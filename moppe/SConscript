@@ -3,7 +3,7 @@
 import sys
 
 env = Environment(CXX     = 'g++',
-                  CCFLAGS = '-g -DDEBUG=1',
+                  CCFLAGS = ['-g', '-DDEBUG=1'],
                   CPPPATH = ['#/',
                              '#/vendor/boost'])
 
@@ -11,7 +11,8 @@ if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =
                      ['/System/Library/Frameworks/OpenGL.framework/Headers',
                       '/System/Library/Frameworks/GLUT.framework/Headers'],
-                     FRAMEWORKS = ['OpenGL', 'GLUT'])
+                     FRAMEWORKS = ['OpenGL', 'GLUT'],
+                     CCFLAGS = ['-DMAC'])
 
 Export('env')
 

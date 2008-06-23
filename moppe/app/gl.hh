@@ -2,7 +2,12 @@
 #ifndef MOPPE_GL_HH
 #define MOPPE_GL_HH
 
-#include <glut.h>
+#ifdef MAC
+# include <glut.h>
+#else
+# include <GL/gl.h>
+# include <GL/glut.h>
+#endif
 
 #include <stdexcept>
 
