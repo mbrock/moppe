@@ -7,6 +7,8 @@
 #include <cmath>
 
 namespace moppe {
+  const float PI2 = 3.14159 * 2;
+
   template <typename T>
   struct Vector3D:
     public boost::equality_comparable<Vector3D<T> >,
@@ -52,7 +54,9 @@ namespace moppe {
   };
 
   template <typename T>
-  struct Quaternion {
+  struct Quaternion:
+    public boost::multipliable<Quaternion<T> >
+  {
     T x, y, z, w;
 
     Quaternion (T x, T y, T z, T w) 

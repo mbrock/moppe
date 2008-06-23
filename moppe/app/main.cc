@@ -1,5 +1,6 @@
 
 #include <moppe/app/app.hh>
+#include <moppe/gfx/camera.hh>
 
 #include <iostream>
 
@@ -7,7 +8,10 @@ namespace moppe {
   class MoppeGLUT : public app::GLUTApplication {
   public:
     MoppeGLUT ()
-      : GLUTApplication ("Moppe", 800, 600)
+      : GLUTApplication ("Moppe", 800, 600),
+	m_camera (Vector3D<float> (0, 0, 10),
+		  Vector3D<float> (0, 0, 0)),
+	m_mouse (800, 600)
     { }
 
     void setup ()
@@ -33,6 +37,20 @@ namespace moppe {
       glutPostRedisplay ();
 
       check_gl ();
+
+      m_mouse.resize (width, height);
+    }
+
+    void mouse (int button, int state, int x, int y)
+    {
+      std::cout << x << "x" << y << "\n";
+    }
+
+    void passive_motion (int x, int y)
+    {
+      std::cout << x << "x" << y << "\n";
+      m_mouse.update (x, y);
+      glutPostRedisplay ();
     }
 
     void display ()
@@ -42,11 +60,9 @@ namespace moppe {
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
       glMatrixMode (GL_MODELVIEW);
-      glLoadIdentity ();
 
-      gluLookAt (2, 2, 10.0,
-		 0.0, 0.0, 0.0,
-		 0.0, 1.0, 0.0);
+      m_camera.set (m_mouse.setting ());
+      m_camera.realize ();
 
       check_gl ();
 
@@ -68,6 +84,10 @@ namespace moppe {
       glFlush ();
       glutSwapBuffers ();
     }
+
+  private:
+    gfx::Camera m_camera;
+    gfx::MouseCameraController m_mouse;
   };
 }
 

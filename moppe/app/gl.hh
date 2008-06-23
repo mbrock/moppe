@@ -26,6 +26,13 @@ namespace moppe {
       throw gl_error (reinterpret_cast<const char*> (gluErrorString (e)));
 #endif
   }
+
+  namespace gl {
+    struct ScopedAttribSaver {
+       ScopedAttribSaver (GLbitfield mask) { glPushAttrib (mask); }
+      ~ScopedAttribSaver ()                { glPopAttrib  ();     }
+    };
+  }
 }
 
 #endif

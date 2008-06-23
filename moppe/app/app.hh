@@ -35,6 +35,12 @@ namespace app {
 			    KeyStatus status)
     { /* Override me. */ }
 
+    virtual void mouse     (int button, int state, int mx, int my)
+    { /* Override me. */ }
+
+    virtual void passive_motion (int mx, int my)
+    { /* Override me. */ }
+
   protected:
     const std::string m_title;
 

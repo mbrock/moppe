@@ -25,6 +25,13 @@ namespace app {
   static void global_reshape_func (int w, int h)
   { global_app->reshape (w, h); }
 
+  static void global_mouse_func (int b, int s, int x, int y)
+  { global_app->mouse (b, s, x, y); }
+
+  static void global_passive_motion_func (int x, int y)
+  { global_app->passive_motion (x, y); }
+
+
 #define DEF_GKF(t, s, k)				     \
   static void s (t code, int mx, int my) \
   { global_app->keyboard (code, mx, my, k); }
@@ -46,6 +53,8 @@ namespace app {
     glutKeyboardUpFunc (global_keyboard_up_func);
     glutSpecialFunc (global_special_func);
     glutSpecialUpFunc (global_special_func);
+    glutMouseFunc (global_mouse_func);
+    glutPassiveMotionFunc (global_passive_motion_func);
 
     setup ();
 
