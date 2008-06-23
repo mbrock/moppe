@@ -1,0 +1,8 @@
+# -*- python -*-
+
+env = Environment(CXX     = 'g++',
+                  CCFLAGS = '-g ',
+                  CPPPATH = '#/')
+Export('env')
+
+env.SConscript('map/SConscript')
