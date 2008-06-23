@@ -11,29 +11,29 @@ namespace moppe {
   const float PI2 = 3.14159 * 2;
 
   template <typename T>
-  struct Vector3D:
-    public boost::equality_comparable<Vector3D<T> >,
-    public boost::addable<Vector3D<T> >,
-    public boost::subtractable<Vector3D<T> >,
-    public boost::multipliable2<Vector3D<T>, T>,
-    public boost::dividable2<Vector3D<T>, T>
+  struct Vector3DG:
+    public boost::equality_comparable<Vector3DG<T> >,
+    public boost::addable<Vector3DG<T> >,
+    public boost::subtractable<Vector3DG<T> >,
+    public boost::multipliable2<Vector3DG<T>, T>,
+    public boost::dividable2<Vector3DG<T>, T>
   {
     T x, y, z;
 
-    Vector3D ()              : x (0), y (0), z (0) { }
-    Vector3D (T x, T y, T z) : x (x), y (y), z (z) { }
+    Vector3DG ()              : x (0), y (0), z (0) { }
+    Vector3DG (T x, T y, T z) : x (x), y (y), z (z) { }
 
-    inline Vector3D& operator += (const Vector3D& v)
+    inline Vector3DG& operator += (const Vector3DG& v)
     { x += v.x; y += v.y; z += v.z; return *this; }
-    inline Vector3D& operator -= (const Vector3D& v)
+    inline Vector3DG& operator -= (const Vector3DG& v)
     { x -= v.x; y -= v.y; z -= v.z; return *this; }
 
-    inline Vector3D& operator *= (T k)
+    inline Vector3DG& operator *= (T k)
     { x *= k; y *= k; z *= k; return *this; }
-    inline Vector3D& operator /= (T k)
+    inline Vector3DG& operator /= (T k)
     { x /= k; y /= k; z /= k; return *this; }
 
-    inline bool operator == (const Vector3D& v) const
+    inline bool operator == (const Vector3DG& v) const
     { return (x == v.x) && (y == v.y) && (z == v.z); }
 
     inline T length  () const { return std::sqrt (length2 ()); }
@@ -55,52 +55,52 @@ namespace moppe {
   };
 
   template <typename T>
-  struct Quaternion:
-    public boost::multipliable<Quaternion<T> >
+  struct QuaternionG:
+    public boost::multipliable<QuaternionG<T> >
   {
     T x, y, z, w;
 
-    Quaternion (T x, T y, T z, T w) 
+    QuaternionG (T x, T y, T z, T w) 
       : x (x), y (y), z (z), w (w) { }
 
-    Quaternion (const Vector3D<T>& v, T w)
+    QuaternionG (const Vector3DG<T>& v, T w)
       : x (v.x), y (v.y), z (v.z), w (w)
     { }
     
-    static inline Quaternion
-    rotation (const Vector3D<T>& axis, float theta)
+    static inline QuaternionG
+    rotation (const Vector3DG<T>& axis, float theta)
     {
-      return Quaternion (std::sin (theta / 2) * axis,
+      return QuaternionG (std::sin (theta / 2) * axis,
 			 std::cos (theta / 2));
     }
 
-    static inline Vector3D<T>
-    rotate (const Vector3D<T>& v,
-	    const Vector3D<T>& axis,
+    static inline Vector3DG<T>
+    rotate (const Vector3DG<T>& v,
+	    const Vector3DG<T>& axis,
 	    float theta)
     {
-      Quaternion r = rotation (axis, theta);
+      QuaternionG r = rotation (axis, theta);
       return rotate (v, r);
     }
 
-    static inline Vector3D<T>
-    rotate (const Vector3D<T>& v,
-	    const Quaternion& q)
+    static inline Vector3DG<T>
+    rotate (const Vector3DG<T>& v,
+	    const QuaternionG& q)
     {
-      Quaternion r (q);
-      const Quaternion rc (r.conjugate ());
+      QuaternionG r (q);
+      const QuaternionG rc (r.conjugate ());
 
-      r *= Quaternion (v, 0);
+      r *= QuaternionG (v, 0);
       r *= rc;
 
       return r.vector ();
     }
 
-    inline Vector3D<T> vector () const { return Vector3D<T> (x, y, z); }
+    inline Vector3DG<T> vector () const { return Vector3DG<T> (x, y, z); }
 
-    Quaternion& operator *= (const Quaternion& q)
+    QuaternionG& operator *= (const QuaternionG& q)
     {
-      const Quaternion a (*this);
+      const QuaternionG a (*this);
 
       x = a.w*q.x + a.x*q.w + a.y*q.z - a.z*q.y;
       y = a.w*q.y - a.x*q.z + a.y*q.w + a.z*q.x;
@@ -110,12 +110,15 @@ namespace moppe {
       return *this;
     }
     
-    inline Quaternion conjugate () const
-    { return Quaternion (x, y, z, -w); }
+    inline QuaternionG conjugate () const
+    { return QuaternionG (x, y, z, -w); }
 
     T length () const
     { return std::sqrt (x*x + y*y + z*z + w*w); }
   };
+
+  typedef Vector3DG<float>   Vector3D;
+  typedef QuaternionG<float> Quaternion;
 }
 
 #endif

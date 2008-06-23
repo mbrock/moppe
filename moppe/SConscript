@@ -3,7 +3,7 @@
 import sys
 
 env = Environment(CXX     = 'g++',
-                  CCFLAGS = ['-g', '-DDEBUG=1'],
+                  CCFLAGS = ['-g', '-DDEBUG=1', '-Wall'],
                   CPPPATH = ['#/',
                              '#/vendor/boost'])
 

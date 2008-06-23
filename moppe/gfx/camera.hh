@@ -19,77 +19,22 @@ namespace gfx {
 
   class Camera {
   public:
-    Camera (Vector3D<float> position, Vector3D<float> target)
-      : m_position (position),
-	m_target (target),
+    Camera (Vector3D position, Vector3D target)
+      : m_position          (position),
+	m_target            (target),
 	m_original_position (position),
-	m_original_target (target)
+	m_original_target   (target)
     { }
 
     void realize ();
     void set (const CameraSetting& setting);
 
   private:
-    Vector3D<float> m_position;
-    Vector3D<float> m_target;
+    Vector3D m_position;
+    Vector3D m_target;
 
-    const Vector3D<float> m_original_position;
-    const Vector3D<float> m_original_target;
-  };
-
-  class MouseCameraController {
-  public:
-    MouseCameraController (int width, int height)
-      : m_width (width),
-	m_height (height),
-	m_valid (false),
-	m_xp (-1),
-	m_yp (-1),
-	m_setting (0, 0)
-    { }
-
-    void resize (int width, int height)
-    {
-      m_valid = false;
-      m_width = width;
-      m_height = height;
-    }
-
-    CameraSetting setting () const { return m_setting; }
-
-    void on_leave () { m_valid = false; }
-
-    void update (int x, int y)
-    {
-      if (m_valid)
-	{
-	  float dx = (x - m_xp) * PI / m_width;
-	  float dy = (y - m_yp) * PI / m_height;
-
-	  m_setting.yaw -= dx;
-	  m_setting.pitch += dy;
-
-	  if (m_setting.pitch > 1)
-	    m_setting.pitch = 1;
-	  else if (m_setting.pitch < -1)
-	    m_setting.pitch = -1;
-	}
-
-      m_xp = x;
-      m_yp = y;
-      m_valid = true;
-    }
-
-  private:
-    int m_width;
-    int m_height;
-
-    bool m_valid;
-
-    int m_xp;
-    int m_yp;
-
-    CameraSetting m_setting;
+    const Vector3D m_original_position;
+    const Vector3D m_original_target;
   };
 }
 }

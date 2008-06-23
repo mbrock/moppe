@@ -1,21 +1,21 @@
 
 #include <moppe/app/app.hh>
 #include <moppe/gfx/camera.hh>
+#include <moppe/gfx/mouse.hh>
 
 #include <iostream>
 
 namespace moppe {
-  class MoppeGLUT : public app::GLUTApplication {
+  class MoppeGLUT: public app::GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D<float> (0, 0, 0),
-		  Vector3D<float> (0, 0, 1)),
+	m_camera (Vector3D (0, 0, 0),
+		  Vector3D (0, 0, 1)),
 	m_mouse (800, 600)
     { }
 
-    void setup ()
-    {
+    void setup () {
       glEnable (GL_DEPTH_TEST);
       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
@@ -23,8 +23,7 @@ namespace moppe {
       glShadeModel (GL_SMOOTH);
     }
 
-    void reshape (int width, int height)
-    {
+    void reshape (int width, int height) {
       m_width = width;
       m_height = height;
 
@@ -40,25 +39,32 @@ namespace moppe {
       m_mouse.resize (width, height);
     }
 
-    void passive_motion (int x, int y)
-    {
-      std::cout << x << "x" << y << "\n";
+    void passive_motion (int x, int y) {
       m_mouse.update (x, y);
       glutPostRedisplay ();
     }
 
-    void display ()
-    {
+    void display () {
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glMatrixMode (GL_MODELVIEW);
 
       m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
-      check_gl ();
-
       glTranslatef (0, 0, 20);
 
+      glColor3f (1, 1, 1);
+
+      glutSolidSphere (2, 20, 20);
+
+      check_gl ();
+
+      glFlush ();
+      glutSwapBuffers ();
+    }
+
+  private:
+    void setup_lights () {
       GLfloat ambient[] = {0.5, 0.1, 0.1, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
@@ -66,21 +72,6 @@ namespace moppe {
       GLfloat light0_position[] = {2, 2, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
       glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
-
-      glColor3f (1, 1, 1);
-
-      glutSolidSphere (2, 20, 20);
-
-      glLineWidth (3);
-      glBegin (GL_LINES);
-      glVertex3f (0, 0, 0);
-      glVertex3f (100, 0, 0);
-      glEnd ();
-
-      check_gl ();
-
-      glFlush ();
-      glutSwapBuffers ();
     }
 
   private:

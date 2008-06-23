@@ -9,7 +9,7 @@
 namespace moppe {
 namespace app {
   enum KeyStatus { 
-    KEY_PRESSED, KEY_RELEASED,
+    KEY_PRESSED,         KEY_RELEASED,
     KEY_SPECIAL_PRESSED, KEY_SPECIAL_RELEASED
   };
 
@@ -18,7 +18,7 @@ namespace app {
     GLUTApplication (const std::string& title, int w, int h);
     virtual ~GLUTApplication ();
 
-    void initialize (int &argc, char **argv, int mode);
+    void initialize    (int &argc, char **argv, int mode);
     void run_main_loop ();
 
     virtual void setup     ()

@@ -2,5 +2,6 @@
 
 Import('env')
 
-env.Library('../moppe-gfx', ['camera.cc'])
+env.Library('../moppe-gfx', ['camera.cc',
+                             'mouse.cc'])
 

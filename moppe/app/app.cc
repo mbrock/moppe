@@ -31,11 +31,10 @@ namespace app {
   static void global_passive_motion_func (int x, int y)
   { global_app->passive_motion (x, y); }
 
-
-#define DEF_GKF(t, s, k)				     \
-  static void s (t code, int mx, int my) \
+#define DEF_GKF(t, s, k)			\
+  static void s (t code, int mx, int my)	\
   { global_app->keyboard (code, mx, my, k); }
-
+  
   DEF_GKF (unsigned char, global_keyboard_func, KEY_PRESSED);
   DEF_GKF (unsigned char, global_keyboard_up_func, KEY_RELEASED);
   DEF_GKF (int, global_special_func, KEY_SPECIAL_PRESSED);

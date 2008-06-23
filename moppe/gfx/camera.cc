@@ -16,17 +16,13 @@ namespace gfx {
 
   void Camera::set (const CameraSetting& setting)
   {
-    const Vector3D<float> pitch_axis (1, 0, 0);
-    const Vector3D<float> yaw_axis   (0, 1, 0);
+    const Vector3D pitch_axis (1, 0, 0);
+    const Vector3D yaw_axis   (0, 1, 0);
 
-    Quaternion<float> qy
-      (Quaternion<float>::rotation (yaw_axis, setting.yaw));
-    Quaternion<float> qp
-      (Quaternion<float>::rotation (pitch_axis, setting.pitch));
+    Quaternion qy (Quaternion::rotation (yaw_axis, setting.yaw));
+    Quaternion qp (Quaternion::rotation (pitch_axis, setting.pitch));
 
-    m_target = Quaternion<float>::rotate (m_original_target, qy * qp);
-
-    std::cout << m_position.length () << std::endl;
+    m_target = Quaternion::rotate (m_original_target, qy * qp);
   }
 }
 }

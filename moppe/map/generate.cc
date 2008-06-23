@@ -65,7 +65,8 @@ namespace map {
   HeightMap::scale (float k)
   { FORALL (x, y) set (x, y, k * get (x, y)); }
   
-  typedef boost::variate_generator<boost::mt19937&, boost::uniform_real<> > realgen_t;
+  typedef boost::variate_generator<boost::mt19937&, 
+				   boost::uniform_real<> > realgen_t;
 
   void
   HeightMap::randomize_uniformly ()
@@ -84,19 +85,11 @@ namespace map {
 		  float nw_v, float ne_v, float sw_v, float se_v)
   {
     const int side = (map.width ()) / (1 << step);
-    const int new_side = side / 2;
 
     const int nw_y = y + 0,       nw_x = x + 0;
     const int n_y  = y + 0,        n_x = x + side / 2;
-    const int ne_y = y + 0,       ne_x = x + side;
-
     const int w_y  = y + side / 2, w_x = x + 0;
-    const int e_y  = y + side / 2, e_x = x + side;
     const int c_y  = y + side / 2, c_x = x + side / 2;
-
-    const int sw_y = y + side,    sw_x = x;
-    const int s_y  = y + side,     s_x = x + side / 2;
-    const int se_y = y + side,    se_x = x + side;
 
     if (side == 1)
       {
