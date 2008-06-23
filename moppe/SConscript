@@ -1,12 +1,20 @@
 # -*- python -*-
 
+import sys
+
 env = Environment(CXX     = 'g++',
-                  CCFLAGS = '-g ',
+                  CCFLAGS = '-g -DDEBUG=1',
                   CPPPATH = ['#/',
-                             '#/vendor/boost',
-                             '/System/Library/Frameworks/OpenGL.framework/Headers',
-                             '/System/Library/Frameworks/GLUT.framework/Headers'],
-                  FRAMEWORKS = ['OpenGL', 'GLUT'])
+                             '#/vendor/boost'])
+
+if sys.platform == 'darwin':
+    env.AppendUnique(CPPPATH =
+                     ['/System/Library/Frameworks/OpenGL.framework/Headers',
+                      '/System/Library/Frameworks/GLUT.framework/Headers'],
+                     FRAMEWORKS = ['OpenGL', 'GLUT'])
+
 Export('env')
 
-env.SConscript(['map/SConscript', 'app/SConscript'])
+env.SConscript(['map/SConscript',
+                'app/SConscript',
+                'gfx/SConscript'])

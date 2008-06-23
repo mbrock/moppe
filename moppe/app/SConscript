@@ -1,7 +1,14 @@
 # -*- python -*-
 
+import sys
+
 Import('env')
 
+libs = ['moppe-map']
+
+if sys.platform != 'darwin':
+    libs.append('glut')
+
 env.Program('moppe', ['main.cc', 'app.cc'],
-            LIBS=['moppe-map'],
+            LIBS=libs,
             LIBPATH='..')
