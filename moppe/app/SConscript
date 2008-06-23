@@ -3,5 +3,5 @@
 Import('env')
 
 env.Program('moppe', ['main.cc', 'app.cc'],
-            LIBS=['moppe-map'],
+            LIBS=['moppe-map', 'moppe-gfx'],
             LIBPATH='..')
