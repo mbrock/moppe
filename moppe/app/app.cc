@@ -47,6 +47,8 @@ namespace app {
     glutSpecialFunc (global_special_func);
     glutSpecialUpFunc (global_special_func);
 
+    setup ();
+
     glutMainLoop ();
   }
 

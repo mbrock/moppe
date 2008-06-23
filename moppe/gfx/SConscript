@@ -1,0 +1,6 @@
+# -*- python -*-
+
+Import('env')
+
+env.Library('../moppe-gfx', ['camera.cc'])
+

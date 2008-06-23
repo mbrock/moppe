@@ -2,7 +2,7 @@
 #ifndef MOPPE_APP_HH
 #define MOPPE_APP_HH
 
-#include <glut.h>
+#include <moppe/app/gl.hh>
 
 #include <string>
 
@@ -20,6 +20,9 @@ namespace app {
 
     void initialize (int &argc, char **argv, int mode);
     void run_main_loop ();
+
+    virtual void setup     ()
+    { /* Override me. */ }
 
     virtual void display   ()
     { /* Override me. */ }
