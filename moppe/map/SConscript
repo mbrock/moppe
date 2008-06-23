@@ -2,6 +2,6 @@
 
 Import('env')
 
-env.Library('moppe-map', ['tga.cc', 'generate.cc'])
+env.Library('../moppe-map', ['tga.cc', 'generate.cc'])
 
-env.Program('test.cc', LIBS=['moppe-map'], LIBPATH='.')
+env.Program('test.cc', LIBS=['moppe-map'], LIBPATH='..')

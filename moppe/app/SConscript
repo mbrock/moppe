@@ -1,0 +1,7 @@
+# -*- python -*-
+
+Import('env')
+
+env.Program('moppe', ['main.cc', 'app.cc'],
+            LIBS=['moppe-map'],
+            LIBPATH='..')

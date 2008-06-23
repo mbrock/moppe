@@ -2,7 +2,11 @@
 
 env = Environment(CXX     = 'g++',
                   CCFLAGS = '-g ',
-                  CPPPATH = '#/')
+                  CPPPATH = ['#/',
+                             '#/vendor/boost',
+                             '/System/Library/Frameworks/OpenGL.framework/Headers',
+                             '/System/Library/Frameworks/GLUT.framework/Headers'],
+                  FRAMEWORKS = ['OpenGL', 'GLUT'])
 Export('env')
 
-env.SConscript('map/SConscript')
+env.SConscript(['map/SConscript', 'app/SConscript'])

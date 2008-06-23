@@ -1,4 +1,7 @@
 
+#ifndef MOPPE_GENERATE_HH
+#define MOPPE_GENERATE_HH
+
 #include <boost/multi_array.hpp>
 #include <boost/random.hpp>
 
@@ -45,3 +48,5 @@ namespace moppe {
     write_tga (std::ostream& stream, const HeightMap& map);
   }
 }
+
+#endif

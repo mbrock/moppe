@@ -1,4 +1,7 @@
 
+#ifndef MOPPE_TGA_HH
+#define MOPPE_TGA_HH
+
 #include <vector>
 
 namespace moppe {
@@ -43,3 +46,5 @@ namespace moppe {
     }
   }
 }
+
+#endif
