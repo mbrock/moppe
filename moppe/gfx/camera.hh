@@ -61,7 +61,7 @@ namespace gfx {
       if (m_valid)
 	{
 	  float dx = (x - m_xp) * PI2 / m_width;
-	  float dy = (y - m_yp) * PI2 / m_height;
+	  float dy = (y - m_yp) * -PI2 / m_height;
 
 	  m_setting.yaw += dx;
 	  m_setting.pitch += dy;

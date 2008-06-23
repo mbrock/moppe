@@ -80,6 +80,12 @@ namespace moppe {
       glTranslatef (0, 0, 0);
       glutSolidSphere (1, 20, 20);
 
+      glLineWidth (3);
+      glBegin (GL_LINES);
+      glVertex3f (0, 0, 0);
+      glVertex3f (100, 0, 0);
+      glEnd ();
+
       check_gl ();
 
       glFlush ();
