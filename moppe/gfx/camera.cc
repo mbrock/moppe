@@ -10,7 +10,7 @@ namespace gfx {
     glLoadIdentity ();
     
     gluLookAt (m_position.x, m_position.y, m_position.z,
-	       m_target.x, m_target.y, m_target.z,
+	       m_target.x,   m_target.y,   m_target.z,
 	       0, 1, 0);
   }
 
@@ -24,7 +24,9 @@ namespace gfx {
     Quaternion<float> qp
       (Quaternion<float>::rotation (pitch_axis, setting.pitch));
 
-    m_position = Quaternion<float>::rotate (m_original_position, qy * qp);
+    m_target = Quaternion<float>::rotate (m_original_target, qy * qp);
+
+    std::cout << m_position.length () << std::endl;
   }
 }
 }

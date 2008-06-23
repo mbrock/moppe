@@ -9,8 +9,8 @@ namespace moppe {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D<float> (0, 0, 10),
-		  Vector3D<float> (0, 0, 0)),
+	m_camera (Vector3D<float> (0, 0, 0),
+		  Vector3D<float> (0, 0, 1)),
 	m_mouse (800, 600)
     { }
 
@@ -28,23 +28,16 @@ namespace moppe {
       m_width = width;
       m_height = height;
 
-      std::cout << width << "x" << height << "\n";
-
       glMatrixMode (GL_PROJECTION);
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (60.0, 1.0 * width / height, 0.01, 100.0);
+      gluPerspective (100.0, 1.0 * width / height, 0.01, 100.0);
       glutPostRedisplay ();
 
       check_gl ();
 
       m_mouse.resize (width, height);
-    }
-
-    void mouse (int button, int state, int x, int y)
-    {
-      std::cout << x << "x" << y << "\n";
     }
 
     void passive_motion (int x, int y)
@@ -56,16 +49,15 @@ namespace moppe {
 
     void display ()
     {
-      std::cout << "mamma?" << std::endl;
-      
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
       glMatrixMode (GL_MODELVIEW);
 
       m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
       check_gl ();
+
+      glTranslatef (0, 0, 20);
 
       GLfloat ambient[] = {0.5, 0.1, 0.1, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
@@ -77,8 +69,7 @@ namespace moppe {
 
       glColor3f (1, 1, 1);
 
-      glTranslatef (0, 0, 0);
-      glutSolidSphere (1, 20, 20);
+      glutSolidSphere (2, 20, 20);
 
       glLineWidth (3);
       glBegin (GL_LINES);

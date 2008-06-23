@@ -22,7 +22,8 @@ namespace gfx {
     Camera (Vector3D<float> position, Vector3D<float> target)
       : m_position (position),
 	m_target (target),
-	m_original_position (position)
+	m_original_position (position),
+	m_original_target (target)
     { }
 
     void realize ();
@@ -30,8 +31,10 @@ namespace gfx {
 
   private:
     Vector3D<float> m_position;
-    const Vector3D<float> m_original_position;
     Vector3D<float> m_target;
+
+    const Vector3D<float> m_original_position;
+    const Vector3D<float> m_original_target;
   };
 
   class MouseCameraController {
@@ -60,13 +63,16 @@ namespace gfx {
     {
       if (m_valid)
 	{
-	  float dx = (x - m_xp) * PI2 / m_width;
-	  float dy = (y - m_yp) * -PI2 / m_height;
+	  float dx = (x - m_xp) * PI / m_width;
+	  float dy = (y - m_yp) * PI / m_height;
 
-	  m_setting.yaw += dx;
+	  m_setting.yaw -= dx;
 	  m_setting.pitch += dy;
 
-	  std::cout << "+ " << dx << "x" << dy << "\n";
+	  if (m_setting.pitch > 1)
+	    m_setting.pitch = 1;
+	  else if (m_setting.pitch < -1)
+	    m_setting.pitch = -1;
 	}
 
       m_xp = x;

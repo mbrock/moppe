@@ -7,6 +7,7 @@
 #include <cmath>
 
 namespace moppe {
+  const float PI  = 3.14159;
   const float PI2 = 3.14159 * 2;
 
   template <typename T>
@@ -111,6 +112,9 @@ namespace moppe {
     
     inline Quaternion conjugate () const
     { return Quaternion (x, y, z, -w); }
+
+    T length () const
+    { return std::sqrt (x*x + y*y + z*z + w*w); }
   };
 }
 
