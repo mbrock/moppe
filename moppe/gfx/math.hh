@@ -25,6 +25,17 @@ namespace moppe {
   }
 
   template <typename T>
+  T max (T a, T b) { return a > b ? a : b; }
+
+  template <typename T>
+  T min (T a, T b) { return a < b ? a : b; }
+
+
+  template <typename T>
+  T linear_interpolate (const T& x, const T& y, const T& alpha)
+  { return alpha * x + (1 - alpha) * y; }
+
+  template <typename T>
   struct Vector3DG:
     // Thanks Boost!  Free derived operators!
     public boost::equality_comparable<Vector3DG<T> >,

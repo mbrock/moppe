@@ -4,6 +4,8 @@
 
 #include <moppe/app/gl.hh>
 
+#include <sys/time.h>
+
 #include <string>
 
 namespace moppe {
@@ -41,6 +43,9 @@ namespace app {
     virtual void passive_motion (int mx, int my)
     { /* Override me. */ }
 
+    virtual void idle ()
+    { /* Override me. */ }
+
   protected:
     const std::string m_title;
 
@@ -49,6 +54,23 @@ namespace app {
   };
 
   extern GLUTApplication *global_app;
+
+  class Timer {
+  public:
+    Timer () { reset (); }
+
+    double elapsed () { return time () - t0; }
+    void   reset   () { t0 = time (); }
+
+  private:
+    double time () const {
+      ::timeval t;
+      gettimeofday (&t, 0);
+      return t.tv_sec + t.tv_usec / 1000000.0;
+    }
+
+    double t0;
+  };
 }
 }
 

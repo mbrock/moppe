@@ -3,6 +3,8 @@
 
 #include <moppe/map/generate.hh>
 
+#include <boost/shared_ptr.hpp>
+
 namespace moppe {
 namespace gfx {
   class NormalMap {
@@ -35,6 +37,9 @@ namespace gfx {
     void recalculate_normals ();
     void render              ();
 
+    void set_next_map      (boost::shared_ptr<map::HeightMap> next_map);
+    void set_interpolation (float interpolation);
+
   private:
     Vector3D vertex          (int x, int y)   const;
     Vector3D normal          (int x, int y)   const;
@@ -44,6 +49,9 @@ namespace gfx {
 
   private:
     const map::HeightMap& m_map;
+    
+    boost::shared_ptr<map::HeightMap> m_next_map;
+    float m_interpolation;
 
     const float m_scale_w;
     const float m_scale_h;

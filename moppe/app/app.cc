@@ -31,6 +31,9 @@ namespace app {
   static void global_passive_motion_func (int x, int y)
   { global_app->passive_motion (x, y); }
 
+  static void global_idle_func ()
+  { global_app->idle (); }
+
 #define DEF_GKF(t, s, k)			\
   static void s (t code, int mx, int my)	\
   { global_app->keyboard (code, mx, my, k); }
@@ -54,6 +57,7 @@ namespace app {
     glutSpecialUpFunc (global_special_func);
     glutMouseFunc (global_mouse_func);
     glutPassiveMotionFunc (global_passive_motion_func);
+    glutIdleFunc (global_idle_func);
 
     setup ();
 

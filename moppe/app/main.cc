@@ -10,15 +10,20 @@
 #include <ctime>
 
 namespace moppe {
-  class MoppeGLUT: public app::GLUTApplication {
+  using namespace map;
+  using namespace app;
+
+  class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
 	m_camera (Vector3D (0, 10, -5),
 		  Vector3D (0, 0, 0)),
 	m_mouse (800, 600),
-	m_map (129, 129, ::time (0)),
-	m_terrain_renderer (m_map, 0.15, 10.0)
+	m_map1 (new RandomHeightMap (129, 129, 0 + ::time (0))),
+	m_map2 (new RandomHeightMap (129, 129, 1 + ::time (0))),
+	m_map3 (m_map1, m_map2),
+	m_terrain_renderer (m_map3, 0.15, 10.0)
     { }
 
     void setup () {
@@ -28,13 +33,28 @@ namespace moppe {
       glEnable (GL_NORMALIZE);
       glShadeModel (GL_SMOOTH);
 
-      std::cout << "Randomizing map...";
-      m_map.randomize_plasmally (0.95);
+      std::cout << "Randomizing maps...";
+      m_map1->randomize_plasmally (0.95);
+      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
       m_terrain_renderer.recalculate_normals ();
 
       m_mouse.set_pitch_limits (-15, 10);
+    }
+
+    void idle () {
+      static const float dt = 1 / 30.0;
+      static const float total = 5;
+
+      if (!m_map3.done ())
+	if (m_timer.elapsed () >= dt)
+	  {
+	    m_timer.reset ();
+	    m_map3.increase_blending_factor (dt / total);
+	    m_terrain_renderer.recalculate_normals ();
+	    glutPostRedisplay ();
+	  }
     }
 
     void reshape (int width, int height) {
@@ -95,7 +115,12 @@ namespace moppe {
   private:
     gfx::Camera m_camera;
     gfx::MouseCameraController m_mouse;
-    map::HeightMap m_map;
+
+    Timer m_timer;
+    boost::shared_ptr<map::RandomHeightMap> m_map1;
+    boost::shared_ptr<map::RandomHeightMap> m_map2;
+    map::InterpolatingHeightMap m_map3;
+
     gfx::TerrainRenderer m_terrain_renderer;
   };
 }

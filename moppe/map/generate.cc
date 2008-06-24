@@ -1,6 +1,7 @@
 
 #include <moppe/map/generate.hh>
 #include <moppe/map/tga.hh>
+#include <moppe/gfx/math.hh>
 
 #include <boost/random.hpp>
 
@@ -8,17 +9,16 @@
 
 namespace moppe {
 namespace map {
-  HeightMap::HeightMap (int width, int height, int seed)
-    : m_data   (boost::extents[height][width]),
-      m_width  (width),
-      m_height (height)
+  RandomHeightMap::RandomHeightMap (int width, int height, int seed)
+    : HeightMap (width, height),
+      m_data    (boost::extents[height][width])
   {
     m_rng.seed (boost::mt19937::result_type (seed));
   }
 
 #define FORALL(x,y)				\
-  for (index_t y = 0; y < m_height; ++y)	\
-    for (index_t x = 0; x < m_width; ++x)
+  for (int y = 0; y < m_height; ++y)	\
+    for (int x = 0; x < m_width; ++x)
 
   float
   HeightMap::min_value () const
@@ -49,7 +49,7 @@ namespace map {
   }
 
   void
-  HeightMap::normalize ()
+  RandomHeightMap::normalize ()
   {
     translate (0 - min_value ());
     float max = max_value ();
@@ -58,18 +58,18 @@ namespace map {
   }
 
   void
-  HeightMap::translate (float d)
+  RandomHeightMap::translate (float d)
   { FORALL (x, y) set (x, y, d + get (x, y)); }
 
   void
-  HeightMap::scale (float k)
+  RandomHeightMap::scale (float k)
   { FORALL (x, y) set (x, y, k * get (x, y)); }
   
   typedef boost::variate_generator<boost::mt19937&, 
 				   boost::uniform_real<> > realgen_t;
 
   void
-  HeightMap::randomize_uniformly ()
+  RandomHeightMap::randomize_uniformly ()
   {
     boost::uniform_real<> range (0, 1);
     realgen_t g (m_rng, range);
@@ -80,7 +80,7 @@ namespace map {
   }
 
   static void
-  do_plasma_step (HeightMap& map, int step, int x, int y, realgen_t& g,
+  do_plasma_step (RandomHeightMap& map, int step, int x, int y, realgen_t& g,
 		  float max_displacement, float r,
 		  float nw_v, float ne_v, float sw_v, float se_v)
   {
@@ -117,7 +117,7 @@ namespace map {
   }
 
   void
-  HeightMap::randomize_plasmally (float roughness)
+  RandomHeightMap::randomize_plasmally (float roughness)
   {
     boost::uniform_real<> range (-1, 1);
     boost::variate_generator<boost::mt19937&, boost::uniform_real<> >
@@ -127,6 +127,22 @@ namespace map {
 		    g (), g (), g (), g ());
     normalize ();
   }
+
+  float
+  InterpolatingHeightMap::get (int x, int y) const
+  {
+    return linear_interpolate (m_from->get (x, y),
+			       m_to->get (x, y),
+			       m_alpha);
+  }
+
+  void
+  InterpolatingHeightMap::set_blending_factor (float alpha)
+  { m_alpha = min (alpha, 1.0f); }
+
+  void 
+  InterpolatingHeightMap::increase_blending_factor (float delta)
+  { m_alpha = min (m_alpha + delta, 1.0f); }
   
   void
   write_tga (std::ostream& stream, const HeightMap& map)

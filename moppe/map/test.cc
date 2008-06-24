@@ -14,7 +14,7 @@ main (int argc, char **argv)
 
   try
     {
-      HeightMap map (513, 513, seed);
+      RandomHeightMap map (513, 513, seed);
       std::cerr << "Randomizing...";
       map.randomize_plasmally (0.7);
       std::cerr << "\ndone.\n";
