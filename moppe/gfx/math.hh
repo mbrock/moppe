@@ -30,7 +30,6 @@ namespace moppe {
   template <typename T>
   T min (T a, T b) { return a < b ? a : b; }
 
-
   template <typename T>
   T linear_interpolate (const T& x, const T& y, const T& alpha)
   { return alpha * x + (1 - alpha) * y; }
@@ -96,6 +95,18 @@ namespace moppe {
 			     const Vector3DG<T>& v) {
     return os << "<" << v.x << " " << v.y << " " << v.z << ">";
   }
+
+  template <typename T>
+  Vector3DG<T>
+  linear_vector_interpolate (const Vector3DG<T>& from,
+			     const Vector3DG<T>& to,
+			     const T& alpha)
+  {
+    return Vector3DG<T> (linear_interpolate (from.x, to.x, alpha),
+			 linear_interpolate (from.y, to.y, alpha),
+			 linear_interpolate (from.z, to.z, alpha));
+  }
+
 
   template <typename T>
   struct QuaternionG:

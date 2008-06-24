@@ -20,10 +20,14 @@ namespace moppe {
 	m_camera (Vector3D (0, 10, -5),
 		  Vector3D (0, 0, 0)),
 	m_mouse (800, 600),
-	m_map1 (new RandomHeightMap (129, 129, 0 + ::time (0))),
-	m_map2 (new RandomHeightMap (129, 129, 1 + ::time (0))),
-	m_map3 (m_map1, m_map2),
-	m_terrain_renderer (m_map3, 0.15, 10.0)
+	m_map1 (new RandomHeightMap (129, 129,
+				     Vector3D (0.15, 10, 0.15),
+				     0 + ::time (0))),
+	m_map2 (new RandomHeightMap (129, 129,
+				     Vector3D (0.15, 10, 0.15),
+				     1 + ::time (0))),
+	m_map3 (m_map1, m_map2, m_map1->scale ()),
+	m_terrain_renderer (m_map3)
     { }
 
     void setup () {
@@ -38,21 +42,18 @@ namespace moppe {
       m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
-      m_terrain_renderer.recalculate_normals ();
-
       m_mouse.set_pitch_limits (-15, 10);
     }
 
     void idle () {
-      static const float dt = 1 / 30.0;
-      static const float total = 5;
+      static const float dt    = 1 / 30.0;
+      static const float total = 3;
 
       if (!m_map3.done ())
 	if (m_timer.elapsed () >= dt)
 	  {
 	    m_timer.reset ();
 	    m_map3.increase_blending_factor (dt / total);
-	    m_terrain_renderer.recalculate_normals ();
 	    glutPostRedisplay ();
 	  }
     }

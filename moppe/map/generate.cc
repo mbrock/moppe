@@ -9,8 +9,44 @@
 
 namespace moppe {
 namespace map {
-  RandomHeightMap::RandomHeightMap (int width, int height, int seed)
-    : HeightMap (width, height),
+  NormalMap::NormalMap (int width, int height)
+    : m_data   (boost::extents[height][width]),
+      m_width  (width),
+      m_height (height)
+  {
+    reset ();
+  }
+
+  void
+  NormalMap::reset ()
+  {
+    for (index_t y = 0; y < m_height; ++y)
+      for (index_t x = 0; x < m_width; ++x)
+	m_data[y][x] = Vector3D (0, 0, 0);
+  }
+
+  void
+  NormalMap::add (int x, int y, const Vector3D& v)
+  {
+    if (((x < 0) || (x > m_width - 1) ||
+	 (y < 0) || (y > m_height - 1)))
+      return;
+
+    m_data[y][x] += v;
+  }
+
+  void
+  NormalMap::normalize_all ()
+  {
+    for (index_t y = 0; y < m_height; ++y)
+      for (index_t x = 0; x < m_width; ++x)
+	m_data[y][x].normalize ();
+  }
+
+  RandomHeightMap::RandomHeightMap (int width, int height,
+				    const Vector3D& scale,
+				    int seed)
+    : NormalComputingHeightMap (width, height, scale),
       m_data    (boost::extents[height][width])
   {
     m_rng.seed (boost::mt19937::result_type (seed));
@@ -48,13 +84,33 @@ namespace map {
     return max;
   }
 
+  Vector3D
+  HeightMap::vertex (int x, int y) const
+  {
+    return Vector3D (m_scale.x * x,
+		     m_scale.y * get (x, y),
+		     m_scale.z * y);    
+  }
+
+  Vector3D
+  HeightMap::triangle_normal (int x1, int y1,
+			      int x2, int y2,
+			      int x3, int y3) const
+  {
+    Vector3D a = vertex (x1, y1);
+    Vector3D b = vertex (x2, y2);
+    Vector3D c = vertex (x3, y3);
+
+    return (b - a).cross (c - a).normalized ();
+  }
+
   void
   RandomHeightMap::normalize ()
   {
     translate (0 - min_value ());
     float max = max_value ();
     if (max != 0.0)
-      scale (1 / max);
+      rescale (1 / max);
   }
 
   void
@@ -62,7 +118,7 @@ namespace map {
   { FORALL (x, y) set (x, y, d + get (x, y)); }
 
   void
-  RandomHeightMap::scale (float k)
+  RandomHeightMap::rescale (float k)
   { FORALL (x, y) set (x, y, k * get (x, y)); }
   
   typedef boost::variate_generator<boost::mt19937&, 
@@ -77,6 +133,8 @@ namespace map {
     for (index_t y = 0; y < m_height; ++y)
       for (index_t x = 0; x < m_width; ++x)
 	set (x, y, g ());
+
+    recompute_normals ();
   }
 
   static void
@@ -126,6 +184,7 @@ namespace map {
     do_plasma_step (*this, 0, 0, 0, g, 1.0, std::pow (2, -roughness),
 		    g (), g (), g (), g ());
     normalize ();
+    recompute_normals ();
   }
 
   float
@@ -134,6 +193,14 @@ namespace map {
     return linear_interpolate (m_from->get (x, y),
 			       m_to->get (x, y),
 			       m_alpha);
+  }
+
+  Vector3D
+  InterpolatingHeightMap::normal (int x, int y) const
+  {
+    return linear_vector_interpolate (m_from->normal (x, y),
+				      m_to->normal (x, y),
+				      m_alpha);
   }
 
   void
@@ -161,6 +228,36 @@ namespace map {
 	}
 
     tga::write_gray8 (stream, data, w, h);
+  }
+
+  void
+  compute_normal_map (const HeightMap& height_map,
+		      NormalMap& normal_map)
+  {
+    normal_map.reset ();
+
+    for (int y = 0; y < height_map.height () - 1; ++y)
+      for (int x = 0; x < height_map.width () - 1; ++x)
+	{
+	  Vector3D left =
+	    height_map.triangle_normal (x, y,
+					x, y + 1,
+					x + 1, y + 1);
+	  Vector3D right =
+	    height_map.triangle_normal (x, y,
+					x + 1, y + 1,
+					x + 1, y);
+
+	  normal_map.add (x, y, left);
+	  normal_map.add (x, y + 1, left);
+	  normal_map.add (x + 1, y + 1, left);
+
+	  normal_map.add (x, y, right);
+	  normal_map.add (x + 1, y, right);
+	  normal_map.add (x + 1, y + 1, right);
+	}
+
+    normal_map.normalize_all ();
   }
 }
 }
