@@ -4,8 +4,7 @@ import sys
 
 env = Environment(CXX     = 'g++',
                   CCFLAGS = ['-g', '-DDEBUG=1', '-Wall'],
-                  CPPPATH = ['#/',
-                             '#/vendor/boost'])
+                  CPPPATH = ['#/', '#/vendor/boost'])
 
 if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =

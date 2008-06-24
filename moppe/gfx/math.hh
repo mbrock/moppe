@@ -37,7 +37,7 @@ namespace moppe {
     { return (x == v.x) && (y == v.y) && (z == v.z); }
 
     inline T length  () const { return std::sqrt (length2 ()); }
-    inline T length2 () const { return x*x + y*y + z*z; }
+    inline T length2 () const { return dot (*this); }
 
     void normalize ()
     {
@@ -51,6 +51,16 @@ namespace moppe {
       T t (*this);
       t.normalize ();
       return t;
+    }
+
+    Vector3DG cross (const Vector3DG& v) const {
+      return Vector3DG (y * v.z - z * v.y,
+			z * v.x - x * v.z,
+			x * v.y - y * v.x);
+    }
+
+    T dot (const Vector3DG& v) const {
+      return x * v.x + y * v.y + z * v.z;
     }
   };
 
@@ -71,7 +81,7 @@ namespace moppe {
     rotation (const Vector3DG<T>& axis, float theta)
     {
       return QuaternionG (std::sin (theta / 2) * axis,
-			 std::cos (theta / 2));
+			  std::cos (theta / 2));
     }
 
     static inline Vector3DG<T>
