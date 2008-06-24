@@ -7,16 +7,18 @@
 
 #include <iostream>
 
+#include <ctime>
+
 namespace moppe {
   class MoppeGLUT: public app::GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D (0, 5, -5),
+	m_camera (Vector3D (0, 10, -5),
 		  Vector3D (0, 0, 0)),
 	m_mouse (800, 600),
-	m_map (65, 65, 1),
-	m_terrain_renderer (m_map)
+	m_map (129, 129, ::time (0)),
+	m_terrain_renderer (m_map, 0.15, 10.0)
     { }
 
     void setup () {
@@ -27,10 +29,12 @@ namespace moppe {
       glShadeModel (GL_SMOOTH);
 
       std::cout << "Randomizing map...";
-      m_map.randomize_plasmally (0.7);
+      m_map.randomize_plasmally (0.95);
       std::cout << "done!\n";
 
-      m_mouse.set_pitch_limits (-15, 45);
+      m_terrain_renderer.recalculate_normals ();
+
+      m_mouse.set_pitch_limits (-15, 10);
     }
 
     void reshape (int width, int height) {
@@ -58,7 +62,7 @@ namespace moppe {
     }
 
     void display () {
-      glClearColor (0, 0, 0);
+      glClearColor (0, 0, 0, 0);
       glColor3f (1, 1, 1);
 
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -67,7 +71,7 @@ namespace moppe {
       m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
-      m_terrain_renderer.render (0.3, 5.0);
+      m_terrain_renderer.render ();
 
       m_camera.draw_debug_text ();
       m_mouse.draw_debug_text ();

@@ -39,6 +39,9 @@ namespace moppe {
 
     extern Configuration global_config;
 
+    void vertex (const Vector3D&);
+    void normal (const Vector3D&);
+
     struct ScopedAttribSaver {
       ScopedAttribSaver  (GLbitfield mask) { glPushAttrib (mask); }
       ~ScopedAttribSaver ()               { glPopAttrib  ();     }

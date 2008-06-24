@@ -62,9 +62,9 @@ namespace moppe {
 	*this /= std::sqrt (k);
     }
 
-    T normalized () const
+    Vector3DG normalized () const
     {
-      T t (*this);
+      Vector3DG t (*this);
       t.normalize ();
       return t;
     }
