@@ -4,7 +4,7 @@
 #include <moppe/app/gl.hh>
 #include <moppe/gfx/math.hh>
 
-#include <iostream>
+#include <boost/format.hpp>
 
 namespace moppe {
 namespace gfx {
@@ -28,6 +28,14 @@ namespace gfx {
 
     void realize ();
     void set (const CameraSetting& setting);
+
+    void draw_debug_text () {
+      std::string text =
+	(boost::format ("Looking at %1%.\nFrom %2%.")
+	 % m_target % m_position).str ();
+      gl::draw_glut_text (GLUT_BITMAP_HELVETICA_18,
+			  20, 20, text);
+    }
 
   private:
     Vector3D m_position;

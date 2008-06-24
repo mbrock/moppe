@@ -9,6 +9,6 @@ libs = ['moppe-map', 'moppe-gfx']
 if sys.platform != 'darwin':
     libs.append('glut')
 
-env.Program('moppe', ['main.cc', 'app.cc'],
+env.Program('moppe', ['main.cc', 'app.cc', 'gl.cc'],
             LIBS=libs,
             LIBPATH='..')

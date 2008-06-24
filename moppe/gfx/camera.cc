@@ -22,7 +22,7 @@ namespace gfx {
     Quaternion qy (Quaternion::rotation (yaw_axis, setting.yaw));
     Quaternion qp (Quaternion::rotation (pitch_axis, setting.pitch));
 
-    m_target = Quaternion::rotate (m_original_target, qy * qp);
+    m_position = Quaternion::rotate (m_original_position, qy * qp);
   }
 }
 }

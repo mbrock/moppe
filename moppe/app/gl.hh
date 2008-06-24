@@ -2,6 +2,10 @@
 #ifndef MOPPE_GL_HH
 #define MOPPE_GL_HH
 
+#include <iostream>
+
+#include <moppe/gfx/math.hh>
+
 #ifdef MAC
 # include <glut.h>
 #else
@@ -28,10 +32,33 @@ namespace moppe {
   }
 
   namespace gl {
-    struct ScopedAttribSaver {
-       ScopedAttribSaver (GLbitfield mask) { glPushAttrib (mask); }
-      ~ScopedAttribSaver ()                { glPopAttrib  ();     }
+    struct Configuration {
+      int screen_width;
+      int screen_height;
     };
+
+    extern Configuration global_config;
+
+    struct ScopedAttribSaver {
+      ScopedAttribSaver  (GLbitfield mask) { glPushAttrib (mask); }
+      ~ScopedAttribSaver ()               { glPopAttrib  ();     }
+    };
+
+    struct ScopedMatrixSaver {
+      ScopedMatrixSaver  () { glPushMatrix (); }
+      ~ScopedMatrixSaver () { glPopMatrix  (); }
+    };
+
+    struct ScopedOrthographicMode {
+      ScopedOrthographicMode ();
+      ~ScopedOrthographicMode ();
+
+    private:
+      ScopedAttribSaver m_depth_settings;
+      ScopedAttribSaver m_enable_settings;
+    };
+
+    void draw_glut_text (void *font, int x, int y, const std::string& s);
   }
 }
 

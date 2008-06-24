@@ -2,6 +2,8 @@
 #include <moppe/app/app.hh>
 #include <moppe/gfx/camera.hh>
 #include <moppe/gfx/mouse.hh>
+#include <moppe/map/generate.hh>
+#include <moppe/gfx/terrain.hh>
 
 #include <iostream>
 
@@ -10,9 +12,11 @@ namespace moppe {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D (0, 0, 0),
-		  Vector3D (0, 0, 1)),
-	m_mouse (800, 600)
+	m_camera (Vector3D (0, 5, -5),
+		  Vector3D (0, 0, 0)),
+	m_mouse (800, 600),
+	m_map (65, 65, 1),
+	m_terrain_renderer (m_map)
     { }
 
     void setup () {
@@ -21,9 +25,18 @@ namespace moppe {
       glEnable (GL_LIGHT0);
       glEnable (GL_NORMALIZE);
       glShadeModel (GL_SMOOTH);
+
+      std::cout << "Randomizing map...";
+      m_map.randomize_plasmally (0.7);
+      std::cout << "done!\n";
+
+      m_mouse.set_pitch_limits (-15, 45);
     }
 
     void reshape (int width, int height) {
+      gl::global_config.screen_width = width;
+      gl::global_config.screen_height = height;
+
       m_width = width;
       m_height = height;
 
@@ -45,21 +58,22 @@ namespace moppe {
     }
 
     void display () {
+      glClearColor (0, 0, 0);
+      glColor3f (1, 1, 1);
+
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glMatrixMode (GL_MODELVIEW);
 
       m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
-      glTranslatef (0, 0, 20);
+      m_terrain_renderer.render (0.3, 5.0);
 
-      glColor3f (1, 1, 1);
-
-      glutSolidSphere (2, 20, 20);
+      m_camera.draw_debug_text ();
+      m_mouse.draw_debug_text ();
 
       check_gl ();
 
-      glFlush ();
       glutSwapBuffers ();
     }
 
@@ -77,6 +91,8 @@ namespace moppe {
   private:
     gfx::Camera m_camera;
     gfx::MouseCameraController m_mouse;
+    map::HeightMap m_map;
+    gfx::TerrainRenderer m_terrain_renderer;
   };
 }
 
