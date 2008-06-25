@@ -32,7 +32,7 @@ namespace moppe {
 
   template <typename T>
   T linear_interpolate (const T& x, const T& y, const T& alpha)
-  { return alpha * x + (1 - alpha) * y; }
+  { return (1 - alpha) * x + alpha * y; }
 
   template <typename T>
   struct Vector3DG:

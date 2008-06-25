@@ -44,17 +44,12 @@ namespace gfx {
     glTranslatef (-0.5 * scale.x * width, 0,
 		  -0.5 * scale.z * height);
 
-    std::cout << m_vertices.size () << "x" << m_normals.size () << std::endl;
-
     for (int y = 0; y < height - 2; ++y)
-      {
-	std::cout << y << std::endl;
-	render_vertex_arrays (GL_TRIANGLE_STRIP,
-			      2 * y * (width - 1),
-			      2 * (width - 1),
-			      m_vertices,
-			      m_normals);
-      }
+      render_vertex_arrays (GL_TRIANGLE_STRIP,
+			    2 * y * (width - 1),
+			    2 * (width - 1),
+			    m_vertices,
+			    m_normals);
   }
 
   void

@@ -34,12 +34,12 @@ namespace moppe {
       glEnable (GL_DEPTH_TEST);
       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
-      glEnable (GL_NORMALIZE);
-      glShadeModel (GL_SMOOTH);
+      //      glEnable (GL_NORMALIZE);
+      //      glShadeModel (GL_SMOOTH);
 
       std::cout << "Randomizing maps...";
       m_map1->randomize_plasmally (0.95);
-      m_map2->randomize_plasmally (0.8);
+      //m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
@@ -54,7 +54,7 @@ namespace moppe {
 	(new RandomHeightMap (129, 129,
 			      Vector3D (0.15, 10, 0.15),
 			      ::time (0)));
-      m_map2->randomize_plasmally (0.95);
+      m_map2->randomize_plasmally (0.995);
       m_map3.change_maps (m_map1, m_map2);
       m_map3.set_blending_factor (0);
     }
