@@ -127,12 +127,19 @@ namespace map {
     
     void set_blending_factor      (float alpha);
     void increase_blending_factor (float delta);
+
+    void change_maps (boost::shared_ptr<HeightMap> from,
+		      boost::shared_ptr<HeightMap> to)
+    {
+      m_from = from;
+      m_to = to;
+    }
     
     bool done () const { return m_alpha >= 1.0; }
     
   private:
-    const boost::shared_ptr<HeightMap> m_from;
-    const boost::shared_ptr<HeightMap> m_to;
+    boost::shared_ptr<HeightMap> m_from;
+    boost::shared_ptr<HeightMap> m_to;
     
     float m_alpha;
   };

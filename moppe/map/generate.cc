@@ -198,6 +198,7 @@ namespace map {
   Vector3D
   InterpolatingHeightMap::normal (int x, int y) const
   {
+    // Maybe QUATERNION interpolation would be BETTER?
     return linear_vector_interpolate (m_from->normal (x, y),
 				      m_to->normal (x, y),
 				      m_alpha);

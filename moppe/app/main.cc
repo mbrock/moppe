@@ -45,6 +45,20 @@ namespace moppe {
       m_mouse.set_pitch_limits (-15, 10);
     }
 
+    void mouse (int button, int state, int x, int y) {
+      if (state != GLUT_UP)
+	return;
+
+      m_map1 = m_map2;
+      m_map2 = boost::shared_ptr<RandomHeightMap>
+	(new RandomHeightMap (129, 129,
+			      Vector3D (0.15, 10, 0.15),
+			      ::time (0)));
+      m_map2->randomize_plasmally (0.95);
+      m_map3.change_maps (m_map1, m_map2);
+      m_map3.set_blending_factor (0);
+    }
+
     void idle () {
       static const float dt    = 1 / 30.0;
       static const float total = 3;
@@ -54,6 +68,10 @@ namespace moppe {
 	  {
 	    m_timer.reset ();
 	    m_map3.increase_blending_factor (dt / total);
+
+	    if (m_map3.done ())
+	      m_terrain_renderer.regenerate ();
+
 	    glutPostRedisplay ();
 	  }
     }
@@ -92,7 +110,10 @@ namespace moppe {
       m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
-      m_terrain_renderer.render ();
+      if (m_map3.done ())
+	m_terrain_renderer.render ();
+      else
+	m_terrain_renderer.render_directly ();
 
       m_camera.draw_debug_text ();
       m_mouse.draw_debug_text ();
