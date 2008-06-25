@@ -35,8 +35,9 @@ namespace map {
 
   class HeightMap {
   public:
-    HeightMap (int width, int height, const Vector3D& scale)
-      : m_width (width), m_height (height), m_scale (scale)
+    HeightMap (int width, int height, const Vector3D& size)
+      : m_width (width), m_height (height),
+	m_scale (size.x / width, size.y, size.z / height)
     { }
     
     virtual ~HeightMap () { }
@@ -51,7 +52,12 @@ namespace map {
     
     inline int      width  () const { return m_width; }
     inline int      height () const { return m_height; }
+
     inline Vector3D scale  () const { return m_scale; }
+    inline Vector3D size   () const
+    { return Vector3D (m_scale.x * m_width, 
+		       m_scale.y, 
+		       m_scale.z * m_height); }
     
     float min_value () const;
     float max_value () const;
@@ -68,8 +74,8 @@ namespace map {
   class NormalComputingHeightMap: public HeightMap {
   public:
     NormalComputingHeightMap (int width, int height,
-			      Vector3D scale)
-      : HeightMap (width, height, scale),
+			      Vector3D size)
+      : HeightMap (width, height, size),
 	m_normals (width, height)
     { }
 
@@ -86,7 +92,7 @@ namespace map {
   class RandomHeightMap: public NormalComputingHeightMap {
   public:
     RandomHeightMap (int width, int height,
-		     const Vector3D& scale,
+		     const Vector3D& size,
 		     int seed = 0);
     
     inline float get (int x, int y) const
@@ -115,8 +121,8 @@ namespace map {
   public:
     InterpolatingHeightMap (boost::shared_ptr<HeightMap> from,
 			    boost::shared_ptr<HeightMap> to,
-			    const Vector3D& scale)
-      : HeightMap (from->width (), from->height (), scale),
+			    const Vector3D& size)
+      : HeightMap (from->width (), from->height (), size),
 	m_from  (from),
 	m_to    (to),
 	m_alpha (0.0)

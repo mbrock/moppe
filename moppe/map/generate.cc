@@ -44,9 +44,9 @@ namespace map {
   }
 
   RandomHeightMap::RandomHeightMap (int width, int height,
-				    const Vector3D& scale,
+				    const Vector3D& size,
 				    int seed)
-    : NormalComputingHeightMap (width, height, scale),
+    : NormalComputingHeightMap (width, height, size),
       m_data    (boost::extents[height][width])
   {
     m_rng.seed (boost::mt19937::result_type (seed));
@@ -87,9 +87,11 @@ namespace map {
   Vector3D
   HeightMap::vertex (int x, int y) const
   {
-    return Vector3D (m_scale.x * x,
-		     m_scale.y * get (x, y),
-		     m_scale.z * y);    
+    Vector3D r (m_scale.x * x,
+		m_scale.y * get (x, y),
+		m_scale.z * y);    
+    //    std::cout << x << "," << y << " -> " << r << "\n";
+    return r;
   }
 
   Vector3D

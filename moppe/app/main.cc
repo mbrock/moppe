@@ -13,20 +13,24 @@ namespace moppe {
   using namespace map;
   using namespace app;
 
+  const Vector3D map_size (100 * one_meter,
+			   20 * one_meter,
+			   100 * one_meter);
+
   class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D (0, 10, -5),
+	m_camera (Vector3D (0, 30 * one_meter, -30 * one_meter),
 		  Vector3D (0, 0, 0)),
 	m_mouse (800, 600),
 	m_map1 (new RandomHeightMap (129, 129,
-				     Vector3D (0.15, 10, 0.15),
+				     map_size,
 				     0 + ::time (0))),
 	m_map2 (new RandomHeightMap (129, 129,
-				     Vector3D (0.15, 10, 0.15),
+				     map_size,
 				     1 + ::time (0))),
-	m_map3 (m_map1, m_map2, m_map1->scale ()),
+	m_map3 (m_map1, m_map2, m_map1->size ()),
 	m_terrain_renderer (m_map3)
     { }
 
@@ -39,7 +43,7 @@ namespace moppe {
 
       std::cout << "Randomizing maps...";
       m_map1->randomize_plasmally (0.95);
-      //m_map2->randomize_plasmally (0.8);
+      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
@@ -52,7 +56,7 @@ namespace moppe {
       m_map1 = m_map2;
       m_map2 = boost::shared_ptr<RandomHeightMap>
 	(new RandomHeightMap (129, 129,
-			      Vector3D (0.15, 10, 0.15),
+			      map_size,
 			      ::time (0)));
       m_map2->randomize_plasmally (0.995);
       m_map3.change_maps (m_map1, m_map2);
