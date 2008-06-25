@@ -4,6 +4,7 @@
 #include <moppe/gfx/mouse.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/gfx/terrain.hh>
+#include <moppe/mov/vehicle.hh>
 
 #include <iostream>
 
@@ -31,15 +32,16 @@ namespace moppe {
 				     map_size,
 				     1 + ::time (0))),
 	m_map3 (m_map1, m_map2, m_map1->size ()),
-	m_terrain_renderer (m_map3)
+	m_terrain_renderer (m_map3),
+	m_vehicle (Vector3D (0.5, 0.0, 0.5), 45, m_map3)
     { }
 
     void setup () {
       glEnable (GL_DEPTH_TEST);
       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
-      //      glEnable (GL_NORMALIZE);
-      //      glShadeModel (GL_SMOOTH);
+      glShadeModel (GL_SMOOTH);
+      //      glEnable (GL_LINE_SMOOTH);
 
       std::cout << "Randomizing maps...";
       m_map1->randomize_plasmally (0.95);
@@ -47,6 +49,8 @@ namespace moppe {
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
+
+      m_vehicle.set_speed (2 * one_meter);
     }
 
     void mouse (int button, int state, int x, int y) {
@@ -67,17 +71,22 @@ namespace moppe {
       static const float dt    = 1 / 30.0;
       static const float total = 3;
 
-      if (!m_map3.done ())
-	if (m_timer.elapsed () >= dt)
-	  {
-	    m_timer.reset ();
-	    m_map3.increase_blending_factor (dt / total);
 
-	    if (m_map3.done ())
-	      m_terrain_renderer.regenerate ();
+      if (m_timer.elapsed () >= dt)
+	{
+	  if (!m_map3.done ())
+	    {
+	      m_timer.reset ();
+	      m_map3.increase_blending_factor (dt / total);
+	      
+	      if (m_map3.done ())
+		m_terrain_renderer.regenerate ();
+	    }
 
-	    glutPostRedisplay ();
-	  }
+	  m_vehicle.update (dt);
+		
+	  glutPostRedisplay ();
+	}
     }
 
     void reshape (int width, int height) {
@@ -119,6 +128,10 @@ namespace moppe {
       else
 	m_terrain_renderer.render_directly ();
 
+      m_terrain_renderer.translate ();
+      m_vehicle.render ();
+
+      m_vehicle.draw_debug_text ();
       m_camera.draw_debug_text ();
       m_mouse.draw_debug_text ();
 
@@ -148,6 +161,8 @@ namespace moppe {
     map::InterpolatingHeightMap m_map3;
 
     gfx::TerrainRenderer m_terrain_renderer;
+
+    mov::Vehicle m_vehicle;
   };
 }
 

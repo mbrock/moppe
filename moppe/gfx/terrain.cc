@@ -34,15 +34,20 @@ namespace gfx {
   }
 
   void
+  TerrainRenderer::translate () {
+    Vector3D size = m_map.size ();
+    glTranslatef (-0.5 * size.x, 0,
+		  -0.5 * size.z);
+  }
+
+  void
   TerrainRenderer::render () {
     gl::ScopedMatrixSaver matrix;
 
     int width     = m_map.width ();
     int height    = m_map.height ();
-    Vector3D size = m_map.size ();
 
-    glTranslatef (-0.5 * size.x, 0,
-		  -0.5 * size.z);
+    translate ();
 
     for (int y = 0; y < height - 2; ++y)
       render_vertex_arrays (GL_TRIANGLE_STRIP,
@@ -58,10 +63,8 @@ namespace gfx {
 
     int width     = m_map.width ();
     int height    = m_map.height ();
-    Vector3D size = m_map.size ();
 
-    glTranslatef (-0.5 * size.x, 0,
-		  -0.5 * size.z);
+    translate ();
 
     for (int y = 0; y < height - 2; ++y)
       {

@@ -49,6 +49,19 @@ namespace map {
     Vector3D triangle_normal (int x1, int y1,
 			      int x2, int y2,
 			      int x3, int y3) const;
+
+    float interpolated_height (float x, float y) const {
+      int xi = x / m_scale.x;
+      int yi = y / m_scale.z;
+      std::cout << get (xi, yi) << "\n";
+      return m_scale.y * get (xi, yi);
+    }
+
+    Vector3D interpolated_normal (float x, float y) const {
+      int xi = x / m_scale.x;
+      int yi = y / m_scale.z;
+      return normal (xi, yi);
+    }
     
     inline int      width  () const { return m_width; }
     inline int      height () const { return m_height; }

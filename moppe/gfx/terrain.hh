@@ -13,6 +13,8 @@ namespace gfx {
     TerrainRenderer (const map::HeightMap& map);
     
     void regenerate ();
+
+    void translate ();
     void render ();
     void render_directly ();
 

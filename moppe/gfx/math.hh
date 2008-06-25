@@ -14,6 +14,8 @@ namespace moppe {
 
   typedef float degrees_t;
   typedef float radians_t;
+  typedef float magnitude_t;
+  typedef float seconds_t;
 
   inline radians_t degrees_to_radians (degrees_t x)
   { return x * (PI2 / 360); }

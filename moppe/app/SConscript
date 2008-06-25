@@ -4,7 +4,7 @@ import sys
 
 Import('env')
 
-libs = ['moppe-map', 'moppe-gfx']
+libs = ['moppe-map', 'moppe-gfx', 'moppe-mov']
 
 if sys.platform != 'darwin':
     libs.append('glut')

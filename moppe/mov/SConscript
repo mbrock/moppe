@@ -1,0 +1,7 @@
+# -*- python -*-
+
+Import('env')
+
+env.Library('../moppe-mov', ['vehicle.cc'])
+
+
