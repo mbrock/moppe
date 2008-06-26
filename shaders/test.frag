@@ -25,6 +25,6 @@ main ()
   c = ct * cf;
   a = at * af;
   gl_FragColor = vec4 (mix (vec3 (c),
-			    vec3 (0.8, 0.8, 1.0),
+			    vec3 (0.9, 0.9, 1.0),
 			    gl_FogFragCoord), a);
 }

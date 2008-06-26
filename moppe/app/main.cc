@@ -20,7 +20,7 @@ namespace moppe {
 
   const int resolution = 257;
 
-  const Vector3D fog (0.8, 0.8, 1.0);
+  const Vector3D fog (0.9, 0.9, 1.0);
 
   class MoppeGLUT: public GLUTApplication {
   public:
@@ -54,7 +54,7 @@ namespace moppe {
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1->randomize_plasmally (0.95);
+      m_map1->randomize_plasmally (0.8);
       m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
