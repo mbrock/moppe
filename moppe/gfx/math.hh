@@ -16,6 +16,7 @@ namespace moppe {
   typedef float radians_t;
   typedef float magnitude_t;
   typedef float seconds_t;
+  typedef float meters_t;
 
   inline radians_t degrees_to_radians (degrees_t x)
   { return x * (PI2 / 360); }
@@ -63,6 +64,9 @@ namespace moppe {
     inline Vector3DG& operator /= (T k)
     { x /= k; y /= k; z /= k; return *this; }
 
+    inline Vector3DG operator - ()
+    { return *this * (-1); }
+
     inline bool operator == (const Vector3DG& v) const
     { return (x == v.x) && (y == v.y) && (z == v.z); }
 
@@ -91,6 +95,10 @@ namespace moppe {
 
     T dot (const Vector3DG& v) const {
       return x * v.x + y * v.y + z * v.z;
+    }
+
+    Vector3DG scaled (const Vector3DG& v) const {
+      return Vector3DG (x * v.x, y * v.y, z * v.z);
     }
   };
 

@@ -35,9 +35,9 @@ namespace gfx {
 
   void
   TerrainRenderer::translate () {
-    Vector3D size = m_map.size ();
-    glTranslatef (-0.5 * size.x, 0,
-		  -0.5 * size.z);
+//     Vector3D size = m_map.size ();
+//     glTranslatef (-0.5 * size.x, 0,
+// 		  -0.5 * size.z);
   }
 
   void

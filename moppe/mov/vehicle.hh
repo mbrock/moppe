@@ -34,6 +34,21 @@ namespace mov {
     void spin (degrees_t degrees)
     { m_yaw += degrees_to_radians (degrees); }
 
+    void set_camera () const {
+      gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
+      
+      glMatrixMode (GL_MODELVIEW);
+      glLoadIdentity ();
+
+      Vector3D p = m_position - m_orientation * 10 * one_meter;
+      gluLookAt (p.x, p.y + 10 * one_meter, p.z,
+		 m_position.x, m_position.y, m_position.z,
+		 0, 1, 0);
+    }
+
+    Vector3D position    () const { return m_position; }
+    Vector3D orientation () const { return m_orientation; }
+
   private:
     void calculate_orientation ();
     void fall_to_ground ();

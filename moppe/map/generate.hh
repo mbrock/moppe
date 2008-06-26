@@ -51,16 +51,41 @@ namespace map {
 			      int x3, int y3) const;
 
     float interpolated_height (float x, float y) const {
-      int xi = x / m_scale.x;
-      int yi = y / m_scale.z;
-      std::cout << get (xi, yi) << "\n";
-      return m_scale.y * get (xi, yi);
+      int xi = x / m_scale.x, yi = y / m_scale.z;
+
+      clamp (xi, 0, m_width - 1);
+      clamp (yi, 0, m_height - 1);
+
+      float ax = x / m_scale.x - xi;
+      float ay = y / m_scale.z - yi;
+
+      float r1 = linear_interpolate (get (xi, yi),
+				     get (xi + 1, yi),
+				     ax);
+      float r2 = linear_interpolate (get (xi, yi + 1),
+				     get (xi + 1, yi + 1),
+				     ax);
+      return m_scale.y * linear_interpolate (r1, r2, ay);
+
+      //      return m_scale.y * get (x / m_scale.x, y / m_scale.z);
     }
 
     Vector3D interpolated_normal (float x, float y) const {
-      int xi = x / m_scale.x;
-      int yi = y / m_scale.z;
-      return normal (xi, yi);
+      int xi = x / m_scale.x, yi = y / m_scale.z;
+
+      clamp (xi, 0, m_width - 1);
+      clamp (yi, 0, m_height - 1);
+
+      float ax = x / m_scale.x - xi;
+      float ay = y / m_scale.z - yi;
+
+      Vector3D r1 = linear_vector_interpolate (normal (xi, yi),
+					       normal (xi + 1, yi),
+					       ax);
+      Vector3D r2 = linear_vector_interpolate (normal (xi, yi + 1),
+					       normal (xi + 1, yi + 1),
+					       ax);
+      return linear_vector_interpolate (r1, r2, ay);
     }
     
     inline int      width  () const { return m_width; }

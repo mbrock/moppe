@@ -14,26 +14,29 @@ namespace moppe {
   using namespace map;
   using namespace app;
 
-  const Vector3D map_size (100 * one_meter,
-			   20 * one_meter,
-			   100 * one_meter);
+  const Vector3D map_size (2000 * one_meter,
+			   800 * one_meter,
+			   2000 * one_meter);
+
+  const int resolution = 257;
+
+  const Vector3D fog (0.0, 0.3, 0.0);
 
   class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (Vector3D (0, 30 * one_meter, -30 * one_meter),
-		  Vector3D (0, 0, 0)),
+	m_camera (60, 20 * one_meter),
 	m_mouse (800, 600),
-	m_map1 (new RandomHeightMap (129, 129,
+	m_map1 (new RandomHeightMap (resolution, resolution,
 				     map_size,
 				     0 + ::time (0))),
-	m_map2 (new RandomHeightMap (129, 129,
+	m_map2 (new RandomHeightMap (resolution, resolution,
 				     map_size,
 				     1 + ::time (0))),
 	m_map3 (m_map1, m_map2, m_map1->size ()),
-	m_terrain_renderer (m_map3),
-	m_vehicle (Vector3D (0.5, 0.0, 0.5), 45, m_map3)
+	m_terrain_renderer (*m_map1),
+	m_vehicle (Vector3D (0.2, 0.0, 0.2), 45, m_map3)
     { }
 
     void setup () {
@@ -41,7 +44,9 @@ namespace moppe {
       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
       glShadeModel (GL_SMOOTH);
-      //      glEnable (GL_LINE_SMOOTH);
+      glEnable (GL_LINE_SMOOTH);
+
+      setup_lights ();
 
       std::cout << "Randomizing maps...";
       m_map1->randomize_plasmally (0.95);
@@ -50,7 +55,10 @@ namespace moppe {
 
       m_mouse.set_pitch_limits (-15, 10);
 
-      m_vehicle.set_speed (2 * one_meter);
+      m_terrain_renderer.regenerate ();
+      m_vehicle.set_speed (15 * one_meter);
+
+      idle ();
     }
 
     void mouse (int button, int state, int x, int y) {
@@ -59,7 +67,7 @@ namespace moppe {
 
       m_map1 = m_map2;
       m_map2 = boost::shared_ptr<RandomHeightMap>
-	(new RandomHeightMap (129, 129,
+	(new RandomHeightMap (resolution, resolution,
 			      map_size,
 			      ::time (0)));
       m_map2->randomize_plasmally (0.995);
@@ -69,21 +77,24 @@ namespace moppe {
 
     void idle () {
       static const float dt    = 1 / 30.0;
-      static const float total = 3;
-
+      //      static const float total = 3;
 
       if (m_timer.elapsed () >= dt)
 	{
-	  if (!m_map3.done ())
-	    {
-	      m_timer.reset ();
-	      m_map3.increase_blending_factor (dt / total);
+// 	  if (!m_map3.done ())
+// 	    {
+// 	      m_timer.reset ();
+// 	      m_map3.increase_blending_factor (dt / total);
 	      
-	      if (m_map3.done ())
-		m_terrain_renderer.regenerate ();
-	    }
+// 	      if (m_map3.done ())
+// 		m_terrain_renderer.regenerate ();
+// 	    }
 
 	  m_vehicle.update (dt);
+	  m_camera.update (m_vehicle.position (),
+			   m_vehicle.orientation (),
+			   dt);
+	  m_camera.limit (m_map3);
 		
 	  glutPostRedisplay ();
 	}
@@ -100,7 +111,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (100.0, 1.0 * width / height, 0.01, 100.0);
+      gluPerspective (60.0, 1.0 * width / height, 0.0025, 100.0);
       glutPostRedisplay ();
 
       check_gl ();
@@ -114,25 +125,24 @@ namespace moppe {
     }
 
     void display () {
-      glClearColor (0, 0, 0, 0);
+      glClearColor (fog.x, fog.y, fog.z, 0);
       glColor3f (1, 1, 1);
 
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       glMatrixMode (GL_MODELVIEW);
 
-      m_camera.set (m_mouse.setting ());
       m_camera.realize ();
 
-      if (m_map3.done ())
+      //      if (m_map3.done ())
 	m_terrain_renderer.render ();
-      else
-	m_terrain_renderer.render_directly ();
+//       else
+// 	m_terrain_renderer.render_directly ();
 
       m_terrain_renderer.translate ();
       m_vehicle.render ();
 
       m_vehicle.draw_debug_text ();
-      m_camera.draw_debug_text ();
+//       m_camera.draw_debug_text ();
       m_mouse.draw_debug_text ();
 
       check_gl ();
@@ -149,10 +159,18 @@ namespace moppe {
       GLfloat light0_position[] = {2, 2, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
       glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
+
+      GLfloat fog_color[] = {fog.x, fog.y, fog.z, 1.0};
+
+      glEnable (GL_FOG);
+      glFogi (GL_FOG_MODE, GL_EXP);
+      glFogfv (GL_FOG_COLOR, fog_color);
+      glFogf (GL_FOG_DENSITY, 1);
+      glHint (GL_FOG_HINT, GL_NICEST);
     }
 
   private:
-    gfx::Camera m_camera;
+    gfx::ThirdPersonCamera m_camera;
     gfx::MouseCameraController m_mouse;
 
     Timer m_timer;
