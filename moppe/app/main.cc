@@ -20,7 +20,7 @@ namespace moppe {
 
   const int resolution = 257;
 
-  const Vector3D fog (0.9, 0.9, 1.0);
+  const Vector3D fog (0.8, 0.8, 0.9);
 
   class MoppeGLUT: public GLUTApplication {
   public:
