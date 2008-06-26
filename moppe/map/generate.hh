@@ -53,8 +53,8 @@ namespace map {
     float interpolated_height (float x, float y) const {
       int xi = x / m_scale.x, yi = y / m_scale.z;
 
-      clamp (xi, 0, m_width - 1);
-      clamp (yi, 0, m_height - 1);
+      clamp (xi, 0, m_width - 2);
+      clamp (yi, 0, m_height - 2);
 
       float ax = x / m_scale.x - xi;
       float ay = y / m_scale.z - yi;

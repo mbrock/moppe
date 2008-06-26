@@ -15,18 +15,18 @@ namespace moppe {
   using namespace app;
 
   const Vector3D map_size (2000 * one_meter,
-			   800 * one_meter,
+			   600 * one_meter,
 			   2000 * one_meter);
 
   const int resolution = 257;
 
-  const Vector3D fog (0.0, 0.3, 0.0);
+  const Vector3D fog (0.5, 0.9, 0.5);
 
   class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
       : GLUTApplication ("Moppe", 800, 600),
-	m_camera (60, 20 * one_meter),
+	m_camera (80, 5 * one_meter),
 	m_mouse (800, 600),
 	m_map1 (new RandomHeightMap (resolution, resolution,
 				     map_size,
@@ -44,7 +44,6 @@ namespace moppe {
       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
       glShadeModel (GL_SMOOTH);
-      glEnable (GL_LINE_SMOOTH);
 
       setup_lights ();
 
@@ -56,7 +55,7 @@ namespace moppe {
       m_mouse.set_pitch_limits (-15, 10);
 
       m_terrain_renderer.regenerate ();
-      m_vehicle.set_speed (15 * one_meter);
+      m_vehicle.set_speed (30 * one_meter);
 
       idle ();
     }
@@ -141,9 +140,9 @@ namespace moppe {
       m_terrain_renderer.translate ();
       m_vehicle.render ();
 
-      m_vehicle.draw_debug_text ();
-//       m_camera.draw_debug_text ();
-      m_mouse.draw_debug_text ();
+      //      m_vehicle.draw_debug_text ();
+      //       m_camera.draw_debug_text ();
+      //      m_mouse.draw_debug_text ();
 
       check_gl ();
 
@@ -152,20 +151,20 @@ namespace moppe {
 
   private:
     void setup_lights () {
-      GLfloat ambient[] = {0.5, 0.1, 0.1, 1.0};
+      GLfloat ambient[] = {0.0, 0.5, 0.0, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
-      GLfloat light0_color[] = {0.0, 1.0, 0.5, 1.0};
-      GLfloat light0_position[] = {2, 2, 2};
+      GLfloat light0_color[] = {0.2, 0.6, 0.0, 1.0};
+      GLfloat light0_position[] = {2, 4000 * one_meter, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
       glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
 
       GLfloat fog_color[] = {fog.x, fog.y, fog.z, 1.0};
 
       glEnable (GL_FOG);
-      glFogi (GL_FOG_MODE, GL_EXP);
+      glFogi (GL_FOG_MODE, GL_EXP2);
       glFogfv (GL_FOG_COLOR, fog_color);
-      glFogf (GL_FOG_DENSITY, 1);
+      glFogf (GL_FOG_DENSITY, 0.4);
       glHint (GL_FOG_HINT, GL_NICEST);
     }
 
