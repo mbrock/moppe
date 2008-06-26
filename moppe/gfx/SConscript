@@ -6,5 +6,7 @@ env.Library('../moppe-gfx', ['camera.cc',
                              'mouse.cc',
                              'terrain.cc',
                              'vertex-array.cc',
-                             'shader.cc'])
+                             'shader.cc',
+                             'texture.cc',
+                             'tga.cc'])
 

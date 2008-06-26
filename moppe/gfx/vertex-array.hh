@@ -34,7 +34,8 @@ namespace gfx {
 			     int from,
 			     int count,
 			     const VertexArray& vertices,
-			     const VertexArray& normals);
+			     const VertexArray& normals,
+			     const VertexArray& texcoords);
 }
 }
 

@@ -20,7 +20,7 @@ namespace moppe {
 
   const int resolution = 257;
 
-  const Vector3D fog (0.5, 0.9, 0.5);
+  const Vector3D fog (0.8, 0.8, 1.0);
 
   class MoppeGLUT: public GLUTApplication {
   public:
@@ -49,6 +49,7 @@ namespace moppe {
 //       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
       glShadeModel (GL_SMOOTH);
+      glEnable (GL_TEXTURE_2D);
 
       setup_lights ();
 
@@ -62,7 +63,7 @@ namespace moppe {
       m_terrain_renderer.regenerate ();
       m_terrain_renderer.setup_shader ();
 
-      m_vehicle.set_speed (30 * one_meter);
+      m_vehicle.set_speed (0 * one_meter);
 
       idle ();
     }
@@ -117,12 +118,39 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (60.0, 1.0 * width / height, 0.0025, 100.0);
+      gluPerspective (90.0, 1.0 * width / height, 0.0025, 1000 * one_meter);
       glutPostRedisplay ();
 
       check_gl ();
 
       m_mouse.resize (width, height);
+    }
+
+    void keyboard  (unsigned char code,
+		    int mx, int my,
+		    KeyStatus status)
+    {
+      if (status == GLUT_UP)
+	return;
+
+      switch (code)
+	{
+	case GLUT_KEY_LEFT:
+	  m_vehicle.spin (-10);
+	  break;
+
+	case GLUT_KEY_RIGHT:
+	  m_vehicle.spin (10);
+	  break;
+
+	case GLUT_KEY_UP:
+	  m_vehicle.increase_speed (1 * one_meter);
+	  break;
+
+	case GLUT_KEY_DOWN:
+	  m_vehicle.increase_speed (-1 * one_meter);
+	  break;
+	}
     }
 
     void passive_motion (int x, int y) {
@@ -147,7 +175,7 @@ namespace moppe {
       m_terrain_renderer.translate ();
       m_vehicle.render ();
 
-      //      m_vehicle.draw_debug_text ();
+      m_vehicle.draw_debug_text ();
       //       m_camera.draw_debug_text ();
       //      m_mouse.draw_debug_text ();
 
@@ -158,11 +186,11 @@ namespace moppe {
 
   private:
     void setup_lights () {
-      GLfloat ambient[] = {0.0, 0.5, 0.0, 1.0};
+      GLfloat ambient[] = {0.5, 0.5, 0.5, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
-      GLfloat light0_color[] = {0.2, 0.6, 0.0, 1.0};
-      GLfloat light0_specular[] = {1.0, 0.0, 0.0, 1.0};
+      GLfloat light0_color[] = {0.6, 1.0, 0.7, 1.0};
+      GLfloat light0_specular[] = {1.0, 1.0, 0.0, 1.0};
       GLfloat light0_position[] = {2, 40, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
       glLightfv (GL_LIGHT0, GL_SPECULAR, light0_specular);
@@ -173,7 +201,7 @@ namespace moppe {
       glEnable (GL_FOG);
       glFogi (GL_FOG_MODE, GL_EXP2);
       glFogfv (GL_FOG_COLOR, fog_color);
-      glFogf (GL_FOG_DENSITY, 0.4);
+      glFogf (GL_FOG_DENSITY, 0.00001);
       glHint (GL_FOG_HINT, GL_NICEST);
     }
 

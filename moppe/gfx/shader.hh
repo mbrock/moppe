@@ -2,6 +2,8 @@
 #ifndef MOPPE_SHADER_HH
 #define MOPPE_SHADER_HH
 
+#include <moppe/app/gl.hh>
+
 #include <string>
 
 namespace moppe {
@@ -38,6 +40,11 @@ namespace gl {
     void link   () const;
     void use    () const;
     void unuse  () const;
+
+    void set_int (const char *name, int x)
+    {
+      glUniform1iARB (glGetUniformLocationARB (m_id, name), x);
+    }
 
     void print_log () const
     { print_shader_log ("program", m_id); }

@@ -23,8 +23,8 @@ namespace mov {
 
     void draw_debug_text () const {
       std::string text =
-	(boost::format ("Orientation: %1%.  Position: %2%.")
-	 % m_orientation % m_position).str ();
+	(boost::format ("Height: %1% meters.")
+	 % (m_position.y / one_meter)).str ();
       gl::draw_glut_text (GLUT_BITMAP_HELVETICA_18,
 			  20, 60, text);
     }
@@ -33,6 +33,9 @@ namespace mov {
     { m_speed = meters_per_second; }
     void spin (degrees_t degrees)
     { m_yaw += degrees_to_radians (degrees); }
+
+    void increase_speed (magnitude_t dv)
+    { m_speed += dv; }
 
     void set_camera () const {
       gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
