@@ -6,6 +6,8 @@
 
 #include <moppe/gfx/math.hh>
 
+#include <GL/glew.h>
+
 #ifdef MAC
 # include <glut.h>
 #else
@@ -18,8 +20,15 @@
 namespace moppe {
   struct gl_error: public std::runtime_error { 
     gl_error (const std::string& what)
-      : runtime_error (what)
+      : runtime_error (what),
+	m_what (what)
     { }
+
+    gl_error::~gl_error () throw () {}
+
+    const char* what () const throw () { return m_what.c_str (); }
+
+    std::string m_what;
   };
 
   inline void check_gl ()

@@ -2,7 +2,6 @@
 #ifndef MOPPE_APP_HH
 #define MOPPE_APP_HH
 
-#include <GL/glew.h>
 #include <moppe/app/gl.hh>
 
 #include <sys/time.h>

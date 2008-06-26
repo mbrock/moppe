@@ -40,8 +40,13 @@ namespace moppe {
     { }
 
     void setup () {
+      if (GLEW_ARB_vertex_shader && GLEW_ARB_fragment_shader)
+	std::cout << "ARB Shader support found!\n";
+      else
+	std::cout << "No ARB shader support found.\n";
+
       glEnable (GL_DEPTH_TEST);
-      glEnable (GL_LIGHTING);
+//       glEnable (GL_LIGHTING);
       glEnable (GL_LIGHT0);
       glShadeModel (GL_SMOOTH);
 
@@ -55,12 +60,9 @@ namespace moppe {
       m_mouse.set_pitch_limits (-15, 10);
 
       m_terrain_renderer.regenerate ();
-      m_vehicle.set_speed (30 * one_meter);
+      m_terrain_renderer.setup_shader ();
 
-      if (GLEW_ARB_vertex_shader && GLEW_ARB_fragment_shader)
-	std::cout << "ARB Shader support found!\n";
-      else
-	std::cout << "No ARB shader support found.\n";
+      m_vehicle.set_speed (30 * one_meter);
 
       idle ();
     }
@@ -160,8 +162,10 @@ namespace moppe {
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
       GLfloat light0_color[] = {0.2, 0.6, 0.0, 1.0};
-      GLfloat light0_position[] = {2, 4000 * one_meter, 2};
+      GLfloat light0_specular[] = {1.0, 0.0, 0.0, 1.0};
+      GLfloat light0_position[] = {2, 40, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
+      glLightfv (GL_LIGHT0, GL_SPECULAR, light0_specular);
       glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
 
       GLfloat fog_color[] = {fog.x, fog.y, fog.z, 1.0};

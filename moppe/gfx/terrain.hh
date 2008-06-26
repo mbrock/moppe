@@ -3,15 +3,18 @@
 
 #include <moppe/map/generate.hh>
 #include <moppe/gfx/vertex-array.hh>
+#include <moppe/gfx/shader.hh>
 
 #include <boost/scoped_array.hpp>
+#include <memory>
 
 namespace moppe {
 namespace gfx {
   class TerrainRenderer {
   public:
     TerrainRenderer (const map::HeightMap& map);
-    
+
+    void setup_shader ();
     void regenerate ();
 
     void translate ();
@@ -23,6 +26,10 @@ namespace gfx {
 
     VertexArray m_vertices;
     VertexArray m_normals;
+
+    gl::Shader m_vertex_shader;
+    gl::Shader m_fragment_shader;
+    gl::ShaderProgram m_shader_program;
   };
 }
 }
