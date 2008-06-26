@@ -9,7 +9,8 @@ env = Environment(CXX     = 'g++',
 if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =
                      ['/System/Library/Frameworks/OpenGL.framework/Headers',
-                      '/System/Library/Frameworks/GLUT.framework/Headers'],
+                      '/System/Library/Frameworks/GLUT.framework/Headers',
+                      '#/vendor/glew/include'],
                      FRAMEWORKS = ['OpenGL', 'GLUT'],
                      CCFLAGS = ['-DMAC'])
 

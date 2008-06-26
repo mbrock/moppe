@@ -59,6 +59,8 @@ namespace app {
     glutPassiveMotionFunc (global_passive_motion_func);
     glutIdleFunc (global_idle_func);
 
+    glewInit ();
+
     setup ();
 
     glutMainLoop ();

@@ -57,6 +57,11 @@ namespace moppe {
       m_terrain_renderer.regenerate ();
       m_vehicle.set_speed (30 * one_meter);
 
+      if (GLEW_ARB_vertex_shader && GLEW_ARB_fragment_shader)
+	std::cout << "ARB Shader support found!\n";
+      else
+	std::cout << "No ARB shader support found.\n";
+
       idle ();
     }
 
