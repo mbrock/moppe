@@ -1,7 +1,7 @@
 
 varying vec4 diffuse, ambient;
 varying vec3 normal, lightDir, halfVector;
-varying float height;
+varying float height, intensity;
 
 void
 main ()
@@ -26,6 +26,8 @@ main ()
 
   diffuse = gl_FrontMaterial.diffuse * gl_LightSource[0].diffuse;
   ambient = gl_LightModel.ambient;
+
+  intensity = max (dot (lightDir, normalize (normal)), 0.0);
 
   gl_TexCoord[0] = gl_MultiTexCoord0;
 }

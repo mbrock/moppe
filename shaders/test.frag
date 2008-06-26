@@ -1,24 +1,17 @@
 varying vec4 diffuse, ambient;
 varying vec3 normal, lightDir, halfVector;
-varying float height;
+varying float height, intensity;
 uniform sampler2D grass, dirt, snow;
-
-void
-main ()
-{
-  vec3 ct, cf, c;
-  vec4 texel;
-  float intensity, at, af, a, fog, density;
-  intensity = max (dot (lightDir, normalize (normal)), 0.0);
-  cf = intensity * diffuse.rgb +
-         ambient.rgb;
+void main () {vec3 ct, cf, c; vec4 texel; float at, af, a, fog, density; vec2 tc;
+  cf = intensity * diffuse.rgb + ambient.rgb;
   af = diffuse.a;
-  texel = texture2D (dirt, gl_TexCoord[0].st);
+  tc = gl_TexCoord[0].st;
+  texel = texture2D (dirt, tc);
   float grass_coef = smoothstep (0.2, 0.6, height);
   float snow_coef = smoothstep (0.7, 0.75, height);
-  texel = grass_coef * vec4 (texture2D (grass, gl_TexCoord[0].st))
-    + (1.0 - grass_coef) * vec4 (texture2D (dirt, gl_TexCoord[0].st));
-  texel = snow_coef * vec4 (texture2D (snow, gl_TexCoord[0].st))
+  texel = grass_coef * texture2D (grass, tc)
+    + (1.0 - grass_coef) * texture2D (dirt, tc);
+  texel = snow_coef * texture2D (snow, tc)
     + (1.0 - snow_coef) * texel;
   ct = texel.rgb;
   at = texel.a;
