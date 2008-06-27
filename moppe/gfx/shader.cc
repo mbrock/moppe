@@ -17,6 +17,8 @@ namespace gl {
     m_id = glCreateShaderObjectARB (m_mode);
     const char *s = m_source.c_str ();
     glShaderSourceARB (m_id, 1, &s, 0);
+
+    std::cerr << "compiling " << m_filename << std::endl;
     glCompileShaderARB (m_id);
   }
 
@@ -62,7 +64,7 @@ namespace gl {
   }
 
   void
-  print_shader_log (const std::string& name, unsigned int id)
+  print_shader_log (const std::string& name, shader_id_t id)
   {
     GLint length = 0;
     GLsizei written = 0;

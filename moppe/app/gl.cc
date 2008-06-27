@@ -13,6 +13,9 @@ namespace gl {
   void normal (const Vector3D& v)
   { glNormal3f (v.x, v.y, v.z); }
 
+  void translate (const Vector3D& v)
+  { glTranslatef (v.x, v.y, v.z); }
+
   ScopedOrthographicMode::ScopedOrthographicMode ()
     : m_depth_settings (GL_DEPTH_BUFFER_BIT),
       m_enable_settings (GL_ENABLE_BIT)

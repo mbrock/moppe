@@ -61,6 +61,7 @@ namespace gfx {
     void limit (const map::HeightMap& map);
 
     void realize () const;
+    Vector3D position () const { return m_position; }
 
   private:
     radians_t m_pitch_offset;

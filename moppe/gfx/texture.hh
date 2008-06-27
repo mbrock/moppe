@@ -11,7 +11,7 @@ namespace gl {
     Texture (const std::string& tga);
 
     void load ();
-    void bind (int unit);
+    void bind (int unit) const;
     
   private:
     std::string m_filename;

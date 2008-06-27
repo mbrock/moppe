@@ -4,12 +4,12 @@ import sys
 
 Import('env')
 
-libs = ['moppe-map', 'moppe-gfx', 'moppe-mov',
-        'GLEW']
+libs = ['moppe-map', 'moppe-gfx', 'moppe-mov']
 
 if sys.platform != 'darwin':
-    libs.append('glut')
+    libs.append(['glut', 'GLEW'])
 
 env.Program('moppe', ['main.cc', 'app.cc', 'gl.cc', 'util.cc'],
             LIBS=libs,
             LIBPATH=['..', '#/vendor/glew/lib'])
+

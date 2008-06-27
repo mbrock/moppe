@@ -20,6 +20,8 @@ namespace util {
     is.read (&buffer[0], length);
     is.close ();
 
+    buffer[length - 1] = 0;
+
     std::string s (buffer);
     delete [] buffer;
     return s;

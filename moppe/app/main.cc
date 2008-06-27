@@ -4,6 +4,7 @@
 #include <moppe/gfx/mouse.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/gfx/terrain.hh>
+#include <moppe/gfx/sky.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <iostream>
@@ -18,9 +19,9 @@ namespace moppe {
 			   600 * one_meter,
 			   2000 * one_meter);
 
-  const int resolution = 257;
+  const int resolution = 129;
 
-  const Vector3D fog (0.8, 0.8, 0.9);
+  const Vector3D fog (0.0, 0.0, 0.0);
 
   class MoppeGLUT: public GLUTApplication {
   public:
@@ -28,34 +29,37 @@ namespace moppe {
       : GLUTApplication ("Moppe", 800, 600),
 	m_camera (80, 5 * one_meter),
 	m_mouse (800, 600),
-	m_map1 (new RandomHeightMap (resolution, resolution,
-				     map_size,
-				     0 + ::time (0))),
-	m_map2 (new RandomHeightMap (resolution, resolution,
-				     map_size,
-				     1 + ::time (0))),
-	m_map3 (m_map1, m_map2, m_map1->size ()),
-	m_terrain_renderer (*m_map1),
-	m_vehicle (Vector3D (0.2, 0.0, 0.2), 45, m_map3)
+	m_map1 (resolution, resolution,
+		map_size,
+		0 + ::time (0)),
+// 	m_map2 (new RandomHeightMap (resolution, resolution,
+// 				     map_size,
+// 				     1 + ::time (0))),
+// 	m_map3 (m_map1, m_map2, m_map1->size ()),
+	m_terrain_renderer (m_map1),
+	m_vehicle (Vector3D (0.2, 0.0, 0.2), 45, m_map1),
+	m_sky ("textures/nebula.tga")
     { }
 
     void setup () {
+#ifndef __APPLE__
       if (GLEW_ARB_vertex_shader && GLEW_ARB_fragment_shader)
 	std::cout << "ARB Shader support found!\n";
       else
 	std::cout << "No ARB shader support found.\n";
+#endif
 
       glEnable (GL_DEPTH_TEST);
 //       glEnable (GL_LIGHTING);
-      glEnable (GL_LIGHT0);
+//      glEnable (GL_LIGHT0);
       glShadeModel (GL_SMOOTH);
       glEnable (GL_TEXTURE_2D);
 
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1->randomize_plasmally (0.8);
-      m_map2->randomize_plasmally (0.8);
+      m_map1.randomize_plasmally (0.8);
+      //      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
@@ -65,6 +69,8 @@ namespace moppe {
 
       m_vehicle.set_speed (0 * one_meter);
 
+      m_sky.load ();
+
       idle ();
     }
 
@@ -72,14 +78,14 @@ namespace moppe {
       if (state != GLUT_UP)
 	return;
 
-      m_map1 = m_map2;
-      m_map2 = boost::shared_ptr<RandomHeightMap>
-	(new RandomHeightMap (resolution, resolution,
-			      map_size,
-			      ::time (0)));
-      m_map2->randomize_plasmally (0.995);
-      m_map3.change_maps (m_map1, m_map2);
-      m_map3.set_blending_factor (0);
+//       m_map1 = m_map2;
+//       m_map2 = boost::shared_ptr<RandomHeightMap>
+// 	(new RandomHeightMap (resolution, resolution,
+// 			      map_size,
+// 			      ::time (0)));
+//       m_map2->randomize_plasmally (0.995);
+//       m_map3.change_maps (m_map1, m_map2);
+//       m_map3.set_blending_factor (0);
     }
 
     void idle () {
@@ -101,7 +107,7 @@ namespace moppe {
 	  m_camera.update (m_vehicle.position (),
 			   m_vehicle.orientation (),
 			   dt);
-	  m_camera.limit (m_map3);
+	  m_camera.limit (m_map1);
 		
 	  glutPostRedisplay ();
 	}
@@ -118,7 +124,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (90.0, 1.0 * width / height, 0.0025, 1000 * one_meter);
+      gluPerspective (90.0, 1.0 * width / height, 0.0025, 200 * one_meter);
       glutPostRedisplay ();
 
       check_gl ();
@@ -167,6 +173,12 @@ namespace moppe {
 
       m_camera.realize ();
 
+      {
+	gl::ScopedMatrixSaver matrix;
+	gl::translate (m_camera.position ());
+	m_sky.render ();
+      }
+
       //      if (m_map3.done ())
 	m_terrain_renderer.render ();
 //       else
@@ -189,7 +201,7 @@ namespace moppe {
       GLfloat ambient[] = {0.5, 0.5, 0.5, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
-      GLfloat light0_color[] = {0.6, 1.0, 0.7, 1.0};
+      GLfloat light0_color[] = {1.0, 1.0, 1.0, 1.0};
       GLfloat light0_specular[] = {1.0, 1.0, 0.0, 1.0};
       GLfloat light0_position[] = {2, 40, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
@@ -210,13 +222,13 @@ namespace moppe {
     gfx::MouseCameraController m_mouse;
 
     Timer m_timer;
-    boost::shared_ptr<map::RandomHeightMap> m_map1;
-    boost::shared_ptr<map::RandomHeightMap> m_map2;
-    map::InterpolatingHeightMap m_map3;
+    map::RandomHeightMap m_map1;
+//     boost::shared_ptr<map::RandomHeightMap> m_map2;
+//     map::InterpolatingHeightMap m_map3;
 
     gfx::TerrainRenderer m_terrain_renderer;
-
     mov::Vehicle m_vehicle;
+    gfx::Sky m_sky;
   };
 }
 

@@ -8,7 +8,9 @@
 
 namespace moppe {
 namespace gl {
-  void print_shader_log (const std::string& title, unsigned int id);
+  typedef void *shader_id_t;
+
+  void print_shader_log (const std::string& title, shader_id_t id);
 
   class Shader {
   public:
@@ -16,7 +18,7 @@ namespace gl {
 
     void load ();
 
-    unsigned int id () const { return m_id; }
+    shader_id_t id () const { return m_id; }
 
     void print_log () const
     { print_shader_log (m_filename, m_id); }
@@ -24,7 +26,7 @@ namespace gl {
   private:
     int m_mode;
     std::string m_filename;
-    unsigned int         m_id;
+    shader_id_t         m_id;
     std::string m_source;
   };
 
@@ -49,10 +51,10 @@ namespace gl {
     void print_log () const
     { print_shader_log ("program", m_id); }
 
-    unsigned int id () const { return m_id; }
+    shader_id_t id () const { return m_id; }
 
   private:
-    unsigned int m_id;
+    shader_id_t m_id;
   };
 }
 }

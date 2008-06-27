@@ -3,16 +3,20 @@
 #define MOPPE_GL_HH
 
 #include <iostream>
+#include <cstdlib>
 
 #include <moppe/gfx/math.hh>
 
-#include <GL/glew.h>
+//#include <GL/glew.h>
 
 #ifdef MAC
 # include <glut.h>
+# include <glu.h>
+# include <OpenGL/glext.h>
 #else
 # include <GL/gl.h>
 # include <GL/glut.h>
+# include <GL/glu.h>
 #endif
 
 #include <stdexcept>
@@ -36,7 +40,11 @@ namespace moppe {
 #ifdef DEBUG
     GLint e = glGetError();
     if (e != GL_NO_ERROR)
-      throw gl_error (reinterpret_cast<const char*> (gluErrorString (e)));
+      {
+	std::cerr << gluErrorString (e) << std::endl;
+	::abort ();
+	//      throw gl_error (reinterpret_cast<const char*> (gluErrorString (e)));
+      }
 #endif
   }
 
@@ -50,6 +58,7 @@ namespace moppe {
 
     void vertex (const Vector3D&);
     void normal (const Vector3D&);
+    void translate (const Vector3D&);
 
     struct ScopedAttribSaver {
       ScopedAttribSaver  (GLbitfield mask) { glPushAttrib (mask); }

@@ -20,7 +20,7 @@ namespace gl {
   }
 
   void
-  Texture::bind (int unit)
+  Texture::bind (int unit) const
   {
     glActiveTextureARB (GL_TEXTURE0_ARB + unit);
     glEnable (GL_TEXTURE_2D);
