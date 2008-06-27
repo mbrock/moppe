@@ -60,6 +60,7 @@ namespace mov {
 
     Vector3D position    () const { return m_position; }
     Vector3D orientation () const { return m_velocity.normalized (); }
+    Vector3D velocity () const { return m_velocity; }
 
   private:
     void calculate_orientation ();

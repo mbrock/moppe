@@ -60,7 +60,7 @@ namespace moppe {
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally (0.85);
+      m_map1.randomize_plasmally (1.0);
       //      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
@@ -164,34 +164,41 @@ namespace moppe {
       glutPostRedisplay ();
     }
 
-    void display () {
+    void render_scene (float x) {
       glClearColor (fog.x, fog.y, fog.z, 0);
-      glColor3f (1, 1, 1);
-
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      glMatrixMode (GL_MODELVIEW);
 
+      glMatrixMode (GL_MODELVIEW);
       m_camera.realize ();
+      
+      Vector3D displacement (m_vehicle.velocity () * x / 20);
+      gl::translate (displacement);
 
       {
 	gl::ScopedMatrixSaver matrix;
 	gl::translate (m_camera.position ());
 	m_sky.render ();
       }
-
-      //      if (m_map3.done ())
-	m_terrain_renderer.render ();
-//       else
-// 	m_terrain_renderer.render_directly ();
-
+      
+      m_terrain_renderer.render ();
       m_terrain_renderer.translate ();
-      m_vehicle.render ();
+      m_vehicle.render ();      
+    }
 
+    void display () {
+      glClearColor (fog.x, fog.y, fog.z, 0);
+      //      glClear (GL_ACCUM_BUFFER_BIT);
+
+      int passes = 1;
+      for (int i = 0; i < passes; ++i)
+	{
+	  render_scene (0.0);
+	  //	  glAccum (GL_ACCUM, 1.0 / passes);
+	}
+
+      //      glAccum (GL_RETURN, 1.0);
+      
       m_vehicle.draw_debug_text ();
-      //       m_camera.draw_debug_text ();
-      //      m_mouse.draw_debug_text ();
-
-      check_gl ();
 
       glutSwapBuffers ();
     }
@@ -240,7 +247,8 @@ main (int argc, char **argv)
   MoppeGLUT app;
   app::global_app = &app;
 
-  app.initialize (argc, argv, GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
+  app.initialize (argc, argv, 
+		  GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 
   try { app.run_main_loop (); }
   catch (const std::exception& e)

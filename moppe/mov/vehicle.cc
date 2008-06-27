@@ -57,7 +57,7 @@ namespace mov {
 
   Vector3D
   Vehicle::drag () const {
-    return m_velocity * -0.2;
+    return m_velocity * -0.1;
   }
 
   void
