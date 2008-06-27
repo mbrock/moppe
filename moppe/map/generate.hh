@@ -49,6 +49,14 @@ namespace map {
     Vector3D triangle_normal (int x1, int y1,
 			      int x2, int y2,
 			      int x3, int y3) const;
+    Vector3D center          () const
+    { return vertex (m_width / 2, m_height / 2); }
+
+    bool in_bounds (float x, float y) const {
+      int xi = x / m_scale.x;
+      int yi = y / m_scale.z;
+      return !(xi < 1 || xi > m_width - 2 || yi < 1 || yi > m_height - 2);
+    }
 
     float interpolated_height (float x, float y) const {
       int xi = x / m_scale.x, yi = y / m_scale.z;

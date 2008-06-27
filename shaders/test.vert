@@ -15,8 +15,8 @@ void main () {
   float fog;
   float density = 0.75;
   vec4 position = ftransform();
-  height = gl_Vertex.y/6.0;
-  fog = length(position) * 0.2;
+  height = gl_Vertex.y/600.0;
+  fog = length(position) * 0.001;
   fog = 1.0 - clamp (0.0, 1.0, fog);
   normal = normalize(gl_NormalMatrix * gl_Normal);
   lightDir = normalize(vec3(gl_LightSource[0].position));

@@ -58,5 +58,12 @@ namespace gl {
 	 ++i)
       glutBitmapCharacter (font, *i);
   }
+
+  void draw_direction (const Vector3D& v) {
+    glBegin (GL_LINES);
+    vertex (Vector3D ());
+    vertex (v * 10);
+    glEnd ();
+  }
 }
 }

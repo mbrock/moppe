@@ -31,7 +31,7 @@ namespace gfx {
     m_vertices.reserve ((height - 2) * (width - 1));
     m_normals.reserve ((height - 2) * (width - 1));
 
-    const float tex_scale = 0.1;
+    const float tex_scale = 0.5 * one_meter;
 
     for (int y = 0; y < height - 2; ++y)
       for (int x = 0; x < width - 1; ++x)
@@ -108,6 +108,16 @@ namespace gfx {
 			    m_texcoords);
 
     m_shader_program.unuse ();
+
+    glLineWidth (2);
+    glBegin (GL_LINES);
+    for (int y = 0; y < height - 1; ++y)
+      for (int x = 0; x < width - 1; ++x)
+	{
+	  gl::vertex (m_map.vertex (x, y));
+	  gl::vertex (m_map.vertex (x, y) + Vector3D (0, 6, 0));
+	}
+    glEnd ();
   }
 
   void

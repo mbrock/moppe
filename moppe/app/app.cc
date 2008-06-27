@@ -54,7 +54,7 @@ namespace app {
     glutKeyboardFunc (global_keyboard_func);
     glutKeyboardUpFunc (global_keyboard_up_func);
     glutSpecialFunc (global_special_func);
-    glutSpecialUpFunc (global_special_func);
+    glutSpecialUpFunc (global_special_up_func);
     glutMouseFunc (global_mouse_func);
     glutPassiveMotionFunc (global_passive_motion_func);
     glutIdleFunc (global_idle_func);

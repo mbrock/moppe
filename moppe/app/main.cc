@@ -37,7 +37,9 @@ namespace moppe {
 // 				     1 + ::time (0))),
 // 	m_map3 (m_map1, m_map2, m_map1->size ()),
 	m_terrain_renderer (m_map1),
-	m_vehicle (Vector3D (0.2, 0.0, 0.2), 45, m_map1),
+	m_vehicle (Vector3D (50 * one_meter, 600 * one_meter,
+			     50 * one_meter), 45, m_map1,
+		   2500, 150),
 	m_sky ("textures/sky.tga")
     { }
 
@@ -58,7 +60,7 @@ namespace moppe {
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally (0.8);
+      m_map1.randomize_plasmally (0.85);
       //      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
@@ -66,8 +68,6 @@ namespace moppe {
 
       m_terrain_renderer.regenerate ();
       m_terrain_renderer.setup_shader ();
-
-      m_vehicle.set_speed (0 * one_meter);
 
       m_sky.load ();
 
@@ -124,7 +124,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (90.0, 1.0 * width / height, 0.0025, 10000 * one_meter);
+      gluPerspective (90.0, 1.0 * width / height, 0.1, 10000 * one_meter);
       glutPostRedisplay ();
 
       check_gl ();
@@ -136,25 +136,25 @@ namespace moppe {
 		    int mx, int my,
 		    KeyStatus status)
     {
-      if (status == GLUT_UP)
-	return;
+      float factor = status == KEY_SPECIAL_PRESSED;
+      std::cout << status << std::endl;
 
       switch (code)
 	{
 	case GLUT_KEY_LEFT:
-	  m_vehicle.spin (-10);
+	  m_vehicle.set_yaw (-45 * factor);
 	  break;
 
 	case GLUT_KEY_RIGHT:
-	  m_vehicle.spin (10);
+	  m_vehicle.set_yaw (45 * factor);
 	  break;
 
 	case GLUT_KEY_UP:
-	  m_vehicle.increase_speed (1 * one_meter);
+	  m_vehicle.set_thrust (1 * factor);
 	  break;
 
 	case GLUT_KEY_DOWN:
-	  m_vehicle.increase_speed (-1 * one_meter);
+	  m_vehicle.set_thrust (-1 * factor);
 	  break;
 	}
     }

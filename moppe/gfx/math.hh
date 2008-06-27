@@ -10,7 +10,7 @@ namespace moppe {
   const float PI  = 3.14159;
   const float PI2 = 3.14159 * 2;
 
-  const float one_meter = 0.01;
+  const float one_meter = 1;
 
   typedef float degrees_t;
   typedef float radians_t;

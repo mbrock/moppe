@@ -80,6 +80,7 @@ namespace moppe {
     };
 
     void draw_glut_text (void *font, int x, int y, const std::string& s);
+    void draw_direction (const Vector3D& v);
   }
 }
 

@@ -31,7 +31,7 @@ namespace gfx {
 			     const Vector3D& orientation,
 			     seconds_t dt)
   {
-    float alpha = 0.01f;
+    float alpha = 0.1f;
 
     if (m_is_uninitialized)
       {
