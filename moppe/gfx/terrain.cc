@@ -12,7 +12,7 @@ namespace gfx {
     : m_map (map),
       m_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/test.vert"),
       m_fragment_shader (GL_FRAGMENT_SHADER_ARB, "shaders/test.frag"),
-      m_tex_grass ("textures/grass.tga"),
+      m_tex_grass ("textures/grass2.tga"),
       m_tex_dirt ("textures/dirt.tga"),
       m_tex_snow ("textures/snow.tga")
   {

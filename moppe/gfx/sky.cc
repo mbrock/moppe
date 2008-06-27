@@ -13,7 +13,10 @@ namespace gfx {
 
   void
   Sky::render () const {
+    gl::ScopedAttribSaver attribs (GL_ENABLE_BIT);
     glDisable (GL_DEPTH_TEST);
+    glDisable (GL_CULL_FACE);
+
     m_texture.bind (0);
 
     GLUquadricObj *q (gluNewQuadric ());
@@ -22,8 +25,6 @@ namespace gfx {
     gluQuadricTexture (q, GL_TRUE);
     gluSphere (q, 2.0, 20, 20);
     gluDeleteQuadric (q);
-
-    glEnable (GL_DEPTH_TEST);
   }
 }
 }

@@ -35,7 +35,12 @@ namespace mov {
   Vehicle::update (seconds_t dt) {
     calculate_orientation ();
     m_position += dt * m_speed * m_orientation;
+    bound ();
     fall_to_ground ();
+  }
+
+  void
+  Vehicle::bound () {
   }
 
   void

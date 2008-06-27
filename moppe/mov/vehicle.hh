@@ -55,6 +55,7 @@ namespace mov {
   private:
     void calculate_orientation ();
     void fall_to_ground ();
+    void bound ();
 
   private:
     Vector3D m_position;

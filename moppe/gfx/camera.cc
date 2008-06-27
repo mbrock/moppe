@@ -31,7 +31,7 @@ namespace gfx {
 			     const Vector3D& orientation,
 			     seconds_t dt)
   {
-    float alpha = 0.05f;
+    float alpha = 0.01f;
 
     if (m_is_uninitialized)
       {
@@ -61,7 +61,7 @@ namespace gfx {
   ThirdPersonCamera::limit (const map::HeightMap& map)
   {
     float min_y = map.interpolated_height (m_position.x, m_position.z);
-    m_position.y = max (min_y + 2 * one_meter, m_position.y);
+    m_position.y = max (min_y + 5 * one_meter, m_position.y);
   }
 
   void

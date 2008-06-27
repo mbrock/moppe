@@ -21,12 +21,12 @@ namespace moppe {
 
   const int resolution = 129;
 
-  const Vector3D fog (0.0, 0.0, 0.0);
+  const Vector3D fog (0.5, 0.5, 0.5);
 
   class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
-      : GLUTApplication ("Moppe", 800, 600),
+      : GLUTApplication ("Moppe", 1027, 768),
 	m_camera (80, 5 * one_meter),
 	m_mouse (800, 600),
 	m_map1 (resolution, resolution,
@@ -38,7 +38,7 @@ namespace moppe {
 // 	m_map3 (m_map1, m_map2, m_map1->size ()),
 	m_terrain_renderer (m_map1),
 	m_vehicle (Vector3D (0.2, 0.0, 0.2), 45, m_map1),
-	m_sky ("textures/nebula.tga")
+	m_sky ("textures/sky.tga")
     { }
 
     void setup () {
@@ -50,8 +50,8 @@ namespace moppe {
 #endif
 
       glEnable (GL_DEPTH_TEST);
-//       glEnable (GL_LIGHTING);
-//      glEnable (GL_LIGHT0);
+      glEnable (GL_CULL_FACE);
+      glCullFace (GL_BACK);
       glShadeModel (GL_SMOOTH);
       glEnable (GL_TEXTURE_2D);
 
@@ -124,7 +124,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (90.0, 1.0 * width / height, 0.0025, 200 * one_meter);
+      gluPerspective (90.0, 1.0 * width / height, 0.0025, 10000 * one_meter);
       glutPostRedisplay ();
 
       check_gl ();

@@ -9,6 +9,6 @@ void main () {
   texel = grass_coef * grasstexel + (1.0 - grass_coef) * texel;
   texel = snow_coef * snowtexel + (1.0 - snow_coef) * texel;
   ct = texel.rgb; at = texel.a;
-  gl_FragColor = vec4 (mix (vec3 (ct * cf), vec3 (0.0, 0.0, 0.0),
-			    gl_FogFragCoord), at * af);
+  gl_FragColor = vec4 (mix (vec3 (ct * cf), vec3 (0.5, 0.5, 0.5),
+			    gl_FogFragCoord), at * af * 0.3);
 }
