@@ -57,7 +57,7 @@ namespace mov {
 
   Vector3D
   Vehicle::drag () const {
-    return m_velocity * -0.1;
+    return m_velocity * -0.05;
   }
 
   void
@@ -97,7 +97,7 @@ namespace mov {
       {
 	m_velocity = (m_map.center () + Vector3D (0, 1500, 0) - m_position);
 	m_velocity.normalize ();
-	m_velocity *= (500 / 3.6);
+	m_velocity *= (800 / 3.6);
       }
   }
 

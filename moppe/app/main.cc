@@ -26,7 +26,7 @@ namespace moppe {
   class MoppeGLUT: public GLUTApplication {
   public:
     MoppeGLUT ()
-      : GLUTApplication ("Moppe", 1027, 768),
+      : GLUTApplication ("Moppe", 1000, 768),
 	m_camera (80, 5 * one_meter),
 	m_mouse (800, 600),
 	m_map1 (resolution, resolution,
@@ -39,7 +39,7 @@ namespace moppe {
 	m_terrain_renderer (m_map1),
 	m_vehicle (Vector3D (50 * one_meter, 600 * one_meter,
 			     50 * one_meter), 45, m_map1,
-		   2500, 150),
+		   5000, 150),
 	m_sky ("textures/sky.tga")
     { }
 
@@ -60,7 +60,7 @@ namespace moppe {
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally (1.0);
+      m_map1.randomize_plasmally (0.8);
       //      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
@@ -75,34 +75,13 @@ namespace moppe {
     }
 
     void mouse (int button, int state, int x, int y) {
-      if (state != GLUT_UP)
-	return;
-
-//       m_map1 = m_map2;
-//       m_map2 = boost::shared_ptr<RandomHeightMap>
-// 	(new RandomHeightMap (resolution, resolution,
-// 			      map_size,
-// 			      ::time (0)));
-//       m_map2->randomize_plasmally (0.995);
-//       m_map3.change_maps (m_map1, m_map2);
-//       m_map3.set_blending_factor (0);
     }
 
     void idle () {
       static const float dt    = 1 / 30.0;
-      //      static const float total = 3;
 
       if (m_timer.elapsed () >= dt)
 	{
-// 	  if (!m_map3.done ())
-// 	    {
-// 	      m_timer.reset ();
-// 	      m_map3.increase_blending_factor (dt / total);
-	      
-// 	      if (m_map3.done ())
-// 		m_terrain_renderer.regenerate ();
-// 	    }
-
 	  m_vehicle.update (dt);
 	  m_camera.update (m_vehicle.position (),
 			   m_vehicle.orientation (),
@@ -124,7 +103,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (90.0, 1.0 * width / height, 0.1, 10000 * one_meter);
+      gluPerspective (100.0, 1.0 * width / height, 0.1, 10000 * one_meter);
       glutPostRedisplay ();
 
       check_gl ();
@@ -142,11 +121,11 @@ namespace moppe {
       switch (code)
 	{
 	case GLUT_KEY_LEFT:
-	  m_vehicle.set_yaw (-45 * factor);
+	  m_vehicle.set_yaw (-90 * factor);
 	  break;
 
 	case GLUT_KEY_RIGHT:
-	  m_vehicle.set_yaw (45 * factor);
+	  m_vehicle.set_yaw (90 * factor);
 	  break;
 
 	case GLUT_KEY_UP:
@@ -164,16 +143,13 @@ namespace moppe {
       glutPostRedisplay ();
     }
 
-    void render_scene (float x) {
+    void render_scene () {
       glClearColor (fog.x, fog.y, fog.z, 0);
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
       glMatrixMode (GL_MODELVIEW);
       m_camera.realize ();
       
-      Vector3D displacement (m_vehicle.velocity () * x / 20);
-      gl::translate (displacement);
-
       {
 	gl::ScopedMatrixSaver matrix;
 	gl::translate (m_camera.position ());
@@ -187,19 +163,10 @@ namespace moppe {
 
     void display () {
       glClearColor (fog.x, fog.y, fog.z, 0);
-      //      glClear (GL_ACCUM_BUFFER_BIT);
 
-      int passes = 1;
-      for (int i = 0; i < passes; ++i)
-	{
-	  render_scene (0.0);
-	  //	  glAccum (GL_ACCUM, 1.0 / passes);
-	}
+      render_scene ();
 
-      //      glAccum (GL_RETURN, 1.0);
-      
       m_vehicle.draw_debug_text ();
-
       glutSwapBuffers ();
     }
 
@@ -236,6 +203,8 @@ namespace moppe {
     gfx::TerrainRenderer m_terrain_renderer;
     mov::Vehicle m_vehicle;
     gfx::Sky m_sky;
+
+    gl::FrameBufferObject m_fbo1, m_fbo2;
   };
 }
 

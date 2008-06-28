@@ -13,17 +13,13 @@ namespace gfx {
     glEnableClientState (GL_VERTEX_ARRAY);
     glEnableClientState (GL_NORMAL_ARRAY);
     glEnableClientState (GL_TEXTURE_COORD_ARRAY);
+
     glVertexPointer (3, GL_FLOAT, 0, vertices.address (from));
     glNormalPointer (GL_FLOAT, 0, normals.address (from));
-
-    // HACK
-
-    //    glActiveTextureARB (GL_TEXTURE0_ARB);
     glTexCoordPointer (3, GL_FLOAT, 0, texcoords.address (from));
-//     glActiveTextureARB (GL_TEXTURE1_ARB);
-//     glTexCoordPointer (3, GL_FLOAT, 0, texcoords.address (from));
 
     glDrawArrays (mode, 0, count);
+
     glDisableClientState (GL_VERTEX_ARRAY);
     glDisableClientState (GL_NORMAL_ARRAY);
     glDisableClientState (GL_TEXTURE_COORD_ARRAY);

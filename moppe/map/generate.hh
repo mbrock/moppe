@@ -55,7 +55,7 @@ namespace map {
     bool in_bounds (float x, float y) const {
       int xi = x / m_scale.x;
       int yi = y / m_scale.z;
-      return !(xi < 2 || xi > m_width - 2 || yi < 2 || yi > m_height - 2);
+      return !(xi < 3 || xi > m_width - 3 || yi < 3 || yi > m_height - 3);
     }
 
     float interpolated_height (float x, float y) const {

@@ -81,6 +81,40 @@ namespace moppe {
 
     void draw_glut_text (void *font, int x, int y, const std::string& s);
     void draw_direction (const Vector3D& v);
+    
+    class FrameBufferObject {
+    public:
+      void create (int w, int h) {
+	glGenFramebuffersEXT (1, &m_id);
+	
+	bind ();
+	
+	glGenTextures (1, &m_tex);
+	glBindTexture (GL_TEXTURE_2D, m_tex);
+	glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexImage2D (GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0,
+		      GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glFramebufferTexture2DEXT (GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT,
+				   GL_TEXTURE_2D, m_tex, 0);
+	
+	int status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+	if (status != GL_FRAMEBUFFER_COMPLETE_EXT)
+	  throw std::runtime_error ("nah");
+	
+	unbind ();
+      }
+      
+      void bind () {
+	glBindFramebufferEXT (GL_FRAMEBUFFER_EXT, m_id);
+      }
+      
+      void unbind () {
+	glBindFramebufferEXT (GL_FRAMEBUFFER_EXT, 0);
+      }
+      
+    private:
+      GLuint m_id, m_tex;
+    };
   }
 }
 
