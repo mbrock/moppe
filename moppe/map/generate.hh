@@ -55,7 +55,7 @@ namespace map {
     bool in_bounds (float x, float y) const {
       int xi = x / m_scale.x;
       int yi = y / m_scale.z;
-      return !(xi < 3 || xi > m_width - 3 || yi < 3 || yi > m_height - 3);
+      return !(xi < 0 || xi > (m_width - 2) || yi < 0 || yi > (m_height - 2));
     }
 
     float interpolated_height (float x, float y) const {
@@ -81,8 +81,8 @@ namespace map {
     Vector3D interpolated_normal (float x, float y) const {
       int xi = x / m_scale.x, yi = y / m_scale.z;
 
-      clamp (xi, 0, m_width - 1);
-      clamp (yi, 0, m_height - 1);
+      clamp (xi, 0, m_width - 2);
+      clamp (yi, 0, m_height - 2);
 
       float ax = x / m_scale.x - xi;
       float ay = y / m_scale.z - yi;

@@ -81,14 +81,14 @@ namespace mov {
 
     if (is_grounded ())
       {
-	m_velocity -= m_velocity.dot (n) * n;
+	m_velocity -= m_velocity.dot (n) * n;;
 	//	m_velocity += m_velocity.dot (n) * o * 0.8;
       }
 
     m_position += m_velocity * dt;
 
-    check_ground_collision ();
     bound ();
+    check_ground_collision ();
   }
 
   void
@@ -97,7 +97,7 @@ namespace mov {
       {
 	m_velocity = (m_map.center () + Vector3D (0, 1500, 0) - m_position);
 	m_velocity.normalize ();
-	m_velocity *= (800 / 3.6);
+	m_velocity *= (400 / 3.6);
       }
   }
 
@@ -114,6 +114,7 @@ namespace mov {
 //     gl::draw_direction (m_velocity);
 //     gl::draw_direction (Vector3D (0, -1, 0));
     gl::draw_direction (m_thrust_orientation);
+    gl::draw_direction (m_velocity);
   }
 }
 }

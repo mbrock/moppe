@@ -109,15 +109,15 @@ namespace gfx {
 
     m_shader_program.unuse ();
 
-    glLineWidth (2);
-    glBegin (GL_LINES);
-    for (int y = 0; y < height - 1; ++y)
-      for (int x = 0; x < width - 1; ++x)
-	{
-	  gl::vertex (m_map.vertex (x, y));
-	  gl::vertex (m_map.vertex (x, y) + Vector3D (0, 6, 0));
-	}
-    glEnd ();
+//     glLineWidth (1);
+//     glBegin (GL_LINES);
+//     for (int y = 0; y < height - 1; ++y)
+//       for (int x = 0; x < width - 1; ++x)
+// 	{
+// 	  gl::vertex (m_map.vertex (x, y));
+// 	  gl::vertex (m_map.vertex (x, y) + Vector3D (0, 6, 0));
+// 	}
+//     glEnd ();
   }
 
   void

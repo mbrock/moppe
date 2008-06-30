@@ -16,7 +16,7 @@ namespace moppe {
   using namespace app;
 
   const Vector3D map_size (2000 * one_meter,
-			   600 * one_meter,
+			   900 * one_meter,
 			   2000 * one_meter);
 
   const int resolution = 129;
@@ -32,10 +32,6 @@ namespace moppe {
 	m_map1 (resolution, resolution,
 		map_size,
 		0 + ::time (0)),
-// 	m_map2 (new RandomHeightMap (resolution, resolution,
-// 				     map_size,
-// 				     1 + ::time (0))),
-// 	m_map3 (m_map1, m_map2, m_map1->size ()),
 	m_terrain_renderer (m_map1),
 	m_vehicle (Vector3D (50 * one_meter, 600 * one_meter,
 			     50 * one_meter), 45, m_map1,
@@ -61,7 +57,6 @@ namespace moppe {
 
       std::cout << "Randomizing maps...";
       m_map1.randomize_plasmally (0.8);
-      //      m_map2->randomize_plasmally (0.8);
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
@@ -78,14 +73,16 @@ namespace moppe {
     }
 
     void idle () {
-      static const float dt    = 1 / 30.0;
+      static const float dt = 1 / 30.0;
+      const float elapsed = m_timer.elapsed ();
 
-      if (m_timer.elapsed () >= dt)
+      if (elapsed >= dt)
 	{
-	  m_vehicle.update (dt);
+	  m_timer.reset ();
+	  m_vehicle.update (elapsed);
 	  m_camera.update (m_vehicle.position (),
 			   m_vehicle.orientation (),
-			   dt);
+			   elapsed);
 	  m_camera.limit (m_map1);
 		
 	  glutPostRedisplay ();
@@ -175,20 +172,12 @@ namespace moppe {
       GLfloat ambient[] = {0.5, 0.5, 0.5, 1.0};
       glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
 
-      GLfloat light0_color[] = {1.0, 1.0, 1.0, 1.0};
+      GLfloat light0_color[] = {0.8, 0.8, 0.8, 1.0};
       GLfloat light0_specular[] = {1.0, 1.0, 0.0, 1.0};
       GLfloat light0_position[] = {2, 40, 2};
       glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
       glLightfv (GL_LIGHT0, GL_SPECULAR, light0_specular);
       glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
-
-      GLfloat fog_color[] = {fog.x, fog.y, fog.z, 1.0};
-
-      glEnable (GL_FOG);
-      glFogi (GL_FOG_MODE, GL_EXP2);
-      glFogfv (GL_FOG_COLOR, fog_color);
-      glFogf (GL_FOG_DENSITY, 0.00001);
-      glHint (GL_FOG_HINT, GL_NICEST);
     }
 
   private:
@@ -197,14 +186,10 @@ namespace moppe {
 
     Timer m_timer;
     map::RandomHeightMap m_map1;
-//     boost::shared_ptr<map::RandomHeightMap> m_map2;
-//     map::InterpolatingHeightMap m_map3;
 
     gfx::TerrainRenderer m_terrain_renderer;
     mov::Vehicle m_vehicle;
     gfx::Sky m_sky;
-
-    gl::FrameBufferObject m_fbo1, m_fbo2;
   };
 }
 
