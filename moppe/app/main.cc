@@ -15,11 +15,11 @@ namespace moppe {
   using namespace map;
   using namespace app;
 
-  const Vector3D map_size (2000 * one_meter,
+  const Vector3D map_size (4000 * one_meter,
 			   900 * one_meter,
-			   2000 * one_meter);
+			   4000 * one_meter);
 
-  const int resolution = 129;
+  const int resolution = 257;
 
   const Vector3D fog (0.5, 0.5, 0.5);
 
@@ -100,7 +100,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (100.0, 1.0 * width / height, 0.1, 10000 * one_meter);
+      gluPerspective (100.0, 1.0 * width / height, 0.1, 800);
       glutPostRedisplay ();
 
       check_gl ();
@@ -147,11 +147,11 @@ namespace moppe {
       glMatrixMode (GL_MODELVIEW);
       m_camera.realize ();
       
-      {
-	gl::ScopedMatrixSaver matrix;
-	gl::translate (m_camera.position ());
-	m_sky.render ();
-      }
+//       {
+// 	gl::ScopedMatrixSaver matrix;
+// 	gl::translate (m_camera.position ());
+// 	//	m_sky.render ();
+//       }
       
       m_terrain_renderer.render ();
       m_terrain_renderer.translate ();

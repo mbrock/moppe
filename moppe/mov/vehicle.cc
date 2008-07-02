@@ -24,8 +24,6 @@ namespace mov {
   void
   Vehicle::calculate_orientation ()
   {
-    //    std::cout << ground_height () - m_position.y << std::endl;
-
     if (is_grounded ())
       {
 	Vector3D n = m_map.interpolated_normal (m_position.x, m_position.z);

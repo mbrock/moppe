@@ -26,6 +26,6 @@ void main () {
   rock_coef = smoothstep(0.4,0.6,height);
   snow_coef = smoothstep(0.78,0.79,height);
   gl_TexCoord[0] = gl_MultiTexCoord0;
-  gl_FogFragCoord = 0.0; /*1.0 - fog;*/
+  gl_FogFragCoord = 1.0 - fog;
   gl_Position = position;
 }

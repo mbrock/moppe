@@ -1,0 +1,18 @@
+
+class Vehicle;
+
+variables {
+  Vector position;
+  Vector velocity;
+  Vector acceleration;
+  String name;
+}
+
+
+
+void update (float dt) [unreliably replicated] {
+  calculate_orientation ();
+    
+  Vector3D f;
+  float g = -9.82 * 
+}
