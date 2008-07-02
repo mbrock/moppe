@@ -21,6 +21,8 @@ void main () {
   texel = snow_coef * snowtexel + (1.0 - snow_coef) * texel;
 
   ct = texel.rgb; at = texel.a;
-  gl_FragColor = vec4 (mix (vec3 (ct * cf), vec3 (0.5, 0.5, 0.5),
-			    gl_FogFragCoord), at * af * 0.3);
+  gl_FragColor = vec4 (mix (vec3 (ct * cf), 
+			    vec3 (0.5, 0.5, 0.5),
+			    gl_FogFragCoord), 
+		       at * af * 0.3);
 }

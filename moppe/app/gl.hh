@@ -7,13 +7,12 @@
 
 #include <moppe/gfx/math.hh>
 
-//#include <GL/glew.h>
-
 #ifdef MAC
 # include <glut.h>
 # include <glu.h>
 # include <OpenGL/glext.h>
 #else
+# include <GL/glew.h>
 # include <GL/gl.h>
 # include <GL/glut.h>
 # include <GL/glu.h>
@@ -28,7 +27,7 @@ namespace moppe {
 	m_what (what)
     { }
 
-    gl_error::~gl_error () throw () {}
+    ~gl_error () throw () {}
 
     const char* what () const throw () { return m_what.c_str (); }
 

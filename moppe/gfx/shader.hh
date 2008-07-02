@@ -8,7 +8,13 @@
 
 namespace moppe {
 namespace gl {
+
+#ifdef MAC
   typedef void *shader_id_t;
+#else
+  // GLEW!  Why do you ruin my types!
+  typedef int   shader_id_t;
+#endif
 
   void print_shader_log (const std::string& title, shader_id_t id);
 
