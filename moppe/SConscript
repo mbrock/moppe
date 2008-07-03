@@ -1,11 +1,13 @@
 # -*- python -*-
 
 import sys
+import os
 
 env = Environment(CXX      = 'g++',
                   CCFLAGS  = ['-g', '-DDEBUG=1', '-Wall'],
                   CPPPATH  = ['#/', '#/vendor/boost', '#/vendor/include'],
-                  LIBPATH  = ['#/moppe', '#/vendor/lib'])
+                  LIBPATH  = ['#/moppe', '#/vendor/lib'],
+                  ENV      = {'PATH' : os.environ['PATH']})
 
 if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =
