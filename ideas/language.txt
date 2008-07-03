@@ -2,40 +2,47 @@
 class Main.
 
 static {
-  var mapSize       := [4 km, 900 m, 4 km].
-  var mapResolution := 257.
+  var Foo := 1.
+  var Bar := foo + 5.
 }
 
 members {
-  var foo := (4 foo: 5).
-  var camera := Camera withFOV:    100 deg
-                       atDistance: 8 m.
-
-  var map             (Heightmap).
-  var terrainRenderer (TerrainRenderer).
-
-  var vehicle := Vehicle at:       [50 m, 0 m, 50 m]
-                         mass:     150 kg
-                         force:    5000 N
-                         oriented: 45 deg.
+  var baz (int) := Bar * 2.
 }
 
-void setup {
-  map := Heightmap sized: mapResolution.
-  map randomize: 0.8.
-
-  terrainRenderer := TerrainRenderer withMap: map.
-  terrainRenderer regenerate.
+void frob {
+  baz := Foo + (baz * 2).
 }
 
-void updateFor: dt (float) {
-  vehicle updateFor: dt onMap: map.
-  camera  updateFor: dt onMap: map following: vehicle.
-}
+// members {
+//   var camera := Camera withFOV:    100 deg
+//                        atDistance: 8 m.
 
-void render {
-  camera realize.
+//   var map             (Heightmap).
+//   var terrainRenderer (TerrainRenderer).
 
-  terrainRenderer render.
-  vehicle render.
-}
+//   var vehicle := Vehicle at:       [50 m, 0 m, 50 m]
+//                          mass:     150 kg
+//                          force:    5000 N
+//                          oriented: 45 deg.
+// }
+
+// void setup {
+//   map := Heightmap sized: mapResolution.
+//   map randomize: 0.8.
+
+//   terrainRenderer := TerrainRenderer withMap: map.
+//   terrainRenderer regenerate.
+// }
+
+// void updateFor: dt (float) {
+//   vehicle updateFor: dt onMap: map.
+//   camera  updateFor: dt onMap: map following: vehicle.
+// }
+
+// void render {
+//   camera realize.
+
+//   terrainRenderer render.
+//   vehicle render.
+// }

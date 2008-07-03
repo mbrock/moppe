@@ -17,7 +17,12 @@ env.Command(CF_NAME + '/Lex.hs',
 
 env.Command([CF_NAME + '/Par.hs', CF_NAME + '/Par.info'],
             CF_NAME + '/Par.y',
-            "happy --debug --info --ghc --coerce --array $SOURCE")
+            "happy --info --ghc --coerce --array $SOURCE")
+
+tex = env.Command('TypeChecker.pdf',
+                  'TypeChecker.lhs',
+                  ("lhs2TeX -o TypeChecker.tex $SOURCE && " +
+                   "pdflatex TypeChecker.tex"))
 
 check = env.Command('check', 'Main.hs',
                     "ghc -o check --make $SOURCE -i:moppe/script/compiler")

@@ -5,9 +5,7 @@ import sys
 env = Environment(CXX      = 'g++',
                   CCFLAGS  = ['-g', '-DDEBUG=1', '-Wall'],
                   CPPPATH  = ['#/', '#/vendor/boost', '#/vendor/include'],
-                  LIBPATH  = ['#/moppe', '#/vendor/lib'],
-                  toolpath = ['#/scons-tools'],
-                  tools    = ['default', 'haskell'])
+                  LIBPATH  = ['#/moppe', '#/vendor/lib'])
 
 if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =
