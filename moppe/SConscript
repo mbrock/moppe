@@ -2,10 +2,12 @@
 
 import sys
 
-env = Environment(CXX     = 'g++',
-                  CCFLAGS = ['-g', '-DDEBUG=1', '-Wall'],
-                  CPPPATH = ['#/', '#/vendor/boost', '#/vendor/include'],
-                  LIBPATH = ['#/build', '#/vendor/lib'])
+env = Environment(CXX      = 'g++',
+                  CCFLAGS  = ['-g', '-DDEBUG=1', '-Wall'],
+                  CPPPATH  = ['#/', '#/vendor/boost', '#/vendor/include'],
+                  LIBPATH  = ['#/moppe', '#/vendor/lib'],
+                  toolpath = ['#/scons-tools'],
+                  tools    = ['default', 'haskell'])
 
 if sys.platform == 'darwin':
     env.AppendUnique(CPPPATH =
@@ -20,4 +22,5 @@ Export('env')
 env.SConscript(['map/SConscript',
                 'app/SConscript',
                 'gfx/SConscript',
-                'mov/SConscript'])
+                'mov/SConscript',
+                'script/SConscript'])

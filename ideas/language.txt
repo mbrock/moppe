@@ -1,18 +1,41 @@
 
-class Vehicle;
+class Main.
 
-variables {
-  Vector position;
-  Vector velocity;
-  Vector acceleration;
-  String name;
+static {
+  var mapSize       := [4 km, 900 m, 4 km].
+  var mapResolution := 257.
 }
 
+members {
+  var foo := (4 foo: 5).
+  var camera := Camera withFOV:    100 deg
+                       atDistance: 8 m.
 
+  var map             (Heightmap).
+  var terrainRenderer (TerrainRenderer).
 
-void update (float dt) [unreliably replicated] {
-  calculate_orientation ();
-    
-  Vector3D f;
-  float g = -9.82 * 
+  var vehicle := Vehicle at:       [50 m, 0 m, 50 m]
+                         mass:     150 kg
+                         force:    5000 N
+                         oriented: 45 deg.
+}
+
+void setup {
+  map := Heightmap sized: mapResolution.
+  map randomize: 0.8.
+
+  terrainRenderer := TerrainRenderer withMap: map.
+  terrainRenderer regenerate.
+}
+
+void updateFor: dt (float) {
+  vehicle updateFor: dt onMap: map.
+  camera  updateFor: dt onMap: map following: vehicle.
+}
+
+void render {
+  camera realize.
+
+  terrainRenderer render.
+  vehicle render.
 }
