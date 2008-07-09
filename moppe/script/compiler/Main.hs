@@ -40,12 +40,13 @@ runTypeChecker s =
       Bad e -> do hPutStrLn stderr "Parse error:\n"
                   hPutStrLn stderr e
                   exitFailure
-      Ok  c -> case typecheck c of
-                 Left e -> do hPutStrLn stderr "Type error:\n"
-                              hPutStrLn stderr (show e)
-                              exitFailure
-                 Right c' -> do hPutStrLn stderr "OK:\n"
-                                hPutStrLn stderr (myPrintTree c')
+      Ok  c -> do x <- typecheck c
+                  case x of
+                    Left e -> do hPutStrLn stderr "Type error:\n"
+                                 hPutStrLn stderr (show e)
+                                 exitFailure
+                    Right c' -> do hPutStrLn stderr "OK:\n"
+                                   hPutStrLn stderr (myPrintTree c')
 
 main :: IO ()
 main =

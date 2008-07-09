@@ -48,9 +48,9 @@ SExpr.  Stmt  ::=  Expr "." ;
 --- Expressions.
 
 internal TExpr.  Expr   ::=  Expr3 "::" Type                    ;
-ESet.            Expr   ::=  ID ":=" Expr                       ;
-EKeywordCall.    Expr   ::=  Expr1 [EKeywordArg]                ;
-EBinaryCall.     Expr1  ::=  Expr2 Op Expr                      ;
+ESet.            Expr   ::=  ID ":=" Expr1                      ;
+EKeywordCall.    Expr   ::=  Expr3 [EKeywordArg]                ;
+EBinaryCall.     Expr1  ::=  Expr Op Expr2                      ;
 EUnaryCall.      Expr2  ::=  Expr2 ID                           ;
 EVar.            Expr3  ::=  ID                                 ;
 EInt.            Expr3  ::=  Integer                            ;

@@ -3,7 +3,7 @@ class Main.
 
 static {
   var Foo := 1.
-  var Bar := foo + 5.
+  var Bar := Foo + 5.
 }
 
 members {
