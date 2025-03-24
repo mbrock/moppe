@@ -3,24 +3,33 @@
 import sys
 import os
 
-env = Environment(CXX      = 'g++',
-                  CCFLAGS  = ['-g', '-DDEBUG=1', '-Wall'],
-                  CPPPATH  = ['#/', '#/vendor/boost', '#/vendor/include'],
-                  LIBPATH  = ['#/moppe', '#/vendor/lib'],
-                  ENV      = {'PATH' : os.environ['PATH']})
+env = Environment(
+    CXX="g++",
+    CCFLAGS=["-g", "-DDEBUG=1", "-Wall", "-std=c++11"],
+    CPPPATH=["#/", "#/vendor/boost", "#/vendor/include"],
+    LIBPATH=["#/moppe", "#/vendor/lib"],
+    ENV={"PATH": os.environ["PATH"]},
+)
 
-if sys.platform == 'darwin':
-    env.AppendUnique(CPPPATH =
-                     ['/System/Library/Frameworks/OpenGL.framework/Headers',
-                      '/System/Library/Frameworks/GLUT.framework/Headers',
-                      '#/vendor/glew/include'],
-                     FRAMEWORKS = ['OpenGL', 'GLUT'],
-                     CCFLAGS = ['-DMAC'])
+if sys.platform == "darwin":
+    env.AppendUnique(
+        CPPPATH=[
+            "/System/Library/Frameworks/OpenGL.framework/Headers",
+            "/System/Library/Frameworks/GLUT.framework/Headers",
+            "#/vendor/glew/include",
+        ],
+        FRAMEWORKS=["OpenGL", "GLUT"],
+        CCFLAGS=["-DMAC"],
+    )
 
-Export('env')
+Export("env")
 
-env.SConscript(['map/SConscript',
-                'app/SConscript',
-                'gfx/SConscript',
-                'mov/SConscript',
-                'script/SConscript'])
+env.SConscript(
+    [
+        "map/SConscript",
+        "app/SConscript",
+        "gfx/SConscript",
+        "mov/SConscript",
+        # "script/SConscript",
+    ]
+)

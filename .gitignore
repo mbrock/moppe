@@ -1,0 +1,6 @@
+vendor
+**/*.a
+**/*.o
+**/*.dblite
+moppe/app/moppe
+moppe/map/test

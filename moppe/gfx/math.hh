@@ -5,6 +5,7 @@
 #include <boost/operators.hpp>
 
 #include <cmath>
+#include <iostream>
 
 namespace moppe {
   const float PI  = 3.14159;

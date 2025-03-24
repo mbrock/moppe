@@ -2,14 +2,13 @@
 
 import sys
 
-Import('env')
+Import("env")
 
-libs        = ['moppe-map', 'moppe-gfx', 'moppe-mov']
-vendor_libs = ['enet']
+libs = ["moppe-map", "moppe-gfx", "moppe-mov"]
+vendor_libs = []
+# vendor_libs = ['enet']
 
-if sys.platform != 'darwin':
-    libs.append(['glut', 'GLEW'])
+if sys.platform != "darwin":
+    libs.append(["glut", "GLEW"])
 
-env.Program('moppe', ['main.cc', 'app.cc', 'gl.cc', 'util.cc'],
-            LIBS = libs + vendor_libs)
-
+env.Program("moppe", ["main.cc", "app.cc", "gl.cc", "util.cc"], LIBS=libs + vendor_libs)

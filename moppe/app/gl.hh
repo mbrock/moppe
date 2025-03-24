@@ -8,8 +8,8 @@
 #include <moppe/gfx/math.hh>
 
 #ifdef MAC
-# include <glut.h>
-# include <glu.h>
+# include <GLUT/glut.h>
+# include <OpenGL/glu.h>
 # include <OpenGL/glext.h>
 #else
 # include <GL/glew.h>
