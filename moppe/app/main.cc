@@ -19,9 +19,10 @@ namespace moppe {
 			   900 * one_meter,
 			   4000 * one_meter);
 
-  const int resolution = 257;
+  const int resolution = 513; // Higher resolution for smoother terrain
 
-  const Vector3D fog (0.5, 0.5, 0.5);
+  // Dynamic fog color will be set based on sky horizon colors
+  Vector3D fog (0.5, 0.5, 0.5);
 
   class MoppeGLUT: public GLUTApplication {
   public:
@@ -52,11 +53,35 @@ namespace moppe {
       glCullFace (GL_BACK);
       glShadeModel (GL_SMOOTH);
       glEnable (GL_TEXTURE_2D);
+      
+      // Enable alpha blending for terrain-sky transitions
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      
+      // Enable anti-aliasing for smoother edges
+      glEnable(GL_POINT_SMOOTH);
+      glEnable(GL_LINE_SMOOTH);
+      glEnable(GL_POLYGON_SMOOTH);
+      glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+      glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+      glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+      
+      // Enable anisotropic filtering for better distant texture quality if supported
+      float maxAniso = 0.0f;
+      glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
+      if (maxAniso > 0.0f) {
+        std::cout << "Anisotropic filtering supported, max value: " << maxAniso << std::endl;
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
+      }
+      
+      // Enable mipmapping for better distance visuals
+      glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+      glHint(GL_GENERATE_MIPMAP_HINT, GL_NICEST);
 
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally (0.8);
+      m_map1.randomize_plasmally (1.0);
       std::cout << "done!\n";
 
       m_mouse.set_pitch_limits (-15, 10);
@@ -75,10 +100,92 @@ namespace moppe {
     void idle () {
       static const float dt = 1 / 30.0;
       const float elapsed = m_timer.elapsed ();
+      static float total_time = 0.0f;
 
       if (elapsed >= dt)
 	{
 	  m_timer.reset ();
+	  total_time += elapsed;
+          
+          // Update sky parameters for day/night cycle
+          float day_length = 240.0f; // 4 minutes per day for a slower, more enjoyable cycle
+          float day_time = fmod(total_time, day_length) / day_length;
+          
+          // Use smoother transition with a sine wave (offset to start at sunrise)
+          float sun_height = sin((day_time * 3.14159f * 2.0f) - 3.14159f * 0.5f);
+          
+          // Make sun height range from 0.0 to 1.0 (night to day)
+          sun_height = (sun_height + 1.0f) * 0.5f;
+          
+          // Update sky parameters
+          m_sky.set_time(total_time);
+          m_sky.set_sun_height(sun_height);
+          
+          // Create more interesting cloud patterns:
+          // 1. Base cloudiness that changes slowly over time
+          float base_cloudiness = sin(total_time * 0.0003f) * 0.4f + 0.5f;
+          
+          // 2. Add weather front that passes by occasionally
+          float weather_front = 0.3f * pow(sin(total_time * 0.0008f), 2.0f);
+          
+          // 3. Small rapid variations for more dynamic feeling
+          float small_variations = sin(total_time * 0.02f) * 0.05f;
+          
+          // Combine all factors for final cloudiness
+          float cloudiness = base_cloudiness + weather_front + small_variations;
+          cloudiness = std::max(0.0f, std::min(1.0f, cloudiness)); // Clamp between 0 and 1
+          
+          m_sky.set_cloudiness(cloudiness);
+          
+          // Update fog color to match the sky horizon
+          Vector3D horizon_color = m_sky.get_horizon_color();
+          
+          // Update global fog color
+          fog = horizon_color;
+          
+          // Update the terrain shader's fog color
+          m_terrain_renderer.set_fog_color(horizon_color);
+          
+          // Update lighting based on sun position
+          update_dynamic_lighting(sun_height, total_time);
+          
+          // Using shadow mapping when available, with fallback to normal-based shadows
+          // when framebuffer objects aren't supported
+          
+          // Calculate sun direction from spherical coordinates
+          float sun_elevation = (sun_height - 0.5f) * 3.14159f; // -PI/2 to PI/2
+          float sun_angle = total_time * 1.0f; // Rotation around y-axis
+          Vector3D light_dir(
+              -cos(sun_elevation) * sin(sun_angle),
+              -sin(sun_elevation),
+              -cos(sun_elevation) * cos(sun_angle)
+          );
+          light_dir.normalize();
+          
+          // Adjust shadow strength based on sun height
+          // Even stronger shadows for more dramatic effect
+          float shadow_strength = 0.7f + sun_height * 0.3f;
+//          shadow_strength = 1.0;
+          
+          // Keep stronger shadows even at sun angles close to horizon
+          // This creates dramatic long shadows at sunrise/sunset
+          if (sun_height < 0.2f && sun_height > 0.02f) {
+              // Enhanced shadows at sunrise/sunset
+              shadow_strength = 0.9f;
+          } else if (sun_height <= 0.02f) {
+              // Fade out shadows at night
+              shadow_strength *= sun_height / 0.02f;
+          }
+          
+          // Enable the alternative shadowing technique
+          m_terrain_renderer.set_shadow_strength(shadow_strength);
+          
+          // Pass sun direction to the shader for normal-based shadowing
+          m_terrain_renderer.set_light_direction(light_dir);
+          
+          // Update shadow map using the current sun position
+          m_terrain_renderer.update_shadow_map(light_dir);
+          
 	  m_vehicle.update (elapsed);
 	  m_camera.update (m_vehicle.position (),
 			   m_vehicle.orientation (),
@@ -100,7 +207,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (100.0, 1.0 * width / height, 0.1, 800);
+      gluPerspective (100.0, 1.0 * width / height, 0.1, 2000);
       glutPostRedisplay ();
 
       check_gl ();
@@ -113,7 +220,7 @@ namespace moppe {
 		    KeyStatus status)
     {
       float factor = status == KEY_SPECIAL_PRESSED;
-      std::cout << status << std::endl;
+      //std::cout << status << std::endl;
 
       switch (code)
 	{
@@ -141,17 +248,21 @@ namespace moppe {
     }
 
     void render_scene () {
-      glClearColor (fog.x, fog.y, fog.z, 0);
+      // Use dynamic fog color for background clear with full alpha
+      glClearColor (fog.x, fog.y, fog.z, 1.0);
       glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
       glMatrixMode (GL_MODELVIEW);
       m_camera.realize ();
       
-//       {
-// 	gl::ScopedMatrixSaver matrix;
-// 	gl::translate (m_camera.position ());
-// 	//	m_sky.render ();
-//       }
+      // Make sure the terrain shader has the latest fog color
+      m_terrain_renderer.set_fog_color(fog);
+      
+      {
+	gl::ScopedMatrixSaver matrix;
+	gl::translate (m_camera.position ());
+		m_sky.render ();
+      }
       
       m_terrain_renderer.render ();
       m_terrain_renderer.translate ();
@@ -159,6 +270,7 @@ namespace moppe {
     }
 
     void display () {
+      // Use dynamic fog color for background clear
       glClearColor (fog.x, fog.y, fog.z, 0);
 
       render_scene ();
@@ -168,16 +280,127 @@ namespace moppe {
     }
 
   private:
-    void setup_lights () {
-      GLfloat ambient[] = {0.5, 0.5, 0.5, 1.0};
-      glLightModelfv (GL_LIGHT_MODEL_AMBIENT, ambient);
-
-      GLfloat light0_color[] = {0.8, 0.8, 0.8, 1.0};
-      GLfloat light0_specular[] = {1.0, 1.0, 0.0, 1.0};
-      GLfloat light0_position[] = {2, 40, 2};
-      glLightfv (GL_LIGHT0, GL_DIFFUSE, light0_color);
-      glLightfv (GL_LIGHT0, GL_SPECULAR, light0_specular);
-      glLightfv (GL_LIGHT0, GL_POSITION, light0_position);
+    void setup_lights() {
+      // Enable lighting to make terrain appear more rounded
+      glEnable(GL_LIGHTING);
+      glEnable(GL_LIGHT0);
+      glEnable(GL_LIGHT1); // Second light for fill
+      
+      // Enable smooth shading for rounded appearance
+      glShadeModel(GL_SMOOTH);
+      
+      // Enable separate specular color for better highlights
+      glLightModeli(GL_LIGHT_MODEL_COLOR_CONTROL, GL_SEPARATE_SPECULAR_COLOR);
+      
+      // Set initial lighting - will be updated dynamically
+      // Just calling with default values to initialize the lights
+      update_dynamic_lighting(0.5f, 0.0f);
+    }
+    
+    void update_dynamic_lighting(float sun_height, float time) {
+      // Calculate sun position based on height and time
+      // Sun follows a circular path, height controls elevation
+      float sun_angle = time * 0.01f; // Rotation around y-axis
+      
+      // Calculate sun direction vector
+      float sun_elevation = (sun_height - 0.5f) * 3.14159f; // -PI/2 to PI/2
+      
+      // Convert spherical to cartesian coordinates
+      float x = cos(sun_elevation) * sin(sun_angle);
+      float y = sin(sun_elevation);
+      float z = cos(sun_elevation) * cos(sun_angle);
+      
+      // Normalize direction
+      float length = sqrt(x*x + y*y + z*z);
+      x /= length;
+      y /= length;
+      z /= length;
+      
+      // Sun position (directional light)
+      GLfloat light0_position[] = {x, y, z, 0.0}; // Directional
+      
+      // Calculate light colors based on time of day
+      // Daylight - bright white/yellow
+      Vector3D day_color(1.0f, 0.98f, 0.9f);
+      
+      // Night - dim blue moonlight
+      Vector3D night_color(0.2f, 0.2f, 0.3f);
+      
+      // Sunset/sunrise - warm orange
+      Vector3D sunset_color(1.0f, 0.6f, 0.3f);
+      
+      // Ambient changes with time of day
+      Vector3D ambient_color;
+      Vector3D light_color;
+      Vector3D specular_color;
+      
+      // Check if we're in sunset/sunrise range (0.1-0.3 or 0.7-0.9)
+      bool is_sunset = (sun_height > 0.1f && sun_height < 0.3f) || 
+                       (sun_height > 0.7f && sun_height < 0.9f);
+      
+      if (is_sunset) {
+        // Calculate sunset intensity
+        float sunset_intensity;
+        if (sun_height < 0.5f) {
+          sunset_intensity = 1.0f - fabs(sun_height - 0.2f) / 0.1f;
+        } else {
+          sunset_intensity = 1.0f - fabs(sun_height - 0.8f) / 0.1f;
+        }
+        sunset_intensity = std::max(0.0f, std::min(1.0f, sunset_intensity));
+        
+        // Blend between day/night and sunset colors
+        float day_factor = (sun_height < 0.5f) ? sun_height / 0.5f : (1.0f - (sun_height - 0.5f) / 0.5f);
+        Vector3D base_color = night_color * (1.0f - day_factor) + day_color * day_factor;
+        
+        light_color = base_color * (1.0f - sunset_intensity) + sunset_color * sunset_intensity;
+        ambient_color = light_color * 0.4f;
+        specular_color = Vector3D(1.0f, 0.9f, 0.8f) * (0.7f + sunset_intensity * 0.3f);
+      } else {
+        // Normal day/night cycle
+        light_color = night_color * (1.0f - sun_height) + day_color * sun_height;
+        
+        // Ambient is stronger during day, weaker at night
+        float ambient_strength = 0.25f + sun_height * 0.35f;
+        ambient_color = light_color * ambient_strength;
+        
+        // Specular is stronger during day
+        float spec_strength = 0.4f + sun_height * 0.6f;
+        specular_color = Vector3D(0.8f, 0.8f, 0.9f) * spec_strength;
+      }
+      
+      // Apply ambient light
+      // GLfloat ambient[4] = {ambient_color.x, ambient_color.y, ambient_color.z, 1.0f};
+      // glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
+      
+      // Apply main directional light (sun/moon)
+      GLfloat light0_diffuse[4] = {light_color.x, light_color.y, light_color.z, 1.0f};
+      GLfloat light0_specular[4] = {specular_color.x, specular_color.y, specular_color.z, 1.0f};
+      
+      glLightfv(GL_LIGHT0, GL_POSITION, light0_position);
+      glLightfv(GL_LIGHT0, GL_DIFFUSE, light0_diffuse);
+      glLightfv(GL_LIGHT0, GL_SPECULAR, light0_specular);
+      
+      // // Add a fill light from the opposite direction (sky light)
+      // // Fill light position - opposite of main light but always above horizon
+      // GLfloat light1_position[4] = {-x, std::max(0.2f, -y), -z, 0.0f};
+      
+      // // Fill light is always blueish sky color, but intensity changes with sun height
+      // Vector3D fill_color = Vector3D(0.5f, 0.6f, 0.9f) * std::max(0.2f, sun_height * 0.4f);
+      // GLfloat light1_diffuse[4] = {fill_color.x, fill_color.y, fill_color.z, 1.0f};
+      // GLfloat light1_specular[4] = {0.0f, 0.0f, 0.0f, 1.0f}; // No specular for fill light
+      
+      // glLightfv(GL_LIGHT1, GL_POSITION, light1_position);
+      // glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+      // glLightfv(GL_LIGHT1, GL_SPECULAR, light1_specular);
+      
+      // Set terrain material properties for better interaction with our lighting
+      GLfloat mat_diffuse[4] = {0.9f, 0.9f, 0.9f, 1.0f};
+      GLfloat mat_specular[4] = {0.5f, 0.5f, 0.5f, 1.0f};
+      GLfloat mat_shininess[1] = {64.0f};
+      
+      glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, mat_diffuse);
+      glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+      glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
     }
 
   private:

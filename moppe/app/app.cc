@@ -16,7 +16,8 @@ namespace app {
   GLUTApplication::initialize (int &argc, char **argv, int mode)
   {
     ::glutInit (&argc, argv);
-    ::glutInitDisplayMode (mode);
+    // Enable multisampling for anti-aliasing
+    ::glutInitDisplayMode (mode | GLUT_MULTISAMPLE);
   }
 
   static void global_display_func ()
@@ -48,6 +49,9 @@ namespace app {
   {
     glutCreateWindow (m_title.c_str ());
     glutReshapeWindow (m_width, m_height);
+    
+    // Enable multisampling for anti-aliasing
+    glEnable(GL_MULTISAMPLE);
     
     glutDisplayFunc (global_display_func);
     glutReshapeFunc (global_reshape_func);

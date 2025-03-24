@@ -11,16 +11,21 @@ namespace util {
     int length;
     
     is.open (filename.c_str (), std::ios::binary);
+    
+    if (!is.is_open()) {
+      std::cerr << "Error: Could not open file " << filename << std::endl;
+      return "";
+    }
 
     is.seekg (0, std::ios::end);
     length = is.tellg ();
     is.seekg (0, std::ios::beg);
 
-    char* buffer = new char [length];
-    is.read (&buffer[0], length);
+    char* buffer = new char [length + 1];
+    is.read (buffer, length);
     is.close ();
 
-    buffer[length - 1] = 0;
+    buffer[length] = 0;
 
     std::string s (buffer);
     delete [] buffer;

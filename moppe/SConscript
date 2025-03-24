@@ -19,7 +19,7 @@ if sys.platform == "darwin":
             "#/vendor/glew/include",
         ],
         FRAMEWORKS=["OpenGL", "GLUT"],
-        CCFLAGS=["-DMAC"],
+        CCFLAGS=["-DMAC", "-DGL_SILENCE_DEPRECATION"],
     )
 
 Export("env")

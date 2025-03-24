@@ -239,9 +239,12 @@ namespace map {
   {
     normal_map.reset ();
 
+    // Calculate weighted normals for smoother curved terrain
+    // Use a larger neighborhood and weighted averaging
     for (int y = 0; y < height_map.height () - 1; ++y)
       for (int x = 0; x < height_map.width () - 1; ++x)
 	{
+	  // Standard triangles
 	  Vector3D left =
 	    height_map.triangle_normal (x, y,
 					x, y + 1,
@@ -251,6 +254,7 @@ namespace map {
 					x + 1, y + 1,
 					x + 1, y);
 
+	  // Weight by 1.0 for direct triangles
 	  normal_map.add (x, y, left);
 	  normal_map.add (x, y + 1, left);
 	  normal_map.add (x + 1, y + 1, left);
@@ -258,6 +262,35 @@ namespace map {
 	  normal_map.add (x, y, right);
 	  normal_map.add (x + 1, y, right);
 	  normal_map.add (x + 1, y + 1, right);
+          
+          // Add neighbor triangles for smoother transitions
+          // Only add to inner vertices to avoid edge issues
+          if (x > 0 && y > 0 && x < height_map.width() - 2 && y < height_map.height() - 2) {
+            // Add diagonal neighbors with half weight
+            for (int dy = -1; dy <= 1; dy++) {
+              for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue; // Skip self
+                
+                // Only consider valid triangles
+                if (x+dx >= 0 && y+dy >= 0 && 
+                    x+dx < height_map.width()-1 && y+dy < height_map.height()-1) {
+                  
+                  Vector3D neighbor_left =
+                    height_map.triangle_normal (x+dx, y+dy,
+                                            x+dx, y+dy+1,
+                                            x+dx+1, y+dy+1);
+                  Vector3D neighbor_right =
+                    height_map.triangle_normal (x+dx, y+dy,
+                                            x+dx+1, y+dy+1,
+                                            x+dx+1, y+dy);
+                                            
+                  // Add with reduced weight (0.3) for smoothing
+                  normal_map.add (x, y, neighbor_left * 0.3);
+                  normal_map.add (x, y, neighbor_right * 0.3);
+                }
+              }
+            }
+          }
 	}
 
     normal_map.normalize_all ();

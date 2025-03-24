@@ -53,6 +53,26 @@ namespace gl {
     {
       glUniform1iARB (glGetUniformLocationARB (m_id, name), x);
     }
+    
+    void set_float (const char *name, float x)
+    {
+      glUniform1fARB (glGetUniformLocationARB (m_id, name), x);
+    }
+    
+    void set_vec3 (const char *name, float x, float y, float z)
+    {
+      glUniform3fARB (glGetUniformLocationARB (m_id, name), x, y, z);
+    }
+    
+    void set_vec4 (const char *name, float x, float y, float z, float w)
+    {
+      glUniform4fARB (glGetUniformLocationARB (m_id, name), x, y, z, w);
+    }
+    
+    void set_matrix (const char *name, const GLfloat *matrix)
+    {
+      glUniformMatrix4fvARB (glGetUniformLocationARB (m_id, name), 1, GL_FALSE, matrix);
+    }
 
     void print_log () const
     { print_shader_log ("program", m_id); }
