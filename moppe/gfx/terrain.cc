@@ -191,6 +191,10 @@ namespace gfx {
     glEnable(GL_LIGHTING);
     glEnable(GL_NORMALIZE); // Normalize normals for better lighting
     
+    // Enable alpha blending for transparent fog effect
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
     m_shader_program.use();
 
     // Bind terrain textures
@@ -272,6 +276,9 @@ namespace gfx {
     }
     
     m_shader_program.unuse();
+    
+    // Disable blending when done
+    glDisable(GL_BLEND);
 
 //     glLineWidth (1);
 //     glBegin (GL_LINES);

@@ -28,10 +28,17 @@ void main () {
   fog = 1.0 - exp(-pow(distance * 0.0015, 1.6));
   fog = clamp(fog, 0.0, 1.0);
   
-  // Add edge detection for ridge lines and silhouettes
-  // This will be used in the fragment shader to soften edges
-  float edge_factor = abs(dot(normalize(position.xyz), normalize(normal)));
-  edge_factor = 1.0 - pow(edge_factor, 4.0); // Higher value = more sensitive edge detection
+  // Improved edge detection for silhouettes against the sky
+  // Get view vector (from vertex to camera)
+  vec3 view_dir = normalize(-position.xyz);
+  
+  // Calculate the dot product between the normal and view vector
+  // This identifies edges where terrain meets sky (silhouettes)
+  float edge_factor = abs(dot(normalize(normal), view_dir));
+  
+  // Adjust the edge factor to get sharper silhouette detection
+  // A lower value in the power function creates sharper silhouette detection
+  edge_factor = 1.0 - pow(edge_factor, 2.0); 
   
   // Pass edge factor to fragment shader
   gl_FrontSecondaryColor = vec4(edge_factor, 0.0, 0.0, 1.0);

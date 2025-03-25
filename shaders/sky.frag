@@ -85,26 +85,27 @@ vec3 atmosphere(vec3 rayDir, vec3 sunDir) {
     
     vec3 baseColor;
     
-    if (signZenith >= 0.0) {
+//    if (signZenith >= 0.0) {
         // Upper hemisphere (sky)
         // Day-night interpolation
         vec3 zenithColor = mix(night_zenith, day_zenith, sunHeight);
         vec3 horizonColor = mix(night_horizon, day_horizon, sunHeight);
         
         // Base sky color
-        baseColor = mix(zenithColor, horizonColor, atmosphericThickness);
+        //baseColor = mix(zenithColor, horizonColor, atmosphericThickness);
+        baseColor = horizonColor;
         
         // Add Rayleigh and Mie scattering
-        baseColor += rayleigh * sunHeight;
-        baseColor += mie * sunHeight;
-    } else {
-        // Lower hemisphere (ground)
-        // Darken the ground color based on time of day
-        baseColor = ground_color * max(0.2, sunHeight);
+        //baseColor += rayleigh * sunHeight;
+        //baseColor += mie * sunHeight;
+    //} else {
+    //    // Lower hemisphere (ground)
+      //  // Darken the ground color based on time of day
+        //baseColor = ground_color * max(0.2, sunHeight);
         
         // Add a subtle gradient toward horizon
-        baseColor = mix(baseColor, mix(night_horizon, day_horizon, sunHeight), pow(1.0 - absZenith, 8.0));
-    }
+        //baseColor = mix(baseColor, mix(night_horizon, day_horizon, sunHeight), pow(1.0 - absZenith, 8.0));
+//    }
     
     return baseColor;
 }

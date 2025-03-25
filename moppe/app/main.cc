@@ -14,11 +14,11 @@ namespace moppe {
   using namespace map;
   using namespace app;
 
-  const Vector3D map_size (4000 * one_meter,
-			   900 * one_meter,
-			   4000 * one_meter);
+  const Vector3D map_size (8000 * one_meter,
+			   2000 * one_meter,
+			   8000 * one_meter);
 
-  const int resolution = 513; // Higher resolution for smoother terrain
+  const int resolution = 1025; // Higher resolution for smoother terrain
 
   // Dynamic fog color will be set based on sky horizon colors
   Vector3D fog (0.5, 0.5, 0.5);
@@ -81,8 +81,10 @@ namespace moppe {
       setup_lights ();
 
       std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally (1.0);
+      m_map1.randomize_plasmally (0.9);
       std::cout << "done!\n";
+
+      m_map1.apply_bowl_edge(0.3, 0.05);
 
       m_mouse.set_pitch_limits (-15, 10);
 
@@ -110,15 +112,10 @@ namespace moppe {
           
           // Update sky parameters for day/night cycle
           float day_length = 240.0f; // 4 minutes per day for a slower, more enjoyable cycle
-          float day_time = fmod(total_time, day_length) / day_length;
+//          float day_time = fmod(total_time, day_length) / day_length;
+
+          float day_time = 0.3f;
           
-          // Set initial time to morning (0.25 = morning in day cycle)
-          float initial_day_offset = 0.25f;
-          if (total_time < 0.1f) {  // Only apply offset at the very start
-              day_time = initial_day_offset;
-          }
-          
-          // Use smoother transition with a sine wave (offset to start at sunrise)
           float sun_height = sin((day_time * 3.14159f * 2.0f) - 3.14159f * 0.5f);
           
           // Make sun height range from 0.0 to 1.0 (night to day)
@@ -223,7 +220,7 @@ namespace moppe {
       glLoadIdentity ();
 
       glViewport (0, 0, width, height);
-      gluPerspective (100.0, 1.0 * width / height, 0.1, 2000);
+      gluPerspective (100.0, 1.0 * width / height, 0.1, 5000);
       glutPostRedisplay ();
 
       check_gl ();

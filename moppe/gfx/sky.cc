@@ -81,7 +81,7 @@ namespace gfx {
       
       // Draw a full sphere that completely surrounds the scene
       // Using a sphere instead of dome to ensure complete coverage
-      float radius = 4000.0f;  // Much larger radius to encompass terrain at all elevations
+      float radius = 8000.0f;  // Much larger radius to encompass terrain at all elevations
       int slices = 32;         // Horizontal resolution
       int stacks = 32;         // Vertical resolution (full sphere)
       

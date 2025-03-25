@@ -153,6 +153,7 @@ namespace map {
     
     void randomize_uniformly ();
     void randomize_plasmally (float roughness);
+    void apply_bowl_edge     (float edge_height, float smoothness);
     
   private:
     typedef boost::multi_array<float, 2> array_t;

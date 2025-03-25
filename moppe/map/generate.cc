@@ -1,4 +1,3 @@
-
 #include <moppe/map/generate.hh>
 #include <moppe/map/tga.hh>
 #include <moppe/gfx/math.hh>
@@ -231,6 +230,54 @@ namespace map {
 	}
 
     tga::write_gray8 (stream, data, w, h);
+  }
+
+  void
+  RandomHeightMap::apply_bowl_edge(float edge_height, float smoothness)
+  {
+    // Generate separate bowl shape and blend with height map
+    FORALL(x, y)
+    {
+      // Calculate normalized coordinates (-1 to 1)
+      float center_x = m_width / 2.0f;
+      float center_y = m_height / 2.0f;
+      float nx = (x - center_x) / center_x;  // Normalized x: -1 to 1
+      float ny = (y - center_y) / center_y;  // Normalized y: -1 to 1
+      
+      // Generate bowl shape
+      float bowl_height = 0.0f;
+      
+      // Calculate distance to each edge and corner
+      float dist_edge_left = std::abs(nx + 1.0f);   // Distance to left edge
+      float dist_edge_right = std::abs(nx - 1.0f);  // Distance to right edge
+      float dist_edge_top = std::abs(ny + 1.0f);    // Distance to top edge
+      float dist_edge_bottom = std::abs(ny - 1.0f); // Distance to bottom edge
+      
+      // Find minimum distance to any edge
+      float min_edge_dist = std::min(std::min(dist_edge_left, dist_edge_right), 
+                                     std::min(dist_edge_top, dist_edge_bottom));
+      
+      // Normalize to 0-1 range (0 at edge, 1 at center)
+      float normalized_dist = min_edge_dist / 2.0f;
+      
+      // Control transition width with smoothness parameter
+      if (normalized_dist < smoothness) {
+        // Create smooth transition at edges
+        float t = normalized_dist / smoothness;
+        // Use smoothstep function for gradual transition: 3t² - 2t³
+        float smooth_t = t * t * (3.0f - 2.0f * t);
+        // Edge height increases as we approach the edge
+        bowl_height = edge_height * (1.0f - smooth_t);
+      }
+      
+      // Apply the bowl shape by subtracting from the height map
+      // This creates a depression around the edges
+      set(x, y, get(x, y) + bowl_height);
+    }
+    
+    // Recompute normals after the height adjustment
+    normalize();
+    recompute_normals();
   }
 
   void

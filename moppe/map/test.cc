@@ -17,7 +17,11 @@ main (int argc, char **argv)
       RandomHeightMap map (513, 513, moppe::Vector3D (1, 1, 1), seed);
       std::cerr << "Randomizing...";
       map.randomize_plasmally (0.7);
-      std::cerr << "\ndone.\n";
+      std::cerr << "done.\n";
+      
+      std::cerr << "Applying bowl edge effect...";
+      map.apply_bowl_edge(1.0, 0.01);
+      std::cerr << "done.\n";
 
       std::cerr << "Writing to test.tga...";
       std::ofstream f ("test.tga", std::ofstream::binary);

@@ -50,7 +50,7 @@ namespace mov {
         }
         
         // Smoothly blend orientations over time
-        float alpha = 1.0f; // m_is_first_update ? 1.0f : 0.1f;
+        float alpha = m_is_first_update ? 1.0f : 0.1f;
         m_avg_orientation = linear_vector_interpolate(m_avg_orientation, target_orientation, alpha);
         m_avg_orientation.normalize();
         
@@ -82,13 +82,12 @@ namespace mov {
   {
     // Increase the grounding tolerance to prevent "stuck in mud" effect
     return std::abs (ground_height () - m_position.y) <
-      (radius + 0.3 * one_meter);
+      (radius + 0.5 * one_meter);
   }
 
   Vector3D
   Vehicle::drag () const {
-    // Much lower base drag factor for better acceleration
-    float drag_factor = 0.01f;
+    float drag_factor = 0.1f;
     
     // Different drag in different directions
     Vector3D velocity_dir = m_velocity.normalized();
@@ -131,23 +130,30 @@ namespace mov {
     // Update skidding mechanics
     if (is_grounded ())
       {
-        // Calculate movement speed
         float speed = m_velocity.length();
-              
-        // Apply a much stronger thrust multiplier
-        float thrust_multiplier = 2.0f; // Base multiplier is 3x higher
-                
+        float thrust_multiplier = 1.0f;
+        
+        // Apply thrust force in the direction of yaw
         f += m_thrust_orientation * m_thrust * m_max_thrust * thrust_multiplier;
         f -= n * g;
+        
+        // Directly modify velocity based on yaw for more responsive turning
+        if (speed > 0.1f) {
+          // Create rotation vector based on yaw change
+          Vector3D desired_direction(cos(m_yaw), 0, sin(m_yaw));
+          
+          // Gradually rotate velocity toward the desired direction
+          float turn_responsiveness = 4.0f * dt; // Adjust this value to control turning speed
+          Vector3D current_direction = m_velocity.normalized();
+          Vector3D new_direction = (current_direction + desired_direction * turn_responsiveness).normalized();
+          
+          // Apply the new direction while preserving speed
+          m_velocity = new_direction * speed;
+        }
       }
 
     // Calculate acceleration
     Vector3D drag_force = drag();
-    
-    // Reduce drag during initial acceleration to prevent "stuck in mud" effect
-    if (is_grounded() && m_thrust > 0.5f && m_velocity.length() < 15.0f) {
-      drag_force = drag_force * 0.2f; // 80% reduction in drag during initial acceleration
-    }
 
     Vector3D a (f / m_mass + drag_force + Vector3D (0, g, 0));
     m_velocity += a * dt;
@@ -173,9 +179,10 @@ namespace mov {
   Vehicle::bound () {
     if (!m_map.in_bounds (m_position.x, m_position.z))
       {
-	m_velocity = (m_map.center () + Vector3D (0, 1500, 0) - m_position);
-	m_velocity.normalize ();
-	m_velocity *= (400 / 3.6);
+	      m_velocity *= -1;
+        // clamp
+        m_position.x = std::max(0.0f, std::min(m_position.x, m_map.width() * m_map.scale().x));
+        m_position.z = std::max(0.0f, std::min(m_position.z, m_map.height() * m_map.scale().z));
       }
   }
 

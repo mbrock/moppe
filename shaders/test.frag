@@ -205,24 +205,31 @@ void main () {
 
   ct = texel.rgb; at = texel.a;
   
-  // Enhanced fog blending with smoother transition and alpha fade
+  // Get fog factor for distance
   float fog_factor = smoothstep(0.0, 0.9, gl_FogFragCoord);
-  
-  // Calculate alpha based on distance for sky blending only at the horizon edges
-  // The further away, the more transparent only at silhouette edges
-  float edge_alpha = 1.0;
   
   // Get edge detection factor from vertex shader
   float edge_factor = gl_SecondaryColor.r;
   
-  // Only apply transparency at the very edges where terrain meets sky
-  // This creates soft anti-aliased silhouettes without making mountains transparent
-  if (edge_factor > 0.7 && gl_FogFragCoord > 0.6) {
-    edge_alpha = mix(1.0, 0.3, (edge_factor - 0.7) * 3.3 * min(1.0, gl_FogFragCoord));
+  // Only apply transparency at silhouette edges where terrain meets sky
+  // Keep regular fog color blending for the rest of the terrain
+  float alpha = 1.0;
+  
+  // Create a stronger edge detection threshold for silhouettes
+  // Only apply transparency at edges where terrain meets sky
+  if (edge_factor > 0.4) { // Lower threshold to catch more of the silhouette
+    // Calculate transparency based on:
+    // 1. How strong the edge is (more transparent at more defined edges)
+    // 2. Distance (more transparent at greater distances)
+    float edge_strength = (edge_factor - 0.4) / 0.6; // Normalize 0.4-1.0 to 0.0-1.0
+    float distance_factor = min(1.0, gl_FogFragCoord * 1.2); // More aggressive with distance
+    
+    // Progressive transparency that's stronger at sharper silhouettes and at distance
+    alpha = mix(1.0, 0.0, edge_strength * distance_factor);
   }
   
-  gl_FragColor = vec4(mix(vec3(ct * cf), 
-                         fogColor,
-                         fog_factor), 
-                     at * af * edge_alpha);
+  // For non-silhouette areas, use regular fog color blending
+  vec3 color = mix(vec3(ct * cf), fogColor, fog_factor);
+  
+  gl_FragColor = vec4(color, alpha * at * af);
 }
