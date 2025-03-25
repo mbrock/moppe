@@ -1,4 +1,3 @@
-
 #include <moppe/app/gl.hh>
 #include <moppe/gfx/terrain.hh>
 
@@ -17,7 +16,11 @@ namespace gfx {
       m_shadow_strength(0.7f), // Default shadow strength (0.0 - 1.0)
       m_tex_grass ("textures/grass2.tga"),
       m_tex_dirt ("textures/dirt.tga"),
-      m_tex_snow ("textures/snow.tga")
+      m_tex_snow ("textures/snow.tga"),
+      m_vehicle_spotlight_enabled(false),
+      m_vehicle_spotlight_position(Vector3D(0, 0, 0)),
+      m_vehicle_spotlight_direction(Vector3D(0, 0, 1)),
+      m_vehicle_spotlight_intensity(15.0f)
   {
     // Don't create shadow map yet - it will be created in setup_shader() 
     // after OpenGL context is established
@@ -198,6 +201,24 @@ namespace gfx {
     m_tex_dirt.bind(1);
     m_tex_snow.bind(2);
     
+    // Set vehicle spotlight parameters
+    m_shader_program.set_bool("vehicleSpotlightEnabled", m_vehicle_spotlight_enabled);
+    if (m_vehicle_spotlight_enabled) {
+      m_shader_program.set_vec3("vehicleSpotlightPosition", 
+                               m_vehicle_spotlight_position.x,
+                               m_vehicle_spotlight_position.y,
+                               m_vehicle_spotlight_position.z);
+      m_shader_program.set_vec3("vehicleSpotlightDirection", 
+                               m_vehicle_spotlight_direction.x,
+                               m_vehicle_spotlight_direction.y,
+                               m_vehicle_spotlight_direction.z);
+      // Spotlight parameters
+      m_shader_program.set_float("vehicleSpotlightCutoff", 0.95f);      // cos(18 degrees) - very tight inner cone
+      m_shader_program.set_float("vehicleSpotlightOuterCutoff", 0.9f);  // cos(25 degrees) - narrow outer edge
+      m_shader_program.set_float("vehicleSpotlightIntensity", m_vehicle_spotlight_intensity);   // Use dynamic intensity
+      m_shader_program.set_vec3("vehicleSpotlightColor", 1.0f, 0.95f, 0.8f); // Warm white color
+    }
+    
     // Check if shadow mapping is available
     if (m_shadow_map && m_shadow_map->is_valid()) {
       // Bind shadow map texture
@@ -305,6 +326,33 @@ namespace gfx {
     m_shader_program.use();
     m_shader_program.set_vec3("sunDirection", light_dir.x, light_dir.y, light_dir.z);
     m_shader_program.unuse();
+  }
+  
+  // Set vehicle spotlight parameters for the shader
+  void
+  TerrainRenderer::set_vehicle_spotlight(bool enabled, const Vector3D& position, const Vector3D& direction) {
+    m_vehicle_spotlight_enabled = enabled;
+    m_vehicle_spotlight_position = position;
+    m_vehicle_spotlight_direction = direction;
+  }
+  
+  // Set spotlight intensity based on time of day
+  void
+  TerrainRenderer::set_spotlight_intensity(float sun_height) {
+    // Increase intensity at night, decrease during day
+    // At night (sun_height = 0.0), max intensity
+    // At day (sun_height = 1.0), min intensity
+    
+    // Base intensity range (higher intensity)
+    float min_intensity = 3.0f;    // Daytime intensity
+    float max_intensity = 10.0f;   // Nighttime intensity
+    
+    // Calculate intensity based on sun height with a smoother transition
+    float night_factor = 1.0f - std::min(1.0f, sun_height * 1.5f); // Faster transition to night intensity
+    night_factor = night_factor * night_factor; // Exponential falloff for smoother transition
+    
+    // Set the spotlight intensity
+    m_vehicle_spotlight_intensity = min_intensity + night_factor * (max_intensity - min_intensity);
   }
 }
 }

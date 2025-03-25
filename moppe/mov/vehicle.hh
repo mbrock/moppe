@@ -1,4 +1,3 @@
-
 #ifndef MOPPE_VEHICLE_HH
 #define MOPPE_VEHICLE_HH
 
@@ -26,10 +25,12 @@ namespace mov {
     void draw_debug_text () const {
       std::string text =
 	(boost::format ("Height: %1% meters. Speed: %2% km/h. "
-			"Thrust: %3% N.")
+			"Thrust: %3% N. Headlight: %4%. Skid: %5%")
 	 % (m_position.y / one_meter)
 	 % (((m_velocity.length ()) / 1000.0) * 3600.0)
-	 % (m_thrust * m_max_thrust)).str ();
+	 % (m_thrust * m_max_thrust)
+         % (m_headlight_on ? "ON" : "OFF")
+         % (m_skid_factor * 100.0f)).str ();
       gl::draw_glut_text (GLUT_BITMAP_HELVETICA_18,
 			  20, 60, text);
     }
@@ -45,6 +46,12 @@ namespace mov {
 
     void increase_thrust (magnitude_t dv)
     { m_thrust += dv; }
+    
+    void set_headlight(bool on)
+    { m_headlight_on = on; }
+    
+    bool is_headlight_on() const
+    { return m_headlight_on; }
 
     void set_camera () const {
       gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
@@ -59,7 +66,7 @@ namespace mov {
     }
 
     Vector3D position    () const { return m_position; }
-    Vector3D orientation () const { return m_velocity.normalized (); }
+    Vector3D orientation () const { return m_avg_orientation.normalized(); }
     Vector3D velocity () const { return m_velocity; }
 
   private:
@@ -81,14 +88,24 @@ namespace mov {
     Vector3D m_position;
     Vector3D m_velocity;
     Vector3D m_thrust_orientation;
+    Vector3D m_avg_orientation;
 
     radians_t m_yaw;
+    radians_t m_target_yaw;
+    
+    // Skid mechanics
+    float m_skid_factor;
+    float m_turn_rate;
+    Vector3D m_skid_direction;
 
     const HeightMap& m_map;
 
     const magnitude_t m_max_thrust;
     magnitude_t m_thrust;
     magnitude_t m_mass;
+    
+    bool m_headlight_on;
+    bool m_is_first_update;
   };
 }
 }

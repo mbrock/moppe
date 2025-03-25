@@ -3,11 +3,21 @@ varying vec3 normal, lightDir;
 varying float height, intensity;
 varying float snow_coef, rock_coef;
 varying vec4 shadowCoord; // For shadow mapping
+varying vec3 worldPos; // World position from vertex shader
 uniform sampler2D grass, dirt, snow;
 uniform sampler2DShadow shadowMap; // Shadow map texture
 uniform vec3 fogColor; // Dynamic fog color that matches sky
 uniform float shadowStrength; // Control shadow darkness (0.0-1.0)
 uniform vec3 sunDirection; // Current sun direction for normal-based shadows
+
+// Vehicle spotlight parameters
+uniform bool vehicleSpotlightEnabled;
+uniform vec3 vehicleSpotlightPosition;
+uniform vec3 vehicleSpotlightDirection;
+uniform float vehicleSpotlightCutoff;
+uniform float vehicleSpotlightOuterCutoff;
+uniform float vehicleSpotlightIntensity;
+uniform vec3 vehicleSpotlightColor;
 
 // Helper function for depth-based blur
 vec4 blurTexture(sampler2D tex, vec2 uv, float blur_amount) {
@@ -25,6 +35,42 @@ vec4 blurTexture(sampler2D tex, vec2 uv, float blur_amount) {
   sum += texture2D(tex, uv + vec2(-blur, -blur)) * 0.125;
   
   return sum;
+}
+
+// Calculate vehicle spotlight contribution
+vec3 calculateVehicleSpotlight(vec3 position) {
+  if (!vehicleSpotlightEnabled) {
+    return vec3(0.0);
+  }
+  
+  // Vector from light to fragment
+  vec3 lightToFrag = position - vehicleSpotlightPosition;
+  float distance = length(lightToFrag);
+  
+  // Normalize vectors
+  vec3 lightToFragDir = -normalize(lightToFrag);
+  
+  // Simply get the dot product directly - because we reversed the direction in the main application,
+  // this dot product will be positive when the fragment is in the light cone
+  float spotDot = dot(lightToFragDir, vehicleSpotlightDirection);
+  
+  // If the fragment is outside the spotlight cone, no contribution
+  if (spotDot < vehicleSpotlightOuterCutoff) {
+    return vec3(0.0);
+  }
+  
+  // Smooth edge between inner and outer cone
+  float spotEffect = smoothstep(vehicleSpotlightOuterCutoff, vehicleSpotlightCutoff, spotDot);
+  
+  // Simple distance attenuation
+  float attenuation = 1.0 / (1.0 + 0.05 * distance);
+  
+  // Normal lighting calculation
+  vec3 lightDir = -lightToFragDir;
+  float normalFactor = max(0.0, dot(normal, lightDir));
+  
+  // Final calculation - simple but effective
+  return vehicleSpotlightColor * spotEffect * attenuation * normalFactor * vehicleSpotlightIntensity;
 }
 
 // PCF shadow mapping - samples multiple points for soft shadows
@@ -135,6 +181,11 @@ void main () {
   
   // Apply shadow to diffuse component (keep ambient)
   vec3 lit_color = intensity * diffuse.rgb * shadowFactor + ambient.rgb;
+  
+  // Add vehicle spotlight contribution
+  vec3 spotlightContribution = calculateVehicleSpotlight(worldPos);
+  lit_color += spotlightContribution;
+  
   cf = lit_color;
   af = diffuse.a;
 

@@ -1,4 +1,3 @@
-
 #include <moppe/app/app.hh>
 #include <moppe/gfx/camera.hh>
 #include <moppe/gfx/mouse.hh>
@@ -37,7 +36,8 @@ namespace moppe {
 	m_vehicle (Vector3D (50 * one_meter, 600 * one_meter,
 			     50 * one_meter), 45, m_map1,
 		   5000, 150),
-	m_sky ("textures/sky.tga")
+	m_sky ("textures/sky.tga"),
+        m_vehicle_light_enabled(true)
     { }
 
     void setup () {
@@ -98,9 +98,10 @@ namespace moppe {
     }
 
     void idle () {
-      static const float dt = 1 / 30.0;
+      static const float dt = 1 / 60.0;
       const float elapsed = m_timer.elapsed ();
       static float total_time = 0.0f;
+      static float last_shadow_update = 0.0f;
 
       if (elapsed >= dt)
 	{
@@ -110,6 +111,12 @@ namespace moppe {
           // Update sky parameters for day/night cycle
           float day_length = 240.0f; // 4 minutes per day for a slower, more enjoyable cycle
           float day_time = fmod(total_time, day_length) / day_length;
+          
+          // Set initial time to morning (0.25 = morning in day cycle)
+          float initial_day_offset = 0.25f;
+          if (total_time < 0.1f) {  // Only apply offset at the very start
+              day_time = initial_day_offset;
+          }
           
           // Use smoother transition with a sine wave (offset to start at sunrise)
           float sun_height = sin((day_time * 3.14159f * 2.0f) - 3.14159f * 0.5f);
@@ -149,6 +156,9 @@ namespace moppe {
           // Update lighting based on sun position
           update_dynamic_lighting(sun_height, total_time);
           
+          // Update spotlight intensity based on time of day
+          m_terrain_renderer.set_spotlight_intensity(sun_height);
+          
           // Using shadow mapping when available, with fallback to normal-based shadows
           // when framebuffer objects aren't supported
           
@@ -165,7 +175,6 @@ namespace moppe {
           // Adjust shadow strength based on sun height
           // Even stronger shadows for more dramatic effect
           float shadow_strength = 0.7f + sun_height * 0.3f;
-//          shadow_strength = 1.0;
           
           // Keep stronger shadows even at sun angles close to horizon
           // This creates dramatic long shadows at sunrise/sunset
@@ -184,7 +193,14 @@ namespace moppe {
           m_terrain_renderer.set_light_direction(light_dir);
           
           // Update shadow map using the current sun position
-          m_terrain_renderer.update_shadow_map(light_dir);
+          // only once per second
+          if (total_time - last_shadow_update >= 1.0f) {
+            m_terrain_renderer.update_shadow_map(light_dir);
+            last_shadow_update = total_time;
+          }
+          
+          // Update vehicle spotlight in the terrain shader
+          update_vehicle_spotlight();
           
 	  m_vehicle.update (elapsed);
 	  m_camera.update (m_vehicle.position (),
@@ -239,6 +255,18 @@ namespace moppe {
 	case GLUT_KEY_DOWN:
 	  m_vehicle.set_thrust (-1 * factor);
 	  break;
+  case 'l':
+  case 'L':
+    // Toggle vehicle light on/off
+    if (status == KEY_PRESSED) {
+      m_vehicle_light_enabled = !m_vehicle_light_enabled;
+      // Update the vehicle's headlight status
+      m_vehicle.set_headlight(m_vehicle_light_enabled);
+      
+      // The actual light will be updated in the next render frame
+      // when update_vehicle_spotlight() is called
+    }
+    break;
 	}
     }
 
@@ -295,6 +323,9 @@ namespace moppe {
       // Set initial lighting - will be updated dynamically
       // Just calling with default values to initialize the lights
       update_dynamic_lighting(0.5f, 0.0f);
+      
+      // Initialize vehicle spotlight in shader
+      update_vehicle_spotlight();
     }
     
     void update_dynamic_lighting(float sun_height, float time) {
@@ -368,7 +399,7 @@ namespace moppe {
         specular_color = Vector3D(0.8f, 0.8f, 0.9f) * spec_strength;
       }
       
-      // Apply ambient light
+      // // Apply ambient light
       // GLfloat ambient[4] = {ambient_color.x, ambient_color.y, ambient_color.z, 1.0f};
       // glLightModelfv(GL_LIGHT_MODEL_AMBIENT, ambient);
       
@@ -403,6 +434,25 @@ namespace moppe {
       glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
     }
 
+    void update_vehicle_spotlight() {
+      // Get vehicle position and orientation
+      Vector3D vehicle_pos = m_vehicle.position();
+      Vector3D vehicle_dir = m_vehicle.orientation();
+      
+      // Position spotlight slightly above and in front of the vehicle
+      Vector3D light_pos = vehicle_pos + Vector3D(0, 1 * one_meter, 0) + vehicle_dir * 1 * one_meter;
+      
+      // Reverse the direction for the shader
+      Vector3D reversed_dir = -vehicle_dir;
+      
+      // Update the terrain shader with the vehicle spotlight parameters
+      m_terrain_renderer.set_vehicle_spotlight(
+        m_vehicle_light_enabled,
+        light_pos,
+        reversed_dir
+      );
+    }
+
   private:
     gfx::ThirdPersonCamera m_camera;
     gfx::MouseCameraController m_mouse;
@@ -413,6 +463,7 @@ namespace moppe {
     gfx::TerrainRenderer m_terrain_renderer;
     mov::Vehicle m_vehicle;
     gfx::Sky m_sky;
+    bool m_vehicle_light_enabled;
   };
 }
 

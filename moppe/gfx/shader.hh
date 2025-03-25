@@ -74,6 +74,11 @@ namespace gl {
       glUniformMatrix4fvARB (glGetUniformLocationARB (m_id, name), 1, GL_FALSE, matrix);
     }
 
+    void set_bool (const char *name, bool x)
+    {
+      glUniform1iARB (glGetUniformLocationARB (m_id, name), x);
+    }
+
     void print_log () const
     { print_shader_log ("program", m_id); }
 

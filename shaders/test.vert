@@ -2,6 +2,7 @@ varying vec4 diffuse, ambient;
 varying vec3 normal, lightDir;
 varying float height, intensity, rock_coef, snow_coef;
 varying vec4 shadowCoord; // For shadow mapping
+varying vec3 worldPos; // World position for vehicle spotlight calculations
 uniform mat4 lightMatrix; // Light's view-projection matrix
 
 float smoothstepVar (float edge1, float edge2, float curve, float value) {
@@ -18,6 +19,9 @@ void main () {
   float density = 0.65; // Reduced for more subtle fog
   vec4 position = ftransform();
   height = gl_Vertex.y/900.0;
+  
+  // Pass the world position for spotlight calculations
+  worldPos = gl_Vertex.xyz;
   
   // Improved fog calculation with better distance scaling
   float distance = length(position.xyz);

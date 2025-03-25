@@ -34,6 +34,12 @@ namespace gfx {
     void set_shadow_strength(float strength) { m_shadow_strength = strength; }
     float get_shadow_strength() const { return m_shadow_strength; }
     void set_light_direction(const Vector3D& light_dir);
+    
+    // Vehicle spotlight support
+    void set_vehicle_spotlight(bool enabled, const Vector3D& position, const Vector3D& direction);
+    
+    // Set spotlight intensity based on time of day (sun_height between 0.0-1.0)
+    void set_spotlight_intensity(float sun_height);
 
   private:
     const map::HeightMap& m_map;
@@ -58,6 +64,12 @@ namespace gfx {
     gl::Texture m_tex_grass;
     gl::Texture m_tex_dirt;
     gl::Texture m_tex_snow;
+    
+    // Vehicle spotlight state
+    bool m_vehicle_spotlight_enabled;
+    Vector3D m_vehicle_spotlight_position;
+    Vector3D m_vehicle_spotlight_direction;
+    float m_vehicle_spotlight_intensity;
   };
 }
 }
