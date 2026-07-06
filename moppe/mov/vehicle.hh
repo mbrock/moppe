@@ -46,6 +46,24 @@ namespace mov {
     void increase_thrust (magnitude_t dv)
     { m_thrust += dv; }
 
+    void rocket_jump ();
+
+    void set_water_level (float level)
+    { m_water_level = level; }
+
+    bool grounded () const { return is_grounded (); }
+
+    // Sideways speed relative to where the bike points; big when
+    // drifting, ~zero when rolling straight
+    float drift_speed () const {
+      float vf = m_velocity.dot (m_heading);
+      return (m_velocity - m_heading * vf).length ();
+    }
+
+    // Downward speed of the last hard landing; reading it clears it
+    float pop_impact ()
+    { float i = m_impact; m_impact = 0; return i; }
+
     void set_camera () const {
       gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
       
@@ -59,10 +77,12 @@ namespace mov {
     }
 
     Vector3D position    () const { return m_position; }
-    Vector3D orientation () const { return m_velocity.normalized (); }
+    Vector3D orientation () const { return m_heading; }
     Vector3D velocity () const { return m_velocity; }
 
   private:
+    void steer (seconds_t dt);
+    void apply_grip (seconds_t dt, const Vector3D& n);
     void calculate_orientation ();
     void fall_to_ground ();
     void check_ground_collision ();
@@ -80,6 +100,7 @@ namespace mov {
   private:
     Vector3D m_position;
     Vector3D m_velocity;
+    Vector3D m_heading;
     Vector3D m_thrust_orientation;
 
     radians_t m_yaw;
@@ -89,6 +110,13 @@ namespace mov {
     const magnitude_t m_max_thrust;
     magnitude_t m_thrust;
     magnitude_t m_mass;
+
+    seconds_t m_rocket_time;
+    seconds_t m_rocket_cooldown;
+    float m_water_level;
+
+    seconds_t m_airborne_time;
+    float m_impact;
   };
 }
 }

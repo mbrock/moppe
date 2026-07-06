@@ -5,7 +5,7 @@ import os
 
 env = Environment(
     CXX="g++",
-    CCFLAGS=["-g", "-DDEBUG=1", "-Wall", "-std=c++11"],
+    CCFLAGS=["-g", "-DDEBUG=1", "-Wall", "-std=c++11", "-O3"],
     CPPPATH=["#/", "#/vendor/boost", "#/vendor/include"],
     LIBPATH=["#/moppe", "#/vendor/lib"],
     ENV={"PATH": os.environ["PATH"]},

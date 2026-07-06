@@ -48,11 +48,14 @@ namespace app {
   GLUTApplication::run_main_loop ()
   {
     glutCreateWindow (m_title.c_str ());
-    glutReshapeWindow (m_width, m_height);
+    glutFullScreen ();
     
     // Enable multisampling for anti-aliasing
     glEnable(GL_MULTISAMPLE);
     
+    // Only real presses and releases; no auto-repeat events
+    glutIgnoreKeyRepeat (1);
+
     glutDisplayFunc (global_display_func);
     glutReshapeFunc (global_reshape_func);
     glutKeyboardFunc (global_keyboard_func);

@@ -10,5 +10,6 @@ env.Library('../moppe-gfx', ['camera.cc',
                              'texture.cc',
                              'tga.cc',
                              'sky.cc',
-                             'shadow.cc'])
+                             'shadow.cc',
+                             'ocean.cc'])
 

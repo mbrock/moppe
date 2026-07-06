@@ -7,9 +7,12 @@
 #include <moppe/gfx/texture.hh>
 #include <moppe/gfx/shadow.hh>
 
+#include <moppe/app/gl.hh>
+
 #include <boost/scoped_array.hpp>
 #include <boost/shared_ptr.hpp>
 #include <memory>
+#include <vector>
 
 namespace moppe {
 namespace gfx {
@@ -36,11 +39,22 @@ namespace gfx {
     void set_light_direction(const Vector3D& light_dir);
 
   private:
+    void upload_buffers ();
+    void draw_strips ();
+
+  private:
     const map::HeightMap& m_map;
 
     VertexArray m_vertices;
     VertexArray m_normals;
     VertexArray m_texcoords;
+
+    // Static terrain geometry lives on the GPU
+    GLuint m_vbo_vertices;
+    GLuint m_vbo_normals;
+    GLuint m_vbo_texcoords;
+    std::vector<GLint>   m_strip_first;
+    std::vector<GLsizei> m_strip_count;
 
     gl::Shader m_vertex_shader;
     gl::Shader m_fragment_shader;

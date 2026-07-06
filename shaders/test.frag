@@ -1,7 +1,7 @@
 varying vec4 diffuse, ambient;
 varying vec3 normal, lightDir;
 varying float height, intensity;
-varying float snow_coef, rock_coef;
+varying float snow_coef, rock_coef, beach_coef;
 varying vec4 shadowCoord; // For shadow mapping
 uniform sampler2D grass, dirt, snow;
 uniform sampler2DShadow shadowMap; // Shadow map texture
@@ -151,6 +151,10 @@ void main () {
   // Blend textures based on height
   texel = rock_coef * rocktexel + (1.0 - rock_coef) * texel;
   texel = snow_coef * snowtexel + (1.0 - snow_coef) * texel;
+
+  // Sandy beaches near the waterline: warm-tinted dirt texture
+  vec4 sandtexel = rocktexel * vec4(1.45, 1.30, 0.95, 1.0);
+  texel = mix(texel, sandtexel, beach_coef);
 
   ct = texel.rgb; at = texel.a;
   

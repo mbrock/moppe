@@ -150,6 +150,7 @@ namespace map {
     void normalize           ();
     void translate           (float d);
     void rescale             (float k);
+    void exponentiate        (float k);
     
     void randomize_uniformly ();
     void randomize_plasmally (float roughness);

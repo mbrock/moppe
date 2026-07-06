@@ -10,6 +10,9 @@ namespace gfx {
 
   TerrainRenderer::TerrainRenderer (const map::HeightMap& map)
     : m_map (map),
+      m_vbo_vertices (0),
+      m_vbo_normals (0),
+      m_vbo_texcoords (0),
       m_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/test.vert"),
       m_fragment_shader (GL_FRAGMENT_SHADER_ARB, "shaders/test.frag"),
       m_shadow_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/shadow.vert"),
@@ -58,6 +61,66 @@ namespace gfx {
 				     (y + 1) * tex_scale,
 				     0.0));
 	}
+
+    // Re-upload if the GL buffers already exist (i.e. not the
+    // initial pre-context call from the constructor)
+    if (m_vbo_vertices != 0)
+      upload_buffers ();
+  }
+
+  void
+  TerrainRenderer::upload_buffers () {
+    if (m_vbo_vertices == 0)
+      {
+	glGenBuffers (1, &m_vbo_vertices);
+	glGenBuffers (1, &m_vbo_normals);
+	glGenBuffers (1, &m_vbo_texcoords);
+      }
+
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices);
+    glBufferData (GL_ARRAY_BUFFER, m_vertices.size () * sizeof (float),
+		  m_vertices.address (0), GL_STATIC_DRAW);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals);
+    glBufferData (GL_ARRAY_BUFFER, m_normals.size () * sizeof (float),
+		  m_normals.address (0), GL_STATIC_DRAW);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_texcoords);
+    glBufferData (GL_ARRAY_BUFFER, m_texcoords.size () * sizeof (float),
+		  m_texcoords.address (0), GL_STATIC_DRAW);
+    glBindBuffer (GL_ARRAY_BUFFER, 0);
+
+    const int width  = m_map.width ();
+    const int height = m_map.height ();
+
+    m_strip_first.clear ();
+    m_strip_count.clear ();
+    for (int y = 0; y < height - 2; ++y)
+      {
+	m_strip_first.push_back (2 * y * (width - 1));
+	m_strip_count.push_back (2 * (width - 1));
+      }
+  }
+
+  void
+  TerrainRenderer::draw_strips () {
+    glEnableClientState (GL_VERTEX_ARRAY);
+    glEnableClientState (GL_NORMAL_ARRAY);
+    glEnableClientState (GL_TEXTURE_COORD_ARRAY);
+
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices);
+    glVertexPointer (3, GL_FLOAT, 0, 0);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals);
+    glNormalPointer (GL_FLOAT, 0, 0);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_texcoords);
+    glTexCoordPointer (3, GL_FLOAT, 0, 0);
+    glBindBuffer (GL_ARRAY_BUFFER, 0);
+
+    glMultiDrawArrays (GL_TRIANGLE_STRIP,
+		       &m_strip_first[0], &m_strip_count[0],
+		       (GLsizei) m_strip_first.size ());
+
+    glDisableClientState (GL_VERTEX_ARRAY);
+    glDisableClientState (GL_NORMAL_ARRAY);
+    glDisableClientState (GL_TEXTURE_COORD_ARRAY);
   }
 
   void
@@ -81,7 +144,8 @@ namespace gfx {
     m_fragment_shader.print_log ();
     m_shader_program.print_log ();
     
-    // Initialize shadow map with larger dimensions for more detail
+    // The sun is fixed so this renders only once; 4096 keeps the
+    // shadows reasonably crisp across the 6km terrain
     m_shadow_map.reset(new ShadowMap(4096, 4096));
 
     // Only load shadow mapping shader if shadow mapping is available
@@ -123,6 +187,9 @@ namespace gfx {
     // Initialize fog color to a default value
     Vector3D defaultFogColor(0.5, 0.6, 0.8);
     set_fog_color(defaultFogColor);
+
+    // Push the terrain geometry to the GPU
+    upload_buffers();
   }
 
   void
@@ -137,14 +204,10 @@ namespace gfx {
       Vector3D center(bounds.x / 2, bounds.y / 2, bounds.z / 2);
       float radius = sqrt(bounds.x * bounds.x + bounds.y * bounds.y + bounds.z * bounds.z) / 2;
       
-      // Use shadow mapping
-      std::cerr << "light_dir: " << light_dir << std::endl;
       m_shadow_map->update_light_position(light_dir, center, radius);
       m_shadow_map->begin_shadow_pass();
       render_for_shadow_map();
       m_shadow_map->end_shadow_pass();
-    } else {
-      std::cerr << "Shadow mapping not available - using normal-based shadows" << std::endl;
     }
   }
   
@@ -162,21 +225,10 @@ namespace gfx {
     
     // Pass light matrix to the shader
     m_shadow_program.set_matrix("lightMatrix", m_shadow_map->get_light_matrix());
-    
-    // Just render the geometry
-    int width = m_map.width();
-    int height = m_map.height();
-    
+
     translate();
-    
-    for (int y = 0; y < height - 2; ++y)
-      render_vertex_arrays(GL_TRIANGLE_STRIP,
-                          2 * y * (width - 1),
-                          2 * (width - 1),
-                          m_vertices,
-                          m_normals,
-                          m_texcoords);
-    
+    draw_strips();
+
     m_shadow_program.unuse();
   }
 
@@ -214,9 +266,6 @@ namespace gfx {
       m_shader_program.set_float("shadowStrength", 0.0f);
     }
 
-    int width = m_map.width();
-    int height = m_map.height();
-
     translate();
 
     // Material settings for better light reflections
@@ -234,13 +283,7 @@ namespace gfx {
     // Enable two-sided lighting for better results on steep terrain
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
 
-    for (int y = 0; y < height - 2; ++y)
-      render_vertex_arrays(GL_TRIANGLE_STRIP,
-			    2 * y * (width - 1),
-			    2 * (width - 1),
-			    m_vertices,
-			    m_normals,
-			    m_texcoords);
+    draw_strips();
 
     // Disable two-sided lighting to avoid affecting other objects
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
