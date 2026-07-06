@@ -348,6 +348,149 @@ namespace map {
     // NB: no recompute_normals() here -- the caller shapes further
   }
 
+  void
+  RandomHeightMap::erode_hydraulically (int droplets)
+  {
+    // Droplet erosion after Beyer (2015): each raindrop rolls
+    // downhill, picking up sediment while it accelerates and
+    // dropping it as it slows, carving gullies into mountainsides
+    // and building alluvial flats where valleys open out.
+    const float inertia    = 0.05f;
+    const float capacity_k = 4.0f;
+    const float min_slope  = 0.005f;
+    const float erode_k    = 0.3f;
+    const float deposit_k  = 0.3f;
+    const float evaporate  = 0.015f;
+    const float gravity    = 4.0f;
+    const int   max_steps  = 64;
+
+    boost::uniform_real<> range (0, 1);
+    realgen_t g (m_rng, range);
+
+    for (int d = 0; d < droplets; ++d)
+      {
+	float px = 1.0f + g () * (m_width - 3);
+	float py = 1.0f + g () * (m_height - 3);
+	float dirx = 0, diry = 0;
+	float speed = 1, water = 1, sediment = 0;
+
+	for (int step = 0; step < max_steps; ++step)
+	  {
+	    const int xi = (int) px, yi = (int) py;
+	    const float fx = px - xi, fy = py - yi;
+
+	    const float h00 = get (xi, yi);
+	    const float h10 = get (xi + 1, yi);
+	    const float h01 = get (xi, yi + 1);
+	    const float h11 = get (xi + 1, yi + 1);
+
+	    // Bilinear height and gradient under the droplet
+	    const float gradx =
+	      (h10 - h00) * (1 - fy) + (h11 - h01) * fy;
+	    const float grady =
+	      (h01 - h00) * (1 - fx) + (h11 - h10) * fx;
+	    const float height =
+	      h00 * (1 - fx) * (1 - fy) + h10 * fx * (1 - fy) +
+	      h01 * (1 - fx) * fy + h11 * fx * fy;
+
+	    // Inertia blends old direction with the slope
+	    dirx = dirx * inertia - gradx * (1 - inertia);
+	    diry = diry * inertia - grady * (1 - inertia);
+	    const float len = std::sqrt (dirx * dirx + diry * diry);
+	    if (len < 1e-10f)
+	      break;
+	    dirx /= len;
+	    diry /= len;
+
+	    const float nx = px + dirx;
+	    const float ny = py + diry;
+	    if (nx < 1 || nx >= m_width - 2 ||
+		ny < 1 || ny >= m_height - 2)
+	      break;
+
+	    const int nxi = (int) nx, nyi = (int) ny;
+	    const float nfx = nx - nxi, nfy = ny - nyi;
+	    const float nheight =
+	      get (nxi, nyi) * (1 - nfx) * (1 - nfy) +
+	      get (nxi + 1, nyi) * nfx * (1 - nfy) +
+	      get (nxi, nyi + 1) * (1 - nfx) * nfy +
+	      get (nxi + 1, nyi + 1) * nfx * nfy;
+
+	    const float dh = nheight - height;
+
+	    const float capacity =
+	      std::max (-dh, min_slope) * speed * water * capacity_k;
+
+	    if (sediment > capacity || dh > 0)
+	      {
+		// Slowing down (or ran uphill into a pit): deposit
+		const float amount = (dh > 0)
+		  ? std::min (dh, sediment)
+		  : (sediment - capacity) * deposit_k;
+		sediment -= amount;
+
+		set (xi, yi,         h00 + amount * (1 - fx) * (1 - fy));
+		set (xi + 1, yi,     h10 + amount * fx * (1 - fy));
+		set (xi, yi + 1,     h01 + amount * (1 - fx) * fy);
+		set (xi + 1, yi + 1, h11 + amount * fx * fy);
+	      }
+	    else
+	      {
+		// Accelerating: scoop material, but never dig
+		// deeper than the drop just travelled
+		const float amount =
+		  std::min ((capacity - sediment) * erode_k, -dh);
+		sediment += amount;
+
+		set (xi, yi,         h00 - amount * (1 - fx) * (1 - fy));
+		set (xi + 1, yi,     h10 - amount * fx * (1 - fy));
+		set (xi, yi + 1,     h01 - amount * (1 - fx) * fy);
+		set (xi + 1, yi + 1, h11 - amount * fx * fy);
+	      }
+
+	    speed = std::sqrt (std::max (0.0f,
+					 speed * speed - dh * gravity));
+	    water *= (1 - evaporate);
+	    px = nx;
+	    py = ny;
+	  }
+      }
+  }
+
+  void
+  RandomHeightMap::erode_thermally (int iterations, float talus)
+  {
+    static const int dx[4] = { 1, -1, 0, 0 };
+    static const int dy[4] = { 0, 0, 1, -1 };
+
+    for (int it = 0; it < iterations; ++it)
+      for (int y = 1; y < m_height - 1; ++y)
+	for (int x = 1; x < m_width - 1; ++x)
+	  {
+	    const float h = get (x, y);
+	    int   best  = -1;
+	    float bestd = talus;
+
+	    for (int k = 0; k < 4; ++k)
+	      {
+		const float d = h - get (x + dx[k], y + dy[k]);
+		if (d > bestd)
+		  {
+		    bestd = d;
+		    best  = k;
+		  }
+	      }
+
+	    if (best >= 0)
+	      {
+		const float move = 0.5f * (bestd - talus);
+		set (x, y, h - move);
+		set (x + dx[best], y + dy[best],
+		     get (x + dx[best], y + dy[best]) + move);
+	      }
+	  }
+  }
+
   float
   InterpolatingHeightMap::get (int x, int y) const
   {

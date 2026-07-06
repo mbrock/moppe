@@ -417,6 +417,10 @@ namespace moppe
       m_map1.randomize_geologically();
       // Slight lowland squash; ~10-15% of the map ends up as ocean
       m_map1.exponentiate(1.15);
+      std::cout << " eroding..." << std::flush;
+      m_map1.erode_hydraulically(1500000);
+      // Talus angle ~40 degrees at 2.4m cells and 650m height scale
+      m_map1.erode_thermally(2, 0.003f);
       m_map1.recompute_normals();
       std::cout << " done!\n";
 

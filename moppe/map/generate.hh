@@ -159,6 +159,14 @@ namespace map {
     // ridged mountains up high.  Leaves normals to the caller so
     // further shaping passes can run first.
     void randomize_geologically ();
+
+    // Particle-based hydraulic erosion: carves gullies into the
+    // slopes and settles sediment on the plains.
+    void erode_hydraulically (int droplets);
+
+    // Talus relaxation: material on too-steep slopes slides to the
+    // foot, smoothing single-cell erosion spikes into scree.
+    void erode_thermally (int iterations, float talus);
     
   private:
     typedef boost::multi_array<float, 2> array_t;
