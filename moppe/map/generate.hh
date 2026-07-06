@@ -154,6 +154,11 @@ namespace map {
     
     void randomize_uniformly ();
     void randomize_plasmally (float roughness);
+
+    // Noise-composed terrain: smooth warped plains low down,
+    // ridged mountains up high.  Leaves normals to the caller so
+    // further shaping passes can run first.
+    void randomize_geologically ();
     
   private:
     typedef boost::multi_array<float, 2> array_t;

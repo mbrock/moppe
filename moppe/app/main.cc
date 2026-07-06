@@ -413,13 +413,12 @@ namespace moppe
 
       setup_lights();
 
-      std::cout << "Randomizing maps...";
-      m_map1.randomize_plasmally(0.85);
-      // Sharpen peaks and widen valleys so the map has distinct
-      // snow-capped mountains instead of uniform rolling hills
-      m_map1.exponentiate(1.6);
+      std::cout << "Generating terrain..." << std::flush;
+      m_map1.randomize_geologically();
+      // Slight lowland squash; ~10-15% of the map ends up as ocean
+      m_map1.exponentiate(1.15);
       m_map1.recompute_normals();
-      std::cout << "done!\n";
+      std::cout << " done!\n";
 
       m_mouse.set_pitch_limits(-15, 10);
 
