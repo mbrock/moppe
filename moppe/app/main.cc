@@ -37,6 +37,9 @@ namespace moppe
   // procedurally generated terrain
   bool pico_mode = false;
 
+  // Urban stunt island: buildings, ramps, and traffic
+  bool city_mode = false;
+
   // Dynamic fog color will be set based on sky horizon colors
   Vector3D fog(0.5, 0.5, 0.5);
 
@@ -672,6 +675,367 @@ namespace moppe
     std::vector<Bird> m_birds;
   };
 
+  // --city mode: a flat city island baked into the heightmap
+  // (streets, launch ramps, stunt mounds, a beach ring into the
+  // sea), buildings as solid collision boxes with drivable roofs,
+  // and box-cars cruising the street grid.
+  class City
+  {
+  public:
+    City() : m_map(0), m_buildings_list(0), m_streets_list(0) {}
+
+    const std::vector<mov::Box>& obstacles() const
+    { return m_boxes; }
+
+    static const float H_CITY;
+
+    void generate(map::RandomHeightMap& map, unsigned seed)
+    {
+      m_map = &map;
+      std::mt19937 rng(seed);
+      std::uniform_real_distribution<float> u(0.0f, 1.0f);
+
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      const float sx = map.scale().x, sz = map.scale().z;
+      const int W = map.width(), H = map.height();
+
+      // -- flat slab, smoothed beach ring, shallow sea outside
+      for (int gy = 0; gy < H; ++gy)
+        for (int gx = 0; gx < W; ++gx)
+        {
+          const float wx = gx * sx, wz = gy * sz;
+          const float d = std::sqrt((wx - cx) * (wx - cx)
+                                    + (wz - cz) * (wz - cz));
+          float h;
+          if (d < CORE)
+            h = H_CITY;
+          else if (d < CORE + 500)
+          {
+            float t = (d - CORE) / 500;
+            t = t * t * (3 - 2 * t);
+            h = H_CITY * (1 - t) - 8 * t;
+          }
+          else
+            h = -8;
+
+          map.set(gx, gy, std::max(0.0f, h) / map_size.y);
+        }
+
+      // -- a few big smooth stunt mounds
+      for (int i = 0; i < 6; ++i)
+      {
+        const float ang = 6.2832f * u(rng);
+        const float dist = 400 + 900 * u(rng);
+        const float mx = cx + cos(ang) * dist;
+        const float mz = cz + sin(ang) * dist;
+        const float R = 60 + 30 * u(rng);
+        const float MH = 12 + 8 * u(rng);
+
+        for (int gy = (int)((mz - R) / sz); gy <= (mz + R) / sz; ++gy)
+          for (int gx = (int)((mx - R) / sx); gx <= (mx + R) / sx;
+               ++gx)
+          {
+            if (gx < 0 || gy < 0 || gx >= W || gy >= H)
+              continue;
+            const float wx = gx * sx, wz = gy * sz;
+            const float d = std::sqrt((wx - mx) * (wx - mx)
+                                      + (wz - mz) * (wz - mz));
+            if (d >= R)
+              continue;
+            const float c = cos(1.5708f * d / R);
+            const float h = H_CITY + MH * c * c;
+            map.set(gx, gy,
+                    std::max(map.get(gx, gy), h / map_size.y));
+          }
+      }
+
+      // -- launch-ramp wedges on the streets: rise, then a drop
+      for (int i = 0; i < 30; ++i)
+      {
+        const bool along_x = u(rng) < 0.5f;
+        const int k = (int)((u(rng) - 0.5f) * 44.0f);
+        const float line = (along_x ? cz : cx) + k * PITCH;
+        const float at = (along_x ? cx : cz)
+            + (u(rng) - 0.5f) * 2600.0f;
+        const float dir = (u(rng) < 0.5f) ? 1.0f : -1.0f;
+
+        const float rx = along_x ? at : line;
+        const float rz = along_x ? line : at;
+        if (std::sqrt((rx - cx) * (rx - cx) + (rz - cz) * (rz - cz))
+            > CORE - 200)
+          continue;
+
+        const float LEN = 22, WID = 9, RH = 7;
+        for (int gy = (int)((rz - LEN) / sz); gy <= (rz + LEN) / sz;
+             ++gy)
+          for (int gx = (int)((rx - LEN) / sx);
+               gx <= (rx + LEN) / sx; ++gx)
+          {
+            if (gx < 0 || gy < 0 || gx >= W || gy >= H)
+              continue;
+            const float wx = gx * sx, wz = gy * sz;
+            const float along =
+                (along_x ? wx - rx : wz - rz) * dir;
+            const float across = along_x ? wz - rz : wx - rx;
+            if (along < -LEN / 2 || along > LEN / 2 ||
+                std::abs(across) > WID / 2)
+              continue;
+            const float t = (along + LEN / 2) / LEN;
+            const float h = H_CITY + RH * t;
+            map.set(gx, gy,
+                    std::max(map.get(gx, gy), h / map_size.y));
+          }
+      }
+
+      // -- buildings on the blocks between streets, taller downtown
+      for (int bi = -27; bi <= 27; ++bi)
+        for (int bj = -27; bj <= 27; ++bj)
+        {
+          const float bx = cx + (bi + 0.5f) * PITCH;
+          const float bz = cz + (bj + 0.5f) * PITCH;
+          const float d = std::sqrt((bx - cx) * (bx - cx)
+                                    + (bz - cz) * (bz - cz));
+          if (d > CORE - 150)
+            continue;
+          if (u(rng) > 0.8f)
+            continue; // plaza
+
+          const float hw = (14 + 20 * u(rng)) / 2;
+          const float hd = (14 + 20 * u(rng)) / 2;
+          const float room = PITCH / 2 - STREET_W / 2 - 3;
+          const float ox = (u(rng) - 0.5f) * 2 * (room - hw);
+          const float oz = (u(rng) - 0.5f) * 2 * (room - hd);
+
+          const float hmax =
+              18 + 110 * std::exp(-(d / 800) * (d / 800));
+          const float bh =
+              std::max(12.0f, hmax * (0.35f + 0.65f * u(rng)));
+
+          Building b;
+          b.box.x0 = bx + ox - hw;
+          b.box.x1 = bx + ox + hw;
+          b.box.z0 = bz + oz - hd;
+          b.box.z1 = bz + oz + hd;
+          b.box.top = H_CITY + bh;
+
+          static const float palette[5][3] = {
+            { 0.62f, 0.62f, 0.64f }, // concrete
+            { 0.72f, 0.65f, 0.55f }, // sandstone
+            { 0.55f, 0.32f, 0.26f }, // brick
+            { 0.35f, 0.50f, 0.62f }, // glass
+            { 0.80f, 0.80f, 0.78f }, // white
+          };
+          const int p = (int)(u(rng) * 5) % 5;
+          const float j = 0.9f + 0.2f * u(rng);
+          b.color = Vector3D(palette[p][0] * j, palette[p][1] * j,
+                             palette[p][2] * j);
+
+          m_buildings.push_back(b);
+          m_boxes.push_back(b.box);
+        }
+
+      // -- cars on the street lanes
+      for (int i = 0; i < 70; ++i)
+      {
+        Car c;
+        c.along_x = u(rng) < 0.5f;
+        const int k = (int)((u(rng) - 0.5f) * 44.0f);
+        c.dir = (u(rng) < 0.5f) ? 1.0f : -1.0f;
+        c.line = (c.along_x ? cz : cx) + k * PITCH + c.dir * 2.6f;
+        c.speed = 8 + 8 * u(rng);
+        c.phase = 3000 * u(rng);
+
+        static const float carpal[5][3] = {
+          { 0.8f, 0.15f, 0.1f }, { 0.15f, 0.3f, 0.7f },
+          { 0.85f, 0.85f, 0.85f }, { 0.9f, 0.75f, 0.1f },
+          { 0.1f, 0.5f, 0.45f },
+        };
+        const int p = (int)(u(rng) * 5) % 5;
+        c.color = Vector3D(carpal[p][0], carpal[p][1], carpal[p][2]);
+        m_cars.push_back(c);
+      }
+    }
+
+    // Compile buildings and streets into display lists (GL context
+    // required, so this runs after generate())
+    void load_gl()
+    {
+      if (!m_map)
+        return;
+
+      m_buildings_list = glGenLists(1);
+      glNewList(m_buildings_list, GL_COMPILE);
+      for (size_t i = 0; i < m_buildings.size(); ++i)
+      {
+        const Building& b = m_buildings[i];
+        const float w = b.box.x1 - b.box.x0;
+        const float d = b.box.z1 - b.box.z0;
+        const float h = b.box.top - H_CITY;
+
+        glColor3f(b.color.x, b.color.y, b.color.z);
+        glPushMatrix();
+        glTranslatef((b.box.x0 + b.box.x1) / 2, H_CITY + h / 2,
+                     (b.box.z0 + b.box.z1) / 2);
+        glScalef(w, h, d);
+        glutSolidCube(1.0);
+        glPopMatrix();
+
+        // darker roof cap
+        glColor3f(b.color.x * 0.5f, b.color.y * 0.5f,
+                  b.color.z * 0.5f);
+        glPushMatrix();
+        glTranslatef((b.box.x0 + b.box.x1) / 2, b.box.top + 0.25f,
+                     (b.box.z0 + b.box.z1) / 2);
+        glScalef(w + 0.6f, 0.5f, d + 0.6f);
+        glutSolidCube(1.0);
+        glPopMatrix();
+      }
+      glEndList();
+
+      // streets draped over the terrain (so they follow ramps)
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      m_streets_list = glGenLists(1);
+      glNewList(m_streets_list, GL_COMPILE);
+      glNormal3f(0, 1, 0);
+      for (int axis = 0; axis < 2; ++axis)
+        for (int k = -27; k <= 27; ++k)
+        {
+          const float line = (axis ? cx : cz) + k * PITCH;
+          if (std::abs(k * PITCH) > CORE)
+            continue;
+
+          glColor3f(0.16f, 0.16f, 0.18f);
+          glBegin(GL_QUAD_STRIP);
+          for (float s = -CORE; s <= CORE; s += 16)
+          {
+            const float wx = axis ? line : cx + s;
+            const float wz = axis ? cz + s : line;
+            if (std::sqrt((wx - cx) * (wx - cx)
+                          + (wz - cz) * (wz - cz)) > CORE - 30)
+            {
+              glEnd();
+              glBegin(GL_QUAD_STRIP);
+              continue;
+            }
+            const float y =
+                m_map->interpolated_height(wx, wz) + 0.10f;
+            if (axis)
+            {
+              glVertex3f(line - STREET_W / 2, y, wz);
+              glVertex3f(line + STREET_W / 2, y, wz);
+            }
+            else
+            {
+              glVertex3f(wx, y, line - STREET_W / 2);
+              glVertex3f(wx, y, line + STREET_W / 2);
+            }
+          }
+          glEnd();
+        }
+      glEndList();
+    }
+
+    void render(float time) const
+    {
+      if (!m_map)
+        return;
+
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_LIGHTING_BIT |
+                                    GL_CURRENT_BIT | GL_TEXTURE_BIT);
+      for (int unit = 3; unit >= 0; --unit)
+      {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glDisable(GL_TEXTURE_2D);
+      }
+      glEnable(GL_COLOR_MATERIAL);
+      glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+      glCallList(m_buildings_list);
+      glCallList(m_streets_list);
+
+      for (size_t i = 0; i < m_cars.size(); ++i)
+        draw_car(m_cars[i], time);
+    }
+
+  private:
+    struct Building
+    {
+      mov::Box box;
+      Vector3D color;
+    };
+
+    struct Car
+    {
+      bool along_x;
+      float line, dir, speed, phase;
+      Vector3D color;
+    };
+
+    static void box(float w, float h, float d)
+    {
+      glPushMatrix();
+      glScalef(w, h, d);
+      glutSolidCube(1.0);
+      glPopMatrix();
+    }
+
+    void draw_car(const Car& c, float time) const
+    {
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      const float s =
+          fmod(c.phase + c.speed * time, 2 * CORE - 200)
+          - (CORE - 100);
+      const float wx = c.along_x ? cx + c.dir * s : c.line;
+      const float wz = c.along_x ? c.line : cz + c.dir * s;
+      const float y = m_map->interpolated_height(wx, wz);
+
+      gl::ScopedMatrixSaver m;
+      glTranslatef(wx, y, wz);
+      if (c.along_x)
+        glRotatef(c.dir > 0 ? 90 : -90, 0, 1, 0);
+      else if (c.dir < 0)
+        glRotatef(180, 0, 1, 0);
+
+      glColor3f(c.color.x, c.color.y, c.color.z);
+      glPushMatrix();
+      glTranslatef(0, 0.55f, 0);
+      box(1.7f, 0.85f, 3.6f);
+      glPopMatrix();
+
+      glColor3f(0.2f, 0.25f, 0.3f);
+      glPushMatrix();
+      glTranslatef(0, 1.15f, -0.2f);
+      box(1.5f, 0.6f, 1.9f);
+      glPopMatrix();
+
+      glColor3f(0.08f, 0.08f, 0.1f);
+      for (int lx = -1; lx <= 1; lx += 2)
+        for (int lz = -1; lz <= 1; lz += 2)
+        {
+          glPushMatrix();
+          glTranslatef(lx * 0.8f, 0.3f, lz * 1.2f);
+          box(0.25f, 0.6f, 0.65f);
+          glPopMatrix();
+        }
+    }
+
+    static const float PITCH;
+    static const float STREET_W;
+    static const float CORE;
+
+    map::RandomHeightMap* m_map;
+    std::vector<Building> m_buildings;
+    std::vector<mov::Box> m_boxes;
+    std::vector<Car> m_cars;
+    GLuint m_buildings_list;
+    GLuint m_streets_list;
+  };
+
+  const float City::H_CITY = 45.0f;
+  const float City::PITCH = 64.0f;
+  const float City::STREET_W = 10.0f;
+  const float City::CORE = 1750.0f;
+
   class MoppeGLUT : public GLUTApplication
   {
   public:
@@ -686,8 +1050,12 @@ namespace moppe
           m_vehicle(pico_mode
                         ? Vector3D(0.34 * map_size.x, 3000,
                                    0.55 * map_size.z)
-                        : Vector3D(50 * one_meter, 600 * one_meter,
-                                   50 * one_meter),
+                        : city_mode
+                              ? Vector3D(map_size.x / 2 + 20, 100,
+                                         map_size.z / 2 + 20)
+                              : Vector3D(50 * one_meter,
+                                         600 * one_meter,
+                                         50 * one_meter),
                     45, m_map1,
                     5000, 150),
           m_sky("textures/sky.tga"),
@@ -745,7 +1113,12 @@ namespace moppe
 
       setup_lights();
 
-      if (pico_mode)
+      if (city_mode)
+      {
+        std::cout << "Building city..." << std::flush;
+        m_city.generate(m_map1, 909);
+      }
+      else if (pico_mode)
       {
         std::cout << "Loading Pico Island DEM..." << std::flush;
         m_map1.load_raw_u16("data/pico.u16", 0.1f, map_size.y);
@@ -774,11 +1147,14 @@ namespace moppe
 
       std::cout << "Planting vegetation...";
       m_vegetation.generate(m_map1,
-                            pico_mode ? 6000 : 2200,
-                            pico_mode ? 4000 : 1500, 1234);
+                            pico_mode ? 6000 : city_mode ? 500 : 2200,
+                            pico_mode ? 4000 : city_mode ? 300 : 1500,
+                            1234);
       std::cout << "done!\n";
 
-      m_star_field.generate(m_map1, pico_mode ? 250 : 80, 555);
+      m_star_field.generate(m_map1,
+                            pico_mode ? 250 : city_mode ? 130 : 80,
+                            555);
 
       m_sky.load();
       m_ocean.load();
@@ -788,8 +1164,11 @@ namespace moppe
       m_fish_school.generate(m_map1, water_level,
                              pico_mode ? 40 : 16, 777);
       m_wildlife.generate(m_map1, water_level,
-                          pico_mode ? 24 : 8,
+                          pico_mode ? 24 : city_mode ? 3 : 8,
                           pico_mode ? 30 : 10, 4242);
+
+      m_city.load_gl();
+      m_vehicle.set_obstacles(&m_city.obstacles());
 
       m_uw_vert.load();
       m_uw_frag.load();
@@ -1303,6 +1682,7 @@ namespace moppe
       }
 
       m_terrain_renderer.render();
+      m_city.render(m_total_time);
       m_vegetation.render(fog);
       m_star_field.render(m_total_time);
       m_terrain_renderer.translate();
@@ -1478,6 +1858,7 @@ namespace moppe
     Dust m_dust;
     Fish m_fish_school;
     Wildlife m_wildlife;
+    City m_city;
 
     gl::Shader m_uw_vert;
     gl::Shader m_uw_frag;
@@ -1499,6 +1880,7 @@ int main(int argc, char **argv)
   using namespace moppe;
 
   for (int i = 1; i < argc; ++i)
+  {
     if (std::string(argv[i]) == "--pico")
     {
       // The real Pico Island: 49.4 km square, summit 2333m,
@@ -1510,6 +1892,13 @@ int main(int argc, char **argv)
       water_level = 15 * one_meter;
       fog_scale = 0.00013f; // clear island air: Pico visible afar
     }
+    else if (std::string(argv[i]) == "--city")
+    {
+      // Urban stunt island in a shallow sea
+      city_mode = true;
+      water_level = 15 * one_meter;
+    }
+  }
 
   MoppeGLUT app;
   app::global_app = &app;

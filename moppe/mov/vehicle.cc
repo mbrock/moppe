@@ -33,7 +33,8 @@ namespace mov {
       m_rocket_cooldown (0),
       m_water_level (-1000 * one_meter),
       m_airborne_time (0),
-      m_impact (0)
+      m_impact (0),
+      m_obstacles (0)
   {
     calculate_orientation ();
        fall_to_ground ();
@@ -81,6 +82,76 @@ namespace mov {
   Vector3D
   Vehicle::drag () const {
     return m_velocity * -0.05;
+  }
+
+  // The obstacle box whose roof is the effective ground under the
+  // bike -- only counts once the bike is up at roof level, so a
+  // building towering overhead is not "ground".
+  const Box*
+  Vehicle::roof_under () const {
+    if (!m_obstacles)
+      return 0;
+
+    const Box* found = 0;
+    float best = m_map.interpolated_height (m_position.x,
+					    m_position.z);
+
+    for (size_t i = 0; i < m_obstacles->size (); ++i)
+      {
+	const Box& b = (*m_obstacles)[i];
+	if (m_position.x >= b.x0 && m_position.x <= b.x1 &&
+	    m_position.z >= b.z0 && m_position.z <= b.z1 &&
+	    m_position.y > b.top - 2 * radius &&
+	    b.top > best)
+	  {
+	    best = b.top;
+	    found = &b;
+	  }
+      }
+
+    return found;
+  }
+
+  void
+  Vehicle::collide_with_walls () {
+    if (!m_obstacles)
+      return;
+
+    for (size_t i = 0; i < m_obstacles->size (); ++i)
+      {
+	const Box& b = (*m_obstacles)[i];
+
+	if (m_position.y - radius >= b.top - 0.05f)
+	  continue; // on or above the roof
+
+	const float dx0 = m_position.x - (b.x0 - radius);
+	const float dx1 = (b.x1 + radius) - m_position.x;
+	const float dz0 = m_position.z - (b.z0 - radius);
+	const float dz1 = (b.z1 + radius) - m_position.z;
+
+	if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
+	  continue; // clear of this block
+
+	// Push out along the axis of least penetration and bounce;
+	// a hard bonk registers as an impact for shake and dust
+	const float px = std::min (dx0, dx1);
+	const float pz = std::min (dz0, dz1);
+
+	if (px < pz)
+	  {
+	    m_position.x = (dx0 < dx1) ? b.x0 - radius : b.x1 + radius;
+	    m_impact = std::max (m_impact,
+				 0.4f * std::abs (m_velocity.x));
+	    m_velocity.x *= -0.35f;
+	  }
+	else
+	  {
+	    m_position.z = (dz0 < dz1) ? b.z0 - radius : b.z1 + radius;
+	    m_impact = std::max (m_impact,
+				 0.4f * std::abs (m_velocity.z));
+	    m_velocity.z *= -0.35f;
+	  }
+      }
   }
 
   void
@@ -165,6 +236,7 @@ namespace mov {
 
     bound ();
     check_ground_collision ();
+    collide_with_walls ();
 
     // Landing detection, for camera shake and dust bursts.  What
     // matters is the speed INTO the surface at touchdown -- landing

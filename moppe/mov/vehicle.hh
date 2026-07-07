@@ -8,9 +8,17 @@
 
 #include <boost/format.hpp>
 
+#include <vector>
+
 namespace moppe {
 namespace mov {
   using namespace moppe::map;
+
+  // An axis-aligned solid block (a building): the vehicle bounces
+  // off its walls, and its top is drivable ground.
+  struct Box {
+    float x0, z0, x1, z1, top;
+  };
 
   class Vehicle {
   public:
@@ -51,6 +59,9 @@ namespace mov {
     void set_water_level (float level)
     { m_water_level = level; }
 
+    void set_obstacles (const std::vector<Box>* boxes)
+    { m_obstacles = boxes; }
+
     bool grounded () const { return is_grounded (); }
 
     // Sideways speed relative to where the bike points; big when
@@ -89,16 +100,26 @@ namespace mov {
     void calculate_orientation ();
     void fall_to_ground ();
     void check_ground_collision ();
+    void collide_with_walls ();
     void bound ();
     bool is_grounded () const;
 
     Vector3D drag () const;
 
-    Vector3D ground_normal () const
-    { return m_map.interpolated_normal (m_position.x, m_position.z); }
+    const Box* roof_under () const;
 
-    float ground_height () const
-    { return m_map.interpolated_height (m_position.x, m_position.z); }
+    Vector3D ground_normal () const {
+      if (roof_under ())
+	return Vector3D (0, 1, 0);
+      return m_map.interpolated_normal (m_position.x, m_position.z);
+    }
+
+    float ground_height () const {
+      const Box* roof = roof_under ();
+      if (roof)
+	return roof->top;
+      return m_map.interpolated_height (m_position.x, m_position.z);
+    }
 
   private:
     Vector3D m_position;
@@ -120,6 +141,8 @@ namespace mov {
 
     seconds_t m_airborne_time;
     float m_impact;
+
+    const std::vector<Box>* m_obstacles;
   };
 }
 }
