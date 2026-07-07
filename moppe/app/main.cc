@@ -774,6 +774,41 @@ namespace moppe
 
     Vector3D last_hit() const { return m_last_hit; }
 
+    // Take the nearest still-driving car within reach: it leaves
+    // traffic and becomes the player's.  Returns its kind, or -1.
+    int take_car_near(const Vector3D& pos, float radius, float time,
+                      Vector3D& out_pos, Vector3D& out_dir,
+                      Vector3D& out_color)
+    {
+      if (!m_map)
+        return -1;
+
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      for (size_t i = 0; i < m_cars.size(); ++i)
+      {
+        Car& c = m_cars[i];
+        if (!c.active)
+          continue;
+
+        const float s =
+            fmod(c.phase + c.speed * time, 2 * c.half) - c.half;
+        const float wx = c.along_x ? cx + c.dir * s : c.line;
+        const float wz = c.along_x ? c.line : cz + c.dir * s;
+        const float dx = pos.x - wx, dz = pos.z - wz;
+        if (dx * dx + dz * dz > radius * radius)
+          continue;
+
+        c.active = false;
+        out_pos = Vector3D(
+            wx, m_map->interpolated_height(wx, wz) + 1.2f, wz);
+        out_dir = c.along_x ? Vector3D(c.dir, 0, 0)
+                            : Vector3D(0, 0, c.dir);
+        out_color = c.color;
+        return c.kind;
+      }
+      return -1;
+    }
+
     static const float H_CITY;
 
     void generate(map::RandomHeightMap& map, unsigned seed)
@@ -962,6 +997,7 @@ namespace moppe
       {
         Car c;
         c.along_x = u(rng) < 0.5f;
+        c.active = true;
         const int k = (int)((u(rng) - 0.5f) * 40.0f);
         c.dir = (u(rng) < 0.5f) ? 1.0f : -1.0f;
         c.line = (c.along_x ? cz : cx) + k * PITCH + c.dir * 2.6f;
@@ -1299,7 +1335,8 @@ namespace moppe
     struct Car
     {
       bool along_x;
-      int kind; // 0 civilian, 1 police, 2 fire truck
+      bool active; // false once the player has taken it
+      int kind;    // 0 civilian, 1 police, 2 fire truck
       float line, dir, speed, phase, half;
       Vector3D color;
     };
@@ -1359,6 +1396,105 @@ namespace moppe
       glVertex3f(dx + 1.2f, H_CITY + 2.6f, b.box.z1 + 0.06f);
       glVertex3f(dx - 1.2f, H_CITY + 2.6f, b.box.z1 + 0.06f);
       glEnd();
+
+      emit_interior(b, rng);
+    }
+
+    // Somebody lives here: rug, table and chairs, sofa, TV, a
+    // bookshelf full of colorful books, and a warm floor lamp
+    static void emit_interior(const Building& b, std::mt19937& rng)
+    {
+      std::uniform_real_distribution<float> u(0.0f, 1.0f);
+      const float ix = (b.box.x0 + b.box.x1) / 2;
+      const float iz = (b.box.z0 + b.box.z1) / 2;
+      const float f = H_CITY;
+
+      // rug
+      glColor3f(0.45f + 0.4f * u(rng), 0.25f + 0.3f * u(rng),
+                0.3f + 0.3f * u(rng));
+      glPushMatrix();
+      glTranslatef(ix, f + 0.04f, iz + 1.5f);
+      box(5.0f, 0.07f, 3.6f);
+      glPopMatrix();
+
+      // table with four legs
+      glColor3f(0.5f, 0.36f, 0.2f);
+      glPushMatrix();
+      glTranslatef(ix, f + 0.75f, iz + 1.5f);
+      box(1.8f, 0.1f, 1.1f);
+      glPopMatrix();
+      for (int lx = -1; lx <= 1; lx += 2)
+        for (int lz = -1; lz <= 1; lz += 2)
+        {
+          glPushMatrix();
+          glTranslatef(ix + lx * 0.75f, f + 0.35f,
+                       iz + 1.5f + lz * 0.4f);
+          box(0.1f, 0.7f, 0.1f);
+          glPopMatrix();
+        }
+
+      // two chairs
+      glColor3f(0.4f, 0.28f, 0.16f);
+      for (int s = -1; s <= 1; s += 2)
+      {
+        glPushMatrix();
+        glTranslatef(ix + s * 1.6f, f + 0.45f, iz + 1.5f);
+        box(0.5f, 0.08f, 0.5f);
+        glPopMatrix();
+        glPushMatrix();
+        glTranslatef(ix + s * 1.85f, f + 0.8f, iz + 1.5f);
+        box(0.08f, 0.8f, 0.5f);
+        glPopMatrix();
+      }
+
+      // sofa by the west wall, TV opposite
+      glColor3f(0.2f + 0.5f * u(rng), 0.3f + 0.3f * u(rng), 0.55f);
+      glPushMatrix();
+      glTranslatef(b.box.x0 + 1.6f, f + 0.4f, iz - 1.5f);
+      box(1.0f, 0.8f, 2.6f);
+      glPopMatrix();
+      glPushMatrix();
+      glTranslatef(b.box.x0 + 1.15f, f + 0.85f, iz - 1.5f);
+      box(0.3f, 1.0f, 2.6f);
+      glPopMatrix();
+
+      glColor3f(0.05f, 0.05f, 0.06f);
+      glPushMatrix();
+      glTranslatef(b.box.x1 - 1.4f, f + 1.3f, iz - 1.5f);
+      box(0.15f, 1.2f, 2.0f);
+      glPopMatrix();
+
+      // bookshelf on the back wall
+      glColor3f(0.35f, 0.24f, 0.14f);
+      glPushMatrix();
+      glTranslatef(ix - 2.0f, f + 1.1f, b.box.z0 + 0.6f);
+      box(2.2f, 2.2f, 0.5f);
+      glPopMatrix();
+      for (int shelf = 0; shelf < 2; ++shelf)
+        for (int bk = 0; bk < 5; ++bk)
+        {
+          glColor3f(0.3f + 0.65f * u(rng), 0.25f + 0.6f * u(rng),
+                    0.3f + 0.6f * u(rng));
+          glPushMatrix();
+          glTranslatef(ix - 2.7f + bk * 0.36f,
+                       f + 0.65f + shelf * 0.8f, b.box.z0 + 0.62f);
+          box(0.24f, 0.55f, 0.32f);
+          glPopMatrix();
+        }
+
+      // a warm lamp so it feels like home
+      glColor3f(0.3f, 0.3f, 0.32f);
+      glPushMatrix();
+      glTranslatef(ix + 2.5f, f + 0.8f, iz - 2.5f);
+      box(0.1f, 1.6f, 0.1f);
+      glPopMatrix();
+      glDisable(GL_LIGHTING);
+      glColor3f(1.0f, 0.85f, 0.5f);
+      glPushMatrix();
+      glTranslatef(ix + 2.5f, f + 1.75f, iz - 2.5f);
+      glutSolidSphere(0.28, 8, 6);
+      glPopMatrix();
+      glEnable(GL_LIGHTING);
     }
 
     // A grid of window quads on each facade, mostly dark glass
@@ -1436,6 +1572,9 @@ namespace moppe
     void draw_car(const Car& c, float time,
                   const Vector3D& cam) const
     {
+      if (!c.active)
+        return; // the player drove off with this one
+
       const float cx = map_size.x / 2, cz = map_size.z / 2;
       const float s =
           fmod(c.phase + c.speed * time, 2 * c.half) - c.half;
@@ -2108,6 +2247,8 @@ namespace moppe
           m_vehicle(spawn_position(),
                     45, m_map1,
                     5000, 150),
+          m_car(spawn_position(), 45, m_map1,
+                14000, 900),
           m_sky("textures/sky.tga"),
           m_ocean(water_level,
                   Vector3D(map_size.x / 2, 0, map_size.z / 2),
@@ -2121,7 +2262,8 @@ namespace moppe
           m_blur_valid(false),
           m_shake(0.0f),
           m_health(100.0f),
-          m_on_foot(false),
+          m_mode(M_BIKE),
+          m_car_exists(false),
           m_combo(0),
           m_fx_rng(7)
     {
@@ -2222,6 +2364,8 @@ namespace moppe
 
       m_city.load_gl();
       m_vehicle.set_obstacles(&m_city.obstacles());
+      m_car.set_obstacles(&m_city.obstacles());
+      m_car.set_water_level(water_level);
 
       m_uw_vert.load();
       m_uw_frag.load();
@@ -2298,38 +2442,51 @@ namespace moppe
         }
 
         m_vehicle.update(elapsed);
-        if (m_on_foot)
+        if (m_car_exists)
+          m_car.update(elapsed);
+        if (m_mode == M_FOOT)
           m_walker.update(elapsed, m_map1, m_city.obstacles());
 
         // -- gameplay feedback: dust, spray, stars, camera shake
         const Vector3D vpos =
-            m_on_foot ? m_walker.position() : m_vehicle.position();
+            (m_mode == M_FOOT)  ? m_walker.position()
+            : (m_mode == M_CAR) ? m_car.position()
+                                : m_vehicle.position();
+        mov::Vehicle& av = active_vehicle();
+
+        // parked vehicles' impacts shouldn't linger until remount
+        if (m_mode != M_BIKE)
+          m_vehicle.pop_impact();
+        if (m_car_exists && m_mode != M_CAR)
+          m_car.pop_impact();
+
         const bool in_water = vpos.y < water_level + 1.0f;
+        const bool driving = (m_mode != M_FOOT);
         const Vector3D dust_color(0.72, 0.63, 0.48);
         const Vector3D spray_color(0.85, 0.92, 1.0);
 
         // Drift kicks up dirt from the rear wheel (or spray)
-        if (m_vehicle.grounded() && m_vehicle.drift_speed() > 6.0f)
+        if (driving && av.grounded() && av.drift_speed() > 6.0f)
         {
-          Vector3D back = vpos - m_vehicle.orientation() * 1.4f;
+          Vector3D back = vpos - av.orientation() * 1.4f;
           back.y = vpos.y - 0.7f;
-          int n = std::min(6, (int)(m_vehicle.drift_speed() * 0.25f));
-          m_dust.emit(back, m_vehicle.velocity() * 0.15f, n,
+          int n = std::min(6, (int)(av.drift_speed() * 0.25f));
+          m_dust.emit(back, av.velocity() * 0.15f, n,
                       in_water ? spray_color : dust_color);
         }
 
         // Wading fast throws up a bow wave
-        if (in_water && m_vehicle.velocity().length() > 15.0f)
+        if (driving && in_water && av.velocity().length() > 15.0f)
           m_dust.emit(vpos + Vector3D(0, -0.5, 0),
-                      m_vehicle.velocity() * 0.3f, 3, spray_color);
+                      av.velocity() * 0.3f, 3, spray_color);
 
         // Hard landings shake the camera and burst dirt outward
-        const float impact = m_vehicle.pop_impact();
+        const float impact = driving ? av.pop_impact() : 0.0f;
         if (impact > 8.0f)
         {
           m_shake = std::min(0.45f, 0.018f * impact);
           m_dust.emit(vpos + Vector3D(0, -0.7, 0),
-                      m_vehicle.velocity() * 0.2f, 18,
+                      av.velocity() * 0.2f, 18,
                       in_water ? spray_color : dust_color);
         }
 
@@ -2342,7 +2499,7 @@ namespace moppe
         {
           m_dust.emit(vpos, Vector3D(0, 6, 0), 40,
                       Vector3D(1.0, 0.5, 0.1));
-          m_vehicle.reset(spawn_position());
+          av.reset(spawn_position());
           m_health = 100.0f;
           m_shake = 1.0f;
         }
@@ -2350,7 +2507,9 @@ namespace moppe
         // Pedestrians get bowled over, with a puff of alarm
         if (city_mode)
         {
-          if (m_city.update_people(vpos, m_vehicle.velocity(),
+          if (m_city.update_people(vpos,
+                                   driving ? av.velocity()
+                                           : Vector3D(),
                                    m_total_time) > 0)
             m_dust.emit(m_city.last_hit(), Vector3D(0, 4, 0), 10,
                         Vector3D(0.95, 0.85, 0.4));
@@ -2365,13 +2524,11 @@ namespace moppe
         m_dust.update(elapsed);
         m_shake *= std::exp(-4.0f * elapsed);
 
-        if (m_on_foot)
+        if (m_mode == M_FOOT)
           m_camera.update(m_walker.position() + Vector3D(0, 1, 0),
                           m_walker.heading(), elapsed);
         else
-          m_camera.update(m_vehicle.position(),
-                          m_vehicle.orientation(),
-                          elapsed);
+          m_camera.update(av.position(), av.orientation(), elapsed);
         m_camera.limit(m_map1);
 
         glutPostRedisplay();
@@ -2430,7 +2587,9 @@ namespace moppe
         return;
 
       const float kmh =
-          m_on_foot ? 0.0f : m_vehicle.velocity().length() * 3.6f;
+          (m_mode == M_FOOT)
+              ? 0.0f
+              : active_vehicle().velocity().length() * 3.6f;
       float k = (kmh - 90.0f) / 160.0f; // fades in 90, full at 250
       k = std::max(0.0f, std::min(1.0f, k));
 
@@ -2527,7 +2686,9 @@ namespace moppe
     void draw_hud()
     {
       const float kmh =
-          m_on_foot ? 0.0f : m_vehicle.velocity().length() * 3.6f;
+          (m_mode == M_FOOT)
+              ? 0.0f
+              : active_vehicle().velocity().length() * 3.6f;
       const float frac = std::min(1.0f, kmh / 300.0f);
       const float PI = 3.14159265f;
 
@@ -2602,7 +2763,9 @@ namespace moppe
 
         // rocket charge bar, pulsing when ready
         {
-          const float charge = m_vehicle.rocket_charge();
+          const float charge = (m_mode == M_FOOT)
+                                   ? 1.0f
+                                   : active_vehicle().rocket_charge();
           const float bx = m_width - 340.0f;
           const float by = m_height - 44.0f;
           const float bw = 180.0f, bh = 14.0f;
@@ -2685,9 +2848,12 @@ namespace moppe
       glColor3f(0.6f, 0.9f, 1.0f);
       gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
                          (int)(m_width - 340), (int)(m_height - 50),
-                         m_vehicle.rocket_charge() >= 1.0f
-                             ? "ROCKET READY"
-                             : "ROCKET");
+                         m_mode == M_FOOT
+                             ? "ON FOOT"
+                             : active_vehicle().rocket_charge()
+                                       >= 1.0f
+                                   ? "ROCKET READY"
+                                   : "ROCKET");
     }
 
     void keyboard(unsigned char code,
@@ -2759,13 +2925,13 @@ namespace moppe
         input_go(-1 * factor);
         break;
 
-      case ' ': // Rocket jump on the bike, a hop on foot
+      case ' ': // Rocket jump when driving, a hop on foot
         if (pressed)
         {
-          if (m_on_foot)
+          if (m_mode == M_FOOT)
             m_walker.jump();
           else
-            m_vehicle.rocket_jump();
+            active_vehicle().rocket_jump();
         }
         break;
 
@@ -2775,41 +2941,75 @@ namespace moppe
       }
     }
 
+    mov::Vehicle& active_vehicle()
+    {
+      return m_mode == M_CAR ? m_car : m_vehicle;
+    }
+
     void input_turn(float v)
     {
-      if (m_on_foot)
+      if (m_mode == M_FOOT)
         m_walker.set_turn(v);
       else
-        m_vehicle.set_yaw(90 * v);
+        active_vehicle().set_yaw(90 * v);
     }
 
     void input_go(float v)
     {
-      if (m_on_foot)
+      if (m_mode == M_FOOT)
         m_walker.set_walk(v > 0 ? v : v * 0.6f);
       else
-        m_vehicle.set_thrust(v);
+        active_vehicle().set_thrust(v);
     }
 
     void toggle_mount()
     {
-      if (!m_on_foot)
+      if (m_mode != M_FOOT)
       {
-        // step off to the side of the bike
-        const Vector3D h = m_vehicle.orientation();
+        // step off to the side of whatever we're driving
+        mov::Vehicle& av = active_vehicle();
+        const Vector3D h = av.orientation();
         const Vector3D side(h.z, 0, -h.x);
-        m_walker.spawn(m_vehicle.position() + side * 1.8f, h);
-        m_vehicle.set_thrust(0);
-        m_vehicle.set_yaw(0);
-        m_on_foot = true;
+        m_walker.spawn(av.position()
+                           + side * (m_mode == M_CAR ? 2.4f : 1.8f),
+                       h);
+        av.set_thrust(0);
+        av.set_yaw(0);
+        m_mode = M_FOOT;
+        return;
       }
-      else if ((m_walker.position() - m_vehicle.position())
-                   .length2() < 5.0f * 5.0f)
+
+      // on foot: bike first, then our parked car, then grand theft
+      if ((m_walker.position() - m_vehicle.position()).length2()
+          < 5.0f * 5.0f)
       {
-        // close enough to climb back on
         m_vehicle.set_thrust(0);
         m_vehicle.set_yaw(0);
-        m_on_foot = false;
+        m_mode = M_BIKE;
+        return;
+      }
+
+      if (m_car_exists &&
+          (m_walker.position() - m_car.position()).length2()
+              < 6.0f * 6.0f)
+      {
+        m_car.set_thrust(0);
+        m_car.set_yaw(0);
+        m_mode = M_CAR;
+        return;
+      }
+
+      Vector3D cpos, cdir, ccolor;
+      const int kind = m_city.take_car_near(
+          m_walker.position(), 7.0f, m_total_time, cpos, cdir,
+          ccolor);
+      if (kind >= 0)
+      {
+        m_car.reset(cpos);
+        m_car.set_heading(cdir);
+        m_car.set_body_style(kind + 1, ccolor);
+        m_car_exists = true;
+        m_mode = M_CAR;
       }
     }
 
@@ -2860,7 +3060,9 @@ namespace moppe
       m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
       m_vehicle.render();
-      if (m_on_foot)
+      if (m_car_exists)
+        m_car.render();
+      if (m_mode == M_FOOT)
         m_walker.render(m_total_time);
       m_fish_school.render(m_total_time, cam);
       m_wildlife.render(m_total_time, cam);
@@ -3026,6 +3228,7 @@ namespace moppe
 
     gfx::TerrainRenderer m_terrain_renderer;
     mov::Vehicle m_vehicle;
+    mov::Vehicle m_car; // the commandeered one, once it exists
     gfx::Sky m_sky;
     gfx::Ocean m_ocean;
     Vegetation m_vegetation;
@@ -3048,8 +3251,11 @@ namespace moppe
     float m_shake;
     float m_health;
 
+    enum Mode { M_BIKE, M_FOOT, M_CAR };
+
     Walker m_walker;
-    bool m_on_foot;
+    int m_mode;
+    bool m_car_exists;
     int m_combo;
 
     std::mt19937 m_fx_rng;

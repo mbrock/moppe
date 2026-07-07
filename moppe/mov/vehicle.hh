@@ -72,6 +72,25 @@ namespace mov {
       m_impact = 0;
     }
 
+    void set_heading (const Vector3D& h)
+    {
+      Vector3D v (h.x, 0, h.z);
+      if (v.length2 () > 0.0001f)
+	{
+	  v.normalize ();
+	  m_heading = v;
+	  m_thrust_orientation = v;
+	}
+    }
+
+    // What this vehicle looks like: 0 = the motorcycle,
+    // 1 = civilian car, 2 = police car, 3 = fire truck
+    void set_body_style (int kind, const Vector3D& color)
+    {
+      m_body_kind = kind;
+      m_body_color = color;
+    }
+
     bool grounded () const { return is_grounded (); }
 
     // Sideways speed relative to where the bike points; big when
@@ -105,6 +124,7 @@ namespace mov {
     Vector3D velocity () const { return m_velocity; }
 
   private:
+    void render_car () const;
     void steer (seconds_t dt);
     void apply_grip (seconds_t dt, const Vector3D& n);
     void calculate_orientation ();
@@ -153,6 +173,9 @@ namespace mov {
     float m_impact;
 
     const std::vector<Box>* m_obstacles;
+
+    int m_body_kind;
+    Vector3D m_body_color;
   };
 }
 }

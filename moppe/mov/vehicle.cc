@@ -14,6 +14,9 @@ namespace mov {
   static const seconds_t rocket_burn_time = 1.0;
   static const seconds_t rocket_cooldown_time = 2.2;
 
+  static void solid_box (float w, float h, float d);
+  static void solid_blob (float rx, float ry, float rz);
+
   Vehicle::Vehicle (const Vector3D& position,
 		    degrees_t orientation,
 		    const HeightMap& map,
@@ -34,7 +37,9 @@ namespace mov {
       m_water_level (-1000 * one_meter),
       m_airborne_time (0),
       m_impact (0),
-      m_obstacles (0)
+      m_obstacles (0),
+      m_body_kind (0),
+      m_body_color (0.8, 0.15, 0.1)
   {
     calculate_orientation ();
        fall_to_ground ();
@@ -260,6 +265,95 @@ namespace mov {
     return 1 - m_rocket_cooldown / rocket_cooldown_time;
   }
 
+  // A commandeered car (or truck), drawn in place of the bike.
+  // Expects the orientation frame and color material to be set up.
+  void
+  Vehicle::render_car () const {
+    const bool truck = (m_body_kind == 3);
+    const float t = glutGet (GLUT_ELAPSED_TIME) * 0.001f;
+
+    // model floor sits where the wheels touch
+    glTranslatef (0, -1.0f, 0);
+
+    glColor3f (m_body_color.x, m_body_color.y, m_body_color.z);
+    {
+      gl::ScopedMatrixSaver m;
+      glTranslatef (0, truck ? 0.8f : 0.55f, 0);
+      solid_box (truck ? 2.1f : 1.7f, truck ? 1.5f : 0.85f,
+		 truck ? 5.6f : 3.6f);
+    }
+
+    glColor3f (0.2f, 0.25f, 0.3f);
+    {
+      gl::ScopedMatrixSaver m;
+      if (truck)
+	{
+	  glTranslatef (0, 1.6f, 1.9f);
+	  solid_box (1.9f, 0.7f, 1.4f);
+	}
+      else
+	{
+	  glTranslatef (0, 1.15f, -0.2f);
+	  solid_box (1.5f, 0.6f, 1.9f);
+	}
+    }
+
+    if (truck)
+      {
+	glColor3f (0.75f, 0.76f, 0.78f);
+	gl::ScopedMatrixSaver m;
+	glTranslatef (0, 1.75f, -0.8f);
+	glRotatef (-6, 1, 0, 0);
+	solid_box (0.5f, 0.12f, 4.4f);
+      }
+
+    glColor3f (0.08f, 0.08f, 0.1f);
+    for (int lx = -1; lx <= 1; lx += 2)
+      for (int lz = -1; lz <= 1; lz += 2)
+	{
+	  gl::ScopedMatrixSaver m;
+	  glTranslatef (lx * (truck ? 1.0f : 0.8f), 0.3f,
+			lz * (truck ? 1.7f : 1.2f));
+	  solid_box (0.25f, 0.6f, 0.65f);
+	}
+
+    // flashing light bar on police and fire vehicles
+    if (m_body_kind >= 2)
+      {
+	glDisable (GL_LIGHTING);
+	const bool phase_a = fmod (t * 3.0f, 1.0f) < 0.5f;
+	for (int s = -1; s <= 1; s += 2)
+	  {
+	    if ((s > 0) == phase_a)
+	      glColor3f (0.2f, 0.4f, 1.0f);
+	    else
+	      glColor3f (1.0f, 0.15f, 0.1f);
+	    gl::ScopedMatrixSaver m;
+	    glTranslatef (s * 0.35f, truck ? 2.05f : 1.55f,
+			  truck ? 2.0f : -0.2f);
+	    solid_box (0.4f, 0.22f, 0.35f);
+	  }
+	glEnable (GL_LIGHTING);
+      }
+
+    // and of course the jump jets work in a car too
+    if (m_rocket_time > 0)
+      {
+	const float k = m_rocket_time / rocket_burn_time;
+	glDisable (GL_LIGHTING);
+	for (int s = -1; s <= 1; s += 2)
+	  {
+	    gl::ScopedMatrixSaver m;
+	    glTranslatef (s * 0.6f, 0.25f, -0.4f);
+	    glRotatef (90, 1, 0, 0);
+	    glColor3f (1.0, 0.7, 0.15);
+	    glutSolidCone (0.16, 2.0 * k, 8, 2);
+	    glColor3f (0.55, 0.75, 1.0);
+	    glutSolidCone (0.09, 2.9 * k, 8, 2);
+	  }
+      }
+  }
+
   void
   Vehicle::rocket_jump () {
     if (m_rocket_cooldown > 0)
@@ -358,6 +452,12 @@ namespace mov {
     static const float gloss[] = { 0.9f, 0.9f, 0.9f, 1.0f };
     glMaterialfv (GL_FRONT_AND_BACK, GL_SPECULAR, gloss);
     glMaterialf (GL_FRONT_AND_BACK, GL_SHININESS, 90.0f);
+
+    if (m_body_kind != 0)
+      {
+	render_car ();
+	return;
+      }
 
     draw_wheel (-0.55, -0.75);
 
