@@ -834,14 +834,17 @@ namespace moppe
           m_boxes.push_back(b.box);
         }
 
-      // -- cars on the street lanes
+      // -- cars on the street lanes, routes clamped to the island
       for (int i = 0; i < 70; ++i)
       {
         Car c;
         c.along_x = u(rng) < 0.5f;
-        const int k = (int)((u(rng) - 0.5f) * 44.0f);
+        const int k = (int)((u(rng) - 0.5f) * 40.0f);
         c.dir = (u(rng) < 0.5f) ? 1.0f : -1.0f;
         c.line = (c.along_x ? cz : cx) + k * PITCH + c.dir * 2.6f;
+        c.half = std::sqrt(std::max(
+            1.0f, (CORE - 120) * (CORE - 120)
+                      - (k * PITCH) * (k * PITCH)));
         c.speed = 8 + 8 * u(rng);
         c.phase = 3000 * u(rng);
 
@@ -854,6 +857,37 @@ namespace moppe
         c.color = Vector3D(carpal[p][0], carpal[p][1], carpal[p][2]);
         m_cars.push_back(c);
       }
+
+      // -- pedestrians strolling the sidewalks
+      for (int i = 0; i < 260; ++i)
+      {
+        Person p;
+        p.along_x = u(rng) < 0.5f;
+        const int k = (int)((u(rng) - 0.5f) * 40.0f);
+        p.dir = (u(rng) < 0.5f) ? 1.0f : -1.0f;
+        const float side = (u(rng) < 0.5f) ? 1.0f : -1.0f;
+        p.line = (p.along_x ? cz : cx) + k * PITCH
+            + side * (STREET_W / 2 + 1.6f);
+        p.half = std::sqrt(std::max(
+            1.0f, (CORE - 160) * (CORE - 160)
+                      - (k * PITCH) * (k * PITCH)));
+        p.speed = 1.1f + 0.9f * u(rng);
+        p.phase = 3000 * u(rng);
+        p.size = 0.9f + 0.2f * u(rng);
+
+        static const float shirts[6][3] = {
+          { 0.85f, 0.2f, 0.15f }, { 0.2f, 0.4f, 0.8f },
+          { 0.95f, 0.9f, 0.85f }, { 0.9f, 0.7f, 0.15f },
+          { 0.3f, 0.65f, 0.35f }, { 0.55f, 0.3f, 0.6f },
+        };
+        const int s = (int)(u(rng) * 6) % 6;
+        p.shirt = Vector3D(shirts[s][0], shirts[s][1], shirts[s][2]);
+        const float tone = u(rng);
+        p.skin = Vector3D(0.55f + 0.38f * tone,
+                          0.40f + 0.32f * tone,
+                          0.30f + 0.28f * tone);
+        m_people.push_back(p);
+      }
     }
 
     // Compile buildings and streets into display lists (GL context
@@ -862,6 +896,8 @@ namespace moppe
     {
       if (!m_map)
         return;
+
+      std::mt19937 wrng(4321); // window lighting pattern
 
       m_buildings_list = glGenLists(1);
       glNewList(m_buildings_list, GL_COMPILE);
@@ -889,6 +925,8 @@ namespace moppe
         glScalef(w + 0.6f, 0.5f, d + 0.6f);
         glutSolidCube(1.0);
         glPopMatrix();
+
+        draw_windows(b, wrng);
       }
       glEndList();
 
@@ -950,11 +988,17 @@ namespace moppe
       glEnable(GL_COLOR_MATERIAL);
       glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
+      // Window quads face every direction; skip culling instead of
+      // worrying about their winding
+      glDisable(GL_CULL_FACE);
+
       glCallList(m_buildings_list);
       glCallList(m_streets_list);
 
       for (size_t i = 0; i < m_cars.size(); ++i)
         draw_car(m_cars[i], time);
+      for (size_t i = 0; i < m_people.size(); ++i)
+        draw_person(m_people[i], time);
     }
 
   private:
@@ -967,9 +1011,80 @@ namespace moppe
     struct Car
     {
       bool along_x;
-      float line, dir, speed, phase;
+      float line, dir, speed, phase, half;
       Vector3D color;
     };
+
+    struct Person
+    {
+      bool along_x;
+      float line, dir, speed, phase, size, half;
+      Vector3D shirt, skin;
+    };
+
+    // A grid of window quads on each facade, mostly dark glass
+    // with the occasional lit one
+    static void draw_windows(const Building& b, std::mt19937& rng)
+    {
+      std::uniform_real_distribution<float> u(0.0f, 1.0f);
+      const float h = b.box.top - H_CITY;
+
+      for (int f = 0; f < 4; ++f)
+      {
+        const bool xf = f < 2; // facade faces +-x
+        const int sign = (f % 2) ? -1 : 1;
+
+        const float w =
+            xf ? b.box.z1 - b.box.z0 : b.box.x1 - b.box.x0;
+        const int nc = (int)((w - 3.0f) / 4.2f);
+        const int nf = (int)((h - 3.0f) / 4.2f);
+        if (nc < 1 || nf < 1)
+          continue;
+
+        const float wall = xf ? (sign > 0 ? b.box.x1 : b.box.x0)
+                              : (sign > 0 ? b.box.z1 : b.box.z0);
+        const float off = wall + sign * 0.08f;
+        const float a0 =
+            (xf ? b.box.z0 + b.box.z1 : b.box.x0 + b.box.x1) / 2
+            - (nc - 1) * 4.2f / 2;
+
+        glNormal3f(xf ? (float)sign : 0.0f, 0.0f,
+                   xf ? 0.0f : (float)sign);
+        glBegin(GL_QUADS);
+        for (int fy = 0; fy < nf; ++fy)
+          for (int c = 0; c < nc; ++c)
+          {
+            if (u(rng) < 0.13f)
+              glColor3f(1.0f, 0.9f, 0.55f); // someone's home
+            else
+            {
+              const float t = 0.8f + 0.4f * u(rng);
+              glColor3f(0.16f * t, 0.22f * t, 0.30f * t);
+            }
+
+            const float y0 = H_CITY + 2.2f + fy * 4.2f;
+            const float y1 = y0 + 2.4f;
+            const float a = a0 + c * 4.2f;
+            const float aa = a - 1.0f, ab = a + 1.0f;
+
+            if (xf)
+            {
+              glVertex3f(off, y0, aa);
+              glVertex3f(off, y0, ab);
+              glVertex3f(off, y1, ab);
+              glVertex3f(off, y1, aa);
+            }
+            else
+            {
+              glVertex3f(aa, y0, off);
+              glVertex3f(ab, y0, off);
+              glVertex3f(ab, y1, off);
+              glVertex3f(aa, y1, off);
+            }
+          }
+        glEnd();
+      }
+    }
 
     static void box(float w, float h, float d)
     {
@@ -983,8 +1098,7 @@ namespace moppe
     {
       const float cx = map_size.x / 2, cz = map_size.z / 2;
       const float s =
-          fmod(c.phase + c.speed * time, 2 * CORE - 200)
-          - (CORE - 100);
+          fmod(c.phase + c.speed * time, 2 * c.half) - c.half;
       const float wx = c.along_x ? cx + c.dir * s : c.line;
       const float wz = c.along_x ? c.line : cz + c.dir * s;
       const float y = m_map->interpolated_height(wx, wz);
@@ -1019,6 +1133,63 @@ namespace moppe
         }
     }
 
+    void draw_person(const Person& p, float time) const
+    {
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      const float s =
+          fmod(p.phase + p.speed * time, 2 * p.half) - p.half;
+      const float wx = p.along_x ? cx + p.dir * s : p.line;
+      const float wz = p.along_x ? p.line : cz + p.dir * s;
+      const float y = m_map->interpolated_height(wx, wz);
+
+      gl::ScopedMatrixSaver m;
+      glTranslatef(wx, y, wz);
+      if (p.along_x)
+        glRotatef(p.dir > 0 ? 90 : -90, 0, 1, 0);
+      else if (p.dir < 0)
+        glRotatef(180, 0, 1, 0);
+      glScalef(p.size, p.size, p.size);
+
+      const float swing = 30.0f * sin(time * 6.5f + p.phase);
+
+      // legs swinging in opposite phase
+      glColor3f(0.18f, 0.18f, 0.24f);
+      for (int leg = -1; leg <= 1; leg += 2)
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(leg * 0.09f, 0.78f, 0);
+        glRotatef(swing * leg, 1, 0, 0);
+        glTranslatef(0, -0.38f, 0);
+        box(0.13f, 0.76f, 0.13f);
+      }
+
+      // torso
+      glColor3f(p.shirt.x, p.shirt.y, p.shirt.z);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.14f, 0);
+        box(0.38f, 0.6f, 0.22f);
+      }
+
+      // arms, counter-swinging
+      for (int arm = -1; arm <= 1; arm += 2)
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(arm * 0.25f, 1.38f, 0);
+        glRotatef(-swing * arm * 0.7f, 1, 0, 0);
+        glTranslatef(0, -0.25f, 0);
+        box(0.09f, 0.5f, 0.09f);
+      }
+
+      // head
+      glColor3f(p.skin.x, p.skin.y, p.skin.z);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.62f, 0);
+        glutSolidSphere(0.13, 8, 6);
+      }
+    }
+
     static const float PITCH;
     static const float STREET_W;
     static const float CORE;
@@ -1027,6 +1198,7 @@ namespace moppe
     std::vector<Building> m_buildings;
     std::vector<mov::Box> m_boxes;
     std::vector<Car> m_cars;
+    std::vector<Person> m_people;
     GLuint m_buildings_list;
     GLuint m_streets_list;
   };
