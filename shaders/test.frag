@@ -9,24 +9,6 @@ uniform vec3 fogColor; // Dynamic fog color that matches sky
 uniform float shadowStrength; // Control shadow darkness (0.0-1.0)
 uniform vec3 sunDirection; // Current sun direction for normal-based shadows
 
-// Helper function for depth-based blur
-vec4 blurTexture(sampler2D tex, vec2 uv, float blur_amount) {
-  // Simple 5-tap blur based on distance
-  vec4 sum = vec4(0.0);
-  float blur = blur_amount * 0.01;
-  
-  // Center sample (highest weight)
-  sum += texture2D(tex, uv) * 0.5;
-  
-  // Four corner samples
-  sum += texture2D(tex, uv + vec2(blur, blur)) * 0.125;
-  sum += texture2D(tex, uv + vec2(-blur, blur)) * 0.125;
-  sum += texture2D(tex, uv + vec2(blur, -blur)) * 0.125;
-  sum += texture2D(tex, uv + vec2(-blur, -blur)) * 0.125;
-  
-  return sum;
-}
-
 // PCF shadow mapping - samples multiple points for soft shadows
 float calculateShadow() {
   // Check if using normal-based shadows or shadow mapping
@@ -90,26 +72,14 @@ float calculateShadow() {
   for (float y = -0.5; y <= 0.5; y += 1.0) {
     for (float x = -0.5; x <= 0.5; x += 1.0) {
       if (x == 0.0 && y == 0.0) continue; // Skip center (already sampled)
-      
+
       weight = 0.15;
-      vec3 offset = vec3(x * texelSize, y * texelSize, 0.0);
+      vec3 offset = vec3(x * texelSize * 1.5, y * texelSize * 1.5, 0.0);
       result += shadow2D(shadowMap, shadowProj + offset).r * weight;
       total_weight += weight;
     }
   }
-  
-  // Far samples (lower weight)
-  for (float y = -1.5; y <= 1.5; y += 1.0) {
-    for (float x = -1.5; x <= 1.5; x += 1.0) {
-      if (abs(x) <= 0.5 && abs(y) <= 0.5) continue; // Skip near samples (already processed)
-      
-      weight = 0.02;
-      vec3 offset = vec3(x * texelSize, y * texelSize, 0.0);
-      result += shadow2D(shadowMap, shadowProj + offset).r * weight;
-      total_weight += weight;
-    }
-  }
-  
+
   // Normalize by total weight
   shadow = result / total_weight;
   
@@ -139,14 +109,12 @@ void main () {
   af = diffuse.a;
 
   tc = gl_TexCoord[0].st;
-  
-  // Calculate blur amount based on distance (fog factor)
-  float blur_amount = gl_FogFragCoord * 3.0;
-  
-  // Apply distance-based blur to textures
-  texel = blurTexture(grass, tc, blur_amount);
-  rocktexel = blurTexture(dirt, tc, blur_amount);
-  snowtexel = blurTexture(snow, tc, blur_amount);
+
+  // Mipmapping + anisotropic filtering handle distance softening;
+  // single taps are far cheaper than the old 5-tap blurs
+  texel = texture2D(grass, tc);
+  rocktexel = texture2D(dirt, tc);
+  snowtexel = texture2D(snow, tc);
 
   // Break up the tiling: modulate each texture with itself sampled
   // at a much larger scale, so no repeating lawn-grid survives

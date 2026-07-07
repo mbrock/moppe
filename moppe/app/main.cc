@@ -234,7 +234,7 @@ namespace moppe
     int collected() const { return m_collected; }
     Vector3D last_pickup() const { return m_last_pos; }
 
-    void render(float time) const
+    void render(float time, const Vector3D& cam) const
     {
       gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
                                     GL_TEXTURE_BIT);
@@ -249,6 +249,10 @@ namespace moppe
       {
         const Star& s = m_stars[i];
         if (s.respawn > 0)
+          continue;
+
+        const float dx = cam.x - s.pos.x, dz = cam.z - s.pos.z;
+        if (dx * dx + dz * dz > 900.0f * 900.0f)
           continue;
 
         gl::ScopedMatrixSaver m;
@@ -407,7 +411,7 @@ namespace moppe
       }
     }
 
-    void render(float time) const
+    void render(float time, const Vector3D& cam) const
     {
       if (m_fish.empty())
         return;
@@ -425,6 +429,11 @@ namespace moppe
       for (size_t i = 0; i < m_fish.size(); ++i)
       {
         const One& f = m_fish[i];
+
+        const float cdx = cam.x - f.cx, cdz = cam.z - f.cz;
+        if (cdx * cdx + cdz * cdz > 600.0f * 600.0f)
+          continue; // invisible underwater from that far
+
         const float a = f.phase + time * f.speed;
 
         gl::ScopedMatrixSaver m;
@@ -533,7 +542,7 @@ namespace moppe
       }
     }
 
-    void render(float time) const
+    void render(float time, const Vector3D& cam) const
     {
       if (m_horses.empty() && m_birds.empty())
         return;
@@ -549,13 +558,25 @@ namespace moppe
       glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
 
       for (size_t i = 0; i < m_horses.size(); ++i)
-        draw_horse(m_horses[i], time);
+      {
+        const Horse& h = m_horses[i];
+        const float dx = cam.x - h.x, dz = cam.z - h.z;
+        if (dx * dx + dz * dz > 700.0f * 700.0f)
+          continue;
+        draw_horse(h, time);
+      }
 
       // Birds read best as flat silhouettes, visible from below too
       glDisable(GL_LIGHTING);
       glDisable(GL_CULL_FACE);
       for (size_t i = 0; i < m_birds.size(); ++i)
-        draw_bird(m_birds[i], time);
+      {
+        const Bird& b = m_birds[i];
+        const float dx = cam.x - b.cx, dz = cam.z - b.cz;
+        if (dx * dx + dz * dz > 1300.0f * 1300.0f)
+          continue;
+        draw_bird(b, time);
+      }
     }
 
   private:
@@ -693,11 +714,12 @@ namespace moppe
   public:
     City()
         : m_map(0),
-          m_buildings_list(0),
           m_streets_list(0),
           m_furniture_list(0),
           m_air_x0(0), m_air_x1(0), m_air_z0(0), m_air_z1(0)
     {
+      for (int s = 0; s < SEC * SEC; ++s)
+        m_sectors[s] = 0;
     }
 
     const std::vector<mov::Box>& obstacles() const
@@ -1017,40 +1039,76 @@ namespace moppe
         return;
 
       std::mt19937 wrng(4321); // window lighting pattern
+      const float cxx = map_size.x / 2, czz = map_size.z / 2;
 
-      m_buildings_list = glGenLists(1);
-      glNewList(m_buildings_list, GL_COMPILE);
-      for (size_t i = 0; i < m_buildings.size(); ++i)
+      // gather lamp and trash can spots up front so they can be
+      // bucketed into sectors along with the buildings
+      std::vector<Vector3D> lamps, cans;
+
+      int lamp_index = 0;
+      for (int axis = 0; axis < 2; ++axis)
+        for (int k = -20; k <= 20; ++k)
+        {
+          const float line = (axis ? cxx : czz) + k * PITCH;
+          for (float s = -CORE; s <= CORE; s += 96)
+          {
+            const float side = (++lamp_index % 2) ? 1.0f : -1.0f;
+            const float off = line + side * (STREET_W / 2 + 0.8f);
+            const float wx = axis ? off : cxx + s;
+            const float wz = axis ? czz + s : off;
+
+            if (std::sqrt((wx - cxx) * (wx - cxx)
+                          + (wz - czz) * (wz - czz)) > CORE - 100)
+              continue;
+            if (in_airport(wx, wz, 10))
+              continue;
+            lamps.push_back(Vector3D(
+                wx, m_map->interpolated_height(wx, wz), wz));
+          }
+        }
+
+      for (int ki = -20; ki <= 20; ++ki)
+        for (int kj = -20; kj <= 20; ++kj)
+        {
+          if ((ki + 2 * kj) % 3 != 0)
+            continue;
+          const float wx = cxx + ki * PITCH + STREET_W / 2 + 1.0f;
+          const float wz = czz + kj * PITCH + STREET_W / 2 + 1.2f;
+          if (std::sqrt((wx - cxx) * (wx - cxx)
+                        + (wz - czz) * (wz - czz)) > CORE - 120)
+            continue;
+          if (in_airport(wx, wz, 10))
+            continue;
+          cans.push_back(Vector3D(
+              wx, m_map->interpolated_height(wx, wz), wz));
+        }
+
+      // Static geometry is bucketed into SEC x SEC sector display
+      // lists so distant chunks of the city can be skipped whole
+      for (int s = 0; s < SEC * SEC; ++s)
       {
-        const Building& b = m_buildings[i];
-        const float w = b.box.x1 - b.box.x0;
-        const float d = b.box.z1 - b.box.z0;
-        const float h = b.box.top - H_CITY;
+        m_sectors[s] = glGenLists(1);
+        glNewList(m_sectors[s], GL_COMPILE);
 
-        glColor3f(b.color.x, b.color.y, b.color.z);
-        glPushMatrix();
-        glTranslatef((b.box.x0 + b.box.x1) / 2, H_CITY + h / 2,
-                     (b.box.z0 + b.box.z1) / 2);
-        glScalef(w, h, d);
-        glutSolidCube(1.0);
-        glPopMatrix();
+        for (size_t i = 0; i < m_buildings.size(); ++i)
+        {
+          const Building& b = m_buildings[i];
+          if (sector_of((b.box.x0 + b.box.x1) / 2,
+                        (b.box.z0 + b.box.z1) / 2) != s)
+            continue;
+          emit_building(b, wrng);
+        }
 
-        // darker roof cap
-        glColor3f(b.color.x * 0.5f, b.color.y * 0.5f,
-                  b.color.z * 0.5f);
-        glPushMatrix();
-        glTranslatef((b.box.x0 + b.box.x1) / 2, b.box.top + 0.25f,
-                     (b.box.z0 + b.box.z1) / 2);
-        glScalef(w + 0.6f, 0.5f, d + 0.6f);
-        glutSolidCube(1.0);
-        glPopMatrix();
+        for (size_t i = 0; i < lamps.size(); ++i)
+          if (sector_of(lamps[i].x, lamps[i].z) == s)
+            emit_lamp(lamps[i]);
 
-        draw_windows(b, wrng);
+        for (size_t i = 0; i < cans.size(); ++i)
+          if (sector_of(cans[i].x, cans[i].z) == s)
+            emit_can(cans[i]);
+
+        glEndList();
       }
-
-      draw_station(m_police, false);
-      draw_station(m_fire, true);
-      glEndList();
 
       // streets draped over the terrain (so they follow ramps)
       const float cx = map_size.x / 2, cz = map_size.z / 2;
@@ -1097,83 +1155,47 @@ namespace moppe
       build_furniture();
     }
 
-    // Street lamps, trash cans, and the airport, in one list
+    static void emit_lamp(const Vector3D& p)
+    {
+      glColor3f(0.25f, 0.26f, 0.28f);
+      glPushMatrix();
+      glTranslatef(p.x, p.y + 2.3f, p.z);
+      box(0.16f, 4.6f, 0.16f);
+      glPopMatrix();
+
+      // warm lamp head, always lit
+      glDisable(GL_LIGHTING);
+      glColor3f(1.0f, 0.88f, 0.55f);
+      glPushMatrix();
+      glTranslatef(p.x, p.y + 4.7f, p.z);
+      glutSolidSphere(0.32, 8, 6);
+      glPopMatrix();
+      glEnable(GL_LIGHTING);
+    }
+
+    static void emit_can(const Vector3D& p)
+    {
+      glColor3f(0.25f, 0.35f, 0.28f);
+      glPushMatrix();
+      glTranslatef(p.x, p.y + 0.45f, p.z);
+      box(0.6f, 0.9f, 0.6f);
+      glPopMatrix();
+
+      glColor3f(0.16f, 0.2f, 0.17f);
+      glPushMatrix();
+      glTranslatef(p.x, p.y + 0.95f, p.z);
+      box(0.68f, 0.1f, 0.68f);
+      glPopMatrix();
+    }
+
+    // The airport and the stations: always-visible landmarks
     void build_furniture()
     {
-      const float cx = map_size.x / 2, cz = map_size.z / 2;
-
       m_furniture_list = glGenLists(1);
       glNewList(m_furniture_list, GL_COMPILE);
 
-      // -- lamps along the streets, alternating sides
-      int lamp_index = 0;
-      for (int axis = 0; axis < 2; ++axis)
-        for (int k = -20; k <= 20; ++k)
-        {
-          const float line = (axis ? cx : cz) + k * PITCH;
-          for (float s = -CORE; s <= CORE; s += 96)
-          {
-            const float side =
-                (++lamp_index % 2) ? 1.0f : -1.0f;
-            const float off =
-                line + side * (STREET_W / 2 + 0.8f);
-            const float wx = axis ? off : cx + s;
-            const float wz = axis ? cz + s : off;
-
-            if (std::sqrt((wx - cx) * (wx - cx)
-                          + (wz - cz) * (wz - cz)) > CORE - 100)
-              continue;
-            if (in_airport(wx, wz, 10))
-              continue;
-
-            const float y = m_map->interpolated_height(wx, wz);
-
-            glColor3f(0.25f, 0.26f, 0.28f);
-            glPushMatrix();
-            glTranslatef(wx, y + 2.3f, wz);
-            box(0.16f, 4.6f, 0.16f);
-            glPopMatrix();
-
-            // warm lamp head, always lit
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 0.88f, 0.55f);
-            glPushMatrix();
-            glTranslatef(wx, y + 4.7f, wz);
-            glutSolidSphere(0.32, 8, 6);
-            glPopMatrix();
-            glEnable(GL_LIGHTING);
-          }
-        }
-
-      // -- trash cans near some intersections
-      for (int ki = -20; ki <= 20; ++ki)
-        for (int kj = -20; kj <= 20; ++kj)
-        {
-          if ((ki + 2 * kj) % 3 != 0)
-            continue;
-
-          const float wx = cx + ki * PITCH + STREET_W / 2 + 1.0f;
-          const float wz = cz + kj * PITCH + STREET_W / 2 + 1.2f;
-          if (std::sqrt((wx - cx) * (wx - cx)
-                        + (wz - cz) * (wz - cz)) > CORE - 120)
-            continue;
-          if (in_airport(wx, wz, 10))
-            continue;
-
-          const float y = m_map->interpolated_height(wx, wz);
-
-          glColor3f(0.25f, 0.35f, 0.28f);
-          glPushMatrix();
-          glTranslatef(wx, y + 0.45f, wz);
-          box(0.6f, 0.9f, 0.6f);
-          glPopMatrix();
-
-          glColor3f(0.16f, 0.2f, 0.17f);
-          glPushMatrix();
-          glTranslatef(wx, y + 0.95f, wz);
-          box(0.68f, 0.1f, 0.68f);
-          glPopMatrix();
-        }
+      draw_station(m_police, false);
+      draw_station(m_fire, true);
 
       // -- the airport: runway, centerline, apron, parked jet
       {
@@ -1220,7 +1242,7 @@ namespace moppe
       glEndList();
     }
 
-    void render(float time) const
+    void render(float time, const Vector3D& cam) const
     {
       if (!m_map)
         return;
@@ -1239,14 +1261,26 @@ namespace moppe
       // worrying about their winding
       glDisable(GL_CULL_FACE);
 
-      glCallList(m_buildings_list);
+      // Only sectors within sight range get drawn at all; beyond
+      // ~2km the fog has swallowed them anyway
+      const float sec_size = map_size.x / SEC;
+      const float reach = 1900.0f + sec_size * 0.71f;
+      for (int sz = 0; sz < SEC; ++sz)
+        for (int sx = 0; sx < SEC; ++sx)
+        {
+          const float dx = cam.x - (sx + 0.5f) * sec_size;
+          const float dz = cam.z - (sz + 0.5f) * sec_size;
+          if (dx * dx + dz * dz < reach * reach)
+            glCallList(m_sectors[sz * SEC + sx]);
+        }
+
       glCallList(m_streets_list);
       glCallList(m_furniture_list);
 
       for (size_t i = 0; i < m_cars.size(); ++i)
-        draw_car(m_cars[i], time);
+        draw_car(m_cars[i], time, cam);
       for (size_t i = 0; i < m_people.size(); ++i)
-        draw_person(m_people[i], time);
+        draw_person(m_people[i], time, cam);
 
       draw_flying_plane(0, time);
       draw_flying_plane(1, time);
@@ -1279,6 +1313,53 @@ namespace moppe
       float hit_time;
       float hx, hy, hz, hvx, hvy, hvz;
     };
+
+    int sector_of(float x, float z) const
+    {
+      int sx = (int)(x / (map_size.x / SEC));
+      int sz = (int)(z / (map_size.z / SEC));
+      sx = std::max(0, std::min(SEC - 1, sx));
+      sz = std::max(0, std::min(SEC - 1, sz));
+      return sz * SEC + sx;
+    }
+
+    static void emit_building(const Building& b, std::mt19937& rng)
+    {
+      const float w = b.box.x1 - b.box.x0;
+      const float d = b.box.z1 - b.box.z0;
+      const float h = b.box.top - H_CITY;
+
+      glColor3f(b.color.x, b.color.y, b.color.z);
+      glPushMatrix();
+      glTranslatef((b.box.x0 + b.box.x1) / 2, H_CITY + h / 2,
+                   (b.box.z0 + b.box.z1) / 2);
+      glScalef(w, h, d);
+      glutSolidCube(1.0);
+      glPopMatrix();
+
+      // darker roof cap
+      glColor3f(b.color.x * 0.5f, b.color.y * 0.5f,
+                b.color.z * 0.5f);
+      glPushMatrix();
+      glTranslatef((b.box.x0 + b.box.x1) / 2, b.box.top + 0.25f,
+                   (b.box.z0 + b.box.z1) / 2);
+      glScalef(w + 0.6f, 0.5f, d + 0.6f);
+      glutSolidCube(1.0);
+      glPopMatrix();
+
+      draw_windows(b, rng);
+
+      // the front door (walkable on foot -- see Walker::collide)
+      const float dx = (b.box.x0 + b.box.x1) / 2;
+      glColor3f(0.09f, 0.08f, 0.09f);
+      glNormal3f(0, 0, 1);
+      glBegin(GL_QUADS);
+      glVertex3f(dx - 1.2f, H_CITY, b.box.z1 + 0.06f);
+      glVertex3f(dx + 1.2f, H_CITY, b.box.z1 + 0.06f);
+      glVertex3f(dx + 1.2f, H_CITY + 2.6f, b.box.z1 + 0.06f);
+      glVertex3f(dx - 1.2f, H_CITY + 2.6f, b.box.z1 + 0.06f);
+      glEnd();
+    }
 
     // A grid of window quads on each facade, mostly dark glass
     // with the occasional lit one
@@ -1352,13 +1433,19 @@ namespace moppe
       glPopMatrix();
     }
 
-    void draw_car(const Car& c, float time) const
+    void draw_car(const Car& c, float time,
+                  const Vector3D& cam) const
     {
       const float cx = map_size.x / 2, cz = map_size.z / 2;
       const float s =
           fmod(c.phase + c.speed * time, 2 * c.half) - c.half;
       const float wx = c.along_x ? cx + c.dir * s : c.line;
       const float wz = c.along_x ? c.line : cz + c.dir * s;
+
+      const float ddx = cam.x - wx, ddz = cam.z - wz;
+      if (ddx * ddx + ddz * ddz > 900.0f * 900.0f)
+        return; // too far to matter
+
       const float y = m_map->interpolated_height(wx, wz);
 
       gl::ScopedMatrixSaver m;
@@ -1704,8 +1791,17 @@ namespace moppe
       }
     }
 
-    void draw_person(const Person& p, float time) const
+    void draw_person(const Person& p, float time,
+                     const Vector3D& cam) const
     {
+      {
+        float wx, wz;
+        person_pos(p, time, wx, wz);
+        const float ddx = cam.x - wx, ddz = cam.z - wz;
+        if (ddx * ddx + ddz * ddz > 450.0f * 450.0f)
+          return; // a pixel at best
+      }
+
       // Bowled over: fly in an arc, tumbling, then lie flat for a
       // moment before getting up again
       if (p.hit_time > 0)
@@ -1803,9 +1899,11 @@ namespace moppe
     map::RandomHeightMap* m_map;
     std::vector<Building> m_buildings;
     std::vector<mov::Box> m_boxes;
+    static const int SEC = 8;
+
     std::vector<Car> m_cars;
     std::vector<Person> m_people;
-    GLuint m_buildings_list;
+    GLuint m_sectors[SEC * SEC];
     GLuint m_streets_list;
     GLuint m_furniture_list;
     float m_air_x0, m_air_x1, m_air_z0, m_air_z1;
@@ -1817,6 +1915,184 @@ namespace moppe
   const float City::PITCH = 64.0f;
   const float City::STREET_W = 10.0f;
   const float City::CORE = 1750.0f;
+
+  // On-foot mode: park the bike, stretch your legs, walk through
+  // doors into buildings.  Toggled with the secret 7-5-R combo.
+  class Walker
+  {
+  public:
+    Walker()
+        : m_pos(), m_heading(0, 0, 1), m_vy(0), m_turn(0),
+          m_walk(0), m_anim(0), m_grounded(true)
+    {
+    }
+
+    void spawn(const Vector3D& pos, const Vector3D& heading)
+    {
+      m_pos = pos;
+      m_heading = Vector3D(heading.x, 0, heading.z);
+      if (m_heading.length2() < 0.01f)
+        m_heading = Vector3D(0, 0, 1);
+      m_heading.normalize();
+      m_vy = 0;
+      m_turn = 0;
+      m_walk = 0;
+    }
+
+    void set_turn(float t) { m_turn = t; }
+    void set_walk(float w) { m_walk = w; }
+
+    void jump()
+    {
+      if (m_grounded)
+        m_vy = 5.5f;
+    }
+
+    void update(float dt, const map::HeightMap& map,
+                const std::vector<mov::Box>& boxes)
+    {
+      if (std::abs(m_turn) > 0.01f)
+        m_heading = Quaternion::rotate(m_heading, Vector3D(0, 1, 0),
+                                       -m_turn * 2.4f * dt);
+
+      float speed = 6.0f;
+      if (m_pos.y < water_level + 0.5f)
+        speed = 2.0f; // wading
+
+      m_pos.x += m_heading.x * m_walk * speed * dt;
+      m_pos.z += m_heading.z * m_walk * speed * dt;
+      m_anim += std::abs(m_walk) * speed * dt;
+
+      collide(boxes);
+
+      // ground is the terrain, or a roof once we're up on one
+      float g = map.interpolated_height(m_pos.x, m_pos.z);
+      for (size_t i = 0; i < boxes.size(); ++i)
+      {
+        const mov::Box& b = boxes[i];
+        if (m_pos.x > b.x0 && m_pos.x < b.x1 &&
+            m_pos.z > b.z0 && m_pos.z < b.z1 &&
+            m_pos.y > b.top - 1.0f && b.top > g)
+          g = b.top;
+      }
+
+      m_vy -= 9.82f * dt;
+      m_pos.y += m_vy * dt;
+      m_grounded = false;
+      if (m_pos.y <= g)
+      {
+        m_pos.y = g;
+        m_vy = 0;
+        m_grounded = true;
+      }
+    }
+
+    Vector3D position() const { return m_pos; }
+    Vector3D heading() const { return m_heading; }
+
+    void render(float) const
+    {
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_LIGHTING_BIT |
+                                    GL_CURRENT_BIT | GL_TEXTURE_BIT);
+      for (int unit = 3; unit >= 0; --unit)
+      {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glDisable(GL_TEXTURE_2D);
+      }
+      glEnable(GL_COLOR_MATERIAL);
+      glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+      gl::ScopedMatrixSaver m;
+      glTranslatef(m_pos.x, m_pos.y, m_pos.z);
+      glRotatef(atan2(m_heading.x, m_heading.z) * 57.2958f,
+                0, 1, 0);
+
+      const float swing =
+          (std::abs(m_walk) > 0.01f) ? 32.0f * sin(m_anim * 3.6f)
+                                     : 0.0f;
+
+      // the rider, dismounted: same blue as the bike
+      glColor3f(0.18f, 0.18f, 0.24f);
+      for (int leg = -1; leg <= 1; leg += 2)
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(leg * 0.09f, 0.78f, 0);
+        glRotatef(swing * leg, 1, 0, 0);
+        glTranslatef(0, -0.38f, 0);
+        glPushMatrix();
+        glScalef(0.13f, 0.76f, 0.13f);
+        glutSolidCube(1.0);
+        glPopMatrix();
+      }
+
+      glColor3f(0.15f, 0.5f, 1.0f);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.14f, 0);
+        glPushMatrix();
+        glScalef(0.38f, 0.6f, 0.22f);
+        glutSolidCube(1.0);
+        glPopMatrix();
+      }
+
+      for (int arm = -1; arm <= 1; arm += 2)
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(arm * 0.25f, 1.38f, 0);
+        glRotatef(-swing * arm * 0.7f, 1, 0, 0);
+        glTranslatef(0, -0.25f, 0);
+        glPushMatrix();
+        glScalef(0.09f, 0.5f, 0.09f);
+        glutSolidCube(1.0);
+        glPopMatrix();
+      }
+
+      // blue helmet, naturally: safety first
+      glColor3f(0.15f, 0.45f, 1.0f);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.62f, 0);
+        glutSolidSphere(0.15, 10, 8);
+      }
+    }
+
+  private:
+    void collide(const std::vector<mov::Box>& boxes)
+    {
+      const float r = 0.4f;
+      for (size_t i = 0; i < boxes.size(); ++i)
+      {
+        const mov::Box& b = boxes[i];
+        if (m_pos.y >= b.top - 0.1f)
+          continue; // up on the roof
+
+        const float dx0 = m_pos.x - (b.x0 - r);
+        const float dx1 = (b.x1 + r) - m_pos.x;
+        const float dz0 = m_pos.z - (b.z0 - r);
+        const float dz1 = (b.z1 + r) - m_pos.z;
+        if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
+          continue;
+
+        // every building has a door in the middle of its +z wall;
+        // people fit through, motorcycles do not
+        const float door_x = (b.x0 + b.x1) / 2;
+        if (std::abs(m_pos.x - door_x) < 1.1f &&
+            std::abs(m_pos.z - b.z1) < 1.8f)
+          continue;
+
+        const float px = std::min(dx0, dx1);
+        const float pz = std::min(dz0, dz1);
+        if (px < pz)
+          m_pos.x = (dx0 < dx1) ? b.x0 - r : b.x1 + r;
+        else
+          m_pos.z = (dz0 < dz1) ? b.z0 - r : b.z1 + r;
+      }
+    }
+
+    Vector3D m_pos, m_heading;
+    float m_vy, m_turn, m_walk, m_anim;
+    bool m_grounded;
+  };
 
   class MoppeGLUT : public GLUTApplication
   {
@@ -1845,6 +2121,8 @@ namespace moppe
           m_blur_valid(false),
           m_shake(0.0f),
           m_health(100.0f),
+          m_on_foot(false),
+          m_combo(0),
           m_fx_rng(7)
     {
     }
@@ -2020,9 +2298,12 @@ namespace moppe
         }
 
         m_vehicle.update(elapsed);
+        if (m_on_foot)
+          m_walker.update(elapsed, m_map1, m_city.obstacles());
 
         // -- gameplay feedback: dust, spray, stars, camera shake
-        const Vector3D vpos = m_vehicle.position();
+        const Vector3D vpos =
+            m_on_foot ? m_walker.position() : m_vehicle.position();
         const bool in_water = vpos.y < water_level + 1.0f;
         const Vector3D dust_color(0.72, 0.63, 0.48);
         const Vector3D spray_color(0.85, 0.92, 1.0);
@@ -2084,9 +2365,13 @@ namespace moppe
         m_dust.update(elapsed);
         m_shake *= std::exp(-4.0f * elapsed);
 
-        m_camera.update(m_vehicle.position(),
-                        m_vehicle.orientation(),
-                        elapsed);
+        if (m_on_foot)
+          m_camera.update(m_walker.position() + Vector3D(0, 1, 0),
+                          m_walker.heading(), elapsed);
+        else
+          m_camera.update(m_vehicle.position(),
+                          m_vehicle.orientation(),
+                          elapsed);
         m_camera.limit(m_map1);
 
         glutPostRedisplay();
@@ -2144,7 +2429,8 @@ namespace moppe
       if (m_blur_tex == 0)
         return;
 
-      const float kmh = m_vehicle.velocity().length() * 3.6f;
+      const float kmh =
+          m_on_foot ? 0.0f : m_vehicle.velocity().length() * 3.6f;
       float k = (kmh - 90.0f) / 160.0f; // fades in 90, full at 250
       k = std::max(0.0f, std::min(1.0f, k));
 
@@ -2240,7 +2526,8 @@ namespace moppe
     // Game HUD: speedometer dial, rocket charge bar, star counter
     void draw_hud()
     {
-      const float kmh = m_vehicle.velocity().length() * 3.6f;
+      const float kmh =
+          m_on_foot ? 0.0f : m_vehicle.velocity().length() * 3.6f;
       const float frac = std::min(1.0f, kmh / 300.0f);
       const float PI = 3.14159265f;
 
@@ -2421,47 +2708,108 @@ namespace moppe
         switch (code)
         {
         case GLUT_KEY_LEFT:
-          m_vehicle.set_yaw(-90 * factor);
+          input_turn(-1 * factor);
           break;
         case GLUT_KEY_RIGHT:
-          m_vehicle.set_yaw(90 * factor);
+          input_turn(1 * factor);
           break;
         case GLUT_KEY_UP:
-          m_vehicle.set_thrust(1 * factor);
+          input_go(1 * factor);
           break;
         case GLUT_KEY_DOWN:
-          m_vehicle.set_thrust(-1 * factor);
+          input_go(-1 * factor);
           break;
         }
         return;
       }
 
+      // The secret dismount combo: 7, then 5, then R
+      if (pressed)
+      {
+        static const char want[3] = { '7', '5', 'r' };
+        const char cc =
+            (code >= 'A' && code <= 'Z') ? code + 32 : code;
+        if (cc == want[m_combo])
+        {
+          if (++m_combo == 3)
+          {
+            m_combo = 0;
+            toggle_mount();
+          }
+        }
+        else
+          m_combo = (cc == '7') ? 1 : 0;
+      }
+
       switch (code)
       {
       case 'a': case 'A':
-        m_vehicle.set_yaw(-90 * factor);
+        input_turn(-1 * factor);
         break;
 
       case 'd': case 'D':
-        m_vehicle.set_yaw(90 * factor);
+        input_turn(1 * factor);
         break;
 
       case 'w': case 'W':
-        m_vehicle.set_thrust(1 * factor);
+        input_go(1 * factor);
         break;
 
       case 's': case 'S':
-        m_vehicle.set_thrust(-1 * factor);
+        input_go(-1 * factor);
         break;
 
-      case ' ': // Rocket jump!
+      case ' ': // Rocket jump on the bike, a hop on foot
         if (pressed)
-          m_vehicle.rocket_jump();
+        {
+          if (m_on_foot)
+            m_walker.jump();
+          else
+            m_vehicle.rocket_jump();
+        }
         break;
 
       case 27: // ESC quits the fullscreen game
         std::exit(0);
         break;
+      }
+    }
+
+    void input_turn(float v)
+    {
+      if (m_on_foot)
+        m_walker.set_turn(v);
+      else
+        m_vehicle.set_yaw(90 * v);
+    }
+
+    void input_go(float v)
+    {
+      if (m_on_foot)
+        m_walker.set_walk(v > 0 ? v : v * 0.6f);
+      else
+        m_vehicle.set_thrust(v);
+    }
+
+    void toggle_mount()
+    {
+      if (!m_on_foot)
+      {
+        // step off to the side of the bike
+        const Vector3D h = m_vehicle.orientation();
+        const Vector3D side(h.z, 0, -h.x);
+        m_walker.spawn(m_vehicle.position() + side * 1.8f, h);
+        m_vehicle.set_thrust(0);
+        m_vehicle.set_yaw(0);
+        m_on_foot = true;
+      }
+      else if ((m_walker.position() - m_vehicle.position())
+                   .length2() < 5.0f * 5.0f)
+      {
+        // close enough to climb back on
+        m_vehicle.set_thrust(0);
+        m_vehicle.set_yaw(0);
+        m_on_foot = false;
       }
     }
 
@@ -2504,14 +2852,18 @@ namespace moppe
         m_sky.render();
       }
 
+      const Vector3D cam = m_camera.position();
+
       m_terrain_renderer.render();
-      m_city.render(m_total_time);
+      m_city.render(m_total_time, cam);
       m_vegetation.render(fog);
-      m_star_field.render(m_total_time);
+      m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
       m_vehicle.render();
-      m_fish_school.render(m_total_time);
-      m_wildlife.render(m_total_time);
+      if (m_on_foot)
+        m_walker.render(m_total_time);
+      m_fish_school.render(m_total_time, cam);
+      m_wildlife.render(m_total_time, cam);
 
       // Translucent water goes last so the seabed, fish, and a
       // submerged bike show through it, then dust so spray sits on
@@ -2695,6 +3047,11 @@ namespace moppe
 
     float m_shake;
     float m_health;
+
+    Walker m_walker;
+    bool m_on_foot;
+    int m_combo;
+
     std::mt19937 m_fx_rng;
   };
 }
