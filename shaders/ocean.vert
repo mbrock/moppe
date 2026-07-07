@@ -1,4 +1,5 @@
 uniform float time;
+uniform float fogScale;
 
 varying vec3 eyePos;
 varying vec3 eyeNormal;
@@ -30,7 +31,7 @@ void main () {
   // Same haze curve as the terrain shader, plus the sea mist that
   // pools over the water (matching the terrain's valley mist)
   float dist = length (eye.xyz);
-  fogCoord = 1.0 - exp (-pow (dist * 0.0004, 1.5));
+  fogCoord = 1.0 - exp (-pow (dist * fogScale, 1.5));
   fogCoord += 0.3 * smoothstep (150.0, 1500.0, dist);
   fogCoord = clamp (fogCoord, 0.0, 1.0);
 }

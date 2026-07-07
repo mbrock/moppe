@@ -31,6 +31,12 @@ namespace gfx {
     
     // Set the fog color for the shader
     void set_fog_color(const Vector3D& color);
+
+    // Tell the shader the world's vertical scale, normalized sea
+    // level, and haze density so the rock/snow/beach bands and fog
+    // land at sensible altitudes for any world size
+    void set_terrain_scales(float height_scale, float sea_norm,
+                            float fog_scale);
     
     // Shadow support
     void update_shadow_map(const Vector3D& light_dir);

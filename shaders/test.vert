@@ -3,6 +3,9 @@ varying vec3 normal, lightDir;
 varying float height, intensity, rock_coef, snow_coef, beach_coef;
 varying vec4 shadowCoord; // For shadow mapping
 uniform mat4 lightMatrix; // Light's view-projection matrix
+uniform float heightScale; // world vertical scale in meters
+uniform float seaLevel;    // sea level / heightScale
+uniform float fogScale;    // distance haze density (per meter)
 
 float smoothstepVar (float edge1, float edge2, float curve, float value) {
   float width = edge2 - edge1;
@@ -17,14 +20,14 @@ void main () {
   float fog;
   float density = 0.65; // Reduced for more subtle fog
   vec4 position = ftransform();
-  // Normalize against the map's vertical scale (650 meters) so the
-  // rock and snow bands below actually span the terrain's range
-  height = gl_Vertex.y/650.0;
+  // Normalize against the world's vertical scale so the rock and
+  // snow bands below span the terrain's actual range
+  height = gl_Vertex.y/heightScale;
 
   // Gentle distance haze: barely there up close, softening the
   // far mountains into the horizon without hiding them
   float distance = length(position.xyz);
-  fog = 1.0 - exp(-pow(distance * 0.0004, 1.5));
+  fog = 1.0 - exp(-pow(distance * fogScale, 1.5));
 
   // Valley mist: extra haze pools over low ground near sea level
   // and thins out with altitude, so peaks rise clear out of it
@@ -47,8 +50,9 @@ void main () {
   intensity = max(dot(lightDir, normalize(normal)),0.0);
   rock_coef = smoothstep(0.35,0.55,height);
   snow_coef = smoothstep(0.55,0.68,height);
-  // Sandy shore around the waterline (sea level 50m / 650m = 0.077)
-  beach_coef = 1.0 - smoothstep(0.080, 0.104, height);
+  // Sandy shore in a band just above the waterline
+  beach_coef = 1.0 - smoothstep(seaLevel + 0.004, seaLevel + 0.030,
+                                height);
 
   // Transform vertex to light space for shadow lookup
   // Bias matrix transforms from [-1,1] to [0,1] for texture coordinates

@@ -8,6 +8,7 @@ namespace gfx {
       m_level (level),
       m_center (center),
       m_half_extent (half_extent),
+      m_fog_scale (0.0004f),
       m_list (0)
   { }
 
@@ -25,7 +26,7 @@ namespace gfx {
     m_program.print_log ();
 
     // A flat grid at sea level; the vertex shader does the waving.
-    const int cells = 200;
+    const int cells = 300;
     const float step = 2 * m_half_extent / cells;
     const float x0 = m_center.x - m_half_extent;
     const float z0 = m_center.z - m_half_extent;
@@ -58,6 +59,7 @@ namespace gfx {
 
     m_program.use ();
     m_program.set_float ("time", time);
+    m_program.set_float ("fogScale", m_fog_scale);
     m_program.set_vec3 ("fogColor",
 			fog_color.x, fog_color.y, fog_color.z);
 

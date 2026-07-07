@@ -19,14 +19,23 @@ namespace moppe
   using namespace map;
   using namespace app;
 
-  const Vector3D map_size(5000 * one_meter,
-                          650 * one_meter,
-                          5000 * one_meter);
+  // World parameters; --pico swaps these for the real Pico Island
+  Vector3D map_size(5000 * one_meter,
+                    650 * one_meter,
+                    5000 * one_meter);
 
-  const int resolution = 2049; // Higher resolution for smoother terrain
+  int resolution = 2049; // Higher resolution for smoother terrain
 
   // Sea level: valleys below this are flooded
-  const float water_level = 50 * one_meter;
+  float water_level = 50 * one_meter;
+
+  // Haze density; larger worlds get clearer air so the big sights
+  // stay visible
+  float fog_scale = 0.0004f;
+
+  // Ride the real Pico Island (Copernicus GLO-30 DEM) instead of
+  // procedurally generated terrain
+  bool pico_mode = false;
 
   // Dynamic fog color will be set based on sky horizon colors
   Vector3D fog(0.5, 0.5, 0.5);
@@ -453,14 +462,18 @@ namespace moppe
                  map_size,
                  0 + ::time(0)),
           m_terrain_renderer(m_map1),
-          m_vehicle(Vector3D(50 * one_meter, 600 * one_meter,
-                             50 * one_meter),
+          m_vehicle(pico_mode
+                        ? Vector3D(0.34 * map_size.x, 3000,
+                                   0.55 * map_size.z)
+                        : Vector3D(50 * one_meter, 600 * one_meter,
+                                   50 * one_meter),
                     45, m_map1,
                     5000, 150),
           m_sky("textures/sky.tga"),
           m_ocean(water_level,
                   Vector3D(map_size.x / 2, 0, map_size.z / 2),
-                  5500 * one_meter),
+                  pico_mode ? 0.55f * map_size.x
+                            : 5500 * one_meter),
           m_uw_vert(GL_VERTEX_SHADER_ARB, "shaders/underwater.vert"),
           m_uw_frag(GL_FRAGMENT_SHADER_ARB, "shaders/underwater.frag"),
           m_last_shadow_update(-1.0f),
@@ -511,14 +524,22 @@ namespace moppe
 
       setup_lights();
 
-      std::cout << "Generating terrain..." << std::flush;
-      m_map1.randomize_geologically();
-      // Slight lowland squash; ~10-15% of the map ends up as ocean
-      m_map1.exponentiate(1.15);
-      std::cout << " eroding..." << std::flush;
-      m_map1.erode_hydraulically(1500000);
-      // Talus angle ~40 degrees at 2.4m cells and 650m height scale
-      m_map1.erode_thermally(2, 0.003f);
+      if (pico_mode)
+      {
+        std::cout << "Loading Pico Island DEM..." << std::flush;
+        m_map1.load_raw_u16("data/pico.u16", 0.1f, map_size.y);
+      }
+      else
+      {
+        std::cout << "Generating terrain..." << std::flush;
+        m_map1.randomize_geologically();
+        // Slight lowland squash; ~10-15% ends up as ocean
+        m_map1.exponentiate(1.15);
+        std::cout << " eroding..." << std::flush;
+        m_map1.erode_hydraulically(1500000);
+        // Talus angle ~40 degrees at 2.4m cells, 650m height scale
+        m_map1.erode_thermally(2, 0.003f);
+      }
       m_map1.recompute_normals();
       std::cout << " done!\n";
 
@@ -526,18 +547,25 @@ namespace moppe
 
       m_terrain_renderer.regenerate();
       m_terrain_renderer.setup_shader();
+      m_terrain_renderer.set_terrain_scales(map_size.y,
+                                            water_level / map_size.y,
+                                            fog_scale);
 
       std::cout << "Planting vegetation...";
-      m_vegetation.generate(m_map1, 2200, 1500, 1234);
+      m_vegetation.generate(m_map1,
+                            pico_mode ? 6000 : 2200,
+                            pico_mode ? 4000 : 1500, 1234);
       std::cout << "done!\n";
 
-      m_star_field.generate(m_map1, 80, 555);
+      m_star_field.generate(m_map1, pico_mode ? 250 : 80, 555);
 
       m_sky.load();
       m_ocean.load();
+      m_ocean.set_fog_scale(fog_scale);
       m_vehicle.set_water_level(water_level);
 
-      m_fish_school.generate(m_map1, water_level, 16, 777);
+      m_fish_school.generate(m_map1, water_level,
+                             pico_mode ? 40 : 16, 777);
 
       m_uw_vert.load();
       m_uw_frag.load();
@@ -676,7 +704,8 @@ namespace moppe
       glLoadIdentity();
 
       glViewport(0, 0, width, height);
-      gluPerspective(100.0, 1.0 * width / height, 0.5, 9000);
+      gluPerspective(100.0, 1.0 * width / height, 0.5,
+                     pico_mode ? 30000 : 9000);
       glutPostRedisplay();
 
       allocate_blur_texture();
@@ -1242,6 +1271,19 @@ namespace moppe
 int main(int argc, char **argv)
 {
   using namespace moppe;
+
+  for (int i = 1; i < argc; ++i)
+    if (std::string(argv[i]) == "--pico")
+    {
+      // The real Pico Island: 49.4 km square, summit 2333m,
+      // sea level slightly raised so the coast reads as ocean
+      pico_mode = true;
+      map_size = Vector3D(49400 * one_meter,
+                          2400 * one_meter,
+                          49400 * one_meter);
+      water_level = 15 * one_meter;
+      fog_scale = 0.00013f; // clear island air: Pico visible afar
+    }
 
   MoppeGLUT app;
   app::global_app = &app;

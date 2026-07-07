@@ -6,7 +6,10 @@
 #include <boost/random.hpp>
 
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <stdexcept>
+#include <vector>
 
 namespace moppe {
 namespace map {
@@ -346,6 +349,28 @@ namespace map {
 
     normalize ();
     // NB: no recompute_normals() here -- the caller shapes further
+  }
+
+  void
+  RandomHeightMap::load_raw_u16 (const std::string& path,
+				 float meters_per_unit,
+				 float max_height_m)
+  {
+    std::ifstream f (path.c_str (), std::ios::binary);
+    if (!f)
+      throw std::runtime_error ("can't open heightmap: " + path);
+
+    std::vector<unsigned char> bytes (m_width * m_height * 2);
+    f.read ((char *) &bytes[0], bytes.size ());
+    if (f.gcount () != (std::streamsize) bytes.size ())
+      throw std::runtime_error ("heightmap truncated: " + path);
+
+    FORALL (x, y)
+      {
+	const size_t i = 2 * ((size_t) y * m_width + x);
+	const unsigned v = bytes[i] | (bytes[i + 1] << 8);
+	set (x, y, v * meters_per_unit / max_height_m);
+      }
   }
 
   void

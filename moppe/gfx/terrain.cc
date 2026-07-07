@@ -346,6 +346,17 @@ namespace gfx {
     m_shader_program.unuse();
   }
   
+  void
+  TerrainRenderer::set_terrain_scales (float height_scale,
+				       float sea_norm,
+				       float fog_scale) {
+    m_shader_program.use ();
+    m_shader_program.set_float ("heightScale", height_scale);
+    m_shader_program.set_float ("seaLevel", sea_norm);
+    m_shader_program.set_float ("fogScale", fog_scale);
+    m_shader_program.unuse ();
+  }
+
   // Helper to pass current light direction to the shader for normal-based shadows
   void
   TerrainRenderer::set_light_direction(const Vector3D& light_dir) {

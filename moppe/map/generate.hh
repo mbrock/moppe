@@ -9,6 +9,7 @@
 #include <boost/shared_ptr.hpp>
 
 #include <iostream>
+#include <string>
 
 namespace moppe {
 namespace map {
@@ -159,6 +160,13 @@ namespace map {
     // ridged mountains up high.  Leaves normals to the caller so
     // further shaping passes can run first.
     void randomize_geologically ();
+
+    // Load raw little-endian uint16 heights (width x height, row 0
+    // first); value * meters_per_unit gives meters, normalized
+    // against max_height_m.
+    void load_raw_u16 (const std::string& path,
+		       float meters_per_unit,
+		       float max_height_m);
 
     // Particle-based hydraulic erosion: carves gullies into the
     // slopes and settles sediment on the plains.

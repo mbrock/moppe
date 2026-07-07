@@ -18,6 +18,8 @@ namespace gfx {
 
     float level () const { return m_level; }
 
+    void set_fog_scale (float scale) { m_fog_scale = scale; }
+
   private:
     gl::Shader m_vertex_shader;
     gl::Shader m_fragment_shader;
@@ -26,6 +28,7 @@ namespace gfx {
     float m_level;
     Vector3D m_center;
     float m_half_extent;
+    float m_fog_scale;
 
     GLuint m_list;
   };
