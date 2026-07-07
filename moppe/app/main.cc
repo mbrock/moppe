@@ -892,7 +892,7 @@ namespace moppe
         const float impact = m_vehicle.pop_impact();
         if (impact > 8.0f)
         {
-          m_shake = std::min(1.2f, 0.05f * impact);
+          m_shake = std::min(0.45f, 0.018f * impact);
           m_dust.emit(vpos + Vector3D(0, -0.7, 0),
                       m_vehicle.velocity() * 0.2f, 18,
                       in_water ? spray_color : dust_color);
