@@ -64,6 +64,9 @@ namespace mov {
     float pop_impact ()
     { float i = m_impact; m_impact = 0; return i; }
 
+    // 0..1: how recharged the jump jets are
+    float rocket_charge () const;
+
     void set_camera () const {
       gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
       

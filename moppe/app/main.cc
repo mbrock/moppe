@@ -346,6 +346,102 @@ namespace moppe
     std::mt19937 m_rng;
   };
 
+  // Schools of little fish circling in the deeper water.
+  class Fish
+  {
+  public:
+    void generate(const map::HeightMap& map, float water,
+                  int schools, unsigned seed)
+    {
+      std::mt19937 rng(seed);
+      std::uniform_real_distribution<float> u(0.0f, 1.0f);
+      const Vector3D size = map.size();
+
+      m_fish.clear();
+      int made = 0, tries = 0;
+      while (made < schools && tries++ < schools * 300)
+      {
+        const float ax = size.x * (0.05f + 0.9f * u(rng));
+        const float az = size.z * (0.05f + 0.9f * u(rng));
+        const float ground = map.interpolated_height(ax, az);
+        if (ground > water - 6.0f)
+          continue; // schools want reasonably deep water
+
+        const int n = 8 + (int)(u(rng) * 5);
+        for (int i = 0; i < n; ++i)
+        {
+          One f;
+          f.cx = ax + 12.0f * (u(rng) - 0.5f);
+          f.cz = az + 12.0f * (u(rng) - 0.5f);
+          f.y = ground + 1.5f
+              + (water - 3.0f - ground - 1.5f) * u(rng);
+          f.radius = 3.0f + 6.0f * u(rng);
+          f.speed = 0.5f + 0.7f * u(rng);
+          f.phase = 6.2832f * u(rng);
+          f.size = 0.6f + 0.8f * u(rng);
+          f.hue = u(rng);
+          m_fish.push_back(f);
+        }
+        ++made;
+      }
+    }
+
+    void render(float time) const
+    {
+      if (m_fish.empty())
+        return;
+
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_LIGHTING_BIT |
+                                    GL_CURRENT_BIT | GL_TEXTURE_BIT);
+      for (int unit = 3; unit >= 0; --unit)
+      {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glDisable(GL_TEXTURE_2D);
+      }
+      glEnable(GL_COLOR_MATERIAL);
+      glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+      for (size_t i = 0; i < m_fish.size(); ++i)
+      {
+        const One& f = m_fish[i];
+        const float a = f.phase + time * f.speed;
+
+        gl::ScopedMatrixSaver m;
+        glTranslatef(f.cx + cos(a) * f.radius,
+                     f.y + 0.3f * sin(time * 1.3f + f.phase * 3.0f),
+                     f.cz + sin(a) * f.radius);
+        // face along the swim circle's tangent
+        glRotatef(-a * 57.2958f, 0, 1, 0);
+        glScalef(f.size, f.size, f.size);
+
+        // body: orange to silvery blue depending on the fish
+        glColor3f(1.0f - 0.3f * f.hue,
+                  0.5f + 0.3f * f.hue,
+                  0.15f + 0.75f * f.hue);
+        glPushMatrix();
+        glScalef(0.28f, 0.22f, 0.6f);
+        glutSolidSphere(1.0, 8, 6);
+        glPopMatrix();
+
+        // wiggling tail fin
+        glPushMatrix();
+        glTranslatef(0, 0, -0.55f);
+        glRotatef(30.0f * sin(time * 6.0f + f.phase), 0, 1, 0);
+        glRotatef(180, 0, 1, 0);
+        glutSolidCone(0.16, 0.45, 6, 2);
+        glPopMatrix();
+      }
+    }
+
+  private:
+    struct One
+    {
+      float cx, cz, y, radius, speed, phase, size, hue;
+    };
+
+    std::vector<One> m_fish;
+  };
+
   class MoppeGLUT : public GLUTApplication
   {
   public:
@@ -365,6 +461,8 @@ namespace moppe
           m_ocean(water_level,
                   Vector3D(map_size.x / 2, 0, map_size.z / 2),
                   5500 * one_meter),
+          m_uw_vert(GL_VERTEX_SHADER_ARB, "shaders/underwater.vert"),
+          m_uw_frag(GL_FRAGMENT_SHADER_ARB, "shaders/underwater.frag"),
           m_last_shadow_update(-1.0f),
           m_total_time(0.0f),
           m_blur_tex(0),
@@ -438,6 +536,16 @@ namespace moppe
       m_sky.load();
       m_ocean.load();
       m_vehicle.set_water_level(water_level);
+
+      m_fish_school.generate(m_map1, water_level, 16, 777);
+
+      m_uw_vert.load();
+      m_uw_frag.load();
+      m_uw_prog.load();
+      m_uw_prog.attach(m_uw_vert);
+      m_uw_prog.attach(m_uw_frag);
+      m_uw_prog.link();
+      m_uw_prog.print_log();
 
       idle();
     }
@@ -664,6 +772,182 @@ namespace moppe
       m_blur_valid = true;
     }
 
+    // Full-screen wavy blue grade whenever the camera goes under
+    // the sea: grab the frame so far, redraw it through the
+    // underwater shader
+    void apply_underwater()
+    {
+      if (m_blur_tex == 0 || m_camera.position().y >= water_level)
+        return;
+
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
+                                    GL_TEXTURE_BIT |
+                                    GL_DEPTH_BUFFER_BIT);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, m_blur_tex);
+      glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0,
+                          m_width, m_height);
+
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_LIGHTING);
+      glDisable(GL_BLEND);
+
+      m_uw_prog.use();
+      m_uw_prog.set_int("scene", 0);
+      m_uw_prog.set_float("time", m_total_time);
+
+      glBegin(GL_QUADS);
+      glTexCoord2f(0, 0); glVertex2f(-1, -1);
+      glTexCoord2f(1, 0); glVertex2f(1, -1);
+      glTexCoord2f(1, 1); glVertex2f(1, 1);
+      glTexCoord2f(0, 1); glVertex2f(-1, 1);
+      glEnd();
+
+      m_uw_prog.unuse();
+    }
+
+    // Game HUD: speedometer dial, rocket charge bar, star counter
+    void draw_hud()
+    {
+      const float kmh = m_vehicle.velocity().length() * 3.6f;
+      const float frac = std::min(1.0f, kmh / 300.0f);
+      const float PI = 3.14159265f;
+
+      // dial center, in top-left-origin pixel coordinates
+      const float cx = m_width - 130.0f;
+      const float cy = m_height - 130.0f;
+      const float R = 95.0f;
+
+      {
+        gl::ScopedOrthographicMode ortho;
+        gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
+                                      GL_LINE_BIT);
+        glEnable(GL_BLEND);
+
+        // dial backplate
+        glColor4f(0.05f, 0.08f, 0.12f, 0.6f);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(cx, cy);
+        for (int i = 0; i <= 32; ++i)
+        {
+          const float a = 2.0f * PI * i / 32.0f;
+          glVertex2f(cx + R * cos(a), cy + R * sin(a));
+        }
+        glEnd();
+
+        // speed arc: sweeps 240 degrees, green through red
+        const int segs = (int)(40 * frac) + 1;
+        glBegin(GL_TRIANGLE_STRIP);
+        for (int i = 0; i <= segs; ++i)
+        {
+          const float f = frac * i / segs;
+          const float a = (210.0f - 240.0f * f) * PI / 180.0f;
+          glColor4f(0.2f + 0.8f * f, 1.0f - 0.85f * f, 0.15f, 0.9f);
+          glVertex2f(cx + 0.97f * R * cos(a), cy - 0.97f * R * sin(a));
+          glVertex2f(cx + 0.84f * R * cos(a), cy - 0.84f * R * sin(a));
+        }
+        glEnd();
+
+        // ticks every 30 km/h
+        glLineWidth(2);
+        glColor4f(0.9f, 0.9f, 0.95f, 0.9f);
+        glBegin(GL_LINES);
+        for (int i = 0; i <= 10; ++i)
+        {
+          const float a = (210.0f - 24.0f * i) * PI / 180.0f;
+          glVertex2f(cx + 0.80f * R * cos(a), cy - 0.80f * R * sin(a));
+          glVertex2f(cx + 0.70f * R * cos(a), cy - 0.70f * R * sin(a));
+        }
+        glEnd();
+
+        // needle
+        {
+          const float a = (210.0f - 240.0f * frac) * PI / 180.0f;
+          glLineWidth(4);
+          glColor4f(1.0f, 0.25f, 0.15f, 0.95f);
+          glBegin(GL_LINES);
+          glVertex2f(cx, cy);
+          glVertex2f(cx + 0.78f * R * cos(a), cy - 0.78f * R * sin(a));
+          glEnd();
+        }
+
+        // hub
+        glColor4f(0.9f, 0.9f, 0.95f, 1.0f);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(cx, cy);
+        for (int i = 0; i <= 12; ++i)
+        {
+          const float a = 2.0f * PI * i / 12.0f;
+          glVertex2f(cx + 6 * cos(a), cy + 6 * sin(a));
+        }
+        glEnd();
+
+        // rocket charge bar, pulsing when ready
+        {
+          const float charge = m_vehicle.rocket_charge();
+          const float bx = m_width - 340.0f;
+          const float by = m_height - 44.0f;
+          const float bw = 180.0f, bh = 14.0f;
+
+          glColor4f(0.05f, 0.08f, 0.12f, 0.6f);
+          glBegin(GL_QUADS);
+          glVertex2f(bx, by);
+          glVertex2f(bx + bw, by);
+          glVertex2f(bx + bw, by + bh);
+          glVertex2f(bx, by + bh);
+          glEnd();
+
+          const float pulse = (charge >= 1.0f)
+              ? 0.7f + 0.3f * sin(m_total_time * 6.0f)
+              : 0.9f;
+          glColor4f(0.3f, 0.8f * pulse, pulse, 0.9f);
+          glBegin(GL_QUADS);
+          glVertex2f(bx, by);
+          glVertex2f(bx + bw * charge, by);
+          glVertex2f(bx + bw * charge, by + bh);
+          glVertex2f(bx, by + bh);
+          glEnd();
+        }
+
+        // golden star icon, top left
+        {
+          const float sx = 36, sy = 36;
+          glColor4f(1.0f, 0.85f, 0.15f, 0.95f);
+          glBegin(GL_TRIANGLE_FAN);
+          glVertex2f(sx, sy);
+          for (int i = 0; i <= 10; ++i)
+          {
+            const float a = (-90.0f + i * 36.0f) * PI / 180.0f;
+            const float r = (i % 2 == 0) ? 17.0f : 7.5f;
+            glVertex2f(sx + r * cos(a), sy + r * sin(a));
+          }
+          glEnd();
+        }
+      }
+
+      // text labels (draw_glut_text manages its own ortho state)
+      glColor3f(1.0f, 0.85f, 0.2f);
+      gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24, 60, 44,
+                         "x " +
+                         std::to_string(m_star_field.collected()));
+
+      glColor3f(0.95f, 0.97f, 1.0f);
+      gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24,
+                         (int)(cx - 20), (int)(cy + 50),
+                         std::to_string((int)kmh));
+      glColor3f(0.7f, 0.75f, 0.8f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         (int)(cx - 18), (int)(cy + 68), "km/h");
+
+      glColor3f(0.6f, 0.9f, 1.0f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         (int)(m_width - 340), (int)(m_height - 50),
+                         m_vehicle.rocket_charge() >= 1.0f
+                             ? "ROCKET READY"
+                             : "ROCKET");
+    }
+
     void keyboard(unsigned char code,
                   int mx, int my,
                   KeyStatus status)
@@ -742,12 +1026,21 @@ namespace moppe
       m_camera.realize();
 
       // Hard-landing camera shake: a small random kick, applied to
-      // the view matrix, decaying over a few tenths of a second
+      // the view matrix, decaying over a few tenths of a second.
+      // Fades out when the camera is close to the ground so the
+      // view can't dip below the terrain.
       if (m_shake > 0.005f)
       {
+        const Vector3D cam = m_camera.position();
+        const float ground =
+            m_map1.interpolated_height(cam.x, cam.z);
+        const float clearance = cam.y - ground;
+        const float room =
+            std::min(1.0f, std::max(0.0f, (clearance - 2.0f) / 8.0f));
+
         std::uniform_real_distribution<float> u(-1.0f, 1.0f);
-        glRotatef(m_shake * u(m_fx_rng), 0, 0, 1);
-        glRotatef(m_shake * u(m_fx_rng), 1, 0, 0);
+        glRotatef(m_shake * room * u(m_fx_rng), 0, 0, 1);
+        glRotatef(m_shake * room * u(m_fx_rng), 1, 0, 0);
       }
 
       {
@@ -761,9 +1054,11 @@ namespace moppe
       m_star_field.render(m_total_time);
       m_terrain_renderer.translate();
       m_vehicle.render();
+      m_fish_school.render(m_total_time);
 
-      // Translucent water goes last so the seabed and a submerged
-      // bike show through it, then the dust so spray sits on top
+      // Translucent water goes last so the seabed, fish, and a
+      // submerged bike show through it, then dust so spray sits on
+      // top of the surface
       m_ocean.render(m_total_time, fog);
       m_dust.render();
     }
@@ -774,19 +1069,9 @@ namespace moppe
       glClearColor(fog.x, fog.y, fog.z, 0);
 
       render_scene();
+      apply_underwater();
       apply_motion_blur();
-
-      m_vehicle.draw_debug_text();
-
-      // Star counter, in gold
-      {
-        gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT);
-        glDisable(GL_LIGHTING);
-        glColor3f(1.0f, 0.85f, 0.2f);
-        gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24, 20, 100,
-                           "Stars: " +
-                           std::to_string(m_star_field.collected()));
-      }
+      draw_hud();
 
       glutSwapBuffers();
     }
@@ -937,6 +1222,12 @@ namespace moppe
     Vegetation m_vegetation;
     Stars m_star_field;
     Dust m_dust;
+    Fish m_fish_school;
+
+    gl::Shader m_uw_vert;
+    gl::Shader m_uw_frag;
+    gl::ShaderProgram m_uw_prog;
+
     float m_last_shadow_update;
     float m_total_time;
 

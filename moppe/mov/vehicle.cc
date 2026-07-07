@@ -181,6 +181,13 @@ namespace mov {
       m_airborne_time += dt;
   }
 
+  float
+  Vehicle::rocket_charge () const {
+    if (m_rocket_cooldown <= 0)
+      return 1;
+    return 1 - m_rocket_cooldown / rocket_cooldown_time;
+  }
+
   void
   Vehicle::rocket_jump () {
     if (m_rocket_cooldown > 0)

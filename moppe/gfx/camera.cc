@@ -60,8 +60,24 @@ namespace gfx {
   void
   ThirdPersonCamera::limit (const map::HeightMap& map)
   {
-    float min_y = map.interpolated_height (m_position.x, m_position.z);
-    m_position.y = max (min_y + 5 * one_meter, m_position.y);
+    float needed = 5 * one_meter
+      + map.interpolated_height (m_position.x, m_position.z);
+
+    // The sight line toward the bike must clear the terrain too,
+    // so hillsides can't poke up through the view: raise the eye
+    // until sampled points along the line stay above ground.
+    for (int i = 1; i <= 2; ++i)
+      {
+	const float t = i / 3.0f;
+	const float sx = m_position.x + (m_target.x - m_position.x) * t;
+	const float sz = m_position.z + (m_target.z - m_position.z) * t;
+	const float g = 2 * one_meter
+	  + map.interpolated_height (sx, sz);
+
+	needed = max (needed, (g - m_target.y * t) / (1 - t));
+      }
+
+    m_position.y = max (needed, m_position.y);
   }
 
   void

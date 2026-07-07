@@ -147,6 +147,13 @@ void main () {
   texel = blurTexture(grass, tc, blur_amount);
   rocktexel = blurTexture(dirt, tc, blur_amount);
   snowtexel = blurTexture(snow, tc, blur_amount);
+
+  // Break up the tiling: modulate each texture with itself sampled
+  // at a much larger scale, so no repeating lawn-grid survives
+  vec3 coarse = texture2D(grass, tc * 0.083 + vec2(0.37, 0.19)).rgb;
+  texel.rgb = texel.rgb * (0.55 + 1.1 * coarse);
+  rocktexel.rgb = rocktexel.rgb
+    * (0.7 + 0.6 * texture2D(dirt, tc * 0.061).r);
   
   // Blend textures based on height
   texel = rock_coef * rocktexel + (1.0 - rock_coef) * texel;

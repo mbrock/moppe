@@ -165,23 +165,27 @@ namespace gfx {
       std::cerr << "Shadow mapping not available - using normal-based shadows" << std::endl;
     }
 
-    // Set texture filtering to improve distant appearance
+    // Set texture filtering to improve distant appearance;
+    // anisotropic filtering keeps grazing-angle ground crisp
     m_tex_grass.load ();
     m_tex_grass.bind(0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 8.0f);
     glGenerateMipmap(GL_TEXTURE_2D);
-    
+
     m_tex_dirt.load ();
     m_tex_dirt.bind(1);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 8.0f);
     glGenerateMipmap(GL_TEXTURE_2D);
-    
+
     m_tex_snow.load ();
     m_tex_snow.bind(2);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 8.0f);
     glGenerateMipmap(GL_TEXTURE_2D);
     
     // Initialize fog color to a default value
