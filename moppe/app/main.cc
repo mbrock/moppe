@@ -862,10 +862,34 @@ namespace moppe
           }
       }
 
+      // -- police and fire stations on two reserved blocks
+      {
+        const float px = cx + (-4 + 0.5f) * PITCH;
+        const float pz = cz + (0 + 0.5f) * PITCH;
+        m_police.x0 = px - 18;
+        m_police.x1 = px + 18;
+        m_police.z0 = pz - 13;
+        m_police.z1 = pz + 13;
+        m_police.top = H_CITY + 12;
+        m_boxes.push_back(m_police);
+
+        const float fx = cx + (3 + 0.5f) * PITCH;
+        const float fz = cz + (1 + 0.5f) * PITCH;
+        m_fire.x0 = fx - 20;
+        m_fire.x1 = fx + 20;
+        m_fire.z0 = fz - 14;
+        m_fire.z1 = fz + 14;
+        m_fire.top = H_CITY + 10;
+        m_boxes.push_back(m_fire);
+      }
+
       // -- buildings on the blocks between streets, taller downtown
       for (int bi = -27; bi <= 27; ++bi)
         for (int bj = -27; bj <= 27; ++bj)
         {
+          if ((bi == -4 && bj == 0) || (bi == 3 && bj == 1))
+            continue; // station blocks
+
           const float bx = cx + (bi + 0.5f) * PITCH;
           const float bz = cz + (bj + 0.5f) * PITCH;
           const float d = std::sqrt((bx - cx) * (bx - cx)
@@ -1023,6 +1047,9 @@ namespace moppe
 
         draw_windows(b, wrng);
       }
+
+      draw_station(m_police, false);
+      draw_station(m_fire, true);
       glEndList();
 
       // streets draped over the terrain (so they follow ramps)
@@ -1223,6 +1250,9 @@ namespace moppe
 
       draw_flying_plane(0, time);
       draw_flying_plane(1, time);
+      for (int i = 0; i < 3; ++i)
+        draw_helicopter(i, time);
+      draw_parked_vehicles(time);
     }
 
   private:
@@ -1338,9 +1368,16 @@ namespace moppe
       else if (c.dir < 0)
         glRotatef(180, 0, 1, 0);
 
-      const bool truck = (c.kind == 2);
+      draw_car_model(c.kind, c.color, time, c.phase);
+    }
 
-      glColor3f(c.color.x, c.color.y, c.color.z);
+    // The vehicle model at the origin, facing +z
+    static void draw_car_model(int kind, const Vector3D& color,
+                               float time, float flash_phase)
+    {
+      const bool truck = (kind == 2);
+
+      glColor3f(color.x, color.y, color.z);
       glPushMatrix();
       glTranslatef(0, truck ? 0.8f : 0.55f, 0);
       box(truck ? 2.1f : 1.7f, truck ? 1.5f : 0.85f,
@@ -1384,10 +1421,11 @@ namespace moppe
         }
 
       // flashing light bar for police and fire
-      if (c.kind != 0)
+      if (kind != 0)
       {
         glDisable(GL_LIGHTING);
-        const bool phase_a = fmod(time * 3.0f + c.phase, 1.0f) < 0.5f;
+        const bool phase_a =
+            fmod(time * 3.0f + flash_phase, 1.0f) < 0.5f;
         for (int s = -1; s <= 1; s += 2)
         {
           const bool blue = (s > 0) == phase_a;
@@ -1402,6 +1440,216 @@ namespace moppe
           glPopMatrix();
         }
         glEnable(GL_LIGHTING);
+      }
+    }
+
+    // A station house: colored hall, stripe, doors, beacon, and a
+    // helipad with an H on the police roof
+    void draw_station(const mov::Box& s, bool fire) const
+    {
+      const float w = s.x1 - s.x0, d = s.z1 - s.z0;
+      const float h = s.top - H_CITY;
+      const float mx = (s.x0 + s.x1) / 2, mz = (s.z0 + s.z1) / 2;
+
+      if (fire)
+        glColor3f(0.72f, 0.18f, 0.12f);
+      else
+        glColor3f(0.55f, 0.62f, 0.72f);
+      glPushMatrix();
+      glTranslatef(mx, H_CITY + h / 2, mz);
+      box(w, h, d);
+      glPopMatrix();
+
+      // stripe around the walls
+      if (fire)
+        glColor3f(0.95f, 0.85f, 0.2f);
+      else
+        glColor3f(0.15f, 0.3f, 0.8f);
+      glPushMatrix();
+      glTranslatef(mx, H_CITY + h * 0.62f, mz);
+      box(w + 0.4f, 1.0f, d + 0.4f);
+      glPopMatrix();
+
+      // garage doors on the street face
+      glColor3f(0.12f, 0.13f, 0.15f);
+      const int doors = fire ? 3 : 1;
+      for (int i = 0; i < doors; ++i)
+      {
+        glPushMatrix();
+        glTranslatef(mx + (i - (doors - 1) / 2.0f) * 7.5f,
+                     H_CITY + 2.3f, s.z1 - 0.1f);
+        box(fire ? 5.5f : 4.2f, 4.6f, 0.6f);
+        glPopMatrix();
+      }
+
+      // beacon pole on a corner
+      glColor3f(0.2f, 0.2f, 0.22f);
+      glPushMatrix();
+      glTranslatef(s.x0 + 2, s.top + 1.0f, s.z0 + 2);
+      box(0.14f, 2.0f, 0.14f);
+      glPopMatrix();
+
+      glDisable(GL_LIGHTING);
+      if (fire)
+        glColor3f(1.0f, 0.4f, 0.1f);
+      else
+        glColor3f(0.25f, 0.5f, 1.0f);
+      glPushMatrix();
+      glTranslatef(s.x0 + 2, s.top + 2.2f, s.z0 + 2);
+      glutSolidSphere(0.35, 8, 6);
+      glPopMatrix();
+      glEnable(GL_LIGHTING);
+
+      if (!fire)
+      {
+        // helipad: dark disc with a white H
+        glNormal3f(0, 1, 0);
+        glColor3f(0.13f, 0.13f, 0.14f);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex3f(mx, s.top + 0.06f, mz);
+        for (int i = 0; i <= 20; ++i)
+        {
+          const float a = 6.2832f * i / 20;
+          glVertex3f(mx + 5.5f * cos(a), s.top + 0.06f,
+                     mz + 5.5f * sin(a));
+        }
+        glEnd();
+
+        glColor3f(0.92f, 0.92f, 0.95f);
+        for (int sgn = -1; sgn <= 1; sgn += 2)
+        {
+          glPushMatrix();
+          glTranslatef(mx + sgn * 1.3f, s.top + 0.10f, mz);
+          box(0.5f, 0.06f, 4.0f);
+          glPopMatrix();
+        }
+        glPushMatrix();
+        glTranslatef(mx, s.top + 0.10f, mz);
+        box(2.1f, 0.06f, 0.5f);
+        glPopMatrix();
+      }
+    }
+
+    // A helicopter at the origin, facing +z
+    static void draw_heli_model(const Vector3D& body,
+                                float rotor_deg, bool flash,
+                                float time)
+    {
+      glColor3f(body.x, body.y, body.z);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 0, 0.3f);
+        glScalef(1.1f, 0.95f, 1.7f);
+        glutSolidSphere(1.0, 10, 8);
+      }
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 0.15f, -2.6f);
+        box(0.24f, 0.3f, 3.4f);
+      }
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 0.7f, -4.1f);
+        box(0.15f, 1.0f, 0.5f);
+      }
+
+      // skids
+      glColor3f(0.2f, 0.2f, 0.22f);
+      for (int s = -1; s <= 1; s += 2)
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(s * 0.6f, -1.05f, 0.2f);
+        box(0.09f, 0.09f, 2.4f);
+      }
+
+      // main rotor, two crossed blades
+      glColor3f(0.12f, 0.12f, 0.14f);
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.05f, 0.3f);
+        glRotatef(rotor_deg, 0, 1, 0);
+        box(8.0f, 0.06f, 0.3f);
+        glRotatef(90, 0, 1, 0);
+        box(8.0f, 0.06f, 0.3f);
+      }
+
+      // tail rotor
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0.2f, 0.3f, -4.1f);
+        glRotatef(rotor_deg * 3, 1, 0, 0);
+        box(0.06f, 1.3f, 0.16f);
+      }
+
+      if (flash)
+      {
+        glDisable(GL_LIGHTING);
+        if (fmod(time * 2.5f, 1.0f) < 0.5f)
+          glColor3f(0.25f, 0.5f, 1.0f);
+        else
+          glColor3f(1.0f, 0.15f, 0.1f);
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, -0.6f, 0.9f);
+        glutSolidSphere(0.18, 6, 5);
+        glEnable(GL_LIGHTING);
+      }
+    }
+
+    void draw_helicopter(int which, float time) const
+    {
+      const float cx = map_size.x / 2, cz = map_size.z / 2;
+      static const float R[3] = { 500, 800, 1100 };
+      static const float ALT[3] = { 130, 170, 210 };
+      static const float W[3] = { 0.075f, 0.06f, 0.05f };
+
+      const Vector3D colors[3] = {
+        Vector3D(0.92, 0.93, 0.96), // police
+        Vector3D(0.80, 0.15, 0.10), // rescue
+        Vector3D(0.95, 0.80, 0.15), // traffic reporter
+      };
+
+      const float a = time * W[which] + which * 2.1f;
+
+      gl::ScopedMatrixSaver m;
+      glTranslatef(cx + cos(a) * R[which], H_CITY + ALT[which],
+                   cz + sin(a) * R[which]);
+      glRotatef(-a * 57.2958f, 0, 1, 0);
+      glRotatef(-12, 0, 0, 1);
+      glScalef(1.3f, 1.3f, 1.3f);
+      draw_heli_model(colors[which], time * 1080, which < 2, time);
+    }
+
+    void draw_parked_vehicles(float time) const
+    {
+      // police cars out front, flashers going
+      for (int i = 0; i < 2; ++i)
+      {
+        gl::ScopedMatrixSaver m;
+        glTranslatef(m_police.x0 + 9 + i * 12, H_CITY,
+                     m_police.z1 + 6);
+        glRotatef(i ? 100.0f : 80.0f, 0, 1, 0);
+        draw_car_model(1, Vector3D(0.92, 0.92, 0.95), time,
+                       0.5f * i);
+      }
+
+      // the fire truck by its hall
+      {
+        gl::ScopedMatrixSaver m;
+        glTranslatef((m_fire.x0 + m_fire.x1) / 2, H_CITY,
+                     m_fire.z1 + 7);
+        glRotatef(90, 0, 1, 0);
+        draw_car_model(2, Vector3D(0.85, 0.1, 0.08), time, 0.3f);
+      }
+
+      // the police helicopter idling on its pad
+      {
+        gl::ScopedMatrixSaver m;
+        glTranslatef((m_police.x0 + m_police.x1) / 2,
+                     m_police.top + 1.16f,
+                     (m_police.z0 + m_police.z1) / 2);
+        glRotatef(35, 0, 1, 0);
+        draw_heli_model(Vector3D(0.92, 0.93, 0.96), time * 80,
+                        false, time);
       }
     }
 
@@ -1561,6 +1809,7 @@ namespace moppe
     GLuint m_streets_list;
     GLuint m_furniture_list;
     float m_air_x0, m_air_x1, m_air_z0, m_air_z1;
+    mov::Box m_police, m_fire;
     Vector3D m_last_hit;
   };
 
