@@ -62,6 +62,16 @@ namespace mov {
     void set_obstacles (const std::vector<Box>* boxes)
     { m_obstacles = boxes; }
 
+    // Respawn: back to a spot, stationary, jets cooled down
+    void reset (const Vector3D& position)
+    {
+      m_position = position;
+      m_velocity = Vector3D ();
+      m_rocket_time = 0;
+      m_rocket_cooldown = 0;
+      m_impact = 0;
+    }
+
     bool grounded () const { return is_grounded (); }
 
     // Sideways speed relative to where the bike points; big when
