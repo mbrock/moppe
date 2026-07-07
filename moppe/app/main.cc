@@ -451,6 +451,227 @@ namespace moppe
     std::vector<One> m_fish;
   };
 
+  // Grazing horse herds on the grasslands, circling bird flocks in
+  // the sky -- dark birds over land, gulls over the sea.
+  class Wildlife
+  {
+  public:
+    void generate(const map::HeightMap& map, float water,
+                  int herds, int flocks, unsigned seed)
+    {
+      std::mt19937 rng(seed);
+      std::uniform_real_distribution<float> u(0.0f, 1.0f);
+      const Vector3D size = map.size();
+
+      m_horses.clear();
+      int made = 0, tries = 0;
+      while (made < herds && tries++ < herds * 400)
+      {
+        const float hx = size.x * (0.05f + 0.9f * u(rng));
+        const float hz = size.z * (0.05f + 0.9f * u(rng));
+        const float hy = map.interpolated_height(hx, hz);
+
+        // Herds like flat grassy meadows
+        if (hy < water + 8.0f || hy > 0.30f * map_size.y)
+          continue;
+        if (map.interpolated_normal(hx, hz).y < 0.88f)
+          continue;
+
+        const int n = 3 + (int)(u(rng) * 4);
+        for (int i = 0; i < n; ++i)
+        {
+          Horse h;
+          h.x = hx + 18.0f * (u(rng) - 0.5f);
+          h.z = hz + 18.0f * (u(rng) - 0.5f);
+          h.y = map.interpolated_height(h.x, h.z);
+          h.heading = 360.0f * u(rng);
+          h.phase = 6.2832f * u(rng);
+          h.size = 0.85f + 0.3f * u(rng);
+          h.tone = u(rng);
+          m_horses.push_back(h);
+        }
+        ++made;
+      }
+
+      m_birds.clear();
+      for (int f = 0; f < flocks; ++f)
+      {
+        const float fx = size.x * (0.05f + 0.9f * u(rng));
+        const float fz = size.z * (0.05f + 0.9f * u(rng));
+        const float ground = map.interpolated_height(fx, fz);
+        const bool over_sea = ground < water;
+        const float alt =
+            std::max(ground, water) + 35.0f + 70.0f * u(rng);
+
+        const int n = 6 + (int)(u(rng) * 5);
+        for (int i = 0; i < n; ++i)
+        {
+          Bird b;
+          b.cx = fx;
+          b.cz = fz;
+          b.y = alt + 8.0f * (u(rng) - 0.5f);
+          b.radius = 18.0f + 22.0f * u(rng);
+          b.speed = 0.25f + 0.2f * u(rng);
+          b.offset = 6.2832f * u(rng);
+          b.flap = 6.2832f * u(rng);
+          b.size = 0.8f + 0.5f * u(rng);
+          b.gull = over_sea;
+          m_birds.push_back(b);
+        }
+      }
+    }
+
+    void render(float time) const
+    {
+      if (m_horses.empty() && m_birds.empty())
+        return;
+
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_LIGHTING_BIT |
+                                    GL_CURRENT_BIT | GL_TEXTURE_BIT);
+      for (int unit = 3; unit >= 0; --unit)
+      {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glDisable(GL_TEXTURE_2D);
+      }
+      glEnable(GL_COLOR_MATERIAL);
+      glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+
+      for (size_t i = 0; i < m_horses.size(); ++i)
+        draw_horse(m_horses[i], time);
+
+      // Birds read best as flat silhouettes, visible from below too
+      glDisable(GL_LIGHTING);
+      glDisable(GL_CULL_FACE);
+      for (size_t i = 0; i < m_birds.size(); ++i)
+        draw_bird(m_birds[i], time);
+    }
+
+  private:
+    struct Horse
+    {
+      float x, y, z, heading, phase, size, tone;
+    };
+
+    struct Bird
+    {
+      float cx, cz, y, radius, speed, offset, flap, size;
+      bool gull;
+    };
+
+    static void box(float w, float h, float d)
+    {
+      glPushMatrix();
+      glScalef(w, h, d);
+      glutSolidCube(1.0);
+      glPopMatrix();
+    }
+
+    static void blob(float rx, float ry, float rz)
+    {
+      glPushMatrix();
+      glScalef(rx, ry, rz);
+      glutSolidSphere(1.0, 10, 8);
+      glPopMatrix();
+    }
+
+    static void draw_horse(const Horse& h, float time)
+    {
+      gl::ScopedMatrixSaver m;
+      glTranslatef(h.x, h.y, h.z);
+      glRotatef(h.heading, 0, 1, 0);
+      glScalef(h.size, h.size, h.size);
+
+      // coat: bay through chestnut, with the odd gray one
+      if (h.tone < 0.75f)
+        glColor3f(0.30f + 0.35f * h.tone,
+                  0.20f + 0.20f * h.tone,
+                  0.13f + 0.12f * h.tone);
+      else
+        glColor3f(0.82f, 0.80f, 0.76f);
+
+      // body
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.05f, 0);
+        blob(0.30f, 0.34f, 0.75f);
+      }
+
+      // legs
+      for (int lx = -1; lx <= 1; lx += 2)
+        for (int lz = -1; lz <= 1; lz += 2)
+        {
+          gl::ScopedMatrixSaver part;
+          glTranslatef(lx * 0.16f, 0.42f, lz * 0.45f);
+          box(0.10f, 0.84f, 0.10f);
+        }
+
+      // neck and head, dipping down to graze and back up
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.25f, 0.6f);
+        const float dip = 0.5f + 0.5f * sin(time * 0.7f + h.phase);
+        glRotatef(-45.0f + 92.0f * dip * dip, 1, 0, 0);
+        {
+          gl::ScopedMatrixSaver seg;
+          glTranslatef(0, 0, 0.3f);
+          blob(0.11f, 0.14f, 0.42f);
+        }
+        {
+          gl::ScopedMatrixSaver seg;
+          glTranslatef(0, 0.02f, 0.72f);
+          blob(0.09f, 0.12f, 0.26f);
+        }
+      }
+
+      // swishing tail
+      {
+        gl::ScopedMatrixSaver part;
+        glTranslatef(0, 1.2f, -0.78f);
+        glRotatef(14.0f * sin(time * 2.3f + h.phase), 0, 0, 1);
+        glTranslatef(0, -0.25f, 0);
+        glColor3f(0.15f, 0.12f, 0.10f);
+        blob(0.06f, 0.30f, 0.07f);
+      }
+    }
+
+    static void draw_bird(const Bird& b, float time)
+    {
+      const float a = b.offset + time * b.speed;
+
+      gl::ScopedMatrixSaver m;
+      glTranslatef(b.cx + cos(a) * b.radius,
+                   b.y + 1.5f * sin(time * 0.9f + b.flap),
+                   b.cz + sin(a) * b.radius);
+      glRotatef(-a * 57.2958f, 0, 1, 0);
+      glRotatef(-18.0f, 0, 0, 1); // bank into the circle
+      glScalef(b.size, b.size, b.size);
+
+      if (b.gull)
+        glColor3f(0.92f, 0.93f, 0.95f);
+      else
+        glColor3f(0.13f, 0.12f, 0.14f);
+
+      glPushMatrix();
+      glScalef(0.10f, 0.09f, 0.30f);
+      glutSolidSphere(1.0, 6, 5);
+      glPopMatrix();
+
+      // flapping wing triangles
+      const float wy = 0.40f * sin(time * 9.0f + b.flap);
+      glBegin(GL_TRIANGLES);
+      glVertex3f(0, 0, 0.12f);
+      glVertex3f(0, 0, -0.10f);
+      glVertex3f(-0.55f, wy, -0.02f);
+      glVertex3f(0, 0, 0.12f);
+      glVertex3f(0, 0, -0.10f);
+      glVertex3f(0.55f, wy, -0.02f);
+      glEnd();
+    }
+
+    std::vector<Horse> m_horses;
+    std::vector<Bird> m_birds;
+  };
+
   class MoppeGLUT : public GLUTApplication
   {
   public:
@@ -566,6 +787,9 @@ namespace moppe
 
       m_fish_school.generate(m_map1, water_level,
                              pico_mode ? 40 : 16, 777);
+      m_wildlife.generate(m_map1, water_level,
+                          pico_mode ? 24 : 8,
+                          pico_mode ? 30 : 10, 4242);
 
       m_uw_vert.load();
       m_uw_frag.load();
@@ -1084,6 +1308,7 @@ namespace moppe
       m_terrain_renderer.translate();
       m_vehicle.render();
       m_fish_school.render(m_total_time);
+      m_wildlife.render(m_total_time);
 
       // Translucent water goes last so the seabed, fish, and a
       // submerged bike show through it, then dust so spray sits on
@@ -1252,6 +1477,7 @@ namespace moppe
     Stars m_star_field;
     Dust m_dust;
     Fish m_fish_school;
+    Wildlife m_wildlife;
 
     gl::Shader m_uw_vert;
     gl::Shader m_uw_frag;
