@@ -2982,20 +2982,21 @@ namespace moppe
       // backing, like the real instruments on the handlebars; in
       // third person it tucks translucently into the corner
       const bool helmet_hud = (m_cam_mode == CAM_HELMET);
-      const float X = helmet_hud ? m_width * 0.5f + 255.0f
-                                 : m_width - 18.0f;
-      const float Y = m_height - (helmet_hud ? 6.0f : 14.0f);
+      const float X = helmet_hud ? m_width * 0.5f + 235.0f
+                                 : m_width - 14.0f;
+      const float Y = m_height - (helmet_hud ? 4.0f : 10.0f);
       const float panel_alpha = helmet_hud ? 0.93f : 0.80f;
 
-      // layout, in top-left-origin pixel coordinates
-      const float cx = X - 147.0f; // speedometer
-      const float cy = Y - 134.0f;
-      const float R = 108.0f;
-      const float mx = X - 410.0f; // mini dial column
-      const float fy = Y - 76.0f;  // fuel
-      const float ry = Y - 191.0f; // boost
-      const float mr = 52.0f;
-      const float lampx = X - 300.0f;
+      // one slim horizontal strip along the bottom:
+      // fuel dial, boost dial, lamp column, speedometer
+      const float cx = X - 95.0f; // speedometer
+      const float cy = Y - 78.0f;
+      const float R = 66.0f;
+      const float bx2 = X - 262.0f; // boost dial
+      const float mx = X - 372.0f;  // fuel dial
+      const float fy = Y - 72.0f;   // mini dial row
+      const float mr = 40.0f;
+      const float lampx = X - 180.0f;
 
       {
         gl::ScopedOrthographicMode ortho;
@@ -3027,7 +3028,7 @@ namespace moppe
 
         // -- dashboard panel behind everything
         {
-          const float x0 = X - 510.0f, y0 = Y - 268.0f;
+          const float x0 = X - 460.0f, y0 = Y - 152.0f;
           const float x1 = X, y1 = Y;
           const float c = 20.0f;
           glColor4f(0.10f, 0.11f, 0.13f, panel_alpha);
@@ -3105,10 +3106,10 @@ namespace moppe
         {
           glColor4f(0.02f, 0.02f, 0.03f, 0.95f);
           glBegin(GL_QUADS);
-          glVertex2f(cx - 40, cy + 38);
-          glVertex2f(cx + 40, cy + 38);
-          glVertex2f(cx + 40, cy + 56);
-          glVertex2f(cx - 40, cy + 56);
+          glVertex2f(cx - 32, cy + 22);
+          glVertex2f(cx + 32, cy + 22);
+          glVertex2f(cx + 32, cy + 38);
+          glVertex2f(cx - 32, cy + 38);
           glEnd();
         }
 
@@ -3133,8 +3134,8 @@ namespace moppe
                    0.92f, 0.92f, 0.95f);
 
         // ==================== BOOST GAUGE ====================
-        hud_dial_face(mx, ry, mr);
-        hud_ring(mx, ry, mr * 0.62f, mr * 0.88f, 20,
+        hud_dial_face(bx2, fy, mr);
+        hud_ring(bx2, fy, mr * 0.62f, mr * 0.88f, 20,
                  20.0f + 140.0f * charge,
                  0.25f, 0.65f, 1.0f, 0.45f);
         glBegin(GL_LINES);
@@ -3142,13 +3143,13 @@ namespace moppe
         {
           const float a = (160.0f - 35.0f * i) * PI / 180.0f;
           glColor4f(0.9f, 0.9f, 0.95f, 0.9f);
-          glVertex2f(mx + 0.66f * mr * cos(a),
-                     ry - 0.66f * mr * sin(a));
-          glVertex2f(mx + 0.86f * mr * cos(a),
-                     ry - 0.86f * mr * sin(a));
+          glVertex2f(bx2 + 0.66f * mr * cos(a),
+                     fy - 0.66f * mr * sin(a));
+          glVertex2f(bx2 + 0.86f * mr * cos(a),
+                     fy - 0.86f * mr * sin(a));
         }
         glEnd();
-        hud_needle(mx, ry, 160.0f - 140.0f * charge,
+        hud_needle(bx2, fy, 160.0f - 140.0f * charge,
                    0.74f * mr, 0.2f * mr, 2.4f,
                    0.35f, 0.75f, 1.0f);
 
@@ -3157,13 +3158,13 @@ namespace moppe
         const bool blink_fast = fmod(m_total_time * 3.5f, 1.0f) < 0.5f;
 
         // boost ready (green), low fuel (amber), damage (red)
-        hud_lamp(lampx, Y - 186.0f, 8,
+        hud_lamp(lampx, Y - 116.0f, 6.5f,
                  riding && charge >= 1.0f && blink_slow,
                  0.2f, 0.95f, 0.35f);
-        hud_lamp(lampx, Y - 134.0f, 8,
+        hud_lamp(lampx, Y - 78.0f, 6.5f,
                  m_fuel < 20.0f && blink_slow,
                  1.0f, 0.6f, 0.05f);
-        hud_lamp(lampx, Y - 82.0f, 8,
+        hud_lamp(lampx, Y - 40.0f, 6.5f,
                  m_health < 35.0f && blink_fast,
                  1.0f, 0.15f, 0.1f);
 
@@ -3233,40 +3234,40 @@ namespace moppe
         const float a = (210.0f - 240.0f * s / 300.0f) * PI / 180.0f;
         const std::string label = std::to_string(s);
         gl::draw_glut_text(
-            GLUT_BITMAP_HELVETICA_12,
-            (int)(cx + 0.58f * R * cos(a) - 3.5f * label.size()),
-            (int)(cy - 0.58f * R * sin(a) + 4), label);
+            GLUT_BITMAP_HELVETICA_10,
+            (int)(cx + 0.58f * R * cos(a) - 3.0f * label.size()),
+            (int)(cy - 0.58f * R * sin(a) + 3), label);
       }
 
       glColor3f(0.65f, 0.68f, 0.72f);
-      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                         (int)(cx - 16), (int)(cy - 26), "km/h");
       gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
-                         (int)(cx - 19), (int)(cy - 44), "MOPPE");
+                         (int)(cx - 13), (int)(cy - 18), "km/h");
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(cx - 17), (int)(cy - 31), "MOPPE");
 
       // odometer digits
       {
         char buf[16];
         snprintf(buf, sizeof buf, "%07.1f", m_odometer / 1000.0);
         glColor3f(0.85f, 0.9f, 0.85f);
-        gl::draw_glut_text(GLUT_BITMAP_9_BY_15,
-                           (int)(cx - 33), (int)(cy + 52), buf);
+        gl::draw_glut_text(GLUT_BITMAP_8_BY_13,
+                           (int)(cx - 28), (int)(cy + 34), buf);
       }
 
       // gauge labels: E/F on the fuel dial, BOOST below its twin
       glColor3f(0.8f, 0.3f, 0.2f);
-      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                         (int)(mx - mr * 0.95f), (int)(fy - mr * 0.28f),
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(mx - mr * 0.95f), (int)(fy - mr * 0.24f),
                          "E");
       glColor3f(0.8f, 0.85f, 0.9f);
-      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                         (int)(mx + mr * 0.82f), (int)(fy - mr * 0.28f),
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(mx + mr * 0.82f), (int)(fy - mr * 0.24f),
                          "F");
       glColor3f(0.65f, 0.68f, 0.72f);
       gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
-                         (int)(mx - 14), (int)(fy + 24), "FUEL");
+                         (int)(mx - 12), (int)(fy + 24), "FUEL");
       gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
-                         (int)(mx - 17), (int)(ry + 24), "BOOST");
+                         (int)(bx2 - 15), (int)(fy + 24), "BOOST");
 
       // star counter
       glColor3f(1.0f, 0.85f, 0.2f);
@@ -3278,7 +3279,7 @@ namespace moppe
       {
         glColor3f(0.6f, 0.9f, 1.0f);
         gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                           (int)(X - 502), (int)(Y - 250),
+                           (int)(X - 450), (int)(Y - 138),
                            "ON FOOT");
       }
     }
