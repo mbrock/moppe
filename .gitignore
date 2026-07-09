@@ -1,4 +1,5 @@
 build/
 build-ios/
+build-ios-dev/
 .DS_Store
 test.tga

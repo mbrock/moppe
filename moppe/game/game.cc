@@ -113,6 +113,7 @@ namespace game {
   public:
     MoppeGame (const WorldParams& world)
       : m_world (world),
+	m_spawn_position (world.spawn_position ()),
 	m_map (world.resolution, world.resolution, world.map_size,
 	       (int) ::time (0)),
 	m_camera (18, 6.5f * one_meter),
@@ -164,6 +165,70 @@ namespace game {
     { ((MoppeGame*) self)->generate_world (); }
     static void finish_thunk (void* self)
     { ((MoppeGame*) self)->finish_setup (); }
+
+    Vector3D choose_landscape_spawn () {
+      // The generated landscape has no authored start.  Sample the
+      // finished terrain for a dry, grassy, locally flat patch rather
+      // than trusting the old fixed coordinate near the map corner.
+      const float margin_x = 0.08f * m_world.map_size.x;
+      const float margin_z = 0.08f * m_world.map_size.z;
+      const float patch = 20.0f * one_meter;
+      const float min_ground = m_world.water_level + 25.0f * one_meter;
+      const float max_ground = 0.32f * m_world.map_size.y;
+
+      std::uniform_real_distribution<float> random_x
+	(margin_x, m_world.map_size.x - margin_x);
+      std::uniform_real_distribution<float> random_z
+	(margin_z, m_world.map_size.z - margin_z);
+
+      Vector3D chosen;
+      Vector3D fallback;
+      int good_count = 0;
+      float fallback_score = -1000000.0f;
+
+      for (int i = 0; i < 6000; ++i) {
+	const float x = random_x (m_fx_rng);
+	const float z = random_z (m_fx_rng);
+	const float h = m_map.interpolated_height (x, z);
+	const float hx0 = m_map.interpolated_height (x - patch, z);
+	const float hx1 = m_map.interpolated_height (x + patch, z);
+	const float hz0 = m_map.interpolated_height (x, z - patch);
+	const float hz1 = m_map.interpolated_height (x, z + patch);
+	const float low = std::min
+	  (h, std::min (std::min (hx0, hx1), std::min (hz0, hz1)));
+	const float high = std::max
+	  (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
+	const float relief = high - low;
+	const float up = m_map.interpolated_normal (x, z).y;
+
+	// Always retain the best fallback.  The large shore penalty makes
+	// even an unusual generated map prefer dry ground over a flat seabed.
+	const float shore_penalty =
+	  std::max (0.0f, min_ground - low) * 2.0f;
+	const float alpine_penalty =
+	  std::max (0.0f, h - max_ground) * 0.03f;
+	const float score = up * 20.0f - relief * 0.2f
+	  - shore_penalty - alpine_penalty;
+	if (score > fallback_score) {
+	  fallback_score = score;
+	  fallback = Vector3D (x, h + 1.2f, z);
+	}
+
+	if (low < min_ground || high > max_ground ||
+	    up < 0.94f || relief > 3.5f * one_meter)
+	  continue;
+
+	// Reservoir sampling chooses uniformly among all suitable sites,
+	// so different generated worlds do not always start at the first
+	// acceptable patch encountered.
+	++good_count;
+	std::uniform_int_distribution<int> keep (1, good_count);
+	if (keep (m_fx_rng) == 1)
+	  chosen = Vector3D (x, h + 1.2f, z);
+      }
+
+      return good_count > 0 ? chosen : fallback;
+    }
 
     void generate_world () {
       // Exceptions must not escape the GCD block (std::terminate);
@@ -237,10 +302,16 @@ namespace game {
       m_vehicle.set_obstacles (&m_city.obstacles ());
       m_car.set_obstacles (&m_city.obstacles ());
 
-      // The vehicles were constructed against the all-zero
-      // heightmap; the first update's ground clamp lifts them onto
-      // the real terrain, exactly as the GL build did.  (A reset to
-      // spawn_position here would drop them from 600 m instead.)
+      if (!m_world.city_mode && !m_world.pico_mode) {
+	m_spawn_position = choose_landscape_spawn ();
+	m_vehicle.reset (m_spawn_position);
+
+	std::uniform_real_distribution<float> heading
+	  (0.0f, 2.0f * 3.14159f);
+	const float a = heading (m_fx_rng);
+	m_vehicle.set_heading (Vector3D (std::sin (a), 0,
+				       std::cos (a)));
+      }
 
       m_ready = true;
     }
@@ -820,10 +891,10 @@ namespace game {
       m_mode = M_BIKE;
       // Back to the start, but ON the ground rather than 600 m
       // over it.
-      const Vector3D spawn = m_world.spawn_position ();
-      const float ground =
-	m_map.interpolated_height (spawn.x, spawn.z);
-      m_vehicle.reset (Vector3D (spawn.x, ground + 1.2f, spawn.z));
+      const float ground = m_map.interpolated_height
+	(m_spawn_position.x, m_spawn_position.z);
+      m_vehicle.reset (Vector3D (m_spawn_position.x, ground + 1.2f,
+				 m_spawn_position.z));
       // Key releases were swallowed during the game-over screen;
       // don't resume with the throttle stuck open.
       m_go_input = 0;
@@ -833,6 +904,7 @@ namespace game {
     }
 
     WorldParams m_world;
+    Vector3D m_spawn_position;
     map::RandomHeightMap m_map;
     Terrain m_terrain;
     ChaseCamera m_camera;
