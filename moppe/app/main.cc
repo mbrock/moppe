@@ -2751,6 +2751,11 @@ namespace moppe
           }
           else
           {
+            // Halfway through the hearts, the game offers its
+            // sympathies out loud
+            if (m_lives == 5)
+              std::system("say 'Ouchies. That hurts.' &");
+
             av.reset(spawn_position());
             m_health = 100.0f;
             m_shake = 1.0f;
