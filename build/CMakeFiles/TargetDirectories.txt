@@ -1,6 +1,7 @@
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_shaders.dir
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_render.dir
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_game.dir
+/Users/mbrock/2025/moppe/build/CMakeFiles/map-test.dir
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_metal.dir
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_apple.dir
 /Users/mbrock/2025/moppe/build/CMakeFiles/moppe_platform_mac.dir

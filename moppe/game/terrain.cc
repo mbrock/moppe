@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 
 #include <moppe/platform/platform.hh>
@@ -46,7 +47,9 @@ namespace game {
     params.height_scale = world.map_size.y;
     params.sea_level_norm = world.water_level / world.map_size.y;
     params.tex_scale = 0.5f * one_meter / m_scale.x;
-    params.shadow_strength = 0.85f;
+    // Debug: MOPPE_NOSHADOW=1 disables the cast-shadow lookup.
+    params.shadow_strength =
+      ::getenv ("MOPPE_NOSHADOW") ? 0.0f : 0.85f;
     params.fog_scale = world.fog_scale;
     r.set_terrain (params, map.raw_heights (), map.raw_normals ());
 

@@ -38,7 +38,7 @@ namespace game {
   // THE sun: one fixed direction shared by the light, the shadow
   // map, the sky's sun disc, and the ocean glint.
   static const float SUN_AZIMUTH = 0.8f;
-  static const float SUN_HEIGHT = 0.75f;   // eternal golden afternoon
+  static float SUN_HEIGHT = 0.75f;   // eternal golden afternoon
 
   static Vector3D
   sun_direction_for (float height) {
@@ -235,6 +235,16 @@ namespace game {
 
       m_total_time += dt;
       const float total_time = m_total_time;
+
+      // Screenshot autopilot for headless verification: rides in a
+      // lazy arc with periodic rocket jumps.
+      static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
+      if (demo) {
+	input_go (1.0f);
+	input_turn (0.35f * std::sin (total_time * 0.25f));
+	if (std::fmod (total_time, 11.0f) < dt)
+	  active_vehicle ().rocket_jump ();
+      }
 
       // Weather: slowly drifting cloudiness with passing fronts.
       float cloudiness =
@@ -854,6 +864,10 @@ main (int argc, char** argv) {
       config.fullscreen = true;
     }
   }
+
+  // Debug: override the sun height (e.g. 0.55 for long shadows).
+  if (const char* sh = ::getenv ("MOPPE_SUNHEIGHT"))
+    game::SUN_HEIGHT = (float) ::atof (sh);
 
   game::MoppeGame game (world);
 

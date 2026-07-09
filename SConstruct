@@ -1,4 +1,0 @@
-# -*- python -*-
-
-SConscript('moppe/SConscript')
-

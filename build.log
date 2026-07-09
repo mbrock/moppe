@@ -1,9 +1,42 @@
-[1/5] Building CXX object CMakeFiles/moppe.dir/moppe/game/game.cc.o
-/Users/mbrock/2025/moppe/moppe/game/game.cc:819:11: warning: private field 'm_turn_input' is not used [-Wunused-private-field]
-  819 |     float m_turn_input;
+[1/38] Compiling moppe/shaders/metal/ocean.metal (macosx)
+[2/38] Compiling moppe/shaders/metal/sky.metal (macosx)
+[3/38] Compiling moppe/shaders/metal/post.metal (macosx)
+[4/38] Compiling moppe/shaders/metal/uber.metal (macosx)
+[5/38] Building CXX object CMakeFiles/moppe_render.dir/moppe/render/text.cc.o
+[6/38] Compiling moppe/shaders/metal/terrain.metal (macosx)
+[7/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/mov/vehicle.cc.o
+[8/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/map/generate.cc.o
+[9/38] Linking moppe.metallib (macosx)
+[10/38] Building CXX object CMakeFiles/moppe_render.dir/moppe/render/draw.cc.o
+[11/38] Linking CXX static library libmoppe_render.a
+[12/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/gfx/tga.cc.o
+[13/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/chase_camera.cc.o
+[14/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/vegetation.cc.o
+[15/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/terrain.cc.o
+[16/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/stars.cc.o
+[17/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/blob_shadow.cc.o
+[18/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/dust.cc.o
+[19/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/sprites.cc.o
+[20/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/fish.cc.o
+[21/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/walker.cc.o
+[22/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/wildlife.cc.o
+[23/38] Building OBJCXX object CMakeFiles/moppe_apple.dir/moppe/platform/apple/apple_common.mm.o
+[24/38] Linking OBJCXX static library libmoppe_apple.a
+[25/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/hud.cc.o
+[26/38] Building CXX object CMakeFiles/map-test.dir/moppe/map/test.cc.o
+[27/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/vehicle_render.cc.o
+[28/38] Building CXX object CMakeFiles/moppe_game.dir/moppe/game/city.cc.o
+[29/38] Building CXX object CMakeFiles/moppe-testbed.dir/moppe/game/testbed.cc.o
+[30/38] Linking CXX static library libmoppe_game.a
+[31/38] Linking CXX executable map-test
+[32/38] Building CXX object CMakeFiles/moppe.dir/moppe/game/game.cc.o
+/Users/mbrock/2025/moppe/moppe/game/game.cc:829:11: warning: private field 'm_turn_input' is not used [-Wunused-private-field]
+  829 |     float m_turn_input;
       |           ^
 1 warning generated.
-[2/5] Building OBJCXX object CMakeFiles/moppe_apple.dir/moppe/platform/apple/apple_common.mm.o
-[3/5] Linking OBJCXX static library libmoppe_apple.a
-[4/5] Linking CXX executable moppe-testbed
-[5/5] Linking CXX executable moppe
+[33/38] Building OBJCXX object CMakeFiles/moppe_metal.dir/moppe/render/metal/metal_renderer.mm.o
+[34/38] Linking CXX static library libmoppe_metal.a
+[35/38] Building OBJCXX object CMakeFiles/moppe_platform_mac.dir/moppe/platform/mac/main_mac.mm.o
+[36/38] Linking CXX static library libmoppe_platform_mac.a
+[37/38] Linking CXX executable moppe-testbed
+[38/38] Linking CXX executable moppe.app/Contents/MacOS/moppe

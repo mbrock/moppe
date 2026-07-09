@@ -72,9 +72,7 @@ add_library(moppe_render STATIC
 )
 target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Game logic + simulation.  NOTE: mov/vehicle.cc still carries its
-# legacy GL render() half until the cutover, so this temporarily
-# needs the MAC define and links OpenGL/GLUT on macOS.
+# Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
   moppe/map/generate.cc
   moppe/mov/vehicle.cc
@@ -94,16 +92,11 @@ add_library(moppe_game STATIC
   moppe/game/hud.cc
 )
 target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-# vendor/boost: only for mov/vehicle.hh's leftover includes (cutover
-# removes this).
-target_include_directories(moppe_game PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/boost)
 target_link_libraries(moppe_game PUBLIC moppe_render)
-if(APPLE)
-  target_compile_definitions(moppe_game PUBLIC MAC GL_SILENCE_DEPRECATION)
-  target_link_libraries(moppe_game PUBLIC
-    "-framework OpenGL" "-framework GLUT")
-endif()
+
+# The heightmap CLI tool (generates a terrain and writes test.tga).
+add_executable(map-test moppe/map/test.cc)
+target_link_libraries(map-test PRIVATE moppe_game)
 
 # ---------------------------------------------------------------
 # Apple: Metal backend + platform layers.
@@ -142,7 +135,25 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-testbed moppe/game/testbed.cc)
   target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
 
-  # The game.
-  add_executable(moppe moppe/game/game.cc)
+  # The game, as a proper .app bundle with the assets inside.
+  # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
+  # and MOPPE_ASSETS=<repo> overrides asset resolution for dev.)
+  add_executable(moppe MACOSX_BUNDLE moppe/game/game.cc)
   target_link_libraries(moppe PRIVATE moppe_game moppe_platform_mac)
+  set_target_properties(moppe PROPERTIES
+    MACOSX_BUNDLE_INFO_PLIST
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
+    MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0")
+  add_custom_command(TARGET moppe POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${MOPPE_METALLIB} $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/moppe.metallib
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/textures
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/data
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
+    COMMENT "Bundling assets into moppe.app")
 endif()
