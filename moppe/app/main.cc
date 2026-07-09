@@ -344,7 +344,7 @@ namespace moppe
   class Dust
   {
   public:
-    Dust() : m_rng(99) {}
+    Dust() : m_particles(), m_rng(99), m_tex(0) {}
 
     void emit(const Vector3D& pos, const Vector3D& vel, int count,
               const Vector3D& color)
@@ -357,9 +357,11 @@ namespace moppe
         p.vel = vel + Vector3D(3.0f * u(m_rng),
                                2.5f + 2.0f * u(m_rng),
                                3.0f * u(m_rng));
-        p.max_life = 0.45f + 0.35f * (0.5f + 0.5f * u(m_rng));
+        p.max_life = 0.5f + 0.4f * (0.5f + 0.5f * u(m_rng));
         p.life = p.max_life;
-        p.size = 0.5f + 0.3f * u(m_rng);
+        p.size = 0.7f + 0.4f * u(m_rng);
+        p.rot = 3.14159f * u(m_rng);
+        p.rot_v = 2.2f * u(m_rng);
         p.color = color;
         m_particles.push_back(p);
       }
@@ -376,15 +378,18 @@ namespace moppe
           continue;
         p.vel *= std::exp(-2.0f * dt); // air drag
         p.pos += p.vel * dt;
+        p.rot += p.rot_v * dt;
         m_particles[j++] = p;
       }
       m_particles.resize(j);
     }
 
-    void render() const
+    void render()
     {
       if (m_particles.empty())
         return;
+
+      ensure_texture();
 
       // Billboard axes straight from the current view matrix
       float mv[16];
@@ -395,11 +400,15 @@ namespace moppe
       gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
                                     GL_TEXTURE_BIT |
                                     GL_DEPTH_BUFFER_BIT);
-      for (int unit = 3; unit >= 0; --unit)
+      for (int unit = 3; unit >= 1; --unit)
       {
         glActiveTexture(GL_TEXTURE0 + unit);
         glDisable(GL_TEXTURE_2D);
       }
+      glActiveTexture(GL_TEXTURE0);
+      glEnable(GL_TEXTURE_2D);
+      glBindTexture(GL_TEXTURE_2D, m_tex);
+      glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
       glDisable(GL_LIGHTING);
       glDepthMask(GL_FALSE); // soft puffs, no z-fighting each other
 
@@ -408,26 +417,74 @@ namespace moppe
       {
         const Particle& p = m_particles[i];
         const float a = p.life / p.max_life;
-        const float s = p.size * (1.6f - 0.6f * a); // grow as it fades
+        const float s = p.size * (1.7f - 0.7f * a); // grow as it fades
 
-        glColor4f(p.color.x, p.color.y, p.color.z, 0.55f * a);
-        gl::vertex(p.pos - right * s - up * s);
-        gl::vertex(p.pos + right * s - up * s);
-        gl::vertex(p.pos + right * s + up * s);
-        gl::vertex(p.pos - right * s + up * s);
+        // spin the billboard so puffs tumble
+        const float ca = cos(p.rot), sa = sin(p.rot);
+        const Vector3D r2 = (right * ca + up * sa) * s;
+        const Vector3D u2 = (up * ca - right * sa) * s;
+
+        glColor4f(p.color.x, p.color.y, p.color.z, 0.75f * a);
+        glTexCoord2f(0, 0);
+        gl::vertex(p.pos - r2 - u2);
+        glTexCoord2f(1, 0);
+        gl::vertex(p.pos + r2 - u2);
+        glTexCoord2f(1, 1);
+        gl::vertex(p.pos + r2 + u2);
+        glTexCoord2f(0, 1);
+        gl::vertex(p.pos - r2 + u2);
       }
       glEnd();
     }
 
   private:
+    // A soft round sprite, generated once: white with a smooth
+    // radial alpha falloff, so puffs read as smoke instead of
+    // hard-edged squares
+    void ensure_texture()
+    {
+      if (m_tex != 0)
+        return;
+
+      const int N = 64;
+      std::vector<unsigned char> img(N * N * 4);
+      for (int y = 0; y < N; ++y)
+        for (int x = 0; x < N; ++x)
+        {
+          const float dx = (x + 0.5f) / N * 2 - 1;
+          const float dy = (y + 0.5f) / N * 2 - 1;
+          float a = std::max(
+              0.0f, 1.0f - std::sqrt(dx * dx + dy * dy));
+          a = a * a * (3.0f - 2.0f * a); // smooth shoulder
+
+          unsigned char* px = &img[(y * N + x) * 4];
+          px[0] = px[1] = px[2] = 255;
+          px[3] = (unsigned char)(255.0f * a);
+        }
+
+      glGenTextures(1, &m_tex);
+      glBindTexture(GL_TEXTURE_2D, m_tex);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                      GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                      GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                      GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                      GL_CLAMP_TO_EDGE);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, N, N, 0, GL_RGBA,
+                   GL_UNSIGNED_BYTE, &img[0]);
+    }
+
     struct Particle
     {
       Vector3D pos, vel, color;
-      float life, max_life, size;
+      float life, max_life, size, rot, rot_v;
     };
 
     std::vector<Particle> m_particles;
     std::mt19937 m_rng;
+    GLuint m_tex;
   };
 
   // Schools of little fish circling in the deeper water.
