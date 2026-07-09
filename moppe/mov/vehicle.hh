@@ -113,6 +113,17 @@ namespace mov {
     // 0..1: how recharged the jump jets are
     float rocket_charge () const;
 
+    // Read-only pose and body state for the external renderer
+    // (game/vehicle_render); the drawing half reads everything it
+    // needs through these.
+    float lean () const { return m_lean; }
+    float susp () const { return m_susp; }
+    radians_t yaw () const { return m_yaw; }
+    Vector3D render_normal () const { return m_render_normal; }
+    seconds_t rocket_time () const { return m_rocket_time; }
+    int body_kind () const { return m_body_kind; }
+    Vector3D body_color () const { return m_body_color; }
+
     void set_camera () const {
       gl::ScopedAttribSaver matrix_mode (GL_TRANSFORM_BIT);
       

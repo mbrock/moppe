@@ -144,18 +144,15 @@ namespace platform {
     }
     CGContextSetGrayFillColor (ctx, 1.0, 1.0);
     // Place the glyph so its bounding box lands inside the bitmap;
-    // CG origin is bottom-left.
+    // CG user space has a bottom-left origin, but the buffer's
+    // row 0 is already the TOP scanline -- no flip needed.
     CGPoint pos = CGPointMake (-box.origin.x + pad,
 			       -box.origin.y + pad);
     CTFontDrawGlyphs (font, &glyph, &pos, 1, ctx);
     CGContextRelease (ctx);
     CFRelease (font);
 
-    // Flip to row-0-at-top.
-    out.pixels.resize (pixels.size ());
-    for (int y = 0; y < h; ++y)
-      memcpy (&out.pixels[(size_t) y * w],
-	      &pixels[(size_t) (h - 1 - y) * w], w);
+    out.pixels = pixels;
     return true;
   }
 }

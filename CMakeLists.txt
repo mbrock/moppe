@@ -68,8 +68,42 @@ add_custom_target(moppe_shaders DEPENDS ${MOPPE_METALLIB})
 
 add_library(moppe_render STATIC
   moppe/render/draw.cc
+  moppe/render/text.cc
 )
 target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Game logic + simulation.  NOTE: mov/vehicle.cc still carries its
+# legacy GL render() half until the cutover, so this temporarily
+# needs the MAC define and links OpenGL/GLUT on macOS.
+add_library(moppe_game STATIC
+  moppe/map/generate.cc
+  moppe/mov/vehicle.cc
+  moppe/gfx/tga.cc
+  moppe/game/terrain.cc
+  moppe/game/chase_camera.cc
+  moppe/game/vegetation.cc
+  moppe/game/stars.cc
+  moppe/game/dust.cc
+  moppe/game/blob_shadow.cc
+  moppe/game/sprites.cc
+  moppe/game/fish.cc
+  moppe/game/wildlife.cc
+  moppe/game/city.cc
+  moppe/game/walker.cc
+  moppe/game/vehicle_render.cc
+  moppe/game/hud.cc
+)
+target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+# vendor/boost: only for mov/vehicle.hh's leftover includes (cutover
+# removes this).
+target_include_directories(moppe_game PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/boost)
+target_link_libraries(moppe_game PUBLIC moppe_render)
+if(APPLE)
+  target_compile_definitions(moppe_game PUBLIC MAC GL_SILENCE_DEPRECATION)
+  target_link_libraries(moppe_game PUBLIC
+    "-framework OpenGL" "-framework GLUT")
+endif()
 
 # ---------------------------------------------------------------
 # Apple: Metal backend + platform layers.
@@ -107,4 +141,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   # Renderer testbed: spinning solids + HUD shapes, no game.
   add_executable(moppe-testbed moppe/game/testbed.cc)
   target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
+
+  # The game.
+  add_executable(moppe moppe/game/game.cc)
+  target_link_libraries(moppe PRIVATE moppe_game moppe_platform_mac)
 endif()

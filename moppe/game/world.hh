@@ -27,11 +27,11 @@ namespace game {
     { }
 
     Vector3D spawn_position () const {
-      if (city_mode)
-	return Vector3D (map_size.x * 0.5f, 0, map_size.z * 0.5f);
       if (pico_mode)
-	return Vector3D (map_size.x * 0.47f, 0, map_size.z * 0.40f);
-      return Vector3D (map_size.x * 0.5f, 0, map_size.z * 0.35f);
+	return Vector3D (0.34f * map_size.x, 3000, 0.55f * map_size.z);
+      if (city_mode)
+	return Vector3D (map_size.x / 2 + 20, 100, map_size.z / 2 + 20);
+      return Vector3D (50 * one_meter, 600 * one_meter, 50 * one_meter);
     }
   };
 

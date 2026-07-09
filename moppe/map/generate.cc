@@ -3,18 +3,18 @@
 #include <moppe/map/tga.hh>
 #include <moppe/gfx/math.hh>
 
-#include <boost/random.hpp>
-
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <stdexcept>
 #include <vector>
 
 namespace moppe {
 namespace map {
   NormalMap::NormalMap (int width, int height)
-    : m_data   (boost::extents[height][width]),
+    : m_data   (width, height),
       m_width  (width),
       m_height (height)
   {
@@ -24,9 +24,9 @@ namespace map {
   void
   NormalMap::reset ()
   {
-    for (index_t y = 0; y < m_height; ++y)
-      for (index_t x = 0; x < m_width; ++x)
-	m_data[y][x] = Vector3D (0, 0, 0);
+    for (int y = 0; y < m_height; ++y)
+      for (int x = 0; x < m_width; ++x)
+	m_data.at (y, x) = Vector3D (0, 0, 0);
   }
 
   void
@@ -36,24 +36,24 @@ namespace map {
 	 (y < 0) || (y > m_height - 1)))
       return;
 
-    m_data[y][x] += v;
+    m_data.at (y, x) += v;
   }
 
   void
   NormalMap::normalize_all ()
   {
-    for (index_t y = 0; y < m_height; ++y)
-      for (index_t x = 0; x < m_width; ++x)
-	m_data[y][x].normalize ();
+    for (int y = 0; y < m_height; ++y)
+      for (int x = 0; x < m_width; ++x)
+	m_data.at (y, x).normalize ();
   }
 
   RandomHeightMap::RandomHeightMap (int width, int height,
 				    const Vector3D& size,
 				    int seed)
     : NormalComputingHeightMap (width, height, size),
-      m_data    (boost::extents[height][width])
+      m_data    (width, height)
   {
-    m_rng.seed (boost::mt19937::result_type (seed));
+    m_rng.seed (std::mt19937::result_type (seed));
   }
 
 #define FORALL(x,y)				\
@@ -133,10 +133,20 @@ namespace map {
   RandomHeightMap::exponentiate (float k)
   { FORALL (x, y) set (x, y, std::pow (get (x, y), k)); }
   
-  typedef boost::variate_generator<boost::mt19937&,
-				   boost::uniform_real<> > realgen_t;
-
   namespace {
+    // Bound uniform-real generator, replacing
+    // boost::variate_generator<mt19937&, uniform_real<> >.
+    struct realgen_t {
+      std::mt19937& rng;
+      std::uniform_real_distribution<float> dist;
+
+      realgen_t (std::mt19937& rng, float lo, float hi)
+	: rng (rng), dist (lo, hi)
+      { }
+
+      float operator () () { return dist (rng); }
+    };
+
     inline float sstep (float e0, float e1, float x) {
       float t = (x - e0) / (e1 - e0);
       t = t < 0 ? 0 : (t > 1 ? 1 : t);
@@ -149,13 +159,13 @@ namespace map {
       int perm[512];
 
       explicit PerlinNoise (unsigned seed) {
-	boost::mt19937 rng;
-	rng.seed (boost::mt19937::result_type (seed));
+	std::mt19937 rng;
+	rng.seed (std::mt19937::result_type (seed));
 	int p[256];
 	for (int i = 0; i < 256; ++i)
 	  p[i] = i;
 	for (int i = 255; i > 0; --i) {
-	  boost::uniform_int<> d (0, i);
+	  std::uniform_int_distribution<int> d (0, i);
 	  int j = d (rng);
 	  int t = p[i]; p[i] = p[j]; p[j] = t;
 	}
@@ -239,11 +249,10 @@ namespace map {
   void
   RandomHeightMap::randomize_uniformly ()
   {
-    boost::uniform_real<> range (0, 1);
-    realgen_t g (m_rng, range);
-    
-    for (index_t y = 0; y < m_height; ++y)
-      for (index_t x = 0; x < m_width; ++x)
+    realgen_t g (m_rng, 0, 1);
+
+    for (int y = 0; y < m_height; ++y)
+      for (int x = 0; x < m_width; ++x)
 	set (x, y, g ());
 
     recompute_normals ();
@@ -289,9 +298,7 @@ namespace map {
   void
   RandomHeightMap::randomize_plasmally (float roughness)
   {
-    boost::uniform_real<> range (-1, 1);
-    boost::variate_generator<boost::mt19937&, boost::uniform_real<> >
-      g (m_rng, range);
+    realgen_t g (m_rng, -1, 1);
 
     do_plasma_step (*this, 0, 0, 0, g, 1.0, std::pow (2, -roughness),
 		    g (), g (), g (), g ());
@@ -389,8 +396,7 @@ namespace map {
     const float gravity    = 4.0f;
     const int   max_steps  = 64;
 
-    boost::uniform_real<> range (0, 1);
-    realgen_t g (m_rng, range);
+    realgen_t g (m_rng, 0, 1);
 
     for (int d = 0; d < droplets; ++d)
       {
@@ -516,31 +522,6 @@ namespace map {
 	  }
   }
 
-  float
-  InterpolatingHeightMap::get (int x, int y) const
-  {
-    return linear_interpolate (m_from->get (x, y),
-			       m_to->get (x, y),
-			       m_alpha);
-  }
-
-  Vector3D
-  InterpolatingHeightMap::normal (int x, int y) const
-  {
-    // Maybe QUATERNION interpolation would be BETTER?
-    return linear_vector_interpolate (m_from->normal (x, y),
-				      m_to->normal (x, y),
-				      m_alpha);
-  }
-
-  void
-  InterpolatingHeightMap::set_blending_factor (float alpha)
-  { m_alpha = min (alpha, 1.0f); }
-
-  void 
-  InterpolatingHeightMap::increase_blending_factor (float delta)
-  { m_alpha = min (m_alpha + delta, 1.0f); }
-  
   void
   write_tga (std::ostream& stream, const HeightMap& map)
   {

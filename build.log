@@ -1,0 +1,9 @@
+[1/5] Building CXX object CMakeFiles/moppe.dir/moppe/game/game.cc.o
+/Users/mbrock/2025/moppe/moppe/game/game.cc:819:11: warning: private field 'm_turn_input' is not used [-Wunused-private-field]
+  819 |     float m_turn_input;
+      |           ^
+1 warning generated.
+[2/5] Building OBJCXX object CMakeFiles/moppe_apple.dir/moppe/platform/apple/apple_common.mm.o
+[3/5] Linking OBJCXX static library libmoppe_apple.a
+[4/5] Linking CXX executable moppe-testbed
+[5/5] Linking CXX executable moppe

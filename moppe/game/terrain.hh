@@ -16,8 +16,9 @@ namespace game {
   class Terrain {
   public:
     // Uploads heights/normals and the splat textures; call again
-    // after the heightmap changes (e.g. city baking).
-    void setup (render::Renderer& r, const map::HeightMap& map,
+    // after the heightmap changes (e.g. city baking).  Takes the
+    // concrete map type: raw_heights()/raw_normals() live there.
+    void setup (render::Renderer& r, const map::RandomHeightMap& map,
 		const WorldParams& world);
 
     // Renders the one-time shadow map.  sun_dir points toward the

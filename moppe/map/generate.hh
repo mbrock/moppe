@@ -4,31 +4,52 @@
 
 #include <moppe/gfx/math.hh>
 
-#include <boost/multi_array.hpp>
-#include <boost/random.hpp>
-#include <boost/shared_ptr.hpp>
-
 #include <iostream>
+#include <memory>
+#include <random>
 #include <string>
+#include <vector>
 
 namespace moppe {
 namespace map {
+  // Contiguous row-major 2D array; at (y, x) preserves the old
+  // boost::multi_array m_data[y][x] indexing.
+  template <typename T>
+  class Array2D {
+  public:
+    Array2D (int width, int height)
+      : m_width (width),
+	m_data ((size_t) width * height)
+    { }
+
+    inline T& at (int y, int x)
+    { return m_data[(size_t) y * m_width + x]; }
+
+    inline const T& at (int y, int x) const
+    { return m_data[(size_t) y * m_width + x]; }
+
+    inline const T* raw () const { return m_data.data (); }
+
+  private:
+    int m_width;
+    std::vector<T> m_data;
+  };
+
   class NormalMap {
   public:
     NormalMap (int width, int height);
 
     inline const Vector3D& at (int x, int y) const
-    { return m_data[y][x]; }
+    { return m_data.at (y, x); }
+
+    inline const Vector3D* raw () const { return m_data.raw (); }
 
     void reset         ();
     void add           (int x, int y, const Vector3D& v);
     void normalize_all ();
 
   private:
-    typedef boost::multi_array<Vector3D, 2> array_t;
-    typedef array_t::index                  index_t;
-
-    array_t m_data;
+    Array2D<Vector3D> m_data;
 
     const int m_width;
     const int m_height;
@@ -40,12 +61,12 @@ namespace map {
       : m_width (width), m_height (height),
 	m_scale (size.x / width, size.y, size.z / height)
     { }
-    
+
     virtual ~HeightMap () { }
-    
+
     virtual float    get    (int x, int y) const = 0;
     virtual Vector3D normal (int x, int y) const = 0;
-    
+
     Vector3D vertex          (int x, int y) const;
     Vector3D triangle_normal (int x1, int y1,
 			      int x2, int y2,
@@ -98,28 +119,28 @@ namespace map {
 					       ax);
       return linear_vector_interpolate (r1, r2, ay);
     }
-    
+
     inline int      width  () const { return m_width; }
     inline int      height () const { return m_height; }
 
     inline Vector3D scale  () const { return m_scale; }
     inline Vector3D size   () const
-    { return Vector3D (m_scale.x * m_width, 
-		       m_scale.y, 
+    { return Vector3D (m_scale.x * m_width,
+		       m_scale.y,
 		       m_scale.z * m_height); }
-    
+
     float min_value () const;
     float max_value () const;
-    
+
   protected:
     const int      m_width;
     const int      m_height;
     const Vector3D m_scale;
   };
-  
+
   void compute_normal_map (const HeightMap& height_map,
 			   NormalMap& normal_map);
-  
+
   class NormalComputingHeightMap: public HeightMap {
   public:
     NormalComputingHeightMap (int width, int height,
@@ -128,33 +149,43 @@ namespace map {
 	m_normals (width, height)
     { }
 
-    void recompute_normals () 
+    void recompute_normals ()
     { compute_normal_map (*this, m_normals); }
-    
+
     Vector3D normal (int x, int y) const
     { return m_normals.at (x, y); }
+
+    // Contiguous width*height array, row 0 first; the renderer
+    // uploads it as a texture.
+    const Vector3D* raw_normals () const
+    { return m_normals.raw (); }
 
   private:
     NormalMap m_normals;
   };
-  
+
   class RandomHeightMap: public NormalComputingHeightMap {
   public:
     RandomHeightMap (int width, int height,
 		     const Vector3D& size,
 		     int seed = 0);
-    
+
     inline float get (int x, int y) const
-    { return m_data[y][x]; }
-    
+    { return m_data.at (y, x); }
+
     inline void set (int x, int y, float value)
-    { m_data[y][x] = value; }
-    
+    { m_data.at (y, x) = value; }
+
+    // Contiguous width*height array, row 0 first; the renderer
+    // uploads it as a texture.
+    const float* raw_heights () const
+    { return m_data.raw (); }
+
     void normalize           ();
     void translate           (float d);
     void rescale             (float k);
     void exponentiate        (float k);
-    
+
     void randomize_uniformly ();
     void randomize_plasmally (float roughness);
 
@@ -177,49 +208,13 @@ namespace map {
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.
     void erode_thermally (int iterations, float talus);
-    
-  private:
-    typedef boost::multi_array<float, 2> array_t;
-    typedef array_t::index               index_t;
-    
-    array_t m_data;
-    
-    boost::mt19937 m_rng;
-  };
-  
-  class InterpolatingHeightMap: public HeightMap {
-  public:
-    InterpolatingHeightMap (boost::shared_ptr<HeightMap> from,
-			    boost::shared_ptr<HeightMap> to,
-			    const Vector3D& size)
-      : HeightMap (from->width (), from->height (), size),
-	m_from  (from),
-	m_to    (to),
-	m_alpha (0.0)
-    { }
-    
-    float    get    (int x, int y) const;
-    Vector3D normal (int x, int y) const;
-    
-    void set_blending_factor      (float alpha);
-    void increase_blending_factor (float delta);
 
-    void change_maps (boost::shared_ptr<HeightMap> from,
-		      boost::shared_ptr<HeightMap> to)
-    {
-      m_from = from;
-      m_to = to;
-    }
-    
-    bool done () const { return m_alpha >= 1.0; }
-    
   private:
-    boost::shared_ptr<HeightMap> m_from;
-    boost::shared_ptr<HeightMap> m_to;
-    
-    float m_alpha;
+    Array2D<float> m_data;
+
+    std::mt19937 m_rng;
   };
-  
+
   void
   write_tga (std::ostream& stream, const HeightMap& map);
 }

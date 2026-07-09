@@ -32,7 +32,8 @@ namespace game {
   }
 
   void
-  Terrain::setup (render::Renderer& r, const map::HeightMap& map,
+  Terrain::setup (render::Renderer& r,
+		  const map::RandomHeightMap& map,
 		  const WorldParams& world) {
     m_scale = map.scale ();
     m_lod_dist = 460.0f * m_scale.x;
