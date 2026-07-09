@@ -64,12 +64,18 @@ namespace moppe
                     cos(el) * cos(sun_azimuth));
   }
 
-  // Simple scattered trees and bushes, compiled into one display
-  // list so the whole forest is a single draw call.
+  // Scattered trees and bushes, bucketed into sector display
+  // lists so only the sectors near the camera are drawn.
   class Vegetation
   {
   public:
-    Vegetation() : m_list(0) {}
+    static const int VSEC = 6;
+
+    Vegetation()
+    {
+      for (int s = 0; s < VSEC * VSEC; ++s)
+        m_lists[s] = 0;
+    }
 
     void generate(const map::HeightMap& map, int trees, int bushes,
                   unsigned seed)
@@ -79,10 +85,13 @@ namespace moppe
 
       const Vector3D size = map.size();
 
-      if (m_list == 0)
-        m_list = glGenLists(1);
-
-      glNewList(m_list, GL_COMPILE);
+      // pick all the spots first so they can be sector-bucketed
+      struct Plant
+      {
+        bool tree;
+        float x, y, z, s, tint;
+      };
+      std::vector<Plant> plants;
 
       int placed = 0;
       for (int i = 0; i < trees * 20 && placed < trees; ++i)
@@ -97,7 +106,8 @@ namespace moppe
         if (y < water_level + 5) continue;
         if (map.interpolated_normal(x, z).y < 0.8f) continue;
 
-        draw_tree(x, y, z, 0.8f + 1.0f * u(rng), u(rng));
+        Plant p = { true, x, y, z, 0.8f + 1.0f * u(rng), u(rng) };
+        plants.push_back(p);
         ++placed;
       }
 
@@ -113,16 +123,43 @@ namespace moppe
         if (y < water_level + 5) continue;
         if (map.interpolated_normal(x, z).y < 0.72f) continue;
 
-        draw_bush(x, y, z, 0.6f + 0.8f * u(rng), u(rng));
+        Plant p = { false, x, y, z, 0.6f + 0.8f * u(rng), u(rng) };
+        plants.push_back(p);
         ++placed;
       }
 
-      glEndList();
+      for (int s = 0; s < VSEC * VSEC; ++s)
+      {
+        if (m_lists[s] == 0)
+          m_lists[s] = glGenLists(1);
+        glNewList(m_lists[s], GL_COMPILE);
+        for (size_t i = 0; i < plants.size(); ++i)
+        {
+          const Plant& p = plants[i];
+          if (sector_of(p.x, p.z) != s)
+            continue;
+          if (p.tree)
+            draw_tree(p.x, p.y, p.z, p.s, p.tint);
+          else
+            draw_bush(p.x, p.y, p.z, p.s, p.tint);
+        }
+        glEndList();
+      }
     }
 
-    void render(const Vector3D& fog_color, float fog_density) const
+    static int sector_of(float x, float z)
     {
-      if (m_list == 0)
+      int sx = (int)(x / (map_size.x / VSEC));
+      int sz = (int)(z / (map_size.z / VSEC));
+      sx = std::max(0, std::min(VSEC - 1, sx));
+      sz = std::max(0, std::min(VSEC - 1, sz));
+      return sz * VSEC + sx;
+    }
+
+    void render(const Vector3D& fog_color, float fog_density,
+                const Vector3D& cam) const
+    {
+      if (m_lists[0] == 0)
         return;
 
       gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_LIGHTING_BIT |
@@ -146,7 +183,17 @@ namespace moppe
       glFogf(GL_FOG_DENSITY, fog_density);
       glFogfv(GL_FOG_COLOR, fc);
 
-      glCallList(m_list);
+      // Only sectors within fog-visibility range get drawn
+      const float sec = map_size.x / VSEC;
+      const float reach = 1.9f / fog_density + sec * 0.71f;
+      for (int sz = 0; sz < VSEC; ++sz)
+        for (int sx = 0; sx < VSEC; ++sx)
+        {
+          const float dx = cam.x - (sx + 0.5f) * sec;
+          const float dz = cam.z - (sz + 0.5f) * sec;
+          if (dx * dx + dz * dz < reach * reach)
+            glCallList(m_lists[sz * VSEC + sx]);
+        }
     }
 
   private:
@@ -185,7 +232,7 @@ namespace moppe
       glPopMatrix();
     }
 
-    GLuint m_list;
+    GLuint m_lists[VSEC * VSEC];
   };
 
   // Spinning golden pickup stars scattered over the terrain; some
@@ -3322,7 +3369,7 @@ namespace moppe
       }
 
       m_city.render(m_total_time, cam);
-      m_vegetation.render(fog, fog_scale * 1.35f);
+      m_vegetation.render(fog, fog_scale * 1.35f, cam);
       m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
       m_vehicle.render();

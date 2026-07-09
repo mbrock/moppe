@@ -14,6 +14,8 @@ namespace gfx {
     : m_map (map),
       m_vbo_vertices (0),
       m_vbo_normals (0),
+      m_vbo_vertices_lo (0),
+      m_vbo_normals_lo (0),
       m_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/test.vert"),
       m_fragment_shader (GL_FRAGMENT_SHADER_ARB, "shaders/test.frag"),
       m_shadow_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/shadow.vert"),
@@ -56,6 +58,23 @@ namespace gfx {
 	  m_vertices.add (m_map.vertex (x, y + 1));
 	}
 
+    // A 4x-decimated copy of the mesh for distant chunks: 1/16th
+    // of the triangles, indistinguishable through the haze
+    m_vertices_lo.clear ();
+    m_normals_lo.clear ();
+
+    const int wlo = (width - 1) / 4 + 1;
+    const int hlo = (height - 1) / 4 + 1;
+
+    for (int y = 0; y < hlo - 2; ++y)
+      for (int x = 0; x < wlo - 1; ++x)
+	{
+	  m_normals_lo.add (m_map.normal (x * 4, y * 4));
+	  m_vertices_lo.add (m_map.vertex (x * 4, y * 4));
+	  m_normals_lo.add (m_map.normal (x * 4, (y + 1) * 4));
+	  m_vertices_lo.add (m_map.vertex (x * 4, (y + 1) * 4));
+	}
+
     // Re-upload if the GL buffers already exist (i.e. not the
     // initial pre-context call from the constructor)
     if (m_vbo_vertices != 0)
@@ -68,6 +87,8 @@ namespace gfx {
       {
 	glGenBuffers (1, &m_vbo_vertices);
 	glGenBuffers (1, &m_vbo_normals);
+	glGenBuffers (1, &m_vbo_vertices_lo);
+	glGenBuffers (1, &m_vbo_normals_lo);
       }
 
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices);
@@ -76,6 +97,14 @@ namespace gfx {
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals);
     glBufferData (GL_ARRAY_BUFFER, m_normals.size () * sizeof (float),
 		  m_normals.address (0), GL_STATIC_DRAW);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices_lo);
+    glBufferData (GL_ARRAY_BUFFER,
+		  m_vertices_lo.size () * sizeof (float),
+		  m_vertices_lo.address (0), GL_STATIC_DRAW);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals_lo);
+    glBufferData (GL_ARRAY_BUFFER,
+		  m_normals_lo.size () * sizeof (float),
+		  m_normals_lo.address (0), GL_STATIC_DRAW);
     glBindBuffer (GL_ARRAY_BUFFER, 0);
 
     const int width  = m_map.width ();
@@ -95,6 +124,8 @@ namespace gfx {
     const int CHUNK = 128;
     const int pairs = width - 1;   // vertex pairs per strip row
     const int strips = height - 2; // strip rows
+    const int lo_pairs = (width - 1) / 4;   // coarse mesh layout
+    const int lo_strips = (height - 1) / 4 - 1;
     const Vector3D scale = m_map.scale ();
 
     m_chunks.clear ();
@@ -121,6 +152,15 @@ namespace gfx {
 	    c.row1 = r1;
 	    c.pair0 = p0;
 	    c.pair1 = p1;
+
+	    // The same block in the 4x-decimated mesh (chunk edges
+	    // are multiples of 128, so they land on coarse samples)
+	    c.lo_row0 = r0 / 4;
+	    c.lo_row1 = std::min (r0 / 4 + CHUNK / 4 - 1,
+				  lo_strips - 1);
+	    c.lo_pair0 = p0 / 4;
+	    c.lo_pair1 = std::min (p0 / 4 + CHUNK / 4,
+				   lo_pairs - 1);
 
 	    const float x0 = p0 * scale.x, x1 = p1 * scale.x;
 	    const float z0 = r0 * scale.z, z1 = (r1 + 1) * scale.z;
@@ -151,6 +191,18 @@ namespace gfx {
   }
 
   void
+  TerrainRenderer::bind_arrays_lo () {
+    glEnableClientState (GL_VERTEX_ARRAY);
+    glEnableClientState (GL_NORMAL_ARRAY);
+
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices_lo);
+    glVertexPointer (3, GL_FLOAT, 0, 0);
+    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals_lo);
+    glNormalPointer (GL_FLOAT, 0, 0);
+    glBindBuffer (GL_ARRAY_BUFFER, 0);
+  }
+
+  void
   TerrainRenderer::unbind_arrays () {
     glDisableClientState (GL_VERTEX_ARRAY);
     glDisableClientState (GL_NORMAL_ARRAY);
@@ -170,9 +222,18 @@ namespace gfx {
 				       const Vector3D& view_dir,
 				       float max_dist) {
     const int pairs = m_map.width () - 1;
+    const int lo_pairs = (m_map.width () - 1) / 4;
+
+    // Fine mesh up close, the 4x-decimated mesh beyond; the coarse
+    // ring starts one chunk early so it fills any seam cracks from
+    // behind (depth testing keeps the fine mesh on top)
+    const float lod_dist = 460.0f * m_map.scale ().x;
+    const float band = 130.0f * m_map.scale ().x;
 
     m_draw_first.clear ();
     m_draw_count.clear ();
+    m_draw_first_lo.clear ();
+    m_draw_count_lo.clear ();
 
     for (size_t i = 0; i < m_chunks.size (); ++i)
       {
@@ -191,21 +252,46 @@ namespace gfx {
 	    d.dot (view_dir) < -c.radius)
 	  continue;
 
-	const GLsizei count = 2 * (c.pair1 - c.pair0 + 1);
-	for (int row = c.row0; row <= c.row1; ++row)
+	const float dist = std::sqrt (dist2);
+
+	if (dist < lod_dist)
 	  {
-	    m_draw_first.push_back (2 * (row * pairs + c.pair0));
-	    m_draw_count.push_back (count);
+	    const GLsizei count = 2 * (c.pair1 - c.pair0 + 1);
+	    for (int row = c.row0; row <= c.row1; ++row)
+	      {
+		m_draw_first.push_back (2 * (row * pairs + c.pair0));
+		m_draw_count.push_back (count);
+	      }
+	  }
+
+	if (dist > lod_dist - band)
+	  {
+	    const GLsizei count = 2 * (c.lo_pair1 - c.lo_pair0 + 1);
+	    for (int row = c.lo_row0; row <= c.lo_row1; ++row)
+	      {
+		m_draw_first_lo.push_back (
+		    2 * (row * lo_pairs + c.lo_pair0));
+		m_draw_count_lo.push_back (count);
+	      }
 	  }
       }
 
-    if (m_draw_first.empty ())
-      return;
+    if (!m_draw_first_lo.empty ())
+      {
+	bind_arrays_lo ();
+	glMultiDrawArrays (GL_TRIANGLE_STRIP,
+			   &m_draw_first_lo[0], &m_draw_count_lo[0],
+			   (GLsizei) m_draw_first_lo.size ());
+      }
 
-    bind_arrays ();
-    glMultiDrawArrays (GL_TRIANGLE_STRIP,
-		       &m_draw_first[0], &m_draw_count[0],
-		       (GLsizei) m_draw_first.size ());
+    if (!m_draw_first.empty ())
+      {
+	bind_arrays ();
+	glMultiDrawArrays (GL_TRIANGLE_STRIP,
+			   &m_draw_first[0], &m_draw_count[0],
+			   (GLsizei) m_draw_first.size ());
+      }
+
     unbind_arrays ();
   }
 

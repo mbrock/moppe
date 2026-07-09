@@ -54,15 +54,18 @@ namespace gfx {
                              const Vector3D& view_dir,
                              float max_dist);
     void bind_arrays ();
+    void bind_arrays_lo ();
     void unbind_arrays ();
 
     // A block of terrain (~128x128 cells) with a bounding sphere,
-    // the granularity of per-frame culling
+    // the granularity of per-frame culling and LOD selection
     struct Chunk {
       Vector3D center;
       float radius;
-      int row0, row1;   // strip rows covered, inclusive
-      int pair0, pair1; // vertex-pair columns covered, inclusive
+      int row0, row1;       // fine strip rows, inclusive
+      int pair0, pair1;     // fine vertex-pair columns, inclusive
+      int lo_row0, lo_row1; // the same block in the coarse mesh
+      int lo_pair0, lo_pair1;
     };
 
   private:
@@ -70,16 +73,22 @@ namespace gfx {
 
     VertexArray m_vertices;
     VertexArray m_normals;
+    VertexArray m_vertices_lo; // 4x decimated mesh for far chunks
+    VertexArray m_normals_lo;
 
     // Static terrain geometry lives on the GPU
     GLuint m_vbo_vertices;
     GLuint m_vbo_normals;
+    GLuint m_vbo_vertices_lo;
+    GLuint m_vbo_normals_lo;
     std::vector<GLint>   m_strip_first;
     std::vector<GLsizei> m_strip_count;
 
     std::vector<Chunk>   m_chunks;
     std::vector<GLint>   m_draw_first; // per-frame scratch
     std::vector<GLsizei> m_draw_count;
+    std::vector<GLint>   m_draw_first_lo;
+    std::vector<GLsizei> m_draw_count_lo;
 
     gl::Shader m_vertex_shader;
     gl::Shader m_fragment_shader;
