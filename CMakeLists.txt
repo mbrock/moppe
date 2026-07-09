@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.24)
+
+# Without an explicit target, Xcode uses the installed SDK version as the
+# minimum OS, making device builds uninstallable on slightly older iPhones.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND
+   NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
+    "Minimum supported iOS version")
+endif()
+
 project(moppe LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 11)
@@ -135,6 +144,7 @@ if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(moppe-ios PRIVATE moppe_game moppe_platform_ios)
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
+    XCODE_GENERATE_SCHEME TRUE
     MACOSX_BUNDLE_INFO_PLIST
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/ios/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME "Moppe"

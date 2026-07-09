@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+device="${MOPPE_IOS_DEVICE:-Restless}"
+team="${MOPPE_IOS_TEAM:-AA8RNDKMB9}"
+configuration="${MOPPE_IOS_CONFIGURATION:-Debug}"
+build_dir="${MOPPE_IOS_BUILD_DIR:-$root/build-ios-device}"
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  cat <<EOF
+Usage: make phone
+
+Builds, installs, and launches Moppe on a paired iPhone.
+
+Environment overrides:
+  MOPPE_IOS_DEVICE         Device name or identifier (default: $device)
+  MOPPE_IOS_TEAM           Apple development team (default: $team)
+  MOPPE_IOS_CONFIGURATION  Xcode configuration (default: $configuration)
+  MOPPE_IOS_BUILD_DIR      Physical-device build directory
+EOF
+  exit 0
+fi
+
+echo "Checking $device..."
+if ! xcrun devicectl device info details \
+  --device "$device" >/dev/null 2>&1; then
+  echo "error: $device is not available." >&2
+  echo "Unlock it and connect this Mac to its hotspot, then retry." >&2
+  exit 1
+fi
+
+echo "Configuring the physical-device build..."
+cmake -S "$root" -B "$build_dir" -G Xcode \
+  -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_SYSROOT=iphoneos \
+  -DCMAKE_OSX_ARCHITECTURES=arm64
+
+echo "Building and signing Moppe for $device..."
+xcodebuild -quiet \
+  -project "$build_dir/moppe.xcodeproj" \
+  -scheme moppe-ios \
+  -configuration "$configuration" \
+  -destination "platform=iOS,name=$device" \
+  CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM="$team" \
+  build
+
+app="$build_dir/$configuration-iphoneos/Moppe.app"
+if [[ ! -d "$app" ]]; then
+  echo "error: expected app was not produced at $app" >&2
+  exit 1
+fi
+
+echo "Installing Moppe on $device..."
+xcrun devicectl device install app --device "$device" "$app"
+
+echo "Launching Moppe..."
+xcrun devicectl device process launch \
+  --device "$device" se.brockman.moppe
+
+echo "Moppe is installed and running on $device."

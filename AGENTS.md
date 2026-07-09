@@ -12,6 +12,11 @@
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target
   with `CODE_SIGNING_ALLOWED=NO`
+- iPhone (build, install, launch): `make phone`
+  - The paired phone must be unlocked and reachable; its Personal Hotspot
+    works when other Wi-Fi networks isolate clients.
+  - Overrides: `MOPPE_IOS_DEVICE`, `MOPPE_IOS_TEAM`,
+    `MOPPE_IOS_CONFIGURATION`, and `MOPPE_IOS_BUILD_DIR`.
 
 ## Architecture (see docs/renderer-design.md)
 - `moppe/render/` — portable renderer API (DrawList immediate mode,

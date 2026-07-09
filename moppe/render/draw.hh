@@ -72,7 +72,8 @@ namespace render {
     void torus (float inner, float outer, int sides, int rings);
 
     // 2D convenience for the HUD (records in the z=0 plane): a thick
-    // line segment as a quad.
+    // line segment as a quad.  Endpoints honor the matrix stack; width
+    // is measured after transformation in final HUD coordinates.
     void line (float x0, float y0, float x1, float y1, float width);
 
     // -- results -----------------------------------------------------
@@ -81,6 +82,7 @@ namespace render {
     bool empty () const { return m_vertices.empty (); }
 
   private:
+    void emit_line (const Vertex& a, const Vertex& b, float width);
     void emit_raw (const Vertex& v);   // no matrix transform (prebaked)
     void flush_run_state ();
     Vertex make_vertex (float x, float y, float z);

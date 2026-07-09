@@ -232,12 +232,12 @@ namespace render {
 
     case Prim::Lines:
       for (size_t i = 0; i + 1 < n; i += 2)
-	line (s[i].px, s[i].py, s[i + 1].px, s[i + 1].py, 1.5f);
+	emit_line (s[i], s[i + 1], 1.5f);
       break;
 
     case Prim::LineStrip:
       for (size_t i = 0; i + 1 < n; ++i)
-	line (s[i].px, s[i].py, s[i + 1].px, s[i + 1].py, 1.5f);
+	emit_line (s[i], s[i + 1], 1.5f);
       break;
     }
 
@@ -245,37 +245,33 @@ namespace render {
   }
 
   void
-  DrawList::line (float x0, float y0, float x1, float y1, float w) {
-    // 2D thick line in the current (usually HUD/ortho) space.  Note:
-    // coordinates here are pre-transformed if called from end(), and
-    // freshly transformed if called directly -- direct calls should
-    // only be made with an identity matrix, which is how the HUD
-    // uses it.
-    float dx = x1 - x0, dy = y1 - y0;
+  DrawList::emit_line (const Vertex& p0, const Vertex& p1, float w) {
+    float dx = p1.px - p0.px, dy = p1.py - p0.py;
     const float len = std::sqrt (dx * dx + dy * dy);
     if (len < 1e-6f)
       return;
     const float hw = w * 0.5f / len;
     const float ox = -dy * hw, oy = dx * hw;
 
-    flush_run_state ();
-
-    Vertex v;
-    v.nx = 0; v.ny = 0; v.nz = 1;
-    v.u = 0; v.v = 0;
-    v.color = m_color;
-    v.lit = 0;
-    v.fogged = m_fogged ? 1 : 0;
-    v.pad0 = v.pad1 = 0;
-
-    Vertex a = v, b = v, c = v, d = v;
-    a.px = x0 + ox; a.py = y0 + oy; a.pz = 0;
-    b.px = x1 + ox; b.py = y1 + oy; b.pz = 0;
-    c.px = x1 - ox; c.py = y1 - oy; c.pz = 0;
-    d.px = x0 - ox; d.py = y0 - oy; d.pz = 0;
+    Vertex a = p0, b = p1, c = p1, d = p0;
+    a.px += ox; a.py += oy;
+    b.px += ox; b.py += oy;
+    c.px -= ox; c.py -= oy;
+    d.px -= ox; d.py -= oy;
 
     emit_raw (a); emit_raw (b); emit_raw (c);
     emit_raw (a); emit_raw (c); emit_raw (d);
+  }
+
+  void
+  DrawList::line (float x0, float y0, float x1, float y1, float w) {
+    // Transform the endpoints before expanding the line.  This keeps
+    // its width in final HUD coordinates and, crucially, makes direct
+    // lines obey the same safe-area/layout transforms as vertex-based
+    // geometry.
+    flush_run_state ();
+    emit_line (make_vertex (x0, y0, 0),
+	       make_vertex (x1, y1, 0), w);
   }
 
   // -- solid primitives ----------------------------------------------

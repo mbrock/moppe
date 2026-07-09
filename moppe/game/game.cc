@@ -649,9 +649,7 @@ namespace game {
       hs.odometer_m = (float) m_odometer;
       hs.lives = m_lives;
       hs.stars = m_stars.collected ();
-      hs.time = m_total_time;
       hs.on_foot = (m_mode == M_FOOT);
-      hs.helmet_view = helmet;
       m_hud.draw (m_hud_dl, hs,
 		  r.width_pts () - (int) (si.left + si.right),
 		  r.height_pts () - (int) (si.top + si.bottom));

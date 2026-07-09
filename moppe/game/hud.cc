@@ -14,22 +14,82 @@ namespace game {
   // ---- instrument cluster drawing helpers --------------------------
 
   namespace {
-    void hud_disc (DrawList& dl, float cx, float cy, float r,
+    const float PI = 3.14159265f;
+
+    struct Point {
+      float x;
+      float y;
+
+      Point () : x (0), y (0) { }
+      Point (float px, float py) : x (px), y (py) { }
+    };
+
+    struct Rect {
+      float x;
+      float y;
+      float width;
+      float height;
+
+      Rect (float px, float py, float w, float h)
+	: x (px), y (py), width (w), height (h) { }
+    };
+
+    struct Dial {
+      Point center;
+      float radius;
+
+      Dial () : radius (0) { }
+      Dial (const Point& c, float r) : center (c), radius (r) { }
+
+      Point at (float radius_scale, float angle_deg) const {
+	const float a = angle_deg * PI / 180.0f;
+	return Point (center.x + radius_scale * radius * std::cos (a),
+		      center.y - radius_scale * radius * std::sin (a));
+      }
+    };
+
+    // Positions are local to two anchors: the status panel's top-left
+    // and the instrument cluster's bottom-right.  Mini dials are derived
+    // from the speed dial, keeping their column aligned by construction.
+    struct HudLayout {
+      Rect status;
+      Point cluster_anchor;
+      Dial speed;
+      Dial fuel;
+      Dial boost;
+
+      HudLayout (float width, float height)
+	: status (10, 8, 171, 77),
+	  cluster_anchor (width - 10, height - 10),
+	  speed (Point (-58, -61), 54)
+      {
+	const float mini_x = speed.center.x - speed.radius - 33.0f;
+	fuel = Dial (Point (mini_x, speed.center.y - 37.0f), 28);
+	boost = Dial (Point (mini_x, speed.center.y + 23.0f), 28);
+      }
+    };
+
+    float clamp01 (float value) {
+      return std::max (0.0f, std::min (1.0f, value));
+    }
+
+    void hud_disc (DrawList& dl, const Point& center, float r,
 		   float cr, float cg, float cb, float ca)
     {
       dl.color (cr, cg, cb, ca);
       dl.begin (Prim::TriangleFan);
-      dl.vertex (cx, cy);
+      dl.vertex (center.x, center.y);
       for (int i = 0; i <= 40; ++i) {
-	const float a = 2.0f * 3.14159f * i / 40;
-	dl.vertex (cx + r * std::cos (a), cy + r * std::sin (a));
+	const float a = 2.0f * PI * i / 40;
+	dl.vertex (center.x + r * std::cos (a),
+		   center.y + r * std::sin (a));
       }
       dl.end ();
     }
 
     // Annulus segment; dial angle convention: 0 deg = +x, angles
     // increase counterclockwise ON SCREEN (y is down, so -sin)
-    void hud_ring (DrawList& dl, float cx, float cy,
+    void hud_ring (DrawList& dl, const Dial& dial,
 		   float r0, float r1, float a0, float a1,
 		   float cr, float cg, float cb, float ca)
     {
@@ -37,22 +97,41 @@ namespace game {
       dl.begin (Prim::TriangleStrip);
       const int segs = 48;
       for (int i = 0; i <= segs; ++i) {
-	const float a =
-	  (a0 + (a1 - a0) * i / segs) * 3.14159f / 180.0f;
-	dl.vertex (cx + r1 * std::cos (a), cy - r1 * std::sin (a));
-	dl.vertex (cx + r0 * std::cos (a), cy - r0 * std::sin (a));
+	const float a = a0 + (a1 - a0) * i / segs;
+	const Point outer = dial.at (r1, a);
+	const Point inner = dial.at (r0, a);
+	dl.vertex (outer.x, outer.y);
+	dl.vertex (inner.x, inner.y);
       }
       dl.end ();
     }
 
+    void hud_ticks (DrawList& dl, const Dial& dial, int count,
+		    float a0, float a1, float inner, float outer,
+		    float width, float cr, float cg, float cb,
+		    float ca)
+    {
+      dl.color (cr, cg, cb, ca);
+      for (int i = 0; i < count; ++i) {
+	const float f = count > 1 ? (float) i / (count - 1) : 0.0f;
+	const float angle = a0 + (a1 - a0) * f;
+	const Point p0 = dial.at (inner, angle);
+	const Point p1 = dial.at (outer, angle);
+	dl.line (p0.x, p0.y, p1.x, p1.y, width);
+      }
+    }
+
     // A tapered needle with a counterweight tail and a hub
-    void hud_needle (DrawList& dl, float cx, float cy, float a_deg,
-		     float len, float tail, float w,
+    void hud_needle (DrawList& dl, const Dial& dial, float a_deg,
+		     float len_scale, float tail_scale, float w,
 		     float cr, float cg, float cb)
     {
-      const float a = a_deg * 3.14159f / 180.0f;
+      const float a = a_deg * PI / 180.0f;
       const float dx = std::cos (a), dy = -std::sin (a);
       const float px = -dy, py = dx;
+      const float cx = dial.center.x, cy = dial.center.y;
+      const float len = dial.radius * len_scale;
+      const float tail = dial.radius * tail_scale;
 
       dl.color (cr, cg, cb, 0.96f);
       dl.begin (Prim::Triangles);
@@ -64,21 +143,56 @@ namespace game {
       dl.vertex (cx - dx * tail, cy - dy * tail);
       dl.end ();
 
-      hud_disc (dl, cx, cy, w * 2.6f, 0.16f, 0.17f, 0.19f, 1.0f);
-      hud_disc (dl, cx, cy, w * 1.4f, 0.75f, 0.77f, 0.80f, 1.0f);
+      hud_disc (dl, dial.center, w * 2.6f,
+		0.16f, 0.17f, 0.19f, 1.0f);
+      hud_disc (dl, dial.center, w * 1.4f,
+		0.75f, 0.77f, 0.80f, 1.0f);
     }
 
     // Metallic bezel + dark face + glass highlight
-    void hud_dial_face (DrawList& dl, float cx, float cy, float R)
+    void hud_dial_face (DrawList& dl, const Dial& dial)
     {
-      hud_ring (dl, cx, cy, R * 0.94f, R * 1.08f, 0, 360,
+      hud_disc (dl, dial.center, dial.radius * 1.12f,
+		0.0f, 0.0f, 0.0f, 0.25f);
+      hud_ring (dl, dial, 0.94f, 1.08f, 0, 360,
 		0.52f, 0.54f, 0.58f, 0.95f);
-      hud_ring (dl, cx, cy, R * 1.02f, R * 1.08f, 0, 360,
+      hud_ring (dl, dial, 1.02f, 1.08f, 0, 360,
 		0.24f, 0.25f, 0.27f, 0.95f);
-      hud_disc (dl, cx, cy, R * 0.96f, 0.06f, 0.07f, 0.09f, 0.93f);
+      hud_disc (dl, dial.center, dial.radius * 0.96f,
+		0.035f, 0.045f, 0.06f, 0.94f);
       // glass reflection across the upper left
-      hud_ring (dl, cx, cy, R * 0.45f, R * 0.92f, 115, 205,
+      hud_ring (dl, dial, 0.45f, 0.92f, 115, 205,
 		1.0f, 1.0f, 1.0f, 0.055f);
+    }
+
+    void hud_panel (DrawList& dl, float x0, float y0,
+		    float x1, float y1, float corner, float alpha)
+    {
+      dl.color (0.045f, 0.055f, 0.075f, alpha);
+      dl.begin (Prim::Polygon);
+      dl.vertex (x0 + corner, y0);
+      dl.vertex (x1 - corner, y0);
+      dl.vertex (x1, y0 + corner);
+      dl.vertex (x1, y1 - corner);
+      dl.vertex (x1 - corner, y1);
+      dl.vertex (x0 + corner, y1);
+      dl.vertex (x0, y1 - corner);
+      dl.vertex (x0, y0 + corner);
+      dl.end ();
+
+      // Complete outline; all eight segments share the panel transform.
+      dl.color (0.46f, 0.54f, 0.67f, 0.48f);
+      dl.line (x0 + corner, y0, x1 - corner, y0, 1.5f);
+      dl.line (x1 - corner, y0, x1, y0 + corner, 1.5f);
+      dl.line (x1, y0 + corner, x1, y1 - corner, 1.5f);
+      dl.line (x1, y1 - corner, x1 - corner, y1, 1.5f);
+      dl.line (x1 - corner, y1, x0 + corner, y1, 1.5f);
+      dl.line (x0 + corner, y1, x0, y1 - corner, 1.5f);
+      dl.line (x0, y1 - corner, x0, y0 + corner, 1.5f);
+      dl.line (x0, y0 + corner, x0 + corner, y0, 1.5f);
+
+      dl.color (0.72f, 0.8f, 0.92f, 0.32f);
+      dl.line (x0 + corner, y0, x1 - corner, y0, 1.0f);
     }
 
     // A little heart: two lobes and a point
@@ -115,19 +229,6 @@ namespace game {
       dl.end ();
     }
 
-    void hud_lamp (DrawList& dl, float x, float y, float r, bool on,
-		   float cr, float cg, float cb)
-    {
-      hud_disc (dl, x, y, r + 2.5f, 0.10f, 0.11f, 0.12f, 0.95f);
-      if (on) {
-	hud_disc (dl, x, y, r + 5.0f, cr, cg, cb, 0.25f); // glow
-	hud_disc (dl, x, y, r, cr, cg, cb, 0.98f);
-      }
-      else
-	hud_disc (dl, x, y, r, cr * 0.22f, cg * 0.22f, cb * 0.22f,
-		  0.9f);
-    }
-
     // The 2D overlay state: blend on, no depth, no cull (the y-down
     // ortho flips winding), unlit, unfogged.
     void hud_state_on (DrawList& dl)
@@ -161,293 +262,185 @@ namespace game {
       (new render::FontAtlas (renderer, "Helvetica", 10.0f, s));
     m_helv12.reset
       (new render::FontAtlas (renderer, "Helvetica", 12.0f, s));
+    m_display24.reset
+      (new render::FontAtlas (renderer, "Menlo", 24.0f, s));
     m_times24.reset
       (new render::FontAtlas (renderer, "Times New Roman", 24.0f, s));
-    // stand-in for GLUT's 8x13 fixed-width bitmap font
-    m_mono.reset
-      (new render::FontAtlas (renderer, "Menlo", 13.0f, s));
   }
 
   void
   Hud::draw (render::DrawList& dl, const HudState& st,
 	     int width_pts, int height_pts)
   {
-    if (!m_helv10)
+    if (!m_helv10 || !m_display24)
       return;  // load() not called
-
-    const float width = (float) width_pts;
-    const float height = (float) height_pts;
 
     const bool riding = !st.on_foot;
     const float kmh = riding ? st.speed_kmh : 0.0f;
-    const float frac = std::min (1.0f, kmh / 300.0f);
-    const float charge = riding ? st.boost_ready01 : 1.0f;
-    const float PI = 3.14159265f;
-
-    // In helmet view the cluster sits centered on a solid backing,
-    // like the real instruments on the handlebars; in third person
-    // it tucks translucently into the corner
-    const bool helmet_hud = st.helmet_view;
-    const float X = helmet_hud ? width * 0.5f + 235.0f
-			       : width - 14.0f;
-    const float Y = height - (helmet_hud ? 4.0f : 10.0f);
-    const float panel_alpha = helmet_hud ? 0.93f : 0.80f;
-
-    // one slim horizontal strip along the bottom:
-    // fuel dial, boost dial, lamp column, speedometer
-    const float cx = X - 95.0f; // speedometer
-    const float cy = Y - 78.0f;
-    const float R = 66.0f;
-    const float bx2 = X - 262.0f; // boost dial
-    const float mx = X - 372.0f;  // fuel dial
-    const float fy = Y - 72.0f;   // mini dial row
-    const float mr = 40.0f;
-    const float lampx = X - 180.0f;
+    const float speed_fraction = clamp01 (kmh / 300.0f);
+    const float charge = clamp01
+      (riding ? st.boost_ready01 : 1.0f);
+    const float fuel = std::max (0.0f, std::min (100.0f, st.fuel));
+    const HudLayout layout ((float) width_pts, (float) height_pts);
 
     hud_state_on (dl);
 
-    // -- dashboard panel behind everything
-    {
-      const float x0 = X - 460.0f, y0 = Y - 152.0f;
-      const float x1 = X, y1 = Y;
-      const float c = 20.0f;
-      dl.color (0.10f, 0.11f, 0.13f, panel_alpha);
-      dl.begin (Prim::Polygon);
-      dl.vertex (x0 + c, y0);
-      dl.vertex (x1 - c, y0);
-      dl.vertex (x1, y0 + c);
-      dl.vertex (x1, y1 - c);
-      dl.vertex (x1 - c, y1);
-      dl.vertex (x0 + c, y1);
-      dl.vertex (x0, y1 - c);
-      dl.vertex (x0, y0 + c);
-      dl.end ();
-      // rim light along the top edge
-      dl.color (0.55f, 0.60f, 0.66f, 0.4f);
-      dl.line (x0, y0 + c, x0 + c, y0, 2);
-      dl.line (x0 + c, y0, x1 - c, y0, 2);
-      dl.line (x1 - c, y0, x1, y0 + c, 2);
-    }
-
-    // ==================== SPEEDOMETER ====================
-    hud_dial_face (dl, cx, cy, R);
-
-    // redline zone 250-300 (speed s maps to 210 - 240*s/300)
-    hud_ring (dl, cx, cy, R * 0.86f, R * 0.95f, -30, 10,
-	      0.8f, 0.10f, 0.08f, 0.5f);
-
-    // live speed arc, green through amber to red
-    if (frac > 0.003f) {
-      const int segs = (int) (44 * frac) + 1;
-      dl.begin (Prim::TriangleStrip);
-      for (int i = 0; i <= segs; ++i) {
-	const float f = frac * i / segs;
-	const float a = (210.0f - 240.0f * f) * PI / 180.0f;
-	dl.color (0.2f + 0.8f * f, 0.95f - 0.8f * f, 0.12f,
-		  0.85f);
-	dl.vertex (cx + 0.95f * R * std::cos (a),
-		   cy - 0.95f * R * std::sin (a));
-	dl.vertex (cx + 0.86f * R * std::cos (a),
-		   cy - 0.86f * R * std::sin (a));
-      }
-      dl.end ();
-    }
-
-    // graduations: minor every 15, major every 30
-    for (int s = 0; s <= 300; s += 15) {
-      const bool major = (s % 30 == 0);
-      const float a =
-	(210.0f - 240.0f * s / 300.0f) * PI / 180.0f;
-      if (major)
-	dl.color (0.92f, 0.93f, 0.95f, 0.95f);
-      else
-	dl.color (0.55f, 0.57f, 0.6f, 0.8f);
-      const float r0 = major ? 0.72f : 0.77f;
-      dl.line (cx + r0 * R * std::cos (a),
-	       cy - r0 * R * std::sin (a),
-	       cx + 0.84f * R * std::cos (a),
-	       cy - 0.84f * R * std::sin (a), 2);
-    }
-
-    // the needle
-    hud_needle (dl, cx, cy, 210.0f - 240.0f * frac,
-		0.80f * R, 0.20f * R, 3.6f,
-		0.95f, 0.22f, 0.12f);
-
-    // odometer window
-    {
-      dl.color (0.02f, 0.02f, 0.03f, 0.95f);
-      dl.begin (Prim::Quads);
-      dl.vertex (cx - 32, cy + 22);
-      dl.vertex (cx + 32, cy + 22);
-      dl.vertex (cx + 32, cy + 38);
-      dl.vertex (cx - 32, cy + 38);
-      dl.end ();
-    }
+    // All cluster geometry is local to one bottom-right anchor.
+    dl.push ();
+    dl.translate (layout.cluster_anchor.x,
+		  layout.cluster_anchor.y, 0);
 
     // ==================== FUEL GAUGE ====================
-    hud_dial_face (dl, mx, fy, mr);
-    // low-fuel zone (left fifth of the 160..20 sweep)
-    hud_ring (dl, mx, fy, mr * 0.62f, mr * 0.88f, 132, 160,
-	      0.85f, 0.35f, 0.05f, 0.5f);
-    for (int i = 0; i <= 4; ++i) {
-      const float a = (160.0f - 35.0f * i) * PI / 180.0f;
-      dl.color (0.9f, 0.9f, 0.95f, 0.9f);
-      dl.line (mx + 0.66f * mr * std::cos (a),
-	       fy - 0.66f * mr * std::sin (a),
-	       mx + 0.86f * mr * std::cos (a),
-	       fy - 0.86f * mr * std::sin (a), 2);
-    }
-    hud_needle (dl, mx, fy, 160.0f - 140.0f * (st.fuel / 100.0f),
-		0.74f * mr, 0.2f * mr, 2.4f,
-		0.92f, 0.92f, 0.95f);
+    hud_dial_face (dl, layout.fuel);
+    const float low_fuel_alpha = fuel < 20.0f ? 0.9f : 0.45f;
+    hud_ring (dl, layout.fuel, 0.62f, 0.88f, 132, 160,
+	      0.95f, 0.32f, 0.04f, low_fuel_alpha);
+    hud_ticks (dl, layout.fuel, 5, 160, 20, 0.66f, 0.86f,
+	       1.5f, 0.88f, 0.9f, 0.94f, 0.9f);
+    hud_needle (dl, layout.fuel,
+		160.0f - 140.0f * (fuel / 100.0f),
+		0.74f, 0.2f, 2.2f, 0.92f, 0.92f, 0.95f);
 
     // ==================== BOOST GAUGE ====================
-    hud_dial_face (dl, bx2, fy, mr);
-    hud_ring (dl, bx2, fy, mr * 0.62f, mr * 0.88f, 20,
-	      20.0f + 140.0f * charge,
-	      0.25f, 0.65f, 1.0f, 0.45f);
-    for (int i = 0; i <= 4; ++i) {
-      const float a = (160.0f - 35.0f * i) * PI / 180.0f;
-      dl.color (0.9f, 0.9f, 0.95f, 0.9f);
-      dl.line (bx2 + 0.66f * mr * std::cos (a),
-	       fy - 0.66f * mr * std::sin (a),
-	       bx2 + 0.86f * mr * std::cos (a),
-	       fy - 0.86f * mr * std::sin (a), 2);
-    }
-    hud_needle (dl, bx2, fy, 160.0f - 140.0f * charge,
-		0.74f * mr, 0.2f * mr, 2.4f,
-		0.35f, 0.75f, 1.0f);
+    hud_dial_face (dl, layout.boost);
+    hud_ring (dl, layout.boost, 0.67f, 0.84f, 210,
+	      210.0f + 240.0f * charge,
+	      0.12f, 0.62f, 1.0f, 0.9f);
 
-    // ==================== WARNING LAMPS ====================
-    const bool blink_slow =
-      std::fmod (st.time * 1.6f, 1.0f) < 0.6f;
-    const bool blink_fast =
-      std::fmod (st.time * 3.5f, 1.0f) < 0.5f;
+    // Lightning-bolt boost mark, centered on the boost dial.
+    const Point boost = layout.boost.center;
+    dl.color (0.9f, 0.96f, 1.0f, 0.95f);
+    dl.begin (Prim::Triangles);
+    dl.vertex (boost.x + 2, boost.y - 14);
+    dl.vertex (boost.x - 9, boost.y + 2);
+    dl.vertex (boost.x, boost.y + 1);
+    dl.vertex (boost.x, boost.y - 1);
+    dl.vertex (boost.x + 9, boost.y - 2);
+    dl.vertex (boost.x - 3, boost.y + 14);
+    dl.end ();
 
-    // boost ready (green), low fuel (amber), damage (red)
-    hud_lamp (dl, lampx, Y - 116.0f, 6.5f,
-	      riding && charge >= 1.0f && blink_slow,
-	      0.2f, 0.95f, 0.35f);
-    hud_lamp (dl, lampx, Y - 78.0f, 6.5f,
-	      st.fuel < 20.0f && blink_slow,
-	      1.0f, 0.6f, 0.05f);
-    hud_lamp (dl, lampx, Y - 40.0f, 6.5f,
-	      st.health01 < 0.35f && blink_fast,
-	      1.0f, 0.15f, 0.1f);
+    // ==================== SPEEDOMETER ====================
+    hud_dial_face (dl, layout.speed);
 
-    // backing plate for the top-left corner readouts
-    {
-      const float x0 = 10, y0 = 8, x1 = 220, y1 = 114;
-      const float c = 12.0f;
-      dl.color (0.10f, 0.11f, 0.13f, 0.62f);
-      dl.begin (Prim::Polygon);
-      dl.vertex (x0 + c, y0);
-      dl.vertex (x1 - c, y0);
-      dl.vertex (x1, y0 + c);
-      dl.vertex (x1, y1 - c);
-      dl.vertex (x1 - c, y1);
-      dl.vertex (x0 + c, y1);
-      dl.vertex (x0, y1 - c);
-      dl.vertex (x0, y0 + c);
-      dl.end ();
-    }
+    // Quiet track behind the live arc, with a short redline segment.
+    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 210,
+	      0.32f, 0.36f, 0.40f, 0.55f);
+    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 10,
+	      0.92f, 0.12f, 0.08f, 0.8f);
 
-    // health bar under the star counter
-    {
-      const float hx = 24, hy = 62;
-      const float hw = 180, hh = 14;
-      const float f = std::max (0.0f, st.health01);
-
-      dl.color (0.05f, 0.08f, 0.12f, 0.6f);
-      dl.begin (Prim::Quads);
-      dl.vertex (hx, hy);
-      dl.vertex (hx + hw, hy);
-      dl.vertex (hx + hw, hy + hh);
-      dl.vertex (hx, hy + hh);
-      dl.end ();
-
-      dl.color (0.9f - 0.7f * f, 0.15f + 0.7f * f, 0.15f,
-		0.95f);
-      dl.begin (Prim::Quads);
-      dl.vertex (hx, hy);
-      dl.vertex (hx + hw * f, hy);
-      dl.vertex (hx + hw * f, hy + hh);
-      dl.vertex (hx, hy + hh);
-      dl.end ();
-    }
-
-    // golden star icon, top left
-    {
-      const float sx = 36, sy = 36;
-      dl.color (1.0f, 0.85f, 0.15f, 0.95f);
-      dl.begin (Prim::TriangleFan);
-      dl.vertex (sx, sy);
-      for (int i = 0; i <= 10; ++i) {
-	const float a = (-90.0f + i * 36.0f) * PI / 180.0f;
-	const float r = (i % 2 == 0) ? 17.0f : 7.5f;
-	dl.vertex (sx + r * std::cos (a), sy + r * std::sin (a));
+    // Live speed arc, green through amber to red.
+    if (speed_fraction > 0.003f) {
+      const int segs = (int) (44 * speed_fraction) + 1;
+      dl.begin (Prim::TriangleStrip);
+      for (int i = 0; i <= segs; ++i) {
+	const float f = speed_fraction * i / segs;
+	const float angle = 210.0f - 240.0f * f;
+	const Point outer = layout.speed.at (0.88f, angle);
+	const Point inner = layout.speed.at (0.78f, angle);
+	dl.color (0.2f + 0.8f * f, 0.95f - 0.8f * f, 0.12f,
+		  0.85f);
+	dl.vertex (outer.x, outer.y);
+	dl.vertex (inner.x, inner.y);
       }
       dl.end ();
     }
 
-    // ten lives, worn on the sleeve
-    for (int i = 0; i < 10; ++i)
-      hud_heart (dl, 26.0f + i * 19.0f, 96.0f, 8.5f, i < st.lives);
+    hud_ticks (dl, layout.speed, 11, 210, -30, 0.66f, 0.75f,
+	       1.4f, 0.85f, 0.88f, 0.92f, 0.85f);
 
-    // ---- printed text
-
-    // speed numbers around the dial
-    dl.color (0.88f, 0.9f, 0.93f);
-    for (int s = 0; s <= 300; s += 60) {
-      const float a = (210.0f - 240.0f * s / 300.0f) * PI / 180.0f;
-      const std::string label = std::to_string (s);
-      m_helv10->draw
-	(dl,
-	 (float) (int) (cx + 0.58f * R * std::cos (a)
-			- 3.0f * label.size ()),
-	 (float) (int) (cy - 0.58f * R * std::sin (a) + 3),
-	 label);
-    }
-
-    dl.color (0.65f, 0.68f, 0.72f);
-    m_helv10->draw (dl, (float) (int) (cx - 13),
-		    (float) (int) (cy - 18), "km/h");
-    m_helv10->draw (dl, (float) (int) (cx - 17),
-		    (float) (int) (cy - 31), "MOPPE");
-
-    // odometer digits
+    // Large digital speed and a small odometer readout.
     {
+      const std::string speed = std::to_string ((int) (kmh + 0.5f));
+      dl.color (0.95f, 0.96f, 0.98f);
+      m_display24->draw
+	(dl, layout.speed.center.x
+	 - m_display24->measure (speed) * 0.5f,
+	 layout.speed.center.y + 4, speed);
+      dl.color (0.72f, 0.75f, 0.8f);
+      const std::string unit = "KM/H";
+      m_helv10->draw
+	(dl, layout.speed.center.x - m_helv10->measure (unit) * 0.5f,
+	 layout.speed.center.y + 18, unit);
+
       char buf[16];
       snprintf (buf, sizeof buf, "%07.1f", st.odometer_m / 1000.0);
-      dl.color (0.85f, 0.9f, 0.85f);
-      m_mono->draw (dl, (float) (int) (cx - 28),
-		    (float) (int) (cy + 34), buf);
+      dl.color (0.76f, 0.8f, 0.76f);
+      m_helv10->draw
+	(dl, layout.speed.center.x - m_helv10->measure (buf) * 0.5f,
+	 layout.speed.center.y + 35, buf);
     }
 
-    // gauge labels: E/F on the fuel dial, BOOST below its twin
+    // Fuel endpoints; the boost dial uses the bolt symbol above.
     dl.color (0.8f, 0.3f, 0.2f);
-    m_helv10->draw (dl, (float) (int) (mx - mr * 0.95f),
-		    (float) (int) (fy - mr * 0.24f), "E");
+    m_helv10->draw
+      (dl, layout.fuel.center.x - layout.fuel.radius * 0.95f,
+       layout.fuel.center.y - layout.fuel.radius * 0.24f, "E");
     dl.color (0.8f, 0.85f, 0.9f);
-    m_helv10->draw (dl, (float) (int) (mx + mr * 0.82f),
-		    (float) (int) (fy - mr * 0.24f), "F");
-    dl.color (0.65f, 0.68f, 0.72f);
-    m_helv10->draw (dl, (float) (int) (mx - 12),
-		    (float) (int) (fy + 24), "FUEL");
-    m_helv10->draw (dl, (float) (int) (bx2 - 15),
-		    (float) (int) (fy + 24), "BOOST");
-
-    // star counter
-    dl.color (1.0f, 0.85f, 0.2f);
-    m_times24->draw (dl, 60, 44,
-		     "x " + std::to_string (st.stars));
+    m_helv10->draw
+      (dl, layout.fuel.center.x + layout.fuel.radius * 0.82f,
+       layout.fuel.center.y - layout.fuel.radius * 0.24f, "F");
 
     if (st.on_foot) {
+      const std::string label = "ON FOOT";
       dl.color (0.6f, 0.9f, 1.0f);
-      m_helv12->draw (dl, (float) (int) (X - 450),
-		      (float) (int) (Y - 138), "ON FOOT");
+      m_helv10->draw
+	(dl, layout.boost.center.x - m_helv10->measure (label) * 0.5f,
+	 layout.boost.center.y + 4, label);
     }
+
+    dl.pop ();
+
+    // The status contents use panel-local coordinates, so moving or
+    // resizing the panel cannot separate its icon, bar, and hearts.
+    dl.push ();
+    dl.translate (layout.status.x, layout.status.y, 0);
+    hud_panel (dl, 0, 0, layout.status.width,
+	       layout.status.height, 11.0f, 0.78f);
+
+    const float health = clamp01 (st.health01);
+    const float bar_x = 10, bar_y = 38;
+    const float bar_width = 142, bar_height = 8;
+    dl.color (0.015f, 0.025f, 0.04f, 0.88f);
+    dl.begin (Prim::Quads);
+    dl.vertex (bar_x, bar_y);
+    dl.vertex (bar_x + bar_width, bar_y);
+    dl.vertex (bar_x + bar_width, bar_y + bar_height);
+    dl.vertex (bar_x, bar_y + bar_height);
+    dl.end ();
+
+    dl.color (0.9f - 0.72f * health,
+	      0.18f + 0.7f * health, 0.12f, 0.98f);
+    dl.begin (Prim::Quads);
+    dl.vertex (bar_x, bar_y);
+    dl.vertex (bar_x + bar_width * health, bar_y);
+    dl.vertex (bar_x + bar_width * health, bar_y + bar_height);
+    dl.vertex (bar_x, bar_y + bar_height);
+    dl.end ();
+
+    // A one-point highlight keeps the narrow bar crisp on Retina.
+    dl.color (0.9f, 1.0f, 0.9f, 0.28f);
+    dl.line (bar_x, bar_y, bar_x + bar_width * health, bar_y, 1.0f);
+
+    const Point star (21, 20);
+    dl.color (1.0f, 0.85f, 0.15f, 0.98f);
+    dl.begin (Prim::TriangleFan);
+    dl.vertex (star.x, star.y);
+    for (int i = 0; i <= 10; ++i) {
+      const float a = (-90.0f + i * 36.0f) * PI / 180.0f;
+      const float r = (i % 2 == 0) ? 12.0f : 5.2f;
+      dl.vertex (star.x + r * std::cos (a),
+		 star.y + r * std::sin (a));
+    }
+    dl.end ();
+
+    for (int i = 0; i < 10; ++i)
+      hud_heart (dl, 11.0f + i * 15.6f, 62.0f,
+		 6.2f, i < st.lives);
+
+    dl.color (0.95f, 0.96f, 0.98f);
+    m_helv12->draw (dl, 41, 25,
+		    "x " + std::to_string (st.stars));
+    dl.pop ();
 
     hud_state_off (dl);
   }
