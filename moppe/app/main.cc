@@ -2921,28 +2921,40 @@ namespace moppe
           riding ? active_vehicle().rocket_charge() : 1.0f;
       const float PI = 3.14159265f;
 
+      // In helmet view the cluster sits centered on a solid
+      // backing, like the real instruments on the handlebars; in
+      // third person it tucks translucently into the corner
+      const bool helmet_hud = (m_cam_mode == CAM_HELMET);
+      const float X = helmet_hud ? m_width * 0.5f + 255.0f
+                                 : m_width - 18.0f;
+      const float Y = m_height - (helmet_hud ? 6.0f : 14.0f);
+      const float panel_alpha = helmet_hud ? 0.93f : 0.80f;
+
       // layout, in top-left-origin pixel coordinates
-      const float cx = m_width - 165.0f;  // speedometer
-      const float cy = m_height - 148.0f;
+      const float cx = X - 147.0f; // speedometer
+      const float cy = Y - 134.0f;
       const float R = 108.0f;
-      const float mx = m_width - 428.0f;  // mini dial column
-      const float fy = m_height - 90.0f;  // fuel
-      const float ry = m_height - 205.0f; // boost
+      const float mx = X - 410.0f; // mini dial column
+      const float fy = Y - 76.0f;  // fuel
+      const float ry = Y - 191.0f; // boost
       const float mr = 52.0f;
-      const float lampx = m_width - 318.0f;
+      const float lampx = X - 300.0f;
 
       {
         gl::ScopedOrthographicMode ortho;
         gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
                                       GL_LINE_BIT);
         glEnable(GL_BLEND);
+        // The ortho mode's y-flip reverses polygon winding, so
+        // culling would silently eat every filled HUD shape
+        glDisable(GL_CULL_FACE);
 
         // -- dashboard panel behind everything
         {
-          const float x0 = m_width - 528.0f, y0 = m_height - 282.0f;
-          const float x1 = m_width - 18.0f, y1 = m_height - 14.0f;
+          const float x0 = X - 510.0f, y0 = Y - 268.0f;
+          const float x1 = X, y1 = Y;
           const float c = 20.0f;
-          glColor4f(0.10f, 0.11f, 0.13f, 0.72f);
+          glColor4f(0.10f, 0.11f, 0.13f, panel_alpha);
           glBegin(GL_POLYGON);
           glVertex2f(x0 + c, y0);
           glVertex2f(x1 - c, y0);
@@ -3069,15 +3081,32 @@ namespace moppe
         const bool blink_fast = fmod(m_total_time * 3.5f, 1.0f) < 0.5f;
 
         // boost ready (green), low fuel (amber), damage (red)
-        hud_lamp(lampx, m_height - 200.0f, 8,
+        hud_lamp(lampx, Y - 186.0f, 8,
                  riding && charge >= 1.0f && blink_slow,
                  0.2f, 0.95f, 0.35f);
-        hud_lamp(lampx, m_height - 148.0f, 8,
+        hud_lamp(lampx, Y - 134.0f, 8,
                  m_fuel < 20.0f && blink_slow,
                  1.0f, 0.6f, 0.05f);
-        hud_lamp(lampx, m_height - 96.0f, 8,
+        hud_lamp(lampx, Y - 82.0f, 8,
                  m_health < 35.0f && blink_fast,
                  1.0f, 0.15f, 0.1f);
+
+        // backing plate for the top-left corner readouts
+        {
+          const float x0 = 10, y0 = 8, x1 = 220, y1 = 86;
+          const float c = 12.0f;
+          glColor4f(0.10f, 0.11f, 0.13f, 0.62f);
+          glBegin(GL_POLYGON);
+          glVertex2f(x0 + c, y0);
+          glVertex2f(x1 - c, y0);
+          glVertex2f(x1, y0 + c);
+          glVertex2f(x1, y1 - c);
+          glVertex2f(x1 - c, y1);
+          glVertex2f(x0 + c, y1);
+          glVertex2f(x0, y1 - c);
+          glVertex2f(x0, y0 + c);
+          glEnd();
+        }
 
         // health bar under the star counter
         {
@@ -3173,8 +3202,8 @@ namespace moppe
       {
         glColor3f(0.6f, 0.9f, 1.0f);
         gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                           (int)(m_width - 520),
-                           (int)(m_height - 264), "ON FOOT");
+                           (int)(X - 502), (int)(Y - 250),
+                           "ON FOOT");
       }
     }
 
