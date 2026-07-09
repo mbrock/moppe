@@ -2379,6 +2379,8 @@ namespace moppe
           m_shake(0.0f),
           m_health(100.0f),
           m_fov_k(0.0f),
+          m_lives(10),
+          m_game_over(false),
           m_fuel(100.0f),
           m_odometer(0.0),
           m_go_input(0.0f),
@@ -2518,6 +2520,13 @@ namespace moppe
       if (raw_elapsed >= dt)
       {
         m_timer.reset();
+
+        if (m_game_over)
+        {
+          glutPostRedisplay();
+          return;
+        }
+
         // Clamp hitches: one giant Euler step tunnels through
         // walls and hurls the camera
         const float elapsed = std::min(raw_elapsed, 0.05f);
@@ -2617,8 +2626,9 @@ namespace moppe
                       in_water ? spray_color : dust_color);
         }
 
-        // Crashes hurt; health trickles back, and running out of
-        // it means a fiery respawn back at the start
+        // Crashes hurt; health trickles back.  Running out costs a
+        // heart and a fiery respawn -- and with no hearts left,
+        // well.  Condolences.
         if (impact > 14.0f)
           m_health -= (impact - 14.0f) * 3.0f;
         m_health = std::min(100.0f, m_health + 4.0f * elapsed);
@@ -2626,9 +2636,17 @@ namespace moppe
         {
           m_dust.emit(vpos, Vector3D(0, 6, 0), 40,
                       Vector3D(1.0, 0.5, 0.1));
-          av.reset(spawn_position());
-          m_health = 100.0f;
-          m_shake = 1.0f;
+          --m_lives;
+          if (m_lives <= 0)
+          {
+            m_game_over = true;
+          }
+          else
+          {
+            av.reset(spawn_position());
+            m_health = 100.0f;
+            m_shake = 1.0f;
+          }
         }
 
         // Pedestrians get bowled over, with a puff of alarm
@@ -2951,6 +2969,41 @@ namespace moppe
                1.0f, 1.0f, 1.0f, 0.055f);
     }
 
+    // A little heart: two lobes and a point
+    static void hud_heart(float x, float y, float s, bool full)
+    {
+      if (full)
+        glColor4f(0.95f, 0.2f, 0.25f, 0.95f);
+      else
+        glColor4f(0.28f, 0.24f, 0.26f, 0.9f);
+
+      glBegin(GL_TRIANGLES);
+      glVertex2f(x - 0.72f * s, y - 0.02f * s);
+      glVertex2f(x + 0.72f * s, y - 0.02f * s);
+      glVertex2f(x, y + 0.9f * s);
+      glEnd();
+
+      // reuse the disc helper for the two lobes (color is set)
+      glBegin(GL_TRIANGLE_FAN);
+      glVertex2f(x - 0.36f * s, y - 0.25f * s);
+      for (int i = 0; i <= 12; ++i)
+      {
+        const float a = 2.0f * 3.14159f * i / 12;
+        glVertex2f(x - 0.36f * s + 0.42f * s * cos(a),
+                   y - 0.25f * s + 0.42f * s * sin(a));
+      }
+      glEnd();
+      glBegin(GL_TRIANGLE_FAN);
+      glVertex2f(x + 0.36f * s, y - 0.25f * s);
+      for (int i = 0; i <= 12; ++i)
+      {
+        const float a = 2.0f * 3.14159f * i / 12;
+        glVertex2f(x + 0.36f * s + 0.42f * s * cos(a),
+                   y - 0.25f * s + 0.42f * s * sin(a));
+      }
+      glEnd();
+    }
+
     static void hud_lamp(float x, float y, float r, bool on,
                          float cr, float cg, float cb)
     {
@@ -3170,7 +3223,7 @@ namespace moppe
 
         // backing plate for the top-left corner readouts
         {
-          const float x0 = 10, y0 = 8, x1 = 220, y1 = 86;
+          const float x0 = 10, y0 = 8, x1 = 220, y1 = 114;
           const float c = 12.0f;
           glColor4f(0.10f, 0.11f, 0.13f, 0.62f);
           glBegin(GL_POLYGON);
@@ -3223,6 +3276,10 @@ namespace moppe
           }
           glEnd();
         }
+
+        // ten lives, worn on the sleeve
+        for (int i = 0; i < 10; ++i)
+          hud_heart(26.0f + i * 19.0f, 96.0f, 8.5f, i < m_lives);
       }
 
       // ---- printed text (draw_glut_text manages its own ortho)
@@ -3296,6 +3353,16 @@ namespace moppe
       const bool pressed = (status == KEY_PRESSED ||
                             status == KEY_SPECIAL_PRESSED);
       const float factor = pressed ? 1.0f : 0.0f;
+
+      // In great pain, only R (ride again) and ESC work
+      if (m_game_over)
+      {
+        if (!special && pressed && (code == 'r' || code == 'R'))
+          revive();
+        else if (!special && code == 27)
+          std::exit(0);
+        return;
+      }
 
       if (special)
       {
@@ -3539,6 +3606,13 @@ namespace moppe
 
     void display()
     {
+      if (m_game_over)
+      {
+        draw_game_over();
+        glutSwapBuffers();
+        return;
+      }
+
       // Use dynamic fog color for background clear
       glClearColor(fog.x, fog.y, fog.z, 0);
 
@@ -3548,6 +3622,37 @@ namespace moppe
       draw_hud();
 
       glutSwapBuffers();
+    }
+
+    // The end, as specified by the design department
+    void draw_game_over()
+    {
+      glClearColor(0, 0, 0, 1);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+      glColor3f(0.75f, 0.08f, 0.08f);
+      gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24,
+                         m_width / 2 - 32, m_height / 2 - 30,
+                         "Sorry.");
+      gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24,
+                         m_width / 2 - 118, m_height / 2 + 10,
+                         "You are in great pain.");
+
+      glColor3f(0.35f, 0.35f, 0.4f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         m_width / 2 - 66, m_height / 2 + 64,
+                         "press R to ride again");
+    }
+
+    void revive()
+    {
+      m_lives = 10;
+      m_health = 100.0f;
+      m_fuel = 100.0f;
+      m_shake = 0.0f;
+      m_mode = M_BIKE;
+      m_vehicle.reset(spawn_position());
+      m_game_over = false;
     }
 
   private:
@@ -3714,6 +3819,8 @@ namespace moppe
     float m_shake;
     float m_health;
     float m_fov_k;
+    int m_lives;
+    bool m_game_over;
     float m_fuel;
     double m_odometer; // meters ridden, ever
     float m_go_input;
