@@ -44,6 +44,8 @@ namespace mov {
       m_water_level (-1000 * one_meter),
       m_airborne_time (0),
       m_impact (0),
+      m_fall_top (0),
+      m_fall_drop (0),
       m_obstacles (0),
       m_body_kind (0),
       m_body_color (0.8, 0.15, 0.1)
@@ -301,17 +303,22 @@ namespace mov {
 	  {
 	    m_impact = std::max (0.0f,
 				 -m_velocity.dot (ground_normal ()));
-	    // Rocket landings are half-forgiven: the jets flare on
-	    // touchdown, or so the story goes
+	    // Rocket landings are partly forgiven: the jets flare
+	    // on touchdown, or so the story goes
 	    if (m_rocket_flight)
-	      m_impact *= 0.6f;
+	      m_impact *= 0.75f;
 	    m_susp_v -= 0.10f * m_impact;
+	    m_fall_drop = m_fall_top - m_position.y;
 	  }
 	m_rocket_flight = false;
 	m_airborne_time = 0;
+	m_fall_top = m_position.y;
       }
     else
-      m_airborne_time += dt;
+      {
+	m_airborne_time += dt;
+	m_fall_top = std::max (m_fall_top, m_position.y);
+      }
 
     // Lean into corners: balance the turn against gravity
     {
@@ -610,7 +617,8 @@ namespace mov {
       draw_wheel (-0.6, 0.2);
     }
 
-    // The fearless rider: leaning torso, stubby arms, blue helmet.
+    // The fearless rider: leaning torso, proper legs gripping the
+    // tank, stubby arms, blue helmet.
     glColor3f (0.15, 0.2, 0.35);
     {
       gl::ScopedMatrixSaver m;
@@ -618,6 +626,28 @@ namespace mov {
       glRotatef (-15, 1, 0, 0);
       solid_blob (0.2, 0.34, 0.16);
     }
+
+    // legs: near-horizontal thighs, shins down to the pegs, boots
+    for (int s = -1; s <= 1; s += 2)
+      {
+	glColor3f (0.14, 0.15, 0.2);
+	{
+	  gl::ScopedMatrixSaver m;
+	  glTranslatef (s * 0.18, 0.02, -0.15);
+	  solid_box (0.11, 0.13, 0.48);
+	}
+	{
+	  gl::ScopedMatrixSaver m;
+	  glTranslatef (s * 0.21, -0.2, 0.08);
+	  solid_box (0.10, 0.4, 0.12);
+	}
+	glColor3f (0.07, 0.07, 0.09);
+	{
+	  gl::ScopedMatrixSaver m;
+	  glTranslatef (s * 0.21, -0.42, 0.12);
+	  solid_box (0.11, 0.11, 0.28);
+	}
+      }
     for (int s = -1; s <= 1; s += 2)
       {
 	gl::ScopedMatrixSaver m;

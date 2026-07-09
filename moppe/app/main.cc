@@ -487,6 +487,107 @@ namespace moppe
     GLuint m_tex;
   };
 
+  // A soft dark disc projected on the ground under a vehicle: the
+  // classic cheap stand-in for a real cast shadow, and it reads
+  // wonderfully -- especially mid rocket-jump, when it shrinks and
+  // fades below you.
+  class BlobShadow
+  {
+  public:
+    BlobShadow() : m_tex(0) {}
+
+    void draw(const Vector3D& pos, float radius,
+              const map::HeightMap& map)
+    {
+      ensure_texture();
+
+      const float gy = map.interpolated_height(pos.x, pos.z);
+      const float h = pos.y - gy;
+      if (h > 30.0f || h < -2.0f)
+        return; // too high to matter (or underground somehow)
+
+      const float fade = 1.0f - std::max(0.0f, h) / 30.0f;
+      const float r = radius * (1.0f + 0.5f * (1.0f - fade));
+
+      Vector3D n = map.interpolated_normal(pos.x, pos.z);
+      Vector3D t1 = n.cross(Vector3D(1, 0, 0));
+      if (t1.length2() < 0.01f)
+        t1 = n.cross(Vector3D(0, 0, 1));
+      t1.normalize();
+      Vector3D t2 = n.cross(t1);
+
+      const Vector3D c =
+          Vector3D(pos.x, gy, pos.z) + n * 0.14f;
+
+      gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
+                                    GL_TEXTURE_BIT |
+                                    GL_DEPTH_BUFFER_BIT);
+      for (int unit = 3; unit >= 1; --unit)
+      {
+        glActiveTexture(GL_TEXTURE0 + unit);
+        glDisable(GL_TEXTURE_2D);
+      }
+      glActiveTexture(GL_TEXTURE0);
+      glEnable(GL_TEXTURE_2D);
+      glBindTexture(GL_TEXTURE_2D, m_tex);
+      glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+      glDisable(GL_LIGHTING);
+      glDisable(GL_CULL_FACE);
+      glDepthMask(GL_FALSE);
+      glEnable(GL_BLEND);
+
+      glColor4f(0.0f, 0.0f, 0.0f, 0.45f * fade);
+      glBegin(GL_QUADS);
+      glTexCoord2f(0, 0);
+      gl::vertex(c - t1 * r - t2 * r);
+      glTexCoord2f(1, 0);
+      gl::vertex(c + t1 * r - t2 * r);
+      glTexCoord2f(1, 1);
+      gl::vertex(c + t1 * r + t2 * r);
+      glTexCoord2f(0, 1);
+      gl::vertex(c - t1 * r + t2 * r);
+      glEnd();
+    }
+
+  private:
+    void ensure_texture()
+    {
+      if (m_tex != 0)
+        return;
+
+      const int N = 64;
+      std::vector<unsigned char> img(N * N * 4);
+      for (int y = 0; y < N; ++y)
+        for (int x = 0; x < N; ++x)
+        {
+          const float dx = (x + 0.5f) / N * 2 - 1;
+          const float dy = (y + 0.5f) / N * 2 - 1;
+          float a = std::max(
+              0.0f, 1.0f - std::sqrt(dx * dx + dy * dy));
+          a = a * a * (3.0f - 2.0f * a);
+
+          unsigned char* px = &img[(y * N + x) * 4];
+          px[0] = px[1] = px[2] = 255;
+          px[3] = (unsigned char)(255.0f * a);
+        }
+
+      glGenTextures(1, &m_tex);
+      glBindTexture(GL_TEXTURE_2D, m_tex);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                      GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                      GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                      GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                      GL_CLAMP_TO_EDGE);
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, N, N, 0, GL_RGBA,
+                   GL_UNSIGNED_BYTE, &img[0]);
+    }
+
+    GLuint m_tex;
+  };
+
   // Schools of little fish circling in the deeper water.
   class Fish
   {
@@ -2592,9 +2693,15 @@ namespace moppe
 
         // parked vehicles' impacts shouldn't linger until remount
         if (m_mode != M_BIKE)
+        {
           m_vehicle.pop_impact();
+          m_vehicle.pop_fall_drop();
+        }
         if (m_car_exists && m_mode != M_CAR)
+        {
           m_car.pop_impact();
+          m_car.pop_fall_drop();
+        }
 
         const bool in_water = vpos.y < water_level + 1.0f;
         const bool driving = (m_mode != M_FOOT);
@@ -2626,12 +2733,13 @@ namespace moppe
                       in_water ? spray_color : dust_color);
         }
 
-        // Crashes hurt; health trickles back.  Running out costs a
-        // heart and a fiery respawn -- and with no hearts left,
-        // well.  Condolences.
-        if (impact > 14.0f)
-          m_health -= (impact - 14.0f) * 3.0f;
-        m_health = std::min(100.0f, m_health + 4.0f * elapsed);
+        // Crashes hurt; health trickles back slowly.  Falls from
+        // above a hundred meters are simply fatal -- house rule.
+        if (impact > 9.0f)
+          m_health -= (impact - 9.0f) * 4.5f;
+        if (driving && av.pop_fall_drop() > 100.0f)
+          m_health = 0.0f;
+        m_health = std::min(100.0f, m_health + 1.5f * elapsed);
         if (m_health <= 0.0f)
         {
           m_dust.emit(vpos, Vector3D(0, 6, 0), 40,
@@ -3586,6 +3694,14 @@ namespace moppe
       m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
 
+      // soft blob shadows under the movers
+      m_blob.draw(m_vehicle.position(), 2.2f, m_map1);
+      if (m_car_exists)
+        m_blob.draw(m_car.position(), 2.9f, m_map1);
+      if (m_mode == M_FOOT)
+        m_blob.draw(m_walker.position() + Vector3D(0, 0.5, 0),
+                    0.8f, m_map1);
+
       // In helmet cam you ARE the rider: don't draw yourself
       const bool helmet = (m_cam_mode == CAM_HELMET);
       if (!(helmet && m_mode == M_BIKE))
@@ -3802,6 +3918,7 @@ namespace moppe
     Vegetation m_vegetation;
     Stars m_star_field;
     Dust m_dust;
+    BlobShadow m_blob;
     Fish m_fish_school;
     Wildlife m_wildlife;
     City m_city;

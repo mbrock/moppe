@@ -106,6 +106,10 @@ namespace mov {
     float pop_impact ()
     { float i = m_impact; m_impact = 0; return i; }
 
+    // How far the last flight fell, peak to touchdown, in meters
+    float pop_fall_drop ()
+    { float d = m_fall_drop; m_fall_drop = 0; return d; }
+
     // 0..1: how recharged the jump jets are
     float rocket_charge () const;
 
@@ -179,6 +183,8 @@ namespace mov {
 
     seconds_t m_airborne_time;
     float m_impact;
+    float m_fall_top;  // highest point of the current flight
+    float m_fall_drop; // set on landing: peak minus touchdown
 
     const std::vector<Box>* m_obstacles;
 
