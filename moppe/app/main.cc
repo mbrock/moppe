@@ -2326,6 +2326,7 @@ namespace moppe
           m_odometer(0.0),
           m_go_input(0.0f),
           m_mode(M_BIKE),
+          m_cam_mode(CAM_CHASE),
           m_car_exists(false),
           m_combo(0),
           m_fx_rng(7)
@@ -2614,13 +2615,43 @@ namespace moppe
         m_dust.update(elapsed);
         m_shake *= std::exp(-4.0f * elapsed);
 
-        if (m_mode == M_FOOT)
-          m_camera.update(m_walker.position() + Vector3D(0, 1, 0),
-                          m_walker.heading(), Vector3D(), elapsed);
+        if (m_cam_mode == CAM_HELMET)
+        {
+          // Ride inside the rider's head; lightly smoothed so
+          // terrain bumps don't rattle the eyeballs
+          Vector3D eye, look;
+          if (m_mode == M_FOOT)
+          {
+            eye = m_walker.position() + Vector3D(0, 1.55, 0);
+            look = m_walker.heading();
+          }
+          else
+          {
+            eye = av.position() + Vector3D(0, 0.95, 0)
+                  + av.orientation() * 0.4f;
+            look = av.orientation();
+          }
+          m_fp_eye = m_fp_eye
+              + (eye - m_fp_eye)
+                    * (1.0f - std::exp(-25.0f * elapsed));
+          m_camera.place(m_fp_eye, m_fp_eye + look * 10.0f);
+        }
         else
-          m_camera.update(av.position(), av.orientation(),
-                          av.velocity(), elapsed);
-        m_camera.limit(m_map1);
+        {
+          // Chase cam, or the same rig flipped to the front so it
+          // swings around and films the rider head-on
+          const float flip = (m_cam_mode == CAM_FRONT) ? -1.0f
+                                                       : 1.0f;
+          if (m_mode == M_FOOT)
+            m_camera.update(m_walker.position() + Vector3D(0, 1, 0),
+                            m_walker.heading() * flip, Vector3D(),
+                            elapsed);
+          else
+            m_camera.update(av.position(),
+                            av.orientation() * flip,
+                            av.velocity(), elapsed);
+          m_camera.limit(m_map1);
+        }
 
         // Speed widens the field of view a touch
         {
@@ -3200,6 +3231,15 @@ namespace moppe
 
       switch (code)
       {
+      case 9: // Tab cycles the camera: chase, front, helmet
+        if (pressed)
+        {
+          m_cam_mode = (m_cam_mode + 1) % 3;
+          if (m_cam_mode == CAM_HELMET)
+            m_fp_eye = m_camera.position(); // glide in, not teleport
+        }
+        break;
+
       case 'a': case 'A':
         input_turn(-1 * factor);
         break;
@@ -3372,10 +3412,14 @@ namespace moppe
       m_vegetation.render(fog, fog_scale * 1.35f, cam);
       m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
-      m_vehicle.render();
-      if (m_car_exists)
+
+      // In helmet cam you ARE the rider: don't draw yourself
+      const bool helmet = (m_cam_mode == CAM_HELMET);
+      if (!(helmet && m_mode == M_BIKE))
+        m_vehicle.render();
+      if (m_car_exists && !(helmet && m_mode == M_CAR))
         m_car.render();
-      if (m_mode == M_FOOT)
+      if (m_mode == M_FOOT && !helmet)
         m_walker.render(m_total_time);
       m_fish_school.render(m_total_time, cam);
       m_wildlife.render(m_total_time, cam);
@@ -3569,9 +3613,12 @@ namespace moppe
     float m_go_input;
 
     enum Mode { M_BIKE, M_FOOT, M_CAR };
+    enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
     Walker m_walker;
     int m_mode;
+    int m_cam_mode;
+    Vector3D m_fp_eye;
     bool m_car_exists;
     int m_combo;
 

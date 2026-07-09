@@ -63,6 +63,15 @@ namespace gfx {
 		 seconds_t dt);
     void limit (const map::HeightMap& map);
 
+    // Directly position the camera (first-person mode bypasses
+    // the chase smoothing entirely)
+    void place (const Vector3D& eye, const Vector3D& target)
+    {
+      m_position = eye;
+      m_target = target;
+      m_is_uninitialized = false;
+    }
+
     void realize () const;
     Vector3D position () const { return m_position; }
 
