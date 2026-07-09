@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+action="${1:-archive}"
+team="${MOPPE_IOS_TEAM:-AA8RNDKMB9}"
+version="${MOPPE_IOS_VERSION:-1.0.0}"
+build_number="${MOPPE_IOS_BUILD_NUMBER:-$(date -u +%Y%m%d%H%M)}"
+build_dir="${MOPPE_IOS_BUILD_DIR:-$root/build-ios-testflight}"
+dist_dir="${MOPPE_IOS_DIST_DIR:-$root/dist}"
+archive="$dist_dir/Moppe-$version-$build_number.xcarchive"
+archive_app="$archive/Products/Applications/Moppe.app"
+
+usage() {
+  echo "Usage: tools/testflight [archive|upload]"
+  echo
+  echo "Environment overrides:"
+  echo "  MOPPE_IOS_TEAM          Apple Developer team (default: $team)"
+  echo "  MOPPE_IOS_VERSION       Marketing version (default: $version)"
+  echo "  MOPPE_IOS_BUILD_NUMBER  Unique build number (default: UTC time)"
+  echo "  MOPPE_IOS_BUILD_DIR     Xcode build directory"
+  echo "  MOPPE_IOS_DIST_DIR      Archive output directory"
+}
+
+if [[ "$action" == "-h" || "$action" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "$action" != "archive" && "$action" != "upload" ]]; then
+  usage >&2
+  exit 2
+fi
+
+mkdir -p "$dist_dir"
+
+echo "Configuring Moppe $version ($build_number) for App Store signing..."
+cmake -S "$root" -B "$build_dir" -G Xcode \
+  -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_SYSROOT=iphoneos \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DMOPPE_VERSION="$version" \
+  -DMOPPE_BUILD_NUMBER="$build_number"
+
+echo "Creating $archive..."
+xcodebuild -quiet \
+  -project "$build_dir/moppe.xcodeproj" \
+  -scheme moppe-ios \
+  -configuration Release \
+  -destination "generic/platform=iOS" \
+  -archivePath "$archive" \
+  CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM="$team" \
+  -allowProvisioningUpdates \
+  archive
+
+echo "Archive created: $archive"
+
+if [[ ! -d "$archive_app" ]]; then
+  echo "error: archive does not contain Moppe.app" >&2
+  exit 1
+fi
+
+codesign --verify --deep --strict "$archive_app"
+
+if [[ "$action" == "upload" ]]; then
+  echo "Uploading Moppe to App Store Connect..."
+  xcodebuild -quiet \
+    -exportArchive \
+    -archivePath "$archive" \
+    -exportPath "$dist_dir/upload-$build_number" \
+    -exportOptionsPlist \
+      "$root/moppe/platform/ios/ExportOptions.plist" \
+    -allowProvisioningUpdates
+  echo "Upload accepted. Processing will continue in App Store Connect."
+fi

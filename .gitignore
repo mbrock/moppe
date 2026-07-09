@@ -2,5 +2,7 @@ build/
 build-ios/
 build-ios-dev/
 build-ios-device/
+build-ios-testflight/
+dist/
 .DS_Store
 test.tga

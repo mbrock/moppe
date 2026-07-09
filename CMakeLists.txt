@@ -14,6 +14,9 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall)
 
+set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
+set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
+
 if(APPLE)
   enable_language(OBJCXX)
   set(CMAKE_OBJCXX_STANDARD 11)
@@ -131,6 +134,11 @@ if(APPLE)
 endif()
 
 if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(MOPPE_IOS_ASSETS
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/ios/Assets.xcassets)
+  set_source_files_properties(${MOPPE_IOS_ASSETS} PROPERTIES
+    MACOSX_PACKAGE_LOCATION Resources)
+
   add_library(moppe_platform_ios STATIC
     moppe/platform/ios/main_ios.mm
   )
@@ -140,7 +148,10 @@ if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(moppe_platform_ios PUBLIC
     moppe_metal moppe_apple "-framework UIKit")
 
-  add_executable(moppe-ios MACOSX_BUNDLE moppe/game/game.cc)
+  add_executable(moppe-ios MACOSX_BUNDLE
+    moppe/game/game.cc
+    ${MOPPE_IOS_ASSETS}
+  )
   target_link_libraries(moppe-ios PRIVATE moppe_game moppe_platform_ios)
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
@@ -149,9 +160,14 @@ if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/ios/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
     MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
-    MACOSX_BUNDLE_BUNDLE_VERSION "1"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${MOPPE_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${MOPPE_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+    XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION "${MOPPE_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+    XCODE_ATTRIBUTE_MARKETING_VERSION "${MOPPE_VERSION}"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
+    XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
   add_custom_command(TARGET moppe-ios POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
