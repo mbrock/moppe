@@ -45,6 +45,8 @@ namespace mov {
     void set_thrust (magnitude_t thrust)
     { m_thrust = thrust; }
 
+    magnitude_t thrust () const { return m_thrust; }
+
     void set_yaw (degrees_t degrees)
     { m_yaw_target = degrees_to_radians (degrees); }
 

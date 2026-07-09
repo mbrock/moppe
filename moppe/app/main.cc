@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <ctime>
 #include <random>
@@ -2274,6 +2275,9 @@ namespace moppe
           m_shake(0.0f),
           m_health(100.0f),
           m_fov_k(0.0f),
+          m_fuel(100.0f),
+          m_odometer(0.0),
+          m_go_input(0.0f),
           m_mode(M_BIKE),
           m_car_exists(false),
           m_combo(0),
@@ -2533,11 +2537,32 @@ namespace moppe
                         Vector3D(0.95, 0.85, 0.4));
         }
 
-        // Star pickups sparkle gold
-        if (m_star_field.update(vpos, elapsed) > 0)
-          m_dust.emit(m_star_field.last_pickup(),
-                      Vector3D(0, 3, 0), 16,
-                      Vector3D(1.0, 0.85, 0.2));
+        // Star pickups sparkle gold -- and top up the tank
+        {
+          const int picked = m_star_field.update(vpos, elapsed);
+          if (picked > 0)
+          {
+            m_dust.emit(m_star_field.last_pickup(),
+                        Vector3D(0, 3, 0), 16,
+                        Vector3D(1.0, 0.85, 0.2));
+            m_fuel = std::min(100.0f, m_fuel + 25.0f * picked);
+          }
+        }
+
+        // Fuel: the throttle burns it; an empty tank limps along
+        // at a third power (never fully stranded)
+        if (driving)
+        {
+          m_fuel = std::max(
+              0.0f, m_fuel - std::abs(av.thrust()) * 0.9f * elapsed);
+          m_odometer += av.velocity().length() * elapsed;
+
+          const float want =
+              m_go_input * ((m_fuel <= 0.5f && m_go_input > 0)
+                                ? 0.3f
+                                : 1.0f);
+          av.set_thrust(want);
+        }
 
         m_dust.update(elapsed);
         m_shake *= std::exp(-4.0f * elapsed);
@@ -2720,19 +2745,113 @@ namespace moppe
     }
 
     // Game HUD: speedometer dial, rocket charge bar, star counter
+    // ---- instrument cluster drawing helpers -------------------
+
+    static void hud_disc(float cx, float cy, float r,
+                         float cr, float cg, float cb, float ca)
+    {
+      glColor4f(cr, cg, cb, ca);
+      glBegin(GL_TRIANGLE_FAN);
+      glVertex2f(cx, cy);
+      for (int i = 0; i <= 40; ++i)
+      {
+        const float a = 2.0f * 3.14159f * i / 40;
+        glVertex2f(cx + r * cos(a), cy + r * sin(a));
+      }
+      glEnd();
+    }
+
+    // Annulus segment; dial angle convention: 0 deg = +x, angles
+    // increase counterclockwise ON SCREEN (y is down, so -sin)
+    static void hud_ring(float cx, float cy, float r0, float r1,
+                         float a0, float a1,
+                         float cr, float cg, float cb, float ca)
+    {
+      glColor4f(cr, cg, cb, ca);
+      glBegin(GL_TRIANGLE_STRIP);
+      const int segs = 48;
+      for (int i = 0; i <= segs; ++i)
+      {
+        const float a =
+            (a0 + (a1 - a0) * i / segs) * 3.14159f / 180.0f;
+        glVertex2f(cx + r1 * cos(a), cy - r1 * sin(a));
+        glVertex2f(cx + r0 * cos(a), cy - r0 * sin(a));
+      }
+      glEnd();
+    }
+
+    // A tapered needle with a counterweight tail and a hub
+    static void hud_needle(float cx, float cy, float a_deg,
+                           float len, float tail, float w,
+                           float cr, float cg, float cb)
+    {
+      const float a = a_deg * 3.14159f / 180.0f;
+      const float dx = cos(a), dy = -sin(a);
+      const float px = -dy, py = dx;
+
+      glColor4f(cr, cg, cb, 0.96f);
+      glBegin(GL_TRIANGLES);
+      glVertex2f(cx + px * w, cy + py * w);
+      glVertex2f(cx - px * w, cy - py * w);
+      glVertex2f(cx + dx * len, cy + dy * len);
+      glVertex2f(cx + px * w * 1.5f, cy + py * w * 1.5f);
+      glVertex2f(cx - px * w * 1.5f, cy - py * w * 1.5f);
+      glVertex2f(cx - dx * tail, cy - dy * tail);
+      glEnd();
+
+      hud_disc(cx, cy, w * 2.6f, 0.16f, 0.17f, 0.19f, 1.0f);
+      hud_disc(cx, cy, w * 1.4f, 0.75f, 0.77f, 0.80f, 1.0f);
+    }
+
+    // Metallic bezel + dark face + glass highlight
+    static void hud_dial_face(float cx, float cy, float R)
+    {
+      hud_ring(cx, cy, R * 0.94f, R * 1.08f, 0, 360,
+               0.52f, 0.54f, 0.58f, 0.95f);
+      hud_ring(cx, cy, R * 1.02f, R * 1.08f, 0, 360,
+               0.24f, 0.25f, 0.27f, 0.95f);
+      hud_disc(cx, cy, R * 0.96f, 0.06f, 0.07f, 0.09f, 0.93f);
+      // glass reflection across the upper left
+      hud_ring(cx, cy, R * 0.45f, R * 0.92f, 115, 205,
+               1.0f, 1.0f, 1.0f, 0.055f);
+    }
+
+    static void hud_lamp(float x, float y, float r, bool on,
+                         float cr, float cg, float cb)
+    {
+      hud_disc(x, y, r + 2.5f, 0.10f, 0.11f, 0.12f, 0.95f);
+      if (on)
+      {
+        hud_disc(x, y, r + 5.0f, cr, cg, cb, 0.25f); // glow
+        hud_disc(x, y, r, cr, cg, cb, 0.98f);
+      }
+      else
+        hud_disc(x, y, r, cr * 0.22f, cg * 0.22f, cb * 0.22f,
+                 0.9f);
+    }
+
+    // ---- the cluster itself -----------------------------------
+
     void draw_hud()
     {
+      const bool riding = (m_mode != M_FOOT);
       const float kmh =
-          (m_mode == M_FOOT)
-              ? 0.0f
-              : active_vehicle().velocity().length() * 3.6f;
+          riding ? active_vehicle().velocity().length() * 3.6f
+                 : 0.0f;
       const float frac = std::min(1.0f, kmh / 300.0f);
+      const float charge =
+          riding ? active_vehicle().rocket_charge() : 1.0f;
       const float PI = 3.14159265f;
 
-      // dial center, in top-left-origin pixel coordinates
-      const float cx = m_width - 130.0f;
-      const float cy = m_height - 130.0f;
-      const float R = 95.0f;
+      // layout, in top-left-origin pixel coordinates
+      const float cx = m_width - 165.0f;  // speedometer
+      const float cy = m_height - 148.0f;
+      const float R = 108.0f;
+      const float mx = m_width - 428.0f;  // mini dial column
+      const float fy = m_height - 90.0f;  // fuel
+      const float ry = m_height - 205.0f; // boost
+      const float mr = 52.0f;
+      const float lampx = m_width - 318.0f;
 
       {
         gl::ScopedOrthographicMode ortho;
@@ -2740,92 +2859,147 @@ namespace moppe
                                       GL_LINE_BIT);
         glEnable(GL_BLEND);
 
-        // dial backplate
-        glColor4f(0.05f, 0.08f, 0.12f, 0.6f);
-        glBegin(GL_TRIANGLE_FAN);
-        glVertex2f(cx, cy);
-        for (int i = 0; i <= 32; ++i)
+        // -- dashboard panel behind everything
         {
-          const float a = 2.0f * PI * i / 32.0f;
-          glVertex2f(cx + R * cos(a), cy + R * sin(a));
+          const float x0 = m_width - 528.0f, y0 = m_height - 282.0f;
+          const float x1 = m_width - 18.0f, y1 = m_height - 14.0f;
+          const float c = 20.0f;
+          glColor4f(0.10f, 0.11f, 0.13f, 0.72f);
+          glBegin(GL_POLYGON);
+          glVertex2f(x0 + c, y0);
+          glVertex2f(x1 - c, y0);
+          glVertex2f(x1, y0 + c);
+          glVertex2f(x1, y1 - c);
+          glVertex2f(x1 - c, y1);
+          glVertex2f(x0 + c, y1);
+          glVertex2f(x0, y1 - c);
+          glVertex2f(x0, y0 + c);
+          glEnd();
+          // rim light along the top edge
+          glLineWidth(2);
+          glColor4f(0.55f, 0.60f, 0.66f, 0.4f);
+          glBegin(GL_LINE_STRIP);
+          glVertex2f(x0, y0 + c);
+          glVertex2f(x0 + c, y0);
+          glVertex2f(x1 - c, y0);
+          glVertex2f(x1, y0 + c);
+          glEnd();
         }
-        glEnd();
 
-        // speed arc: sweeps 240 degrees, green through red
-        const int segs = (int)(40 * frac) + 1;
-        glBegin(GL_TRIANGLE_STRIP);
-        for (int i = 0; i <= segs; ++i)
+        // ==================== SPEEDOMETER ====================
+        hud_dial_face(cx, cy, R);
+
+        // redline zone 250-300 (speed s maps to 210 - 240*s/300)
+        hud_ring(cx, cy, R * 0.86f, R * 0.95f, -30, 10,
+                 0.8f, 0.10f, 0.08f, 0.5f);
+
+        // live speed arc, green through amber to red
+        if (frac > 0.003f)
         {
-          const float f = frac * i / segs;
-          const float a = (210.0f - 240.0f * f) * PI / 180.0f;
-          glColor4f(0.2f + 0.8f * f, 1.0f - 0.85f * f, 0.15f, 0.9f);
-          glVertex2f(cx + 0.97f * R * cos(a), cy - 0.97f * R * sin(a));
-          glVertex2f(cx + 0.84f * R * cos(a), cy - 0.84f * R * sin(a));
+          const int segs = (int)(44 * frac) + 1;
+          glBegin(GL_TRIANGLE_STRIP);
+          for (int i = 0; i <= segs; ++i)
+          {
+            const float f = frac * i / segs;
+            const float a = (210.0f - 240.0f * f) * PI / 180.0f;
+            glColor4f(0.2f + 0.8f * f, 0.95f - 0.8f * f, 0.12f,
+                      0.85f);
+            glVertex2f(cx + 0.95f * R * cos(a),
+                       cy - 0.95f * R * sin(a));
+            glVertex2f(cx + 0.86f * R * cos(a),
+                       cy - 0.86f * R * sin(a));
+          }
+          glEnd();
         }
-        glEnd();
 
-        // ticks every 30 km/h
-        glLineWidth(2);
-        glColor4f(0.9f, 0.9f, 0.95f, 0.9f);
+        // graduations: minor every 15, major every 30
         glBegin(GL_LINES);
-        for (int i = 0; i <= 10; ++i)
+        for (int s = 0; s <= 300; s += 15)
         {
-          const float a = (210.0f - 24.0f * i) * PI / 180.0f;
-          glVertex2f(cx + 0.80f * R * cos(a), cy - 0.80f * R * sin(a));
-          glVertex2f(cx + 0.70f * R * cos(a), cy - 0.70f * R * sin(a));
+          const bool major = (s % 30 == 0);
+          const float a =
+              (210.0f - 240.0f * s / 300.0f) * PI / 180.0f;
+          if (major)
+            glColor4f(0.92f, 0.93f, 0.95f, 0.95f);
+          else
+            glColor4f(0.55f, 0.57f, 0.6f, 0.8f);
+          const float r0 = major ? 0.72f : 0.77f;
+          glVertex2f(cx + r0 * R * cos(a), cy - r0 * R * sin(a));
+          glVertex2f(cx + 0.84f * R * cos(a),
+                     cy - 0.84f * R * sin(a));
         }
         glEnd();
 
-        // needle
+        // the needle
+        hud_needle(cx, cy, 210.0f - 240.0f * frac,
+                   0.80f * R, 0.20f * R, 3.6f,
+                   0.95f, 0.22f, 0.12f);
+
+        // odometer window
         {
-          const float a = (210.0f - 240.0f * frac) * PI / 180.0f;
-          glLineWidth(4);
-          glColor4f(1.0f, 0.25f, 0.15f, 0.95f);
-          glBegin(GL_LINES);
-          glVertex2f(cx, cy);
-          glVertex2f(cx + 0.78f * R * cos(a), cy - 0.78f * R * sin(a));
+          glColor4f(0.02f, 0.02f, 0.03f, 0.95f);
+          glBegin(GL_QUADS);
+          glVertex2f(cx - 40, cy + 38);
+          glVertex2f(cx + 40, cy + 38);
+          glVertex2f(cx + 40, cy + 56);
+          glVertex2f(cx - 40, cy + 56);
           glEnd();
         }
 
-        // hub
-        glColor4f(0.9f, 0.9f, 0.95f, 1.0f);
-        glBegin(GL_TRIANGLE_FAN);
-        glVertex2f(cx, cy);
-        for (int i = 0; i <= 12; ++i)
+        // ==================== FUEL GAUGE ====================
+        hud_dial_face(mx, fy, mr);
+        // low-fuel zone (left fifth of the 160..20 sweep)
+        hud_ring(mx, fy, mr * 0.62f, mr * 0.88f, 132, 160,
+                 0.85f, 0.35f, 0.05f, 0.5f);
+        glBegin(GL_LINES);
+        for (int i = 0; i <= 4; ++i)
         {
-          const float a = 2.0f * PI * i / 12.0f;
-          glVertex2f(cx + 6 * cos(a), cy + 6 * sin(a));
+          const float a = (160.0f - 35.0f * i) * PI / 180.0f;
+          glColor4f(0.9f, 0.9f, 0.95f, 0.9f);
+          glVertex2f(mx + 0.66f * mr * cos(a),
+                     fy - 0.66f * mr * sin(a));
+          glVertex2f(mx + 0.86f * mr * cos(a),
+                     fy - 0.86f * mr * sin(a));
         }
         glEnd();
+        hud_needle(mx, fy, 160.0f - 140.0f * (m_fuel / 100.0f),
+                   0.74f * mr, 0.2f * mr, 2.4f,
+                   0.92f, 0.92f, 0.95f);
 
-        // rocket charge bar, pulsing when ready
+        // ==================== BOOST GAUGE ====================
+        hud_dial_face(mx, ry, mr);
+        hud_ring(mx, ry, mr * 0.62f, mr * 0.88f, 20,
+                 20.0f + 140.0f * charge,
+                 0.25f, 0.65f, 1.0f, 0.45f);
+        glBegin(GL_LINES);
+        for (int i = 0; i <= 4; ++i)
         {
-          const float charge = (m_mode == M_FOOT)
-                                   ? 1.0f
-                                   : active_vehicle().rocket_charge();
-          const float bx = m_width - 340.0f;
-          const float by = m_height - 44.0f;
-          const float bw = 180.0f, bh = 14.0f;
-
-          glColor4f(0.05f, 0.08f, 0.12f, 0.6f);
-          glBegin(GL_QUADS);
-          glVertex2f(bx, by);
-          glVertex2f(bx + bw, by);
-          glVertex2f(bx + bw, by + bh);
-          glVertex2f(bx, by + bh);
-          glEnd();
-
-          const float pulse = (charge >= 1.0f)
-              ? 0.7f + 0.3f * sin(m_total_time * 6.0f)
-              : 0.9f;
-          glColor4f(0.3f, 0.8f * pulse, pulse, 0.9f);
-          glBegin(GL_QUADS);
-          glVertex2f(bx, by);
-          glVertex2f(bx + bw * charge, by);
-          glVertex2f(bx + bw * charge, by + bh);
-          glVertex2f(bx, by + bh);
-          glEnd();
+          const float a = (160.0f - 35.0f * i) * PI / 180.0f;
+          glColor4f(0.9f, 0.9f, 0.95f, 0.9f);
+          glVertex2f(mx + 0.66f * mr * cos(a),
+                     ry - 0.66f * mr * sin(a));
+          glVertex2f(mx + 0.86f * mr * cos(a),
+                     ry - 0.86f * mr * sin(a));
         }
+        glEnd();
+        hud_needle(mx, ry, 160.0f - 140.0f * charge,
+                   0.74f * mr, 0.2f * mr, 2.4f,
+                   0.35f, 0.75f, 1.0f);
+
+        // ==================== WARNING LAMPS ====================
+        const bool blink_slow = fmod(m_total_time * 1.6f, 1.0f) < 0.6f;
+        const bool blink_fast = fmod(m_total_time * 3.5f, 1.0f) < 0.5f;
+
+        // boost ready (green), low fuel (amber), damage (red)
+        hud_lamp(lampx, m_height - 200.0f, 8,
+                 riding && charge >= 1.0f && blink_slow,
+                 0.2f, 0.95f, 0.35f);
+        hud_lamp(lampx, m_height - 148.0f, 8,
+                 m_fuel < 20.0f && blink_slow,
+                 1.0f, 0.6f, 0.05f);
+        hud_lamp(lampx, m_height - 96.0f, 8,
+                 m_health < 35.0f && blink_fast,
+                 1.0f, 0.15f, 0.1f);
 
         // health bar under the star counter
         {
@@ -2841,7 +3015,6 @@ namespace moppe
           glVertex2f(hx, hy + hh);
           glEnd();
 
-          // green fading to red as it drains
           glColor4f(0.9f - 0.7f * f, 0.15f + 0.7f * f, 0.15f,
                     0.95f);
           glBegin(GL_QUADS);
@@ -2868,29 +3041,63 @@ namespace moppe
         }
       }
 
-      // text labels (draw_glut_text manages its own ortho state)
+      // ---- printed text (draw_glut_text manages its own ortho)
+
+      // speed numbers around the dial
+      glColor3f(0.88f, 0.9f, 0.93f);
+      for (int s = 0; s <= 300; s += 60)
+      {
+        const float a = (210.0f - 240.0f * s / 300.0f) * PI / 180.0f;
+        const std::string label = std::to_string(s);
+        gl::draw_glut_text(
+            GLUT_BITMAP_HELVETICA_12,
+            (int)(cx + 0.58f * R * cos(a) - 3.5f * label.size()),
+            (int)(cy - 0.58f * R * sin(a) + 4), label);
+      }
+
+      glColor3f(0.65f, 0.68f, 0.72f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         (int)(cx - 16), (int)(cy - 26), "km/h");
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(cx - 19), (int)(cy - 44), "MOPPE");
+
+      // odometer digits
+      {
+        char buf[16];
+        snprintf(buf, sizeof buf, "%07.1f", m_odometer / 1000.0);
+        glColor3f(0.85f, 0.9f, 0.85f);
+        gl::draw_glut_text(GLUT_BITMAP_9_BY_15,
+                           (int)(cx - 33), (int)(cy + 52), buf);
+      }
+
+      // gauge labels: E/F on the fuel dial, BOOST below its twin
+      glColor3f(0.8f, 0.3f, 0.2f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         (int)(mx - mr * 0.95f), (int)(fy - mr * 0.28f),
+                         "E");
+      glColor3f(0.8f, 0.85f, 0.9f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                         (int)(mx + mr * 0.82f), (int)(fy - mr * 0.28f),
+                         "F");
+      glColor3f(0.65f, 0.68f, 0.72f);
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(mx - 14), (int)(fy + 24), "FUEL");
+      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_10,
+                         (int)(mx - 17), (int)(ry + 24), "BOOST");
+
+      // star counter
       glColor3f(1.0f, 0.85f, 0.2f);
       gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24, 60, 44,
                          "x " +
                          std::to_string(m_star_field.collected()));
 
-      glColor3f(0.95f, 0.97f, 1.0f);
-      gl::draw_glut_text(GLUT_BITMAP_TIMES_ROMAN_24,
-                         (int)(cx - 20), (int)(cy + 50),
-                         std::to_string((int)kmh));
-      glColor3f(0.7f, 0.75f, 0.8f);
-      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                         (int)(cx - 18), (int)(cy + 68), "km/h");
-
-      glColor3f(0.6f, 0.9f, 1.0f);
-      gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
-                         (int)(m_width - 340), (int)(m_height - 50),
-                         m_mode == M_FOOT
-                             ? "ON FOOT"
-                             : active_vehicle().rocket_charge()
-                                       >= 1.0f
-                                   ? "ROCKET READY"
-                                   : "ROCKET");
+      if (m_mode == M_FOOT)
+      {
+        glColor3f(0.6f, 0.9f, 1.0f);
+        gl::draw_glut_text(GLUT_BITMAP_HELVETICA_12,
+                           (int)(m_width - 520),
+                           (int)(m_height - 264), "ON FOOT");
+      }
     }
 
     void keyboard(unsigned char code,
@@ -2968,7 +3175,14 @@ namespace moppe
           if (m_mode == M_FOOT)
             m_walker.jump();
           else
+          {
+            const float before = active_vehicle().rocket_charge();
             active_vehicle().rocket_jump();
+            // A burn drinks a gulp of fuel
+            if (before >= 1.0f &&
+                active_vehicle().rocket_charge() < 1.0f)
+              m_fuel = std::max(0.0f, m_fuel - 6.0f);
+          }
         }
         break;
 
@@ -2993,6 +3207,7 @@ namespace moppe
 
     void input_go(float v)
     {
+      m_go_input = v;
       if (m_mode == M_FOOT)
         m_walker.set_walk(v > 0 ? v : v * 0.6f);
       else
@@ -3302,6 +3517,9 @@ namespace moppe
     float m_shake;
     float m_health;
     float m_fov_k;
+    float m_fuel;
+    double m_odometer; // meters ridden, ever
+    float m_go_input;
 
     enum Mode { M_BIKE, M_FOOT, M_CAR };
 
