@@ -5,6 +5,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/map/generate.hh>
 
+#include <algorithm>
 #include <vector>
 
 namespace moppe {
@@ -45,7 +46,11 @@ namespace mov {
     void increase_thrust (magnitude_t dv)
     { m_thrust += dv; }
 
-    void rocket_jump ();
+    // Continuous jump jets.  boost is 0..1; drive is -1..1 and tilts
+    // the jet backward/vertical/forward to match the driving stick.
+    void set_boost (float boost, float drive);
+    void replenish_boost (float amount)
+    { m_boost_charge = std::min (1.0f, m_boost_charge + amount); }
 
     void set_water_level (float level)
     { m_water_level = level; }
@@ -58,8 +63,12 @@ namespace mov {
     {
       m_position = position;
       m_velocity = Vector3D ();
-      m_rocket_time = 0;
-      m_rocket_cooldown = 0;
+      m_boost_input = 0;
+      m_boost_drive = 0;
+      m_boost_level = 0;
+      m_boost_charge = 1;
+      m_boost_recharge_delay = 0;
+      m_boost_flight = false;
       m_impact = 0;
     }
 
@@ -99,8 +108,10 @@ namespace mov {
     float pop_fall_drop ()
     { float d = m_fall_drop; m_fall_drop = 0; return d; }
 
-    // 0..1: how recharged the jump jets are
-    float rocket_charge () const;
+    // Stored energy and current output of the continuous jump jets.
+    float boost_charge () const { return m_boost_charge; }
+    float boost_level () const { return m_boost_level; }
+    float boost_drive () const { return m_boost_drive; }
 
     // Read-only pose and body state for the external renderer
     // (game/vehicle_render); the drawing half reads everything it
@@ -109,7 +120,6 @@ namespace mov {
     float susp () const { return m_susp; }
     radians_t yaw () const { return m_yaw; }
     Vector3D render_normal () const { return m_render_normal; }
-    seconds_t rocket_time () const { return m_rocket_time; }
     int body_kind () const { return m_body_kind; }
     Vector3D body_color () const { return m_body_color; }
 
@@ -156,7 +166,7 @@ namespace mov {
     float m_lean;           // roll into corners (radians)
     Vector3D m_render_normal; // smoothed up vector for drawing
     float m_susp, m_susp_v;   // visual suspension spring
-    bool m_rocket_flight;     // landing softened after a rocket
+    bool m_boost_flight;      // landing softened after using the jets
 
     const HeightMap& m_map;
 
@@ -165,8 +175,11 @@ namespace mov {
     magnitude_t m_thrust;
     magnitude_t m_mass;
 
-    seconds_t m_rocket_time;
-    seconds_t m_rocket_cooldown;
+    float m_boost_input;
+    float m_boost_drive;
+    float m_boost_level;
+    float m_boost_charge;
+    seconds_t m_boost_recharge_delay;
     float m_water_level;
 
     seconds_t m_airborne_time;

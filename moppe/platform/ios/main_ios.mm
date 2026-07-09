@@ -1,12 +1,8 @@
-// iOS platform layer: UIKit + MTKView, with touch zones synthesized
-// onto the same autorepeat-free key-edge model the game already
-// speaks.  Landscape only.
+// iOS platform layer: UIKit + MTKView with two floating analog controls.
+// Landscape only.
 //
-// Touch zones (fractions of the view, landscape):
-//   bottom-left eighth/eighth        steer left / steer right
-//   bottom-right quarter             throttle
-//   mid-right band (below rocket)    brake / reverse
-//   right edge, upper-middle         rocket jump (Space)
+//   lower-left half                  steer + throttle/brake/reverse
+//   lower-right half                 continuous jump-jet boost
 //   top-right corner                 camera cycle (Tab)
 //   top-left corner                  mount/dismount (synthesizes the
 //                                    secret 7-5-R combo; on the game
@@ -18,14 +14,27 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 
 using moppe::platform::Game;
 using moppe::platform::Key;
 using moppe::platform::Config;
+using moppe::platform::ControlState;
 
 static Game* g_game = 0;
 static Config g_config;
+
+static float
+control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
+  const CGFloat magnitude = std::abs (displacement);
+  if (magnitude <= dead_zone)
+    return 0;
+  const float value = (float) std::min
+    (1.0, (magnitude - dead_zone) / (travel - dead_zone));
+  return displacement < 0 ? -value : value;
+}
 
 // ------------------------------------------------------------------
 
@@ -33,38 +42,124 @@ static Config g_config;
 @end
 
 @implementation MoppeTouchView {
-  std::map<void*, int> m_touch_keys;   // UITouch* -> Key
-  std::map<int, int> m_key_refs;       // Key -> live touch count
+  std::map<void*, int> m_touch_keys;  // corner action touches
+  std::map<int, int> m_key_refs;
+  UITouch* m_drive_touch;
+  UITouch* m_boost_touch;
+  CGPoint m_drive_center;
+  CGPoint m_boost_center;
+  float m_steer;
+  float m_drive;
+  float m_boost;
+  CAShapeLayer* m_drive_base;
+  CAShapeLayer* m_drive_knob;
+  CAShapeLayer* m_boost_base;
+  CAShapeLayer* m_boost_knob;
+}
+
+- (CAShapeLayer*) controlLayerWithRadius: (CGFloat) radius
+				      color: (UIColor*) color
+				       fill: (CGFloat) fill {
+  CAShapeLayer* layer = [CAShapeLayer layer];
+  layer.bounds = CGRectMake (0, 0, radius * 2, radius * 2);
+  layer.path = [UIBezierPath
+	bezierPathWithOvalInRect: layer.bounds].CGPath;
+  layer.fillColor = [color colorWithAlphaComponent: fill].CGColor;
+  layer.strokeColor = [color colorWithAlphaComponent: 0.5].CGColor;
+  layer.lineWidth = 1.5;
+  layer.hidden = YES;
+  layer.zPosition = 100;
+  layer.contentsScale = [UIScreen mainScreen].scale;
+  [self.layer addSublayer: layer];
+  return layer;
 }
 
 - (instancetype) initWithFrame: (CGRect) frame {
   self = [super initWithFrame: frame device: nil];
-  self.multipleTouchEnabled = YES;
+  if (self) {
+    self.multipleTouchEnabled = YES;
+    UIColor* drive = [UIColor colorWithRed: 0.72 green: 0.86
+				      blue: 1.0 alpha: 1.0];
+    UIColor* boost = [UIColor colorWithRed: 0.25 green: 0.72
+				      blue: 1.0 alpha: 1.0];
+    m_drive_base = [self controlLayerWithRadius: 62 color: drive
+						 fill: 0.08];
+    m_drive_knob = [self controlLayerWithRadius: 22 color: drive
+						 fill: 0.28];
+    m_boost_base = [self controlLayerWithRadius: 56 color: boost
+						 fill: 0.09];
+    m_boost_knob = [self controlLayerWithRadius: 23 color: boost
+						 fill: 0.34];
+  }
   return self;
 }
 
-- (Key) zoneForPoint: (CGPoint) p {
-  // Zones live inside the safe area (notch / home indicator).
+- (BOOL) normalizedPoint: (CGPoint) p
+			x: (CGFloat*) x y: (CGFloat*) y {
   const UIEdgeInsets si = self.safeAreaInsets;
   const CGFloat w = self.bounds.size.width - si.left - si.right;
   const CGFloat h = self.bounds.size.height - si.top - si.bottom;
   if (w <= 0 || h <= 0)
+    return NO;
+  *x = (p.x - si.left) / w;
+  *y = (p.y - si.top) / h;
+  return *x >= 0 && *x <= 1 && *y >= 0 && *y <= 1;
+}
+
+- (Key) actionForPoint: (CGPoint) p {
+  CGFloat x, y;
+  if (![self normalizedPoint: p x: &x y: &y])
     return Key::Unknown;
-  const CGFloat x = (p.x - si.left) / w, y = (p.y - si.top) / h;
 
   if (y < 0.18) {
-    if (x > 0.85) return Key::Tab;      // camera cycle
-    if (x < 0.15) return Key::Seven;    // mount/dismount combo
+    if (x > 0.82) return Key::Tab;
+    if (x < 0.18) return Key::Seven;
   }
-  if (x < 0.25 && y > 0.4)
-    return (x < 0.125) ? Key::A : Key::D;
-  if (x > 0.75) {
-    if (y > 0.5) return Key::W;         // throttle
-    if (y > 0.2) return Key::Space;     // rocket
-  }
-  if (x > 0.55 && x <= 0.75 && y > 0.5)
-    return Key::S;                      // brake / reverse
   return Key::Unknown;
+}
+
+- (void) sendControls {
+  if (!g_game)
+    return;
+  ControlState state;
+  state.steer = m_steer;
+  state.drive = m_drive;
+  state.boost = m_boost;
+  g_game->controls (state);
+}
+
+- (void) showBase: (CAShapeLayer*) base knob: (CAShapeLayer*) knob
+	      center: (CGPoint) center {
+  base.position = center;
+  knob.position = center;
+  base.hidden = NO;
+  knob.hidden = NO;
+}
+
+- (void) updateDrive: (CGPoint) p {
+  const CGFloat travel = 62, dead_zone = 7;
+  const CGFloat dx = p.x - m_drive_center.x;
+  const CGFloat dy = m_drive_center.y - p.y;
+  const float raw_steer = control_axis (dx, dead_zone, travel);
+  const float magnitude = std::abs (raw_steer);
+  m_steer = (raw_steer < 0 ? -1.0f : 1.0f)
+    * magnitude * (0.35f + 0.65f * magnitude);
+  m_drive = control_axis (dy, dead_zone, travel);
+
+  const CGFloat length = std::sqrt (dx * dx + dy * dy);
+  const CGFloat scale = length > travel ? travel / length : 1;
+  m_drive_knob.position = CGPointMake
+    (m_drive_center.x + dx * scale, m_drive_center.y - dy * scale);
+}
+
+- (void) updateBoost: (CGPoint) p {
+  const CGFloat travel = 56, dead_zone = 5;
+  const CGFloat dy = m_boost_center.y - p.y;
+  m_boost = std::max (0.0f, control_axis (dy, dead_zone, travel));
+  const CGFloat shown = std::max ((CGFloat) 0,
+				 std::min (travel, dy));
+  m_boost_knob.position = CGPointMake
+    (m_boost_center.x, m_boost_center.y - shown);
 }
 
 - (void) pressKey: (Key) k down: (bool) down {
@@ -91,29 +186,86 @@ static Config g_config;
 - (void) touchesBegan: (NSSet<UITouch*>*) touches
 	    withEvent: (UIEvent*) event {
   for (UITouch* t in touches) {
-    Key k = [self zoneForPoint: [t locationInView: self]];
-    if (k == Key::Unknown)
+    const CGPoint p = [t locationInView: self];
+    Key k = [self actionForPoint: p];
+    if (k != Key::Unknown) {
+      m_touch_keys[(__bridge void*) t] = (int) k;
+      if (++m_key_refs[(int) k] == 1)
+	[self pressKey: k down: true];
       continue;
-    m_touch_keys[(__bridge void*) t] = (int) k;
-    // Reference-count per key: a second finger in the same zone
-    // must not re-press, and lifting one of two must not release.
-    if (++m_key_refs[(int) k] == 1)
-      [self pressKey: k down: true];
+    }
+
+    CGFloat x, y;
+    if (![self normalizedPoint: p x: &x y: &y] || y < 0.22)
+      continue;
+
+    [CATransaction begin];
+    [CATransaction setDisableActions: YES];
+    if (x < 0.5 && !m_drive_touch) {
+      m_drive_touch = t;
+      m_drive_center = p;
+      [self showBase: m_drive_base knob: m_drive_knob center: p];
+      [self updateDrive: p];
+    } else if (x >= 0.5 && !m_boost_touch) {
+      m_boost_touch = t;
+      m_boost_center = p;
+      [self showBase: m_boost_base knob: m_boost_knob center: p];
+      [self updateBoost: p];
+    }
+    [CATransaction commit];
+    [self sendControls];
   }
 }
 
+- (void) touchesMoved: (NSSet<UITouch*>*) touches
+	    withEvent: (UIEvent*) event {
+  [CATransaction begin];
+  [CATransaction setDisableActions: YES];
+  bool changed = false;
+  for (UITouch* t in touches) {
+    if (t == m_drive_touch) {
+      [self updateDrive: [t locationInView: self]];
+      changed = true;
+    } else if (t == m_boost_touch) {
+      [self updateBoost: [t locationInView: self]];
+      changed = true;
+    }
+  }
+  [CATransaction commit];
+  if (changed)
+    [self sendControls];
+}
+
 - (void) endTouches: (NSSet<UITouch*>*) touches {
+  bool changed = false;
+  [CATransaction begin];
+  [CATransaction setDisableActions: YES];
   for (UITouch* t in touches) {
     std::map<void*, int>::iterator it =
       m_touch_keys.find ((__bridge void*) t);
-    if (it == m_touch_keys.end ())
-      continue;
-    if (--m_key_refs[it->second] <= 0) {
-      m_key_refs.erase (it->second);
-      [self pressKey: (Key) it->second down: false];
+    if (it != m_touch_keys.end ()) {
+      if (--m_key_refs[it->second] <= 0) {
+	m_key_refs.erase (it->second);
+	[self pressKey: (Key) it->second down: false];
+      }
+      m_touch_keys.erase (it);
+    } else if (t == m_drive_touch) {
+      m_drive_touch = nil;
+      m_steer = m_drive = 0;
+      m_drive_base.hidden = YES;
+      m_drive_knob.hidden = YES;
+      changed = true;
+    } else if (t == m_boost_touch) {
+      m_boost_touch = nil;
+      m_boost = 0;
+      m_boost_base.hidden = YES;
+      m_boost_knob.hidden = YES;
+      changed = true;
     }
-    m_touch_keys.erase (it);
   }
+  [CATransaction commit];
+  if (changed)
+    [self sendControls];
 }
 
 - (void) touchesEnded: (NSSet<UITouch*>*) touches
@@ -121,8 +273,7 @@ static Config g_config;
   [self endTouches: touches];
 }
 
-// Interrupted touches (calls, Control Center) must release their
-// keys or the throttle sticks open.
+// Interrupted touches must release every axis so driving cannot stick.
 - (void) touchesCancelled: (NSSet<UITouch*>*) touches
 	        withEvent: (UIEvent*) event {
   [self endTouches: touches];

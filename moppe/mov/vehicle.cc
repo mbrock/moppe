@@ -12,8 +12,11 @@ namespace mov {
   static const float steering_rate = 1.6;
   static const float air_steering_rate = 0.9;
 
-  static const seconds_t rocket_burn_time = 1.0;
-  static const seconds_t rocket_cooldown_time = 2.2;
+  static const float boost_acceleration = 26.0f;
+  static const float boost_max_tilt = 60.0f * PI / 180.0f;
+  static const seconds_t boost_full_burn_time = 3.0f;
+  static const seconds_t boost_recharge_time = 5.0f;
+  static const seconds_t boost_recharge_pause = 0.65f;
 
   Vehicle::Vehicle (const Vector3D& position,
 		    degrees_t orientation,
@@ -33,14 +36,17 @@ namespace mov {
       m_render_normal (0, 1, 0),
       m_susp (0),
       m_susp_v (0),
-      m_rocket_flight (false),
+      m_boost_flight (false),
       m_map (map),
       m_max_thrust (max_thrust),
       m_power (power),
       m_thrust (0),
       m_mass (mass),
-      m_rocket_time (0),
-      m_rocket_cooldown (0),
+      m_boost_input (0),
+      m_boost_drive (0),
+      m_boost_level (0),
+      m_boost_charge (1),
+      m_boost_recharge_delay (0),
       m_water_level (-1000 * one_meter),
       m_airborne_time (0),
       m_impact (0),
@@ -251,6 +257,41 @@ namespace mov {
 
     const bool contact = driving_contact ();
 
+    // The trigger meters a finite reserve.  Recharging pauses after a
+    // burn and is deliberately slower in the air, so feathering the
+    // jets cannot produce permanent flight.
+    if (m_boost_input > 0.001f) {
+      if (m_boost_charge > 0) {
+	const float available =
+	  m_boost_charge * boost_full_burn_time / dt;
+	m_boost_level = std::min (m_boost_input, available);
+	m_boost_charge = std::max
+	  (0.0f, m_boost_charge
+	   - m_boost_level * dt / boost_full_burn_time);
+	m_boost_flight = true;
+      } else
+	m_boost_level = 0;
+      // An empty trigger must be released before recharge starts; this
+      // avoids a sputtering free impulse every time a sliver returns.
+      m_boost_recharge_delay = boost_recharge_pause;
+    } else {
+      m_boost_level = 0;
+      if (m_boost_recharge_delay > 0)
+	m_boost_recharge_delay -= dt;
+      else {
+	const float recharge_scale = is_grounded () ? 1.0f : 0.35f;
+	m_boost_charge = std::min
+	  (1.0f, m_boost_charge
+	   + recharge_scale * dt / boost_recharge_time);
+      }
+    }
+
+    const float tilt = boost_max_tilt * std::abs (m_boost_drive);
+    const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
+    const Vector3D boost_direction =
+      Vector3D (0, std::cos (tilt), 0)
+      + m_heading * (drive_sign * std::sin (tilt));
+
     Vector3D f;
     const float g = -9.82 * one_meter;
     const Vector3D n = ground_normal ();
@@ -267,38 +308,37 @@ namespace mov {
 	  std::min (m_max_thrust, m_power / std::max (vf, 0.5f));
 	f += m_thrust_orientation * m_thrust * force;
       }
-    if (is_grounded ())
-      f -= n * g;
+    Vector3D a (f / m_mass + drag () + Vector3D (0, g, 0)
+		+ boost_direction * (boost_acceleration * m_boost_level));
 
-    Vector3D a (f / m_mass + drag () + Vector3D (0, g, 0));
-
-    // The jump jets burn hard enough to climb against gravity and
-    // push forward at the same time
-    if (m_rocket_time > 0)
-      a += Vector3D (0, 35.0f, 0) + m_heading * 10.0f;
+    // The ground supplies only as much normal force as necessary.  A
+    // partial vertical burn therefore lightens the vehicle; it leaves
+    // the surface only once the jets overcome gravity.
+    if (is_grounded ()) {
+      const float into_ground = a.dot (n);
+      if (into_ground < 0)
+	a -= n * into_ground;
+    }
 
     m_velocity += a * dt;
 
-    // Sticking to the ground would cancel the rockets, so traction
-    // is suspended while they burn
-    if (m_rocket_time <= 0)
-      {
-	if (is_grounded ())
-	  m_velocity -= m_velocity.dot (n) * n;
-	if (contact)
-	  apply_grip (dt, n);
-      }
+    if (is_grounded ()) {
+      const float normal_speed = m_velocity.dot (n);
+      if (a.dot (n) <= 0.001f || normal_speed < 0)
+	m_velocity -= n * normal_speed;
+    }
+    if (contact) {
+      // Jets progressively unload the tires instead of turning grip
+      // off at the slightest touch.
+      const float grip_dt = dt * (1.0f - 0.8f * m_boost_level);
+      apply_grip (grip_dt, n);
+    }
 
     // Wading through the ocean is slow going
     if (m_position.y - radius < m_water_level)
       m_velocity *= std::exp (-1.4 * dt);
 
     m_position += m_velocity * dt;
-
-    if (m_rocket_time > 0)
-      m_rocket_time -= dt;
-    if (m_rocket_cooldown > 0)
-      m_rocket_cooldown -= dt;
 
     bound ();
     check_ground_collision ();
@@ -314,14 +354,15 @@ namespace mov {
 	  {
 	    m_impact = std::max (0.0f,
 				 -m_velocity.dot (ground_normal ()));
-	    // Rocket landings are partly forgiven: the jets flare
-	    // on touchdown, or so the story goes
-	    if (m_rocket_flight)
+	    // Boost-assisted landings are partly forgiven: the jets
+	    // flare on touchdown, or so the story goes.
+	    if (m_boost_flight)
 	      m_impact *= 0.75f;
 	    m_susp_v -= 0.10f * m_impact;
 	    m_fall_drop = m_fall_top - m_position.y;
 	  }
-	m_rocket_flight = false;
+	if (m_boost_level <= 0)
+	  m_boost_flight = false;
 	m_airborne_time = 0;
 	m_fall_top = m_position.y;
       }
@@ -359,24 +400,10 @@ namespace mov {
     m_susp = std::max (-0.35f, std::min (0.15f, m_susp));
   }
 
-  float
-  Vehicle::rocket_charge () const {
-    if (m_rocket_cooldown <= 0)
-      return 1;
-    return 1 - m_rocket_cooldown / rocket_cooldown_time;
-  }
-
   void
-  Vehicle::rocket_jump () {
-    if (m_rocket_cooldown > 0)
-      return;
-
-    // Fires on the ground or mid-air; the initial kick gets the
-    // bike off the deck and update() keeps the burn going
-    m_velocity += Vector3D (0, 12.0f, 0);
-    m_rocket_time = rocket_burn_time;
-    m_rocket_cooldown = rocket_cooldown_time;
-    m_rocket_flight = true;
+  Vehicle::set_boost (float boost, float drive) {
+    m_boost_input = std::max (0.0f, std::min (1.0f, boost));
+    m_boost_drive = std::max (-1.0f, std::min (1.0f, drive));
   }
 
   void

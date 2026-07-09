@@ -25,6 +25,14 @@ namespace platform {
     bool fullscreen = false;
   };
 
+  // Continuous controls used by touch/gamepad-style platforms.  The
+  // driving axes are signed (-1..1); boost is a trigger (0..1).
+  struct ControlState {
+    float steer = 0;
+    float drive = 0;
+    float boost = 0;
+  };
+
   // Implemented by the game; driven by the per-OS run loop.
   //
   // Lifecycle: setup() must return quickly -- long world generation
@@ -41,6 +49,7 @@ namespace platform {
     virtual void tick (float dt) = 0;
     virtual void render (render::Renderer& r) = 0;
     virtual void key (Key k, bool down) { (void) k; (void) down; }
+    virtual void controls (const ControlState& state) { (void) state; }
   };
 
   // Runs the platform main loop; returns the process exit code.

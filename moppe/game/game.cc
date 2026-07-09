@@ -135,7 +135,9 @@ namespace game {
 	m_game_over (false),
 	m_fuel (100.0f),
 	m_odometer (0),
+	m_turn_input (0),
 	m_go_input (0),
+	m_boost_input (0),
 	m_mode (M_BIKE),
 	m_cam_mode (CAM_CHASE),
 	m_car_exists (false),
@@ -326,13 +328,12 @@ namespace game {
       const float total_time = m_total_time;
 
       // Screenshot autopilot for headless verification: rides in a
-      // lazy arc with periodic rocket jumps.
+      // lazy arc with periodic boost-assisted leaps.
       static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
       if (demo) {
 	input_go (1.0f);
 	input_turn (0.35f * std::sin (total_time * 0.25f));
-	if (std::fmod (total_time, 11.0f) < dt)
-	  active_vehicle ().rocket_jump ();
+	input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
       }
 
       // Weather: slowly drifting cloudiness with passing fronts.
@@ -437,13 +438,14 @@ namespace game {
 		       Vector3D (0.95f, 0.85f, 0.4f));
       }
 
-      // Star pickups sparkle gold -- and top up the tank.
+      // Star pickups sparkle gold and top up fuel and boost reserves.
       {
 	const int picked = m_stars.update (vpos, m_total_time, dt);
 	if (picked > 0) {
 	  m_dust.emit (m_stars.last_pos (), Vector3D (0, 3, 0), 16,
 		       Vector3D (1.0f, 0.85f, 0.2f));
 	  m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
+	  av.replenish_boost (0.25f * picked);
 	}
       }
 
@@ -644,7 +646,7 @@ namespace game {
 	? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
       hs.fuel = m_fuel;
       hs.boost_ready01 = (m_mode == M_FOOT)
-	? 1.0f : active_vehicle ().rocket_charge ();
+	? 1.0f : active_vehicle ().boost_charge ();
       hs.health01 = m_health / 100.0f;
       hs.odometer_m = (float) m_odometer;
       hs.lives = m_lives;
@@ -730,6 +732,14 @@ namespace game {
 
     // -- input -------------------------------------------------------
 
+    void controls (const platform::ControlState& state) override {
+      if (m_game_over)
+	return;
+      input_turn (state.steer);
+      input_go (state.drive);
+      input_boost (state.boost);
+    }
+
     void key (platform::Key k, bool down) override {
       using platform::Key;
       const float factor = down ? 1.0f : 0.0f;
@@ -786,18 +796,8 @@ namespace game {
 	break;
 
       case Key::Space:
-	if (down && m_ready) {
-	  if (m_mode == M_FOOT)
-	    m_walker.jump ();
-	  else {
-	    const float before = active_vehicle ().rocket_charge ();
-	    active_vehicle ().rocket_jump ();
-	    // A burn drinks a gulp of fuel.
-	    if (before >= 1.0f &&
-		active_vehicle ().rocket_charge () < 1.0f)
-	      m_fuel = std::max (0.0f, m_fuel - 6.0f);
-	  }
-	}
+	if (m_ready)
+	  input_boost (factor);
 	break;
 
       case Key::Escape:
@@ -818,6 +818,7 @@ namespace game {
     { return m_mode == M_CAR ? m_car : m_vehicle; }
 
     void input_turn (float v) {
+      m_turn_input = v;
       if (m_mode == M_FOOT)
 	m_walker.set_turn (v);
       else
@@ -828,8 +829,20 @@ namespace game {
       m_go_input = v;
       if (m_mode == M_FOOT)
 	m_walker.set_walk (v > 0 ? v : v * 0.6f);
-      else
+      else {
 	active_vehicle ().set_thrust (v);
+	active_vehicle ().set_boost (m_boost_input, m_go_input);
+      }
+    }
+
+    void input_boost (float v) {
+      const float previous = m_boost_input;
+      m_boost_input = std::max (0.0f, std::min (1.0f, v));
+      if (m_mode == M_FOOT) {
+	if (m_boost_input > 0.1f && previous <= 0.1f)
+	  m_walker.jump ();
+      } else
+	active_vehicle ().set_boost (m_boost_input, m_go_input);
     }
 
     void toggle_mount () {
@@ -846,7 +859,10 @@ namespace game {
 			h);
 	av.set_thrust (0);
 	av.set_yaw (0);
+	av.set_boost (0, 0);
 	m_mode = M_FOOT;
+	input_turn (m_turn_input);
+	input_go (m_go_input);
 	return;
       }
 
@@ -856,6 +872,9 @@ namespace game {
 	m_vehicle.set_thrust (0);
 	m_vehicle.set_yaw (0);
 	m_mode = M_BIKE;
+	input_turn (m_turn_input);
+	input_go (m_go_input);
+	input_boost (m_boost_input);
 	return;
       }
 
@@ -865,6 +884,9 @@ namespace game {
 	m_car.set_thrust (0);
 	m_car.set_yaw (0);
 	m_mode = M_CAR;
+	input_turn (m_turn_input);
+	input_go (m_go_input);
+	input_boost (m_boost_input);
 	return;
       }
 
@@ -878,6 +900,9 @@ namespace game {
 	m_car.set_body_style (kind + 1, ccolor);
 	m_car_exists = true;
 	m_mode = M_CAR;
+	input_turn (m_turn_input);
+	input_go (m_go_input);
+	input_boost (m_boost_input);
       }
     }
 
@@ -895,9 +920,12 @@ namespace game {
 				 m_spawn_position.z));
       // Key releases were swallowed during the game-over screen;
       // don't resume with the throttle stuck open.
+      m_turn_input = 0;
       m_go_input = 0;
+      m_boost_input = 0;
       m_vehicle.set_thrust (0);
       m_vehicle.set_yaw (0);
+      m_vehicle.set_boost (0, 0);
       m_game_over = false;
     }
 
@@ -939,7 +967,9 @@ namespace game {
     bool m_game_over;
     float m_fuel;
     double m_odometer;
+    float m_turn_input;
     float m_go_input;
+    float m_boost_input;
     Mode m_mode;
     CamMode m_cam_mode;
     Vector3D m_fp_eye;

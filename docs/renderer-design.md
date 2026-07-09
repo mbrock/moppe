@@ -90,7 +90,8 @@ amended the first draft. The deltas, now integrated below, were:
 - iOS input additions: mount/dismount button, contextual "ride again"
   button on the game-over screen, quit routed through the platform layer
   (no exit() on iOS), multipleTouchEnabled = YES, touchesCancelled
-  synthesizes key releases (as does focus loss on macOS).
+  clears every analog axis and held action (focus loss similarly releases
+  keys on macOS).
 - iOS bundle: UILaunchStoryboardName (else the app letterboxes at legacy
   resolution), orientation keys; speech shim holds one static
   AVSpeechSynthesizer (a local one deallocates mid-utterance).
@@ -256,7 +257,7 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
       virtual void tick(seconds_t dt);          // fixed-ish step, ≤ 0.05 s
       virtual void render(render::Frame&);
       virtual void key(KeyCode, bool down);     // autorepeat filtered
-      virtual void touch(const TouchState&);    // iOS virtual controls
+      virtual void controls(const ControlState&); // analog steer/drive/boost
     };
     int platform::run(Game&, const Config&);    // per-OS entry
     std::string platform::asset_path(const char* rel);  // bundle-aware
@@ -266,9 +267,9 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
   `--fullscreen` flag (the old build forced fullscreen; windowed is kinder
   for development). keyDown/keyUp with isARepeat filtered; flagsChanged for
   robustness; releases synthesized on focus loss so throttle can't stick.
-- iOS: UIKit + MTKView, CADisplayLink-driven; on-screen touch controls
-  (steer zones + throttle/brake/rocket/camera buttons) mapped onto the same
-  KeyCode edges; world generation on a background queue behind a loading
+- iOS: UIKit + MTKView, CADisplayLink-driven; two floating analog controls
+  (left steer + throttle/brake, right continuous boost) plus camera and mount
+  corner actions; world generation on a background queue behind a loading
   screen (mandatory — synchronous multi-second setup would trip the watchdog).
 - Frame loop: MTKView draw callback accumulates real time and runs tick()
   gated at 1/60 with the same 0.05 s clamp (no more idle busy-spin).

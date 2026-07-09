@@ -5,9 +5,12 @@
 
 namespace moppe {
 namespace game {
-  // Copied from mov/vehicle.cc: normalizes the shrinking rocket
-  // plume against the remaining burn.
-  static const float rocket_burn_time = 1.0f;
+  static float
+  boost_nozzle_angle (const mov::Vehicle& v) {
+    // The exhaust points opposite the force: backward when boosting
+    // forward, straight down at neutral drive, and forward in reverse.
+    return 90.0f + 60.0f * v.boost_drive ();
+  }
 
   static void
   solid_box (render::DrawList& dl, float w, float h, float d) {
@@ -112,16 +115,16 @@ namespace game {
         dl.lit (true);
       }
 
-    // and of course the jump jets work in a car too
-    if (v.rocket_time () > 0)
+    // And of course the continuously gimballed jump jets work in a car.
+    if (v.boost_level () > 0.001f)
       {
-        const float k = v.rocket_time () / rocket_burn_time;
+        const float k = v.boost_level ();
         dl.lit (false);
         for (int s = -1; s <= 1; s += 2)
           {
             dl.push ();
             dl.translate (s * 0.6f, 0.25f, -0.4f);
-            dl.rotate_deg (90, 1, 0, 0);
+            dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
             dl.color (1.0f, 0.7f, 0.15f);
             dl.cone (0.16f, 2.0f * k, 8, 2);
             dl.color (0.55f, 0.75f, 1.0f);
@@ -266,13 +269,13 @@ namespace game {
     solid_box (dl, 0.16f, 0.08f, 0.1f);
     dl.pop ();
 
-    // Jump-jet nozzles under the frame, pointing at the ground.
+    // Gimballed jump-jet nozzles under the frame.
     dl.color (0.6f, 0.62f, 0.68f);
     for (int s = -1; s <= 1; s += 2)
       {
         dl.push ();
         dl.translate (s * 0.14f, -0.45f, -0.35f);
-        dl.rotate_deg (90, 1, 0, 0);
+        dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
         dl.cone (0.09f, 0.22f, 8, 2);
         dl.pop ();
       }
@@ -294,18 +297,17 @@ namespace game {
         dl.lit (true);
       }
 
-    // Rocket blast while the jump jets burn: an orange plume with
-    // a blue-white core, shrinking as the burn runs out.
-    if (v.rocket_time () > 0)
+    // Live jump-jet output: an orange plume with a blue-white core.
+    if (v.boost_level () > 0.001f)
       {
-        const float k = v.rocket_time () / rocket_burn_time;
+        const float k = v.boost_level ();
 
         dl.lit (false);
         for (int s = -1; s <= 1; s += 2)
           {
             dl.push ();
             dl.translate (s * 0.14f, -0.55f, -0.35f);
-            dl.rotate_deg (90, 1, 0, 0);
+            dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
             dl.color (1.0f, 0.7f, 0.15f);
             dl.cone (0.14f, 1.8f * k, 8, 2);
             dl.color (0.55f, 0.75f, 1.0f);

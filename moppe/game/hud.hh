@@ -18,8 +18,8 @@ namespace game {
     float speed_kmh;
     // m_fuel: 0..100.  Drives the fuel needle sweep.
     float fuel;
-    // active_vehicle().rocket_charge(): 0..1.  Drives the boost
-    // dial's blue charge arc; ignored (treated as 1.0) on foot.
+    // active_vehicle().boost_charge(): 0..1.  Drives the boost dial's
+    // blue reserve arc; ignored (treated as 1.0) on foot.
     float boost_ready01;
     // m_health / 100: 0..1.  Drives the health bar fill and color.
     float health01;

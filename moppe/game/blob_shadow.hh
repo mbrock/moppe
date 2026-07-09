@@ -9,7 +9,7 @@ namespace moppe {
 namespace game {
   // A soft dark disc projected on the ground under a vehicle: the
   // classic cheap stand-in for a real cast shadow, and it reads
-  // wonderfully -- especially mid rocket-jump, when it shrinks and
+  // wonderfully -- especially while boosting, when it shrinks and
   // fades below you.
   class BlobShadow {
   public:

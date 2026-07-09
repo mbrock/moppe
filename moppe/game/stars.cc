@@ -27,7 +27,7 @@ namespace game {
       if (ground < params.water_level + 2)
 	continue; // land only
 
-      // Every fourth star hangs high up: rocket-jump territory
+      // Every fourth star hangs high up: jump-jet territory
       bool high = (m_stars.size () % 4 == 0);
       s.pos.y = ground + (high ? 14.0f + 8.0f * u (rng) : 2.5f);
       s.phase = 360.0f * u (rng);

@@ -10,7 +10,7 @@
 namespace moppe {
 namespace game {
   // Spinning golden pickup stars scattered over the terrain; some
-  // hover high enough that only a rocket jump reaches them.
+  // hover high enough that only the jump jets reach them.
   class Stars {
   public:
     Stars ();
