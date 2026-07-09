@@ -3001,10 +3001,29 @@ namespace moppe
         gl::ScopedOrthographicMode ortho;
         gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
                                       GL_LINE_BIT);
+
+        // The ortho helper replaces the projection but leaves the
+        // camera's world-space MODELVIEW in place -- without an
+        // identity here, every HUD vertex is dragged through the
+        // camera transform and lands off-screen.  (Text always
+        // worked because draw_glut_text loads its own identity.)
+        glMatrixMode(GL_MODELVIEW);
+        gl::ScopedMatrixSaver mv;
+        glLoadIdentity();
+
         glEnable(GL_BLEND);
         // The ortho mode's y-flip reverses polygon winding, so
         // culling would silently eat every filled HUD shape
         glDisable(GL_CULL_FACE);
+
+        // The terrain leaves texture units 1-2 enabled; they would
+        // tint the dials with stray texels (the ortho helper only
+        // covers unit 0)
+        for (int unit = 3; unit >= 0; --unit)
+        {
+          glActiveTexture(GL_TEXTURE0 + unit);
+          glDisable(GL_TEXTURE_2D);
+        }
 
         // -- dashboard panel behind everything
         {
