@@ -54,9 +54,11 @@ namespace map {
     { return vertex (m_width / 2, m_height / 2); }
 
     bool in_bounds (float x, float y) const {
-      int xi = x / m_scale.x;
-      int yi = y / m_scale.z;
-      return !(xi < 0 || xi > (m_width - 2) || yi < 0 || yi > (m_height - 2));
+      // Test the floats: integer truncation would admit a strip of
+      // slightly-negative coordinates on two edges
+      return x >= 0 && y >= 0 &&
+	x <= (m_width - 2) * m_scale.x &&
+	y <= (m_height - 2) * m_scale.z;
     }
 
     float interpolated_height (float x, float y) const {

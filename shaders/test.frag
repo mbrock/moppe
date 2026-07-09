@@ -1,156 +1,113 @@
-varying vec4 diffuse, ambient;
-varying vec3 normal, lightDir;
-varying float height, intensity;
-varying float snow_coef, rock_coef, beach_coef;
-varying vec4 shadowCoord; // For shadow mapping
+// Terrain fragment shader: per-pixel lighting, slope-aware
+// grass/rock/snow/sand bands, PCF shadows, aerial-perspective fog.
+varying vec3 normal;
+varying vec3 wnormal;
+varying vec3 ecPos;
+varying float height;
+varying vec4 shadowCoord;
+
 uniform sampler2D grass, dirt, snow;
-uniform sampler2DShadow shadowMap; // Shadow map texture
-uniform vec3 fogColor; // Dynamic fog color that matches sky
-uniform float shadowStrength; // Control shadow darkness (0.0-1.0)
-uniform vec3 sunDirection; // Current sun direction for normal-based shadows
+uniform sampler2DShadow shadowMap;
+uniform vec3 fogColor;
+uniform float shadowStrength; // 0 disables shadow lookups
+uniform float seaLevel;       // sea level / heightScale
 
-// PCF shadow mapping - samples multiple points for soft shadows
-float calculateShadow() {
-  // Check if using normal-based shadows or shadow mapping
-  // If shadowStrength is close to zero, we're using normal-based shadows
-  bool useNormalBasedShadows = (shadowStrength < 0.01);
-  if (useNormalBasedShadows) {
-    // Normal-based shadowing only
-    // Use the normal direction to approximate shadows
-    float dotLight = dot(normalize(normal), normalize(sunDirection));
-    float simpleShadow = smoothstep(-0.1, 0.3, dotLight);
-    
-    // Terrain self-shadowing approximation - steep areas cast shadows
-    float steepness = 1.0 - abs(normal.y);
-    float terrainShadow = smoothstep(0.7, 0.9, steepness);
-    
-    // Combine shadowing factors
-    float shadow = min(simpleShadow, 1.0 - terrainShadow);
-    
-    // Distance-based shadow fading (softer in the distance)
-    float shadowFade = 1.0 - gl_FogFragCoord;
-    shadowFade = max(0.0, shadowFade * 2.0); // Fade shadows in the distance
-    
-    // Final shadow factor with fake shadow strength
-    return 0.0; // mix(1.0, shadow, 0.7 * shadowFade);
-  }
+float calculateShadow(vec3 n, vec3 L) {
+  if (shadowStrength < 0.01)
+    return 1.0;
 
-  // Normalize shadow coordinates
   vec3 shadowProj = shadowCoord.xyz / shadowCoord.w;
-  
-  // If outside the light's view frustum, no shadow
   if (shadowProj.x < 0.0 || shadowProj.x > 1.0 ||
       shadowProj.y < 0.0 || shadowProj.y > 1.0 ||
-      shadowProj.z < 0.0 || shadowProj.z > 1.0) {
+      shadowProj.z < 0.0 || shadowProj.z > 1.0)
     return 1.0;
-  }
-  
-  // Shadow mapping implementation
-  
-  // Depth bias to reduce shadow acne
-  float bias = 0.0005;
+
+  // Slope-scaled bias against acne on raking ground
+  float bias = 0.0006 + 0.0025 * (1.0 - max(dot(n, L), 0.0));
   shadowProj.z -= bias;
-  
-  // Basic shadow test - returns 0.0 (shadowed) or 1.0 (lit)
-  float shadow = shadow2D(shadowMap, shadowProj).r;
-  
-  // PCF filtering - sample neighboring texels for sharper shadows with soft edges
-  float texelSize = 1.0 / 4096.0; // Shadow map size (increased from 2048)
-  
-  // Sharper PCF filter for more dramatic shadows
-  // Using weighted samples for better quality
-  float result = 0.0;
-  float total_weight = 0.0;
-  float weight;
-  
-  // Center sample gets highest weight
-  weight = 0.5;
-  result += shadow2D(shadowMap, shadowProj).r * weight;
-  total_weight += weight;
-  
-  // Near samples (higher weight)
-  for (float y = -0.5; y <= 0.5; y += 1.0) {
-    for (float x = -0.5; x <= 0.5; x += 1.0) {
-      if (x == 0.0 && y == 0.0) continue; // Skip center (already sampled)
 
-      weight = 0.15;
-      vec3 offset = vec3(x * texelSize * 1.5, y * texelSize * 1.5, 0.0);
-      result += shadow2D(shadowMap, shadowProj + offset).r * weight;
-      total_weight += weight;
-    }
-  }
+  // Center + 4 diagonal taps; LINEAR depth compare gives free
+  // 2x2 PCF inside each tap
+  const float texel = 1.0 / 4096.0;
+  float shadow = 0.4 * shadow2D(shadowMap, shadowProj).r;
+  for (float y = -1.5; y <= 1.5; y += 3.0)
+    for (float x = -1.5; x <= 1.5; x += 3.0)
+      shadow += 0.15 * shadow2D(shadowMap,
+                                shadowProj
+                                + vec3(x * texel, y * texel,
+                                       0.0)).r;
+  shadow = pow(shadow, 1.3);
 
-  // Normalize by total weight
-  shadow = result / total_weight;
-  
-  // Make shadows darker and more dramatic by applying a power function
-  shadow = pow(shadow, 2.5); // Darker shadows (higher exponent = darker shadows)
-  
-  // Distance-based shadow fading with longer shadows
-  float shadowFade = 1.0 - gl_FogFragCoord;
-  shadowFade = max(0.0, shadowFade * 2.5); // Extended shadow distance
-  
-  // Final shadow factor with stronger contrast (1.0 = fully lit, 0.0 = fully shadowed)
-  return mix(1.0, shadow, min(1.0, shadowStrength * shadowFade * 1.5));
+  // Fade shadows out into the haze
+  float fade = clamp(2.5 * (1.0 - gl_FogFragCoord), 0.0, 1.0);
+  return mix(1.0, shadow, shadowStrength * fade);
 }
 
 void main () {
-  vec3 ct, cf;
-  vec4 texel, rocktexel, snowtexel;
-  float at, af, fog, density;
-  vec2 tc;
-  
-  // Calculate shadow factor
-  float shadowFactor = calculateShadow();
-  
-  // Apply shadow to diffuse component (keep ambient)
-  vec3 lit_color = intensity * diffuse.rgb * shadowFactor + ambient.rgb;
-  cf = lit_color;
-  af = diffuse.a;
+  // Aerial perspective: haze brightens and warms toward the sun
+  vec3 V = normalize(ecPos); // eye -> fragment
+  vec3 L = normalize(gl_LightSource[0].position.xyz);
+  float sunAmt = pow(max(dot(V, L), 0.0), 8.0);
+  vec3 fogC = mix(fogColor, fogColor * vec3(1.25, 1.12, 0.9),
+                  sunAmt);
 
-  tc = gl_TexCoord[0].st;
+  // Fully fogged: skip all texture and shadow work
+  float fog_factor = smoothstep(0.0, 0.9, gl_FogFragCoord);
+  if (fog_factor >= 0.995) {
+    gl_FragColor = vec4(fogC, 1.0);
+    return;
+  }
 
-  // Mipmapping + anisotropic filtering handle distance softening;
-  // single taps are far cheaper than the old 5-tap blurs
-  texel = texture2D(grass, tc);
-  rocktexel = texture2D(dirt, tc);
-  snowtexel = texture2D(snow, tc);
+  vec3 n = normalize(normal);
+  vec3 wn = normalize(wnormal);
 
-  // Break up the tiling: modulate each texture with itself sampled
-  // at a much larger scale, so no repeating lawn-grid survives
+  // Texture bands: by altitude AND slope -- rock breaks through on
+  // steep faces, snow only settles on flatter ground, sand stays
+  // off the cliffs
+  float rock_coef = max(smoothstep(0.35, 0.55, height),
+                        1.0 - smoothstep(0.68, 0.84, wn.y));
+  float snow_coef = smoothstep(0.55, 0.68, height)
+                    * smoothstep(0.58, 0.78, wn.y);
+  float beach_coef = (1.0 - smoothstep(seaLevel + 0.004,
+                                       seaLevel + 0.030, height))
+                     * smoothstep(0.55, 0.75, wn.y);
+
+  vec2 tc = gl_TexCoord[0].st;
+  vec4 texel = texture2D(grass, tc);
+  vec4 rocktexel = texture2D(dirt, tc);
+  vec4 snowtexel = texture2D(snow, tc);
+
+  // Break up the tiling: modulate each layer with itself at a much
+  // larger scale (mutually uncorrelated offsets)
   vec3 coarse = texture2D(grass, tc * 0.083 + vec2(0.37, 0.19)).rgb;
-  texel.rgb = texel.rgb * (0.55 + 1.1 * coarse);
-  rocktexel.rgb = rocktexel.rgb
-    * (0.7 + 0.6 * texture2D(dirt, tc * 0.061).r);
-  
-  // Blend textures based on height
-  texel = rock_coef * rocktexel + (1.0 - rock_coef) * texel;
-  texel = snow_coef * snowtexel + (1.0 - snow_coef) * texel;
+  texel.rgb *= (0.55 + 1.1 * coarse);
+  rocktexel.rgb *= (0.7 + 0.6 * texture2D(dirt, tc * 0.061).r);
+  snowtexel.rgb *= (0.75 + 0.5 * texture2D(snow,
+                                           tc * 0.053
+                                           + vec2(0.21, 0.43)).r);
 
-  // Sandy beaches near the waterline: warm-tinted dirt texture
+  // Altitude tint: sun-dried gold near the coast, lusher higher up
+  texel.rgb *= mix(vec3(1.06, 1.00, 0.82), vec3(0.92, 1.02, 0.90),
+                   smoothstep(0.08, 0.30, height));
+
+  texel = mix(texel, rocktexel, rock_coef);
+  texel = mix(texel, snowtexel, snow_coef);
   vec4 sandtexel = rocktexel * vec4(1.45, 1.30, 0.95, 1.0);
   texel = mix(texel, sandtexel, beach_coef);
 
-  ct = texel.rgb; at = texel.a;
-  
-  // Enhanced fog blending with smoother transition and alpha fade
-  float fog_factor = smoothstep(0.0, 0.9, gl_FogFragCoord);
-  
-  // Calculate alpha based on distance for sky blending only at the horizon edges
-  // The further away, the more transparent only at silhouette edges
-  float edge_alpha = 1.0;
-  
-  // Get edge detection factor from vertex shader
-  float edge_factor = gl_SecondaryColor.r;
-  
-  // Only apply transparency at the very edges where terrain meets sky
-  // This creates soft anti-aliased silhouettes without making mountains transparent
-  if (edge_factor > 0.7 && gl_FogFragCoord > 0.6) {
-    edge_alpha = mix(1.0, 0.3, (edge_factor - 0.7) * 3.3 * min(1.0, gl_FogFragCoord));
-  }
-  
-  gl_FragColor = vec4(mix(vec3(ct * cf), 
-                         fogColor,
-                         fog_factor), 
-                     at * af * edge_alpha);
+  // Per-pixel Lambert with real cast shadows
+  float shadowFactor = calculateShadow(n, L);
+  float intensity = max(dot(L, n), 0.0);
+  vec3 lit = intensity * shadowFactor
+                 * (gl_FrontMaterial.diffuse
+                    * gl_LightSource[0].diffuse).rgb
+             + gl_LightModel.ambient.rgb;
+
+  // Snowfields sparkle in the sun
+  vec3 h = normalize(L - V);
+  lit += snow_coef * shadowFactor
+         * pow(max(dot(n, h), 0.0), 32.0) * 0.4;
+
+  vec3 color = texel.rgb * lit;
+  gl_FragColor = vec4(mix(color, fogC, fog_factor), 1.0);
 }

@@ -75,9 +75,9 @@ namespace gfx {
                  m_width, m_height, 0, 
                  GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
     
-    // Set texture parameters
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // LINEAR on a depth-compare texture gives free hardware PCF
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     
@@ -131,9 +131,10 @@ namespace gfx {
     // Clear depth
     glClear(GL_DEPTH_BUFFER_BIT);
     
-    // Use front face culling for shadow map pass
-    // This helps reduce shadow acne caused by self-shadowing
-    glCullFace(GL_FRONT);
+    // The terrain is an open sheet: front-face culling would cull
+    // the very faces we need, leaving an empty depth map.  Polygon
+    // offset below handles acne instead.
+    glDisable(GL_CULL_FACE);
     
     // Disable color writes
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -152,6 +153,7 @@ namespace gfx {
     // Restore normal rendering
     glDisable(GL_POLYGON_OFFSET_FILL);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
     
     // Unbind FBO
@@ -184,55 +186,32 @@ namespace gfx {
   }
   
   void ShadowMap::update_light_position(const Vector3D& light_dir, const Vector3D& center, float radius) {
-    // Save current matrices
-    glPushMatrix();
+    // Build proj * view (and the biased version) on the GL matrix
+    // stack so column-major multiplication order is guaranteed
+    // correct -- no hand-rolled matrix math.
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    
-    // Set up light's view
-    glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    
-    // Orthographic projection from light's point of view
-    glOrtho(-radius, radius, -radius, radius, -radius * 3, radius * 3);
-    
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    
-    // Create light position that's farther away to produce longer shadows
+
+    // Ortho box big enough for the whole scene: the eye sits
+    // radius*3.5 back, so the scene spans [2.5r, 4.5r] in depth
+    glOrtho(-radius, radius, -radius, radius,
+            radius * 0.5, radius * 6.0);
+
     Vector3D light_pos = center - light_dir * (radius * 3.5);
-    
-    // Look from light position toward the scene center with slight offset for better shadowing
-    // This helps create longer and more dramatic shadows
-    Vector3D center_offset = center + Vector3D(0.0f, radius * 0.05f, 0.0f);
     gluLookAt(light_pos.x, light_pos.y, light_pos.z,
-             center_offset.x, center_offset.y, center_offset.z,
-             0.0f, 1.0f, 0.0f);
-    
-    // Get the light's view-projection matrix
-    GLfloat proj_matrix[16];
-    GLfloat model_matrix[16];
-    
-    glGetFloatv(GL_PROJECTION_MATRIX, proj_matrix);
-    glGetFloatv(GL_MODELVIEW_MATRIX, model_matrix);
-    
-    // Multiply projection * modelview to get the complete light transform
-    // Note: This is a simplified matrix multiplication for 4x4 matrices
-    for (int i = 0; i < 4; i++) {
-      for (int j = 0; j < 4; j++) {
-        m_light_matrix[i*4+j] = 0.0f;
-        for (int k = 0; k < 4; k++) {
-          m_light_matrix[i*4+j] += proj_matrix[i*4+k] * model_matrix[k*4+j];
-        }
-      }
-    }
-    
-    // Restore matrices
-    glMatrixMode(GL_PROJECTION);
+              center.x, center.y, center.z,
+              0.0f, 1.0f, 0.0f);
+
+    glGetFloatv(GL_PROJECTION_MATRIX, m_light_matrix_ndc);
+
+    // Fold in the bias for the [0,1] lookup path
+    glLoadMatrixf(m_bias_matrix);
+    glMultMatrixf(m_light_matrix_ndc);
+    glGetFloatv(GL_PROJECTION_MATRIX, m_light_matrix);
+
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
-    glPopMatrix();
   }
 }
 }

@@ -16,6 +16,10 @@ void main () {
 
   p.y += 1.2 * sin (a1) + 1.0 * sin (a2) + 1.8 * sin (a3);
 
+  // Gerstner-style horizontal displacement sharpens the crests
+  p.x -= 0.8 * 1.2 * cos (a1) + 0.5 * 1.8 * cos (a3);
+  p.z -= 0.8 * 1.0 * cos (a2) + 0.5 * 1.8 * cos (a3);
+
   // Analytic surface normal from the wave derivatives
   float dx = 1.2 * 0.020 * cos (a1) + 1.8 * 0.011 * cos (a3);
   float dz = 1.0 * 0.023 * cos (a2) + 1.8 * 0.011 * cos (a3);

@@ -1,18 +1,8 @@
-// Shadow mapping vertex shader
-varying vec4 shadowCoord;
+// Shadow depth pass: rasterize the terrain from the light's view.
+// The terrain's object space is world space, so the light's
+// projection*view matrix is the whole transform.
 uniform mat4 lightMatrix;
 
 void main() {
-    // Calculate vertex position
-    vec4 position = ftransform();
-    
-    // Transform vertex to light space for shadow lookup
-    shadowCoord = lightMatrix * gl_ModelViewMatrix * gl_Vertex;
-    
-    // Pass through normal and texcoord
-    gl_TexCoord[0] = gl_MultiTexCoord0;
-    gl_FrontColor = gl_Color;
-    
-    // Output position
-    gl_Position = position;
+    gl_Position = lightMatrix * vec4(gl_Vertex.xyz, 1.0);
 }

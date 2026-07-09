@@ -29,8 +29,15 @@ namespace mov {
 		 std::cos (degrees_to_radians (orientation))),
       m_thrust_orientation (m_heading),
       m_yaw (0),
+      m_yaw_target (0),
+      m_lean (0),
+      m_render_normal (0, 1, 0),
+      m_susp (0),
+      m_susp_v (0),
+      m_rocket_flight (false),
       m_map (map),
       m_max_thrust (max_thrust),
+      m_thrust (0),
       m_mass (mass),
       m_rocket_time (0),
       m_rocket_cooldown (0),
@@ -86,7 +93,21 @@ namespace mov {
 
   Vector3D
   Vehicle::drag () const {
-    return m_velocity * -0.05;
+    // Linear rolling drag plus quadratic air drag: terminal speed
+    // lands near the speedometer's 300 km/h, and fall speeds stay
+    // survivable
+    return m_velocity * -(0.05f + 0.0035f * m_velocity.length ());
+  }
+
+  // Grounded, or close enough that a micro-hop over a bump should
+  // not cut the throttle -- keeps rough ground feeling planted
+  // while real jumps still feel like jumps
+  bool
+  Vehicle::driving_contact () const {
+    if (is_grounded ())
+      return true;
+    return m_airborne_time < 0.12f &&
+      m_position.y - ground_height () < radius + 0.6f;
   }
 
   // The obstacle box whose roof is the effective ground under the
@@ -164,9 +185,15 @@ namespace mov {
     if (std::abs (m_yaw) < 0.001f)
       return;
 
-    if (is_grounded ())
-      m_heading = Quaternion::rotate (m_heading, ground_normal (),
-				      -m_yaw * steering_rate * dt);
+    if (driving_contact ())
+      {
+	// Full lock turns slower at speed: stable at 250 km/h,
+	// nimble at walking pace
+	const float vf = std::abs (m_velocity.dot (m_heading));
+	const float rate = steering_rate / (1.0f + vf / 70.0f);
+	m_heading = Quaternion::rotate (m_heading, ground_normal (),
+					-m_yaw * rate * dt);
+      }
     else
       // Mid-air attitude control: swing the bike around, keep the
       // momentum -- landing sideways starts a drift
@@ -175,8 +202,9 @@ namespace mov {
   }
 
   // Tire grip pulls the velocity into line with where the bike
-  // points.  Braking hard or flicking the bars at speed breaks
-  // traction, and the bike slides -- that's a drift.
+  // points.  Grip fades continuously with steering input and
+  // speed, braking breaks traction outright, and an ongoing slide
+  // keeps breathing instead of snapping straight.
   void
   Vehicle::apply_grip (seconds_t dt, const Vector3D& n) {
     Vector3D fwd = m_heading - n * m_heading.dot (n);
@@ -184,32 +212,50 @@ namespace mov {
       return;
     fwd.normalize ();
 
+    // Split velocity into forward, surface-normal, and in-plane
+    // lateral parts; only the lateral part is gripped, so a launch
+    // (normal component) survives the coyote-contact window
     const float vf = m_velocity.dot (fwd);
-    const Vector3D lat = m_velocity - fwd * vf;
+    const Vector3D vn = n * m_velocity.dot (n);
+    const Vector3D lat = m_velocity - fwd * vf - vn;
 
-    float grip = 3.0f;
-    if (std::abs (m_yaw) > 0.01f && std::abs (vf) > 20.0f)
-      grip = 1.1f;
+    const float steer_amt =
+      std::min (1.0f, std::abs (m_yaw) / 0.8f);
+    const float speed_amt =
+      std::min (1.0f, std::max (0.0f, (std::abs (vf) - 15.0f) / 10.0f));
+
+    float grip = 3.0f - 1.9f * steer_amt * speed_amt;
+
     if (m_thrust < -0.1f && vf > 3.0f)
-      grip = 0.45f;
+      grip = std::min (grip, 0.45f); // brake-slide
+    if (lat.length2 () > 16.0f)
+      grip = std::min (grip, 1.4f);  // mid-drift hysteresis
 
-    m_velocity = fwd * vf + lat * std::exp (-grip * dt);
+    m_velocity = fwd * vf + vn + lat * std::exp (-grip * dt);
   }
 
   void
   Vehicle::update (seconds_t dt) {
+    // Steering input ramps in rather than snapping: smooth onset
+    // for the heading, the grip model, and the fork visual at once
+    m_yaw += (m_yaw_target - m_yaw)
+      * (1.0f - std::exp (-9.0f * dt));
+
     steer (dt);
     calculate_orientation ();
+
+    const bool contact = driving_contact ();
 
     Vector3D f;
     const float g = -9.82 * one_meter;
     const Vector3D n = ground_normal ();
 
+    // Thrust stays on through micro-hops (coyote contact); the
+    // normal force only applies with real ground under the wheels
+    if (contact)
+      f += m_thrust_orientation * m_thrust * m_max_thrust;
     if (is_grounded ())
-      {
-	f += m_thrust_orientation * m_thrust * m_max_thrust;
-	f -= n * g;
-      }
+      f -= n * g;
 
     Vector3D a (f / m_mass + drag () + Vector3D (0, g, 0));
 
@@ -222,10 +268,12 @@ namespace mov {
 
     // Sticking to the ground would cancel the rockets, so traction
     // is suspended while they burn
-    if (is_grounded () && m_rocket_time <= 0)
+    if (m_rocket_time <= 0)
       {
-	m_velocity -= m_velocity.dot (n) * n;
-	apply_grip (dt, n);
+	if (is_grounded ())
+	  m_velocity -= m_velocity.dot (n) * n;
+	if (contact)
+	  apply_grip (dt, n);
       }
 
     // Wading through the ocean is slow going
@@ -250,12 +298,47 @@ namespace mov {
     if (is_grounded ())
       {
 	if (m_airborne_time > 0.25f)
-	  m_impact = std::max (0.0f,
-			       -m_velocity.dot (ground_normal ()));
+	  {
+	    m_impact = std::max (0.0f,
+				 -m_velocity.dot (ground_normal ()));
+	    // Rocket landings are half-forgiven: the jets flare on
+	    // touchdown, or so the story goes
+	    if (m_rocket_flight)
+	      m_impact *= 0.6f;
+	    m_susp_v -= 0.10f * m_impact;
+	  }
+	m_rocket_flight = false;
 	m_airborne_time = 0;
       }
     else
       m_airborne_time += dt;
+
+    // Lean into corners: balance the turn against gravity
+    {
+      float target = 0;
+      if (driving_contact ())
+	{
+	  const float vf = m_velocity.dot (m_heading);
+	  const float rate =
+	    steering_rate / (1.0f + std::abs (vf) / 70.0f);
+	  target = std::atan2 (vf * (-m_yaw * rate), 9.82f);
+	  target = std::max (-0.7f, std::min (0.7f, target));
+	}
+      m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt));
+    }
+
+    // Smoothed up vector for drawing: the raw bilinear normal
+    // jitters cell-to-cell at speed
+    m_render_normal =
+      linear_vector_interpolate (m_render_normal, ground_normal (),
+				 1.0f - std::exp (-10.0f * dt));
+    if (m_render_normal.length2 () > 0.000001f)
+      m_render_normal.normalize ();
+
+    // Visual suspension spring: kicked by landings, settles fast
+    m_susp_v += (-70.0f * m_susp - 9.0f * m_susp_v) * dt;
+    m_susp += m_susp_v * dt;
+    m_susp = std::max (-0.35f, std::min (0.15f, m_susp));
   }
 
   float
@@ -364,6 +447,7 @@ namespace mov {
     m_velocity += Vector3D (0, 12.0f, 0);
     m_rocket_time = rocket_burn_time;
     m_rocket_cooldown = rocket_cooldown_time;
+    m_rocket_flight = true;
   }
 
   void
@@ -428,11 +512,13 @@ namespace mov {
 	glDisable (GL_TEXTURE_2D);
       }
 
-    glTranslatef (m_position.x, m_position.y, m_position.z);
+    glTranslatef (m_position.x, m_position.y + m_susp,
+		  m_position.z);
 
-    // Orient the bike along its heading, upright on the terrain.
+    // Orient the bike along its heading, upright on the smoothed
+    // terrain normal (the raw one jitters at speed)
     Vector3D fwd   = m_heading.normalized ();
-    Vector3D right = ground_normal ().cross (fwd).normalized ();
+    Vector3D right = m_render_normal.cross (fwd).normalized ();
     Vector3D up    = fwd.cross (right);
 
     const float frame[16] = { right.x, right.y, right.z, 0,
@@ -440,6 +526,9 @@ namespace mov {
 			      fwd.x,   fwd.y,   fwd.z,   0,
 			      0,       0,       0,       1 };
     glMultMatrixf (frame);
+
+    // Lean into the corner
+    glRotatef (m_lean * 57.2958f, 0, 0, 1);
 
     // Chunkier bike, easier to see from the chase camera; lifted so
     // the scaled wheels still touch the ground

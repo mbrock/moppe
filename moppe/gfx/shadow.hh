@@ -17,7 +17,12 @@ namespace gfx {
     void bind_shadow_map();
     void unbind_shadow_map();
     
+    // Bias * projection * view: for shadow lookups in [0,1]
     const GLfloat* get_light_matrix() const { return m_light_matrix; }
+    // Projection * view only: for rasterizing the depth pass
+    const GLfloat* get_light_matrix_ndc() const
+    { return m_light_matrix_ndc; }
+
     void update_light_position(const Vector3D& light_dir, const Vector3D& center, float radius);
     
     // Check if shadow mapping is available/valid
@@ -30,8 +35,9 @@ namespace gfx {
     GLuint m_fbo;           // Framebuffer for shadow map
     GLuint m_depth_texture; // Shadow map depth texture
     
-    GLfloat m_light_matrix[16]; // Light's view-projection matrix
-    GLfloat m_bias_matrix[16];  // Bias matrix for texture coords
+    GLfloat m_light_matrix[16];     // bias * proj * view
+    GLfloat m_light_matrix_ndc[16]; // proj * view
+    GLfloat m_bias_matrix[16];      // [-1,1] -> [0,1]
   };
 }
 }

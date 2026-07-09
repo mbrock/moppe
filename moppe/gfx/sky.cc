@@ -11,7 +11,10 @@ namespace gfx {
       m_time(0.0f),
       m_sun_height(0.8f),
       m_cloudiness(0.5f),
-      m_use_shader(true)
+      m_sun_dir(0, 1, 0),
+      m_fog_color(0.5, 0.6, 0.8),
+      m_use_shader(true),
+      m_sphere_list(0)
   { }
 
   void
@@ -57,66 +60,73 @@ namespace gfx {
       std::cerr << "Falling back to texture-based sky" << std::endl;
       m_use_shader = false;
     }
+
+    // The sphere geometry is static (all animation is uniform-
+    // driven), so compile it once: one strip per stack ring
+    const float radius = 4000.0f;
+    const int slices = 24, stacks = 24;
+
+    m_sphere_list = glGenLists(1);
+    glNewList(m_sphere_list, GL_COMPILE);
+    for (int i = 0; i < stacks; ++i) {
+      const float a0 = M_PI * (float) i / stacks - M_PI / 2;
+      const float a1 = M_PI * (float) (i + 1) / stacks - M_PI / 2;
+      const float y0 = radius * sin(a0), r0 = radius * cos(a0);
+      const float y1 = radius * sin(a1), r1 = radius * cos(a1);
+
+      glBegin(GL_TRIANGLE_STRIP);
+      for (int j = 0; j <= slices; ++j) {
+        const float b = 2 * M_PI * (float) j / slices;
+        const float cb = cos(b), sb = sin(b);
+        glVertex3f(r1 * cb, y1, r1 * sb);
+        glVertex3f(r0 * cb, y0, r0 * sb);
+      }
+      glEnd();
+    }
+    glEndList();
   }
 
   void
   Sky::render () const {
-    gl::ScopedAttribSaver attribs(GL_ENABLE_BIT);
-    glDisable(GL_DEPTH_TEST);
+    // Drawn AFTER the terrain with depth testing on (writes off):
+    // terrain depth kills the hidden sky fragments, so the pricey
+    // cloud shader only runs on visible sky pixels.
+    gl::ScopedAttribSaver attribs(GL_ENABLE_BIT |
+                                  GL_DEPTH_BUFFER_BIT);
     glDisable(GL_CULL_FACE);
-    
+    glDepthMask(GL_FALSE);
+    // The sky shader forces depth to the far plane (exactly 1.0 in
+    // fp32), so LEQUAL is required for it to pass where the buffer
+    // still holds the clear value
+    glDepthFunc(GL_LEQUAL);
+
     if (m_use_shader) {
       // Use procedural shader
       m_program.use();
-      
+
       // Set uniforms
       int timeLoc = glGetUniformLocationARB(m_program.id(), "time");
       if (timeLoc != -1) glUniform1fARB(timeLoc, m_time);
-      
+
       int sunHeightLoc = glGetUniformLocationARB(m_program.id(), "sunHeight");
       if (sunHeightLoc != -1) glUniform1fARB(sunHeightLoc, m_sun_height);
-      
+
       int cloudinessLoc = glGetUniformLocationARB(m_program.id(), "cloudiness");
       if (cloudinessLoc != -1) glUniform1fARB(cloudinessLoc, m_cloudiness);
-      
-      // Draw a full sphere that completely surrounds the scene
-      // Using a sphere instead of dome to ensure complete coverage
-      float radius = 4000.0f;  // Much larger radius to encompass terrain at all elevations
-      int slices = 32;         // Horizontal resolution
-      int stacks = 32;         // Vertical resolution (full sphere)
-      
-      glBegin(GL_TRIANGLE_STRIP);
-      
-      // Generate a full sphere (not just hemisphere)
-      for (int i = 0; i <= stacks; ++i) {
-          // Full sphere goes from -90 to +90 degrees
-          float stackAngle = (float)(M_PI) * ((float)i / (float)stacks) - (float)(M_PI / 2);
-          float y = radius * sin(stackAngle); // Up vector (-radius to +radius)
-          float ringRadius = radius * cos(stackAngle); // Circle radius at this height
-          
-          for (int j = 0; j <= slices; ++j) {
-              float sliceAngle = (float)(2 * M_PI) * ((float)j / (float)slices);
-              float x = ringRadius * cos(sliceAngle);
-              float z = ringRadius * sin(sliceAngle);
-              
-              // Generate vertex
-              glVertex3f(x, y, z);
-              
-              // Generate next vertex in strip if not at last ring
-              if (i < stacks) {
-                  float nextStackAngle = (float)(M_PI) * ((float)(i + 1) / (float)stacks) - (float)(M_PI / 2);
-                  float nextY = radius * sin(nextStackAngle);
-                  float nextRingRadius = radius * cos(nextStackAngle);
-                  float nextX = nextRingRadius * cos(sliceAngle);
-                  float nextZ = nextRingRadius * sin(sliceAngle);
-                  
-                  glVertex3f(nextX, nextY, nextZ);
-              }
-          }
-      }
-      
-      glEnd();
-      
+
+      int sunDirLoc = glGetUniformLocationARB(m_program.id(), "sunDir");
+      if (sunDirLoc != -1)
+        glUniform3fARB(sunDirLoc, m_sun_dir.x, m_sun_dir.y,
+                       m_sun_dir.z);
+
+      int fogColorLoc = glGetUniformLocationARB(m_program.id(), "fogColor");
+      if (fogColorLoc != -1)
+        glUniform3fARB(fogColorLoc, m_fog_color.x, m_fog_color.y,
+                       m_fog_color.z);
+
+      if (m_sphere_list != 0)
+        glCallList(m_sphere_list);
+
       // Unuse shader
       m_program.unuse();
     } else {

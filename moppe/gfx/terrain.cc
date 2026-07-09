@@ -2,6 +2,8 @@
 #include <moppe/app/gl.hh>
 #include <moppe/gfx/terrain.hh>
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 
 namespace moppe {
@@ -12,7 +14,6 @@ namespace gfx {
     : m_map (map),
       m_vbo_vertices (0),
       m_vbo_normals (0),
-      m_vbo_texcoords (0),
       m_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/test.vert"),
       m_fragment_shader (GL_FRAGMENT_SHADER_ARB, "shaders/test.frag"),
       m_shadow_vertex_shader (GL_VERTEX_SHADER_ARB, "shaders/shadow.vert"),
@@ -36,7 +37,6 @@ namespace gfx {
   TerrainRenderer::regenerate () {
     m_normals.clear ();
     m_vertices.clear ();
-    m_texcoords.clear ();
 
     int width      = m_map.width ();
     int height     = m_map.height ();
@@ -44,7 +44,8 @@ namespace gfx {
     m_vertices.reserve ((height - 2) * (width - 1));
     m_normals.reserve ((height - 2) * (width - 1));
 
-    const float tex_scale = 0.5 * one_meter;
+    // Texture coordinates are derived from position in the vertex
+    // shader (uniform texScale), so no texcoord stream is stored.
 
     for (int y = 0; y < height - 2; ++y)
       for (int x = 0; x < width - 1; ++x)
@@ -53,13 +54,6 @@ namespace gfx {
 	  m_vertices.add (m_map.vertex (x, y));
 	  m_normals.add (m_map.normal (x, y + 1));
 	  m_vertices.add (m_map.vertex (x, y + 1));
-
-	  m_texcoords.add (Vector3D (x * tex_scale,
-				     y * tex_scale,
-				     0.0));
-	  m_texcoords.add (Vector3D (x * tex_scale,
-				     (y + 1) * tex_scale,
-				     0.0));
 	}
 
     // Re-upload if the GL buffers already exist (i.e. not the
@@ -74,7 +68,6 @@ namespace gfx {
       {
 	glGenBuffers (1, &m_vbo_vertices);
 	glGenBuffers (1, &m_vbo_normals);
-	glGenBuffers (1, &m_vbo_texcoords);
       }
 
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices);
@@ -83,9 +76,6 @@ namespace gfx {
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals);
     glBufferData (GL_ARRAY_BUFFER, m_normals.size () * sizeof (float),
 		  m_normals.address (0), GL_STATIC_DRAW);
-    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_texcoords);
-    glBufferData (GL_ARRAY_BUFFER, m_texcoords.size () * sizeof (float),
-		  m_texcoords.address (0), GL_STATIC_DRAW);
     glBindBuffer (GL_ARRAY_BUFFER, 0);
 
     const int width  = m_map.width ();
@@ -98,29 +88,125 @@ namespace gfx {
 	m_strip_first.push_back (2 * y * (width - 1));
 	m_strip_count.push_back (2 * (width - 1));
       }
+
+    // Build culling chunks: ~128x128-cell blocks with bounding
+    // spheres.  Adjacent chunks share a boundary column so strips
+    // remain seamless.
+    const int CHUNK = 128;
+    const int pairs = width - 1;   // vertex pairs per strip row
+    const int strips = height - 2; // strip rows
+    const Vector3D scale = m_map.scale ();
+
+    m_chunks.clear ();
+    for (int r0 = 0; r0 < strips; r0 += CHUNK)
+      {
+	const int r1 = std::min (r0 + CHUNK - 1, strips - 1);
+	for (int p0 = 0; p0 + 1 < pairs; p0 += CHUNK)
+	  {
+	    const int p1 = std::min (p0 + CHUNK, pairs - 1);
+
+	    float ymin = 1e9f, ymax = -1e9f;
+	    for (int y = r0; y <= r1 + 1; ++y)
+	      for (int x = p0; x <= p1; ++x)
+		{
+		  const float h = m_map.get (x, y);
+		  ymin = std::min (ymin, h);
+		  ymax = std::max (ymax, h);
+		}
+	    ymin *= scale.y;
+	    ymax *= scale.y;
+
+	    Chunk c;
+	    c.row0 = r0;
+	    c.row1 = r1;
+	    c.pair0 = p0;
+	    c.pair1 = p1;
+
+	    const float x0 = p0 * scale.x, x1 = p1 * scale.x;
+	    const float z0 = r0 * scale.z, z1 = (r1 + 1) * scale.z;
+	    c.center = Vector3D ((x0 + x1) / 2, (ymin + ymax) / 2,
+				 (z0 + z1) / 2);
+	    const float hx = (x1 - x0) / 2, hy = (ymax - ymin) / 2,
+	                hz = (z1 - z0) / 2;
+	    c.radius = std::sqrt (hx * hx + hy * hy + hz * hz);
+
+	    m_chunks.push_back (c);
+	  }
+      }
+
+    m_draw_first.reserve (m_strip_first.size () * 18);
+    m_draw_count.reserve (m_strip_first.size () * 18);
   }
 
   void
-  TerrainRenderer::draw_strips () {
+  TerrainRenderer::bind_arrays () {
     glEnableClientState (GL_VERTEX_ARRAY);
     glEnableClientState (GL_NORMAL_ARRAY);
-    glEnableClientState (GL_TEXTURE_COORD_ARRAY);
 
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_vertices);
     glVertexPointer (3, GL_FLOAT, 0, 0);
     glBindBuffer (GL_ARRAY_BUFFER, m_vbo_normals);
     glNormalPointer (GL_FLOAT, 0, 0);
-    glBindBuffer (GL_ARRAY_BUFFER, m_vbo_texcoords);
-    glTexCoordPointer (3, GL_FLOAT, 0, 0);
     glBindBuffer (GL_ARRAY_BUFFER, 0);
+  }
 
+  void
+  TerrainRenderer::unbind_arrays () {
+    glDisableClientState (GL_VERTEX_ARRAY);
+    glDisableClientState (GL_NORMAL_ARRAY);
+  }
+
+  void
+  TerrainRenderer::draw_all_strips () {
+    bind_arrays ();
     glMultiDrawArrays (GL_TRIANGLE_STRIP,
 		       &m_strip_first[0], &m_strip_count[0],
 		       (GLsizei) m_strip_first.size ());
+    unbind_arrays ();
+  }
 
-    glDisableClientState (GL_VERTEX_ARRAY);
-    glDisableClientState (GL_NORMAL_ARRAY);
-    glDisableClientState (GL_TEXTURE_COORD_ARRAY);
+  void
+  TerrainRenderer::draw_culled_strips (const Vector3D& cam,
+				       const Vector3D& view_dir,
+				       float max_dist) {
+    const int pairs = m_map.width () - 1;
+
+    m_draw_first.clear ();
+    m_draw_count.clear ();
+
+    for (size_t i = 0; i < m_chunks.size (); ++i)
+      {
+	const Chunk& c = m_chunks[i];
+	const Vector3D d = c.center - cam;
+	const float dist2 = d.length2 ();
+
+	// too far: the haze has swallowed it
+	const float reach = max_dist + c.radius;
+	if (dist2 > reach * reach)
+	  continue;
+
+	// entirely behind the camera plane (conservative: keeps
+	// anything whose sphere pokes past the eye)
+	if (dist2 > c.radius * c.radius &&
+	    d.dot (view_dir) < -c.radius)
+	  continue;
+
+	const GLsizei count = 2 * (c.pair1 - c.pair0 + 1);
+	for (int row = c.row0; row <= c.row1; ++row)
+	  {
+	    m_draw_first.push_back (2 * (row * pairs + c.pair0));
+	    m_draw_count.push_back (count);
+	  }
+      }
+
+    if (m_draw_first.empty ())
+      return;
+
+    bind_arrays ();
+    glMultiDrawArrays (GL_TRIANGLE_STRIP,
+		       &m_draw_first[0], &m_draw_count[0],
+		       (GLsizei) m_draw_first.size ());
+    unbind_arrays ();
   }
 
   void
@@ -192,6 +278,14 @@ namespace gfx {
     Vector3D defaultFogColor(0.5, 0.6, 0.8);
     set_fog_color(defaultFogColor);
 
+    // Constant uniforms: texture units never change
+    m_shader_program.use();
+    m_shader_program.set_int("grass", 0);
+    m_shader_program.set_int("dirt", 1);
+    m_shader_program.set_int("snow", 2);
+    m_shader_program.set_int("shadowMap", 3);
+    m_shader_program.unuse();
+
     // Push the terrain geometry to the GPU
     upload_buffers();
   }
@@ -212,6 +306,18 @@ namespace gfx {
       m_shadow_map->begin_shadow_pass();
       render_for_shadow_map();
       m_shadow_map->end_shadow_pass();
+
+      // The sun is fixed, so the lookup matrix and strength are
+      // constants from here on: push them to the terrain shader once
+      m_shader_program.use();
+      m_shader_program.set_matrix("lightMatrix",
+                                  m_shadow_map->get_light_matrix());
+      m_shader_program.set_float("shadowStrength", m_shadow_strength);
+      m_shader_program.unuse();
+    } else {
+      m_shader_program.use();
+      m_shader_program.set_float("shadowStrength", 0.0f);
+      m_shader_program.unuse();
     }
   }
   
@@ -223,91 +329,57 @@ namespace gfx {
     }
     
     gl::ScopedMatrixSaver matrix;
-    
+
     // Use shadow program for depth pass
     m_shadow_program.use();
-    
-    // Pass light matrix to the shader
-    m_shadow_program.set_matrix("lightMatrix", m_shadow_map->get_light_matrix());
+
+    // Rasterize from the light: the un-biased NDC matrix
+    m_shadow_program.set_matrix("lightMatrix",
+                                m_shadow_map->get_light_matrix_ndc());
 
     translate();
-    draw_strips();
+    draw_all_strips();
 
     m_shadow_program.unuse();
   }
 
   void
-  TerrainRenderer::render () {
+  TerrainRenderer::render (const Vector3D& cam,
+			   const Vector3D& view_dir,
+			   float max_dist) {
     gl::ScopedMatrixSaver matrix;
+    gl::ScopedAttribSaver attribs (GL_ENABLE_BIT);
 
-    // Enable lighting for rounded appearance
     glEnable(GL_LIGHTING);
-    glEnable(GL_NORMALIZE); // Normalize normals for better lighting
-    
+
+    // Terrain is opaque: skipping blending saves framebuffer
+    // read-modify-write across most of the screen
+    glDisable(GL_BLEND);
+
     m_shader_program.use();
 
-    // Bind terrain textures
-    m_shader_program.set_int("grass", 0);
-    m_shader_program.set_int("dirt", 1);
-    m_shader_program.set_int("snow", 2);
+    // Bind terrain textures (unit 0 is reused by post effects, so
+    // rebinding each frame is required)
     m_tex_grass.bind(0);
     m_tex_dirt.bind(1);
     m_tex_snow.bind(2);
-    
-    // Check if shadow mapping is available
-    if (m_shadow_map && m_shadow_map->is_valid()) {
-      // Bind shadow map texture
+    if (m_shadow_map && m_shadow_map->is_valid())
       m_shadow_map->bind_shadow_map();
-      m_shader_program.set_int("shadowMap", 3); // Shadow map on texture unit 3
-      
-      // Pass light matrix to the shader
-      m_shader_program.set_matrix("lightMatrix", m_shadow_map->get_light_matrix());
-      
-      // Pass shadow strength to the shader
-      m_shader_program.set_float("shadowStrength", m_shadow_strength);
-    } else {
-      // Set shadow strength to 0 to use normal-based shadows in the shader
-      m_shader_program.set_float("shadowStrength", 0.0f);
-    }
 
     translate();
 
-    // Material settings for better light reflections
-    // The actual color values will be set by the dynamic lighting system
-    // These are just base properties for the terrain
-    static const float specular[] = { 0.6f, 0.6f, 0.6f, 1.0f };
+    // The shader reads these material/light products per pixel
     static const float diffuse[] = { 0.9f, 0.9f, 0.9f, 1.0f };
     static const float ambient[] = { 0.4f, 0.4f, 0.4f, 0.0f };
-    
     glMaterialfv(GL_FRONT, GL_AMBIENT, ambient);
     glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuse);
-    glMaterialfv(GL_FRONT, GL_SPECULAR, specular);
-    glMaterialf(GL_FRONT, GL_SHININESS, 60.0f);
-    
-    // Enable two-sided lighting for better results on steep terrain
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE);
 
-    draw_strips();
+    draw_culled_strips(cam, view_dir, max_dist);
 
-    // Disable two-sided lighting to avoid affecting other objects
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
-    
-    // Unbind shadow map if it's being used
-    if (m_shadow_map && m_shadow_map->is_valid()) {
+    if (m_shadow_map && m_shadow_map->is_valid())
       m_shadow_map->unbind_shadow_map();
-    }
-    
-    m_shader_program.unuse();
 
-//     glLineWidth (1);
-//     glBegin (GL_LINES);
-//     for (int y = 0; y < height - 1; ++y)
-//       for (int x = 0; x < width - 1; ++x)
-// 	{
-// 	  gl::vertex (m_map.vertex (x, y));
-// 	  gl::vertex (m_map.vertex (x, y) + Vector3D (0, 6, 0));
-// 	}
-//     glEnd ();
+    m_shader_program.unuse();
   }
 
   void
@@ -354,6 +426,9 @@ namespace gfx {
     m_shader_program.set_float ("heightScale", height_scale);
     m_shader_program.set_float ("seaLevel", sea_norm);
     m_shader_program.set_float ("fogScale", fog_scale);
+    // Texture repeat per world meter (was a stored texcoord stream)
+    m_shader_program.set_float ("texScale",
+				0.5f * one_meter / m_map.scale ().x);
     m_shader_program.unuse ();
   }
 

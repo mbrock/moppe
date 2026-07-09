@@ -46,10 +46,10 @@ namespace mov {
     { m_thrust = thrust; }
 
     void set_yaw (degrees_t degrees)
-    { m_yaw = degrees_to_radians (degrees); }
+    { m_yaw_target = degrees_to_radians (degrees); }
 
     void spin (degrees_t degrees)
-    { m_yaw += degrees_to_radians (degrees); }
+    { m_yaw_target += degrees_to_radians (degrees); }
 
     void increase_thrust (magnitude_t dv)
     { m_thrust += dv; }
@@ -133,6 +133,7 @@ namespace mov {
     void collide_with_walls ();
     void bound ();
     bool is_grounded () const;
+    bool driving_contact () const;
 
     Vector3D drag () const;
 
@@ -157,7 +158,12 @@ namespace mov {
     Vector3D m_heading;
     Vector3D m_thrust_orientation;
 
-    radians_t m_yaw;
+    radians_t m_yaw;        // smoothed actual steering
+    radians_t m_yaw_target; // raw keyboard input
+    float m_lean;           // roll into corners (radians)
+    Vector3D m_render_normal; // smoothed up vector for drawing
+    float m_susp, m_susp_v;   // visual suspension spring
+    bool m_rocket_flight;     // landing softened after a rocket
 
     const HeightMap& m_map;
 

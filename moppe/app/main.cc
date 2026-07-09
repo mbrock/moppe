@@ -52,6 +52,17 @@ namespace moppe
   // Dynamic fog color will be set based on sky horizon colors
   Vector3D fog(0.5, 0.5, 0.5);
 
+  // THE sun: one fixed direction shared by the GL light, the
+  // shadow map, the sky's sun disc, and the ocean glint
+  const float sun_azimuth = 0.8f; // radians around y
+
+  static Vector3D sun_direction_for(float height)
+  {
+    const float el = (height - 0.5f) * 3.14159f;
+    return Vector3D(cos(el) * sin(sun_azimuth), sin(el),
+                    cos(el) * cos(sun_azimuth));
+  }
+
   // Simple scattered trees and bushes, compiled into one display
   // list so the whole forest is a single draw call.
   class Vegetation
@@ -108,7 +119,7 @@ namespace moppe
       glEndList();
     }
 
-    void render(const Vector3D& fog_color) const
+    void render(const Vector3D& fog_color, float fog_density) const
     {
       if (m_list == 0)
         return;
@@ -131,7 +142,7 @@ namespace moppe
       GLfloat fc[4] = {fog_color.x, fog_color.y, fog_color.z, 1.0f};
       glEnable(GL_FOG);
       glFogi(GL_FOG_MODE, GL_EXP2);
-      glFogf(GL_FOG_DENSITY, 0.0005f);
+      glFogf(GL_FOG_DENSITY, fog_density);
       glFogfv(GL_FOG_COLOR, fc);
 
       glCallList(m_list);
@@ -2238,7 +2249,7 @@ namespace moppe
   public:
     MoppeGLUT()
         : GLUTApplication("Moppe", 1000, 768),
-          m_camera(80, 5 * one_meter),
+          m_camera(18, 6.5 * one_meter),
           m_mouse(800, 600),
           m_map1(resolution, resolution,
                  map_size,
@@ -2262,6 +2273,7 @@ namespace moppe
           m_blur_valid(false),
           m_shake(0.0f),
           m_health(100.0f),
+          m_fov_k(0.0f),
           m_mode(M_BIKE),
           m_car_exists(false),
           m_combo(0),
@@ -2283,6 +2295,9 @@ namespace moppe
       glCullFace(GL_BACK);
       glShadeModel(GL_SMOOTH);
       glEnable(GL_TEXTURE_2D);
+      // Scaled fixed-function models (bike, critters, city) need
+      // their normals renormalized
+      glEnable(GL_NORMALIZE);
 
       // Enable alpha blending for terrain-sky transitions
       glEnable(GL_BLEND);
@@ -2356,6 +2371,10 @@ namespace moppe
       m_ocean.set_fog_scale(fog_scale);
       m_vehicle.set_water_level(water_level);
 
+      // Generation took seconds; don't hand them to physics as
+      // one giant first step
+      m_timer.reset();
+
       m_fish_school.generate(m_map1, water_level,
                              pico_mode ? 40 : 16, 777);
       m_wildlife.generate(m_map1, water_level,
@@ -2385,19 +2404,24 @@ namespace moppe
     void idle()
     {
       static const float dt = 1 / 60.0;
-      const float elapsed = m_timer.elapsed();
+      const float raw_elapsed = m_timer.elapsed();
 
-      if (elapsed >= dt)
+      if (raw_elapsed >= dt)
       {
         m_timer.reset();
+        // Clamp hitches: one giant Euler step tunnels through
+        // walls and hurls the camera
+        const float elapsed = std::min(raw_elapsed, 0.05f);
         m_total_time += elapsed;
         const float total_time = m_total_time;
 
-        // Eternal daylight: the sun stays high and fixed
-        static const float sun_height = 0.92f;
+        // Eternal golden afternoon: the sun stays fixed at a low,
+        // raking angle that gives the terrain long real shadows
+        static const float sun_height = 0.75f;
 
         m_sky.set_time(total_time); // keeps the clouds drifting
         m_sky.set_sun_height(sun_height);
+        m_sky.set_sun_direction(sun_direction_for(sun_height));
 
         // Create more interesting cloud patterns:
         // 1. Base cloudiness that changes slowly over time
@@ -2420,6 +2444,7 @@ namespace moppe
         Vector3D horizon = m_sky.get_horizon_color();
         fog = horizon * 0.75f + Vector3D(0.93, 0.95, 1.0) * 0.25f;
         m_terrain_renderer.set_fog_color(fog);
+        m_sky.set_fog_color(fog);
 
         // The GL light position must be re-specified each tick under
         // the current modelview so the sun stays fixed in the world
@@ -2428,16 +2453,9 @@ namespace moppe
         // The sun never moves, so one shadow-map render lasts forever
         if (m_last_shadow_update < 0.0f)
         {
-          const float sun_elevation = (sun_height - 0.5f) * 3.14159f;
-          const float sun_angle = 0.8f; // matches update_dynamic_lighting
-          Vector3D light_dir(
-              -cos(sun_elevation) * sin(sun_angle),
-              -sin(sun_elevation),
-              -cos(sun_elevation) * cos(sun_angle));
-          light_dir.normalize();
-
           m_terrain_renderer.set_shadow_strength(0.85f);
-          m_terrain_renderer.update_shadow_map(light_dir);
+          m_terrain_renderer.update_shadow_map(
+              sun_direction_for(sun_height) * -1.0f);
           m_last_shadow_update = total_time;
         }
 
@@ -2526,10 +2544,21 @@ namespace moppe
 
         if (m_mode == M_FOOT)
           m_camera.update(m_walker.position() + Vector3D(0, 1, 0),
-                          m_walker.heading(), elapsed);
+                          m_walker.heading(), Vector3D(), elapsed);
         else
-          m_camera.update(av.position(), av.orientation(), elapsed);
+          m_camera.update(av.position(), av.orientation(),
+                          av.velocity(), elapsed);
         m_camera.limit(m_map1);
+
+        // Speed widens the field of view a touch
+        {
+          const float kmh = driving
+              ? av.velocity().length() * 3.6f : 0.0f;
+          const float k = std::min(
+              1.0f, std::max(0.0f, (kmh - 70.0f) / 180.0f));
+          m_fov_k += (k - m_fov_k)
+              * (1.0f - std::exp(-5.0f * elapsed));
+        }
 
         glutPostRedisplay();
       }
@@ -2592,6 +2621,14 @@ namespace moppe
               : active_vehicle().velocity().length() * 3.6f;
       float k = (kmh - 90.0f) / 160.0f; // fades in 90, full at 250
       k = std::max(0.0f, std::min(1.0f, k));
+
+      // Below the blur threshold, skip the full-screen copy too --
+      // it costs an MSAA resolve every frame for nothing
+      if (k <= 0.01f)
+      {
+        m_blur_valid = false;
+        return;
+      }
 
       gl::ScopedAttribSaver attribs(GL_ENABLE_BIT | GL_CURRENT_BIT |
                                     GL_TEXTURE_BIT |
@@ -3021,6 +3058,13 @@ namespace moppe
 
     void render_scene()
     {
+      // Speed-kicked field of view, re-specified per frame
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      gluPerspective(100.0 + 9.0 * m_fov_k,
+                     1.0 * m_width / m_height, 0.5,
+                     pico_mode ? 30000 : 9000);
+
       // Use dynamic fog color for background clear with full alpha
       glClearColor(fog.x, fog.y, fog.z, 1.0);
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -3046,17 +3090,24 @@ namespace moppe
         glRotatef(m_shake * room * u(m_fx_rng), 1, 0, 0);
       }
 
+      const Vector3D cam = m_camera.position();
+
+      // Terrain first; only chunks within the haze horizon and not
+      // behind the camera are drawn (3.0/fogScale is ~99.4% fogged,
+      // so the cutoff is invisible against the sky's horizon color)
+      m_terrain_renderer.render(cam, m_camera.forward(),
+                                3.0f / fog_scale);
+
+      // Sky AFTER the terrain: with depth testing on, the pricey
+      // cloud shader only runs where sky is actually visible
       {
         gl::ScopedMatrixSaver matrix;
-        gl::translate(m_camera.position());
+        gl::translate(cam);
         m_sky.render();
       }
 
-      const Vector3D cam = m_camera.position();
-
-      m_terrain_renderer.render();
       m_city.render(m_total_time, cam);
-      m_vegetation.render(fog);
+      m_vegetation.render(fog, fog_scale * 1.35f);
       m_star_field.render(m_total_time, cam);
       m_terrain_renderer.translate();
       m_vehicle.render();
@@ -3250,6 +3301,7 @@ namespace moppe
 
     float m_shake;
     float m_health;
+    float m_fov_k;
 
     enum Mode { M_BIKE, M_FOOT, M_CAR };
 

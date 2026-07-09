@@ -52,16 +52,23 @@ namespace gfx {
 		       meters_t distance)
       : m_pitch_offset (degrees_to_radians (pitch_offset)),
 	m_distance (distance),
+	m_speed (0),
+	m_dt (1 / 60.0f),
 	m_is_uninitialized (true)
     { }
 
     void update (const Vector3D& position,
 		 const Vector3D& orientation,
+		 const Vector3D& velocity,
 		 seconds_t dt);
     void limit (const map::HeightMap& map);
 
     void realize () const;
     Vector3D position () const { return m_position; }
+
+    // Unit vector from the eye toward the target
+    Vector3D forward () const
+    { return (m_target - m_position).normalized (); }
 
   private:
     radians_t m_pitch_offset;
@@ -70,6 +77,9 @@ namespace gfx {
     Vector3D m_position;
     Vector3D m_target;
     Vector3D m_avg_orientation;
+    Vector3D m_ahead;   // low-passed look-ahead offset
+    float    m_speed;   // low-passed speed for the distance clamp
+    float    m_dt;
 
     bool m_is_uninitialized;
   };

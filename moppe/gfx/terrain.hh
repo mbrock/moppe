@@ -25,7 +25,10 @@ namespace gfx {
     void regenerate();
 
     void translate();
-    void render();
+    // Draws only chunks within max_dist of the camera and not
+    // entirely behind it
+    void render(const Vector3D& cam, const Vector3D& view_dir,
+                float max_dist);
     void render_for_shadow_map(); // Render just the geometry for shadow map
     void render_directly();
     
@@ -46,21 +49,37 @@ namespace gfx {
 
   private:
     void upload_buffers ();
-    void draw_strips ();
+    void draw_all_strips ();
+    void draw_culled_strips (const Vector3D& cam,
+                             const Vector3D& view_dir,
+                             float max_dist);
+    void bind_arrays ();
+    void unbind_arrays ();
+
+    // A block of terrain (~128x128 cells) with a bounding sphere,
+    // the granularity of per-frame culling
+    struct Chunk {
+      Vector3D center;
+      float radius;
+      int row0, row1;   // strip rows covered, inclusive
+      int pair0, pair1; // vertex-pair columns covered, inclusive
+    };
 
   private:
     const map::HeightMap& m_map;
 
     VertexArray m_vertices;
     VertexArray m_normals;
-    VertexArray m_texcoords;
 
     // Static terrain geometry lives on the GPU
     GLuint m_vbo_vertices;
     GLuint m_vbo_normals;
-    GLuint m_vbo_texcoords;
     std::vector<GLint>   m_strip_first;
     std::vector<GLsizei> m_strip_count;
+
+    std::vector<Chunk>   m_chunks;
+    std::vector<GLint>   m_draw_first; // per-frame scratch
+    std::vector<GLsizei> m_draw_count;
 
     gl::Shader m_vertex_shader;
     gl::Shader m_fragment_shader;

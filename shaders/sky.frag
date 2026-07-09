@@ -7,6 +7,8 @@ varying vec2 vUV;
 uniform float time;            // Time for animation and day cycle
 uniform float sunHeight;       // Height of sun (0.0 to 1.0)
 uniform float cloudiness;      // Cloud coverage (0.0 to 1.0)
+uniform vec3 sunDir;           // THE sun: same as light and shadows
+uniform vec3 fogColor;         // terrain/ocean haze color
 
 // Advanced noise functions
 float hash(float n) {
@@ -40,18 +42,19 @@ float noise(vec3 p) {
     return result;
 }
 
-// Fractal Brownian Motion
+// Fractal Brownian Motion; the domain rotates between octaves to
+// break the axial grain of lattice value noise
 float fbm(vec3 p) {
     float f = 0.0;
     float amplitude = 0.5;
-    float frequency = 1.0;
-    
-    for(int i = 0; i < 5; i++) {
-        f += amplitude * noise(p * frequency);
+
+    for(int i = 0; i < 4; i++) {
+        f += amplitude * noise(p);
+        p = 2.03 * vec3(0.8 * p.x + 0.6 * p.z, p.y + 7.31,
+                        -0.6 * p.x + 0.8 * p.z);
         amplitude *= 0.5;
-        frequency *= 2.0;
     }
-    
+
     return f;
 }
 
@@ -152,25 +155,12 @@ void main()
 {
     // Normalize direction for skybox
     vec3 dir = normalize(vPosition);
-    
-    // Calculate sun direction
-    float sunTheta = 3.14159 * (0.5 - sunHeight);
-    vec3 sunDir = normalize(vec3(0.0, cos(sunTheta), sin(sunTheta)));
-    
+
+    // One sun for the whole scene, straight from the game
+    vec3 sun = normalize(sunDir);
+
     // Atmospheric scattering
-    vec3 skyColor = atmosphere(dir, sunDir);
-    
-    // Sun disk with realistic shape
-    float sunDot = max(0.0, dot(dir, sunDir));
-    float sunDisk = pow(sunDot, 256.0);
-    float sunGlow = pow(sunDot, 8.0) * 0.3;
-    
-    // Sun color varies with height (redder at horizon)
-    vec3 sunColor = mix(vec3(1.0, 0.6, 0.3), vec3(1.0, 0.9, 0.7), sunHeight);
-    
-    // Add sun to sky
-    skyColor += sunDisk * sunColor;
-    skyColor += sunGlow * vec3(1.0, 0.4, 0.2) * sunHeight;
+    vec3 skyColor = atmosphere(dir, sun);
     
     // Clouds - Only render clouds in the upper hemisphere
     float clouds = 0.0;
@@ -178,22 +168,39 @@ void main()
         // Project clouds onto a dome
         float cloudHeight = 200.0;
         vec3 cloudPos = dir * (cloudHeight / dir.y);
-        
+
         // Add time-based movement
         cloudPos += vec3(time * 2.0, 0.0, time * 1.0);
-        
+
         // Get cloud density
         clouds = cloudShape(cloudPos * 0.01, cloudiness);
-        
+
         // Fade clouds at horizon
         clouds *= smoothstep(0.05, 0.1, dir.y);
-        
+
         // If we have clouds, apply cloud lighting
         if (clouds > 0.01) {
-            vec3 cloudColor = cloudLighting(clouds, cloudPos, sunDir);
+            vec3 cloudColor = cloudLighting(clouds, cloudPos, sun);
             skyColor = mix(skyColor, cloudColor, clouds * 0.9);
         }
     }
+
+    // Blend the horizon into the exact fog color the terrain and
+    // ocean fade to, so distant silhouettes meet the sky seamlessly
+    skyColor = mix(skyColor, fogColor,
+                   pow(1.0 - clamp(dir.y, 0.0, 1.0), 6.0));
+
+    // Sun disk with realistic shape (drawn over the haze)
+    float sunDot = max(0.0, dot(dir, sun));
+    float sunDisk = pow(sunDot, 256.0);
+    float sunGlow = pow(sunDot, 8.0) * 0.3;
+
+    // Sun color varies with height (redder at horizon)
+    vec3 sunColor = mix(vec3(1.0, 0.6, 0.3), vec3(1.0, 0.9, 0.7), sunHeight);
+
+    // Add sun to sky; the corona warms only when the sun is low
+    skyColor += sunDisk * sunColor;
+    skyColor += sunGlow * mix(vec3(1.0, 0.4, 0.2), vec3(1.0, 0.85, 0.6), sunHeight) * sunHeight;
     
     // Stars at night - only in upper hemisphere
     if (sunHeight < 0.2 && dir.y > 0.0) {
@@ -213,6 +220,10 @@ void main()
         skyColor += starPattern * starBrightness * starColor;
     }
     
+    // Dither breaks up 8-bit banding in the smooth gradients
+    skyColor += (fract(sin(dot(dir.xy, vec2(12.9898, 78.233)))
+                       * 43758.5453) - 0.5) / 255.0;
+
     // Final color
     gl_FragColor = vec4(skyColor, 1.0);
 }
