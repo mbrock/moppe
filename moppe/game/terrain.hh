@@ -1,0 +1,53 @@
+#ifndef MOPPE_GAME_TERRAIN_HH
+#define MOPPE_GAME_TERRAIN_HH
+
+#include <moppe/game/world.hh>
+#include <moppe/map/generate.hh>
+#include <moppe/render/renderer.hh>
+
+#include <vector>
+
+namespace moppe {
+namespace game {
+  // Game-side terrain: uploads the height/normal arrays (the same
+  // ones physics samples), builds chunk bounding spheres, culls
+  // chunks per frame, and computes the one-time sun-shadow matrix.
+  // Replaces gfx::TerrainRenderer + gfx::ShadowMap.
+  class Terrain {
+  public:
+    // Uploads heights/normals and the splat textures; call again
+    // after the heightmap changes (e.g. city baking).
+    void setup (render::Renderer& r, const map::HeightMap& map,
+		const WorldParams& world);
+
+    // Renders the one-time shadow map.  sun_dir points toward the
+    // sun, world space.
+    void render_shadow (render::Renderer& r, const map::HeightMap& map,
+			const Vector3D& sun_dir);
+
+    // Emits culled chunk draws: distance cull against max_dist plus
+    // a conservative behind-camera test; fine mesh near, 4x coarse
+    // ring behind it filling seam cracks (same scheme as the GL
+    // build).
+    void render (render::Renderer& r, const Vector3D& cam,
+		 const Vector3D& view_dir, float max_dist);
+
+  private:
+    struct Chunk {
+      int x0, z0;               // grid origin
+      Vector3D center;
+      float radius;
+    };
+
+    std::vector<Chunk> m_chunks;
+    std::vector<render::ChunkDraw> m_draws;
+    Vector3D m_scale;
+    float m_lod_dist = 0;
+    float m_lod_band = 0;
+    render::TexturePtr m_grass, m_dirt, m_snow;
+    bool m_textures_loaded = false;
+  };
+}
+}
+
+#endif

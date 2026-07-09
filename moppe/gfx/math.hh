@@ -1,9 +1,6 @@
 #ifndef MOPPE_MATH_HH
 #define MOPPE_MATH_HH
 
-// Operator deriving.
-#include <boost/operators.hpp>
-
 #include <cmath>
 #include <iostream>
 
@@ -41,14 +38,9 @@ namespace moppe {
   { return (1 - alpha) * x + alpha * y; }
 
   template <typename T>
-  struct Vector3DG:
-    // Thanks Boost!  Free derived operators!
-    public boost::equality_comparable<Vector3DG<T> >,
-    public boost::addable<Vector3DG<T> >,
-    public boost::subtractable<Vector3DG<T> >,
-    public boost::multipliable2<Vector3DG<T>, T>,
-    public boost::dividable2<Vector3DG<T>, T>
-  {
+  struct Vector3DG {
+    typedef T scalar_type;
+
     T x, y, z;
 
     Vector3DG ()                   : x (0),   y (0),   z (0)   { }
@@ -104,6 +96,35 @@ namespace moppe {
   };
 
   template <typename T>
+  inline Vector3DG<T> operator + (Vector3DG<T> a, const Vector3DG<T>& b)
+  { a += b; return a; }
+
+  template <typename T>
+  inline Vector3DG<T> operator - (Vector3DG<T> a, const Vector3DG<T>& b)
+  { a -= b; return a; }
+
+  // The scalar is a non-deduced parameter so that e.g. v * 10
+  // converts the int instead of failing deduction.
+  template <typename T>
+  inline Vector3DG<T> operator * (Vector3DG<T> v,
+				  typename Vector3DG<T>::scalar_type k)
+  { v *= k; return v; }
+
+  template <typename T>
+  inline Vector3DG<T> operator * (typename Vector3DG<T>::scalar_type k,
+				  Vector3DG<T> v)
+  { v *= k; return v; }
+
+  template <typename T>
+  inline Vector3DG<T> operator / (Vector3DG<T> v,
+				  typename Vector3DG<T>::scalar_type k)
+  { v /= k; return v; }
+
+  template <typename T>
+  inline bool operator != (const Vector3DG<T>& a, const Vector3DG<T>& b)
+  { return !(a == b); }
+
+  template <typename T>
   std::ostream& operator << (std::ostream& os,
 			     const Vector3DG<T>& v) {
     return os << "<" << v.x << " " << v.y << " " << v.z << ">";
@@ -122,9 +143,7 @@ namespace moppe {
 
 
   template <typename T>
-  struct QuaternionG:
-    public boost::multipliable<QuaternionG<T> >
-  {
+  struct QuaternionG {
     T x, y, z, w;
 
     QuaternionG (T x, T y, T z, T w) 
@@ -186,6 +205,11 @@ namespace moppe {
     T length () const
     { return std::sqrt (x*x + y*y + z*z + w*w); }
   };
+
+  template <typename T>
+  inline QuaternionG<T> operator * (QuaternionG<T> a,
+				    const QuaternionG<T>& b)
+  { a *= b; return a; }
 
   typedef Vector3DG<float>   Vector3D;
   typedef QuaternionG<float> Quaternion;

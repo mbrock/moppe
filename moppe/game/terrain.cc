@@ -1,0 +1,153 @@
+#include <moppe/game/terrain.hh>
+#include <moppe/gfx/tga.hh>
+
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+
+#include <moppe/platform/platform.hh>
+
+namespace moppe {
+namespace game {
+  namespace {
+    const int CHUNK = 128;
+
+    render::TexturePtr
+    load_tga (render::Renderer& r, const std::string& rel) {
+      tga::TGAImg img;
+      const std::string path = platform::asset_path (rel);
+      if (img.Load (const_cast<char*> (path.c_str ())) != IMG_OK)
+	throw std::runtime_error ("failed to load texture: " + path);
+
+      render::TextureDesc desc;
+      desc.width = img.GetWidth ();
+      desc.height = img.GetHeight ();
+      desc.format = img.GetBPP () == 32
+	? render::TextureFormat::RGBA8 : render::TextureFormat::RGB8;
+      desc.filter = render::TextureFilter::Mipmap;
+      desc.wrap = render::TextureWrap::Repeat;
+      desc.max_anisotropy = 8.0f;
+      return r.create_texture (desc, img.GetImg ());
+    }
+  }
+
+  void
+  Terrain::setup (render::Renderer& r, const map::HeightMap& map,
+		  const WorldParams& world) {
+    m_scale = map.scale ();
+    m_lod_dist = 460.0f * m_scale.x;
+    m_lod_band = 130.0f * m_scale.x;
+
+    render::TerrainParams params;
+    params.width = map.width ();
+    params.height = map.height ();
+    params.scale = m_scale;
+    params.height_scale = world.map_size.y;
+    params.sea_level_norm = world.water_level / world.map_size.y;
+    params.tex_scale = 0.5f * one_meter / m_scale.x;
+    params.shadow_strength = 0.85f;
+    params.fog_scale = world.fog_scale;
+    r.set_terrain (params, map.raw_heights (), map.raw_normals ());
+
+    if (!m_textures_loaded) {
+      m_grass = load_tga (r, "textures/grass2.tga");
+      m_dirt = load_tga (r, "textures/dirt.tga");
+      m_snow = load_tga (r, "textures/snow.tga");
+      r.set_terrain_textures (m_grass, m_dirt, m_snow);
+      m_textures_loaded = true;
+    }
+
+    // Chunk bounding spheres from the actual height range.
+    const int chunks_per_side = (map.width () - 1) / CHUNK;
+    m_chunks.clear ();
+    m_chunks.reserve ((size_t) chunks_per_side * chunks_per_side);
+    for (int cz = 0; cz < chunks_per_side; ++cz)
+      for (int cx = 0; cx < chunks_per_side; ++cx) {
+	float ymin = 1e9f, ymax = -1e9f;
+	for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
+	  for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
+	    const float h = map.get (x, z);
+	    ymin = std::min (ymin, h);
+	    ymax = std::max (ymax, h);
+	  }
+	ymin *= m_scale.y;
+	ymax *= m_scale.y;
+
+	Chunk c;
+	c.x0 = cx * CHUNK;
+	c.z0 = cz * CHUNK;
+	const float x0 = c.x0 * m_scale.x;
+	const float x1 = (c.x0 + CHUNK) * m_scale.x;
+	const float z0 = c.z0 * m_scale.z;
+	const float z1 = (c.z0 + CHUNK) * m_scale.z;
+	c.center = Vector3D ((x0 + x1) / 2, (ymin + ymax) / 2,
+			     (z0 + z1) / 2);
+	const float hx = (x1 - x0) / 2, hy = (ymax - ymin) / 2,
+	  hz = (z1 - z0) / 2;
+	c.radius = std::sqrt (hx * hx + hy * hy + hz * hz);
+	m_chunks.push_back (c);
+      }
+  }
+
+  void
+  Terrain::render_shadow (render::Renderer& r,
+			  const map::HeightMap& map,
+			  const Vector3D& sun_dir) {
+    const Vector3D bounds = map.size ();
+    const Vector3D center (bounds.x / 2, bounds.y / 2, bounds.z / 2);
+    const float radius = bounds.length () / 2;
+
+    // Ortho box big enough for the whole scene: the light sits
+    // radius*3.5 out toward the sun, so the scene spans roughly
+    // [2.5r, 4.5r] in light depth (same numbers as the GL build).
+    const Vector3D light_pos = center + sun_dir * (radius * 3.5f);
+    const Mat4 view = Mat4::look_at (light_pos, center,
+				     Vector3D (0, 1, 0));
+    const Mat4 proj = Mat4::ortho (-radius, radius, -radius, radius,
+				   radius * 0.5f, radius * 6.0f);
+    r.render_terrain_shadow (proj * view);
+  }
+
+  void
+  Terrain::render (render::Renderer& r, const Vector3D& cam,
+		   const Vector3D& view_dir, float max_dist) {
+    m_draws.clear ();
+
+    // Coarse ring first: the fine mesh wins by depth on overlap.
+    for (int pass = 0; pass < 2; ++pass) {
+      const bool coarse = (pass == 0);
+      for (size_t i = 0; i < m_chunks.size (); ++i) {
+	const Chunk& c = m_chunks[i];
+	const Vector3D d = c.center - cam;
+	const float dist2 = d.length2 ();
+
+	// Too far: the haze has swallowed it.
+	const float reach = max_dist + c.radius;
+	if (dist2 > reach * reach)
+	  continue;
+
+	// Entirely behind the camera plane (conservative).
+	if (dist2 > c.radius * c.radius &&
+	    d.dot (view_dir) < -c.radius)
+	  continue;
+
+	const float dist = std::sqrt (dist2);
+	const bool want = coarse
+	  ? dist > m_lod_dist - m_lod_band
+	  : dist < m_lod_dist;
+	if (!want)
+	  continue;
+
+	render::ChunkDraw draw;
+	draw.x0 = (uint16_t) c.x0;
+	draw.z0 = (uint16_t) c.z0;
+	draw.coarse = coarse ? 1 : 0;
+	m_draws.push_back (draw);
+      }
+    }
+
+    if (!m_draws.empty ())
+      r.draw_terrain (&m_draws[0], (int) m_draws.size ());
+  }
+}
+}

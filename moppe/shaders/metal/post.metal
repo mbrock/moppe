@@ -1,0 +1,67 @@
+// Fullscreen passes: present blit, motion-blur ghost quads, and the
+// underwater grade (port of shaders/underwater.frag).
+//
+// UV convention: v = 0 at the TOP of the texture (Metal render
+// targets), the opposite of GL -- screen-space gradients from the
+// GL shaders must flip.
+
+#include "common.h"
+
+struct QuadVaryings {
+  float4 position [[position]];
+  float2 uv;
+};
+
+// Fullscreen triangle; uv zoom shrinks toward the center for the
+// motion-blur feedback ghosts.
+vertex QuadVaryings
+quad_vertex (uint vid [[vertex_id]],
+	     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]])
+{
+  const float2 pos[3] = { float2 (-1, -1), float2 (3, -1),
+			  float2 (-1, 3) };
+  QuadVaryings out;
+  out.position = float4 (pos[vid], 0.5, 1.0);
+  float2 uv = float2 ((pos[vid].x + 1) * 0.5,
+		      1.0 - (pos[vid].y + 1) * 0.5);
+  const float zoom = q.params.x;
+  out.uv = (uv - 0.5) / zoom + 0.5;
+  return out;
+}
+
+fragment float4
+quad_fragment (QuadVaryings in [[stage_in]],
+	       constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
+	       texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  return float4 (scene.sample (smp, in.uv).rgb, 1.0) * q.tint;
+}
+
+// Underwater grade: sinusoidal wobble, blue-green mix, vertical
+// murk (darker toward the bottom -- GL's uv.y gradient, flipped),
+// drifting shimmer.
+fragment float4
+underwater_fragment (QuadVaryings in [[stage_in]],
+		     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
+		     texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  const float time = q.params.y;
+
+  float2 uv = in.uv;
+  uv.x += 0.007 * sin (uv.y * 31.0 + time * 1.9);
+  uv.y += 0.007 * sin (uv.x * 27.0 + time * 2.3);
+  uv = clamp (uv, 0.0, 1.0);
+
+  float3 c = scene.sample (smp, uv).rgb;
+  c = mix (c, c * float3 (0.30, 0.62, 0.85), 0.5);
+
+  // GL murk was 0.75 + 0.25 * uv.y with v=0 at the bottom.
+  c *= 0.75 + 0.25 * (1.0 - in.uv.y);
+
+  c += 0.03 * sin (in.uv.x * 40.0 + time * 3.0)
+     * sin (in.uv.y * 34.0 - time * 2.2);
+
+  return float4 (c, 1.0);
+}
