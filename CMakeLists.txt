@@ -121,6 +121,39 @@ if(APPLE)
     "-framework CoreGraphics" "-framework AVFoundation")
 endif()
 
+if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_library(moppe_platform_ios STATIC
+    moppe/platform/ios/main_ios.mm
+  )
+  target_include_directories(moppe_platform_ios
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(moppe_platform_ios PRIVATE -fobjc-arc)
+  target_link_libraries(moppe_platform_ios PUBLIC
+    moppe_metal moppe_apple "-framework UIKit")
+
+  add_executable(moppe-ios MACOSX_BUNDLE moppe/game/game.cc)
+  target_link_libraries(moppe-ios PRIVATE moppe_game moppe_platform_ios)
+  set_target_properties(moppe-ios PROPERTIES
+    OUTPUT_NAME "Moppe"
+    MACOSX_BUNDLE_INFO_PLIST
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/ios/Info.plist.in
+    MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+  add_custom_command(TARGET moppe-ios POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${MOPPE_METALLIB} $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/moppe.metallib
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/textures
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/textures
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/data
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/data
+    COMMENT "Bundling assets into Moppe.app (iOS)")
+endif()
+
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_library(moppe_platform_mac STATIC
     moppe/platform/mac/main_mac.mm

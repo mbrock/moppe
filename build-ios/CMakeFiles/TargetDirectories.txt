@@ -1,0 +1,10 @@
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_shaders.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_render.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_game.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/map-test.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_metal.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_apple.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe_platform_ios.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/moppe-ios.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/ALL_BUILD.dir
+/Users/mbrock/2025/moppe/build-ios/CMakeFiles/ZERO_CHECK.dir

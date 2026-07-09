@@ -130,7 +130,6 @@ namespace game {
 	m_fuel (100.0f),
 	m_odometer (0),
 	m_go_input (0),
-	m_turn_input (0),
 	m_mode (M_BIKE),
 	m_cam_mode (CAM_CHASE),
 	m_car_exists (false),
@@ -826,7 +825,6 @@ namespace game {
     float m_fuel;
     double m_odometer;
     float m_go_input;
-    float m_turn_input;
     Mode m_mode;
     CamMode m_cam_mode;
     Vector3D m_fp_eye;
