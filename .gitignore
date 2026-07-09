@@ -1,6 +1,4 @@
-vendor
-**/*.a
-**/*.o
-**/*.dblite
-moppe/app/moppe
-moppe/map/test
+build/
+build-ios/
+.DS_Store
+test.tga
