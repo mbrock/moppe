@@ -1,0 +1,68 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project moppe.xcodeproj -target moppe-ios -configuration Release -sdk iphoneos build DEVELOPMENT_TEAM=AA8RNDKMB9 CODE_SIGN_STYLE=Automatic "CODE_SIGN_IDENTITY=Apple Development" -allowProvisioningUpdates -allowProvisioningDeviceRegistration
+
+User defaults from command line:
+    IDEPackageSupportUseBuiltinSCM = YES
+
+Build settings from command line:
+    CODE_SIGN_IDENTITY = Apple Development
+    CODE_SIGN_STYLE = Automatic
+    DEVELOPMENT_TEAM = AA8RNDKMB9
+    SDKROOT = iphoneos18.1
+
+note: Using codesigning identity override: Apple Development
+ComputeTargetDependencyGraph
+warning: Building targets in manual order is deprecated - check "Parallelize build for command-line builds" in the project editor, or set DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING in any of the targets in the current build to suppress this warning
+note: Target dependency graph (8 targets)
+    Target 'moppe-ios' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_render' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_game' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_metal' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_apple' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_platform_ios' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_platform_ios' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_render' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_metal' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_apple' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_apple' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_metal' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_shaders' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_render' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_shaders' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_game' in project 'moppe'
+        ➜ Explicit dependency on target 'moppe_render' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'moppe_render' in project 'moppe'
+        ➜ Explicit dependency on target 'ZERO_CHECK' in project 'moppe'
+    Target 'ZERO_CHECK' in project 'moppe' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.1.sdk -x c++ -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.1.sdk -x objective-c++ -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.1.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/libtool -V
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.1.sdk -x c -c /dev/null
+
+Build description signature: 21bb119768acc3f634fa1d185cdb9322
+Build description path: /Users/mbrock/2025/moppe/build-ios-dev/build/XCBuildData/21bb119768acc3f634fa1d185cdb9322.xcbuilddata
+note: Run script build phase 'Generate CMakeFiles/moppe_shaders' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'moppe_shaders' from project 'moppe')
+note: Run script build phase 'Generate CMakeFiles/ZERO_CHECK' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'ZERO_CHECK' from project 'moppe')
+/Users/mbrock/2025/moppe/build-ios-dev/moppe.xcodeproj: error: The operation couldn’t be completed. Unable to log in with account 'phubuh@gmail.com'. The login details for account 'phubuh@gmail.com' were rejected. (in target 'moppe-ios' from project 'moppe')
+/Users/mbrock/2025/moppe/build-ios-dev/moppe.xcodeproj: error: No profiles for 'se.brockman.moppe' were found: Xcode couldn't find any iOS App Development provisioning profiles matching 'se.brockman.moppe'. (in target 'moppe-ios' from project 'moppe')
+note: Run script build phase 'CMake PostBuild Rules' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'moppe-ios' from project 'moppe')
+** BUILD FAILED **
+

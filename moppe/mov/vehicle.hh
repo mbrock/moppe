@@ -19,10 +19,14 @@ namespace mov {
 
   class Vehicle {
   public:
+    // max_thrust caps the wheel force (launch punch); power caps
+    // force * speed, so acceleration tapers like a real engine
+    // instead of shoving at 3 g all the way to the horizon.
     Vehicle (const Vector3D& position,
 	     degrees_t orientation,
 	     const HeightMap& map,
 	     magnitude_t max_thrust,
+	     magnitude_t power,
 	     magnitude_t mass);
 
     void update (seconds_t dt);
@@ -157,6 +161,7 @@ namespace mov {
     const HeightMap& m_map;
 
     const magnitude_t m_max_thrust;
+    const magnitude_t m_power;
     magnitude_t m_thrust;
     magnitude_t m_mass;
 

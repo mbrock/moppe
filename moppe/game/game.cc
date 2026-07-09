@@ -116,8 +116,13 @@ namespace game {
 	m_map (world.resolution, world.resolution, world.map_size,
 	       (int) ::time (0)),
 	m_camera (18, 6.5f * one_meter),
-	m_vehicle (world.spawn_position (), 45, m_map, 5000, 150),
-	m_car (world.spawn_position (), 45, m_map, 14000, 900),
+	// Dirt-bike figures: 2600 N of launch, 30 kW of engine --
+	// hard low-end punch, ~125 km/h against drag (the old
+	// 5000 N constant force topped out near 300).
+	m_vehicle (world.spawn_position (), 45, m_map, 2600, 30000,
+		   150),
+	m_car (world.spawn_position (), 45, m_map, 14000, 100000,
+	       900),
 	m_renderer (0),
 	m_ready (false),
 	m_gen_stage (0),
@@ -340,7 +345,12 @@ namespace game {
 	  if (m_lives == 5)
 	    platform::say ("Ouchies. That hurts.");
 
-	  av.reset (m_world.spawn_position ());
+	  // Respawn where you crashed, upright on the ground.
+	  // (Deaths used to teleport you 600 m above the map
+	  // corner -- it read as falling through the cosmos.)
+	  const float ground =
+	    m_map.interpolated_height (vpos.x, vpos.z);
+	  av.reset (Vector3D (vpos.x, ground + 1.2f, vpos.z));
 	  m_health = 100.0f;
 	  m_shake = 1.0f;
 	}
@@ -808,7 +818,12 @@ namespace game {
       m_fuel = 100.0f;
       m_shake = 0.0f;
       m_mode = M_BIKE;
-      m_vehicle.reset (m_world.spawn_position ());
+      // Back to the start, but ON the ground rather than 600 m
+      // over it.
+      const Vector3D spawn = m_world.spawn_position ();
+      const float ground =
+	m_map.interpolated_height (spawn.x, spawn.z);
+      m_vehicle.reset (Vector3D (spawn.x, ground + 1.2f, spawn.z));
       // Key releases were swallowed during the game-over screen;
       // don't resume with the throttle stuck open.
       m_go_input = 0;

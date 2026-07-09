@@ -19,6 +19,7 @@ namespace mov {
 		    degrees_t orientation,
 		    const HeightMap& map,
 		    magnitude_t max_thrust,
+		    magnitude_t power,
 		    magnitude_t mass)
     : m_position (position),
       m_velocity (),
@@ -35,6 +36,7 @@ namespace mov {
       m_rocket_flight (false),
       m_map (map),
       m_max_thrust (max_thrust),
+      m_power (power),
       m_thrust (0),
       m_mass (mass),
       m_rocket_time (0),
@@ -224,12 +226,15 @@ namespace mov {
     const float speed_amt =
       std::min (1.0f, std::max (0.0f, (std::abs (vf) - 15.0f) / 10.0f));
 
-    float grip = 3.0f - 1.9f * steer_amt * speed_amt;
+    // Knobby-tire baseline: the bike tracks where it points unless
+    // you deliberately break traction with hard steering at speed
+    // or a brake-slide (the old 3.0 base read as riding on a dream)
+    float grip = 4.5f - 3.0f * steer_amt * speed_amt;
 
     if (m_thrust < -0.1f && vf > 3.0f)
-      grip = std::min (grip, 0.45f); // brake-slide
+      grip = std::min (grip, 0.8f);  // brake-slide
     if (lat.length2 () > 16.0f)
-      grip = std::min (grip, 1.4f);  // mid-drift hysteresis
+      grip = std::min (grip, 2.0f);  // mid-drift hysteresis
 
     m_velocity = fwd * vf + vn + lat * std::exp (-grip * dt);
   }
@@ -251,9 +256,17 @@ namespace mov {
     const Vector3D n = ground_normal ();
 
     // Thrust stays on through micro-hops (coyote contact); the
-    // normal force only applies with real ground under the wheels
+    // normal force only applies with real ground under the wheels.
+    // Force is engine-power-limited above a few m/s: hard launch,
+    // tapering pull, a real top speed against drag.
     if (contact)
-      f += m_thrust_orientation * m_thrust * m_max_thrust;
+      {
+	const float vf =
+	  std::abs (m_velocity.dot (m_thrust_orientation));
+	const float force =
+	  std::min (m_max_thrust, m_power / std::max (vf, 0.5f));
+	f += m_thrust_orientation * m_thrust * force;
+      }
     if (is_grounded ())
       f -= n * g;
 
@@ -368,22 +381,36 @@ namespace mov {
 
   void
   Vehicle::bound () {
-    if (!m_map.in_bounds (m_position.x, m_position.z))
-      {
-	m_velocity = (m_map.center () + Vector3D (0, 1500, 0) - m_position);
-	m_velocity.normalize ();
-	m_velocity *= (400 / 3.6);
+    // Invisible walls at the map edge, bouncing like the building
+    // walls do.  (The old build flung you across the sky toward
+    // the map center at 400 km/h -- it read as a glitchy teleport,
+    // especially near the corner spawn.)
+    const float margin = 2 * one_meter;
+    const float max_x = (m_map.width () - 2) * m_map.scale ().x
+      - margin;
+    const float max_z = (m_map.height () - 2) * m_map.scale ().z
+      - margin;
 
-	// Face the direction we got flung so the bike doesn't sail
-	// home backwards.
-	Vector3D level (m_velocity.x, 0, m_velocity.z);
-	if (level.length2 () > 0.0001f)
-	  {
-	    level.normalize ();
-	    m_heading = level;
-	    m_thrust_orientation = level;
-	  }
-      }
+    float bounced = 0;
+    if (m_position.x < margin)
+      { m_position.x = margin;
+	if (m_velocity.x < 0) { bounced = -m_velocity.x;
+	  m_velocity.x *= -0.35f; } }
+    else if (m_position.x > max_x)
+      { m_position.x = max_x;
+	if (m_velocity.x > 0) { bounced = m_velocity.x;
+	  m_velocity.x *= -0.35f; } }
+    if (m_position.z < margin)
+      { m_position.z = margin;
+	if (m_velocity.z < 0) { bounced = max (bounced, -m_velocity.z);
+	  m_velocity.z *= -0.35f; } }
+    else if (m_position.z > max_z)
+      { m_position.z = max_z;
+	if (m_velocity.z > 0) { bounced = max (bounced, m_velocity.z);
+	  m_velocity.z *= -0.35f; } }
+
+    if (bounced > 0)
+      m_impact = max (m_impact, 0.4f * bounced);
   }
 
 }
