@@ -200,5 +200,10 @@ namespace platform {
       [NSApp terminate: nil];
     });
   }
+
+  Insets
+  safe_insets () {
+    return Insets ();
+  }
 }
 }

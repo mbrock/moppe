@@ -137,6 +137,7 @@ namespace render {
     id<MTLTexture> m_msaa_color = nil, m_msaa_depth = nil;
     id<MTLTexture> m_scene_a = nil, m_scene_b = nil;
     id<MTLTexture> m_prev_frame = nil;
+    bool m_prev_valid = false;
     int m_target_w = 0, m_target_h = 0;
     bool m_memoryless_ok = false;
 
@@ -193,7 +194,16 @@ namespace render {
     view.sampleCount = 1;
     view.framebufferOnly = YES;
 #if !TARGET_OS_IPHONE
-    view.colorspace = CGColorSpaceCreateWithName (kCGColorSpaceSRGB);
+    {
+      CGColorSpaceRef srgb =
+	CGColorSpaceCreateWithName (kCGColorSpaceSRGB);
+      view.colorspace = srgb;
+      CGColorSpaceRelease (srgb);
+    }
+    if (view.window)
+      m_scale = (float) view.window.backingScaleFactor;
+#else
+    m_scale = (float) view.contentScaleFactor;
 #endif
 
 #if TARGET_OS_SIMULATOR
@@ -654,6 +664,8 @@ namespace render {
     m_scene_b = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1, false);
     m_prev_frame = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1,
 				false);
+    // Freshly created: undefined contents until the first blur blit.
+    m_prev_valid = false;
   }
 
   // -- frame ---------------------------------------------------------
@@ -1086,7 +1098,17 @@ namespace render {
 
     // Ghost quads: previous frame drawn back 3x, zoomed, faded --
     // then the composite becomes the next "previous frame", which
-    // is what makes the radial streaks build up.
+    // is what makes the radial streaks build up.  A freshly
+    // (re)created prev texture holds undefined memory: skip the
+    // ghosts and just prime it (the old build's m_blur_valid).
+    if (!m_prev_valid) {
+      id<MTLBlitCommandEncoder> prime = [m_cmd blitCommandEncoder];
+      [prime copyFromTexture: m_current toTexture: m_prev_frame];
+      [prime endEncoding];
+      m_prev_valid = true;
+      return;
+    }
+
     MTLRenderPassDescriptor* rp =
       [MTLRenderPassDescriptor renderPassDescriptor];
     rp.colorAttachments[0].texture = m_current;

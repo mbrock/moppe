@@ -57,6 +57,13 @@ namespace platform {
   // Monotonic time in seconds; never wall-clock.
   double now ();
 
+  // Screen areas covered by notches / home indicators, in points.
+  // Zero on macOS.  The HUD and touch zones stay inside these.
+  struct Insets {
+    float left = 0, top = 0, right = 0, bottom = 0;
+  };
+  Insets safe_insets ();
+
   // Speak a phrase, asynchronously and best-effort.
   void say (const std::string& phrase);
 

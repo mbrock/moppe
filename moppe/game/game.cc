@@ -161,6 +161,18 @@ namespace game {
     { ((MoppeGame*) self)->finish_setup (); }
 
     void generate_world () {
+      // Exceptions must not escape the GCD block (std::terminate);
+      // surface them on the loading screen instead.
+      try {
+	generate_world_inner ();
+      } catch (const std::exception& e) {
+	std::cerr << "world generation failed: " << e.what ()
+		  << std::endl;
+	m_gen_stage = 7;
+      }
+    }
+
+    void generate_world_inner () {
       if (m_world.city_mode) {
 	m_gen_stage = 1;
 	m_city.generate (m_map, m_world);
@@ -195,6 +207,8 @@ namespace game {
     }
 
     void finish_setup () {
+      if (m_gen_stage == 7)
+	return;   // generation failed; loading screen shows why
       render::Renderer& r = *m_renderer;
 
       m_terrain.setup (r, m_map, m_world);
@@ -540,8 +554,10 @@ namespace game {
 	  r.apply_motion_blur (k);
       }
 
-      // HUD.
+      // HUD, kept inside the safe area (notch / home indicator).
       m_hud_dl.clear ();
+      const platform::Insets si = platform::safe_insets ();
+      m_hud_dl.translate (si.left, si.top, 0);
       HudState hs;
       hs.speed_kmh = (m_mode == M_FOOT)
 	? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
@@ -555,7 +571,9 @@ namespace game {
       hs.time = m_total_time;
       hs.on_foot = (m_mode == M_FOOT);
       hs.helmet_view = helmet;
-      m_hud.draw (m_hud_dl, hs, r.width_pts (), r.height_pts ());
+      m_hud.draw (m_hud_dl, hs,
+		  r.width_pts () - (int) (si.left + si.right),
+		  r.height_pts () - (int) (si.top + si.bottom));
       r.draw_hud (m_hud_dl);
 
       r.end_frame ();
@@ -587,9 +605,10 @@ namespace game {
 	"Eroding (1.5 million droplets)...",
 	"Computing normals, planting things...",
 	"Uploading to the GPU...",
+	"World generation failed -- see the log.",
       };
       const int stage = m_gen_stage;
-      const char* text = stages[stage < 0 ? 0 : stage > 6 ? 6 : stage];
+      const char* text = stages[stage < 0 ? 0 : stage > 7 ? 7 : stage];
 
       const float w = (float) r.width_pts ();
       const float h = (float) r.height_pts ();
@@ -645,8 +664,12 @@ namespace game {
 	return;
       }
 
-      // The secret dismount combo: 7, then 5, then R.
-      if (down) {
+      // The secret dismount combo: 7, then 5, then R.  Arrow keys
+      // bypass it (they were "special" codes dispatched before the
+      // combo machine in the GLUT build).
+      const bool arrow = (k == Key::Left || k == Key::Right
+			  || k == Key::Up || k == Key::Down);
+      if (down && !arrow) {
 	static const Key want[3] = { Key::Seven, Key::Five, Key::R };
 	if (k == want[m_combo]) {
 	  if (++m_combo == 3) {
@@ -786,6 +809,11 @@ namespace game {
       m_shake = 0.0f;
       m_mode = M_BIKE;
       m_vehicle.reset (m_world.spawn_position ());
+      // Key releases were swallowed during the game-over screen;
+      // don't resume with the throttle stuck open.
+      m_go_input = 0;
+      m_vehicle.set_thrust (0);
+      m_vehicle.set_yaw (0);
       m_game_over = false;
     }
 
@@ -814,7 +842,9 @@ namespace game {
     render::DrawList m_dust_dl;
     render::DrawList m_hud_dl;
 
-    float m_total_time;
+    // double: a float accumulator quantizes 60 Hz ticks after ~18 h
+    // and stops advancing entirely after ~24 days.
+    double m_total_time;
     float m_cloudiness = 0.5f;
     Vector3D m_fog;
     float m_shake;

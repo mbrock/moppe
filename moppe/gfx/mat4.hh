@@ -169,11 +169,13 @@ namespace moppe {
 	det = 1.0f;
       const float k = 1.0f / det;
 
-      // inverse(M)^T: rows of the cofactor matrix become columns.
+      // inverse(M)^T = cof(M)/det: c0..c2 are the COLUMNS of the
+      // cofactor matrix (adj(M) = cof(M)^T would give plain
+      // inverse(M) and counter-rotate normals).
       NormalMat n;
-      n.c0 = Vector3D (A, B, C) * k;
-      n.c1 = Vector3D (c*h - b*i, a*i - c*g, b*g - a*h) * k;
-      n.c2 = Vector3D (b*f - c*e, c*d - a*f, a*e - b*d) * k;
+      n.c0 = Vector3D (A, c*h - b*i, b*f - c*e) * k;
+      n.c1 = Vector3D (B, a*i - c*g, c*d - a*f) * k;
+      n.c2 = Vector3D (C, b*g - a*h, a*e - b*d) * k;
       return n;
     }
 

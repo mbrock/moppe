@@ -50,8 +50,8 @@ underwater_fragment (QuadVaryings in [[stage_in]],
   const float time = q.params.y;
 
   float2 uv = in.uv;
-  uv.x += 0.007 * sin (uv.y * 31.0 + time * 1.9);
-  uv.y += 0.007 * sin (uv.x * 27.0 + time * 2.3);
+  uv.x += 0.007 * sin (uv.y * 32.0 + time * 2.3);
+  uv.y += 0.007 * sin (uv.x * 27.0 - time * 1.9);
   uv = clamp (uv, 0.0, 1.0);
 
   float3 c = scene.sample (smp, uv).rgb;
@@ -60,8 +60,9 @@ underwater_fragment (QuadVaryings in [[stage_in]],
   // GL murk was 0.75 + 0.25 * uv.y with v=0 at the bottom.
   c *= 0.75 + 0.25 * (1.0 - in.uv.y);
 
-  c += 0.03 * sin (in.uv.x * 40.0 + time * 3.0)
-     * sin (in.uv.y * 34.0 - time * 2.2);
+  // Drifting shimmer (multiplicative, as in the GL build).
+  c *= 0.95 + 0.05 * sin (time * 1.7 + in.uv.x * 9.0
+			  + in.uv.y * 4.0);
 
   return float4 (c, 1.0);
 }

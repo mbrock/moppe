@@ -34,6 +34,7 @@ static Config g_config;
 
 @implementation MoppeTouchView {
   std::map<void*, int> m_touch_keys;   // UITouch* -> Key
+  std::map<int, int> m_key_refs;       // Key -> live touch count
 }
 
 - (instancetype) initWithFrame: (CGRect) frame {
@@ -43,9 +44,13 @@ static Config g_config;
 }
 
 - (Key) zoneForPoint: (CGPoint) p {
-  const CGFloat w = self.bounds.size.width;
-  const CGFloat h = self.bounds.size.height;
-  const CGFloat x = p.x / w, y = p.y / h;
+  // Zones live inside the safe area (notch / home indicator).
+  const UIEdgeInsets si = self.safeAreaInsets;
+  const CGFloat w = self.bounds.size.width - si.left - si.right;
+  const CGFloat h = self.bounds.size.height - si.top - si.bottom;
+  if (w <= 0 || h <= 0)
+    return Key::Unknown;
+  const CGFloat x = (p.x - si.left) / w, y = (p.y - si.top) / h;
 
   if (y < 0.18) {
     if (x > 0.85) return Key::Tab;      // camera cycle
@@ -90,7 +95,10 @@ static Config g_config;
     if (k == Key::Unknown)
       continue;
     m_touch_keys[(__bridge void*) t] = (int) k;
-    [self pressKey: k down: true];
+    // Reference-count per key: a second finger in the same zone
+    // must not re-press, and lifting one of two must not release.
+    if (++m_key_refs[(int) k] == 1)
+      [self pressKey: k down: true];
   }
 }
 
@@ -100,7 +108,10 @@ static Config g_config;
       m_touch_keys.find ((__bridge void*) t);
     if (it == m_touch_keys.end ())
       continue;
-    [self pressKey: (Key) it->second down: false];
+    if (--m_key_refs[it->second] <= 0) {
+      m_key_refs.erase (it->second);
+      [self pressKey: (Key) it->second down: false];
+    }
     m_touch_keys.erase (it);
   }
 }
@@ -210,6 +221,22 @@ namespace platform {
   void
   request_quit () {
     // iOS apps don't exit programmatically.
+  }
+
+  Insets
+  safe_insets () {
+    Insets r;
+    UIWindow* w = nil;
+    for (UIWindow* win in [UIApplication sharedApplication].windows)
+      if (win.isKeyWindow) { w = win; break; }
+    if (!w)
+      return r;
+    const UIEdgeInsets si = w.safeAreaInsets;
+    r.left = (float) si.left;
+    r.top = (float) si.top;
+    r.right = (float) si.right;
+    r.bottom = (float) si.bottom;
+    return r;
   }
 }
 }

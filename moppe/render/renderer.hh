@@ -20,7 +20,7 @@ namespace render {
     Vector3D camera_pos;
     Vector3D cam_right, cam_up, cam_forward;
     Vector3D clear_color;         // also the fog/haze color
-    float fog_scale;
+    float fog_scale = 0.0f;
     Vector3D sun_dir;             // world space, toward the sun
     // Fixed-function light products (NOT white: the eternal golden
     // afternoon computes a sunset-tinted sun).  Ambient multiplies
@@ -28,7 +28,7 @@ namespace render {
     Vector3D sun_diffuse;
     Vector3D sun_specular;
     Vector3D ambient;
-    float time;
+    float time = 0.0f;
   };
 
   // World-change-time terrain setup.  Heights/normals are the same
