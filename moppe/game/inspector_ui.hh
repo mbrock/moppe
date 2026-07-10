@@ -11,6 +11,21 @@ namespace moppe {
 namespace render { class Renderer; }
 
 namespace game {
+  struct UiRect {
+    float x;
+    float y;
+    float width;
+    float height;
+
+    bool contains (float px, float py) const {
+      return px >= x && px < x + width
+	&& py >= y && py < y + height;
+    }
+  };
+
+  UiRect stepper_minus_rect (const UiRect& bounds);
+  UiRect stepper_plus_rect (const UiRect& bounds);
+
   // Small immediate-mode inspector skin built on the renderer's existing
   // DrawList and FontAtlas.  It intentionally owns no widget state: tools
   // keep their values and call these drawing helpers every frame.
@@ -28,6 +43,19 @@ namespace game {
     void key_hint (render::DrawList& dl, float x, float y,
 		   const std::string& key,
 		   const std::string& description) const;
+    void section_header (render::DrawList& dl, const UiRect& bounds,
+			 const std::string& title) const;
+    void button (render::DrawList& dl, const UiRect& bounds,
+		 const std::string& text, bool hot, bool pressed,
+		 bool selected = false) const;
+    void pipeline_row (render::DrawList& dl, const UiRect& bounds,
+		       const std::string& index,
+		       const std::string& name,
+		       const std::string& detail,
+		       bool hot, bool pressed, bool selected) const;
+    void stepper (render::DrawList& dl, const UiRect& bounds,
+		  const std::string& label, const std::string& value,
+		  bool minus_hot, bool plus_hot, bool pressed) const;
 
   private:
     std::unique_ptr<render::FontAtlas> m_body;

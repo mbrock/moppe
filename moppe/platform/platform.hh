@@ -35,6 +35,12 @@ namespace platform {
     float boost = 0;
   };
 
+  enum class PointerButton {
+    Primary,
+    Secondary,
+    Middle
+  };
+
   // Implemented by the game; driven by the per-OS run loop.
   //
   // Lifecycle: setup() must return quickly -- long world generation
@@ -42,7 +48,8 @@ namespace platform {
   // drawing a loading screen until it finishes.  tick() receives
   // real dt clamped to 0.05 s.  key() edges are autorepeat-filtered;
   // releases are synthesized on focus loss / touch cancellation so
-  // held inputs can't stick.
+  // held inputs can't stick.  Pointer coordinates and deltas are in
+  // y-down view points, matching HUD coordinates.
   class Game {
   public:
     virtual ~Game () {}
@@ -52,6 +59,16 @@ namespace platform {
     virtual void render (render::Renderer& r) = 0;
     virtual void key (Key k, bool down) { (void) k; (void) down; }
     virtual void controls (const ControlState& state) { (void) state; }
+    virtual void pointer_move (float x, float y, float dx, float dy) {
+      (void) x; (void) y; (void) dx; (void) dy;
+    }
+    virtual void pointer_button
+      (PointerButton button, bool down, float x, float y) {
+      (void) button; (void) down; (void) x; (void) y;
+    }
+    virtual void pointer_scroll (float x, float y, float delta) {
+      (void) x; (void) y; (void) delta;
+    }
   };
 
   // Runs the platform main loop; returns the process exit code.

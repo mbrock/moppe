@@ -15,6 +15,7 @@
 
 using moppe::platform::Game;
 using moppe::platform::Key;
+using moppe::platform::PointerButton;
 
 // ------------------------------------------------------------------
 
@@ -62,9 +63,41 @@ map_key (NSEvent* event) {
 
 @implementation MoppeView {
   std::set<int> m_held;
+  std::set<int> m_pointer_buttons;
+  float m_pointer_x;
+  float m_pointer_y;
 }
 
 - (BOOL) acceptsFirstResponder { return YES; }
+- (BOOL) acceptsFirstMouse: (NSEvent*) event { return YES; }
+
+- (NSPoint) pointerPoint: (NSEvent*) event {
+  const NSPoint p = [self convertPoint: event.locationInWindow
+			      fromView: nil];
+  return NSMakePoint (p.x, self.bounds.size.height - p.y);
+}
+
+- (void) updatePointer: (NSEvent*) event {
+  const NSPoint p = [self pointerPoint: event];
+  const float dx = p.x - m_pointer_x;
+  const float dy = p.y - m_pointer_y;
+  m_pointer_x = p.x;
+  m_pointer_y = p.y;
+  self.game->pointer_move (m_pointer_x, m_pointer_y, dx, dy);
+}
+
+- (void) pointerButton: (PointerButton) button
+		  down: (bool) down event: (NSEvent*) event {
+  const NSPoint p = [self pointerPoint: event];
+  m_pointer_x = p.x;
+  m_pointer_y = p.y;
+  if (down)
+    m_pointer_buttons.insert ((int) button);
+  else
+    m_pointer_buttons.erase ((int) button);
+  self.game->pointer_button
+    (button, down, m_pointer_x, m_pointer_y);
+}
 
 - (void) keyDown: (NSEvent*) event {
   if (event.isARepeat)
@@ -84,12 +117,54 @@ map_key (NSEvent* event) {
   self.game->key (k, false);
 }
 
+- (void) mouseMoved: (NSEvent*) event
+{ [self updatePointer: event]; }
+
+- (void) mouseDragged: (NSEvent*) event
+{ [self updatePointer: event]; }
+
+- (void) rightMouseDragged: (NSEvent*) event
+{ [self updatePointer: event]; }
+
+- (void) otherMouseDragged: (NSEvent*) event
+{ [self updatePointer: event]; }
+
+- (void) mouseDown: (NSEvent*) event
+{ [self pointerButton: PointerButton::Primary down: true event: event]; }
+
+- (void) mouseUp: (NSEvent*) event
+{ [self pointerButton: PointerButton::Primary down: false event: event]; }
+
+- (void) rightMouseDown: (NSEvent*) event
+{ [self pointerButton: PointerButton::Secondary down: true event: event]; }
+
+- (void) rightMouseUp: (NSEvent*) event
+{ [self pointerButton: PointerButton::Secondary down: false event: event]; }
+
+- (void) otherMouseDown: (NSEvent*) event
+{ [self pointerButton: PointerButton::Middle down: true event: event]; }
+
+- (void) otherMouseUp: (NSEvent*) event
+{ [self pointerButton: PointerButton::Middle down: false event: event]; }
+
+- (void) scrollWheel: (NSEvent*) event {
+  const NSPoint p = [self pointerPoint: event];
+  m_pointer_x = p.x;
+  m_pointer_y = p.y;
+  self.game->pointer_scroll
+    (m_pointer_x, m_pointer_y, (float) event.scrollingDeltaY);
+}
+
 - (void) releaseAllKeys {
   // Focus loss must not leave the throttle stuck open.
   for (std::set<int>::iterator it = m_held.begin ();
        it != m_held.end (); ++it)
     self.game->key ((Key) *it, false);
   m_held.clear ();
+  for (int button : m_pointer_buttons)
+    self.game->pointer_button
+      ((PointerButton) button, false, m_pointer_x, m_pointer_y);
+  m_pointer_buttons.clear ();
 }
 @end
 
@@ -234,6 +309,7 @@ namespace platform {
 
       [window makeKeyAndOrderFront: nil];
       [window makeFirstResponder: view];
+      window.acceptsMouseMovedEvents = YES;
       [NSApp activateIgnoringOtherApps: YES];
 
       if (config.fullscreen)

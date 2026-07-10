@@ -28,6 +28,10 @@ namespace game {
     bool active () const { return m_active; }
     void tick (float dt);
     void key (platform::Key key, bool down);
+    void pointer_move (float x, float y, float dx, float dy);
+    void pointer_button (platform::PointerButton button, bool down,
+			 float x, float y);
+    void pointer_scroll (float x, float y, float delta);
 
     Vector3D position () const;
     Vector3D forward () const;
@@ -40,6 +44,13 @@ namespace game {
     void select (terrain::GeologicalLayer layer);
     void reset_pipeline ();
     void rerun_pipeline ();
+    void append_stage (terrain::PipelineStage stage);
+    void move_selected_stage (int direction);
+    void duplicate_selected_stage ();
+    void remove_selected_stage ();
+    void adjust_selected_property (int row, int direction);
+    void handle_click (float x, float y);
+    void ensure_selected_stage_visible ();
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
 
@@ -53,6 +64,13 @@ namespace game {
 
     bool m_active;
     terrain::TerrainPipeline m_pipeline;
+    int m_selected_stage;
+    int m_stage_scroll;
+
+    float m_pointer_x;
+    float m_pointer_y;
+    bool m_pointer_down;
+    bool m_camera_drag;
 
     float m_yaw;
     float m_pitch;
