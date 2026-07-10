@@ -7,6 +7,7 @@
   - Modes: `--city`, `--pico`, `--fullscreen`, `--windowed`
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    `MOPPE_RENDERSCALE=<0.25..1>`,
     `MOPPE_MAPCACHE=<file>` (load the heightfield from the file if present,
     else generate and save it -- skips the ~30 s erosion at boot; landscape
     mode only)

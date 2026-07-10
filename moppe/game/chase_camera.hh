@@ -9,14 +9,14 @@ namespace moppe {
 namespace game {
   // The chase camera from gfx::ThirdPersonCamera, GL-free: instead
   // of realize()-ing onto the GL matrix stack it hands out a view
-  // matrix.  All smoothing/clamping math is unchanged.
+  // matrix. Its follow spring and terrain corridor are frame-rate
+  // independent.
   class ChaseCamera {
   public:
     ChaseCamera (degrees_t pitch_offset, meters_t distance)
       : m_pitch_offset (degrees_to_radians (pitch_offset)),
 	m_distance (distance),
 	m_speed (0),
-	m_dt (1 / 60.0f),
 	m_is_uninitialized (true)
     { }
 
@@ -31,6 +31,8 @@ namespace game {
     void place (const Vector3D& eye, const Vector3D& target) {
       m_position = eye;
       m_target = target;
+      m_position_velocity = Vector3D ();
+      m_target_velocity = Vector3D ();
       m_is_uninitialized = false;
     }
 
@@ -52,9 +54,9 @@ namespace game {
     Vector3D m_target;
     Vector3D m_avg_orientation;
     Vector3D m_ahead;
+    Vector3D m_position_velocity;
+    Vector3D m_target_velocity;
     float    m_speed;
-    float    m_dt;
-
     bool m_is_uninitialized;
   };
 }

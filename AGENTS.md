@@ -6,7 +6,8 @@
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe` (or `open build/moppe.app`)
   - Modes: `--city`, `--pico`, `--fullscreen`, `--windowed`
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
-    (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`
+    (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    `MOPPE_RENDERSCALE=<0.25..1>`
 - Renderer smoke test: `./build/moppe-testbed`
 - Heightmap tool: `./build/map-test [seed]` (writes test.tga)
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS

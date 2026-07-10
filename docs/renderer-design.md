@@ -69,15 +69,19 @@ amended the first draft. The deltas, now integrated below, were:
 - The per-frame view matrix composes the **camera-shake rotation** before
   FrameEnv is built; FrameEnv exposes the resulting right/up/forward basis,
   which replaces Dust's GL_MODELVIEW_MATRIX readback for billboards.
+- The chase target uses a responsive spring while the camera body is lightly
+  underdamped. A dense terrain-corridor test raises the eye immediately over
+  slopes and ridges; the spring owns the gentler descent afterward.
 - The uber shader's haze uses the terrain's **distance term only** — the
   valley-mist term stays terrain-exclusive, because the whole city sits at
   exactly the mist's full-strength altitude (H_CITY = 45) and would change
   atmosphere noticeably.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
-  bug is documented at main.cc:3182). HUD coordinates are **points**
-  (drawableSize / contentsScale), the glyph atlas rasterizes at pointSize ×
-  scale, safe-area insets offset HUD anchors and touch zones on iOS, and
-  "Times" maps to "Times New Roman" on iOS.
+  bug is documented at main.cc:3182). HUD coordinates are view **points**;
+  drawable pixels per point may be lower than the screen backing scale when
+  macOS halves extreme resolutions above 12 MP. `MOPPE_RENDERSCALE` overrides
+  that heuristic. Safe-area insets offset HUD anchors and touch zones on iOS,
+  and "Times" maps to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.

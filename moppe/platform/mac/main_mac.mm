@@ -7,6 +7,8 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <set>
@@ -91,6 +93,27 @@ match_screen_refresh_rate (MoppeView* view) {
   view.preferredFramesPerSecond = hz > 0 ? hz : 60;
 }
 
+static void
+match_screen_render_size (MoppeView* view) {
+  const NSSize points = view.bounds.size;
+  const NSSize native = [view convertSizeToBacking: points];
+  float scale = native.width * native.height > 12000000.0
+    ? 0.5f : 1.0f;
+
+  if (const char* requested = ::getenv ("MOPPE_RENDERSCALE")) {
+    scale = (float) ::atof (requested);
+    scale = std::max (0.25f, std::min (1.0f, scale));
+  }
+
+  const CGSize wanted = CGSizeMake
+    (std::round (native.width * scale),
+     std::round (native.height * scale));
+  view.autoResizeDrawable = NO;
+  if (view.drawableSize.width != wanted.width ||
+      view.drawableSize.height != wanted.height)
+    view.drawableSize = wanted;
+}
+
 // ------------------------------------------------------------------
 
 @interface MoppeDelegate
@@ -122,10 +145,8 @@ match_screen_refresh_rate (MoppeView* view) {
 
 - (void) mtkView: (MTKView*) view
 	 drawableSizeWillChange: (CGSize) size {
-  const float scale = view.window
-    ? (float) view.window.backingScaleFactor : 1.0f;
-  self.game->resize ((int) (size.width / scale),
-		     (int) (size.height / scale));
+  self.game->resize ((int) view.bounds.size.width,
+		     (int) view.bounds.size.height);
 }
 
 - (void) windowWillClose: (NSNotification*) note {
@@ -140,8 +161,17 @@ match_screen_refresh_rate (MoppeView* view) {
 
 - (void) windowDidChangeScreen: (NSNotification*) note {
   NSWindow* window = note.object;
+  if ([window.contentView isKindOfClass: [MoppeView class]]) {
+    MoppeView* view = (MoppeView*) window.contentView;
+    match_screen_refresh_rate (view);
+    match_screen_render_size (view);
+  }
+}
+
+- (void) windowDidResize: (NSNotification*) note {
+  NSWindow* window = note.object;
   if ([window.contentView isKindOfClass: [MoppeView class]])
-    match_screen_refresh_rate ((MoppeView*) window.contentView);
+    match_screen_render_size ((MoppeView*) window.contentView);
 }
 
 - (NSApplicationTerminateReply) applicationShouldTerminate:
@@ -179,6 +209,7 @@ namespace platform {
       view.game = &game;
       window.contentView = view;
       match_screen_refresh_rate (view);
+      match_screen_render_size (view);
 
       // The renderer configures the view (formats, colorspace).
       std::string lib = asset_path (MOPPE_SHADER_NAME);
@@ -199,10 +230,9 @@ namespace platform {
       if (config.fullscreen)
 	[window toggleFullScreen: nil];
 
-      const float scale = (float) window.backingScaleFactor;
       game.setup (*renderer,
-		  (int) (view.drawableSize.width / scale),
-		  (int) (view.drawableSize.height / scale));
+		  (int) view.bounds.size.width,
+		  (int) view.bounds.size.height);
 
       [NSApp run];
       return 0;

@@ -827,12 +827,11 @@ namespace render {
     m_slot = (m_slot + 1) % FRAMES_IN_FLIGHT;
     m_stream_used = 0;
 
-    m_scale = 1.0f;
-#if TARGET_OS_IPHONE
-    m_scale = (float) [UIScreen mainScreen].scale;
-#else
+    const CGSize points = m_view.bounds.size;
+    m_scale = points.width > 0
+      ? m_target_w / (float) points.width : 1.0f;
+#if !TARGET_OS_IPHONE
     if (m_view.window) {
-      m_scale = (float) m_view.window.backingScaleFactor;
       NSScreen* screen = m_view.window.screen;
       if (screen)
 	m_edr_headroom = std::max
@@ -840,8 +839,8 @@ namespace render {
 	   screen.maximumExtendedDynamicRangeColorComponentValue);
     }
 #endif
-    m_width_pts = (int) (m_target_w / m_scale);
-    m_height_pts = (int) (m_target_h / m_scale);
+    m_width_pts = (int) points.width;
+    m_height_pts = (int) points.height;
 
     m_fp = params;
     std::memset (&m_fu, 0, sizeof (m_fu));
