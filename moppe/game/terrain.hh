@@ -19,7 +19,10 @@ namespace game {
     // after the heightmap changes (e.g. city baking).  Takes the
     // concrete map type: raw_heights()/raw_normals() live there.
     void setup (render::Renderer& r, const map::RandomHeightMap& map,
-		const WorldParams& world);
+		const WorldParams& world,
+		render::TerrainProjection projection =
+		  render::TerrainProjection::Plane,
+		bool repeat_periodically = true);
 
     // Renders the one-time shadow map.  sun_dir points toward the
     // sun, world space.
@@ -45,6 +48,9 @@ namespace game {
     Vector3D m_period;
     float m_lod_scale = 1;
     bool m_periodic = false;
+    bool m_repeat_periodically = true;
+    render::TerrainProjection m_projection =
+      render::TerrainProjection::Plane;
     render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
     bool m_textures_loaded = false;
   };

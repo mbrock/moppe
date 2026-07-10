@@ -50,6 +50,12 @@ namespace game {
     UiRect seed_rect ()
     { return { left_x + 90, 52, 128, 28 }; }
 
+    UiRect fit_rect ()
+    { return { 252, 52, 72, 28 }; }
+
+    UiRect torus_rect ()
+    { return { 330, 52, 112, 28 }; }
+
     UiRect layer_rect (int index) {
       const float gap = 3.0f;
       const float width = (492.0f - 6 * gap) / 7.0f;
@@ -123,7 +129,8 @@ namespace game {
 	return "height ^ " + format_float (power->exponent, 2);
       if (const auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage))
-	return format_count (hydraulic->droplets) + " droplets";
+	return format_count (hydraulic->droplets) + " drops / "
+	  + format_count (hydraulic->batch_size) + " batch";
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       return std::to_string (thermal.iterations) + " passes @ "
 	+ format_float (thermal.talus, 4);
@@ -159,9 +166,10 @@ namespace game {
     }
 
     int stage_property_count (const terrain::PipelineStage& stage) {
-      if (std::holds_alternative<terrain::PowerHeights> (stage)
-	  || std::holds_alternative<terrain::HydraulicErosion> (stage))
+      if (std::holds_alternative<terrain::PowerHeights> (stage))
 	return 1;
+      if (std::holds_alternative<terrain::HydraulicErosion> (stage))
+	return 2;
       if (std::holds_alternative<terrain::ThermalErosion> (stage))
 	return 2;
       return 0;
@@ -173,8 +181,11 @@ namespace game {
 	  std::get_if<terrain::PowerHeights> (&stage))
 	return { "EXPONENT", format_float (power->exponent, 2) };
       if (const auto* hydraulic =
-	  std::get_if<terrain::HydraulicErosion> (&stage))
-	return { "DROPLETS", format_count (hydraulic->droplets) };
+	  std::get_if<terrain::HydraulicErosion> (&stage)) {
+	if (row == 0)
+	  return { "DROPLETS", format_count (hydraulic->droplets) };
+	return { "BATCH SIZE", format_count (hydraulic->batch_size) };
+      }
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       if (row == 0)
 	return { "PASSES", std::to_string (thermal.iterations) };
@@ -188,11 +199,13 @@ namespace game {
       m_pipeline (terrain::make_geological_pipeline (0)),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
-      m_pointer_down (false), m_camera_drag (false),
+      m_pointer_down (false), m_camera_drag (false), m_pan_drag (false),
+      m_target (),
       m_yaw (0.72f), m_pitch (0.62f), m_distance (5600.0f),
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
-      m_tilt_up (false), m_tilt_down (false)
+      m_tilt_up (false), m_tilt_down (false),
+      m_torus_view (false)
   { }
 
   void
@@ -221,9 +234,12 @@ namespace game {
     m_stage_scroll = 0;
     m_pointer_down = false;
     m_camera_drag = false;
+    m_pan_drag = false;
+    m_torus_view = false;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
+    fit_view ();
 
     const size_t count = (size_t) map.width () * map.height ();
     m_saved_heights.assign (map.raw_heights (),
@@ -245,10 +261,33 @@ namespace game {
     m_tilt_up = m_tilt_down = false;
     m_pointer_down = false;
     m_camera_drag = false;
+    m_pan_drag = false;
     m_active = false;
     m_map = 0;
     m_terrain = 0;
     m_world = 0;
+  }
+
+  void
+  TerrainLab::fit_view ()
+  {
+    if (!m_world)
+      return;
+    m_target = Vector3D
+      (m_world->map_size.x * 0.5f,
+	 m_torus_view ? 0.0f : m_world->map_size.y * 0.10f,
+	 m_world->map_size.z * 0.5f);
+    m_yaw = 0.72f;
+    m_pitch = m_torus_view ? 0.48f : 1.22f;
+    m_distance = m_torus_view ? 4700.0f : 6500.0f;
+  }
+
+  void
+  TerrainLab::toggle_torus_view ()
+  {
+    m_torus_view = !m_torus_view;
+    fit_view ();
+    refresh ();
   }
 
   void
@@ -423,8 +462,12 @@ namespace game {
 	(power->exponent + direction * 0.05f, 0.1f, 4.0f);
     } else if (auto* hydraulic =
 	       std::get_if<terrain::HydraulicErosion> (&stage)) {
-      hydraulic->droplets = std::clamp
-	(hydraulic->droplets + direction * 25000, 0, 2000000);
+      if (row == 0)
+	hydraulic->droplets = std::clamp
+	  (hydraulic->droplets + direction * 25000, 0, 2000000);
+      else
+	hydraulic->batch_size = std::clamp
+	  (hydraulic->batch_size + direction * 64, 1, 4096);
     } else if (auto* thermal =
 	       std::get_if<terrain::ThermalErosion> (&stage)) {
       if (row == 0)
@@ -456,6 +499,14 @@ namespace game {
       m_pipeline.randomness = { .seed = seed, .offset = 3 };
       m_selected_stage = -1;
       rerun_pipeline ();
+      return;
+    }
+    if (fit_rect ().contains (x, y)) {
+      fit_view ();
+      return;
+    }
+    if (torus_rect ().contains (x, y)) {
+      toggle_torus_view ();
       return;
     }
     for (int i = 0; i < 7; ++i) {
@@ -528,8 +579,13 @@ namespace game {
     m_map->recompute_normals ();
     WorldParams display = *m_world;
     if (inspection_fog)
-      display.fog_scale *= 0.18f;
-    m_terrain->setup (*m_renderer, *m_map, display);
+      display.fog_scale = 0.0f;
+    const render::TerrainProjection projection =
+      inspection_fog && m_torus_view
+      ? render::TerrainProjection::Torus
+      : render::TerrainProjection::Plane;
+    m_terrain->setup
+      (*m_renderer, *m_map, display, projection, !inspection_fog);
     m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
   }
 
@@ -547,7 +603,7 @@ namespace game {
     m_pitch += tilt * dt * 0.55f;
     m_pitch = std::clamp (m_pitch, 0.18f, 1.28f);
     m_distance *= std::exp (zoom * dt * 1.1f);
-    m_distance = std::clamp (m_distance, 700.0f, 9000.0f);
+    m_distance = std::clamp (m_distance, 500.0f, 16000.0f);
   }
 
   void
@@ -610,6 +666,17 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
+    if (m_pan_drag) {
+      const Vector3D f = forward ();
+      Vector3D right = f.cross (Vector3D (0, 1, 0));
+      Vector3D ground_forward (f.x, 0, f.z);
+      right.normalize ();
+      ground_forward.normalize ();
+      const float scale = m_distance * 0.0012f;
+      m_target -= right * (dx * scale);
+      m_target += ground_forward * (dy * scale);
+      return;
+    }
     if (!m_camera_drag)
       return;
     m_yaw -= dx * 0.006f;
@@ -636,7 +703,7 @@ namespace game {
 	m_camera_drag = false;
       }
     } else {
-      m_camera_drag = down;
+      m_pan_drag = down;
     }
   }
 
@@ -657,17 +724,14 @@ namespace game {
     }
     const float amount = std::clamp (delta, -8.0f, 8.0f);
     m_distance *= std::exp (-amount * 0.055f);
-    m_distance = std::clamp (m_distance, 700.0f, 9000.0f);
+    m_distance = std::clamp (m_distance, 500.0f, 16000.0f);
   }
 
   Vector3D
   TerrainLab::position () const
   {
-    const Vector3D target
-      (m_world->map_size.x * 0.5f, m_world->map_size.y * 0.12f,
-       m_world->map_size.z * 0.5f);
     const float horizontal = std::cos (m_pitch) * m_distance;
-    return target + Vector3D
+    return m_target + Vector3D
       (std::sin (m_yaw) * horizontal,
        std::sin (m_pitch) * m_distance,
        std::cos (m_yaw) * horizontal);
@@ -676,19 +740,13 @@ namespace game {
   Vector3D
   TerrainLab::forward () const
   {
-    const Vector3D target
-      (m_world->map_size.x * 0.5f, m_world->map_size.y * 0.12f,
-       m_world->map_size.z * 0.5f);
-    return (target - position ()).normalized ();
+    return (m_target - position ()).normalized ();
   }
 
   Mat4
   TerrainLab::view_matrix () const
   {
-    const Vector3D target
-      (m_world->map_size.x * 0.5f, m_world->map_size.y * 0.12f,
-       m_world->map_size.z * 0.5f);
-    return Mat4::look_at (position (), target, Vector3D (0, 1, 0));
+    return Mat4::look_at (position (), m_target, Vector3D (0, 1, 0));
   }
 
   void
@@ -711,8 +769,11 @@ namespace game {
     seed << "SEED " << m_pipeline.randomness.seed << " >";
     m_ui.button (dl, seed_rect (), seed.str (), hot (seed_rect ()),
 		 m_pointer_down);
-
-    m_ui.label (dl, 262, 71, "TERRAIN LAB / LIVE RECIPE", true);
+    m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()),
+		 m_pointer_down);
+    m_ui.button (dl, torus_rect (),
+		 m_torus_view ? "FLAT VIEW" : "DONUT VIEW",
+		 hot (torus_rect ()), m_pointer_down, m_torus_view);
     for (int i = 0; i < 7; ++i) {
       const UiRect bounds = layer_rect (i);
       m_ui.button (dl, bounds, layer_labels[i], hot (bounds),
@@ -805,7 +866,7 @@ namespace game {
     m_ui.label (dl, left_x, 586, status.str (), true);
     m_ui.label
       (dl, left_x, 613,
-       "CLICK controls | DRAG landscape to orbit | WHEEL to zoom");
+	"LEFT DRAG orbit | RIGHT/MIDDLE DRAG pan | WHEEL zoom");
     m_ui.label
       (dl, left_x, 636,
        "Pipeline rows are selectable and reorderable | T returns to game");

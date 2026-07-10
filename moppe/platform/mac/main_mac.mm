@@ -180,7 +180,15 @@ match_screen_refresh_rate (MoppeView* view) {
 static void
 match_screen_render_size (MoppeView* view) {
   const NSSize points = view.bounds.size;
-  const NSSize native = [view convertSizeToBacking: points];
+  // Do not derive this from convertSizeToBacking:.  MTKView can fold its
+  // manually overridden drawableSize back into that conversion after a
+  // Space/focus transition, so applying MOPPE_RENDERSCALE again makes the
+  // target shrink geometrically on every Alt-Tab.  The window's physical
+  // backing scale is the stable source of truth.
+  const CGFloat backing = view.window
+    ? view.window.backingScaleFactor : NSScreen.mainScreen.backingScaleFactor;
+  const NSSize native = NSMakeSize
+    (points.width * backing, points.height * backing);
   float scale = native.width * native.height > 12000000.0
     ? 0.5f : 1.0f;
 

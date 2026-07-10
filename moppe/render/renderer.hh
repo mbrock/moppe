@@ -10,6 +10,11 @@
 
 namespace moppe {
 namespace render {
+  enum class TerrainProjection : uint8_t {
+    Plane,
+    Torus
+  };
+
   // Per-frame environment.  The view matrix already includes the
   // camera-shake rotation; the right/up/forward basis is derived
   // from it and replaces the old GL_MODELVIEW_MATRIX readback for
@@ -47,6 +52,10 @@ namespace render {
     float shadow_strength;
     float fog_scale;
     bool periodic = false;
+    TerrainProjection projection = TerrainProjection::Plane;
+    float torus_major_radius = 0.0f;
+    float torus_minor_radius = 0.0f;
+    float torus_height_scale = 0.0f;
   };
 
   enum class TerrainLod : uint8_t {

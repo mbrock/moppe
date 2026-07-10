@@ -46,10 +46,14 @@ namespace game {
   void
   Terrain::setup (render::Renderer& r,
 		  const map::RandomHeightMap& map,
-		  const WorldParams& world) {
+		  const WorldParams& world,
+		  render::TerrainProjection projection,
+		  bool repeat_periodically) {
     m_scale = map.scale ();
     m_period = map.size ();
     m_periodic = map.periodic ();
+    m_repeat_periodically = repeat_periodically;
+    m_projection = projection;
     m_lod_scale = std::max (m_scale.x, m_scale.z);
 
     render::TerrainParams params;
@@ -60,10 +64,15 @@ namespace game {
     params.sea_level_norm = world.water_level / world.map_size.y;
     params.tex_scale = 0.5f * one_meter / m_scale.x;
     // Debug: MOPPE_NOSHADOW=1 disables the cast-shadow lookup.
-    params.shadow_strength =
-      ::getenv ("MOPPE_NOSHADOW") ? 0.0f : 0.85f;
+    params.shadow_strength = projection == render::TerrainProjection::Torus
+      || ::getenv ("MOPPE_NOSHADOW") ? 0.0f : 0.85f;
     params.fog_scale = world.fog_scale;
     params.periodic = map.periodic ();
+    params.projection = projection;
+    const float shortest_period = std::min (m_period.x, m_period.z);
+    params.torus_major_radius = 0.34f * shortest_period;
+    params.torus_minor_radius = 0.10f * shortest_period;
+    params.torus_height_scale = 0.45f;
     r.set_terrain (params, map.raw_heights (), map.raw_normals ());
 
     if (!m_textures_loaded) {
@@ -111,6 +120,8 @@ namespace game {
   Terrain::render_shadow (render::Renderer& r,
 			  const map::HeightMap& map,
 			  const Vector3D& sun_dir) {
+    if (m_projection == render::TerrainProjection::Torus)
+      return;
     const Vector3D bounds = map.size ();
     const Vector3D center (bounds.x / 2, bounds.y / 2, bounds.z / 2);
     const float radius = bounds.length () / 2;
@@ -131,18 +142,35 @@ namespace game {
 		   const Vector3D& view_dir, float max_dist) {
     m_draws.clear ();
 
+    if (m_projection == render::TerrainProjection::Torus) {
+      m_draws.reserve (m_chunks.size ());
+      for (const Chunk& chunk : m_chunks) {
+	render::ChunkDraw draw;
+	draw.x0 = static_cast<uint16_t> (chunk.x0);
+	draw.z0 = static_cast<uint16_t> (chunk.z0);
+	draw.lod = render::TerrainLod::Stride2;
+	draw.morph_start = 0.0f;
+	draw.morph_end = 0.0f;
+	m_draws.push_back (draw);
+      }
+      if (!m_draws.empty ())
+	r.draw_terrain (m_draws.data (), static_cast<int> (m_draws.size ()));
+      return;
+    }
+
     const float half_width = 0.5f * CHUNK * m_scale.x;
     const float half_depth = 0.5f * CHUNK * m_scale.z;
     for (size_t i = 0; i < m_chunks.size (); ++i) {
       const Chunk& c = m_chunks[i];
       const float reach = max_dist + c.radius;
-      const int min_tile_x = m_periodic ? static_cast<int> (std::ceil
+      const bool repeat = m_periodic && m_repeat_periodically;
+      const int min_tile_x = repeat ? static_cast<int> (std::ceil
 	((cam.x - reach - c.center.x) / m_period.x)) : 0;
-      const int max_tile_x = m_periodic ? static_cast<int> (std::floor
+      const int max_tile_x = repeat ? static_cast<int> (std::floor
 	((cam.x + reach - c.center.x) / m_period.x)) : 0;
-      const int min_tile_z = m_periodic ? static_cast<int> (std::ceil
+      const int min_tile_z = repeat ? static_cast<int> (std::ceil
 	((cam.z - reach - c.center.z) / m_period.z)) : 0;
-      const int max_tile_z = m_periodic ? static_cast<int> (std::floor
+      const int max_tile_z = repeat ? static_cast<int> (std::floor
 	((cam.z + reach - c.center.z) / m_period.z)) : 0;
 
       for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)

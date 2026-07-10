@@ -113,7 +113,7 @@ namespace game {
 
   class MoppeGame: public platform::Game {
   public:
-    MoppeGame (const WorldParams& world)
+    MoppeGame (const WorldParams& world, bool start_in_terrain_lab)
       : m_world (world),
 	m_spawn_position (world.spawn_position ()),
 	m_seed ((int) ::time (0)),
@@ -128,6 +128,7 @@ namespace game {
 	m_car (world.spawn_position (), 45, m_map, 14000, 100000,
 	       900),
 	m_renderer (0),
+	m_start_in_terrain_lab (start_in_terrain_lab),
 	m_ready (false),
 	m_gen_stage (0),
 	m_total_time (0),
@@ -330,6 +331,10 @@ namespace game {
       }
 
       m_ready = true;
+      if (m_start_in_terrain_lab)
+	m_terrain_lab.enter
+	  (r, m_map, m_terrain, m_world, m_seed,
+	   sun_direction_for (SUN_HEIGHT));
     }
 
     // -- simulation --------------------------------------------------
@@ -649,9 +654,9 @@ namespace game {
       fp.cam_right = Vector3D (view.m[0], view.m[4], view.m[8]);
       fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
       fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
-      fp.clear_color = m_fog;
-      const float scene_fog = terrain_lab
-	? m_world.fog_scale * 0.18f : m_world.fog_scale;
+      fp.clear_color = terrain_lab
+	? Vector3D (0.012f, 0.016f, 0.022f) : m_fog;
+      const float scene_fog = terrain_lab ? 0.0f : m_world.fog_scale;
       fp.fog_scale = scene_fog;
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
       sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
@@ -683,7 +688,7 @@ namespace game {
 	}
 	vis *= 1.0f - 0.65f * m_cloudiness;
 	m_flare += (vis - m_flare) * 0.12f;
-	fp.sun_visibility = m_flare;
+	fp.sun_visibility = terrain_lab ? 0.0f : m_flare;
       }
 
       if (!r.begin_frame (fp))
@@ -707,13 +712,15 @@ namespace game {
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
-      render::SkyParams sky;
-      sky.time = m_total_time;
-      sky.sun_height = SUN_HEIGHT;
-      sky.cloudiness = m_cloudiness;
-      sky.sun_dir = fp.sun_dir;
-      sky.fog_color = m_fog;
-      r.draw_sky (sky);
+      if (!terrain_lab) {
+	render::SkyParams sky;
+	sky.time = m_total_time;
+	sky.sun_height = SUN_HEIGHT;
+	sky.cloudiness = m_cloudiness;
+	sky.sun_dir = fp.sun_dir;
+	sky.fog_color = m_fog;
+	r.draw_sky (sky);
+      }
 
       if (!terrain_lab) {
 	// The world draw list, in the GL build's draw order.  Terrain lab
@@ -750,17 +757,19 @@ namespace game {
 
       // Translucent water late so the seabed and fish show
       // through; dust last so spray sits atop the surface.
-      render::OceanParams ocean;
-      ocean.time = m_total_time;
-      ocean.fog_color = m_fog;
-      ocean.fog_scale = scene_fog;
-      if (m_world.toroidal ()) {
-	const Vector3D center (0.5f * m_world.map_size.x, 0,
-			       0.5f * m_world.map_size.z);
-	ocean.world_offset.x = cam.x - center.x;
-	ocean.world_offset.z = cam.z - center.z;
+      if (!terrain_lab) {
+	render::OceanParams ocean;
+	ocean.time = m_total_time;
+	ocean.fog_color = m_fog;
+	ocean.fog_scale = scene_fog;
+	if (m_world.toroidal ()) {
+	  const Vector3D center (0.5f * m_world.map_size.x, 0,
+				 0.5f * m_world.map_size.z);
+	  ocean.world_offset.x = cam.x - center.x;
+	  ocean.world_offset.z = cam.z - center.z;
+	}
+	r.draw_ocean (ocean);
       }
-      r.draw_ocean (ocean);
 
       if (!terrain_lab) {
 	m_dust_dl.clear ();
@@ -803,6 +812,9 @@ namespace game {
 	hs.stars = m_stars.collected ();
 	hs.on_foot = (m_mode == M_FOOT);
 	hs.frame_time_s = m_frame_time;
+	const Vector3D heading = m_mode == M_FOOT
+	  ? m_walker.heading () : active_vehicle ().orientation ();
+	hs.heading_radians = std::atan2 (heading.x, heading.z);
 	m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
       }
       r.draw_hud (m_hud_dl);
@@ -1136,6 +1148,7 @@ namespace game {
     std::unique_ptr<render::FontAtlas> m_loading_font;
 
     render::Renderer* m_renderer;
+    bool m_start_in_terrain_lab;
     std::atomic<bool> m_ready;
     std::atomic<int> m_gen_stage;
 
@@ -1176,6 +1189,7 @@ main (int argc, char** argv) {
 
   game::WorldParams world;
   platform::Config config;
+  bool start_in_terrain_lab = false;
   config.title = "Moppe";
   config.fullscreen = true;
 
@@ -1198,6 +1212,8 @@ main (int argc, char** argv) {
       config.fullscreen = true;
     } else if (arg == "--windowed") {
       config.fullscreen = false;
+    } else if (arg == "--terrain-lab") {
+      start_in_terrain_lab = true;
     }
   }
 
@@ -1205,7 +1221,7 @@ main (int argc, char** argv) {
   if (const char* sh = ::getenv ("MOPPE_SUNHEIGHT"))
     game::SUN_HEIGHT = (float) ::atof (sh);
 
-  game::MoppeGame game (world);
+  game::MoppeGame game (world, start_in_terrain_lab);
 
   try {
     return platform::run (game, config);

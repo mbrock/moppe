@@ -170,7 +170,32 @@ terrain_vertex (uint index [[vertex_id]],
     }
   }
 
-  const float3 world (world_xz.x, u.params0.y * h, world_xz.y);
+  float3 world;
+  if (u.params2.x > 0.5) {
+    constexpr float tau = 6.28318530718;
+    const float theta = tau * grid.x / (heights.get_width () - 1);
+    const float phi = tau * grid.y / (heights.get_height () - 1);
+    const float ct = cos (theta), st = sin (theta);
+    const float cp = cos (phi), sp = sin (phi);
+    const float tube_radius = u.params2.z
+      + u.params0.y * h * u.params2.w;
+    const float ring_radius = u.params2.y + tube_radius * cp;
+    const float2 center
+      (u.params0.x * (heights.get_width () - 1) * 0.5,
+       u.params0.z * (heights.get_height () - 1) * 0.5);
+    world = float3 (center.x + ring_radius * ct,
+		    tube_radius * sp,
+		    center.y + ring_radius * st);
+
+    const float3 tangent_u (-st, 0.0, ct);
+    const float3 outward (ct * cp, sp, st * cp);
+    const float3 tangent_v (-ct * sp, cp, -st * sp);
+    normal = normalize (normal.x * tangent_u
+			+ normal.y * outward
+			+ normal.z * tangent_v);
+  } else {
+    world = float3 (world_xz.x, u.params0.y * h, world_xz.y);
+  }
 
   TerrainVaryings out;
   out.position = u.view_proj * float4 (world, 1.0);
@@ -182,14 +207,17 @@ terrain_vertex (uint index [[vertex_id]],
   // mist term is terrain-exclusive by design).
   const float dist = length (world - u.camera_pos.xyz);
   float fog = 1.0 - exp (-pow (dist * u.fog_color.w, 1.5));
-  const float lowness = 1.0 - smoothstep (45.0, 170.0, world.y);
-  fog += 0.3 * lowness * smoothstep (150.0, 1500.0, dist);
+  if (u.fog_color.w > 0.0) {
+    const float lowness = 1.0 - smoothstep (45.0, 170.0, world.y);
+    fog += 0.3 * lowness * smoothstep (150.0, 1500.0, dist);
+  }
   out.fog = saturate (fog);
 
   const float3 canonical_world
     (canonical_xz.x, world.y, canonical_xz.y);
   out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
-  out.uv = world.xz * u.params0.w;
+  out.uv = (u.params2.x > 0.5 ? canonical_xz : world.xz)
+    * u.params0.w;
   return out;
 }
 
