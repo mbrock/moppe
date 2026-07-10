@@ -258,8 +258,11 @@ sky_fragment (SkyVaryings in [[stage_in]],
 				float3 (1.0, 0.58, 0.28), golden);
 
   // Clouds occlude the disc and corona but not the wide bloom.
+  // The disc is pushed well past display white: the HDR target
+  // keeps it, the bloom pass feeds on it, and the tonemapper rolls
+  // it off to a hot core instead of a flat clip.
   const float occlude = 1.0 - saturate (clouds) * 0.92;
-  sky_color += (sun_disk + corona) * sun_color * occlude;
+  sky_color += (sun_disk * 3.0 + corona * 1.7) * sun_color * occlude;
   sky_color += bloom * sun_color * daylight;
 
   // Stars at night, upper hemisphere only.

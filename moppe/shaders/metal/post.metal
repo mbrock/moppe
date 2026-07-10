@@ -48,7 +48,9 @@ bloom_bright_fragment (QuadVaryings in [[stage_in]],
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float3 c = scene.sample (smp, in.uv).rgb;
   const float luma = dot (c, float3 (0.299, 0.587, 0.114));
-  const float k = smoothstep (0.66, 0.90, luma);
+  // The scene is HDR now: only genuinely hot pixels (above display
+  // white) feed the glow.
+  const float k = smoothstep (0.85, 1.35, luma);
   return float4 (c * k, 1.0);
 }
 
@@ -71,11 +73,23 @@ bloom_blur_fragment (QuadVaryings in [[stage_in]],
   return float4 (c, 1.0);
 }
 
-// Final scene grade.  The renderer intentionally preserves the game's
-// gamma-space palette, so this is a compact display-referred treatment:
-// chromatic fringing and bloom from the lens, an occlusion-aware sun
-// flare, a little separation, warm highlights, cool shadows, animated
-// grain, and a soft vignette.  The HUD is drawn afterwards and stays
+// Shoulder-only filmic tonemap for the HDR scene: exact identity
+// below `start` (the game's palette is tuned in display space and
+// must survive untouched), then an exponential rolloff that
+// asymptotes at start + scale = 1.0.  Per-channel, so overdriven
+// colors desaturate toward white the way film does.
+static inline float3 moppe_tonemap (float3 c) {
+  const float start = 0.75;
+  const float scale = 0.25;
+  const float3 over = max (c - start, 0.0);
+  return min (c, start) + scale * (1.0 - exp (-over / scale));
+}
+
+// Final scene grade.  The scene arrives HDR (half-float); after the
+// lens stack (fringe, bloom, flare) the tonemapper brings it to
+// display range, then a compact display-referred treatment: a little
+// separation, warm highlights, cool shadows, animated grain, and a
+// soft vignette.  The HUD is drawn afterwards and stays
 // pixel-accurate.
 fragment float4
 present_fragment (QuadVaryings in [[stage_in]],
@@ -127,6 +141,11 @@ present_fragment (QuadVaryings in [[stage_in]],
       color += ghost_tint[g] * falloff * 0.05 * q.sun.z;
     }
   }
+
+  // HDR -> display: filmic shoulder (identity below 0.75, so the
+  // tuned palette holds; hot plume cores and sun glints roll off
+  // to white instead of clipping).
+  color = moppe_tonemap (color);
 
   // Gentle filmic S-curve (gamma-space): richer shadows and a
   // rounder highlight shoulder without crushing the 8-bit palette.

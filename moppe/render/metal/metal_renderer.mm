@@ -297,44 +297,49 @@ namespace render {
 
   void
   MetalRenderer::build_pipelines () {
-    const MTLPixelFormat color = MTLPixelFormatBGRA8Unorm;
+    // The scene renders HDR (half-float, scene-referred with
+    // headroom above 1.0); only the present + HUD passes target the
+    // 8-bit drawable, after the tonemapper.
+    const MTLPixelFormat scene = MTLPixelFormatRGBA16Float;
+    const MTLPixelFormat drawable = MTLPixelFormatBGRA8Unorm;
     const MTLPixelFormat depth = MTLPixelFormatDepth32Float;
 
     m_uber_opaque = make_pipeline (@"uber_vertex", @"uber_fragment",
-				   color, depth, MSAA_SAMPLES, false);
+				   scene, depth, MSAA_SAMPLES, false);
     m_uber_blend = make_pipeline (@"uber_vertex", @"uber_fragment",
-				  color, depth, MSAA_SAMPLES, true);
+				  scene, depth, MSAA_SAMPLES, true);
     m_uber_add = make_pipeline (@"uber_vertex", @"uber_fragment",
-				color, depth, MSAA_SAMPLES, true,
+				scene, depth, MSAA_SAMPLES, true,
 				true);
     m_hud = make_pipeline (@"hud_vertex", @"hud_fragment",
-			   color, MTLPixelFormatInvalid, 1, true);
+			   drawable, MTLPixelFormatInvalid, 1, true);
     m_present = make_pipeline (@"quad_vertex", @"present_fragment",
-			       color, MTLPixelFormatInvalid, 1, false);
+			       drawable, MTLPixelFormatInvalid, 1,
+			       false);
     m_ghost = make_pipeline (@"quad_vertex", @"quad_fragment",
-			     color, MTLPixelFormatInvalid, 1, true);
+			     scene, MTLPixelFormatInvalid, 1, true);
     m_underwater = make_pipeline (@"quad_vertex",
 				  @"underwater_fragment",
-				  color, MTLPixelFormatInvalid, 1,
+				  scene, MTLPixelFormatInvalid, 1,
 				  false);
     m_bloom_bright = make_pipeline (@"quad_vertex",
 				    @"bloom_bright_fragment",
-				    color, MTLPixelFormatInvalid, 1,
+				    scene, MTLPixelFormatInvalid, 1,
 				    false);
     m_bloom_blur = make_pipeline (@"quad_vertex",
 				  @"bloom_blur_fragment",
-				  color, MTLPixelFormatInvalid, 1,
+				  scene, MTLPixelFormatInvalid, 1,
 				  false);
     m_terrain = make_pipeline (@"terrain_vertex", @"terrain_fragment",
-			       color, depth, MSAA_SAMPLES, false);
+			       scene, depth, MSAA_SAMPLES, false);
     m_terrain_shadow = make_pipeline (@"terrain_shadow_vertex", nil,
 				      MTLPixelFormatInvalid,
 				      MTLPixelFormatDepth16Unorm, 1,
 				      false);
     m_sky = make_pipeline (@"sky_vertex", @"sky_fragment",
-			   color, depth, MSAA_SAMPLES, false);
+			   scene, depth, MSAA_SAMPLES, false);
     m_ocean = make_pipeline (@"ocean_vertex", @"ocean_fragment",
-			     color, depth, MSAA_SAMPLES, true);
+			     scene, depth, MSAA_SAMPLES, true);
 
     // Depth-stencil states, reversed-Z.
     for (int test = 0; test < 2; ++test)
@@ -679,19 +684,21 @@ namespace render {
       return;
 
     m_target_w = w; m_target_h = h;
-    m_msaa_color = make_target (MTLPixelFormatBGRA8Unorm, w, h,
+    m_msaa_color = make_target (MTLPixelFormatRGBA16Float, w, h,
 				MSAA_SAMPLES, true);
     m_msaa_depth = make_target (MTLPixelFormatDepth32Float, w, h,
 				MSAA_SAMPLES, true);
-    m_scene_a = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1, false);
-    m_scene_b = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1, false);
-    m_prev_frame = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1,
+    m_scene_a = make_target (MTLPixelFormatRGBA16Float, w, h, 1,
+			     false);
+    m_scene_b = make_target (MTLPixelFormatRGBA16Float, w, h, 1,
+			     false);
+    m_prev_frame = make_target (MTLPixelFormatRGBA16Float, w, h, 1,
 				false);
     const int bw = w / 4 > 0 ? w / 4 : 1;
     const int bh = h / 4 > 0 ? h / 4 : 1;
-    m_bloom_a = make_target (MTLPixelFormatBGRA8Unorm, bw, bh, 1,
+    m_bloom_a = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1,
 			     false);
-    m_bloom_b = make_target (MTLPixelFormatBGRA8Unorm, bw, bh, 1,
+    m_bloom_b = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1,
 			     false);
     // Freshly created: undefined contents until the first blur blit.
     m_prev_valid = false;

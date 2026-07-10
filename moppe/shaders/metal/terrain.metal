@@ -238,9 +238,9 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb
     + moppe_hemisphere_light (u.ambient.rgb, n);
 
-  // Snowfields sparkle in the sun.
+  // Snowfields sparkle in the sun (into HDR headroom, for bloom).
   const float3 h = normalize (l - view_dir);
-  lit += snow_coef * shadow * pow (max (dot (n, h), 0.0), 32.0) * 0.4;
+  lit += snow_coef * shadow * pow (max (dot (n, h), 0.0), 32.0) * 0.65;
 
   const float3 color = texel * lit;
   return float4 (mix (color, fog_c, fog_factor), 1.0);

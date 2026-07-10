@@ -104,7 +104,9 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   const float3 sun = normalize (u.sun_dir.xyz);
   const float3 h = normalize (sun + v);
   const float nh = max (dot (n, h), 0.0);
-  const float sharp_glint = pow (nh, 120.0) * 0.85;
+  // The sharp glint deliberately exceeds display white: HDR keeps
+  // it for the bloom pass and the tonemapper's shoulder.
+  const float sharp_glint = pow (nh, 120.0) * 1.9;
   const float broad_glint = pow (nh, 24.0) * 0.14;
   const float spec = (sharp_glint + broad_glint) * (1.0 - in.fog);
 
