@@ -108,6 +108,7 @@ struct MoppeQuadUniforms {
 
 struct MoppeHudUniforms {
   MoppeMat4 proj;             // point coords, y-down
+  MoppeFloat4 params;         // x=extended-linear output
 };
 
 #endif

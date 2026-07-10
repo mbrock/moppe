@@ -32,11 +32,13 @@ namespace game {
     // m_mode == M_FOOT: zeroes the speed, parks the boost dial and
     // shows the "ON FOOT" tag.
     bool on_foot;
+    // Real draw-callback interval, used by the ECU telemetry trace.
+    float frame_time_s;
 
     HudState ()
       : speed_kmh (0), fuel (100.0f), boost_ready01 (1.0f),
 	health01 (1.0f), odometer_m (0), lives (10), stars (0),
-	on_foot (false)
+	on_foot (false), frame_time_s (1.0f / 60.0f)
     { }
   };
 
@@ -46,6 +48,8 @@ namespace game {
   // coordinates, y-down, origin top-left.
   class Hud {
   public:
+    Hud ();
+
     // Builds the font atlases; call once after the renderer is up.
     void load (render::Renderer& renderer);
 
@@ -62,6 +66,10 @@ namespace game {
     std::unique_ptr<render::FontAtlas> m_helv12;   // ON FOOT etc.
     std::unique_ptr<render::FontAtlas> m_display24; // digital speed
     std::unique_ptr<render::FontAtlas> m_times24;  // game over
+    float m_fps_history[48];
+    float m_fps;
+    int m_fps_cursor;
+    int m_fps_count;
   };
 }
 }

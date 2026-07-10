@@ -15,6 +15,8 @@
 #import <QuartzCore/QuartzCore.h>
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
+#else
+#import <AppKit/AppKit.h>
 #endif
 
 #include <moppe/render/metal/metal_renderer.hh>
@@ -180,6 +182,7 @@ namespace render {
     id<MTLTexture> m_probe_tex = nil;
     id<MTLBuffer> m_probe_buf[FRAMES_IN_FLIGHT];
     float m_exposure = 1.0f;
+    float m_edr_headroom = 1.0f;
     int m_target_w = 0, m_target_h = 0;
     bool m_memoryless_ok = false;
 
@@ -232,16 +235,23 @@ namespace render {
     m_queue = [m_device newCommandQueue];
 
     view.device = m_device;
+#if TARGET_OS_IPHONE
     view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+#else
+    view.colorPixelFormat = MTLPixelFormatRGBA16Float;
+#endif
     view.depthStencilPixelFormat = MTLPixelFormatInvalid;
     view.sampleCount = 1;
     view.framebufferOnly = YES;
 #if !TARGET_OS_IPHONE
     {
-      CGColorSpaceRef srgb =
-	CGColorSpaceCreateWithName (kCGColorSpaceSRGB);
-      view.colorspace = srgb;
-      CGColorSpaceRelease (srgb);
+      CGColorSpaceRef linear =
+	CGColorSpaceCreateWithName (kCGColorSpaceExtendedLinearSRGB);
+      view.colorspace = linear;
+      CGColorSpaceRelease (linear);
+      CAMetalLayer* layer = (CAMetalLayer*) view.layer;
+      layer.wantsExtendedDynamicRangeContent = YES;
+      layer.displaySyncEnabled = YES;
     }
     if (view.window)
       m_scale = (float) view.window.backingScaleFactor;
@@ -342,11 +352,15 @@ namespace render {
 
   void
   MetalRenderer::build_pipelines () {
-    // The scene renders HDR (half-float, scene-referred with
-    // headroom above 1.0); only the present + HUD passes target the
-    // 8-bit drawable, after the tonemapper.
+    // The scene renders HDR (half-float, scene-referred with headroom
+    // above 1.0). macOS keeps that headroom through an EDR drawable;
+    // iOS uses the existing 8-bit SDR presentation path.
     const MTLPixelFormat scene = MTLPixelFormatRGBA16Float;
+#if TARGET_OS_IPHONE
     const MTLPixelFormat drawable = MTLPixelFormatBGRA8Unorm;
+#else
+    const MTLPixelFormat drawable = MTLPixelFormatRGBA16Float;
+#endif
     const MTLPixelFormat depth = MTLPixelFormatDepth32Float;
 
     m_uber_opaque = make_pipeline (@"uber_vertex", @"uber_fragment",
@@ -817,8 +831,14 @@ namespace render {
 #if TARGET_OS_IPHONE
     m_scale = (float) [UIScreen mainScreen].scale;
 #else
-    if (m_view.window)
+    if (m_view.window) {
       m_scale = (float) m_view.window.backingScaleFactor;
+      NSScreen* screen = m_view.window.screen;
+      if (screen)
+	m_edr_headroom = std::max
+	  (1.0f, (float)
+	   screen.maximumExtendedDynamicRangeColorComponentValue);
+    }
 #endif
     m_width_pts = (int) (m_target_w / m_scale);
     m_height_pts = (int) (m_target_h / m_scale);
@@ -1377,6 +1397,10 @@ namespace render {
       q.tint.w = m_exposure;
       q.params.x = 1;
       q.params.y = m_fp.time;
+#if !TARGET_OS_IPHONE
+      q.params.z = m_edr_headroom;
+      q.params.w = 1;
+#endif
 
       // Project the sun onto the screen for the flare; the game
       // supplies the occlusion term, we add the edge fade.
@@ -1419,10 +1443,16 @@ namespace render {
     // HUD overlay in point coordinates.
     if (!list.empty () && m_hud) {
       MoppeHudUniforms hu;
+      std::memset (&hu, 0, sizeof (hu));
       hu.proj = m4 (Mat4::hud_ortho ((float) m_width_pts,
 				     (float) m_height_pts));
+#if !TARGET_OS_IPHONE
+      hu.params.x = 1;
+#endif
       [enc setVertexBytes: &hu length: sizeof (hu)
 		  atIndex: MOPPE_BUF_FRAME];
+      [enc setFragmentBytes: &hu length: sizeof (hu)
+		    atIndex: MOPPE_BUF_FRAME];
       play_list (enc, list.vertices (), list.runs (), true);
     }
 

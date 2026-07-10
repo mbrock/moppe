@@ -128,6 +128,7 @@ namespace game {
 	m_ready (false),
 	m_gen_stage (0),
 	m_total_time (0),
+	m_frame_time (1.0f / 60.0f),
 	m_shake (0),
 	m_health (100.0f),
 	m_fov_k (0),
@@ -329,6 +330,7 @@ namespace game {
     // -- simulation --------------------------------------------------
 
     void tick (float dt) override {
+      m_frame_time = dt;
       if (!m_ready || m_game_over)
 	return;
 
@@ -760,6 +762,7 @@ namespace game {
       hs.lives = m_lives;
       hs.stars = m_stars.collected ();
       hs.on_foot = (m_mode == M_FOOT);
+      hs.frame_time_s = m_frame_time;
       m_hud.draw (m_hud_dl, hs,
 		  r.width_pts () - (int) (si.left + si.right),
 		  r.height_pts () - (int) (si.top + si.bottom));
@@ -1067,6 +1070,7 @@ namespace game {
     // double: a float accumulator quantizes 60 Hz ticks after ~18 h
     // and stops advancing entirely after ~24 days.
     double m_total_time;
+    float m_frame_time;
     float m_cloudiness = 0.5f;
     float m_flare = 0.0f;
     Vector3D m_fog;
@@ -1097,6 +1101,7 @@ main (int argc, char** argv) {
   game::WorldParams world;
   platform::Config config;
   config.title = "Moppe";
+  config.fullscreen = true;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -1115,6 +1120,8 @@ main (int argc, char** argv) {
       world.water_level = 15 * one_meter;
     } else if (arg == "--fullscreen") {
       config.fullscreen = true;
+    } else if (arg == "--windowed") {
+      config.fullscreen = false;
     }
   }
 

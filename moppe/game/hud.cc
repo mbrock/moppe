@@ -254,6 +254,12 @@ namespace game {
 
   // ---- the cluster itself -------------------------------------------
 
+  Hud::Hud ()
+    : m_fps (0), m_fps_cursor (0), m_fps_count (0)
+  {
+    std::fill (m_fps_history, m_fps_history + 48, 0.0f);
+  }
+
   void
   Hud::load (render::Renderer& renderer)
   {
@@ -282,6 +288,13 @@ namespace game {
       (riding ? st.boost_ready01 : 1.0f);
     const float fuel = std::max (0.0f, std::min (100.0f, st.fuel));
     const HudLayout layout ((float) width_pts, (float) height_pts);
+    const float frame_time = std::max (st.frame_time_s, 0.001f);
+    const float instant_fps = std::min (240.0f, 1.0f / frame_time);
+    m_fps = m_fps > 0.0f
+      ? m_fps * 0.9f + instant_fps * 0.1f : instant_fps;
+    m_fps_history[m_fps_cursor] = m_fps;
+    m_fps_cursor = (m_fps_cursor + 1) % 48;
+    m_fps_count = std::min (m_fps_count + 1, 48);
 
     hud_state_on (dl);
 
@@ -441,6 +454,41 @@ namespace game {
     m_helv12->draw (dl, 41, 25,
 		    "x " + std::to_string (st.stars));
     dl.pop ();
+
+    // A compact ECU module: useful frame telemetry disguised as one
+    // more instrument on the bike, with a short rolling pace trace.
+    {
+      const float x = (float) width_pts - 126.0f;
+      const float y = 8.0f;
+      const float w = 116.0f;
+      const float h = 43.0f;
+      hud_panel (dl, x, y, x + w, y + h, 7.0f, 0.62f);
+
+      dl.color (0.48f, 0.58f, 0.68f, 0.9f);
+      m_helv10->draw (dl, x + 7, y + 13, "ECU");
+      char fps[16];
+      snprintf (fps, sizeof fps, "%3.0f FPS", m_fps);
+      dl.color (0.72f, 0.9f, 0.92f, 0.94f);
+      m_helv10->draw
+	(dl, x + w - 7 - m_helv10->measure (fps), y + 13, fps);
+
+      const float gx0 = x + 7, gx1 = x + w - 7;
+      const float gy0 = y + 20, gy1 = y + h - 6;
+      dl.color (0.22f, 0.3f, 0.35f, 0.65f);
+      dl.line (gx0, gy1, gx1, gy1, 1.0f);
+
+      dl.color (0.2f, 0.78f, 0.76f, 0.84f);
+      for (int i = 1; i < m_fps_count; ++i) {
+	const int i0 = (m_fps_cursor - m_fps_count + i - 1 + 48) % 48;
+	const int i1 = (m_fps_cursor - m_fps_count + i + 48) % 48;
+	const float x0 = gx0 + (gx1 - gx0) * (i - 1) / 47.0f;
+	const float x1 = gx0 + (gx1 - gx0) * i / 47.0f;
+	const float f0 = clamp01 (m_fps_history[i0] / 144.0f);
+	const float f1 = clamp01 (m_fps_history[i1] / 144.0f);
+	dl.line (x0, gy1 - (gy1 - gy0) * f0,
+		 x1, gy1 - (gy1 - gy0) * f1, 1.25f);
+      }
+    }
 
     hud_state_off (dl);
   }

@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 3.24)
 
+# Ninja and Makefiles otherwise default to an unoptimized build. Keep symbols
+# for useful crash reports while making the normal desktop build representative
+# of real gameplay performance.
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+    "Build type (Debug, Release, RelWithDebInfo, or MinSizeRel)" FORCE)
+  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+    Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 # Without an explicit target, Xcode uses the installed SDK version as the
 # minimum OS, making device builds uninstallable on slightly older iPhones.
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND

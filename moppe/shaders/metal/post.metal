@@ -156,7 +156,9 @@ present_fragment (QuadVaryings in [[stage_in]],
     }
   }
 
-  // Linear HDR -> filmic display, then encode for the sRGB drawable.
+  const float3 hdr_color = color;
+
+  // Linear HDR -> filmic display, then encode for the SDR grade.
   color = moppe_aces (color);
   color = pow (color, 1.0 / 2.2);
 
@@ -189,7 +191,22 @@ present_fragment (QuadVaryings in [[stage_in]],
   const float2 centered = centered_uv * float2 (1.0, 0.72);
   const float vignette = 1.0 - 0.09
     * smoothstep (0.22, 0.72, dot (centered, centered));
-  return float4 (saturate (color * vignette), 1.0);
+  color *= vignette;
+
+  if (q.params.w > 0.5) {
+    // macOS EDR uses extended-linear sRGB: preserve the familiar SDR
+    // grade below 1.0, then let only true scene highlights rise above
+    // diffuse white. The live headroom tracks the current display mode.
+    float3 linear = pow (saturate (color), 2.2);
+    const float peak = max (hdr_color.r,
+			    max (hdr_color.g, hdr_color.b));
+    const float extra = min (max (log2 (max (peak, 1.0)), 0.0) * 0.42,
+			     max (q.params.z - 1.0, 0.0));
+    linear += hdr_color / max (peak, 0.0001) * extra * vignette;
+    return float4 (min (linear, float3 (q.params.z)), 1.0);
+  }
+
+  return float4 (saturate (color), 1.0);
 }
 
 // Underwater grade: sinusoidal wobble, blue-green mix, vertical

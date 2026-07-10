@@ -84,6 +84,15 @@ map_key (NSEvent* event) {
 
 // ------------------------------------------------------------------
 
+static void
+match_screen_refresh_rate (MoppeView* view) {
+  NSScreen* screen = view.window.screen;
+  const NSInteger hz = screen ? screen.maximumFramesPerSecond : 60;
+  view.preferredFramesPerSecond = hz > 0 ? hz : 60;
+}
+
+// ------------------------------------------------------------------
+
 @interface MoppeDelegate
   : NSObject <MTKViewDelegate, NSApplicationDelegate, NSWindowDelegate>
 @property (nonatomic, assign) Game* game;
@@ -129,6 +138,12 @@ map_key (NSEvent* event) {
     [(MoppeView*) w.contentView releaseAllKeys];
 }
 
+- (void) windowDidChangeScreen: (NSNotification*) note {
+  NSWindow* window = note.object;
+  if ([window.contentView isKindOfClass: [MoppeView class]])
+    match_screen_refresh_rate ((MoppeView*) window.contentView);
+}
+
 - (NSApplicationTerminateReply) applicationShouldTerminate:
     (NSApplication*) app {
   return NSTerminateNow;
@@ -162,8 +177,8 @@ namespace platform {
       MoppeView* view = [[MoppeView alloc] initWithFrame: frame
 						  device: nil];
       view.game = &game;
-      view.preferredFramesPerSecond = 60;
       window.contentView = view;
+      match_screen_refresh_rate (view);
 
       // The renderer configures the view (formats, colorspace).
       std::string lib = asset_path (MOPPE_SHADER_NAME);

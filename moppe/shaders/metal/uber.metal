@@ -116,8 +116,12 @@ hud_vertex (uint vid [[vertex_id]],
 
 fragment float4
 hud_fragment (HudVaryings in [[stage_in]],
+	      constant MoppeHudUniforms& hud [[buffer(MOPPE_BUF_FRAME)]],
 	      texture2d<float> tex [[texture(MOPPE_TEX_COLOR)]],
 	      sampler smp [[sampler(0)]])
 {
-  return in.color * tex.sample (smp, in.uv);
+  float4 color = in.color * tex.sample (smp, in.uv);
+  if (hud.params.x > 0.5)
+    color.rgb = pow (color.rgb, 2.2);
+  return color;
 }

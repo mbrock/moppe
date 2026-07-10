@@ -37,7 +37,7 @@ inline float3 moppe_wind (float3 world, float w, float t) {
 // The scene computes in LINEAR light (half-float targets); art
 // colors are still authored as familiar display-space numbers and
 // decoded with this at the point of use.  The present pass
-// tonemaps (ACES) and encodes back to sRGB.
+// tonemaps (ACES) and encodes for the active SDR or EDR drawable.
 inline float3 moppe_srgb (float3 c) {
   return pow (c, 2.2);
 }

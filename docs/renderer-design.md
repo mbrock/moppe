@@ -48,11 +48,13 @@ amended the first draft. The deltas, now integrated below, were:
 - Sky far-plane depth comes from the **vertex stage** (clip z = 0 under
   reversed-Z), never a fragment [[depth]] output, to keep early-z rejection
   of the expensive cloud shader on TBDR.
-- All intermediate targets bgra8Unorm with the view/layer colorspace pinned
-  to **sRGB** so P3/EDR displays don't reinterpret the gamma-space look.
+- Scene and post targets are **RGBA16Float**. macOS presents through an
+  extended-linear sRGB RGBA16Float drawable and requests live EDR headroom;
+  the filmic SDR grade stays below 1.0 while scene highlights can exceed it.
+  iOS keeps an 8-bit SDR drawable.
 - One metallib **per SDK** (macosx / iphoneos / iphonesimulator) via
-  xcrun -sdk; two build trees (CMakePresets: mac, ios-sim, ios-device),
-  Xcode generator + CODE_SIGNING_ALLOWED=NO for simulator builds.
+  xcrun -sdk. A macOS Command Line Tools build without the offline Metal
+  compiler bundles combined MSL source for runtime compilation instead.
 - MeshBuilder emits 32-bit indices when a mesh exceeds 65,535 vertices
   (the 301² ocean grid does); 0xFFFF/0xFFFFFFFF are reserved strip-restart
   values in Metal.
@@ -96,7 +98,8 @@ amended the first draft. The deltas, now integrated below, were:
   resolution), orientation keys; speech shim holds one static
   AVSpeechSynthesizer (a local one deallocates mid-utterance).
 - Tick policy: one tick per draw callback with actual dt clamped to 0.05 s
-  (the physics is already variable-dt), preferredFramesPerSecond = 60.
+  (the physics is already variable-dt). macOS follows the active screen's
+  maximum refresh rate with display sync enabled; iOS requests 60 FPS.
 
 ## Module layout
 
@@ -265,10 +268,9 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
     std::string platform::asset_path(const char* rel);  // bundle-aware
     void platform::say(const char* phrase);     // AVSpeechSynthesizer / no-op
 
-- macOS: NSApplication + MTKView delegate; windowed 1280×800 by default with
-  `--fullscreen` flag (the old build forced fullscreen; windowed is kinder
-  for development). keyDown/keyUp with isARepeat filtered; flagsChanged for
-  robustness; releases synthesized on focus loss so throttle can't stick.
+- macOS: NSApplication + MTKView delegate; native fullscreen by default with
+  a `--windowed` development override. keyDown/keyUp with isARepeat filtered;
+  releases are synthesized on focus loss so throttle can't stick.
 - iOS: UIKit + MTKView, CADisplayLink-driven; two floating analog controls
   (left steer + throttle/brake, right continuous boost) plus camera and mount
   corner actions; world generation on a background queue behind a loading
