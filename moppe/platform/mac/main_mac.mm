@@ -38,8 +38,17 @@ map_key (NSEvent* event) {
   case 'a': return Key::A;
   case 's': return Key::S;
   case 'd': return Key::D;
+  case 'e': return Key::E;
+  case 'n': return Key::N;
   case 'r': return Key::R;
+  case 't': return Key::T;
+  case 'y': return Key::Y;
+  case '1': return Key::One;
+  case '2': return Key::Two;
+  case '3': return Key::Three;
+  case '4': return Key::Four;
   case '5': return Key::Five;
+  case '6': return Key::Six;
   case '7': return Key::Seven;
   default:  return Key::Unknown;
   }

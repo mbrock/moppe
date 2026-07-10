@@ -12,6 +12,18 @@
 
 namespace moppe {
 namespace map {
+  enum class GeologicalField {
+    Combined,
+    Continent,
+    Plains,
+    Mountains,
+    MountainMask,
+    WarpX,
+    WarpY
+  };
+
+  const char* geological_field_name (GeologicalField field);
+
   // Contiguous row-major 2D array; at (y, x) preserves the old
   // boost::multi_array m_data[y][x] indexing.
   template <typename T>
@@ -186,13 +198,20 @@ namespace map {
     void rescale             (float k);
     void exponentiate        (float k);
 
+    // Restart all procedural choices from a known seed.  Terrain
+    // tools use this before selecting a component so every view is
+    // sampled from the same underlying noise fields.
+    void reseed (int seed)
+    { m_rng.seed (std::mt19937::result_type (seed)); }
+
     void randomize_uniformly ();
     void randomize_plasmally (float roughness);
 
     // Noise-composed terrain: smooth warped plains low down,
     // ridged mountains up high.  Leaves normals to the caller so
     // further shaping passes can run first.
-    void randomize_geologically ();
+    void randomize_geologically
+      (GeologicalField field = GeologicalField::Combined);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized

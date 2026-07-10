@@ -148,6 +148,8 @@ add_library(moppe_game STATIC
   moppe/game/walker.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
+  moppe/game/inspector_ui.cc
+  moppe/game/terrain_lab.cc
 )
 target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_game PUBLIC moppe_render)

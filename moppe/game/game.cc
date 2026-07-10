@@ -9,6 +9,7 @@
 
 #include <moppe/game/world.hh>
 #include <moppe/game/terrain.hh>
+#include <moppe/game/terrain_lab.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/vegetation.hh>
 #include <moppe/game/stars.hh>
@@ -114,8 +115,9 @@ namespace game {
     MoppeGame (const WorldParams& world)
       : m_world (world),
 	m_spawn_position (world.spawn_position ()),
+	m_seed ((int) ::time (0)),
 	m_map (world.resolution, world.resolution, world.map_size,
-	       (int) ::time (0)),
+	       m_seed),
 	m_camera (18, 6.5f * one_meter),
 	// Dirt-bike figures: 2600 N of launch, 30 kW of engine --
 	// hard low-end punch, ~125 km/h against drag (the old
@@ -154,6 +156,7 @@ namespace game {
       // Fast, main-thread resource setup; the heavy world build
       // runs behind the loading screen.
       m_hud.load (r);
+      m_terrain_lab.load (r);
       m_loading_font.reset
 	(new render::FontAtlas (r, "Helvetica", 14,
 				r.scale_factor ()));
@@ -336,6 +339,14 @@ namespace game {
 
       m_total_time += dt;
       const float total_time = m_total_time;
+
+      // Terrain inspection pauses actors and vehicle physics, but keeps the
+      // visual clock alive so sky and water remain a useful frame of
+      // reference around the heightmap.
+      if (m_terrain_lab.active ()) {
+	m_terrain_lab.tick (dt);
+	return;
+      }
 
       // Screenshot autopilot for headless verification: rides in a
       // lazy arc with periodic boost-assisted leaps.
@@ -601,14 +612,17 @@ namespace game {
       render::FrameParams fp;
       const float aspect =
 	(float) r.width_pts () / std::max (1, r.height_pts ());
+      const bool terrain_lab = m_terrain_lab.active ();
+      const float fov = terrain_lab ? 70.0f : 100.0f + 9.0f * m_fov_k;
       fp.proj = Mat4::perspective_reversed
-	(degrees_to_radians (100.0f + 9.0f * m_fov_k), aspect, 0.5f,
+	(degrees_to_radians (fov), aspect, 0.5f,
 	 m_world.pico_mode ? 30000.0f : 9000.0f);
 
       // Hard-landing camera shake, faded near the ground so the
       // view can't dip below the terrain.
-      Mat4 view = m_camera.view_matrix ();
-      if (m_shake > 0.005f) {
+      Mat4 view = terrain_lab
+	? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
+      if (!terrain_lab && m_shake > 0.005f) {
 	const Vector3D cam = m_camera.position ();
 	const float ground =
 	  m_map.interpolated_height (cam.x, cam.z);
@@ -627,13 +641,16 @@ namespace game {
       }
       fp.view = view;
 
-      const Vector3D cam = m_camera.position ();
+      const Vector3D cam = terrain_lab
+	? m_terrain_lab.position () : m_camera.position ();
       fp.camera_pos = cam;
       fp.cam_right = Vector3D (view.m[0], view.m[4], view.m[8]);
       fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
       fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
       fp.clear_color = m_fog;
-      fp.fog_scale = m_world.fog_scale;
+      const float scene_fog = terrain_lab
+	? m_world.fog_scale * 0.18f : m_world.fog_scale;
+      fp.fog_scale = scene_fog;
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
       sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
       fp.sun_specular = fp.sun_specular * 0.5f;   // material specular
@@ -672,7 +689,7 @@ namespace game {
 
       FrameEnv env;
       env.fog_color = m_fog;
-      env.fog_scale = m_world.fog_scale;
+      env.fog_scale = scene_fog;
       env.sun_dir = fp.sun_dir;
       env.camera_pos = cam;
       env.cam_right = fp.cam_right;
@@ -681,8 +698,10 @@ namespace game {
       env.time = m_total_time;
 
       // Terrain first, chunk-culled to the haze horizon.
-      m_terrain.render (r, cam, m_camera.forward (),
-			3.0f / m_world.fog_scale);
+      m_terrain.render (r, cam,
+		terrain_lab ? m_terrain_lab.forward () : m_camera.forward (),
+			terrain_lab ? 12000.0f
+			: 3.0f / m_world.fog_scale);
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
@@ -694,51 +713,57 @@ namespace game {
       sky.fog_color = m_fog;
       r.draw_sky (sky);
 
-      // The world draw list, in the GL build's draw order.
-      m_world_dl.clear ();
-      if (m_world.city_mode)
-	m_city.render (r, m_world_dl, env);
-      m_vegetation.render (r, env);
-      m_stars.render (m_world_dl, env);
+      if (!terrain_lab) {
+	// The world draw list, in the GL build's draw order.  Terrain lab
+	// deliberately hides every placed object so generator differences are
+	// not confused with stale vegetation or actor positions.
+	m_world_dl.clear ();
+	if (m_world.city_mode)
+	  m_city.render (r, m_world_dl, env);
+	m_vegetation.render (r, env);
+	m_stars.render (m_world_dl, env);
 
-      // Soft blob shadows under the movers.
-      m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
-      if (m_car_exists)
-	m_blob.draw (m_world_dl, m_map, m_car.position (), 2.9f);
-      if (m_mode == M_FOOT)
-	m_blob.draw (m_world_dl, m_map,
-		     m_walker.position () + Vector3D (0, 0.5f, 0),
-		     0.8f);
+	// Soft blob shadows under the movers.
+	m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
+	if (m_car_exists)
+	  m_blob.draw (m_world_dl, m_map, m_car.position (), 2.9f);
+	if (m_mode == M_FOOT)
+	  m_blob.draw (m_world_dl, m_map,
+		       m_walker.position () + Vector3D (0, 0.5f, 0),
+		       0.8f);
 
-      // In helmet cam you ARE the rider: don't draw yourself.
-      const bool helmet = (m_cam_mode == CAM_HELMET);
-      if (!(helmet && m_mode == M_BIKE))
-	render_vehicle (m_world_dl, m_vehicle, m_total_time);
-      if (m_car_exists && !(helmet && m_mode == M_CAR))
-	render_vehicle (m_world_dl, m_car, m_total_time);
-      if (m_mode == M_FOOT && !helmet)
-	m_walker.render (m_world_dl, m_total_time);
+	// In helmet cam you ARE the rider: don't draw yourself.
+	const bool helmet = (m_cam_mode == CAM_HELMET);
+	if (!(helmet && m_mode == M_BIKE))
+	  render_vehicle (m_world_dl, m_vehicle, m_total_time);
+	if (m_car_exists && !(helmet && m_mode == M_CAR))
+	  render_vehicle (m_world_dl, m_car, m_total_time);
+	if (m_mode == M_FOOT && !helmet)
+	  m_walker.render (m_world_dl, m_total_time);
 
-      m_fish.render (m_world_dl, env);
-      m_wildlife.render (m_world_dl, env);
-      r.draw_list (m_world_dl);
+	m_fish.render (m_world_dl, env);
+	m_wildlife.render (m_world_dl, env);
+	r.draw_list (m_world_dl);
+      }
 
       // Translucent water late so the seabed and fish show
       // through; dust last so spray sits atop the surface.
       render::OceanParams ocean;
       ocean.time = m_total_time;
       ocean.fog_color = m_fog;
-      ocean.fog_scale = m_world.fog_scale;
+      ocean.fog_scale = scene_fog;
       r.draw_ocean (ocean);
 
-      m_dust_dl.clear ();
-      m_dust.render (m_dust_dl, env);
-      r.draw_list (m_dust_dl);
+      if (!terrain_lab) {
+	m_dust_dl.clear ();
+	m_dust.render (m_dust_dl, env);
+	r.draw_list (m_dust_dl);
+      }
 
       // Post effects.
-      if (cam.y < m_world.water_level)
+      if (!terrain_lab && cam.y < m_world.water_level)
 	r.apply_underwater (m_total_time);
-      {
+      if (!terrain_lab) {
 	const float kmh = (m_mode == M_FOOT)
 	  ? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
 	float k = (kmh - 90.0f) / 160.0f;
@@ -751,21 +776,27 @@ namespace game {
       m_hud_dl.clear ();
       const platform::Insets si = platform::safe_insets ();
       m_hud_dl.translate (si.left, si.top, 0);
-      HudState hs;
-      hs.speed_kmh = (m_mode == M_FOOT)
-	? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
-      hs.fuel = m_fuel;
-      hs.boost_ready01 = (m_mode == M_FOOT)
-	? 1.0f : active_vehicle ().boost_charge ();
-      hs.health01 = m_health / 100.0f;
-      hs.odometer_m = (float) m_odometer;
-      hs.lives = m_lives;
-      hs.stars = m_stars.collected ();
-      hs.on_foot = (m_mode == M_FOOT);
-      hs.frame_time_s = m_frame_time;
-      m_hud.draw (m_hud_dl, hs,
-		  r.width_pts () - (int) (si.left + si.right),
-		  r.height_pts () - (int) (si.top + si.bottom));
+      const int hud_width =
+	r.width_pts () - (int) (si.left + si.right);
+      const int hud_height =
+	r.height_pts () - (int) (si.top + si.bottom);
+      if (terrain_lab) {
+	m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
+      } else {
+	HudState hs;
+	hs.speed_kmh = (m_mode == M_FOOT)
+	  ? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
+	hs.fuel = m_fuel;
+	hs.boost_ready01 = (m_mode == M_FOOT)
+	  ? 1.0f : active_vehicle ().boost_charge ();
+	hs.health01 = m_health / 100.0f;
+	hs.odometer_m = (float) m_odometer;
+	hs.lives = m_lives;
+	hs.stars = m_stars.collected ();
+	hs.on_foot = (m_mode == M_FOOT);
+	hs.frame_time_s = m_frame_time;
+	m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
+      }
       r.draw_hud (m_hud_dl);
 
       r.end_frame ();
@@ -845,7 +876,7 @@ namespace game {
     // -- input -------------------------------------------------------
 
     void controls (const platform::ControlState& state) override {
-      if (m_game_over)
+      if (m_game_over || m_terrain_lab.active ())
 	return;
       input_turn (state.steer);
       input_go (state.drive);
@@ -862,6 +893,23 @@ namespace game {
 	  revive ();
 	else if (k == Key::Escape && down)
 	  platform::request_quit ();
+	return;
+      }
+
+      if (m_terrain_lab.active ()) {
+	if (k == Key::T && down)
+	  m_terrain_lab.leave ();
+	else
+	  m_terrain_lab.key (k, down);
+	return;
+      }
+
+      if (k == Key::T && down && m_ready) {
+	input_turn (0);
+	input_go (0);
+	input_boost (0);
+	m_terrain_lab.enter (*m_renderer, m_map, m_terrain, m_world,
+			     m_seed, sun_direction_for (SUN_HEIGHT));
 	return;
       }
 
@@ -1043,8 +1091,10 @@ namespace game {
 
     WorldParams m_world;
     Vector3D m_spawn_position;
+    int m_seed;
     map::RandomHeightMap m_map;
     Terrain m_terrain;
+    TerrainLab m_terrain_lab;
     ChaseCamera m_camera;
     mov::Vehicle m_vehicle;
     mov::Vehicle m_car;

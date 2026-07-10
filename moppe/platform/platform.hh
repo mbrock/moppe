@@ -15,8 +15,9 @@ namespace platform {
     Unknown,
     Left, Right, Up, Down,
     W, A, S, D,
-    Space, Tab, Escape, R,
-    Five, Seven
+    Space, Tab, Escape,
+    E, N, R, T, Y,
+    One, Two, Three, Four, Five, Six, Seven
   };
 
   struct Config {
