@@ -3,7 +3,10 @@
 ## Build Commands
 - Configure: `cmake -B build -G Ninja`
 - Build everything: `cmake --build build`
-- Run the game: `./build/moppe.app/Contents/MacOS/moppe` (or `open build/moppe.app`)
+- Unit tests: `ctest --test-dir build --output-on-failure`
+- Scalar-field visual check: `./build/terrain-field-demo /tmp/field.png 512`
+- Run the game: `./build/moppe.app/Contents/MacOS/moppe`
+  (or `open build/moppe.app`)
   - Modes: `--city`, `--pico`, `--fullscreen`, `--windowed`
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
@@ -30,6 +33,8 @@
   vegetation, wildlife, dust, HUD, vehicle rendering; glue in game.cc).
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
+- `moppe/terrain/` is the portable runtime field-expression DAG, evaluator
+  backends, and artifact writers; see `docs/terrain-expressions.md`.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
 - Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,
@@ -68,6 +73,7 @@
   requested.
 
 ## C++ Features
-- C++11 standard
+- C++23 standard; newer C++26 features may be enabled per target when the
+  active Apple and CI toolchains support them without compatibility shims
 - RAII for resource management
 - Enable compiler warnings (-Wall)

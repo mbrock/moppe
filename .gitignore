@@ -6,3 +6,4 @@ build-ios-testflight/
 dist/
 .DS_Store
 test.tga
+field-demo.png
