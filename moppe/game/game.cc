@@ -268,11 +268,11 @@ namespace game {
 	  m_gen_stage = 7;
 	} else {
 	  m_gen_stage = 3;
-	  const terrain::TerrainPipeline pipeline =
-	    terrain::make_default_world_pipeline (m_seed);
+	  const terrain::TerrainProgram pipeline =
+	    terrain::make_default_world_program (m_seed);
 	  m_map.run_pipeline
 	    (pipeline, [this] (std::size_t,
-			       const terrain::PipelineStage& stage) {
+			       const terrain::TerrainTransform& stage) {
 	      if (std::holds_alternative<terrain::HydraulicErosion> (stage))
 		m_gen_stage = 4;
 	    });

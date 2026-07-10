@@ -4,7 +4,7 @@ Moppe's portable terrain subsystem separates three kinds of value:
 
 1. `ScalarField` is a lazy expression DAG.
 2. `GeologicalRecipe` contains the values used to construct related fields.
-3. `TerrainPipeline` orders operations that require a materialized heightmap.
+3. `TerrainProgram` orders operations that require a materialized heightmap.
 
 The game, Terrain Lab, unit tests, and command-line tools share these types.
 None of them contains renderer or platform graphics API state.
@@ -55,8 +55,8 @@ recipe's seven inspectable layers to the former generator bit for bit.
 
 ## Materialized pipelines
 
-`TerrainPipeline` contains a recipe, selected output layer, a reproducible
-random-stream position, and an ordered `std::vector<PipelineStage>`.  A stage
+`TerrainProgram` contains a recipe, selected output layer, a reproducible
+random-stream position, and an ordered `std::vector<TerrainTransform>`.  A stage
 is one of these runtime variants:
 
 - `NormalizeHeights`
@@ -102,7 +102,7 @@ The Terrain Lab window presents the system as a small construction game:
   gameplay LOD path and fades the finite draw horizon into distance haze;
 - Donut View embeds the periodic heightfield as an actual torus on the GPU.
 
-Every action edits the `TerrainPipeline` or `GeologicalRecipe` value.  The lab
+Every action edits the `TerrainProgram` or `GeologicalRecipe` value.  The lab
 keeps exact height-and-random-state checkpoints after each stage, so a stage
 edit only replays the affected suffix.  It does not maintain a parallel shadow
 representation of the recipe itself.  Leaving the lab restores the exact
@@ -111,10 +111,10 @@ playable heightmap snapshot.
 In C++, a scripted experiment is ordinary value manipulation:
 
 ```cpp
-auto pipeline = moppe::terrain::make_geological_pipeline (123);
+auto pipeline = moppe::terrain::make_geological_program (123);
 pipeline.recipe.mountains.cycles = 8;
 pipeline.recipe.blend.mountain_weight = 0.9f;
-pipeline.stages.emplace_back (moppe::terrain::HydraulicErosion {
+pipeline.transforms.emplace_back (moppe::terrain::HydraulicErosion {
   .droplets = 100000,
   .batch_size = 256
 });

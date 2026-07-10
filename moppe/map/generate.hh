@@ -3,7 +3,7 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/terrain/pipeline.hh>
+#include <moppe/terrain/program.hh>
 #include <moppe/terrain/topology.hh>
 
 #include <cmath>
@@ -247,18 +247,18 @@ namespace map {
       (terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
     using PipelineProgress = std::function
-      <void (std::size_t, const terrain::PipelineStage&)>;
+      <void (std::size_t, const terrain::TerrainTransform&)>;
 
     // Rebuilds the source and replays every ordered stage.  The pipeline
     // value therefore fully determines both interactive and game terrain.
-    void run_pipeline (const terrain::TerrainPipeline& pipeline,
+    void run_pipeline (const terrain::TerrainProgram& pipeline,
 		       const PipelineProgress& progress = { });
 
     // Incremental pipeline execution for interactive tools.  A checkpoint
     // includes both heights and random state, so resuming a prefix is exactly
     // equivalent to replaying the complete pipeline.
-    void begin_pipeline (const terrain::TerrainPipeline& pipeline);
-    void apply_pipeline_stage (const terrain::PipelineStage& stage);
+    void begin_pipeline (const terrain::TerrainProgram& pipeline);
+    void apply_pipeline_stage (const terrain::TerrainTransform& stage);
     PipelineState capture_pipeline_state () const;
     void restore_pipeline_state (const PipelineState& state);
 

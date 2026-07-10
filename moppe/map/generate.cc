@@ -268,9 +268,9 @@ namespace map {
 
   void
   RandomHeightMap::begin_pipeline
-    (const terrain::TerrainPipeline& pipeline)
+    (const terrain::TerrainProgram& pipeline)
   {
-    terrain::validate_pipeline (pipeline);
+    terrain::validate_program (pipeline);
     m_rng.seed (pipeline.randomness.seed);
     m_rng.discard (pipeline.randomness.offset);
     materialize_geological_recipe (pipeline.recipe, pipeline.layer);
@@ -278,7 +278,7 @@ namespace map {
 
   void
   RandomHeightMap::apply_pipeline_stage
-    (const terrain::PipelineStage& stage)
+    (const terrain::TerrainTransform& stage)
   {
     if (std::holds_alternative<terrain::NormalizeHeights> (stage))
       normalize ();
@@ -320,14 +320,14 @@ namespace map {
 
   void
   RandomHeightMap::run_pipeline
-    (const terrain::TerrainPipeline& pipeline,
+    (const terrain::TerrainProgram& pipeline,
      const PipelineProgress& progress)
   {
     begin_pipeline (pipeline);
-    for (std::size_t i = 0; i < pipeline.stages.size (); ++i) {
+    for (std::size_t i = 0; i < pipeline.transforms.size (); ++i) {
       if (progress)
-	progress (i, pipeline.stages[i]);
-      apply_pipeline_stage (pipeline.stages[i]);
+	progress (i, pipeline.transforms[i]);
+      apply_pipeline_stage (pipeline.transforms[i]);
     }
   }
 

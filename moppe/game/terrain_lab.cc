@@ -117,7 +117,7 @@ namespace game {
       return text;
     }
 
-    std::string stage_name (const terrain::PipelineStage& stage) {
+    std::string stage_name (const terrain::TerrainTransform& stage) {
       if (std::holds_alternative<terrain::NormalizeHeights> (stage))
 	return "NORMALIZE";
       if (std::holds_alternative<terrain::PowerHeights> (stage))
@@ -127,7 +127,7 @@ namespace game {
       return "TALUS RELAX";
     }
 
-    std::string stage_detail (const terrain::PipelineStage& stage) {
+    std::string stage_detail (const terrain::TerrainTransform& stage) {
       if (std::holds_alternative<terrain::NormalizeHeights> (stage))
 	return "map sampled range to 0..1";
       if (const auto* power =
@@ -171,7 +171,7 @@ namespace game {
       }
     }
 
-    int stage_property_count (const terrain::PipelineStage& stage) {
+    int stage_property_count (const terrain::TerrainTransform& stage) {
       if (std::holds_alternative<terrain::PowerHeights> (stage))
 	return 1;
       if (std::holds_alternative<terrain::HydraulicErosion> (stage))
@@ -182,7 +182,7 @@ namespace game {
     }
 
     PropertyText stage_property
-      (const terrain::PipelineStage& stage, int row) {
+      (const terrain::TerrainTransform& stage, int row) {
       if (const auto* power =
 	  std::get_if<terrain::PowerHeights> (&stage))
 	return { "EXPONENT", format_float (power->exponent, 2) };
@@ -202,7 +202,7 @@ namespace game {
   TerrainLab::TerrainLab ()
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false),
-      m_pipeline (terrain::make_geological_pipeline (0)),
+      m_pipeline (terrain::make_geological_program (0)),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
       m_pointer_down (false), m_camera_drag (false), m_pan_drag (false),
@@ -234,7 +234,7 @@ namespace game {
     m_terrain = &terrain;
     m_world = &world;
     m_sun_dir = sun_dir;
-    m_pipeline = terrain::make_geological_pipeline
+    m_pipeline = terrain::make_geological_program
       (static_cast<std::uint32_t> (seed));
     m_selected_stage = -1;
     m_stage_scroll = 0;
@@ -337,7 +337,7 @@ namespace game {
   void
   TerrainLab::reset_pipeline ()
   {
-    m_pipeline = terrain::make_geological_pipeline
+    m_pipeline = terrain::make_geological_program
       (m_pipeline.randomness.seed, m_pipeline.layer);
     m_selected_stage = -1;
     m_stage_scroll = 0;
@@ -352,7 +352,7 @@ namespace game {
     m_map->begin_pipeline (m_pipeline);
     m_checkpoints.clear ();
     m_checkpoints.push_back (m_map->capture_pipeline_state ());
-    for (const terrain::PipelineStage& stage : m_pipeline.stages) {
+    for (const terrain::TerrainTransform& stage : m_pipeline.transforms) {
       m_map->apply_pipeline_stage (stage);
       m_checkpoints.push_back (m_map->capture_pipeline_state ());
     }
@@ -370,19 +370,19 @@ namespace game {
     m_map->restore_pipeline_state (m_checkpoints[first_stage]);
     m_checkpoints.resize (static_cast<std::size_t> (first_stage) + 1);
     for (std::size_t i = static_cast<std::size_t> (first_stage);
-	 i < m_pipeline.stages.size (); ++i) {
-      m_map->apply_pipeline_stage (m_pipeline.stages[i]);
+	 i < m_pipeline.transforms.size (); ++i) {
+      m_map->apply_pipeline_stage (m_pipeline.transforms[i]);
       m_checkpoints.push_back (m_map->capture_pipeline_state ());
     }
     refresh ();
   }
 
   void
-  TerrainLab::append_stage (terrain::PipelineStage stage)
+  TerrainLab::append_stage (terrain::TerrainTransform stage)
   {
-    const int first_stage = static_cast<int> (m_pipeline.stages.size ());
-    m_pipeline.stages.push_back (std::move (stage));
-    m_selected_stage = static_cast<int> (m_pipeline.stages.size ()) - 1;
+    const int first_stage = static_cast<int> (m_pipeline.transforms.size ());
+    m_pipeline.transforms.push_back (std::move (stage));
+    m_selected_stage = static_cast<int> (m_pipeline.transforms.size ()) - 1;
     ensure_selected_stage_visible ();
     rerun_pipeline_from (first_stage);
   }
@@ -394,10 +394,10 @@ namespace game {
       (m_selected_stage, m_selected_stage + direction);
     const int target = m_selected_stage + direction;
     if (m_selected_stage < 0 || target < 0
-	|| target >= static_cast<int> (m_pipeline.stages.size ()))
+	|| target >= static_cast<int> (m_pipeline.transforms.size ()))
       return;
-    std::swap (m_pipeline.stages[m_selected_stage],
-	       m_pipeline.stages[target]);
+    std::swap (m_pipeline.transforms[m_selected_stage],
+	       m_pipeline.transforms[target]);
     m_selected_stage = target;
     ensure_selected_stage_visible ();
     rerun_pipeline_from (first_stage);
@@ -407,12 +407,12 @@ namespace game {
   TerrainLab::duplicate_selected_stage ()
   {
     if (m_selected_stage < 0
-	|| m_selected_stage >= static_cast<int> (m_pipeline.stages.size ()))
+	|| m_selected_stage >= static_cast<int> (m_pipeline.transforms.size ()))
       return;
     const int first_stage = m_selected_stage + 1;
-    const auto position = m_pipeline.stages.begin () + first_stage;
-    m_pipeline.stages.insert
-      (position, m_pipeline.stages[m_selected_stage]);
+    const auto position = m_pipeline.transforms.begin () + first_stage;
+    m_pipeline.transforms.insert
+      (position, m_pipeline.transforms[m_selected_stage]);
     ++m_selected_stage;
     ensure_selected_stage_visible ();
     rerun_pipeline_from (first_stage);
@@ -422,16 +422,16 @@ namespace game {
   TerrainLab::remove_selected_stage ()
   {
     if (m_selected_stage < 0
-	|| m_selected_stage >= static_cast<int> (m_pipeline.stages.size ()))
+	|| m_selected_stage >= static_cast<int> (m_pipeline.transforms.size ()))
       return;
     const int first_stage = m_selected_stage;
-    m_pipeline.stages.erase
-      (m_pipeline.stages.begin () + m_selected_stage);
-    if (m_pipeline.stages.empty ())
+    m_pipeline.transforms.erase
+      (m_pipeline.transforms.begin () + m_selected_stage);
+    if (m_pipeline.transforms.empty ())
       m_selected_stage = -1;
     else
       m_selected_stage = std::min
-	(m_selected_stage, static_cast<int> (m_pipeline.stages.size ()) - 1);
+	(m_selected_stage, static_cast<int> (m_pipeline.transforms.size ()) - 1);
     ensure_selected_stage_visible ();
     rerun_pipeline_from (first_stage);
   }
@@ -439,7 +439,7 @@ namespace game {
   void
   TerrainLab::ensure_selected_stage_visible ()
   {
-    const int count = static_cast<int> (m_pipeline.stages.size ());
+    const int count = static_cast<int> (m_pipeline.transforms.size ());
     const int maximum = std::max (0, count - visible_stage_rows);
     if (m_selected_stage >= 0) {
       if (m_selected_stage < m_stage_scroll)
@@ -506,8 +506,8 @@ namespace game {
       return;
     }
 
-    terrain::PipelineStage& stage =
-      m_pipeline.stages[m_selected_stage];
+    terrain::TerrainTransform& stage =
+      m_pipeline.transforms[m_selected_stage];
     if (auto* power = std::get_if<terrain::PowerHeights> (&stage)) {
       power->exponent = std::clamp
 	(power->exponent + direction * 0.05f, 0.1f, 4.0f);
@@ -572,7 +572,7 @@ namespace game {
     }
     for (int row = 0; row < visible_stage_rows; ++row) {
       const int stage = m_stage_scroll + row;
-      if (stage < static_cast<int> (m_pipeline.stages.size ())
+      if (stage < static_cast<int> (m_pipeline.transforms.size ())
 	  && stage_rect (row).contains (x, y)) {
 	m_selected_stage = stage;
 	return;
@@ -608,7 +608,7 @@ namespace game {
     int property_count = 9;
     if (m_selected_stage >= 0)
       property_count = stage_property_count
-	(m_pipeline.stages[m_selected_stage]);
+	(m_pipeline.transforms[m_selected_stage]);
     for (int row = 0; row < property_count; ++row) {
       const UiRect bounds = property_rect (row);
       if (stepper_minus_rect (bounds).contains (x, y)) {
@@ -621,8 +621,8 @@ namespace game {
       }
     }
     if (m_selected_stage >= 0) {
-      terrain::PipelineStage& stage =
-	m_pipeline.stages[m_selected_stage];
+      terrain::TerrainTransform& stage =
+	m_pipeline.transforms[m_selected_stage];
       if (auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage)) {
 	constexpr int presets[] = { 1, 64, 256, 1024 };
@@ -783,9 +783,9 @@ namespace game {
     m_pointer_x = x;
     m_pointer_y = y;
     if (stage_list_rect ().contains (x, y)
-	&& m_pipeline.stages.size () > visible_stage_rows) {
+	&& m_pipeline.transforms.size () > visible_stage_rows) {
       m_stage_scroll += delta > 0.0f ? -1 : 1;
-      const int maximum = static_cast<int> (m_pipeline.stages.size ())
+      const int maximum = static_cast<int> (m_pipeline.transforms.size ())
 	- visible_stage_rows;
       m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
       return;
@@ -869,13 +869,13 @@ namespace game {
 	       + stage_row_height, 2.0f);
     for (int row = 0; row < visible_stage_rows; ++row) {
       const int stage_index = m_stage_scroll + row;
-      if (stage_index >= static_cast<int> (m_pipeline.stages.size ()))
+      if (stage_index >= static_cast<int> (m_pipeline.transforms.size ()))
 	break;
       const UiRect bounds = stage_rect (row);
       m_ui.pipeline_row
 	(dl, bounds, std::to_string (stage_index + 1),
-	 stage_name (m_pipeline.stages[stage_index]),
-	 stage_detail (m_pipeline.stages[stage_index]), hot (bounds),
+	 stage_name (m_pipeline.transforms[stage_index]),
+	 stage_detail (m_pipeline.transforms[stage_index]), hot (bounds),
 	 m_pointer_down, m_selected_stage == stage_index);
     }
 
@@ -904,8 +904,8 @@ namespace game {
 	   hot (stepper_plus_rect (bounds)), m_pointer_down);
       }
     } else {
-      const terrain::PipelineStage& stage =
-	m_pipeline.stages[m_selected_stage];
+      const terrain::TerrainTransform& stage =
+	m_pipeline.transforms[m_selected_stage];
       const int count = stage_property_count (stage);
       for (int row = 0; row < count; ++row) {
 	const UiRect bounds = property_rect (row);
@@ -943,7 +943,7 @@ namespace game {
     }
 
     std::ostringstream status;
-    status << m_pipeline.stages.size () << " stages | selected ";
+    status << m_pipeline.transforms.size () << " stages | selected ";
     if (m_selected_stage < 0)
       status << "field recipe";
     else
