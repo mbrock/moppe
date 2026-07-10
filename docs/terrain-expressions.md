@@ -24,9 +24,38 @@ semantic node because the historical generator relied on fused floating-point
 results.  The Perlin shuffle also has an explicit unbiased sampler, avoiding
 standard-library-dependent sequences.
 
+Every backend implements the `FieldEvaluator` materialization boundary.
 `CpuEvaluator` lowers unique nodes to a topologically ordered register program
-and runs it for every point in a `Domain2D`.  Future MSL, WGSL, SPIR-V, or
-other backends can traverse the same variants.
+and runs it for every point in a `Domain2D`.  The macOS backend lowers the same
+DAG to a Metal function-stitching graph and executes it as a compute kernel.
+Future WGSL, SPIR-V, or compiled CPU backends can traverse the same variants.
+
+### Metal 4 function stitching
+
+The Metal backend precompiles a small vocabulary of `[[stitchable]]` MSL
+functions.  At runtime it maps scalar-field nodes to
+`MTLFunctionStitchingFunctionNode` values, wraps the graph in an
+`MTL4StitchedFunctionDescriptor`, and privately links it into one fixed
+materialization kernel through `MTL4ComputePipelineDescriptor`.
+
+Graph structure and graph data stay separate.  Constants and noise settings
+occupy mutable GPU buffers.  A specialized stitchable loader bakes only each
+value's stable buffer slot into the compiled graph.  Seeded Perlin permutation
+tables are produced by shared host code, so CPU and GPU evaluators use the
+same lattice.  The pipeline cache keys only the operation topology: changing
+a recipe value or seed reuses the pipeline, while changing the expression
+shape compiles another one.
+
+The fixed stitched-function ABI contains position, scalar parameters, noise
+descriptors, and permutation tables.  A small ordinary MSL kernel supplies
+the sampling domain and output buffer.  This keeps thread indexing and storage
+outside the field algebra and gives later backends an equally plain boundary.
+
+Terrain Lab requests the accelerated evaluator lazily from the platform and
+injects it into `map::TerrainEvaluator`.  macOS 26 uses Metal 4; unsupported
+platforms return no accelerator and retain the CPU implementation.  The
+current checkpoint reads the result back into the authoritative CPU heightmap
+so all existing transforms and physics remain unchanged.
 
 ## Geological recipes
 
@@ -166,6 +195,18 @@ Run both the pure terrain tests and map integration tests with:
 ctest --test-dir build --output-on-failure
 ```
 
+On macOS 26 this also runs `moppe-metal-tests`, comparing every field operation
+and the complete geological source against `CpuEvaluator`.  The standalone
+Metal timing and agreement check is:
+
+```sh
+./build/terrain-metal-demo 2049 123
+```
+
+On an M2 Pro, the initial checkpoint measured the 2049-square combined field
+at about 200 ms in the parallel CPU interpreter and 16 ms in a cached stitched
+Metal dispatch, including allocation, synchronization, and CPU readback.
+
 The field preview evaluates one lazy field:
 
 ```sh
@@ -197,7 +238,10 @@ are `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and
 - Add a stable serialization format for sources and programs, then layer a
   lightweight scripting language over the same values.
 - Generalize hydraulic constants into their own first-class parameter value.
-- Add compiled CPU and GPU evaluators alongside `CpuEvaluator`, while keeping
+- Keep the interactive Metal result GPU-resident through normalization,
+  normal generation, and rendering; read back only when CPU transforms or
+  gameplay need an authoritative map.
+- Add a compiled/SIMD CPU backend and portable GPU lowerings while keeping
   graphics API types outside the semantic graph.
 
 This remains a terrain system rather than a general tensor library.  New

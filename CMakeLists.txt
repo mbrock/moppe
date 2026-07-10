@@ -57,6 +57,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/uber.metal
   moppe/shaders/metal/post.metal
   moppe/shaders/metal/terrain.metal
+  moppe/shaders/metal/field.metal
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
 )
@@ -64,6 +65,7 @@ set(MOPPE_METAL_SOURCES
 set(MOPPE_METAL_DEPS
   moppe/shaders/metal/common.h
   moppe/render/metal/shader_types.h
+  moppe/terrain/metal/field_shader_types.h
 )
 
 execute_process(
@@ -106,6 +108,9 @@ else()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${MOPPE_METAL_SOURCES} ${MOPPE_METAL_DEPS})
   file(READ moppe/render/metal/shader_types.h MOPPE_METAL_SOURCE)
+  file(READ moppe/terrain/metal/field_shader_types.h
+    MOPPE_METAL_FIELD_TYPES)
+  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_FIELD_TYPES}\n")
   file(READ moppe/shaders/metal/common.h MOPPE_METAL_COMMON)
   string(REPLACE
     "#include \"../../render/metal/shader_types.h\"" ""
@@ -114,6 +119,9 @@ else()
   foreach(src ${MOPPE_METAL_SOURCES})
     file(READ ${src} MOPPE_METAL_PART)
     string(REPLACE "#include \"common.h\"" ""
+      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
+    string(REPLACE
+      "#include \"../../terrain/metal/field_shader_types.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
   endforeach()
@@ -139,6 +147,7 @@ target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # independent of game and platform code so tools and tests use the same DAG.
 add_library(moppe_terrain STATIC
   moppe/terrain/field.cc
+  moppe/terrain/noise.cc
   moppe/terrain/cpu_evaluator.cc
   moppe/terrain/geological.cc
   moppe/terrain/program.cc
@@ -146,6 +155,35 @@ add_library(moppe_terrain STATIC
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_terrain PUBLIC ZLIB::ZLIB)
+
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_library(moppe_terrain_metal STATIC
+    moppe/terrain/metal/metal_evaluator.mm
+  )
+  target_include_directories(moppe_terrain_metal
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(moppe_terrain_metal PRIVATE -fobjc-arc)
+  target_link_libraries(moppe_terrain_metal PUBLIC moppe_terrain
+    "-framework Metal" "-framework Foundation")
+  add_dependencies(moppe_terrain_metal moppe_shaders)
+
+  add_executable(terrain-metal-demo
+    moppe/terrain/metal/metal_field_demo.cc)
+  target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
+  target_compile_definitions(terrain-metal-demo PRIVATE
+    MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+
+  if(BUILD_TESTING)
+    add_executable(moppe-metal-tests
+      tests/test_main.cc
+      tests/terrain/metal_evaluator_test.cc
+    )
+    target_link_libraries(moppe-metal-tests PRIVATE moppe_terrain_metal)
+    target_compile_definitions(moppe-metal-tests PRIVATE
+      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+    add_test(NAME moppe-metal-tests COMMAND moppe-metal-tests)
+  endif()
+endif()
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(terrain-field-demo moppe/terrain/field_demo.cc)
@@ -296,7 +334,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_compile_definitions(moppe_platform_mac PRIVATE
     MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
   target_link_libraries(moppe_platform_mac PUBLIC
-    moppe_metal moppe_apple "-framework AppKit")
+    moppe_metal moppe_apple moppe_terrain_metal "-framework AppKit")
 
   # Renderer testbed: spinning solids + HUD shapes, no game.
   add_executable(moppe-testbed moppe/game/testbed.cc)

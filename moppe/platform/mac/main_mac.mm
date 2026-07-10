@@ -6,6 +6,7 @@
 
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
+#include <moppe/terrain/metal/metal_evaluator.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -276,6 +277,18 @@ match_screen_render_size (MoppeView* view) {
 
 namespace moppe {
 namespace platform {
+  std::unique_ptr<terrain::FieldEvaluator>
+  create_field_evaluator () {
+    try {
+      return std::make_unique<terrain::metal::MetalEvaluator>
+	(asset_path (MOPPE_SHADER_NAME));
+    } catch (const std::exception& error) {
+      std::cerr << "moppe: Metal field evaluator unavailable: "
+		<< error.what () << std::endl;
+      return { };
+    }
+  }
+
   int
   run (Game& game, const Config& config) {
     @autoreleasepool {

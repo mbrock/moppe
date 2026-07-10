@@ -236,12 +236,20 @@ namespace map {
   void
   RandomHeightMap::materialize (const terrain::ScalarField& field)
   {
+    static const terrain::CpuEvaluator evaluator;
+    materialize (field, evaluator);
+  }
+
+  void
+  RandomHeightMap::materialize
+    (const terrain::ScalarField& field,
+     const terrain::FieldEvaluator& evaluator)
+  {
     const terrain::Domain2D domain {
       .width = static_cast<std::size_t> (m_width),
       .height = static_cast<std::size_t> (m_height)
     };
-    const terrain::ScalarRaster raster = terrain::CpuEvaluator ().evaluate
-      (field, domain);
+    const terrain::ScalarRaster raster = evaluator.evaluate (field, domain);
 
     FORALL (x, y)
       set (x, y, raster.at (x, y));

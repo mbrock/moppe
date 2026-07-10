@@ -3,6 +3,7 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
+#include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/topology.hh>
 
@@ -243,6 +244,8 @@ namespace map {
     // Sample an arbitrary scalar-field value into this storage.  Choosing and
     // expanding a program source belongs to TerrainEvaluator.
     void materialize (const terrain::ScalarField& field);
+    void materialize (const terrain::ScalarField& field,
+		      const terrain::FieldEvaluator& evaluator);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized

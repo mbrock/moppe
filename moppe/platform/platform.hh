@@ -3,10 +3,14 @@
 
 #include <moppe/render/renderer.hh>
 
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace moppe {
+namespace terrain {
+  class FieldEvaluator;
+}
 namespace platform {
   // Unified key codes: removes the old ASCII/GLUT_KEY_* numeric
   // collision ('d' == GLUT_KEY_LEFT == 100).  Only keys the game
@@ -84,6 +88,10 @@ namespace platform {
 
   // Monotonic time in seconds; never wall-clock.
   double now ();
+
+  // Returns the platform's accelerated pointwise-field backend when one is
+  // available.  A null result deliberately selects the portable CPU backend.
+  std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator ();
 
   // Screen areas covered by notches / home indicators, in points.
   // Zero on macOS.  The HUD and touch zones stay inside these.

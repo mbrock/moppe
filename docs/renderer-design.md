@@ -222,10 +222,12 @@ light matrix, shadow strength) instead of gl_* built-ins. Lighting moves to
 world space (the eye-space detour existed only because fixed-function GL
 transformed lights by the modelview).
 
-Future (out of scope now, noted for later): generate the fBm/ridged noise in
-a compute kernel (~75 M noise evals → ~10 ms on GPU); hydraulic erosion stays
-CPU — 1.5 M sequential droplets with scattered read-modify-writes don't map
-to GPU without changing the algorithm (and the look).
+The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
+and runs in a compute kernel.  Terrain Lab currently reads the result back to
+the authoritative CPU heightmap before normalization, normals, erosion, and
+texture upload.  The next renderer boundary is to keep interactive previews
+GPU-resident through normalization and normal generation.  Hydraulic erosion
+remains a separate iterative problem rather than part of the pointwise graph.
 
 ## Other shader ports
 

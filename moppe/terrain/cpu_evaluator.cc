@@ -1,13 +1,12 @@
 #include <moppe/terrain/cpu_evaluator.hh>
+#include <moppe/terrain/noise.hh>
 
 #include <algorithm>
 #include <atomic>
-#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
 #include <memory>
-#include <random>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
@@ -16,39 +15,11 @@
 
 namespace moppe::terrain {
   namespace {
-    std::uint32_t bounded_random (std::mt19937& rng,
-				  std::uint32_t bound) {
-      // Match libc++'s unbiased bit-mask rejection, which the original
-      // macOS generator used.  Keeping it explicit also makes geological
-      // seeds independent of the standard-library implementation.
-      std::uint32_t mask = bound - 1;
-      mask |= mask >> 1;
-      mask |= mask >> 2;
-      mask |= mask >> 4;
-      mask |= mask >> 8;
-      mask |= mask >> 16;
-      std::uint32_t value;
-      do
-	value = rng () & mask;
-      while (value >= bound);
-      return value;
-    }
-
     class PerlinTable {
     public:
-      explicit PerlinTable (std::uint32_t seed) {
-	std::mt19937 rng (seed);
-	std::array<int, 256> shuffled;
-	for (int i = 0; i < 256; ++i)
-	  shuffled[i] = i;
-	for (int i = 255; i > 0; --i) {
-	  const int j = static_cast<int>
-	    (bounded_random (rng, static_cast<std::uint32_t> (i + 1)));
-	  std::swap (shuffled[i], shuffled[j]);
-	}
-	for (int i = 0; i < 512; ++i)
-	  m_permutation[i] = shuffled[i & 255];
-      }
+      explicit PerlinTable (std::uint32_t seed)
+	: m_permutation (make_perlin_permutation (seed))
+      { }
 
       float noise (float x, float y) const {
 	return noise (x, y, 256, 256);
@@ -180,7 +151,7 @@ namespace moppe::terrain {
 	}
       }
 
-      std::array<int, 512> m_permutation;
+      PerlinPermutation m_permutation;
     };
 
     struct LoadConstant { float value; };

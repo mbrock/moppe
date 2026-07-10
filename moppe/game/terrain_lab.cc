@@ -246,7 +246,10 @@ namespace game {
 
     m_renderer = &renderer;
     m_map = &map;
-    m_evaluator = std::make_unique<map::TerrainEvaluator> (map);
+    if (!m_source_evaluator)
+      m_source_evaluator = platform::create_field_evaluator ();
+    m_evaluator = std::make_unique<map::TerrainEvaluator>
+      (map, m_source_evaluator.get ());
     m_terrain = &terrain;
     m_world = &world;
     m_sun_dir = sun_dir;
