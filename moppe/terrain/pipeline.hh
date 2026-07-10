@@ -18,6 +18,7 @@ namespace moppe::terrain {
 
   struct HydraulicErosion {
     int droplets;
+    int batch_size = 256;
   };
 
   struct ThermalErosion {

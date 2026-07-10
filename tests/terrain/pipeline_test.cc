@@ -30,12 +30,27 @@ MOPPE_TEST (default_world_pipeline_records_every_transform) {
   MOPPE_CHECK
     (std::get<HydraulicErosion> (pipeline.stages[2]).droplets
      == 1500000);
+  MOPPE_CHECK
+    (std::get<HydraulicErosion> (pipeline.stages[2]).batch_size == 256);
 }
 
 MOPPE_TEST (pipeline_validation_rejects_invalid_stage_parameters) {
   TerrainPipeline pipeline = make_geological_pipeline (123);
   pipeline.stages.emplace_back (HydraulicErosion { -1 });
   bool threw = false;
+  try {
+    validate_pipeline (pipeline);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
+
+  pipeline = make_geological_pipeline (123);
+  pipeline.stages.emplace_back (HydraulicErosion {
+    .droplets = 10,
+    .batch_size = 0
+  });
+  threw = false;
   try {
     validate_pipeline (pipeline);
   } catch (const std::invalid_argument&) {
