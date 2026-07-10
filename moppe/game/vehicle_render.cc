@@ -159,19 +159,31 @@ namespace game {
     if (v.boost_level () > 0.001f)
       {
         const float k = v.boost_level ();
+        const float flicker = 0.88f
+          + 0.12f * std::sin (t * 39.0f) * std::sin (t * 26.0f + 1.1f);
+        const float len = k * flicker;
+
+        render::DrawState glow;
+        glow.blend = true;
+        glow.additive = true;
+        glow.depth_write = false;
+        dl.state (glow);
         dl.lit (false);
         for (int s = -1; s <= 1; s += 2)
           {
             dl.push ();
             dl.translate (s * 0.6f, 0.25f, -0.4f);
             dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
-            dl.color (1.0f, 0.7f, 0.15f);
-            dl.cone (0.16f, 2.0f * k, 8, 2);
-            dl.color (0.55f, 0.75f, 1.0f);
-            dl.cone (0.09f, 2.9f * k, 8, 2);
+            dl.color (1.0f, 0.42f, 0.10f, 0.28f);
+            dl.cone (0.24f, 2.1f * len, 10, 3);
+            dl.color (1.0f, 0.62f, 0.18f, 0.55f);
+            dl.cone (0.14f, 2.7f * len, 10, 3);
+            dl.color (0.90f, 0.95f, 1.0f, 0.85f);
+            dl.cone (0.065f, 3.2f * len, 8, 3);
             dl.pop ();
           }
         dl.lit (true);
+        dl.state (render::DrawState ());
       }
   }
 
@@ -331,12 +343,23 @@ namespace game {
       draw_limb (dl, Vector3D (s * 0.06f, 0.02f, 0.0f),
                  Vector3D (s * 0.06f, 0.13f, -0.02f), 0.04f);
 
-    // Headlight, drawn unlit so it always looks switched on.
+    // Headlight, drawn unlit so it always looks switched on, with
+    // a soft additive halo that the bloom pass picks up.
     dl.push ();
     dl.lit (false);
     dl.color (1.0f, 0.95f, 0.7f);
     dl.translate (0, -0.06f, 0.16f);
     dl.sphere (0.075f, 10, 10);
+    {
+      render::DrawState glow;
+      glow.blend = true;
+      glow.additive = true;
+      glow.depth_write = false;
+      dl.state (glow);
+      dl.color (1.0f, 0.85f, 0.5f, 0.22f);
+      dl.sphere (0.13f, 10, 10);
+      dl.state (render::DrawState ());
+    }
     dl.lit (true);
     dl.pop ();
 
@@ -408,38 +431,65 @@ namespace game {
         dl.pop ();
       }
 
-    // Exhaust flame licking out of the muffler under load.
+    // Exhaust flame licking out of the muffler under load: an
+    // additive two-layer lick with a pale core.
     if (std::abs (v.thrust ()) > 0.1)
       {
+        const float th = std::abs (v.thrust ());
+        const float lick = 0.85f + 0.15f
+          * std::sin (time * 47.0f + std::sin (time * 31.0f));
+
+        render::DrawState glow;
+        glow.blend = true;
+        glow.additive = true;
+        glow.depth_write = false;
+        dl.state (glow);
         dl.lit (false);
-        dl.color (1.0f, 0.55f, 0.1f);
         dl.push ();
         dl.translate (0.17f, -0.30f, -0.80f);
         dl.rotate_deg (180, 0, 1, 0);
-        dl.cone (0.06f, 0.16f + 0.30f * std::abs (v.thrust ()),
-                 8, 2);
+        dl.color (1.0f, 0.45f, 0.08f, 0.55f);
+        dl.cone (0.07f, (0.16f + 0.30f * th) * lick, 8, 2);
+        dl.color (1.0f, 0.85f, 0.45f, 0.75f);
+        dl.cone (0.035f, (0.22f + 0.36f * th) * lick, 8, 2);
         dl.pop ();
         dl.lit (true);
+        dl.state (render::DrawState ());
       }
 
-    // Live jump-jet output: an orange plume with a blue-white core.
+    // Live jump-jet output: a layered additive plume -- a wide warm
+    // sheath around an orange body around a white-hot core, all
+    // shivering with engine flicker.  Additive layers sum where
+    // they overlap, so the middle reads as incandescent.
     if (v.boost_level () > 0.001f)
       {
         const float k = v.boost_level ();
+        const float flicker = 0.88f
+          + 0.12f * std::sin (time * 41.0f)
+                  * std::sin (time * 27.0f + 1.7f);
+        const float len = k * flicker;
 
+        render::DrawState glow;
+        glow.blend = true;
+        glow.additive = true;
+        glow.depth_write = false;
+        dl.state (glow);
         dl.lit (false);
         for (int s = -1; s <= 1; s += 2)
           {
             dl.push ();
             dl.translate (s * 0.14f, -0.55f, -0.35f);
             dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
-            dl.color (1.0f, 0.7f, 0.15f);
-            dl.cone (0.14f, 1.8f * k, 8, 2);
-            dl.color (0.55f, 0.75f, 1.0f);
-            dl.cone (0.08f, 2.6f * k, 8, 2);
+            dl.color (1.0f, 0.42f, 0.10f, 0.28f);
+            dl.cone (0.21f, 1.9f * len, 10, 3);
+            dl.color (1.0f, 0.62f, 0.18f, 0.55f);
+            dl.cone (0.12f, 2.5f * len, 10, 3);
+            dl.color (0.90f, 0.95f, 1.0f, 0.85f);
+            dl.cone (0.055f, 3.0f * len, 8, 3);
             dl.pop ();
           }
         dl.lit (true);
+        dl.state (render::DrawState ());
       }
 
     dl.pop ();

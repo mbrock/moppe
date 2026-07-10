@@ -30,6 +30,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_SHADOW   3
 #define MOPPE_TEX_ROCK     4
 #define MOPPE_TEX_SCENE    0
+#define MOPPE_TEX_BLOOM    1   /* post passes */
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
 #define MOPPE_TEX_NORMALS  1   /* vertex stage */
 
@@ -83,13 +84,18 @@ struct MoppeOceanUniforms {
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
-  MoppeFloat4 params;         // x=time
+  MoppeFloat4 params;         // x=time, y=sea level (world y)
+  MoppeFloat4 shore;          // x=1/step_x, y=1/step_z,
+			      // z=height_scale, w=grid width (0=off)
 };
 
-// Fullscreen quad passes: present, motion-blur ghosts, underwater.
+// Fullscreen quad passes: present, motion-blur ghosts, underwater,
+// bloom bright/blur.
 struct MoppeQuadUniforms {
   MoppeFloat4 tint;           // rgb * alpha blend factor
-  MoppeFloat4 params;         // x=uv zoom, y=time, z=underwater flag
+  MoppeFloat4 params;         // x=uv zoom, y=time, zw=blur texel step
+  MoppeFloat4 sun;            // xy=sun screen uv, z=flare strength,
+			      // w=aspect (present pass only)
 };
 
 struct MoppeHudUniforms {

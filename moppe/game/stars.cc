@@ -82,6 +82,21 @@ namespace game {
       dl.torus (0.16f, 0.75f, 10, 18);
       dl.color (1.0f, 0.95f, 0.6f);
       dl.sphere (0.3f, 8, 8);
+
+      // A breathing additive halo turns each pickup into a beacon
+      // (the bloom pass picks it up from far off).
+      {
+	render::DrawState glow;
+	glow.blend = true;
+	glow.additive = true;
+	glow.depth_write = false;
+	dl.state (glow);
+	const float pulse =
+	  1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
+	dl.color (1.0f, 0.80f, 0.30f, 0.15f);
+	dl.sphere (1.15f * pulse, 10, 8);
+	dl.state (render::DrawState ());
+      }
       dl.pop ();
     }
     dl.lit (true);

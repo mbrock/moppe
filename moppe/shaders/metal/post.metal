@@ -38,16 +38,95 @@ quad_fragment (QuadVaryings in [[stage_in]],
   return float4 (scene.sample (smp, in.uv).rgb, 1.0) * q.tint;
 }
 
-// Final scene grade.  The renderer intentionally preserves the game's
-// gamma-space palette, so this is a compact display-referred treatment:
-// a little separation, warm highlights, cool shadows, and a soft vignette.
-// The HUD is drawn afterwards and stays pixel-accurate.
+// Bloom bright pass: soft-knee threshold into the quarter-res
+// chain.  Only genuinely hot pixels pass -- the sun, the boost
+// plume, glints, snowfields in direct light.
 fragment float4
-present_fragment (QuadVaryings in [[stage_in]],
-		  texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
+bloom_bright_fragment (QuadVaryings in [[stage_in]],
+		       texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
 {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
-  float3 color = scene.sample (smp, in.uv).rgb;
+  const float3 c = scene.sample (smp, in.uv).rgb;
+  const float luma = dot (c, float3 (0.299, 0.587, 0.114));
+  const float k = smoothstep (0.66, 0.90, luma);
+  return float4 (c * k, 1.0);
+}
+
+// Separable 9-tap gaussian; params.zw carries the texel step for
+// this direction.
+fragment float4
+bloom_blur_fragment (QuadVaryings in [[stage_in]],
+		     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
+		     texture2d<float> src [[texture(MOPPE_TEX_SCENE)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  const float2 step = q.params.zw;
+  const float w[5] = { 0.227027, 0.1945946, 0.1216216,
+		       0.054054, 0.016216 };
+  float3 c = src.sample (smp, in.uv).rgb * w[0];
+  for (int i = 1; i < 5; ++i) {
+    c += src.sample (smp, in.uv + step * (float) i).rgb * w[i];
+    c += src.sample (smp, in.uv - step * (float) i).rgb * w[i];
+  }
+  return float4 (c, 1.0);
+}
+
+// Final scene grade.  The renderer intentionally preserves the game's
+// gamma-space palette, so this is a compact display-referred treatment:
+// chromatic fringing and bloom from the lens, an occlusion-aware sun
+// flare, a little separation, warm highlights, cool shadows, animated
+// grain, and a soft vignette.  The HUD is drawn afterwards and stays
+// pixel-accurate.
+fragment float4
+present_fragment (QuadVaryings in [[stage_in]],
+		  constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
+		  texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]],
+		  texture2d<float> bloom [[texture(MOPPE_TEX_BLOOM)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  const float time = q.params.y;
+
+  // Chromatic fringe, quadratic toward the corners so the center
+  // stays razor sharp.
+  const float2 centered_uv = in.uv - 0.5;
+  const float rr = dot (centered_uv, centered_uv);
+  const float2 fringe = centered_uv * rr * 0.010;
+  float3 color = float3 (scene.sample (smp, in.uv + fringe).r,
+			 scene.sample (smp, in.uv).g,
+			 scene.sample (smp, in.uv - fringe).b);
+
+  // Bloom, prefiltered and blurred at quarter resolution.
+  color += bloom.sample (smp, in.uv).rgb * 0.45;
+
+  // Lens flare: warm veil + anamorphic streak on the sun, plus a
+  // few tinted ghosts mirrored through the screen center.  sun.z
+  // already folds in terrain occlusion, clouds, and edge fade.
+  if (q.sun.z > 0.001) {
+    float2 d = in.uv - q.sun.xy;
+    d.x *= q.sun.w;
+    const float dist = length (d);
+
+    const float veil = exp (-dist * 2.6) * 0.15;
+    const float streak = exp (-abs (d.y) * 46.0)
+      * exp (-abs (d.x) * 3.2) * 0.42;
+    color += float3 (1.0, 0.86, 0.62) * (veil + streak) * q.sun.z;
+
+    const float2 sun_c = q.sun.xy - 0.5;
+    const float ghost_k[3] = { 0.45, 0.9, 1.5 };
+    const float ghost_r[3] = { 0.05, 0.085, 0.13 };
+    const float3 ghost_tint[3] = {
+      float3 (0.45, 0.75, 1.0),
+      float3 (1.0, 0.62, 0.38),
+      float3 (0.55, 1.0, 0.65),
+    };
+    for (int g = 0; g < 3; ++g) {
+      float2 gd = in.uv - (0.5 - sun_c * ghost_k[g]);
+      gd.x *= q.sun.w;
+      const float falloff =
+	exp (-dot (gd, gd) / (ghost_r[g] * ghost_r[g]));
+      color += ghost_tint[g] * falloff * 0.05 * q.sun.z;
+    }
+  }
 
   // Gentle filmic S-curve (gamma-space): richer shadows and a
   // rounder highlight shoulder without crushing the 8-bit palette.
@@ -70,7 +149,18 @@ present_fragment (QuadVaryings in [[stage_in]],
   // A touch of global contrast around mid-gray.
   color = (color - 0.5) * 1.03 + 0.508;
 
-  const float2 centered = (in.uv - 0.5) * float2 (1.0, 0.72);
+  // Animated film grain, stronger in the shadows.  Hashed from the
+  // pixel coordinate (bounded first: sin() loses precision on big
+  // arguments) so it's per-pixel, not a smooth gradient.
+  const float2 gp = fmod (in.position.xy
+			  + float2 (time * 173.0, time * 251.0),
+			  1024.0);
+  const float grain = fract (sin (dot (gp, float2 (12.9898, 78.233)))
+			     * 43758.5453);
+  const float gl = dot (color, float3 (0.299, 0.587, 0.114));
+  color += (grain - 0.5) * 0.020 * (1.0 - 0.65 * gl);
+
+  const float2 centered = centered_uv * float2 (1.0, 0.72);
   const float vignette = 1.0 - 0.09
     * smoothstep (0.22, 0.72, dot (centered, centered));
   return float4 (saturate (color * vignette), 1.0);

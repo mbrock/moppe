@@ -99,7 +99,8 @@ namespace render {
 			 bool gen_mips);
     id<MTLRenderPipelineState> make_pipeline
       (NSString* vs, NSString* fs, MTLPixelFormat color,
-       MTLPixelFormat depth, int samples, bool blend);
+       MTLPixelFormat depth, int samples, bool blend,
+       bool additive = false);
 
     // scene-pass encoding helpers
     id<MTLRenderCommandEncoder> scene_encoder ();
@@ -120,9 +121,12 @@ namespace render {
 
     // pipelines
     id<MTLRenderPipelineState> m_uber_opaque = nil, m_uber_blend = nil;
+    id<MTLRenderPipelineState> m_uber_add = nil;
     id<MTLRenderPipelineState> m_hud = nil;
     id<MTLRenderPipelineState> m_present = nil, m_ghost = nil;
     id<MTLRenderPipelineState> m_underwater = nil;
+    id<MTLRenderPipelineState> m_bloom_bright = nil;
+    id<MTLRenderPipelineState> m_bloom_blur = nil;
     id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
 
@@ -134,10 +138,11 @@ namespace render {
     id<MTLSamplerState> m_sampler_clamp = nil;
     TexturePtr m_white;
 
-    // render targets (drawable-sized)
+    // render targets (drawable-sized; bloom at quarter res)
     id<MTLTexture> m_msaa_color = nil, m_msaa_depth = nil;
     id<MTLTexture> m_scene_a = nil, m_scene_b = nil;
     id<MTLTexture> m_prev_frame = nil;
+    id<MTLTexture> m_bloom_a = nil, m_bloom_b = nil;
     bool m_prev_valid = false;
     int m_target_w = 0, m_target_h = 0;
     bool m_memoryless_ok = false;
@@ -160,6 +165,7 @@ namespace render {
     uint32_t m_sky_vcount = 0;
     id<MTLBuffer> m_ocean_verts = nil;
     uint32_t m_ocean_vcount = 0;
+    float m_ocean_level = 0;
 
     // streaming
     dispatch_semaphore_t m_inflight;
@@ -244,7 +250,8 @@ namespace render {
   MetalRenderer::make_pipeline (NSString* vs, NSString* fs,
 				MTLPixelFormat color,
 				MTLPixelFormat depth,
-				int samples, bool blend) {
+				int samples, bool blend,
+				bool additive) {
     id<MTLFunction> vf = [m_library newFunctionWithName: vs];
     id<MTLFunction> ff = fs ? [m_library newFunctionWithName: fs] : nil;
     if (!vf || (fs && !ff)) {
@@ -260,15 +267,17 @@ namespace render {
     if (color != MTLPixelFormatInvalid) {
       d.colorAttachments[0].pixelFormat = color;
       if (blend) {
+	// Additive keeps src-alpha as the throttle but sums into
+	// the framebuffer: overlapping glow builds toward white.
+	const MTLBlendFactor dst = additive
+	  ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
 	d.colorAttachments[0].blendingEnabled = YES;
 	d.colorAttachments[0].sourceRGBBlendFactor =
 	  MTLBlendFactorSourceAlpha;
-	d.colorAttachments[0].destinationRGBBlendFactor =
-	  MTLBlendFactorOneMinusSourceAlpha;
+	d.colorAttachments[0].destinationRGBBlendFactor = dst;
 	d.colorAttachments[0].sourceAlphaBlendFactor =
 	  MTLBlendFactorSourceAlpha;
-	d.colorAttachments[0].destinationAlphaBlendFactor =
-	  MTLBlendFactorOneMinusSourceAlpha;
+	d.colorAttachments[0].destinationAlphaBlendFactor = dst;
       }
     }
     d.depthAttachmentPixelFormat = depth;
@@ -295,6 +304,9 @@ namespace render {
 				   color, depth, MSAA_SAMPLES, false);
     m_uber_blend = make_pipeline (@"uber_vertex", @"uber_fragment",
 				  color, depth, MSAA_SAMPLES, true);
+    m_uber_add = make_pipeline (@"uber_vertex", @"uber_fragment",
+				color, depth, MSAA_SAMPLES, true,
+				true);
     m_hud = make_pipeline (@"hud_vertex", @"hud_fragment",
 			   color, MTLPixelFormatInvalid, 1, true);
     m_present = make_pipeline (@"quad_vertex", @"present_fragment",
@@ -303,6 +315,14 @@ namespace render {
 			     color, MTLPixelFormatInvalid, 1, true);
     m_underwater = make_pipeline (@"quad_vertex",
 				  @"underwater_fragment",
+				  color, MTLPixelFormatInvalid, 1,
+				  false);
+    m_bloom_bright = make_pipeline (@"quad_vertex",
+				    @"bloom_bright_fragment",
+				    color, MTLPixelFormatInvalid, 1,
+				    false);
+    m_bloom_blur = make_pipeline (@"quad_vertex",
+				  @"bloom_blur_fragment",
 				  color, MTLPixelFormatInvalid, 1,
 				  false);
     m_terrain = make_pipeline (@"terrain_vertex", @"terrain_fragment",
@@ -622,6 +642,7 @@ namespace render {
 	}
       }
 
+    m_ocean_level = setup.level;
     m_ocean_vcount = (uint32_t) (verts.size () / 3);
     m_ocean_verts = [m_device
       newBufferWithBytes: verts.data ()
@@ -666,6 +687,12 @@ namespace render {
     m_scene_b = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1, false);
     m_prev_frame = make_target (MTLPixelFormatBGRA8Unorm, w, h, 1,
 				false);
+    const int bw = w / 4 > 0 ? w / 4 : 1;
+    const int bh = h / 4 > 0 ? h / 4 : 1;
+    m_bloom_a = make_target (MTLPixelFormatBGRA8Unorm, bw, bh, 1,
+			     false);
+    m_bloom_b = make_target (MTLPixelFormatBGRA8Unorm, bw, bh, 1,
+			     false);
     // Freshly created: undefined contents until the first blur blit.
     m_prev_valid = false;
   }
@@ -921,6 +948,18 @@ namespace render {
     u.sun_dir = m_fu.sun_dir;
     u.fog_color = f4 (params.fog_color, params.fog_scale);
     u.params.x = params.time;
+    u.params.y = m_ocean_level;
+
+    // Shore data: the fragment shader reads the height texture to
+    // find the seabed for foam and shallows.
+    if (m_have_terrain && m_heights) {
+      u.shore.x = 1.0f / m_terrain_params.scale.x;
+      u.shore.y = 1.0f / m_terrain_params.scale.z;
+      u.shore.z = m_terrain_params.scale.y;
+      u.shore.w = (float) m_terrain_params.width;
+      [enc setFragmentTexture: m_heights
+		      atIndex: MOPPE_TEX_HEIGHTS];
+    }
 
     [enc setVertexBuffer: m_ocean_verts offset: 0
 		 atIndex: MOPPE_BUF_VERTICES];
@@ -968,8 +1007,9 @@ namespace render {
       [enc setRenderPipelineState: m_hud];
       [enc setCullMode: MTLCullModeNone];
     } else {
-      [enc setRenderPipelineState: s.blend
-	? m_uber_blend : m_uber_opaque];
+      [enc setRenderPipelineState:
+	     s.additive ? m_uber_add
+	     : s.blend ? m_uber_blend : m_uber_opaque];
       [enc setDepthStencilState:
 	     m_ds[s.depth_test ? 1 : 0][s.depth_write ? 1 : 0]];
       [enc setCullMode: s.cull ? MTLCullModeBack : MTLCullModeNone];
@@ -1152,6 +1192,46 @@ namespace render {
   MetalRenderer::draw_hud (const DrawList& list) {
     end_scene_encoder ();
 
+    // One fullscreen pass into `dst` reading `src`.
+    auto quad_pass = [&] (id<MTLRenderPipelineState> pso,
+			  id<MTLTexture> src, id<MTLTexture> dst,
+			  const MoppeQuadUniforms& q) {
+      MTLRenderPassDescriptor* p =
+	[MTLRenderPassDescriptor renderPassDescriptor];
+      p.colorAttachments[0].texture = dst;
+      p.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      p.colorAttachments[0].storeAction = MTLStoreActionStore;
+      id<MTLRenderCommandEncoder> e =
+	[m_cmd renderCommandEncoderWithDescriptor: p];
+      [e setRenderPipelineState: pso];
+      [e setVertexBytes: &q length: sizeof (q)
+		atIndex: MOPPE_BUF_FRAME];
+      [e setFragmentBytes: &q length: sizeof (q)
+		  atIndex: MOPPE_BUF_FRAME];
+      [e setFragmentTexture: src atIndex: MOPPE_TEX_SCENE];
+      [e drawPrimitives: MTLPrimitiveTypeTriangle
+	    vertexStart: 0 vertexCount: 3];
+      [e endEncoding];
+    };
+
+    // Bloom: bright-pass into quarter res, then a separable blur
+    // (a -> b horizontal, b -> a vertical).
+    const bool bloom_ok = m_bloom_bright && m_bloom_blur && m_bloom_a;
+    if (bloom_ok) {
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1;
+      quad_pass (m_bloom_bright, m_current, m_bloom_a, q);
+
+      q.params.z = 1.0f / (float) m_bloom_a.width;
+      q.params.w = 0;
+      quad_pass (m_bloom_blur, m_bloom_a, m_bloom_b, q);
+      q.params.z = 0;
+      q.params.w = 1.0f / (float) m_bloom_a.height;
+      quad_pass (m_bloom_blur, m_bloom_b, m_bloom_a, q);
+    }
+
     MTLRenderPassDescriptor* rp =
       [MTLRenderPassDescriptor renderPassDescriptor];
     rp.colorAttachments[0].texture = m_drawable.texture;
@@ -1161,18 +1241,47 @@ namespace render {
     id<MTLRenderCommandEncoder> enc =
       [m_cmd renderCommandEncoderWithDescriptor: rp];
 
-    // Scene quad.
+    // Scene quad with the final grade, bloom, and lens flare.
     if (m_present) {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
       q.params.x = 1;
+      q.params.y = m_fp.time;
+
+      // Project the sun onto the screen for the flare; the game
+      // supplies the occlusion term, we add the edge fade.
+      if (m_fp.sun_visibility > 0.001f) {
+	const Mat4 vp = m_fp.proj * m_fp.view;
+	const Vector3D sp = m_fp.camera_pos + m_fp.sun_dir * 4000.0f;
+	const float* m = vp.m;
+	const float cx = m[0]*sp.x + m[4]*sp.y + m[8]*sp.z + m[12];
+	const float cy = m[1]*sp.x + m[5]*sp.y + m[9]*sp.z + m[13];
+	const float cw = m[3]*sp.x + m[7]*sp.y + m[11]*sp.z + m[15];
+	if (cw > 0.01f) {
+	  const float nx = cx / cw, ny = cy / cw;
+	  const float edge =
+	    1.0f - std::max (0.0f, (std::max (std::fabs (nx),
+					      std::fabs (ny))
+				    - 0.85f) / 0.45f);
+	  if (edge > 0.0f) {
+	    q.sun.x = nx * 0.5f + 0.5f;
+	    q.sun.y = 1.0f - (ny * 0.5f + 0.5f);
+	    q.sun.z = m_fp.sun_visibility
+	      * (edge > 1.0f ? 1.0f : edge);
+	    q.sun.w = (float) m_target_w / (float) m_target_h;
+	  }
+	}
+      }
+
       [enc setRenderPipelineState: m_present];
       [enc setVertexBytes: &q length: sizeof (q)
 		  atIndex: MOPPE_BUF_FRAME];
       [enc setFragmentBytes: &q length: sizeof (q)
 		    atIndex: MOPPE_BUF_FRAME];
       [enc setFragmentTexture: m_current atIndex: MOPPE_TEX_SCENE];
+      if (bloom_ok)
+	[enc setFragmentTexture: m_bloom_a atIndex: MOPPE_TEX_BLOOM];
       [enc drawPrimitives: MTLPrimitiveTypeTriangle
 	      vertexStart: 0 vertexCount: 3];
     }

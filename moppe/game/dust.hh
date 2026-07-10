@@ -22,6 +22,7 @@ namespace game {
       float life = 1.0f;        // scales the base lifetime
       float gravity = 0.0f;     // m/s^2 downward
       float spread = 1.0f;      // scales the velocity jitter
+      bool additive = false;    // glow (embers) vs. soft dust
     };
 
     Dust ();
@@ -39,6 +40,7 @@ namespace game {
     struct Particle {
       Vector3D pos, vel, color;
       float life, max_life, size, rot, rot_v, gravity;
+      bool additive;
     };
 
     std::vector<Particle> m_particles;

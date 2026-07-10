@@ -54,16 +54,18 @@ namespace render {
   // to a handful of precompiled pipeline/depth-stencil objects.
   struct DrawState {
     bool blend;        // src-alpha / one-minus-src-alpha
+    bool additive;     // src-alpha / one: glow that sums to white
     bool depth_test;
     bool depth_write;
     bool cull;         // back faces, CCW front
 
     DrawState ()
-      : blend (false), depth_test (true),
+      : blend (false), additive (false), depth_test (true),
 	depth_write (true), cull (true) {}
 
     bool operator == (const DrawState& o) const {
-      return blend == o.blend && depth_test == o.depth_test
+      return blend == o.blend && additive == o.additive
+	&& depth_test == o.depth_test
 	&& depth_write == o.depth_write && cull == o.cull;
     }
     bool operator != (const DrawState& o) const { return !(*this == o); }

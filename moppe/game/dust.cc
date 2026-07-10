@@ -42,6 +42,7 @@ namespace game {
       p.rot = 3.14159f * u (m_rng);
       p.rot_v = 2.2f * u (m_rng);
       p.gravity = style.gravity;
+      p.additive = style.additive;
       // Slight per-particle value variation keeps a plume from
       // reading as one flat-colored blob.
       p.color = color * (0.88f + 0.16f * (0.5f + 0.5f * u (m_rng)));
@@ -80,36 +81,47 @@ namespace game {
     render::DrawState soft;
     soft.blend = true;
     soft.depth_write = false; // soft puffs, no z-fighting each other
-    dl.state (soft);
+    render::DrawState glow = soft;
+    glow.additive = true;
+
     dl.lit (false);
     dl.set_texture (m_tex.get ());
 
-    dl.begin (render::Prim::Quads);
-    for (size_t i = 0; i < m_particles.size (); ++i) {
-      const Particle& p = m_particles[i];
-      const float a = p.life / p.max_life;
-      const float s = p.size * (1.7f - 0.7f * a); // grow as it fades
+    // Two passes: soft alpha-blended dust, then additive embers on
+    // top (runs with no vertices cost nothing).
+    for (int pass = 0; pass < 2; ++pass) {
+      const bool additive = (pass == 1);
+      dl.state (additive ? glow : soft);
 
-      // spin the billboard so puffs tumble
-      const float ca = std::cos (p.rot), sa = std::sin (p.rot);
-      const Vector3D r2 = (right * ca + up * sa) * s;
-      const Vector3D u2 = (up * ca - right * sa) * s;
+      dl.begin (render::Prim::Quads);
+      for (size_t i = 0; i < m_particles.size (); ++i) {
+	const Particle& p = m_particles[i];
+	if (p.additive != additive)
+	  continue;
+	const float a = p.life / p.max_life;
+	const float s = p.size * (1.7f - 0.7f * a); // grow as it fades
 
-      // Quick fade-in so puffs don't pop, long fade-out; capped
-      // below the old 0.75 so plumes stay translucent.
-      const float age = 1.0f - a;
-      const float fade_in = std::min (1.0f, age * 8.0f);
-      dl.color (p.color, 0.6f * fade_in * a);
-      dl.uv (0, 0);
-      dl.vertex (p.pos - r2 - u2);
-      dl.uv (1, 0);
-      dl.vertex (p.pos + r2 - u2);
-      dl.uv (1, 1);
-      dl.vertex (p.pos + r2 + u2);
-      dl.uv (0, 1);
-      dl.vertex (p.pos - r2 + u2);
+	// spin the billboard so puffs tumble
+	const float ca = std::cos (p.rot), sa = std::sin (p.rot);
+	const Vector3D r2 = (right * ca + up * sa) * s;
+	const Vector3D u2 = (up * ca - right * sa) * s;
+
+	// Quick fade-in so puffs don't pop, long fade-out; capped
+	// below the old 0.75 so plumes stay translucent.
+	const float age = 1.0f - a;
+	const float fade_in = std::min (1.0f, age * 8.0f);
+	dl.color (p.color, (additive ? 0.85f : 0.6f) * fade_in * a);
+	dl.uv (0, 0);
+	dl.vertex (p.pos - r2 - u2);
+	dl.uv (1, 0);
+	dl.vertex (p.pos + r2 - u2);
+	dl.uv (1, 1);
+	dl.vertex (p.pos + r2 + u2);
+	dl.uv (0, 1);
+	dl.vertex (p.pos - r2 + u2);
+      }
+      dl.end ();
     }
-    dl.end ();
 
     dl.set_texture (0);
     dl.lit (true);

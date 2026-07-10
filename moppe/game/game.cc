@@ -420,6 +420,24 @@ namespace game {
 	}
       }
 
+      // Jet embers: hot additive sparks streaming out of the
+      // nozzles while the jets burn, arcing down and dying fast.
+      if (driving && av.boost_level () > 0.05f) {
+	std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+	if (chance (m_fx_rng) < 34.0f * av.boost_level () * dt) {
+	  Dust::Style ember;
+	  ember.size = 0.15f;
+	  ember.life = 0.45f;
+	  ember.gravity = 6.0f;
+	  ember.spread = 0.3f;
+	  ember.additive = true;
+	  m_dust.emit (vpos - fwd * 0.5f + Vector3D (0, -0.5f, 0),
+		       av.velocity () * 0.5f - fwd * 2.0f
+		       + Vector3D (0, -4.0f, 0),
+		       1, Vector3D (1.0f, 0.55f, 0.18f), ember);
+	}
+      }
+
       // Exhaust smoke: faint gray puffs that rise off the muffler
       // while the throttle is open.
       if (driving && std::abs (av.thrust ()) > 0.3f
@@ -624,6 +642,31 @@ namespace game {
       fp.ambient = Vector3D (0.28f, 0.30f, 0.34f)
         * (0.35f + 0.65f * daylight);
       fp.time = m_total_time;
+
+      // Lens-flare occlusion: march toward the sun through the
+      // heightmap; any ridge above the ray kills the flare.  Cloud
+      // cover and submersion dim it; smoothed so it doesn't blink
+      // as hills sweep past the sun.
+      {
+	float vis = 1.0f;
+	if (cam.y < m_world.water_level)
+	  vis = 0.0f;
+	else {
+	  for (int i = 1; i <= 40; ++i) {
+	    const float t = 90.0f * i;
+	    const Vector3D p = cam + fp.sun_dir * t;
+	    if (!m_map.in_bounds (p.x, p.z))
+	      break;
+	    if (m_map.interpolated_height (p.x, p.z) > p.y) {
+	      vis = 0.0f;
+	      break;
+	    }
+	  }
+	}
+	vis *= 1.0f - 0.65f * m_cloudiness;
+	m_flare += (vis - m_flare) * 0.12f;
+	fp.sun_visibility = m_flare;
+      }
 
       if (!r.begin_frame (fp))
 	return;
@@ -1028,6 +1071,7 @@ namespace game {
     // and stops advancing entirely after ~24 days.
     double m_total_time;
     float m_cloudiness = 0.5f;
+    float m_flare = 0.0f;
     Vector3D m_fog;
     float m_shake;
     float m_health;

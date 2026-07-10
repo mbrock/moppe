@@ -28,6 +28,10 @@ namespace render {
     Vector3D sun_specular;
     Vector3D ambient;
     float time = 0.0f;
+    // How much of the sun the camera can actually see (0..1); the
+    // game raymarches the heightmap and folds in cloud cover.
+    // Drives the present pass's lens flare.
+    float sun_visibility = 0.0f;
   };
 
   // World-change-time terrain setup.  Heights/normals are the same
