@@ -6,8 +6,10 @@
 #include <moppe/game/world.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/map/generate.hh>
+#include <moppe/map/terrain_evaluator.hh>
 #include <moppe/platform/platform.hh>
 
+#include <memory>
 #include <vector>
 
 namespace moppe {
@@ -50,9 +52,9 @@ namespace game {
 
   private:
     void select (terrain::GeologicalLayer layer);
-    void reset_pipeline ();
-    void rebuild_pipeline ();
-    void rerun_pipeline_from (int first_stage);
+    void reset_program ();
+    void rebuild_program ();
+    void rerun_program_from (int first_stage);
     void append_stage (terrain::TerrainTransform stage);
     void move_selected_stage (int direction);
     void duplicate_selected_stage ();
@@ -68,14 +70,15 @@ namespace game {
     InspectorUi m_ui;
     render::Renderer* m_renderer;
     map::RandomHeightMap* m_map;
+    std::unique_ptr<map::TerrainEvaluator> m_evaluator;
     Terrain* m_terrain;
     const WorldParams* m_world;
     Vector3D m_sun_dir;
     std::vector<float> m_saved_heights;
 
     bool m_active;
-    terrain::TerrainProgram m_pipeline;
-    std::vector<map::RandomHeightMap::PipelineState> m_checkpoints;
+    terrain::TerrainProgram m_program;
+    std::vector<map::TerrainCheckpoint> m_checkpoints;
     int m_selected_stage;
     int m_stage_scroll;
 

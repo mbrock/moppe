@@ -10,6 +10,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
+#include <moppe/map/terrain_evaluator.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/vegetation.hh>
 #include <moppe/game/stars.hh>
@@ -268,12 +269,14 @@ namespace game {
 	  m_gen_stage = 7;
 	} else {
 	  m_gen_stage = 3;
-	  const terrain::TerrainProgram pipeline =
+	  const terrain::TerrainProgram program =
 	    terrain::make_default_world_program (m_seed);
-	  m_map.run_pipeline
-	    (pipeline, [this] (std::size_t,
-			       const terrain::TerrainTransform& stage) {
-	      if (std::holds_alternative<terrain::HydraulicErosion> (stage))
+	  map::TerrainEvaluator evaluator (m_map);
+	  evaluator.evaluate
+	    (program, [this] (std::size_t,
+			      const terrain::TerrainTransform& transform) {
+	      if (std::holds_alternative<terrain::HydraulicErosion>
+		  (transform))
 		m_gen_stage = 4;
 	    });
 	  if (cache)

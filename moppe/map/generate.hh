@@ -3,11 +3,10 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/terrain/program.hh>
+#include <moppe/terrain/geological.hh>
 #include <moppe/terrain/topology.hh>
 
 #include <cmath>
-#include <functional>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -204,11 +203,6 @@ namespace map {
 
   class RandomHeightMap: public NormalComputingHeightMap {
   public:
-    struct PipelineState {
-      std::vector<float> heights;
-      std::mt19937 randomness;
-    };
-
     RandomHeightMap (int width, int height,
 		     const Vector3D& size,
 		     int seed = 0,
@@ -246,21 +240,11 @@ namespace map {
     void randomize_geologically
       (terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
-    using PipelineProgress = std::function
-      <void (std::size_t, const terrain::TerrainTransform&)>;
-
-    // Rebuilds the source and replays every ordered stage.  The pipeline
-    // value therefore fully determines both interactive and game terrain.
-    void run_pipeline (const terrain::TerrainProgram& pipeline,
-		       const PipelineProgress& progress = { });
-
-    // Incremental pipeline execution for interactive tools.  A checkpoint
-    // includes both heights and random state, so resuming a prefix is exactly
-    // equivalent to replaying the complete pipeline.
-    void begin_pipeline (const terrain::TerrainProgram& pipeline);
-    void apply_pipeline_stage (const terrain::TerrainTransform& stage);
-    PipelineState capture_pipeline_state () const;
-    void restore_pipeline_state (const PipelineState& state);
+    // Materialize a geological field into this storage.  Program ordering,
+    // random-stream state, and checkpoints belong to TerrainEvaluator.
+    void materialize_geological
+      (const terrain::GeologicalRecipe& recipe,
+       terrain::GeologicalLayer layer);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized
@@ -279,16 +263,14 @@ namespace map {
     // Particle-based hydraulic erosion: carves gullies into the
     // slopes and settles sediment on the plains.
     void erode_hydraulically (int droplets, int batch_size = 256);
+    void erode_hydraulically (std::mt19937& randomness,
+			      int droplets, int batch_size = 256);
 
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.
     void erode_thermally (int iterations, float talus);
 
   private:
-    void materialize_geological_recipe
-      (const terrain::GeologicalRecipe& recipe,
-       terrain::GeologicalLayer layer);
-
     Array2D<float> m_data;
 
     std::mt19937 m_rng;

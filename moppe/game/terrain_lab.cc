@@ -202,7 +202,7 @@ namespace game {
   TerrainLab::TerrainLab ()
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false),
-      m_pipeline (terrain::make_geological_program (0)),
+      m_program (terrain::make_geological_program (0)),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
       m_pointer_down (false), m_camera_drag (false), m_pan_drag (false),
@@ -231,10 +231,11 @@ namespace game {
 
     m_renderer = &renderer;
     m_map = &map;
+    m_evaluator = std::make_unique<map::TerrainEvaluator> (map);
     m_terrain = &terrain;
     m_world = &world;
     m_sun_dir = sun_dir;
-    m_pipeline = terrain::make_geological_program
+    m_program = terrain::make_geological_program
       (static_cast<std::uint32_t> (seed));
     m_selected_stage = -1;
     m_stage_scroll = 0;
@@ -251,7 +252,7 @@ namespace game {
     m_saved_heights.assign (map.raw_heights (),
 			    map.raw_heights () + count);
     m_active = true;
-    rebuild_pipeline ();
+    rebuild_program ();
   }
 
   void
@@ -271,6 +272,7 @@ namespace game {
     m_camera_drag = false;
     m_pan_drag = false;
     m_active = false;
+    m_evaluator.reset ();
     m_map = 0;
     m_terrain = 0;
     m_world = 0;
@@ -327,52 +329,52 @@ namespace game {
   void
   TerrainLab::select (terrain::GeologicalLayer layer)
   {
-    if (layer == m_pipeline.layer)
+    if (layer == m_program.layer)
       return;
-    m_pipeline.layer = layer;
+    m_program.layer = layer;
     m_selected_stage = -1;
-    rebuild_pipeline ();
+    rebuild_program ();
   }
 
   void
-  TerrainLab::reset_pipeline ()
+  TerrainLab::reset_program ()
   {
-    m_pipeline = terrain::make_geological_program
-      (m_pipeline.randomness.seed, m_pipeline.layer);
+    m_program = terrain::make_geological_program
+      (m_program.randomness.seed, m_program.layer);
     m_selected_stage = -1;
     m_stage_scroll = 0;
-    rebuild_pipeline ();
+    rebuild_program ();
   }
 
   void
-  TerrainLab::rebuild_pipeline ()
+  TerrainLab::rebuild_program ()
   {
-    if (!m_map)
+    if (!m_evaluator)
       return;
-    m_map->begin_pipeline (m_pipeline);
+    m_evaluator->begin (m_program);
     m_checkpoints.clear ();
-    m_checkpoints.push_back (m_map->capture_pipeline_state ());
-    for (const terrain::TerrainTransform& stage : m_pipeline.transforms) {
-      m_map->apply_pipeline_stage (stage);
-      m_checkpoints.push_back (m_map->capture_pipeline_state ());
+    m_checkpoints.push_back (m_evaluator->checkpoint ());
+    for (const terrain::TerrainTransform& transform : m_program.transforms) {
+      m_evaluator->apply (transform);
+      m_checkpoints.push_back (m_evaluator->checkpoint ());
     }
     refresh ();
   }
 
   void
-  TerrainLab::rerun_pipeline_from (int first_stage)
+  TerrainLab::rerun_program_from (int first_stage)
   {
-    if (!m_map || first_stage < 0
+    if (!m_evaluator || first_stage < 0
 	|| first_stage >= static_cast<int> (m_checkpoints.size ())) {
-      rebuild_pipeline ();
+      rebuild_program ();
       return;
     }
-    m_map->restore_pipeline_state (m_checkpoints[first_stage]);
+    m_evaluator->restore (m_checkpoints[first_stage]);
     m_checkpoints.resize (static_cast<std::size_t> (first_stage) + 1);
     for (std::size_t i = static_cast<std::size_t> (first_stage);
-	 i < m_pipeline.transforms.size (); ++i) {
-      m_map->apply_pipeline_stage (m_pipeline.transforms[i]);
-      m_checkpoints.push_back (m_map->capture_pipeline_state ());
+	 i < m_program.transforms.size (); ++i) {
+      m_evaluator->apply (m_program.transforms[i]);
+      m_checkpoints.push_back (m_evaluator->checkpoint ());
     }
     refresh ();
   }
@@ -380,11 +382,11 @@ namespace game {
   void
   TerrainLab::append_stage (terrain::TerrainTransform stage)
   {
-    const int first_stage = static_cast<int> (m_pipeline.transforms.size ());
-    m_pipeline.transforms.push_back (std::move (stage));
-    m_selected_stage = static_cast<int> (m_pipeline.transforms.size ()) - 1;
+    const int first_stage = static_cast<int> (m_program.transforms.size ());
+    m_program.transforms.push_back (std::move (stage));
+    m_selected_stage = static_cast<int> (m_program.transforms.size ()) - 1;
     ensure_selected_stage_visible ();
-    rerun_pipeline_from (first_stage);
+    rerun_program_from (first_stage);
   }
 
   void
@@ -394,52 +396,52 @@ namespace game {
       (m_selected_stage, m_selected_stage + direction);
     const int target = m_selected_stage + direction;
     if (m_selected_stage < 0 || target < 0
-	|| target >= static_cast<int> (m_pipeline.transforms.size ()))
+	|| target >= static_cast<int> (m_program.transforms.size ()))
       return;
-    std::swap (m_pipeline.transforms[m_selected_stage],
-	       m_pipeline.transforms[target]);
+    std::swap (m_program.transforms[m_selected_stage],
+	       m_program.transforms[target]);
     m_selected_stage = target;
     ensure_selected_stage_visible ();
-    rerun_pipeline_from (first_stage);
+    rerun_program_from (first_stage);
   }
 
   void
   TerrainLab::duplicate_selected_stage ()
   {
     if (m_selected_stage < 0
-	|| m_selected_stage >= static_cast<int> (m_pipeline.transforms.size ()))
+	|| m_selected_stage >= static_cast<int> (m_program.transforms.size ()))
       return;
     const int first_stage = m_selected_stage + 1;
-    const auto position = m_pipeline.transforms.begin () + first_stage;
-    m_pipeline.transforms.insert
-      (position, m_pipeline.transforms[m_selected_stage]);
+    const auto position = m_program.transforms.begin () + first_stage;
+    m_program.transforms.insert
+      (position, m_program.transforms[m_selected_stage]);
     ++m_selected_stage;
     ensure_selected_stage_visible ();
-    rerun_pipeline_from (first_stage);
+    rerun_program_from (first_stage);
   }
 
   void
   TerrainLab::remove_selected_stage ()
   {
     if (m_selected_stage < 0
-	|| m_selected_stage >= static_cast<int> (m_pipeline.transforms.size ()))
+	|| m_selected_stage >= static_cast<int> (m_program.transforms.size ()))
       return;
     const int first_stage = m_selected_stage;
-    m_pipeline.transforms.erase
-      (m_pipeline.transforms.begin () + m_selected_stage);
-    if (m_pipeline.transforms.empty ())
+    m_program.transforms.erase
+      (m_program.transforms.begin () + m_selected_stage);
+    if (m_program.transforms.empty ())
       m_selected_stage = -1;
     else
       m_selected_stage = std::min
-	(m_selected_stage, static_cast<int> (m_pipeline.transforms.size ()) - 1);
+	(m_selected_stage, static_cast<int> (m_program.transforms.size ()) - 1);
     ensure_selected_stage_visible ();
-    rerun_pipeline_from (first_stage);
+    rerun_program_from (first_stage);
   }
 
   void
   TerrainLab::ensure_selected_stage_visible ()
   {
-    const int count = static_cast<int> (m_pipeline.transforms.size ());
+    const int count = static_cast<int> (m_program.transforms.size ());
     const int maximum = std::max (0, count - visible_stage_rows);
     if (m_selected_stage >= 0) {
       if (m_selected_stage < m_stage_scroll)
@@ -456,7 +458,7 @@ namespace game {
     if (direction == 0)
       return;
     if (m_selected_stage < 0) {
-      terrain::GeologicalRecipe& recipe = m_pipeline.recipe;
+      terrain::GeologicalRecipe& recipe = m_program.recipe;
       switch (row) {
       case 0:
 	recipe.warp.amplitude = std::clamp
@@ -502,12 +504,12 @@ namespace game {
       default:
 	return;
       }
-      rebuild_pipeline ();
+      rebuild_program ();
       return;
     }
 
     terrain::TerrainTransform& stage =
-      m_pipeline.transforms[m_selected_stage];
+      m_program.transforms[m_selected_stage];
     if (auto* power = std::get_if<terrain::PowerHeights> (&stage)) {
       power->exponent = std::clamp
 	(power->exponent + direction * 0.05f, 0.1f, 4.0f);
@@ -530,7 +532,7 @@ namespace game {
     } else {
       return;
     }
-    rerun_pipeline_from (m_selected_stage);
+    rerun_program_from (m_selected_stage);
   }
 
   void
@@ -541,15 +543,15 @@ namespace game {
       return;
     }
     if (reset_rect ().contains (x, y)) {
-      reset_pipeline ();
+      reset_program ();
       return;
     }
     if (seed_rect ().contains (x, y)) {
-      const std::uint32_t seed = m_pipeline.randomness.seed + 1;
-      m_pipeline.recipe.seeds = terrain::derive_geological_seeds (seed);
-      m_pipeline.randomness = { .seed = seed, .offset = 3 };
+      const std::uint32_t seed = m_program.randomness.seed + 1;
+      m_program.recipe.seeds = terrain::derive_geological_seeds (seed);
+      m_program.randomness = { .seed = seed, .offset = 3 };
       m_selected_stage = -1;
-      rebuild_pipeline ();
+      rebuild_program ();
       return;
     }
     if (fit_rect ().contains (x, y)) {
@@ -572,7 +574,7 @@ namespace game {
     }
     for (int row = 0; row < visible_stage_rows; ++row) {
       const int stage = m_stage_scroll + row;
-      if (stage < static_cast<int> (m_pipeline.transforms.size ())
+      if (stage < static_cast<int> (m_program.transforms.size ())
 	  && stage_rect (row).contains (x, y)) {
 	m_selected_stage = stage;
 	return;
@@ -608,7 +610,7 @@ namespace game {
     int property_count = 9;
     if (m_selected_stage >= 0)
       property_count = stage_property_count
-	(m_pipeline.transforms[m_selected_stage]);
+	(m_program.transforms[m_selected_stage]);
     for (int row = 0; row < property_count; ++row) {
       const UiRect bounds = property_rect (row);
       if (stepper_minus_rect (bounds).contains (x, y)) {
@@ -622,14 +624,14 @@ namespace game {
     }
     if (m_selected_stage >= 0) {
       terrain::TerrainTransform& stage =
-	m_pipeline.transforms[m_selected_stage];
+	m_program.transforms[m_selected_stage];
       if (auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage)) {
 	constexpr int presets[] = { 1, 64, 256, 1024 };
 	for (int i = 0; i < 4; ++i)
 	  if (batch_preset_rect (i).contains (x, y)) {
 	    hydraulic->batch_size = presets[i];
-	    rerun_pipeline_from (m_selected_stage);
+	    rerun_program_from (m_selected_stage);
 	    return;
 	  }
       }
@@ -706,15 +708,15 @@ namespace game {
     case Key::Six:   select (terrain::GeologicalLayer::WarpX); break;
     case Key::Seven: select (terrain::GeologicalLayer::WarpY); break;
     case Key::R:
-      reset_pipeline ();
+      reset_program ();
       break;
     case Key::N:
-      m_pipeline.randomness.seed += 1;
-      m_pipeline.recipe.seeds = terrain::derive_geological_seeds
-	(m_pipeline.randomness.seed);
-      m_pipeline.randomness.offset = 3;
+      m_program.randomness.seed += 1;
+      m_program.recipe.seeds = terrain::derive_geological_seeds
+	(m_program.randomness.seed);
+      m_program.randomness.offset = 3;
       m_selected_stage = -1;
-      rebuild_pipeline ();
+      rebuild_program ();
       break;
     case Key::E:
       append_stage (terrain::HydraulicErosion { 100000 });
@@ -783,9 +785,9 @@ namespace game {
     m_pointer_x = x;
     m_pointer_y = y;
     if (stage_list_rect ().contains (x, y)
-	&& m_pipeline.transforms.size () > visible_stage_rows) {
+	&& m_program.transforms.size () > visible_stage_rows) {
       m_stage_scroll += delta > 0.0f ? -1 : 1;
-      const int maximum = static_cast<int> (m_pipeline.transforms.size ())
+      const int maximum = static_cast<int> (m_program.transforms.size ())
 	- visible_stage_rows;
       m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
       return;
@@ -834,7 +836,7 @@ namespace game {
 		 m_pointer_down);
 
     std::ostringstream seed;
-    seed << "SEED " << m_pipeline.randomness.seed << " >";
+    seed << "SEED " << m_program.randomness.seed << " >";
     m_ui.button (dl, seed_rect (), seed.str (), hot (seed_rect ()),
 		 m_pointer_down);
     m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()),
@@ -847,7 +849,7 @@ namespace game {
     for (int i = 0; i < 7; ++i) {
       const UiRect bounds = layer_rect (i);
       m_ui.button (dl, bounds, layer_labels[i], hot (bounds),
-		   m_pointer_down, m_pipeline.layer == layers[i]);
+		   m_pointer_down, m_program.layer == layers[i]);
     }
 
     m_ui.section_header
@@ -859,7 +861,7 @@ namespace game {
     const UiRect source = source_rect ();
     m_ui.pipeline_row
       (dl, source, "F", "GEOLOGICAL FIELD",
-       terrain::geological_layer_name (m_pipeline.layer), hot (source),
+       terrain::geological_layer_name (m_program.layer), hot (source),
        m_pointer_down, m_selected_stage < 0);
 
     dl.color (0.37f, 0.55f, 0.37f, 0.9f);
@@ -869,13 +871,13 @@ namespace game {
 	       + stage_row_height, 2.0f);
     for (int row = 0; row < visible_stage_rows; ++row) {
       const int stage_index = m_stage_scroll + row;
-      if (stage_index >= static_cast<int> (m_pipeline.transforms.size ()))
+      if (stage_index >= static_cast<int> (m_program.transforms.size ()))
 	break;
       const UiRect bounds = stage_rect (row);
       m_ui.pipeline_row
 	(dl, bounds, std::to_string (stage_index + 1),
-	 stage_name (m_pipeline.transforms[stage_index]),
-	 stage_detail (m_pipeline.transforms[stage_index]), hot (bounds),
+	 stage_name (m_program.transforms[stage_index]),
+	 stage_detail (m_program.transforms[stage_index]), hot (bounds),
 	 m_pointer_down, m_selected_stage == stage_index);
     }
 
@@ -897,7 +899,7 @@ namespace game {
       for (int row = 0; row < 9; ++row) {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = recipe_property
-	  (m_pipeline.recipe, row);
+	  (m_program.recipe, row);
 	m_ui.stepper
 	  (dl, bounds, property.label, property.value,
 	   hot (stepper_minus_rect (bounds)),
@@ -905,7 +907,7 @@ namespace game {
       }
     } else {
       const terrain::TerrainTransform& stage =
-	m_pipeline.transforms[m_selected_stage];
+	m_program.transforms[m_selected_stage];
       const int count = stage_property_count (stage);
       for (int row = 0; row < count; ++row) {
 	const UiRect bounds = property_rect (row);
@@ -943,7 +945,7 @@ namespace game {
     }
 
     std::ostringstream status;
-    status << m_pipeline.transforms.size () << " stages | selected ";
+    status << m_program.transforms.size () << " stages | selected ";
     if (m_selected_stage < 0)
       status << "field recipe";
     else

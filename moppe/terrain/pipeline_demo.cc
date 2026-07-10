@@ -1,4 +1,5 @@
 #include <moppe/map/generate.hh>
+#include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/image.hh>
 #include <moppe/terrain/program.hh>
 
@@ -122,7 +123,7 @@ int main (int argc, char** argv) {
     map::RandomHeightMap map
       (resolution, resolution, Vector3D (1, 1, 1), seed,
        Topology::Torus);
-    map.run_pipeline (pipeline);
+    map::TerrainEvaluator (map).evaluate (pipeline);
     const std::size_t count = static_cast<std::size_t> (resolution)
       * static_cast<std::size_t> (resolution);
     std::vector<float> values

@@ -234,7 +234,7 @@ namespace map {
   }
 
   void
-  RandomHeightMap::materialize_geological_recipe
+  RandomHeightMap::materialize_geological
     (const terrain::GeologicalRecipe& recipe,
      terrain::GeologicalLayer layer)
   {
@@ -262,73 +262,8 @@ namespace map {
       .ridge = m_rng (),
       .warp = m_rng ()
     };
-    materialize_geological_recipe (recipe, layer);
+    materialize_geological (recipe, layer);
     normalize ();
-  }
-
-  void
-  RandomHeightMap::begin_pipeline
-    (const terrain::TerrainProgram& pipeline)
-  {
-    terrain::validate_program (pipeline);
-    m_rng.seed (pipeline.randomness.seed);
-    m_rng.discard (pipeline.randomness.offset);
-    materialize_geological_recipe (pipeline.recipe, pipeline.layer);
-  }
-
-  void
-  RandomHeightMap::apply_pipeline_stage
-    (const terrain::TerrainTransform& stage)
-  {
-    if (std::holds_alternative<terrain::NormalizeHeights> (stage))
-      normalize ();
-    else if (const auto* power =
-	     std::get_if<terrain::PowerHeights> (&stage))
-      exponentiate (power->exponent);
-    else if (const auto* hydraulic =
-	     std::get_if<terrain::HydraulicErosion> (&stage))
-      erode_hydraulically (hydraulic->droplets, hydraulic->batch_size);
-    else if (const auto* thermal =
-	     std::get_if<terrain::ThermalErosion> (&stage))
-      erode_thermally (thermal->iterations, thermal->talus);
-    synchronize_periodic_edges ();
-  }
-
-  RandomHeightMap::PipelineState
-  RandomHeightMap::capture_pipeline_state () const
-  {
-    const std::size_t count = static_cast<std::size_t> (m_width) * m_height;
-    return {
-      .heights = std::vector<float> (raw_heights (), raw_heights () + count),
-      .randomness = m_rng
-    };
-  }
-
-  void
-  RandomHeightMap::restore_pipeline_state (const PipelineState& state)
-  {
-    const std::size_t expected =
-      static_cast<std::size_t> (m_width) * m_height;
-    if (state.heights.size () != expected)
-      throw std::invalid_argument
-	("pipeline checkpoint dimensions do not match heightmap");
-    std::size_t i = 0;
-    FORALL (x, y)
-      set (x, y, state.heights[i++]);
-    m_rng = state.randomness;
-  }
-
-  void
-  RandomHeightMap::run_pipeline
-    (const terrain::TerrainProgram& pipeline,
-     const PipelineProgress& progress)
-  {
-    begin_pipeline (pipeline);
-    for (std::size_t i = 0; i < pipeline.transforms.size (); ++i) {
-      if (progress)
-	progress (i, pipeline.transforms[i]);
-      apply_pipeline_stage (pipeline.transforms[i]);
-    }
   }
 
   void
@@ -407,6 +342,13 @@ namespace map {
   void
   RandomHeightMap::erode_hydraulically (int droplets, int batch_size)
   {
+    erode_hydraulically (m_rng, droplets, batch_size);
+  }
+
+  void
+  RandomHeightMap::erode_hydraulically
+    (std::mt19937& randomness, int droplets, int batch_size)
+  {
     // Droplet erosion after Beyer (2015): each raindrop rolls
     // downhill, picking up sediment while it accelerates and
     // dropping it as it slows, carving gullies into mountainsides
@@ -424,7 +366,7 @@ namespace map {
       throw std::invalid_argument
 	("hydraulic erosion batch size must be positive");
 
-    realgen_t g (m_rng, 0, 1);
+    realgen_t g (randomness, 0, 1);
 
     if (periodic ()) {
       const int period_x = unique_width ();
