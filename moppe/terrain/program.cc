@@ -8,8 +8,10 @@ namespace moppe::terrain {
   TerrainProgram make_geological_program
     (std::uint32_t root_seed, GeologicalLayer layer) {
     return {
-      .recipe = make_geological_recipe (root_seed),
-      .layer = layer,
+      .source = {
+	.recipe = make_geological_recipe (root_seed),
+	.layer = layer
+      },
       .randomness = { .seed = root_seed, .offset = 3 },
       .transforms = { NormalizeHeights { } }
     };
@@ -30,7 +32,7 @@ namespace moppe::terrain {
   }
 
   void validate_program (const TerrainProgram& program) {
-    validate_geological_recipe (program.recipe);
+    validate_geological_recipe (program.source.recipe);
     for (const TerrainTransform& transform : program.transforms) {
       std::visit ([] (const auto& operation) {
 	using T = std::decay_t<decltype (operation)>;

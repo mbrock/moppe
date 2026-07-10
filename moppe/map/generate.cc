@@ -234,18 +234,14 @@ namespace map {
   }
 
   void
-  RandomHeightMap::materialize_geological
-    (const terrain::GeologicalRecipe& recipe,
-     terrain::GeologicalLayer layer)
+  RandomHeightMap::materialize (const terrain::ScalarField& field)
   {
-    const terrain::GeologicalFields fields =
-      terrain::make_geological_fields (recipe);
     const terrain::Domain2D domain {
       .width = static_cast<std::size_t> (m_width),
       .height = static_cast<std::size_t> (m_height)
     };
     const terrain::ScalarRaster raster = terrain::CpuEvaluator ().evaluate
-      (terrain::geological_layer (fields, layer), domain);
+      (field, domain);
 
     FORALL (x, y)
       set (x, y, raster.at (x, y));
@@ -262,7 +258,9 @@ namespace map {
       .ridge = m_rng (),
       .warp = m_rng ()
     };
-    materialize_geological (recipe, layer);
+    const terrain::GeologicalFields fields =
+      terrain::make_geological_fields (recipe);
+    materialize (terrain::geological_layer (fields, layer));
     normalize ();
   }
 

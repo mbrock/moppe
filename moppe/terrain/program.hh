@@ -58,9 +58,16 @@ namespace moppe::terrain {
     std::uint64_t offset;
   };
 
-  struct TerrainProgram {
+  // A source is a value in its own right, rather than an implicit prelude to
+  // the transform list.  The geological source retains its recipe so tools
+  // can edit meaningful parameters and expand it into a ScalarField on demand.
+  struct GeologicalSource {
     GeologicalRecipe recipe;
     GeologicalLayer layer;
+  };
+
+  struct TerrainProgram {
+    GeologicalSource source;
     RandomSequence randomness;
     std::vector<TerrainTransform> transforms;
   };

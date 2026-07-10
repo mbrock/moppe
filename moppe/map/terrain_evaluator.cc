@@ -14,7 +14,10 @@ namespace moppe::map {
     terrain::validate_program (program);
     m_randomness.seed (program.randomness.seed);
     m_randomness.discard (program.randomness.offset);
-    m_target.materialize_geological (program.recipe, program.layer);
+    const terrain::GeologicalFields fields =
+      terrain::make_geological_fields (program.source.recipe);
+    m_target.materialize
+      (terrain::geological_layer (fields, program.source.layer));
   }
 
   void

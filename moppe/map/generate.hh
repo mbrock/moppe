@@ -240,11 +240,9 @@ namespace map {
     void randomize_geologically
       (terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
-    // Materialize a geological field into this storage.  Program ordering,
-    // random-stream state, and checkpoints belong to TerrainEvaluator.
-    void materialize_geological
-      (const terrain::GeologicalRecipe& recipe,
-       terrain::GeologicalLayer layer);
+    // Sample an arbitrary scalar-field value into this storage.  Choosing and
+    // expanding a program source belongs to TerrainEvaluator.
+    void materialize (const terrain::ScalarField& field);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized

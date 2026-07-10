@@ -29,7 +29,19 @@ namespace {
   }
 }
 
-MOPPE_TEST (pipeline_replays_the_direct_generation_sequence) {
+MOPPE_TEST (heightmap_materializes_an_arbitrary_scalar_field) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map (3, 3, Vector3D (1, 1, 1), 0);
+
+  map.materialize (coordinate_x () + 2.0f * coordinate_y ());
+
+  MOPPE_CHECK_NEAR (map.get (0, 0), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (map.get (1, 1), 1.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (map.get (2, 2), 3.0f, 1e-6f);
+}
+
+MOPPE_TEST (evaluator_replays_the_direct_generation_sequence) {
   using namespace moppe;
   using namespace moppe::terrain;
   const Vector3D size (1, 1, 1);
@@ -39,73 +51,73 @@ MOPPE_TEST (pipeline_replays_the_direct_generation_sequence) {
   legacy.erode_hydraulically (200);
   legacy.erode_thermally (1, 0.003f);
 
-  TerrainProgram pipeline = make_geological_program (123);
-  pipeline.transforms.emplace_back (PowerHeights { 1.15f });
-  pipeline.transforms.emplace_back (HydraulicErosion { 200 });
-  pipeline.transforms.emplace_back (ThermalErosion { 1, 0.003f });
+  TerrainProgram program = make_geological_program (123);
+  program.transforms.emplace_back (PowerHeights { 1.15f });
+  program.transforms.emplace_back (HydraulicErosion { 200 });
+  program.transforms.emplace_back (ThermalErosion { 1, 0.003f });
   map::RandomHeightMap replayed (65, 65, size, 999);
-  evaluate (replayed, pipeline);
+  evaluate (replayed, program);
 
   MOPPE_CHECK (maps_match (legacy, replayed));
 }
 
-MOPPE_TEST (running_a_pipeline_twice_is_deterministic) {
+MOPPE_TEST (evaluating_a_program_twice_is_deterministic) {
   using namespace moppe;
   using namespace moppe::terrain;
   const Vector3D size (1, 1, 1);
-  TerrainProgram pipeline = make_geological_program (77);
-  pipeline.transforms.emplace_back (HydraulicErosion { 100 });
+  TerrainProgram program = make_geological_program (77);
+  program.transforms.emplace_back (HydraulicErosion { 100 });
   map::RandomHeightMap first (33, 33, size, 0);
   map::RandomHeightMap second (33, 33, size, 1);
 
-  evaluate (first, pipeline);
-  evaluate (second, pipeline);
+  evaluate (first, program);
+  evaluate (second, program);
   MOPPE_CHECK (maps_match (first, second));
 }
 
-MOPPE_TEST (pipeline_checkpoint_resume_matches_complete_replay) {
+MOPPE_TEST (evaluator_checkpoint_resume_matches_complete_replay) {
   using namespace moppe;
   using namespace moppe::terrain;
   const Vector3D size (100, 20, 100);
-  TerrainProgram pipeline = make_geological_program (77);
-  pipeline.transforms.emplace_back (PowerHeights { 1.15f });
-  pipeline.transforms.emplace_back (HydraulicErosion {
+  TerrainProgram program = make_geological_program (77);
+  program.transforms.emplace_back (PowerHeights { 1.15f });
+  program.transforms.emplace_back (HydraulicErosion {
     .droplets = 257,
     .batch_size = 64
   });
-  pipeline.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+  program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
   map::RandomHeightMap replayed
     (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap resumed
     (65, 65, size, 0, Topology::Torus);
 
-  evaluate (replayed, pipeline);
+  evaluate (replayed, program);
   map::TerrainEvaluator evaluator (resumed);
-  evaluator.begin (pipeline);
-  evaluator.apply (pipeline.transforms[0]);
+  evaluator.begin (program);
+  evaluator.apply (program.transforms[0]);
   const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
   evaluator.apply (HydraulicErosion {
     .droplets = 3,
     .batch_size = 1
   });
   evaluator.restore (checkpoint);
-  for (std::size_t i = 1; i < pipeline.transforms.size (); ++i)
-    evaluator.apply (pipeline.transforms[i]);
+  for (std::size_t i = 1; i < program.transforms.size (); ++i)
+    evaluator.apply (program.transforms[i]);
 
   MOPPE_CHECK (maps_match (replayed, resumed));
 }
 
-MOPPE_TEST (periodic_pipeline_preserves_height_and_normal_seams) {
+MOPPE_TEST (periodic_program_preserves_height_and_normal_seams) {
   using namespace moppe;
   using namespace moppe::terrain;
   const Vector3D size (5000, 650, 3000);
   map::RandomHeightMap map
     (65, 33, size, 123, Topology::Torus);
-  TerrainProgram pipeline = make_geological_program (123);
-  pipeline.transforms.emplace_back (PowerHeights { 1.15f });
-  pipeline.transforms.emplace_back (HydraulicErosion { 400 });
-  pipeline.transforms.emplace_back (ThermalErosion { 2, 0.003f });
-  evaluate (map, pipeline);
+  TerrainProgram program = make_geological_program (123);
+  program.transforms.emplace_back (PowerHeights { 1.15f });
+  program.transforms.emplace_back (HydraulicErosion { 400 });
+  program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+  evaluate (map, program);
   map.recompute_normals ();
 
   MOPPE_CHECK (map.periodic ());
@@ -160,8 +172,8 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
   using namespace moppe;
   using namespace moppe::terrain;
   const Vector3D size (100, 20, 100);
-  TerrainProgram pipeline = make_geological_program (987);
-  pipeline.transforms.emplace_back (HydraulicErosion {
+  TerrainProgram program = make_geological_program (987);
+  program.transforms.emplace_back (HydraulicErosion {
     .droplets = 513,
     .batch_size = 64
   });
@@ -170,8 +182,8 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
   map::RandomHeightMap second
     (65, 65, size, 1, Topology::Torus);
 
-  evaluate (first, pipeline);
-  evaluate (second, pipeline);
+  evaluate (first, program);
+  evaluate (second, program);
 
   MOPPE_CHECK (maps_match (first, second));
   for (int i = 0; i < first.width (); ++i)

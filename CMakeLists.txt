@@ -158,7 +158,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc
-    tests/terrain/pipeline_test.cc
+    tests/terrain/program_test.cc
     tests/terrain/image_test.cc
   )
   target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
@@ -195,7 +195,7 @@ target_link_libraries(moppe_game PUBLIC moppe_terrain)
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-map-tests
     tests/test_main.cc
-    tests/map/pipeline_test.cc
+    tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-map-tests PRIVATE moppe_game)
   add_test(NAME moppe-map-tests COMMAND moppe-map-tests)

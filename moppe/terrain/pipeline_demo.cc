@@ -29,21 +29,21 @@ namespace {
     return value;
   }
 
-  void apply_option (moppe::terrain::TerrainProgram& pipeline,
+  void apply_option (moppe::terrain::TerrainProgram& program,
 		     std::string_view option) {
     using namespace moppe::terrain;
     if (option == "world") {
-      const GeologicalLayer layer = pipeline.layer;
-      pipeline = make_default_world_program (pipeline.randomness.seed);
-      pipeline.layer = layer;
+      const GeologicalLayer layer = program.source.layer;
+      program = make_default_world_program (program.randomness.seed);
+      program.source.layer = layer;
       return;
     }
     if (option == "raw") {
-      pipeline.transforms.clear ();
+      program.transforms.clear ();
       return;
     }
     if (option == "normalize") {
-      pipeline.transforms.emplace_back (NormalizeHeights { });
+      program.transforms.emplace_back (NormalizeHeights { });
       return;
     }
 
@@ -55,13 +55,13 @@ namespace {
     const std::string_view value = option.substr (equals + 1);
 
     if (name == "power")
-      pipeline.transforms.emplace_back (PowerHeights { parse_float (value) });
+      program.transforms.emplace_back (PowerHeights { parse_float (value) });
     else if (name == "hydraulic") {
       const std::size_t comma = value.find (',');
       const int droplets = parse_int (value.substr (0, comma));
       const int batch_size = comma == std::string_view::npos
 	? 256 : parse_int (value.substr (comma + 1));
-      pipeline.transforms.emplace_back (HydraulicErosion {
+      program.transforms.emplace_back (HydraulicErosion {
 	.droplets = droplets,
 	.batch_size = batch_size
       });
@@ -71,28 +71,28 @@ namespace {
       if (comma == std::string_view::npos)
 	throw std::invalid_argument
 	  ("thermal expects iterations,talus");
-      pipeline.transforms.emplace_back (ThermalErosion {
+      program.transforms.emplace_back (ThermalErosion {
 	parse_int (value.substr (0, comma)),
 	parse_float (value.substr (comma + 1))
       });
     } else if (name == "warp-amplitude")
-      pipeline.recipe.warp.amplitude = parse_float (value);
+      program.source.recipe.warp.amplitude = parse_float (value);
     else if (name == "continent-frequency")
-      pipeline.recipe.continent.noise.cycles = parse_int (value);
+      program.source.recipe.continent.noise.cycles = parse_int (value);
     else if (name == "plains-frequency")
-      pipeline.recipe.plains.noise.cycles = parse_int (value);
+      program.source.recipe.plains.noise.cycles = parse_int (value);
     else if (name == "mountain-frequency")
-      pipeline.recipe.mountains.cycles = parse_int (value);
+      program.source.recipe.mountains.cycles = parse_int (value);
     else if (name == "mask-low")
-      pipeline.recipe.blend.mask_low = parse_float (value);
+      program.source.recipe.blend.mask_low = parse_float (value);
     else if (name == "mask-high")
-      pipeline.recipe.blend.mask_high = parse_float (value);
+      program.source.recipe.blend.mask_high = parse_float (value);
     else if (name == "continent-weight")
-      pipeline.recipe.blend.continent_weight = parse_float (value);
+      program.source.recipe.blend.continent_weight = parse_float (value);
     else if (name == "plains-weight")
-      pipeline.recipe.blend.plains_weight = parse_float (value);
+      program.source.recipe.blend.plains_weight = parse_float (value);
     else if (name == "mountain-weight")
-      pipeline.recipe.blend.mountain_weight = parse_float (value);
+      program.source.recipe.blend.mountain_weight = parse_float (value);
     else
       throw std::invalid_argument
 	("unknown pipeline option: " + std::string (name));
@@ -116,14 +116,14 @@ int main (int argc, char** argv) {
       throw std::invalid_argument
 	("unknown layer: " + std::string (layer_id));
 
-    TerrainProgram pipeline = make_geological_program (seed, *layer);
+    TerrainProgram program = make_geological_program (seed, *layer);
     for (int i = 5; i < argc; ++i)
-      apply_option (pipeline, argv[i]);
+      apply_option (program, argv[i]);
 
     map::RandomHeightMap map
       (resolution, resolution, Vector3D (1, 1, 1), seed,
        Topology::Torus);
-    map::TerrainEvaluator (map).evaluate (pipeline);
+    map::TerrainEvaluator (map).evaluate (program);
     const std::size_t count = static_cast<std::size_t> (resolution)
       * static_cast<std::size_t> (resolution);
     std::vector<float> values
@@ -141,8 +141,8 @@ int main (int argc, char** argv) {
     std::cout << "wrote " << path << " (" << layer_id << ", seed "
 	      << seed << ", " << resolution << "x" << resolution
 	      << ", stages";
-    for (const TerrainTransform& stage : pipeline.transforms)
-      std::cout << " " << terrain_transform_id (stage);
+    for (const TerrainTransform& transform : program.transforms)
+      std::cout << " " << terrain_transform_id (transform);
     std::cout << ")\n";
   } catch (const std::exception& error) {
     std::cerr << "terrain pipeline demo: " << error.what () << "\n";
