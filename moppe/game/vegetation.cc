@@ -516,6 +516,12 @@ namespace game {
     plant.species = species;
     plant.palette = palette;
     plant.position = position;
+    if (m_periodic) {
+      plant.position.x = terrain::wrap_coordinate
+	(plant.position.x, m_map_size.x);
+      plant.position.z = terrain::wrap_coordinate
+	(plant.position.z, m_map_size.z);
+    }
     plant.ground_normal = normal;
     plant.scale = scale;
     plant.tint = tint;
@@ -535,10 +541,15 @@ namespace game {
     const int reed_count = std::max (0, population.reeds);
     std::mt19937 rng (1234);
     std::uniform_real_distribution<float> u (0.0f, 1.0f);
+    const auto random_coordinate = [&u, &rng, this] (float extent) {
+      const float unit = u (rng);
+      return extent * (m_periodic ? unit : 0.02f + 0.96f * unit);
+    };
 
     const Vector3D size = map.size ();
     m_map_size = world.map_size;
     m_lean = world.pico_mode;
+    m_periodic = map.periodic ();
     m_map = &map;
     m_water = world.water_level;
     m_height = world.map_size.y;
@@ -555,8 +566,8 @@ namespace game {
     std::vector<Vector3D> groves;
     for (int i = 0; i < ngrove * 30
 	   && (int) groves.size () < ngrove; ++i) {
-      const float x = size.x * (0.02f + 0.96f * u (rng));
-      const float z = size.z * (0.02f + 0.96f * u (rng));
+      const float x = random_coordinate (size.x);
+      const float z = random_coordinate (size.z);
       const float y = map.interpolated_height (x, z);
       if (y < water + 6 || y > 0.30f * H) continue;
       if (map.interpolated_normal (x, z).y < 0.80f) continue;
@@ -577,8 +588,8 @@ namespace game {
 	z = g.z + std::sin (a) * d;
 	if (!map.in_bounds (x, z)) continue;
       } else {
-	x = size.x * (0.02f + 0.96f * u (rng));
-	z = size.z * (0.02f + 0.96f * u (rng));
+	x = random_coordinate (size.x);
+	z = random_coordinate (size.z);
       }
       const float y = map.interpolated_height (x, z);
       if (y < water + 5) continue;
@@ -613,8 +624,8 @@ namespace game {
     // flower.
     placed = 0;
     for (int i = 0; i < bushes * 20 && placed < bushes; ++i) {
-      const float x = size.x * (0.02f + 0.96f * u (rng));
-      const float z = size.z * (0.02f + 0.96f * u (rng));
+      const float x = random_coordinate (size.x);
+      const float z = random_coordinate (size.z);
       const float y = map.interpolated_height (x, z);
       if (y > 0.45f * H) continue;
       if (y < water + 5) continue;
@@ -639,8 +650,8 @@ namespace game {
     std::vector<uint8_t> meadow_palette;
     for (int i = 0; i < nmeadow * 30
 	   && (int) meadows.size () < nmeadow; ++i) {
-      const float x = size.x * (0.02f + 0.96f * u (rng));
-      const float z = size.z * (0.02f + 0.96f * u (rng));
+      const float x = random_coordinate (size.x);
+      const float z = random_coordinate (size.z);
       const float y = map.interpolated_height (x, z);
       if (y < water + 4 || y > 0.36f * H) continue;
       if (map.interpolated_normal (x, z).y < 0.78f) continue;
@@ -660,8 +671,8 @@ namespace game {
 	x = m.x + std::cos (a) * d;
 	z = m.z + std::sin (a) * d;
       } else {
-	x = size.x * (0.02f + 0.96f * u (rng));
-	z = size.z * (0.02f + 0.96f * u (rng));
+	x = random_coordinate (size.x);
+	z = random_coordinate (size.z);
       }
       if (!map.in_bounds (x, z)) continue;
       const float y = map.interpolated_height (x, z);
@@ -714,8 +725,8 @@ namespace game {
     // Reed clumps stand in the shallows band along the waterline.
     placed = 0;
     for (int i = 0; i < reed_count * 30 && placed < reed_count; ++i) {
-      const float x = size.x * (0.02f + 0.96f * u (rng));
-      const float z = size.z * (0.02f + 0.96f * u (rng));
+      const float x = random_coordinate (size.x);
+      const float z = random_coordinate (size.z);
       const float y = map.interpolated_height (x, z);
       if (y < water + 0.15f || y > water + 2.4f) continue;
       const Vector3D n = map.interpolated_normal (x, z);
@@ -866,13 +877,29 @@ namespace game {
 
     for (int z = 0; z < grid; ++z)
       for (int x = 0; x < grid; ++x) {
-	const float dx = camera.x - (x + 0.5f) * width;
-	const float dz = camera.z - (z + 0.5f) * depth;
-	if (dx * dx + dz * dz >= center_reach * center_reach)
-	  continue;
 	const render::MeshPtr& mesh = meshes[z * grid + x];
-	if (mesh)
-	  r.draw_mesh (*mesh, Mat4 ());
+	if (!mesh)
+	  continue;
+	const float center_x = (x + 0.5f) * width;
+	const float center_z = (z + 0.5f) * depth;
+	const int min_tile_x = m_periodic ? static_cast<int> (std::ceil
+	  ((camera.x - center_reach - center_x) / m_map_size.x)) : 0;
+	const int max_tile_x = m_periodic ? static_cast<int> (std::floor
+	  ((camera.x + center_reach - center_x) / m_map_size.x)) : 0;
+	const int min_tile_z = m_periodic ? static_cast<int> (std::ceil
+	  ((camera.z - center_reach - center_z) / m_map_size.z)) : 0;
+	const int max_tile_z = m_periodic ? static_cast<int> (std::floor
+	  ((camera.z + center_reach - center_z) / m_map_size.z)) : 0;
+	for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
+	  for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
+	    const Vector3D offset (tile_x * m_map_size.x, 0,
+				   tile_z * m_map_size.z);
+	    const float dx = camera.x - center_x - offset.x;
+	    const float dz = camera.z - center_z - offset.z;
+	    if (dx * dx + dz * dz >= center_reach * center_reach)
+	      continue;
+	    r.draw_mesh (*mesh, Mat4::translation (offset));
+	  }
       }
   }
 

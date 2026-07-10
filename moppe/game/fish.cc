@@ -17,12 +17,16 @@ namespace game {
     std::mt19937 rng (777);
     std::uniform_real_distribution<float> u (0.0f, 1.0f);
     const Vector3D size = map.size ();
+    m_period = size;
+    m_periodic = map.periodic ();
 
     m_fish.clear ();
     int made = 0, tries = 0;
     while (made < schools && tries++ < schools * 300) {
-      const float ax = size.x * (0.05f + 0.9f * u (rng));
-      const float az = size.z * (0.05f + 0.9f * u (rng));
+      const float ax = size.x * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
+      const float az = size.z * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
       const float ground = map.interpolated_height (ax, az);
       if (ground > water - 6.0f)
 	continue; // schools want reasonably deep water
@@ -56,17 +60,23 @@ namespace game {
     for (size_t i = 0; i < m_fish.size (); ++i) {
       const One& f = m_fish[i];
 
-      const float cdx = cam.x - f.cx, cdz = cam.z - f.cz;
+      float center_x = f.cx;
+      float center_z = f.cz;
+      if (m_periodic) {
+	center_x = terrain::nearest_image (center_x, cam.x, m_period.x);
+	center_z = terrain::nearest_image (center_z, cam.z, m_period.z);
+      }
+      const float cdx = cam.x - center_x, cdz = cam.z - center_z;
       if (cdx * cdx + cdz * cdz > 600.0f * 600.0f)
 	continue; // invisible underwater from that far
 
       const float a = f.phase + time * f.speed;
 
       dl.push ();
-      dl.translate (f.cx + std::cos (a) * f.radius,
+      dl.translate (center_x + std::cos (a) * f.radius,
 		    f.y + 0.3f * std::sin (time * 1.3f
 					   + f.phase * 3.0f),
-		    f.cz + std::sin (a) * f.radius);
+		    center_z + std::sin (a) * f.radius);
       // face along the swim circle's tangent
       dl.rotate_deg (-a * 57.2958f, 0, 1, 0);
       dl.scale (f.size, f.size, f.size);

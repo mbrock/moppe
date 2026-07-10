@@ -36,6 +36,8 @@ namespace game {
     std::vector<Star> m_stars;
     int m_collected;
     Vector3D m_last_pos;
+    Vector3D m_period;
+    bool m_periodic = false;
   };
 }
 }

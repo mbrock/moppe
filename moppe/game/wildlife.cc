@@ -20,12 +20,16 @@ namespace game {
     std::mt19937 rng (4242);
     std::uniform_real_distribution<float> u (0.0f, 1.0f);
     const Vector3D size = map.size ();
+    m_period = size;
+    m_periodic = map.periodic ();
 
     m_horses.clear ();
     int made = 0, tries = 0;
     while (made < herds && tries++ < herds * 400) {
-      const float hx = size.x * (0.05f + 0.9f * u (rng));
-      const float hz = size.z * (0.05f + 0.9f * u (rng));
+      const float hx = size.x * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
+      const float hz = size.z * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
       const float hy = map.interpolated_height (hx, hz);
 
       // Herds like flat grassy meadows
@@ -51,8 +55,10 @@ namespace game {
 
     m_birds.clear ();
     for (int f = 0; f < flocks; ++f) {
-      const float fx = size.x * (0.05f + 0.9f * u (rng));
-      const float fz = size.z * (0.05f + 0.9f * u (rng));
+      const float fx = size.x * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
+      const float fz = size.z * (m_periodic ? u (rng)
+					  : 0.05f + 0.9f * u (rng));
       const float ground = map.interpolated_height (fx, fz);
       const bool over_sea = ground < water;
       const float alt =
@@ -84,7 +90,11 @@ namespace game {
     const Vector3D& cam = env.camera_pos;
 
     for (size_t i = 0; i < m_horses.size (); ++i) {
-      const Horse& h = m_horses[i];
+      Horse h = m_horses[i];
+      if (m_periodic) {
+	h.x = terrain::nearest_image (h.x, cam.x, m_period.x);
+	h.z = terrain::nearest_image (h.z, cam.z, m_period.z);
+      }
       const float dx = cam.x - h.x, dz = cam.z - h.z;
       if (dx * dx + dz * dz > 700.0f * 700.0f)
 	continue;
@@ -97,7 +107,11 @@ namespace game {
     no_cull.cull = false;
     dl.state (no_cull);
     for (size_t i = 0; i < m_birds.size (); ++i) {
-      const Bird& b = m_birds[i];
+      Bird b = m_birds[i];
+      if (m_periodic) {
+	b.cx = terrain::nearest_image (b.cx, cam.x, m_period.x);
+	b.cz = terrain::nearest_image (b.cz, cam.z, m_period.z);
+      }
       const float dx = cam.x - b.cx, dz = cam.z - b.cz;
       if (dx * dx + dz * dz > 1300.0f * 1300.0f)
 	continue;

@@ -971,6 +971,8 @@ namespace render {
       c.morph_end = chunks[i].morph_end;
       c.parent_step = lod + 1 < TERRAIN_LOD_COUNT
 	? TERRAIN_LOD_STEP[lod + 1] : TERRAIN_LOD_STEP[lod];
+      c.world_offset.x = chunks[i].offset_x;
+      c.world_offset.z = chunks[i].offset_z;
       [enc setVertexBytes: &c length: sizeof (c)
 		  atIndex: MOPPE_BUF_CHUNK];
       [enc drawIndexedPrimitives: MTLPrimitiveTypeTriangleStrip
@@ -1071,6 +1073,9 @@ namespace render {
     u.fog_color = f4lin (params.fog_color, params.fog_scale);
     u.params.x = params.time;
     u.params.y = m_ocean_level;
+    u.params.z = m_terrain_params.periodic ? 1.0f : 0.0f;
+    u.world_offset.x = params.world_offset.x;
+    u.world_offset.z = params.world_offset.z;
 
     // Shore data: the fragment shader reads the height texture to
     // find the seabed for foam and shallows.

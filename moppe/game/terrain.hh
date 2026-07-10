@@ -42,7 +42,9 @@ namespace game {
     std::vector<Chunk> m_chunks;
     std::vector<render::ChunkDraw> m_draws;
     Vector3D m_scale;
+    Vector3D m_period;
     float m_lod_scale = 1;
+    bool m_periodic = false;
     render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
     bool m_textures_loaded = false;
   };

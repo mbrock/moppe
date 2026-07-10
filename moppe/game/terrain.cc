@@ -48,6 +48,8 @@ namespace game {
 		  const map::RandomHeightMap& map,
 		  const WorldParams& world) {
     m_scale = map.scale ();
+    m_period = map.size ();
+    m_periodic = map.periodic ();
     m_lod_scale = std::max (m_scale.x, m_scale.z);
 
     render::TerrainParams params;
@@ -61,6 +63,7 @@ namespace game {
     params.shadow_strength =
       ::getenv ("MOPPE_NOSHADOW") ? 0.0f : 0.85f;
     params.fog_scale = world.fog_scale;
+    params.periodic = map.periodic ();
     r.set_terrain (params, map.raw_heights (), map.raw_normals ());
 
     if (!m_textures_loaded) {
@@ -132,44 +135,59 @@ namespace game {
     const float half_depth = 0.5f * CHUNK * m_scale.z;
     for (size_t i = 0; i < m_chunks.size (); ++i) {
       const Chunk& c = m_chunks[i];
-      const Vector3D d = c.center - cam;
-      const float dist2 = d.length2 ();
-
-      // Too far: the haze has swallowed it.
       const float reach = max_dist + c.radius;
-      if (dist2 > reach * reach)
-	continue;
+      const int min_tile_x = m_periodic ? static_cast<int> (std::ceil
+	((cam.x - reach - c.center.x) / m_period.x)) : 0;
+      const int max_tile_x = m_periodic ? static_cast<int> (std::floor
+	((cam.x + reach - c.center.x) / m_period.x)) : 0;
+      const int min_tile_z = m_periodic ? static_cast<int> (std::ceil
+	((cam.z - reach - c.center.z) / m_period.z)) : 0;
+      const int max_tile_z = m_periodic ? static_cast<int> (std::floor
+	((cam.z + reach - c.center.z) / m_period.z)) : 0;
 
-      // Entirely behind the camera plane (conservative).
-      if (dist2 > c.radius * c.radius &&
-	  d.dot (view_dir) < -c.radius)
-	continue;
+      for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
+	for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
+	  const Vector3D offset (tile_x * m_period.x, 0,
+				 tile_z * m_period.z);
+	  const Vector3D d = c.center + offset - cam;
+	  const float dist2 = d.length2 ();
 
-      // Choose from the distance to the nearest point of the chunk,
-      // rather than its center.  A finer chunk is retained until every
-      // point on it has completed the shader morph to the parent LOD.
-      const float dx = std::max
-	(0.0f, std::fabs (d.x) - half_width);
-      const float dz = std::max
-	(0.0f, std::fabs (d.z) - half_depth);
-      const float nearest = std::sqrt (dx * dx + dz * dz);
+	  // Too far: the haze has swallowed it.
+	  if (dist2 > reach * reach)
+	    continue;
 
-      int lod = LOD_COUNT - 1;
-      for (int level = 0; level < LOD_COUNT - 1; ++level)
-	if (nearest < LOD_END[level] * m_lod_scale) {
-	  lod = level;
-	  break;
+	  // Entirely behind the camera plane (conservative).
+	  if (dist2 > c.radius * c.radius &&
+	      d.dot (view_dir) < -c.radius)
+	    continue;
+
+	  // Choose from the distance to the nearest point of the chunk,
+	  // rather than its center.
+	  const float dx = std::max
+	    (0.0f, std::fabs (d.x) - half_width);
+	  const float dz = std::max
+	    (0.0f, std::fabs (d.z) - half_depth);
+	  const float nearest = std::sqrt (dx * dx + dz * dz);
+
+	  int lod = LOD_COUNT - 1;
+	  for (int level = 0; level < LOD_COUNT - 1; ++level)
+	    if (nearest < LOD_END[level] * m_lod_scale) {
+	      lod = level;
+	      break;
+	    }
+
+	  render::ChunkDraw draw;
+	  draw.x0 = (uint16_t) c.x0;
+	  draw.z0 = (uint16_t) c.z0;
+	  draw.lod = (render::TerrainLod) lod;
+	  draw.morph_start = lod < LOD_COUNT - 1
+	    ? LOD_MORPH_START[lod] * m_lod_scale : 0.0f;
+	  draw.morph_end = lod < LOD_COUNT - 1
+	    ? LOD_END[lod] * m_lod_scale : 0.0f;
+	  draw.offset_x = offset.x;
+	  draw.offset_z = offset.z;
+	  m_draws.push_back (draw);
 	}
-
-      render::ChunkDraw draw;
-      draw.x0 = (uint16_t) c.x0;
-      draw.z0 = (uint16_t) c.z0;
-      draw.lod = (render::TerrainLod) lod;
-      draw.morph_start = lod < LOD_COUNT - 1
-	? LOD_MORPH_START[lod] * m_lod_scale : 0.0f;
-      draw.morph_end = lod < LOD_COUNT - 1
-	? LOD_END[lod] * m_lod_scale : 0.0f;
-      m_draws.push_back (draw);
     }
 
     if (!m_draws.empty ())

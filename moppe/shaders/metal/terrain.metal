@@ -131,7 +131,7 @@ terrain_world_pos (uint index,
 
   return float3 (u.params0.x * grid.x,
 		 u.params0.y * h,
-		 u.params0.z * grid.y);
+		 u.params0.z * grid.y) + chunk.world_offset.xyz;
 }
 
 vertex TerrainVaryings
@@ -152,8 +152,9 @@ terrain_vertex (uint index [[vertex_id]],
     normal = terrain_read_normal (uint2 (grid), normals);
   }
 
-  const float2 world_xz (u.params0.x * grid.x,
-			 u.params0.z * grid.y);
+  const float2 canonical_xz (u.params0.x * grid.x,
+			     u.params0.z * grid.y);
+  const float2 world_xz = canonical_xz + chunk.world_offset.xz;
   if (chunk.parent_step > chunk.step &&
       chunk.morph_end > chunk.morph_start) {
     const float dist = length (world_xz - u.camera_pos.xz);
@@ -185,7 +186,9 @@ terrain_vertex (uint index [[vertex_id]],
   fog += 0.3 * lowness * smoothstep (150.0, 1500.0, dist);
   out.fog = saturate (fog);
 
-  out.shadow_coord = u.light_matrix * float4 (world, 1.0);
+  const float3 canonical_world
+    (canonical_xz.x, world.y, canonical_xz.y);
+  out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
   out.uv = world.xz * u.params0.w;
   return out;
 }

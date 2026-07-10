@@ -74,9 +74,10 @@ struct MoppeChunkUniforms {
   float morph_end;
   float parent_step;          // next coarser source-texel step
   int pad;
+  MoppeFloat4 world_offset;   // x/z translated periodic image
 };
 #ifndef __METAL_VERSION__
-static_assert (sizeof (MoppeChunkUniforms) == 32,
+static_assert (sizeof (MoppeChunkUniforms) == 48,
 	       "terrain chunk uniforms must match Metal layout");
 #endif
 
@@ -95,6 +96,7 @@ struct MoppeOceanUniforms {
   MoppeFloat4 params;         // x=time, y=sea level (world y)
   MoppeFloat4 shore;          // x=1/step_x, y=1/step_z,
 			      // z=height_scale, w=grid width (0=off)
+  MoppeFloat4 world_offset;
 };
 
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,
