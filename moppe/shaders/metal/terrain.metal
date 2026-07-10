@@ -350,6 +350,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 		  texture2d<float> snow [[texture(MOPPE_TEX_SNOW)]],
 		  texture2d<float> rock [[texture(MOPPE_TEX_ROCK)]],
 		  depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]],
+		  depth2d<float> previous_shadow_map
+		    [[texture(MOPPE_TEX_PREVIOUS_SHADOW)]],
 		  sampler smp [[sampler(0)]])
 {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -444,9 +446,16 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   texel = mix (texel, sand_c, beach_coef);
 
   // Per-pixel Lambert with real cast shadows.
-  const float shadow = terrain_shadow_factor (in.shadow_coord, in.fog,
-					      n, l, u.params1.z,
-					      u.params1.w, shadow_map);
+  const float current_shadow = terrain_shadow_factor
+    (in.shadow_coord, in.fog, n, l, u.params1.z,
+     u.params1.w, shadow_map);
+  float shadow = current_shadow;
+  if (u.params3.x > 0.5 && u.params3.z < 1.0) {
+    const float previous_shadow = terrain_shadow_factor
+      (in.shadow_coord, in.fog, n, l, u.params1.z,
+       u.params3.w, previous_shadow_map);
+    shadow = mix (previous_shadow, current_shadow, u.params3.z);
+  }
   // 0.9 is the old GL terrain material diffuse.
   const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
   float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb

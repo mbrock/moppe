@@ -176,7 +176,7 @@ spheres) become run boundaries.
 
 Fixed pass structure per frame, expressed as explicit API on `Renderer`:
 
-    shadow pass (once per world)  → 4096² Depth32F, terrain only
+    shadow pass (once per world)  → 4096² Depth16, terrain only
     scene pass  (MSAA 4x → resolve into sceneA, Depth32F reversed-Z)
        terrain → sky → city sectors → vegetation sectors → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
@@ -249,12 +249,19 @@ iterative problem rather than part of the pointwise graph.
 
 ## Shadow map
 
-Unchanged technique: one ortho depth render of the terrain from the fixed
-sun, 4096² Depth32F, hardware PCF via compare sampler, 5-tap weighted kernel
-with slope-scaled bias in the terrain shader. The light matrices are computed
-with our own Mat4 (ortho + lookAt), replacing the "do matrix math on the GL
-projection stack" trick in shadow.cc. Bias matrix maps x,y to [0,1]; z is
-already [0,1] in Metal (adjusted for reversed-Z).
+The gameplay technique is one ortho depth render of the terrain from the fixed
+sun, 4096² Depth16, hardware PCF via compare sampler, and a 5-tap weighted
+kernel with slope-scaled bias in the terrain shader. The Terrain Lab uses an
+explicit preview quality: 1024² at source stride 2. Lab shadow maps are
+double-buffered and their visibility results crossfade on the same 120 ms
+clock as heightfield transitions, so a lowering mountain never receives the
+stale shadow of its old geometry. `MOPPE_PROFILE_SHADOW=1` prints the GPU time
+for the pass.
+
+The light matrices are computed with our own Mat4 (ortho + lookAt), replacing
+the "do matrix math on the GL projection stack" trick in shadow.cc. Bias
+matrix maps x,y to [0,1]; z is already [0,1] in Metal (adjusted for
+reversed-Z).
 
 ## Text
 

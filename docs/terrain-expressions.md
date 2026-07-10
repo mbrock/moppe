@@ -170,9 +170,13 @@ Knob motion updates the program value immediately, while evaluation is
 coalesced on the frame tick: direct fields update frequently, iterative stages
 use a slower cadence, and releasing the knob commits the newest value.  Each
 completed preview morphs from the previous height texture over 120 ms, with
-normals derived from the interpolated surface.  The UI itself is Moppe's small
-immediate-mode `InspectorUi` drawn through `DrawList`, not an external widget
-library.
+normals derived from the interpolated surface.  Its shadow is rebuilt
+immediately at 1024-square resolution from every second terrain sample, then
+crossfaded from the previous shadow on the same 120 ms clock.  This keeps
+light and geometry together while dragging without paying for the gameplay
+shadow pass.  `MOPPE_PROFILE_SHADOW=1` reports the GPU time of either path.
+The UI itself is Moppe's small immediate-mode `InspectorUi` drawn through
+`DrawList`, not an external widget library.
 
 For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
 1025-square field and skips canonical erosion, vegetation, stars, fish, and

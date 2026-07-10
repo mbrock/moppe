@@ -67,6 +67,8 @@ namespace game {
     // Debug: MOPPE_NOSHADOW=1 disables the cast-shadow lookup.
     params.shadow_strength = projection == render::TerrainProjection::Torus
       || ::getenv ("MOPPE_NOSHADOW") ? 0.0f : 0.85f;
+    params.shadow_resolution = interactive_preview ? 1024 : 4096;
+    params.shadow_sample_step = interactive_preview ? 2 : 1;
     params.fog_scale = world.fog_scale;
     params.periodic = map.periodic ();
     params.projection = projection;

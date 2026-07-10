@@ -51,6 +51,8 @@ namespace render {
     float sea_level_norm;         // sea level / height_scale
     float tex_scale;              // texture repeats per world meter
     float shadow_strength;
+    int shadow_resolution = 4096;
+    int shadow_sample_step = 1;
     float fog_scale;
     bool periodic = false;
     TerrainProjection projection = TerrainProjection::Plane;

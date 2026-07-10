@@ -239,7 +239,6 @@ namespace game {
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
       m_tilt_up (false), m_tilt_down (false),
-      m_shadow_refresh_delay (0.0f),
       m_scroll_zoom_target (5600.0f),
       m_view (ViewMode::Cover)
   { }
@@ -283,7 +282,6 @@ namespace game {
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
-    m_shadow_refresh_delay = 0.0f;
     fit_view ();
 
     const size_t count = (size_t) map.width () * map.height ();
@@ -847,10 +845,7 @@ namespace game {
     m_terrain->setup
       (*m_renderer, *m_map, display, projection, repeat,
 	interactive_preview);
-    if (interactive_preview)
-      m_shadow_refresh_delay = 0.12f;
-    else
-      m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
+    m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
   }
 
   void
@@ -861,11 +856,6 @@ namespace game {
     if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
       run_pending_parameter_rebuild ();
 
-    if (m_shadow_refresh_delay > 0.0f) {
-      m_shadow_refresh_delay -= dt;
-      if (m_shadow_refresh_delay <= 0.0f && m_renderer && m_map && m_terrain)
-	m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
-    }
     const float orbit = (m_orbit_right ? 1.0f : 0.0f)
       - (m_orbit_left ? 1.0f : 0.0f);
     const float tilt = (m_tilt_up ? 1.0f : 0.0f)
