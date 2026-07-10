@@ -118,6 +118,9 @@ namespace mov {
     // needs through these.
     float lean () const { return m_lean; }
     float susp () const { return m_susp; }
+    // Accumulated wheel roll angle, radians in [0, 2pi).
+    float wheel_spin () const { return m_wheel_spin; }
+    bool airborne () const { return m_airborne_time > 0.15f; }
     radians_t yaw () const { return m_yaw; }
     Vector3D render_normal () const { return m_render_normal; }
     int body_kind () const { return m_body_kind; }
@@ -166,6 +169,7 @@ namespace mov {
     float m_lean;           // roll into corners (radians)
     Vector3D m_render_normal; // smoothed up vector for drawing
     float m_susp, m_susp_v;   // visual suspension spring
+    float m_wheel_spin;       // visual wheel roll angle (radians)
     bool m_boost_flight;      // landing softened after using the jets
 
     const HeightMap& m_map;

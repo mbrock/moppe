@@ -36,6 +36,7 @@ namespace mov {
       m_render_normal (0, 1, 0),
       m_susp (0),
       m_susp_v (0),
+      m_wheel_spin (0),
       m_boost_flight (false),
       m_map (map),
       m_max_thrust (max_thrust),
@@ -398,6 +399,17 @@ namespace mov {
     m_susp_v += (-70.0f * m_susp - 9.0f * m_susp_v) * dt;
     m_susp += m_susp_v * dt;
     m_susp = std::max (-0.35f, std::min (0.15f, m_susp));
+
+    // Wheel roll for the renderer: ground speed while rolling, a
+    // throttle-driven spin-up in the air.  ~0.68 m wheel radius as
+    // drawn.  Kept in [0, 2pi) so precision survives long rides.
+    {
+      float rate = m_velocity.dot (m_heading) / 0.68f;
+      if (!contact && std::abs (m_thrust) > 0.1f)
+	rate = 40.0f * m_thrust;
+      m_wheel_spin = std::fmod (m_wheel_spin + rate * dt,
+				2.0f * 3.14159265f);
+    }
   }
 
   void
