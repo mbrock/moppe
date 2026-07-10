@@ -17,6 +17,12 @@ namespace game {
   // restores it so experiments cannot alter the playable world.
   class TerrainLab {
   public:
+    enum class ViewMode {
+      Tile,
+      Cover,
+      Torus
+    };
+
     TerrainLab ();
 
     void load (render::Renderer& renderer);
@@ -26,7 +32,8 @@ namespace game {
     void leave ();
 
     bool active () const { return m_active; }
-    bool torus_view () const { return m_torus_view; }
+    bool cover_view () const { return m_view == ViewMode::Cover; }
+    bool torus_view () const { return m_view == ViewMode::Torus; }
     void tick (float dt);
     void key (platform::Key key, bool down);
     void pointer_move (float x, float y, float dx, float dy);
@@ -56,7 +63,7 @@ namespace game {
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
     void fit_view ();
-    void toggle_torus_view ();
+    void cycle_view ();
 
     InspectorUi m_ui;
     render::Renderer* m_renderer;
@@ -88,7 +95,7 @@ namespace game {
     bool m_zoom_out;
     bool m_tilt_up;
     bool m_tilt_down;
-    bool m_torus_view;
+    ViewMode m_view;
   };
 }
 }

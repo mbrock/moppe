@@ -96,13 +96,17 @@ The Terrain Lab window presents the system as a small construction game:
 - reset returns to the canonical normalized base recipe;
 - left-dragging outside the window orbits, right- or middle-dragging pans,
   and the mouse wheel zooms over a much wider range;
-- Fit restores a whole-domain overview with inspection fog disabled;
-- Donut View embeds the periodic heightfield as an actual torus on the GPU,
-  while Flat View shows exactly one fundamental square.
+- Fit restores an overview appropriate to the selected view;
+- Tile View shows exactly one fundamental square;
+- Cover View repeats the square around the camera through the existing
+  gameplay LOD path and fades the finite draw horizon into distance haze;
+- Donut View embeds the periodic heightfield as an actual torus on the GPU.
 
-Every action edits the `TerrainPipeline` or `GeologicalRecipe` value and then
-replays it.  The UI does not maintain a parallel shadow representation of the
-pipeline.  Leaving the lab restores the exact playable heightmap snapshot.
+Every action edits the `TerrainPipeline` or `GeologicalRecipe` value.  The lab
+keeps exact height-and-random-state checkpoints after each stage, so a stage
+edit only replays the affected suffix.  It does not maintain a parallel shadow
+representation of the recipe itself.  Leaving the lab restores the exact
+playable heightmap snapshot.
 
 In C++, a scripted experiment is ordinary value manipulation:
 
@@ -121,7 +125,16 @@ Hydraulic batches advance their droplets in lockstep.  Every droplet reads
 the same heightfield for one simulation step, sparse erosion/deposition deltas
 are accumulated, and the batch is committed before the next step.  This is a
 deterministic CPU implementation of the work boundary a future compute kernel
-can execute in parallel.
+can execute in parallel.  Terrain Lab exposes batch-size presets of 1, 64,
+256, and 1024 as well as the numeric stepper, making the visual effect of more
+simultaneous erosion directly comparable.
+
+The present CPU implementation still evaluates droplets serially inside that
+logical batch.  A prototype using a persistent CPU worker team and two barriers
+per droplet step preserved output exactly but was substantially slower because
+the work between barriers is too small.  The next performance pass should
+therefore lower a whole lockstep batch to a GPU compute kernel, or redesign the
+CPU algorithm around much coarser per-worker tiles and private delta buffers.
 
 ## Tests and command-line feedback
 

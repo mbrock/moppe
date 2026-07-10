@@ -53,8 +53,14 @@ namespace game {
     UiRect fit_rect ()
     { return { 252, 52, 72, 28 }; }
 
-    UiRect torus_rect ()
+    UiRect view_rect ()
     { return { 330, 52, 112, 28 }; }
+
+    UiRect batch_preset_rect (int index) {
+      const float gap = 4.0f;
+      const float width = (right_width - 3 * gap) / 4.0f;
+      return { right_x + index * (width + gap), 326, width, 28 };
+    }
 
     UiRect layer_rect (int index) {
       const float gap = 3.0f;
@@ -205,7 +211,7 @@ namespace game {
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
       m_tilt_up (false), m_tilt_down (false),
-      m_torus_view (false)
+      m_view (ViewMode::Cover)
   { }
 
   void
@@ -235,7 +241,7 @@ namespace game {
     m_pointer_down = false;
     m_camera_drag = false;
     m_pan_drag = false;
-    m_torus_view = false;
+    m_view = ViewMode::Cover;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -277,17 +283,31 @@ namespace game {
       return;
     m_target = Vector3D
       (m_world->map_size.x * 0.5f,
-	 m_torus_view ? 0.0f : m_world->map_size.y * 0.10f,
+	 m_view == ViewMode::Torus
+	 ? 0.0f : m_world->map_size.y * 0.10f,
 	 m_world->map_size.z * 0.5f);
     m_yaw = 0.72f;
-    m_pitch = m_torus_view ? 0.48f : 1.22f;
-    m_distance = m_torus_view ? 4700.0f : 6500.0f;
+    if (m_view == ViewMode::Torus) {
+      m_pitch = 0.48f;
+      m_distance = 4700.0f;
+    } else if (m_view == ViewMode::Cover) {
+      m_pitch = 0.88f;
+      m_distance = 7200.0f;
+    } else {
+      m_pitch = 1.22f;
+      m_distance = 6500.0f;
+    }
   }
 
   void
-  TerrainLab::toggle_torus_view ()
+  TerrainLab::cycle_view ()
   {
-    m_torus_view = !m_torus_view;
+    if (m_view == ViewMode::Tile)
+      m_view = ViewMode::Cover;
+    else if (m_view == ViewMode::Cover)
+      m_view = ViewMode::Torus;
+    else
+      m_view = ViewMode::Tile;
     fit_view ();
     refresh ();
   }
@@ -536,8 +556,8 @@ namespace game {
       fit_view ();
       return;
     }
-    if (torus_rect ().contains (x, y)) {
-      toggle_torus_view ();
+    if (view_rect ().contains (x, y)) {
+      cycle_view ();
       return;
     }
     for (int i = 0; i < 7; ++i) {
@@ -600,6 +620,20 @@ namespace game {
 	return;
       }
     }
+    if (m_selected_stage >= 0) {
+      terrain::PipelineStage& stage =
+	m_pipeline.stages[m_selected_stage];
+      if (auto* hydraulic =
+	  std::get_if<terrain::HydraulicErosion> (&stage)) {
+	constexpr int presets[] = { 1, 64, 256, 1024 };
+	for (int i = 0; i < 4; ++i)
+	  if (batch_preset_rect (i).contains (x, y)) {
+	    hydraulic->batch_size = presets[i];
+	    rerun_pipeline_from (m_selected_stage);
+	    return;
+	  }
+      }
+    }
   }
 
   void
@@ -609,14 +643,17 @@ namespace game {
       return;
     m_map->recompute_normals ();
     WorldParams display = *m_world;
-    if (inspection_fog)
-      display.fog_scale = 0.0f;
+    if (inspection_fog) {
+      display.fog_scale = m_view == ViewMode::Cover
+	? 0.00011f : 0.0f;
+    }
     const render::TerrainProjection projection =
-      inspection_fog && m_torus_view
+      inspection_fog && m_view == ViewMode::Torus
       ? render::TerrainProjection::Torus
       : render::TerrainProjection::Plane;
+    const bool repeat = !inspection_fog || m_view == ViewMode::Cover;
     m_terrain->setup
-      (*m_renderer, *m_map, display, projection, !inspection_fog);
+      (*m_renderer, *m_map, display, projection, repeat);
     m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
   }
 
@@ -802,9 +839,11 @@ namespace game {
 		 m_pointer_down);
     m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()),
 		 m_pointer_down);
-    m_ui.button (dl, torus_rect (),
-		 m_torus_view ? "FLAT VIEW" : "DONUT VIEW",
-		 hot (torus_rect ()), m_pointer_down, m_torus_view);
+    const char* view_label = m_view == ViewMode::Tile ? "VIEW: TILE"
+      : m_view == ViewMode::Cover ? "VIEW: COVER" : "VIEW: DONUT";
+    m_ui.button (dl, view_rect (), view_label,
+		 hot (view_rect ()), m_pointer_down,
+		 m_view != ViewMode::Tile);
     for (int i = 0; i < 7; ++i) {
       const UiRect bounds = layer_rect (i);
       m_ui.button (dl, bounds, layer_labels[i], hot (bounds),
@@ -885,6 +924,21 @@ namespace game {
 		    "A whole-raster materialization barrier.");
 	m_ui.label (dl, right_x + 8, 342,
 		    "It can be moved, copied, or deleted.");
+      } else if (std::holds_alternative<terrain::HydraulicErosion> (stage)) {
+	m_ui.label (dl, right_x + 8, 319, "BATCH EXPERIMENT", true);
+	constexpr const char* labels[] = { "1", "64", "256", "1024" };
+	const int batch =
+	  std::get<terrain::HydraulicErosion> (stage).batch_size;
+	constexpr int presets[] = { 1, 64, 256, 1024 };
+	for (int i = 0; i < 4; ++i) {
+	  const UiRect bounds = batch_preset_rect (i);
+	  m_ui.button (dl, bounds, labels[i], hot (bounds),
+		       m_pointer_down, batch == presets[i]);
+	}
+	m_ui.label (dl, right_x + 8, 372,
+		    "A batch advances together, then commits.");
+	m_ui.label (dl, right_x + 8, 392,
+		    "Larger batches make erosion more simultaneous.");
       }
     }
 
