@@ -37,7 +37,7 @@ namespace game {
 	       int height_pts) const;
 
   private:
-    void select (map::GeologicalField field);
+    void select (terrain::GeologicalLayer layer);
     void reset_field ();
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
@@ -52,7 +52,7 @@ namespace game {
 
     bool m_active;
     int m_seed;
-    map::GeologicalField m_field;
+    terrain::GeologicalLayer m_layer;
     int m_droplets;
     int m_thermal_passes;
 
