@@ -265,7 +265,7 @@ namespace map {
 
     // Particle-based hydraulic erosion: carves gullies into the
     // slopes and settles sediment on the plains.
-    void erode_hydraulically (int droplets);
+    void erode_hydraulically (int droplets, int batch_size = 256);
 
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.

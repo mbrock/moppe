@@ -20,7 +20,10 @@ namespace moppe::terrain {
     TerrainPipeline pipeline = make_geological_pipeline (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
     pipeline.stages.emplace_back (PowerHeights { 1.15f });
-    pipeline.stages.emplace_back (HydraulicErosion { 1500000 });
+    pipeline.stages.emplace_back (HydraulicErosion {
+      .droplets = 1500000,
+      .batch_size = 256
+    });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
     pipeline.stages.emplace_back (ThermalErosion { 2, 0.003f });
     return pipeline;
@@ -37,9 +40,10 @@ namespace moppe::terrain {
 	    throw std::invalid_argument
 	      ("height exponent must be positive and finite");
 	} else if constexpr (std::is_same_v<T, HydraulicErosion>) {
-	  if (operation.droplets < 0)
+	  if (operation.droplets < 0 || operation.batch_size <= 0)
 	    throw std::invalid_argument
-	      ("hydraulic droplet count cannot be negative");
+	      ("hydraulic erosion needs a non-negative droplet count "
+	       "and a positive batch size");
 	} else if constexpr (std::is_same_v<T, ThermalErosion>) {
 	  if (operation.iterations < 0
 	      || !std::isfinite (operation.talus)

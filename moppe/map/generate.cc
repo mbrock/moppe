@@ -287,7 +287,7 @@ namespace map {
 	exponentiate (power->exponent);
       else if (const auto* hydraulic =
 	       std::get_if<terrain::HydraulicErosion> (&stage))
-	erode_hydraulically (hydraulic->droplets);
+	erode_hydraulically (hydraulic->droplets, hydraulic->batch_size);
       else if (const auto* thermal =
 	       std::get_if<terrain::ThermalErosion> (&stage))
 	erode_thermally (thermal->iterations, thermal->talus);
@@ -320,7 +320,7 @@ namespace map {
   // Heightfield cache format: 4-byte magic, int32 width, int32
   // height, then width*height little-endian float32, row 0 first.
   static const char bounded_heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
-  static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', 'T' };
+  static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', '2' };
 
   bool
   RandomHeightMap::try_load_cache (const std::string& path)
@@ -369,7 +369,7 @@ namespace map {
   }
 
   void
-  RandomHeightMap::erode_hydraulically (int droplets)
+  RandomHeightMap::erode_hydraulically (int droplets, int batch_size)
   {
     // Droplet erosion after Beyer (2015): each raindrop rolls
     // downhill, picking up sediment while it accelerates and
@@ -383,6 +383,10 @@ namespace map {
     const float evaporate  = 0.015f;
     const float gravity    = 4.0f;
     const int   max_steps  = 64;
+
+    if (batch_size <= 0)
+      throw std::invalid_argument
+	("hydraulic erosion batch size must be positive");
 
     realgen_t g (m_rng, 0, 1);
 
@@ -421,56 +425,105 @@ namespace map {
 	  return s;
 	};
 
-      for (int d = 0; d < droplets; ++d) {
-	float px = g () * period_x;
-	float py = g () * period_y;
+      struct Droplet {
+	float px, py;
 	float dirx = 0, diry = 0;
 	float speed = 1, water = 1, sediment = 0;
+	bool active = true;
+      };
+
+      const std::size_t cell_count =
+	static_cast<std::size_t> (m_width) * m_height;
+      std::vector<float> changes (cell_count, 0.0f);
+      std::vector<std::uint8_t> marked (cell_count, 0);
+      std::vector<std::size_t> touched;
+      touched.reserve (static_cast<std::size_t> (batch_size) * 16);
+
+      const auto add_change = [&] (int x, int y, float amount) {
+	const std::size_t index = static_cast<std::size_t> (y) * m_width + x;
+	if (!marked[index]) {
+	  marked[index] = 1;
+	  touched.push_back (index);
+	}
+	changes[index] += amount;
+      };
+
+      for (int first = 0; first < droplets; first += batch_size) {
+	const int count = std::min (batch_size, droplets - first);
+	std::vector<Droplet> batch;
+	batch.reserve (count);
+	for (int i = 0; i < count; ++i)
+	  batch.push_back ({
+	    .px = g () * period_x,
+	    .py = g () * period_y
+	  });
 
 	for (int step = 0; step < max_steps; ++step) {
-	  const Sample here = sample (px, py);
-	  dirx = dirx * inertia - here.gradx * (1 - inertia);
-	  diry = diry * inertia - here.grady * (1 - inertia);
-	  const float len = std::sqrt (dirx * dirx + diry * diry);
-	  if (len < 1e-10f)
-	    break;
-	  dirx /= len;
-	  diry /= len;
+	  bool any_active = false;
+	  touched.clear ();
+	  for (Droplet& drop : batch) {
+	    if (!drop.active)
+	      continue;
+	    const Sample here = sample (drop.px, drop.py);
+	    drop.dirx = drop.dirx * inertia
+	      - here.gradx * (1 - inertia);
+	    drop.diry = drop.diry * inertia
+	      - here.grady * (1 - inertia);
+	    const float len = std::sqrt
+	      (drop.dirx * drop.dirx + drop.diry * drop.diry);
+	    if (len < 1e-10f) {
+	      drop.active = false;
+	      continue;
+	    }
+	    drop.dirx /= len;
+	    drop.diry /= len;
 
-	  const float nx = terrain::wrap_coordinate
-	    (px + dirx, static_cast<float> (period_x));
-	  const float ny = terrain::wrap_coordinate
-	    (py + diry, static_cast<float> (period_y));
-	  const Sample next = sample (nx, ny);
-	  const float dh = next.height - here.height;
-	  const float capacity = std::max (-dh, min_slope)
-	    * speed * water * capacity_k;
+	    const float nx = terrain::wrap_coordinate
+	      (drop.px + drop.dirx, static_cast<float> (period_x));
+	    const float ny = terrain::wrap_coordinate
+	      (drop.py + drop.diry, static_cast<float> (period_y));
+	    const Sample next = sample (nx, ny);
+	    const float dh = next.height - here.height;
+	    const float capacity = std::max (-dh, min_slope)
+	      * drop.speed * drop.water * capacity_k;
 
-	  float amount = 0;
-	  if (sediment > capacity || dh > 0) {
-	    amount = dh > 0 ? std::min (dh, sediment)
-	      : (sediment - capacity) * deposit_k;
-	    sediment -= amount;
-	  } else {
-	    amount = -std::min
-	      ((capacity - sediment) * erode_k, -dh);
-	    sediment -= amount;
+	    float amount;
+	    if (drop.sediment > capacity || dh > 0) {
+	      amount = dh > 0 ? std::min (dh, drop.sediment)
+		: (drop.sediment - capacity) * deposit_k;
+	      drop.sediment -= amount;
+	    } else {
+	      amount = -std::min
+		((capacity - drop.sediment) * erode_k, -dh);
+	      drop.sediment -= amount;
+	    }
+
+	    add_change (here.x0, here.y0,
+		amount * (1 - here.fx) * (1 - here.fy));
+	    add_change (here.x1, here.y0,
+		amount * here.fx * (1 - here.fy));
+	    add_change (here.x0, here.y1,
+		amount * (1 - here.fx) * here.fy);
+	    add_change (here.x1, here.y1,
+		amount * here.fx * here.fy);
+
+	    drop.speed = std::sqrt (std::max
+	      (0.0f, drop.speed * drop.speed - dh * gravity));
+	    drop.water *= (1 - evaporate);
+	    drop.px = nx;
+	    drop.py = ny;
+	    any_active = true;
 	  }
 
-	  set (here.x0, here.y0,
-	       here.h00 + amount * (1 - here.fx) * (1 - here.fy));
-	  set (here.x1, here.y0,
-	       here.h10 + amount * here.fx * (1 - here.fy));
-	  set (here.x0, here.y1,
-	       here.h01 + amount * (1 - here.fx) * here.fy);
-	  set (here.x1, here.y1,
-	       here.h11 + amount * here.fx * here.fy);
-
-	  speed = std::sqrt
-	    (std::max (0.0f, speed * speed - dh * gravity));
-	  water *= (1 - evaporate);
-	  px = nx;
-	  py = ny;
+	  for (std::size_t index : touched) {
+	    const int x = static_cast<int> (index % m_width);
+	    const int y = static_cast<int> (index / m_width);
+	    set (x, y, get (x, y) + changes[index]);
+	    changes[index] = 0.0f;
+	    marked[index] = 0;
+	  }
+	  if (!any_active)
+	    break;
 	}
       }
       synchronize_periodic_edges ();

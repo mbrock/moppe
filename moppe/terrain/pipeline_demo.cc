@@ -55,9 +55,16 @@ namespace {
 
     if (name == "power")
       pipeline.stages.emplace_back (PowerHeights { parse_float (value) });
-    else if (name == "hydraulic")
-      pipeline.stages.emplace_back
-	(HydraulicErosion { parse_int (value) });
+    else if (name == "hydraulic") {
+      const std::size_t comma = value.find (',');
+      const int droplets = parse_int (value.substr (0, comma));
+      const int batch_size = comma == std::string_view::npos
+	? 256 : parse_int (value.substr (comma + 1));
+      pipeline.stages.emplace_back (HydraulicErosion {
+	.droplets = droplets,
+	.batch_size = batch_size
+      });
+    }
     else if (name == "thermal") {
       const std::size_t comma = value.find (',');
       if (comma == std::string_view::npos)
@@ -113,7 +120,8 @@ int main (int argc, char** argv) {
       apply_option (pipeline, argv[i]);
 
     map::RandomHeightMap map
-      (resolution, resolution, Vector3D (1, 1, 1), seed);
+      (resolution, resolution, Vector3D (1, 1, 1), seed,
+       Topology::Torus);
     map.run_pipeline (pipeline);
     const std::size_t count = static_cast<std::size_t> (resolution)
       * static_cast<std::size_t> (resolution);

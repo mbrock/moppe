@@ -117,3 +117,48 @@ MOPPE_TEST (vehicle_coordinates_remain_unwrapped_on_the_torus) {
 			      vehicle.position ().z),
      map.interpolated_height (12.5f, 92.5f), 1e-5f);
 }
+
+MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (100, 20, 100);
+  TerrainPipeline pipeline = make_geological_pipeline (987);
+  pipeline.stages.emplace_back (HydraulicErosion {
+    .droplets = 513,
+    .batch_size = 64
+  });
+  map::RandomHeightMap first
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap second
+    (65, 65, size, 1, Topology::Torus);
+
+  first.run_pipeline (pipeline);
+  second.run_pipeline (pipeline);
+
+  MOPPE_CHECK (maps_match (first, second));
+  for (int i = 0; i < first.width (); ++i)
+    MOPPE_CHECK
+      (first.get (i, 0) == first.get (i, first.height () - 1));
+}
+
+MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (100, 20, 100);
+  TerrainPipeline serial = make_geological_pipeline (321);
+  serial.stages.emplace_back (HydraulicErosion {
+    .droplets = 256,
+    .batch_size = 1
+  });
+  TerrainPipeline batched = serial;
+  std::get<HydraulicErosion> (batched.stages.back ()).batch_size = 64;
+  map::RandomHeightMap one_at_a_time
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap sixty_four_at_a_time
+    (65, 65, size, 0, Topology::Torus);
+
+  one_at_a_time.run_pipeline (serial);
+  sixty_four_at_a_time.run_pipeline (batched);
+
+  MOPPE_CHECK (!maps_match (one_at_a_time, sixty_four_at_a_time));
+}
