@@ -17,6 +17,14 @@ struct MoppeVertexIn {
   uchar4 flags;               // x: lit, y: fogged
 };
 
+// The scene computes in LINEAR light (half-float targets); art
+// colors are still authored as familiar display-space numbers and
+// decoded with this at the point of use.  The present pass
+// tonemaps (ACES) and encodes back to sRGB.
+inline float3 moppe_srgb (float3 c) {
+  return pow (c, 2.2);
+}
+
 // The terrain haze curve (from shaders/test.vert), minus the
 // valley-mist term, which stays terrain-only by design.
 inline float moppe_distance_fog (float dist, float fog_scale) {
@@ -27,8 +35,8 @@ inline float moppe_distance_fog (float dist, float fog_scale) {
 // the directional sun: cool sky above, warm earth bounce below.
 inline float3 moppe_hemisphere_light (float3 ambient, float3 normal) {
   const float hemi = 0.5 + 0.5 * normalize (normal).y;
-  const float3 ground = float3 (0.92, 0.74, 0.58);
-  const float3 sky = float3 (0.74, 0.92, 1.12);
+  const float3 ground = moppe_srgb (float3 (0.92, 0.74, 0.58));
+  const float3 sky = moppe_srgb (float3 (0.74, 0.92, 1.12));
   return ambient * mix (ground, sky, hemi);
 }
 
@@ -44,8 +52,9 @@ inline float3 moppe_warmed_fog (float3 fog_color, float3 view_dir,
   const float broad = pow (sun_dot, 5.0);
   const float tight = pow (sun_dot, 24.0);
   const float horizon = pow (1.0 - abs (view_dir.y), 3.0);
-  const float3 sun_color = mix (float3 (1.0, 0.96, 0.84),
-				float3 (1.0, 0.58, 0.28), golden);
+  const float3 sun_color = mix (moppe_srgb (float3 (1.0, 0.96, 0.84)),
+				moppe_srgb (float3 (1.0, 0.58, 0.28)),
+				golden);
 
   // Rayleigh-ish back scatter: haze goes faintly blue away from
   // the sun.

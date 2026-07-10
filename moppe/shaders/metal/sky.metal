@@ -83,15 +83,16 @@ static float3 sky_atmosphere (float3 ray_dir, float3 sun_dir,
   float sign_zenith = sign (ray_dir.y);
   float atmospheric_thickness = 1.0 - abs_zenith;
 
-  const float3 day_zenith = float3 (0.06, 0.20, 0.55);
-  const float3 day_mid = float3 (0.25, 0.46, 0.78);
-  const float3 day_horizon = float3 (0.55, 0.68, 0.84);
-  const float3 night_zenith = float3 (0.004, 0.009, 0.05);
-  const float3 night_mid = float3 (0.015, 0.022, 0.06);
-  const float3 night_horizon = float3 (0.035, 0.045, 0.09);
+  const float3 day_zenith = moppe_srgb (float3 (0.06, 0.20, 0.55));
+  const float3 day_mid = moppe_srgb (float3 (0.25, 0.46, 0.78));
+  const float3 day_horizon = moppe_srgb (float3 (0.55, 0.68, 0.84));
+  const float3 night_zenith = moppe_srgb (float3 (0.004, 0.009, 0.05));
+  const float3 night_mid = moppe_srgb (float3 (0.015, 0.022, 0.06));
+  const float3 night_horizon =
+    moppe_srgb (float3 (0.035, 0.045, 0.09));
 
   // Below the horizon: dark grayish-blue ground reflection.
-  const float3 ground_color = float3 (0.08, 0.09, 0.13);
+  const float3 ground_color = moppe_srgb (float3 (0.08, 0.09, 0.13));
 
   float3 base_color;
 
@@ -113,7 +114,8 @@ static float3 sky_atmosphere (float3 ray_dir, float3 sun_dir,
     // sky clean blue.  Forward scattering supplies the bright area
     // around the sun that ties into the directional ground haze.
     const float horizon_band = pow (atmospheric_thickness, 4.0);
-    base_color = mix (base_color, float3 (0.94, 0.52, 0.26),
+    base_color = mix (base_color,
+		      moppe_srgb (float3 (0.94, 0.52, 0.26)),
 		      0.16 * golden * horizon_band);
 
     // Two Mie lobes: a broad ambient brightening plus a tighter
@@ -121,9 +123,9 @@ static float3 sky_atmosphere (float3 ray_dir, float3 sun_dir,
     const float sun_dot = max (dot (ray_dir, sun_dir), 0.0);
     const float broad = pow (sun_dot, 4.0);
     const float tight = pow (sun_dot, 32.0);
-    const float3 scatter_color = mix (float3 (1.0, 0.96, 0.82),
-				      float3 (1.0, 0.55, 0.24),
-				      golden);
+    const float3 scatter_color =
+      mix (moppe_srgb (float3 (1.0, 0.96, 0.82)),
+	   moppe_srgb (float3 (1.0, 0.55, 0.24)), golden);
     base_color += scatter_color * daylight
       * (broad * (0.07 + 0.12 * golden)
 	 + tight * (0.10 + 0.22 * golden)
@@ -165,10 +167,12 @@ static float3 sky_cloud_lighting (float cloud_density, float3 view_dir,
   // The warm shift is quadratic in `golden` so mid-afternoon clouds
   // stay white-on-blue; only a truly low sun paints them.
   const float sunset = golden * golden;
-  const float3 lit = mix (float3 (1.04, 1.03, 1.00),
-			  float3 (1.05, 0.76, 0.50), sunset);
-  const float3 shade = mix (float3 (0.55, 0.63, 0.76),
-			    float3 (0.48, 0.44, 0.58), sunset);
+  const float3 lit = mix (moppe_srgb (float3 (1.04, 1.03, 1.00)),
+			  moppe_srgb (float3 (1.05, 0.76, 0.50)),
+			  sunset);
+  const float3 shade = mix (moppe_srgb (float3 (0.55, 0.63, 0.76)),
+			    moppe_srgb (float3 (0.48, 0.44, 0.58)),
+			    sunset);
 
   // Dense cores shade toward cool gray-blue; wisps stay bright.
   const float core = pow (saturate (cloud_density), 0.75);
@@ -211,9 +215,10 @@ sky_fragment (SkyVaryings in [[stage_in]],
       * smoothstep (0.08, 0.25, dir.y)
       * (0.10 + 0.08 * cloudiness);
     const float daylight_ci = smoothstep (-0.08, 0.18, sun.y);
-    const float3 ci_color = mix (float3 (0.9, 0.95, 1.05),
-				 float3 (1.0, 0.9, 0.8),
-				 pow (max (dot (dir, sun), 0.0), 4.0));
+    const float3 ci_color =
+      mix (moppe_srgb (float3 (0.9, 0.95, 1.05)),
+	   moppe_srgb (float3 (1.0, 0.9, 0.8)),
+	   pow (max (dot (dir, sun), 0.0), 4.0));
     sky_color = mix (sky_color, ci_color,
 		     streak * (0.25 + 0.75 * daylight_ci));
   }
@@ -254,8 +259,9 @@ sky_fragment (SkyVaryings in [[stage_in]],
   const float daylight = smoothstep (-0.08, 0.18, sun.y);
   const float golden = daylight
     * (1.0 - smoothstep (0.15, 0.65, sun.y));
-  const float3 sun_color = mix (float3 (1.0, 0.96, 0.84),
-				float3 (1.0, 0.58, 0.28), golden);
+  const float3 sun_color = mix (moppe_srgb (float3 (1.0, 0.96, 0.84)),
+				moppe_srgb (float3 (1.0, 0.58, 0.28)),
+				golden);
 
   // Clouds occlude the disc and corona but not the wide bloom.
   // The disc is pushed well past display white: the HDR target
@@ -276,8 +282,8 @@ sky_fragment (SkyVaryings in [[stage_in]],
       (1.0 - daylight) * 0.3 * horizon_fade;
     star_brightness = max (0.0, star_brightness);
 
-    float3 star_color = mix (float3 (0.8, 0.9, 1.0),
-			     float3 (1.0, 0.9, 0.8),
+    float3 star_color = mix (moppe_srgb (float3 (0.8, 0.9, 1.0)),
+			     moppe_srgb (float3 (1.0, 0.9, 0.8)),
 			     sky_noise (dir * 10.0));
 
     sky_color += star_pattern * star_brightness * star_color;

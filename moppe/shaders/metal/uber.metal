@@ -32,7 +32,10 @@ uber_vertex (uint vid [[vertex_id]],
   out.world_pos = world.xyz;
   out.normal = nrm * float3 (v.normal);
   out.uv = float2 (v.uv);
-  out.color = float4 (v.color) / 255.0;
+  // Vertex colors are authored in display space; decode to linear
+  // here so they interpolate and light correctly (alpha stays).
+  const float4 c = float4 (v.color) / 255.0;
+  out.color = float4 (moppe_srgb (c.rgb), c.a);
   out.lit = v.flags.x ? 1.0 : 0.0;
   out.fogged = v.flags.y ? 1.0 : 0.0;
   return out;

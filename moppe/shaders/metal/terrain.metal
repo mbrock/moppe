@@ -195,7 +195,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // large-scale variation and lighting.
   const float grass_value = dot (grass_c,
 				 float3 (0.299, 0.587, 0.114));
-  const float3 grass_palette = grass_value * float3 (0.70, 1.18, 0.50);
+  const float3 grass_palette = grass_value
+    * moppe_srgb (float3 (0.70, 1.18, 0.50));
   grass_c = mix (grass_c, grass_palette, 0.58);
   grass_c *= 0.65 + 0.95 * coarse;
 
@@ -207,13 +208,19 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // -- scree / cliff / snow ---------------------------------------
   float3 scree_c = terrain_layer (dirt, smp, tc, far_blend);
   scree_c *= 0.7 + 0.6 * dirt.sample (smp, tc * 0.061).r;
+  // Rein in the linear-space saturation of the pink gravel (ACES
+  // pushes warm midtones hard).
+  scree_c = mix (scree_c,
+		 float3 (dot (scree_c, float3 (0.299, 0.587, 0.114))),
+		 0.18);
 
   // The stones texture is olive; pull it toward a dry granite gray
   // and let the macro variation streak it.
   float3 cliff_c = terrain_layer (rock, smp, tc * 1.7, far_blend);
   const float cliff_value = dot (cliff_c,
 				 float3 (0.299, 0.587, 0.114));
-  cliff_c = mix (cliff_c, cliff_value * float3 (1.02, 0.94, 0.88),
+  cliff_c = mix (cliff_c,
+		 cliff_value * moppe_srgb (float3 (1.01, 0.97, 0.94)),
 		 0.65);
   cliff_c *= 0.75 + 0.7 * coarse;
 
@@ -226,7 +233,9 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   texel = mix (texel, scree_c, scree_coef);
   texel = mix (texel, cliff_c, cliff_coef);
   texel = mix (texel, snow_c, snow_coef);
-  const float3 sand_c = scree_c * float3 (1.45, 1.30, 0.95);
+  // Gentler warm ratio than the display-era tint: multiplicative
+  // hue shifts run stronger in linear light.
+  const float3 sand_c = scree_c * float3 (1.28, 1.20, 0.98);
   texel = mix (texel, sand_c, beach_coef);
 
   // Per-pixel Lambert with real cast shadows.

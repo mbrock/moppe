@@ -113,11 +113,12 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   const float daylight = smoothstep (-0.08, 0.18, sun.y);
   const float golden = daylight
     * (1.0 - smoothstep (0.15, 0.65, sun.y));
-  const float3 glint_color = mix (float3 (0.92, 0.96, 1.0),
-				  float3 (1.0, 0.67, 0.34), golden);
+  const float3 glint_color =
+    mix (moppe_srgb (float3 (0.92, 0.96, 1.0)),
+	 moppe_srgb (float3 (1.0, 0.67, 0.34)), golden);
 
-  const float3 deep = float3 (0.035, 0.17, 0.28);
-  const float3 shallow = float3 (0.10, 0.42, 0.55);
+  const float3 deep = moppe_srgb (float3 (0.035, 0.17, 0.28));
+  const float3 shallow = moppe_srgb (float3 (0.10, 0.42, 0.55));
   float3 water = mix (deep, shallow, 0.25 + 0.5 * fresnel);
   float alpha = mix (0.78, 0.95, fresnel);
 
@@ -130,7 +131,8 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 
     // Clarity by water column: tropical turquoise over the sand.
     const float clarity = exp (-depth_m * 0.14);
-    water = mix (water, float3 (0.13, 0.52, 0.50), 0.6 * clarity);
+    water = mix (water, moppe_srgb (float3 (0.13, 0.52, 0.50)),
+		 0.6 * clarity);
     alpha = mix (alpha, 0.35, clarity * (1.0 - 0.5 * fresnel));
 
     // Foam: hugs the waterline (the pow sharpens the band so the
@@ -149,7 +151,8 @@ ocean_fragment (OceanVaryings in [[stage_in]],
     foam *= 0.45 + 0.55 * (p1 * p2 * 1.6);
     foam = saturate (foam) * (0.35 + 0.65 * daylight);
 
-    water = mix (water, float3 (0.93, 0.97, 1.0), foam);
+    water = mix (water, moppe_srgb (float3 (0.93, 0.97, 1.0)),
+		 foam);
     alpha = max (alpha, foam * 0.9);
   }
 

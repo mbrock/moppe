@@ -31,9 +31,22 @@ namespace render {
     const int MSAA_SAMPLES = 4;
     const int SHADOW_SIZE = 4096;
     const int CHUNK_CELLS = 128;
+    const int PROBE_W = 32;       // auto-exposure luminance probe
+    const int PROBE_H = 16;
 
     MoppeFloat4 f4 (const Vector3D& v, float w = 0.0f) {
       MoppeFloat4 r; r.x = v.x; r.y = v.y; r.z = v.z; r.w = w;
+      return r;
+    }
+
+    // Game-side colors are authored in display space; the scene
+    // lights in linear.  Decode at the uniform boundary.
+    MoppeFloat4 f4lin (const Vector3D& v, float w = 0.0f) {
+      MoppeFloat4 r;
+      r.x = std::pow (std::max (v.x, 0.0f), 2.2f);
+      r.y = std::pow (std::max (v.y, 0.0f), 2.2f);
+      r.z = std::pow (std::max (v.z, 0.0f), 2.2f);
+      r.w = w;
       return r;
     }
 
@@ -105,6 +118,7 @@ namespace render {
     // scene-pass encoding helpers
     id<MTLRenderCommandEncoder> scene_encoder ();
     void end_scene_encoder ();
+    void update_exposure ();
     void play_list (id<MTLRenderCommandEncoder> enc,
 		    const std::vector<Vertex>& verts,
 		    const std::vector<DrawList::Run>& runs,
@@ -127,6 +141,7 @@ namespace render {
     id<MTLRenderPipelineState> m_underwater = nil;
     id<MTLRenderPipelineState> m_bloom_bright = nil;
     id<MTLRenderPipelineState> m_bloom_blur = nil;
+    id<MTLRenderPipelineState> m_probe = nil;
     id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
 
@@ -144,6 +159,13 @@ namespace render {
     id<MTLTexture> m_prev_frame = nil;
     id<MTLTexture> m_bloom_a = nil, m_bloom_b = nil;
     bool m_prev_valid = false;
+
+    // Auto exposure: a tiny luminance probe of each frame is read
+    // back FRAMES_IN_FLIGHT frames later (safe by the semaphore)
+    // and drives a smoothed exposure factor.
+    id<MTLTexture> m_probe_tex = nil;
+    id<MTLBuffer> m_probe_buf[FRAMES_IN_FLIGHT];
+    float m_exposure = 1.0f;
     int m_target_w = 0, m_target_h = 0;
     bool m_memoryless_ok = false;
 
@@ -330,6 +352,9 @@ namespace render {
 				  @"bloom_blur_fragment",
 				  scene, MTLPixelFormatInvalid, 1,
 				  false);
+    m_probe = make_pipeline (@"quad_vertex", @"probe_fragment",
+			     MTLPixelFormatRGBA32Float,
+			     MTLPixelFormatInvalid, 1, false);
     m_terrain = make_pipeline (@"terrain_vertex", @"terrain_fragment",
 			       scene, depth, MSAA_SAMPLES, false);
     m_terrain_shadow = make_pipeline (@"terrain_shadow_vertex", nil,
@@ -425,8 +450,12 @@ namespace render {
     }
 
     const bool mips = desc.filter == TextureFilter::Mipmap;
+    // sRGB view: the hardware decodes texels to linear at sample
+    // time (and encodes on mip generation), so albedo textures light
+    // correctly in the linear scene.  White + coverage textures
+    // (glyphs, particle discs) are unaffected.
     MTLTextureDescriptor* td = [MTLTextureDescriptor
-      texture2DDescriptorWithPixelFormat: MTLPixelFormatRGBA8Unorm
+      texture2DDescriptorWithPixelFormat: MTLPixelFormatRGBA8Unorm_sRGB
 				   width: desc.width
 				  height: desc.height
 			       mipmapped: mips];
@@ -700,8 +729,44 @@ namespace render {
 			     false);
     m_bloom_b = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1,
 			     false);
+    if (!m_probe_tex) {
+      m_probe_tex = make_target (MTLPixelFormatRGBA32Float,
+				 PROBE_W, PROBE_H, 1, false);
+      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i)
+	m_probe_buf[i] = [m_device
+	  newBufferWithLength: PROBE_W * PROBE_H * 16
+		      options: MTLResourceStorageModeShared];
+    }
     // Freshly created: undefined contents until the first blur blit.
     m_prev_valid = false;
+  }
+
+  // Log-average the last completed probe and ease the exposure
+  // toward mid-gray; clamped to about a stop either way so night
+  // stays night.  Adapting down (a blinding scene) is faster than
+  // adapting up, like eyes.
+  void
+  MetalRenderer::update_exposure () {
+    id<MTLBuffer> buf = m_probe_buf[m_slot];
+    if (!buf)
+      return;
+    const float* px = (const float*) buf.contents;
+    double sum = 0;
+    for (int i = 0; i < PROBE_W * PROBE_H; ++i) {
+      const float l = 0.2126f * px[i * 4]
+	+ 0.7152f * px[i * 4 + 1]
+	+ 0.0722f * px[i * 4 + 2];
+      sum += std::log2 (std::max (l, 1e-4f));
+    }
+    const float avg =
+      (float) std::exp2 (sum / (PROBE_W * PROBE_H));
+    if (avg <= 1.5e-4f)
+      return;   // probe not written yet (startup frames)
+
+    float target = 0.16f / avg;
+    target = std::min (1.9f, std::max (0.55f, target));
+    const float rate = target < m_exposure ? 0.10f : 0.04f;
+    m_exposure += (target - m_exposure) * rate;
   }
 
   // -- frame ---------------------------------------------------------
@@ -738,11 +803,13 @@ namespace render {
     m_fu.view_proj = m4 (params.proj * params.view);
     m_fu.camera_pos = f4 (params.camera_pos);
     m_fu.sun_dir = f4 (params.sun_dir);
-    m_fu.sun_diffuse = f4 (params.sun_diffuse);
-    m_fu.sun_specular = f4 (params.sun_specular);
-    m_fu.ambient = f4 (params.ambient);
-    m_fu.fog_color = f4 (params.clear_color, params.fog_scale);
+    m_fu.sun_diffuse = f4lin (params.sun_diffuse);
+    m_fu.sun_specular = f4lin (params.sun_specular);
+    m_fu.ambient = f4lin (params.ambient);
+    m_fu.fog_color = f4lin (params.clear_color, params.fog_scale);
     m_fu.misc.x = params.time;
+
+    update_exposure ();
 
     m_cmd = [m_queue commandBuffer];
     m_current = m_scene_a;
@@ -764,8 +831,9 @@ namespace render {
     rp.colorAttachments[0].storeAction =
       MTLStoreActionMultisampleResolve;
     rp.colorAttachments[0].clearColor =
-      MTLClearColorMake (m_fp.clear_color.x, m_fp.clear_color.y,
-			 m_fp.clear_color.z, 1.0);
+      MTLClearColorMake (std::pow (m_fp.clear_color.x, 2.2f),
+			 std::pow (m_fp.clear_color.y, 2.2f),
+			 std::pow (m_fp.clear_color.z, 2.2f), 1.0);
     rp.depthAttachment.texture = m_msaa_depth;
     rp.depthAttachment.loadAction = MTLLoadActionClear;
     rp.depthAttachment.storeAction = MTLStoreActionDontCare;
@@ -922,7 +990,7 @@ namespace render {
     std::memset (&u, 0, sizeof (u));
     u.view_proj = m4 (m_fp.proj * view_rot);
     u.sun_dir = f4 (params.sun_dir);
-    u.fog_color = f4 (params.fog_color);
+    u.fog_color = f4lin (params.fog_color);
     u.params.x = params.time;
     u.params.y = params.sun_height;
     u.params.z = params.cloudiness;
@@ -953,7 +1021,7 @@ namespace render {
     u.view_proj = m_fu.view_proj;
     u.camera_pos = m_fu.camera_pos;
     u.sun_dir = m_fu.sun_dir;
-    u.fog_color = f4 (params.fog_color, params.fog_scale);
+    u.fog_color = f4lin (params.fog_color, params.fog_scale);
     u.params.x = params.time;
     u.params.y = m_ocean_level;
 
@@ -1222,12 +1290,14 @@ namespace render {
     };
 
     // Bloom: bright-pass into quarter res, then a separable blur
-    // (a -> b horizontal, b -> a vertical).
+    // (a -> b horizontal, b -> a vertical).  The bright pass sees
+    // the exposed scene so the glow tracks the eye's adaptation.
     const bool bloom_ok = m_bloom_bright && m_bloom_blur && m_bloom_a;
     if (bloom_ok) {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
-      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.tint.x = q.tint.y = q.tint.z = 1;
+      q.tint.w = m_exposure;
       q.params.x = 1;
       quad_pass (m_bloom_bright, m_current, m_bloom_a, q);
 
@@ -1239,6 +1309,29 @@ namespace render {
       quad_pass (m_bloom_blur, m_bloom_b, m_bloom_a, q);
     }
 
+    // Auto-exposure probe: a 32x16 average of this frame, blitted
+    // to a CPU-visible buffer and read FRAMES_IN_FLIGHT frames
+    // later in update_exposure().
+    if (m_probe && m_probe_tex && m_probe_buf[m_slot]) {
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1;
+      quad_pass (m_probe, m_current, m_probe_tex, q);
+
+      id<MTLBlitCommandEncoder> blit = [m_cmd blitCommandEncoder];
+      [blit copyFromTexture: m_probe_tex
+		sourceSlice: 0
+		sourceLevel: 0
+	       sourceOrigin: MTLOriginMake (0, 0, 0)
+		 sourceSize: MTLSizeMake (PROBE_W, PROBE_H, 1)
+		   toBuffer: m_probe_buf[m_slot]
+	  destinationOffset: 0
+     destinationBytesPerRow: PROBE_W * 16
+   destinationBytesPerImage: PROBE_W * PROBE_H * 16];
+      [blit endEncoding];
+    }
+
     MTLRenderPassDescriptor* rp =
       [MTLRenderPassDescriptor renderPassDescriptor];
     rp.colorAttachments[0].texture = m_drawable.texture;
@@ -1248,11 +1341,12 @@ namespace render {
     id<MTLRenderCommandEncoder> enc =
       [m_cmd renderCommandEncoderWithDescriptor: rp];
 
-    // Scene quad with the final grade, bloom, and lens flare.
+    // Scene quad with the tonemap, grade, bloom, and lens flare.
     if (m_present) {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
-      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.tint.x = q.tint.y = q.tint.z = 1;
+      q.tint.w = m_exposure;
       q.params.x = 1;
       q.params.y = m_fp.time;
 
@@ -1274,8 +1368,9 @@ namespace render {
 	  if (edge > 0.0f) {
 	    q.sun.x = nx * 0.5f + 0.5f;
 	    q.sun.y = 1.0f - (ny * 0.5f + 0.5f);
+	    // Exposure folds in so the flare adapts with the eye.
 	    q.sun.z = m_fp.sun_visibility
-	      * (edge > 1.0f ? 1.0f : edge);
+	      * (edge > 1.0f ? 1.0f : edge) * m_exposure;
 	    q.sun.w = (float) m_target_w / (float) m_target_h;
 	  }
 	}

@@ -40,18 +40,34 @@ quad_fragment (QuadVaryings in [[stage_in]],
 
 // Bloom bright pass: soft-knee threshold into the quarter-res
 // chain.  Only genuinely hot pixels pass -- the sun, the boost
-// plume, glints, snowfields in direct light.
+// plume, glints, snowfields in direct light.  tint.w carries the
+// auto-exposure so the glow tracks adaptation.
 fragment float4
 bloom_bright_fragment (QuadVaryings in [[stage_in]],
+		       constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
 		       texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
 {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
-  const float3 c = scene.sample (smp, in.uv).rgb;
-  const float luma = dot (c, float3 (0.299, 0.587, 0.114));
-  // The scene is HDR now: only genuinely hot pixels (above display
-  // white) feed the glow.
+  const float3 c = scene.sample (smp, in.uv).rgb * q.tint.w;
+  const float luma = dot (c, float3 (0.2126, 0.7152, 0.0722));
   const float k = smoothstep (0.85, 1.35, luma);
   return float4 (c * k, 1.0);
+}
+
+// Auto-exposure probe: a handful of wide taps averaged into a tiny
+// target the CPU reads back for the adaptation loop.
+fragment float4
+probe_fragment (QuadVaryings in [[stage_in]],
+		texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  const float2 o = float2 (0.008, 0.014);
+  float3 c = scene.sample (smp, in.uv).rgb * 0.2;
+  c += scene.sample (smp, in.uv + o).rgb * 0.2;
+  c += scene.sample (smp, in.uv - o).rgb * 0.2;
+  c += scene.sample (smp, in.uv + float2 (o.x, -o.y)).rgb * 0.2;
+  c += scene.sample (smp, in.uv + float2 (-o.x, o.y)).rgb * 0.2;
+  return float4 (c, 1.0);
 }
 
 // Separable 9-tap gaussian; params.zw carries the texel step for
@@ -73,24 +89,20 @@ bloom_blur_fragment (QuadVaryings in [[stage_in]],
   return float4 (c, 1.0);
 }
 
-// Shoulder-only filmic tonemap for the HDR scene: exact identity
-// below `start` (the game's palette is tuned in display space and
-// must survive untouched), then an exponential rolloff that
-// asymptotes at start + scale = 1.0.  Per-channel, so overdriven
-// colors desaturate toward white the way film does.
-static inline float3 moppe_tonemap (float3 c) {
-  const float start = 0.75;
-  const float scale = 0.25;
-  const float3 over = max (c - start, 0.0);
-  return min (c, start) + scale * (1.0 - exp (-over / scale));
+// ACES filmic fit (Narkowicz): linear scene radiance in, display-
+// linear [0,1] out, with the classic toe, shoulder, and highlight
+// desaturation.
+static inline float3 moppe_aces (float3 x) {
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return saturate ((x * (a * x + b)) / (x * (c * x + d) + e));
 }
 
-// Final scene grade.  The scene arrives HDR (half-float); after the
-// lens stack (fringe, bloom, flare) the tonemapper brings it to
-// display range, then a compact display-referred treatment: a little
-// separation, warm highlights, cool shadows, animated grain, and a
-// soft vignette.  The HUD is drawn afterwards and stays
-// pixel-accurate.
+// Final scene treatment.  The scene arrives as linear HDR
+// radiance; the lens stack (fringe, bloom, flare) composes in
+// linear, auto-exposure scales it, ACES tonemaps, sRGB encodes,
+// and then a colorist-style CDL grade, vibrance, grain, and
+// vignette finish the frame.  The HUD is drawn afterwards and
+// stays pixel-accurate.
 fragment float4
 present_fragment (QuadVaryings in [[stage_in]],
 		  constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
@@ -109,7 +121,9 @@ present_fragment (QuadVaryings in [[stage_in]],
 			 scene.sample (smp, in.uv).g,
 			 scene.sample (smp, in.uv - fringe).b);
 
-  // Bloom, prefiltered and blurred at quarter resolution.
+  // Eye adaptation, then bloom (the bright pass already saw the
+  // exposed scene, so it adds in matching units).
+  color *= q.tint.w;
   color += bloom.sample (smp, in.uv).rgb * 0.45;
 
   // Lens flare: warm veil + anamorphic streak on the sun, plus a
@@ -142,31 +156,24 @@ present_fragment (QuadVaryings in [[stage_in]],
     }
   }
 
-  // HDR -> display: filmic shoulder (identity below 0.75, so the
-  // tuned palette holds; hot plume cores and sun glints roll off
-  // to white instead of clipping).
-  color = moppe_tonemap (color);
+  // Linear HDR -> filmic display, then encode for the sRGB drawable.
+  color = moppe_aces (color);
+  color = pow (color, 1.0 / 2.2);
 
-  // Gentle filmic S-curve (gamma-space): richer shadows and a
-  // rounder highlight shoulder without crushing the 8-bit palette.
-  color = mix (color, color * color * (3.0 - 2.0 * color), 0.22);
-
-  const float luma = dot (color, float3 (0.299, 0.587, 0.114));
-
-  // Split tone: cool teal shadows against warm amber highlights.
-  const float highlight = smoothstep (0.30, 0.85, luma);
-  color *= mix (float3 (0.960, 1.005, 1.060),
-		float3 (1.060, 1.005, 0.940), highlight);
+  // Colorist grade, ASC-CDL style in the teal-orange direction:
+  // warm slope, faintly cool lift, a whisper of per-channel power.
+  color = color * float3 (1.05, 1.00, 0.94)
+        + float3 (-0.006, 0.000, 0.012);
+  color = pow (max (color, float3 (0.0)),
+	       float3 (1.05, 1.02, 1.00));
 
   // Vibrance: muted pixels gain saturation faster than rich ones,
   // so grass and sky deepen while skin-tone-ish dust stays natural.
+  const float luma = dot (color, float3 (0.299, 0.587, 0.114));
   const float maxc = max (color.r, max (color.g, color.b));
   const float minc = min (color.r, min (color.g, color.b));
   color = mix (float3 (luma), color,
 	       1.0 + 0.14 * (1.0 - (maxc - minc)));
-
-  // A touch of global contrast around mid-gray.
-  color = (color - 0.5) * 1.03 + 0.508;
 
   // Animated film grain, stronger in the shadows.  Hashed from the
   // pixel coordinate (bounded first: sin() loses precision on big
