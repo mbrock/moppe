@@ -49,16 +49,30 @@ present_fragment (QuadVaryings in [[stage_in]],
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   float3 color = scene.sample (smp, in.uv).rgb;
 
+  // Gentle filmic S-curve (gamma-space): richer shadows and a
+  // rounder highlight shoulder without crushing the 8-bit palette.
+  color = mix (color, color * color * (3.0 - 2.0 * color), 0.22);
+
   const float luma = dot (color, float3 (0.299, 0.587, 0.114));
-  const float highlight = smoothstep (0.35, 0.85, luma);
-  color *= mix (float3 (0.98, 1.00, 1.035),
-		float3 (1.035, 1.00, 0.965), highlight);
-  color = mix (float3 (luma), color, 1.045);
-  color = (color - 0.5) * 1.045 + 0.512;
+
+  // Split tone: cool teal shadows against warm amber highlights.
+  const float highlight = smoothstep (0.30, 0.85, luma);
+  color *= mix (float3 (0.960, 1.005, 1.060),
+		float3 (1.060, 1.005, 0.940), highlight);
+
+  // Vibrance: muted pixels gain saturation faster than rich ones,
+  // so grass and sky deepen while skin-tone-ish dust stays natural.
+  const float maxc = max (color.r, max (color.g, color.b));
+  const float minc = min (color.r, min (color.g, color.b));
+  color = mix (float3 (luma), color,
+	       1.0 + 0.14 * (1.0 - (maxc - minc)));
+
+  // A touch of global contrast around mid-gray.
+  color = (color - 0.5) * 1.03 + 0.508;
 
   const float2 centered = (in.uv - 0.5) * float2 (1.0, 0.72);
-  const float vignette = 1.0 - 0.07
-    * smoothstep (0.25, 0.72, dot (centered, centered));
+  const float vignette = 1.0 - 0.09
+    * smoothstep (0.22, 0.72, dot (centered, centered));
   return float4 (saturate (color * vignette), 1.0);
 }
 

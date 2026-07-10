@@ -6,7 +6,10 @@
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe` (or `open build/moppe.app`)
   - Modes: `--city`, `--pico`, `--fullscreen`
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
-    (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`
+    (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
+    `MOPPE_MAPCACHE=<file>` (load the heightfield from the file if present,
+    else generate and save it -- skips the ~30 s erosion at boot; landscape
+    mode only)
 - Renderer smoke test: `./build/moppe-testbed`
 - Heightmap tool: `./build/map-test [seed]` (writes test.tga)
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS

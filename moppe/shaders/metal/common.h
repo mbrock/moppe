@@ -32,18 +32,32 @@ inline float3 moppe_hemisphere_light (float3 ambient, float3 normal) {
   return ambient * mix (ground, sky, hemi);
 }
 
-// Aerial perspective: haze brightens and warms toward the sun.
+// Aerial perspective: haze brightens and warms toward the sun (two
+// scatter lobes) and cools slightly opposite it, so panning across
+// the horizon reads as one continuous atmosphere.
 inline float3 moppe_warmed_fog (float3 fog_color, float3 view_dir,
 				float3 sun_dir) {
   const float daylight = smoothstep (-0.08, 0.18, sun_dir.y);
   const float golden = daylight
     * (1.0 - smoothstep (0.15, 0.65, sun_dir.y));
-  const float sun_amt = pow (max (dot (view_dir, sun_dir), 0.0), 5.0);
+  const float sun_dot = max (dot (view_dir, sun_dir), 0.0);
+  const float broad = pow (sun_dot, 5.0);
+  const float tight = pow (sun_dot, 24.0);
   const float horizon = pow (1.0 - abs (view_dir.y), 3.0);
   const float3 sun_color = mix (float3 (1.0, 0.96, 0.84),
 				float3 (1.0, 0.58, 0.28), golden);
-  return fog_color
-    + sun_color * sun_amt * (0.05 + 0.14 * horizon) * daylight;
+
+  // Rayleigh-ish back scatter: haze goes faintly blue away from
+  // the sun.
+  const float away = max (-dot (view_dir, sun_dir), 0.0);
+  const float3 base = fog_color
+    * mix (float3 (1.0, 1.0, 1.0), float3 (0.95, 0.98, 1.05),
+	   0.45 * away * daylight);
+
+  return base
+    + sun_color * daylight
+      * (broad * (0.05 + 0.14 * horizon)
+	 + tight * (0.04 + 0.10 * golden));
 }
 
 #endif

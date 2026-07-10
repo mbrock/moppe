@@ -99,7 +99,9 @@ namespace game {
   horizon_color_for (float sun_height) {
     const float daylight = daylight_for (sun_height);
     const float warmth = golden_light_for (sun_height) * 0.16f;
-    const Vector3D day_horizon (0.46f, 0.64f, 0.86f);
+    // Must track sky.metal's day_horizon so distant terrain fades
+    // into exactly the color the sky shows at the horizon.
+    const Vector3D day_horizon (0.55f, 0.68f, 0.84f);
     const Vector3D night_horizon (0.035f, 0.045f, 0.09f);
     const Vector3D warm_horizon (0.92f, 0.58f, 0.32f);
     const Vector3D base = night_horizon * (1.0f - daylight)
