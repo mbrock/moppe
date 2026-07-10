@@ -56,6 +56,7 @@ namespace render {
     float torus_major_radius = 0.0f;
     float torus_minor_radius = 0.0f;
     float torus_height_scale = 0.0f;
+    bool derive_normals = false;
   };
 
   enum class TerrainLod : uint8_t {

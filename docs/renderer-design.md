@@ -224,10 +224,12 @@ transformed lights by the modelview).
 
 The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
 and runs in a compute kernel.  Terrain Lab currently reads the result back to
-the authoritative CPU heightmap before normalization, normals, erosion, and
-texture upload.  The next renderer boundary is to keep interactive previews
-GPU-resident through normalization and normal generation.  Hydraulic erosion
-remains a separate iterative problem rather than part of the pointwise graph.
+the authoritative CPU heightmap before normalization, erosion, and texture
+upload.  Interactive previews derive normals from the height texture, reuse
+terrain GPU resources, and restore exact CPU normals when leaving the lab.
+The next renderer boundary is to keep pointwise results GPU-resident through
+global normalization and rendering.  Hydraulic erosion remains a separate
+iterative problem rather than part of the pointwise graph.
 
 ## Other shader ports
 

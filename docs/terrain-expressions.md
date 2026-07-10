@@ -154,10 +154,11 @@ The Terrain Lab window presents the system as a small construction game:
 - Donut View embeds the periodic heightfield as an actual torus on the GPU.
 
 Every action edits the `TerrainProgram` or `GeologicalRecipe` value.  The lab
-keeps exact height-and-random-state checkpoints after each stage, so a stage
-edit only replays the affected suffix.  It does not maintain a parallel shadow
-representation of the recipe itself.  Leaving the lab restores the exact
-playable heightmap snapshot.
+keeps exact height-and-random-state checkpoints at stage inputs, so a stage
+edit only replays the affected suffix.  The final output already lives in the
+working map and is not copied into redundant history.  The lab does not
+maintain a parallel shadow representation of the recipe itself.  Leaving the
+lab restores the exact playable heightmap snapshot.
 
 In C++, a scripted experiment is ordinary value manipulation:
 
@@ -206,6 +207,12 @@ Metal timing and agreement check is:
 On an M2 Pro, the initial checkpoint measured the 2049-square combined field
 at about 200 ms in the parallel CPU interpreter and 16 ms in a cached stitched
 Metal dispatch, including allocation, synchronization, and CPU readback.
+Profiling the actual Terrain Lab controls then reduced a recipe-parameter click
+from about 102 ms to roughly 23--25 ms.  Interactive previews reuse evaluator
+buffers, height and normal textures, and terrain index buffers; normalize in
+two CPU passes; derive preview normals from the height texture in the terrain
+vertex shader; use conservative chunk bounds; and debounce shadow refreshes.
+The exact CPU normal map is rebuilt when returning to gameplay.
 
 The field preview evaluates one lazy field:
 

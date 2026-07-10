@@ -124,10 +124,19 @@ namespace map {
   void
   RandomHeightMap::normalize ()
   {
-    translate (0 - min_value ());
-    float max = max_value ();
-    if (max != 0.0)
-      rescale (1 / max);
+    float* values = m_data.raw ();
+    const std::size_t count = static_cast<std::size_t>
+      (m_width) * m_height;
+    const auto [minimum, maximum] = std::minmax_element
+      (values, values + count);
+    const float offset = 0.0f - *minimum;
+    // Preserve the old translate-then-max arithmetic exactly while reducing
+    // four full raster passes to two contiguous ones.
+    const float translated_maximum = *maximum + offset;
+    const float scale = translated_maximum != 0.0f
+      ? 1.0f / translated_maximum : 1.0f;
+    for (float* value = values; value != values + count; ++value)
+      *value = (*value + offset) * scale;
   }
 
   void
@@ -251,8 +260,8 @@ namespace map {
     };
     const terrain::ScalarRaster raster = evaluator.evaluate (field, domain);
 
-    FORALL (x, y)
-      set (x, y, raster.at (x, y));
+    std::copy (raster.values ().begin (), raster.values ().end (),
+	       m_data.raw ());
     synchronize_periodic_edges ();
     // NB: no recompute_normals() here -- the caller shapes further
   }

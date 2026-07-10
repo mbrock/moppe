@@ -544,7 +544,8 @@ namespace render {
     const int w = params.width, h = params.height;
 
     // Heights: R32Float, read() access only.
-    {
+    if (!m_heights || m_heights.width != (NSUInteger) w
+	|| m_heights.height != (NSUInteger) h) {
       MTLTextureDescriptor* td = [MTLTextureDescriptor
 	texture2DDescriptorWithPixelFormat: MTLPixelFormatR32Float
 				     width: w height: h
@@ -552,11 +553,11 @@ namespace render {
       td.storageMode = MTLStorageModePrivate;
       td.usage = MTLTextureUsageShaderRead;
       m_heights = [m_device newTextureWithDescriptor: td];
-      upload_texture (m_heights, heights, w, h, 4, false);
     }
+    upload_texture (m_heights, heights, w, h, 4, false);
 
     // Normals: RG16Snorm xz, y reconstructed in the shader.
-    {
+    if (!params.derive_normals) {
       std::vector<int16_t> packed ((size_t) w * h * 2);
       for (size_t i = 0; i < (size_t) w * h; ++i) {
 	const Vector3D& n = normals[i];
@@ -566,14 +567,27 @@ namespace render {
 	packed[i * 2 + 0] = (int16_t) (x * 32767.0f);
 	packed[i * 2 + 1] = (int16_t) (z * 32767.0f);
       }
+      if (!m_normals || m_normals.width != (NSUInteger) w
+	  || m_normals.height != (NSUInteger) h) {
+	MTLTextureDescriptor* td = [MTLTextureDescriptor
+	  texture2DDescriptorWithPixelFormat: MTLPixelFormatRG16Snorm
+				       width: w height: h
+				   mipmapped: NO];
+	td.storageMode = MTLStorageModePrivate;
+	td.usage = MTLTextureUsageShaderRead;
+	m_normals = [m_device newTextureWithDescriptor: td];
+      }
+      upload_texture (m_normals, packed.data (), w, h, 4, false);
+    } else if (!m_normals) {
+      const int16_t up[2] = { 0, 0 };
       MTLTextureDescriptor* td = [MTLTextureDescriptor
 	texture2DDescriptorWithPixelFormat: MTLPixelFormatRG16Snorm
-				     width: w height: h
+				     width: 1 height: 1
 				 mipmapped: NO];
       td.storageMode = MTLStorageModePrivate;
       td.usage = MTLTextureUsageShaderRead;
       m_normals = [m_device newTextureWithDescriptor: td];
-      upload_texture (m_normals, packed.data (), w, h, 4, false);
+      upload_texture (m_normals, up, 1, 1, 4, false);
     }
 
     // Shared chunk-local index templates.  The finest inserts one
@@ -599,8 +613,9 @@ namespace render {
       }
     };
     for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod)
-      m_terrain_indices[lod] = Gen::make
-	(m_device, TERRAIN_LOD_VERTS[lod], m_terrain_index_count[lod]);
+      if (!m_terrain_indices[lod])
+	m_terrain_indices[lod] = Gen::make
+	  (m_device, TERRAIN_LOD_VERTS[lod], m_terrain_index_count[lod]);
 
     m_have_terrain = true;
   }
@@ -935,6 +950,8 @@ namespace render {
     u.params2.y = m_terrain_params.torus_major_radius;
     u.params2.z = m_terrain_params.torus_minor_radius;
     u.params2.w = m_terrain_params.torus_height_scale;
+    u.params3.x = m_terrain_params.derive_normals ? 1.0f : 0.0f;
+    u.params3.y = m_terrain_params.periodic ? 1.0f : 0.0f;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];

@@ -294,48 +294,48 @@ namespace moppe::terrain::metal {
 	.max_y = domain.max_y
       };
       const std::size_t sample_count = domain.width * domain.height;
-      id<MTLBuffer> output = [m_device
-	newBufferWithLength:sample_count * sizeof (float)
-	options:MTLResourceStorageModeShared];
-      id<MTLBuffer> domain_buffer = [m_device
-	newBufferWithBytes:&gpu_domain length:sizeof (gpu_domain)
-	options:MTLResourceStorageModeShared];
-
+      ensure_buffer
+	(m_output, m_output_capacity, sample_count * sizeof (float));
+      ensure_buffer
+	(m_domain, m_domain_capacity, sizeof (gpu_domain));
+      std::memcpy (m_domain.contents, &gpu_domain, sizeof (gpu_domain));
       const float zero_parameter = 0.0f;
-      id<MTLBuffer> parameters = [m_device newBufferWithBytes:
-	(prepared.parameters.empty () ? &zero_parameter
-	 : prepared.parameters.data ())
-	length:std::max<std::size_t> (1, prepared.parameters.size ())
-	  * sizeof (float)
-	options:MTLResourceStorageModeShared];
+      const std::size_t parameter_bytes = std::max<std::size_t>
+	(1, prepared.parameters.size ()) * sizeof (float);
+      ensure_buffer (m_parameters, m_parameter_capacity, parameter_bytes);
+      std::memcpy
+	(m_parameters.contents,
+	 prepared.parameters.empty () ? &zero_parameter
+	 : prepared.parameters.data (), parameter_bytes);
       const MoppeFieldNoise zero_noise { };
-      id<MTLBuffer> noises = [m_device newBufferWithBytes:
-	(prepared.noises.empty () ? &zero_noise : prepared.noises.data ())
-	length:std::max<std::size_t> (1, prepared.noises.size ())
-	  * sizeof (MoppeFieldNoise)
-	options:MTLResourceStorageModeShared];
+      const std::size_t noise_bytes = std::max<std::size_t>
+	(1, prepared.noises.size ()) * sizeof (MoppeFieldNoise);
+      ensure_buffer (m_noises, m_noise_capacity, noise_bytes);
+      std::memcpy
+	(m_noises.contents,
+	 prepared.noises.empty () ? &zero_noise : prepared.noises.data (),
+	 noise_bytes);
       const std::int32_t zero_permutation = 0;
-      id<MTLBuffer> permutations = [m_device newBufferWithBytes:
-	(prepared.permutations.empty () ? &zero_permutation
-	 : prepared.permutations.data ())
-	length:std::max<std::size_t> (1, prepared.permutations.size ())
-	  * sizeof (std::int32_t)
-	options:MTLResourceStorageModeShared];
-      if (!output || !domain_buffer || !parameters || !noises
-	  || !permutations)
-	throw std::runtime_error ("failed to allocate Metal field buffers");
+      const std::size_t permutation_bytes = std::max<std::size_t>
+	(1, prepared.permutations.size ()) * sizeof (std::int32_t);
+      ensure_buffer
+	(m_permutations, m_permutation_capacity, permutation_bytes);
+      std::memcpy
+	(m_permutations.contents,
+	 prepared.permutations.empty () ? &zero_permutation
+	 : prepared.permutations.data (), permutation_bytes);
 
       id<MTLCommandBuffer> command = [m_queue commandBuffer];
       id<MTLComputeCommandEncoder> encoder =
 	[command computeCommandEncoder];
       [encoder setComputePipelineState:pipeline];
-      [encoder setBuffer:output offset:0 atIndex:MOPPE_FIELD_OUTPUT_BUFFER];
-      [encoder setBuffer:domain_buffer offset:0
+      [encoder setBuffer:m_output offset:0 atIndex:MOPPE_FIELD_OUTPUT_BUFFER];
+      [encoder setBuffer:m_domain offset:0
 	      atIndex:MOPPE_FIELD_DOMAIN_BUFFER];
-      [encoder setBuffer:parameters offset:0
+      [encoder setBuffer:m_parameters offset:0
 	      atIndex:MOPPE_FIELD_PARAMETER_BUFFER];
-      [encoder setBuffer:noises offset:0 atIndex:MOPPE_FIELD_NOISE_BUFFER];
-      [encoder setBuffer:permutations offset:0
+      [encoder setBuffer:m_noises offset:0 atIndex:MOPPE_FIELD_NOISE_BUFFER];
+      [encoder setBuffer:m_permutations offset:0
 	      atIndex:MOPPE_FIELD_PERMUTATION_BUFFER];
       [encoder dispatchThreads:MTLSizeMake (domain.width, domain.height, 1)
 	threadsPerThreadgroup:MTLSizeMake (16, 16, 1)];
@@ -347,7 +347,7 @@ namespace moppe::terrain::metal {
 
       std::vector<float> values (sample_count);
       std::memcpy
-	(values.data (), output.contents, values.size () * sizeof (float));
+	(values.data (), m_output.contents, values.size () * sizeof (float));
       return ScalarRaster (domain, std::move (values));
     }
 
@@ -356,6 +356,18 @@ namespace moppe::terrain::metal {
     }
 
   private:
+    void ensure_buffer (id<MTLBuffer> __strong& buffer,
+                        std::size_t& capacity,
+			std::size_t required) {
+      if (buffer && capacity >= required)
+	return;
+      buffer = [m_device newBufferWithLength:required
+				     options:MTLResourceStorageModeShared];
+      if (!buffer)
+	throw std::runtime_error ("failed to allocate Metal field buffer");
+      capacity = required;
+    }
+
     id<MTLComputePipelineState> compile (const PreparedField& prepared) {
       NSMutableArray<MTL4FunctionDescriptor*>* function_descriptors =
 	[NSMutableArray array];
@@ -545,6 +557,16 @@ namespace moppe::terrain::metal {
     id<MTLCommandQueue> m_queue = nil;
     NSMutableDictionary<NSString*, id<MTLComputePipelineState>>*
       m_pipelines = nil;
+    id<MTLBuffer> m_output = nil;
+    id<MTLBuffer> m_domain = nil;
+    id<MTLBuffer> m_parameters = nil;
+    id<MTLBuffer> m_noises = nil;
+    id<MTLBuffer> m_permutations = nil;
+    std::size_t m_output_capacity = 0;
+    std::size_t m_domain_capacity = 0;
+    std::size_t m_parameter_capacity = 0;
+    std::size_t m_noise_capacity = 0;
+    std::size_t m_permutation_capacity = 0;
     std::mutex m_mutex;
     std::atomic<std::size_t> m_pipeline_count = 0;
   };
