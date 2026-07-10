@@ -7,31 +7,31 @@
 
 using namespace moppe::terrain;
 
-MOPPE_TEST (geological_pipeline_has_an_explicit_normalization_stage) {
-  const TerrainProgram pipeline = make_geological_program
+MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
+  const TerrainProgram program = make_geological_program
     (123, GeologicalLayer::Mountains);
 
-  MOPPE_CHECK (pipeline.layer == GeologicalLayer::Mountains);
-  MOPPE_CHECK (pipeline.randomness.seed == 123);
-  MOPPE_CHECK (pipeline.randomness.offset == 3);
-  MOPPE_CHECK (pipeline.transforms.size () == 1);
+  MOPPE_CHECK (program.source.layer == GeologicalLayer::Mountains);
+  MOPPE_CHECK (program.randomness.seed == 123);
+  MOPPE_CHECK (program.randomness.offset == 3);
+  MOPPE_CHECK (program.transforms.size () == 1);
   MOPPE_CHECK (std::holds_alternative<NormalizeHeights>
-    (pipeline.transforms[0]));
+    (program.transforms[0]));
 }
 
-MOPPE_TEST (default_world_pipeline_records_every_transform) {
-  const TerrainProgram pipeline = make_default_world_program (123);
+MOPPE_TEST (default_world_program_records_every_transform) {
+  const TerrainProgram program = make_default_world_program (123);
 
-  MOPPE_CHECK (pipeline.transforms.size () == 4);
-  MOPPE_CHECK (terrain_transform_id (pipeline.transforms[0]) == "normalize");
-  MOPPE_CHECK (terrain_transform_id (pipeline.transforms[1]) == "power");
-  MOPPE_CHECK (terrain_transform_id (pipeline.transforms[2]) == "hydraulic");
-  MOPPE_CHECK (terrain_transform_id (pipeline.transforms[3]) == "thermal");
+  MOPPE_CHECK (program.transforms.size () == 4);
+  MOPPE_CHECK (terrain_transform_id (program.transforms[0]) == "normalize");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[1]) == "power");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[2]) == "hydraulic");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[3]) == "thermal");
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (pipeline.transforms[2]).droplets
+    (std::get<HydraulicErosion> (program.transforms[2]).droplets
      == 1500000);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (pipeline.transforms[2]).batch_size == 256);
+    (std::get<HydraulicErosion> (program.transforms[2]).batch_size == 256);
 }
 
 MOPPE_TEST (transform_semantics_describe_execution_requirements) {
@@ -64,25 +64,25 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
        .evaluation_order == EvaluationOrder::Iterative);
 }
 
-MOPPE_TEST (pipeline_validation_rejects_invalid_stage_parameters) {
-  TerrainProgram pipeline = make_geological_program (123);
-  pipeline.transforms.emplace_back (HydraulicErosion { -1 });
+MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
+  TerrainProgram program = make_geological_program (123);
+  program.transforms.emplace_back (HydraulicErosion { -1 });
   bool threw = false;
   try {
-    validate_program (pipeline);
+    validate_program (program);
   } catch (const std::invalid_argument&) {
     threw = true;
   }
   MOPPE_CHECK (threw);
 
-  pipeline = make_geological_program (123);
-  pipeline.transforms.emplace_back (HydraulicErosion {
+  program = make_geological_program (123);
+  program.transforms.emplace_back (HydraulicErosion {
     .droplets = 10,
     .batch_size = 0
   });
   threw = false;
   try {
-    validate_program (pipeline);
+    validate_program (program);
   } catch (const std::invalid_argument&) {
     threw = true;
   }

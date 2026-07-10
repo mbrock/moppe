@@ -59,7 +59,7 @@ namespace game {
     UiRect batch_preset_rect (int index) {
       const float gap = 4.0f;
       const float width = (right_width - 3 * gap) / 4.0f;
-      return { right_x + index * (width + gap), 326, width, 28 };
+      return { right_x + index * (width + gap), 350, width, 28 };
     }
 
     UiRect layer_rect (int index) {
@@ -140,6 +140,21 @@ namespace game {
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       return std::to_string (thermal.iterations) + " passes @ "
 	+ format_float (thermal.talus, 4);
+    }
+
+    std::string semantics_detail
+      (const terrain::TerrainTransform& transform) {
+      const terrain::TransformSemantics semantics =
+	terrain::terrain_transform_semantics (transform);
+      const char* spatial = semantics.spatial_scope
+	== terrain::SpatialScope::Pointwise ? "POINTWISE"
+	: semantics.spatial_scope == terrain::SpatialScope::Neighborhood
+	? "NEIGHBORHOOD" : "GLOBAL";
+      const char* order = semantics.evaluation_order
+	== terrain::EvaluationOrder::Direct ? "DIRECT"
+	: semantics.evaluation_order == terrain::EvaluationOrder::Reduction
+	? "REDUCTION" : "ITERATIVE";
+      return std::string (spatial) + " / " + order;
     }
 
     struct PropertyText {
@@ -329,9 +344,9 @@ namespace game {
   void
   TerrainLab::select (terrain::GeologicalLayer layer)
   {
-    if (layer == m_program.layer)
+    if (layer == m_program.source.layer)
       return;
-    m_program.layer = layer;
+    m_program.source.layer = layer;
     m_selected_stage = -1;
     rebuild_program ();
   }
@@ -340,7 +355,7 @@ namespace game {
   TerrainLab::reset_program ()
   {
     m_program = terrain::make_geological_program
-      (m_program.randomness.seed, m_program.layer);
+      (m_program.randomness.seed, m_program.source.layer);
     m_selected_stage = -1;
     m_stage_scroll = 0;
     rebuild_program ();
@@ -458,7 +473,7 @@ namespace game {
     if (direction == 0)
       return;
     if (m_selected_stage < 0) {
-      terrain::GeologicalRecipe& recipe = m_program.recipe;
+      terrain::GeologicalRecipe& recipe = m_program.source.recipe;
       switch (row) {
       case 0:
 	recipe.warp.amplitude = std::clamp
@@ -548,7 +563,7 @@ namespace game {
     }
     if (seed_rect ().contains (x, y)) {
       const std::uint32_t seed = m_program.randomness.seed + 1;
-      m_program.recipe.seeds = terrain::derive_geological_seeds (seed);
+      m_program.source.recipe.seeds = terrain::derive_geological_seeds (seed);
       m_program.randomness = { .seed = seed, .offset = 3 };
       m_selected_stage = -1;
       rebuild_program ();
@@ -712,7 +727,7 @@ namespace game {
       break;
     case Key::N:
       m_program.randomness.seed += 1;
-      m_program.recipe.seeds = terrain::derive_geological_seeds
+      m_program.source.recipe.seeds = terrain::derive_geological_seeds
 	(m_program.randomness.seed);
       m_program.randomness.offset = 3;
       m_selected_stage = -1;
@@ -849,7 +864,7 @@ namespace game {
     for (int i = 0; i < 7; ++i) {
       const UiRect bounds = layer_rect (i);
       m_ui.button (dl, bounds, layer_labels[i], hot (bounds),
-		   m_pointer_down, m_program.layer == layers[i]);
+		   m_pointer_down, m_program.source.layer == layers[i]);
     }
 
     m_ui.section_header
@@ -861,7 +876,7 @@ namespace game {
     const UiRect source = source_rect ();
     m_ui.pipeline_row
       (dl, source, "F", "GEOLOGICAL FIELD",
-       terrain::geological_layer_name (m_program.layer), hot (source),
+       terrain::geological_layer_name (m_program.source.layer), hot (source),
        m_pointer_down, m_selected_stage < 0);
 
     dl.color (0.37f, 0.55f, 0.37f, 0.9f);
@@ -899,7 +914,7 @@ namespace game {
       for (int row = 0; row < 9; ++row) {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = recipe_property
-	  (m_program.recipe, row);
+	  (m_program.source.recipe, row);
 	m_ui.stepper
 	  (dl, bounds, property.label, property.value,
 	   hot (stepper_minus_rect (bounds)),
@@ -921,13 +936,15 @@ namespace game {
 		  stage_name (stage), true);
       m_ui.label (dl, right_x + 8, 292,
 		  stage_detail (stage));
+      m_ui.label (dl, right_x + 8, 316,
+		  semantics_detail (stage), true);
       if (std::holds_alternative<terrain::NormalizeHeights> (stage)) {
-	m_ui.label (dl, right_x + 8, 322,
+	m_ui.label (dl, right_x + 8, 344,
 		    "A whole-raster materialization barrier.");
-	m_ui.label (dl, right_x + 8, 342,
+	m_ui.label (dl, right_x + 8, 364,
 		    "It can be moved, copied, or deleted.");
       } else if (std::holds_alternative<terrain::HydraulicErosion> (stage)) {
-	m_ui.label (dl, right_x + 8, 319, "BATCH EXPERIMENT", true);
+	m_ui.label (dl, right_x + 8, 342, "BATCH EXPERIMENT", true);
 	constexpr const char* labels[] = { "1", "64", "256", "1024" };
 	const int batch =
 	  std::get<terrain::HydraulicErosion> (stage).batch_size;
@@ -937,9 +954,9 @@ namespace game {
 	  m_ui.button (dl, bounds, labels[i], hot (bounds),
 		       m_pointer_down, batch == presets[i]);
 	}
-	m_ui.label (dl, right_x + 8, 372,
+	m_ui.label (dl, right_x + 8, 394,
 		    "A batch advances together, then commits.");
-	m_ui.label (dl, right_x + 8, 392,
+	m_ui.label (dl, right_x + 8, 414,
 		    "Larger batches make erosion more simultaneous.");
       }
     }

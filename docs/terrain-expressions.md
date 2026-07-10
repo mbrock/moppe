@@ -1,10 +1,11 @@
 # Terrain expressions, recipes, and pipelines
 
-Moppe's portable terrain subsystem separates three kinds of value:
+Moppe's portable terrain subsystem separates four kinds of value:
 
 1. `ScalarField` is a lazy expression DAG.
-2. `GeologicalRecipe` contains the values used to construct related fields.
-3. `TerrainProgram` orders operations that require a materialized heightmap.
+2. `GeologicalSource` retains the recipe and selected field to materialize.
+3. `TerrainTransform` describes a terrain-to-terrain operation.
+4. `TerrainProgram` composes one source with an ordered transform sequence.
 
 The game, Terrain Lab, unit tests, and command-line tools share these types.
 None of them contains renderer or platform graphics API state.
@@ -53,21 +54,42 @@ Changing a recipe creates a different graph the next time it is built; it
 does not mutate an existing graph or raster.  Golden tests lock the canonical
 recipe's seven inspectable layers to the former generator bit for bit.
 
-## Materialized pipelines
+## Programs and materialized transformations
 
-`TerrainProgram` contains a recipe, selected output layer, a reproducible
-random-stream position, and an ordered `std::vector<TerrainTransform>`.  A stage
-is one of these runtime variants:
+`TerrainProgram` contains a `GeologicalSource`, a reproducible random-stream
+position, and an ordered `std::vector<TerrainTransform>`.  A transform is one
+of these runtime variants:
 
 - `NormalizeHeights`
 - `PowerHeights`
 - `HydraulicErosion`
 - `ThermalErosion`
 
-`RandomHeightMap::run_pipeline()` materializes the source field and replays
-those stages in order.  Whole-raster reduction and stateful simulation are
-therefore visible barriers rather than pretending to be pointwise field
-expressions.
+`map::TerrainEvaluator` materializes the source and applies those transforms
+to concrete height storage.  It owns program order, random-stream position,
+progress reporting, and exact resumable checkpoints.  `RandomHeightMap` no
+longer interprets programs; it stores samples and provides the concrete
+shaping kernels that the evaluator invokes.
+
+Transforms are immutable values even when evaluating them reuses a mutable
+buffer.  This lets erosion participate in the terrain language without
+pretending that it is a pointwise `ScalarField`, and without requiring a new
+2049-square allocation after every operation.
+
+Every transform also reports two enum-valued semantic properties.  These are
+descriptions for tools and evaluators, not a class hierarchy:
+
+| Transform | `SpatialScope` | `EvaluationOrder` |
+| --- | --- | --- |
+| Power | `Pointwise` | `Direct` |
+| Normalize | `Global` | `Reduction` |
+| Thermal erosion | `Neighborhood` | `Iterative` |
+| Hydraulic erosion | `Global` | `Iterative` |
+
+In more abstract language these roughly separate timeless field algebra,
+local context, whole-terrain knowledge, and historical evolution.  The code
+keeps the plain operational names because the axes overlap: normalization is
+global but not historical, while drainage is both global and evolving.
 
 The canonical game profile is now exactly:
 
@@ -79,9 +101,9 @@ geological source
   -> thermal(2 iterations, talus 0.003)
 ```
 
-Terrain Lab retains a pipeline value too.  Game generation and interactive
-inspection therefore use the same interpreter.  The saved random-stream
-offset preserves the former erosion sequence.
+Terrain Lab retains a program value too.  Game generation, command-line
+experiments, and interactive inspection therefore use the same evaluator.
+The saved random-stream offset preserves the former erosion sequence.
 
 ### Field Algebra Tycoon UI
 
@@ -111,14 +133,14 @@ playable heightmap snapshot.
 In C++, a scripted experiment is ordinary value manipulation:
 
 ```cpp
-auto pipeline = moppe::terrain::make_geological_program (123);
-pipeline.recipe.mountains.cycles = 8;
-pipeline.recipe.blend.mountain_weight = 0.9f;
-pipeline.transforms.emplace_back (moppe::terrain::HydraulicErosion {
+auto program = moppe::terrain::make_geological_program (123);
+program.source.recipe.mountains.cycles = 8;
+program.source.recipe.blend.mountain_weight = 0.9f;
+program.transforms.emplace_back (moppe::terrain::HydraulicErosion {
   .droplets = 100000,
   .batch_size = 256
 });
-map.run_pipeline (pipeline);
+moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
 
 Hydraulic batches advance their droplets in lockstep.  Every droplet reads
@@ -150,8 +172,8 @@ The field preview evaluates one lazy field:
 ./build/terrain-field-demo /tmp/mountains.png 512 mountains 123
 ```
 
-The pipeline preview uses the same recipe value and `RandomHeightMap`
-interpreter as the game:
+The pipeline preview uses the same program value and `TerrainEvaluator` as the
+game:
 
 ```sh
 ./build/terrain-pipeline-demo /tmp/base.png 257 123 combined
@@ -161,7 +183,7 @@ interpreter as the game:
   power=1.15 hydraulic=10000 thermal=2,0.003
 ```
 
-Every pipeline starts with normalization.  `raw` clears its stages;
+Every default program starts with normalization.  `raw` clears its transforms;
 `normalize` appends normalization explicitly; `world` selects the complete,
 slow canonical game profile.  Recipe overrides include `warp-amplitude`, the
 three layer frequencies, mask edges, and blend weights.  Geological layer IDs
@@ -172,7 +194,7 @@ are `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and
 
 - Add parameter metadata so Terrain Lab can generate suitable sliders and
   numeric controls from recipe members rather than hard-code each widget.
-- Add a stable serialization format for recipes and pipelines, then layer a
+- Add a stable serialization format for sources and programs, then layer a
   lightweight scripting language over the same values.
 - Generalize hydraulic constants into their own first-class parameter value.
 - Add compiled CPU and GPU evaluators alongside `CpuEvaluator`, while keeping
