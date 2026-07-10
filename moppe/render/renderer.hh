@@ -94,6 +94,7 @@ namespace render {
 			      const Vector3D* normals) = 0;
     virtual void set_terrain_textures (TexturePtr grass,
 				       TexturePtr dirt,
+				       TexturePtr rock,
 				       TexturePtr snow) = 0;
     // Renders the one-time terrain shadow map from the fixed sun.
     // light_view_proj maps world to light NDC (conventional Z).

@@ -68,6 +68,7 @@ namespace render {
 		      const float* heights,
 		      const Vector3D* normals) override;
     void set_terrain_textures (TexturePtr grass, TexturePtr dirt,
+			       TexturePtr rock,
 			       TexturePtr snow) override;
     void render_terrain_shadow (const Mat4& light_view_proj) override;
     void set_ocean (const OceanSetup& setup) override;
@@ -152,7 +153,7 @@ namespace render {
     uint32_t m_idx_fine_count = 0, m_idx_coarse_count = 0;
     TerrainParams m_terrain_params;
     bool m_have_terrain = false;
-    TexturePtr m_grass, m_dirt, m_snow;
+    TexturePtr m_grass, m_dirt, m_rock, m_snow;
 
     // sky dome / ocean grid
     id<MTLBuffer> m_sky_verts = nil;
@@ -515,8 +516,9 @@ namespace render {
 
   void
   MetalRenderer::set_terrain_textures (TexturePtr grass, TexturePtr dirt,
+				       TexturePtr rock,
 				       TexturePtr snow) {
-    m_grass = grass; m_dirt = dirt; m_snow = snow;
+    m_grass = grass; m_dirt = dirt; m_rock = rock; m_snow = snow;
   }
 
   void
@@ -793,6 +795,7 @@ namespace render {
 
     MetalTexture* grass = (MetalTexture*) m_grass.get ();
     MetalTexture* dirt = (MetalTexture*) m_dirt.get ();
+    MetalTexture* rock = (MetalTexture*) m_rock.get ();
     MetalTexture* snow = (MetalTexture*) m_snow.get ();
     if (grass) {
       [enc setFragmentTexture: grass->texture
@@ -801,6 +804,8 @@ namespace render {
     }
     if (dirt)
       [enc setFragmentTexture: dirt->texture atIndex: MOPPE_TEX_DIRT];
+    if (rock)
+      [enc setFragmentTexture: rock->texture atIndex: MOPPE_TEX_ROCK];
     if (snow)
       [enc setFragmentTexture: snow->texture atIndex: MOPPE_TEX_SNOW];
     if (m_shadow_map)

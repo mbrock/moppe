@@ -28,6 +28,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_DIRT     1
 #define MOPPE_TEX_SNOW     2
 #define MOPPE_TEX_SHADOW   3
+#define MOPPE_TEX_ROCK     4
 #define MOPPE_TEX_SCENE    0
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
 #define MOPPE_TEX_NORMALS  1   /* vertex stage */

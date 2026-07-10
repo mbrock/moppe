@@ -56,8 +56,9 @@ namespace game {
     if (!m_textures_loaded) {
       m_grass = load_tga (r, "textures/grass2.tga");
       m_dirt = load_tga (r, "textures/dirt.tga");
+      m_rock = load_tga (r, "textures/stones.tga");
       m_snow = load_tga (r, "textures/snow.tga");
-      r.set_terrain_textures (m_grass, m_dirt, m_snow);
+      r.set_terrain_textures (m_grass, m_dirt, m_rock, m_snow);
       m_textures_loaded = true;
     }
 

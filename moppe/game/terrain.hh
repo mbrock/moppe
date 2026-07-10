@@ -45,7 +45,7 @@ namespace game {
     Vector3D m_scale;
     float m_lod_dist = 0;
     float m_lod_band = 0;
-    render::TexturePtr m_grass, m_dirt, m_snow;
+    render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
     bool m_textures_loaded = false;
   };
 }
