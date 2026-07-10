@@ -70,6 +70,7 @@ namespace game {
     InspectorUi m_ui;
     render::Renderer* m_renderer;
     map::RandomHeightMap* m_map;
+    std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
     std::unique_ptr<map::TerrainEvaluator> m_evaluator;
     Terrain* m_terrain;
     const WorldParams* m_world;

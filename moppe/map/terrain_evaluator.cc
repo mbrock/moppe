@@ -4,8 +4,10 @@
 #include <variant>
 
 namespace moppe::map {
-  TerrainEvaluator::TerrainEvaluator (RandomHeightMap& target)
-    : m_target (target)
+  TerrainEvaluator::TerrainEvaluator
+    (RandomHeightMap& target,
+     const terrain::FieldEvaluator* source_evaluator)
+    : m_target (target), m_source_evaluator (source_evaluator)
   { }
 
   void
@@ -16,8 +18,12 @@ namespace moppe::map {
     m_randomness.discard (program.randomness.offset);
     const terrain::GeologicalFields fields =
       terrain::make_geological_fields (program.source.recipe);
-    m_target.materialize
-      (terrain::geological_layer (fields, program.source.layer));
+    const terrain::ScalarField field =
+      terrain::geological_layer (fields, program.source.layer);
+    if (m_source_evaluator)
+      m_target.materialize (field, *m_source_evaluator);
+    else
+      m_target.materialize (field);
   }
 
   void
