@@ -44,7 +44,8 @@ namespace game {
   private:
     void select (terrain::GeologicalLayer layer);
     void reset_pipeline ();
-    void rerun_pipeline ();
+    void rebuild_pipeline ();
+    void rerun_pipeline_from (int first_stage);
     void append_stage (terrain::PipelineStage stage);
     void move_selected_stage (int direction);
     void duplicate_selected_stage ();
@@ -67,6 +68,7 @@ namespace game {
 
     bool m_active;
     terrain::TerrainPipeline m_pipeline;
+    std::vector<map::RandomHeightMap::PipelineState> m_checkpoints;
     int m_selected_stage;
     int m_stage_scroll;
 

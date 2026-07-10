@@ -1,6 +1,7 @@
 #include <moppe/terrain/cpu_evaluator.hh>
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <functional>
@@ -8,6 +9,7 @@
 #include <memory>
 #include <random>
 #include <stdexcept>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
@@ -362,22 +364,29 @@ namespace moppe::terrain {
     (const ScalarField& field, const Domain2D& domain) const {
     validate (domain);
     const Program program = compile (field);
-    std::vector<float> registers (program.instructions.size ());
     std::vector<float> output (domain.width * domain.height);
     const float inv_x = 1.0f / static_cast<float> (domain.width - 1);
     const float inv_y = 1.0f / static_cast<float> (domain.height - 1);
 
-    for (std::size_t y = 0; y < domain.height; ++y) {
-      const float fy = static_cast<float> (y) * inv_y;
-      const float py = domain.min_y + fy * (domain.max_y - domain.min_y);
+    std::atomic<std::size_t> next_row = 0;
+    const auto evaluate_rows = [&] {
+      std::vector<float> registers (program.instructions.size ());
+      for (;;) {
+	const std::size_t y = next_row.fetch_add
+	  (1, std::memory_order_relaxed);
+	if (y >= domain.height)
+	  break;
+	const float fy = static_cast<float> (y) * inv_y;
+	const float py = domain.min_y
+	  + fy * (domain.max_y - domain.min_y);
 
-      for (std::size_t x = 0; x < domain.width; ++x) {
-        const float fx = static_cast<float> (x) * inv_x;
-	const float px = domain.min_x
-	  + fx * (domain.max_x - domain.min_x);
+	for (std::size_t x = 0; x < domain.width; ++x) {
+	  const float fx = static_cast<float> (x) * inv_x;
+	  const float px = domain.min_x
+	    + fx * (domain.max_x - domain.min_x);
 
-	for (std::size_t i = 0; i < program.instructions.size (); ++i) {
-	  registers[i] = std::visit ([&] (const auto& instruction) {
+	  for (std::size_t i = 0; i < program.instructions.size (); ++i) {
+	    registers[i] = std::visit ([&] (const auto& instruction) {
 	    using T = std::decay_t<decltype (instruction)>;
 	    if constexpr (std::is_same_v<T, LoadConstant>)
 	      return instruction.value;
@@ -428,11 +437,26 @@ namespace moppe::terrain {
 		 instruction.period_x, instruction.period_y,
 		 instruction.octaves, instruction.lacunarity,
 		 instruction.gain);
-	  }, program.instructions[i]);
-	}
+	    }, program.instructions[i]);
+	  }
 
-	output[y * domain.width + x] = registers[program.output];
+	  output[y * domain.width + x] = registers[program.output];
+	}
       }
+    };
+
+    const std::size_t hardware_threads = std::max
+      (1u, std::thread::hardware_concurrency ());
+    const std::size_t worker_count = output.size () < 65536
+      ? 1 : std::min (domain.height, hardware_threads);
+    if (worker_count == 1) {
+      evaluate_rows ();
+    } else {
+      std::vector<std::jthread> workers;
+      workers.reserve (worker_count - 1);
+      for (std::size_t i = 1; i < worker_count; ++i)
+	workers.emplace_back (evaluate_rows);
+      evaluate_rows ();
     }
 
     return ScalarRaster (domain, std::move (output));
