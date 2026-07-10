@@ -3,8 +3,9 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/terrain/geological.hh>
+#include <moppe/terrain/pipeline.hh>
 
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -202,6 +203,14 @@ namespace map {
     void randomize_geologically
       (terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
+    using PipelineProgress = std::function
+      <void (std::size_t, const terrain::PipelineStage&)>;
+
+    // Rebuilds the source and replays every ordered stage.  The pipeline
+    // value therefore fully determines both interactive and game terrain.
+    void run_pipeline (const terrain::TerrainPipeline& pipeline,
+		       const PipelineProgress& progress = { });
+
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized
     // against max_height_m.
@@ -225,6 +234,10 @@ namespace map {
     void erode_thermally (int iterations, float talus);
 
   private:
+    void materialize_geological_recipe
+      (const terrain::GeologicalRecipe& recipe,
+       terrain::GeologicalLayer layer);
+
     Array2D<float> m_data;
 
     std::mt19937 m_rng;

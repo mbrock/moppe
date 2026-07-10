@@ -2,15 +2,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <sstream>
+#include <variant>
 
 namespace moppe {
 namespace game {
   TerrainLab::TerrainLab ()
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
-      m_active (false), m_seed (0),
-      m_layer (terrain::GeologicalLayer::Combined),
-      m_droplets (0), m_thermal_passes (0),
+      m_active (false),
+      m_pipeline (terrain::make_geological_pipeline (0)),
       m_yaw (0.72f), m_pitch (0.62f), m_distance (5600.0f),
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
@@ -37,8 +38,8 @@ namespace game {
     m_terrain = &terrain;
     m_world = &world;
     m_sun_dir = sun_dir;
-    m_seed = seed;
-    m_layer = terrain::GeologicalLayer::Combined;
+    m_pipeline = terrain::make_geological_pipeline
+      (static_cast<std::uint32_t> (seed));
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -47,7 +48,7 @@ namespace game {
     m_saved_heights.assign (map.raw_heights (),
 			    map.raw_heights () + count);
     m_active = true;
-    reset_field ();
+    rerun_pipeline ();
   }
 
   void
@@ -82,21 +83,27 @@ namespace game {
   void
   TerrainLab::select (terrain::GeologicalLayer layer)
   {
-    if (layer == m_layer && m_droplets == 0 && m_thermal_passes == 0)
+    if (layer == m_pipeline.layer && m_pipeline.stages.size () == 1)
       return;
-    m_layer = layer;
-    reset_field ();
+    m_pipeline = terrain::make_geological_pipeline
+      (m_pipeline.randomness.seed, layer);
+    rerun_pipeline ();
   }
 
   void
-  TerrainLab::reset_field ()
+  TerrainLab::reset_pipeline ()
+  {
+    m_pipeline = terrain::make_geological_pipeline
+      (m_pipeline.randomness.seed, m_pipeline.layer);
+    rerun_pipeline ();
+  }
+
+  void
+  TerrainLab::rerun_pipeline ()
   {
     if (!m_map)
       return;
-    m_map->reseed (m_seed);
-    m_map->randomize_geologically (m_layer);
-    m_droplets = 0;
-    m_thermal_passes = 0;
+    m_map->run_pipeline (m_pipeline);
     refresh ();
   }
 
@@ -162,21 +169,22 @@ namespace game {
     case Key::Six:   select (terrain::GeologicalLayer::WarpX); break;
     case Key::Seven: select (terrain::GeologicalLayer::WarpY); break;
     case Key::R:
-      reset_field ();
+      reset_pipeline ();
       break;
     case Key::N:
-      ++m_seed;
-      reset_field ();
+      m_pipeline = terrain::make_geological_pipeline
+	(m_pipeline.randomness.seed + 1, m_pipeline.layer);
+      rerun_pipeline ();
       break;
     case Key::E:
-      m_map->erode_hydraulically (100000);
-      m_droplets += 100000;
-      refresh ();
+      m_pipeline.stages.emplace_back
+	(terrain::HydraulicErosion { 100000 });
+      rerun_pipeline ();
       break;
     case Key::Y:
-      m_map->erode_thermally (2, 0.003f);
-      m_thermal_passes += 2;
-      refresh ();
+      m_pipeline.stages.emplace_back
+	(terrain::ThermalErosion { 2, 0.003f });
+      rerun_pipeline ();
       break;
     default:
       break;
@@ -221,18 +229,29 @@ namespace game {
     m_ui.panel (dl, 14, 14, 350, 316, "TERRAIN LAB");
 
     std::ostringstream seed;
-    seed << "Seed " << m_seed;
+    seed << "Seed " << m_pipeline.randomness.seed;
     m_ui.label (dl, 28, 67, seed.str ());
     m_ui.label
-      (dl, 28, 88, terrain::geological_layer_name (m_layer), true);
+      (dl, 28, 88,
+	terrain::geological_layer_name (m_pipeline.layer), true);
 
-    std::ostringstream transforms;
-    transforms << "Transforms: " << m_droplets << " droplets, "
-	       << m_thermal_passes << " thermal passes";
-    m_ui.label (dl, 28, 109, transforms.str ());
+    int droplets = 0;
+    int thermal_passes = 0;
+    for (const terrain::PipelineStage& stage : m_pipeline.stages) {
+      if (const auto* hydraulic =
+	  std::get_if<terrain::HydraulicErosion> (&stage))
+	droplets += hydraulic->droplets;
+      else if (const auto* thermal =
+	       std::get_if<terrain::ThermalErosion> (&stage))
+	thermal_passes += thermal->iterations;
+    }
+    std::ostringstream pipeline;
+    pipeline << "Pipeline: " << m_pipeline.stages.size () << " stages; "
+	     << droplets << " drops, " << thermal_passes << " thermal";
+    m_ui.label (dl, 28, 109, pipeline.str ());
 
     m_ui.key_hint (dl, 28, 139, "1-7", "noise fields / combined");
-    m_ui.key_hint (dl, 28, 165, "R", "reset this field");
+    m_ui.key_hint (dl, 28, 165, "R", "reset pipeline");
     m_ui.key_hint (dl, 28, 191, "N", "next deterministic seed");
     m_ui.key_hint (dl, 28, 217, "E", "+100,000 erosion droplets");
     m_ui.key_hint (dl, 28, 243, "Y", "+2 thermal passes");

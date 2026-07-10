@@ -38,7 +38,8 @@ namespace game {
 
   private:
     void select (terrain::GeologicalLayer layer);
-    void reset_field ();
+    void reset_pipeline ();
+    void rerun_pipeline ();
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
 
@@ -51,10 +52,7 @@ namespace game {
     std::vector<float> m_saved_heights;
 
     bool m_active;
-    int m_seed;
-    terrain::GeologicalLayer m_layer;
-    int m_droplets;
-    int m_thermal_passes;
+    terrain::TerrainPipeline m_pipeline;
 
     float m_yaw;
     float m_pitch;

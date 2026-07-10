@@ -5,6 +5,8 @@
 - Build everything: `cmake --build build`
 - Unit tests: `ctest --test-dir build --output-on-failure`
 - Scalar-field visual check: `./build/terrain-field-demo /tmp/field.png 512`
+- Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
+  257 123 combined power=1.15 hydraulic=10000 thermal=2,0.003`
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
   - Modes: `--city`, `--pico`, `--fullscreen`, `--windowed`
@@ -33,8 +35,9 @@
   vegetation, wildlife, dust, HUD, vehicle rendering; glue in game.cc).
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
-- `moppe/terrain/` is the portable runtime field-expression DAG, evaluator
-  backends, and artifact writers; see `docs/terrain-expressions.md`.
+- `moppe/terrain/` is the portable runtime field-expression DAG, recipe and
+  pipeline values, evaluator backends, and artifact writers; see
+  `docs/terrain-expressions.md`.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
 - Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,

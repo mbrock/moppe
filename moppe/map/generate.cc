@@ -214,26 +214,63 @@ namespace map {
   }
 
   void
-  RandomHeightMap::randomize_geologically (terrain::GeologicalLayer layer)
+  RandomHeightMap::materialize_geological_recipe
+    (const terrain::GeologicalRecipe& recipe,
+     terrain::GeologicalLayer layer)
   {
-    const terrain::GeologicalSeeds seeds {
-      .base = m_rng (),
-      .ridge = m_rng (),
-      .warp = m_rng ()
-    };
     const terrain::GeologicalFields fields =
-      terrain::make_geological_fields (seeds);
+      terrain::make_geological_fields (recipe);
     const terrain::Domain2D domain {
       .width = static_cast<std::size_t> (m_width),
       .height = static_cast<std::size_t> (m_height)
     };
-    const terrain::ScalarRaster raster = terrain::normalize
-      (terrain::CpuEvaluator ().evaluate
-	(terrain::geological_layer (fields, layer), domain));
+    const terrain::ScalarRaster raster = terrain::CpuEvaluator ().evaluate
+      (terrain::geological_layer (fields, layer), domain);
 
     FORALL (x, y)
       set (x, y, raster.at (x, y));
     // NB: no recompute_normals() here -- the caller shapes further
+  }
+
+  void
+  RandomHeightMap::randomize_geologically (terrain::GeologicalLayer layer)
+  {
+    terrain::GeologicalRecipe recipe;
+    recipe.seeds = {
+      .base = m_rng (),
+      .ridge = m_rng (),
+      .warp = m_rng ()
+    };
+    materialize_geological_recipe (recipe, layer);
+    normalize ();
+  }
+
+  void
+  RandomHeightMap::run_pipeline
+    (const terrain::TerrainPipeline& pipeline,
+     const PipelineProgress& progress)
+  {
+    terrain::validate_pipeline (pipeline);
+    m_rng.seed (pipeline.randomness.seed);
+    m_rng.discard (pipeline.randomness.offset);
+    materialize_geological_recipe (pipeline.recipe, pipeline.layer);
+
+    for (std::size_t i = 0; i < pipeline.stages.size (); ++i) {
+      const terrain::PipelineStage& stage = pipeline.stages[i];
+      if (progress)
+	progress (i, stage);
+      if (std::holds_alternative<terrain::NormalizeHeights> (stage))
+	normalize ();
+      else if (const auto* power =
+	       std::get_if<terrain::PowerHeights> (&stage))
+	exponentiate (power->exponent);
+      else if (const auto* hydraulic =
+	       std::get_if<terrain::HydraulicErosion> (&stage))
+	erode_hydraulically (hydraulic->droplets);
+      else if (const auto* thermal =
+	       std::get_if<terrain::ThermalErosion> (&stage))
+	erode_thermally (thermal->iterations, thermal->talus);
+    }
   }
 
   void

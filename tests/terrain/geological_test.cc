@@ -6,6 +6,7 @@
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <stdexcept>
 #include <variant>
 
 using namespace moppe::terrain;
@@ -79,4 +80,36 @@ MOPPE_TEST (geological_layer_ids_round_trip) {
     MOPPE_CHECK (parsed && *parsed == layer);
   }
   MOPPE_CHECK (!geological_layer_from_id ("not-a-layer"));
+}
+
+MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
+  GeologicalRecipe recipe = make_geological_recipe (123);
+  const GeologicalSeeds seeds = derive_geological_seeds (123);
+
+  MOPPE_CHECK (recipe.seeds.base == seeds.base);
+  MOPPE_CHECK (recipe.seeds.ridge == seeds.ridge);
+  MOPPE_CHECK (recipe.seeds.warp == seeds.warp);
+  MOPPE_CHECK_NEAR (recipe.warp.amplitude, 0.15f, 1e-6f);
+  MOPPE_CHECK_NEAR (recipe.mountains.frequency, 6.0f, 1e-6f);
+
+  recipe.mountains.frequency = 8.0f;
+  const ScalarRaster changed = CpuEvaluator ().evaluate
+    (make_geological_fields (recipe).mountains,
+     { .width = 17, .height = 17 });
+  const ScalarRaster original = CpuEvaluator ().evaluate
+    (make_geological_fields (make_geological_recipe (123)).mountains,
+     { .width = 17, .height = 17 });
+  MOPPE_CHECK (changed.at (8, 8) != original.at (8, 8));
+}
+
+MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
+  GeologicalRecipe recipe = make_geological_recipe (123);
+  recipe.blend.mask_high = recipe.blend.mask_low;
+  bool threw = false;
+  try {
+    (void) make_geological_fields (recipe);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
 }
