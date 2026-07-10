@@ -79,10 +79,27 @@ geological source
   -> thermal(2 iterations, talus 0.003)
 ```
 
-Terrain Lab retains a pipeline value too.  E and Y append typed erosion stages
-and replay the value; R replaces it with the normalized base pipeline.  Game
-generation and interactive inspection therefore use the same interpreter.
-The saved random-stream offset preserves the former erosion sequence.
+Terrain Lab retains a pipeline value too.  Game generation and interactive
+inspection therefore use the same interpreter.  The saved random-stream
+offset preserves the former erosion sequence.
+
+### Field Algebra Tycoon UI
+
+The Terrain Lab window presents the system as a small construction game:
+
+- the geological source and every materialized stage are selectable rows;
+- normalization, power, hydraulic, and thermal stages can be appended;
+- selected stages can be moved, copied, deleted, and edited in place;
+- selecting the source exposes live steppers for warp, frequency, mask, and
+  blend parameters;
+- changing the inspected layer or random seed preserves the downstream stack;
+- reset returns to the canonical normalized base recipe;
+- dragging outside the window or right-dragging orbits the landscape, while
+  the mouse wheel zooms; the keyboard camera controls remain available.
+
+Every action edits the `TerrainPipeline` or `GeologicalRecipe` value and then
+replays it.  The UI does not maintain a parallel shadow representation of the
+pipeline.  Leaving the lab restores the exact playable heightmap snapshot.
 
 In C++, a scripted experiment is ordinary value manipulation:
 

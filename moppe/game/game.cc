@@ -885,6 +885,24 @@ namespace game {
       input_boost (state.boost);
     }
 
+    void pointer_move (float x, float y, float dx, float dy) override {
+      if (m_terrain_lab.active ())
+	m_terrain_lab.pointer_move (x, y, dx, dy);
+    }
+
+    void pointer_button
+      (platform::PointerButton button, bool down,
+       float x, float y) override {
+      if (m_terrain_lab.active ())
+	m_terrain_lab.pointer_button (button, down, x, y);
+    }
+
+    void pointer_scroll
+      (float x, float y, float delta) override {
+      if (m_terrain_lab.active ())
+	m_terrain_lab.pointer_scroll (x, y, delta);
+    }
+
     void key (platform::Key k, bool down) override {
       using platform::Key;
       const float factor = down ? 1.0f : 0.0f;
