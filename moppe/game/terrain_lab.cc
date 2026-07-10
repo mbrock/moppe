@@ -221,12 +221,17 @@ namespace game {
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
       m_pointer_down (false), m_camera_drag (false), m_pan_drag (false),
+      m_parameter_drag (false), m_drag_property (-1),
+      m_drag_start_y (0.0f), m_drag_start_normalized (0.0f),
+      m_parameter_rebuild_pending (false),
+      m_parameter_rebuild_stage (-1), m_parameter_rebuild_delay (0.0f),
       m_target (),
       m_yaw (0.72f), m_pitch (0.62f), m_distance (5600.0f),
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
       m_tilt_up (false), m_tilt_down (false),
       m_shadow_refresh_delay (0.0f),
+      m_scroll_zoom_target (5600.0f),
       m_view (ViewMode::Cover)
   { }
 
@@ -261,6 +266,10 @@ namespace game {
     m_pointer_down = false;
     m_camera_drag = false;
     m_pan_drag = false;
+    m_parameter_drag = false;
+    m_drag_property = -1;
+    m_parameter_rebuild_pending = false;
+    m_parameter_rebuild_delay = 0.0f;
     m_view = ViewMode::Cover;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
@@ -291,6 +300,8 @@ namespace game {
     m_pointer_down = false;
     m_camera_drag = false;
     m_pan_drag = false;
+    m_parameter_drag = false;
+    m_parameter_rebuild_pending = false;
     m_active = false;
     m_evaluator.reset ();
     m_map = 0;
@@ -319,6 +330,7 @@ namespace game {
       m_pitch = 1.22f;
       m_distance = 6500.0f;
     }
+    m_scroll_zoom_target = m_distance;
   }
 
   void
@@ -486,87 +498,163 @@ namespace game {
     m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
   }
 
-  void
-  TerrainLab::adjust_selected_property (int row, int direction)
+  float
+  TerrainLab::selected_property_normalized (int row) const
   {
-    if (direction == 0)
-      return;
+    const auto unit = [] (float value, float low, float high) {
+      return high > low ? std::clamp
+	((value - low) / (high - low), 0.0f, 1.0f) : 0.0f;
+    };
+    if (m_selected_stage < 0) {
+      const terrain::GeologicalRecipe& recipe = m_program.source.recipe;
+      switch (row) {
+      case 0: return unit (recipe.warp.amplitude, 0.0f, 0.6f);
+      case 1: return unit (recipe.continent.noise.cycles, 1.0f, 16.0f);
+      case 2: return unit (recipe.plains.noise.cycles, 1.0f, 32.0f);
+      case 3: return unit (recipe.mountains.cycles, 1.0f, 8.0f);
+      case 4: return unit
+	(recipe.blend.mask_low, 0.0f, recipe.blend.mask_high - 0.001f);
+      case 5: return unit
+	(recipe.blend.mask_high, recipe.blend.mask_low + 0.001f, 1.0f);
+      case 6: return unit (recipe.blend.continent_weight, 0.0f, 1.5f);
+      case 7: return unit (recipe.blend.plains_weight, 0.0f, 1.0f);
+      case 8: return unit (recipe.blend.mountain_weight, 0.0f, 1.5f);
+      default: return 0.0f;
+      }
+    }
+
+    const terrain::TerrainTransform& stage =
+      m_program.transforms[m_selected_stage];
+    if (const auto* power = std::get_if<terrain::PowerHeights> (&stage))
+      return unit (power->exponent, 0.1f, 4.0f);
+    if (const auto* hydraulic =
+	std::get_if<terrain::HydraulicErosion> (&stage))
+      return row == 0 ? unit (hydraulic->droplets, 0.0f, 2000000.0f)
+	: unit (hydraulic->batch_size, 1.0f, 4096.0f);
+    if (const auto* thermal =
+	std::get_if<terrain::ThermalErosion> (&stage))
+      return row == 0 ? unit (thermal->iterations, 0.0f, 20.0f)
+	: unit (thermal->talus, 0.0f, 0.05f);
+    return 0.0f;
+  }
+
+  bool
+  TerrainLab::set_selected_property_normalized (int row, float value)
+  {
+    value = std::clamp (value, 0.0f, 1.0f);
+    const auto mix = [value] (float low, float high) {
+      return low + value * (high - low);
+    };
     if (m_selected_stage < 0) {
       terrain::GeologicalRecipe& recipe = m_program.source.recipe;
       switch (row) {
-      case 0:
-	recipe.warp.amplitude = std::clamp
-	  (recipe.warp.amplitude + direction * 0.025f, 0.0f, 0.6f);
-	break;
-      case 1:
-	recipe.continent.noise.cycles = std::clamp
-	  (recipe.continent.noise.cycles + direction, 1, 16);
-	break;
-      case 2:
-	recipe.plains.noise.cycles = std::clamp
-	  (recipe.plains.noise.cycles + direction, 1, 32);
-	break;
-      case 3:
-	recipe.mountains.cycles = std::clamp
-	  (recipe.mountains.cycles + direction, 1, 8);
-	break;
-      case 4:
-	recipe.blend.mask_low = std::clamp
-	  (recipe.blend.mask_low + direction * 0.025f,
-	   0.0f, recipe.blend.mask_high - 0.025f);
-	break;
-      case 5:
-	recipe.blend.mask_high = std::clamp
-	  (recipe.blend.mask_high + direction * 0.025f,
-	   recipe.blend.mask_low + 0.025f, 1.0f);
-	break;
-      case 6:
-	recipe.blend.continent_weight = std::clamp
-	  (recipe.blend.continent_weight + direction * 0.05f,
-	   0.0f, 1.5f);
-	break;
-      case 7:
-	recipe.blend.plains_weight = std::clamp
-	  (recipe.blend.plains_weight + direction * 0.025f,
-	   0.0f, 1.0f);
-	break;
-      case 8:
-	recipe.blend.mountain_weight = std::clamp
-	  (recipe.blend.mountain_weight + direction * 0.05f,
-	   0.0f, 1.5f);
-	break;
-      default:
-	return;
+      case 0: {
+	const float old = recipe.warp.amplitude;
+	recipe.warp.amplitude = mix (0.0f, 0.6f);
+	return recipe.warp.amplitude != old;
       }
-      rebuild_program ();
-      return;
+      case 1: {
+	const int old = recipe.continent.noise.cycles;
+	recipe.continent.noise.cycles = std::lround (mix (1.0f, 16.0f));
+	return recipe.continent.noise.cycles != old;
+      }
+      case 2: {
+	const int old = recipe.plains.noise.cycles;
+	recipe.plains.noise.cycles = std::lround (mix (1.0f, 32.0f));
+	return recipe.plains.noise.cycles != old;
+      }
+      case 3: {
+	const int old = recipe.mountains.cycles;
+	recipe.mountains.cycles = std::lround (mix (1.0f, 8.0f));
+	return recipe.mountains.cycles != old;
+      }
+      case 4: {
+	const float old = recipe.blend.mask_low;
+	recipe.blend.mask_low = mix
+	  (0.0f, recipe.blend.mask_high - 0.001f);
+	return recipe.blend.mask_low != old;
+      }
+      case 5: {
+	const float old = recipe.blend.mask_high;
+	recipe.blend.mask_high = mix
+	  (recipe.blend.mask_low + 0.001f, 1.0f);
+	return recipe.blend.mask_high != old;
+      }
+      case 6: {
+	const float old = recipe.blend.continent_weight;
+	recipe.blend.continent_weight = mix (0.0f, 1.5f);
+	return recipe.blend.continent_weight != old;
+      }
+      case 7: {
+	const float old = recipe.blend.plains_weight;
+	recipe.blend.plains_weight = mix (0.0f, 1.0f);
+	return recipe.blend.plains_weight != old;
+      }
+      case 8: {
+	const float old = recipe.blend.mountain_weight;
+	recipe.blend.mountain_weight = mix (0.0f, 1.5f);
+	return recipe.blend.mountain_weight != old;
+      }
+      default: return false;
+      }
     }
 
     terrain::TerrainTransform& stage =
       m_program.transforms[m_selected_stage];
     if (auto* power = std::get_if<terrain::PowerHeights> (&stage)) {
-      power->exponent = std::clamp
-	(power->exponent + direction * 0.05f, 0.1f, 4.0f);
-    } else if (auto* hydraulic =
-	       std::get_if<terrain::HydraulicErosion> (&stage)) {
-      if (row == 0)
-	hydraulic->droplets = std::clamp
-	  (hydraulic->droplets + direction * 25000, 0, 2000000);
-      else
-	hydraulic->batch_size = std::clamp
-	  (hydraulic->batch_size + direction * 64, 1, 4096);
-    } else if (auto* thermal =
-	       std::get_if<terrain::ThermalErosion> (&stage)) {
-      if (row == 0)
-	thermal->iterations = std::clamp
-	  (thermal->iterations + direction, 0, 20);
-      else
-	thermal->talus = std::clamp
-	  (thermal->talus + direction * 0.0005f, 0.0f, 0.05f);
-    } else {
-      return;
+      const float old = power->exponent;
+      power->exponent = mix (0.1f, 4.0f);
+      return power->exponent != old;
     }
-    rerun_program_from (m_selected_stage);
+    if (auto* hydraulic =
+	std::get_if<terrain::HydraulicErosion> (&stage)) {
+      if (row == 0) {
+	const int old = hydraulic->droplets;
+	hydraulic->droplets = std::lround (mix (0.0f, 2000000.0f));
+	return hydraulic->droplets != old;
+      }
+      const int old = hydraulic->batch_size;
+      hydraulic->batch_size = std::lround (mix (1.0f, 4096.0f));
+      return hydraulic->batch_size != old;
+    }
+    if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
+      if (row == 0) {
+	const int old = thermal->iterations;
+	thermal->iterations = std::lround (mix (0.0f, 20.0f));
+	return thermal->iterations != old;
+      }
+      const float old = thermal->talus;
+      thermal->talus = mix (0.0f, 0.05f);
+      return thermal->talus != old;
+    }
+    return false;
+  }
+
+  void
+  TerrainLab::queue_parameter_rebuild ()
+  {
+    m_parameter_rebuild_pending = true;
+    m_parameter_rebuild_stage = m_selected_stage;
+  }
+
+  void
+  TerrainLab::run_pending_parameter_rebuild ()
+  {
+    if (!m_parameter_rebuild_pending)
+      return;
+    const int stage = m_parameter_rebuild_stage;
+    m_parameter_rebuild_pending = false;
+    bool iterative = false;
+    if (stage >= 0
+	&& stage < static_cast<int> (m_program.transforms.size ())) {
+      iterative = terrain::terrain_transform_semantics
+	(m_program.transforms[stage]).evaluation_order
+	== terrain::EvaluationOrder::Iterative;
+      rerun_program_from (stage);
+    } else {
+      rebuild_program ();
+    }
+    m_parameter_rebuild_delay = iterative ? 0.18f : 0.045f;
   }
 
   void
@@ -641,21 +729,6 @@ namespace game {
       return;
     }
 
-    int property_count = 9;
-    if (m_selected_stage >= 0)
-      property_count = stage_property_count
-	(m_program.transforms[m_selected_stage]);
-    for (int row = 0; row < property_count; ++row) {
-      const UiRect bounds = property_rect (row);
-      if (stepper_minus_rect (bounds).contains (x, y)) {
-	adjust_selected_property (row, -1);
-	return;
-      }
-      if (stepper_plus_rect (bounds).contains (x, y)) {
-	adjust_selected_property (row, 1);
-	return;
-      }
-    }
     if (m_selected_stage >= 0) {
       terrain::TerrainTransform& stage =
 	m_program.transforms[m_selected_stage];
@@ -702,6 +775,11 @@ namespace game {
   void
   TerrainLab::tick (float dt)
   {
+    if (m_parameter_rebuild_delay > 0.0f)
+      m_parameter_rebuild_delay -= dt;
+    if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
+      run_pending_parameter_rebuild ();
+
     if (m_shadow_refresh_delay > 0.0f) {
       m_shadow_refresh_delay -= dt;
       if (m_shadow_refresh_delay <= 0.0f && m_renderer && m_map && m_terrain)
@@ -717,8 +795,11 @@ namespace game {
     m_yaw += orbit * dt * 0.85f;
     m_pitch += tilt * dt * 0.55f;
     m_pitch = std::clamp (m_pitch, 0.18f, 1.28f);
-    m_distance *= std::exp (zoom * dt * 1.1f);
-    m_distance = std::clamp (m_distance, 500.0f, 16000.0f);
+    m_scroll_zoom_target *= std::exp (zoom * dt * 1.1f);
+    m_scroll_zoom_target = std::clamp
+      (m_scroll_zoom_target, 500.0f, 16000.0f);
+    const float zoom_response = 1.0f - std::exp (-dt * 14.0f);
+    m_distance += (m_scroll_zoom_target - m_distance) * zoom_response;
   }
 
   void
@@ -781,6 +862,13 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
+    if (m_parameter_drag) {
+      const float normalized = m_drag_start_normalized
+	+ (m_drag_start_y - y) / 180.0f;
+      if (set_selected_property_normalized (m_drag_property, normalized))
+	queue_parameter_rebuild ();
+      return;
+    }
     if (m_pan_drag) {
       const Vector3D f = forward ();
       Vector3D right = f.cross (Vector3D (0, 1, 0));
@@ -810,11 +898,30 @@ namespace game {
     if (button == platform::PointerButton::Primary) {
       m_pointer_down = down;
       if (down) {
-	if (window_rect ().contains (x, y))
+	int property_count = 9;
+	if (m_selected_stage >= 0)
+	  property_count = stage_property_count
+	    (m_program.transforms[m_selected_stage]);
+	for (int row = 0; row < property_count; ++row) {
+	  if (!parameter_control_rect (property_rect (row)).contains (x, y))
+	    continue;
+	  m_parameter_drag = true;
+	  m_drag_property = row;
+	  m_drag_start_y = y;
+	  m_drag_start_normalized = selected_property_normalized (row);
+	  return;
+	}
+	if (window_rect ().contains (x, y)) {
 	  handle_click (x, y);
-	else
+	} else {
 	  m_camera_drag = true;
+	}
       } else {
+	if (m_parameter_drag) {
+	  m_parameter_drag = false;
+	  m_drag_property = -1;
+	  run_pending_parameter_rebuild ();
+	}
 	m_camera_drag = false;
       }
     } else {
@@ -829,17 +936,20 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
-    if (stage_list_rect ().contains (x, y)
-	&& m_program.transforms.size () > visible_stage_rows) {
-      m_stage_scroll += delta > 0.0f ? -1 : 1;
-      const int maximum = static_cast<int> (m_program.transforms.size ())
-	- visible_stage_rows;
-      m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
+    if (window_rect ().contains (x, y)) {
+      if (stage_list_rect ().contains (x, y)
+	  && m_program.transforms.size () > visible_stage_rows) {
+	m_stage_scroll += delta > 0.0f ? -1 : 1;
+	const int maximum = static_cast<int> (m_program.transforms.size ())
+	  - visible_stage_rows;
+	m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
+      }
       return;
     }
-    const float amount = std::clamp (delta, -8.0f, 8.0f);
-    m_distance *= std::exp (-amount * 0.055f);
-    m_distance = std::clamp (m_distance, 500.0f, 16000.0f);
+    const float amount = std::clamp (delta, -2.0f, 2.0f);
+    m_scroll_zoom_target *= std::exp (-amount * 0.028f);
+    m_scroll_zoom_target = std::clamp
+      (m_scroll_zoom_target, 500.0f, 16000.0f);
   }
 
   Vector3D
@@ -945,10 +1055,11 @@ namespace game {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = recipe_property
 	  (m_program.source.recipe, row);
-	m_ui.stepper
+	m_ui.knob
 	  (dl, bounds, property.label, property.value,
-	   hot (stepper_minus_rect (bounds)),
-	   hot (stepper_plus_rect (bounds)), m_pointer_down);
+	   selected_property_normalized (row),
+	   hot (parameter_control_rect (bounds)),
+	   m_parameter_drag && m_drag_property == row);
       }
     } else {
       const terrain::TerrainTransform& stage =
@@ -957,10 +1068,11 @@ namespace game {
       for (int row = 0; row < count; ++row) {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = stage_property (stage, row);
-	m_ui.stepper
+	m_ui.knob
 	  (dl, bounds, property.label, property.value,
-	   hot (stepper_minus_rect (bounds)),
-	   hot (stepper_plus_rect (bounds)), m_pointer_down);
+	   selected_property_normalized (row),
+	   hot (parameter_control_rect (bounds)),
+	   m_parameter_drag && m_drag_property == row);
       }
       m_ui.label (dl, right_x + 8, 270,
 		  stage_name (stage), true);
@@ -1000,7 +1112,7 @@ namespace game {
     m_ui.label (dl, left_x, 586, status.str (), true);
     m_ui.label
       (dl, left_x, 613,
-	"LEFT DRAG orbit | RIGHT/MIDDLE DRAG pan | WHEEL zoom");
+	"DRAG KNOBS vertically | LEFT DRAG orbit | RIGHT DRAG pan");
     m_ui.label
       (dl, left_x, 636,
        "Pipeline rows are selectable and reorderable | T returns to game");

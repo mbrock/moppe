@@ -64,7 +64,8 @@ terrain_normal_bilinear (float2 grid,
 static inline float
 terrain_preview_height (float2 grid,
 			constant MoppeTerrainUniforms& u,
-			texture2d<float, access::read> heights)
+			texture2d<float, access::read> heights,
+			texture2d<float, access::read> previous_heights)
 {
   const float2 limit (heights.get_width () - 1,
 		      heights.get_height () - 1);
@@ -73,7 +74,11 @@ terrain_preview_height (float2 grid,
   } else {
     grid = clamp (grid, float2 (0.0), limit);
   }
-  return terrain_height_bilinear (grid, heights);
+  const float current = terrain_height_bilinear (grid, heights);
+  if (u.params3.z >= 1.0)
+    return current;
+  const float previous = terrain_height_bilinear (grid, previous_heights);
+  return mix (previous, current, u.params3.z);
 }
 
 // Terrain Lab changes heightfields far more often than gameplay.  Deriving
@@ -82,16 +87,17 @@ terrain_preview_height (float2 grid,
 static inline float3
 terrain_preview_normal (float2 grid,
 			constant MoppeTerrainUniforms& u,
-			texture2d<float, access::read> heights)
+			texture2d<float, access::read> heights,
+			texture2d<float, access::read> previous_heights)
 {
   const float left = terrain_preview_height
-    (grid - float2 (1.0, 0.0), u, heights);
+    (grid - float2 (1.0, 0.0), u, heights, previous_heights);
   const float right = terrain_preview_height
-    (grid + float2 (1.0, 0.0), u, heights);
+    (grid + float2 (1.0, 0.0), u, heights, previous_heights);
   const float back = terrain_preview_height
-    (grid - float2 (0.0, 1.0), u, heights);
+    (grid - float2 (0.0, 1.0), u, heights, previous_heights);
   const float front = terrain_preview_height
-    (grid + float2 (0.0, 1.0), u, heights);
+    (grid + float2 (0.0, 1.0), u, heights, previous_heights);
   const float3 tangent_x
     (2.0 * u.params0.x, (right - left) * u.params0.y, 0.0);
   const float3 tangent_z
@@ -177,22 +183,24 @@ terrain_vertex (uint index [[vertex_id]],
 		constant MoppeTerrainUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
 		constant MoppeChunkUniforms& chunk [[buffer(MOPPE_BUF_CHUNK)]],
 		texture2d<float, access::read> heights [[texture(MOPPE_TEX_HEIGHTS)]],
-		texture2d<float, access::read> normals [[texture(MOPPE_TEX_NORMALS)]])
+		texture2d<float, access::read> normals [[texture(MOPPE_TEX_NORMALS)]],
+		texture2d<float, access::read> previous_heights
+		  [[texture(MOPPE_TEX_PREVIOUS_HEIGHTS)]])
 {
   const float2 grid = terrain_grid_pos (index, chunk);
   float h;
   float3 normal;
   const bool derive_normal = u.params3.x > 0.5;
-  if (chunk.step < 1.0) {
+  if (derive_normal) {
+    h = terrain_preview_height (grid, u, heights, previous_heights);
+    normal = terrain_preview_normal
+      (grid, u, heights, previous_heights);
+  } else if (chunk.step < 1.0) {
     h = terrain_height_bilinear (grid, heights);
-    normal = derive_normal
-      ? terrain_preview_normal (grid, u, heights)
-      : terrain_normal_bilinear (grid, normals);
+    normal = terrain_normal_bilinear (grid, normals);
   } else {
     h = heights.read (uint2 (grid)).r;
-    normal = derive_normal
-      ? terrain_preview_normal (grid, u, heights)
-      : terrain_read_normal (uint2 (grid), normals);
+    normal = terrain_read_normal (uint2 (grid), normals);
   }
 
   const float2 canonical_xz (u.params0.x * grid.x,
@@ -204,8 +212,13 @@ terrain_vertex (uint index [[vertex_id]],
     const float morph = smoothstep
       (chunk.morph_start, chunk.morph_end, dist);
     if (morph > 0.0) {
-      const float parent_h = terrain_height_on_lattice
+      float parent_h = terrain_height_on_lattice
 	(grid, chunk.parent_step, heights);
+      if (derive_normal && u.params3.z < 1.0) {
+	const float previous_parent_h = terrain_height_on_lattice
+	  (grid, chunk.parent_step, previous_heights);
+	parent_h = mix (previous_parent_h, parent_h, u.params3.z);
+      }
       h = mix (h, parent_h, morph);
       if (!derive_normal) {
 	const float3 parent_n = terrain_normal_on_lattice

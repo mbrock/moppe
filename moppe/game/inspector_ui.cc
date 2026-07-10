@@ -2,6 +2,9 @@
 
 #include <moppe/render/renderer.hh>
 
+#include <algorithm>
+#include <cmath>
+
 namespace moppe {
 namespace game {
   namespace {
@@ -35,14 +38,9 @@ namespace game {
     }
   }
 
-  UiRect stepper_minus_rect (const UiRect& bounds) {
-    return { bounds.x + bounds.width - 112, bounds.y + 5, 26,
-	     bounds.height - 10 };
-  }
-
-  UiRect stepper_plus_rect (const UiRect& bounds) {
-    return { bounds.x + bounds.width - 26, bounds.y + 5, 26,
-	     bounds.height - 10 };
+  UiRect parameter_control_rect (const UiRect& bounds) {
+    return { bounds.x + bounds.width - 112, bounds.y + 3, 108,
+	     bounds.height - 6 };
   }
 
   void
@@ -223,12 +221,14 @@ namespace game {
   }
 
   void
-  InspectorUi::stepper
+  InspectorUi::knob
     (render::DrawList& dl, const UiRect& bounds,
      const std::string& label_text, const std::string& value,
-     bool minus_hot, bool plus_hot, bool pressed) const
+     float normalized, bool hot, bool active) const
   {
-    dl.color (0.10f, 0.18f, 0.18f, 0.98f);
+    normalized = std::clamp (normalized, 0.0f, 1.0f);
+    dl.color (hot ? 0.12f : 0.10f, hot ? 0.22f : 0.18f,
+	      hot ? 0.21f : 0.18f, 0.98f);
     fill_rect (dl, bounds);
     dl.color (0.20f, 0.31f, 0.30f, 0.9f);
     dl.line (bounds.x, bounds.y + bounds.height,
@@ -240,16 +240,12 @@ namespace game {
 		    label_text);
     }
 
-    const UiRect minus = stepper_minus_rect (bounds);
-    const UiRect plus = stepper_plus_rect (bounds);
+    const UiRect control = parameter_control_rect (bounds);
     const UiRect value_box
-      { minus.x + minus.width + 2, minus.y,
-	plus.x - minus.x - minus.width - 4, minus.height };
-    button (dl, minus, "-", minus_hot, pressed, false);
-    button (dl, plus, "+", plus_hot, pressed, false);
+      { control.x, control.y + 2, control.width - 39, control.height - 4 };
     dl.color (0.045f, 0.08f, 0.08f, 0.98f);
     fill_rect (dl, value_box);
-    bevel (dl, value_box, true);
+    bevel (dl, value_box, active);
     if (m_key) {
       dl.color (0.93f, 0.97f, 0.74f, 0.99f);
       const float value_width = m_key->measure (value);
@@ -257,6 +253,26 @@ namespace game {
 	value_box.x + (value_box.width - value_width) * 0.5f,
 	value_box.y + value_box.height * 0.5f + 4, value);
     }
+
+    const float cx = control.x + control.width - 18.0f;
+    const float cy = bounds.y + bounds.height * 0.5f;
+    const float radius = 13.0f;
+    dl.color (active ? 0.36f : hot ? 0.29f : 0.20f,
+	      active ? 0.56f : hot ? 0.43f : 0.31f,
+	      active ? 0.48f : hot ? 0.39f : 0.32f, 1.0f);
+    dl.begin (render::Prim::TriangleFan);
+    dl.vertex (cx, cy);
+    for (int i = 0; i <= 24; ++i) {
+      const float angle = i * 2.0f * 3.14159265f / 24.0f;
+      dl.vertex (cx + std::cos (angle) * radius,
+		 cy + std::sin (angle) * radius);
+    }
+    dl.end ();
+
+    const float angle = (0.75f + normalized * 1.5f) * 3.14159265f;
+    dl.color (0.96f, 1.0f, 0.72f, 0.99f);
+    dl.line (cx, cy, cx + std::cos (angle) * 9.0f,
+	     cy + std::sin (angle) * 9.0f, 2.0f);
   }
 }
 }

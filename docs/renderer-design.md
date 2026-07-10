@@ -226,7 +226,8 @@ The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
 and runs in a compute kernel.  Terrain Lab currently reads the result back to
 the authoritative CPU heightmap before normalization, erosion, and texture
 upload.  Interactive previews derive normals from the height texture, reuse
-terrain GPU resources, and restore exact CPU normals when leaving the lab.
+terrain GPU resources, and morph old and new height textures over 120 ms.
+They restore exact CPU normals when leaving the lab.
 The next renderer boundary is to keep pointwise results GPU-resident through
 global normalization and rendering.  Hydraulic erosion remains a separate
 iterative problem rather than part of the pointwise graph.

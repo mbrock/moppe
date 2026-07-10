@@ -23,8 +23,7 @@ namespace game {
     }
   };
 
-  UiRect stepper_minus_rect (const UiRect& bounds);
-  UiRect stepper_plus_rect (const UiRect& bounds);
+  UiRect parameter_control_rect (const UiRect& bounds);
 
   // Small immediate-mode inspector skin built on the renderer's existing
   // DrawList and FontAtlas.  It intentionally owns no widget state: tools
@@ -53,9 +52,9 @@ namespace game {
 		       const std::string& name,
 		       const std::string& detail,
 		       bool hot, bool pressed, bool selected) const;
-    void stepper (render::DrawList& dl, const UiRect& bounds,
-		  const std::string& label, const std::string& value,
-		  bool minus_hot, bool plus_hot, bool pressed) const;
+    void knob (render::DrawList& dl, const UiRect& bounds,
+	       const std::string& label, const std::string& value,
+	       float normalized, bool hot, bool active) const;
 
   private:
     std::unique_ptr<render::FontAtlas> m_body;

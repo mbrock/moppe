@@ -59,7 +59,10 @@ namespace game {
     void move_selected_stage (int direction);
     void duplicate_selected_stage ();
     void remove_selected_stage ();
-    void adjust_selected_property (int row, int direction);
+    float selected_property_normalized (int row) const;
+    bool set_selected_property_normalized (int row, float value);
+    void queue_parameter_rebuild ();
+    void run_pending_parameter_rebuild ();
     void handle_click (float x, float y);
     void ensure_selected_stage_visible ();
     void refresh (bool inspection_fog = true);
@@ -88,6 +91,13 @@ namespace game {
     bool m_pointer_down;
     bool m_camera_drag;
     bool m_pan_drag;
+    bool m_parameter_drag;
+    int m_drag_property;
+    float m_drag_start_y;
+    float m_drag_start_normalized;
+    bool m_parameter_rebuild_pending;
+    int m_parameter_rebuild_stage;
+    float m_parameter_rebuild_delay;
 
     Vector3D m_target;
     float m_yaw;
@@ -100,6 +110,7 @@ namespace game {
     bool m_tilt_up;
     bool m_tilt_down;
     float m_shadow_refresh_delay;
+    float m_scroll_zoom_target;
     ViewMode m_view;
   };
 }

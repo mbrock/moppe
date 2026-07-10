@@ -141,12 +141,12 @@ The Terrain Lab window presents the system as a small construction game:
 - the geological source and every materialized stage are selectable rows;
 - normalization, power, hydraulic, and thermal stages can be appended;
 - selected stages can be moved, copied, deleted, and edited in place;
-- selecting the source exposes live steppers for warp, cycle count, mask, and
-  blend parameters;
+- selecting the source exposes synth-style rotary controls for warp, cycle
+  count, mask, and blend parameters; drag vertically to adjust them;
 - changing the inspected layer or random seed preserves the downstream stack;
 - reset returns to the canonical normalized base recipe;
 - left-dragging outside the window orbits, right- or middle-dragging pans,
-  and the mouse wheel zooms over a much wider range;
+  and the mouse wheel zooms only while it is over the terrain;
 - Fit restores an overview appropriate to the selected view;
 - Tile View shows exactly one fundamental square;
 - Cover View repeats the square around the camera through the existing
@@ -159,6 +159,14 @@ edit only replays the affected suffix.  The final output already lives in the
 working map and is not copied into redundant history.  The lab does not
 maintain a parallel shadow representation of the recipe itself.  Leaving the
 lab restores the exact playable heightmap snapshot.
+
+Knob motion updates the program value immediately, while evaluation is
+coalesced on the frame tick: direct fields update frequently, iterative stages
+use a slower cadence, and releasing the knob commits the newest value.  Each
+completed preview morphs from the previous height texture over 120 ms, with
+normals derived from the interpolated surface.  The UI itself is Moppe's small
+immediate-mode `InspectorUi` drawn through `DrawList`, not an external widget
+library.
 
 In C++, a scripted experiment is ordinary value manipulation:
 
@@ -178,7 +186,7 @@ the same heightfield for one simulation step, sparse erosion/deposition deltas
 are accumulated, and the batch is committed before the next step.  This is a
 deterministic CPU implementation of the work boundary a future compute kernel
 can execute in parallel.  Terrain Lab exposes batch-size presets of 1, 64,
-256, and 1024 as well as the numeric stepper, making the visual effect of more
+256, and 1024 as well as the numeric knob, making the visual effect of more
 simultaneous erosion directly comparable.
 
 The present CPU implementation still evaluates droplets serially inside that
