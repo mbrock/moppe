@@ -131,8 +131,7 @@ namespace platform {
       return true;
     }
 
-    std::basic_string<unsigned char> pixels;
-    pixels.resize ((size_t) w * h, 0);
+    std::vector<unsigned char> pixels ((size_t) w * h, 0);
 
     CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray ();
     CGContextRef ctx = CGBitmapContextCreate

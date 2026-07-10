@@ -276,11 +276,8 @@ namespace game {
       m_gen_stage = 5;
       m_map.recompute_normals ();
 
-      m_vegetation.generate (m_map, m_world,
-			     m_world.pico_mode ? 6000
-			     : m_world.city_mode ? 500 : 2200,
-			     m_world.pico_mode ? 4000
-			     : m_world.city_mode ? 300 : 1500);
+      m_vegetation.generate
+	(m_map, m_world, Vegetation::population_for (m_world));
       m_stars.generate (m_map, m_world,
 			m_world.pico_mode ? 250
 			: m_world.city_mode ? 130 : 80);

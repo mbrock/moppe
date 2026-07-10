@@ -9,44 +9,87 @@
 
 namespace moppe {
 namespace game {
-  // Scattered trees and bushes, bucketed into 6x6 sector meshes so
-  // only the sectors within fog reach are drawn.  Port of main.cc's
-  // Vegetation; display lists become baked meshes and the plant
-  // list is retained between generate() and load().
+  // Scattered flora, baked into sector meshes so only what the haze
+  // lets the camera see is drawn.  Two granularities: structural
+  // growth (trunks, canopies, bush volumes, contact shadows) on the
+  // coarse structure grid drawn out to the haze horizon, and fine detail
+  // (leaf quads, grass tufts, flowers, shoreline reeds) on a finer grid
+  // drawn only near the camera, where it registers.  All
+  // of it sways: vertices carry wind weights the scene vertex shader
+  // animates, so the baked meshes stay static buffers.
   class Vegetation {
   public:
-    static const int VSEC = 6;
+    // Named population settings keep world-mode tuning out of the
+    // generation algorithm and make custom worlds straightforward.
+    struct Population {
+      int trees;
+      int bushes;
+      int max_tufts;
+      int max_flowers;
+      int reeds;
 
-    // Rejection-samples plant spots (fixed seed 1234, same rules
-    // as the GL build).  `count` is the tree count; the bush count
-    // follows the original per-mode call site (pico 4000, city
-    // 300, else 1500).
-    void generate (const map::HeightMap& map,
-		   const WorldParams& world, int count);
+      Population (int tree_count, int bush_count, int tuft_limit,
+		  int flower_limit, int reed_count)
+	: trees (tree_count), bushes (bush_count),
+	  max_tufts (tuft_limit), max_flowers (flower_limit),
+	  reeds (reed_count) {}
+    };
 
-    // Explicit counts (GL build: pico 6000/4000, city 500/300,
-    // default 2200/1500).
+    static Population population_for (const WorldParams& world);
+
     void generate (const map::HeightMap& map,
 		   const WorldParams& world,
-		   int trees, int bushes);
+		   const Population& population);
 
-    // Bakes the 36 sector meshes from the retained plant list.
+    // Bakes the sector and detail-cell meshes from the plant list.
     void load (render::Renderer& r);
 
-    // Draws the sectors within fog-visibility reach of the camera.
+    // Draws the sectors within fog reach, detail cells within
+    // detail reach.
     void render (render::Renderer& r, const FrameEnv& env);
 
   private:
-    struct Plant {
-      bool tree;
-      float x, y, z, s, tint;
+    static const int STRUCTURE_GRID = 6;
+    static const int DETAIL_GRID = 14;
+
+    enum class Species : uint8_t {
+      Broadleaf, Conifer, Birch, Bush, Tuft, Flower, Reed
     };
 
-    int sector_of (float x, float z) const;
+    struct Plant {
+      Species species;
+      uint8_t palette;    // flower/bush bloom color index
+      Vector3D position;   // ground point
+      Vector3D ground_normal;
+      float scale;
+      float tint;         // per-plant color variance
+      uint32_t seed;      // deterministic per-plant detail
+    };
+
+    void append_plant (Species species, const Vector3D& position,
+		       const Vector3D& normal, float scale, float tint,
+		       uint32_t seed, uint8_t palette = 0);
+    int cell_of (const Vector3D& position, int grid) const;
+    void record_structure (render::DrawList& dl, const Plant& plant) const;
+    void record_shadow (render::DrawList& dl, const Plant& plant) const;
+    void record_detail (render::DrawList& dl, const Plant& plant) const;
+    void render_grid (render::Renderer& r, const render::MeshPtr* meshes,
+		      int grid, float reach, const Vector3D& camera) const;
+    void record_near_grass (const FrameEnv& env);
 
     std::vector<Plant> m_plants;
-    render::MeshPtr m_meshes[VSEC * VSEC];
+    render::MeshPtr m_meshes[STRUCTURE_GRID * STRUCTURE_GRID];
+    render::MeshPtr m_detail[DETAIL_GRID * DETAIL_GRID];
     Vector3D m_map_size;
+    bool m_lean;          // pico mode: cheaper per-plant geometry
+
+    // Near-field grass: a deterministic hash grid of tufts around
+    // the camera, re-recorded each frame so there's always grass at
+    // the wheels without baking millions of blades.
+    const map::HeightMap* m_map = nullptr;
+    float m_water = 0;
+    float m_height = 1;
+    render::DrawList m_near;
   };
 }
 }

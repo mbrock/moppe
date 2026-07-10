@@ -14,8 +14,25 @@ struct MoppeVertexIn {
   packed_float3 normal;
   packed_float2 uv;
   uchar4 color;
-  uchar4 flags;               // x: lit, y: fogged
+  uchar4 flags;               // x: lit, y: fogged, z: wind weight
 };
+
+// Vegetation sway: a slow prevailing gust plus a faster flutter,
+// phased by world position so the field moves as travelling waves
+// rather than in lockstep.  `w` is the vertex's wind weight (0..1);
+// anchored roots record 0 and skip this entirely.
+inline float3 moppe_wind (float3 world, float w, float t) {
+  const float ph = world.x * 0.043 + world.z * 0.051;
+  const float gust = sin (t * 1.13 + ph)
+    + 0.45 * sin (t * 2.63 + ph * 1.7 + 1.3);
+  const float flutter = sin (t * 6.8 + ph * 13.0 + world.y * 1.9);
+  const float amp = 0.24 * w;
+  world.x += (0.79 * gust + 0.30 * flutter) * amp;
+  world.z += (0.53 * gust - 0.24 * flutter) * amp;
+  // Blades and boughs bow slightly as they bend away from vertical.
+  world.y -= 0.15 * abs (gust) * amp;
+  return world;
+}
 
 // The scene computes in LINEAR light (half-float targets); art
 // colors are still authored as familiar display-space numbers and

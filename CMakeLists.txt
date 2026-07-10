@@ -99,6 +99,7 @@ add_library(moppe_game STATIC
   moppe/game/fish.cc
   moppe/game/wildlife.cc
   moppe/game/city.cc
+  moppe/game/model.cc
   moppe/game/walker.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc

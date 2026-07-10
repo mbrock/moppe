@@ -24,8 +24,12 @@ uber_vertex (uint vid [[vertex_id]],
 {
   const MoppeVertexIn v = verts[vid];
 
-  const float4 world = draw.model * float4 (float3 (v.position), 1.0);
+  float4 world = draw.model * float4 (float3 (v.position), 1.0);
   const float3x3 nrm (draw.nrm0.xyz, draw.nrm1.xyz, draw.nrm2.xyz);
+
+  if (v.flags.z)
+    world.xyz = moppe_wind (world.xyz, float (v.flags.z) / 255.0,
+			    frame.misc.x);
 
   UberVaryings out;
   out.position = frame.view_proj * world;

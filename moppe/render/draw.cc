@@ -13,6 +13,7 @@ namespace render {
       m_u (0), m_v (0),
       m_lit (true),
       m_fogged (true),
+      m_wind (0),
       m_texture (0),
       m_prim (Prim::Triangles),
       m_in_begin (false)
@@ -28,6 +29,7 @@ namespace render {
     m_u = m_v = 0;
     m_lit = true;
     m_fogged = true;
+    m_wind = 0;
     m_texture = 0;
     m_state = DrawState ();
     m_in_begin = false;
@@ -105,6 +107,7 @@ namespace render {
 
   void DrawList::lit (bool on)    { m_lit = on; }
   void DrawList::fogged (bool on) { m_fogged = on; }
+  void DrawList::wind (float w)   { m_wind = Color::quantize (w); }
 
   void DrawList::set_texture (const Texture* t) { m_texture = t; }
 
@@ -129,7 +132,8 @@ namespace render {
     v.color = m_color;
     v.lit = m_lit ? 1 : 0;
     v.fogged = m_fogged ? 1 : 0;
-    v.pad0 = v.pad1 = 0;
+    v.wind = m_wind;
+    v.pad1 = 0;
     return v;
   }
 

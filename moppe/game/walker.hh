@@ -31,8 +31,7 @@ namespace game {
     Vector3D position () const { return m_pos; }
     Vector3D heading () const { return m_heading; }
 
-    // The walk cycle runs off the distance-accumulated phase, not
-    // the clock; `time` is kept for call-site parity.
+    // The walk cycle runs off distance; time only drives idle breathing.
     void render (render::DrawList& dl, float time) const;
 
   private:

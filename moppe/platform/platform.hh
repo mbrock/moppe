@@ -4,6 +4,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <string>
+#include <vector>
 
 namespace moppe {
 namespace platform {
@@ -88,7 +89,7 @@ namespace platform {
     int width = 0, height = 0;
     int bearing_x = 0, bearing_y = 0;  // from origin to bitmap top-left
     float advance = 0;
-    std::basic_string<unsigned char> pixels;  // width*height coverage
+    std::vector<unsigned char> pixels;  // width*height coverage
   };
   bool rasterize_glyph (const char* font_family, float point_size,
 			float scale, unsigned int codepoint,

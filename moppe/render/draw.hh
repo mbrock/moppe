@@ -50,6 +50,9 @@ namespace render {
     void color (const Vector3D& c, float a = 1.0f);
     void lit (bool on);
     void fogged (bool on);
+    // Wind sway weight for subsequent vertices (0 = anchored, 1 =
+    // full amplitude); the scene vertex shader animates it.
+    void wind (float w);
     void set_texture (const Texture* t);
     void normal (const Vector3D& n);
     void uv (float u, float v);
@@ -99,6 +102,7 @@ namespace render {
     float m_u, m_v;
     bool m_lit;
     bool m_fogged;
+    uint8_t m_wind;
     const Texture* m_texture;
     DrawState m_state;
 
