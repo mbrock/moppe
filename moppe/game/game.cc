@@ -655,7 +655,10 @@ namespace game {
       fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
       fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
       fp.clear_color = terrain_lab
-	? Vector3D (0.012f, 0.016f, 0.022f) : m_fog;
+	? (m_terrain_lab.cover_view ()
+	   ? Vector3D (0.10f, 0.13f, 0.16f)
+	   : Vector3D (0.012f, 0.016f, 0.022f))
+	: m_fog;
       const float scene_fog = terrain_lab ? 0.0f : m_world.fog_scale;
       fp.fog_scale = scene_fog;
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
