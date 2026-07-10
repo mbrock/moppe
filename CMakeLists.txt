@@ -20,8 +20,12 @@ endif()
 
 project(moppe LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 11)
+include(CTest)
+find_package(ZLIB REQUIRED)
+
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall)
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
@@ -29,7 +33,9 @@ set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
 
 if(APPLE)
   enable_language(OBJCXX)
-  set(CMAKE_OBJCXX_STANDARD 11)
+  set(CMAKE_OBJCXX_STANDARD 23)
+  set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+  set(CMAKE_OBJCXX_EXTENSIONS OFF)
 endif()
 
 # ---------------------------------------------------------------
@@ -128,6 +134,32 @@ add_library(moppe_render STATIC
   moppe/render/text.cc
 )
 target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Runtime scalar-field expressions plus evaluator backends.  This stays
+# independent of game and platform code so tools and tests use the same DAG.
+add_library(moppe_terrain STATIC
+  moppe/terrain/field.cc
+  moppe/terrain/cpu_evaluator.cc
+  moppe/terrain/image.cc
+)
+target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(moppe_terrain PUBLIC ZLIB::ZLIB)
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(terrain-field-demo moppe/terrain/field_demo.cc)
+  target_link_libraries(terrain-field-demo PRIVATE moppe_terrain)
+endif()
+
+if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(moppe-unit-tests
+    tests/test_main.cc
+    tests/terrain/field_test.cc
+    tests/terrain/cpu_evaluator_test.cc
+    tests/terrain/image_test.cc
+  )
+  target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
+  add_test(NAME moppe-unit-tests COMMAND moppe-unit-tests)
+endif()
 
 # Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
