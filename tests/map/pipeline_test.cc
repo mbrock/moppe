@@ -1,4 +1,5 @@
 #include <moppe/map/generate.hh>
+#include <moppe/map/terrain_evaluator.hh>
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/program.hh>
 #include <moppe/terrain/topology.hh>
@@ -21,6 +22,11 @@ namespace {
 	  return false;
     return true;
   }
+
+  void evaluate (moppe::map::RandomHeightMap& target,
+		 const moppe::terrain::TerrainProgram& program) {
+    moppe::map::TerrainEvaluator (target).evaluate (program);
+  }
 }
 
 MOPPE_TEST (pipeline_replays_the_direct_generation_sequence) {
@@ -38,7 +44,7 @@ MOPPE_TEST (pipeline_replays_the_direct_generation_sequence) {
   pipeline.transforms.emplace_back (HydraulicErosion { 200 });
   pipeline.transforms.emplace_back (ThermalErosion { 1, 0.003f });
   map::RandomHeightMap replayed (65, 65, size, 999);
-  replayed.run_pipeline (pipeline);
+  evaluate (replayed, pipeline);
 
   MOPPE_CHECK (maps_match (legacy, replayed));
 }
@@ -52,8 +58,8 @@ MOPPE_TEST (running_a_pipeline_twice_is_deterministic) {
   map::RandomHeightMap first (33, 33, size, 0);
   map::RandomHeightMap second (33, 33, size, 1);
 
-  first.run_pipeline (pipeline);
-  second.run_pipeline (pipeline);
+  evaluate (first, pipeline);
+  evaluate (second, pipeline);
   MOPPE_CHECK (maps_match (first, second));
 }
 
@@ -73,18 +79,18 @@ MOPPE_TEST (pipeline_checkpoint_resume_matches_complete_replay) {
   map::RandomHeightMap resumed
     (65, 65, size, 0, Topology::Torus);
 
-  replayed.run_pipeline (pipeline);
-  resumed.begin_pipeline (pipeline);
-  resumed.apply_pipeline_stage (pipeline.transforms[0]);
-  const map::RandomHeightMap::PipelineState checkpoint =
-    resumed.capture_pipeline_state ();
-  resumed.apply_pipeline_stage (HydraulicErosion {
+  evaluate (replayed, pipeline);
+  map::TerrainEvaluator evaluator (resumed);
+  evaluator.begin (pipeline);
+  evaluator.apply (pipeline.transforms[0]);
+  const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
+  evaluator.apply (HydraulicErosion {
     .droplets = 3,
     .batch_size = 1
   });
-  resumed.restore_pipeline_state (checkpoint);
+  evaluator.restore (checkpoint);
   for (std::size_t i = 1; i < pipeline.transforms.size (); ++i)
-    resumed.apply_pipeline_stage (pipeline.transforms[i]);
+    evaluator.apply (pipeline.transforms[i]);
 
   MOPPE_CHECK (maps_match (replayed, resumed));
 }
@@ -99,7 +105,7 @@ MOPPE_TEST (periodic_pipeline_preserves_height_and_normal_seams) {
   pipeline.transforms.emplace_back (PowerHeights { 1.15f });
   pipeline.transforms.emplace_back (HydraulicErosion { 400 });
   pipeline.transforms.emplace_back (ThermalErosion { 2, 0.003f });
-  map.run_pipeline (pipeline);
+  evaluate (map, pipeline);
   map.recompute_normals ();
 
   MOPPE_CHECK (map.periodic ());
@@ -164,8 +170,8 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
   map::RandomHeightMap second
     (65, 65, size, 1, Topology::Torus);
 
-  first.run_pipeline (pipeline);
-  second.run_pipeline (pipeline);
+  evaluate (first, pipeline);
+  evaluate (second, pipeline);
 
   MOPPE_CHECK (maps_match (first, second));
   for (int i = 0; i < first.width (); ++i)
@@ -189,8 +195,8 @@ MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
   map::RandomHeightMap sixty_four_at_a_time
     (65, 65, size, 0, Topology::Torus);
 
-  one_at_a_time.run_pipeline (serial);
-  sixty_four_at_a_time.run_pipeline (batched);
+  evaluate (one_at_a_time, serial);
+  evaluate (sixty_four_at_a_time, batched);
 
   MOPPE_CHECK (!maps_match (one_at_a_time, sixty_four_at_a_time));
 }

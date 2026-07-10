@@ -168,6 +168,7 @@ endif()
 # Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
   moppe/map/generate.cc
+  moppe/map/terrain_evaluator.cc
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
