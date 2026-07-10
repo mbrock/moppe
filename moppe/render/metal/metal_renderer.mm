@@ -256,11 +256,20 @@ namespace render {
 #endif
 
     NSError* error = nil;
-    NSURL* url = [NSURL fileURLWithPath:
-		    [NSString stringWithUTF8String: lib_path.c_str ()]];
-    m_library = [m_device newLibraryWithURL: url error: &error];
+    NSString* path = [NSString stringWithUTF8String: lib_path.c_str ()];
+    NSURL* url = [NSURL fileURLWithPath: path];
+    if ([path.pathExtension isEqualToString: @"metal"]) {
+      NSString* source = [NSString stringWithContentsOfFile: path
+					   encoding: NSUTF8StringEncoding
+					      error: &error];
+      if (source)
+	m_library = [m_device newLibraryWithSource: source
+					 options: nil error: &error];
+    } else {
+      m_library = [m_device newLibraryWithURL: url error: &error];
+    }
     if (!m_library) {
-      std::cerr << "moppe: failed to load metallib at " << lib_path
+      std::cerr << "moppe: failed to load shader library at " << lib_path
 		<< ": "
 		<< (error ? error.localizedDescription.UTF8String : "?")
 		<< std::endl;

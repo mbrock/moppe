@@ -166,7 +166,7 @@ namespace platform {
       window.contentView = view;
 
       // The renderer configures the view (formats, colorspace).
-      std::string lib = asset_path ("moppe.metallib");
+      std::string lib = asset_path (MOPPE_SHADER_NAME);
       render::Renderer* renderer =
 	render::create_metal_renderer ((__bridge void*) view, lib);
 

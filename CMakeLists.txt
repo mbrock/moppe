@@ -50,30 +50,65 @@ set(MOPPE_METAL_DEPS
   moppe/render/metal/shader_types.h
 )
 
-set(MOPPE_AIR_FILES)
-foreach(src ${MOPPE_METAL_SOURCES})
-  get_filename_component(name ${src} NAME_WE)
-  set(air ${CMAKE_CURRENT_BINARY_DIR}/${name}.air)
-  add_custom_command(
-    OUTPUT ${air}
-    COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
-            -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
-            -o ${air}
-    DEPENDS ${src} ${MOPPE_METAL_DEPS}
-    COMMENT "Compiling ${src} (${MOPPE_METAL_SDK})"
-    VERBATIM)
-  list(APPEND MOPPE_AIR_FILES ${air})
-endforeach()
+execute_process(
+  COMMAND xcrun -sdk ${MOPPE_METAL_SDK} -find metal
+  RESULT_VARIABLE MOPPE_METAL_RESULT
+  OUTPUT_QUIET ERROR_QUIET)
 
-set(MOPPE_METALLIB ${CMAKE_CURRENT_BINARY_DIR}/moppe.metallib)
-add_custom_command(
-  OUTPUT ${MOPPE_METALLIB}
-  COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metallib
-          ${MOPPE_AIR_FILES} -o ${MOPPE_METALLIB}
-  DEPENDS ${MOPPE_AIR_FILES}
-  COMMENT "Linking moppe.metallib (${MOPPE_METAL_SDK})"
-  VERBATIM)
-add_custom_target(moppe_shaders DEPENDS ${MOPPE_METALLIB})
+if(MOPPE_METAL_RESULT EQUAL 0)
+  set(MOPPE_AIR_FILES)
+  foreach(src ${MOPPE_METAL_SOURCES})
+    get_filename_component(name ${src} NAME_WE)
+    set(air ${CMAKE_CURRENT_BINARY_DIR}/${name}.air)
+    add_custom_command(
+      OUTPUT ${air}
+      COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
+              -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
+              -o ${air}
+      DEPENDS ${src} ${MOPPE_METAL_DEPS}
+      COMMENT "Compiling ${src} (${MOPPE_METAL_SDK})"
+      VERBATIM)
+    list(APPEND MOPPE_AIR_FILES ${air})
+  endforeach()
+
+  set(MOPPE_SHADER_ASSET ${CMAKE_CURRENT_BINARY_DIR}/moppe.metallib)
+  set(MOPPE_SHADER_NAME moppe.metallib)
+  add_custom_command(
+    OUTPUT ${MOPPE_SHADER_ASSET}
+    COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metallib
+            ${MOPPE_AIR_FILES} -o ${MOPPE_SHADER_ASSET}
+    DEPENDS ${MOPPE_AIR_FILES}
+    COMMENT "Linking moppe.metallib (${MOPPE_METAL_SDK})"
+    VERBATIM)
+else()
+  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    message(FATAL_ERROR "The iOS build requires Xcode's Metal toolchain")
+  endif()
+
+  # Command Line Tools includes the Metal runtime but not the offline shader
+  # compiler.  Build one self-contained source file for runtime compilation.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    ${MOPPE_METAL_SOURCES} ${MOPPE_METAL_DEPS})
+  file(READ moppe/render/metal/shader_types.h MOPPE_METAL_SOURCE)
+  file(READ moppe/shaders/metal/common.h MOPPE_METAL_COMMON)
+  string(REPLACE
+    "#include \"../../render/metal/shader_types.h\"" ""
+    MOPPE_METAL_COMMON "${MOPPE_METAL_COMMON}")
+  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_COMMON}\n")
+  foreach(src ${MOPPE_METAL_SOURCES})
+    file(READ ${src} MOPPE_METAL_PART)
+    string(REPLACE "#include \"common.h\"" ""
+      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
+    string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
+  endforeach()
+  set(MOPPE_SHADER_ASSET ${CMAKE_CURRENT_BINARY_DIR}/moppe.metal)
+  set(MOPPE_SHADER_NAME moppe.metal)
+  file(WRITE ${MOPPE_SHADER_ASSET} "${MOPPE_METAL_SOURCE}")
+  message(STATUS
+    "Metal compiler not found; shaders will compile at runtime on macOS")
+endif()
+
+add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
 
 # ---------------------------------------------------------------
 # Portable core: rendering abstraction + game-independent code.
@@ -174,7 +209,8 @@ if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
   add_custom_command(TARGET moppe-ios POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_METALLIB} $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/moppe.metallib
+      ${MOPPE_SHADER_ASSET}
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/${MOPPE_SHADER_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/textures
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-ios>/textures
@@ -191,6 +227,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_include_directories(moppe_platform_mac
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(moppe_platform_mac PRIVATE -fobjc-arc)
+  target_compile_definitions(moppe_platform_mac PRIVATE
+    MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
   target_link_libraries(moppe_platform_mac PUBLIC
     moppe_metal moppe_apple "-framework AppKit")
 
@@ -212,7 +250,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     MACOSX_BUNDLE_BUNDLE_VERSION "1")
   add_custom_command(TARGET moppe POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${MOPPE_METALLIB} $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/moppe.metallib
+      ${MOPPE_SHADER_ASSET}
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       ${CMAKE_CURRENT_SOURCE_DIR}/textures
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/textures
