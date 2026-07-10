@@ -1,6 +1,6 @@
 #include <moppe/map/generate.hh>
 #include <moppe/terrain/image.hh>
-#include <moppe/terrain/pipeline.hh>
+#include <moppe/terrain/program.hh>
 
 #include <cstdint>
 #include <fstream>
@@ -28,21 +28,21 @@ namespace {
     return value;
   }
 
-  void apply_option (moppe::terrain::TerrainPipeline& pipeline,
+  void apply_option (moppe::terrain::TerrainProgram& pipeline,
 		     std::string_view option) {
     using namespace moppe::terrain;
     if (option == "world") {
       const GeologicalLayer layer = pipeline.layer;
-      pipeline = make_default_world_pipeline (pipeline.randomness.seed);
+      pipeline = make_default_world_program (pipeline.randomness.seed);
       pipeline.layer = layer;
       return;
     }
     if (option == "raw") {
-      pipeline.stages.clear ();
+      pipeline.transforms.clear ();
       return;
     }
     if (option == "normalize") {
-      pipeline.stages.emplace_back (NormalizeHeights { });
+      pipeline.transforms.emplace_back (NormalizeHeights { });
       return;
     }
 
@@ -54,13 +54,13 @@ namespace {
     const std::string_view value = option.substr (equals + 1);
 
     if (name == "power")
-      pipeline.stages.emplace_back (PowerHeights { parse_float (value) });
+      pipeline.transforms.emplace_back (PowerHeights { parse_float (value) });
     else if (name == "hydraulic") {
       const std::size_t comma = value.find (',');
       const int droplets = parse_int (value.substr (0, comma));
       const int batch_size = comma == std::string_view::npos
 	? 256 : parse_int (value.substr (comma + 1));
-      pipeline.stages.emplace_back (HydraulicErosion {
+      pipeline.transforms.emplace_back (HydraulicErosion {
 	.droplets = droplets,
 	.batch_size = batch_size
       });
@@ -70,7 +70,7 @@ namespace {
       if (comma == std::string_view::npos)
 	throw std::invalid_argument
 	  ("thermal expects iterations,talus");
-      pipeline.stages.emplace_back (ThermalErosion {
+      pipeline.transforms.emplace_back (ThermalErosion {
 	parse_int (value.substr (0, comma)),
 	parse_float (value.substr (comma + 1))
       });
@@ -115,7 +115,7 @@ int main (int argc, char** argv) {
       throw std::invalid_argument
 	("unknown layer: " + std::string (layer_id));
 
-    TerrainPipeline pipeline = make_geological_pipeline (seed, *layer);
+    TerrainProgram pipeline = make_geological_program (seed, *layer);
     for (int i = 5; i < argc; ++i)
       apply_option (pipeline, argv[i]);
 
@@ -140,8 +140,8 @@ int main (int argc, char** argv) {
     std::cout << "wrote " << path << " (" << layer_id << ", seed "
 	      << seed << ", " << resolution << "x" << resolution
 	      << ", stages";
-    for (const PipelineStage& stage : pipeline.stages)
-      std::cout << " " << pipeline_stage_id (stage);
+    for (const TerrainTransform& stage : pipeline.transforms)
+      std::cout << " " << terrain_transform_id (stage);
     std::cout << ")\n";
   } catch (const std::exception& error) {
     std::cerr << "terrain pipeline demo: " << error.what () << "\n";

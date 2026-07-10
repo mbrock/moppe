@@ -141,7 +141,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/field.cc
   moppe/terrain/cpu_evaluator.cc
   moppe/terrain/geological.cc
-  moppe/terrain/pipeline.cc
+  moppe/terrain/program.cc
   moppe/terrain/image.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

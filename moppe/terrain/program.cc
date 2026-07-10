@@ -1,37 +1,37 @@
-#include <moppe/terrain/pipeline.hh>
+#include <moppe/terrain/program.hh>
 
 #include <cmath>
 #include <stdexcept>
 #include <type_traits>
 
 namespace moppe::terrain {
-  TerrainPipeline make_geological_pipeline
+  TerrainProgram make_geological_program
     (std::uint32_t root_seed, GeologicalLayer layer) {
     return {
       .recipe = make_geological_recipe (root_seed),
       .layer = layer,
       .randomness = { .seed = root_seed, .offset = 3 },
-      .stages = { NormalizeHeights { } }
+      .transforms = { NormalizeHeights { } }
     };
   }
 
-  TerrainPipeline make_default_world_pipeline
+  TerrainProgram make_default_world_program
     (std::uint32_t root_seed) {
-    TerrainPipeline pipeline = make_geological_pipeline (root_seed);
+    TerrainProgram program = make_geological_program (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
-    pipeline.stages.emplace_back (PowerHeights { 1.15f });
-    pipeline.stages.emplace_back (HydraulicErosion {
+    program.transforms.emplace_back (PowerHeights { 1.15f });
+    program.transforms.emplace_back (HydraulicErosion {
       .droplets = 1500000,
       .batch_size = 256
     });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
-    pipeline.stages.emplace_back (ThermalErosion { 2, 0.003f });
-    return pipeline;
+    program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+    return program;
   }
 
-  void validate_pipeline (const TerrainPipeline& pipeline) {
-    validate_geological_recipe (pipeline.recipe);
-    for (const PipelineStage& stage : pipeline.stages) {
+  void validate_program (const TerrainProgram& program) {
+    validate_geological_recipe (program.recipe);
+    for (const TerrainTransform& transform : program.transforms) {
       std::visit ([] (const auto& operation) {
 	using T = std::decay_t<decltype (operation)>;
 	if constexpr (std::is_same_v<T, PowerHeights>) {
@@ -51,11 +51,12 @@ namespace moppe::terrain {
 	    throw std::invalid_argument
 	      ("thermal erosion parameters are invalid");
 	}
-      }, stage);
+      }, transform);
     }
   }
 
-  std::string_view pipeline_stage_id (const PipelineStage& stage) {
+  std::string_view terrain_transform_id
+    (const TerrainTransform& transform) {
     return std::visit ([] (const auto& operation) -> std::string_view {
       using T = std::decay_t<decltype (operation)>;
       if constexpr (std::is_same_v<T, NormalizeHeights>)
@@ -66,6 +67,21 @@ namespace moppe::terrain {
 	return "hydraulic";
       else
 	return "thermal";
-    }, stage);
+    }, transform);
+  }
+
+  TransformSemantics terrain_transform_semantics
+    (const TerrainTransform& transform) {
+    return std::visit ([] (const auto& operation) -> TransformSemantics {
+      using T = std::decay_t<decltype (operation)>;
+      if constexpr (std::is_same_v<T, PowerHeights>)
+	return { SpatialScope::Pointwise, EvaluationOrder::Direct };
+      else if constexpr (std::is_same_v<T, NormalizeHeights>)
+	return { SpatialScope::Global, EvaluationOrder::Reduction };
+      else if constexpr (std::is_same_v<T, ThermalErosion>)
+	return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
+      else
+	return { SpatialScope::Global, EvaluationOrder::Iterative };
+    }, transform);
   }
 }
