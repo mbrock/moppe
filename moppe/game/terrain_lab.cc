@@ -9,7 +9,7 @@ namespace game {
   TerrainLab::TerrainLab ()
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false), m_seed (0),
-      m_field (map::GeologicalField::Combined),
+      m_layer (terrain::GeologicalLayer::Combined),
       m_droplets (0), m_thermal_passes (0),
       m_yaw (0.72f), m_pitch (0.62f), m_distance (5600.0f),
       m_orbit_left (false), m_orbit_right (false),
@@ -38,7 +38,7 @@ namespace game {
     m_world = &world;
     m_sun_dir = sun_dir;
     m_seed = seed;
-    m_field = map::GeologicalField::Combined;
+    m_layer = terrain::GeologicalLayer::Combined;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -80,11 +80,11 @@ namespace game {
   }
 
   void
-  TerrainLab::select (map::GeologicalField field)
+  TerrainLab::select (terrain::GeologicalLayer layer)
   {
-    if (field == m_field && m_droplets == 0 && m_thermal_passes == 0)
+    if (layer == m_layer && m_droplets == 0 && m_thermal_passes == 0)
       return;
-    m_field = field;
+    m_layer = layer;
     reset_field ();
   }
 
@@ -94,7 +94,7 @@ namespace game {
     if (!m_map)
       return;
     m_map->reseed (m_seed);
-    m_map->randomize_geologically (m_field);
+    m_map->randomize_geologically (m_layer);
     m_droplets = 0;
     m_thermal_passes = 0;
     refresh ();
@@ -154,13 +154,13 @@ namespace game {
       return;
 
     switch (key) {
-    case Key::One:   select (map::GeologicalField::Combined); break;
-    case Key::Two:   select (map::GeologicalField::Continent); break;
-    case Key::Three: select (map::GeologicalField::Plains); break;
-    case Key::Four:  select (map::GeologicalField::Mountains); break;
-    case Key::Five:  select (map::GeologicalField::MountainMask); break;
-    case Key::Six:   select (map::GeologicalField::WarpX); break;
-    case Key::Seven: select (map::GeologicalField::WarpY); break;
+    case Key::One:   select (terrain::GeologicalLayer::Combined); break;
+    case Key::Two:   select (terrain::GeologicalLayer::Continent); break;
+    case Key::Three: select (terrain::GeologicalLayer::Plains); break;
+    case Key::Four:  select (terrain::GeologicalLayer::Mountains); break;
+    case Key::Five:  select (terrain::GeologicalLayer::MountainMask); break;
+    case Key::Six:   select (terrain::GeologicalLayer::WarpX); break;
+    case Key::Seven: select (terrain::GeologicalLayer::WarpY); break;
     case Key::R:
       reset_field ();
       break;
@@ -223,7 +223,8 @@ namespace game {
     std::ostringstream seed;
     seed << "Seed " << m_seed;
     m_ui.label (dl, 28, 67, seed.str ());
-    m_ui.label (dl, 28, 88, map::geological_field_name (m_field), true);
+    m_ui.label
+      (dl, 28, 88, terrain::geological_layer_name (m_layer), true);
 
     std::ostringstream transforms;
     transforms << "Transforms: " << m_droplets << " droplets, "

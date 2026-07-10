@@ -3,6 +3,7 @@
 
 #include <tests/test.hh>
 
+#include <cmath>
 #include <numbers>
 
 using namespace moppe::terrain;
@@ -50,4 +51,27 @@ MOPPE_TEST (cpu_evaluator_rejects_degenerate_domains) {
     threw = true;
   }
   MOPPE_CHECK (threw);
+}
+
+MOPPE_TEST (normalization_is_an_explicit_materialization_barrier) {
+  const Domain2D domain { .width = 3, .height = 2 };
+  const ScalarRaster ramp = CpuEvaluator ().evaluate
+    (2.0f + 4.0f * coordinate_x (), domain);
+  const ScalarRaster normalized = normalize (ramp);
+
+  MOPPE_CHECK_NEAR (normalized.at (0, 0), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (normalized.at (1, 0), 0.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (normalized.at (2, 0), 1.0f, 1e-6f);
+}
+
+MOPPE_TEST (multiply_add_preserves_fused_float_semantics) {
+  const float a = 0.15f;
+  const float b = 0.1234567f;
+  const float c = 0.7654321f;
+  const ScalarField field = multiply_add
+    (constant (a), constant (b), constant (c));
+  const ScalarRaster raster = CpuEvaluator ().evaluate
+    (field, { .width = 2, .height = 2 });
+
+  MOPPE_CHECK (raster.at (0, 0) == std::fma (a, b, c));
 }

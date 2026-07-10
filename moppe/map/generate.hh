@@ -3,6 +3,7 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
+#include <moppe/terrain/geological.hh>
 
 #include <iostream>
 #include <memory>
@@ -12,18 +13,6 @@
 
 namespace moppe {
 namespace map {
-  enum class GeologicalField {
-    Combined,
-    Continent,
-    Plains,
-    Mountains,
-    MountainMask,
-    WarpX,
-    WarpY
-  };
-
-  const char* geological_field_name (GeologicalField field);
-
   // Contiguous row-major 2D array; at (y, x) preserves the old
   // boost::multi_array m_data[y][x] indexing.
   template <typename T>
@@ -211,7 +200,7 @@ namespace map {
     // ridged mountains up high.  Leaves normals to the caller so
     // further shaping passes can run first.
     void randomize_geologically
-      (GeologicalField field = GeologicalField::Combined);
+      (terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized

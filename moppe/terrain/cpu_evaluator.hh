@@ -41,6 +41,11 @@ namespace moppe::terrain {
     ScalarRaster evaluate (const ScalarField& field,
 			   const Domain2D& domain) const;
   };
+
+  // A materialization barrier: remaps the sampled minimum and maximum to
+  // zero and one.  Constant rasters become zero, matching HeightMap's
+  // existing normalization semantics.
+  ScalarRaster normalize (const ScalarRaster& raster);
 }
 
 #endif

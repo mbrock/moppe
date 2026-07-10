@@ -1,9 +1,12 @@
 #include <moppe/terrain/cpu_evaluator.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <random>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
@@ -11,16 +14,153 @@
 
 namespace moppe::terrain {
   namespace {
+    std::uint32_t bounded_random (std::mt19937& rng,
+				  std::uint32_t bound) {
+      // Match libc++'s unbiased bit-mask rejection, which the original
+      // macOS generator used.  Keeping it explicit also makes geological
+      // seeds independent of the standard-library implementation.
+      std::uint32_t mask = bound - 1;
+      mask |= mask >> 1;
+      mask |= mask >> 2;
+      mask |= mask >> 4;
+      mask |= mask >> 8;
+      mask |= mask >> 16;
+      std::uint32_t value;
+      do
+	value = rng () & mask;
+      while (value >= bound);
+      return value;
+    }
+
+    class PerlinTable {
+    public:
+      explicit PerlinTable (std::uint32_t seed) {
+	std::mt19937 rng (seed);
+	std::array<int, 256> shuffled;
+	for (int i = 0; i < 256; ++i)
+	  shuffled[i] = i;
+	for (int i = 255; i > 0; --i) {
+	  const int j = static_cast<int>
+	    (bounded_random (rng, static_cast<std::uint32_t> (i + 1)));
+	  std::swap (shuffled[i], shuffled[j]);
+	}
+	for (int i = 0; i < 512; ++i)
+	  m_permutation[i] = shuffled[i & 255];
+      }
+
+      float noise (float x, float y) const {
+	const float floor_x = std::floor (x);
+	const float floor_y = std::floor (y);
+	const int xi = static_cast<int> (floor_x) & 255;
+	const int yi = static_cast<int> (floor_y) & 255;
+	const float xf = x - floor_x;
+	const float yf = y - floor_y;
+	const float u = fade (xf);
+	const float v = fade (yf);
+
+	const int aa = m_permutation[m_permutation[xi] + yi];
+	const int ab = m_permutation[m_permutation[xi] + yi + 1];
+	const int ba = m_permutation[m_permutation[xi + 1] + yi];
+	const int bb = m_permutation[m_permutation[xi + 1] + yi + 1];
+
+	return lerp
+	  (lerp (grad (aa, xf, yf), grad (ba, xf - 1, yf), u),
+	   lerp (grad (ab, xf, yf - 1),
+		 grad (bb, xf - 1, yf - 1), u), v);
+      }
+
+      float fbm (float x, float y, int octaves,
+		  float lacunarity, float gain) const {
+	float sum = 0, amplitude = 1, frequency = 1, norm = 0;
+	for (int i = 0; i < octaves; ++i) {
+	  sum += amplitude * noise (x * frequency, y * frequency);
+	  norm += amplitude;
+	  amplitude *= gain;
+	  frequency *= lacunarity;
+	}
+	return sum / norm;
+      }
+
+      float ridged (float x, float y, int octaves,
+		     float lacunarity, float gain) const {
+	float sum = 0, amplitude = 0.5f, frequency = 1;
+	float weight = 1, norm = 0;
+	for (int i = 0; i < octaves; ++i) {
+	  float value = 1.0f
+	    - std::fabs (noise (x * frequency, y * frequency));
+	  value *= value;
+	  value *= weight;
+	  weight = std::clamp (value * 2.0f, 0.0f, 1.0f);
+	  sum += value * amplitude;
+	  norm += amplitude;
+	  amplitude *= gain;
+	  frequency *= lacunarity;
+	}
+	return sum / norm;
+      }
+
+    private:
+      static float fade (float value) {
+	return value * value * value
+	  * (value * (value * 6 - 15) + 10);
+      }
+
+      static float lerp (float a, float b, float amount) {
+	return a + amount * (b - a);
+      }
+
+      static float grad (int hash, float x, float y) {
+	switch (hash & 7) {
+	case 0:  return  x + y;
+	case 1:  return  x - y;
+	case 2:  return -x + y;
+	case 3:  return -x - y;
+	case 4:  return  x;
+	case 5:  return -x;
+	case 6:  return  y;
+	default: return -y;
+	}
+      }
+
+      std::array<int, 512> m_permutation;
+    };
+
     struct LoadConstant { float value; };
     struct LoadX { };
     struct LoadY { };
     struct AddRegisters { std::size_t left, right; };
+    struct SubtractRegisters { std::size_t left, right; };
     struct MultiplyRegisters { std::size_t left, right; };
+    struct MultiplyAddRegisters {
+      std::size_t multiplier, multiplicand, addend;
+    };
     struct SineRegister { std::size_t operand; };
+    struct SmoothstepRegister {
+      float edge0, edge1;
+      std::size_t operand;
+    };
+    struct PerlinRegister {
+      std::shared_ptr<const PerlinTable> table;
+      std::size_t x, y;
+    };
+    struct FbmRegister {
+      std::shared_ptr<const PerlinTable> table;
+      std::size_t x, y;
+      int octaves;
+      float lacunarity, gain;
+    };
+    struct RidgedRegister {
+      std::shared_ptr<const PerlinTable> table;
+      std::size_t x, y;
+      int octaves;
+      float lacunarity, gain;
+    };
 
     using Instruction = std::variant
-      <LoadConstant, LoadX, LoadY, AddRegisters,
-       MultiplyRegisters, SineRegister>;
+      <LoadConstant, LoadX, LoadY, AddRegisters, SubtractRegisters,
+       MultiplyRegisters, MultiplyAddRegisters, SineRegister,
+       SmoothstepRegister,
+       PerlinRegister, FbmRegister, RidgedRegister>;
 
     struct Program {
       std::vector<Instruction> instructions;
@@ -31,6 +171,16 @@ namespace moppe::terrain {
       Program program;
       program.instructions.reserve (unique_node_count (field));
       std::unordered_map<const expression::Node*, std::size_t> registers;
+      std::unordered_map
+	<std::uint32_t, std::shared_ptr<const PerlinTable>> tables;
+
+      const auto table_for = [&tables] (std::uint32_t seed) {
+	if (const auto found = tables.find (seed); found != tables.end ())
+	  return found->second;
+	auto table = std::make_shared<const PerlinTable> (seed);
+	tables.emplace (seed, table);
+	return table;
+      };
 
       std::function<std::size_t (const expression::NodePtr&)> emit;
       emit = [&] (const expression::NodePtr& node) -> std::size_t {
@@ -50,11 +200,36 @@ namespace moppe::terrain {
 	    else if constexpr (std::is_same_v<T, expression::Add>)
 	      return AddRegisters
 		{ emit (operation.left), emit (operation.right) };
+	    else if constexpr (std::is_same_v<T, expression::Subtract>)
+	      return SubtractRegisters
+		{ emit (operation.left), emit (operation.right) };
 	    else if constexpr (std::is_same_v<T, expression::Multiply>)
 	      return MultiplyRegisters
 		{ emit (operation.left), emit (operation.right) };
-	    else
+	    else if constexpr (std::is_same_v<T, expression::MultiplyAdd>)
+	      return MultiplyAddRegisters
+		{ emit (operation.multiplier), emit (operation.multiplicand),
+		  emit (operation.addend) };
+	    else if constexpr (std::is_same_v<T, expression::Sine>)
 	      return SineRegister { emit (operation.operand) };
+	    else if constexpr (std::is_same_v<T, expression::Smoothstep>)
+	      return SmoothstepRegister
+		{ operation.edge0, operation.edge1,
+		  emit (operation.operand) };
+	    else if constexpr (std::is_same_v<T, expression::PerlinNoise>)
+	      return PerlinRegister
+		{ table_for (operation.seed), emit (operation.x),
+		  emit (operation.y) };
+	    else if constexpr (std::is_same_v<T, expression::FbmNoise>)
+	      return FbmRegister
+		{ table_for (operation.seed), emit (operation.x),
+		  emit (operation.y), operation.octaves,
+		  operation.lacunarity, operation.gain };
+	    else
+	      return RidgedRegister
+		{ table_for (operation.seed), emit (operation.x),
+		  emit (operation.y), operation.octaves,
+		  operation.lacunarity, operation.gain };
 	  }, node->operation);
 
 	const std::size_t index = program.instructions.size ();
@@ -109,13 +284,15 @@ namespace moppe::terrain {
     const Program program = compile (field);
     std::vector<float> registers (program.instructions.size ());
     std::vector<float> output (domain.width * domain.height);
+    const float inv_x = 1.0f / static_cast<float> (domain.width - 1);
+    const float inv_y = 1.0f / static_cast<float> (domain.height - 1);
 
     for (std::size_t y = 0; y < domain.height; ++y) {
-      const float fy = static_cast<float> (y) / (domain.height - 1);
+      const float fy = static_cast<float> (y) * inv_y;
       const float py = domain.min_y + fy * (domain.max_y - domain.min_y);
 
       for (std::size_t x = 0; x < domain.width; ++x) {
-	const float fx = static_cast<float> (x) / (domain.width - 1);
+        const float fx = static_cast<float> (x) * inv_x;
 	const float px = domain.min_x
 	  + fx * (domain.max_x - domain.min_x);
 
@@ -130,10 +307,35 @@ namespace moppe::terrain {
 	      return py;
 	    else if constexpr (std::is_same_v<T, AddRegisters>)
 	      return registers[instruction.left] + registers[instruction.right];
+	    else if constexpr (std::is_same_v<T, SubtractRegisters>)
+	      return registers[instruction.left] - registers[instruction.right];
 	    else if constexpr (std::is_same_v<T, MultiplyRegisters>)
 	      return registers[instruction.left] * registers[instruction.right];
-	    else
+	    else if constexpr (std::is_same_v<T, MultiplyAddRegisters>)
+	      return std::fma (registers[instruction.multiplier],
+			       registers[instruction.multiplicand],
+			       registers[instruction.addend]);
+	    else if constexpr (std::is_same_v<T, SineRegister>)
 	      return std::sin (registers[instruction.operand]);
+	    else if constexpr (std::is_same_v<T, SmoothstepRegister>) {
+	      float amount = (registers[instruction.operand]
+			      - instruction.edge0)
+		/ (instruction.edge1 - instruction.edge0);
+	      amount = std::clamp (amount, 0.0f, 1.0f);
+	      return amount * amount * (3.0f - 2.0f * amount);
+	    } else if constexpr (std::is_same_v<T, PerlinRegister>)
+	      return instruction.table->noise
+		(registers[instruction.x], registers[instruction.y]);
+	    else if constexpr (std::is_same_v<T, FbmRegister>)
+	      return instruction.table->fbm
+		(registers[instruction.x], registers[instruction.y],
+		 instruction.octaves, instruction.lacunarity,
+		 instruction.gain);
+	    else
+	      return instruction.table->ridged
+		(registers[instruction.x], registers[instruction.y],
+		 instruction.octaves, instruction.lacunarity,
+		 instruction.gain);
 	  }, program.instructions[i]);
 	}
 
@@ -142,5 +344,16 @@ namespace moppe::terrain {
     }
 
     return ScalarRaster (domain, std::move (output));
+  }
+
+  ScalarRaster normalize (const ScalarRaster& raster) {
+    const float minimum = raster.min_value ();
+    const float range = raster.max_value () - minimum;
+    const float scale = range != 0.0f ? 1.0f / range : 0.0f;
+    std::vector<float> values;
+    values.reserve (raster.values ().size ());
+    for (float value : raster.values ())
+      values.push_back ((value - minimum) * scale);
+    return ScalarRaster (raster.domain (), std::move (values));
   }
 }

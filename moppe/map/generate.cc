@@ -2,6 +2,8 @@
 #include <moppe/map/generate.hh>
 #include <moppe/map/tga.hh>
 #include <moppe/gfx/math.hh>
+#include <moppe/terrain/cpu_evaluator.hh>
+#include <moppe/terrain/geological.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -15,21 +17,6 @@
 
 namespace moppe {
 namespace map {
-  const char*
-  geological_field_name (GeologicalField field)
-  {
-    switch (field) {
-    case GeologicalField::Combined:     return "combined terrain";
-    case GeologicalField::Continent:    return "continent field";
-    case GeologicalField::Plains:       return "plains detail";
-    case GeologicalField::Mountains:    return "ridged mountains";
-    case GeologicalField::MountainMask: return "mountain mask";
-    case GeologicalField::WarpX:        return "domain warp X";
-    case GeologicalField::WarpY:        return "domain warp Y";
-    }
-    return "unknown";
-  }
-
   NormalMap::NormalMap (int width, int height)
     : m_data   (width, height),
       m_width  (width),
@@ -164,103 +151,6 @@ namespace map {
       float operator () () { return dist (rng); }
     };
 
-    inline float sstep (float e0, float e1, float x) {
-      float t = (x - e0) / (e1 - e0);
-      t = t < 0 ? 0 : (t > 1 ? 1 : t);
-      return t * t * (3 - 2 * t);
-    }
-
-    // Classic 2D Perlin gradient noise with fBm and ridged-
-    // multifractal composites.
-    struct PerlinNoise {
-      int perm[512];
-
-      explicit PerlinNoise (unsigned seed) {
-	std::mt19937 rng;
-	rng.seed (std::mt19937::result_type (seed));
-	int p[256];
-	for (int i = 0; i < 256; ++i)
-	  p[i] = i;
-	for (int i = 255; i > 0; --i) {
-	  std::uniform_int_distribution<int> d (0, i);
-	  int j = d (rng);
-	  int t = p[i]; p[i] = p[j]; p[j] = t;
-	}
-	for (int i = 0; i < 512; ++i)
-	  perm[i] = p[i & 255];
-      }
-
-      static float fade (float t)
-      { return t * t * t * (t * (t * 6 - 15) + 10); }
-
-      static float lerp (float a, float b, float t)
-      { return a + t * (b - a); }
-
-      static float grad (int hash, float x, float y) {
-	switch (hash & 7) {
-	case 0:  return  x + y;
-	case 1:  return  x - y;
-	case 2:  return -x + y;
-	case 3:  return -x - y;
-	case 4:  return  x;
-	case 5:  return -x;
-	case 6:  return  y;
-	default: return -y;
-	}
-      }
-
-      float noise (float x, float y) const {
-	int xi = (int) std::floor (x) & 255;
-	int yi = (int) std::floor (y) & 255;
-	float xf = x - std::floor (x);
-	float yf = y - std::floor (y);
-
-	float u = fade (xf), v = fade (yf);
-
-	int aa = perm[perm[xi] + yi];
-	int ab = perm[perm[xi] + yi + 1];
-	int ba = perm[perm[xi + 1] + yi];
-	int bb = perm[perm[xi + 1] + yi + 1];
-
-	return lerp (lerp (grad (aa, xf, yf),
-			   grad (ba, xf - 1, yf), u),
-		     lerp (grad (ab, xf, yf - 1),
-			   grad (bb, xf - 1, yf - 1), u),
-		     v);
-      }
-
-      float fbm (float x, float y, int octaves,
-		 float lacunarity, float gain) const {
-	float sum = 0, amp = 1, freq = 1, norm = 0;
-	for (int i = 0; i < octaves; ++i) {
-	  sum += amp * noise (x * freq, y * freq);
-	  norm += amp;
-	  amp *= gain;
-	  freq *= lacunarity;
-	}
-	return sum / norm;  // roughly [-1, 1]
-      }
-
-      // Musgrave-style ridges: fold the noise at zero so its
-      // crossings become sharp crests, weight octaves by the one
-      // below so detail clings to the ridgelines.
-      float ridged (float x, float y, int octaves,
-		    float lacunarity, float gain) const {
-	float sum = 0, amp = 0.5f, freq = 1, weight = 1, norm = 0;
-	for (int i = 0; i < octaves; ++i) {
-	  float n = 1.0f - std::fabs (noise (x * freq, y * freq));
-	  n *= n;
-	  n *= weight;
-	  weight = n * 2.0f;
-	  weight = weight < 0 ? 0 : (weight > 1 ? 1 : weight);
-	  sum += n * amp;
-	  norm += amp;
-	  amp *= gain;
-	  freq *= lacunarity;
-	}
-	return sum / norm;  // [0, 1]
-      }
-    };
   }
 
   void
@@ -324,64 +214,25 @@ namespace map {
   }
 
   void
-  RandomHeightMap::randomize_geologically (GeologicalField field)
+  RandomHeightMap::randomize_geologically (terrain::GeologicalLayer layer)
   {
-    PerlinNoise base_noise (m_rng ());
-    PerlinNoise ridge_noise (m_rng ());
-    PerlinNoise warp_noise (m_rng ());
-
-    const float inv = 1.0f / (m_width - 1);
+    const terrain::GeologicalSeeds seeds {
+      .base = m_rng (),
+      .ridge = m_rng (),
+      .warp = m_rng ()
+    };
+    const terrain::GeologicalFields fields =
+      terrain::make_geological_fields (seeds);
+    const terrain::Domain2D domain {
+      .width = static_cast<std::size_t> (m_width),
+      .height = static_cast<std::size_t> (m_height)
+    };
+    const terrain::ScalarRaster raster = terrain::normalize
+      (terrain::CpuEvaluator ().evaluate
+	(terrain::geological_layer (fields, layer), domain));
 
     FORALL (x, y)
-      {
-	const float u = x * inv;
-	const float v = y * inv;
-
-	// Domain warp: bend all later lookups so ridges and coasts
-	// flow in curves instead of following the noise grid
-	float wx = warp_noise.fbm (u * 3.0f + 11.3f,
-				   v * 3.0f + 7.7f, 4, 2.0f, 0.5f);
-	float wy = warp_noise.fbm (u * 3.0f + 91.1f,
-				   v * 3.0f + 33.9f, 4, 2.0f, 0.5f);
-	const float pu = u + 0.15f * wx;
-	const float pv = v + 0.15f * wy;
-
-	// Broad continent shape: which parts are lowland or highland
-	float continent =
-	  base_noise.fbm (pu * 2.5f, pv * 2.5f, 4, 2.0f, 0.5f)
-	  * 0.5f + 0.5f;
-
-	// Gentle rolling detail for the plains
-	float plains =
-	  base_noise.fbm (pu * 12.0f, pv * 12.0f, 4, 2.0f, 0.5f)
-	  * 0.5f + 0.5f;
-
-	// Sharp ridged relief for the mountains
-	float mountains =
-	  ridge_noise.ridged (pu * 6.0f, pv * 6.0f, 6, 2.05f, 0.55f);
-
-	// Altitude decides the character: smooth low, ridgey high
-	const float mountain_mask = sstep (0.45f, 0.75f, continent);
-
-	float h = 0.0f;
-	switch (field) {
-	case GeologicalField::Combined:
-	  h = continent * 0.55f
-	    + plains * 0.12f * (1.0f - mountain_mask)
-	    + mountains * 0.65f * mountain_mask;
-	  break;
-	case GeologicalField::Continent:    h = continent; break;
-	case GeologicalField::Plains:       h = plains; break;
-	case GeologicalField::Mountains:    h = mountains; break;
-	case GeologicalField::MountainMask: h = mountain_mask; break;
-	case GeologicalField::WarpX:        h = wx; break;
-	case GeologicalField::WarpY:        h = wy; break;
-	}
-
-	set (x, y, h);
-      }
-
-    normalize ();
+      set (x, y, raster.at (x, y));
     // NB: no recompute_normals() here -- the caller shapes further
   }
 
