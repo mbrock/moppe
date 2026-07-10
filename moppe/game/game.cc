@@ -238,7 +238,7 @@ namespace game {
       } catch (const std::exception& e) {
 	std::cerr << "world generation failed: " << e.what ()
 		  << std::endl;
-	m_gen_stage = 7;
+	m_gen_stage = 8;
       }
     }
 
@@ -251,14 +251,25 @@ namespace game {
 	m_map.load_raw_u16 (platform::asset_path ("data/pico.u16"),
 			    0.1f, m_world.map_size.y);
       } else {
-	m_gen_stage = 3;
-	m_map.randomize_geologically ();
-	// Slight lowland squash; ~10-15% ends up as ocean
-	m_map.exponentiate (1.15);
-	m_gen_stage = 4;
-	m_map.erode_hydraulically (1500000);
-	// Talus angle ~40 degrees at 2.4m cells, 650m height scale
-	m_map.erode_thermally (2, 0.003f);
+	// MOPPE_MAPCACHE=<file>: load the finished heightfield when
+	// the file exists, otherwise generate as usual and save it.
+	// Skipping the erosion simulation turns a ~30 s boot into a
+	// couple of seconds for screenshot iteration.
+	const char* cache = ::getenv ("MOPPE_MAPCACHE");
+	if (cache && m_map.try_load_cache (cache)) {
+	  m_gen_stage = 7;
+	} else {
+	  m_gen_stage = 3;
+	  m_map.randomize_geologically ();
+	  // Slight lowland squash; ~10-15% ends up as ocean
+	  m_map.exponentiate (1.15);
+	  m_gen_stage = 4;
+	  m_map.erode_hydraulically (1500000);
+	  // Talus angle ~40 degrees at 2.4m cells, 650m height scale
+	  m_map.erode_thermally (2, 0.003f);
+	  if (cache)
+	    m_map.save_cache (cache);
+	}
       }
       m_gen_stage = 5;
       m_map.recompute_normals ();
@@ -277,7 +288,7 @@ namespace game {
     }
 
     void finish_setup () {
-      if (m_gen_stage == 7)
+      if (m_gen_stage == 8)
 	return;   // generation failed; loading screen shows why
       render::Renderer& r = *m_renderer;
 
@@ -688,10 +699,11 @@ namespace game {
 	"Eroding (1.5 million droplets)...",
 	"Computing normals, planting things...",
 	"Uploading to the GPU...",
+	"Loading cached terrain...",
 	"World generation failed -- see the log.",
       };
       const int stage = m_gen_stage;
-      const char* text = stages[stage < 0 ? 0 : stage > 7 ? 7 : stage];
+      const char* text = stages[stage < 0 ? 0 : stage > 8 ? 8 : stage];
 
       const float w = (float) r.width_pts ();
       const float h = (float) r.height_pts ();

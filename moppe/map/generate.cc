@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -378,6 +380,52 @@ namespace map {
 	const unsigned v = bytes[i] | (bytes[i + 1] << 8);
 	set (x, y, v * meters_per_unit / max_height_m);
       }
+  }
+
+  // Heightfield cache format: 4-byte magic, int32 width, int32
+  // height, then width*height little-endian float32, row 0 first.
+  static const char heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
+
+  bool
+  RandomHeightMap::try_load_cache (const std::string& path)
+  {
+    std::ifstream f (path.c_str (), std::ios::binary);
+    if (!f)
+      return false;
+
+    char magic[4] = { 0, 0, 0, 0 };
+    int32_t w = 0, h = 0;
+    f.read (magic, 4);
+    f.read ((char *) &w, 4);
+    f.read ((char *) &h, 4);
+    if (!f || std::memcmp (magic, heightfield_magic, 4) != 0
+	|| w != m_width || h != m_height)
+      return false;
+
+    std::vector<float> heights ((size_t) m_width * m_height);
+    f.read ((char *) &heights[0], heights.size () * sizeof (float));
+    if (f.gcount () !=
+	(std::streamsize) (heights.size () * sizeof (float)))
+      return false;
+
+    FORALL (x, y)
+      set (x, y, heights[(size_t) y * m_width + x]);
+    return true;
+  }
+
+  void
+  RandomHeightMap::save_cache (const std::string& path) const
+  {
+    std::ofstream f (path.c_str (), std::ios::binary);
+    if (!f)
+      throw std::runtime_error ("can't write map cache: " + path);
+
+    const int32_t w = m_width, h = m_height;
+    f.write (heightfield_magic, 4);
+    f.write ((const char *) &w, 4);
+    f.write ((const char *) &h, 4);
+    f.write ((const char *) raw_heights (),
+	     (size_t) m_width * m_height * sizeof (float));
   }
 
   void

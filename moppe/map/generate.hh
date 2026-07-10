@@ -201,6 +201,13 @@ namespace map {
 		       float meters_per_unit,
 		       float max_height_m);
 
+    // Development cache: save/load the finished heightfield so a
+    // boot can skip the erosion simulation (see MOPPE_MAPCACHE).
+    // Loading fails quietly (returns false) on a missing file or a
+    // dimension mismatch.
+    bool try_load_cache (const std::string& path);
+    void save_cache     (const std::string& path) const;
+
     // Particle-based hydraulic erosion: carves gullies into the
     // slopes and settles sediment on the plains.
     void erode_hydraulically (int droplets);
