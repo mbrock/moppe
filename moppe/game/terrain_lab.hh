@@ -26,6 +26,7 @@ namespace game {
     void leave ();
 
     bool active () const { return m_active; }
+    bool torus_view () const { return m_torus_view; }
     void tick (float dt);
     void key (platform::Key key, bool down);
     void pointer_move (float x, float y, float dx, float dy);
@@ -53,6 +54,8 @@ namespace game {
     void ensure_selected_stage_visible ();
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
+    void fit_view ();
+    void toggle_torus_view ();
 
     InspectorUi m_ui;
     render::Renderer* m_renderer;
@@ -71,7 +74,9 @@ namespace game {
     float m_pointer_y;
     bool m_pointer_down;
     bool m_camera_drag;
+    bool m_pan_drag;
 
+    Vector3D m_target;
     float m_yaw;
     float m_pitch;
     float m_distance;
@@ -81,6 +86,7 @@ namespace game {
     bool m_zoom_out;
     bool m_tilt_up;
     bool m_tilt_down;
+    bool m_torus_view;
   };
 }
 }

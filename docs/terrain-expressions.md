@@ -75,7 +75,7 @@ The canonical game profile is now exactly:
 geological source
   -> normalize
   -> power(1.15)
-  -> hydraulic(1,500,000 droplets)
+  -> hydraulic(1,500,000 droplets, batches of 256)
   -> thermal(2 iterations, talus 0.003)
 ```
 
@@ -90,12 +90,15 @@ The Terrain Lab window presents the system as a small construction game:
 - the geological source and every materialized stage are selectable rows;
 - normalization, power, hydraulic, and thermal stages can be appended;
 - selected stages can be moved, copied, deleted, and edited in place;
-- selecting the source exposes live steppers for warp, frequency, mask, and
+- selecting the source exposes live steppers for warp, cycle count, mask, and
   blend parameters;
 - changing the inspected layer or random seed preserves the downstream stack;
 - reset returns to the canonical normalized base recipe;
-- dragging outside the window or right-dragging orbits the landscape, while
-  the mouse wheel zooms; the keyboard camera controls remain available.
+- left-dragging outside the window orbits, right- or middle-dragging pans,
+  and the mouse wheel zooms over a much wider range;
+- Fit restores a whole-domain overview with inspection fog disabled;
+- Donut View embeds the periodic heightfield as an actual torus on the GPU,
+  while Flat View shows exactly one fundamental square.
 
 Every action edits the `TerrainPipeline` or `GeologicalRecipe` value and then
 replays it.  The UI does not maintain a parallel shadow representation of the
@@ -105,12 +108,20 @@ In C++, a scripted experiment is ordinary value manipulation:
 
 ```cpp
 auto pipeline = moppe::terrain::make_geological_pipeline (123);
-pipeline.recipe.mountains.frequency = 9.0f;
+pipeline.recipe.mountains.cycles = 8;
 pipeline.recipe.blend.mountain_weight = 0.9f;
-pipeline.stages.emplace_back
-  (moppe::terrain::HydraulicErosion { 100000 });
+pipeline.stages.emplace_back (moppe::terrain::HydraulicErosion {
+  .droplets = 100000,
+  .batch_size = 256
+});
 map.run_pipeline (pipeline);
 ```
+
+Hydraulic batches advance their droplets in lockstep.  Every droplet reads
+the same heightfield for one simulation step, sparse erosion/deposition deltas
+are accumulated, and the batch is committed before the next step.  This is a
+deterministic CPU implementation of the work boundary a future compute kernel
+can execute in parallel.
 
 ## Tests and command-line feedback
 

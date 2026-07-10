@@ -73,6 +73,10 @@ namespace game {
       return std::max (0.0f, std::min (1.0f, value));
     }
 
+    float wrap_degrees (float value) {
+      return value - 360.0f * std::floor ((value + 180.0f) / 360.0f);
+    }
+
     void hud_disc (DrawList& dl, const Point& center, float r,
 		   float cr, float cg, float cb, float ca)
     {
@@ -454,6 +458,58 @@ namespace game {
     m_helv12->draw (dl, 41, 25,
 		    "x " + std::to_string (st.stars));
     dl.pop ();
+
+    // Heading ribbon.  World +Z is north and +X is east, matching
+    // the coordinate convention used by vehicle and walker headings.
+    {
+      const float width = std::min (230.0f, width_pts * 0.38f);
+      const float x = (width_pts - width) * 0.5f;
+      const float y = 8.0f;
+      const float height = 43.0f;
+      const float center = x + width * 0.5f;
+      const float heading = st.heading_radians * 180.0f / PI;
+      const float pixels_per_degree = (width - 20.0f) / 180.0f;
+      hud_panel (dl, x, y, x + width, y + height, 7.0f, 0.62f);
+
+      static const char* labels[8] = {
+	"N", "", "E", "", "S", "", "W", ""
+      };
+      for (int i = 0; i < 8; ++i) {
+	const float bearing = i * 45.0f;
+	const float delta = wrap_degrees (bearing - heading);
+	if (std::fabs (delta) > 94.0f)
+	  continue;
+	const float tx = center + delta * pixels_per_degree;
+	const bool cardinal = labels[i][0] != '\0';
+	dl.color (cardinal ? 0.86f : 0.48f,
+		  cardinal ? 0.91f : 0.56f,
+		  cardinal ? 0.96f : 0.63f,
+		  cardinal ? 0.95f : 0.72f);
+	dl.line (tx, y + 8, tx, y + (cardinal ? 18 : 14),
+		 cardinal ? 1.5f : 1.0f);
+	if (cardinal)
+	  m_helv12->draw
+	    (dl, tx - m_helv12->measure (labels[i]) * 0.5f,
+	     y + 31, labels[i]);
+      }
+
+      dl.color (1.0f, 0.72f, 0.16f, 0.98f);
+      dl.line (center, y + 5, center, y + 22, 2.0f);
+      dl.begin (Prim::Triangles);
+      dl.vertex (center, y + 25);
+      dl.vertex (center - 4, y + 19);
+      dl.vertex (center + 4, y + 19);
+      dl.end ();
+
+      int degrees = static_cast<int> (std::round (heading));
+      degrees = (degrees % 360 + 360) % 360;
+      char bearing[8];
+      snprintf (bearing, sizeof bearing, "%03d", degrees);
+      dl.color (0.92f, 0.78f, 0.38f, 0.92f);
+      m_helv10->draw
+	(dl, x + width - 7 - m_helv10->measure (bearing),
+	 y + 14, bearing);
+    }
 
     // A compact ECU module: useful frame telemetry disguised as one
     // more instrument on the bike, with a short rolling pace trace.

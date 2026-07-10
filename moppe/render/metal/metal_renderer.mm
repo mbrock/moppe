@@ -931,6 +931,10 @@ namespace render {
     u.params1.y = m_terrain_params.sea_level_norm;
     u.params1.z = m_have_shadow ? m_terrain_params.shadow_strength : 0;
     u.params1.w = 1.0f / SHADOW_SIZE;
+    u.params2.x = static_cast<float> (m_terrain_params.projection);
+    u.params2.y = m_terrain_params.torus_major_radius;
+    u.params2.z = m_terrain_params.torus_minor_radius;
+    u.params2.w = m_terrain_params.torus_height_scale;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];

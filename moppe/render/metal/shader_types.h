@@ -62,6 +62,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
   MoppeFloat4 params0;        // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale
   MoppeFloat4 params1;        // x=height_scale_norm, y=sea_level, z=shadow_strength, w=shadow_texel
+  MoppeFloat4 params2;        // x=projection, y=torus R, z=torus r, w=height scale
 };
 
 // Per-chunk terrain instance data.
