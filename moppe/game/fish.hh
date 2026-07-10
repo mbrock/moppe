@@ -29,6 +29,8 @@ namespace game {
     };
 
     std::vector<One> m_fish;
+    Vector3D m_period;
+    bool m_periodic = false;
   };
 }
 }

@@ -2,6 +2,7 @@
 #define MOPPE_GAME_WORLD_HH
 
 #include <moppe/gfx/math.hh>
+#include <moppe/terrain/topology.hh>
 
 namespace moppe {
 namespace game {
@@ -32,6 +33,12 @@ namespace game {
       if (city_mode)
 	return Vector3D (map_size.x / 2 + 20, 100, map_size.z / 2 + 20);
       return Vector3D (50 * one_meter, 600 * one_meter, 50 * one_meter);
+    }
+
+    bool toroidal () const { return !pico_mode && !city_mode; }
+    terrain::Topology topology () const {
+      return toroidal ()
+	? terrain::Topology::Torus : terrain::Topology::Bounded;
     }
   };
 

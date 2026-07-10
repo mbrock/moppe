@@ -46,6 +46,8 @@ namespace game {
 
     std::vector<Horse> m_horses;
     std::vector<Bird> m_birds;
+    Vector3D m_period;
+    bool m_periodic = false;
   };
 }
 }

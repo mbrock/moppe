@@ -118,7 +118,7 @@ namespace game {
 	m_spawn_position (world.spawn_position ()),
 	m_seed ((int) ::time (0)),
 	m_map (world.resolution, world.resolution, world.map_size,
-	       m_seed),
+	       m_seed, world.topology ()),
 	m_camera (18, 6.5f * one_meter),
 	// Dirt-bike figures: 2600 N of launch, 30 kW of engine --
 	// hard low-end punch, ~125 km/h against drag (the old
@@ -754,6 +754,12 @@ namespace game {
       ocean.time = m_total_time;
       ocean.fog_color = m_fog;
       ocean.fog_scale = scene_fog;
+      if (m_world.toroidal ()) {
+	const Vector3D center (0.5f * m_world.map_size.x, 0,
+			       0.5f * m_world.map_size.z);
+	ocean.world_offset.x = cam.x - center.x;
+	ocean.world_offset.z = cam.z - center.z;
+      }
       r.draw_ocean (ocean);
 
       if (!terrain_lab) {

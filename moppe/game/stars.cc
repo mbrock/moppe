@@ -16,12 +16,16 @@ namespace game {
     std::mt19937 rng (555);
     std::uniform_real_distribution<float> u (0.0f, 1.0f);
     const Vector3D size = map.size ();
+    m_period = size;
+    m_periodic = map.periodic ();
 
     m_stars.clear ();
     while ((int) m_stars.size () < count) {
       Star s;
-      s.pos.x = size.x * (0.03f + 0.94f * u (rng));
-      s.pos.z = size.z * (0.03f + 0.94f * u (rng));
+      s.pos.x = size.x * (m_periodic ? u (rng)
+				    : 0.03f + 0.94f * u (rng));
+      s.pos.z = size.z * (m_periodic ? u (rng)
+				    : 0.03f + 0.94f * u (rng));
 
       float ground = map.interpolated_height (s.pos.x, s.pos.z);
       if (ground < params.water_level + 2)
@@ -46,11 +50,16 @@ namespace game {
 	s.respawn -= dt;
 	continue;
       }
-      if ((s.pos - vehicle_pos).length2 () < 4.5f * 4.5f) {
+      Vector3D delta = s.pos - vehicle_pos;
+      if (m_periodic) {
+	delta.x = terrain::minimum_image_delta (delta.x, m_period.x);
+	delta.z = terrain::minimum_image_delta (delta.z, m_period.z);
+      }
+      if (delta.length2 () < 4.5f * 4.5f) {
 	s.respawn = 60.0f; // comes back later
 	++m_collected;
 	++picked;
-	m_last_pos = s.pos;
+	m_last_pos = vehicle_pos + delta;
       }
     }
     return picked;
@@ -69,14 +78,19 @@ namespace game {
       if (s.respawn > 0)
 	continue;
 
-      const float dx = cam.x - s.pos.x, dz = cam.z - s.pos.z;
+      Vector3D position = s.pos;
+      if (m_periodic) {
+	position.x = terrain::nearest_image (position.x, cam.x, m_period.x);
+	position.z = terrain::nearest_image (position.z, cam.z, m_period.z);
+      }
+      const float dx = cam.x - position.x, dz = cam.z - position.z;
       if (dx * dx + dz * dz > 900.0f * 900.0f)
 	continue;
 
       dl.push ();
-      dl.translate (s.pos.x,
-		    s.pos.y + 0.35f * std::sin (time * 2.0f + s.phase),
-		    s.pos.z);
+      dl.translate (position.x,
+		    position.y + 0.35f * std::sin (time * 2.0f + s.phase),
+		    position.z);
       dl.rotate_deg (time * 150.0f + s.phase, 0, 1, 0);
       dl.color (1.0f, 0.85f, 0.15f);
       dl.torus (0.16f, 0.75f, 10, 18);

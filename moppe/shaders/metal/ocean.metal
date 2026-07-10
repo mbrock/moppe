@@ -20,6 +20,7 @@ ocean_vertex (uint vid [[vertex_id]],
 	      constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]])
 {
   float3 p = float3 (verts[vid]);
+  p += u.world_offset.xyz;
   const float time = u.params.x;
 
   // Three overlapping swells with different directions and speeds.
@@ -58,9 +59,17 @@ ocean_ground_height (float2 world_xz,
 		     constant MoppeOceanUniforms& u,
 		     texture2d<float, access::read> heights)
 {
-  const float edge = u.shore.w - 2.0;
-  const float gx = clamp (world_xz.x * u.shore.x, 0.0, edge);
-  const float gz = clamp (world_xz.y * u.shore.y, 0.0, edge);
+  const float sample_edge = u.shore.w - 2.0;
+  const float period = u.shore.w - 1.0;
+  float gx = world_xz.x * u.shore.x;
+  float gz = world_xz.y * u.shore.y;
+  if (u.params.z > 0.5) {
+    gx -= floor (gx / period) * period;
+    gz -= floor (gz / period) * period;
+  } else {
+    gx = clamp (gx, 0.0, sample_edge);
+    gz = clamp (gz, 0.0, sample_edge);
+  }
   const uint2 i = uint2 ((uint) gx, (uint) gz);
   const float fx = gx - (float) i.x;
   const float fz = gz - (float) i.y;

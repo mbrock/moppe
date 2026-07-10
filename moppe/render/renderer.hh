@@ -46,6 +46,7 @@ namespace render {
     float tex_scale;              // texture repeats per world meter
     float shadow_strength;
     float fog_scale;
+    bool periodic = false;
   };
 
   enum class TerrainLod : uint8_t {
@@ -65,6 +66,8 @@ namespace render {
     TerrainLod lod;
     float morph_start;
     float morph_end;
+    float offset_x = 0.0f;
+    float offset_z = 0.0f;
   };
 
   struct SkyParams {
@@ -86,6 +89,7 @@ namespace render {
     float time;
     Vector3D fog_color;
     float fog_scale;
+    Vector3D world_offset;
   };
 
   // The renderer: a game-shaped interface, not a general RHI.  Sky,
