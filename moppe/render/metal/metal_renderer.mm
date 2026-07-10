@@ -36,7 +36,6 @@ namespace render {
   namespace {
     const int FRAMES_IN_FLIGHT = 3;
     const int MSAA_SAMPLES = 4;
-    const int SHADOW_SIZE = 4096;
     const int CHUNK_CELLS = 128;
     const int TERRAIN_LOD_COUNT = (int) TerrainLod::Count;
     const int TERRAIN_NATIVE_LOD = (int) TerrainLod::Native;
@@ -274,6 +273,7 @@ namespace render {
 
     // shadow map
     id<MTLTexture> m_shadow_map = nil;
+    id<MTLTexture> m_previous_shadow_map = nil;
     Mat4 m_light_biased;
     bool m_have_shadow = false;
 
@@ -282,6 +282,8 @@ namespace render {
     id<MTLTexture> m_normals = nil;
     float m_height_transition_start = 0.0f;
     bool m_height_transition_active = false;
+    uint64_t m_height_transition_generation = 0;
+    uint64_t m_shadow_transition_generation = 0;
     id<MTLBuffer> m_terrain_indices[TERRAIN_LOD_COUNT];
     uint32_t m_terrain_index_count[TERRAIN_LOD_COUNT];
     TerrainParams m_terrain_params;
@@ -635,6 +637,8 @@ namespace render {
       && m_heights.height == (NSUInteger) h;
     const bool continue_transition = transition
       && m_height_transition_active && m_previous_heights;
+    if (transition && !continue_transition)
+      ++m_height_transition_generation;
 
     if (transition && !continue_transition) {
       id<MTLTexture> old_heights = m_heights;
@@ -740,11 +744,25 @@ namespace render {
     if (!m_terrain_shadow || !m_have_terrain)
       return;
 
-    if (!m_shadow_map) {
+    const int shadow_size = std::max
+      (256, m_terrain_params.shadow_resolution);
+    const bool new_shadow_transition = m_terrain_params.derive_normals
+      && m_shadow_transition_generation != m_height_transition_generation;
+    if (new_shadow_transition && m_shadow_map) {
+      id<MTLTexture> old_shadow = m_shadow_map;
+      m_shadow_map = m_previous_shadow_map;
+      m_previous_shadow_map = old_shadow;
+    } else if (!m_terrain_params.derive_normals) {
+      m_previous_shadow_map = nil;
+    }
+
+    if (!m_shadow_map
+	|| m_shadow_map.width != (NSUInteger) shadow_size
+	|| m_shadow_map.height != (NSUInteger) shadow_size) {
       MTLTextureDescriptor* td = [MTLTextureDescriptor
 	texture2DDescriptorWithPixelFormat: MTLPixelFormatDepth16Unorm
-				     width: SHADOW_SIZE
-				    height: SHADOW_SIZE
+				     width: shadow_size
+				    height: shadow_size
 				 mipmapped: NO];
       td.storageMode = MTLStorageModePrivate;
       td.usage = MTLTextureUsageRenderTarget
@@ -786,6 +804,13 @@ namespace render {
 		atIndex: MOPPE_BUF_FRAME];
     [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
 
+    const int requested_step = std::max
+      (1, m_terrain_params.shadow_sample_step);
+    int shadow_lod = TERRAIN_NATIVE_LOD;
+    while (shadow_lod + 1 < TERRAIN_LOD_COUNT
+	   && TERRAIN_LOD_STEP[shadow_lod] < requested_step)
+      ++shadow_lod;
+    const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
     const int chunks = (m_terrain_params.width - 1) / CHUNK_CELLS;
     for (int cz = 0; cz < chunks; ++cz)
       for (int cx = 0; cx < chunks; ++cx) {
@@ -793,21 +818,28 @@ namespace render {
 	std::memset (&c, 0, sizeof (c));
 	c.origin_x = cx * CHUNK_CELLS;
 	c.origin_z = cz * CHUNK_CELLS;
-	c.step = 1.0f;
-	c.verts_per_row = CHUNK_CELLS + 1;
-	c.parent_step = 1.0f;
+	c.step = shadow_step;
+	c.verts_per_row = TERRAIN_LOD_VERTS[shadow_lod];
+	c.parent_step = shadow_step;
 	[enc setVertexBytes: &c length: sizeof (c)
 		    atIndex: MOPPE_BUF_CHUNK];
 	[enc drawIndexedPrimitives: MTLPrimitiveTypeTriangleStrip
-			indexCount: m_terrain_index_count[TERRAIN_NATIVE_LOD]
+			indexCount: m_terrain_index_count[shadow_lod]
 			 indexType: MTLIndexTypeUInt32
-		       indexBuffer: m_terrain_indices[TERRAIN_NATIVE_LOD]
+		       indexBuffer: m_terrain_indices[shadow_lod]
 		 indexBufferOffset: 0];
       }
     [enc endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];
+    if (::getenv ("MOPPE_PROFILE_SHADOW")) {
+      const double gpu_ms = 1000.0
+	* (cmd.GPUEndTime - cmd.GPUStartTime);
+      std::cerr << "terrain shadow: " << shadow_size << "px, step "
+		<< shadow_step << ", " << gpu_ms << " ms GPU\n";
+    }
     m_have_shadow = true;
+    m_shadow_transition_generation = m_height_transition_generation;
   }
 
   void
@@ -1053,7 +1085,8 @@ namespace render {
     u.params1.x = m_terrain_params.height_scale;
     u.params1.y = m_terrain_params.sea_level_norm;
     u.params1.z = m_have_shadow ? m_terrain_params.shadow_strength : 0;
-    u.params1.w = 1.0f / SHADOW_SIZE;
+    u.params1.w = m_shadow_map
+      ? 1.0f / (float) m_shadow_map.width : 1.0f / 4096.0f;
     u.params2.x = static_cast<float> (m_terrain_params.projection);
     u.params2.y = m_terrain_params.torus_major_radius;
     u.params2.z = m_terrain_params.torus_minor_radius;
@@ -1070,6 +1103,8 @@ namespace render {
 	m_height_transition_active = false;
     }
     u.params3.z = height_blend;
+    u.params3.w = m_previous_shadow_map
+      ? 1.0f / (float) m_previous_shadow_map.width : u.params1.w;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];
@@ -1099,6 +1134,10 @@ namespace render {
     if (m_shadow_map)
       [enc setFragmentTexture: m_shadow_map
 		      atIndex: MOPPE_TEX_SHADOW];
+    if (m_shadow_map)
+      [enc setFragmentTexture:
+	(m_previous_shadow_map ? m_previous_shadow_map : m_shadow_map)
+		      atIndex: MOPPE_TEX_PREVIOUS_SHADOW];
 
     for (int i = 0; i < count; ++i) {
       const int lod = std::max
