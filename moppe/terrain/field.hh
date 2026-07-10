@@ -73,9 +73,32 @@ namespace moppe::terrain {
       float gain;
     };
 
+    struct PeriodicFbmNoise {
+      std::uint32_t seed;
+      NodePtr x;
+      NodePtr y;
+      int period_x;
+      int period_y;
+      int octaves;
+      int lacunarity;
+      float gain;
+    };
+
+    struct PeriodicRidgedNoise {
+      std::uint32_t seed;
+      NodePtr x;
+      NodePtr y;
+      int period_x;
+      int period_y;
+      int octaves;
+      int lacunarity;
+      float gain;
+    };
+
     using Operation = std::variant
       <Constant, CoordinateX, CoordinateY, Add, Subtract, Multiply,
-       MultiplyAdd, Sine, Smoothstep, PerlinNoise, FbmNoise, RidgedNoise>;
+       MultiplyAdd, Sine, Smoothstep, PerlinNoise, FbmNoise, RidgedNoise,
+       PeriodicFbmNoise, PeriodicRidgedNoise>;
 
     // Nodes are immutable and may be shared by several downstream
     // expressions.  Reusing a ScalarField therefore forms a DAG rather
@@ -115,6 +138,12 @@ namespace moppe::terrain {
   ScalarField ridged_noise (std::uint32_t seed, const ScalarField& x,
 			    const ScalarField& y, int octaves,
 			    float lacunarity, float gain);
+  ScalarField periodic_fbm_noise
+    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
+     int period_x, int period_y, int octaves, int lacunarity, float gain);
+  ScalarField periodic_ridged_noise
+    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
+     int period_x, int period_y, int octaves, int lacunarity, float gain);
 
   ScalarField operator + (const ScalarField& left,
 			  const ScalarField& right);

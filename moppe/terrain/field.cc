@@ -28,7 +28,9 @@ namespace moppe::terrain {
 	  visit_nodes (operation.right, visited);
 	} else if constexpr (std::is_same_v<T, expression::PerlinNoise>
 			   || std::is_same_v<T, expression::FbmNoise>
-			   || std::is_same_v<T, expression::RidgedNoise>) {
+			   || std::is_same_v<T, expression::RidgedNoise>
+			   || std::is_same_v<T, expression::PeriodicFbmNoise>
+			   || std::is_same_v<T, expression::PeriodicRidgedNoise>) {
 	  visit_nodes (operation.x, visited);
 	  visit_nodes (operation.y, visited);
 	} else if constexpr (std::is_same_v<T, expression::MultiplyAdd>) {
@@ -115,6 +117,39 @@ namespace moppe::terrain {
     validate_fractal_noise (octaves, lacunarity, gain);
     return make_field (expression::RidgedNoise
       { seed, x.node (), y.node (), octaves, lacunarity, gain });
+  }
+
+  namespace {
+    void validate_periodic_noise (int period_x, int period_y,
+				  int octaves, int lacunarity,
+				  float gain) {
+      if (period_x <= 0 || period_y <= 0)
+	throw std::invalid_argument
+	  ("periodic noise periods must be positive");
+      if (octaves <= 0 || lacunarity <= 0 || !(gain > 0.0f))
+	throw std::invalid_argument
+	  ("periodic fractal noise parameters are invalid");
+    }
+  }
+
+  ScalarField periodic_fbm_noise
+    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
+     int period_x, int period_y, int octaves, int lacunarity, float gain) {
+    validate_periodic_noise
+      (period_x, period_y, octaves, lacunarity, gain);
+    return make_field (expression::PeriodicFbmNoise
+      { seed, x.node (), y.node (), period_x, period_y,
+	octaves, lacunarity, gain });
+  }
+
+  ScalarField periodic_ridged_noise
+    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
+     int period_x, int period_y, int octaves, int lacunarity, float gain) {
+    validate_periodic_noise
+      (period_x, period_y, octaves, lacunarity, gain);
+    return make_field (expression::PeriodicRidgedNoise
+      { seed, x.node (), y.node (), period_x, period_y,
+	octaves, lacunarity, gain });
   }
 
   ScalarField operator + (const ScalarField& left,

@@ -4,7 +4,9 @@
 
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/pipeline.hh>
+#include <moppe/terrain/topology.hh>
 
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -48,6 +50,7 @@ namespace map {
 
     void reset         ();
     void add           (int x, int y, const Vector3D& v);
+    void set           (int x, int y, const Vector3D& v);
     void normalize_all ();
 
   private:
@@ -59,9 +62,15 @@ namespace map {
 
   class HeightMap {
   public:
-    HeightMap (int width, int height, const Vector3D& size)
+    HeightMap (int width, int height, const Vector3D& size,
+	       terrain::Topology topology = terrain::Topology::Bounded)
       : m_width (width), m_height (height),
-	m_scale (size.x / width, size.y, size.z / height)
+	m_scale (size.x / (topology == terrain::Topology::Torus
+			   ? width - 1 : width),
+		 size.y,
+		 size.z / (topology == terrain::Topology::Torus
+			   ? height - 1 : height)),
+	m_topology (topology)
     { }
 
     virtual ~HeightMap () { }
@@ -77,6 +86,8 @@ namespace map {
     { return vertex (m_width / 2, m_height / 2); }
 
     bool in_bounds (float x, float y) const {
+	if (periodic ())
+	  return std::isfinite (x) && std::isfinite (y);
       // Test the floats: integer truncation would admit a strip of
       // slightly-negative coordinates on two edges
       return x >= 0 && y >= 0 &&
@@ -85,13 +96,21 @@ namespace map {
     }
 
     float interpolated_height (float x, float y) const {
-      int xi = x / m_scale.x, yi = y / m_scale.z;
+      float gx = x / m_scale.x, gy = y / m_scale.z;
+      if (periodic ()) {
+	gx = terrain::wrap_coordinate
+	  (gx, static_cast<float> (unique_width ()));
+	gy = terrain::wrap_coordinate
+	  (gy, static_cast<float> (unique_height ()));
+      }
+      int xi = static_cast<int> (std::floor (gx));
+      int yi = static_cast<int> (std::floor (gy));
 
       clamp (xi, 0, m_width - 2);
       clamp (yi, 0, m_height - 2);
 
-      float ax = x / m_scale.x - xi;
-      float ay = y / m_scale.z - yi;
+      float ax = gx - xi;
+      float ay = gy - yi;
 
       float r1 = linear_interpolate (get (xi, yi),
 				     get (xi + 1, yi),
@@ -105,13 +124,21 @@ namespace map {
     }
 
     Vector3D interpolated_normal (float x, float y) const {
-      int xi = x / m_scale.x, yi = y / m_scale.z;
+      float gx = x / m_scale.x, gy = y / m_scale.z;
+      if (periodic ()) {
+	gx = terrain::wrap_coordinate
+	  (gx, static_cast<float> (unique_width ()));
+	gy = terrain::wrap_coordinate
+	  (gy, static_cast<float> (unique_height ()));
+      }
+      int xi = static_cast<int> (std::floor (gx));
+      int yi = static_cast<int> (std::floor (gy));
 
       clamp (xi, 0, m_width - 2);
       clamp (yi, 0, m_height - 2);
 
-      float ax = x / m_scale.x - xi;
-      float ay = y / m_scale.z - yi;
+      float ax = gx - xi;
+      float ay = gy - yi;
 
       Vector3D r1 = linear_vector_interpolate (normal (xi, yi),
 					       normal (xi + 1, yi),
@@ -124,12 +151,18 @@ namespace map {
 
     inline int      width  () const { return m_width; }
     inline int      height () const { return m_height; }
+    inline int unique_width () const
+    { return periodic () ? m_width - 1 : m_width; }
+    inline int unique_height () const
+    { return periodic () ? m_height - 1 : m_height; }
+    inline bool periodic () const
+    { return m_topology == terrain::Topology::Torus; }
 
     inline Vector3D scale  () const { return m_scale; }
     inline Vector3D size   () const
-    { return Vector3D (m_scale.x * m_width,
+    { return Vector3D (m_scale.x * unique_width (),
 		       m_scale.y,
-		       m_scale.z * m_height); }
+		       m_scale.z * unique_height ()); }
 
     float min_value () const;
     float max_value () const;
@@ -138,6 +171,7 @@ namespace map {
     const int      m_width;
     const int      m_height;
     const Vector3D m_scale;
+    const terrain::Topology m_topology;
   };
 
   void compute_normal_map (const HeightMap& height_map,
@@ -146,8 +180,10 @@ namespace map {
   class NormalComputingHeightMap: public HeightMap {
   public:
     NormalComputingHeightMap (int width, int height,
-			      Vector3D size)
-      : HeightMap (width, height, size),
+			      Vector3D size,
+			      terrain::Topology topology =
+				terrain::Topology::Bounded)
+      : HeightMap (width, height, size, topology),
 	m_normals (width, height)
     { }
 
@@ -170,7 +206,8 @@ namespace map {
   public:
     RandomHeightMap (int width, int height,
 		     const Vector3D& size,
-		     int seed = 0);
+		     int seed = 0,
+		     terrain::Topology topology = terrain::Topology::Bounded);
 
     inline float get (int x, int y) const
     { return m_data.at (y, x); }
@@ -187,6 +224,7 @@ namespace map {
     void translate           (float d);
     void rescale             (float k);
     void exponentiate        (float k);
+    void synchronize_periodic_edges ();
 
     // Restart all procedural choices from a known seed.  Terrain
     // tools use this before selecting a component so every view is

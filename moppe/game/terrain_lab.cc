@@ -139,12 +139,12 @@ namespace game {
       switch (row) {
       case 0: return { "WARP STRENGTH",
 	format_float (recipe.warp.amplitude, 3) };
-      case 1: return { "CONTINENT FREQ",
-	format_float (recipe.continent.noise.frequency, 2) };
-      case 2: return { "PLAINS FREQ",
-	format_float (recipe.plains.noise.frequency, 2) };
-      case 3: return { "MOUNTAIN FREQ",
-	format_float (recipe.mountains.frequency, 2) };
+      case 1: return { "CONTINENT CYCLES",
+	std::to_string (recipe.continent.noise.cycles) };
+      case 2: return { "PLAINS CYCLES",
+	std::to_string (recipe.plains.noise.cycles) };
+      case 3: return { "MOUNTAIN CYCLES",
+	std::to_string (recipe.mountains.cycles) };
       case 4: return { "MASK START",
 	format_float (recipe.blend.mask_low, 3) };
       case 5: return { "MASK END",
@@ -373,19 +373,16 @@ namespace game {
 	  (recipe.warp.amplitude + direction * 0.025f, 0.0f, 0.6f);
 	break;
       case 1:
-	recipe.continent.noise.frequency = std::clamp
-	  (recipe.continent.noise.frequency + direction * 0.25f,
-	   0.25f, 16.0f);
+	recipe.continent.noise.cycles = std::clamp
+	  (recipe.continent.noise.cycles + direction, 1, 16);
 	break;
       case 2:
-	recipe.plains.noise.frequency = std::clamp
-	  (recipe.plains.noise.frequency + direction * 0.5f,
-	   0.5f, 32.0f);
+	recipe.plains.noise.cycles = std::clamp
+	  (recipe.plains.noise.cycles + direction, 1, 32);
 	break;
       case 3:
-	recipe.mountains.frequency = std::clamp
-	  (recipe.mountains.frequency + direction * 0.25f,
-	   0.25f, 24.0f);
+	recipe.mountains.cycles = std::clamp
+	  (recipe.mountains.cycles + direction, 1, 8);
 	break;
       case 4:
 	recipe.blend.mask_low = std::clamp

@@ -420,6 +420,9 @@ namespace mov {
 
   void
   Vehicle::bound () {
+    if (m_map.periodic ())
+      return;
+
     // Invisible walls at the map edge, bouncing like the building
     // walls do.  (The old build flung you across the sky toward
     // the map center at 400 km/h -- it read as a glitchy teleport,

@@ -25,9 +25,9 @@ namespace moppe::terrain {
   };
 
   struct FractalNoiseParameters {
-    float frequency = 1.0f;
+    int cycles = 1;
     int octaves = 1;
-    float lacunarity = 2.0f;
+    int lacunarity = 2;
     float gain = 0.5f;
   };
 
@@ -37,7 +37,7 @@ namespace moppe::terrain {
   };
 
   struct DomainWarpParameters {
-    FractalNoiseParameters noise { 3.0f, 4, 2.0f, 0.5f };
+    FractalNoiseParameters noise { 3, 4, 2, 0.5f };
     float amplitude = 0.15f;
     Offset2D x_offset { 11.3f, 7.7f };
     Offset2D y_offset { 91.1f, 33.9f };
@@ -64,12 +64,12 @@ namespace moppe::terrain {
     GeologicalSeeds seeds { };
     DomainWarpParameters warp { };
     RemappedNoiseParameters continent {
-      { 2.5f, 4, 2.0f, 0.5f }, 0.5f, 0.5f
+      { 3, 4, 2, 0.5f }, 0.5f, 0.5f
     };
     RemappedNoiseParameters plains {
-      { 12.0f, 4, 2.0f, 0.5f }, 0.5f, 0.5f
+      { 12, 4, 2, 0.5f }, 0.5f, 0.5f
     };
-    FractalNoiseParameters mountains { 6.0f, 6, 2.05f, 0.55f };
+    FractalNoiseParameters mountains { 6, 6, 2, 0.55f };
     GeologicalBlendParameters blend { };
   };
 

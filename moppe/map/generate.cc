@@ -44,6 +44,12 @@ namespace map {
   }
 
   void
+  NormalMap::set (int x, int y, const Vector3D& v)
+  {
+    m_data.at (y, x) = v;
+  }
+
+  void
   NormalMap::normalize_all ()
   {
     for (int y = 0; y < m_height; ++y)
@@ -53,8 +59,9 @@ namespace map {
 
   RandomHeightMap::RandomHeightMap (int width, int height,
 				    const Vector3D& size,
-				    int seed)
-    : NormalComputingHeightMap (width, height, size),
+				    int seed,
+				    terrain::Topology topology)
+    : NormalComputingHeightMap (width, height, size, topology),
       m_data    (width, height)
   {
     m_rng.seed (std::mt19937::result_type (seed));
@@ -136,6 +143,17 @@ namespace map {
   void
   RandomHeightMap::exponentiate (float k)
   { FORALL (x, y) set (x, y, std::pow (get (x, y), k)); }
+
+  void
+  RandomHeightMap::synchronize_periodic_edges ()
+  {
+    if (!periodic ())
+      return;
+    for (int y = 0; y < unique_height (); ++y)
+      set (m_width - 1, y, get (0, y));
+    for (int x = 0; x < m_width; ++x)
+      set (x, m_height - 1, get (x, 0));
+  }
   
   namespace {
     // Bound uniform-real generator, replacing
@@ -162,6 +180,7 @@ namespace map {
       for (int x = 0; x < m_width; ++x)
 	set (x, y, g ());
 
+    synchronize_periodic_edges ();
     recompute_normals ();
   }
 
@@ -210,6 +229,7 @@ namespace map {
     do_plasma_step (*this, 0, 0, 0, g, 1.0, std::pow (2, -roughness),
 		    g (), g (), g (), g ());
     normalize ();
+    synchronize_periodic_edges ();
     recompute_normals ();
   }
 
@@ -229,6 +249,7 @@ namespace map {
 
     FORALL (x, y)
       set (x, y, raster.at (x, y));
+    synchronize_periodic_edges ();
     // NB: no recompute_normals() here -- the caller shapes further
   }
 
@@ -270,6 +291,7 @@ namespace map {
       else if (const auto* thermal =
 	       std::get_if<terrain::ThermalErosion> (&stage))
 	erode_thermally (thermal->iterations, thermal->talus);
+      synchronize_periodic_edges ();
     }
   }
 
@@ -297,7 +319,8 @@ namespace map {
 
   // Heightfield cache format: 4-byte magic, int32 width, int32
   // height, then width*height little-endian float32, row 0 first.
-  static const char heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
+  static const char bounded_heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
+  static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', 'T' };
 
   bool
   RandomHeightMap::try_load_cache (const std::string& path)
@@ -311,7 +334,9 @@ namespace map {
     f.read (magic, 4);
     f.read ((char *) &w, 4);
     f.read ((char *) &h, 4);
-    if (!f || std::memcmp (magic, heightfield_magic, 4) != 0
+    const char* expected_magic = periodic ()
+      ? torus_heightfield_magic : bounded_heightfield_magic;
+    if (!f || std::memcmp (magic, expected_magic, 4) != 0
 	|| w != m_width || h != m_height)
       return false;
 
@@ -323,6 +348,7 @@ namespace map {
 
     FORALL (x, y)
       set (x, y, heights[(size_t) y * m_width + x]);
+    synchronize_periodic_edges ();
     return true;
   }
 
@@ -334,7 +360,8 @@ namespace map {
       throw std::runtime_error ("can't write map cache: " + path);
 
     const int32_t w = m_width, h = m_height;
-    f.write (heightfield_magic, 4);
+    f.write (periodic () ? torus_heightfield_magic
+			 : bounded_heightfield_magic, 4);
     f.write ((const char *) &w, 4);
     f.write ((const char *) &h, 4);
     f.write ((const char *) raw_heights (),
@@ -358,6 +385,97 @@ namespace map {
     const int   max_steps  = 64;
 
     realgen_t g (m_rng, 0, 1);
+
+    if (periodic ()) {
+      const int period_x = unique_width ();
+      const int period_y = unique_height ();
+
+      struct Sample {
+	int x0, x1, y0, y1;
+	float fx, fy, h00, h10, h01, h11;
+	float height, gradx, grady;
+      };
+      const auto sample = [this, period_x, period_y]
+	(float x, float y) {
+	  Sample s;
+	  const float floor_x = std::floor (x);
+	  const float floor_y = std::floor (y);
+	  s.x0 = terrain::wrap_index ((int) floor_x, period_x);
+	  s.y0 = terrain::wrap_index ((int) floor_y, period_y);
+	  s.x1 = terrain::wrap_index (s.x0 + 1, period_x);
+	  s.y1 = terrain::wrap_index (s.y0 + 1, period_y);
+	  s.fx = x - floor_x;
+	  s.fy = y - floor_y;
+	  s.h00 = get (s.x0, s.y0);
+	  s.h10 = get (s.x1, s.y0);
+	  s.h01 = get (s.x0, s.y1);
+	  s.h11 = get (s.x1, s.y1);
+	  s.gradx = (s.h10 - s.h00) * (1 - s.fy)
+	    + (s.h11 - s.h01) * s.fy;
+	  s.grady = (s.h01 - s.h00) * (1 - s.fx)
+	    + (s.h11 - s.h10) * s.fx;
+	  s.height = s.h00 * (1 - s.fx) * (1 - s.fy)
+	    + s.h10 * s.fx * (1 - s.fy)
+	    + s.h01 * (1 - s.fx) * s.fy
+	    + s.h11 * s.fx * s.fy;
+	  return s;
+	};
+
+      for (int d = 0; d < droplets; ++d) {
+	float px = g () * period_x;
+	float py = g () * period_y;
+	float dirx = 0, diry = 0;
+	float speed = 1, water = 1, sediment = 0;
+
+	for (int step = 0; step < max_steps; ++step) {
+	  const Sample here = sample (px, py);
+	  dirx = dirx * inertia - here.gradx * (1 - inertia);
+	  diry = diry * inertia - here.grady * (1 - inertia);
+	  const float len = std::sqrt (dirx * dirx + diry * diry);
+	  if (len < 1e-10f)
+	    break;
+	  dirx /= len;
+	  diry /= len;
+
+	  const float nx = terrain::wrap_coordinate
+	    (px + dirx, static_cast<float> (period_x));
+	  const float ny = terrain::wrap_coordinate
+	    (py + diry, static_cast<float> (period_y));
+	  const Sample next = sample (nx, ny);
+	  const float dh = next.height - here.height;
+	  const float capacity = std::max (-dh, min_slope)
+	    * speed * water * capacity_k;
+
+	  float amount = 0;
+	  if (sediment > capacity || dh > 0) {
+	    amount = dh > 0 ? std::min (dh, sediment)
+	      : (sediment - capacity) * deposit_k;
+	    sediment -= amount;
+	  } else {
+	    amount = -std::min
+	      ((capacity - sediment) * erode_k, -dh);
+	    sediment -= amount;
+	  }
+
+	  set (here.x0, here.y0,
+	       here.h00 + amount * (1 - here.fx) * (1 - here.fy));
+	  set (here.x1, here.y0,
+	       here.h10 + amount * here.fx * (1 - here.fy));
+	  set (here.x0, here.y1,
+	       here.h01 + amount * (1 - here.fx) * here.fy);
+	  set (here.x1, here.y1,
+	       here.h11 + amount * here.fx * here.fy);
+
+	  speed = std::sqrt
+	    (std::max (0.0f, speed * speed - dh * gravity));
+	  water *= (1 - evaporate);
+	  px = nx;
+	  py = ny;
+	}
+      }
+      synchronize_periodic_edges ();
+      return;
+    }
 
     for (int d = 0; d < droplets; ++d)
       {
@@ -455,6 +573,36 @@ namespace map {
     static const int dx[4] = { 1, -1, 0, 0 };
     static const int dy[4] = { 0, 0, 1, -1 };
 
+    if (periodic ()) {
+      const int period_x = unique_width ();
+      const int period_y = unique_height ();
+      for (int it = 0; it < iterations; ++it)
+	for (int y = 0; y < period_y; ++y)
+	  for (int x = 0; x < period_x; ++x) {
+	    const float h = get (x, y);
+	    int best = -1;
+	    float bestd = talus;
+	    for (int k = 0; k < 4; ++k) {
+	      const int nx = terrain::wrap_index (x + dx[k], period_x);
+	      const int ny = terrain::wrap_index (y + dy[k], period_y);
+	      const float d = h - get (nx, ny);
+	      if (d > bestd) {
+		bestd = d;
+		best = k;
+	      }
+	    }
+	    if (best >= 0) {
+	      const int nx = terrain::wrap_index (x + dx[best], period_x);
+	      const int ny = terrain::wrap_index (y + dy[best], period_y);
+	      const float move = 0.5f * (bestd - talus);
+	      set (x, y, h - move);
+	      set (nx, ny, get (nx, ny) + move);
+	    }
+	  }
+      synchronize_periodic_edges ();
+      return;
+    }
+
     for (int it = 0; it < iterations; ++it)
       for (int y = 1; y < m_height - 1; ++y)
 	for (int x = 1; x < m_width - 1; ++x)
@@ -507,6 +655,32 @@ namespace map {
 		      NormalMap& normal_map)
   {
     normal_map.reset ();
+
+    if (height_map.periodic ()) {
+      const int period_x = height_map.unique_width ();
+      const int period_y = height_map.unique_height ();
+      for (int y = 0; y < period_y; ++y)
+	for (int x = 0; x < period_x; ++x) {
+	  const Vector3D left = height_map.triangle_normal
+	    (x, y, x, y + 1, x + 1, y + 1);
+	  const Vector3D right = height_map.triangle_normal
+	    (x, y, x + 1, y + 1, x + 1, y);
+	  const int x1 = terrain::wrap_index (x + 1, period_x);
+	  const int y1 = terrain::wrap_index (y + 1, period_y);
+	  normal_map.add (x, y, left);
+	  normal_map.add (x, y1, left);
+	  normal_map.add (x1, y1, left);
+	  normal_map.add (x, y, right);
+	  normal_map.add (x1, y, right);
+	  normal_map.add (x1, y1, right);
+	}
+      normal_map.normalize_all ();
+      for (int y = 0; y < period_y; ++y)
+	normal_map.set (period_x, y, normal_map.at (0, y));
+      for (int x = 0; x <= period_x; ++x)
+	normal_map.set (x, period_y, normal_map.at (x, 0));
+      return;
+    }
 
     // Each vertex accumulates the normals of every triangle that
     // touches it (up to six), which smooths adequately on a dense
