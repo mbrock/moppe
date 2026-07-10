@@ -70,11 +70,11 @@ namespace {
     } else if (name == "warp-amplitude")
       pipeline.recipe.warp.amplitude = parse_float (value);
     else if (name == "continent-frequency")
-      pipeline.recipe.continent.noise.frequency = parse_float (value);
+      pipeline.recipe.continent.noise.cycles = parse_int (value);
     else if (name == "plains-frequency")
-      pipeline.recipe.plains.noise.frequency = parse_float (value);
+      pipeline.recipe.plains.noise.cycles = parse_int (value);
     else if (name == "mountain-frequency")
-      pipeline.recipe.mountains.frequency = parse_float (value);
+      pipeline.recipe.mountains.cycles = parse_int (value);
     else if (name == "mask-low")
       pipeline.recipe.blend.mask_low = parse_float (value);
     else if (name == "mask-high")

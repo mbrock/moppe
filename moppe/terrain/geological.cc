@@ -9,13 +9,19 @@ namespace moppe::terrain {
   namespace {
     void validate_noise (const FractalNoiseParameters& noise,
 			 const char* name) {
-      if (!std::isfinite (noise.frequency) || noise.frequency <= 0.0f
-	  || noise.octaves <= 0
-	  || !std::isfinite (noise.lacunarity)
-	  || noise.lacunarity <= 0.0f
+      if (noise.cycles <= 0 || noise.octaves <= 0
+	  || noise.lacunarity <= 0
 	  || !std::isfinite (noise.gain) || noise.gain <= 0.0f)
 	throw std::invalid_argument
 	  (std::string (name) + " noise parameters are invalid");
+
+      int octave_cycles = noise.cycles;
+      for (int octave = 1; octave < noise.octaves; ++octave) {
+	if (octave_cycles > 256 / noise.lacunarity)
+	  throw std::invalid_argument
+	    (std::string (name) + " noise exceeds the 256-cell lattice");
+	octave_cycles *= noise.lacunarity;
+      }
     }
 
     void require_finite (float value, const char* name) {
@@ -67,16 +73,19 @@ namespace moppe::terrain {
     const ScalarField u = coordinate_x ();
     const ScalarField v = coordinate_y ();
 
-    const ScalarField warp_x = fbm_noise
+    const int warp_cycles = recipe.warp.noise.cycles;
+    const ScalarField warp_x = periodic_fbm_noise
       (recipe.seeds.warp,
-       u * recipe.warp.noise.frequency + recipe.warp.x_offset.x,
-       v * recipe.warp.noise.frequency + recipe.warp.x_offset.y,
+       u * static_cast<float> (warp_cycles) + recipe.warp.x_offset.x,
+       v * static_cast<float> (warp_cycles) + recipe.warp.x_offset.y,
+       warp_cycles, warp_cycles,
        recipe.warp.noise.octaves, recipe.warp.noise.lacunarity,
        recipe.warp.noise.gain);
-    const ScalarField warp_y = fbm_noise
+    const ScalarField warp_y = periodic_fbm_noise
       (recipe.seeds.warp,
-       u * recipe.warp.noise.frequency + recipe.warp.y_offset.x,
-       v * recipe.warp.noise.frequency + recipe.warp.y_offset.y,
+       u * static_cast<float> (warp_cycles) + recipe.warp.y_offset.x,
+       v * static_cast<float> (warp_cycles) + recipe.warp.y_offset.y,
+       warp_cycles, warp_cycles,
        recipe.warp.noise.octaves, recipe.warp.noise.lacunarity,
        recipe.warp.noise.gain);
     const ScalarField warped_x = multiply_add
@@ -84,30 +93,36 @@ namespace moppe::terrain {
     const ScalarField warped_y = multiply_add
       (constant (recipe.warp.amplitude), warp_y, v);
 
+    const int continent_cycles = recipe.continent.noise.cycles;
     const ScalarField continent = multiply_add
-      (fbm_noise
+      (periodic_fbm_noise
       (recipe.seeds.base,
-       warped_x * recipe.continent.noise.frequency,
-       warped_y * recipe.continent.noise.frequency,
+       warped_x * static_cast<float> (continent_cycles),
+       warped_y * static_cast<float> (continent_cycles),
+       continent_cycles, continent_cycles,
        recipe.continent.noise.octaves,
        recipe.continent.noise.lacunarity,
        recipe.continent.noise.gain),
        constant (recipe.continent.scale),
        constant (recipe.continent.bias));
+    const int plains_cycles = recipe.plains.noise.cycles;
     const ScalarField plains = multiply_add
-      (fbm_noise
+      (periodic_fbm_noise
       (recipe.seeds.base,
-       warped_x * recipe.plains.noise.frequency,
-       warped_y * recipe.plains.noise.frequency,
+       warped_x * static_cast<float> (plains_cycles),
+       warped_y * static_cast<float> (plains_cycles),
+       plains_cycles, plains_cycles,
        recipe.plains.noise.octaves,
        recipe.plains.noise.lacunarity,
        recipe.plains.noise.gain),
        constant (recipe.plains.scale),
        constant (recipe.plains.bias));
-    const ScalarField mountains = ridged_noise
+    const int mountain_cycles = recipe.mountains.cycles;
+    const ScalarField mountains = periodic_ridged_noise
       (recipe.seeds.ridge,
-       warped_x * recipe.mountains.frequency,
-       warped_y * recipe.mountains.frequency,
+       warped_x * static_cast<float> (mountain_cycles),
+       warped_y * static_cast<float> (mountain_cycles),
+       mountain_cycles, mountain_cycles,
        recipe.mountains.octaves, recipe.mountains.lacunarity,
        recipe.mountains.gain);
     const ScalarField mountain_mask = smoothstep

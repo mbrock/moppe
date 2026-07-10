@@ -25,19 +25,19 @@ namespace {
   }
 }
 
-MOPPE_TEST (geological_recipe_matches_historical_generator) {
+MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
   struct GoldenLayer {
     GeologicalLayer layer;
     std::uint64_t hash;
   };
   constexpr std::array golden {
-    GoldenLayer { GeologicalLayer::Combined, 0xdd6de93ca7d0e2e9ull },
-    GoldenLayer { GeologicalLayer::Continent, 0xac072157b08bf34aull },
-    GoldenLayer { GeologicalLayer::Plains, 0xd9c3caa65fed7cb5ull },
-    GoldenLayer { GeologicalLayer::Mountains, 0x1383f3e449c454adull },
-    GoldenLayer { GeologicalLayer::MountainMask, 0x4f03a4bb126370e2ull },
-    GoldenLayer { GeologicalLayer::WarpX, 0xbcb3154439c01f35ull },
-    GoldenLayer { GeologicalLayer::WarpY, 0xc67193ae4fb03b82ull }
+    GoldenLayer { GeologicalLayer::Combined, 0xcf9894c9d9ac1800ull },
+    GoldenLayer { GeologicalLayer::Continent, 0x5e8c75981b887e30ull },
+    GoldenLayer { GeologicalLayer::Plains, 0xf45bb04923b0c0b4ull },
+    GoldenLayer { GeologicalLayer::Mountains, 0xc21fbf32c46b8ed0ull },
+    GoldenLayer { GeologicalLayer::MountainMask, 0x77e2dec35a4c7eebull },
+    GoldenLayer { GeologicalLayer::WarpX, 0x6c928009ffd5c17aull },
+    GoldenLayer { GeologicalLayer::WarpY, 0x3f8851268f877c20ull }
   };
   const GeologicalFields fields = make_geological_fields
     (derive_geological_seeds (123));
@@ -90,9 +90,9 @@ MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
   MOPPE_CHECK (recipe.seeds.ridge == seeds.ridge);
   MOPPE_CHECK (recipe.seeds.warp == seeds.warp);
   MOPPE_CHECK_NEAR (recipe.warp.amplitude, 0.15f, 1e-6f);
-  MOPPE_CHECK_NEAR (recipe.mountains.frequency, 6.0f, 1e-6f);
+  MOPPE_CHECK (recipe.mountains.cycles == 6);
 
-  recipe.mountains.frequency = 8.0f;
+  recipe.mountains.cycles = 8;
   const ScalarRaster changed = CpuEvaluator ().evaluate
     (make_geological_fields (recipe).mountains,
      { .width = 17, .height = 17 });
@@ -112,4 +112,28 @@ MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
     threw = true;
   }
   MOPPE_CHECK (threw);
+}
+
+MOPPE_TEST (every_geological_layer_is_periodic) {
+  const GeologicalFields fields = make_geological_fields
+    (make_geological_recipe (123));
+  constexpr GeologicalLayer layers[] = {
+    GeologicalLayer::Combined,
+    GeologicalLayer::Continent,
+    GeologicalLayer::Plains,
+    GeologicalLayer::Mountains,
+    GeologicalLayer::MountainMask,
+    GeologicalLayer::WarpX,
+    GeologicalLayer::WarpY
+  };
+
+  for (GeologicalLayer layer : layers) {
+    const ScalarRaster raster = CpuEvaluator ().evaluate
+      (geological_layer (fields, layer),
+       { .width = 65, .height = 65 });
+    for (std::size_t i = 0; i < 65; ++i) {
+      MOPPE_CHECK_NEAR (raster.at (0, i), raster.at (64, i), 1e-5f);
+      MOPPE_CHECK_NEAR (raster.at (i, 0), raster.at (i, 64), 1e-5f);
+    }
+  }
 }

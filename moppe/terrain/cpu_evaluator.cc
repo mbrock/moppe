@@ -49,19 +49,27 @@ namespace moppe::terrain {
       }
 
       float noise (float x, float y) const {
+	return noise (x, y, 256, 256);
+      }
+
+      float noise (float x, float y, int period_x, int period_y) const {
 	const float floor_x = std::floor (x);
 	const float floor_y = std::floor (y);
-	const int xi = static_cast<int> (floor_x) & 255;
-	const int yi = static_cast<int> (floor_y) & 255;
+	const int xi = wrap_lattice (static_cast<int> (floor_x), period_x);
+	const int yi = wrap_lattice (static_cast<int> (floor_y), period_y);
+	const int xj = wrap_lattice
+	  (static_cast<int> (floor_x) + 1, period_x);
+	const int yj = wrap_lattice
+	  (static_cast<int> (floor_y) + 1, period_y);
 	const float xf = x - floor_x;
 	const float yf = y - floor_y;
 	const float u = fade (xf);
 	const float v = fade (yf);
 
 	const int aa = m_permutation[m_permutation[xi] + yi];
-	const int ab = m_permutation[m_permutation[xi] + yi + 1];
-	const int ba = m_permutation[m_permutation[xi + 1] + yi];
-	const int bb = m_permutation[m_permutation[xi + 1] + yi + 1];
+	const int ab = m_permutation[m_permutation[xi] + yj];
+	const int ba = m_permutation[m_permutation[xj] + yi];
+	const int bb = m_permutation[m_permutation[xj] + yj];
 
 	return lerp
 	  (lerp (grad (aa, xf, yf), grad (ba, xf - 1, yf), u),
@@ -99,7 +107,55 @@ namespace moppe::terrain {
 	return sum / norm;
       }
 
+      float periodic_fbm (float x, float y, int period_x, int period_y,
+			  int octaves, int lacunarity, float gain) const {
+	float sum = 0, amplitude = 1, norm = 0;
+	int octave_period_x = period_x;
+	int octave_period_y = period_y;
+	float frequency = 1;
+	for (int i = 0; i < octaves; ++i) {
+	  sum += amplitude * noise
+	    (x * frequency, y * frequency,
+	     octave_period_x, octave_period_y);
+	  norm += amplitude;
+	  amplitude *= gain;
+	  frequency *= static_cast<float> (lacunarity);
+	  octave_period_x *= lacunarity;
+	  octave_period_y *= lacunarity;
+	}
+	return sum / norm;
+      }
+
+      float periodic_ridged
+	(float x, float y, int period_x, int period_y,
+	 int octaves, int lacunarity, float gain) const {
+	float sum = 0, amplitude = 0.5f, frequency = 1;
+	float weight = 1, norm = 0;
+	int octave_period_x = period_x;
+	int octave_period_y = period_y;
+	for (int i = 0; i < octaves; ++i) {
+	  float value = 1.0f - std::fabs (noise
+	    (x * frequency, y * frequency,
+	     octave_period_x, octave_period_y));
+	  value *= value;
+	  value *= weight;
+	  weight = std::clamp (value * 2.0f, 0.0f, 1.0f);
+	  sum += value * amplitude;
+	  norm += amplitude;
+	  amplitude *= gain;
+	  frequency *= static_cast<float> (lacunarity);
+	  octave_period_x *= lacunarity;
+	  octave_period_y *= lacunarity;
+	}
+	return sum / norm;
+      }
+
     private:
+      static int wrap_lattice (int value, int period) {
+	const int wrapped = value % period;
+	return (wrapped < 0 ? wrapped + period : wrapped) & 255;
+      }
+
       static float fade (float value) {
 	return value * value * value
 	  * (value * (value * 6 - 15) + 10);
@@ -155,12 +211,25 @@ namespace moppe::terrain {
       int octaves;
       float lacunarity, gain;
     };
+    struct PeriodicFbmRegister {
+      std::shared_ptr<const PerlinTable> table;
+      std::size_t x, y;
+      int period_x, period_y, octaves, lacunarity;
+      float gain;
+    };
+    struct PeriodicRidgedRegister {
+      std::shared_ptr<const PerlinTable> table;
+      std::size_t x, y;
+      int period_x, period_y, octaves, lacunarity;
+      float gain;
+    };
 
     using Instruction = std::variant
       <LoadConstant, LoadX, LoadY, AddRegisters, SubtractRegisters,
        MultiplyRegisters, MultiplyAddRegisters, SineRegister,
        SmoothstepRegister,
-       PerlinRegister, FbmRegister, RidgedRegister>;
+       PerlinRegister, FbmRegister, RidgedRegister,
+       PeriodicFbmRegister, PeriodicRidgedRegister>;
 
     struct Program {
       std::vector<Instruction> instructions;
@@ -225,11 +294,22 @@ namespace moppe::terrain {
 		{ table_for (operation.seed), emit (operation.x),
 		  emit (operation.y), operation.octaves,
 		  operation.lacunarity, operation.gain };
-	    else
+	    else if constexpr (std::is_same_v<T, expression::RidgedNoise>)
 	      return RidgedRegister
 		{ table_for (operation.seed), emit (operation.x),
 		  emit (operation.y), operation.octaves,
 		  operation.lacunarity, operation.gain };
+	    else if constexpr
+	      (std::is_same_v<T, expression::PeriodicFbmNoise>)
+	      return PeriodicFbmRegister
+		{ table_for (operation.seed), emit (operation.x),
+		  emit (operation.y), operation.period_x, operation.period_y,
+		  operation.octaves, operation.lacunarity, operation.gain };
+	    else
+	      return PeriodicRidgedRegister
+		{ table_for (operation.seed), emit (operation.x),
+		  emit (operation.y), operation.period_x, operation.period_y,
+		  operation.octaves, operation.lacunarity, operation.gain };
 	  }, node->operation);
 
 	const std::size_t index = program.instructions.size ();
@@ -331,9 +411,21 @@ namespace moppe::terrain {
 		(registers[instruction.x], registers[instruction.y],
 		 instruction.octaves, instruction.lacunarity,
 		 instruction.gain);
-	    else
+	    else if constexpr (std::is_same_v<T, RidgedRegister>)
 	      return instruction.table->ridged
 		(registers[instruction.x], registers[instruction.y],
+		 instruction.octaves, instruction.lacunarity,
+		 instruction.gain);
+	    else if constexpr (std::is_same_v<T, PeriodicFbmRegister>)
+	      return instruction.table->periodic_fbm
+		(registers[instruction.x], registers[instruction.y],
+		 instruction.period_x, instruction.period_y,
+		 instruction.octaves, instruction.lacunarity,
+		 instruction.gain);
+	    else
+	      return instruction.table->periodic_ridged
+		(registers[instruction.x], registers[instruction.y],
+		 instruction.period_x, instruction.period_y,
 		 instruction.octaves, instruction.lacunarity,
 		 instruction.gain);
 	  }, program.instructions[i]);
