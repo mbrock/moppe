@@ -204,6 +204,11 @@ namespace map {
 
   class RandomHeightMap: public NormalComputingHeightMap {
   public:
+    struct PipelineState {
+      std::vector<float> heights;
+      std::mt19937 randomness;
+    };
+
     RandomHeightMap (int width, int height,
 		     const Vector3D& size,
 		     int seed = 0,
@@ -248,6 +253,14 @@ namespace map {
     // value therefore fully determines both interactive and game terrain.
     void run_pipeline (const terrain::TerrainPipeline& pipeline,
 		       const PipelineProgress& progress = { });
+
+    // Incremental pipeline execution for interactive tools.  A checkpoint
+    // includes both heights and random state, so resuming a prefix is exactly
+    // equivalent to replaying the complete pipeline.
+    void begin_pipeline (const terrain::TerrainPipeline& pipeline);
+    void apply_pipeline_stage (const terrain::PipelineStage& stage);
+    PipelineState capture_pipeline_state () const;
+    void restore_pipeline_state (const PipelineState& state);
 
     // Load raw little-endian uint16 heights (width x height, row 0
     // first); value * meters_per_unit gives meters, normalized

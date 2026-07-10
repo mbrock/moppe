@@ -57,6 +57,38 @@ MOPPE_TEST (running_a_pipeline_twice_is_deterministic) {
   MOPPE_CHECK (maps_match (first, second));
 }
 
+MOPPE_TEST (pipeline_checkpoint_resume_matches_complete_replay) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (100, 20, 100);
+  TerrainPipeline pipeline = make_geological_pipeline (77);
+  pipeline.stages.emplace_back (PowerHeights { 1.15f });
+  pipeline.stages.emplace_back (HydraulicErosion {
+    .droplets = 257,
+    .batch_size = 64
+  });
+  pipeline.stages.emplace_back (ThermalErosion { 2, 0.003f });
+  map::RandomHeightMap replayed
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap resumed
+    (65, 65, size, 0, Topology::Torus);
+
+  replayed.run_pipeline (pipeline);
+  resumed.begin_pipeline (pipeline);
+  resumed.apply_pipeline_stage (pipeline.stages[0]);
+  const map::RandomHeightMap::PipelineState checkpoint =
+    resumed.capture_pipeline_state ();
+  resumed.apply_pipeline_stage (HydraulicErosion {
+    .droplets = 3,
+    .batch_size = 1
+  });
+  resumed.restore_pipeline_state (checkpoint);
+  for (std::size_t i = 1; i < pipeline.stages.size (); ++i)
+    resumed.apply_pipeline_stage (pipeline.stages[i]);
+
+  MOPPE_CHECK (maps_match (replayed, resumed));
+}
+
 MOPPE_TEST (periodic_pipeline_preserves_height_and_normal_seams) {
   using namespace moppe;
   using namespace moppe::terrain;

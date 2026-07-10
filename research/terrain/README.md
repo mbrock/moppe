@@ -49,3 +49,40 @@ For Moppe, they suggest two separable modules:
 
 Keeping those pieces separate will let the terrain lab compare methods while
 feeding every result into the same heightmap renderer.
+
+## Moppe implementation direction
+
+The analytical method needs one adaptation before it can operate on Moppe's
+periodic world.  Its river trees are rooted at fixed boundary cells, and the
+paper requires at least one such cell for a well-posed solution.  A torus has
+no geometric boundary.  Moppe should instead use an explicit outlet mask:
+
+- submerged ocean cells are fixed outlets in the normal random-world recipe;
+- an all-land recipe must provide explicit sinks, or deliberately select basin
+  minima as fixed sinks;
+- depression routing must ensure every other cell reaches one of those roots,
+  without creating a receiver cycle across a periodic seam.
+
+The first implementation should preserve the paper's module boundaries:
+
+1. Build a tested `DrainageGraph` containing one receiver per cell, a
+   topological ordering, accumulated drainage area, downstream distance, and
+   outlet/basin identity.
+2. Implement the paper's linear-time recursive analytical solution for
+   `n = 1` on a fixed drainage graph.
+3. Add the elevation/drainage fixed-point iteration, then its coarse-to-fine
+   V-cycle.  Keep fixed outlets unchanged at every level.
+4. Expose this as a separate pipeline stage beside droplet erosion, with time,
+   uplift, `k`, `m`, outlet policy, levels, and iteration count as first-class
+   parameters.
+5. Treat FastFlow as an optional GPU drainage backend for the same graph
+   product, not as a different meaning for the analytical stage.
+
+Initial profiling on the 2049-square world showed about 1.31 seconds for the
+geological field plus output and 11.02 seconds for the default-sized
+1.5-million-droplet pipeline.  Parallel CPU field evaluation reduced the
+first measurement to 0.77 seconds while preserving byte-identical output; the
+full run remained 10.78 seconds.  This makes pipeline-prefix reuse and a new
+erosion backend higher priorities than MSL field lowering.  MSL remains useful
+afterward for fast recipe previews and as the first alternative field
+evaluator, but it does not by itself accelerate the current CPU erosion pass.

@@ -245,7 +245,7 @@ namespace game {
     m_saved_heights.assign (map.raw_heights (),
 			    map.raw_heights () + count);
     m_active = true;
-    rerun_pipeline ();
+    rebuild_pipeline ();
   }
 
   void
@@ -256,6 +256,8 @@ namespace game {
     restore_game_map ();
     m_saved_heights.clear ();
     m_saved_heights.shrink_to_fit ();
+    m_checkpoints.clear ();
+    m_checkpoints.shrink_to_fit ();
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -309,7 +311,7 @@ namespace game {
       return;
     m_pipeline.layer = layer;
     m_selected_stage = -1;
-    rerun_pipeline ();
+    rebuild_pipeline ();
   }
 
   void
@@ -319,30 +321,57 @@ namespace game {
       (m_pipeline.randomness.seed, m_pipeline.layer);
     m_selected_stage = -1;
     m_stage_scroll = 0;
-    rerun_pipeline ();
+    rebuild_pipeline ();
   }
 
   void
-  TerrainLab::rerun_pipeline ()
+  TerrainLab::rebuild_pipeline ()
   {
     if (!m_map)
       return;
-    m_map->run_pipeline (m_pipeline);
+    m_map->begin_pipeline (m_pipeline);
+    m_checkpoints.clear ();
+    m_checkpoints.push_back (m_map->capture_pipeline_state ());
+    for (const terrain::PipelineStage& stage : m_pipeline.stages) {
+      m_map->apply_pipeline_stage (stage);
+      m_checkpoints.push_back (m_map->capture_pipeline_state ());
+    }
+    refresh ();
+  }
+
+  void
+  TerrainLab::rerun_pipeline_from (int first_stage)
+  {
+    if (!m_map || first_stage < 0
+	|| first_stage >= static_cast<int> (m_checkpoints.size ())) {
+      rebuild_pipeline ();
+      return;
+    }
+    m_map->restore_pipeline_state (m_checkpoints[first_stage]);
+    m_checkpoints.resize (static_cast<std::size_t> (first_stage) + 1);
+    for (std::size_t i = static_cast<std::size_t> (first_stage);
+	 i < m_pipeline.stages.size (); ++i) {
+      m_map->apply_pipeline_stage (m_pipeline.stages[i]);
+      m_checkpoints.push_back (m_map->capture_pipeline_state ());
+    }
     refresh ();
   }
 
   void
   TerrainLab::append_stage (terrain::PipelineStage stage)
   {
+    const int first_stage = static_cast<int> (m_pipeline.stages.size ());
     m_pipeline.stages.push_back (std::move (stage));
     m_selected_stage = static_cast<int> (m_pipeline.stages.size ()) - 1;
     ensure_selected_stage_visible ();
-    rerun_pipeline ();
+    rerun_pipeline_from (first_stage);
   }
 
   void
   TerrainLab::move_selected_stage (int direction)
   {
+    const int first_stage = std::min
+      (m_selected_stage, m_selected_stage + direction);
     const int target = m_selected_stage + direction;
     if (m_selected_stage < 0 || target < 0
 	|| target >= static_cast<int> (m_pipeline.stages.size ()))
@@ -351,7 +380,7 @@ namespace game {
 	       m_pipeline.stages[target]);
     m_selected_stage = target;
     ensure_selected_stage_visible ();
-    rerun_pipeline ();
+    rerun_pipeline_from (first_stage);
   }
 
   void
@@ -360,12 +389,13 @@ namespace game {
     if (m_selected_stage < 0
 	|| m_selected_stage >= static_cast<int> (m_pipeline.stages.size ()))
       return;
-    const auto position = m_pipeline.stages.begin () + m_selected_stage + 1;
+    const int first_stage = m_selected_stage + 1;
+    const auto position = m_pipeline.stages.begin () + first_stage;
     m_pipeline.stages.insert
       (position, m_pipeline.stages[m_selected_stage]);
     ++m_selected_stage;
     ensure_selected_stage_visible ();
-    rerun_pipeline ();
+    rerun_pipeline_from (first_stage);
   }
 
   void
@@ -374,6 +404,7 @@ namespace game {
     if (m_selected_stage < 0
 	|| m_selected_stage >= static_cast<int> (m_pipeline.stages.size ()))
       return;
+    const int first_stage = m_selected_stage;
     m_pipeline.stages.erase
       (m_pipeline.stages.begin () + m_selected_stage);
     if (m_pipeline.stages.empty ())
@@ -382,7 +413,7 @@ namespace game {
       m_selected_stage = std::min
 	(m_selected_stage, static_cast<int> (m_pipeline.stages.size ()) - 1);
     ensure_selected_stage_visible ();
-    rerun_pipeline ();
+    rerun_pipeline_from (first_stage);
   }
 
   void
@@ -451,7 +482,7 @@ namespace game {
       default:
 	return;
       }
-      rerun_pipeline ();
+      rebuild_pipeline ();
       return;
     }
 
@@ -479,7 +510,7 @@ namespace game {
     } else {
       return;
     }
-    rerun_pipeline ();
+    rerun_pipeline_from (m_selected_stage);
   }
 
   void
@@ -498,7 +529,7 @@ namespace game {
       m_pipeline.recipe.seeds = terrain::derive_geological_seeds (seed);
       m_pipeline.randomness = { .seed = seed, .offset = 3 };
       m_selected_stage = -1;
-      rerun_pipeline ();
+      rebuild_pipeline ();
       return;
     }
     if (fit_rect ().contains (x, y)) {
@@ -646,7 +677,7 @@ namespace game {
 	(m_pipeline.randomness.seed);
       m_pipeline.randomness.offset = 3;
       m_selected_stage = -1;
-      rerun_pipeline ();
+      rebuild_pipeline ();
       break;
     case Key::E:
       append_stage (terrain::HydraulicErosion { 100000 });

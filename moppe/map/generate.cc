@@ -267,31 +267,67 @@ namespace map {
   }
 
   void
-  RandomHeightMap::run_pipeline
-    (const terrain::TerrainPipeline& pipeline,
-     const PipelineProgress& progress)
+  RandomHeightMap::begin_pipeline
+    (const terrain::TerrainPipeline& pipeline)
   {
     terrain::validate_pipeline (pipeline);
     m_rng.seed (pipeline.randomness.seed);
     m_rng.discard (pipeline.randomness.offset);
     materialize_geological_recipe (pipeline.recipe, pipeline.layer);
+  }
 
+  void
+  RandomHeightMap::apply_pipeline_stage
+    (const terrain::PipelineStage& stage)
+  {
+    if (std::holds_alternative<terrain::NormalizeHeights> (stage))
+      normalize ();
+    else if (const auto* power =
+	     std::get_if<terrain::PowerHeights> (&stage))
+      exponentiate (power->exponent);
+    else if (const auto* hydraulic =
+	     std::get_if<terrain::HydraulicErosion> (&stage))
+      erode_hydraulically (hydraulic->droplets, hydraulic->batch_size);
+    else if (const auto* thermal =
+	     std::get_if<terrain::ThermalErosion> (&stage))
+      erode_thermally (thermal->iterations, thermal->talus);
+    synchronize_periodic_edges ();
+  }
+
+  RandomHeightMap::PipelineState
+  RandomHeightMap::capture_pipeline_state () const
+  {
+    const std::size_t count = static_cast<std::size_t> (m_width) * m_height;
+    return {
+      .heights = std::vector<float> (raw_heights (), raw_heights () + count),
+      .randomness = m_rng
+    };
+  }
+
+  void
+  RandomHeightMap::restore_pipeline_state (const PipelineState& state)
+  {
+    const std::size_t expected =
+      static_cast<std::size_t> (m_width) * m_height;
+    if (state.heights.size () != expected)
+      throw std::invalid_argument
+	("pipeline checkpoint dimensions do not match heightmap");
+    std::size_t i = 0;
+    FORALL (x, y)
+      set (x, y, state.heights[i++]);
+    m_rng = state.randomness;
+  }
+
+  void
+  RandomHeightMap::run_pipeline
+    (const terrain::TerrainPipeline& pipeline,
+     const PipelineProgress& progress)
+  {
+    begin_pipeline (pipeline);
     for (std::size_t i = 0; i < pipeline.stages.size (); ++i) {
-      const terrain::PipelineStage& stage = pipeline.stages[i];
       if (progress)
-	progress (i, stage);
-      if (std::holds_alternative<terrain::NormalizeHeights> (stage))
-	normalize ();
-      else if (const auto* power =
-	       std::get_if<terrain::PowerHeights> (&stage))
-	exponentiate (power->exponent);
-      else if (const auto* hydraulic =
-	       std::get_if<terrain::HydraulicErosion> (&stage))
-	erode_hydraulically (hydraulic->droplets, hydraulic->batch_size);
-      else if (const auto* thermal =
-	       std::get_if<terrain::ThermalErosion> (&stage))
-	erode_thermally (thermal->iterations, thermal->talus);
-      synchronize_periodic_edges ();
+	progress (i, pipeline.stages[i]);
+      apply_pipeline_stage (pipeline.stages[i]);
     }
   }
 

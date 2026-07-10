@@ -42,6 +42,16 @@ MOPPE_TEST (cpu_evaluator_composes_arithmetic_and_sine) {
   MOPPE_CHECK_NEAR (raster.at (4, 0), 0.0f, 1e-5f);
 }
 
+MOPPE_TEST (large_cpu_evaluation_preserves_field_values) {
+  const Domain2D domain { .width = 257, .height = 257 };
+  const ScalarField field = coordinate_x () + 2.0f * coordinate_y ();
+  const ScalarRaster raster = CpuEvaluator ().evaluate (field, domain);
+
+  MOPPE_CHECK_NEAR (raster.at (0, 0), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (raster.at (128, 128), 1.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (raster.at (256, 256), 3.0f, 1e-6f);
+}
+
 MOPPE_TEST (cpu_evaluator_rejects_degenerate_domains) {
   bool threw = false;
   try {
