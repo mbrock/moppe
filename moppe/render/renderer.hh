@@ -7,6 +7,7 @@
 #include <moppe/render/draw.hh>
 
 #include <cstdint>
+#include <string>
 
 namespace moppe {
 namespace render {
@@ -144,6 +145,10 @@ namespace render {
     virtual void apply_motion_blur (float strength) = 0;
     // 2D overlay in point coordinates, y-down, origin top-left.
     virtual void draw_hud (const DrawList& list) = 0;
+    // Development capture: the backend writes the next completed frame.
+    // Unsupported platforms may leave this as a no-op.
+    virtual void request_screenshot (const std::string& path)
+    { (void) path; }
     virtual void end_frame () = 0;
 
     // -- geometry of the drawable -------------------------------------

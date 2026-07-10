@@ -317,6 +317,8 @@ namespace platform {
       MoppeView* view = [[MoppeView alloc] initWithFrame: frame
 						  device: nil];
       view.game = &game;
+      if (config.capture_frames)
+	view.framebufferOnly = NO;
       window.contentView = view;
       match_screen_refresh_rate (view);
       match_screen_render_size (view);

@@ -17,13 +17,16 @@
 #import <UIKit/UIKit.h>
 #else
 #import <AppKit/AppKit.h>
+#import <ImageIO/ImageIO.h>
 #endif
 
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -49,6 +52,88 @@ namespace render {
     };
     const int PROBE_W = 32;       // auto-exposure luminance probe
     const int PROBE_H = 16;
+
+#if !TARGET_OS_IPHONE
+    float half_to_float (std::uint16_t half) {
+      const std::uint32_t sign = (half & 0x8000u) << 16;
+      std::uint32_t exponent = (half >> 10) & 0x1fu;
+      std::uint32_t mantissa = half & 0x03ffu;
+      std::uint32_t bits;
+      if (exponent == 0) {
+	if (mantissa == 0) {
+	  bits = sign;
+	} else {
+	  exponent = 113;
+	  while ((mantissa & 0x0400u) == 0) {
+	    mantissa <<= 1;
+	    --exponent;
+	  }
+	  mantissa &= 0x03ffu;
+	  bits = sign | (exponent << 23) | (mantissa << 13);
+	}
+      } else if (exponent == 31) {
+	bits = sign | 0x7f800000u | (mantissa << 13);
+      } else {
+	bits = sign | ((exponent + 112) << 23) | (mantissa << 13);
+      }
+      return std::bit_cast<float> (bits);
+    }
+
+    unsigned char linear_byte (float value) {
+      value = std::clamp (value, 0.0f, 1.0f);
+      const float srgb = value <= 0.0031308f
+	? value * 12.92f
+	: 1.055f * std::pow (value, 1.0f / 2.4f) - 0.055f;
+      return static_cast<unsigned char> (srgb * 255.0f + 0.5f);
+    }
+
+    bool write_capture_png (const std::string& path, int width, int height,
+			    std::size_t source_row_bytes,
+			    const void* source) {
+      std::vector<unsigned char> pixels
+	(static_cast<std::size_t> (width) * height * 4);
+      const auto* bytes = static_cast<const unsigned char*> (source);
+      for (int y = 0; y < height; ++y) {
+	const auto* row = reinterpret_cast<const std::uint16_t*>
+	  (bytes + static_cast<std::size_t> (y) * source_row_bytes);
+	for (int x = 0; x < width; ++x) {
+	  unsigned char* pixel = pixels.data ()
+	    + (static_cast<std::size_t> (y) * width + x) * 4;
+	  pixel[0] = linear_byte (half_to_float (row[x * 4]));
+	  pixel[1] = linear_byte (half_to_float (row[x * 4 + 1]));
+	  pixel[2] = linear_byte (half_to_float (row[x * 4 + 2]));
+	  pixel[3] = 255;
+	}
+      }
+
+      CGDataProviderRef provider = CGDataProviderCreateWithData
+	(nullptr, pixels.data (), pixels.size (), nullptr);
+      CGColorSpaceRef color_space = CGColorSpaceCreateWithName
+	(kCGColorSpaceSRGB);
+      CGImageRef image = CGImageCreate
+	(width, height, 8, 32, static_cast<std::size_t> (width) * 4,
+	 color_space, static_cast<CGBitmapInfo>
+	 (static_cast<std::uint32_t> (kCGImageAlphaLast)
+	  | static_cast<std::uint32_t> (kCGBitmapByteOrderDefault)),
+	 provider, nullptr, false, kCGRenderingIntentDefault);
+      NSString* filename = [NSString stringWithUTF8String:path.c_str ()];
+      NSURL* url = [NSURL fileURLWithPath:filename];
+      CGImageDestinationRef destination = CGImageDestinationCreateWithURL
+	((__bridge CFURLRef) url, CFSTR ("public.png"), 1, nullptr);
+      bool written = false;
+      if (destination && image) {
+	CGImageDestinationAddImage (destination, image, nullptr);
+	written = CGImageDestinationFinalize (destination);
+      }
+      if (destination)
+	CFRelease (destination);
+      if (image)
+	CGImageRelease (image);
+      CGColorSpaceRelease (color_space);
+      CGDataProviderRelease (provider);
+      return written;
+    }
+#endif
 
     MoppeFloat4 f4 (const Vector3D& v, float w = 0.0f) {
       MoppeFloat4 r; r.x = v.x; r.y = v.y; r.z = v.z; r.w = w;
@@ -112,6 +197,7 @@ namespace render {
     void apply_underwater (float time) override;
     void apply_motion_blur (float strength) override;
     void draw_hud (const DrawList& list) override;
+    void request_screenshot (const std::string& path) override;
     void end_frame () override;
 
     int width_pts () const override { return m_width_pts; }
@@ -226,6 +312,7 @@ namespace render {
 
     int m_width_pts = 0, m_height_pts = 0;
     float m_scale = 1.0f;
+    std::string m_screenshot_path;
   };
 
   // ------------------------------------------------------------------
@@ -245,7 +332,6 @@ namespace render {
 #endif
     view.depthStencilPixelFormat = MTLPixelFormatInvalid;
     view.sampleCount = 1;
-    view.framebufferOnly = YES;
 #if !TARGET_OS_IPHONE
     {
       CGColorSpaceRef linear =
@@ -1520,10 +1606,48 @@ namespace render {
   }
 
   void
+  MetalRenderer::request_screenshot (const std::string& path) {
+    m_screenshot_path = path;
+  }
+
+  void
   MetalRenderer::end_frame () {
     end_scene_encoder ();   // in case nothing was drawn
 
-    if (m_drawable)
+#if !TARGET_OS_IPHONE
+    id<MTLBuffer> capture = nil;
+    std::size_t capture_row_bytes = 0;
+    int capture_width = 0;
+    int capture_height = 0;
+    const std::string capture_path = m_screenshot_path;
+    if (!capture_path.empty () && m_drawable) {
+      capture_width = static_cast<int> (m_drawable.texture.width);
+      capture_height = static_cast<int> (m_drawable.texture.height);
+      capture_row_bytes =
+	(static_cast<std::size_t> (capture_width) * 8 + 255)
+	& ~static_cast<std::size_t> (255);
+      capture = [m_device
+	newBufferWithLength:capture_row_bytes * capture_height
+	options:MTLResourceStorageModeShared];
+      id<MTLBlitCommandEncoder> blit = [m_cmd blitCommandEncoder];
+      [blit copyFromTexture:m_drawable.texture
+		sourceSlice:0
+		sourceLevel:0
+	       sourceOrigin:MTLOriginMake (0, 0, 0)
+		 sourceSize:MTLSizeMake (capture_width, capture_height, 1)
+		   toBuffer:capture
+	  destinationOffset:0
+     destinationBytesPerRow:capture_row_bytes
+   destinationBytesPerImage:capture_row_bytes * capture_height];
+      [blit endEncoding];
+    }
+#endif
+
+    if (m_drawable
+#if !TARGET_OS_IPHONE
+	&& capture_path.empty ()
+#endif
+       )
       [m_cmd presentDrawable: m_drawable];
 
     dispatch_semaphore_t sem = m_inflight;
@@ -1531,6 +1655,20 @@ namespace render {
       dispatch_semaphore_signal (sem);
     }];
     [m_cmd commit];
+
+#if !TARGET_OS_IPHONE
+    if (capture) {
+      [m_cmd waitUntilCompleted];
+      if (!write_capture_png
+	  (capture_path, capture_width, capture_height,
+	   capture_row_bytes, capture.contents))
+	std::cerr << "moppe: failed to write screenshot "
+		  << capture_path << std::endl;
+      else
+	std::cout << "moppe: wrote screenshot " << capture_path << std::endl;
+    }
+    m_screenshot_path.clear ();
+#endif
 
     m_cmd = nil;
     m_drawable = nil;

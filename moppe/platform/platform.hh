@@ -29,6 +29,7 @@ namespace platform {
     int width = 1280;             // ignored when fullscreen
     int height = 800;
     bool fullscreen = false;
+    bool capture_frames = false;  // request blit-readable drawables
   };
 
   // Continuous controls used by touch/gamepad-style platforms.  The

@@ -141,8 +141,9 @@ The Terrain Lab window presents the system as a small construction game:
 - the geological source and every materialized stage are selectable rows;
 - normalization, power, hydraulic, and thermal stages can be appended;
 - selected stages can be moved, copied, deleted, and edited in place;
-- selecting the source exposes synth-style rotary controls for warp, cycle
-  count, mask, and blend parameters; drag vertically to adjust them;
+- continuous values use synth-style rotary controls with vertical dragging;
+- natural-number values such as periodic wave counts, erosion droplets,
+  batches, and passes use explicit digital minus/value/plus counters;
 - changing the inspected layer or random seed preserves the downstream stack;
 - reset returns to the canonical normalized base recipe;
 - left-dragging outside the window orbits, right- or middle-dragging pans,
@@ -152,6 +153,11 @@ The Terrain Lab window presents the system as a small construction game:
 - Cover View repeats the square around the camera through the existing
   gameplay LOD path and fades the finite draw horizon into distance haze;
 - Donut View embeds the periodic heightfield as an actual torus on the GPU.
+
+The three `WAVES` counters are integer spatial frequencies: how many periods
+fit around one fundamental side of the torus.  They are not literal counts of
+continents, plains, or mountain ranges; integer frequencies are what make the
+noise join seamlessly at the world boundary.
 
 Every action edits the `TerrainProgram` or `GeologicalRecipe` value.  The lab
 keeps exact height-and-random-state checkpoints at stage inputs, so a stage
@@ -167,6 +173,20 @@ completed preview morphs from the previous height texture over 120 ms, with
 normals derived from the interpolated surface.  The UI itself is Moppe's small
 immediate-mode `InspectorUi` drawn through `DrawList`, not an external widget
 library.
+
+For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
+1025-square field and skips canonical erosion, vegetation, stars, fish, and
+wildlife setup.  The full build-and-capture loop is scriptable:
+
+```sh
+make terrain-lab-shot
+tools/capture-terrain-lab /tmp/lab.png
+```
+
+The capture command defaults to seed 123, reads the completed Metal drawable
+back directly, writes an 8-bit sRGB PNG, and exits.  It does not need window
+automation or screen-capture tooling.  `MOPPE_SEED` and `MOPPE_RENDERSCALE`
+override its deterministic seed and output scale.
 
 In C++, a scripted experiment is ordinary value manipulation:
 
@@ -248,8 +268,8 @@ are `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and
 
 ## Next boundaries
 
-- Add parameter metadata so Terrain Lab can generate suitable sliders and
-  numeric controls from recipe members rather than hard-code each widget.
+- Promote the current continuous/natural UI domains into terrain-level
+  parameter metadata so tools can generate controls without hard-coded rows.
 - Add a stable serialization format for sources and programs, then layer a
   lightweight scripting language over the same values.
 - Generalize hydraulic constants into their own first-class parameter value.

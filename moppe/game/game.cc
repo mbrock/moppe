@@ -114,10 +114,12 @@ namespace game {
 
   class MoppeGame: public platform::Game {
   public:
-    MoppeGame (const WorldParams& world, bool start_in_terrain_lab)
+    MoppeGame (const WorldParams& world, bool start_in_terrain_lab,
+	       bool terrain_lab_preview, int seed,
+	       std::string screenshot_path)
       : m_world (world),
 	m_spawn_position (world.spawn_position ()),
-	m_seed ((int) ::time (0)),
+	m_seed (seed >= 0 ? seed : static_cast<int> (::time (0))),
 	m_map (world.resolution, world.resolution, world.map_size,
 	       m_seed, world.topology ()),
 	m_camera (18, 6.5f * one_meter),
@@ -130,6 +132,9 @@ namespace game {
 	       900),
 	m_renderer (0),
 	m_start_in_terrain_lab (start_in_terrain_lab),
+	m_terrain_lab_preview (terrain_lab_preview),
+	m_screenshot_path (std::move (screenshot_path)),
+	m_screenshot_frames (0),
 	m_ready (false),
 	m_gen_stage (0),
 	m_total_time (0),
@@ -252,7 +257,12 @@ namespace game {
     }
 
     void generate_world_inner () {
-      if (m_world.city_mode) {
+      if (m_terrain_lab_preview) {
+	m_gen_stage = 3;
+	const terrain::TerrainProgram program =
+	  terrain::make_geological_program (m_seed);
+	map::TerrainEvaluator (m_map).evaluate (program);
+      } else if (m_world.city_mode) {
 	m_gen_stage = 1;
 	m_city.generate (m_map, m_world);
       } else if (m_world.pico_mode) {
@@ -286,13 +296,15 @@ namespace game {
       m_gen_stage = 5;
       m_map.recompute_normals ();
 
-      m_vegetation.generate
-	(m_map, m_world, Vegetation::population_for (m_world));
-      m_stars.generate (m_map, m_world,
-			m_world.pico_mode ? 250
-			: m_world.city_mode ? 130 : 80);
-      m_fish.generate (m_map, m_world);
-      m_wildlife.generate (m_map, m_world);
+      if (!m_terrain_lab_preview) {
+	m_vegetation.generate
+	  (m_map, m_world, Vegetation::population_for (m_world));
+	m_stars.generate (m_map, m_world,
+			  m_world.pico_mode ? 250
+			  : m_world.city_mode ? 130 : 80);
+	m_fish.generate (m_map, m_world);
+	m_wildlife.generate (m_map, m_world);
+      }
       m_gen_stage = 6;
     }
 
@@ -302,9 +314,11 @@ namespace game {
       render::Renderer& r = *m_renderer;
 
       m_terrain.setup (r, m_map, m_world);
-      m_terrain.render_shadow (r, m_map,
-			       sun_direction_for (SUN_HEIGHT));
-      m_vegetation.load (r);
+      if (!m_terrain_lab_preview) {
+	m_terrain.render_shadow (r, m_map,
+				 sun_direction_for (SUN_HEIGHT));
+	m_vegetation.load (r);
+      }
       if (m_world.city_mode)
 	m_city.load (r);
 
@@ -322,7 +336,8 @@ namespace game {
       m_vehicle.set_obstacles (&m_city.obstacles ());
       m_car.set_obstacles (&m_city.obstacles ());
 
-      if (!m_world.city_mode && !m_world.pico_mode) {
+      if (!m_terrain_lab_preview
+	  && !m_world.city_mode && !m_world.pico_mode) {
 	m_spawn_position = choose_landscape_spawn ();
 	m_vehicle.reset (m_spawn_position);
 
@@ -697,6 +712,11 @@ namespace game {
 	fp.sun_visibility = terrain_lab ? 0.0f : m_flare;
       }
 
+      const bool captured = terrain_lab && !m_screenshot_path.empty ()
+	&& ++m_screenshot_frames >= 30;
+      if (captured) {
+	r.request_screenshot (m_screenshot_path);
+      }
       if (!r.begin_frame (fp))
 	return;
 
@@ -826,6 +846,10 @@ namespace game {
       r.draw_hud (m_hud_dl);
 
       r.end_frame ();
+      if (captured) {
+	m_screenshot_path.clear ();
+	platform::request_quit ();
+      }
     }
 
     void render_loading (render::Renderer& r) {
@@ -1155,6 +1179,9 @@ namespace game {
 
     render::Renderer* m_renderer;
     bool m_start_in_terrain_lab;
+    bool m_terrain_lab_preview;
+    std::string m_screenshot_path;
+    int m_screenshot_frames;
     std::atomic<bool> m_ready;
     std::atomic<int> m_gen_stage;
 
@@ -1196,6 +1223,9 @@ main (int argc, char** argv) {
   game::WorldParams world;
   platform::Config config;
   bool start_in_terrain_lab = false;
+  bool terrain_lab_preview = false;
+  std::string screenshot_path;
+  int seed = -1;
   config.title = "Moppe";
   config.fullscreen = true;
 
@@ -1220,14 +1250,42 @@ main (int argc, char** argv) {
       config.fullscreen = false;
     } else if (arg == "--terrain-lab") {
       start_in_terrain_lab = true;
+    } else if (arg == "--terrain-lab-preview") {
+      start_in_terrain_lab = true;
+      terrain_lab_preview = true;
+      config.fullscreen = false;
+      world.resolution = 1025;
+    } else if (arg == "--terrain-lab-screenshot") {
+      if (i + 1 >= argc) {
+	std::cerr << "--terrain-lab-screenshot requires a PNG path\n";
+	return -1;
+      }
+      screenshot_path = argv[++i];
+      start_in_terrain_lab = true;
+      terrain_lab_preview = true;
+      config.fullscreen = false;
+      world.resolution = 1025;
+    } else if (arg == "--seed") {
+      if (i + 1 >= argc) {
+	std::cerr << "--seed requires an integer\n";
+	return -1;
+      }
+      seed = std::atoi (argv[++i]);
     }
   }
+  if (terrain_lab_preview)
+    config.fullscreen = false;
+  config.capture_frames = !screenshot_path.empty ();
+  if (!screenshot_path.empty () && seed < 0)
+    seed = 123;
 
   // Debug: override the sun height (e.g. 0.55 for long shadows).
   if (const char* sh = ::getenv ("MOPPE_SUNHEIGHT"))
     game::SUN_HEIGHT = (float) ::atof (sh);
 
-  game::MoppeGame game (world, start_in_terrain_lab);
+  game::MoppeGame game
+    (world, start_in_terrain_lab, terrain_lab_preview, seed,
+     std::move (screenshot_path));
 
   try {
     return platform::run (game, config);

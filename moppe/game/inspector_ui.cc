@@ -43,6 +43,17 @@ namespace game {
 	     bounds.height - 6 };
   }
 
+  UiRect counter_minus_rect (const UiRect& bounds) {
+    const UiRect control = parameter_control_rect (bounds);
+    return { control.x, control.y + 2, 28, control.height - 4 };
+  }
+
+  UiRect counter_plus_rect (const UiRect& bounds) {
+    const UiRect control = parameter_control_rect (bounds);
+    return { control.x + control.width - 28, control.y + 2, 28,
+	     control.height - 4 };
+  }
+
   void
   InspectorUi::load (render::Renderer& renderer)
   {
@@ -270,9 +281,54 @@ namespace game {
     dl.end ();
 
     const float angle = (0.75f + normalized * 1.5f) * 3.14159265f;
+    dl.color (0.24f, 0.38f, 0.35f, 0.9f);
+    for (int i = 0; i < 9; ++i) {
+      const float tick = (0.75f + i * 1.5f / 8.0f) * 3.14159265f;
+      dl.line (cx + std::cos (tick) * 15.0f,
+	       cy + std::sin (tick) * 15.0f,
+	       cx + std::cos (tick) * 17.0f,
+	       cy + std::sin (tick) * 17.0f, 1.0f);
+    }
     dl.color (0.96f, 1.0f, 0.72f, 0.99f);
     dl.line (cx, cy, cx + std::cos (angle) * 9.0f,
 	     cy + std::sin (angle) * 9.0f, 2.0f);
+  }
+
+  void
+  InspectorUi::counter
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& label_text, const std::string& value,
+     bool minus_hot, bool plus_hot, bool pressed) const
+  {
+    dl.color (0.095f, 0.16f, 0.19f, 0.98f);
+    fill_rect (dl, bounds);
+    dl.color (0.18f, 0.29f, 0.34f, 0.9f);
+    dl.line (bounds.x, bounds.y + bounds.height,
+	     bounds.x + bounds.width, bounds.y + bounds.height, 1.0f);
+    if (m_body) {
+      dl.color (0.68f, 0.80f, 0.86f, 0.99f);
+      m_body->draw (dl, bounds.x + 7,
+		    bounds.y + bounds.height * 0.5f + 4,
+		    label_text);
+    }
+
+    const UiRect minus = counter_minus_rect (bounds);
+    const UiRect plus = counter_plus_rect (bounds);
+    const UiRect value_box
+      { minus.x + minus.width + 3, minus.y,
+	plus.x - minus.x - minus.width - 6, minus.height };
+    button (dl, minus, "-", minus_hot, pressed, false);
+    button (dl, plus, "+", plus_hot, pressed, false);
+    dl.color (0.025f, 0.055f, 0.07f, 0.99f);
+    fill_rect (dl, value_box);
+    bevel (dl, value_box, true);
+    if (m_key) {
+      dl.color (0.72f, 0.94f, 1.0f, 0.99f);
+      const float value_width = m_key->measure (value);
+      m_key->draw (dl,
+	value_box.x + (value_box.width - value_width) * 0.5f,
+	value_box.y + value_box.height * 0.5f + 4, value);
+    }
   }
 }
 }

@@ -160,29 +160,33 @@ namespace game {
     struct PropertyText {
       std::string label;
       std::string value;
+      ParameterDomain domain;
     };
 
     PropertyText recipe_property
       (const terrain::GeologicalRecipe& recipe, int row) {
       switch (row) {
       case 0: return { "WARP STRENGTH",
-	format_float (recipe.warp.amplitude, 3) };
-      case 1: return { "CONTINENT CYCLES",
-	std::to_string (recipe.continent.noise.cycles) };
-      case 2: return { "PLAINS CYCLES",
-	std::to_string (recipe.plains.noise.cycles) };
-      case 3: return { "MOUNTAIN CYCLES",
-	std::to_string (recipe.mountains.cycles) };
+	format_float (recipe.warp.amplitude, 3), ParameterDomain::Continuous };
+      case 1: return { "CONTINENT WAVES",
+	std::to_string (recipe.continent.noise.cycles), ParameterDomain::Natural };
+      case 2: return { "PLAINS WAVES",
+	std::to_string (recipe.plains.noise.cycles), ParameterDomain::Natural };
+      case 3: return { "RIDGE WAVES",
+	std::to_string (recipe.mountains.cycles), ParameterDomain::Natural };
       case 4: return { "MASK START",
-	format_float (recipe.blend.mask_low, 3) };
+	format_float (recipe.blend.mask_low, 3), ParameterDomain::Continuous };
       case 5: return { "MASK END",
-	format_float (recipe.blend.mask_high, 3) };
+	format_float (recipe.blend.mask_high, 3), ParameterDomain::Continuous };
       case 6: return { "CONTINENT MIX",
-	format_float (recipe.blend.continent_weight, 2) };
+	format_float (recipe.blend.continent_weight, 2),
+	ParameterDomain::Continuous };
       case 7: return { "PLAINS MIX",
-	format_float (recipe.blend.plains_weight, 2) };
+	format_float (recipe.blend.plains_weight, 2),
+	ParameterDomain::Continuous };
       default: return { "MOUNTAIN MIX",
-	format_float (recipe.blend.mountain_weight, 2) };
+	format_float (recipe.blend.mountain_weight, 2),
+	ParameterDomain::Continuous };
       }
     }
 
@@ -200,17 +204,22 @@ namespace game {
       (const terrain::TerrainTransform& stage, int row) {
       if (const auto* power =
 	  std::get_if<terrain::PowerHeights> (&stage))
-	return { "EXPONENT", format_float (power->exponent, 2) };
+	return { "EXPONENT", format_float (power->exponent, 2),
+	  ParameterDomain::Continuous };
       if (const auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage)) {
 	if (row == 0)
-	  return { "DROPLETS", format_count (hydraulic->droplets) };
-	return { "BATCH SIZE", format_count (hydraulic->batch_size) };
+	  return { "DROPLETS", format_count (hydraulic->droplets),
+	    ParameterDomain::Natural };
+	return { "BATCH SIZE", format_count (hydraulic->batch_size),
+	  ParameterDomain::Natural };
       }
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       if (row == 0)
-	return { "PASSES", std::to_string (thermal.iterations) };
-      return { "TALUS", format_float (thermal.talus, 4) };
+	return { "PASSES", std::to_string (thermal.iterations),
+	  ParameterDomain::Natural };
+      return { "TALUS", format_float (thermal.talus, 4),
+	ParameterDomain::Continuous };
     }
   }
 
@@ -538,9 +547,20 @@ namespace game {
     return 0.0f;
   }
 
+  ParameterDomain
+  TerrainLab::selected_property_domain (int row) const
+  {
+    if (m_selected_stage < 0)
+      return recipe_property (m_program.source.recipe, row).domain;
+    return stage_property
+      (m_program.transforms[m_selected_stage], row).domain;
+  }
+
   bool
   TerrainLab::set_selected_property_normalized (int row, float value)
   {
+    if (selected_property_domain (row) != ParameterDomain::Continuous)
+      return false;
     value = std::clamp (value, 0.0f, 1.0f);
     const auto mix = [value] (float low, float high) {
       return low + value * (high - low);
@@ -626,6 +646,50 @@ namespace game {
       const float old = thermal->talus;
       thermal->talus = mix (0.0f, 0.05f);
       return thermal->talus != old;
+    }
+    return false;
+  }
+
+  bool
+  TerrainLab::adjust_selected_natural (int row, int direction)
+  {
+    if (direction == 0
+	|| selected_property_domain (row) != ParameterDomain::Natural)
+      return false;
+    if (m_selected_stage < 0) {
+      terrain::GeologicalRecipe& recipe = m_program.source.recipe;
+      int* value = row == 1 ? &recipe.continent.noise.cycles
+	: row == 2 ? &recipe.plains.noise.cycles
+	: &recipe.mountains.cycles;
+      const int maximum = row == 1 ? 16 : row == 2 ? 32 : 8;
+      const int changed = std::clamp (*value + direction, 1, maximum);
+      if (changed == *value)
+	return false;
+      *value = changed;
+      return true;
+    }
+
+    terrain::TerrainTransform& stage =
+      m_program.transforms[m_selected_stage];
+    if (auto* hydraulic =
+	std::get_if<terrain::HydraulicErosion> (&stage)) {
+      int& value = row == 0 ? hydraulic->droplets : hydraulic->batch_size;
+      const int step = row == 0 ? 25000 : 64;
+      const int low = row == 0 ? 0 : 1;
+      const int high = row == 0 ? 2000000 : 4096;
+      const int changed = std::clamp (value + direction * step, low, high);
+      if (changed == value)
+	return false;
+      value = changed;
+      return true;
+    }
+    if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
+      const int changed = std::clamp
+	(thermal->iterations + direction, 0, 20);
+      if (changed == thermal->iterations)
+	return false;
+      thermal->iterations = changed;
+      return true;
     }
     return false;
   }
@@ -727,6 +791,23 @@ namespace game {
       else
 	remove_selected_stage ();
       return;
+    }
+
+    int property_count = 9;
+    if (m_selected_stage >= 0)
+      property_count = stage_property_count
+	(m_program.transforms[m_selected_stage]);
+    for (int row = 0; row < property_count; ++row) {
+      if (selected_property_domain (row) != ParameterDomain::Natural)
+	continue;
+      const UiRect bounds = property_rect (row);
+      const int direction = counter_minus_rect (bounds).contains (x, y)
+	? -1 : counter_plus_rect (bounds).contains (x, y) ? 1 : 0;
+      if (adjust_selected_natural (row, direction)) {
+	queue_parameter_rebuild ();
+	run_pending_parameter_rebuild ();
+	return;
+      }
     }
 
     if (m_selected_stage >= 0) {
@@ -905,6 +986,8 @@ namespace game {
 	for (int row = 0; row < property_count; ++row) {
 	  if (!parameter_control_rect (property_rect (row)).contains (x, y))
 	    continue;
+	  if (selected_property_domain (row) != ParameterDomain::Continuous)
+	    continue;
 	  m_parameter_drag = true;
 	  m_drag_property = row;
 	  m_drag_start_y = y;
@@ -1055,11 +1138,18 @@ namespace game {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = recipe_property
 	  (m_program.source.recipe, row);
-	m_ui.knob
-	  (dl, bounds, property.label, property.value,
-	   selected_property_normalized (row),
-	   hot (parameter_control_rect (bounds)),
-	   m_parameter_drag && m_drag_property == row);
+	if (property.domain == ParameterDomain::Continuous) {
+	  m_ui.knob
+	    (dl, bounds, property.label, property.value,
+	     selected_property_normalized (row),
+	     hot (parameter_control_rect (bounds)),
+	     m_parameter_drag && m_drag_property == row);
+	} else {
+	  m_ui.counter
+	    (dl, bounds, property.label, property.value,
+	     hot (counter_minus_rect (bounds)),
+	     hot (counter_plus_rect (bounds)), m_pointer_down);
+	}
       }
     } else {
       const terrain::TerrainTransform& stage =
@@ -1068,11 +1158,18 @@ namespace game {
       for (int row = 0; row < count; ++row) {
 	const UiRect bounds = property_rect (row);
 	const PropertyText property = stage_property (stage, row);
-	m_ui.knob
-	  (dl, bounds, property.label, property.value,
-	   selected_property_normalized (row),
-	   hot (parameter_control_rect (bounds)),
-	   m_parameter_drag && m_drag_property == row);
+	if (property.domain == ParameterDomain::Continuous) {
+	  m_ui.knob
+	    (dl, bounds, property.label, property.value,
+	     selected_property_normalized (row),
+	     hot (parameter_control_rect (bounds)),
+	     m_parameter_drag && m_drag_property == row);
+	} else {
+	  m_ui.counter
+	    (dl, bounds, property.label, property.value,
+	     hot (counter_minus_rect (bounds)),
+	     hot (counter_plus_rect (bounds)), m_pointer_down);
+	}
       }
       m_ui.label (dl, right_x + 8, 270,
 		  stage_name (stage), true);
@@ -1112,10 +1209,14 @@ namespace game {
     m_ui.label (dl, left_x, 586, status.str (), true);
     m_ui.label
       (dl, left_x, 613,
-	"DRAG KNOBS vertically | LEFT DRAG orbit | RIGHT DRAG pan");
+	"LEFT DRAG orbit | RIGHT DRAG pan | TERRAIN WHEEL zoom");
     m_ui.label
       (dl, left_x, 636,
        "Pipeline rows are selectable and reorderable | T returns to game");
+    m_ui.key_hint
+      (dl, right_x + 8, 558, "DIAL", "continuous value");
+    m_ui.key_hint
+      (dl, right_x + 8, 584, "- / +", "whole-number count");
     m_ui.end (dl);
   }
 }

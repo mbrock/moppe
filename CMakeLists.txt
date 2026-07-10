@@ -260,7 +260,8 @@ if(APPLE)
   target_include_directories(moppe_metal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(moppe_metal PRIVATE -fobjc-arc)
   target_link_libraries(moppe_metal PUBLIC moppe_render
-    "-framework Metal" "-framework MetalKit" "-framework QuartzCore")
+    "-framework Metal" "-framework MetalKit" "-framework QuartzCore"
+    "-framework ImageIO")
   add_dependencies(moppe_metal moppe_shaders)
 
   add_library(moppe_apple STATIC
