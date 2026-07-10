@@ -14,6 +14,11 @@
 
 namespace moppe {
 namespace game {
+  enum class ParameterDomain {
+    Continuous,
+    Natural
+  };
+
   // Interactive, renderer-backed workbench for heightmap generators and
   // transforms.  It temporarily borrows the game's map but snapshots and
   // restores it so experiments cannot alter the playable world.
@@ -60,7 +65,9 @@ namespace game {
     void duplicate_selected_stage ();
     void remove_selected_stage ();
     float selected_property_normalized (int row) const;
+    ParameterDomain selected_property_domain (int row) const;
     bool set_selected_property_normalized (int row, float value);
+    bool adjust_selected_natural (int row, int direction);
     void queue_parameter_rebuild ();
     void run_pending_parameter_rebuild ();
     void handle_click (float x, float y);

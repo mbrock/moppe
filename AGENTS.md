@@ -9,8 +9,10 @@
   257 123 combined power=1.15 hydraulic=10000,256 thermal=2,0.003`
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
-  - Modes: `--city`, `--pico`, `--terrain-lab`, `--fullscreen`,
-    `--windowed`
+  - Modes: `--city`, `--pico`, `--terrain-lab`,
+    `--terrain-lab-preview`, `--fullscreen`, `--windowed`
+  - Fast deterministic UI capture: `make terrain-lab-shot` (writes
+    `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`

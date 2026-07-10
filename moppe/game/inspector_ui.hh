@@ -24,6 +24,8 @@ namespace game {
   };
 
   UiRect parameter_control_rect (const UiRect& bounds);
+  UiRect counter_minus_rect (const UiRect& bounds);
+  UiRect counter_plus_rect (const UiRect& bounds);
 
   // Small immediate-mode inspector skin built on the renderer's existing
   // DrawList and FontAtlas.  It intentionally owns no widget state: tools
@@ -55,6 +57,9 @@ namespace game {
     void knob (render::DrawList& dl, const UiRect& bounds,
 	       const std::string& label, const std::string& value,
 	       float normalized, bool hot, bool active) const;
+    void counter (render::DrawList& dl, const UiRect& bounds,
+		  const std::string& label, const std::string& value,
+		  bool minus_hot, bool plus_hot, bool pressed) const;
 
   private:
     std::unique_ptr<render::FontAtlas> m_body;
