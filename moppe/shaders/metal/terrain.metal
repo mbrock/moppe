@@ -2,9 +2,9 @@
 // buffers), splat-textured by altitude and slope, PCF-shadowed.
 // Port of shaders/test.vert + test.frag with explicit uniforms.
 //
-// The height texture is R32Float and is accessed EXCLUSIVELY via
-// read() at integer coordinates -- R32F is not linearly filterable
-// on Apple GPUs before Apple9.
+// The height texture is R32Float and is accessed via integer read().
+// R32F is not linearly filterable on Apple GPUs before Apple9, so the
+// subdivided near field performs its four-tap interpolation manually.
 
 #include "common.h"
 
@@ -18,21 +18,120 @@ struct TerrainVaryings {
   float2 uv;
 };
 
+static inline float
+terrain_height_bilinear (float2 grid,
+			 texture2d<float, access::read> heights)
+{
+  const uint2 limit (heights.get_width () - 1, heights.get_height () - 1);
+  grid = clamp (grid, float2 (0.0), float2 (limit));
+  const uint2 p00 = uint2 (floor (grid));
+  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const float2 f = fract (grid);
+  const float h0 = mix (heights.read (p00).r,
+			heights.read (uint2 (p11.x, p00.y)).r, f.x);
+  const float h1 = mix (heights.read (uint2 (p00.x, p11.y)).r,
+			heights.read (p11).r, f.x);
+  return mix (h0, h1, f.y);
+}
+
+static inline float3
+terrain_read_normal (uint2 p,
+		     texture2d<float, access::read> normals)
+{
+  const float2 nxz = normals.read (p).rg;
+  const float ny = sqrt (max (1.0 - dot (nxz, nxz), 0.0));
+  return float3 (nxz.x, ny, nxz.y);
+}
+
+static inline float3
+terrain_normal_bilinear (float2 grid,
+			 texture2d<float, access::read> normals)
+{
+  const uint2 limit (normals.get_width () - 1, normals.get_height () - 1);
+  grid = clamp (grid, float2 (0.0), float2 (limit));
+  const uint2 p00 = uint2 (floor (grid));
+  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const float2 f = fract (grid);
+  const float3 n0 = mix
+    (terrain_read_normal (p00, normals),
+     terrain_read_normal (uint2 (p11.x, p00.y), normals), f.x);
+  const float3 n1 = mix
+    (terrain_read_normal (uint2 (p00.x, p11.y), normals),
+     terrain_read_normal (p11, normals), f.x);
+  return mix (n0, n1, f.y);
+}
+
+// Height on the actual triangle surface produced by a coarser grid.
+// The strip topology uses the bottom-left to top-right diagonal.
+static inline float
+terrain_height_on_lattice (float2 grid, float step,
+			   texture2d<float, access::read> heights)
+{
+  const float2 limit (heights.get_width () - 1,
+		      heights.get_height () - 1);
+  const float2 cell = min (floor (grid / step) * step, limit - step);
+  const float2 f = clamp ((grid - cell) / step, 0.0, 1.0);
+  const uint stride = (uint) step;
+  const uint2 p00 = uint2 (cell);
+  const uint2 p10 = p00 + uint2 (stride, 0);
+  const uint2 p01 = p00 + uint2 (0, stride);
+  const uint2 p11 = p00 + uint2 (stride);
+  const float h00 = heights.read (p00).r;
+  const float h10 = heights.read (p10).r;
+  const float h01 = heights.read (p01).r;
+  const float h11 = heights.read (p11).r;
+  if (f.x + f.y <= 1.0)
+    return h00 + f.x * (h10 - h00) + f.y * (h01 - h00);
+  return h11 + (1.0 - f.y) * (h10 - h11)
+    + (1.0 - f.x) * (h01 - h11);
+}
+
+static inline float3
+terrain_normal_on_lattice (float2 grid, float step,
+			   texture2d<float, access::read> normals)
+{
+  const float2 limit (normals.get_width () - 1,
+		      normals.get_height () - 1);
+  const float2 cell = min (floor (grid / step) * step, limit - step);
+  const float2 f = clamp ((grid - cell) / step, 0.0, 1.0);
+  const uint stride = (uint) step;
+  const uint2 p00 = uint2 (cell);
+  const float3 n00 = terrain_read_normal (p00, normals);
+  const float3 n10 = terrain_read_normal
+    (p00 + uint2 (stride, 0), normals);
+  const float3 n01 = terrain_read_normal
+    (p00 + uint2 (0, stride), normals);
+  const float3 n11 = terrain_read_normal
+    (p00 + uint2 (stride), normals);
+  if (f.x + f.y <= 1.0)
+    return n00 + f.x * (n10 - n00) + f.y * (n01 - n00);
+  return n11 + (1.0 - f.y) * (n10 - n11)
+    + (1.0 - f.x) * (n01 - n11);
+}
+
+static inline float2
+terrain_grid_pos (uint index, constant MoppeChunkUniforms& chunk)
+{
+  const uint local_x = index % chunk.verts_per_row;
+  const uint local_z = index / chunk.verts_per_row;
+  return float2 (chunk.origin_x, chunk.origin_z)
+    + float2 (local_x, local_z) * chunk.step;
+}
+
 static inline float3
 terrain_world_pos (uint index,
 		   constant MoppeChunkUniforms& chunk,
 		   constant MoppeTerrainUniforms& u,
 		   texture2d<float, access::read> heights)
 {
-  const uint local_x = index % chunk.verts_per_row;
-  const uint local_z = index / chunk.verts_per_row;
-  const uint gx = chunk.origin_x + local_x * chunk.stride;
-  const uint gz = chunk.origin_z + local_z * chunk.stride;
+  const float2 grid = terrain_grid_pos (index, chunk);
+  const float h = chunk.step < 1.0
+    ? terrain_height_bilinear (grid, heights)
+    : heights.read (uint2 (grid)).r;
 
-  const float h = heights.read (uint2 (gx, gz)).r;
-  return float3 (u.params0.x * gx,
+  return float3 (u.params0.x * grid.x,
 		 u.params0.y * h,
-		 u.params0.z * gz);
+		 u.params0.z * grid.y);
 }
 
 vertex TerrainVaryings
@@ -42,23 +141,40 @@ terrain_vertex (uint index [[vertex_id]],
 		texture2d<float, access::read> heights [[texture(MOPPE_TEX_HEIGHTS)]],
 		texture2d<float, access::read> normals [[texture(MOPPE_TEX_NORMALS)]])
 {
-  const uint local_x = index % chunk.verts_per_row;
-  const uint local_z = index / chunk.verts_per_row;
-  const uint gx = chunk.origin_x + local_x * chunk.stride;
-  const uint gz = chunk.origin_z + local_z * chunk.stride;
+  const float2 grid = terrain_grid_pos (index, chunk);
+  float h;
+  float3 normal;
+  if (chunk.step < 1.0) {
+    h = terrain_height_bilinear (grid, heights);
+    normal = terrain_normal_bilinear (grid, normals);
+  } else {
+    h = heights.read (uint2 (grid)).r;
+    normal = terrain_read_normal (uint2 (grid), normals);
+  }
 
-  const float h = heights.read (uint2 (gx, gz)).r;
-  const float3 world = float3 (u.params0.x * gx,
-			       u.params0.y * h,
-			       u.params0.z * gz);
+  const float2 world_xz (u.params0.x * grid.x,
+			 u.params0.z * grid.y);
+  if (chunk.parent_step > chunk.step &&
+      chunk.morph_end > chunk.morph_start) {
+    const float dist = length (world_xz - u.camera_pos.xz);
+    const float morph = smoothstep
+      (chunk.morph_start, chunk.morph_end, dist);
+    if (morph > 0.0) {
+      const float parent_h = terrain_height_on_lattice
+	(grid, chunk.parent_step, heights);
+      const float3 parent_n = terrain_normal_on_lattice
+	(grid, chunk.parent_step, normals);
+      h = mix (h, parent_h, morph);
+      normal = mix (normal, parent_n, morph);
+    }
+  }
 
-  const float2 nxz = normals.read (uint2 (gx, gz)).rg;
-  const float ny = sqrt (max (1.0 - dot (nxz, nxz), 0.0));
+  const float3 world (world_xz.x, u.params0.y * h, world_xz.y);
 
   TerrainVaryings out;
   out.position = u.view_proj * float4 (world, 1.0);
   out.world_pos = world;
-  out.normal = float3 (nxz.x, ny, nxz.y);
+  out.normal = normal;
   out.height = h;
 
   // Distance haze plus valley mist that pools on low ground (the

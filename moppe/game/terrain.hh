@@ -27,9 +27,8 @@ namespace game {
 			const Vector3D& sun_dir);
 
     // Emits culled chunk draws: distance cull against max_dist plus
-    // a conservative behind-camera test; fine mesh near, 4x coarse
-    // ring behind it filling seam cracks (same scheme as the GL
-    // build).
+    // a conservative behind-camera test.  Five nested LODs run from
+    // a bilinearly subdivided near field to a stride-8 haze ring.
     void render (render::Renderer& r, const Vector3D& cam,
 		 const Vector3D& view_dir, float max_dist);
 
@@ -43,8 +42,7 @@ namespace game {
     std::vector<Chunk> m_chunks;
     std::vector<render::ChunkDraw> m_draws;
     Vector3D m_scale;
-    float m_lod_dist = 0;
-    float m_lod_band = 0;
+    float m_lod_scale = 1;
     render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
     bool m_textures_loaded = false;
   };

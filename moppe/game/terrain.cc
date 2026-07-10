@@ -12,6 +12,17 @@ namespace moppe {
 namespace game {
   namespace {
     const int CHUNK = 128;
+    const int LOD_COUNT = (int) render::TerrainLod::Count;
+
+    // Distances are expressed in source heightmap cells and scaled to
+    // world units at setup.  Each end is also the point where the finer
+    // level has completely morphed onto its parent surface.
+    const float LOD_MORPH_START[LOD_COUNT - 1] = {
+      64.0f, 288.0f, 576.0f, 1152.0f
+    };
+    const float LOD_END[LOD_COUNT - 1] = {
+      96.0f, 384.0f, 768.0f, 1536.0f
+    };
 
     render::TexturePtr
     load_tga (render::Renderer& r, const std::string& rel) {
@@ -37,8 +48,7 @@ namespace game {
 		  const map::RandomHeightMap& map,
 		  const WorldParams& world) {
     m_scale = map.scale ();
-    m_lod_dist = 460.0f * m_scale.x;
-    m_lod_band = 130.0f * m_scale.x;
+    m_lod_scale = std::max (m_scale.x, m_scale.z);
 
     render::TerrainParams params;
     params.width = map.width ();
@@ -118,37 +128,48 @@ namespace game {
 		   const Vector3D& view_dir, float max_dist) {
     m_draws.clear ();
 
-    // Coarse ring first: the fine mesh wins by depth on overlap.
-    for (int pass = 0; pass < 2; ++pass) {
-      const bool coarse = (pass == 0);
-      for (size_t i = 0; i < m_chunks.size (); ++i) {
-	const Chunk& c = m_chunks[i];
-	const Vector3D d = c.center - cam;
-	const float dist2 = d.length2 ();
+    const float half_width = 0.5f * CHUNK * m_scale.x;
+    const float half_depth = 0.5f * CHUNK * m_scale.z;
+    for (size_t i = 0; i < m_chunks.size (); ++i) {
+      const Chunk& c = m_chunks[i];
+      const Vector3D d = c.center - cam;
+      const float dist2 = d.length2 ();
 
-	// Too far: the haze has swallowed it.
-	const float reach = max_dist + c.radius;
-	if (dist2 > reach * reach)
-	  continue;
+      // Too far: the haze has swallowed it.
+      const float reach = max_dist + c.radius;
+      if (dist2 > reach * reach)
+	continue;
 
-	// Entirely behind the camera plane (conservative).
-	if (dist2 > c.radius * c.radius &&
-	    d.dot (view_dir) < -c.radius)
-	  continue;
+      // Entirely behind the camera plane (conservative).
+      if (dist2 > c.radius * c.radius &&
+	  d.dot (view_dir) < -c.radius)
+	continue;
 
-	const float dist = std::sqrt (dist2);
-	const bool want = coarse
-	  ? dist > m_lod_dist - m_lod_band
-	  : dist < m_lod_dist;
-	if (!want)
-	  continue;
+      // Choose from the distance to the nearest point of the chunk,
+      // rather than its center.  A finer chunk is retained until every
+      // point on it has completed the shader morph to the parent LOD.
+      const float dx = std::max
+	(0.0f, std::fabs (d.x) - half_width);
+      const float dz = std::max
+	(0.0f, std::fabs (d.z) - half_depth);
+      const float nearest = std::sqrt (dx * dx + dz * dz);
 
-	render::ChunkDraw draw;
-	draw.x0 = (uint16_t) c.x0;
-	draw.z0 = (uint16_t) c.z0;
-	draw.coarse = coarse ? 1 : 0;
-	m_draws.push_back (draw);
-      }
+      int lod = LOD_COUNT - 1;
+      for (int level = 0; level < LOD_COUNT - 1; ++level)
+	if (nearest < LOD_END[level] * m_lod_scale) {
+	  lod = level;
+	  break;
+	}
+
+      render::ChunkDraw draw;
+      draw.x0 = (uint16_t) c.x0;
+      draw.z0 = (uint16_t) c.z0;
+      draw.lod = (render::TerrainLod) lod;
+      draw.morph_start = lod < LOD_COUNT - 1
+	? LOD_MORPH_START[lod] * m_lod_scale : 0.0f;
+      draw.morph_end = lod < LOD_COUNT - 1
+	? LOD_END[lod] * m_lod_scale : 0.0f;
+      m_draws.push_back (draw);
     }
 
     if (!m_draws.empty ())

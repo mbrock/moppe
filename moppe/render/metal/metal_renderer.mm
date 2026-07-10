@@ -20,6 +20,8 @@
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -31,6 +33,18 @@ namespace render {
     const int MSAA_SAMPLES = 4;
     const int SHADOW_SIZE = 4096;
     const int CHUNK_CELLS = 128;
+    const int TERRAIN_LOD_COUNT = (int) TerrainLod::Count;
+    const int TERRAIN_NATIVE_LOD = (int) TerrainLod::Native;
+    const float TERRAIN_LOD_STEP[TERRAIN_LOD_COUNT] = {
+      0.5f, 1.0f, 2.0f, 4.0f, 8.0f
+    };
+    const int TERRAIN_LOD_VERTS[TERRAIN_LOD_COUNT] = {
+      CHUNK_CELLS * 2 + 1,
+      CHUNK_CELLS + 1,
+      CHUNK_CELLS / 2 + 1,
+      CHUNK_CELLS / 4 + 1,
+      CHUNK_CELLS / 8 + 1
+    };
     const int PROBE_W = 32;       // auto-exposure luminance probe
     const int PROBE_H = 16;
 
@@ -176,8 +190,8 @@ namespace render {
 
     // terrain
     id<MTLTexture> m_heights = nil, m_normals = nil;
-    id<MTLBuffer> m_idx_fine = nil, m_idx_coarse = nil;
-    uint32_t m_idx_fine_count = 0, m_idx_coarse_count = 0;
+    id<MTLBuffer> m_terrain_indices[TERRAIN_LOD_COUNT];
+    uint32_t m_terrain_index_count[TERRAIN_LOD_COUNT];
     TerrainParams m_terrain_params;
     bool m_have_terrain = false;
     TexturePtr m_grass, m_dirt, m_rock, m_snow;
@@ -539,9 +553,9 @@ namespace render {
       upload_texture (m_normals, packed.data (), w, h, 4, false);
     }
 
-    // Index templates: chunk-local grids as triangle strips with
-    // restart indices.  Fine = 129x129 verts, coarse = 33x33
-    // (stride 4).
+    // Shared chunk-local index templates.  The finest inserts one
+    // virtual vertex between source samples; progressively coarser
+    // levels use source strides 1, 2, 4, and 8.
     struct Gen {
       static id<MTLBuffer> make (id<MTLDevice> dev, int vpr,
 				 uint32_t& count_out) {
@@ -561,9 +575,9 @@ namespace render {
 			       options: MTLResourceStorageModeShared];
       }
     };
-    m_idx_fine = Gen::make (m_device, CHUNK_CELLS + 1, m_idx_fine_count);
-    m_idx_coarse = Gen::make (m_device, CHUNK_CELLS / 4 + 1,
-			      m_idx_coarse_count);
+    for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod)
+      m_terrain_indices[lod] = Gen::make
+	(m_device, TERRAIN_LOD_VERTS[lod], m_terrain_index_count[lod]);
 
     m_have_terrain = true;
   }
@@ -630,16 +644,18 @@ namespace render {
     for (int cz = 0; cz < chunks; ++cz)
       for (int cx = 0; cx < chunks; ++cx) {
 	MoppeChunkUniforms c;
+	std::memset (&c, 0, sizeof (c));
 	c.origin_x = cx * CHUNK_CELLS;
 	c.origin_z = cz * CHUNK_CELLS;
-	c.stride = 1;
+	c.step = 1.0f;
 	c.verts_per_row = CHUNK_CELLS + 1;
+	c.parent_step = 1.0f;
 	[enc setVertexBytes: &c length: sizeof (c)
 		    atIndex: MOPPE_BUF_CHUNK];
 	[enc drawIndexedPrimitives: MTLPrimitiveTypeTriangleStrip
-			indexCount: m_idx_fine_count
+			indexCount: m_terrain_index_count[TERRAIN_NATIVE_LOD]
 			 indexType: MTLIndexTypeUInt32
-		       indexBuffer: m_idx_fine
+		       indexBuffer: m_terrain_indices[TERRAIN_NATIVE_LOD]
 		 indexBufferOffset: 0];
       }
     [enc endEncoding];
@@ -915,21 +931,24 @@ namespace render {
 		      atIndex: MOPPE_TEX_SHADOW];
 
     for (int i = 0; i < count; ++i) {
+      const int lod = std::max
+	(0, std::min (TERRAIN_LOD_COUNT - 1, (int) chunks[i].lod));
       MoppeChunkUniforms c;
+      std::memset (&c, 0, sizeof (c));
       c.origin_x = chunks[i].x0;
       c.origin_z = chunks[i].z0;
-      c.stride = chunks[i].coarse ? 4 : 1;
-      c.verts_per_row = chunks[i].coarse
-	? CHUNK_CELLS / 4 + 1 : CHUNK_CELLS + 1;
+      c.step = TERRAIN_LOD_STEP[lod];
+      c.verts_per_row = TERRAIN_LOD_VERTS[lod];
+      c.morph_start = chunks[i].morph_start;
+      c.morph_end = chunks[i].morph_end;
+      c.parent_step = lod + 1 < TERRAIN_LOD_COUNT
+	? TERRAIN_LOD_STEP[lod + 1] : TERRAIN_LOD_STEP[lod];
       [enc setVertexBytes: &c length: sizeof (c)
 		  atIndex: MOPPE_BUF_CHUNK];
       [enc drawIndexedPrimitives: MTLPrimitiveTypeTriangleStrip
-		      indexCount: (chunks[i].coarse
-				   ? m_idx_coarse_count
-				   : m_idx_fine_count)
+		      indexCount: m_terrain_index_count[lod]
 		       indexType: MTLIndexTypeUInt32
-		     indexBuffer: (chunks[i].coarse
-				   ? m_idx_coarse : m_idx_fine)
+		     indexBuffer: m_terrain_indices[lod]
 	       indexBufferOffset: 0];
     }
   }

@@ -48,10 +48,23 @@ namespace render {
     float fog_scale;
   };
 
-  // One culled terrain chunk instance: grid origin plus LOD.
+  enum class TerrainLod : uint8_t {
+    Subdivided,
+    Native,
+    Stride2,
+    Stride4,
+    Stride8,
+    Count
+  };
+
+  // One culled terrain chunk instance.  The two distances describe
+  // where this level morphs onto the exact triangle surface of its
+  // parent level, preventing pops and cracks at chunk boundaries.
   struct ChunkDraw {
     uint16_t x0, z0;              // grid sample origin (multiple of 128)
-    uint8_t coarse;               // 0 = 129x129 fine, 1 = 33x33 stride-4
+    TerrainLod lod;
+    float morph_start;
+    float morph_end;
   };
 
   struct SkyParams {

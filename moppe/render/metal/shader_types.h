@@ -68,9 +68,17 @@ struct MoppeTerrainUniforms {
 struct MoppeChunkUniforms {
   int origin_x;
   int origin_z;
-  int stride;                 // 1 fine, 4 coarse
-  int verts_per_row;          // 129 fine, 33 coarse
+  float step;                 // source texels per rendered grid cell
+  int verts_per_row;
+  float morph_start;          // horizontal world distance
+  float morph_end;
+  float parent_step;          // next coarser source-texel step
+  int pad;
 };
+#ifndef __METAL_VERSION__
+static_assert (sizeof (MoppeChunkUniforms) == 32,
+	       "terrain chunk uniforms must match Metal layout");
+#endif
 
 struct MoppeSkyUniforms {
   MoppeMat4 view_proj;        // rotation-only view * reversed-Z proj

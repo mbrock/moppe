@@ -196,11 +196,13 @@ New: heights live in an R32F 2049² texture; per-vertex normals (the same ones
 the CPU computes for physics) live in an RG16Snorm texture (y reconstructed).
 The terrain vertex shader derives grid (x,z) from the index-buffer value and
 a per-chunk origin, samples height, and computes world position — no vertex
-buffers at all. Two shared index templates (129×129 fine grid, 33×33 coarse
-= the 4× LOD) as triangle strips with primitive restart. Per frame the CPU
-culls the same 128×128-cell chunks (distance + behind-camera sphere tests,
-unchanged) and issues ≤ ~256 tiny indexed draws with the chunk origin +
-stride passed as bytes. World regeneration = re-upload two textures.
+buffers at all. Five shared index templates cover a bilinearly subdivided
+257×257 near grid followed by native 129×129 and stride-2/4/8 grids. Each
+finer level morphs onto the exact triangle surface of its parent before the
+chunk changes LOD, avoiding pops and boundary cracks without skirts. Per
+frame the CPU culls the same 128×128-cell chunks (distance + conservative
+behind-camera tests) and issues at most one tiny indexed draw per visible
+chunk. World regeneration = re-upload two textures.
 
 Physics keeps its authoritative CPU copy (HeightMap::interpolated_height/
 normal, ~10 samples/frame) — heights and rendered normals come from the same
