@@ -99,6 +99,7 @@ namespace game {
     bool m_zoom_out;
     bool m_tilt_up;
     bool m_tilt_down;
+    float m_shadow_refresh_delay;
     ViewMode m_view;
   };
 }

@@ -1,5 +1,6 @@
 #include <moppe/map/terrain_evaluator.hh>
 
+#include <algorithm>
 #include <stdexcept>
 #include <variant>
 
@@ -76,10 +77,8 @@ namespace moppe::map {
     if (checkpoint.heights.size () != expected)
       throw std::invalid_argument
 	("terrain checkpoint dimensions do not match target");
-    std::size_t i = 0;
-    for (int y = 0; y < m_target.height (); ++y)
-      for (int x = 0; x < m_target.width (); ++x)
-	m_target.set (x, y, checkpoint.heights[i++]);
+    std::copy (checkpoint.heights.begin (), checkpoint.heights.end (),
+	       m_target.raw_heights ());
     m_randomness = checkpoint.randomness;
   }
 }

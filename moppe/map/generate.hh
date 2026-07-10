@@ -33,6 +33,7 @@ namespace map {
     { return m_data[(size_t) y * m_width + x]; }
 
     inline const T* raw () const { return m_data.data (); }
+    inline T* raw () { return m_data.data (); }
 
   private:
     int m_width;
@@ -218,6 +219,9 @@ namespace map {
     // Contiguous width*height array, row 0 first; the renderer
     // uploads it as a texture.
     const float* raw_heights () const
+    { return m_data.raw (); }
+
+    float* raw_heights ()
     { return m_data.raw (); }
 
     void normalize           ();

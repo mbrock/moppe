@@ -61,6 +61,44 @@ terrain_normal_bilinear (float2 grid,
   return mix (n0, n1, f.y);
 }
 
+static inline float
+terrain_preview_height (float2 grid,
+			constant MoppeTerrainUniforms& u,
+			texture2d<float, access::read> heights)
+{
+  const float2 limit (heights.get_width () - 1,
+		      heights.get_height () - 1);
+  if (u.params3.y > 0.5) {
+    grid -= floor (grid / limit) * limit;
+  } else {
+    grid = clamp (grid, float2 (0.0), limit);
+  }
+  return terrain_height_bilinear (grid, heights);
+}
+
+// Terrain Lab changes heightfields far more often than gameplay.  Deriving
+// preview normals at visible vertices avoids rebuilding and uploading a
+// four-million-entry CPU normal map after every parameter click.
+static inline float3
+terrain_preview_normal (float2 grid,
+			constant MoppeTerrainUniforms& u,
+			texture2d<float, access::read> heights)
+{
+  const float left = terrain_preview_height
+    (grid - float2 (1.0, 0.0), u, heights);
+  const float right = terrain_preview_height
+    (grid + float2 (1.0, 0.0), u, heights);
+  const float back = terrain_preview_height
+    (grid - float2 (0.0, 1.0), u, heights);
+  const float front = terrain_preview_height
+    (grid + float2 (0.0, 1.0), u, heights);
+  const float3 tangent_x
+    (2.0 * u.params0.x, (right - left) * u.params0.y, 0.0);
+  const float3 tangent_z
+    (0.0, (front - back) * u.params0.y, 2.0 * u.params0.z);
+  return normalize (cross (tangent_z, tangent_x));
+}
+
 // Height on the actual triangle surface produced by a coarser grid.
 // The strip topology uses the bottom-left to top-right diagonal.
 static inline float
@@ -144,12 +182,17 @@ terrain_vertex (uint index [[vertex_id]],
   const float2 grid = terrain_grid_pos (index, chunk);
   float h;
   float3 normal;
+  const bool derive_normal = u.params3.x > 0.5;
   if (chunk.step < 1.0) {
     h = terrain_height_bilinear (grid, heights);
-    normal = terrain_normal_bilinear (grid, normals);
+    normal = derive_normal
+      ? terrain_preview_normal (grid, u, heights)
+      : terrain_normal_bilinear (grid, normals);
   } else {
     h = heights.read (uint2 (grid)).r;
-    normal = terrain_read_normal (uint2 (grid), normals);
+    normal = derive_normal
+      ? terrain_preview_normal (grid, u, heights)
+      : terrain_read_normal (uint2 (grid), normals);
   }
 
   const float2 canonical_xz (u.params0.x * grid.x,
@@ -163,10 +206,12 @@ terrain_vertex (uint index [[vertex_id]],
     if (morph > 0.0) {
       const float parent_h = terrain_height_on_lattice
 	(grid, chunk.parent_step, heights);
-      const float3 parent_n = terrain_normal_on_lattice
-	(grid, chunk.parent_step, normals);
       h = mix (h, parent_h, morph);
-      normal = mix (normal, parent_n, morph);
+      if (!derive_normal) {
+	const float3 parent_n = terrain_normal_on_lattice
+	  (grid, chunk.parent_step, normals);
+	normal = mix (normal, parent_n, morph);
+      }
     }
   }
 

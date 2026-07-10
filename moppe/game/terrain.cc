@@ -48,7 +48,8 @@ namespace game {
 		  const map::RandomHeightMap& map,
 		  const WorldParams& world,
 		  render::TerrainProjection projection,
-		  bool repeat_periodically) {
+		  bool repeat_periodically,
+		  bool interactive_preview) {
     m_scale = map.scale ();
     m_period = map.size ();
     m_periodic = map.periodic ();
@@ -73,6 +74,7 @@ namespace game {
     params.torus_major_radius = 0.34f * shortest_period;
     params.torus_minor_radius = 0.10f * shortest_period;
     params.torus_height_scale = 0.45f;
+    params.derive_normals = interactive_preview;
     r.set_terrain (params, map.raw_heights (), map.raw_normals ());
 
     if (!m_textures_loaded) {
@@ -90,13 +92,17 @@ namespace game {
     m_chunks.reserve ((size_t) chunks_per_side * chunks_per_side);
     for (int cz = 0; cz < chunks_per_side; ++cz)
       for (int cx = 0; cx < chunks_per_side; ++cx) {
-	float ymin = 1e9f, ymax = -1e9f;
-	for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
-	  for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-	    const float h = map.get (x, z);
-	    ymin = std::min (ymin, h);
-	    ymax = std::max (ymax, h);
-	  }
+	float ymin = -1.0f, ymax = 2.0f;
+	if (!interactive_preview) {
+	  ymin = 1e9f;
+	  ymax = -1e9f;
+	  for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
+	    for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
+	      const float h = map.get (x, z);
+	      ymin = std::min (ymin, h);
+	      ymax = std::max (ymax, h);
+	    }
+	}
 	ymin *= m_scale.y;
 	ymax *= m_scale.y;
 

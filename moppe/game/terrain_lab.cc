@@ -226,6 +226,7 @@ namespace game {
       m_orbit_left (false), m_orbit_right (false),
       m_zoom_in (false), m_zoom_out (false),
       m_tilt_up (false), m_tilt_down (false),
+      m_shadow_refresh_delay (0.0f),
       m_view (ViewMode::Cover)
   { }
 
@@ -264,6 +265,7 @@ namespace game {
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
+    m_shadow_refresh_delay = 0.0f;
     fit_view ();
 
     const size_t count = (size_t) map.width () * map.height ();
@@ -371,10 +373,12 @@ namespace game {
       return;
     m_evaluator->begin (m_program);
     m_checkpoints.clear ();
-    m_checkpoints.push_back (m_evaluator->checkpoint ());
     for (const terrain::TerrainTransform& transform : m_program.transforms) {
-      m_evaluator->apply (transform);
+      // A checkpoint is the input to a stage.  The final output is already
+      // resident in m_map, so copying it would only duplicate 16 MiB at the
+      // default lab resolution on every recipe edit.
       m_checkpoints.push_back (m_evaluator->checkpoint ());
+      m_evaluator->apply (transform);
     }
     refresh ();
   }
@@ -382,17 +386,29 @@ namespace game {
   void
   TerrainLab::rerun_program_from (int first_stage)
   {
-    if (!m_evaluator || first_stage < 0
-	|| first_stage >= static_cast<int> (m_checkpoints.size ())) {
+    const int stage_count =
+      static_cast<int> (m_program.transforms.size ());
+    if (!m_evaluator || first_stage < 0 || first_stage > stage_count
+	|| first_stage > static_cast<int> (m_checkpoints.size ())) {
       rebuild_program ();
       return;
     }
-    m_evaluator->restore (m_checkpoints[first_stage]);
-    m_checkpoints.resize (static_cast<std::size_t> (first_stage) + 1);
+
+    if (first_stage < static_cast<int> (m_checkpoints.size ()))
+      m_evaluator->restore (m_checkpoints[first_stage]);
+
+    // Appending a stage starts from the current final map.  Other edits start
+    // from their saved input, and discard only the now-invalid suffix.
+    const std::size_t retained = std::min
+      (static_cast<std::size_t> (stage_count),
+	static_cast<std::size_t> (first_stage + 1));
+    if (m_checkpoints.size () > retained)
+      m_checkpoints.resize (retained);
     for (std::size_t i = static_cast<std::size_t> (first_stage);
 	 i < m_program.transforms.size (); ++i) {
+      if (i >= m_checkpoints.size ())
+	m_checkpoints.push_back (m_evaluator->checkpoint ());
       m_evaluator->apply (m_program.transforms[i]);
-      m_checkpoints.push_back (m_evaluator->checkpoint ());
     }
     refresh ();
   }
@@ -661,7 +677,9 @@ namespace game {
   {
     if (!m_renderer || !m_map || !m_terrain || !m_world)
       return;
-    m_map->recompute_normals ();
+    const bool interactive_preview = inspection_fog;
+    if (!interactive_preview)
+      m_map->recompute_normals ();
     WorldParams display = *m_world;
     if (inspection_fog) {
       display.fog_scale = m_view == ViewMode::Cover
@@ -673,13 +691,22 @@ namespace game {
       : render::TerrainProjection::Plane;
     const bool repeat = !inspection_fog || m_view == ViewMode::Cover;
     m_terrain->setup
-      (*m_renderer, *m_map, display, projection, repeat);
-    m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
+      (*m_renderer, *m_map, display, projection, repeat,
+	interactive_preview);
+    if (interactive_preview)
+      m_shadow_refresh_delay = 0.12f;
+    else
+      m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
   }
 
   void
   TerrainLab::tick (float dt)
   {
+    if (m_shadow_refresh_delay > 0.0f) {
+      m_shadow_refresh_delay -= dt;
+      if (m_shadow_refresh_delay <= 0.0f && m_renderer && m_map && m_terrain)
+	m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
+    }
     const float orbit = (m_orbit_right ? 1.0f : 0.0f)
       - (m_orbit_left ? 1.0f : 0.0f);
     const float tilt = (m_tilt_up ? 1.0f : 0.0f)

@@ -22,7 +22,8 @@ namespace game {
 		const WorldParams& world,
 		render::TerrainProjection projection =
 		  render::TerrainProjection::Plane,
-		bool repeat_periodically = true);
+		bool repeat_periodically = true,
+		bool interactive_preview = false);
 
     // Renders the one-time shadow map.  sun_dir points toward the
     // sun, world space.
