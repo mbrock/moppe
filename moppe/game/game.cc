@@ -385,16 +385,56 @@ namespace game {
 
       const bool in_water = vpos.y < m_world.water_level + 1.0f;
       const bool driving = (m_mode != M_FOOT);
-      const Vector3D dust_color (0.72f, 0.63f, 0.48f);
+      const Vector3D dust_color (0.60f, 0.52f, 0.40f);
+      const Vector3D clod_color (0.42f, 0.34f, 0.24f);
       const Vector3D spray_color (0.85f, 0.92f, 1.0f);
+      const Vector3D fwd = av.orientation ();
+      const Vector3D rear_wheel =
+	vpos - fwd * 1.4f + Vector3D (0, -0.7f, 0);
 
       // Drift kicks up dirt from the rear wheel (or spray).
       if (driving && av.grounded () && av.drift_speed () > 6.0f) {
-	Vector3D back = vpos - av.orientation () * 1.4f;
-	back.y = vpos.y - 0.7f;
-	int n = std::min (6, (int) (av.drift_speed () * 0.25f));
-	m_dust.emit (back, av.velocity () * 0.15f, n,
+	int n = std::min (4, (int) (av.drift_speed () * 0.2f));
+	m_dust.emit (rear_wheel, av.velocity () * 0.15f, n,
 		     in_water ? spray_color : dust_color);
+      }
+
+      // Roost: hard throttle sprays an arc of dirt clods backward
+      // off the rear knobby, heaviest when the engine is winning
+      // against the ground (launches, corner exits).
+      if (driving && av.grounded () && !in_water
+	  && av.thrust () > 0.6f) {
+	const float speed = av.velocity ().length ();
+	const float slip = av.thrust ()
+	  * (1.0f - std::min (1.0f, speed / 30.0f));
+	if (slip > 0.15f) {
+	  Dust::Style roost;
+	  roost.size = 0.45f;
+	  roost.life = 0.9f;
+	  roost.gravity = 12.0f;
+	  roost.spread = 0.5f;
+	  m_dust.emit (rear_wheel,
+		       fwd * (-6.0f - 14.0f * slip)
+		       + Vector3D (0, 3.5f + 3.0f * slip, 0),
+		       1 + (int) (slip * 3.0f), clod_color, roost);
+	}
+      }
+
+      // Exhaust smoke: faint gray puffs that rise off the muffler
+      // while the throttle is open.
+      if (driving && std::abs (av.thrust ()) > 0.3f
+	  && m_mode == M_BIKE) {
+	std::uniform_real_distribution<float> chance (0.0f, 1.0f);
+	if (chance (m_fx_rng) < 14.0f * dt) {
+	  Dust::Style smoke;
+	  smoke.size = 0.35f;
+	  smoke.life = 0.8f;
+	  smoke.gravity = -2.5f;   // buoyant
+	  smoke.spread = 0.25f;
+	  m_dust.emit (vpos - fwd * 1.2f + Vector3D (0, -0.4f, 0),
+		       av.velocity () * 0.25f, 1,
+		       Vector3D (0.45f, 0.45f, 0.48f), smoke);
+	}
       }
 
       // Wading fast throws up a bow wave.
@@ -402,13 +442,26 @@ namespace game {
 	m_dust.emit (vpos + Vector3D (0, -0.5f, 0),
 		     av.velocity () * 0.3f, 3, spray_color);
 
-      // Hard landings shake the camera and burst dirt outward.
+      // Hard landings shake the camera and burst dirt outward:
+      // a low pancake of dust plus a ring of ballistic clods.
       const float impact = driving ? av.pop_impact () : 0.0f;
       if (impact > 8.0f) {
 	m_shake = std::min (0.45f, 0.018f * impact);
 	m_dust.emit (vpos + Vector3D (0, -0.7f, 0),
-		     av.velocity () * 0.2f, 18,
+		     av.velocity () * 0.2f, 12,
 		     in_water ? spray_color : dust_color);
+	if (!in_water) {
+	  Dust::Style burst;
+	  burst.size = 0.5f;
+	  burst.life = 1.1f;
+	  burst.gravity = 10.0f;
+	  burst.spread = 1.4f;
+	  m_dust.emit (vpos + Vector3D (0, -0.6f, 0),
+		       av.velocity () * 0.15f
+		       + Vector3D (0, 2.0f + 0.15f * impact, 0),
+		       (int) std::min (10.0f, impact * 0.5f),
+		       clod_color, burst);
+	}
       }
 
       // Crashes hurt; health trickles back slowly.  Falls from
