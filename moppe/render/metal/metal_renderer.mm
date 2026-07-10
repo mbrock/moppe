@@ -192,7 +192,10 @@ namespace render {
     bool m_have_shadow = false;
 
     // terrain
-    id<MTLTexture> m_heights = nil, m_normals = nil;
+    id<MTLTexture> m_heights = nil, m_previous_heights = nil;
+    id<MTLTexture> m_normals = nil;
+    float m_height_transition_start = 0.0f;
+    bool m_height_transition_active = false;
     id<MTLBuffer> m_terrain_indices[TERRAIN_LOD_COUNT];
     uint32_t m_terrain_index_count[TERRAIN_LOD_COUNT];
     TerrainParams m_terrain_params;
@@ -540,8 +543,21 @@ namespace render {
   MetalRenderer::set_terrain (const TerrainParams& params,
 			      const float* heights,
 			      const Vector3D* normals) {
-    m_terrain_params = params;
     const int w = params.width, h = params.height;
+    const bool transition = params.derive_normals && m_have_terrain
+      && m_heights && m_heights.width == (NSUInteger) w
+      && m_heights.height == (NSUInteger) h;
+    const bool continue_transition = transition
+      && m_height_transition_active && m_previous_heights;
+
+    if (transition && !continue_transition) {
+      id<MTLTexture> old_heights = m_heights;
+      m_heights = m_previous_heights;
+      m_previous_heights = old_heights;
+    } else if (!transition) {
+      m_previous_heights = nil;
+    }
+    m_terrain_params = params;
 
     // Heights: R32Float, read() access only.
     if (!m_heights || m_heights.width != (NSUInteger) w
@@ -555,6 +571,12 @@ namespace render {
       m_heights = [m_device newTextureWithDescriptor: td];
     }
     upload_texture (m_heights, heights, w, h, 4, false);
+    if (transition && !continue_transition) {
+      m_height_transition_start = m_fp.time;
+      m_height_transition_active = true;
+    } else if (!transition) {
+      m_height_transition_active = false;
+    }
 
     // Normals: RG16Snorm xz, y reconstructed in the shader.
     if (!params.derive_normals) {
@@ -952,6 +974,16 @@ namespace render {
     u.params2.w = m_terrain_params.torus_height_scale;
     u.params3.x = m_terrain_params.derive_normals ? 1.0f : 0.0f;
     u.params3.y = m_terrain_params.periodic ? 1.0f : 0.0f;
+    float height_blend = 1.0f;
+    if (m_height_transition_active && m_previous_heights) {
+      const float elapsed = std::max
+	(0.0f, m_fp.time - m_height_transition_start);
+      const float t = std::min (1.0f, elapsed / 0.12f);
+      height_blend = t * t * (3.0f - 2.0f * t);
+      if (t >= 1.0f)
+	m_height_transition_active = false;
+    }
+    u.params3.z = height_blend;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];
@@ -959,6 +991,9 @@ namespace render {
 		  atIndex: MOPPE_BUF_FRAME];
     [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
     [enc setVertexTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
+    [enc setVertexTexture:
+      (m_previous_heights ? m_previous_heights : m_heights)
+		 atIndex: MOPPE_TEX_PREVIOUS_HEIGHTS];
 
     MetalTexture* grass = (MetalTexture*) m_grass.get ();
     MetalTexture* dirt = (MetalTexture*) m_dirt.get ();

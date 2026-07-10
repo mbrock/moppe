@@ -149,6 +149,11 @@ map_key (NSEvent* event) {
 { [self pointerButton: PointerButton::Middle down: false event: event]; }
 
 - (void) scrollWheel: (NSEvent*) event {
+  // Trackpads and the Magic Mouse keep emitting inertial events after the
+  // fingers have stopped.  That feels natural in a document but makes an
+  // orbital camera run away from an otherwise modest zoom gesture.
+  if (event.momentumPhase != NSEventPhaseNone)
+    return;
   const NSPoint p = [self pointerPoint: event];
   m_pointer_x = p.x;
   m_pointer_y = p.y;

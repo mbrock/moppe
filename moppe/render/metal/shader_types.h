@@ -33,6 +33,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_BLOOM    1   /* post passes */
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
 #define MOPPE_TEX_NORMALS  1   /* vertex stage */
+#define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
 
 struct MoppeFrameUniforms {
   MoppeMat4 view_proj;
@@ -63,7 +64,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 params0;        // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale
   MoppeFloat4 params1;        // x=height_scale_norm, y=sea_level, z=shadow_strength, w=shadow_texel
   MoppeFloat4 params2;        // x=projection, y=torus R, z=torus r, w=height scale
-  MoppeFloat4 params3;        // x=derive normals, y=periodic
+  MoppeFloat4 params3;        // x=derive normals, y=periodic, z=height blend
 };
 
 // Per-chunk terrain instance data.
