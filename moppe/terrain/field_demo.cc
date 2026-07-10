@@ -36,7 +36,7 @@ namespace {
       throw std::invalid_argument
 	("unknown preset: " + std::string (preset));
     const GeologicalFields fields = make_geological_fields
-      (derive_geological_seeds (seed));
+      (make_geological_recipe (seed));
     return geological_layer (fields, *layer);
   }
 }

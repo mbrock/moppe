@@ -141,6 +141,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/field.cc
   moppe/terrain/cpu_evaluator.cc
   moppe/terrain/geological.cc
+  moppe/terrain/pipeline.cc
   moppe/terrain/image.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -157,6 +158,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc
+    tests/terrain/pipeline_test.cc
     tests/terrain/image_test.cc
   )
   target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
@@ -189,9 +191,25 @@ target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_game PUBLIC moppe_render)
 target_link_libraries(moppe_game PUBLIC moppe_terrain)
 
+if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(moppe-map-tests
+    tests/test_main.cc
+    tests/map/pipeline_test.cc
+  )
+  target_link_libraries(moppe-map-tests PRIVATE moppe_game)
+  add_test(NAME moppe-map-tests COMMAND moppe-map-tests)
+endif()
+
 # The heightmap CLI tool (generates a terrain and writes test.tga).
 add_executable(map-test moppe/map/test.cc)
 target_link_libraries(map-test PRIVATE moppe_game)
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(terrain-pipeline-demo
+    moppe/terrain/pipeline_demo.cc
+  )
+  target_link_libraries(terrain-pipeline-demo PRIVATE moppe_game)
+endif()
 
 # ---------------------------------------------------------------
 # Apple: Metal backend + platform layers.

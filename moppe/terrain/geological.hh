@@ -24,6 +24,55 @@ namespace moppe::terrain {
     std::uint32_t warp;
   };
 
+  struct FractalNoiseParameters {
+    float frequency = 1.0f;
+    int octaves = 1;
+    float lacunarity = 2.0f;
+    float gain = 0.5f;
+  };
+
+  struct Offset2D {
+    float x;
+    float y;
+  };
+
+  struct DomainWarpParameters {
+    FractalNoiseParameters noise { 3.0f, 4, 2.0f, 0.5f };
+    float amplitude = 0.15f;
+    Offset2D x_offset { 11.3f, 7.7f };
+    Offset2D y_offset { 91.1f, 33.9f };
+  };
+
+  struct RemappedNoiseParameters {
+    FractalNoiseParameters noise;
+    float scale;
+    float bias;
+  };
+
+  struct GeologicalBlendParameters {
+    float mask_low = 0.45f;
+    float mask_high = 0.75f;
+    float continent_weight = 0.55f;
+    float plains_weight = 0.12f;
+    float mountain_weight = 0.65f;
+  };
+
+  // A complete, copyable description of the geological field recipe.
+  // Editing one of these values changes graph construction; it never
+  // mutates an already-built field or raster.
+  struct GeologicalRecipe {
+    GeologicalSeeds seeds { };
+    DomainWarpParameters warp { };
+    RemappedNoiseParameters continent {
+      { 2.5f, 4, 2.0f, 0.5f }, 0.5f, 0.5f
+    };
+    RemappedNoiseParameters plains {
+      { 12.0f, 4, 2.0f, 0.5f }, 0.5f, 0.5f
+    };
+    FractalNoiseParameters mountains { 6.0f, 6, 2.05f, 0.55f };
+    GeologicalBlendParameters blend { };
+  };
+
   struct GeologicalFields {
     ScalarField warp_x;
     ScalarField warp_y;
@@ -37,6 +86,9 @@ namespace moppe::terrain {
   };
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed);
+  GeologicalRecipe make_geological_recipe (std::uint32_t root_seed);
+  void validate_geological_recipe (const GeologicalRecipe& recipe);
+  GeologicalFields make_geological_fields (const GeologicalRecipe& recipe);
   GeologicalFields make_geological_fields (const GeologicalSeeds& seeds);
   ScalarField geological_layer (const GeologicalFields& fields,
 				 GeologicalLayer layer);

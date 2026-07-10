@@ -33,6 +33,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <variant>
 
 namespace moppe {
 namespace game {
@@ -266,13 +267,14 @@ namespace game {
 	  m_gen_stage = 7;
 	} else {
 	  m_gen_stage = 3;
-	  m_map.randomize_geologically ();
-	  // Slight lowland squash; ~10-15% ends up as ocean
-	  m_map.exponentiate (1.15);
-	  m_gen_stage = 4;
-	  m_map.erode_hydraulically (1500000);
-	  // Talus angle ~40 degrees at 2.4m cells, 650m height scale
-	  m_map.erode_thermally (2, 0.003f);
+	  const terrain::TerrainPipeline pipeline =
+	    terrain::make_default_world_pipeline (m_seed);
+	  m_map.run_pipeline
+	    (pipeline, [this] (std::size_t,
+			       const terrain::PipelineStage& stage) {
+	      if (std::holds_alternative<terrain::HydraulicErosion> (stage))
+		m_gen_stage = 4;
+	    });
 	  if (cache)
 	    m_map.save_cache (cache);
 	}
