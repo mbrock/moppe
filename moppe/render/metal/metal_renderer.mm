@@ -296,7 +296,7 @@ namespace render {
 				  color, depth, MSAA_SAMPLES, true);
     m_hud = make_pipeline (@"hud_vertex", @"hud_fragment",
 			   color, MTLPixelFormatInvalid, 1, true);
-    m_present = make_pipeline (@"quad_vertex", @"quad_fragment",
+    m_present = make_pipeline (@"quad_vertex", @"present_fragment",
 			       color, MTLPixelFormatInvalid, 1, false);
     m_ghost = make_pipeline (@"quad_vertex", @"quad_fragment",
 			     color, MTLPixelFormatInvalid, 1, true);

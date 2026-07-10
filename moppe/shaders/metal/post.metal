@@ -38,6 +38,30 @@ quad_fragment (QuadVaryings in [[stage_in]],
   return float4 (scene.sample (smp, in.uv).rgb, 1.0) * q.tint;
 }
 
+// Final scene grade.  The renderer intentionally preserves the game's
+// gamma-space palette, so this is a compact display-referred treatment:
+// a little separation, warm highlights, cool shadows, and a soft vignette.
+// The HUD is drawn afterwards and stays pixel-accurate.
+fragment float4
+present_fragment (QuadVaryings in [[stage_in]],
+		  texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
+{
+  constexpr sampler smp (address::clamp_to_edge, filter::linear);
+  float3 color = scene.sample (smp, in.uv).rgb;
+
+  const float luma = dot (color, float3 (0.299, 0.587, 0.114));
+  const float highlight = smoothstep (0.35, 0.85, luma);
+  color *= mix (float3 (0.98, 1.00, 1.035),
+		float3 (1.035, 1.00, 0.965), highlight);
+  color = mix (float3 (luma), color, 1.045);
+  color = (color - 0.5) * 1.045 + 0.512;
+
+  const float2 centered = (in.uv - 0.5) * float2 (1.0, 0.72);
+  const float vignette = 1.0 - 0.07
+    * smoothstep (0.25, 0.72, dot (centered, centered));
+  return float4 (saturate (color * vignette), 1.0);
+}
+
 // Underwater grade: sinusoidal wobble, blue-green mix, vertical
 // murk (darker toward the bottom -- GL's uv.y gradient, flipped),
 // drifting shimmer.

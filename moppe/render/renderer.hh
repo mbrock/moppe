@@ -22,9 +22,8 @@ namespace render {
     Vector3D clear_color;         // also the fog/haze color
     float fog_scale = 0.0f;
     Vector3D sun_dir;             // world space, toward the sun
-    // Fixed-function light products (NOT white: the eternal golden
-    // afternoon computes a sunset-tinted sun).  Ambient multiplies
-    // vertex color, per AMBIENT_AND_DIFFUSE color material.
+    // Art-directed sun products.  Ambient is the strength/color fed
+    // into the shaders' cool-sky / warm-ground hemisphere fill.
     Vector3D sun_diffuse;
     Vector3D sun_specular;
     Vector3D ambient;

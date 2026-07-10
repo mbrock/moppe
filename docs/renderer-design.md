@@ -59,11 +59,11 @@ amended the first draft. The deltas, now integrated below, were:
 - `DrawList` gains `mult(const Mat4&)` (the bike orients itself with a
   glMultMatrixf basis frame today) and mesh draws take a per-draw model
   matrix; the sky pipeline takes the camera position as a uniform.
-- `FrameEnv` carries **sun diffuse, sun specular, and ambient colors** —
-  at the fixed sun_height 0.75 the GL code computes a warm *sunset-tinted*
-  light, not white; ambient (GL default 0.2) multiplies vertex color per
-  AMBIENT_AND_DIFFUSE color-material. GL_LIGHT1 is enabled but unconfigured
-  in the old code — one light only, do not "faithfully" add a fill light.
+- `FrameEnv` carries **sun diffuse, sun specular, and ambient colors**.
+  The sun color follows its physical elevation, from warm horizon light to
+  soft ivory daylight. Ambient drives a shader-side hemisphere fill (cool
+  sky above, warm ground bounce below), keeping gameplay silhouettes readable
+  while the one directional sun remains the source of cast shadows.
 - The per-frame view matrix composes the **camera-shake rotation** before
   FrameEnv is built; FrameEnv exposes the resulting right/up/forward basis,
   which replaces Dust's GL_MODELVIEW_MATRIX readback for billboards.

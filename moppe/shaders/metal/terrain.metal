@@ -164,18 +164,28 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   float4 rocktexel = dirt.sample (smp, tc);
   float4 snowtexel = snow.sample (smp, tc);
 
+  // The source grass is an extremely saturated photographic green.
+  // Pull it toward a sunlit emerald/olive palette before applying
+  // large-scale variation and lighting.
+  const float grass_value = dot (texel.rgb,
+				 float3 (0.299, 0.587, 0.114));
+  const float3 grass_palette = grass_value * float3 (0.70, 1.18, 0.50);
+  texel.rgb = mix (texel.rgb, grass_palette, 0.58);
+
   // Break up the tiling: modulate each layer with itself at a much
   // larger scale (mutually uncorrelated offsets).
-  const float3 coarse = grass.sample (smp, tc * 0.083
-				      + float2 (0.37, 0.19)).rgb;
-  texel.rgb *= (0.55 + 1.1 * coarse);
+  const float3 coarse_sample = grass.sample
+    (smp, tc * 0.083 + float2 (0.37, 0.19)).rgb;
+  const float coarse = dot (coarse_sample,
+			    float3 (0.299, 0.587, 0.114));
+  texel.rgb *= 0.65 + 0.95 * coarse;
   rocktexel.rgb *= (0.7 + 0.6 * dirt.sample (smp, tc * 0.061).r);
   snowtexel.rgb *= (0.75 + 0.5 * snow.sample (smp, tc * 0.053
 					      + float2 (0.21, 0.43)).r);
 
   // Altitude tint: sun-dried gold near the coast, lusher higher up.
-  texel.rgb *= mix (float3 (1.06, 1.00, 0.82),
-		    float3 (0.92, 1.02, 0.90),
+  texel.rgb *= mix (float3 (1.10, 0.96, 0.78),
+		    float3 (0.96, 1.00, 0.88),
 		    smoothstep (0.08, 0.30, height));
 
   texel = mix (texel, rocktexel, rock_coef);
@@ -188,9 +198,9 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 					      n, l, u.params1.z,
 					      u.params1.w, shadow_map);
   // 0.9 is the old GL terrain material diffuse.
-  const float intensity = max (dot (l, n), 0.0);
+  const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
   float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb
-    + u.ambient.rgb;
+    + moppe_hemisphere_light (u.ambient.rgb, n);
 
   // Snowfields sparkle in the sun.
   const float3 h = normalize (l - view_dir);

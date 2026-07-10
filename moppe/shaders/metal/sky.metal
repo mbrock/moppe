@@ -73,45 +73,48 @@ static float sky_fbm (float3 p) {
 // Atmospheric scattering approximation.
 static float3 sky_atmosphere (float3 ray_dir, float3 sun_dir,
 			      float sun_height) {
-  // Rayleigh scattering coefficients.
-  const float3 rayleigh_coeff = float3 (5.8e-6, 13.5e-6, 33.1e-6);
-
-  float rayleigh_factor =
-    1.0 + pow (1.0 - max (0.0, dot (ray_dir, sun_dir)), 5.0) * 2.0;
-  float3 rayleigh = rayleigh_coeff * rayleigh_factor;
-
-  // Mie scattering approximation.
-  float mie_factor = pow (max (0.0, dot (ray_dir, sun_dir)), 8.0) * 0.5;
-  float3 mie = float3 (mie_factor);
-
+  (void) sun_height;
+  const float daylight = smoothstep (-0.08, 0.18, sun_dir.y);
+  const float golden = daylight
+    * (1.0 - smoothstep (0.15, 0.65, sun_dir.y));
   float abs_zenith = abs (ray_dir.y);
   float sign_zenith = sign (ray_dir.y);
   float atmospheric_thickness = 1.0 - abs_zenith;
 
-  const float3 day_zenith = float3 (0.0, 0.1, 0.6);
-  const float3 day_horizon = float3 (0.3, 0.5, 0.9);
-  const float3 night_zenith = float3 (0.0, 0.0, 0.1);
-  const float3 night_horizon = float3 (0.05, 0.05, 0.1);
+  const float3 day_zenith = float3 (0.08, 0.24, 0.58);
+  const float3 day_horizon = float3 (0.46, 0.64, 0.86);
+  const float3 night_zenith = float3 (0.005, 0.01, 0.055);
+  const float3 night_horizon = float3 (0.035, 0.045, 0.09);
 
   // Below the horizon: dark grayish-blue ground reflection.
-  const float3 ground_color = float3 (0.1, 0.1, 0.15);
+  const float3 ground_color = float3 (0.08, 0.09, 0.13);
 
   float3 base_color;
 
   if (sign_zenith >= 0.0) {
-    // Upper hemisphere: day-night interpolated sky gradient.
-    float3 zenith_color = mix (night_zenith, day_zenith, sun_height);
-    float3 horizon_color = mix (night_horizon, day_horizon, sun_height);
+    float3 zenith_color = mix (night_zenith, day_zenith, daylight);
+    float3 horizon_color = mix (night_horizon, day_horizon, daylight);
 
     base_color = mix (zenith_color, horizon_color,
-		      atmospheric_thickness);
-    base_color += rayleigh * sun_height;
-    base_color += mie * sun_height;
+		      pow (atmospheric_thickness, 0.72));
+
+    // Warm only the low atmospheric band, leaving the rest of the
+    // sky clean blue.  Forward scattering supplies the bright area
+    // around the sun that ties into the directional ground haze.
+    const float horizon_band = pow (atmospheric_thickness, 4.0);
+    base_color = mix (base_color, float3 (0.90, 0.50, 0.26),
+		      0.12 * golden * horizon_band);
+    const float forward = pow (max (dot (ray_dir, sun_dir), 0.0), 5.0);
+    const float3 scatter_color = mix (float3 (1.0, 0.96, 0.82),
+				      float3 (1.0, 0.55, 0.24),
+				      golden);
+    base_color += scatter_color * forward
+      * (0.10 + 0.16 * golden) * daylight;
   } else {
     // Lower hemisphere: darkened ground with a horizon gradient.
-    base_color = ground_color * max (0.2, sun_height);
+    base_color = ground_color * (0.2 + 0.8 * daylight);
     base_color = mix (base_color,
-		      mix (night_horizon, day_horizon, sun_height),
+		      mix (night_horizon, day_horizon, daylight),
 		      pow (1.0 - abs_zenith, 8.0));
   }
 
@@ -133,28 +136,16 @@ static float sky_cloud_shape (float3 p, float coverage, float time) {
 // Cloud lighting: directional light, self-shadowing, sunset tint.
 static float3 sky_cloud_lighting (float cloud_density, float3 sun_dir,
 				  float sun_height) {
-  float3 cloud_color = float3 (0.9, 0.9, 0.95);
-
-  float sun_light =
-    max (0.0, dot (normalize (float3 (0.0, 1.0, 0.0)), sun_dir));
-  float direct_light = pow (sun_light, 4.0) * 0.5 + 0.5;
-
-  float self_shadow = 1.0 - cloud_density * 0.5;
-
-  float sunset =
-    pow (max (0.0, dot (normalize (float3 (0.0, 0.3, 1.0)), sun_dir)),
-	 2.0);
-  float3 sunset_color =
-    mix (float3 (1.0, 0.8, 0.5), float3 (1.0, 0.4, 0.2), sunset);
-
-  cloud_color = cloud_color
-    * mix (float3 (0.5, 0.5, 0.65), sunset_color, direct_light)
-    * self_shadow;
-
-  // Darken clouds at night.
-  cloud_color = mix (cloud_color * 0.2, cloud_color, sun_height);
-
-  return cloud_color;
+  (void) sun_height;
+  const float daylight = smoothstep (-0.08, 0.18, sun_dir.y);
+  const float golden = daylight
+    * (1.0 - smoothstep (0.15, 0.65, sun_dir.y));
+  const float3 shade = float3 (0.34, 0.40, 0.52);
+  const float3 sunlit = mix (float3 (1.0, 0.97, 0.90),
+			     float3 (1.0, 0.72, 0.46), golden);
+  float3 cloud_color = mix (shade, sunlit, 0.48 + 0.38 * daylight);
+  cloud_color *= 1.0 - 0.38 * cloud_density;
+  return mix (cloud_color * 0.18, cloud_color, daylight);
 }
 
 fragment float4
@@ -199,28 +190,28 @@ sky_fragment (SkyVaryings in [[stage_in]],
 
   // Sun disk with realistic shape (drawn over the haze).
   float sun_dot = max (0.0, dot (dir, sun));
-  float sun_disk = pow (sun_dot, 256.0);
-  float sun_glow = pow (sun_dot, 8.0) * 0.3;
+  float sun_disk = pow (sun_dot, 512.0);
+  float sun_glow = pow (sun_dot, 12.0) * 0.24;
 
-  // Sun color varies with height (redder at horizon).
-  float3 sun_color =
-    mix (float3 (1.0, 0.6, 0.3), float3 (1.0, 0.9, 0.7), sun_height);
+  const float daylight = smoothstep (-0.08, 0.18, sun.y);
+  const float golden = daylight
+    * (1.0 - smoothstep (0.15, 0.65, sun.y));
+  const float3 sun_color = mix (float3 (1.0, 0.96, 0.84),
+				float3 (1.0, 0.58, 0.28), golden);
 
   // Add sun to sky; the corona warms only when the sun is low.
   sky_color += sun_disk * sun_color;
-  sky_color += sun_glow
-    * mix (float3 (1.0, 0.4, 0.2), float3 (1.0, 0.85, 0.6), sun_height)
-    * sun_height;
+  sky_color += sun_glow * sun_color * daylight;
 
   // Stars at night, upper hemisphere only.
-  if (sun_height < 0.2 && dir.y > 0.0) {
+  if (daylight < 0.2 && dir.y > 0.0) {
     float star_pattern = sky_noise (dir * 100.0);
     star_pattern = pow (star_pattern, 20.0);
 
     // Fade stars near the horizon.
     float horizon_fade = smoothstep (0.0, 0.4, dir.y);
     float star_brightness =
-      (1.0 - sun_height * 5.0) * 0.3 * horizon_fade;
+      (1.0 - daylight) * 0.3 * horizon_fade;
     star_brightness = max (0.0, star_brightness);
 
     float3 star_color = mix (float3 (0.8, 0.9, 1.0),

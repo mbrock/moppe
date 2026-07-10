@@ -50,17 +50,24 @@ uber_fragment (UberVaryings in [[stage_in]],
   if (in.lit > 0.5) {
     const float3 n = normalize (in.normal);
     const float3 l = frame.sun_dir.xyz;
-    const float lambert = max (dot (n, l), 0.0);
+    const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
 
     // AMBIENT_AND_DIFFUSE color material: both terms scale the
     // vertex color.
-    float3 lit = base.rgb * (frame.ambient.rgb
+    float3 lit = base.rgb * (moppe_hemisphere_light
+                             (frame.ambient.rgb, n)
 			     + frame.sun_diffuse.rgb * lambert);
 
     // Separate specular (global material, shininess 64).
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
     const float3 h = normalize (l + v);
     lit += frame.sun_specular.rgb * pow (max (dot (n, h), 0.0), 64.0);
+
+    // A restrained sky rim separates moving silhouettes from the
+    // landscape, especially on their shadowed side.
+    const float rim = pow (1.0 - max (dot (n, v), 0.0), 3.0)
+      * (0.35 + 0.65 * max (n.y, 0.0));
+    lit += base.rgb * float3 (0.07, 0.11, 0.18) * rim;
 
     color = lit;
   }

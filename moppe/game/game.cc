@@ -38,7 +38,7 @@ namespace game {
   // THE sun: one fixed direction shared by the light, the shadow
   // map, the sky's sun disc, and the ocean glint.
   static const float SUN_AZIMUTH = 0.8f;
-  static float SUN_HEIGHT = 0.75f;   // eternal golden afternoon
+  static float SUN_HEIGHT = 0.62f;   // low, vivid golden afternoon
 
   static Vector3D
   sun_direction_for (float height) {
@@ -48,38 +48,48 @@ namespace game {
 		     std::cos (el) * std::cos (SUN_AZIMUTH));
   }
 
-  // The fixed-function light colors from update_dynamic_lighting at
-  // sun_height 0.75: the sunset branch, NOT white.
+  static float
+  smooth_curve (float edge0, float edge1, float x) {
+    float t = (x - edge0) / (edge1 - edge0);
+    clamp (t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+  }
+
+  static float
+  sun_elevation_for (float sun_height) {
+    return std::sin ((sun_height - 0.5f) * 3.14159f);
+  }
+
+  static float
+  daylight_for (float sun_height) {
+    return smooth_curve (-0.08f, 0.18f,
+                         sun_elevation_for (sun_height));
+  }
+
+  static float
+  golden_light_for (float sun_height) {
+    const float elevation = sun_elevation_for (sun_height);
+    return daylight_for (sun_height)
+      * (1.0f - smooth_curve (0.15f, 0.65f, elevation));
+  }
+
+  // Sunlight is warm near the horizon and becomes a soft ivory as
+  // it rises.  Intensity follows the real elevation rather than the
+  // old cyclic sun-height color branches.
   static void
   sun_light_colors (float sun_height, Vector3D& diffuse,
 		    Vector3D& specular) {
-    const Vector3D day_color (1.0f, 0.98f, 0.9f);
-    const Vector3D night_color (0.2f, 0.2f, 0.3f);
-    const Vector3D sunset_color (1.0f, 0.6f, 0.3f);
+    const float daylight = daylight_for (sun_height);
+    const float golden = golden_light_for (sun_height);
+    const Vector3D warm (1.0f, 0.60f, 0.30f);
+    const Vector3D ivory (1.0f, 0.96f, 0.84f);
+    const Vector3D sun_color = ivory * (1.0f - golden)
+      + warm * golden;
 
-    const bool is_sunset =
-      (sun_height > 0.1f && sun_height < 0.3f) ||
-      (sun_height > 0.7f && sun_height < 0.9f);
-
-    if (is_sunset) {
-      float k = (sun_height < 0.5f)
-	? 1.0f - std::fabs (sun_height - 0.2f) / 0.1f
-	: 1.0f - std::fabs (sun_height - 0.8f) / 0.1f;
-      clamp (k, 0.0f, 1.0f);
-
-      const float day_factor = (sun_height < 0.5f)
-	? sun_height / 0.5f : 1.0f - (sun_height - 0.5f) / 0.5f;
-      const Vector3D base = night_color * (1.0f - day_factor)
-	+ day_color * day_factor;
-
-      diffuse = base * (1.0f - k) + sunset_color * k;
-      specular = Vector3D (1.0f, 0.9f, 0.8f) * (0.7f + k * 0.3f);
-    } else {
-      diffuse = night_color * (1.0f - sun_height)
-	+ day_color * sun_height;
-      specular = Vector3D (0.8f, 0.8f, 0.9f)
-	* (0.4f + sun_height * 0.6f);
-    }
+    diffuse = sun_color * (0.10f + 0.98f * daylight);
+    specular = (Vector3D (1.0f, 0.86f, 0.70f) * golden
+                + Vector3D (0.92f, 0.95f, 1.0f) * (1.0f - golden))
+      * (0.15f + 0.85f * daylight);
   }
 
   // Sky horizon color (port of gfx::Sky::get_horizon_color): the
@@ -87,26 +97,14 @@ namespace game {
   // fog color each tick.
   static Vector3D
   horizon_color_for (float sun_height) {
-    const Vector3D day_horizon (0.3f, 0.5f, 0.9f);
-    const Vector3D night_horizon (0.05f, 0.05f, 0.1f);
-    const Vector3D sunset_horizon (0.7f, 0.4f, 0.3f);
-
-    const bool is_sunset =
-      (sun_height > 0.1f && sun_height < 0.3f) ||
-      (sun_height > 0.7f && sun_height < 0.9f);
-
-    if (is_sunset) {
-      float k = (sun_height < 0.5f)
-	? 1.0f - std::fabs (sun_height - 0.2f) / 0.1f
-	: 1.0f - std::fabs (sun_height - 0.8f) / 0.1f;
-      clamp (k, 0.0f, 1.0f);
-
-      const Vector3D base = night_horizon * (1.0f - sun_height)
-	+ day_horizon * sun_height;
-      return base * (1.0f - k) + sunset_horizon * k;
-    }
-    return night_horizon * (1.0f - sun_height)
-      + day_horizon * sun_height;
+    const float daylight = daylight_for (sun_height);
+    const float warmth = golden_light_for (sun_height) * 0.16f;
+    const Vector3D day_horizon (0.46f, 0.64f, 0.86f);
+    const Vector3D night_horizon (0.035f, 0.045f, 0.09f);
+    const Vector3D warm_horizon (0.92f, 0.58f, 0.32f);
+    const Vector3D base = night_horizon * (1.0f - daylight)
+      + day_horizon * daylight;
+    return base * (1.0f - warmth) + warm_horizon * warmth;
   }
 
   class MoppeGame: public platform::Game {
@@ -344,9 +342,11 @@ namespace game {
       clamp (cloudiness, 0.0f, 1.0f);
       m_cloudiness = cloudiness;
 
-      // Fog color: sky horizon shifted toward a milky pale blue.
+      // Fog stays mostly sky-blue.  Directional warmth is added in
+      // the shaders only when looking toward the sun.
       const Vector3D horizon = horizon_color_for (SUN_HEIGHT);
-      m_fog = horizon * 0.75f + Vector3D (0.93f, 0.95f, 1.0f) * 0.25f;
+      m_fog = horizon * 0.82f
+        + Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
 
       m_vehicle.update (dt);
       if (m_car_exists)
@@ -554,7 +554,9 @@ namespace game {
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
       sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
       fp.sun_specular = fp.sun_specular * 0.5f;   // material specular
-      fp.ambient = Vector3D (0.2f, 0.2f, 0.2f);   // GL light-model default
+      const float daylight = daylight_for (SUN_HEIGHT);
+      fp.ambient = Vector3D (0.28f, 0.30f, 0.34f)
+        * (0.35f + 0.65f * daylight);
       fp.time = m_total_time;
 
       if (!r.begin_frame (fp))

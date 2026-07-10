@@ -81,11 +81,19 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   // Sun glint, dimmed by haze so it doesn't ghost through the fog.
   const float3 sun = normalize (u.sun_dir.xyz);
   const float3 h = normalize (sun + v);
-  const float spec = pow (max (dot (n, h), 0.0), 120.0) * 0.9
-      * (1.0 - in.fog);
+  const float nh = max (dot (n, h), 0.0);
+  const float sharp_glint = pow (nh, 120.0) * 0.85;
+  const float broad_glint = pow (nh, 24.0) * 0.14;
+  const float spec = (sharp_glint + broad_glint) * (1.0 - in.fog);
 
-  const float3 deep = float3 (0.04, 0.16, 0.26);
-  const float3 shallow = float3 (0.12, 0.38, 0.50);
+  const float daylight = smoothstep (-0.08, 0.18, sun.y);
+  const float golden = daylight
+    * (1.0 - smoothstep (0.15, 0.65, sun.y));
+  const float3 glint_color = mix (float3 (0.92, 0.96, 1.0),
+				  float3 (1.0, 0.67, 0.34), golden);
+
+  const float3 deep = float3 (0.035, 0.17, 0.28);
+  const float3 shallow = float3 (0.10, 0.42, 0.55);
   const float3 water = mix (deep, shallow, 0.25 + 0.5 * fresnel);
 
   // Aerial perspective: same sun-warmed haze as the terrain.
@@ -94,7 +102,7 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 					 sun);
 
   const float3 color = mix (water, fog_c, 0.55 * fresnel)
-      + float3 (spec);
+      + glint_color * spec * daylight;
 
   const float alpha = mix (0.78, 0.95, fresnel);
 
