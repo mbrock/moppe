@@ -15,6 +15,21 @@
 
 namespace moppe {
 namespace map {
+  const char*
+  geological_field_name (GeologicalField field)
+  {
+    switch (field) {
+    case GeologicalField::Combined:     return "combined terrain";
+    case GeologicalField::Continent:    return "continent field";
+    case GeologicalField::Plains:       return "plains detail";
+    case GeologicalField::Mountains:    return "ridged mountains";
+    case GeologicalField::MountainMask: return "mountain mask";
+    case GeologicalField::WarpX:        return "domain warp X";
+    case GeologicalField::WarpY:        return "domain warp Y";
+    }
+    return "unknown";
+  }
+
   NormalMap::NormalMap (int width, int height)
     : m_data   (width, height),
       m_width  (width),
@@ -309,7 +324,7 @@ namespace map {
   }
 
   void
-  RandomHeightMap::randomize_geologically ()
+  RandomHeightMap::randomize_geologically (GeologicalField field)
   {
     PerlinNoise base_noise (m_rng ());
     PerlinNoise ridge_noise (m_rng ());
@@ -348,10 +363,20 @@ namespace map {
 	// Altitude decides the character: smooth low, ridgey high
 	const float mountain_mask = sstep (0.45f, 0.75f, continent);
 
-	const float h =
-	  continent * 0.55f
-	  + plains * 0.12f * (1.0f - mountain_mask)
-	  + mountains * 0.65f * mountain_mask;
+	float h = 0.0f;
+	switch (field) {
+	case GeologicalField::Combined:
+	  h = continent * 0.55f
+	    + plains * 0.12f * (1.0f - mountain_mask)
+	    + mountains * 0.65f * mountain_mask;
+	  break;
+	case GeologicalField::Continent:    h = continent; break;
+	case GeologicalField::Plains:       h = plains; break;
+	case GeologicalField::Mountains:    h = mountains; break;
+	case GeologicalField::MountainMask: h = mountain_mask; break;
+	case GeologicalField::WarpX:        h = wx; break;
+	case GeologicalField::WarpY:        h = wy; break;
+	}
 
 	set (x, y, h);
       }
