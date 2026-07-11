@@ -374,3 +374,23 @@ MOPPE_TEST (placed_hydraulic_droplet_traces_and_balances_sediment) {
   MOPPE_CHECK_NEAR (trace.eroded, trace.deposited,
 		    trace.eroded * 2e-5f + 1e-7f);
 }
+
+MOPPE_TEST (path_monotone_droplet_settles_in_a_local_basin) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map
+    (33, 33, Vector3D (64, 20, 64), 0, Topology::Bounded);
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x) {
+      const float dx = static_cast<float> (x - 16);
+      map.set (x, y, 0.2f + 0.002f * dx * dx);
+    }
+
+  const map::HydraulicDropletTrace trace = map.trace_hydraulic_droplet
+    (8.5f, 16.5f, 128, 0.01f, SedimentDisposition::Deposit,
+     CarvingRule::PathMonotone);
+
+  MOPPE_CHECK (trace.termination == map::HydraulicDropletTermination::Flat);
+  MOPPE_CHECK (trace.points.back ().x >= 15.0f);
+  MOPPE_CHECK (trace.points.back ().x <= 17.0f);
+}
