@@ -427,6 +427,8 @@ static void log_runtime_parameters (MoppeView* view) {
 
 namespace moppe {
   namespace platform {
+    static __weak NSWindow* active_window = nil;
+
     std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator () {
       try {
         return std::make_unique<terrain::metal::MetalEvaluator> (
@@ -460,6 +462,7 @@ namespace moppe {
                                         backing:NSBackingStoreBuffered
                                           defer:NO];
         window.title = [NSString stringWithUTF8String:config.title.c_str ()];
+        active_window = window;
         [window center];
 
         MoppeView* view = [[MoppeView alloc] initWithFrame:frame device:nil];
@@ -497,12 +500,21 @@ namespace moppe {
           *renderer, (int)view.bounds.size.width, (int)view.bounds.size.height);
 
         [NSApp run];
+        active_window = nil;
         return 0;
       }
     }
 
     void request_quit () {
       dispatch_async (dispatch_get_main_queue (), ^{ [NSApp terminate:nil]; });
+    }
+
+    void set_window_title (const std::string& title) {
+      NSString* value = [NSString stringWithUTF8String:title.c_str ()];
+      dispatch_async (dispatch_get_main_queue (), ^{
+        if (active_window)
+          active_window.title = value;
+      });
     }
 
     Insets safe_insets () {

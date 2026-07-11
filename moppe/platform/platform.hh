@@ -112,6 +112,10 @@ namespace moppe {
     // Ask the run loop to quit (no-op on iOS, where apps don't exit).
     void request_quit ();
 
+    // Updates desktop window chrome without touching the rendered drawable.
+    // No-op on platforms without a titled window.
+    void set_window_title (const std::string& title);
+
     // Resolve an asset-relative path ("textures/grass2.tga") to an
     // absolute path: the app bundle on Apple platforms, or the
     // executable/source directory for loose development builds.
