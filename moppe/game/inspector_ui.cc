@@ -543,18 +543,19 @@ namespace game {
 	(dl, bounds.x + bounds.width - high_width,
 	 bounds.y + bounds.height, high);
     }
+    const float rail_x = bounds.x + 9.0f;
+    const float rail_width = bounds.width - 18.0f;
     const float y = bounds.y + 35.0f;
     dl.color (0.25f, 0.43f, 0.39f, 0.65f);
     for (int i = 0; i <= 4; ++i) {
-      const float tick_x = bounds.x + bounds.width * i / 4.0f;
+      const float tick_x = rail_x + rail_width * i / 4.0f;
       dl.line (tick_x, y - 4, tick_x, y + 4, 1.0f);
     }
-    dl.color (0.04f, 0.095f, 0.09f, 1.0f);
-    dl.line (bounds.x, y, bounds.x + bounds.width, y, 7.0f);
+    dl.color (0.12f, 0.25f, 0.22f, 0.95f);
+    dl.line (rail_x, y, rail_x + rail_width, y, 7.0f);
     dl.color (0.25f, 0.68f, 0.58f, 1.0f);
-    dl.line (bounds.x, y,
-	     bounds.x + bounds.width * normalized, y, 4.0f);
-    const float cx = bounds.x + bounds.width * normalized;
+    dl.line (rail_x, y, rail_x + rail_width * normalized, y, 4.0f);
+    const float cx = rail_x + rail_width * normalized;
     dl.color (0.29f, 0.82f, 0.65f, active ? 0.30f : 0.13f);
     draw_circle (dl, cx, y, active ? 13.0f : 11.0f);
     dl.color (active ? 0.91f : hot ? 0.82f : 0.72f,

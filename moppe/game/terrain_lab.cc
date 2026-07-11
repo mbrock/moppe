@@ -71,13 +71,13 @@ namespace game {
 
     UiRect friendly_panel_rect (int height) {
       return { 18, 18, 500,
-	       static_cast<float> (std::max (480, height - 36)) };
+	       static_cast<float> (std::min (580, std::max (480, height - 36))) };
     }
 
     UiRect friendly_action_rect (int index) {
       constexpr float gap = 6.0f;
       constexpr float width = (464.0f - gap * 2.0f) / 3.0f;
-      return { 36 + index * (width + gap), 98, width, 48 };
+      return { 36 + index * (width + gap), 36, width, 48 };
     }
 
     UiRect friendly_preset_rect (int index) {
@@ -85,12 +85,12 @@ namespace game {
       constexpr float width = (464.0f - gap) / 2.0f;
       const int row = index / 2;
       const int column = index % 2;
-      return { 36 + column * (width + gap), 184 + row * 72.0f,
-	       width, 64 };
+      return { 36 + column * (width + gap), 100 + row * 62.0f,
+	       width, 54 };
     }
 
     UiRect friendly_slider_rect (int index) {
-      return { 36, 353 + index * 68.0f, 464, 58 };
+      return { 36, 238 + index * 68.0f, 464, 58 };
     }
 
     UiRect friendly_lens_rect (int index, int width) {
@@ -1858,8 +1858,10 @@ namespace game {
     m_pointer_y = y;
     if (m_friendly_drag) {
       const UiRect bounds = friendly_slider_rect (m_friendly_drag_control);
-      const float normalized = bounds.width > 0.0f
-	? (x - bounds.x) / bounds.width : 0.0f;
+      const float rail_x = bounds.x + 9.0f;
+      const float rail_width = bounds.width - 18.0f;
+      const float normalized = rail_width > 0.0f
+	? (x - rail_x) / rail_width : 0.0f;
       if (set_friendly_control_normalized
 	  (m_friendly_drag_control, normalized))
 	m_parameter_rebuild_delay = 0.045f;
@@ -1934,8 +1936,10 @@ namespace game {
 	      });
 	    m_friendly_drag = true;
 	    m_friendly_drag_control = control;
+	    const float rail_x = bounds.x + 9.0f;
+	    const float rail_width = bounds.width - 18.0f;
 	    set_friendly_control_normalized
-	      (control, (x - bounds.x) / bounds.width);
+	      (control, (x - rail_x) / rail_width);
 	    return;
 	  }
 	  if (friendly_ui_contains
@@ -2044,12 +2048,11 @@ namespace game {
       return bounds.contains (m_pointer_x, m_pointer_y);
     };
     m_ui.begin (dl);
-    m_ui.surface (dl, friendly_panel_rect (height));
-    m_ui.heading (dl, 36, 58, "WORLD SHAPER");
-    m_ui.paragraph (dl, 37, 84, "Make a landscape, then let time shape it.");
+    const UiRect panel = friendly_panel_rect (height);
+    m_ui.surface (dl, panel);
 
     constexpr const char* action_labels[] = {
-      "NEW WORLD", "FRAME WORLD", "EXPERT"
+      "NEW WORLD", "CENTER", "EXPERT"
     };
     for (int i = 0; i < 3; ++i) {
       const UiRect bounds = friendly_action_rect (i);
@@ -2057,23 +2060,16 @@ namespace game {
 	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down,
 	 false, i == 0);
     }
-
-    m_ui.caption (dl, 37, 171, "START WITH A STORY");
     constexpr const char* preset_titles[] = {
       "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
-    };
-    constexpr const char* preset_details[] = {
-      "high and sharp", "softened by time",
-      "water finds a way", "rivers cut deep"
     };
     for (int i = 0; i < 4; ++i) {
       const UiRect bounds = friendly_preset_rect (i);
       m_ui.friendly_button
-	(dl, bounds, preset_titles[i], preset_details[i], hot (bounds),
+	(dl, bounds, preset_titles[i], "", hot (bounds),
 	 m_pointer_down, m_friendly_preset == i, false);
     }
 
-    m_ui.caption (dl, 37, 338, "SHAPE THIS WORLD");
     constexpr const char* slider_titles[] = {
       "MOUNTAINS", "WILD RIDGES", "AGE", "RAINFALL"
     };
@@ -2091,33 +2087,9 @@ namespace game {
 	 m_friendly_drag && m_friendly_drag_control == i);
     }
 
-    if (height >= 790) {
-      constexpr const char* story_titles[] = {
-	"A NEW WORLD IS WAITING",
-	"LAND RISES  >  PEAKS STAY SHARP",
-	"LAND RISES  >  RAIN FALLS  >  HILLS SOFTEN",
-	"RAIN FALLS  >  WATER GATHERS  >  RIVERS GROW",
-	"LAND RISES  >  RIVERS CUT  >  CANYONS DEEPEN"
-      };
-      constexpr const char* story_details[] = {
-	"Choose a story above, then make it your own.",
-	"A young landscape with little weathering.",
-	"Time and gravity have rounded the high ground.",
-	"Abundant water gathers into lakes and streams.",
-	"Old rivers have worked deep into strong rock."
-      };
-      const int story = m_friendly_preset + 1;
-      m_ui.caption (dl, 37, 638, "THIS WORLD'S STORY");
-      const UiRect story_bounds { 36, 654, 464, 82 };
-      m_ui.friendly_button
-	(dl, story_bounds, story_titles[story], story_details[story],
-	 false, false, false, false);
-    }
-
-    const float hint_y = std::max (748.0f, static_cast<float> (height - 27));
     m_ui.caption
-      (dl, 37, hint_y,
-       "DRAG THE LAND TO ORBIT  -  SCROLL TO ZOOM  -  T BACK");
+      (dl, 37, panel.y + panel.height - 21,
+       "DRAG: ORBIT   SCROLL: ZOOM   T: BACK");
 
     constexpr const char* lens_titles[] = {
       "LAND", "STEEP", "WATER", "DROP RAIN"
@@ -2130,7 +2102,7 @@ namespace game {
     const UiRect last_lens = friendly_lens_rect (3, width);
     const UiRect lens_surface {
       first_lens.x - 10.0f, 10.0f,
-      last_lens.x + last_lens.width - first_lens.x + 20.0f, 104.0f
+      last_lens.x + last_lens.width - first_lens.x + 20.0f, 66.0f
     };
     m_ui.surface (dl, lens_surface);
     for (int i = 0; i < 4; ++i) {
@@ -2139,16 +2111,6 @@ namespace game {
 	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
 	 m_overlay == lens_modes[i], i == 3);
     }
-    const char* lens_help = m_overlay == OverlayMode::Slope
-      ? "Bright ground is steep. Dark ground is gentle."
-      : m_overlay == OverlayMode::StandingWater
-      ? "See where water gathers, rests, and finds the sea."
-      : m_overlay == OverlayMode::Trace
-      ? "Click anywhere on the land and follow the raindrop."
-      : "The living surface, without a map reading.";
-    m_ui.paragraph
-      (dl, std::max (530.0f, static_cast<float> (width - 478)), 94,
-       lens_help, m_overlay != OverlayMode::None);
     m_ui.end (dl);
   }
 
