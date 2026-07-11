@@ -93,6 +93,7 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Body inlet and outflow catchment ledgers for rendering and erosion.
 - [X] Directed dry river reaches split at confluences and water bodies.
 - [X] World-space river ribbons animated from reach direction and discharge.
+- [X] Clustered high-flow knickpoint candidates with physical drop and slope.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
@@ -143,8 +144,13 @@ next iterations.
 - Smooth or fit reach centerlines while preserving confluences and periodic
   continuity.
 - Build explicit junction and lake/ocean mouth geometry.
-- Use longitudinal bed profiles to separate quiet flow, rapids, cascades, and
-  true falls; add foam and spray only where those regimes warrant it.
+- [X] Cluster steep visible-channel steps into deterministic fall candidates,
+  expose them in FALLS and TRACE, and intensify cascade foam from that reading.
+- [ ] Distinguish free-falling lips from steep continuous cascades using a
+  longer longitudinal profile or explicit channel morphology.
+- [ ] Render a curved falling sheet and soft foot spray only after a candidate
+  has an actual lip/face; a vertical quad over the continuous heightfield was
+  tested and rejected because it intersected terrain and broke the river.
 - Give the rider water contact, crossing, and depth feedback after the visual
   surface is stable.
 
@@ -176,8 +182,8 @@ Terrain Lab exposes =+AGE= independently from =+DROP= and =+TALUS=.  The
 =terrain-stream-power-experiment= tool replays source, analytical, droplets,
 and their combinations from one checkpoint.  On seed 123 at 257 square, the
 200 ky / four-pass / 30K-drop combined-plus-talus result reduced dry sinks
-from 515 in the source and 416 after droplets to 303, and reduced ponds from
-46 after droplets to 12.  It retained 112 persistent-channel cells versus 132
+from 515 in the source and 416 after droplets to 311, and reduced ponds from
+46 after droplets to 13.  It retained 98 persistent-channel cells versus 132
 after droplets alone.  The analytical-only result creates many one-cell
 discontinuities, confirming the paper's warning that hillslope treatment is
 part of a usable method rather than optional polish.
@@ -262,6 +268,20 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Steep river steps become inspectable cascade candidates
+
+- Added deterministic =Waterfall= candidates derived from physical drop,
+  slope, discharge threshold, and adjacency clustering on ordered reaches.
+- Added FALLS markers, counts, and TRACE details in Terrain Lab.
+- Fed the candidate signal into the existing river material as stronger foam
+  without breaking terrain-following ribbon continuity.
+- Seed 123 at 1025 square found 183 candidates across 346 source reaches and
+  234 across 481 reaches after 30K droplets; one-time analysis took roughly
+  262--306 ms and the ordinary rider capture remained near 115 FPS.
+- Tested and rejected a free-falling quad prototype: without an actual carved
+  lip or curved sheet it intersected the continuous heightfield and rendered
+  as disconnected white blocks.  True waterfall geometry remains open work.
 
 ** 2026-07-11 Finite-time stream power becomes a pipeline stage
 

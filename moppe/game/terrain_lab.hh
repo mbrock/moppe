@@ -74,7 +74,8 @@ namespace game {
       HeightDelta,
       Trace,
       StandingWater,
-      PermanentWater
+      PermanentWater,
+      Waterfalls
     };
 
     void select (terrain::GeologicalLayer layer);

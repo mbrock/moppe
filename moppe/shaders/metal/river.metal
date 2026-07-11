@@ -1,6 +1,6 @@
 // Flow-aligned translucent ribbons for routed streams. Geometry supplies
 // cross-stream u, downstream distance v, rapid strength in color.r, and a
-// logarithmic discharge signal in color.g.
+// logarithmic discharge signal in color.g, and waterfall strength in color.b.
 
 #include "common.h"
 
@@ -11,6 +11,7 @@ struct RiverVaryings {
   float2 uv;
   float rapid;
   float discharge;
+  float waterfall;
 };
 
 vertex RiverVaryings
@@ -32,6 +33,7 @@ river_vertex (uint vid [[vertex_id]],
   out.uv = float2 (v.uv);
   out.rapid = float (v.color.r) / 255.0;
   out.discharge = float (v.color.g) / 255.0;
+  out.waterfall = float (v.color.b) / 255.0;
   return out;
 }
 
@@ -43,7 +45,8 @@ river_fragment (RiverVaryings in [[stage_in]],
   const float time = frame.misc.x;
   const float edge = smoothstep (0.0, 0.16, in.uv.x)
     * smoothstep (0.0, 0.16, 1.0 - in.uv.x);
-  const float phase = in.uv.y * 0.22 - time * (2.2 + in.rapid * 2.5);
+  const float phase = in.uv.y * 0.22
+    - time * (2.2 + in.rapid * 2.5 + in.waterfall * 2.0);
   const float ribs = 0.5 + 0.5 * sin (phase * 6.28318
 				      + sin (in.uv.x * 18.0));
   const float streak = pow (ribs, 5.0)
@@ -60,7 +63,11 @@ river_fragment (RiverVaryings in [[stage_in]],
   const float3 shallow = moppe_srgb (float3 (0.055, 0.32, 0.34));
   const float3 deep = moppe_srgb (float3 (0.025, 0.14, 0.22));
   float3 color = mix (shallow, deep, saturate (in.discharge));
-  const float foam = saturate (in.rapid * (0.10 + 0.55 * streak));
+  const float fall_streak = pow
+    (0.5 + 0.5 * sin (in.uv.x * 46.0 + phase * 0.35), 3.0);
+  const float foam = max
+    (saturate (in.rapid * (0.10 + 0.55 * streak)),
+     saturate (in.waterfall * (0.48 + 0.48 * fall_streak)));
   color = mix (color, moppe_srgb (float3 (0.82, 0.94, 0.96)), foam);
 
   const float3 half_vector = normalize (frame.sun_dir.xyz + view);
@@ -77,6 +84,7 @@ river_fragment (RiverVaryings in [[stage_in]],
   color = mix (color, fog_color, smoothstep (0.0, 0.9, fog));
 
   const float alpha = edge
-    * (0.44 + 0.14 * fresnel + 0.18 * foam);
+    * (0.44 + 0.14 * fresnel + 0.18 * foam
+       + 0.20 * in.waterfall);
   return float4 (color, alpha);
 }

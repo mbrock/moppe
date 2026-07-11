@@ -27,6 +27,25 @@ namespace moppe::terrain {
       const int result = value % n;
       return static_cast<std::size_t> (result < 0 ? result + n : result);
     }
+
+    float receiver_distance (std::uint32_t cell, std::uint32_t receiver,
+			     const TerrainGrid& grid) {
+      const int width = static_cast<int> (grid.unique_width ());
+      const int height = static_cast<int> (grid.unique_height ());
+      int dx = static_cast<int> (cell % width)
+	- static_cast<int> (receiver % width);
+      int dy = static_cast<int> (cell / width)
+	- static_cast<int> (receiver / width);
+      if (grid.topology == Topology::Torus) {
+	if (dx > width / 2) dx -= width;
+	if (dx < -width / 2) dx += width;
+	if (dy > height / 2) dy -= height;
+	if (dy < -height / 2) dy += height;
+      }
+      return std::hypot
+	(static_cast<float> (dx) * grid.spacing_x,
+	 static_cast<float> (dy) * grid.spacing_y);
+    }
   }
 
   DrainageGraph
@@ -331,11 +350,17 @@ namespace moppe::terrain {
   extract_river_network (const FloodField& flood,
 			 const LakeCensus& census,
 			 const DrainageGraph& drainage,
-			 float minimum_area_m2)
+			 float minimum_area_m2,
+			 const WaterfallParameters& waterfall_parameters)
   {
     const std::size_t count = flood.width () * flood.height ();
     if (!std::isfinite (minimum_area_m2) || minimum_area_m2 < 0.0f)
       throw std::invalid_argument ("river area threshold must be finite");
+    if (!std::isfinite (waterfall_parameters.minimum_drop_m)
+	|| waterfall_parameters.minimum_drop_m < 0.0f
+	|| !std::isfinite (waterfall_parameters.minimum_slope)
+	|| waterfall_parameters.minimum_slope < 0.0f)
+      throw std::invalid_argument ("waterfall thresholds must be finite");
     if (census.body.size () != count || flood.ocean.size () != count
 	|| drainage.width () != flood.width ()
 	|| drainage.height () != flood.height ())
@@ -368,8 +393,11 @@ namespace moppe::terrain {
 
     RiverNetwork network {
       .minimum_area_m2 = minimum_area_m2,
+      .waterfall_parameters = waterfall_parameters,
       .reach_by_cell = std::vector<std::uint32_t>
-	(count, RiverReach::no_id)
+	(count, RiverReach::no_id),
+      .waterfall_by_cell = std::vector<std::uint32_t>
+	(count, Waterfall::no_id)
     };
     for (std::uint32_t start = 0; start < count; ++start) {
       if (!eligible[start] || network.reach_by_cell[start] != RiverReach::no_id
@@ -416,6 +444,58 @@ namespace moppe::terrain {
 	drainage.receiver[reach.cells.back ()];
       if (eligible[next])
 	reach.downstream_reach = network.reach_by_cell[next];
+    }
+
+    for (const RiverReach& reach : network.reaches) {
+      const float reference_area = std::max
+	(minimum_area_m2, drainage.source_grid.spacing_x
+	 * drainage.source_grid.spacing_y);
+      Waterfall selected { };
+      bool has_selected = false;
+      std::size_t last_candidate = 0;
+      float selected_score = 0.0f;
+      const auto emit_selected = [&] {
+	if (!has_selected)
+	  return;
+	selected.id = static_cast<std::uint32_t> (network.waterfalls.size ());
+	network.waterfall_by_cell[selected.lip_cell] = selected.id;
+	network.waterfalls.push_back (selected);
+	has_selected = false;
+	selected_score = 0.0f;
+      };
+      for (std::size_t i = 0; i < reach.cells.size (); ++i) {
+	const std::uint32_t cell = reach.cells[i];
+	const std::uint32_t next = drainage.receiver[cell];
+	const float distance = receiver_distance
+	  (cell, next, drainage.source_grid);
+	const float slope = drainage.slope.values ()[cell];
+	const float drop = slope * distance;
+	if (drop < waterfall_parameters.minimum_drop_m
+	    || slope < waterfall_parameters.minimum_slope)
+	  continue;
+	if (has_selected
+	    && i > last_candidate + waterfall_parameters.separation_cells)
+	  emit_selected ();
+	last_candidate = i;
+	const float area = drainage.contributing_area.values ()[cell];
+	const float score = drop * std::sqrt
+	  (std::max (1.0f, area / reference_area));
+	if (!has_selected || score > selected_score
+	    || (score == selected_score && cell < selected.lip_cell)) {
+	  selected = {
+	    .reach_id = reach.id,
+	    .lip_cell = cell,
+	    .foot_cell = next,
+	    .drop_m = drop,
+	    .horizontal_distance_m = distance,
+	    .slope = slope,
+	    .contributing_area_m2 = area
+	  };
+	  has_selected = true;
+	  selected_score = score;
+	}
+      }
+      emit_selected ();
     }
     return network;
   }

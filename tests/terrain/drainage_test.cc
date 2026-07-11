@@ -4,6 +4,7 @@
 #include <tests/test.hh>
 
 #include <array>
+#include <vector>
 
 using namespace moppe::terrain;
 
@@ -160,7 +161,9 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   MOPPE_CHECK (graph_a.sinks == graph_b.sinks);
   MOPPE_CHECK (network_a.bodies.size () == network_b.bodies.size ());
   MOPPE_CHECK (rivers_a.reach_by_cell == rivers_b.reach_by_cell);
+  MOPPE_CHECK (rivers_a.waterfall_by_cell == rivers_b.waterfall_by_cell);
   MOPPE_CHECK (rivers_a.reaches.size () == rivers_b.reaches.size ());
+  MOPPE_CHECK (rivers_a.waterfalls.size () == rivers_b.waterfalls.size ());
   for (std::size_t i = 0; i < graph_a.contributing_area.values ().size ();
        ++i)
     MOPPE_CHECK_NEAR (graph_a.contributing_area.values ()[i],
@@ -186,4 +189,74 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     MOPPE_CHECK_NEAR (a.downstream_area_m2, b.downstream_area_m2, 0.0f);
     MOPPE_CHECK_NEAR (a.maximum_slope, b.maximum_slope, 0.0f);
   }
+  for (std::size_t i = 0; i < rivers_a.waterfalls.size (); ++i) {
+    const Waterfall& a = rivers_a.waterfalls[i];
+    const Waterfall& b = rivers_b.waterfalls[i];
+    MOPPE_CHECK (a.lip_cell == b.lip_cell);
+    MOPPE_CHECK (a.foot_cell == b.foot_cell);
+    MOPPE_CHECK (a.reach_id == b.reach_id);
+    MOPPE_CHECK_NEAR (a.drop_m, b.drop_m, 0.0f);
+    MOPPE_CHECK_NEAR (a.contributing_area_m2,
+		      b.contributing_area_m2, 0.0f);
+  }
+}
+
+MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
+  constexpr std::size_t count = 12;
+  const TerrainGrid grid {
+    .width = 6,
+    .height = 2,
+    .spacing_x = 2.0f,
+    .spacing_y = 2.0f
+  };
+  const Domain2D domain { .width = 6, .height = 2 };
+  const std::vector<std::uint32_t> receiver {
+    1, 2, 3, 4, 5, 5,
+    6, 7, 8, 9, 10, 11
+  };
+  const FloodField flood {
+    .source_grid = grid,
+    .sea_level = 0.0f,
+    .has_ocean = false,
+    .water_level = ScalarRaster
+      (domain, std::vector<float> (count, 0.0f)),
+    .water_depth = ScalarRaster
+      (domain, std::vector<float> (count, 0.0f)),
+    .ocean = std::vector<std::uint8_t> (count, 0),
+    .spill_receiver = receiver,
+    .outlets = { 5, 6, 7, 8, 9, 10, 11 }
+  };
+  const LakeCensus census {
+    .body = std::vector<std::uint32_t> (count, LakeCensus::dry)
+  };
+  const DrainageGraph drainage {
+    .source_grid = grid,
+    .receiver = receiver,
+    .slope = ScalarRaster (domain, {
+      0.1f, 0.6f, 1.2f, 0.1f, 0.8f, 0.0f,
+      0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+    }),
+    .contributing_area = ScalarRaster (domain, {
+      1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f
+    }),
+    .basin = std::vector<std::uint32_t> (count, 5),
+    .sinks = { 5, 6, 7, 8, 9, 10, 11 }
+  };
+
+  const RiverNetwork rivers = extract_river_network
+    (flood, census, drainage, 1.0f, {
+      .minimum_drop_m = 1.0f,
+      .minimum_slope = 0.5f,
+      .separation_cells = 1
+    });
+
+  MOPPE_CHECK (rivers.reaches.size () == 1);
+  MOPPE_CHECK (rivers.waterfalls.size () == 2);
+  MOPPE_CHECK (rivers.waterfalls[0].lip_cell == 2);
+  MOPPE_CHECK (rivers.waterfalls[0].foot_cell == 3);
+  MOPPE_CHECK_NEAR (rivers.waterfalls[0].drop_m, 2.4f, 1e-6f);
+  MOPPE_CHECK (rivers.waterfalls[1].lip_cell == 4);
+  MOPPE_CHECK (rivers.waterfall_by_cell[2] == 0);
+  MOPPE_CHECK (rivers.waterfall_by_cell[4] == 1);
 }
