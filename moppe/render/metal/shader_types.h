@@ -35,6 +35,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_BLOOM    1   /* post passes */
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
 #define MOPPE_TEX_NORMALS  1   /* vertex stage */
+#define MOPPE_TEX_MOISTURE 2   /* grass stages */
 #define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
 #define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
 #define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1

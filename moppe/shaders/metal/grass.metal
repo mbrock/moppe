@@ -77,7 +77,8 @@ grass_blade (uint world_cell_x, uint world_cell_z, uint blade,
 	     constant MoppeFrameUniforms& frame,
 	     constant MoppeGrassUniforms& grass,
 	     texture2d<float, access::read> heights,
-	     texture2d<float, access::read> normals) {
+	     texture2d<float, access::read> normals,
+	     texture2d<float, access::read> moisture_map) {
   constexpr float tau = 6.28318530718;
   GrassBlade b;
   b.valid = false;
@@ -125,11 +126,15 @@ grass_blade (uint world_cell_x, uint world_cell_z, uint blade,
   }
 
   // Patchiness from drifting value noise; plane-wave sines band into
-  // visible stripes across the field.
+  // visible stripes across the field. The hydrology's moisture field
+  // leads: lush dense growth near water, sparse dry tufts on ridges.
+  const float moisture = grass_ground_height
+    (grid, terrain_limit - 1.0, moisture_map);
   const float patch = saturate
     (0.25 + 0.95 * moppe_value_noise (world_xz * 0.041)
      * (0.55 + 0.45 * moppe_value_noise (world_xz * 0.013)));
-  const float occupancy = 0.68 + 0.31 * patch;
+  const float occupancy = (0.55 + 0.31 * patch)
+    * mix (0.72, 1.18, moisture);
   valid = valid && grass_random (seed + 3u) <= occupancy;
 
   // Density LOD: all blades survive nearby, while the outer ring drops a
@@ -148,10 +153,11 @@ grass_blade (uint world_cell_x, uint world_cell_z, uint blade,
   b.direction = float2 (cos (angle), sin (angle));
   b.side = float2 (-b.direction.y, b.direction.x);
   const float dry = saturate
-    (0.70 * ((terrain_height - 0.10) / 0.22)
-     + 0.20 * grass_random (seed + 5u) + 0.10 * patch);
+    (0.85 * (1.0 - moisture)
+     + 0.20 * grass_random (seed + 5u) + 0.10 * patch - 0.10);
   b.height = mix (0.32, 0.88, grass_random (seed + 6u))
     * mix (0.72, 1.27, patch)
+    * mix (0.62, 1.30, moisture)
     * (1.0 - smoothstep (0.88 * grass.terrain.w,
 			 grass.terrain.w, b.distance));
   b.bend = b.height * mix (0.06, 0.34, grass_random (seed + 7u));
@@ -206,7 +212,9 @@ grass_vertex (uint vid [[vertex_id]], uint iid [[instance_id]],
 	      texture2d<float, access::read> heights
 	        [[texture(MOPPE_TEX_HEIGHTS)]],
 	      texture2d<float, access::read> normals
-	        [[texture(MOPPE_TEX_NORMALS)]]) {
+	        [[texture(MOPPE_TEX_NORMALS)]],
+	      texture2d<float, access::read> moisture_map
+	        [[texture(MOPPE_TEX_MOISTURE)]]) {
   constexpr uint vertices_per_blade = 18;
   const uint side_count = uint (grass.grid.w);
   const uint cell_x = iid % side_count;
@@ -221,7 +229,8 @@ grass_vertex (uint vid [[vertex_id]], uint iid [[instance_id]],
   const uint world_cell_z = uint (origin.y + int (cell_z));
 
   const GrassBlade b = grass_blade
-    (world_cell_x, world_cell_z, blade, frame, grass, heights, normals);
+    (world_cell_x, world_cell_z, blade, frame, grass, heights, normals,
+     moisture_map);
   if (!b.valid) {
     GrassVaryings out;
     out.position = float4 (0.0, 0.0, -1.0, 0.0);
@@ -345,7 +354,9 @@ grass_mesh (GrassMesh out,
 	    texture2d<float, access::read> heights
 	      [[texture(MOPPE_TEX_HEIGHTS)]],
 	    texture2d<float, access::read> normals
-	      [[texture(MOPPE_TEX_NORMALS)]]) {
+	      [[texture(MOPPE_TEX_NORMALS)]],
+	    texture2d<float, access::read> moisture_map
+	      [[texture(MOPPE_TEX_MOISTURE)]]) {
   if (thread_id == 0u)
     out.set_primitive_count (GRASS_PATCH_BLADES * 6);
   if (mesh_id >= payload.count || thread_id >= GRASS_PATCH_BLADES)
@@ -361,7 +372,8 @@ grass_mesh (GrassMesh out,
     (origin.y + int (patch.y * GRASS_PATCH_Z + cell / GRASS_PATCH_X));
 
   const GrassBlade b = grass_blade
-    (world_cell_x, world_cell_z, blade, frame, grass, heights, normals);
+    (world_cell_x, world_cell_z, blade, frame, grass, heights, normals,
+     moisture_map);
 
   const uint v_base = thread_id * 8u;
   const uint p_base = thread_id * 6u;

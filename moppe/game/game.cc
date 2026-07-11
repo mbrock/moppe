@@ -28,6 +28,7 @@
 #include <moppe/map/generate.hh>
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/moisture.hh>
 
 #include <algorithm>
 #include <atomic>
@@ -506,6 +507,25 @@ namespace game {
 	  }
       }
       r.set_ocean (ocean, water_levels);
+
+      if (m_standing_water && m_drainage) {
+	// Ground moisture from the hydrology: vegetation reads it for
+	// blade height, color, and density.
+	const terrain::ScalarRaster moisture = terrain::analyze_moisture
+	  (*m_standing_water, *m_lake_census, *m_drainage);
+	std::vector<float> expanded
+	  (static_cast<std::size_t> (m_map.width ()) * m_map.height ());
+	const std::span<const float> unique = moisture.values ();
+	const std::size_t unique_width = m_standing_water->width ();
+	const std::size_t unique_height = m_standing_water->height ();
+	for (int y = 0; y < m_map.height (); ++y)
+	  for (int x = 0; x < m_map.width (); ++x)
+	    expanded[static_cast<std::size_t> (y) * m_map.width () + x]
+	      = unique[(static_cast<std::size_t> (y) % unique_height)
+		       * unique_width
+		       + static_cast<std::size_t> (x) % unique_width];
+	r.set_terrain_moisture (expanded);
+      }
 
       m_vehicle.set_water_level (m_world.water_level);
       m_car.set_water_level (m_world.water_level);
