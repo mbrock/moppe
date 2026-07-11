@@ -309,7 +309,9 @@ GPU frame time, and current resource memory; set `MOPPE_METAL_HUD=0` for a
 clean window. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
 time summaries to stderr. To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
-captured by default, or set `MOPPE_METAL_CAPTURE_FRAMES` to another count.
+captured after the world is ready by default, or set
+`MOPPE_METAL_CAPTURE_FRAMES` to another count. Both capture and the timing
+summary deliberately exclude the loading screen.
 
 The light matrices are computed with our own Mat4 (ortho + lookAt), replacing
 the "do matrix math on the GL projection stack" trick in shadow.cc. Bias
