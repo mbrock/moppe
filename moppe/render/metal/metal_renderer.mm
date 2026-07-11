@@ -256,6 +256,7 @@ namespace render {
     // depth-stencil: index [test][write], reversed-Z (>=)
     id<MTLDepthStencilState> m_ds[2][2];
     id<MTLDepthStencilState> m_ds_shadow = nil;
+    id<MTLDepthStencilState> m_ds_river = nil;
 
     id<MTLSamplerState> m_sampler_repeat = nil;   // mip, aniso
     id<MTLSamplerState> m_sampler_clamp = nil;
@@ -439,6 +440,8 @@ namespace render {
       }
     }
     d.depthAttachmentPixelFormat = depth;
+    if (depth == MTLPixelFormatDepth32Float_Stencil8)
+      d.stencilAttachmentPixelFormat = depth;
 
     NSError* error = nil;
     id<MTLRenderPipelineState> pso =
@@ -464,7 +467,9 @@ namespace render {
 #else
     const MTLPixelFormat drawable = MTLPixelFormatRGBA16Float;
 #endif
-    const MTLPixelFormat depth = MTLPixelFormatDepth32Float;
+    // The scene depth target carries a stencil plane so self-overlapping
+    // translucent surfaces (river strips) can blend first-fragment-wins.
+    const MTLPixelFormat depth = MTLPixelFormatDepth32Float_Stencil8;
 
     m_uber_opaque = make_pipeline (@"uber_vertex", @"uber_fragment",
 				   scene, depth, MSAA_SAMPLES, false);
@@ -525,6 +530,24 @@ namespace render {
       d.depthCompareFunction = MTLCompareFunctionLessEqual;
       d.depthWriteEnabled = YES;
       m_ds_shadow = [m_device newDepthStencilStateWithDescriptor: d];
+    }
+    {
+      // First-fragment-wins for the translucent river strips: the first
+      // water fragment on a pixel stamps stencil 1, and every later
+      // overlapping strip fragment fails the Equal-0 test, so bends and
+      // confluences never double-blend into dark wedges.
+      MTLDepthStencilDescriptor* d =
+	[[MTLDepthStencilDescriptor alloc] init];
+      d.depthCompareFunction = MTLCompareFunctionGreaterEqual;
+      d.depthWriteEnabled = NO;
+      // Drawn with reference value 1: pass while the pixel still holds
+      // the cleared 0, then Replace stamps the reference in.
+      MTLStencilDescriptor* s = [[MTLStencilDescriptor alloc] init];
+      s.stencilCompareFunction = MTLCompareFunctionNotEqual;
+      s.depthStencilPassOperation = MTLStencilOperationReplace;
+      d.frontFaceStencil = s;
+      d.backFaceStencil = s;
+      m_ds_river = [m_device newDepthStencilStateWithDescriptor: d];
     }
 
     // Samplers.
@@ -924,7 +947,8 @@ namespace render {
 		  length: verts.size () * sizeof (float)
 		 options: MTLResourceStorageModeShared];
 
-    const std::size_t expected = static_cast<std::size_t>
+    // Interleaved (level, wave amplitude) pairs per terrain sample.
+    const std::size_t expected = 2 * static_cast<std::size_t>
       (m_terrain_params.width) * m_terrain_params.height;
     m_have_water_levels = water_levels.size () == expected;
     if (m_have_water_levels) {
@@ -934,7 +958,7 @@ namespace render {
 	  || m_water_levels.width != static_cast<NSUInteger> (width)
 	  || m_water_levels.height != static_cast<NSUInteger> (height)) {
 	MTLTextureDescriptor* td = [MTLTextureDescriptor
-	  texture2DDescriptorWithPixelFormat: MTLPixelFormatR32Float
+	  texture2DDescriptorWithPixelFormat: MTLPixelFormatRG32Float
 				       width: width height: height
 				   mipmapped: NO];
 	td.storageMode = MTLStorageModePrivate;
@@ -942,7 +966,7 @@ namespace render {
 	m_water_levels = [m_device newTextureWithDescriptor: td];
       }
       upload_texture (m_water_levels, water_levels.data (), width, height,
-		      4, false);
+		      8, false);
     }
   }
 
@@ -977,7 +1001,7 @@ namespace render {
     m_target_w = w; m_target_h = h;
     m_msaa_color = make_target (MTLPixelFormatRGBA16Float, w, h,
 				MSAA_SAMPLES, true);
-    m_msaa_depth = make_target (MTLPixelFormatDepth32Float, w, h,
+    m_msaa_depth = make_target (MTLPixelFormatDepth32Float_Stencil8, w, h,
 				MSAA_SAMPLES, true);
     m_scene_a = make_target (MTLPixelFormatRGBA16Float, w, h, 1,
 			     false);
@@ -1105,6 +1129,10 @@ namespace render {
     rp.depthAttachment.loadAction = MTLLoadActionClear;
     rp.depthAttachment.storeAction = MTLStoreActionDontCare;
     rp.depthAttachment.clearDepth = 0.0;   // reversed-Z far
+    rp.stencilAttachment.texture = m_msaa_depth;
+    rp.stencilAttachment.loadAction = MTLLoadActionClear;
+    rp.stencilAttachment.storeAction = MTLStoreActionDontCare;
+    rp.stencilAttachment.clearStencil = 0;
 
     m_enc = [m_cmd renderCommandEncoderWithDescriptor: rp];
     [m_enc setFrontFacingWinding: MTLWindingCounterClockwise];
@@ -1497,7 +1525,8 @@ namespace render {
       return;
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
     [enc setRenderPipelineState: m_river];
-    [enc setDepthStencilState: m_ds[1][0]];
+    [enc setDepthStencilState: m_ds_river];
+    [enc setStencilReferenceValue: 1];
     [enc setCullMode: MTLCullModeNone];
 
     MoppeDrawUniforms du;

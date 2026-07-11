@@ -199,14 +199,19 @@ occludes the expensive cloud shader.
 
 River ribbons are retained `DrawList` meshes but use a dedicated translucent
 scene pipeline.  Their UVs encode across-stream position and cumulative
-downstream distance; packed vertex color carries rapid strength and a
-logarithmic discharge signal, plus clustered fall-candidate strength.  The
-shader advects two value-noise layers downstream at different speeds and
-derives normal ripple, restrained churn/cascade foam, a bank contact line,
-Fresnel sky reflection, and sun glint from those readings.  It depth-tests
-without writing depth and is drawn before the standing-water grid.  The mesh
-is presentation-only: the ordered `RiverNetwork` and terrain remain the
-authoritative routing and bed data.
+downstream distance; packed vertex color carries rapid strength, the water
+column depth (normalized by a shared span constant), and clustered
+fall-candidate strength.  The shader advects two value-noise layers
+downstream at different speeds and derives normal ripple, restrained
+churn/cascade foam, a depth-gated bank contact line, Fresnel sky
+reflection, and sun glint from those readings.  Transparency follows the
+actual water column, so shallow streams are glass over their carved beds.
+The pass depth-tests without writing depth and blends first-fragment-wins
+through the scene stencil plane (reference 1 over cleared 0), so strip
+self-overlap at bends and confluences never double-darkens.  It draws
+before the standing-water grid.  The mesh is presentation-only: the
+ordered `RiverNetwork` and terrain remain the authoritative routing and
+bed data.
 
 Cross-sections are level and ride at a fixed fraction of the shared
 `channel_depth_m` law above the carved bed, so the water plane meets the
@@ -281,8 +286,10 @@ iterative problem rather than part of the pointwise graph.
 - sky.frag (228 lines, fully procedural) → MSL 1:1; uniforms time, sunHeight,
   cloudiness, sunDir, fogColor.
 - ocean.vert/frag → MSL on a regular grid mesh; the vertex stage samples the
-  priority-flood water surface for ocean and inland lake elevation, while
-  waves fade at shore and dry fragments are discarded.
+  priority-flood water surface (RG32F: level plus per-body wave amplitude)
+  for ocean and inland lake elevation. Waves fade at shore, scale with the
+  body's classification so tarns do not heave like the sea, and dry
+  fragments are discarded.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was

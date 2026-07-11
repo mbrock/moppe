@@ -14,11 +14,12 @@ struct OceanVaryings {
   float fog;
 };
 
-// Bilinear grid height under a point, in world meters. R32F textures must be
-// read at integer coordinates, so filtering is explicit. This is shared by
-// terrain and standing-water lookups.
-static float
-ocean_grid_height (float2 world_xz,
+// Bilinear grid sample under a point. Float textures must be read at
+// integer coordinates, so filtering is explicit. This is shared by the
+// R32F terrain heights and the RG32F standing-water grid; x is height
+// in world meters, y carries the water grid's wave amplitude factor.
+static float2
+ocean_grid_sample (float2 world_xz,
 		   constant MoppeOceanUniforms& u,
 		   texture2d<float, access::read> grid)
 {
@@ -36,12 +37,21 @@ ocean_grid_height (float2 world_xz,
   const uint2 i = uint2 ((uint) gx, (uint) gz);
   const float fx = gx - (float) i.x;
   const float fz = gz - (float) i.y;
-  const float h00 = grid.read (i).r;
-  const float h10 = grid.read (i + uint2 (1, 0)).r;
-  const float h01 = grid.read (i + uint2 (0, 1)).r;
-  const float h11 = grid.read (i + uint2 (1, 1)).r;
-  return mix (mix (h00, h10, fx), mix (h01, h11, fx), fz)
-    * u.shore.z;
+  const float2 s00 = grid.read (i).rg;
+  const float2 s10 = grid.read (i + uint2 (1, 0)).rg;
+  const float2 s01 = grid.read (i + uint2 (0, 1)).rg;
+  const float2 s11 = grid.read (i + uint2 (1, 1)).rg;
+  float2 sample = mix (mix (s00, s10, fx), mix (s01, s11, fx), fz);
+  sample.x *= u.shore.z;
+  return sample;
+}
+
+static float
+ocean_grid_height (float2 world_xz,
+		   constant MoppeOceanUniforms& u,
+		   texture2d<float, access::read> grid)
+{
+  return ocean_grid_sample (world_xz, u, grid).x;
 }
 
 vertex OceanVaryings
@@ -60,9 +70,12 @@ ocean_vertex (uint vid [[vertex_id]],
   float wave_scale = 1.0;
   if (u.params.w > 0.5) {
     const float ground = ocean_grid_height (p.xz, u, heights);
-    p.y = ocean_grid_height (p.xz, u, water_levels);
-    // Waves vanish at lake and ocean shores instead of climbing dry ground.
-    wave_scale = smoothstep (0.15, 6.0, p.y - ground);
+    const float2 water = ocean_grid_sample (p.xz, u, water_levels);
+    p.y = water.x;
+    // Waves vanish at lake and ocean shores instead of climbing dry
+    // ground, and inland bodies only ripple with their per-body
+    // amplitude: a tarn must not heave like the open sea.
+    wave_scale = smoothstep (0.15, 6.0, p.y - ground) * water.y;
   }
 
   // Three overlapping swells with different directions and speeds.

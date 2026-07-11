@@ -1,11 +1,15 @@
 // Flow-aligned translucent water for routed streams. Geometry supplies
 // level cross-sections riding in carved channels: cross-stream u,
-// downstream distance v in meters, rapid strength in color.r, a
-// logarithmic discharge signal in color.g, waterfall strength in color.b,
-// and fade opacity in color.a. Surface detail scrolls along v so the
-// pattern advects downstream like a flow map.
+// downstream distance v in meters, rapid strength in color.r, the water
+// column depth in color.g (normalized by MOPPE_RIVER_DEPTH_SPAN meters),
+// waterfall strength in color.b, and fade opacity in color.a. Surface
+// detail scrolls along v so the pattern advects downstream like a flow
+// map; transparency follows the actual water column, so shallow water is
+// glassy and deep water reads as a body.
 
 #include "common.h"
+
+#define MOPPE_RIVER_DEPTH_SPAN 2.0
 
 struct RiverVaryings {
   float4 position [[position]];
@@ -13,7 +17,7 @@ struct RiverVaryings {
   float3 normal;
   float2 uv;
   float rapid;
-  float discharge;
+  float depth;
   float waterfall;
   float opacity;
 };
@@ -36,7 +40,7 @@ river_vertex (uint vid [[vertex_id]],
   out.normal = normalize (nrm * float3 (v.normal));
   out.uv = float2 (v.uv);
   out.rapid = float (v.color.r) / 255.0;
-  out.discharge = float (v.color.g) / 255.0;
+  out.depth = float (v.color.g) / 255.0;
   out.waterfall = float (v.color.b) / 255.0;
   out.opacity = float (v.color.a) / 255.0;
   return out;
@@ -84,15 +88,17 @@ river_fragment (RiverVaryings in [[stage_in]],
     (frame.fog_color.rgb, to_frag / max (distance, 1e-4),
      frame.sun_dir.xyz);
 
+  const float depth_m = in.depth * MOPPE_RIVER_DEPTH_SPAN;
   const float3 shallow = moppe_srgb (float3 (0.10, 0.38, 0.38));
   const float3 deep = moppe_srgb (float3 (0.03, 0.15, 0.24));
-  float3 color = mix (shallow, deep, saturate (in.discharge));
+  float3 color = mix (shallow, deep, smoothstep (0.15, 1.2, depth_m));
   // The sky reflects off the surface exactly as it does off the ocean;
   // without this the channel reads as a black trench.
   color = mix (color, fog_color, 0.5 * fresnel + 0.06);
 
   // Foam: broken water in rapids and falls, plus a thin contact line
-  // where the surface meets the carved bank.
+  // where the surface meets the carved bank.  Shallow streams get no
+  // bank foam at all so they stay clear water instead of white tubes.
   const float churn = saturate
     (0.6 * in.rapid * smoothstep (0.55, 0.95,
 				  0.5 * (n1 + n2) + 0.25 * in.rapid));
@@ -100,7 +106,7 @@ river_fragment (RiverVaryings in [[stage_in]],
     (in.waterfall * (0.45 + 0.55 * smoothstep (0.3, 0.75, n1)));
   const float bank = smoothstep (0.82, 0.98, abs (in.uv.x - 0.5) * 2.0)
     * (0.18 + 0.30 * surface) * smoothstep (0.30, 0.75, surface)
-    * (0.4 + 0.6 * in.discharge) * (1.0 - in.waterfall);
+    * smoothstep (0.25, 0.9, depth_m) * (1.0 - in.waterfall);
   const float foam = saturate (max (max (churn, fall), bank));
   color = mix (color, moppe_srgb (float3 (0.87, 0.95, 0.97)), foam);
 
@@ -111,11 +117,12 @@ river_fragment (RiverVaryings in [[stage_in]],
 
   color = mix (color, fog_color, smoothstep (0.0, 0.9, fog));
 
-  // Filled channels read as water bodies: deeper discharge is nearly
-  // opaque, which also hides the double blend where strip segments
-  // overlap on the inside of a bend.
+  // Transparency follows the water column: a hand-deep stream is glassy
+  // over its bed, a meter of water reads as a body, and foam or falling
+  // water stays visible regardless.
+  const float body = smoothstep (0.05, 1.0, depth_m);
   const float alpha = edge * in.opacity
-    * saturate (0.62 + 0.30 * in.discharge + 0.10 * fresnel
-		+ 0.20 * in.waterfall + 0.30 * foam);
+    * saturate (0.15 + 0.65 * body + 0.10 * fresnel
+		+ 0.25 * in.waterfall + 0.45 * foam);
   return float4 (color, alpha);
 }

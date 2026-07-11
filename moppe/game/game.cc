@@ -470,18 +470,40 @@ namespace game {
 	const terrain::ScalarRaster permanent =
 	  terrain::permanent_water_surface
 	    (*m_standing_water, *m_lake_census);
+	// Interleaved (surface level, wave amplitude) per sample. Only the
+	// ocean carries full swells; inland bodies calm with their class,
+	// so a mountain tarn stops heaving like the open sea.
 	water_levels.resize
-	  (static_cast<std::size_t> (m_map.width ()) * m_map.height ());
+	  (2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
 	const std::span<const float> unique =
 	  permanent.values ();
 	const std::size_t unique_width = m_standing_water->width ();
 	const std::size_t unique_height = m_standing_water->height ();
+	const auto wave_amplitude = [&] (std::size_t cell) -> float {
+	  if (m_standing_water->ocean[cell])
+	    return 1.0f;
+	  const std::uint32_t body = m_lake_census->body[cell];
+	  if (body == terrain::LakeCensus::dry
+	      || body >= m_lake_census->bodies.size ())
+	    return 0.0f;
+	  switch (m_lake_census->bodies[body].classification) {
+	  case terrain::WaterBodyClass::Sea: return 1.0f;
+	  case terrain::WaterBodyClass::Lake: return 0.10f;
+	  case terrain::WaterBodyClass::Pond: return 0.04f;
+	  case terrain::WaterBodyClass::Puddle: return 0.0f;
+	  }
+	  return 0.0f;
+	};
 	for (int y = 0; y < m_map.height (); ++y)
-	  for (int x = 0; x < m_map.width (); ++x)
-	    water_levels[static_cast<std::size_t> (y) * m_map.width () + x]
-	      = unique[(static_cast<std::size_t> (y) % unique_height)
-		       * unique_width
-		       + static_cast<std::size_t> (x) % unique_width];
+	  for (int x = 0; x < m_map.width (); ++x) {
+	    const std::size_t cell =
+	      (static_cast<std::size_t> (y) % unique_height) * unique_width
+	      + static_cast<std::size_t> (x) % unique_width;
+	    const std::size_t out = 2
+	      * (static_cast<std::size_t> (y) * m_map.width () + x);
+	    water_levels[out] = unique[cell];
+	    water_levels[out + 1] = wave_amplitude (cell);
+	  }
       }
       r.set_ocean (ocean, water_levels);
 

@@ -16,7 +16,7 @@ namespace moppe::terrain {
   // Channel width and carved depth from catchment area, shared by carving
   // and rendering so water surfaces fill the beds carved under them.
   float channel_width_m (float area_m2) noexcept;
-  float channel_depth_m (float area_m2, float cell_spacing_m,
+  float channel_depth_m (float area_m2,
 			 const ChannelCarving& parameters = { }) noexcept;
 
   ChannelCarvingResult carve_channels
