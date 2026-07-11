@@ -1896,7 +1896,11 @@ namespace render {
 
     id<MTLBuffer> buf = m_stream[m_slot];
     if (!buf || buf.length < needed) {
-      size_t cap = buf ? buf.length : (1 << 20);
+      // Native-resolution HUD text plus transient world-space effects can
+      // legitimately exceed 1 MiB in Terrain Lab. Avoid replacing the shared
+      // per-frame buffer between the scene and HUD encoders in the common
+      // case; growth remains available for genuinely larger frames.
+      size_t cap = buf ? buf.length : (4 << 20);
       while (cap < needed)
 	cap *= 2;
       // Old buffer stays retained by prior encoder commands.

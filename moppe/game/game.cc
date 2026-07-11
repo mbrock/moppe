@@ -987,8 +987,13 @@ namespace game {
 	fp.sun_visibility = terrain_lab ? 0.0f : m_flare;
       }
 
+      static const int screenshot_delay = [] {
+	if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
+	  return std::max (1, ::atoi (frames));
+	return 30;
+      } ();
       const bool captured = !m_screenshot_path.empty ()
-	&& ++m_screenshot_frames >= 30;
+	&& ++m_screenshot_frames >= screenshot_delay;
       if (captured) {
 	if (m_water_inspection)
 	  std::cerr << "water screenshot camera: eye="
@@ -1098,6 +1103,9 @@ namespace game {
 	}
 	r.draw_ocean (ocean);
       }
+
+      if (terrain_lab)
+	m_terrain_lab.render_droplet (r, cam);
 
       if (!terrain_lab) {
 	m_dust_dl.clear ();

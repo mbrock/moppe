@@ -354,3 +354,23 @@ MOPPE_TEST (water_termination_can_settle_the_remaining_sediment) {
      static_cast<float> (report.deposited),
      static_cast<float> (report.eroded * 2e-5 + 1e-7));
 }
+
+MOPPE_TEST (placed_hydraulic_droplet_traces_and_balances_sediment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map
+    (33, 33, Vector3D (64, 20, 64), 0, Topology::Bounded);
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x)
+      map.set (x, y, 0.9f - 0.02f * x + 0.0002f * y);
+
+  const map::HydraulicDropletTrace trace = map.trace_hydraulic_droplet
+    (8.5f, 16.5f, 128, 0.01f, SedimentDisposition::Deposit,
+     CarvingRule::PathMonotone);
+
+  MOPPE_CHECK (trace.points.size () > 2);
+  MOPPE_CHECK (trace.points.back ().x > trace.points.front ().x);
+  MOPPE_CHECK (trace.eroded > 0.0f);
+  MOPPE_CHECK_NEAR (trace.eroded, trace.deposited,
+		    trace.eroded * 2e-5f + 1e-7f);
+}

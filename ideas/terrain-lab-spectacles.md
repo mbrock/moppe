@@ -16,6 +16,12 @@ is orange where it scrapes material away and blue where it deposits it.
 
 The lesson is simple: water follows slope, and it carries things.
 
+Implemented: Terrain Lab's raindrop tool now places an ordinary droplet from
+the hydraulic erosion model, commits its path-monotone erosion and deposition,
+draws the signed material trail in world space, and follows the moving drop
+with the inspection camera.  The palette can replace its temporary text
+treatment independently.
+
 ### The mega-droplet
 
 Make the meteorite idea physically honest: use the same droplet model, but

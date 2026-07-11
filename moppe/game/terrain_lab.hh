@@ -66,6 +66,8 @@ namespace game {
     Mat4 view_matrix () const;
     void render_rivers (render::Renderer& renderer,
 			const Vector3D& camera) const;
+    void render_droplet (render::Renderer& renderer,
+			 const Vector3D& camera);
 
     void draw (render::DrawList& dl, int width_pts,
 	       int height_pts) const;
@@ -119,6 +121,9 @@ namespace game {
     const terrain::DrainageGraph& drainage ();
     const terrain::FloodField& standing_water ();
     void inspect_drainage (float x, float y);
+    std::optional<Vector3D> terrain_point_at_screen (float x, float y) const;
+    void launch_droplet (float x, float y);
+    Vector3D droplet_world_position (std::size_t index) const;
 
     InspectorUi m_ui;
     render::Renderer* m_renderer;
@@ -133,6 +138,11 @@ namespace game {
     bool m_active;
     bool m_map_pristine;
     terrain::TerrainProgram m_program;
+    map::HydraulicDropletTrace m_droplet_trace;
+    render::DrawList m_droplet_draw;
+    float m_droplet_progress;
+    bool m_droplet_armed;
+    bool m_droplet_follow;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;
