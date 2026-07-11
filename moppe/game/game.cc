@@ -256,7 +256,8 @@ namespace moppe {
                  m_vehicle.state (),
                  m_car.state (),
                  m_walker.state (),
-                 m_camera.state () };
+                 m_camera.state (),
+                 m_stars.state () };
       }
 
       void restore (const GameState& state) {
@@ -265,6 +266,7 @@ namespace moppe {
         m_car.restore (state.car);
         m_walker.restore (state.walker);
         m_camera.restore (state.camera);
+        m_stars.restore (state.stars);
       }
 
       // -- lifecycle ---------------------------------------------------

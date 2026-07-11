@@ -6,6 +6,8 @@
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
+#include <array>
+#include <cstddef>
 #include <vector>
 
 namespace moppe {
@@ -14,6 +16,21 @@ namespace moppe {
     // hover high enough that only the jump jets reach them.
     class Stars {
     public:
+      static constexpr std::size_t MAX_STARS = 250;
+
+      struct StarState {
+        Vector3D position {};
+        float phase = 0.0f;
+        float respawn = 0.0f;
+      };
+
+      struct State {
+        std::array<StarState, MAX_STARS> stars {};
+        std::size_t count = 0;
+        int collected = 0;
+        Vector3D last_position {};
+      };
+
       Stars ();
 
       void generate (const map::HeightMap& map,
@@ -24,6 +41,9 @@ namespace moppe {
       int update (const Vector3D& vehicle_pos, float time, float dt);
 
       void render (render::Renderer& r, const FrameEnv& env);
+
+      State state () const;
+      void restore (const State& state);
 
       int collected () const {
         return m_collected;

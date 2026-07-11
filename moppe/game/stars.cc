@@ -2,14 +2,44 @@
 
 #include <cmath>
 #include <random>
+#include <stdexcept>
 
 namespace moppe {
   namespace game {
     Stars::Stars () : m_collected (0) {}
 
+    Stars::State Stars::state () const {
+      if (m_stars.size () > MAX_STARS)
+        throw std::logic_error ("star set exceeds snapshot capacity");
+      State result;
+      result.count = m_stars.size ();
+      result.collected = m_collected;
+      result.last_position = m_last_pos;
+      for (std::size_t i = 0; i < m_stars.size (); ++i)
+        result.stars[i] = { m_stars[i].pos,
+                            m_stars[i].phase,
+                            m_stars[i].respawn };
+      return result;
+    }
+
+    void Stars::restore (const State& state) {
+      if (state.count != m_stars.size ())
+        throw std::invalid_argument (
+          "star state does not match the generated star set");
+      m_collected = state.collected;
+      m_last_pos = state.last_position;
+      for (std::size_t i = 0; i < state.count; ++i) {
+        m_stars[i].pos = state.stars[i].position;
+        m_stars[i].phase = state.stars[i].phase;
+        m_stars[i].respawn = state.stars[i].respawn;
+      }
+    }
+
     void Stars::generate (const map::HeightMap& map,
                           const WorldParams& params,
                           int count) {
+      if (count < 0 || count > static_cast<int> (MAX_STARS))
+        throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
       const Vector3D size = map.size ();

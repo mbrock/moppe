@@ -3,6 +3,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <type_traits>
 
 namespace {
@@ -85,6 +86,34 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
   check_vector (walker.state ().heading, walker_state.heading);
   MOPPE_CHECK_NEAR (walker.state ().turn, walker_state.turn, 1e-6f);
   MOPPE_CHECK_NEAR (walker.state ().walk, walker_state.walk, 1e-6f);
+}
+
+MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vector3D (100, 20, 100), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  game::WorldParams world;
+  world.map_size = map.size ();
+  world.water_level = 0.0f;
+  game::Stars stars;
+  stars.generate (map, world, 8);
+  const game::Stars::State initial = stars.state ();
+
+  MOPPE_CHECK (stars.update (initial.stars[0].position, 0.0f, 1.0f / 60.0f) ==
+               1);
+  MOPPE_CHECK (stars.collected () == 1);
+  stars.restore (initial);
+  const game::Stars::State restored = stars.state ();
+
+  MOPPE_CHECK (restored.count == 8);
+  MOPPE_CHECK (restored.collected == 0);
+  check_vector (restored.stars[0].position, initial.stars[0].position);
+  MOPPE_CHECK_NEAR (restored.stars[0].phase, initial.stars[0].phase, 1e-6f);
+  MOPPE_CHECK_NEAR (restored.stars[0].respawn, initial.stars[0].respawn, 1e-6f);
 }
 
 MOPPE_TEST (game_state_is_an_independent_value) {
