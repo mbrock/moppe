@@ -146,6 +146,20 @@ namespace moppe {
       int blades_per_cell = 3;
     };
 
+    struct DustEmission {
+      uint64_t id = 0;
+      float birth_time = 0.0f;
+      Vector3D position;
+      Vector3D velocity;
+      Vector3D color;
+      float size = 1.0f;
+      float life = 1.0f;
+      float gravity = 0.0f;
+      float spread = 1.0f;
+      uint32_t particle_count = 0;
+      bool additive = false;
+    };
+
     // The renderer: a game-shaped interface, not a general RHI.  Sky,
     // ocean, terrain and the post effects are backend features with
     // dedicated shaders; a WebGPU backend reimplements this interface
@@ -203,6 +217,11 @@ namespace moppe {
       virtual void draw_ocean (const OceanParams& params) = 0;
       virtual void draw_grass (const GrassParams& params) {
         (void)params;
+      }
+      virtual void draw_dust (std::span<const DustEmission> emissions,
+                              float logical_time) {
+        (void)emissions;
+        (void)logical_time;
       }
       virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;

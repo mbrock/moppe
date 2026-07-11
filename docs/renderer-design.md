@@ -313,6 +313,11 @@ iterative problem rather than part of the pointwise graph.
   deliberate small visual improvement).
 - HUD uses a separate 2D pipeline (no lighting/fog, y-down ortho, scissor
   none, blend on).
+- Dust, spray, smoke, and sparkles are bounded emission events. Metal derives
+  deterministic particles from an integer counter hash and expands each live
+  emission into billboard quads with a mesh shader (instanced vertex fallback),
+  in separate soft-alpha and additive passes. Particle poses are analytic in
+  logical time, so replay does not require a mutable particle array or RNG.
 
 ## Shadow map
 

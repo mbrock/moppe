@@ -2,10 +2,8 @@
 #define MOPPE_GAME_DUST_HH
 
 #include <moppe/game/world.hh>
-#include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
-#include <random>
 #include <vector>
 
 namespace moppe {
@@ -27,7 +25,11 @@ namespace moppe {
 
       Dust ();
 
-      void load (render::Renderer& r);
+      struct State {
+        std::vector<render::DustEmission> emissions;
+        uint64_t next_id = 1;
+        float logical_time = 0.0f;
+      };
 
       void emit (const Vector3D& pos,
                  const Vector3D& vel,
@@ -39,18 +41,15 @@ namespace moppe {
                  const Vector3D& color,
                  const Style& style);
       void update (float dt);
-      void render (render::DrawList& dl, const FrameEnv& env);
+      void render (render::Renderer& renderer) const;
+
+      State state () const;
+      void restore (const State& state);
 
     private:
-      struct Particle {
-        Vector3D pos, vel, color;
-        float life, max_life, size, rot, rot_v, gravity;
-        bool additive;
-      };
-
-      std::vector<Particle> m_particles;
-      std::mt19937 m_rng;
-      render::TexturePtr m_tex;
+      std::vector<render::DustEmission> m_emissions;
+      uint64_t m_next_id = 1;
+      float m_logical_time = 0.0f;
     };
   }
 }

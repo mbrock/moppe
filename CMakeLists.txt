@@ -64,6 +64,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/ocean.metal
   moppe/shaders/metal/river.metal
   moppe/shaders/metal/grass.metal
+  moppe/shaders/metal/dust.metal
 )
 
 set(MOPPE_METAL_DEPS

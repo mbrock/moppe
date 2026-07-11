@@ -140,6 +140,19 @@ struct MoppeGrassUniforms {
   MoppeFloat4 mesh;    // xy=patch grid dimensions (mesh path)
 };
 
+struct MoppeDustEmission {
+  MoppeFloat4 position_birth; // xyz position, w birth time
+  MoppeFloat4 velocity_count; // xyz base velocity, w particle count
+  MoppeFloat4 color_id;       // rgb display-space color, w emission id
+  MoppeFloat4 style;          // size, life, gravity, spread
+};
+
+struct MoppeDustUniforms {
+  MoppeFloat4 camera_right; // xyz
+  MoppeFloat4 camera_up;    // xyz
+  MoppeFloat4 params;       // x logical time
+};
+
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,
 // bloom bright/blur.
 struct MoppeQuadUniforms {
