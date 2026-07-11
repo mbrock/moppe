@@ -76,7 +76,8 @@ namespace game {
 			  const std::string& detail,
 			  bool hot, bool pressed,
 			  bool selected = false,
-			  bool featured = false) const;
+			  bool featured = false,
+			  int icon = -1) const;
     void friendly_slider (render::DrawList& dl, const UiRect& bounds,
 			  const std::string& title,
 			  const std::string& low,
@@ -91,6 +92,10 @@ namespace game {
     std::unique_ptr<render::FontAtlas> m_display;
     std::unique_ptr<render::FontAtlas> m_friendly_body;
     std::unique_ptr<render::FontAtlas> m_friendly_label;
+    render::TexturePtr m_friendly_icons;
+
+    void friendly_icon (render::DrawList& dl, const UiRect& bounds,
+			int icon, float alpha = 1.0f) const;
   };
 }
 }
