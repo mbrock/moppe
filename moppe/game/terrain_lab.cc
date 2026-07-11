@@ -831,6 +831,43 @@ namespace game {
        point.y * scale.z);
   }
 
+  float
+  TerrainLab::visible_droplet_pitch (const Vector3D& droplet) const
+  {
+    if (!m_map)
+      return m_pitch;
+
+    // Preserve the player's orbit when it already has a clear view.  In a
+    // valley, progressively lift the camera until every sample between it
+    // and the bead clears the terrain.  The clearance tapers toward the
+    // droplet, which is deliberately drawn just above the surface.
+    constexpr float maximum_pitch = 1.48f;
+    constexpr float pitch_step = 0.035f;
+    const float first_pitch = std::clamp (m_pitch, 0.18f, maximum_pitch);
+    for (float pitch = first_pitch; pitch <= maximum_pitch;
+	 pitch += pitch_step) {
+      const float horizontal = std::cos (pitch) * m_distance;
+      const Vector3D camera = m_target + Vector3D
+	(std::sin (m_yaw) * horizontal,
+	 std::sin (pitch) * m_distance,
+	 std::cos (m_yaw) * horizontal);
+      bool visible = true;
+      for (int sample = 1; sample < 32; ++sample) {
+	const float t = static_cast<float> (sample) / 32.0f;
+	const Vector3D point = camera + (droplet - camera) * t;
+	const float clearance = 5.0f * (1.0f - t);
+	if (point.y < m_map->interpolated_height (point.x, point.z)
+	    + clearance) {
+	  visible = false;
+	  break;
+	}
+      }
+      if (visible)
+	return pitch;
+    }
+    return maximum_pitch;
+  }
+
   void
   TerrainLab::render_droplet (render::Renderer& renderer,
 			      const Vector3D& camera)
@@ -2067,6 +2104,9 @@ namespace game {
 	const float response = 1.0f - std::exp (-dt * 3.5f);
 	m_target += (desired - m_target) * response;
 	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 850.0f);
+	const float clear_pitch = visible_droplet_pitch (desired);
+	if (clear_pitch > m_pitch)
+	  m_pitch = clear_pitch;
 	if (m_droplet_progress >= last)
 	  m_droplet_follow = false;
       }
@@ -2081,7 +2121,7 @@ namespace game {
 
     m_yaw += orbit * dt * 0.85f;
     m_pitch += tilt * dt * 0.55f;
-    m_pitch = std::clamp (m_pitch, 0.18f, 1.28f);
+    m_pitch = std::clamp (m_pitch, 0.18f, 1.48f);
     m_scroll_zoom_target *= std::exp (zoom * dt * 1.1f);
     m_scroll_zoom_target = std::clamp
       (m_scroll_zoom_target, 500.0f, 16000.0f);
@@ -2185,7 +2225,7 @@ namespace game {
     m_camera_drag_distance += std::hypot (dx, dy);
     m_yaw -= dx * 0.006f;
     m_pitch += dy * 0.006f;
-    m_pitch = std::clamp (m_pitch, 0.18f, 1.28f);
+    m_pitch = std::clamp (m_pitch, 0.18f, 1.48f);
   }
 
   void
