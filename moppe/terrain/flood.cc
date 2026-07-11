@@ -63,17 +63,87 @@ namespace moppe::terrain {
     std::vector<std::uint32_t> outlets;
     std::priority_queue<Cell, std::vector<Cell>, HigherCell> frontier;
 
-    for (std::size_t y = 0; y < height; ++y)
-      for (std::size_t x = 0; x < width; ++x) {
-	const std::uint32_t cell = static_cast<std::uint32_t> (index (x, y));
-	if (terrain.at (x, y) <= sea_level) {
-	  water[cell] = sea_level;
-	  receiver[cell] = cell;
-	  visited[cell] = 1;
-	  outlets.push_back (cell);
-	  frontier.push ({ sea_level, cell });
+    // A torus has no exterior boundary that identifies the ocean. Treat the
+    // largest connected below-sea component as the global ocean; enclosed
+    // low components must earn their own higher spill level. Scan order
+    // breaks equal-size ties deterministically.
+    std::queue<std::uint32_t> sea_frontier;
+    std::vector<std::uint8_t> submerged_seen (count, 0);
+    std::vector<std::uint32_t> component;
+    std::vector<std::uint32_t> ocean;
+    for (std::uint32_t origin = 0; origin < count; ++origin) {
+      if (submerged_seen[origin]
+	  || terrain.at (origin % width, origin / width) > sea_level)
+	continue;
+      component.clear ();
+      submerged_seen[origin] = 1;
+      sea_frontier.push (origin);
+      while (!sea_frontier.empty ()) {
+	const std::uint32_t cell = sea_frontier.front ();
+	sea_frontier.pop ();
+	component.push_back (cell);
+	const std::size_t x = cell % width;
+	const std::size_t y = cell / width;
+	for (const Offset offset : neighbors) {
+	  const int raw_x = static_cast<int> (x) + offset.x;
+	  const int raw_y = static_cast<int> (y) + offset.y;
+	  if (!periodic && (raw_x < 0 || raw_y < 0
+			      || raw_x >= static_cast<int> (width)
+			      || raw_y >= static_cast<int> (height)))
+	    continue;
+	  const std::size_t nx = periodic ? wrapped (raw_x, width)
+				    : static_cast<std::size_t> (raw_x);
+	  const std::size_t ny = periodic ? wrapped (raw_y, height)
+				    : static_cast<std::size_t> (raw_y);
+	  const std::uint32_t next = static_cast<std::uint32_t> (index (nx, ny));
+	  if (submerged_seen[next] || terrain.at (nx, ny) > sea_level)
+	    continue;
+	  submerged_seen[next] = 1;
+	  sea_frontier.push (next);
 	}
       }
+      if (component.size () > ocean.size ())
+	ocean = component;
+    }
+
+    if (!ocean.empty ()) {
+      std::vector<std::uint8_t> ocean_cell (count, 0);
+      for (const std::uint32_t cell : ocean)
+	ocean_cell[cell] = 1;
+      const std::uint32_t root = ocean.front ();
+      water[root] = sea_level;
+      receiver[root] = root;
+      visited[root] = 1;
+      outlets.push_back (root);
+      sea_frontier.push (root);
+      while (!sea_frontier.empty ()) {
+	const std::uint32_t cell = sea_frontier.front ();
+	sea_frontier.pop ();
+	frontier.push ({ sea_level, cell });
+	const std::size_t x = cell % width;
+	const std::size_t y = cell / width;
+	for (const Offset offset : neighbors) {
+	  const int raw_x = static_cast<int> (x) + offset.x;
+	  const int raw_y = static_cast<int> (y) + offset.y;
+	  if (!periodic && (raw_x < 0 || raw_y < 0
+			      || raw_x >= static_cast<int> (width)
+			      || raw_y >= static_cast<int> (height)))
+	    continue;
+	  const std::size_t nx = periodic ? wrapped (raw_x, width)
+				    : static_cast<std::size_t> (raw_x);
+	  const std::size_t ny = periodic ? wrapped (raw_y, height)
+				    : static_cast<std::size_t> (raw_y);
+	  const std::uint32_t next = static_cast<std::uint32_t> (index (nx, ny));
+	  if (!ocean_cell[next] || visited[next])
+	    continue;
+	  water[next] = sea_level;
+	  receiver[next] = cell;
+	  visited[next] = 1;
+	  sea_frontier.push (next);
+	}
+      }
+    }
+    const bool has_ocean = !ocean.empty ();
 
     // An all-land torus has no geometric boundary. Root its minimax water
     // surface at the deterministic global minimum so the analysis remains
@@ -136,6 +206,7 @@ namespace moppe::terrain {
     return {
       .source_grid = grid,
       .sea_level = sea_level,
+      .has_ocean = has_ocean,
       .water_level = ScalarRaster (domain, std::move (water)),
       .water_depth = ScalarRaster (domain, std::move (depth)),
       .spill_receiver = std::move (receiver),
@@ -173,18 +244,22 @@ namespace moppe::terrain {
 	.cells = 0,
 	.area_m2 = 0.0f,
 	.maximum_depth_m = 0.0f,
+	.mean_depth_m = 0.0f,
 	.volume_m3 = 0.0f,
 	.surface_level_m = 0.0f,
-	.spill_cell = origin,
+	.ocean_connected = false,
+	.outlet_cell = WaterBody::no_cell,
+	.spill_cell = WaterBody::no_cell,
 	.classification = WaterBodyClass::Puddle
       };
-      float spill_error = std::numeric_limits<float>::infinity ();
       double surface_sum_m = 0.0;
+      std::vector<std::uint32_t> members;
       census.body[origin] = id;
       frontier.push (origin);
       while (!frontier.empty ()) {
 	const std::uint32_t cell = frontier.front ();
 	frontier.pop ();
+	members.push_back (cell);
 	const std::size_t x = cell % width;
 	const std::size_t y = cell / width;
 	const float depth_m = depth[cell] * height_scale;
@@ -210,22 +285,29 @@ namespace moppe::terrain {
 	      census.body[next] = id;
 	      frontier.push (next);
 	    }
-	  } else {
-	    const float terrain_height = level[next] - depth[next];
-	    const float error = std::fabs (terrain_height - level[cell]);
-	    if (error < spill_error
-		|| (error == spill_error && next < body.spill_cell)) {
-	      spill_error = error;
-	      body.spill_cell = next;
-	    }
 	  }
 	}
       }
       body.area_m2 = static_cast<float> (body.cells) * cell_area;
+      body.mean_depth_m = body.volume_m3 / body.area_m2;
       body.surface_level_m = static_cast<float>
 	(surface_sum_m / static_cast<double> (body.cells));
-      if (std::fabs (body.surface_level_m
-		    - flood.sea_level * height_scale) < 1e-3f)
+      body.ocean_connected = flood.has_ocean
+	&& std::fabs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
+      if (!body.ocean_connected) {
+	for (const std::uint32_t cell : members) {
+	  const std::uint32_t next = flood.spill_receiver[cell];
+	  if (next == cell || census.body[next] == id)
+	    continue;
+	  if (body.spill_cell == WaterBody::no_cell
+	      || next < body.spill_cell
+	      || (next == body.spill_cell && cell < body.outlet_cell)) {
+	    body.outlet_cell = cell;
+	    body.spill_cell = next;
+	  }
+	}
+      }
+      if (body.ocean_connected)
 	body.classification = WaterBodyClass::Sea;
       else if (body.area_m2 < 600.0f || body.maximum_depth_m < 0.25f
 	       || body.volume_m3 < 100.0f)

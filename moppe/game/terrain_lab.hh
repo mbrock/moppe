@@ -116,6 +116,7 @@ namespace game {
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;
+    std::optional<terrain::WaterNetwork> m_water_network;
     std::optional<terrain::FloodField> m_flood;
     std::optional<terrain::LakeCensus> m_lakes;
     OverlayMode m_overlay;

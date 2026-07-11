@@ -11,10 +11,12 @@
 namespace moppe::terrain {
   // The standing liquid surface over a materialized terrain. Rasters contain
   // unique torus samples; spill_receiver forms a deterministic forest leading
-  // from every cell to a sea-level seed (or the global-minimum fallback).
+  // to the largest connected below-sea component (or the global-minimum
+  // fallback when the world has no ocean).
   struct FloodField {
     TerrainGrid source_grid;
     float sea_level;
+    bool has_ocean;
     ScalarRaster water_level;
     ScalarRaster water_depth;
     std::vector<std::uint32_t> spill_receiver;
@@ -37,12 +39,18 @@ namespace moppe::terrain {
   };
 
   struct WaterBody {
+    static constexpr std::uint32_t no_cell =
+      std::numeric_limits<std::uint32_t>::max ();
+
     std::uint32_t id;
     std::size_t cells;
     float area_m2;
     float maximum_depth_m;
+    float mean_depth_m;
     float volume_m3;
     float surface_level_m;
+    bool ocean_connected;
+    std::uint32_t outlet_cell;
     std::uint32_t spill_cell;
     WaterBodyClass classification;
   };

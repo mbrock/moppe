@@ -9,12 +9,25 @@
 #include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
 namespace moppe {
 namespace game {
   namespace {
+    std::string_view water_body_class_name
+      (terrain::WaterBodyClass classification)
+    {
+      switch (classification) {
+      case terrain::WaterBodyClass::Puddle: return "PUDDLE";
+      case terrain::WaterBodyClass::Pond: return "POND";
+      case terrain::WaterBodyClass::Lake: return "LAKE";
+      case terrain::WaterBodyClass::Sea: return "SEA";
+      }
+      return "WATER";
+    }
+
     constexpr float window_x = 14.0f;
     constexpr float window_y = 14.0f;
     constexpr float window_width = 520.0f;
@@ -537,6 +550,7 @@ namespace game {
   TerrainLab::invalidate_analysis ()
   {
     m_drainage.reset ();
+    m_water_network.reset ();
     m_flood.reset ();
     m_lakes.reset ();
     m_inspected_cell.reset ();
@@ -594,11 +608,18 @@ namespace game {
     if (!m_drainage) {
       const auto start = std::chrono::steady_clock::now ();
       m_drainage = terrain::analyze_wet_drainage
-	(m_map->terrain_view (), standing_water ());
+	(m_map->terrain_view (), standing_water (), *m_lakes);
+      m_water_network = terrain::analyze_water_network
+	(*m_flood, *m_lakes, *m_drainage);
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::ostringstream status;
-      status << m_drainage->sinks.size () << " outlets | "
+      std::size_t inlets = 0;
+      for (const terrain::WaterBodyFlow& flow : m_water_network->bodies)
+	inlets += flow.inlets.size ();
+      status << m_drainage->sinks.size () << " outlets, "
+	     << format_count (static_cast<int> (inlets))
+	     << " body entry edges | "
 	     << std::fixed << std::setprecision (0) << milliseconds
 	     << " ms analysis";
       m_analysis_status = status.str ();
@@ -802,7 +823,7 @@ namespace game {
 	  unique[i] = static_cast<float> (graph.basin[i]);
 	params.ramp = render::TerrainOverlayRamp::Categorical;
 	params.opacity = 0.40f;
-	m_overlay_status = "BASINS — shared sink catchments | "
+	m_overlay_status = "BASINS — shared outlet catchments | "
 	  + m_analysis_status;
       } else if (m_overlay == OverlayMode::Sinks) {
 	for (const std::uint32_t sink : graph.sinks) {
@@ -824,7 +845,7 @@ namespace game {
 	}
 	params.ramp = render::TerrainOverlayRamp::Marker;
 	params.opacity = 0.95f;
-	m_overlay_status = "SINKS — local drainage minima | "
+	m_overlay_status = "OUTLETS — terminal wet routes | "
 	  + m_analysis_status;
       } else {
 	if (!m_inspected_cell || *m_inspected_cell >= unique.size ()) {
@@ -863,9 +884,24 @@ namespace game {
 	params.opacity = 0.98f;
 	const float area = graph.contributing_area.values ()[*m_inspected_cell];
 	std::ostringstream trace;
-	trace << "TRACE — " << steps << " to sink; " << catchment_cells
-	      << "-cell basin | area " << std::fixed << std::setprecision (0)
-	      << area << " m2";
+	const std::uint32_t body_id =
+	  m_lakes->body[*m_inspected_cell];
+	if (body_id != terrain::LakeCensus::dry) {
+	  const terrain::WaterBody& body = m_lakes->bodies[body_id];
+	  const terrain::WaterBodyFlow& flow =
+	    m_water_network->bodies[body_id];
+	  trace << "TRACE — " << water_body_class_name (body.classification)
+		<< " #" << body.id << " | " << flow.inlets.size ()
+		<< " inlets | mean " << std::fixed << std::setprecision (1)
+		<< body.mean_depth_m << "m | catchment "
+		<< std::setprecision (0)
+		<< (body.ocean_connected ? flow.inflow_area_m2
+		    : flow.outflow_area_m2) << " m2";
+	} else {
+	  trace << "TRACE — " << steps << " to outlet; " << catchment_cells
+		<< "-cell basin | area " << std::fixed
+		<< std::setprecision (0) << area << " m2";
+	}
 	m_overlay_status = trace.str ();
       }
       for (int y = 0; y < height; ++y)
@@ -1737,7 +1773,7 @@ namespace game {
        "MAP READINGS");
     constexpr const char* overlay_labels[] = {
       "MATERIAL", "HEIGHT", "SLOPE", "FLOW",
-      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE", "WATER",
+      "STREAMS", "BASINS", "OUTLETS", "DELTA", "TRACE", "WATER",
       "LAKES"
     };
     constexpr OverlayMode overlay_modes[] = {

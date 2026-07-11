@@ -125,6 +125,7 @@ namespace moppe::terrain {
   DrainageGraph
   analyze_wet_drainage (const TerrainView& terrain,
 			const FloodField& flood,
+			const LakeCensus& census,
 			const DrainageParameters& parameters)
   {
     if (parameters.routing != DrainageRouting::D8)
@@ -140,6 +141,8 @@ namespace moppe::terrain {
 	|| flood.source_grid.spacing_y != grid.spacing_y
 	|| flood.source_grid.height_scale != grid.height_scale)
       throw std::invalid_argument ("flood field does not match terrain");
+    if (census.body.size () != count)
+      throw std::invalid_argument ("lake census does not match terrain");
 
     const bool periodic = grid.topology == Topology::Torus;
     const std::span<const float> surface = flood.water_level.values ();
@@ -177,6 +180,44 @@ namespace moppe::terrain {
 	}
 	slope[cell] = steepest;
       }
+
+    // A flat inland body has one route-proven spill. Replace any incidental
+    // priority-flood partition inside it with a deterministic breadth-first
+    // tree leading to that spill, so the body's full discharge stays whole.
+    std::vector<std::uint8_t> routed (count, 0);
+    std::queue<std::uint32_t> body_frontier;
+    for (const WaterBody& body : census.bodies) {
+      if (body.ocean_connected || body.outlet_cell == WaterBody::no_cell)
+	continue;
+      receiver[body.outlet_cell] = body.spill_cell;
+      routed[body.outlet_cell] = 1;
+      body_frontier.push (body.outlet_cell);
+      while (!body_frontier.empty ()) {
+	const std::uint32_t cell = body_frontier.front ();
+	body_frontier.pop ();
+	const std::size_t x = cell % width;
+	const std::size_t y = cell / width;
+	for (const Offset offset : neighbors) {
+	  const int raw_x = static_cast<int> (x) + offset.x;
+	  const int raw_y = static_cast<int> (y) + offset.y;
+	  if (!periodic && (raw_x < 0 || raw_y < 0
+			      || raw_x >= static_cast<int> (width)
+			      || raw_y >= static_cast<int> (height)))
+	    continue;
+	  const std::size_t nx = periodic ? wrapped (raw_x, width)
+				    : static_cast<std::size_t> (raw_x);
+	  const std::size_t ny = periodic ? wrapped (raw_y, height)
+				    : static_cast<std::size_t> (raw_y);
+	  const std::uint32_t next = static_cast<std::uint32_t>
+	    (index (nx, ny));
+	  if (routed[next] || census.body[next] != body.id)
+	    continue;
+	  routed[next] = 1;
+	  receiver[next] = cell;
+	  body_frontier.push (next);
+	}
+      }
+    }
 
     // Equal-height lake routes cannot be accumulated by elevation order.
     // Receiver edges either lower the filled surface or follow the acyclic
@@ -237,5 +278,52 @@ namespace moppe::terrain {
       .basin = std::move (basin),
       .sinks = std::move (sinks)
     };
+  }
+
+  WaterNetwork
+  analyze_water_network (const FloodField& flood,
+			 const LakeCensus& census,
+			 const DrainageGraph& drainage)
+  {
+    const std::size_t count = flood.width () * flood.height ();
+    if (census.body.size () != count
+	|| drainage.width () != flood.width ()
+	|| drainage.height () != flood.height ())
+      throw std::invalid_argument ("water analyses do not share a domain");
+
+    WaterNetwork network;
+    network.bodies.reserve (census.bodies.size ());
+    for (const WaterBody& body : census.bodies) {
+      WaterBodyFlow flow {
+	.body_id = body.id,
+	.inflow_area_m2 = 0.0f,
+	.outlet_cell = body.outlet_cell,
+	.spill_cell = body.spill_cell,
+	.downstream_cell = WaterBodyFlow::no_cell,
+	.outflow_area_m2 = 0.0f
+      };
+      if (body.spill_cell != WaterBody::no_cell) {
+	flow.downstream_cell = drainage.receiver[body.spill_cell];
+	flow.outflow_area_m2 =
+	  drainage.contributing_area.values ()[body.spill_cell];
+      }
+      network.bodies.push_back (std::move (flow));
+    }
+
+    for (std::uint32_t cell = 0; cell < count; ++cell) {
+      const std::uint32_t next = drainage.receiver[cell];
+      if (next == cell || census.body[cell] != LakeCensus::dry
+	  || census.body[next] == LakeCensus::dry)
+	continue;
+      WaterBodyFlow& flow = network.bodies[census.body[next]];
+      const float area = drainage.contributing_area.values ()[cell];
+      flow.inlets.push_back ({
+	.upstream_cell = cell,
+	.water_cell = next,
+	.contributing_area_m2 = area
+      });
+      flow.inflow_area_m2 += area;
+    }
+    return network;
   }
 }
