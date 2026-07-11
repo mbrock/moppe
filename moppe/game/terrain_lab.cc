@@ -392,6 +392,7 @@ namespace game {
       else if (name == "water")
 	m_overlay = OverlayMode::StandingWater;
       else if (name == "lakes") m_overlay = OverlayMode::PermanentWater;
+      else if (name == "falls") m_overlay = OverlayMode::Waterfalls;
     }
     m_drainage.reset ();
     m_water_network.reset ();
@@ -667,7 +668,8 @@ namespace game {
 	inlets += flow.inlets.size ();
       status << m_drainage->sinks.size () << " outlets, "
 	     << format_count (static_cast<int> (inlets))
-	     << " entries, " << m_rivers->reaches.size () << " reaches | "
+	     << " entries, " << m_rivers->reaches.size () << " reaches, "
+	     << m_rivers->waterfalls.size () << " falls | "
 	     << std::fixed << std::setprecision (0) << milliseconds
 	     << " ms analysis";
       m_analysis_status = status.str ();
@@ -881,7 +883,7 @@ namespace game {
 	  ? render::TerrainOverlayRamp::Streams
 	  : render::TerrainOverlayRamp::Flow;
 	m_overlay_status = (m_overlay == OverlayMode::Streams
-	  ? "STREAMS — dry reaches >= 64 cells | "
+	  ? "STREAMS — dry reaches >= 1,024 cells | "
 	  : "FLOW — logarithmic contributing area | ") + m_analysis_status;
       } else if (m_overlay == OverlayMode::Basins) {
 	for (std::size_t i = 0; i < unique.size (); ++i)
@@ -911,6 +913,27 @@ namespace game {
 	params.ramp = render::TerrainOverlayRamp::Marker;
 	params.opacity = 0.95f;
 	m_overlay_status = "OUTLETS — terminal wet routes | "
+	  + m_analysis_status;
+      } else if (m_overlay == OverlayMode::Waterfalls) {
+	for (const terrain::Waterfall& waterfall : m_rivers->waterfalls) {
+	  const int fx = static_cast<int> (waterfall.lip_cell % unique_width);
+	  const int fy = static_cast<int> (waterfall.lip_cell / unique_width);
+	  for (int dy = -3; dy <= 3; ++dy)
+	    for (int dx = -3; dx <= 3; ++dx) {
+	      const std::size_t x = static_cast<std::size_t>
+		((fx + dx + static_cast<int> (unique_width))
+		 % static_cast<int> (unique_width));
+	      const std::size_t y = static_cast<std::size_t>
+		((fy + dy + static_cast<int> (unique_height))
+		 % static_cast<int> (unique_height));
+	      unique[y * unique_width + x] = std::max
+		(unique[y * unique_width + x],
+		 1.0f - 0.14f * static_cast<float> (std::hypot (dx, dy)));
+	    }
+	}
+	params.ramp = render::TerrainOverlayRamp::Marker;
+	params.opacity = 0.98f;
+	m_overlay_status = "FALLS — clustered steep high-flow steps | "
 	  + m_analysis_status;
       } else {
 	if (!m_inspected_cell || *m_inspected_cell >= unique.size ()) {
@@ -962,6 +985,16 @@ namespace game {
 		<< std::setprecision (0)
 		<< (body.ocean_connected ? flow.inflow_area_m2
 		    : flow.outflow_area_m2) << " m2";
+	} else if (m_rivers->waterfall_by_cell[*m_inspected_cell]
+		   != terrain::Waterfall::no_id) {
+	  const terrain::Waterfall& waterfall = m_rivers->waterfalls
+	    [m_rivers->waterfall_by_cell[*m_inspected_cell]];
+	  trace << "TRACE — FALL #" << waterfall.id << " | drop "
+		<< std::fixed << std::setprecision (1) << waterfall.drop_m
+		<< "m | slope " << std::setprecision (2) << waterfall.slope
+		<< " | area " << std::setprecision (0)
+		<< waterfall.contributing_area_m2 << " m2 | reach #"
+		<< waterfall.reach_id;
 	} else if (m_rivers->reach_by_cell[*m_inspected_cell]
 		   != terrain::RiverReach::no_id) {
 	  const terrain::RiverReach& reach = m_rivers->reaches
@@ -1369,9 +1402,10 @@ namespace game {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
       OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
-      OverlayMode::StandingWater, OverlayMode::PermanentWater
+      OverlayMode::StandingWater, OverlayMode::PermanentWater,
+      OverlayMode::Waterfalls
     };
-    for (int i = 0; i < 11; ++i)
+    for (int i = 0; i < 12; ++i)
       if (overlay_rect (i).contains (x, y)) {
 	set_overlay (overlay_modes[i]);
 	return;
@@ -1912,15 +1946,16 @@ namespace game {
     constexpr const char* overlay_labels[] = {
       "MATERIAL", "HEIGHT", "SLOPE", "FLOW",
       "STREAMS", "BASINS", "OUTLETS", "DELTA", "TRACE", "WATER",
-      "LAKES"
+	  "LAKES", "FALLS"
     };
     constexpr OverlayMode overlay_modes[] = {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
       OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
-      OverlayMode::StandingWater, OverlayMode::PermanentWater
+      OverlayMode::StandingWater, OverlayMode::PermanentWater,
+      OverlayMode::Waterfalls
     };
-    for (int i = 0; i < 11; ++i) {
+    for (int i = 0; i < 12; ++i) {
       const UiRect bounds = overlay_rect (i);
       m_ui.button (dl, bounds, overlay_labels[i], hot (bounds),
 		   m_pointer_down, m_overlay == overlay_modes[i]);

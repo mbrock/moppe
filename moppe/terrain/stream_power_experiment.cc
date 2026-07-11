@@ -117,7 +117,7 @@ int main (int argc, char** argv) {
 
     std::cout
       << "mode,total_ms,sinks,stream_cells,max_area_cells,longest_path,"
-      << "puddles,ponds,lakes,water_m3,lowered_m3,raised_m3,"
+      << "puddles,ponds,lakes,waterfalls,water_m3,lowered_m3,raised_m3,"
       << "mean_change_m,max_change_m,droplet_eroded,droplet_deposited\n";
     for (const Mode& mode : modes) {
       evaluator.restore (base);
@@ -147,6 +147,10 @@ int main (int argc, char** argv) {
       const FloodField flood = analyze_standing_water
 	(map.terrain_view (), analytical.sea_level);
       const LakeCensus census = census_lakes (flood);
+      const DrainageGraph wet = analyze_wet_drainage
+	(map.terrain_view (), flood, census);
+      const RiverNetwork rivers = extract_river_network
+	(flood, census, wet, 1024.0f * cell_area);
       int puddles = 0, ponds = 0, lakes = 0;
       double water = 0.0;
       for (const WaterBody& body : census.bodies) {
@@ -161,7 +165,8 @@ int main (int argc, char** argv) {
 		<< ',' << drainage.sinks.size () << ',' << stream_cells
 		<< ',' << maximum_area / cell_area
 		<< ',' << longest_path (drainage)
-		<< ',' << puddles << ',' << ponds << ',' << lakes << ',' << water
+		<< ',' << puddles << ',' << ponds << ',' << lakes
+		<< ',' << rivers.waterfalls.size () << ',' << water
 		<< ',' << analytical_report.lowered_volume_m3
 		<< ',' << analytical_report.raised_volume_m3
 		<< ',' << analytical_report.mean_absolute_change_m

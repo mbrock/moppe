@@ -200,8 +200,9 @@ occludes the expensive cloud shader.
 River ribbons are retained `DrawList` meshes but use a dedicated translucent
 scene pipeline.  Their UVs encode across-stream position and cumulative
 downstream distance; packed vertex color carries rapid strength and a
-logarithmic discharge signal.  The shader derives moving ribs, restrained
-foam, Fresnel response, and sun glint from those readings.  It depth-tests
+logarithmic discharge signal, plus clustered fall-candidate strength.  The
+shader derives moving ribs, restrained cascade foam, Fresnel response, and
+sun glint from those readings.  It depth-tests
 without writing depth and is drawn before the standing-water grid.  The mesh
 is presentation-only: the ordered `RiverNetwork` and terrain remain the
 authoritative routing and bed data.

@@ -13,6 +13,7 @@ namespace moppe::game {
       float distance;
       float rapid;
       float discharge;
+      float waterfall;
       bool water;
     };
 
@@ -120,6 +121,8 @@ namespace moppe::game {
 	  .distance = distance,
 	  .rapid = rapid_signal (slope),
 	  .discharge = discharge_signal (area, rivers.minimum_area_m2),
+	  .waterfall = rivers.waterfall_by_cell[cell]
+	    != terrain::Waterfall::no_id ? 1.0f : 0.0f,
 	  .water = water
 	});
       }
@@ -144,7 +147,8 @@ namespace moppe::game {
 	  left.y = map.interpolated_height (left.x, left.z) + 0.10f;
 	  right.y = map.interpolated_height (right.x, right.z) + 0.10f;
 	}
-	draw.color (points[i].rapid, points[i].discharge, 0.0f, 1.0f);
+	draw.color (points[i].rapid, points[i].discharge,
+		    points[i].waterfall, 1.0f);
 	draw.normal (points[i].normal);
 	draw.uv (0.0f, points[i].distance);
 	draw.vertex (left);

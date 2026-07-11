@@ -177,6 +177,16 @@ cells, upstream and downstream catchment area, and maximum physical slope.
 The arbitrary receiver tree used to carry bookkeeping across a flat lake is
 therefore absent from the visible stream reading.
 
+The same value clusters visible-channel receiver edges above physical drop
+and slope thresholds into deterministic `Waterfall` candidates. Adjacent
+qualifying steps become one cascade represented by its strongest edge. Each
+candidate records its lip and foot cells, reach, drop, run, slope, and
+contributing area. Terrain Lab's FALLS reading marks the candidates and TRACE
+reports their measurements. Rendering currently treats the signal as stronger
+cascade foam on the continuous ribbon. A tested vertical-quad prototype was
+discarded because a heightfield step is still a continuous slope: the quad
+intersected terrain and visually disconnected the river.
+
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
 

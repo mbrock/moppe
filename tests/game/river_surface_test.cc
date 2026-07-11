@@ -2,6 +2,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -24,7 +25,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   map::RandomHeightMap map (4, 4, Vector3D (40, 10, 40), 0);
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set (x, z, 0.0f);
+      map.set (x, z, 0.4f - 0.1f * x);
   map.recompute_normals ();
 
   const terrain::TerrainGrid grid = map.terrain_view ().grid ();
@@ -62,6 +63,8 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   const terrain::RiverNetwork rivers {
     .minimum_area_m2 = 25000.0f,
     .reach_by_cell = std::vector<std::uint32_t> (count, 0),
+    .waterfall_by_cell = std::vector<std::uint32_t>
+      (count, terrain::Waterfall::no_id),
     .reaches = {{
       .id = 0,
       .cells = { 0, 1, 2 },
@@ -94,4 +97,25 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     MOPPE_CHECK (std::isfinite (vertex.py));
     MOPPE_CHECK (std::isfinite (vertex.pz));
   }
+
+  terrain::RiverNetwork falling = rivers;
+  falling.waterfall_by_cell[1] = 0;
+  falling.waterfalls.push_back ({
+    .id = 0,
+    .reach_id = 0,
+    .lip_cell = 1,
+    .foot_cell = 2,
+    .drop_m = 1.0f,
+    .horizontal_distance_m = 10.0f,
+    .slope = 0.1f,
+    .contributing_area_m2 = 100000.0f
+  });
+  const render::DrawList fall_draw = game::build_river_ribbons
+    (map, flood, census, drainage, falling);
+  std::size_t waterfall_vertices = 0;
+  for (const render::Vertex& vertex : fall_draw.vertices ())
+    if (vertex.color.b == 255)
+      ++waterfall_vertices;
+  MOPPE_CHECK (fall_draw.vertices ().size () == 18);
+  MOPPE_CHECK (waterfall_vertices > 0);
 }

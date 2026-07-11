@@ -78,10 +78,32 @@ namespace moppe::terrain {
     float maximum_slope;
   };
 
+  struct WaterfallParameters {
+    float minimum_drop_m = 3.0f;
+    float minimum_slope = 0.6f;
+    std::size_t separation_cells = 1;
+  };
+
+  struct Waterfall {
+    static constexpr std::uint32_t no_id = RiverReach::no_id;
+
+    std::uint32_t id;
+    std::uint32_t reach_id;
+    std::uint32_t lip_cell;
+    std::uint32_t foot_cell;
+    float drop_m;
+    float horizontal_distance_m;
+    float slope;
+    float contributing_area_m2;
+  };
+
   struct RiverNetwork {
     float minimum_area_m2;
+    WaterfallParameters waterfall_parameters;
     std::vector<std::uint32_t> reach_by_cell;
+    std::vector<std::uint32_t> waterfall_by_cell;
     std::vector<RiverReach> reaches;
+    std::vector<Waterfall> waterfalls;
   };
 
   DrainageGraph analyze_drainage
@@ -96,7 +118,8 @@ namespace moppe::terrain {
      const DrainageGraph& drainage);
   RiverNetwork extract_river_network
     (const FloodField& flood, const LakeCensus& census,
-     const DrainageGraph& drainage, float minimum_area_m2);
+     const DrainageGraph& drainage, float minimum_area_m2,
+     const WaterfallParameters& waterfall_parameters = { });
 }
 
 #endif
