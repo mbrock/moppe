@@ -70,6 +70,8 @@ namespace mov {
       m_boost_recharge_delay = 0;
       m_boost_flight = false;
       m_impact = 0;
+      m_render_heading = m_heading;
+      m_render_normal = Vector3D (0, 1, 0);
     }
 
     void set_heading (const Vector3D& h)
@@ -123,6 +125,7 @@ namespace mov {
     bool airborne () const { return m_airborne_time > 0.15f; }
     radians_t yaw () const { return m_yaw; }
     Vector3D render_normal () const { return m_render_normal; }
+    Vector3D render_orientation () const { return m_render_heading; }
     int body_kind () const { return m_body_kind; }
     Vector3D body_color () const { return m_body_color; }
 
@@ -167,6 +170,7 @@ namespace mov {
     radians_t m_yaw;        // smoothed actual steering
     radians_t m_yaw_target; // raw keyboard input
     float m_lean;           // roll into corners (radians)
+    Vector3D m_render_heading; // visual forward, follows the flight arc
     Vector3D m_render_normal; // smoothed up vector for drawing
     float m_susp, m_susp_v;   // visual suspension spring
     float m_wheel_spin;       // visual wheel roll angle (radians)
