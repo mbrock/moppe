@@ -2,6 +2,7 @@
 
 #include <moppe/terrain/analytical_erosion.hh>
 #include <moppe/terrain/carve.hh>
+#include <moppe/terrain/cpu_evaluator.hh>
 
 #include <algorithm>
 #include <stdexcept>
@@ -15,7 +16,8 @@ namespace moppe::map {
   { }
 
   void
-  TerrainEvaluator::begin (const terrain::TerrainProgram& program)
+  TerrainEvaluator::begin (const terrain::TerrainProgram& program,
+		   const SourceProgress& source_progress)
   {
     terrain::validate_program (program);
     m_randomness.seed (program.randomness.seed);
@@ -26,8 +28,10 @@ namespace moppe::map {
       terrain::geological_layer (fields, program.source.layer);
     if (m_source_evaluator)
       m_target.materialize (field, *m_source_evaluator);
-    else
-      m_target.materialize (field);
+    else {
+      const terrain::CpuEvaluator evaluator (source_progress);
+      m_target.materialize (field, evaluator);
+    }
   }
 
   terrain::TerrainTransformReport
@@ -84,9 +88,10 @@ namespace moppe::map {
   void
   TerrainEvaluator::evaluate
     (const terrain::TerrainProgram& program, const Progress& progress,
-     const IterationProgress& iteration_progress)
+     const IterationProgress& iteration_progress,
+     const SourceProgress& source_progress)
   {
-    begin (program);
+    begin (program, source_progress);
     m_iteration_progress = iteration_progress;
     for (std::size_t i = 0; i < program.transforms.size (); ++i) {
       m_transform_index = i;
