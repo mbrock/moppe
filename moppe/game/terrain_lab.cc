@@ -404,6 +404,7 @@ namespace game {
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false), m_map_pristine (false),
       m_program (terrain::make_geological_program (0)),
+      m_droplet_overlay_points (0),
       m_droplet_progress (0.0f), m_droplet_armed (false),
       m_droplet_follow (false),
       m_overlay (OverlayMode::None),
@@ -511,6 +512,8 @@ namespace game {
     m_inspected_cell.reset ();
     m_droplet_trace = { };
     m_droplet_target.reset ();
+    m_droplet_overlay.clear ();
+    m_droplet_overlay_points = 0;
     m_droplet_progress = 0.0f;
     m_droplet_armed = false;
     m_droplet_follow = false;
@@ -578,6 +581,8 @@ namespace game {
     m_river_surface.clear ();
     m_droplet_trace = { };
     m_droplet_target.reset ();
+    m_droplet_overlay.clear ();
+    m_droplet_overlay_points = 0;
     m_droplet_draw.clear ();
     m_droplet_armed = false;
     m_droplet_follow = false;
@@ -904,6 +909,75 @@ namespace game {
   }
 
   void
+  TerrainLab::update_droplet_overlay (bool force)
+  {
+    if (!m_renderer || !m_map || m_droplet_trace.points.empty ()
+	|| m_overlay != OverlayMode::None)
+      return;
+    const int width = m_map->width ();
+    const int height = m_map->height ();
+    const std::size_t count = static_cast<std::size_t> (width) * height;
+    if (m_droplet_overlay.size () != count) {
+      m_droplet_overlay.assign (count, 0.0f);
+      m_droplet_overlay_points = 0;
+      force = true;
+    }
+    const std::size_t visible = std::min
+      (m_droplet_trace.points.size (),
+	static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)) + 1);
+    const int unique_width = m_map->unique_width ();
+    const int unique_height = m_map->unique_height ();
+    constexpr int radius = 4;
+    constexpr float radius_f = 3.5f;
+    const auto stamp = [&] (int x, int y, float value) {
+      if (m_map->periodic ()) {
+	x = terrain::wrap_index (x, unique_width);
+	y = terrain::wrap_index (y, unique_height);
+      } else if (x < 0 || x >= width || y < 0 || y >= height) {
+	return;
+      }
+      const auto set = [&] (int sx, int sy) {
+	float& cell = m_droplet_overlay
+	  [static_cast<std::size_t> (sy) * width + sx];
+	cell = std::max (cell, value);
+      };
+      set (x, y);
+      if (m_map->periodic () && x == 0)
+	set (width - 1, y);
+      if (m_map->periodic () && y == 0)
+	set (x, height - 1);
+      if (m_map->periodic () && x == 0 && y == 0)
+	set (width - 1, height - 1);
+    };
+    for (; m_droplet_overlay_points < visible;
+	 ++m_droplet_overlay_points) {
+      const map::HydraulicDropletPoint& point =
+	m_droplet_trace.points[m_droplet_overlay_points];
+      const int center_x = static_cast<int> (std::floor (point.x));
+      const int center_y = static_cast<int> (std::floor (point.y));
+      for (int dy = -radius; dy <= radius; ++dy)
+	for (int dx = -radius; dx <= radius; ++dx) {
+	  const float distance = std::hypot
+	    (static_cast<float> (center_x + dx) - point.x,
+	     static_cast<float> (center_y + dy) - point.y);
+	  const float falloff = std::max (0.0f, 1.0f - distance / radius_f);
+	  stamp (center_x + dx, center_y + dy, falloff * falloff);
+	}
+      force = true;
+    }
+    if (!force)
+      return;
+    m_renderer->set_terrain_overlay ({
+      .width = width,
+      .height = height,
+      .minimum = 0.0f,
+      .maximum = 1.0f,
+      .opacity = 0.96f,
+      .ramp = render::TerrainOverlayRamp::Droplet
+    }, m_droplet_overlay);
+  }
+
+  void
   TerrainLab::render_droplet (render::Renderer& renderer,
 			      const Vector3D& camera)
   {
@@ -948,45 +1022,7 @@ namespace game {
     }
 
     if (m_droplet_trace.points.size () >= 2) {
-      const std::size_t completed = std::min
-	(m_droplet_trace.points.size () - 1,
-	 static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)));
-      const std::size_t visible = std::min
-	(completed + 1, m_droplet_trace.points.size () - 1);
       const Vector3D bead = droplet_world_position (m_droplet_progress);
-
-      const auto ribbon = [&] (float extra_width, float alpha,
-			       const Vector3D& color) {
-	m_droplet_draw.begin (render::Prim::Quads);
-	for (std::size_t i = 1; i <= visible; ++i) {
-	  const Vector3D a = droplet_world_position (i - 1);
-	  const Vector3D b = i == visible
-	    ? bead : droplet_world_position (i);
-	  const Vector3D segment = b - a;
-	  if (segment.length2 () < 1e-6f
-	      || segment.length () > 8.0f * std::max
-		(map_scale.x, map_scale.z))
-	    continue;
-	  const Vector3D middle = (a + b) * 0.5f;
-	  Vector3D side = segment.cross (camera - middle);
-	  if (side.length2 () < 1e-6f)
-	    side = segment.cross (Vector3D (0, 1, 0));
-	  side.normalize ();
-	  const float activity = std::min
-	    (1.0f, 1800.0f * (m_droplet_trace.points[i].eroded
-			      + m_droplet_trace.points[i].deposited));
-	  side *= 1.25f + 2.2f * activity + extra_width;
-	  m_droplet_draw.color (color, alpha);
-	  m_droplet_draw.vertex (a - side);
-	  m_droplet_draw.vertex (a + side);
-	  m_droplet_draw.vertex (b + side);
-	  m_droplet_draw.vertex (b - side);
-	}
-	m_droplet_draw.end ();
-      };
-      ribbon (7.0f, 0.08f, Vector3D (0.05f, 0.52f, 1.0f));
-      ribbon (2.5f, 0.28f, Vector3D (0.02f, 0.72f, 1.0f));
-      ribbon (0.0f, 0.78f, Vector3D (0.42f, 0.94f, 1.0f));
 
       Vector3D direction = bead - droplet_world_position
 	(std::max (0.0f, m_droplet_progress - 0.65f));
@@ -1105,6 +1141,9 @@ namespace game {
       (hit->x / scale.x, hit->z / scale.z, 512, 0.01f,
        terrain::SedimentDisposition::Deposit,
        terrain::CarvingRule::PathMonotone);
+    m_droplet_overlay.assign
+      (static_cast<std::size_t> (m_map->width ()) * m_map->height (), 0.0f);
+    m_droplet_overlay_points = 0;
     // Hold briefly on the release point so a click on a summit visibly
     // begins there before the erosion step starts running downhill.
     m_droplet_progress = -8.0f;
@@ -1202,7 +1241,10 @@ namespace game {
     if (!m_renderer || !m_map)
       return;
     if (m_overlay == OverlayMode::None) {
-      m_renderer->clear_terrain_overlay ();
+      if (!m_droplet_trace.points.empty ())
+	update_droplet_overlay (true);
+      else
+	m_renderer->clear_terrain_overlay ();
       m_overlay_status = "NO READING — terrain materials";
       return;
     }
@@ -2230,6 +2272,7 @@ namespace game {
 	if (m_droplet_progress >= last)
 	  m_droplet_follow = false;
       }
+      update_droplet_overlay ();
     }
 
     const float orbit = (m_orbit_right ? 1.0f : 0.0f)
