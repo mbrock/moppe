@@ -30,6 +30,8 @@ add_compile_options(-Wall)
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
+option(MOPPE_BUILD_DEVELOPER_TOOLS
+  "Build demos, experiments, testbeds, and command-line tools" ON)
 
 if(APPLE)
   enable_language(OBJCXX)
@@ -176,11 +178,13 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     "-framework Metal" "-framework Foundation")
   add_dependencies(moppe_terrain_metal moppe_shaders)
 
-  add_executable(terrain-metal-demo
-    moppe/terrain/metal/metal_field_demo.cc)
-  target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
-  target_compile_definitions(terrain-metal-demo PRIVATE
-    MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+  if(MOPPE_BUILD_DEVELOPER_TOOLS)
+    add_executable(terrain-metal-demo
+      moppe/terrain/metal/metal_field_demo.cc)
+    target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
+    target_compile_definitions(terrain-metal-demo PRIVATE
+      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+  endif()
 
   if(BUILD_TESTING)
     add_executable(moppe-metal-tests
@@ -194,7 +198,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   endif()
 endif()
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(MOPPE_BUILD_DEVELOPER_TOOLS AND
+   NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(terrain-field-demo moppe/terrain/field_demo.cc)
   target_link_libraries(terrain-field-demo PRIVATE moppe_terrain)
 endif()
@@ -256,11 +261,12 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_test(NAME moppe-map-tests COMMAND moppe-map-tests)
 endif()
 
-# The heightmap CLI tool (generates a terrain and writes test.tga).
-add_executable(map-test moppe/map/test.cc)
-target_link_libraries(map-test PRIVATE moppe_game)
+# Developer tools for inspecting and iterating on terrain generation.
+if(MOPPE_BUILD_DEVELOPER_TOOLS AND
+   NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(map-test moppe/map/test.cc)
+  target_link_libraries(map-test PRIVATE moppe_game)
 
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(terrain-pipeline-demo
     moppe/terrain/pipeline_demo.cc
   )
@@ -364,9 +370,11 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(moppe_platform_mac PUBLIC
     moppe_metal moppe_apple moppe_terrain_metal "-framework AppKit")
 
-  # Renderer testbed: spinning solids + HUD shapes, no game.
-  add_executable(moppe-testbed moppe/game/testbed.cc)
-  target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
+  if(MOPPE_BUILD_DEVELOPER_TOOLS)
+    # Renderer testbed: spinning solids + HUD shapes, no game.
+    add_executable(moppe-testbed moppe/game/testbed.cc)
+    target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
+  endif()
 
   # The game, as a proper .app bundle with the assets inside.
   # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
@@ -402,4 +410,38 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
     DEPENDS ${MOPPE_SHADER_ASSET} moppe
     COMMENT "Refreshing bundled shaders")
+endif()
+
+# CMake's Xcode generator normally presents the project target-by-target,
+# which is useful for building but awkward for browsing. Add one read-only
+# source tree and tuck implementation targets into a collapsed folder.
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+  set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+  file(GLOB_RECURSE MOPPE_XCODE_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/*.hh
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/*.metal
+    ${CMAKE_CURRENT_SOURCE_DIR}/moppe/*.mm
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.hh)
+  add_custom_target(Source SOURCES ${MOPPE_XCODE_SOURCES})
+  source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES ${MOPPE_XCODE_SOURCES})
+
+  foreach(target
+      moppe_apple
+      moppe_bundle_shaders
+      moppe_game
+      moppe_metal
+      moppe_platform_mac
+      moppe_render
+      moppe_shaders
+      moppe_terrain
+      moppe_terrain_metal)
+    if(TARGET ${target})
+      set_target_properties(${target} PROPERTIES FOLDER "Build Internals")
+    endif()
+  endforeach()
 endif()
