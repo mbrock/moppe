@@ -47,6 +47,20 @@ namespace moppe::terrain {
     return std::clamp (0.008f * std::sqrt (area_m2), 1.2f, 12.0f);
   }
 
+  float
+  channel_depth_m (float area_m2, float cell_spacing_m,
+		   const ChannelCarving& parameters) noexcept
+  {
+    const float depth = std::clamp
+      (parameters.depth_per_sqrt_m2 * std::sqrt (area_m2),
+       parameters.minimum_depth_m, parameters.maximum_depth_m);
+    // Channels narrower than a cell become proportionally shallower
+    // notches instead of full-depth cell-wide trenches.
+    const float coverage = std::clamp
+      (channel_width_m (area_m2) / cell_spacing_m, 0.35f, 1.0f);
+    return depth * coverage;
+  }
+
   ChannelCarvingResult
   carve_channels (const TerrainView& terrain,
 		  const ChannelCarving& parameters)
@@ -79,15 +93,9 @@ namespace moppe::terrain {
       return original[cell] * height_scale;
     };
     const auto depth_m = [&] (std::uint32_t cell) {
-      const float area = drainage.contributing_area.values ()[cell];
-      const float depth = std::clamp
-	(parameters.depth_per_sqrt_m2 * std::sqrt (area),
-	 parameters.minimum_depth_m, parameters.maximum_depth_m);
-      // Channels narrower than a cell become proportionally shallower
-      // notches instead of full-depth cell-wide trenches.
-      const float coverage = std::clamp
-	(channel_width_m (area) / grid.spacing_x, 0.35f, 1.0f);
-      return depth * coverage;
+      return channel_depth_m
+	(drainage.contributing_area.values ()[cell], grid.spacing_x,
+	 parameters);
     };
     const auto water_cell = [&] (std::uint32_t cell) {
       return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
@@ -99,22 +107,49 @@ namespace moppe::terrain {
     for (const RiverReach& reach : rivers.reaches)
       if (reach.downstream_reach != RiverReach::no_id)
 	++pending[reach.downstream_reach];
-    constexpr float no_bed = std::numeric_limits<float>::infinity ();
-    std::vector<float> entry_bed (rivers.reaches.size (), no_bed);
-    std::vector<std::uint32_t> ready;
+    std::vector<std::uint32_t> order;
+    order.reserve (rivers.reaches.size ());
     for (const RiverReach& reach : rivers.reaches)
       if (pending[reach.id] == 0)
-	ready.push_back (reach.id);
+	order.push_back (reach.id);
+    for (std::size_t next = 0; next < order.size (); ++next) {
+      const RiverReach& reach = rivers.reaches[order[next]];
+      if (reach.downstream_reach != RiverReach::no_id
+	  && --pending[reach.downstream_reach] == 0)
+	order.push_back (reach.downstream_reach);
+    }
+    if (order.size () != rivers.reaches.size ())
+      throw std::logic_error ("river reaches do not form a downstream DAG");
 
+    // Beds must stay above the water body a path eventually enters, or the
+    // flood backs up the carved channel and the whole reach turns into a
+    // standing-water arm.  Propagate that floor upstream, then let only the
+    // final mouth step dip under the surface.
+    constexpr float no_bed = std::numeric_limits<float>::infinity ();
+    constexpr float backwater_freeboard = 0.15f;
+    std::vector<float> floor_m (rivers.reaches.size (), -no_bed);
+    for (std::size_t index = order.size (); index-- > 0;) {
+      const RiverReach& reach = rivers.reaches[order[index]];
+      if (reach.downstream_ocean)
+	floor_m[reach.id] = flood.sea_level * height_scale
+	  + backwater_freeboard;
+      else if (reach.downstream_body != RiverReach::no_id
+	       && reach.downstream_body < census.bodies.size ())
+	floor_m[reach.id] =
+	  census.bodies[reach.downstream_body].surface_level_m
+	  + backwater_freeboard;
+      else if (reach.downstream_reach != RiverReach::no_id)
+	floor_m[reach.id] = floor_m[reach.downstream_reach];
+    }
+
+    std::vector<float> entry_bed (rivers.reaches.size (), no_bed);
     std::vector<CarvePoint> points;
-    std::size_t processed = 0;
-    while (!ready.empty ()) {
-      const RiverReach& reach = rivers.reaches[ready.back ()];
-      ready.pop_back ();
-      ++processed;
+    for (const std::uint32_t id : order) {
+      const RiverReach& reach = rivers.reaches[id];
       float bed = entry_bed[reach.id];
       for (const std::uint32_t cell : reach.cells) {
-	bed = std::min (bed, ground_m (cell) - depth_m (cell));
+	bed = std::max (std::min (bed, ground_m (cell) - depth_m (cell)),
+			floor_m[reach.id]);
 	points.push_back ({ cell, bed, channel_width_m
 	  (drainage.contributing_area.values ()[cell]) });
       }
@@ -124,17 +159,14 @@ namespace moppe::terrain {
 	const std::uint32_t last = reach.cells.back ();
 	const std::uint32_t next = drainage.receiver[last];
 	if (next != last && water_cell (next))
-	  points.push_back ({ next, bed, points.back ().width_m });
+	  points.push_back
+	    ({ next, bed - backwater_freeboard - 0.2f,
+	       points.back ().width_m });
       }
-      if (reach.downstream_reach != RiverReach::no_id) {
+      if (reach.downstream_reach != RiverReach::no_id)
 	entry_bed[reach.downstream_reach] = std::min
 	  (entry_bed[reach.downstream_reach], bed);
-	if (--pending[reach.downstream_reach] == 0)
-	  ready.push_back (reach.downstream_reach);
-      }
     }
-    if (processed != rivers.reaches.size ())
-      throw std::logic_error ("river reaches do not form a downstream DAG");
 
     for (const CarvePoint& point : points) {
       const int cx = static_cast<int> (point.cell) % width;

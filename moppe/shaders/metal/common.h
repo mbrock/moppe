@@ -34,6 +34,23 @@ inline float3 moppe_wind (float3 world, float w, float t) {
   return world;
 }
 
+// Cheap tiling-free value noise for water surfaces: foam breakup and
+// scrolled ripple fields share one look across rivers and lakes.
+inline float moppe_hash12 (float2 p) {
+  return fract (sin (dot (p, float2 (127.1, 311.7))) * 43758.5453);
+}
+
+inline float moppe_value_noise (float2 p) {
+  const float2 i = floor (p);
+  const float2 f = fract (p);
+  const float2 u = f * f * (3.0 - 2.0 * f);
+  const float a = moppe_hash12 (i);
+  const float b = moppe_hash12 (i + float2 (1, 0));
+  const float c = moppe_hash12 (i + float2 (0, 1));
+  const float d = moppe_hash12 (i + float2 (1, 1));
+  return mix (mix (a, b, u.x), mix (c, d, u.x), u.y);
+}
+
 // The scene computes in LINEAR light (half-float targets); art
 // colors are still authored as familiar display-space numbers and
 // decoded with this at the point of use.  The present pass

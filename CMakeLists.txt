@@ -388,4 +388,12 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
       ${CMAKE_CURRENT_SOURCE_DIR}/data
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/data
     COMMENT "Bundling assets into moppe.app")
+  # POST_BUILD bundling only runs when the executable relinks, which lets
+  # shader-only edits go stale inside the bundle. Refresh them every build.
+  add_custom_target(moppe_bundle_shaders ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${MOPPE_SHADER_ASSET}
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
+    DEPENDS ${MOPPE_SHADER_ASSET} moppe
+    COMMENT "Refreshing bundled shaders")
 endif()
