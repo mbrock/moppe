@@ -24,6 +24,9 @@ committed roadmap.
 - `terrain-lab-spectacles.md` collects playful hydrology demonstrations which
   make erosion, watersheds, deep time, and intervention visible in Terrain
   Lab.
+- `watersheds-of-execution.md` treats a program as a landscape of possible
+  paths, sampled execution as traffic through its catchments, and complexity
+  analysis as a kind of computational hydrology.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
