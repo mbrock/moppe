@@ -1,4 +1,5 @@
 build/
+build-homebrew/
 build-xcode/
 build-ios/
 build-ios-dev/
