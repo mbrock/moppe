@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <random>
 
 namespace moppe {
@@ -960,11 +961,22 @@ namespace game {
 		 std::min (fog_reach, 560.0f), env.camera_pos);
 
     if (m_map) {
-      render::GrassParams grass;
-      grass.radius = 90.0f;
-      grass.spacing = 0.32f;
-      grass.blades_per_cell = 4;
-      r.draw_grass (grass);
+      // Blade count goes with (radius / spacing)^2, so MOPPE_GRASS
+      // scales cost quadratically: 1 is the laptop-friendly default,
+      // ~1.7 restores the original 90 m / 0.32 m field, 0 mows the
+      // lawn entirely.
+      static const float lush = [] {
+	const char* g = ::getenv ("MOPPE_GRASS");
+	return g ? std::strtof (g, nullptr) : 1.0f;
+      } ();
+      if (lush > 0.0f) {
+	const float s = std::sqrt (lush);
+	render::GrassParams grass;
+	grass.radius = 65.0f * s;
+	grass.spacing = 0.40f / s;
+	grass.blades_per_cell = 4;
+	r.draw_grass (grass);
+      }
     }
   }
 
