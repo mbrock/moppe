@@ -201,17 +201,25 @@ River ribbons are retained `DrawList` meshes but use a dedicated translucent
 scene pipeline.  Their UVs encode across-stream position and cumulative
 downstream distance; packed vertex color carries rapid strength and a
 logarithmic discharge signal, plus clustered fall-candidate strength.  The
-shader derives moving ribs, restrained cascade foam, Fresnel response, and
-sun glint from those readings.  It depth-tests
+shader advects two value-noise layers downstream at different speeds and
+derives normal ripple, restrained churn/cascade foam, a bank contact line,
+Fresnel sky reflection, and sun glint from those readings.  It depth-tests
 without writing depth and is drawn before the standing-water grid.  The mesh
 is presentation-only: the ordered `RiverNetwork` and terrain remain the
 authoritative routing and bed data.
 
+Cross-sections are level and ride at a fixed fraction of the shared
+`channel_depth_m` law above the carved bed, so the water plane meets the
+stamped banks and the depth test cuts the waterline; sides are never draped
+onto terrain.  Each section's normal is the water plane tilted by the local
+downstream drop.
+
 Before baking, each ordered reach is resampled twice per receiver edge with a
-cubic Hermite curve. Horizontal tangents are capped at one edge length, exact
-source and downstream endpoints are retained, and dry height/normals are read
-back from the terrain at every new point. Width, discharge, rapid, cascade,
-and water-boundary height interpolate on the same curve. This is presentation
+cubic Hermite curve. Horizontal tangents are capped at one edge length and
+exact source and downstream endpoints are retained. Width, discharge, rapid,
+cascade, and surface height interpolate on the same curve; the carved bed
+under the spline stays within the bank blend of the stamped centerline, so
+interpolated surface heights keep a clean waterline. This is presentation
 geometry only; it rounds D8 corners without moving a confluence, lake inlet,
 or outlet away from its authoritative cell.
 

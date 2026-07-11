@@ -1,5 +1,7 @@
 #include <moppe/game/river_surface.hh>
 
+#include <moppe/terrain/carve.hh>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -7,9 +9,12 @@
 
 namespace moppe::game {
   namespace {
+    // The rendered surface fills the carved channel to this fraction of
+    // its stamped depth, leaving the rest as visible bank freeboard.
+    constexpr float channel_fill = 0.75f;
+
     struct RibbonPoint {
       Vector3D position;
-      Vector3D normal;
       float width;
       float distance;
       float rapid;
@@ -53,8 +58,7 @@ namespace moppe::game {
     }
 
     std::vector<RibbonPoint>
-    smooth_centerline (const std::vector<RibbonPoint>& raw,
-		       const map::HeightMap& map)
+    smooth_centerline (const std::vector<RibbonPoint>& raw)
     {
       constexpr int subdivisions = 2;
       std::vector<RibbonPoint> result;
@@ -84,26 +88,22 @@ namespace moppe::game {
 	  const float h11 = t3 - t2;
 	  Vector3D position = from.position * h00 + from_tangent * h10
 	    + to.position * h01 + to_tangent * h11;
-	  const bool touches_water = from.water || to.water;
-	  position.y = touches_water
-	    ? interpolate (from.position.y, to.position.y, t)
-	    : map.interpolated_height (position.x, position.z) + 0.10f;
+	  // Surface heights interpolate along the channel: the carved bed
+	  // under the spline stays within the bank blend of the stamped
+	  // centerline, so the water plane keeps a clean waterline.
+	  position.y = interpolate (from.position.y, to.position.y, t);
 	  result.push_back ({
 	    .position = position,
-	    .normal = touches_water ? Vector3D (0, 1, 0)
-	      : map.interpolated_normal (position.x, position.z).normalized (),
 	    .width = interpolate (from.width, to.width, t),
 	    .distance = 0.0f,
 	    .rapid = interpolate (from.rapid, to.rapid, t),
 	    .discharge = interpolate (from.discharge, to.discharge, t),
 	    .waterfall = interpolate (from.waterfall, to.waterfall, t),
 	    .opacity = interpolate (from.opacity, to.opacity, t),
-	    .water = touches_water
+	    .water = from.water || to.water
 	  });
 	}
       }
-      result.front ().normal = raw.front ().normal;
-      result.back ().normal = raw.back ().normal;
       result.front ().water = raw.front ().water;
       result.back ().water = raw.back ().water;
       float distance = 0.0f;
@@ -208,10 +208,14 @@ namespace moppe::game {
 	  distance += std::hypot (step_x, step_z);
 	}
 	const bool water = water_cell (cell);
+	const float area = drainage.contributing_area.values ()[cell];
+	// Dry reaches fill the channel carved under them: the heightmap
+	// already carries the stamped bed, so the surface rides at a fixed
+	// fraction of the shared depth law above it.
 	const float y = water
 	  ? flood.water_level.values ()[cell] * scale.y + 0.06f
-	  : map.get (x, z) * scale.y + 0.10f;
-	const float area = drainage.contributing_area.values ()[cell];
+	  : map.get (x, z) * scale.y + channel_fill
+	    * terrain::channel_depth_m (area, drainage.source_grid.spacing_x);
 	const float mouth_step = i >= first_water
 	  ? static_cast<float> (i - first_water) : 0.0f;
 	const float mouth_fraction = water_points > 1 && i >= first_water
@@ -223,7 +227,6 @@ namespace moppe::game {
 	const float slope = drainage.slope.values ()[slope_cell];
 	raw_points.push_back ({
 	  .position = Vector3D (world_x, y, world_z),
-	  .normal = map.normal (x, z),
 	  .width = river_width (area) * (water ? 1.35f + 0.55f * mouth_fraction
 					     : 1.0f),
 	  .distance = distance,
@@ -239,7 +242,7 @@ namespace moppe::game {
 	});
       }
       const std::vector<RibbonPoint> points = smooth_centerline
-	(raw_points, map);
+	(raw_points);
       if (points.size () < 2)
 	continue;
 
@@ -249,21 +252,25 @@ namespace moppe::game {
 	const Vector3D after = points[i + 1 == points.size () ? i : i + 1]
 	  .position;
 	Vector3D tangent (after.x - before.x, 0.0f, after.z - before.z);
-	if (tangent.length () < 1e-5f)
+	const float run = tangent.length ();
+	if (run < 1e-5f)
 	  tangent = Vector3D (1, 0, 0);
 	else
 	  tangent = tangent.normalized ();
 	const Vector3D across (-tangent.z, 0.0f, tangent.x);
+	// Cross-sections are level: the water plane meets the carved banks
+	// and the depth test cuts the waterline. The normal is the surface
+	// normal of that plane tilted by the downstream drop.
+	const float drop = run < 1e-5f ? 0.0f
+	  : (after.y - before.y) / run;
+	const Vector3D normal = Vector3D
+	  (-tangent.x * drop, 1.0f, -tangent.z * drop).normalized ();
 	const float half_width = 0.5f * points[i].width;
-	Vector3D left = points[i].position - across * half_width;
-	Vector3D right = points[i].position + across * half_width;
-	if (!points[i].water) {
-	  left.y = map.interpolated_height (left.x, left.z) + 0.10f;
-	  right.y = map.interpolated_height (right.x, right.z) + 0.10f;
-	}
+	const Vector3D left = points[i].position - across * half_width;
+	const Vector3D right = points[i].position + across * half_width;
 	draw.color (points[i].rapid, points[i].discharge,
 		    points[i].waterfall, points[i].opacity);
-	draw.normal (points[i].normal);
+	draw.normal (normal);
 	draw.uv (0.0f, points[i].distance);
 	draw.vertex (left);
 	draw.uv (1.0f, points[i].distance);

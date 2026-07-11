@@ -172,18 +172,21 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 
     // Foam: hugs the waterline (the pow sharpens the band so the
     // wide shallow shelf doesn't stripe), pulsing gently, broken up
-    // by a cellular-ish product of two incommensurate waves rather
-    // than one plane wave (which read as plaid moire from the air).
+    // by drifting value noise (plane-wave products read as plaid
+    // moire from the air).
     const float surge = 0.5 + 0.5 * sin (time * 1.3 - depth_m * 2.4);
     float foam = pow (1.0 - smoothstep (0.0, 1.2, depth_m), 1.7)
-      * (0.70 + 0.30 * surge);
-    const float p1 =
-      0.5 + 0.5 * sin (in.world_pos.x * 0.61
-		       + in.world_pos.z * 1.13 + time * 0.8);
-    const float p2 =
-      0.5 + 0.5 * sin (in.world_pos.x * 1.31
-		       - in.world_pos.z * 0.47 - time * 0.6);
-    foam *= 0.45 + 0.55 * (p1 * p2 * 1.6);
+      * (0.80 + 0.20 * surge);
+    // The breakup noise only runs inside the shore band; deep water
+    // keeps its zero foam without paying for it.
+    if (foam > 1e-3) {
+      const float b1 = moppe_value_noise
+	(in.world_pos.xz * 0.22 + float2 (time * 0.10, -time * 0.07));
+      const float b2 = moppe_value_noise
+	(in.world_pos.xz * 0.55 - float2 (time * 0.05, time * 0.09));
+      foam *= 0.25 + 0.75 * smoothstep (0.25, 0.80,
+					0.55 * b1 + 0.45 * b2);
+    }
     foam = saturate (foam) * (0.35 + 0.65 * daylight);
 
     water = mix (water, moppe_srgb (float3 (0.93, 0.97, 1.0)),

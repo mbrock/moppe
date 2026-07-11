@@ -26,9 +26,9 @@ namespace moppe::terrain {
   int profile_droplet_count
     (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
-    case TerrainGenerationProfile::Fast: return 30000;
-    case TerrainGenerationProfile::Play: return 100000;
-    case TerrainGenerationProfile::Research: return 300000;
+    case TerrainGenerationProfile::Fast: return 100000;
+    case TerrainGenerationProfile::Play: return 300000;
+    case TerrainGenerationProfile::Research: return 500000;
     }
     return 100000;
   }
@@ -36,7 +36,7 @@ namespace moppe::terrain {
   int profile_stream_power_iterations
     (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
-    case TerrainGenerationProfile::Fast: return 2;
+    case TerrainGenerationProfile::Fast: return 4;
     case TerrainGenerationProfile::Play: return 4;
     case TerrainGenerationProfile::Research: return 4;
     }
@@ -64,6 +64,11 @@ namespace moppe::terrain {
       .time_years = 200000.0f,
       .fixed_point_iterations = profile_stream_power_iterations (profile)
     });
+    // The analytical stage leaves one-cell discontinuities (its paper calls
+    // hillslope treatment essential); a talus pass smooths them before the
+    // droplet budget, which is far thinner per cell at rider resolution
+    // than in the recorded 257-square experiment.
+    program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
     program.transforms.emplace_back (HydraulicErosion {
       .droplets = profile_droplet_count (profile),
       .batch_size = 256,

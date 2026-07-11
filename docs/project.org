@@ -145,6 +145,11 @@ next iterations.
 
 - [X] Resample reach centerlines with bounded cubic tangents while preserving
   exact source/downstream endpoints, periodic continuity, and terrain contact.
+- [X] Carve channel beds under every visible reach and float level water
+  cross-sections in them, so the surface meets real banks instead of
+  draping over grass.
+- [X] Replace plane-wave streaks with flow-advected value noise, restrained
+  churn/cascade foam, a bank contact line, and Fresnel sky reflection.
 - [X] Fade lake/ocean mouths into standing water, extending the current only
   when the next wet receiver is an adjacent D8 cell rather than a body-level
   routing shortcut.
@@ -277,6 +282,53 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Rivers fill their carved channels
+
+The rendering pass that carving was for.  Ribbon cross-sections are now
+level and ride at 0.75 of the shared =channel_depth_m= law above the carved
+bed, so the water plane meets the stamped banks and the depth test cuts a
+clean waterline; sides are no longer draped onto terrain, and each section's
+normal is the water plane tilted by the downstream drop.  The river shader
+was rewritten around two value-noise layers advected downstream at different
+speeds: normal ripple from their gradients, churn foam gated by the rapid
+signal, cascade foam on waterfall strength, a thin bank contact line, and
+the same Fresnel-to-haze sky reflection the ocean uses (without it the
+channel read as a black trench).  The ocean's foam breakup switched from a
+plane-wave product (plaid moire, polka-dot surge rings) to drifting value
+noise, computed only inside the shore band.  =moppe_value_noise= lives in
+the shared shader header.
+
+Two erosion corrections fell out of inspecting the results:
+
+1. The carved bed now respects a backwater floor.  Beds are clamped above
+   the surface level of the water body each path eventually enters
+   (propagated upstream through the reach DAG), with only the final mouth
+   step dipping under the surface.  Without this, channels crossing flat
+   lowland dug below their lake's level kilometres early and priority-flood
+   turned whole reaches into standing-water arms.
+2. The naive AGE hookup tripled the standing-water census (1231 water
+   bodies without it, 5539 with; the paper's warning about one-cell
+   discontinuities at work).  A thermal pass interposed between the
+   analytical stage and droplets, four fixed-point passes on every profile,
+   and droplet budgets raised to 100k/300k/500k bring seed 123 at 1025
+   square to 1734 bodies.  World generation logs a one-line standing-water
+   census so pond explosions from future erosion changes show up at load.
+
+One build-system trap cost this session an hour of false theories: bundled
+shaders were only copied into moppe.app by a POST_BUILD step on the
+executable, so shader-only edits silently tested the previous shader.  A
+=moppe_bundle_shaders= target now refreshes the bundle on every build.
+When a capture contradicts a shader edit, suspect staleness first.
+
+Verification: seed-123 river, mouth, waterfall, and lake captures.  Rivers
+sit visibly below grade with real banks; the waterfall candidate renders as
+a bright coherent cascade from a hanging tarn; the mouth widens and fades
+into its lake.  The rider capture reads 59 FPS at its new twin-lake spawn
+against 98 on the previous terrain — suspected vsync/scene difference
+rather than shader cost (the foam noise is shore-band-only), but it needs a
+proper perf pass.  Lake shorelines keep their coarse-grid sawtooth and
+checkerboard; that remains the paused fine-boundary-band project.
 
 ** 2026-07-11 The world program ages valleys and carves river channels
 

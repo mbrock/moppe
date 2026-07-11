@@ -397,6 +397,15 @@ namespace game {
 	m_standing_water = terrain::analyze_standing_water
 	  (m_map.terrain_view (), sea_level);
 	m_lake_census = terrain::census_lakes (*m_standing_water);
+	{
+	  // A one-line hydrology reading at load: pond explosions from
+	  // erosion regressions show up here before any capture does.
+	  std::size_t wet = 0;
+	  for (const terrain::WaterBody& body : m_lake_census->bodies)
+	    wet += body.cells;
+	  std::cerr << "standing water: " << m_lake_census->bodies.size ()
+		    << " bodies, " << wet << " wet cells\n";
+	}
 	m_drainage = terrain::analyze_wet_drainage
 	  (m_map.terrain_view (), *m_standing_water, *m_lake_census);
 	m_water_network = terrain::analyze_water_network
