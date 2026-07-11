@@ -1781,7 +1781,6 @@ main (int argc, char** argv) {
   terrain::TerrainGenerationProfile generation_profile =
     terrain::TerrainGenerationProfile::Play;
   config.title = "Moppe";
-  config.fullscreen = true;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
