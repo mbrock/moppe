@@ -2003,13 +2003,22 @@ namespace game {
 	.sediment_at_termination = terrain::SedimentDisposition::Deposit
       });
     } else {
+      // A deliberately droplet-free stream-power experiment.  The friendly
+      // AGE slider reaches zero, so the same recipe provides an exact
+      // base-versus-analytical comparison without switching to Expert mode.
+      // One routing pass keeps the full-resolution interaction tolerable;
+      // talus relaxation supplies the hillslope correction that the raw
+      // analytical slice does not yet implement itself.
       recipe.blend.plains_weight = 0.25f;
       recipe.blend.mountain_weight = 1.25f;
       recipe.warp.amplitude = 0.28f;
       m_program.transforms.emplace_back (terrain::PowerHeights { 1.3f });
       m_program.transforms.emplace_back (terrain::AnalyticalErosion {
-	.time_years = 450000.0f,
-	.fixed_point_iterations = 4
+	.time_years = 200000.0f,
+	.fixed_point_iterations = 1
+      });
+      m_program.transforms.emplace_back (terrain::ThermalErosion {
+	4, 0.004f
       });
     }
     m_selected_stage = -1;
@@ -2252,7 +2261,12 @@ namespace game {
   {
     if (m_parameter_rebuild_delay > 0.0f)
       m_parameter_rebuild_delay -= dt;
-    if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
+    // Iterative terrain transforms can take longer than a frame on the
+    // full-resolution Lab map. Keep the thumb responsive while dragging and
+    // evaluate the final value on release instead of repeatedly blocking the
+    // event loop with obsolete intermediate rebuilds.
+    if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f
+	&& !m_friendly_drag && !m_parameter_drag)
       run_pending_parameter_rebuild ();
 
     if (m_droplet_trace.points.size () > 1) {
@@ -2620,7 +2634,7 @@ namespace game {
 	(dl, bounds, action_labels[i], hot (bounds), m_pointer_down, i);
     }
     constexpr const char* preset_titles[] = {
-      "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
+      "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "STREAM POWER"
     };
     for (int i = 0; i < 4; ++i) {
       const UiRect bounds = friendly_preset_rect (i, height);

@@ -244,6 +244,10 @@ identities, so ordinary source iteration does not accumulate abandoned maps.
 
 The Terrain Lab window presents the system as a small construction game:
 
+- the friendly Stream Power preset contains one-pass analytical erosion and
+  talus correction but no droplets, and its Age slider reaches zero for a
+  same-recipe before/after comparison; slow iterative controls rebuild when
+  the drag is released rather than stalling through intermediate values;
 - the geological source and every materialized stage are selectable rows;
 - normalization, power, analytical age, droplet, and thermal stages can be
   appended independently and combined in any order;
