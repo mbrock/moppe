@@ -84,6 +84,8 @@ namespace game {
 			  const std::string& high,
 			  float normalized, bool hot,
 			  bool active) const;
+    void friendly_tool_cursor (render::DrawList& dl, float x, float y,
+			       int icon) const;
 
   private:
     std::unique_ptr<render::FontAtlas> m_body;

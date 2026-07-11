@@ -641,5 +641,14 @@ namespace game {
     dl.set_texture (nullptr);
     dl.uv (0.0f, 0.0f);
   }
+
+  void
+  InspectorUi::friendly_tool_cursor
+    (render::DrawList& dl, float x, float y, int icon) const
+  {
+    dl.color (0.20f, 0.92f, 0.82f, 0.18f);
+    draw_circle (dl, x + 21.0f, y + 21.0f, 18.0f);
+    friendly_icon (dl, { x + 7.0f, y + 7.0f, 28.0f, 28.0f }, icon);
+  }
 }
 }
