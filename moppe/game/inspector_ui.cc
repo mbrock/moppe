@@ -17,6 +17,30 @@ namespace game {
       dl.end ();
     }
 
+    void fill_rounded_rect (render::DrawList& dl, const UiRect& bounds,
+			    float radius) {
+      radius = std::clamp
+	(radius, 0.0f, std::min (bounds.width, bounds.height) * 0.5f);
+      constexpr int corner_steps = 5;
+      dl.begin (render::Prim::TriangleFan);
+      dl.vertex (bounds.x + bounds.width * 0.5f,
+		 bounds.y + bounds.height * 0.5f);
+      for (int corner = 0; corner < 4; ++corner) {
+	const float cx = corner == 0 || corner == 3
+	  ? bounds.x + radius : bounds.x + bounds.width - radius;
+	const float cy = corner < 2
+	  ? bounds.y + radius : bounds.y + bounds.height - radius;
+	const float start = 3.14159265f + corner * 1.57079633f;
+	for (int i = 0; i <= corner_steps; ++i) {
+	  const float angle = start + i * 1.57079633f / corner_steps;
+	  dl.vertex (cx + std::cos (angle) * radius,
+		     cy + std::sin (angle) * radius);
+	}
+      }
+      dl.vertex (bounds.x + radius, bounds.y);
+      dl.end ();
+    }
+
     void bevel (render::DrawList& dl, const UiRect& bounds,
 		 bool pressed) {
       if (pressed)
@@ -64,6 +88,12 @@ namespace game {
       (new render::FontAtlas (renderer, "Helvetica", 15.0f, scale));
     m_key.reset
       (new render::FontAtlas (renderer, "Menlo", 11.0f, scale));
+    m_display.reset
+      (new render::FontAtlas (renderer, "Avenir Next", 25.0f, scale));
+    m_friendly_body.reset
+      (new render::FontAtlas (renderer, "Avenir Next", 16.0f, scale));
+    m_friendly_label.reset
+      (new render::FontAtlas (renderer, "Avenir Next", 13.0f, scale));
   }
 
   void
@@ -329,6 +359,122 @@ namespace game {
 	value_box.x + (value_box.width - value_width) * 0.5f,
 	value_box.y + value_box.height * 0.5f + 4, value);
     }
+  }
+
+  void
+  InspectorUi::surface (render::DrawList& dl, const UiRect& bounds) const
+  {
+    const UiRect shadow { bounds.x + 3, bounds.y + 5,
+			  bounds.width, bounds.height };
+    dl.color (0.005f, 0.012f, 0.014f, 0.42f);
+    fill_rounded_rect (dl, shadow, 13.0f);
+    dl.color (0.16f, 0.29f, 0.27f, 0.92f);
+    fill_rounded_rect (dl, bounds, 13.0f);
+    dl.color (0.035f, 0.075f, 0.073f, 0.96f);
+    const UiRect inner { bounds.x + 1, bounds.y + 1,
+			 bounds.width - 2, bounds.height - 2 };
+    fill_rounded_rect (dl, inner, 12.0f);
+  }
+
+  void
+  InspectorUi::heading (render::DrawList& dl, float x, float y,
+			const std::string& text) const
+  {
+    if (!m_display)
+      return;
+    dl.color (0.95f, 0.94f, 0.77f, 1.0f);
+    m_display->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::paragraph (render::DrawList& dl, float x, float y,
+			  const std::string& text, bool bright) const
+  {
+    if (!m_friendly_body)
+      return;
+    if (bright)
+      dl.color (0.91f, 0.95f, 0.89f, 0.99f);
+    else
+      dl.color (0.67f, 0.76f, 0.72f, 0.98f);
+    m_friendly_body->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::caption (render::DrawList& dl, float x, float y,
+			const std::string& text) const
+  {
+    if (!m_friendly_label)
+      return;
+    dl.color (0.65f, 0.75f, 0.69f, 0.98f);
+    m_friendly_label->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::friendly_button
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, const std::string& detail,
+     bool hot, bool pressed, bool selected) const
+  {
+    const bool pushed = hot && pressed;
+    dl.color (selected ? 0.38f : 0.18f,
+	      selected ? 0.72f : 0.39f,
+	      selected ? 0.61f : 0.35f, 0.95f);
+    fill_rounded_rect (dl, bounds, 8.0f);
+    if (selected)
+      dl.color (0.16f, 0.48f, 0.42f, 0.98f);
+    else if (pushed)
+      dl.color (0.10f, 0.24f, 0.22f, 0.99f);
+    else if (hot)
+      dl.color (0.14f, 0.34f, 0.31f, 0.98f);
+    else
+      dl.color (0.085f, 0.19f, 0.18f, 0.98f);
+    const UiRect inner { bounds.x + 1, bounds.y + 1,
+			 bounds.width - 2, bounds.height - 2 };
+    fill_rounded_rect (dl, inner, 7.0f);
+    if (m_friendly_body) {
+      dl.color (0.94f, 0.96f, 0.84f, 1.0f);
+      m_friendly_body->draw (dl, bounds.x + 12, bounds.y + 22, title);
+    }
+    if (!detail.empty () && m_friendly_label) {
+      dl.color (0.60f, 0.72f, 0.67f, 0.98f);
+      m_friendly_label->draw
+	(dl, bounds.x + 12, bounds.y + bounds.height - 10, detail);
+    }
+  }
+
+  void
+  InspectorUi::friendly_slider
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, const std::string& low,
+     const std::string& high, float normalized, bool hot,
+     bool active) const
+  {
+    normalized = std::clamp (normalized, 0.0f, 1.0f);
+    if (m_friendly_body) {
+      dl.color (0.89f, 0.93f, 0.82f, 1.0f);
+      m_friendly_body->draw (dl, bounds.x, bounds.y + 16, title);
+    }
+    if (m_friendly_label) {
+      dl.color (0.52f, 0.64f, 0.59f, 0.98f);
+      m_friendly_label->draw
+	(dl, bounds.x, bounds.y + bounds.height, low);
+      const float high_width = m_friendly_label->measure (high);
+      m_friendly_label->draw
+	(dl, bounds.x + bounds.width - high_width,
+	 bounds.y + bounds.height, high);
+    }
+    const float y = bounds.y + 29.0f;
+    dl.color (0.04f, 0.095f, 0.09f, 1.0f);
+    dl.line (bounds.x, y, bounds.x + bounds.width, y, 7.0f);
+    dl.color (0.25f, 0.68f, 0.58f, 1.0f);
+    dl.line (bounds.x, y,
+	     bounds.x + bounds.width * normalized, y, 4.0f);
+    const float cx = bounds.x + bounds.width * normalized;
+    dl.color (active ? 0.91f : hot ? 0.82f : 0.72f,
+	      active ? 0.98f : 0.91f,
+	      active ? 0.73f : 0.69f, 1.0f);
+    const UiRect thumb { cx - 7, y - 7, 14, 14 };
+    fill_rounded_rect (dl, thumb, 7.0f);
   }
 }
 }

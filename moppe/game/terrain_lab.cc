@@ -69,6 +69,51 @@ namespace game {
 	|| readings_rect ().contains (x, y);
     }
 
+    UiRect friendly_panel_rect (int height) {
+      return { 18, 18, 460,
+	       static_cast<float> (std::max (480, height - 36)) };
+    }
+
+    UiRect friendly_action_rect (int index) {
+      constexpr float gap = 6.0f;
+      constexpr float width = (428.0f - gap * 2.0f) / 3.0f;
+      return { 34 + index * (width + gap), 91, width, 42 };
+    }
+
+    UiRect friendly_preset_rect (int index) {
+      constexpr float gap = 8.0f;
+      constexpr float width = (428.0f - gap) / 2.0f;
+      const int row = index / 2;
+      const int column = index % 2;
+      return { 34 + column * (width + gap), 171 + row * 65.0f,
+	       width, 57 };
+    }
+
+    UiRect friendly_slider_rect (int index) {
+      return { 38, 337 + index * 59.0f, 420, 50 };
+    }
+
+    UiRect friendly_lens_rect (int index, int width) {
+      constexpr float button_width = 102.0f;
+      constexpr float gap = 7.0f;
+      const float start = std::max
+	(490.0f, width - (button_width * 4.0f + gap * 3.0f + 18.0f));
+      return { start + index * (button_width + gap), 18,
+	       button_width, 46 };
+    }
+
+    bool friendly_ui_contains (float x, float y, int width, int height) {
+      if (friendly_panel_rect (height).contains (x, y))
+	return true;
+      for (int i = 0; i < 4; ++i)
+	if (friendly_lens_rect (i, width).contains (x, y))
+	  return true;
+      return false;
+    }
+
+    UiRect expert_back_rect ()
+    { return { 448, 52, 72, 28 }; }
+
     UiRect overlay_rect (int index) {
       constexpr float gap = 4.0f;
       constexpr float margin = 10.0f;
@@ -314,7 +359,10 @@ namespace game {
       m_pointer_x (0), m_pointer_y (0),
       m_pointer_down (false), m_camera_drag (false),
       m_camera_drag_distance (0.0f), m_pan_drag (false),
-      m_parameter_drag (false), m_drag_property (-1),
+      m_parameter_drag (false), m_friendly_drag (false),
+      m_friendly_drag_control (-1), m_expert_ui (false),
+      m_friendly_preset (-1), m_ui_width (960), m_ui_height (640),
+      m_drag_property (-1),
       m_drag_start_y (0.0f), m_drag_start_normalized (0.0f),
       m_parameter_rebuild_pending (false),
       m_parameter_rebuild_stage (-1), m_parameter_rebuild_delay (0.0f),
@@ -375,6 +423,10 @@ namespace game {
     m_camera_drag = false;
     m_pan_drag = false;
     m_parameter_drag = false;
+    m_friendly_drag = false;
+    m_friendly_drag_control = -1;
+    m_expert_ui = false;
+    m_friendly_preset = -1;
     m_drag_property = -1;
     m_parameter_rebuild_pending = false;
     m_parameter_rebuild_delay = 0.0f;
@@ -1395,9 +1447,162 @@ namespace game {
     m_parameter_rebuild_delay = iterative ? 0.18f : 0.045f;
   }
 
+  float
+  TerrainLab::friendly_control_normalized (int control) const
+  {
+    if (control == 0)
+      return std::clamp
+	(m_program.source.recipe.blend.mountain_weight / 1.5f, 0.0f, 1.0f);
+    if (control == 1)
+      return std::clamp
+	(m_program.source.recipe.warp.amplitude / 0.6f, 0.0f, 1.0f);
+    for (const terrain::TerrainTransform& stage : m_program.transforms) {
+      if (control == 2) {
+	if (const auto* age = std::get_if<terrain::AnalyticalErosion> (&stage))
+	  return std::clamp (age->time_years / 800000.0f, 0.0f, 1.0f);
+      } else if (control == 3) {
+	if (const auto* rain = std::get_if<terrain::HydraulicErosion> (&stage))
+	  return std::clamp (rain->droplets / 300000.0f, 0.0f, 1.0f);
+      }
+    }
+    return 0.0f;
+  }
+
+  bool
+  TerrainLab::set_friendly_control_normalized (int control, float value)
+  {
+    value = std::clamp (value, 0.0f, 1.0f);
+    int changed_stage = -1;
+    bool changed = false;
+    if (control == 0) {
+      float& weight = m_program.source.recipe.blend.mountain_weight;
+      const float next = value * 1.5f;
+      changed = next != weight;
+      weight = next;
+    } else if (control == 1) {
+      float& warp = m_program.source.recipe.warp.amplitude;
+      const float next = value * 0.6f;
+      changed = next != warp;
+      warp = next;
+    } else {
+      for (std::size_t i = 0; i < m_program.transforms.size (); ++i) {
+	terrain::TerrainTransform& stage = m_program.transforms[i];
+	if (control == 2) {
+	  if (auto* age = std::get_if<terrain::AnalyticalErosion> (&stage)) {
+	    const float next = value * 800000.0f;
+	    changed = next != age->time_years;
+	    age->time_years = next;
+	    changed_stage = static_cast<int> (i);
+	    break;
+	  }
+	} else if (auto* rain =
+		   std::get_if<terrain::HydraulicErosion> (&stage)) {
+	  const int next = static_cast<int> (std::lround (value * 300000.0f));
+	  changed = next != rain->droplets;
+	  rain->droplets = next;
+	  changed_stage = static_cast<int> (i);
+	  break;
+	}
+      }
+    }
+    if (!changed)
+      return false;
+    m_friendly_preset = -1;
+    m_parameter_rebuild_pending = true;
+    m_parameter_rebuild_stage = changed_stage;
+    return true;
+  }
+
+  void
+  TerrainLab::apply_friendly_preset (int preset)
+  {
+    const std::uint32_t seed = m_program.randomness.seed;
+    m_program = terrain::make_geological_program (seed);
+    auto& recipe = m_program.source.recipe;
+    if (preset == 0) {
+      recipe.blend.mountain_weight = 1.35f;
+      recipe.warp.amplitude = 0.22f;
+      m_program.transforms.emplace_back (terrain::PowerHeights { 1.35f });
+    } else if (preset == 1) {
+      recipe.blend.mountain_weight = 0.65f;
+      recipe.warp.amplitude = 0.08f;
+      m_program.transforms.emplace_back (terrain::PowerHeights { 0.78f });
+      m_program.transforms.emplace_back (terrain::AnalyticalErosion {
+	.time_years = 500000.0f,
+	.fixed_point_iterations = 3
+      });
+      m_program.transforms.emplace_back (terrain::ThermalErosion { 4, 0.004f });
+    } else if (preset == 2) {
+      recipe.blend.continent_weight = 0.72f;
+      recipe.blend.mountain_weight = 1.05f;
+      m_program.transforms.emplace_back (terrain::PowerHeights { 1.12f });
+      m_program.transforms.emplace_back (terrain::HydraulicErosion {
+	.droplets = 100000,
+	.batch_size = 256,
+	.max_steps = 256,
+	.minimum_water = 0.01f,
+	.sediment_at_termination = terrain::SedimentDisposition::Deposit
+      });
+    } else {
+      recipe.blend.plains_weight = 0.25f;
+      recipe.blend.mountain_weight = 1.25f;
+      recipe.warp.amplitude = 0.28f;
+      m_program.transforms.emplace_back (terrain::PowerHeights { 1.3f });
+      m_program.transforms.emplace_back (terrain::AnalyticalErosion {
+	.time_years = 450000.0f,
+	.fixed_point_iterations = 4
+      });
+    }
+    m_selected_stage = -1;
+    m_stage_scroll = 0;
+    m_friendly_preset = preset;
+    rebuild_program ();
+  }
+
+  void
+  TerrainLab::handle_friendly_click (float x, float y)
+  {
+    for (int i = 0; i < 3; ++i) {
+      if (!friendly_action_rect (i).contains (x, y))
+	continue;
+      if (i == 0) {
+	const std::uint32_t seed = m_program.randomness.seed + 1;
+	m_program = terrain::make_geological_program (seed);
+	m_selected_stage = -1;
+	m_friendly_preset = -1;
+	rebuild_program ();
+      } else if (i == 1) {
+	fit_view ();
+      } else {
+	m_expert_ui = true;
+      }
+      return;
+    }
+    for (int i = 0; i < 4; ++i) {
+      if (friendly_preset_rect (i).contains (x, y)) {
+	apply_friendly_preset (i);
+	return;
+      }
+    }
+    constexpr OverlayMode modes[] = {
+      OverlayMode::None, OverlayMode::Slope,
+      OverlayMode::StandingWater, OverlayMode::Trace
+    };
+    for (int i = 0; i < 4; ++i) {
+      if (friendly_lens_rect (i, m_ui_width).contains (x, y)) {
+	set_overlay (modes[i]);
+	return;
+      }
+    }
+  }
+
   void
   TerrainLab::handle_click (float x, float y)
   {
+    if (m_expert_ui && expert_back_rect ().contains (x, y)) {
+      m_expert_ui = false;
+      return;
+    }
     constexpr OverlayMode overlay_modes[] = {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
@@ -1645,6 +1850,15 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
+    if (m_friendly_drag) {
+      const UiRect bounds = friendly_slider_rect (m_friendly_drag_control);
+      const float normalized = bounds.width > 0.0f
+	? (x - bounds.x) / bounds.width : 0.0f;
+      if (set_friendly_control_normalized
+	  (m_friendly_drag_control, normalized))
+	m_parameter_rebuild_delay = 0.045f;
+      return;
+    }
     if (m_parameter_drag) {
       const float normalized = m_drag_start_normalized
 	+ (m_drag_start_y - y) / 180.0f;
@@ -1682,28 +1896,78 @@ namespace game {
     if (button == platform::PointerButton::Primary) {
       m_pointer_down = down;
       if (down) {
-	int property_count = 9;
-	if (m_selected_stage >= 0)
-	  property_count = stage_property_count
-	    (m_program.transforms[m_selected_stage]);
-	for (int row = 0; row < property_count; ++row) {
-	  if (!parameter_control_rect (property_rect (row)).contains (x, y))
-	    continue;
-	  if (selected_property_domain (row) != ParameterDomain::Continuous)
-	    continue;
-	  m_parameter_drag = true;
-	  m_drag_property = row;
-	  m_drag_start_y = y;
-	  m_drag_start_normalized = selected_property_normalized (row);
-	  return;
-	}
-	if (ui_contains (x, y)) {
-	  handle_click (x, y);
+	if (!m_expert_ui) {
+	  for (int control = 0; control < 4; ++control) {
+	    const UiRect bounds = friendly_slider_rect (control);
+	    if (!bounds.contains (x, y))
+	      continue;
+	    const bool has_age = std::any_of
+	      (m_program.transforms.begin (), m_program.transforms.end (),
+	       [] (const terrain::TerrainTransform& stage) {
+		 return std::holds_alternative<terrain::AnalyticalErosion>
+		   (stage);
+	       });
+	    const bool has_rain = std::any_of
+	      (m_program.transforms.begin (), m_program.transforms.end (),
+	       [] (const terrain::TerrainTransform& stage) {
+		 return std::holds_alternative<terrain::HydraulicErosion>
+		   (stage);
+	       });
+	    if (control == 2 && !has_age)
+	      append_stage (terrain::AnalyticalErosion {
+		.time_years = 0.0f
+	      });
+	    else if (control == 3 && !has_rain)
+	      append_stage (terrain::HydraulicErosion {
+		.droplets = 0,
+		.batch_size = 256,
+		.max_steps = 256,
+		.minimum_water = 0.01f,
+		.sediment_at_termination =
+		  terrain::SedimentDisposition::Deposit
+	      });
+	    m_friendly_drag = true;
+	    m_friendly_drag_control = control;
+	    set_friendly_control_normalized
+	      (control, (x - bounds.x) / bounds.width);
+	    return;
+	  }
+	  if (friendly_ui_contains
+	      (x, y, m_ui_width, m_ui_height))
+	    handle_friendly_click (x, y);
+	  else {
+	    m_camera_drag = true;
+	    m_camera_drag_distance = 0.0f;
+	  }
 	} else {
-	  m_camera_drag = true;
-	  m_camera_drag_distance = 0.0f;
+	  int property_count = 9;
+	  if (m_selected_stage >= 0)
+	    property_count = stage_property_count
+	      (m_program.transforms[m_selected_stage]);
+	  for (int row = 0; row < property_count; ++row) {
+	    if (!parameter_control_rect (property_rect (row)).contains (x, y))
+	      continue;
+	    if (selected_property_domain (row) != ParameterDomain::Continuous)
+	      continue;
+	    m_parameter_drag = true;
+	    m_drag_property = row;
+	    m_drag_start_y = y;
+	    m_drag_start_normalized = selected_property_normalized (row);
+	    return;
+	  }
+	  if (ui_contains (x, y))
+	    handle_click (x, y);
+	  else {
+	    m_camera_drag = true;
+	    m_camera_drag_distance = 0.0f;
+	  }
 	}
       } else {
+	if (m_friendly_drag) {
+	  m_friendly_drag = false;
+	  m_friendly_drag_control = -1;
+	  run_pending_parameter_rebuild ();
+	}
 	if (m_parameter_drag) {
 	  m_parameter_drag = false;
 	  m_drag_property = -1;
@@ -1726,8 +1990,10 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
-    if (ui_contains (x, y)) {
-      if (stage_list_rect ().contains (x, y)
+    const bool over_ui = m_expert_ui ? ui_contains (x, y)
+      : friendly_ui_contains (x, y, m_ui_width, m_ui_height);
+    if (over_ui) {
+      if (m_expert_ui && stage_list_rect ().contains (x, y)
 	  && m_program.transforms.size () > visible_stage_rows) {
 	m_stage_scroll += delta > 0.0f ? -1 : 1;
 	const int maximum = static_cast<int> (m_program.transforms.size ())
@@ -1765,7 +2031,97 @@ namespace game {
   }
 
   void
-  TerrainLab::draw (render::DrawList& dl, int, int) const
+  TerrainLab::draw_friendly
+    (render::DrawList& dl, int width, int height) const
+  {
+    const auto hot = [this] (const UiRect& bounds) {
+      return bounds.contains (m_pointer_x, m_pointer_y);
+    };
+    m_ui.begin (dl);
+    m_ui.surface (dl, friendly_panel_rect (height));
+    m_ui.heading (dl, 34, 53, "WORLD SHAPER");
+    m_ui.paragraph (dl, 35, 76, "Make a landscape, then let time shape it.");
+
+    constexpr const char* action_labels[] = {
+      "NEW WORLD", "CENTER", "EXPERT"
+    };
+    for (int i = 0; i < 3; ++i) {
+      const UiRect bounds = friendly_action_rect (i);
+      m_ui.friendly_button
+	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down);
+    }
+
+    m_ui.caption (dl, 35, 157, "START WITH A STORY");
+    constexpr const char* preset_titles[] = {
+      "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
+    };
+    constexpr const char* preset_details[] = {
+      "high and sharp", "softened by time",
+      "water finds a way", "rivers cut deep"
+    };
+    for (int i = 0; i < 4; ++i) {
+      const UiRect bounds = friendly_preset_rect (i);
+      m_ui.friendly_button
+	(dl, bounds, preset_titles[i], preset_details[i], hot (bounds),
+	 m_pointer_down, m_friendly_preset == i);
+    }
+
+    m_ui.caption (dl, 35, 322, "SHAPE THIS WORLD");
+    constexpr const char* slider_titles[] = {
+      "MOUNTAINS", "WILD RIDGES", "AGE", "RAINFALL"
+    };
+    constexpr const char* slider_low[] = {
+      "GENTLE", "SMOOTH", "YOUNG", "DRY"
+    };
+    constexpr const char* slider_high[] = {
+      "TALL", "TWISTED", "ANCIENT", "SOAKED"
+    };
+    for (int i = 0; i < 4; ++i) {
+      const UiRect bounds = friendly_slider_rect (i);
+      m_ui.friendly_slider
+	(dl, bounds, slider_titles[i], slider_low[i], slider_high[i],
+	 friendly_control_normalized (i), hot (bounds),
+	 m_friendly_drag && m_friendly_drag_control == i);
+    }
+
+    const float hint_y = std::max (602.0f, static_cast<float> (height - 27));
+    m_ui.caption
+      (dl, 35, hint_y, "DRAG THE LAND TO ORBIT  -  SCROLL TO ZOOM  -  T BACK");
+
+    constexpr const char* lens_titles[] = {
+      "LAND", "STEEP", "WATER", "DROP RAIN"
+    };
+    constexpr OverlayMode lens_modes[] = {
+      OverlayMode::None, OverlayMode::Slope,
+      OverlayMode::StandingWater, OverlayMode::Trace
+    };
+    for (int i = 0; i < 4; ++i) {
+      const UiRect bounds = friendly_lens_rect (i, width);
+      m_ui.friendly_button
+	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
+	 m_overlay == lens_modes[i]);
+    }
+    if (m_overlay == OverlayMode::Trace)
+      m_ui.paragraph
+	(dl, std::max (490.0f, static_cast<float> (width - 438)), 88,
+	 "Click anywhere on the land and follow the raindrop.", true);
+    m_ui.end (dl);
+  }
+
+  void
+  TerrainLab::draw (render::DrawList& dl, int width, int height) const
+  {
+    m_ui_width = width;
+    m_ui_height = height;
+    if (!m_expert_ui) {
+      draw_friendly (dl, width, height);
+      return;
+    }
+    draw_expert (dl);
+  }
+
+  void
+  TerrainLab::draw_expert (render::DrawList& dl) const
   {
     const auto hot = [this] (const UiRect& bounds) {
       return bounds.contains (m_pointer_x, m_pointer_y);
@@ -1791,6 +2147,8 @@ namespace game {
     m_ui.button (dl, view_rect (), view_label,
 		 hot (view_rect ()), m_pointer_down,
 		 m_view != ViewMode::Tile);
+    m_ui.button (dl, expert_back_rect (), "FRIENDLY",
+		 hot (expert_back_rect ()), m_pointer_down);
     for (int i = 0; i < 7; ++i) {
       const UiRect bounds = layer_rect (i);
       m_ui.button (dl, bounds, layer_labels[i], hot (bounds),
