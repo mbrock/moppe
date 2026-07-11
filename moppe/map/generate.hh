@@ -5,6 +5,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/geological.hh>
+#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/topology.hh>
 
 #include <cmath>
@@ -223,6 +224,8 @@ namespace map {
 
     float* raw_heights ()
     { return m_data.raw (); }
+
+    terrain::TerrainView terrain_view () const;
 
     void normalize           ();
     void translate           (float d);
