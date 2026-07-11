@@ -2003,6 +2003,9 @@ namespace game {
 	.sediment_at_termination = terrain::SedimentDisposition::Deposit
       });
     } else {
+      // A deliberately droplet-free stream-power experiment.  The friendly
+      // AGE slider reaches zero, so the same recipe provides an exact
+      // base-versus-analytical comparison without switching to Expert mode.
       recipe.blend.plains_weight = 0.25f;
       recipe.blend.mountain_weight = 1.25f;
       recipe.warp.amplitude = 0.28f;
@@ -2620,7 +2623,7 @@ namespace game {
 	(dl, bounds, action_labels[i], hot (bounds), m_pointer_down, i);
     }
     constexpr const char* preset_titles[] = {
-      "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
+      "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "STREAM POWER"
     };
     for (int i = 0; i < 4; ++i) {
       const UiRect bounds = friendly_preset_rect (i, height);
