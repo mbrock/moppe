@@ -1,6 +1,7 @@
 #include <moppe/map/terrain_evaluator.hh>
 
 #include <moppe/terrain/analytical_erosion.hh>
+#include <moppe/terrain/carve.hh>
 
 #include <algorithm>
 #include <stdexcept>
@@ -59,6 +60,18 @@ namespace moppe::map {
     else if (const auto* thermal =
 	     std::get_if<terrain::ThermalErosion> (&transform))
       m_target.erode_thermally (thermal->iterations, thermal->talus);
+    else if (const auto* carving =
+	     std::get_if<terrain::ChannelCarving> (&transform)) {
+      terrain::ChannelCarvingResult result = terrain::carve_channels
+	(m_target.terrain_view (), *carving);
+      const std::size_t width = m_target.unique_width ();
+      const std::size_t height = m_target.unique_height ();
+      for (std::size_t y = 0; y < height; ++y)
+	for (std::size_t x = 0; x < width; ++x)
+	  m_target.set (static_cast<int> (x), static_cast<int> (y),
+			result.heights[y * width + x]);
+      report = result.report;
+    }
     m_target.synchronize_periodic_edges ();
     return report;
   }

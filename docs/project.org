@@ -94,6 +94,8 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Directed dry river reaches split at confluences and water bodies.
 - [X] World-space river ribbons animated from reach direction and discharge.
 - [X] Clustered high-flow knickpoint candidates with physical drop and slope.
+- [X] Finite-time stream-power aging in the world generation program.
+- [X] Discharge-scaled channel beds carved along the extracted river network.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
@@ -275,6 +277,42 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 The world program ages valleys and carves river channels
+
+The random world now runs the finite-time analytical stream-power transform
+and a new channel-carving stage.  The world program is source, power,
+=AnalyticalErosion= (200 ky, two fixed-point passes on the fast profile and
+four on play/research), droplets, thermal, and finally =ChannelCarving=.
+Aging runs before droplets as the drainage-scale stage; carving runs last so
+smoothing cannot refill the beds.
+
+Carving is deterministic stamping, not simulation.  It recomputes the flood
+field, wet drainage, and river network on the eroded terrain — the same
+account the renderer consumes — then cuts a channel cross-section along each
+reach centerline.  Bed depth follows catchment area (clamped 0.4-2.5 m,
+scaled down for channels narrower than a cell), widths share the renderer's
+area-to-width law, banks blend over six meters, and beds are propagated
+monotone downstream through reach junctions (Kahn order over the reach DAG),
+so every carved channel drains to its mouth by construction.  Reaches also
+carve one receiver step into standing water so mouths pass under the lake
+surface instead of ending in a wall.
+
+Verification: unit tests cover trunk lowering, monotone beds, determinism,
+never-raising, and torus stamping; the seed-123 water captures show incised
+grooves under the ribbons and matured branched valleys, and the ordinary
+rider capture holds 98 FPS.  Two fixed-point aging passes at 1025 square
+cost about 1.5 s, so fast-profile captures remain quick.  Terrain caches
+key on the executable hash and invalidated automatically.
+
+Known limits, deliberately left for the rendering pass: ribbons still draw
+their surface 0.06-0.10 m above the carved bed, so channels read as grooves
+under translucent strips rather than filled watercourses; flow-aligned
+surface detail, depth-based absorption, and foam keyed to the carved bed
+are the natural next steps.  Lake shorelines are untouched by carving and
+still need the planned fine boundary band.  Terrain Lab has no =+CARVE=
+stage control yet; the pipeline demo accepts =carve= and
+=carve=area_cells[,depth_scale,min_depth,max_depth,sea,blend]=.
 
 ** 2026-07-11 Shoreline rendering investigation paused
 

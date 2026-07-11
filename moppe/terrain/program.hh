@@ -34,10 +34,11 @@ namespace moppe::terrain {
 
   using TerrainTransform = std::variant
     <NormalizeHeights, PowerHeights, AnalyticalErosion,
-     HydraulicErosion, ThermalErosion>;
+     HydraulicErosion, ThermalErosion, ChannelCarving>;
 
   using TerrainTransformReport = std::variant
-    <std::monostate, AnalyticalErosionReport, HydraulicErosionReport>;
+    <std::monostate, AnalyticalErosionReport, HydraulicErosionReport,
+     ChannelCarvingReport>;
 
   // These two axes describe what an evaluator must observe, without
   // prescribing whether it uses a CPU loop, a GPU kernel, or something
@@ -95,6 +96,8 @@ namespace moppe::terrain {
   TerrainProgram make_world_program
     (std::uint32_t root_seed, TerrainGenerationProfile profile);
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept;
+  int profile_stream_power_iterations
+    (TerrainGenerationProfile profile) noexcept;
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
 
   void validate_program (const TerrainProgram& program);

@@ -33,6 +33,16 @@ namespace moppe::terrain {
     return 100000;
   }
 
+  int profile_stream_power_iterations
+    (TerrainGenerationProfile profile) noexcept {
+    switch (profile) {
+    case TerrainGenerationProfile::Fast: return 2;
+    case TerrainGenerationProfile::Play: return 4;
+    case TerrainGenerationProfile::Research: return 4;
+    }
+    return 4;
+  }
+
   std::string_view profile_id
     (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
@@ -48,6 +58,12 @@ namespace moppe::terrain {
     TerrainProgram program = make_geological_program (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
     program.transforms.emplace_back (PowerHeights { 1.15f });
+    // Drainage-scale valley incision before droplet finishing; the 200 ky
+    // four-pass setting follows the recorded stream-power comparison.
+    program.transforms.emplace_back (AnalyticalErosion {
+      .time_years = 200000.0f,
+      .fixed_point_iterations = profile_stream_power_iterations (profile)
+    });
     program.transforms.emplace_back (HydraulicErosion {
       .droplets = profile_droplet_count (profile),
       .batch_size = 256,
@@ -57,6 +73,8 @@ namespace moppe::terrain {
     });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
     program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+    // Channel beds are stamped last so smoothing cannot refill them.
+    program.transforms.emplace_back (ChannelCarving { });
     return program;
   }
 
@@ -101,6 +119,20 @@ namespace moppe::terrain {
 	      || operation.talus < 0.0f)
 	    throw std::invalid_argument
 	      ("thermal erosion parameters are invalid");
+	} else if constexpr (std::is_same_v<T, ChannelCarving>) {
+	  if (!std::isfinite (operation.sea_level)
+	      || !std::isfinite (operation.minimum_area_cells)
+	      || operation.minimum_area_cells <= 0.0f
+	      || !std::isfinite (operation.depth_per_sqrt_m2)
+	      || operation.depth_per_sqrt_m2 < 0.0f
+	      || !std::isfinite (operation.minimum_depth_m)
+	      || operation.minimum_depth_m < 0.0f
+	      || !std::isfinite (operation.maximum_depth_m)
+	      || operation.maximum_depth_m < operation.minimum_depth_m
+	      || !std::isfinite (operation.bank_blend_m)
+	      || operation.bank_blend_m < 0.0f)
+	    throw std::invalid_argument
+	      ("channel carving parameters are invalid");
 	}
       }, transform);
     }
@@ -118,6 +150,8 @@ namespace moppe::terrain {
 	return "hydraulic";
       else if constexpr (std::is_same_v<T, AnalyticalErosion>)
 	return "analytical";
+      else if constexpr (std::is_same_v<T, ChannelCarving>)
+	return "carve";
       else
 	return "thermal";
     }, transform);
@@ -133,6 +167,8 @@ namespace moppe::terrain {
 	return { SpatialScope::Global, EvaluationOrder::Reduction };
       else if constexpr (std::is_same_v<T, ThermalErosion>)
 	return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
+      else if constexpr (std::is_same_v<T, ChannelCarving>)
+	return { SpatialScope::Global, EvaluationOrder::Direct };
       else
 	return { SpatialScope::Global, EvaluationOrder::Iterative };
     }, transform);
