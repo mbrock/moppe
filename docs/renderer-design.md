@@ -338,6 +338,8 @@ effective callback rate and CPU time in the game tick and render call. It also
 splits renderer time into render-target maintenance, in-flight command-buffer
 waiting, drawable acquisition, and Metal encoding/submission, making a missed
 frame deadline distinguishable from compositor or drawable back-pressure.
+`MOPPE_PROFILE_GPU_SIMPLE=1` reports only command-buffer GPU time without
+injecting the more intrusive per-encoder counter samples.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set
