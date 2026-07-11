@@ -11,16 +11,14 @@ int main () {
       std::cout << "[pass] " << test.name << "\n";
     } catch (const std::exception& error) {
       ++failures;
-      std::cerr << "[fail] " << test.name << "\n  "
-		<< error.what () << "\n";
+      std::cerr << "[fail] " << test.name << "\n  " << error.what () << "\n";
     } catch (...) {
       ++failures;
-      std::cerr << "[fail] " << test.name
-		<< "\n  unknown exception\n";
+      std::cerr << "[fail] " << test.name << "\n  unknown exception\n";
     }
   }
 
-  std::cout << moppe::test::registry ().size () << " tests, "
-	    << failures << " failures\n";
+  std::cout << moppe::test::registry ().size () << " tests, " << failures
+            << " failures\n";
   return failures == 0 ? 0 : 1;
 }

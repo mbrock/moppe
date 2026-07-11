@@ -4,10 +4,7 @@
 #include <cmath>
 
 namespace moppe::terrain {
-  enum class Topology {
-    Bounded,
-    Torus
-  };
+  enum class Topology { Bounded, Torus };
 
   inline int wrap_index (int value, int period) {
     const int remainder = value % period;

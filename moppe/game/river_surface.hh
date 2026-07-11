@@ -7,25 +7,27 @@
 #include <moppe/terrain/flood.hh>
 
 namespace moppe::game {
-  float visible_river_minimum_area
-    (const terrain::TerrainGrid& grid) noexcept;
+  float visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept;
 
-  render::DrawList build_river_ribbons
-    (const map::HeightMap& map, const terrain::FloodField& flood,
-     const terrain::LakeCensus& census,
-     const terrain::DrainageGraph& drainage,
-     const terrain::RiverNetwork& rivers);
+  render::DrawList build_river_ribbons (const map::HeightMap& map,
+                                        const terrain::FloodField& flood,
+                                        const terrain::LakeCensus& census,
+                                        const terrain::DrainageGraph& drainage,
+                                        const terrain::RiverNetwork& rivers);
 
   class RiverSurface {
   public:
-    void rebuild (render::Renderer& renderer, const map::HeightMap& map,
-		  const terrain::FloodField& flood,
-		  const terrain::LakeCensus& census,
-		  const terrain::DrainageGraph& drainage,
-		  const terrain::RiverNetwork& rivers);
+    void rebuild (render::Renderer& renderer,
+                  const map::HeightMap& map,
+                  const terrain::FloodField& flood,
+                  const terrain::LakeCensus& census,
+                  const terrain::DrainageGraph& drainage,
+                  const terrain::RiverNetwork& rivers);
     void clear ();
     void draw (render::Renderer& renderer, const Vector3D& camera) const;
-    bool empty () const { return !m_mesh; }
+    bool empty () const {
+      return !m_mesh;
+    }
 
   private:
     render::MeshPtr m_mesh;

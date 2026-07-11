@@ -34,25 +34,27 @@ namespace moppe::terrain {
   class TerrainView {
   public:
     TerrainView (TerrainGrid grid, std::span<const float> heights)
-      : m_grid (grid), m_heights (heights)
-    {
-      if (grid.width < 2 || grid.height < 2
-	  || grid.spacing_x <= 0.0f || grid.spacing_y <= 0.0f
-	  || grid.height_scale <= 0.0f
-	  || heights.size () != grid.width * grid.height)
-	throw std::invalid_argument ("invalid materialized terrain view");
-      if (grid.topology == Topology::Torus
-	  && (grid.width < 3 || grid.height < 3))
-	throw std::invalid_argument
-	  ("periodic terrain needs a duplicated seam");
+        : m_grid (grid), m_heights (heights) {
+      if (grid.width < 2 || grid.height < 2 || grid.spacing_x <= 0.0f ||
+          grid.spacing_y <= 0.0f || grid.height_scale <= 0.0f ||
+          heights.size () != grid.width * grid.height)
+        throw std::invalid_argument ("invalid materialized terrain view");
+      if (grid.topology == Topology::Torus &&
+          (grid.width < 3 || grid.height < 3))
+        throw std::invalid_argument (
+          "periodic terrain needs a duplicated seam");
     }
 
-    const TerrainGrid& grid () const noexcept { return m_grid; }
-    std::span<const float> heights () const noexcept { return m_heights; }
+    const TerrainGrid& grid () const noexcept {
+      return m_grid;
+    }
+    std::span<const float> heights () const noexcept {
+      return m_heights;
+    }
 
     float at (std::size_t x, std::size_t y) const {
       if (x >= m_grid.width || y >= m_grid.height)
-	throw std::out_of_range ("terrain sample outside grid");
+        throw std::out_of_range ("terrain sample outside grid");
       return m_heights[y * m_grid.width + x];
     }
 

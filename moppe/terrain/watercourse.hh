@@ -38,7 +38,7 @@ namespace moppe::terrain {
     float base_speed_m_s = 2.0f;
     float rapid_speed_m_s = 3.5f;
     float waterfall_speed_m_s = 5.0f;
-    WaterPermanence permanence = { };
+    WaterPermanence permanence = {};
   };
 
   struct WaterSheets {
@@ -57,11 +57,12 @@ namespace moppe::terrain {
     std::vector<float> flow;
   };
 
-  WaterSheets paint_watercourses
-    (const TerrainView& terrain, const FloodField& flood,
-     const LakeCensus& census, const DrainageGraph& drainage,
-     const RiverNetwork& rivers,
-     const WatercoursePaint& parameters = { });
+  WaterSheets paint_watercourses (const TerrainView& terrain,
+                                  const FloodField& flood,
+                                  const LakeCensus& census,
+                                  const DrainageGraph& drainage,
+                                  const RiverNetwork& rivers,
+                                  const WatercoursePaint& parameters = {});
 }
 
 #endif

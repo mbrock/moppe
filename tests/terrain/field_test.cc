@@ -20,8 +20,8 @@ MOPPE_TEST (arithmetic_builds_runtime_node_variants) {
   const ScalarField x = coordinate_x ();
   const ScalarField expression = 0.5f + 2.0f * x;
 
-  MOPPE_CHECK
-    (std::holds_alternative<expression::Add> (expression.node ()->operation));
+  MOPPE_CHECK (
+    std::holds_alternative<expression::Add> (expression.node ()->operation));
   MOPPE_CHECK (unique_node_count (expression) == 5);
 }
 
@@ -31,10 +31,10 @@ MOPPE_TEST (terrain_operations_are_explicit_runtime_variants) {
   const ScalarField fused = multiply_add (x, constant (2.0f), x);
   const ScalarField mask = smoothstep (0.2f, 0.8f, x);
 
-  MOPPE_CHECK (std::holds_alternative<expression::Subtract>
-    (difference.node ()->operation));
-  MOPPE_CHECK (std::holds_alternative<expression::MultiplyAdd>
-    (fused.node ()->operation));
-  MOPPE_CHECK (std::holds_alternative<expression::Smoothstep>
-    (mask.node ()->operation));
+  MOPPE_CHECK (std::holds_alternative<expression::Subtract> (
+    difference.node ()->operation));
+  MOPPE_CHECK (
+    std::holds_alternative<expression::MultiplyAdd> (fused.node ()->operation));
+  MOPPE_CHECK (
+    std::holds_alternative<expression::Smoothstep> (mask.node ()->operation));
 }

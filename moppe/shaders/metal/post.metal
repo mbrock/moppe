@@ -14,26 +14,23 @@ struct QuadVaryings {
 
 // Fullscreen triangle; uv zoom shrinks toward the center for the
 // motion-blur feedback ghosts.
-vertex QuadVaryings
-quad_vertex (uint vid [[vertex_id]],
-	     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]])
-{
-  const float2 pos[3] = { float2 (-1, -1), float2 (3, -1),
-			  float2 (-1, 3) };
+vertex QuadVaryings quad_vertex (uint vid [[vertex_id]],
+                                 constant MoppeQuadUniforms& q
+                                 [[buffer (MOPPE_BUF_FRAME)]]) {
+  const float2 pos[3] = { float2 (-1, -1), float2 (3, -1), float2 (-1, 3) };
   QuadVaryings out;
   out.position = float4 (pos[vid], 0.5, 1.0);
-  float2 uv = float2 ((pos[vid].x + 1) * 0.5,
-		      1.0 - (pos[vid].y + 1) * 0.5);
+  float2 uv = float2 ((pos[vid].x + 1) * 0.5, 1.0 - (pos[vid].y + 1) * 0.5);
   const float zoom = q.params.x;
   out.uv = (uv - 0.5) / zoom + 0.5;
   return out;
 }
 
-fragment float4
-quad_fragment (QuadVaryings in [[stage_in]],
-	       constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
-	       texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
-{
+fragment float4 quad_fragment (QuadVaryings in [[stage_in]],
+                               constant MoppeQuadUniforms& q
+                               [[buffer (MOPPE_BUF_FRAME)]],
+                               texture2d<float> scene
+                               [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   return float4 (scene.sample (smp, in.uv).rgb, 1.0) * q.tint;
 }
@@ -42,11 +39,11 @@ quad_fragment (QuadVaryings in [[stage_in]],
 // chain.  Only genuinely hot pixels pass -- the sun, the boost
 // plume, glints, snowfields in direct light.  tint.w carries the
 // auto-exposure so the glow tracks adaptation.
-fragment float4
-bloom_bright_fragment (QuadVaryings in [[stage_in]],
-		       constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
-		       texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
-{
+fragment float4 bloom_bright_fragment (QuadVaryings in [[stage_in]],
+                                       constant MoppeQuadUniforms& q
+                                       [[buffer (MOPPE_BUF_FRAME)]],
+                                       texture2d<float> scene
+                                       [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float3 c = scene.sample (smp, in.uv).rgb * q.tint.w;
   const float luma = dot (c, float3 (0.2126, 0.7152, 0.0722));
@@ -56,10 +53,9 @@ bloom_bright_fragment (QuadVaryings in [[stage_in]],
 
 // Auto-exposure probe: a handful of wide taps averaged into a tiny
 // target the CPU reads back for the adaptation loop.
-fragment float4
-probe_fragment (QuadVaryings in [[stage_in]],
-		texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
-{
+fragment float4 probe_fragment (QuadVaryings in [[stage_in]],
+                                texture2d<float> scene
+                                [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float2 o = float2 (0.008, 0.014);
   float3 c = scene.sample (smp, in.uv).rgb * 0.2;
@@ -72,19 +68,18 @@ probe_fragment (QuadVaryings in [[stage_in]],
 
 // Separable 9-tap gaussian; params.zw carries the texel step for
 // this direction.
-fragment float4
-bloom_blur_fragment (QuadVaryings in [[stage_in]],
-		     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
-		     texture2d<float> src [[texture(MOPPE_TEX_SCENE)]])
-{
+fragment float4 bloom_blur_fragment (QuadVaryings in [[stage_in]],
+                                     constant MoppeQuadUniforms& q
+                                     [[buffer (MOPPE_BUF_FRAME)]],
+                                     texture2d<float> src
+                                     [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float2 step = q.params.zw;
-  const float w[5] = { 0.227027, 0.1945946, 0.1216216,
-		       0.054054, 0.016216 };
+  const float w[5] = { 0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216 };
   float3 c = src.sample (smp, in.uv).rgb * w[0];
   for (int i = 1; i < 5; ++i) {
-    c += src.sample (smp, in.uv + step * (float) i).rgb * w[i];
-    c += src.sample (smp, in.uv - step * (float) i).rgb * w[i];
+    c += src.sample (smp, in.uv + step * (float)i).rgb * w[i];
+    c += src.sample (smp, in.uv - step * (float)i).rgb * w[i];
   }
   return float4 (c, 1.0);
 }
@@ -103,12 +98,13 @@ static inline float3 moppe_aces (float3 x) {
 // and then a colorist-style CDL grade, vibrance, grain, and
 // vignette finish the frame.  The HUD is drawn afterwards and
 // stays pixel-accurate.
-fragment float4
-present_fragment (QuadVaryings in [[stage_in]],
-		  constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
-		  texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]],
-		  texture2d<float> bloom [[texture(MOPPE_TEX_BLOOM)]])
-{
+fragment float4 present_fragment (QuadVaryings in [[stage_in]],
+                                  constant MoppeQuadUniforms& q
+                                  [[buffer (MOPPE_BUF_FRAME)]],
+                                  texture2d<float> scene
+                                  [[texture (MOPPE_TEX_SCENE)]],
+                                  texture2d<float> bloom
+                                  [[texture (MOPPE_TEX_BLOOM)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float time = q.params.y;
 
@@ -118,8 +114,8 @@ present_fragment (QuadVaryings in [[stage_in]],
   const float rr = dot (centered_uv, centered_uv);
   const float2 fringe = centered_uv * rr * 0.010;
   float3 color = float3 (scene.sample (smp, in.uv + fringe).r,
-			 scene.sample (smp, in.uv).g,
-			 scene.sample (smp, in.uv - fringe).b);
+                         scene.sample (smp, in.uv).g,
+                         scene.sample (smp, in.uv - fringe).b);
 
   // Eye adaptation, then bloom (the bright pass already saw the
   // exposed scene, so it adds in matching units).
@@ -135,8 +131,8 @@ present_fragment (QuadVaryings in [[stage_in]],
     const float dist = length (d);
 
     const float veil = exp (-dist * 2.6) * 0.15;
-    const float streak = exp (-abs (d.y) * 46.0)
-      * exp (-abs (d.x) * 3.2) * 0.42;
+    const float streak =
+      exp (-abs (d.y) * 46.0) * exp (-abs (d.x) * 3.2) * 0.42;
     color += float3 (1.0, 0.86, 0.62) * (veil + streak) * q.sun.z;
 
     const float2 sun_c = q.sun.xy - 0.5;
@@ -150,8 +146,7 @@ present_fragment (QuadVaryings in [[stage_in]],
     for (int g = 0; g < 3; ++g) {
       float2 gd = in.uv - (0.5 - sun_c * ghost_k[g]);
       gd.x *= q.sun.w;
-      const float falloff =
-	exp (-dot (gd, gd) / (ghost_r[g] * ghost_r[g]));
+      const float falloff = exp (-dot (gd, gd) / (ghost_r[g] * ghost_r[g]));
       color += ghost_tint[g] * falloff * 0.05 * q.sun.z;
     }
   }
@@ -165,10 +160,8 @@ present_fragment (QuadVaryings in [[stage_in]],
   // Warm print-film base with cyan-blue shadow density. Keep the treatment
   // restrained: mustard grass, coral earth, turquoise water, and creamy
   // highlights should feel designed without flattening the time of day.
-  color = color * float3 (1.045, 1.005, 0.955)
-        + float3 (-0.004, 0.002, 0.012);
-  color = pow (max (color, float3 (0.0)),
-	       float3 (1.05, 1.02, 1.00));
+  color = color * float3 (1.045, 1.005, 0.955) + float3 (-0.004, 0.002, 0.012);
+  color = pow (max (color, float3 (0.0)), float3 (1.05, 1.02, 1.00));
 
   const float grade_luma = dot (color, float3 (0.299, 0.587, 0.114));
   const float shadow_tone = 1.0 - smoothstep (0.10, 0.48, grade_luma);
@@ -181,23 +174,21 @@ present_fragment (QuadVaryings in [[stage_in]],
   const float luma = dot (color, float3 (0.299, 0.587, 0.114));
   const float maxc = max (color.r, max (color.g, color.b));
   const float minc = min (color.r, min (color.g, color.b));
-  color = mix (float3 (luma), color,
-	       1.0 + 0.10 * (1.0 - (maxc - minc)));
+  color = mix (float3 (luma), color, 1.0 + 0.10 * (1.0 - (maxc - minc)));
 
   // Animated film grain, stronger in the shadows.  Hashed from the
   // pixel coordinate (bounded first: sin() loses precision on big
   // arguments) so it's per-pixel, not a smooth gradient.
-  const float2 gp = fmod (in.position.xy
-			  + float2 (time * 173.0, time * 251.0),
-			  1024.0);
-  const float grain = fract (sin (dot (gp, float2 (12.9898, 78.233)))
-			     * 43758.5453);
+  const float2 gp =
+    fmod (in.position.xy + float2 (time * 173.0, time * 251.0), 1024.0);
+  const float grain =
+    fract (sin (dot (gp, float2 (12.9898, 78.233))) * 43758.5453);
   const float gl = dot (color, float3 (0.299, 0.587, 0.114));
   color += (grain - 0.5) * 0.020 * (1.0 - 0.65 * gl);
 
   const float2 centered = centered_uv * float2 (1.0, 0.72);
-  const float vignette = 1.0 - 0.09
-    * smoothstep (0.22, 0.72, dot (centered, centered));
+  const float vignette =
+    1.0 - 0.09 * smoothstep (0.22, 0.72, dot (centered, centered));
   color *= vignette;
 
   if (q.params.w > 0.5) {
@@ -205,10 +196,9 @@ present_fragment (QuadVaryings in [[stage_in]],
     // grade below 1.0, then let only true scene highlights rise above
     // diffuse white. The live headroom tracks the current display mode.
     float3 linear = pow (saturate (color), 2.2);
-    const float peak = max (hdr_color.r,
-			    max (hdr_color.g, hdr_color.b));
+    const float peak = max (hdr_color.r, max (hdr_color.g, hdr_color.b));
     const float extra = min (max (log2 (max (peak, 1.0)), 0.0) * 0.42,
-			     max (q.params.z - 1.0, 0.0));
+                             max (q.params.z - 1.0, 0.0));
     linear += hdr_color / max (peak, 0.0001) * extra * vignette;
     return float4 (min (linear, float3 (q.params.z)), 1.0);
   }
@@ -219,11 +209,11 @@ present_fragment (QuadVaryings in [[stage_in]],
 // Underwater grade: sinusoidal wobble, blue-green mix, vertical
 // murk (darker toward the bottom -- GL's uv.y gradient, flipped),
 // drifting shimmer.
-fragment float4
-underwater_fragment (QuadVaryings in [[stage_in]],
-		     constant MoppeQuadUniforms& q [[buffer(MOPPE_BUF_FRAME)]],
-		     texture2d<float> scene [[texture(MOPPE_TEX_SCENE)]])
-{
+fragment float4 underwater_fragment (QuadVaryings in [[stage_in]],
+                                     constant MoppeQuadUniforms& q
+                                     [[buffer (MOPPE_BUF_FRAME)]],
+                                     texture2d<float> scene
+                                     [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float time = q.params.y;
 
@@ -239,8 +229,7 @@ underwater_fragment (QuadVaryings in [[stage_in]],
   c *= 0.75 + 0.25 * (1.0 - in.uv.y);
 
   // Drifting shimmer (multiplicative, as in the GL build).
-  c *= 0.95 + 0.05 * sin (time * 1.7 + in.uv.x * 9.0
-			  + in.uv.y * 4.0);
+  c *= 0.95 + 0.05 * sin (time * 1.7 + in.uv.x * 9.0 + in.uv.y * 4.0);
 
   return float4 (c, 1.0);
 }

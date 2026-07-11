@@ -61,16 +61,12 @@ namespace moppe::terrain {
   // Editing one of these values changes graph construction; it never
   // mutates an already-built field or raster.
   struct GeologicalRecipe {
-    GeologicalSeeds seeds { };
-    DomainWarpParameters warp { };
-    RemappedNoiseParameters continent {
-      { 3, 4, 2, 0.5f }, 0.5f, 0.5f
-    };
-    RemappedNoiseParameters plains {
-      { 12, 4, 2, 0.5f }, 0.5f, 0.5f
-    };
+    GeologicalSeeds seeds {};
+    DomainWarpParameters warp {};
+    RemappedNoiseParameters continent { { 3, 4, 2, 0.5f }, 0.5f, 0.5f };
+    RemappedNoiseParameters plains { { 12, 4, 2, 0.5f }, 0.5f, 0.5f };
     FractalNoiseParameters mountains { 6, 6, 2, 0.55f };
-    GeologicalBlendParameters blend { };
+    GeologicalBlendParameters blend {};
   };
 
   struct GeologicalFields {
@@ -91,11 +87,10 @@ namespace moppe::terrain {
   GeologicalFields make_geological_fields (const GeologicalRecipe& recipe);
   GeologicalFields make_geological_fields (const GeologicalSeeds& seeds);
   ScalarField geological_layer (const GeologicalFields& fields,
-				 GeologicalLayer layer);
+                                GeologicalLayer layer);
   const char* geological_layer_name (GeologicalLayer layer);
   std::string_view geological_layer_id (GeologicalLayer layer);
-  std::optional<GeologicalLayer> geological_layer_from_id
-    (std::string_view id);
+  std::optional<GeologicalLayer> geological_layer_from_id (std::string_view id);
 }
 
 #endif

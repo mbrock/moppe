@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+case "${1-}" in
+  "")
+    mode=-i
+    ;;
+  --check)
+    mode=--dry-run
+    ;;
+  *)
+    echo "usage: tools/format [--check]" >&2
+    exit 2
+    ;;
+esac
+
+if ! command -v clang-format >/dev/null 2>&1; then
+  echo "clang-format is required (brew install llvm)" >&2
+  exit 1
+fi
+
+git ls-files -z -- \
+  '*.c' '*.cc' '*.cpp' '*.cxx' \
+  '*.h' '*.hh' '*.hpp' '*.hxx' \
+  '*.m' '*.mm' '*.metal' |
+  xargs -0 clang-format "$mode" --Werror

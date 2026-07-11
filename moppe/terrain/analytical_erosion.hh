@@ -13,8 +13,9 @@ namespace moppe::terrain {
     AnalyticalErosionReport report;
   };
 
-  AnalyticalErosionResult erode_analytically
-    (const TerrainView& terrain, const AnalyticalErosion& parameters);
+  AnalyticalErosionResult
+  erode_analytically (const TerrainView& terrain,
+                      const AnalyticalErosion& parameters);
 }
 
 #endif

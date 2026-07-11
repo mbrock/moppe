@@ -9,41 +9,46 @@
 #include <vector>
 
 namespace moppe {
-namespace game {
-  // Spinning golden pickup stars scattered over the terrain; some
-  // hover high enough that only the jump jets reach them.
-  class Stars {
-  public:
-    Stars ();
+  namespace game {
+    // Spinning golden pickup stars scattered over the terrain; some
+    // hover high enough that only the jump jets reach them.
+    class Stars {
+    public:
+      Stars ();
 
-    void generate (const map::HeightMap& map,
-		   const WorldParams& params, int count);
+      void generate (const map::HeightMap& map,
+                     const WorldParams& params,
+                     int count);
 
-    // Checks pickups; returns how many were grabbed this tick
-    int update (const Vector3D& vehicle_pos, float time, float dt);
+      // Checks pickups; returns how many were grabbed this tick
+      int update (const Vector3D& vehicle_pos, float time, float dt);
 
-    void render (render::Renderer& r, const FrameEnv& env);
+      void render (render::Renderer& r, const FrameEnv& env);
 
-    int collected () const { return m_collected; }
-    const Vector3D& last_pos () const { return m_last_pos; }
+      int collected () const {
+        return m_collected;
+      }
+      const Vector3D& last_pos () const {
+        return m_last_pos;
+      }
 
-  private:
-    struct Star {
-      Vector3D home;
-      Vector3D pos;
-      float phase;
-      float respawn;
+    private:
+      struct Star {
+        Vector3D home;
+        Vector3D pos;
+        float phase;
+        float respawn;
+      };
+
+      std::vector<Star> m_stars;
+      render::MeshPtr m_body;
+      render::MeshPtr m_halo;
+      int m_collected;
+      Vector3D m_last_pos;
+      Vector3D m_period;
+      bool m_periodic = false;
     };
-
-    std::vector<Star> m_stars;
-    render::MeshPtr m_body;
-    render::MeshPtr m_halo;
-    int m_collected;
-    Vector3D m_last_pos;
-    Vector3D m_period;
-    bool m_periodic = false;
-  };
-}
+  }
 }
 
 #endif

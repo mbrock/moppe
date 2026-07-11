@@ -32,12 +32,7 @@ namespace moppe::terrain {
     }
   };
 
-  enum class WaterBodyClass {
-    Puddle,
-    Pond,
-    Lake,
-    Sea
-  };
+  enum class WaterBodyClass { Puddle, Pond, Lake, Sea };
 
   struct WaterBody {
     static constexpr std::uint32_t no_cell =
@@ -70,13 +65,12 @@ namespace moppe::terrain {
     float minimum_volume_m3 = 100.0f;
   };
 
-  FloodField analyze_standing_water
-    (const TerrainView& terrain, float sea_level);
-  LakeCensus census_lakes
-    (const FloodField& flood, float wet_epsilon = 1e-7f);
-  ScalarRaster permanent_water_surface
-    (const FloodField& flood, const LakeCensus& census,
-     const WaterPermanence& permanence = { });
+  FloodField analyze_standing_water (const TerrainView& terrain,
+                                     float sea_level);
+  LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);
+  ScalarRaster permanent_water_surface (const FloodField& flood,
+                                        const LakeCensus& census,
+                                        const WaterPermanence& permanence = {});
 }
 
 #endif

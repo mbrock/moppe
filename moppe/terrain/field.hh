@@ -15,8 +15,8 @@ namespace moppe::terrain {
       float value;
     };
 
-    struct CoordinateX { };
-    struct CoordinateY { };
+    struct CoordinateX {};
+    struct CoordinateY {};
 
     struct Add {
       NodePtr left;
@@ -95,10 +95,20 @@ namespace moppe::terrain {
       float gain;
     };
 
-    using Operation = std::variant
-      <Constant, CoordinateX, CoordinateY, Add, Subtract, Multiply,
-       MultiplyAdd, Sine, Smoothstep, PerlinNoise, FbmNoise, RidgedNoise,
-       PeriodicFbmNoise, PeriodicRidgedNoise>;
+    using Operation = std::variant<Constant,
+                                   CoordinateX,
+                                   CoordinateY,
+                                   Add,
+                                   Subtract,
+                                   Multiply,
+                                   MultiplyAdd,
+                                   Sine,
+                                   Smoothstep,
+                                   PerlinNoise,
+                                   FbmNoise,
+                                   RidgedNoise,
+                                   PeriodicFbmNoise,
+                                   PeriodicRidgedNoise>;
 
     // Nodes are immutable and may be shared by several downstream
     // expressions.  Reusing a ScalarField therefore forms a DAG rather
@@ -114,8 +124,9 @@ namespace moppe::terrain {
   public:
     explicit ScalarField (expression::NodePtr node);
 
-    const expression::NodePtr& node () const noexcept
-    { return m_node; }
+    const expression::NodePtr& node () const noexcept {
+      return m_node;
+    }
 
   private:
     expression::NodePtr m_node;
@@ -126,38 +137,50 @@ namespace moppe::terrain {
   ScalarField coordinate_y ();
   ScalarField sin (const ScalarField& operand);
   ScalarField multiply_add (const ScalarField& multiplier,
-			    const ScalarField& multiplicand,
-			    const ScalarField& addend);
-  ScalarField smoothstep (float edge0, float edge1,
-			  const ScalarField& operand);
-  ScalarField perlin_noise (std::uint32_t seed, const ScalarField& x,
-			    const ScalarField& y);
-  ScalarField fbm_noise (std::uint32_t seed, const ScalarField& x,
-			 const ScalarField& y, int octaves,
-			 float lacunarity, float gain);
-  ScalarField ridged_noise (std::uint32_t seed, const ScalarField& x,
-			    const ScalarField& y, int octaves,
-			    float lacunarity, float gain);
-  ScalarField periodic_fbm_noise
-    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
-     int period_x, int period_y, int octaves, int lacunarity, float gain);
-  ScalarField periodic_ridged_noise
-    (std::uint32_t seed, const ScalarField& x, const ScalarField& y,
-     int period_x, int period_y, int octaves, int lacunarity, float gain);
+                            const ScalarField& multiplicand,
+                            const ScalarField& addend);
+  ScalarField smoothstep (float edge0, float edge1, const ScalarField& operand);
+  ScalarField
+  perlin_noise (std::uint32_t seed, const ScalarField& x, const ScalarField& y);
+  ScalarField fbm_noise (std::uint32_t seed,
+                         const ScalarField& x,
+                         const ScalarField& y,
+                         int octaves,
+                         float lacunarity,
+                         float gain);
+  ScalarField ridged_noise (std::uint32_t seed,
+                            const ScalarField& x,
+                            const ScalarField& y,
+                            int octaves,
+                            float lacunarity,
+                            float gain);
+  ScalarField periodic_fbm_noise (std::uint32_t seed,
+                                  const ScalarField& x,
+                                  const ScalarField& y,
+                                  int period_x,
+                                  int period_y,
+                                  int octaves,
+                                  int lacunarity,
+                                  float gain);
+  ScalarField periodic_ridged_noise (std::uint32_t seed,
+                                     const ScalarField& x,
+                                     const ScalarField& y,
+                                     int period_x,
+                                     int period_y,
+                                     int octaves,
+                                     int lacunarity,
+                                     float gain);
 
-  ScalarField operator + (const ScalarField& left,
-			  const ScalarField& right);
-  ScalarField operator * (const ScalarField& left,
-			  const ScalarField& right);
-  ScalarField operator - (const ScalarField& left,
-			  const ScalarField& right);
+  ScalarField operator+ (const ScalarField& left, const ScalarField& right);
+  ScalarField operator* (const ScalarField& left, const ScalarField& right);
+  ScalarField operator- (const ScalarField& left, const ScalarField& right);
 
-  ScalarField operator + (const ScalarField& left, float right);
-  ScalarField operator + (float left, const ScalarField& right);
-  ScalarField operator * (const ScalarField& left, float right);
-  ScalarField operator * (float left, const ScalarField& right);
-  ScalarField operator - (const ScalarField& left, float right);
-  ScalarField operator - (float left, const ScalarField& right);
+  ScalarField operator+ (const ScalarField& left, float right);
+  ScalarField operator+ (float left, const ScalarField& right);
+  ScalarField operator* (const ScalarField& left, float right);
+  ScalarField operator* (float left, const ScalarField& right);
+  ScalarField operator- (const ScalarField& left, float right);
+  ScalarField operator- (float left, const ScalarField& right);
 
   // Counts node identities, not tree visits, so shared subexpressions
   // are counted once.

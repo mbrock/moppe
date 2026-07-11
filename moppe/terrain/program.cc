@@ -5,56 +5,57 @@
 #include <type_traits>
 
 namespace moppe::terrain {
-  TerrainProgram make_geological_program
-    (std::uint32_t root_seed, GeologicalLayer layer) {
-    return {
-      .source = {
-	.recipe = make_geological_recipe (root_seed),
-	.layer = layer
-      },
-      .randomness = { .seed = root_seed, .offset = 3 },
-      .transforms = { NormalizeHeights { } }
-    };
+  TerrainProgram make_geological_program (std::uint32_t root_seed,
+                                          GeologicalLayer layer) {
+    return { .source = { .recipe = make_geological_recipe (root_seed),
+                         .layer = layer },
+             .randomness = { .seed = root_seed, .offset = 3 },
+             .transforms = { NormalizeHeights {} } };
   }
 
-  TerrainProgram make_default_world_program
-    (std::uint32_t root_seed) {
-    return make_world_program
-      (root_seed, TerrainGenerationProfile::Research);
+  TerrainProgram make_default_world_program (std::uint32_t root_seed) {
+    return make_world_program (root_seed, TerrainGenerationProfile::Research);
   }
 
-  int profile_droplet_count
-    (TerrainGenerationProfile profile) noexcept {
+  int profile_droplet_count (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
-    case TerrainGenerationProfile::Fast: return 100000;
-    case TerrainGenerationProfile::Play: return 300000;
-    case TerrainGenerationProfile::Research: return 500000;
+    case TerrainGenerationProfile::Fast:
+      return 100000;
+    case TerrainGenerationProfile::Play:
+      return 300000;
+    case TerrainGenerationProfile::Research:
+      return 500000;
     }
     return 100000;
   }
 
-  int profile_stream_power_iterations
-    (TerrainGenerationProfile profile) noexcept {
+  int profile_stream_power_iterations (
+    TerrainGenerationProfile profile) noexcept {
     switch (profile) {
-    case TerrainGenerationProfile::Fast: return 4;
-    case TerrainGenerationProfile::Play: return 4;
-    case TerrainGenerationProfile::Research: return 4;
+    case TerrainGenerationProfile::Fast:
+      return 4;
+    case TerrainGenerationProfile::Play:
+      return 4;
+    case TerrainGenerationProfile::Research:
+      return 4;
     }
     return 4;
   }
 
-  std::string_view profile_id
-    (TerrainGenerationProfile profile) noexcept {
+  std::string_view profile_id (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
-    case TerrainGenerationProfile::Fast: return "fast";
-    case TerrainGenerationProfile::Play: return "play";
-    case TerrainGenerationProfile::Research: return "research";
+    case TerrainGenerationProfile::Fast:
+      return "fast";
+    case TerrainGenerationProfile::Play:
+      return "play";
+    case TerrainGenerationProfile::Research:
+      return "research";
     }
     return "play";
   }
 
-  TerrainProgram make_world_program
-    (std::uint32_t root_seed, TerrainGenerationProfile profile) {
+  TerrainProgram make_world_program (std::uint32_t root_seed,
+                                     TerrainGenerationProfile profile) {
     TerrainProgram program = make_geological_program (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
     program.transforms.emplace_back (PowerHeights { 1.15f });
@@ -62,8 +63,7 @@ namespace moppe::terrain {
     // four-pass setting follows the recorded stream-power comparison.
     program.transforms.emplace_back (AnalyticalErosion {
       .time_years = 200000.0f,
-      .fixed_point_iterations = profile_stream_power_iterations (profile)
-    });
+      .fixed_point_iterations = profile_stream_power_iterations (profile) });
     // The analytical stage leaves one-cell discontinuities (its paper calls
     // hillslope treatment essential); a talus pass smooths them before the
     // droplet budget, which is far thinner per cell at rider resolution
@@ -74,108 +74,110 @@ namespace moppe::terrain {
       .batch_size = 256,
       .max_steps = 512,
       .minimum_water = 0.01f,
-      .sediment_at_termination = SedimentDisposition::Deposit
-    });
+      .sediment_at_termination = SedimentDisposition::Deposit });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
     program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
     // Channel beds are stamped last so smoothing cannot refill them.
-    program.transforms.emplace_back (ChannelCarving { });
+    program.transforms.emplace_back (ChannelCarving {});
     return program;
   }
 
   void validate_program (const TerrainProgram& program) {
     validate_geological_recipe (program.source.recipe);
     for (const TerrainTransform& transform : program.transforms) {
-      std::visit ([] (const auto& operation) {
-	using T = std::decay_t<decltype (operation)>;
-	if constexpr (std::is_same_v<T, PowerHeights>) {
-	  if (!std::isfinite (operation.exponent)
-	      || operation.exponent <= 0.0f)
-	    throw std::invalid_argument
-	      ("height exponent must be positive and finite");
-	} else if constexpr (std::is_same_v<T, HydraulicErosion>) {
-	  if (operation.droplets < 0 || operation.batch_size <= 0
-	      || operation.max_steps <= 0
-	      || !std::isfinite (operation.minimum_water)
-	      || operation.minimum_water < 0.0f
-	      || operation.minimum_water >= 1.0f)
-	    throw std::invalid_argument
-	      ("hydraulic erosion needs a non-negative droplet count "
-	       "and positive batch size and lifetime");
-	} else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
-	  if (!std::isfinite (operation.time_years)
-	      || operation.time_years < 0.0f
-	      || !std::isfinite (operation.uplift_m_per_year)
-	      || operation.uplift_m_per_year < 0.0f
-	      || !std::isfinite (operation.erodibility)
-	      || operation.erodibility <= 0.0f
-	      || !std::isfinite (operation.area_exponent)
-	      || operation.area_exponent < 0.0f
-	      || !std::isfinite (operation.sea_level)
-	      || operation.fixed_point_iterations <= 0
-	      || !std::isfinite (operation.relaxation)
-	      || operation.relaxation <= 0.0f
-	      || operation.relaxation > 1.0f)
-	    throw std::invalid_argument
-	      ("analytical erosion parameters are invalid");
-	} else if constexpr (std::is_same_v<T, ThermalErosion>) {
-	  if (operation.iterations < 0
-	      || !std::isfinite (operation.talus)
-	      || operation.talus < 0.0f)
-	    throw std::invalid_argument
-	      ("thermal erosion parameters are invalid");
-	} else if constexpr (std::is_same_v<T, ChannelCarving>) {
-	  if (!std::isfinite (operation.sea_level)
-	      || !std::isfinite (operation.minimum_area_cells)
-	      || operation.minimum_area_cells <= 0.0f
-	      || !std::isfinite (operation.depth_per_sqrt_m2)
-	      || operation.depth_per_sqrt_m2 < 0.0f
-	      || !std::isfinite (operation.minimum_depth_m)
-	      || operation.minimum_depth_m < 0.0f
-	      || !std::isfinite (operation.maximum_depth_m)
-	      || operation.maximum_depth_m < operation.minimum_depth_m
-	      || !std::isfinite (operation.bank_blend_m)
-	      || operation.bank_blend_m < 0.0f)
-	    throw std::invalid_argument
-	      ("channel carving parameters are invalid");
-	}
-      }, transform);
+      std::visit (
+        [] (const auto& operation) {
+          using T = std::decay_t<decltype (operation)>;
+          if constexpr (std::is_same_v<T, PowerHeights>) {
+            if (!std::isfinite (operation.exponent) ||
+                operation.exponent <= 0.0f)
+              throw std::invalid_argument (
+                "height exponent must be positive and finite");
+          } else if constexpr (std::is_same_v<T, HydraulicErosion>) {
+            if (operation.droplets < 0 || operation.batch_size <= 0 ||
+                operation.max_steps <= 0 ||
+                !std::isfinite (operation.minimum_water) ||
+                operation.minimum_water < 0.0f ||
+                operation.minimum_water >= 1.0f)
+              throw std::invalid_argument (
+                "hydraulic erosion needs a non-negative droplet count "
+                "and positive batch size and lifetime");
+          } else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
+            if (!std::isfinite (operation.time_years) ||
+                operation.time_years < 0.0f ||
+                !std::isfinite (operation.uplift_m_per_year) ||
+                operation.uplift_m_per_year < 0.0f ||
+                !std::isfinite (operation.erodibility) ||
+                operation.erodibility <= 0.0f ||
+                !std::isfinite (operation.area_exponent) ||
+                operation.area_exponent < 0.0f ||
+                !std::isfinite (operation.sea_level) ||
+                operation.fixed_point_iterations <= 0 ||
+                !std::isfinite (operation.relaxation) ||
+                operation.relaxation <= 0.0f || operation.relaxation > 1.0f)
+              throw std::invalid_argument (
+                "analytical erosion parameters are invalid");
+          } else if constexpr (std::is_same_v<T, ThermalErosion>) {
+            if (operation.iterations < 0 || !std::isfinite (operation.talus) ||
+                operation.talus < 0.0f)
+              throw std::invalid_argument (
+                "thermal erosion parameters are invalid");
+          } else if constexpr (std::is_same_v<T, ChannelCarving>) {
+            if (!std::isfinite (operation.sea_level) ||
+                !std::isfinite (operation.minimum_area_cells) ||
+                operation.minimum_area_cells <= 0.0f ||
+                !std::isfinite (operation.depth_per_sqrt_m2) ||
+                operation.depth_per_sqrt_m2 < 0.0f ||
+                !std::isfinite (operation.minimum_depth_m) ||
+                operation.minimum_depth_m < 0.0f ||
+                !std::isfinite (operation.maximum_depth_m) ||
+                operation.maximum_depth_m < operation.minimum_depth_m ||
+                !std::isfinite (operation.bank_blend_m) ||
+                operation.bank_blend_m < 0.0f)
+              throw std::invalid_argument (
+                "channel carving parameters are invalid");
+          }
+        },
+        transform);
     }
   }
 
-  std::string_view terrain_transform_id
-    (const TerrainTransform& transform) {
-    return std::visit ([] (const auto& operation) -> std::string_view {
-      using T = std::decay_t<decltype (operation)>;
-      if constexpr (std::is_same_v<T, NormalizeHeights>)
-	return "normalize";
-      else if constexpr (std::is_same_v<T, PowerHeights>)
-	return "power";
-      else if constexpr (std::is_same_v<T, HydraulicErosion>)
-	return "hydraulic";
-      else if constexpr (std::is_same_v<T, AnalyticalErosion>)
-	return "analytical";
-      else if constexpr (std::is_same_v<T, ChannelCarving>)
-	return "carve";
-      else
-	return "thermal";
-    }, transform);
+  std::string_view terrain_transform_id (const TerrainTransform& transform) {
+    return std::visit (
+      [] (const auto& operation) -> std::string_view {
+        using T = std::decay_t<decltype (operation)>;
+        if constexpr (std::is_same_v<T, NormalizeHeights>)
+          return "normalize";
+        else if constexpr (std::is_same_v<T, PowerHeights>)
+          return "power";
+        else if constexpr (std::is_same_v<T, HydraulicErosion>)
+          return "hydraulic";
+        else if constexpr (std::is_same_v<T, AnalyticalErosion>)
+          return "analytical";
+        else if constexpr (std::is_same_v<T, ChannelCarving>)
+          return "carve";
+        else
+          return "thermal";
+      },
+      transform);
   }
 
-  TransformSemantics terrain_transform_semantics
-    (const TerrainTransform& transform) {
-    return std::visit ([] (const auto& operation) -> TransformSemantics {
-      using T = std::decay_t<decltype (operation)>;
-      if constexpr (std::is_same_v<T, PowerHeights>)
-	return { SpatialScope::Pointwise, EvaluationOrder::Direct };
-      else if constexpr (std::is_same_v<T, NormalizeHeights>)
-	return { SpatialScope::Global, EvaluationOrder::Reduction };
-      else if constexpr (std::is_same_v<T, ThermalErosion>)
-	return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
-      else if constexpr (std::is_same_v<T, ChannelCarving>)
-	return { SpatialScope::Global, EvaluationOrder::Direct };
-      else
-	return { SpatialScope::Global, EvaluationOrder::Iterative };
-    }, transform);
+  TransformSemantics
+  terrain_transform_semantics (const TerrainTransform& transform) {
+    return std::visit (
+      [] (const auto& operation) -> TransformSemantics {
+        using T = std::decay_t<decltype (operation)>;
+        if constexpr (std::is_same_v<T, PowerHeights>)
+          return { SpatialScope::Pointwise, EvaluationOrder::Direct };
+        else if constexpr (std::is_same_v<T, NormalizeHeights>)
+          return { SpatialScope::Global, EvaluationOrder::Reduction };
+        else if constexpr (std::is_same_v<T, ThermalErosion>)
+          return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
+        else if constexpr (std::is_same_v<T, ChannelCarving>)
+          return { SpatialScope::Global, EvaluationOrder::Direct };
+        else
+          return { SpatialScope::Global, EvaluationOrder::Iterative };
+      },
+      transform);
   }
 }
