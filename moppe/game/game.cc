@@ -444,6 +444,16 @@ namespace game {
       m_gen_stage = 6;
     }
 
+    // The recipe behind the current map: entering the lab shows the
+    // world's own pipeline instead of rebuilding a bare geological
+    // field.  City and pico maps are not program outputs; they get
+    // the geological recipe as a starting point for experiments.
+    terrain::TerrainProgram lab_program () const {
+      if (m_terrain_lab_preview || m_world.city_mode || m_world.pico_mode)
+	return terrain::make_geological_program (m_seed);
+      return terrain::make_world_program (m_seed, m_generation_profile);
+    }
+
     void finish_setup () {
       render::Renderer& r = *m_renderer;
 
@@ -546,7 +556,7 @@ namespace game {
       remember_seed (m_world, m_generation_profile, m_seed);
       if (m_start_in_terrain_lab) {
 	m_terrain_lab.enter
-	  (r, m_map, m_terrain, m_world, m_seed,
+	  (r, m_map, m_terrain, m_world, lab_program (),
 	   sun_direction_for (SUN_HEIGHT));
 	m_start_in_terrain_lab = false;
       }
@@ -567,23 +577,6 @@ namespace game {
       m_total_time += dt;
       const float total_time = m_total_time;
 
-      // Terrain inspection pauses actors and vehicle physics, but keeps the
-      // visual clock alive so sky and water remain a useful frame of
-      // reference around the heightmap.
-      if (m_terrain_lab.active ()) {
-	m_terrain_lab.tick (dt);
-	return;
-      }
-
-      // Screenshot autopilot for headless verification: rides in a
-      // lazy arc with periodic boost-assisted leaps.
-      static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
-      if (demo && !m_water_inspection) {
-	input_go (1.0f);
-	input_turn (0.35f * std::sin (total_time * 0.25f));
-	input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
-      }
-
       // Weather: slowly drifting cloudiness with passing fronts.
       float cloudiness =
 	std::sin (total_time * 0.0003f) * 0.4f + 0.5f
@@ -597,6 +590,23 @@ namespace game {
       const Vector3D horizon = horizon_color_for (SUN_HEIGHT);
       m_fog = horizon * 0.82f
         + Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
+
+      // Terrain inspection pauses actors and vehicle physics, but keeps the
+      // visual clock, weather, and fog alive so sky and water remain a
+      // useful frame of reference around the heightmap.
+      if (m_terrain_lab.active ()) {
+	m_terrain_lab.tick (dt);
+	return;
+      }
+
+      // Screenshot autopilot for headless verification: rides in a
+      // lazy arc with periodic boost-assisted leaps.
+      static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
+      if (demo && !m_water_inspection) {
+	input_go (1.0f);
+	input_turn (0.35f * std::sin (total_time * 0.25f));
+	input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
+      }
 
       m_vehicle.update (dt);
       if (m_car_exists)
@@ -880,12 +890,14 @@ namespace game {
       fp.cam_right = Vector3D (view.m[0], view.m[4], view.m[8]);
       fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
       fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
-      fp.clear_color = terrain_lab
-	? (m_terrain_lab.cover_view ()
-	   ? Vector3D (0.10f, 0.13f, 0.16f)
-	   : Vector3D (0.012f, 0.016f, 0.022f))
+      // The lab's plane views render the game's own sky and haze; the
+      // torus is an abstract inspection object on a dark backdrop.
+      fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
+	? Vector3D (0.012f, 0.016f, 0.022f)
 	: m_fog;
-      const float scene_fog = terrain_lab ? 0.0f : m_world.fog_scale;
+      const float scene_fog = terrain_lab
+	? m_terrain_lab.scene_fog (m_world.fog_scale)
+	: m_world.fog_scale;
       fp.fog_scale = scene_fog;
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
       sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
@@ -954,7 +966,7 @@ namespace game {
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
-      if (!terrain_lab) {
+      if (!terrain_lab || !m_terrain_lab.torus_view ()) {
 	render::SkyParams sky;
 	sky.time = m_total_time;
 	sky.sun_height = SUN_HEIGHT;
@@ -1004,7 +1016,12 @@ namespace game {
       else
 	m_river_surface.draw (r, cam);
 
-      if (!terrain_lab) {
+      // The lab keeps the game's painted water while the map is the
+      // game's own; a rebuilt map invalidates the water sheets, so
+      // they disappear until the lab's own analysis draws ribbons.
+      if (!terrain_lab
+	  || (!m_terrain_lab.torus_view ()
+	      && m_terrain_lab.map_pristine ())) {
 	render::OceanParams ocean;
 	ocean.time = m_total_time;
 	ocean.fog_color = m_fog;
@@ -1207,7 +1224,8 @@ namespace game {
 	input_go (0);
 	input_boost (0);
 	m_terrain_lab.enter (*m_renderer, m_map, m_terrain, m_world,
-			     m_seed, sun_direction_for (SUN_HEIGHT));
+			     lab_program (),
+			     sun_direction_for (SUN_HEIGHT));
 	return;
       }
 

@@ -128,7 +128,7 @@ namespace game {
 
     UiRect add_stage_rect (int index) {
       const float gap = 3.0f;
-      const float width = (left_width - 4 * gap) / 5.0f;
+      const float width = (left_width - 5 * gap) / 6.0f;
       return { left_x + index * (width + gap), 497, width, 29 };
     }
 
@@ -171,6 +171,8 @@ namespace game {
 	return "STREAM POWER AGE";
       if (std::holds_alternative<terrain::HydraulicErosion> (stage))
 	return "WATER EROSION";
+      if (std::holds_alternative<terrain::ChannelCarving> (stage))
+	return "CHANNEL CARVE";
       return "TALUS RELAX";
     }
 
@@ -190,6 +192,12 @@ namespace game {
 	return format_count (hydraulic->droplets) + " drops / "
 	  + format_count (hydraulic->batch_size) + " batch / "
 	  + format_count (hydraulic->max_steps) + " steps";
+      if (const auto* carving =
+	  std::get_if<terrain::ChannelCarving> (&stage))
+	return format_float (carving->minimum_depth_m, 1) + ".."
+	  + format_float (carving->maximum_depth_m, 1) + " m beds @ "
+	  + format_count
+	      (static_cast<int> (carving->minimum_area_cells)) + " cells";
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       return std::to_string (thermal.iterations) + " passes @ "
 	+ format_float (thermal.talus, 4);
@@ -252,6 +260,8 @@ namespace game {
 	return 3;
       if (std::holds_alternative<terrain::ThermalErosion> (stage))
 	return 2;
+      if (std::holds_alternative<terrain::ChannelCarving> (stage))
+	return 5;
       return 0;
     }
 
@@ -296,6 +306,28 @@ namespace game {
 	return { "MAX STEPS", format_count (hydraulic->max_steps),
 	  ParameterDomain::Natural };
       }
+      if (const auto* carving =
+	  std::get_if<terrain::ChannelCarving> (&stage)) {
+	if (row == 0)
+	  return { "MIN AREA",
+	    format_count (static_cast<int> (carving->minimum_area_cells)),
+	    ParameterDomain::Continuous };
+	if (row == 1)
+	  return { "DEPTH SCALE",
+	    format_float (carving->depth_per_sqrt_m2 * 1000.0f, 2),
+	    ParameterDomain::Continuous };
+	if (row == 2)
+	  return { "MIN DEPTH (M)",
+	    format_float (carving->minimum_depth_m, 2),
+	    ParameterDomain::Continuous };
+	if (row == 3)
+	  return { "MAX DEPTH (M)",
+	    format_float (carving->maximum_depth_m, 2),
+	    ParameterDomain::Continuous };
+	return { "BANK BLEND (M)",
+	  format_float (carving->bank_blend_m, 1),
+	  ParameterDomain::Continuous };
+      }
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       if (row == 0)
 	return { "PASSES", std::to_string (thermal.iterations),
@@ -307,7 +339,7 @@ namespace game {
 
   TerrainLab::TerrainLab ()
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
-      m_active (false),
+      m_active (false), m_map_pristine (false),
       m_program (terrain::make_geological_program (0)),
       m_overlay (OverlayMode::None),
       m_selected_stage (-1), m_stage_scroll (0),
@@ -336,7 +368,8 @@ namespace game {
   void
   TerrainLab::enter (render::Renderer& renderer,
 		     map::RandomHeightMap& map, Terrain& terrain,
-		     const WorldParams& world, int seed,
+		     const WorldParams& world,
+		     const terrain::TerrainProgram& program,
 		     const Vector3D& sun_dir)
   {
     if (m_active)
@@ -351,8 +384,8 @@ namespace game {
     m_terrain = &terrain;
     m_world = &world;
     m_sun_dir = sun_dir;
-    m_program = terrain::make_geological_program
-      (static_cast<std::uint32_t> (seed));
+    m_program = program;
+    bool env_stages = false;
     if (const char* erosion = std::getenv ("MOPPE_LAB_EROSION")) {
       std::istringstream input (erosion);
       std::string part;
@@ -366,9 +399,12 @@ namespace game {
 	.minimum_water = 0.01f,
 	.sediment_at_termination = terrain::SedimentDisposition::Deposit
       });
+      env_stages = true;
     }
-    if (std::getenv ("MOPPE_LAB_ANALYTICAL"))
+    if (std::getenv ("MOPPE_LAB_ANALYTICAL")) {
       m_program.transforms.emplace_back (terrain::AnalyticalErosion { });
+      env_stages = true;
+    }
     m_selected_stage = -1;
     m_stage_scroll = 0;
     m_pointer_down = false;
@@ -412,7 +448,17 @@ namespace game {
     m_saved_heights.assign (map.raw_heights (),
 			    map.raw_heights () + count);
     m_active = true;
-    rebuild_program ();
+    // The map on screen IS this program's output (or the world it was
+    // loaded from): entering the lab is just another view of it, so
+    // don't rebuild.  The pipeline reruns only once something is
+    // edited.  Env-var stages are additions and do need a run.
+    m_checkpoints.clear ();
+    m_reports.clear ();
+    m_map_pristine = true;
+    if (env_stages)
+      rebuild_program ();
+    else
+      refresh ();
     if (std::getenv ("MOPPE_LAB_RIVERS"))
       drainage ();
     if (const char* stage = std::getenv ("MOPPE_LAB_STAGE")) {
@@ -508,6 +554,7 @@ namespace game {
     for (int y = 0; y < m_map->height (); ++y)
       for (int x = 0; x < m_map->width (); ++x)
 	m_map->set (x, y, m_saved_heights[i++]);
+    m_map_pristine = true;
     refresh (false);
   }
 
@@ -536,6 +583,7 @@ namespace game {
   {
     if (!m_evaluator)
       return;
+    m_map_pristine = false;
     m_evaluator->begin (m_program);
     m_checkpoints.clear ();
     m_reports.clear ();
@@ -561,6 +609,7 @@ namespace game {
       return;
     }
 
+    m_map_pristine = false;
     if (first_stage < static_cast<int> (m_checkpoints.size ()))
       m_evaluator->restore (m_checkpoints[first_stage]);
 
@@ -690,6 +739,10 @@ namespace game {
   TerrainLab::render_rivers (render::Renderer& renderer,
 			     const Vector3D& camera) const
   {
+    // A pristine map still renders the game's painted water sheets;
+    // the analysis ribbons would only double-draw on top of them.
+    if (m_map_pristine)
+      return;
     m_river_surface.draw (renderer, camera);
   }
 
@@ -1147,6 +1200,18 @@ namespace game {
       return row == 0 ? unit (hydraulic->droplets, 0.0f, 5000000.0f)
 	: row == 1 ? unit (hydraulic->batch_size, 1.0f, 4096.0f)
 	: unit (hydraulic->max_steps, 1.0f, 2048.0f);
+    if (const auto* carving =
+	std::get_if<terrain::ChannelCarving> (&stage)) {
+      if (row == 0)
+	return unit (carving->minimum_area_cells, 64.0f, 16384.0f);
+      if (row == 1)
+	return unit (carving->depth_per_sqrt_m2, 0.0f, 0.01f);
+      if (row == 2)
+	return unit (carving->minimum_depth_m, 0.0f, 4.0f);
+      if (row == 3)
+	return unit (carving->maximum_depth_m, 0.0f, 12.0f);
+      return unit (carving->bank_blend_m, 0.0f, 30.0f);
+    }
     if (const auto* thermal =
 	std::get_if<terrain::ThermalErosion> (&stage))
       return row == 0 ? unit (thermal->iterations, 0.0f, 20.0f)
@@ -1277,6 +1342,33 @@ namespace game {
       const int old = hydraulic->max_steps;
       hydraulic->max_steps = std::lround (mix (1.0f, 2048.0f));
       return hydraulic->max_steps != old;
+    }
+    if (auto* carving = std::get_if<terrain::ChannelCarving> (&stage)) {
+      if (row == 0) {
+	const float old = carving->minimum_area_cells;
+	carving->minimum_area_cells = mix (64.0f, 16384.0f);
+	return carving->minimum_area_cells != old;
+      }
+      if (row == 1) {
+	const float old = carving->depth_per_sqrt_m2;
+	carving->depth_per_sqrt_m2 = mix (0.0f, 0.01f);
+	return carving->depth_per_sqrt_m2 != old;
+      }
+      if (row == 2) {
+	const float old = carving->minimum_depth_m;
+	carving->minimum_depth_m = mix
+	  (0.0f, std::min (4.0f, carving->maximum_depth_m));
+	return carving->minimum_depth_m != old;
+      }
+      if (row == 3) {
+	const float old = carving->maximum_depth_m;
+	carving->maximum_depth_m = mix
+	  (std::max (0.0f, carving->minimum_depth_m), 12.0f);
+	return carving->maximum_depth_m != old;
+      }
+      const float old = carving->bank_blend_m;
+      carving->bank_blend_m = mix (0.0f, 30.0f);
+      return carving->bank_blend_m != old;
     }
     if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
       if (row == 0) {
@@ -1456,7 +1548,7 @@ namespace game {
 	return;
       }
     }
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
       if (!add_stage_rect (i).contains (x, y))
 	continue;
       if (i == 0)
@@ -1474,8 +1566,10 @@ namespace game {
 	  .sediment_at_termination =
 	    terrain::SedimentDisposition::Deposit
 	});
-      else
+      else if (i == 4)
 	append_stage (terrain::ThermalErosion { 2, 0.003f });
+      else
+	append_stage (terrain::ChannelCarving { });
       return;
     }
     for (int i = 0; i < 4; ++i) {
@@ -1535,19 +1629,30 @@ namespace game {
     }
   }
 
+  float
+  TerrainLab::scene_fog (float) const
+  {
+    // Both plane views orbit kilometres above the map; gameplay fog
+    // density would swallow it whole, so keep a faint aerial haze.
+    return m_view == ViewMode::Torus ? 0.0f : 0.00004f;
+  }
+
   void
   TerrainLab::refresh (bool inspection_fog)
   {
     if (!m_renderer || !m_map || !m_terrain || !m_world)
       return;
-    const bool interactive_preview = inspection_fog;
+    // A pristine map is the game's own terrain with baked normals:
+    // render it at full quality.  Preview quality (GPU-derived
+    // normals, small shadow map) is for maps the lab has rebuilt and
+    // may rebuild again while a parameter drags.
+    const bool interactive_preview = inspection_fog
+      && (!m_map_pristine || m_view == ViewMode::Torus);
     if (!interactive_preview)
       m_map->recompute_normals ();
     WorldParams display = *m_world;
-    if (inspection_fog) {
-      display.fog_scale = m_view == ViewMode::Cover
-	? 0.00011f : 0.0f;
-    }
+    if (inspection_fog)
+      display.fog_scale = scene_fog (m_world->fog_scale);
     const render::TerrainProjection projection =
       inspection_fog && m_view == ViewMode::Torus
       ? render::TerrainProjection::Torus
@@ -1827,12 +1932,12 @@ namespace game {
     }
 
     static const char* add_labels[] = {
-      "+NORM", "+POWER", "+AGE", "+DROP", "+TALUS"
+      "+NORM", "+POWER", "+AGE", "+DROP", "+TALUS", "+CARVE"
     };
     static const char* edit_labels[] = {
       "UP", "DOWN", "COPY", "DEL"
     };
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
       const UiRect add = add_stage_rect (i);
       m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
     }

@@ -39,13 +39,21 @@ namespace game {
 
     void load (render::Renderer& renderer);
     void enter (render::Renderer& renderer, map::RandomHeightMap& map,
-		Terrain& terrain, const WorldParams& world, int seed,
+		Terrain& terrain, const WorldParams& world,
+		const terrain::TerrainProgram& program,
 		const Vector3D& sun_dir);
     void leave ();
 
     bool active () const { return m_active; }
     bool cover_view () const { return m_view == ViewMode::Cover; }
     bool torus_view () const { return m_view == ViewMode::Torus; }
+    // True until a pipeline edit rebuilds the map: the terrain on
+    // screen is still the game's own, so the game's water sheets and
+    // full-quality setup remain valid.
+    bool map_pristine () const { return m_map_pristine; }
+    // The haze the current lab view renders with; the orbit cameras
+    // sit kilometres out, so full gameplay fog would swallow the map.
+    float scene_fog (float world_fog) const;
     void tick (float dt);
     void key (platform::Key key, bool down);
     void pointer_move (float x, float y, float dx, float dy);
@@ -116,6 +124,7 @@ namespace game {
     std::vector<float> m_saved_heights;
 
     bool m_active;
+    bool m_map_pristine;
     terrain::TerrainProgram m_program;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;
