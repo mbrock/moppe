@@ -14,7 +14,7 @@ struct MoppeVertexIn {
   packed_float3 normal;
   packed_float2 uv;
   uchar4 color;
-  uchar4 flags;               // x: lit, y: fogged, z: wind weight
+  uchar4 flags;               // x: lit, y: fogged, z: wind, w: grass
 };
 
 // Vegetation sway: a slow prevailing gust plus a faster flutter,

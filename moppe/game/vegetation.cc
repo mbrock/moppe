@@ -33,14 +33,58 @@ namespace game {
     // per-frame near-field grass so they read as one field.  `dry`
     // pushes toward straw, `j` is per-blade jitter.
     inline Vector3D blade_base (float dry, float j) {
-      return Vector3D (0.09f + 0.14f * dry + j,
-		       0.20f + 0.02f * dry + 2 * j,
-		       0.05f + 0.04f * dry);
+      return Vector3D (0.22f + 0.20f * dry + j,
+		       0.38f - 0.03f * dry + 2 * j,
+		       0.09f + 0.06f * dry);
     }
     inline Vector3D blade_tip (float dry, float j) {
-      return Vector3D (0.26f + 0.18f * dry + 2 * j,
-		       0.40f - 0.04f * dry + 2 * j,
-		       0.12f + 0.07f * dry);
+      return Vector3D (0.48f + 0.25f * dry + 2 * j,
+		       0.66f - 0.08f * dry + 2 * j,
+		       0.16f + 0.10f * dry);
+    }
+
+    inline float grass_patch (float x, float z) {
+      const float broad = std::sin (x * 0.036f
+	+ 1.7f * std::sin (z * 0.019f));
+      const float detail = std::sin (z * 0.071f - x * 0.043f);
+      return std::clamp (0.52f + 0.28f * broad + 0.20f * detail,
+			 0.0f, 1.0f);
+    }
+
+    // A narrow segmented strip rather than the old single triangle. The
+    // quadratic centerline keeps the root upright and bends progressively
+    // toward the tip; UV.y and the grass flag drive blade shading in Metal.
+    void record_blade (render::DrawList& dl, const Vector3D& root,
+		       float height, float bend_angle, float bend,
+		       float half_width, float dry, float jitter,
+		       float sway, int segments) {
+      const Vector3D side (std::cos (bend_angle + PI * 0.5f), 0,
+			   std::sin (bend_angle + PI * 0.5f));
+      const Vector3D direction (std::cos (bend_angle), 0,
+				std::sin (bend_angle));
+      const Vector3D face (-side.z, 0.18f, side.x);
+      const Vector3D base = blade_base (dry, jitter);
+      const Vector3D tip = blade_tip (dry, jitter);
+
+      auto center = [&] (float t) {
+	return root + Vector3D (0, height * t, 0)
+	  + direction * (bend * t * t);
+      };
+      auto emit = [&] (float t, float side_sign) {
+	const float width = half_width * (1.0f - 0.86f * t);
+	dl.normal (face);
+	dl.uv (0.5f + 0.5f * side_sign, t);
+	dl.color (base * (1.0f - t) + tip * t);
+	dl.wind (sway * t * t);
+	dl.vertex (center (t) + side * (width * side_sign));
+      };
+
+      for (int segment = 0; segment < segments; ++segment) {
+	const float t0 = segment / (float) segments;
+	const float t1 = (segment + 1) / (float) segments;
+	emit (t0, -1); emit (t0, 1); emit (t1, -1);
+	emit (t1, -1); emit (t0, 1); emit (t1, 1);
+      }
     }
 
     const float FLOWER_PETALS[5][3] = {
@@ -385,6 +429,7 @@ namespace game {
       Rand r (p.seed);
       const float dry = p.tint;
       dl.normal (Vector3D (0, 1, 0));
+      dl.grass (true);
       dl.begin (render::Prim::Triangles);
       const int blades = 5 + (int) (r.next () * 3.0f);
       for (int k = 0; k < blades; ++k) {
@@ -395,24 +440,15 @@ namespace game {
 	const float h = r.range (0.26f, 0.58f) * p.s;
 	const float ba = r.range (0, PI2);
 	const float bm = r.range (0.06f, 0.34f) * h;
-	const Vector3D tip = root
-	  + Vector3D (std::cos (ba) * bm, h, std::sin (ba) * bm);
 	const float w = r.range (0.020f, 0.042f);
-	const float wa = r.range (0, PI2);
-	const Vector3D perp (std::cos (wa) * w, 0,
-			     std::sin (wa) * w);
-
 	const float j = r.range (-0.02f, 0.02f);
-	dl.wind (0);
-	dl.color (blade_base (dry, j));
-	dl.vertex (root - perp);
-	dl.vertex (root + perp);
-	dl.color (blade_tip (dry, j));
-	dl.wind (std::min (1.0f, h * 1.6f) * r.range (0.45f, 0.85f));
-	dl.vertex (tip);
+	record_blade (dl, root, h, ba, bm, w, dry, j,
+		      std::min (1.0f, h * 1.6f)
+		        * r.range (0.45f, 0.85f), 3);
       }
       dl.end ();
       dl.wind (0);
+      dl.grass (false);
     }
 
     void record_reeds (render::DrawList& dl, const Spot& p) {
@@ -939,8 +975,12 @@ namespace game {
     m_near.state (ds);
     m_near.normal (Vector3D (0, 1, 0));
 
-    const float cell = 2.9f;
-    const float radius = 44.0f;
+    // Carry individual grass into the mid-field on the target Mac instead of
+    // dropping directly from nearby blades to a flat terrain texture. Outer
+    // clumps use fewer, slightly broader blades to control streaming cost.
+    const float cell = 1.7f;
+    const float radius = 90.0f;
+    const float detail_radius = 40.0f;
     const int span = (int) (radius / cell) + 1;
     const int cx = (int) std::floor (env.camera_pos.x / cell);
     const int cz = (int) std::floor (env.camera_pos.z / cell);
@@ -953,12 +993,14 @@ namespace game {
 	  ^ (uint32_t) gz * 19349663u;
 	h = (h ^ (h >> 13)) * 2654435761u;
 	h ^= h >> 16;
-	if ((h & 0xffu) > 190u)
-	  continue;
 	const float fx = ((h >> 8) & 0x3ffu) * (1.0f / 1023.0f);
 	const float fz = ((h >> 18) & 0x3ffu) * (1.0f / 1023.0f);
 	const float x = (gx + fx) * cell;
 	const float z = (gz + fz) * cell;
+	const float patch = grass_patch (x, z);
+	const float occupancy = 0.65f + 0.33f * patch;
+	if ((h & 0xffu) * (1.0f / 255.0f) > occupancy)
+	  continue;
 	if (!m_map->in_bounds (x, z))
 	  continue;
 
@@ -979,12 +1021,14 @@ namespace game {
 	  std::min (1.0f, 2.4f * (1.0f - d2 / (radius * radius)));
 	const float dry = std::min (1.0f, std::max (0.0f,
 	  (y / m_height - 0.10f) / 0.22f)) * 0.7f
-	  + 0.3f * ((h >> 24) * (1.0f / 255.0f));
+	  + 0.2f * ((h >> 24) * (1.0f / 255.0f))
+	  + 0.1f * patch;
 
 	// A few elected cells grow a wildflower with the grass, so
 	// blooms are part of the near field everywhere, not only in
 	// the baked meadows.
-	if (((h >> 5) & 0x1fu) == 0 && fade > 0.8f) {
+    if (((h >> 5) & 0x1fu) == 0
+	&& d2 < detail_radius * detail_radius) {
 	  Spot fl = { Vector3D (x, y, z), Vector3D (0, 1, 0),
 		      0.9f, (h >> 24) * (1.0f / 255.0f),
 		      h, (int) ((h >> 10) % 5) };
@@ -992,36 +1036,35 @@ namespace game {
 	}
 
 	Rand r (h);
-	const int blades = 6 + (int) (r.next () * 4.0f);
+	const bool detailed = d2 < detail_radius * detail_radius;
+	const int blades = detailed
+	  ? 5 + (int) (r.next () * 4.0f)
+	  : 2 + (int) (r.next () * 3.0f);
+	m_near.grass (true);
 	m_near.begin (render::Prim::Triangles);
 	for (int k = 0; k < blades; ++k) {
 	  const float oa = r.range (0, PI2);
-	  const float od = r.range (0.0f, 1.25f);
+	  const float od = r.range (0.0f, detailed ? 0.75f : 0.60f);
 	  const Vector3D root (x + std::cos (oa) * od, y,
 			       z + std::sin (oa) * od);
-	  const float bh = r.range (0.24f, 0.55f) * fade;
+	  const float patch_height = 0.72f + 0.55f * patch;
+	  const float bh = r.range (detailed ? 0.28f : 0.38f,
+			    detailed ? 0.62f : 0.78f)
+	    * patch_height * fade;
 	  const float ba = r.range (0, PI2);
 	  const float bm = r.range (0.06f, 0.34f) * bh;
-	  const Vector3D tip = root
-	    + Vector3D (std::cos (ba) * bm, bh, std::sin (ba) * bm);
-	  const float w = r.range (0.025f, 0.055f);
-	  const float wa = r.range (0, PI2);
-	  const Vector3D perp (std::cos (wa) * w, 0,
-			       std::sin (wa) * w);
-
+	  const float w = r.range (detailed ? 0.018f : 0.025f,
+			   detailed ? 0.038f : 0.048f);
 	  const float j = r.range (-0.02f, 0.02f);
-	  m_near.wind (0);
-	  m_near.color (blade_base (dry, j));
-	  m_near.vertex (root - perp);
-	  m_near.vertex (root + perp);
-	  m_near.color (blade_tip (dry, j));
-	  m_near.wind (std::min (1.0f, bh * 1.6f)
-		       * r.range (0.45f, 0.85f));
-	  m_near.vertex (tip);
+	  record_blade (m_near, root, bh, ba, bm, w, dry, j,
+			std::min (1.0f, bh * 1.6f)
+			  * r.range (0.45f, 0.85f), detailed ? 3 : 2);
 	}
 	m_near.end ();
+	m_near.grass (false);
       }
     m_near.wind (0);
+    m_near.grass (false);
   }
 }
 }
