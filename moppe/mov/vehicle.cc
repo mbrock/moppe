@@ -17,6 +17,8 @@ namespace mov {
   static const seconds_t boost_full_burn_time = 3.0f;
   static const seconds_t boost_recharge_time = 5.0f;
   static const seconds_t boost_recharge_pause = 0.65f;
+  static const float boost_reserve_charge = 0.06f;
+  static const float boost_emergency_level = 0.18f;
 
   Vehicle::Vehicle (const Vector3D& position,
 		    degrees_t orientation,
@@ -33,6 +35,7 @@ namespace mov {
       m_yaw (0),
       m_yaw_target (0),
       m_lean (0),
+      m_render_heading (m_heading),
       m_render_normal (0, 1, 0),
       m_susp (0),
       m_susp_v (0),
@@ -262,18 +265,21 @@ namespace mov {
     // burn and is deliberately slower in the air, so feathering the
     // jets cannot produce permanent flight.
     if (m_boost_input > 0.001f) {
-      if (m_boost_charge > 0) {
+      if (m_boost_charge > boost_reserve_charge) {
 	const float available =
-	  m_boost_charge * boost_full_burn_time / dt;
+	  (m_boost_charge - boost_reserve_charge)
+	  * boost_full_burn_time / dt;
 	m_boost_level = std::min (m_boost_input, available);
 	m_boost_charge = std::max
-	  (0.0f, m_boost_charge
+	  (boost_reserve_charge, m_boost_charge
 	   - m_boost_level * dt / boost_full_burn_time);
 	m_boost_flight = true;
       } else
-	m_boost_level = 0;
-      // An empty trigger must be released before recharge starts; this
-      // avoids a sputtering free impulse every time a sliver returns.
+	// The reserve cannot sustain flight, but it always supplies enough
+	// thrust to take the cruelty out of a long fall.
+	m_boost_level = boost_emergency_level * m_boost_input;
+      // The trigger must be released before recharge starts; this avoids
+      // alternating reserve thrust and tiny rechargeable impulses.
       m_boost_recharge_delay = boost_recharge_pause;
     } else {
       m_boost_level = 0;
@@ -387,11 +393,32 @@ namespace mov {
       m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt));
     }
 
-    // Smoothed up vector for drawing: the raw bilinear normal
-    // jitters cell-to-cell at speed
-    m_render_normal =
-      linear_vector_interpolate (m_render_normal, ground_normal (),
-				 1.0f - std::exp (-10.0f * dt));
+    // Visual attitude is separate from the steering heading. In flight the
+    // bike follows its trajectory, while steering can still yaw the bike
+    // without redirecting its momentum. Near a vertical arc, retain the
+    // previous right axis so the bike cannot arbitrarily roll over.
+    Vector3D pose_forward = m_heading;
+    Vector3D pose_up = ground_normal ();
+    float pose_rate = 10.0f;
+    if (airborne () && m_velocity.length2 () > 4.0f) {
+      pose_forward = m_velocity.normalized ();
+      Vector3D right = Vector3D (0, 1, 0).cross (pose_forward);
+      if (right.length2 () < 0.0001f)
+	right = m_render_normal.cross (m_render_heading);
+      if (right.length2 () < 0.0001f)
+	right = Vector3D (1, 0, 0);
+      right.normalize ();
+      pose_up = pose_forward.cross (right);
+      pose_rate = 4.5f;
+    }
+
+    const float pose_alpha = 1.0f - std::exp (-pose_rate * dt);
+    m_render_heading = linear_vector_interpolate
+      (m_render_heading, pose_forward, pose_alpha);
+    m_render_normal = linear_vector_interpolate
+      (m_render_normal, pose_up, pose_alpha);
+    if (m_render_heading.length2 () > 0.000001f)
+      m_render_heading.normalize ();
     if (m_render_normal.length2 () > 0.000001f)
       m_render_normal.normalize ();
 

@@ -119,7 +119,7 @@ namespace platform {
   // terms -- see text.hh for the atlas builder that consumes this.
   struct GlyphBitmap {
     int width = 0, height = 0;
-    int bearing_x = 0, bearing_y = 0;  // from origin to bitmap top-left
+    float bearing_x = 0, bearing_y = 0;  // origin to bitmap top-left
     float advance = 0;
     std::vector<unsigned char> pixels;  // width*height coverage
   };

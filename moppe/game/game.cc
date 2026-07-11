@@ -211,6 +211,7 @@ namespace game {
 	m_total_time (0),
 	m_frame_time (1.0f / 60.0f),
 	m_shake (0),
+	m_shake_time (0),
 	m_health (100.0f),
 	m_fov_k (0),
 	m_lives (10),
@@ -224,6 +225,11 @@ namespace game {
 	m_cam_mode (CAM_CHASE),
 	m_car_exists (false),
 	m_combo (0),
+	m_score (0),
+	m_jump_airtime (0),
+	m_landed_airtime (0),
+	m_landed_points (0),
+	m_landed_age (10),
 	m_fx_rng (7)
     { }
 
@@ -237,7 +243,7 @@ namespace game {
       m_hud.load (r);
       m_terrain_lab.load (r);
       m_loading_font.reset
-	(new render::FontAtlas (r, "Helvetica", 14,
+	(new render::FontAtlas (r, "AvenirNext-Medium", 18,
 				r.scale_factor ()));
       m_dust.load (r);
       m_blob.load (r);
@@ -577,7 +583,9 @@ namespace game {
       m_total_time += dt;
       const float total_time = m_total_time;
 
-      // Weather: slowly drifting cloudiness with passing fronts.
+      // Weather remains part of the world while actors are paused.  This
+      // also initializes the shared horizon color when the game starts
+      // directly in Terrain Lab.
       float cloudiness =
 	std::sin (total_time * 0.0003f) * 0.4f + 0.5f
 	+ 0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f)
@@ -632,6 +640,23 @@ namespace game {
 
       const bool in_water = vpos.y < m_world.water_level + 1.0f;
       const bool driving = (m_mode != M_FOOT);
+
+      // Long jumps become score events after three seconds. Keep the last
+      // airborne time locally because Vehicle clears its timer on touchdown.
+      if (driving && av.airtime () > 0.0f) {
+	m_jump_airtime = av.airtime ();
+	m_landed_age += dt;
+      } else {
+	if (driving && m_jump_airtime >= 3.0f) {
+	  m_landed_airtime = m_jump_airtime;
+	  m_landed_points = (int) std::round
+	    (100.0f * m_jump_airtime * m_jump_airtime);
+	  m_score += m_landed_points;
+	  m_landed_age = 0.0f;
+	}
+	m_jump_airtime = 0.0f;
+	m_landed_age += dt;
+      }
       const Vector3D dust_color (0.60f, 0.52f, 0.40f);
       const Vector3D clod_color (0.42f, 0.34f, 0.24f);
       const Vector3D spray_color (0.85f, 0.92f, 1.0f);
@@ -711,7 +736,8 @@ namespace game {
       // a low pancake of dust plus a ring of ballistic clods.
       const float impact = driving ? av.pop_impact () : 0.0f;
       if (impact > 8.0f) {
-	m_shake = std::min (0.45f, 0.018f * impact);
+	m_shake = std::min (0.28f, 0.010f * impact);
+	m_shake_time = 0.0f;
 	m_dust.emit (vpos + Vector3D (0, -0.7f, 0),
 		     av.velocity () * 0.2f, 12,
 		     in_water ? spray_color : dust_color);
@@ -756,6 +782,7 @@ namespace game {
 	  av.reset (Vector3D (vpos.x, ground + 1.2f, vpos.z));
 	  m_health = 100.0f;
 	  m_shake = 1.0f;
+	  m_shake_time = 0.0f;
 	}
       }
 
@@ -773,8 +800,21 @@ namespace game {
       {
 	const int picked = m_stars.update (vpos, m_total_time, dt);
 	if (picked > 0) {
-	  m_dust.emit (m_stars.last_pos (), Vector3D (0, 3, 0), 16,
-		       Vector3D (1.0f, 0.85f, 0.2f));
+	  Dust::Style sparkle;
+	  sparkle.size = 0.38f;
+	  sparkle.life = 0.85f;
+	  sparkle.gravity = -1.5f;
+	  sparkle.spread = 1.7f;
+	  sparkle.additive = true;
+	  m_dust.emit (m_stars.last_pos (), Vector3D (0, 4, 0), 32,
+		       Vector3D (1.0f, 0.72f, 0.12f), sparkle);
+	  Dust::Style flash;
+	  flash.size = 0.9f;
+	  flash.life = 0.35f;
+	  flash.spread = 0.25f;
+	  flash.additive = true;
+	  m_dust.emit (m_stars.last_pos (), Vector3D (), 5,
+		       Vector3D (1.0f, 0.95f, 0.55f), flash);
 	  m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
 	  av.replenish_boost (0.25f * picked);
 	}
@@ -794,7 +834,8 @@ namespace game {
       }
 
       m_dust.update (dt);
-      m_shake *= std::exp (-4.0f * dt);
+      m_shake_time += dt;
+      m_shake *= std::exp (-7.0f * dt);
 
       if (m_cam_mode == CAM_HELMET) {
 	// Ride inside the rider's head; lightly smoothed so
@@ -861,8 +902,8 @@ namespace game {
 	(degrees_to_radians (fov), aspect, 0.5f,
 	 m_world.pico_mode ? 30000.0f : 9000.0f);
 
-      // Hard-landing camera shake, faded near the ground so the
-      // view can't dip below the terrain.
+      // Hard landings produce a brief continuous vibration. Randomizing the
+      // rotations each frame looked like violent camera teleportation.
       Mat4 view = terrain_lab
 	? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
       if (!terrain_lab && !m_water_inspection && m_shake > 0.005f) {
@@ -873,13 +914,17 @@ namespace game {
 	const float room = std::min
 	  (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
 
-	std::uniform_real_distribution<float> u (-1.0f, 1.0f);
+	const float pulse = m_shake * room;
+	const float roll = pulse * std::sin (2.0f * PI * 15.0f
+					    * m_shake_time);
+	const float pitch = pulse * 0.55f
+	  * std::sin (2.0f * PI * 19.0f * m_shake_time + 0.7f);
 	view = view
 	  * Mat4::rotation (degrees_to_radians
-			    (m_shake * room * u (m_fx_rng)),
+			    (roll),
 			    Vector3D (0, 0, 1))
 	  * Mat4::rotation (degrees_to_radians
-			    (m_shake * room * u (m_fx_rng)),
+			    (pitch),
 			    Vector3D (1, 0, 0));
       }
       fp.view = view;
@@ -908,6 +953,12 @@ namespace game {
       // color instead of collapsing into near-black silhouettes.
       fp.ambient = Vector3D (0.39f, 0.43f, 0.49f)
         * (0.35f + 0.65f * daylight);
+      if (terrain_lab) {
+	// Keep the same time of day while giving the high overview a small
+	// legibility lift after automatic exposure.
+	fp.ambient = fp.ambient * 1.15f;
+	fp.exposure_bias = 0.88f;
+      }
       fp.time = m_total_time;
       fp.profile = true;
 
@@ -958,6 +1009,26 @@ namespace game {
       env.cam_forward = fp.cam_forward;
       env.time = m_total_time;
 
+      const auto draw_world_sky = [&] {
+	render::SkyParams sky;
+	sky.time = m_total_time;
+	sky.sun_height = SUN_HEIGHT;
+	// A world-shaping overview should keep the game world's moving sky,
+	// without letting a passing front hide the land being edited.
+	sky.cloudiness = terrain_lab
+	  ? std::min (m_cloudiness, 0.35f) : m_cloudiness;
+	sky.sun_dir = fp.sun_dir;
+	sky.fog_color = m_fog;
+	r.draw_sky (sky);
+      };
+
+      // At this extreme altitude, drawing the far-plane dome after terrain
+      // exposes depth precision at the horizon.  Paint it first in the lab;
+      // terrain then covers it deterministically.  Gameplay retains the
+      // cheaper depth-culled order below.
+      if (terrain_lab && !m_terrain_lab.torus_view ())
+	draw_world_sky ();
+
       // Terrain first, chunk-culled to the haze horizon.
       m_terrain.render (r, cam,
 		terrain_lab ? m_terrain_lab.forward () : m_camera.forward (),
@@ -966,15 +1037,8 @@ namespace game {
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
-      if (!terrain_lab || !m_terrain_lab.torus_view ()) {
-	render::SkyParams sky;
-	sky.time = m_total_time;
-	sky.sun_height = SUN_HEIGHT;
-	sky.cloudiness = m_cloudiness;
-	sky.sun_dir = fp.sun_dir;
-	sky.fog_color = m_fog;
-	r.draw_sky (sky);
-      }
+      if (!terrain_lab)
+	draw_world_sky ();
 
       if (!terrain_lab && !m_water_inspection) {
 	// The world draw list, in the GL build's draw order.  Terrain lab
@@ -1074,6 +1138,11 @@ namespace game {
 	hs.odometer_m = (float) m_odometer;
 	hs.lives = m_lives;
 	hs.stars = m_stars.collected ();
+	hs.score = m_score;
+	hs.airtime_s = m_jump_airtime;
+	hs.landed_airtime_s = m_landed_airtime;
+	hs.landed_points = m_landed_points;
+	hs.landed_age_s = m_landed_age;
 	hs.on_foot = (m_mode == M_FOOT);
 	hs.frame_time_s = m_frame_time;
 	const Vector3D heading = m_mode == M_FOOT
@@ -1414,6 +1483,9 @@ namespace game {
       m_health = 100.0f;
       m_fuel = 100.0f;
       m_shake = 0.0f;
+      m_shake_time = 0.0f;
+      m_jump_airtime = 0.0f;
+      m_landed_age = 10.0f;
       m_mode = M_BIKE;
       // Back to the start, but ON the ground rather than 600 m
       // over it.
@@ -1482,6 +1554,7 @@ namespace game {
     float m_flare = 0.0f;
     Vector3D m_fog;
     float m_shake;
+    float m_shake_time;
     float m_health;
     float m_fov_k;
     int m_lives;
@@ -1496,6 +1569,11 @@ namespace game {
     Vector3D m_fp_eye;
     bool m_car_exists;
     int m_combo;
+    int m_score;
+    float m_jump_airtime;
+    float m_landed_airtime;
+    int m_landed_points;
+    float m_landed_age;
     std::mt19937 m_fx_rng;
   };
 }
