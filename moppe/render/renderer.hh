@@ -7,6 +7,7 @@
 #include <moppe/render/draw.hh>
 
 #include <cstdint>
+#include <span>
 #include <string>
 
 namespace moppe {
@@ -60,6 +61,24 @@ namespace render {
     float torus_minor_radius = 0.0f;
     float torus_height_scale = 0.0f;
     bool derive_normals = false;
+  };
+
+  enum class TerrainOverlayRamp : uint8_t {
+    Heat,
+    Flow,
+    Streams,
+    Categorical,
+    Diverging,
+    Marker
+  };
+
+  struct TerrainOverlayParams {
+    int width;
+    int height;
+    float minimum;
+    float maximum;
+    float opacity = 0.65f;
+    TerrainOverlayRamp ramp = TerrainOverlayRamp::Heat;
   };
 
   enum class TerrainLod : uint8_t {
@@ -130,6 +149,9 @@ namespace render {
 				       TexturePtr dirt,
 				       TexturePtr rock,
 				       TexturePtr snow) = 0;
+    virtual void set_terrain_overlay
+      (const TerrainOverlayParams& params, std::span<const float> values) = 0;
+    virtual void clear_terrain_overlay () = 0;
     // Renders the one-time terrain shadow map from the fixed sun.
     // light_view_proj maps world to light NDC (conventional Z).
     virtual void render_terrain_shadow (const Mat4& light_view_proj) = 0;

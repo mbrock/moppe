@@ -183,6 +183,10 @@ namespace render {
     void set_terrain_textures (TexturePtr grass, TexturePtr dirt,
 			       TexturePtr rock,
 			       TexturePtr snow) override;
+    void set_terrain_overlay
+      (const TerrainOverlayParams& params,
+       std::span<const float> values) override;
+    void clear_terrain_overlay () override;
     void render_terrain_shadow (const Mat4& light_view_proj) override;
     void set_ocean (const OceanSetup& setup) override;
 
@@ -289,6 +293,9 @@ namespace render {
     TerrainParams m_terrain_params;
     bool m_have_terrain = false;
     TexturePtr m_grass, m_dirt, m_rock, m_snow;
+    id<MTLTexture> m_terrain_overlay = nil;
+    TerrainOverlayParams m_terrain_overlay_params { };
+    bool m_have_terrain_overlay = false;
 
     // sky dome / ocean grid
     id<MTLBuffer> m_sky_verts = nil;
@@ -740,6 +747,38 @@ namespace render {
   }
 
   void
+  MetalRenderer::set_terrain_overlay
+    (const TerrainOverlayParams& params, std::span<const float> values)
+  {
+    if (params.width < 1 || params.height < 1
+	|| values.size () != static_cast<std::size_t>
+	  (params.width) * params.height)
+      throw std::invalid_argument ("invalid terrain overlay raster");
+    if (!m_terrain_overlay
+	|| m_terrain_overlay.width != (NSUInteger) params.width
+	|| m_terrain_overlay.height != (NSUInteger) params.height) {
+      MTLTextureDescriptor* td = [MTLTextureDescriptor
+	texture2DDescriptorWithPixelFormat: MTLPixelFormatR32Float
+				     width: params.width
+				    height: params.height
+				 mipmapped: NO];
+      td.storageMode = MTLStorageModePrivate;
+      td.usage = MTLTextureUsageShaderRead;
+      m_terrain_overlay = [m_device newTextureWithDescriptor: td];
+    }
+    upload_texture (m_terrain_overlay, values.data (), params.width,
+		    params.height, 4, false);
+    m_terrain_overlay_params = params;
+    m_have_terrain_overlay = true;
+  }
+
+  void
+  MetalRenderer::clear_terrain_overlay ()
+  {
+    m_have_terrain_overlay = false;
+  }
+
+  void
   MetalRenderer::render_terrain_shadow (const Mat4& light_view_proj) {
     if (!m_terrain_shadow || !m_have_terrain)
       return;
@@ -1105,6 +1144,13 @@ namespace render {
     u.params3.z = height_blend;
     u.params3.w = m_previous_shadow_map
       ? 1.0f / (float) m_previous_shadow_map.width : u.params1.w;
+    if (m_have_terrain_overlay) {
+      u.params4.x = 1.0f + static_cast<float>
+	(m_terrain_overlay_params.ramp);
+      u.params4.y = m_terrain_overlay_params.minimum;
+      u.params4.z = m_terrain_overlay_params.maximum;
+      u.params4.w = m_terrain_overlay_params.opacity;
+    }
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];
@@ -1138,6 +1184,9 @@ namespace render {
       [enc setFragmentTexture:
 	(m_previous_shadow_map ? m_previous_shadow_map : m_shadow_map)
 		      atIndex: MOPPE_TEX_PREVIOUS_SHADOW];
+    if (m_terrain_overlay)
+      [enc setFragmentTexture: m_terrain_overlay
+		      atIndex: MOPPE_TEX_TERRAIN_OVERLAY];
 
     for (int i = 0; i < count; ++i) {
       const int lod = std::max
