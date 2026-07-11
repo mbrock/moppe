@@ -20,6 +20,35 @@ namespace moppe {
 
     class Vehicle {
     public:
+      struct State {
+        Vector3D position {};
+        Vector3D velocity {};
+        Vector3D heading {};
+        Vector3D thrust_orientation {};
+        radians_t yaw {};
+        radians_t yaw_target {};
+        float lean {};
+        Vector3D render_heading {};
+        Vector3D render_normal {};
+        float susp {};
+        float susp_v {};
+        float wheel_spin {};
+        bool boost_flight {};
+        magnitude_t thrust {};
+        float boost_input {};
+        float boost_drive {};
+        float boost_level {};
+        float boost_charge {};
+        seconds_t boost_recharge_delay {};
+        float water_level {};
+        seconds_t airborne_time {};
+        float impact {};
+        float fall_top {};
+        float fall_drop {};
+        int body_kind {};
+        Vector3D body_color {};
+      };
+
       // max_thrust caps the wheel force (launch punch); power caps
       // force * speed, so acceleration tapers like a real engine
       // instead of shoving at 3 g all the way to the horizon.
@@ -31,6 +60,9 @@ namespace moppe {
                magnitude_t mass);
 
       void update (seconds_t dt);
+
+      State state () const;
+      void restore (const State& state);
 
       void set_thrust (magnitude_t thrust) {
         m_thrust = thrust;

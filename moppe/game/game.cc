@@ -11,6 +11,7 @@
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/city.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/game_state.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/river_surface.hh>
@@ -215,7 +216,7 @@ namespace moppe {
       return base * (1.0f - warmth) + warm_horizon * warmth;
     }
 
-    class MoppeGame : public platform::Game {
+    class MoppeGame : public platform::Game, private GameLogicState {
     public:
       MoppeGame (const WorldParams& world,
                  const GraphicsSettings& graphics,
@@ -248,13 +249,23 @@ namespace moppe {
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
-            m_gen_stage (0), m_total_time (0), m_frame_time (1.0f / 60.0f),
-            m_shake (0), m_shake_time (0), m_health (100.0f), m_fov_k (0),
-            m_lives (10), m_game_over (false), m_fuel (100.0f), m_odometer (0),
-            m_turn_input (0), m_go_input (0), m_boost_input (0),
-            m_mode (M_BIKE), m_cam_mode (CAM_CHASE), m_car_exists (false),
-            m_combo (0), m_score (0), m_jump_airtime (0), m_landed_airtime (0),
-            m_landed_points (0), m_landed_age (10), m_fx_rng (7) {}
+            m_gen_stage (0) {}
+
+      GameState state () const {
+        return { static_cast<const GameLogicState&> (*this),
+                 m_vehicle.state (),
+                 m_car.state (),
+                 m_walker.state (),
+                 m_camera.state () };
+      }
+
+      void restore (const GameState& state) {
+        static_cast<GameLogicState&> (*this) = state.logic;
+        m_vehicle.restore (state.vehicle);
+        m_car.restore (state.car);
+        m_walker.restore (state.walker);
+        m_camera.restore (state.camera);
+      }
 
       // -- lifecycle ---------------------------------------------------
 
@@ -1682,9 +1693,6 @@ namespace moppe {
       }
 
     private:
-      enum Mode { M_BIKE, M_FOOT, M_CAR };
-      enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
-
       mov::Vehicle& active_vehicle () {
         return m_mode == M_CAR ? m_car : m_vehicle;
       }
@@ -1890,36 +1898,6 @@ namespace moppe {
       render::DrawList m_world_dl;
       render::DrawList m_dust_dl;
       render::DrawList m_hud_dl;
-
-      // double: a float accumulator quantizes 60 Hz ticks after ~18 h
-      // and stops advancing entirely after ~24 days.
-      double m_total_time;
-      float m_frame_time;
-      float m_cloudiness = 0.5f;
-      float m_flare = 0.0f;
-      Vector3D m_fog;
-      float m_shake;
-      float m_shake_time;
-      float m_health;
-      float m_fov_k;
-      int m_lives;
-      bool m_game_over;
-      float m_fuel;
-      double m_odometer;
-      float m_turn_input;
-      float m_go_input;
-      float m_boost_input;
-      Mode m_mode;
-      CamMode m_cam_mode;
-      Vector3D m_fp_eye;
-      bool m_car_exists;
-      int m_combo;
-      int m_score;
-      float m_jump_airtime;
-      float m_landed_airtime;
-      int m_landed_points;
-      float m_landed_age;
-      std::mt19937 m_fx_rng;
     };
   }
 }

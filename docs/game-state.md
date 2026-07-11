@@ -1,0 +1,37 @@
+# Game state and replay
+
+Moppe separates the generated world and resident resources from the mutable
+logical state that advances each tick. The latter is intended to become a
+copyable checkpoint: restore a value, replay the same fixed-step inputs, and
+observe the same sequence of game states while rendering it under different
+graphics settings.
+
+`game::GameLogicState` currently gathers the game clock, derived weather and
+camera effects, player mode and inputs, health/fuel/scoring values, gameplay
+timers, and the effects random-number generator. `game::GameState` combines
+that value with snapshots of both vehicles, the walker, and the chase camera.
+Restoring those subsystem values changes only their mutable state; immutable
+terrain references, obstacle references, and vehicle physical parameters stay
+attached to the live objects.
+
+This is the first replayable slice, not yet a claim of complete determinism.
+Mutable stars, dust/particle populations, city actors, and any renderer
+history are not yet in `GameState`. World generation, terrain analysis,
+uploaded meshes and textures, window state, and asynchronous loading state do
+not belong there. Renderer history should get its own reset boundary rather
+than being copied into logical game state.
+
+The intended experiment loop is:
+
+1. Generate and prepare one fixed world.
+2. Advance with a fixed timestep to an interesting point and copy
+   `GameState`.
+3. For each graphics combination, restore the state, reset renderer history,
+   replay the same fixed-step input tape, discard settling frames, and measure
+   the remaining frames.
+4. Tag every timing sample with the graphics-feature mask, replay epoch, and
+   logical frame number.
+
+Subsystem state structs should remain plain values. When another mutable
+system joins the checkpoint, it should expose `state()` and `restore()` while
+keeping configuration and resource ownership outside the returned value.
