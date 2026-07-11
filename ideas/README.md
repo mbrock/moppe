@@ -12,6 +12,9 @@ committed roadmap.
 - `tending-the-world.md` proposes that riding, reading, and changing the
   landscape become one continuous form of play rather than a game/editor
   split.
+- `world-as-lab.md` imagines the resulting open-world experience: riding as a
+  way to reach places where observation, experiment, care, making, and memory
+  become the larger game.
 - `structure-of-space.md` develops the irregular cellular tissue through
   which continuous terrain can become places, construction, and persistent
   history.
