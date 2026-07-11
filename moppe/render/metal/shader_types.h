@@ -65,6 +65,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
   MoppeFloat4 sun_diffuse;
+  MoppeFloat4 sun_specular;
   MoppeFloat4 ambient;
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
   MoppeFloat4 params0;        // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale

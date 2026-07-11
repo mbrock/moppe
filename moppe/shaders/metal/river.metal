@@ -81,6 +81,7 @@ river_fragment (RiverVaryings in [[stage_in]],
   const float3 view = normalize (frame.camera_pos.xyz - in.world_pos);
   const float fresnel = 0.035
     + 0.965 * pow (1.0 - max (dot (n, view), 0.0), 5.0);
+  const float3 reflection_dir = reflect (-view, n);
 
   const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
   const float distance = length (to_frag);
@@ -91,6 +92,8 @@ river_fragment (RiverVaryings in [[stage_in]],
   const float3 fog_color = moppe_warmed_fog
     (frame.fog_color.rgb, to_frag / max (distance, 1e-4),
      frame.sun_dir.xyz);
+  const float3 sky_reflection = moppe_sky_radiance
+    (frame.fog_color.rgb, reflection_dir, frame.sun_dir.xyz);
 
   const float depth_m = in.depth * MOPPE_RIVER_DEPTH_SPAN;
   const float3 shallow = moppe_srgb (float3 (0.10, 0.38, 0.38));
@@ -98,7 +101,7 @@ river_fragment (RiverVaryings in [[stage_in]],
   float3 color = mix (shallow, deep, smoothstep (0.15, 1.2, depth_m));
   // The sky reflects off the surface exactly as it does off the ocean;
   // without this the channel reads as a black trench.
-  color = mix (color, fog_color, 0.5 * fresnel + 0.06);
+  color = mix (color, sky_reflection, 0.5 * fresnel + 0.06);
 
   // Foam: broken water in rapids and falls, plus a thin contact line
   // where the surface meets the carved bank.  Shallow streams get no

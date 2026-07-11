@@ -1176,6 +1176,7 @@ namespace render {
     u.camera_pos = m_fu.camera_pos;
     u.sun_dir = m_fu.sun_dir;
     u.sun_diffuse = m_fu.sun_diffuse;
+    u.sun_specular = m_fu.sun_specular;
     u.ambient = m_fu.ambient;
     u.fog_color = m_fu.fog_color;
     u.fog_color.w = m_terrain_params.fog_scale;
