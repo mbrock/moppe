@@ -77,6 +77,8 @@ honest books.
   honest.
 - `second-author.md` — the long-range design: centers, paths, movers,
   settlements.
+- `tending-the-world.md` — the game as an ongoing practice of riding,
+  understanding, and caring for one generated world.
 
 The project's acceptance test, stated once so you know the direction
 of "better": a generated world passes when one of its places could

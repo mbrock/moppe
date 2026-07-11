@@ -16,8 +16,12 @@ top of it.
 
 The more speculative ambition is an inhabited procedural world.  The
 [[file:../ideas/second-author.md][second-author notes]] explore how geology might
-eventually support paths, roads, centers, and settlements.  That is a
-promising design direction, not a current subsystem or settled roadmap.
+eventually support paths, roads, centers, and settlements.  The
+[[file:../ideas/tending-the-world.md][tending-the-world essay]] develops the
+related possibility that riding, interpreting, and changing the landscape
+could become one continuous form of play instead of a game/editor split.
+These are promising design directions, not current subsystems or a settled
+roadmap.
 
 * Current product
 
