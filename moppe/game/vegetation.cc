@@ -960,9 +960,11 @@ namespace game {
 		 std::min (fog_reach, 560.0f), env.camera_pos);
 
     if (m_map) {
-      record_near_grass (env);
-      if (!m_near.empty ())
-	r.draw_list (m_near);
+      render::GrassParams grass;
+      grass.radius = 90.0f;
+      grass.spacing = 0.32f;
+      grass.blades_per_cell = 4;
+      r.draw_grass (grass);
     }
   }
 

@@ -117,6 +117,13 @@ struct MoppeOceanUniforms {
   MoppeFloat4 shadow;         // x=strength, y=shadow texel
 };
 
+struct MoppeGrassUniforms {
+  MoppeFloat4 grid;           // xy=world origin, z=spacing, w=side count
+  MoppeFloat4 terrain;        // xyz=terrain scale, w=radius
+  MoppeFloat4 limits;         // x=sea norm, y=max height norm, z=periodic
+                              // w=blades per cell
+};
+
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,
 // bloom bright/blur.
 struct MoppeQuadUniforms {
