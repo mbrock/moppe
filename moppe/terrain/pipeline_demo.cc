@@ -56,6 +56,37 @@ namespace {
 
     if (name == "power")
       program.transforms.emplace_back (PowerHeights { parse_float (value) });
+    else if (name == "analytical") {
+      std::vector<std::string_view> parts;
+      std::size_t start = 0;
+      while (start <= value.size ()) {
+	const std::size_t comma = value.find (',', start);
+	parts.push_back (value.substr
+	  (start, comma == std::string_view::npos
+	   ? value.size () - start : comma - start));
+	if (comma == std::string_view::npos)
+	  break;
+	start = comma + 1;
+      }
+      if (parts.empty () || parts.size () > 7)
+	throw std::invalid_argument
+	  ("analytical expects age[,uplift,k,m,sea,iterations,relaxation]");
+      AnalyticalErosion erosion;
+      erosion.time_years = parse_float (parts[0]);
+      if (parts.size () > 1)
+	erosion.uplift_m_per_year = parse_float (parts[1]);
+      if (parts.size () > 2)
+	erosion.erodibility = parse_float (parts[2]);
+      if (parts.size () > 3)
+	erosion.area_exponent = parse_float (parts[3]);
+      if (parts.size () > 4)
+	erosion.sea_level = parse_float (parts[4]);
+      if (parts.size () > 5)
+	erosion.fixed_point_iterations = parse_int (parts[5]);
+      if (parts.size () > 6)
+	erosion.relaxation = parse_float (parts[6]);
+      program.transforms.emplace_back (erosion);
+    }
     else if (name == "hydraulic") {
       std::vector<std::string_view> parts;
       std::size_t start = 0;
@@ -175,7 +206,15 @@ int main (int argc, char** argv) {
       std::cout << " " << terrain_transform_id (transform);
     std::cout << ")\n";
     for (const TerrainTransformReport& result : reports)
-      if (const auto* report = std::get_if<HydraulicErosionReport> (&result))
+      if (const auto* report = std::get_if<AnalyticalErosionReport> (&result))
+	std::cout << "analytical: fixed=" << report->fixed_boundaries
+		  << " lowered_m3=" << report->lowered_volume_m3
+		  << " raised_m3=" << report->raised_volume_m3
+		  << " mean_change_m=" << report->mean_absolute_change_m
+		  << " max_change_m=" << report->maximum_absolute_change_m
+		  << "\n";
+      else if (const auto* report =
+	       std::get_if<HydraulicErosionReport> (&result))
 	std::cout << "hydraulic: eroded=" << report->eroded
 		  << " deposited=" << report->deposited
 		  << " discarded=" << report->discarded_sediment

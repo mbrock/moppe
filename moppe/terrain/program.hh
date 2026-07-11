@@ -33,10 +33,11 @@ namespace moppe::terrain {
   };
 
   using TerrainTransform = std::variant
-    <NormalizeHeights, PowerHeights, HydraulicErosion, ThermalErosion>;
+    <NormalizeHeights, PowerHeights, AnalyticalErosion,
+     HydraulicErosion, ThermalErosion>;
 
   using TerrainTransformReport = std::variant
-    <std::monostate, HydraulicErosionReport>;
+    <std::monostate, AnalyticalErosionReport, HydraulicErosionReport>;
 
   // These two axes describe what an evaluator must observe, without
   // prescribing whether it uses a CPU loop, a GPU kernel, or something

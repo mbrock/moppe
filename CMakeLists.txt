@@ -153,6 +153,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
   moppe/terrain/flood.cc
+  moppe/terrain/analytical_erosion.cc
   moppe/terrain/geological.cc
   moppe/terrain/program.cc
   moppe/terrain/image.cc
@@ -205,6 +206,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
     tests/terrain/flood_test.cc
+    tests/terrain/analytical_erosion_test.cc
   )
   target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
   add_test(NAME moppe-unit-tests COMMAND moppe-unit-tests)
@@ -262,6 +264,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     moppe/terrain/erosion_experiment.cc
   )
   target_link_libraries(terrain-erosion-experiment PRIVATE moppe_game)
+
+  add_executable(terrain-stream-power-experiment
+    moppe/terrain/stream_power_experiment.cc
+  )
+  target_link_libraries(terrain-stream-power-experiment PRIVATE moppe_game)
 endif()
 
 # ---------------------------------------------------------------

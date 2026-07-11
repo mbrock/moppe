@@ -57,6 +57,8 @@ feeding every result into the same heightmap renderer.
   now uses natural water termination and explicit settlement, and why the
   remaining sink problem led to the standing-water/flood-field reading now
   exposed in the Terrain Lab.
+- `stream-power-experiment.md` records the first finite-time analytical,
+  droplet, hillslope, and combined comparison on one fixed source.
 
 ## Moppe implementation direction
 
@@ -76,13 +78,13 @@ The first implementation should preserve the paper's module boundaries:
 1. Build a tested `DrainageGraph` containing one receiver per cell, a
    topological ordering, accumulated drainage area, downstream distance, and
    outlet/basin identity.
-2. Implement the paper's linear-time recursive analytical solution for
-   `n = 1` on a fixed drainage graph.
-3. Add the elevation/drainage fixed-point iteration, then its coarse-to-fine
-   V-cycle.  Keep fixed outlets unchanged at every level.
-4. Expose this as a separate pipeline stage beside droplet erosion, with time,
-   uplift, `k`, `m`, outlet policy, levels, and iteration count as first-class
-   parameters.
+2. [done, first slice] Implement the paper's finite-time characteristic
+   solution for `n = 1` on a fixed drainage graph.
+3. [partial] Add relaxed elevation/drainage fixed-point iteration, then its
+   coarse-to-fine V-cycle. Keep fixed outlets unchanged at every level.
+4. [partial] Expose this as a separate pipeline stage beside droplet erosion.
+   Time, uplift, `k`, `m`, sea level, relaxation, and iteration count are now
+   first-class parameters; outlet policy and multigrid levels remain.
 5. Treat FastFlow as an optional GPU drainage backend for the same graph
    product, not as a different meaning for the analytical stage.
 

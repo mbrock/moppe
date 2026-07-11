@@ -128,7 +128,7 @@ namespace game {
 
     UiRect add_stage_rect (int index) {
       const float gap = 3.0f;
-      const float width = (left_width - 3 * gap) / 4.0f;
+      const float width = (left_width - 4 * gap) / 5.0f;
       return { left_x + index * (width + gap), 497, width, 29 };
     }
 
@@ -167,6 +167,8 @@ namespace game {
 	return "NORMALIZE";
       if (std::holds_alternative<terrain::PowerHeights> (stage))
 	return "POWER CURVE";
+      if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
+	return "STREAM POWER AGE";
       if (std::holds_alternative<terrain::HydraulicErosion> (stage))
 	return "WATER EROSION";
       return "TALUS RELAX";
@@ -178,6 +180,11 @@ namespace game {
       if (const auto* power =
 	  std::get_if<terrain::PowerHeights> (&stage))
 	return "height ^ " + format_float (power->exponent, 2);
+      if (const auto* analytical =
+	  std::get_if<terrain::AnalyticalErosion> (&stage))
+	return format_float (analytical->time_years / 1000.0f, 0)
+	  + " ky / " + std::to_string (analytical->fixed_point_iterations)
+	  + " routing passes";
       if (const auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage))
 	return format_count (hydraulic->droplets) + " drops / "
@@ -239,6 +246,8 @@ namespace game {
     int stage_property_count (const terrain::TerrainTransform& stage) {
       if (std::holds_alternative<terrain::PowerHeights> (stage))
 	return 1;
+      if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
+	return 6;
       if (std::holds_alternative<terrain::HydraulicErosion> (stage))
 	return 3;
       if (std::holds_alternative<terrain::ThermalErosion> (stage))
@@ -252,6 +261,30 @@ namespace game {
 	  std::get_if<terrain::PowerHeights> (&stage))
 	return { "EXPONENT", format_float (power->exponent, 2),
 	  ParameterDomain::Continuous };
+      if (const auto* analytical =
+	  std::get_if<terrain::AnalyticalErosion> (&stage)) {
+	if (row == 0)
+	  return { "AGE (KY)",
+	    format_float (analytical->time_years / 1000.0f, 0),
+	    ParameterDomain::Continuous };
+	if (row == 1)
+	  return { "UPLIFT (MM/Y)",
+	    format_float (analytical->uplift_m_per_year * 1000.0f, 2),
+	    ParameterDomain::Continuous };
+	if (row == 2)
+	  return { "ERODIBILITY", format_ledger (analytical->erodibility),
+	    ParameterDomain::Continuous };
+	if (row == 3)
+	  return { "AREA EXPONENT",
+	    format_float (analytical->area_exponent, 2),
+	    ParameterDomain::Continuous };
+	if (row == 4)
+	  return { "ROUTING PASSES",
+	    std::to_string (analytical->fixed_point_iterations),
+	    ParameterDomain::Natural };
+	return { "RELAXATION", format_float (analytical->relaxation, 2),
+	  ParameterDomain::Continuous };
+      }
       if (const auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage)) {
 	if (row == 0)
@@ -334,6 +367,8 @@ namespace game {
 	.sediment_at_termination = terrain::SedimentDisposition::Deposit
       });
     }
+    if (std::getenv ("MOPPE_LAB_ANALYTICAL"))
+      m_program.transforms.emplace_back (terrain::AnalyticalErosion { });
     m_selected_stage = -1;
     m_stage_scroll = 0;
     m_pointer_down = false;
@@ -1060,6 +1095,20 @@ namespace game {
       m_program.transforms[m_selected_stage];
     if (const auto* power = std::get_if<terrain::PowerHeights> (&stage))
       return unit (power->exponent, 0.1f, 4.0f);
+    if (const auto* analytical =
+	std::get_if<terrain::AnalyticalErosion> (&stage)) {
+      if (row == 0)
+	return unit (analytical->time_years, 0.0f, 1600000.0f);
+      if (row == 1)
+	return unit (analytical->uplift_m_per_year, 0.0f, 0.003f);
+      if (row == 2)
+	return unit (std::log10 (analytical->erodibility), -6.0f, -3.0f);
+      if (row == 3)
+	return unit (analytical->area_exponent, 0.0f, 1.0f);
+      if (row == 4)
+	return unit (analytical->fixed_point_iterations, 1.0f, 12.0f);
+      return unit (analytical->relaxation, 0.1f, 1.0f);
+    }
     if (const auto* hydraulic =
 	std::get_if<terrain::HydraulicErosion> (&stage))
       return row == 0 ? unit (hydraulic->droplets, 0.0f, 5000000.0f)
@@ -1151,6 +1200,35 @@ namespace game {
       power->exponent = mix (0.1f, 4.0f);
       return power->exponent != old;
     }
+    if (auto* analytical =
+	std::get_if<terrain::AnalyticalErosion> (&stage)) {
+      if (row == 0) {
+	const float old = analytical->time_years;
+	analytical->time_years = mix (0.0f, 1600000.0f);
+	return analytical->time_years != old;
+      }
+      if (row == 1) {
+	const float old = analytical->uplift_m_per_year;
+	analytical->uplift_m_per_year = mix (0.0f, 0.003f);
+	return analytical->uplift_m_per_year != old;
+      }
+      if (row == 2) {
+	const float old = analytical->erodibility;
+	analytical->erodibility = std::pow (10.0f, mix (-6.0f, -3.0f));
+	return analytical->erodibility != old;
+      }
+      if (row == 3) {
+	const float old = analytical->area_exponent;
+	analytical->area_exponent = mix (0.0f, 1.0f);
+	return analytical->area_exponent != old;
+      }
+      if (row == 5) {
+	const float old = analytical->relaxation;
+	analytical->relaxation = mix (0.1f, 1.0f);
+	return analytical->relaxation != old;
+      }
+      return false;
+    }
     if (auto* hydraulic =
 	std::get_if<terrain::HydraulicErosion> (&stage)) {
       if (row == 0) {
@@ -1201,6 +1279,15 @@ namespace game {
 
     terrain::TerrainTransform& stage =
       m_program.transforms[m_selected_stage];
+    if (auto* analytical =
+	std::get_if<terrain::AnalyticalErosion> (&stage)) {
+      const int changed = std::clamp
+	(analytical->fixed_point_iterations + direction, 1, 12);
+      if (changed == analytical->fixed_point_iterations)
+	return false;
+      analytical->fixed_point_iterations = changed;
+      return true;
+    }
     if (auto* hydraulic =
 	std::get_if<terrain::HydraulicErosion> (&stage)) {
       int* value = row == 0 ? &hydraulic->droplets
@@ -1335,7 +1422,7 @@ namespace game {
 	return;
       }
     }
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
       if (!add_stage_rect (i).contains (x, y))
 	continue;
       if (i == 0)
@@ -1343,6 +1430,8 @@ namespace game {
       else if (i == 1)
 	append_stage (terrain::PowerHeights { 1.15f });
       else if (i == 2)
+	append_stage (terrain::AnalyticalErosion { });
+      else if (i == 3)
 	append_stage (terrain::HydraulicErosion {
 	  .droplets = 100000,
 	  .batch_size = 256,
@@ -1704,15 +1793,17 @@ namespace game {
     }
 
     static const char* add_labels[] = {
-      "+NORM", "+POWER", "+WATER", "+TALUS"
+      "+NORM", "+POWER", "+AGE", "+DROP", "+TALUS"
     };
     static const char* edit_labels[] = {
       "UP", "DOWN", "COPY", "DEL"
     };
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
       const UiRect add = add_stage_rect (i);
-      const UiRect edit = edit_stage_rect (i);
       m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
+    }
+    for (int i = 0; i < 4; ++i) {
+      const UiRect edit = edit_stage_rect (i);
       m_ui.button (dl, edit, edit_labels[i], hot (edit),
 		   m_pointer_down, false);
     }
@@ -1755,12 +1846,14 @@ namespace game {
 	     hot (counter_plus_rect (bounds)), m_pointer_down);
 	}
       }
-      m_ui.label (dl, right_x + 8, 294,
-		  stage_name (stage), true);
-      m_ui.label (dl, right_x + 8, 316,
-		  stage_detail (stage));
-      m_ui.label (dl, right_x + 8, 338,
-		  semantics_detail (stage), true);
+      if (count <= 3) {
+	m_ui.label (dl, right_x + 8, 294,
+		    stage_name (stage), true);
+	m_ui.label (dl, right_x + 8, 316,
+		    stage_detail (stage));
+	m_ui.label (dl, right_x + 8, 338,
+		    semantics_detail (stage), true);
+      }
       if (std::holds_alternative<terrain::NormalizeHeights> (stage)) {
 	m_ui.label (dl, right_x + 8, 366,
 		    "A whole-raster materialization barrier.");
@@ -1846,9 +1939,12 @@ namespace game {
        "Readings color the surface; geometry stays terrain.");
     const terrain::HydraulicErosionReport* erosion_report = nullptr;
     const terrain::HydraulicErosion* erosion_stage = nullptr;
+    const terrain::AnalyticalErosionReport* analytical_report = nullptr;
     if (m_selected_stage >= 0
 	&& m_selected_stage < static_cast<int> (m_reports.size ())) {
       erosion_report = std::get_if<terrain::HydraulicErosionReport>
+	(&m_reports[static_cast<std::size_t> (m_selected_stage)]);
+      analytical_report = std::get_if<terrain::AnalyticalErosionReport>
 	(&m_reports[static_cast<std::size_t> (m_selected_stage)]);
       erosion_stage = std::get_if<terrain::HydraulicErosion>
 	(&m_program.transforms[static_cast<std::size_t> (m_selected_stage)]);
@@ -1885,6 +1981,28 @@ namespace game {
 	   (static_cast<int> (report.stopped_at_water_cutoff))
 	 + "  FLAT " + format_count
 	   (static_cast<int> (report.stopped_flat)));
+    } else if (analytical_report) {
+      const auto& report = *analytical_report;
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 232,
+	 "FINITE-TIME STREAM POWER", true);
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 254,
+	 "FIXED BOUNDARIES "
+	 + format_count (static_cast<int> (report.fixed_boundaries))
+	 + "  PASSES " + std::to_string (report.fixed_point_iterations));
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 276,
+	 "LOWERED " + format_ledger (report.lowered_volume_m3)
+	 + " M3  RAISED " + format_ledger (report.raised_volume_m3));
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 298,
+	 "MEAN CHANGE " + format_float
+	   (static_cast<float> (report.mean_absolute_change_m), 2) + " M");
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 320,
+	 "MAX CHANGE " + format_float
+	   (static_cast<float> (report.maximum_absolute_change_m), 2) + " M");
     }
     m_ui.end (dl);
   }

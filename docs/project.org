@@ -75,6 +75,9 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Explicit residual-sediment deposition; recorded experiments close the
   sediment ledger.
 - [X] Path-monotone carving option, now the default in =HydraulicErosion=.
+- [X] Finite-time =n=1= analytical stream-power transform with physical age,
+  uplift, erodibility, drainage exponent, and routing controls.
+- [X] Fixed-seed source/analytical/droplet/talus comparison harness.
 - [X] Priority-flood standing-water surface and deterministic lake census.
 - [X] Puddle, pond, lake, and sea classifications.
 - [X] Area/depth/volume permanence policy for rendered inland water.
@@ -155,6 +158,24 @@ Path-monotone carving reduced sinks and small water bodies in the recorded
 strong.  Add clamp-frequency and pit-attribution instrumentation before
 deciding that it is the final physical rule.
 
+** DONE Establish the first global stream-power comparison
+
+The first global pass implements the finite-time characteristic solution from
+Tzathas et al. for =n=1=.  It evaluates initial elevation and uplift along the
+depression-aware drainage trees, fixes ocean cells, and optionally recomputes
+routing with relaxed fixed-point passes.  It is a first analytical slice, not
+the paper's complete multigrid solver.
+
+Terrain Lab exposes =+AGE= independently from =+DROP= and =+TALUS=.  The
+=terrain-stream-power-experiment= tool replays source, analytical, droplets,
+and their combinations from one checkpoint.  On seed 123 at 257 square, the
+200 ky / four-pass / 30K-drop combined-plus-talus result reduced dry sinks
+from 515 in the source and 416 after droplets to 303, and reduced ponds from
+46 after droplets to 12.  It retained 112 persistent-channel cells versus 132
+after droplets alone.  The analytical-only result creates many one-cell
+discontinuities, confirming the paper's warning that hillslope treatment is
+part of a usable method rather than optional polish.
+
 * Near horizon
 
 ** NEXT Couple erosion to standing water
@@ -165,14 +186,14 @@ the basin's full flow.  This should allow ponds to fill, outlets to retreat,
 and drainage networks to mature instead of treating every sink as a terminal
 error.
 
-** NEXT Compare erosion scales
+** NEXT Complete the analytical erosion method
 
-Keep droplet erosion, but test it as the detailed finishing stage after a
-global stream-power pass.  The first experiment should be a deterministic CPU
-transform with age, uplift, erodibility, drainage-area exponent, and hillslope
-strength.  Compare geological source, stream power, droplets, and the combined
-pipeline on the same seeds.  Analytical age-based erosion and FastFlow-style
-GPU routing remain follow-on experiments, not prerequisites.
+Keep the new finite-time transform as the drainage-scale stage and droplets as
+the detailed finishing stage.  Next, add the paper's coarse-to-fine routing
+acceleration and slope/hillslope correction, then repeat the comparison across
+several fixed seeds and at rider resolution.  FastFlow-style GPU routing
+remains a possible backend for the same graph contract rather than a different
+erosion meaning.
 
 ** NEXT Let hydrology drive water rendering
 
@@ -235,6 +256,19 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Finite-time stream power becomes a pipeline stage
+
+- Implemented the paper's =n=1= characteristic solution over routed river
+  trees with physical age, uplift, erodibility, and drainage-area exponent.
+- Used ocean cells as fixed boundaries and depression-aware routes for inland
+  bodies; enforced the detachment-limited bound that terrain cannot rise
+  faster than uplift.
+- Added deterministic, seam, zero-age, uplift, and no-spurious-rise tests.
+- Added =+AGE= controls and change ledgers to Terrain Lab and a six-mode
+  fixed-seed comparison tool.
+- Recorded that the global pass supplies strong dendritic structure but needs
+  talus/droplet finishing to suppress fixed-graph discontinuities.
 
 ** 2026-07-11 Routed reaches become animated river surfaces
 
