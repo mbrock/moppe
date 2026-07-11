@@ -128,11 +128,10 @@ TerrainView -> DrainageGraph
 
 The periodic D8 analysis works on the unique torus samples, omitting the
 duplicated rendering seam. Each cell stores one `uint32_t` receiver rather
-than an adjacency matrix. Receivers must be strictly lower; a cell with no
-lower neighbor points to itself and is an explicit sink. Sorting cells by
-height then gives deterministic upstream-area accumulation and basin
-assignment without graph cycles. Depression filling or breaching is a future
-policy, not a hidden part of this first reference interpretation.
+than an adjacency matrix. Receivers in the dry reference reading must be
+strictly lower; a cell with no lower neighbor points to itself and is an
+explicit sink. Sorting cells by height then gives deterministic upstream-area
+accumulation and basin assignment without graph cycles.
 
 Standing water is a second structured reading over the same samples:
 
@@ -147,9 +146,12 @@ TerrainView + sea level -> FloodField
 A deterministic D8 priority flood begins at every submerged ocean cell and
 propagates the lowest possible spill elevation over the unique torus. An
 all-land torus uses its global minimum as an explicit endorheic fallback.
-Every spill-receiver chain is acyclic and reaches one of those roots. This is
-currently an observational reading: dry drainage and hydraulic erosion do not
-yet route across its water surface. In random-world gameplay, however, the
+Every spill-receiver chain is acyclic and reaches one of those roots. The wet
+drainage interpretation chooses strict downhill D8 routes on this filled
+surface and follows the spill forest to resolve equal-height lake interiors.
+Its general topological accumulation carries the full upstream area across
+lakes without mutating terrain. Hydraulic erosion does not yet consume this
+route. In random-world gameplay, however, the
 same `FloodField::water_level` raster drives the animated water grid: vertices
 sample the local lake elevation, dry fragments are discarded, and wave
 amplitude fades toward each shore. This changes presentation and spawn-site

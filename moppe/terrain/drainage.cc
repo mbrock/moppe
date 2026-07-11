@@ -1,9 +1,13 @@
 #include <moppe/terrain/drainage.hh>
+#include <moppe/terrain/flood.hh>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <numeric>
+#include <queue>
+#include <span>
 #include <stdexcept>
 
 namespace moppe::terrain {
@@ -110,6 +114,123 @@ namespace moppe::terrain {
     };
     return {
       .source_grid = source_grid,
+      .receiver = std::move (receiver),
+      .slope = ScalarRaster (domain, std::move (slope)),
+      .contributing_area = ScalarRaster (domain, std::move (area)),
+      .basin = std::move (basin),
+      .sinks = std::move (sinks)
+    };
+  }
+
+  DrainageGraph
+  analyze_wet_drainage (const TerrainView& terrain,
+			const FloodField& flood,
+			const DrainageParameters& parameters)
+  {
+    if (parameters.routing != DrainageRouting::D8)
+      throw std::invalid_argument ("unsupported drainage routing");
+
+    const TerrainGrid& grid = terrain.grid ();
+    const std::size_t width = grid.unique_width ();
+    const std::size_t height = grid.unique_height ();
+    const std::size_t count = width * height;
+    if (flood.width () != width || flood.height () != height
+	|| flood.source_grid.topology != grid.topology
+	|| flood.source_grid.spacing_x != grid.spacing_x
+	|| flood.source_grid.spacing_y != grid.spacing_y
+	|| flood.source_grid.height_scale != grid.height_scale)
+      throw std::invalid_argument ("flood field does not match terrain");
+
+    const bool periodic = grid.topology == Topology::Torus;
+    const std::span<const float> surface = flood.water_level.values ();
+    const auto index = [width] (std::size_t x, std::size_t y) {
+      return y * width + x;
+    };
+
+    std::vector<std::uint32_t> receiver (count);
+    std::vector<float> slope (count, 0.0f);
+    for (std::size_t y = 0; y < height; ++y)
+      for (std::size_t x = 0; x < width; ++x) {
+	const std::size_t cell = index (x, y);
+	receiver[cell] = flood.spill_receiver[cell];
+	float steepest = 0.0f;
+	for (const Offset offset : neighbors) {
+	  const int raw_x = static_cast<int> (x) + offset.x;
+	  const int raw_y = static_cast<int> (y) + offset.y;
+	  if (!periodic && (raw_x < 0 || raw_y < 0
+			      || raw_x >= static_cast<int> (width)
+			      || raw_y >= static_cast<int> (height)))
+	    continue;
+	  const std::size_t nx = periodic ? wrapped (raw_x, width)
+				    : static_cast<std::size_t> (raw_x);
+	  const std::size_t ny = periodic ? wrapped (raw_y, height)
+				    : static_cast<std::size_t> (raw_y);
+	  const std::size_t next = index (nx, ny);
+	  const float distance = std::hypot
+	    (offset.x * grid.spacing_x, offset.y * grid.spacing_y);
+	  const float candidate = (surface[cell] - surface[next])
+	    * grid.height_scale / distance;
+	  if (candidate > steepest) {
+	    steepest = candidate;
+	    receiver[cell] = static_cast<std::uint32_t> (next);
+	  }
+	}
+	slope[cell] = steepest;
+      }
+
+    // Equal-height lake routes cannot be accumulated by elevation order.
+    // Receiver edges either lower the filled surface or follow the acyclic
+    // priority-flood forest, so a general topological pass handles both.
+    std::vector<std::uint32_t> donors (count, 0);
+    for (std::uint32_t cell = 0; cell < count; ++cell)
+      if (receiver[cell] != cell)
+	++donors[receiver[cell]];
+
+    std::priority_queue<std::uint32_t, std::vector<std::uint32_t>,
+			std::greater<std::uint32_t>> ready;
+    for (std::uint32_t cell = 0; cell < count; ++cell)
+      if (donors[cell] == 0)
+	ready.push (cell);
+
+    const float cell_area = grid.spacing_x * grid.spacing_y;
+    std::vector<float> area (count, cell_area);
+    std::vector<std::uint32_t> order;
+    order.reserve (count);
+    while (!ready.empty ()) {
+      const std::uint32_t cell = ready.top ();
+      ready.pop ();
+      order.push_back (cell);
+      if (receiver[cell] == cell)
+	continue;
+      const std::uint32_t next = receiver[cell];
+      area[next] += area[cell];
+      if (--donors[next] == 0)
+	ready.push (next);
+    }
+    if (order.size () != count)
+      throw std::logic_error ("wet drainage routing contains a cycle");
+
+    std::vector<std::uint32_t> basin (count);
+    std::vector<std::uint32_t> sinks;
+    for (auto i = order.rbegin (); i != order.rend (); ++i) {
+      const std::uint32_t cell = *i;
+      if (receiver[cell] == cell) {
+	basin[cell] = cell;
+	sinks.push_back (cell);
+      } else {
+	basin[cell] = basin[receiver[cell]];
+      }
+    }
+    std::sort (sinks.begin (), sinks.end ());
+
+    const Domain2D domain {
+      .width = width,
+      .height = height,
+      .max_x = grid.spacing_x * static_cast<float> (width),
+      .max_y = grid.spacing_y * static_cast<float> (height)
+    };
+    return {
+      .source_grid = grid,
       .receiver = std::move (receiver),
       .slope = ScalarRaster (domain, std::move (slope)),
       .contributing_area = ScalarRaster (domain, std::move (area)),
