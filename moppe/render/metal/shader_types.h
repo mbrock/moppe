@@ -118,10 +118,11 @@ struct MoppeOceanUniforms {
 };
 
 struct MoppeGrassUniforms {
-  MoppeFloat4 grid;           // xy=world origin, z=spacing, w=side count
+  MoppeFloat4 grid;           // xy=origin cell indices, z=spacing, w=side
   MoppeFloat4 terrain;        // xyz=terrain scale, w=radius
   MoppeFloat4 limits;         // x=sea norm, y=max height norm, z=periodic
                               // w=blades per cell
+  MoppeFloat4 mesh;           // xy=patch grid dimensions (mesh path)
 };
 
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,

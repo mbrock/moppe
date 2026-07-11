@@ -253,6 +253,8 @@ namespace render {
     id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
     id<MTLRenderPipelineState> m_grass_pipeline = nil;
+    id<MTLRenderPipelineState> m_grass_mesh_pipeline = nil;
+    bool m_mesh_shaders_ok = false;
     id<MTLRenderPipelineState> m_river = nil;
 
     // depth-stencil: index [test][write], reversed-Z (>=)
@@ -370,6 +372,8 @@ namespace render {
 #else
     m_memoryless_ok = [m_device supportsFamily: MTLGPUFamilyApple2];
 #endif
+    if (@available (macOS 13.0, iOS 16.0, *))
+      m_mesh_shaders_ok = [m_device supportsFamily: MTLGPUFamilyMetal3];
 
     NSError* error = nil;
     NSString* path = [NSString stringWithUTF8String: lib_path.c_str ()];
@@ -512,6 +516,39 @@ namespace render {
 			   scene, depth, MSAA_SAMPLES, false);
     m_ocean = make_pipeline (@"ocean_vertex", @"ocean_fragment",
 			     scene, depth, MSAA_SAMPLES, true);
+    if (m_mesh_shaders_ok) {
+      if (@available (macOS 13.0, iOS 16.0, *)) {
+	// The mesh grass path: an object stage culls patches and a mesh
+	// stage emits the surviving blades. Falls back to the instanced
+	// vertex pipeline when compilation or hardware support fails.
+	MTLMeshRenderPipelineDescriptor* d =
+	  [[MTLMeshRenderPipelineDescriptor alloc] init];
+	d.objectFunction = [m_library newFunctionWithName: @"grass_object"];
+	d.meshFunction = [m_library newFunctionWithName: @"grass_mesh"];
+	d.fragmentFunction =
+	  [m_library newFunctionWithName: @"grass_fragment"];
+	d.rasterSampleCount = MSAA_SAMPLES;
+	d.colorAttachments[0].pixelFormat = scene;
+	d.depthAttachmentPixelFormat = depth;
+	d.stencilAttachmentPixelFormat = depth;
+	d.payloadMemoryLength = 1024;
+	d.maxTotalThreadsPerObjectThreadgroup = 64;
+	d.maxTotalThreadsPerMeshThreadgroup = 32;
+	if (d.objectFunction && d.meshFunction && d.fragmentFunction) {
+	  NSError* error = nil;
+	  m_grass_mesh_pipeline = [m_device
+	    newRenderPipelineStateWithMeshDescriptor: d
+					     options: MTLPipelineOptionNone
+					  reflection: nil
+					       error: &error];
+	  if (!m_grass_mesh_pipeline)
+	    std::cerr << "moppe: grass mesh pipeline failed: "
+		      << (error
+			  ? error.localizedDescription.UTF8String : "?")
+		      << std::endl;
+	}
+      }
+    }
     m_grass_pipeline = make_pipeline (@"grass_vertex", @"grass_fragment",
 				      scene, depth, MSAA_SAMPLES, false);
     m_river = make_pipeline (@"river_vertex", @"river_fragment",
@@ -1419,13 +1456,11 @@ namespace render {
 	|| params.blades_per_cell <= 0)
       return;
 
-    id<MTLRenderCommandEncoder> enc = scene_encoder ();
-    [enc setRenderPipelineState: m_grass_pipeline];
-    [enc setDepthStencilState: m_ds[1][1]];
-    [enc setCullMode: MTLCullModeNone];
-
     const int side = (int) std::ceil
       ((2.0f * params.radius) / params.spacing);
+    // Patch dimensions mirror GRASS_PATCH_X/Z in grass.metal.
+    const int patches_x = (side + 3) / 4;
+    const int patches_z = (side + 1) / 2;
     MoppeGrassUniforms u;
     std::memset (&u, 0, sizeof (u));
     // The window origin travels as exact integer cell indices; the shader
@@ -1445,18 +1480,47 @@ namespace render {
     u.limits.y = 0.42f;
     u.limits.z = m_terrain_params.periodic ? 1.0f : 0.0f;
     u.limits.w = (float) params.blades_per_cell;
+    u.mesh.x = (float) patches_x;
+    u.mesh.y = (float) patches_z;
 
-    [enc setVertexBytes: &m_fu length: sizeof (m_fu)
-		 atIndex: MOPPE_BUF_FRAME];
+    id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    [enc setDepthStencilState: m_ds[1][1]];
+    [enc setCullMode: MTLCullModeNone];
     [enc setFragmentBytes: &m_fu length: sizeof (m_fu)
 		   atIndex: MOPPE_BUF_FRAME];
+    if (m_shadow_map)
+      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
+
+    if (m_grass_mesh_pipeline) {
+      if (@available (macOS 13.0, iOS 16.0, *)) {
+	[enc setRenderPipelineState: m_grass_mesh_pipeline];
+	[enc setObjectBytes: &m_fu length: sizeof (m_fu)
+		    atIndex: MOPPE_BUF_FRAME];
+	[enc setObjectBytes: &u length: sizeof (u)
+		    atIndex: MOPPE_BUF_DRAW];
+	[enc setObjectTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
+	[enc setMeshBytes: &m_fu length: sizeof (m_fu)
+		  atIndex: MOPPE_BUF_FRAME];
+	[enc setMeshBytes: &u length: sizeof (u)
+		  atIndex: MOPPE_BUF_DRAW];
+	[enc setMeshTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
+	[enc setMeshTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
+	const NSUInteger total = (NSUInteger) patches_x
+	  * (NSUInteger) patches_z;
+	[enc drawMeshThreadgroups: MTLSizeMake ((total + 63) / 64, 1, 1)
+	  threadsPerObjectThreadgroup: MTLSizeMake (64, 1, 1)
+	     threadsPerMeshThreadgroup: MTLSizeMake (32, 1, 1)];
+	return;
+      }
+    }
+
+    [enc setRenderPipelineState: m_grass_pipeline];
+    [enc setVertexBytes: &m_fu length: sizeof (m_fu)
+		 atIndex: MOPPE_BUF_FRAME];
     [enc setVertexBytes: &u length: sizeof (u)
 		 atIndex: MOPPE_BUF_DRAW];
     [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
     [enc setVertexTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
-    if (m_shadow_map)
-      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
-
     const NSUInteger vertices = 18u
       * (NSUInteger) params.blades_per_cell;
     const NSUInteger instances = (NSUInteger) side * (NSUInteger) side;
