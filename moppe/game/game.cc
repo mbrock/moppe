@@ -211,6 +211,7 @@ namespace game {
 	m_total_time (0),
 	m_frame_time (1.0f / 60.0f),
 	m_shake (0),
+	m_shake_time (0),
 	m_health (100.0f),
 	m_fov_k (0),
 	m_lives (10),
@@ -701,7 +702,8 @@ namespace game {
       // a low pancake of dust plus a ring of ballistic clods.
       const float impact = driving ? av.pop_impact () : 0.0f;
       if (impact > 8.0f) {
-	m_shake = std::min (0.45f, 0.018f * impact);
+	m_shake = std::min (0.28f, 0.010f * impact);
+	m_shake_time = 0.0f;
 	m_dust.emit (vpos + Vector3D (0, -0.7f, 0),
 		     av.velocity () * 0.2f, 12,
 		     in_water ? spray_color : dust_color);
@@ -746,6 +748,7 @@ namespace game {
 	  av.reset (Vector3D (vpos.x, ground + 1.2f, vpos.z));
 	  m_health = 100.0f;
 	  m_shake = 1.0f;
+	  m_shake_time = 0.0f;
 	}
       }
 
@@ -784,7 +787,8 @@ namespace game {
       }
 
       m_dust.update (dt);
-      m_shake *= std::exp (-4.0f * dt);
+      m_shake_time += dt;
+      m_shake *= std::exp (-7.0f * dt);
 
       if (m_cam_mode == CAM_HELMET) {
 	// Ride inside the rider's head; lightly smoothed so
@@ -851,8 +855,8 @@ namespace game {
 	(degrees_to_radians (fov), aspect, 0.5f,
 	 m_world.pico_mode ? 30000.0f : 9000.0f);
 
-      // Hard-landing camera shake, faded near the ground so the
-      // view can't dip below the terrain.
+      // Hard landings produce a brief continuous vibration. Randomizing the
+      // rotations each frame looked like violent camera teleportation.
       Mat4 view = terrain_lab
 	? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
       if (!terrain_lab && !m_water_inspection && m_shake > 0.005f) {
@@ -863,13 +867,17 @@ namespace game {
 	const float room = std::min
 	  (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
 
-	std::uniform_real_distribution<float> u (-1.0f, 1.0f);
+	const float pulse = m_shake * room;
+	const float roll = pulse * std::sin (2.0f * PI * 15.0f
+					    * m_shake_time);
+	const float pitch = pulse * 0.55f
+	  * std::sin (2.0f * PI * 19.0f * m_shake_time + 0.7f);
 	view = view
 	  * Mat4::rotation (degrees_to_radians
-			    (m_shake * room * u (m_fx_rng)),
+			    (roll),
 			    Vector3D (0, 0, 1))
 	  * Mat4::rotation (degrees_to_radians
-			    (m_shake * room * u (m_fx_rng)),
+			    (pitch),
 			    Vector3D (1, 0, 0));
       }
       fp.view = view;
@@ -1396,6 +1404,7 @@ namespace game {
       m_health = 100.0f;
       m_fuel = 100.0f;
       m_shake = 0.0f;
+      m_shake_time = 0.0f;
       m_mode = M_BIKE;
       // Back to the start, but ON the ground rather than 600 m
       // over it.
@@ -1464,6 +1473,7 @@ namespace game {
     float m_flare = 0.0f;
     Vector3D m_fog;
     float m_shake;
+    float m_shake_time;
     float m_health;
     float m_fov_k;
     int m_lives;
