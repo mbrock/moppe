@@ -70,6 +70,7 @@ namespace game {
     params.shadow_resolution = interactive_preview ? 1024 : 4096;
     params.shadow_sample_step = interactive_preview ? 2 : 1;
     params.fog_scale = world.fog_scale;
+    params.topology_overlay = ::getenv ("MOPPE_TERRAIN_TOPOLOGY") != nullptr;
     params.periodic = map.periodic ();
     params.projection = projection;
     const float shortest_period = std::min (m_period.x, m_period.z);

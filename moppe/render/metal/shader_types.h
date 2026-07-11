@@ -76,6 +76,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 params3;        // x=derive normals, y=periodic
                               // z=height blend, w=previous shadow texel
   MoppeFloat4 params4;        // x=overlay ramp + 1, y=min, z=max, w=opacity
+  MoppeFloat4 params5;        // x=terrain topology overlay opacity
 };
 
 // Per-chunk terrain instance data.

@@ -17,7 +17,85 @@ struct TerrainVaryings {
   float4 shadow_coord;
   float2 uv;
   float2 field_uv;
+  float2 grid_coord;       // authoritative source-height lattice
+  float2 mesh_coord;       // actual rendered lattice, for topology overlay
+  float lod_step [[flat]]; // source texels per rendered grid edge
 };
+
+// Catmull-Rom reconstruction and its derivative. The final 2D height is
+// kept within the four corners of the source cell, so smoothing cannot grow a
+// new peak or dig a new pit between authoritative height samples.
+static inline float2
+terrain_cubic (float p0, float p1, float p2, float p3, float t)
+{
+  const float a = 0.5 * (-p0 + 3.0 * p1 - 3.0 * p2 + p3);
+  const float b = 0.5 * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3);
+  const float c = 0.5 * (-p0 + p2);
+  return float2 (((a * t + b) * t + c) * t + p1,
+                 (3.0 * a * t + 2.0 * b) * t + c);
+}
+
+static inline uint2
+terrain_sample_position (int2 p, uint2 limit, bool periodic)
+{
+  if (periodic) {
+    const int2 period = int2 (limit);
+    p = (p % period + period) % period;
+  } else {
+    p = clamp (p, int2 (0), int2 (limit));
+  }
+  return uint2 (p);
+}
+
+// Returns normalized height and derivatives with respect to source-grid x/z.
+static inline float3
+terrain_height_smooth (float2 grid,
+                       constant MoppeTerrainUniforms& u,
+                       texture2d<float, access::read> heights)
+{
+  const uint2 limit (heights.get_width () - 1, heights.get_height () - 1);
+  const bool periodic = u.params3.y > 0.5;
+  if (periodic)
+    grid -= floor (grid / float2 (limit)) * float2 (limit);
+  else
+    grid = clamp (grid, float2 (0.0), float2 (limit));
+
+  const int2 cell = int2 (floor (grid));
+  const float2 f = fract (grid);
+  float row[4];
+  float dx[4];
+  for (int j = 0; j < 4; ++j) {
+    float p[4];
+    for (int i = 0; i < 4; ++i)
+      p[i] = heights.read (terrain_sample_position
+        (cell + int2 (i - 1, j - 1), limit, periodic)).r;
+    const float2 value = terrain_cubic (p[0], p[1], p[2], p[3], f.x);
+    row[j] = value.x;
+    dx[j] = value.y;
+  }
+  const float2 y = terrain_cubic
+    (row[0], row[1], row[2], row[3], f.y);
+  const float x = terrain_cubic
+    (dx[0], dx[1], dx[2], dx[3], f.y).x;
+
+  const float h00 = heights.read (terrain_sample_position
+    (cell, limit, periodic)).r;
+  const float h10 = heights.read (terrain_sample_position
+    (cell + int2 (1, 0), limit, periodic)).r;
+  const float h01 = heights.read (terrain_sample_position
+    (cell + int2 (0, 1), limit, periodic)).r;
+  const float h11 = heights.read (terrain_sample_position
+    (cell + int2 (1), limit, periodic)).r;
+  const float lo = min (min (h00, h10), min (h01, h11));
+  const float hi = max (max (h00, h10), max (h01, h11));
+  if (y.x < lo || y.x > hi) {
+    const float h0 = mix (h00, h10, f.x);
+    const float h1 = mix (h01, h11, f.x);
+    const float bilinear_x = mix (h10 - h00, h11 - h01, f.y);
+    return float3 (mix (h0, h1, f.y), bilinear_x, h1 - h0);
+  }
+  return float3 (y.x, x, y.y);
+}
 
 static inline float
 terrain_height_bilinear (float2 grid,
@@ -197,8 +275,13 @@ terrain_vertex (uint index [[vertex_id]],
     normal = terrain_preview_normal
       (grid, u, heights, previous_heights);
   } else if (chunk.step < 1.0) {
-    h = terrain_height_bilinear (grid, heights);
-    normal = terrain_normal_bilinear (grid, normals);
+    const float3 smooth = terrain_height_smooth (grid, u, heights);
+    h = smooth.x;
+    const float3 tangent_x
+      (u.params0.x, smooth.y * u.params0.y, 0.0);
+    const float3 tangent_z
+      (0.0, smooth.z * u.params0.y, u.params0.z);
+    normal = normalize (cross (tangent_z, tangent_x));
   } else {
     h = heights.read (uint2 (grid)).r;
     normal = terrain_read_normal (uint2 (grid), normals);
@@ -279,6 +362,10 @@ terrain_vertex (uint index [[vertex_id]],
     * u.params0.w;
   out.field_uv = grid / float2 (heights.get_width () - 1,
 				heights.get_height () - 1);
+  out.grid_coord = grid;
+  out.mesh_coord = (grid - float2 (chunk.origin_x, chunk.origin_z))
+    / chunk.step;
+  out.lod_step = chunk.step;
   return out;
 }
 
@@ -619,6 +706,31 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   lit += snow_coef * u.sun_specular.rgb * shadow
     * pow (max (dot (n, h), 0.0), 32.0) * 0.5;
 
-  const float3 color = texel * lit;
+  float3 color = texel * lit;
+  if (u.params5.x > 0.0) {
+    // The quarter-cell reconstruction is usually too dense to read as a
+    // wireframe, so show its authoritative source-height cells. Native and
+    // coarser levels show their actual rendered triangles.
+    const float2 topology_coord = in.lod_step < 1.0
+      ? in.grid_coord : in.mesh_coord;
+    const float2 cell = fract (topology_coord);
+    const float2 axis_width = max (fwidth (topology_coord), float2 (1e-4));
+    const float axis_edge = min
+      (min (cell.x, 1.0 - cell.x) / axis_width.x,
+       min (cell.y, 1.0 - cell.y) / axis_width.y);
+    const float diagonal_width = max
+      (fwidth (topology_coord.x + topology_coord.y), 1e-4);
+    const float diagonal_edge = in.lod_step < 1.0 ? 1e4
+      : abs (cell.x + cell.y - 1.0) / diagonal_width;
+    const float edge = min (axis_edge, diagonal_edge);
+    const float line = 1.0 - smoothstep (0.45, 1.25, edge);
+    const float distance_fade = 1.0 - smoothstep (1400.0, 2200.0, dist);
+    const float lod_band = clamp (log2 (max (in.lod_step, 0.25)) + 2.0,
+                                  0.0, 5.0) / 5.0;
+    const float3 lod_tint = mix (float3 (0.82, 0.94, 1.0),
+                                 float3 (1.0, 0.84, 0.68), lod_band);
+    color = mix (color, color * lod_tint, 0.055 * distance_fade);
+    color *= 1.0 - line * u.params5.x * distance_fade;
+  }
   return float4 (mix (color, fog_c, fog_factor), 1.0);
 }
