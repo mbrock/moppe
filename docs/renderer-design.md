@@ -183,7 +183,7 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
     scene pass  (MSAA 4x → resolve into sceneA, Depth32F reversed-Z)
        terrain → sky → city sectors → vegetation sectors → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
-       blob shadows) → ocean → dust        (same order as today)
+       blob shadows) → river ribbons → ocean → dust
     post passes (ping-pong sceneA/sceneB as needed)
        underwater grade (when camera submerged)
        motion-blur ghosts: current += 3 zoomed alpha quads of prevFrame
@@ -196,6 +196,15 @@ demands it), Metal [0,1] clip z, non-sRGB formats everywhere to preserve the
 original gamma-space look. The sky shader forces depth to the far plane
 (z = 0 under reversed-Z) and tests against cleared depth, so terrain still
 occludes the expensive cloud shader.
+
+River ribbons are retained `DrawList` meshes but use a dedicated translucent
+scene pipeline.  Their UVs encode across-stream position and cumulative
+downstream distance; packed vertex color carries rapid strength and a
+logarithmic discharge signal.  The shader derives moving ribs, restrained
+foam, Fresnel response, and sun glint from those readings.  It depth-tests
+without writing depth and is drawn before the standing-water grid.  The mesh
+is presentation-only: the ordered `RiverNetwork` and terrain remain the
+authoritative routing and bed data.
 
 ## Terrain: vertex pulling (the big modernization)
 

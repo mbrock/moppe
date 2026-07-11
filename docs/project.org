@@ -83,6 +83,7 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Explicit global-ocean identity and route-proven inland body spills.
 - [X] Body inlet and outflow catchment ledgers for rendering and erosion.
 - [X] Directed dry river reaches split at confluences and water bodies.
+- [X] World-space river ribbons animated from reach direction and discharge.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
@@ -106,21 +107,37 @@ consume the wet graph.
 
 * Active work
 
-** TODO Render river ribbons from reaches
+** DONE Render the first river ribbons from reaches
 
-Terrain Lab now shows coherent dry reaches above a contributing-area
-threshold, stopping at lake inlets and resuming at spills.  The next step is a
-world-space ribbon representation that follows those ordered cells, widens
-with discharge, stays slightly above its bed, and carries flow coordinates for
-animated detail.  It should remain presentation only until its alignment has
-been judged from the motorcycle.
+The game and Terrain Lab now build retained world-space ribbons from coherent
+dry reaches.  They follow the ordered receiver cells, widen with catchment,
+sit just above the sampled bed, and carry downstream distance, discharge, and
+rapid strength into an animated Metal material.  A presentation threshold of
+1,024 source cells keeps the rendered network to persistent-looking channels;
+the denser analytical network remains available in Terrain Lab.
 
 Acceptance evidence:
 
-- Ribbons join cleanly at confluences and water-body boundaries.
-- Width and animation direction visibly agree with discharge and routing.
-- Near-field rivers survive rider-scale inspection without excessive z-fight.
-- Rendering remains downstream of the reading and does not edit terrain.
+- [X] Seed 123 completes wet routing and renders in both Lab and gameplay.
+- [X] Width increases with catchment and animation follows downstream distance.
+- [X] Near-field ribbons remain above the sampled bed without visible z-fight.
+- [X] Rendering consumes derived readings and does not edit terrain.
+
+This is a first visible slice, not finished river morphology.  Cell-center
+polylines can still bend sharply, confluences have no fitted junction surface,
+and a steep reach is only shaded as a rapid rather than turned into a vertical
+fall or spray system.  Those limitations are now visible enough to guide the
+next iterations.
+
+** TODO Make channels read as watercourses rather than routed ribbons
+
+- Smooth or fit reach centerlines while preserving confluences and periodic
+  continuity.
+- Build explicit junction and lake/ocean mouth geometry.
+- Use longitudinal bed profiles to separate quiet flow, rapids, cascades, and
+  true falls; add foam and spray only where those regimes warrant it.
+- Give the rider water contact, crossing, and depth feedback after the visual
+  surface is stable.
 
 ** TODO Improve lake identity and inspection
 
@@ -218,6 +235,17 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Routed reaches become animated river surfaces
+
+- Added a retained river-ribbon mesh and a flow-aligned Metal material shared
+  by Terrain Lab and the random game.
+- Made ribbon width a physical catchment reading and separated the visible
+  channel cutoff from the denser analysis network.
+- Fixed a large-world routing cycle by selecting a lake's final flood-tree
+  departure after any dry-saddle re-entry; added a synthetic regression test.
+- Verified fixed seed 123 from the motorcycle and added direct ribbon geometry
+  tests for scale, widening, and finite vertices.
 
 ** 2026-07-11 Wet drainage crosses standing water
 

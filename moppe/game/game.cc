@@ -9,6 +9,7 @@
 
 #include <moppe/game/world.hh>
 #include <moppe/game/terrain.hh>
+#include <moppe/game/river_surface.hh>
 #include <moppe/game/terrain_lab.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/game/chase_camera.hh>
@@ -391,6 +392,13 @@ namespace game {
 	m_standing_water = terrain::analyze_standing_water
 	  (m_map.terrain_view (), sea_level);
 	m_lake_census = terrain::census_lakes (*m_standing_water);
+	m_drainage = terrain::analyze_wet_drainage
+	  (m_map.terrain_view (), *m_standing_water, *m_lake_census);
+	m_water_network = terrain::analyze_water_network
+	  (*m_standing_water, *m_lake_census, *m_drainage);
+	m_rivers = terrain::extract_river_network
+	  (*m_standing_water, *m_lake_census, *m_drainage,
+	   visible_river_minimum_area (m_drainage->source_grid));
       }
 
       if (!m_terrain_lab_preview) {
@@ -411,6 +419,10 @@ namespace game {
       render::Renderer& r = *m_renderer;
 
       m_terrain.setup (r, m_map, m_world);
+      if (m_rivers)
+	m_river_surface.rebuild
+	  (r, m_map, *m_standing_water, *m_lake_census,
+	   *m_drainage, *m_rivers);
       if (!m_terrain_lab_preview) {
 	m_terrain.render_shadow (r, m_map,
 				 sun_direction_for (SUN_HEIGHT));
@@ -906,6 +918,11 @@ namespace game {
 
       // Translucent water late so the seabed and fish show
       // through; dust last so spray sits atop the surface.
+      if (terrain_lab)
+	m_terrain_lab.render_rivers (r, cam);
+      else
+	m_river_surface.draw (r, cam);
+
       if (!terrain_lab) {
 	render::OceanParams ocean;
 	ocean.time = m_total_time;
@@ -1189,6 +1206,10 @@ namespace game {
       m_gen_stage = 0;
       m_standing_water.reset ();
       m_lake_census.reset ();
+      m_drainage.reset ();
+      m_water_network.reset ();
+      m_rivers.reset ();
+      m_river_surface.clear ();
       ++m_seed;
       m_mode = M_BIKE;
       m_car_exists = false;
@@ -1318,6 +1339,10 @@ namespace game {
     map::RandomHeightMap m_map;
     std::optional<terrain::FloodField> m_standing_water;
     std::optional<terrain::LakeCensus> m_lake_census;
+    std::optional<terrain::DrainageGraph> m_drainage;
+    std::optional<terrain::WaterNetwork> m_water_network;
+    std::optional<terrain::RiverNetwork> m_rivers;
+    RiverSurface m_river_surface;
     Terrain m_terrain;
     TerrainLab m_terrain_lab;
     ChaseCamera m_camera;
