@@ -296,17 +296,23 @@ namespace moppe::terrain {
       body.ocean_connected = flood.has_ocean
 	&& std::fabs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
       if (!body.ocean_connected) {
-	for (const std::uint32_t cell : members) {
+	// A priority-flood path can leave a connected flat, cross a dry
+	// saddle, and re-enter the same flat.  Use its final departure as the
+	// body's spill; rebuilding the body as one drainage tree at an earlier
+	// departure would point that tree back into itself.
+	std::uint32_t cell = members.front ();
+	std::size_t steps = 0;
+	while (flood.spill_receiver[cell] != cell && steps < count) {
 	  const std::uint32_t next = flood.spill_receiver[cell];
-	  if (next == cell || census.body[next] == id)
-	    continue;
-	  if (body.spill_cell == WaterBody::no_cell
-	      || next < body.spill_cell
-	      || (next == body.spill_cell && cell < body.outlet_cell)) {
+	  if (census.body[cell] == id && census.body[next] != id) {
 	    body.outlet_cell = cell;
 	    body.spill_cell = next;
 	  }
+	  cell = next;
+	  ++steps;
 	}
+	if (steps == count)
+	  throw std::logic_error ("standing-water spill routing contains a cycle");
       }
       if (body.ocean_connected)
 	body.classification = WaterBodyClass::Sea;

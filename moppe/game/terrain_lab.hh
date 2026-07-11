@@ -2,6 +2,7 @@
 #define MOPPE_GAME_TERRAIN_LAB_HH
 
 #include <moppe/game/inspector_ui.hh>
+#include <moppe/game/river_surface.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/world.hh>
 #include <moppe/gfx/mat4.hh>
@@ -55,6 +56,8 @@ namespace game {
     Vector3D position () const;
     Vector3D forward () const;
     Mat4 view_matrix () const;
+    void render_rivers (render::Renderer& renderer,
+			const Vector3D& camera) const;
 
     void draw (render::DrawList& dl, int width_pts,
 	       int height_pts) const;
@@ -118,6 +121,7 @@ namespace game {
     std::optional<terrain::DrainageGraph> m_drainage;
     std::optional<terrain::WaterNetwork> m_water_network;
     std::optional<terrain::RiverNetwork> m_rivers;
+    RiverSurface m_river_surface;
     std::optional<terrain::FloodField> m_flood;
     std::optional<terrain::LakeCensus> m_lakes;
     OverlayMode m_overlay;

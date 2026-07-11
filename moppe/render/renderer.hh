@@ -167,6 +167,7 @@ namespace render {
     virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
     virtual void draw_sky (const SkyParams& params) = 0;
     virtual void draw_ocean (const OceanParams& params) = 0;
+    virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
     virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;
     virtual void draw_list (const DrawList& list) = 0;
     // Post effects; call between world drawing and draw_hud.

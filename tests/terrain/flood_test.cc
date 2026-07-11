@@ -3,6 +3,7 @@
 #include <tests/test.hh>
 
 #include <array>
+#include <vector>
 
 using namespace moppe::terrain;
 
@@ -140,6 +141,34 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   MOPPE_CHECK (census.bodies[0].spill_cell == 7);
   MOPPE_CHECK
     (census.bodies[0].classification == WaterBodyClass::Puddle);
+}
+
+MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
+  const TerrainGrid grid {
+    .width = 3,
+    .height = 3
+  };
+  const std::vector<float> level (9, 1.0f);
+  const std::vector<float> depth {
+    1.0f, 0.0f, 0.0f,
+    0.0f, 1.0f, 0.0f,
+    0.0f, 0.0f, 0.0f
+  };
+  const FloodField flood {
+    .source_grid = grid,
+    .sea_level = 0.0f,
+    .has_ocean = false,
+    .water_level = ScalarRaster ({ .width = 3, .height = 3 }, level),
+    .water_depth = ScalarRaster ({ .width = 3, .height = 3 }, depth),
+    .ocean = std::vector<std::uint8_t> (9, 0),
+    .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 },
+    .outlets = { 8 }
+  };
+  const LakeCensus census = census_lakes (flood);
+
+  MOPPE_CHECK (census.bodies.size () == 1);
+  MOPPE_CHECK (census.bodies[0].outlet_cell == 4);
+  MOPPE_CHECK (census.bodies[0].spill_cell == 5);
 }
 
 MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {

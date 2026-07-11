@@ -196,6 +196,7 @@ namespace render {
     void draw_terrain (const ChunkDraw* chunks, int count) override;
     void draw_sky (const SkyParams& params) override;
     void draw_ocean (const OceanParams& params) override;
+    void draw_rivers (const Mesh& mesh, const Mat4& model) override;
     void draw_mesh (const Mesh& mesh, const Mat4& model) override;
     void draw_list (const DrawList& list) override;
     void apply_underwater (float time) override;
@@ -250,6 +251,7 @@ namespace render {
     id<MTLRenderPipelineState> m_probe = nil;
     id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
+    id<MTLRenderPipelineState> m_river = nil;
 
     // depth-stencil: index [test][write], reversed-Z (>=)
     id<MTLDepthStencilState> m_ds[2][2];
@@ -502,6 +504,8 @@ namespace render {
     m_sky = make_pipeline (@"sky_vertex", @"sky_fragment",
 			   scene, depth, MSAA_SAMPLES, false);
     m_ocean = make_pipeline (@"ocean_vertex", @"ocean_fragment",
+			     scene, depth, MSAA_SAMPLES, true);
+    m_river = make_pipeline (@"river_vertex", @"river_fragment",
 			     scene, depth, MSAA_SAMPLES, true);
 
     // Depth-stencil states, reversed-Z.
@@ -1484,6 +1488,37 @@ namespace render {
 	      vertexStart: r.first
 	      vertexCount: r.count];
     }
+  }
+
+  void
+  MetalRenderer::draw_rivers (const Mesh& mesh, const Mat4& model) {
+    const MetalMesh& m = (const MetalMesh&) mesh;
+    if (!m_river || !m.vertices)
+      return;
+    id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    [enc setRenderPipelineState: m_river];
+    [enc setDepthStencilState: m_ds[1][0]];
+    [enc setCullMode: MTLCullModeNone];
+
+    MoppeDrawUniforms du;
+    std::memset (&du, 0, sizeof (du));
+    du.model = m4 (model);
+    const NormalMat nm = NormalMat::from (model);
+    du.nrm0 = f4 (nm.c0);
+    du.nrm1 = f4 (nm.c1);
+    du.nrm2 = f4 (nm.c2);
+    [enc setVertexBytes: &du length: sizeof (du)
+		atIndex: MOPPE_BUF_DRAW];
+    [enc setVertexBytes: &m_fu length: sizeof (m_fu)
+		atIndex: MOPPE_BUF_FRAME];
+    [enc setFragmentBytes: &m_fu length: sizeof (m_fu)
+		  atIndex: MOPPE_BUF_FRAME];
+    [enc setVertexBuffer: m.vertices offset: 0
+		 atIndex: MOPPE_BUF_VERTICES];
+    for (const DrawList::Run& run : m.runs)
+      if (run.count > 0)
+	[enc drawPrimitives: MTLPrimitiveTypeTriangle
+		vertexStart: run.first vertexCount: run.count];
   }
 
   // -- post ----------------------------------------------------------

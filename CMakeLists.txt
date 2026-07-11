@@ -60,6 +60,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/field.metal
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
+  moppe/shaders/metal/river.metal
 )
 
 set(MOPPE_METAL_DEPS
@@ -216,6 +217,7 @@ add_library(moppe_game STATIC
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
+  moppe/game/river_surface.cc
   moppe/game/chase_camera.cc
   moppe/game/vegetation.cc
   moppe/game/stars.cc
@@ -239,6 +241,7 @@ target_link_libraries(moppe_game PUBLIC moppe_terrain)
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-map-tests
     tests/test_main.cc
+    tests/game/river_surface_test.cc
     tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-map-tests PRIVATE moppe_game)

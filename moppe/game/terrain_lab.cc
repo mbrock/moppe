@@ -359,6 +359,9 @@ namespace game {
       else if (name == "lakes") m_overlay = OverlayMode::PermanentWater;
     }
     m_drainage.reset ();
+    m_water_network.reset ();
+    m_rivers.reset ();
+    m_river_surface.clear ();
     m_flood.reset ();
     m_lakes.reset ();
     m_inspected_cell.reset ();
@@ -374,6 +377,8 @@ namespace game {
 			    map.raw_heights () + count);
     m_active = true;
     rebuild_program ();
+    if (std::getenv ("MOPPE_LAB_RIVERS"))
+      drainage ();
     if (const char* stage = std::getenv ("MOPPE_LAB_STAGE")) {
       const int selected = std::atoi (stage);
       if (selected >= 0
@@ -405,6 +410,7 @@ namespace game {
     m_checkpoints.shrink_to_fit ();
     m_reports.clear ();
     m_reports.shrink_to_fit ();
+    m_river_surface.clear ();
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -552,6 +558,7 @@ namespace game {
     m_drainage.reset ();
     m_water_network.reset ();
     m_rivers.reset ();
+    m_river_surface.clear ();
     m_flood.reset ();
     m_lakes.reset ();
     m_inspected_cell.reset ();
@@ -612,10 +619,11 @@ namespace game {
 	(m_map->terrain_view (), standing_water (), *m_lakes);
       m_water_network = terrain::analyze_water_network
 	(*m_flood, *m_lakes, *m_drainage);
-      const float cell_area = m_drainage->source_grid.spacing_x
-	* m_drainage->source_grid.spacing_y;
       m_rivers = terrain::extract_river_network
-	(*m_flood, *m_lakes, *m_drainage, 64.0f * cell_area);
+	(*m_flood, *m_lakes, *m_drainage,
+	 visible_river_minimum_area (m_drainage->source_grid));
+      m_river_surface.rebuild
+	(*m_renderer, *m_map, *m_flood, *m_lakes, *m_drainage, *m_rivers);
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::ostringstream status;
@@ -639,6 +647,13 @@ namespace game {
       return;
     m_overlay = mode;
     update_overlay ();
+  }
+
+  void
+  TerrainLab::render_rivers (render::Renderer& renderer,
+			     const Vector3D& camera) const
+  {
+    m_river_surface.draw (renderer, camera);
   }
 
   void
