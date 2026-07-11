@@ -276,6 +276,80 @@ Detailed engineering guidance remains in
 
 * Log
 
+** 2026-07-11 Shoreline rendering investigation paused
+
+*** Current situation
+
+The hydrology is supplying the right standing-water bodies and levels, but the
+shared ocean/lake renderer is not yet presenting their boundaries convincingly.
+Close =lake=, =mouth=, and =river= inspection shots show bright, sawtooth shore
+edges and occasional triangular skirts where the water surface meets terrain.
+The problem is especially visible around small islands, narrow inlets, and the
+foreground edge of a lake. It is a rendering artifact, not evidence that the
+lake census or body routing changed.
+
+The current renderer draws one regular 300 by 300 water grid across an
+11-kilometre square, so its vertices are about 36.7 metres apart. The hydrology
+and terrain rasters are sampled at roughly 5-metre spacing. The vertex shader
+therefore displaces a coarse triangle using much finer water-level data, while
+the fragment shader reconstructs depth and discards dry fragments. Shallow
+foam makes the resulting coarse/masked boundary particularly bright. This
+scale mismatch is now the leading explanation for the visible skirts and
+facets.
+
+*** How it is being tested
+
+Use the hydrology-targeted capture tool rather than the ordinary spawn camera:
+
+#+begin_src sh
+MOPPE_SEED=123 tools/capture-water /tmp/water-lake.png lake
+MOPPE_SEED=123 tools/capture-water /tmp/water-mouth.png mouth
+MOPPE_SEED=123 tools/capture-water /tmp/water-river.png river
+MOPPE_SEED=123 tools/capture-water /tmp/water-fall.png waterfall
+MOPPE_SEED=123 tools/capture-water /tmp/water-join.png confluence
+MOPPE_SEED=123 tools/capture-game /tmp/water-ride.png
+#+end_src
+
+The feature shots hide vegetation, actors, and HUD, select a deterministic
+hydrology cell, and print its cell, score, eye, and target. Compare images in
+pairs from the same feature/seed; do not treat a normal rider shot that merely
+has water in the distance as shoreline evidence. Run the ordinary rider shot
+as the separate performance/regression check. The accepted 300-cell renderer
+records about 115 FPS in that seed-123 capture.
+
+*** Experiments rejected in this pass
+
+1. The shader was changed to interpolate wet occupancy separately from surface
+   elevation and to normalize elevation over wet corners only. This avoided
+   mathematically mixing a real lake level with the dry-cell zero sentinel, but
+   paired lake, mouth, and river captures were materially unchanged. The coarse
+   geometry, rather than that interpolation alone, is the limiting factor. The
+   shader change was reverted.
+2. The global water grid was increased from 300 to 600 cells. Shore silhouettes
+   became somewhat finer, but the same bright facets remained and the ordinary
+   rider capture fell from 115 to 81 FPS. Four times the global triangle count
+   is too expensive for an incomplete improvement, so this change was reverted.
+
+*** A better next attempt
+
+Keep the coarse grid for deep lake and ocean interiors, but stop asking it to
+represent the shore. Build a separate fine boundary band from the permanent
+water mask, probably with marching squares or an equivalent clipped contour at
+terrain-cell resolution. Give that band stable body surface levels and a signed
+shore-distance/coverage coordinate for wave suppression, transparency, and
+foam. The coarse interior must be clipped back far enough that it does not
+overlap and darken the boundary band. Test the extracted contour and periodic
+seam deterministically on the CPU before adding backend geometry, then repeat
+the exact fixed-camera comparisons above. A signed-distance texture without
+finer boundary geometry may still be useful for material control, but the
+failed interpolation experiment is evidence that it will not fix the shape by
+itself.
+
+Other visible water work remains separate: confluences still need a
+non-overlapping strip union, and waterfall candidates still expose gaps or
+steep terrain-following ribbons rather than a selected falling sheet. The
+inspection cameras are doing their job by making these failures repeatable.
+
 ** 2026-07-11 Water features get deterministic inspection cameras
 
 - Added =tools/capture-water OUTPUT FEATURE= and the corresponding
