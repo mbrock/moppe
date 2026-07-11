@@ -495,6 +495,11 @@ namespace map {
 
       const Sample next = sample (nx, ny);
       const float dh = next.height - here.height;
+      if (carving_rule == terrain::CarvingRule::PathMonotone
+	  && dh >= 0.0f) {
+	trace.termination = HydraulicDropletTermination::Flat;
+	break;
+      }
       const float capacity = std::max (-dh, min_slope)
 	* speed * water * capacity_k;
       float eroded = 0.0f, deposited = 0.0f;
@@ -713,6 +718,11 @@ namespace map {
 	      (drop.py + drop.diry, static_cast<float> (period_y));
 	    const Sample next = sample (nx, ny);
 	    const float dh = next.height - here.height;
+	    if (carving_rule == terrain::CarvingRule::PathMonotone
+		&& dh >= 0.0f) {
+	      finish (drop, here, report.stopped_flat);
+	      continue;
+	    }
 	    const float capacity = std::max (-dh, min_slope)
 	      * drop.speed * drop.water * capacity_k;
 
@@ -841,6 +851,11 @@ namespace map {
 	      get (nxi + 1, nyi + 1) * nfx * nfy;
 
 	    const float dh = nheight - height;
+	    if (carving_rule == terrain::CarvingRule::PathMonotone
+		&& dh >= 0.0f) {
+	      finish (report.stopped_flat);
+	      break;
+	    }
 
 	    const float capacity =
 	      std::max (-dh, min_slope) * speed * water * capacity_k;
