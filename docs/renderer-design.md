@@ -237,17 +237,25 @@ New: heights live in an R32F 2049² texture; per-vertex normals (the same ones
 the CPU computes for physics) live in an RG16Snorm texture (y reconstructed).
 The terrain vertex shader derives grid (x,z) from the index-buffer value and
 a per-chunk origin, samples height, and computes world position — no vertex
-buffers at all. Five shared index templates cover a bilinearly subdivided
-257×257 near grid followed by native 129×129 and stride-2/4/8 grids. Each
+buffers at all. Five shared index templates cover a smoothly reconstructed
+513×513 near grid at quarter-source-cell spacing, followed by native 129×129
+and stride-2/4/8 grids. The near field uses bounded Catmull-Rom heights and
+surface-derived normals, then morphs back to the authoritative terrain. Each
 finer level morphs onto the exact triangle surface of its parent before the
 chunk changes LOD, avoiding pops and boundary cracks without skirts. Per
 frame the CPU culls the same 128×128-cell chunks (distance + conservative
 behind-camera tests) and issues at most one tiny indexed draw per visible
 chunk. World regeneration = re-upload two textures.
 
+Set `MOPPE_TERRAIN_TOPOLOGY=1` to overlay the source-height cells in the
+reconstructed near field and the actual triangles in native and coarser LODs.
+The subtle LOD tint and wire overlay are intended for visual inspection only.
+
 Physics keeps its authoritative CPU copy (HeightMap::interpolated_height/
-normal, ~10 samples/frame) — heights and rendered normals come from the same
-arrays, so nothing can diverge. City generation still bakes into the CPU
+normal, ~10 samples/frame). Rendering and physics share the exact grid
+samples; the reconstructed near surface is bounded to each source cell's
+corner range but can differ between samples from physics's bilinear surface.
+It morphs back before the native LOD. City generation still bakes into the CPU
 heightmap and just re-uploads.
 
 The splat/shadow/haze fragment shader ports 1:1 from shaders/test.frag with

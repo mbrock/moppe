@@ -44,10 +44,10 @@ namespace render {
     const int TERRAIN_LOD_COUNT = (int) TerrainLod::Count;
     const int TERRAIN_NATIVE_LOD = (int) TerrainLod::Native;
     const float TERRAIN_LOD_STEP[TERRAIN_LOD_COUNT] = {
-      0.5f, 1.0f, 2.0f, 4.0f, 8.0f
+      0.25f, 1.0f, 2.0f, 4.0f, 8.0f
     };
     const int TERRAIN_LOD_VERTS[TERRAIN_LOD_COUNT] = {
-      CHUNK_CELLS * 2 + 1,
+      CHUNK_CELLS * 4 + 1,
       CHUNK_CELLS + 1,
       CHUNK_CELLS / 2 + 1,
       CHUNK_CELLS / 4 + 1,
@@ -1531,6 +1531,7 @@ namespace render {
       u.params4.z = m_terrain_overlay_params.maximum;
       u.params4.w = m_terrain_overlay_params.opacity;
     }
+    u.params5.x = m_terrain_params.topology_overlay ? 0.24f : 0.0f;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];

@@ -58,6 +58,9 @@ namespace render {
     int shadow_resolution = 4096;
     int shadow_sample_step = 1;
     float fog_scale;
+    // Development overlay showing the actual terrain triangles. Useful for
+    // inspecting the dense reconstructed near field and ordinary LODs.
+    bool topology_overlay = false;
     bool periodic = false;
     TerrainProjection projection = TerrainProjection::Plane;
     float torus_major_radius = 0.0f;
