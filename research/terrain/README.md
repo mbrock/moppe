@@ -50,6 +50,13 @@ For Moppe, they suggest two separable modules:
 Keeping those pieces separate will let the terrain lab compare methods while
 feeding every result into the same heightmap renderer.
 
+## Experiments
+
+- `erosion-lifetime-experiment.md` records the fixed-seed droplet-lifetime,
+  sediment-ledger, and erosion-footprint sweeps. It explains why the default
+  now uses natural water termination and explicit settlement, and why the
+  remaining sink problem points toward a standing-water/flood-field reading.
+
 ## Moppe implementation direction
 
 The analytical method needs one adaptation before it can operate on Moppe's
@@ -78,11 +85,8 @@ The first implementation should preserve the paper's module boundaries:
 5. Treat FastFlow as an optional GPU drainage backend for the same graph
    product, not as a different meaning for the analytical stage.
 
-Initial profiling on the 2049-square world showed about 1.31 seconds for the
-geological field plus output and 11.02 seconds for the default-sized
-1.5-million-droplet pipeline.  Parallel CPU field evaluation reduced the
-first measurement to 0.77 seconds while preserving byte-identical output; the
-full run remained 10.78 seconds.  This makes pipeline-prefix reuse and a new
-erosion backend higher priorities than MSL field lowering.  MSL remains useful
-afterward for fast recipe previews and as the first alternative field
-evaluator, but it does not by itself accelerate the current CPU erosion pass.
+The historical 2049-square profile took about 10.78 seconds for 1.5 million
+droplets capped at 64 steps. The conservation experiment reallocates a similar
+step budget to 300,000 droplets that naturally die around step 305. MSL field
+lowering accelerates recipe previews but does not accelerate this CPU erosion
+pass; drainage and erosion remain the important compute-backend boundary.

@@ -155,7 +155,8 @@ The canonical game profile is now exactly:
 geological source
   -> normalize
   -> power(1.15)
-  -> hydraulic(1,500,000 droplets, batches of 256)
+  -> hydraulic(300,000 droplets, batches of 256,
+               1% water cutoff, 512-step safety cap, settle at death)
   -> thermal(2 iterations, talus 0.003)
 ```
 
@@ -198,6 +199,8 @@ drainage-specific API. `MOPPE_LAB_OVERLAY` (`height`, `slope`, `flow`,
 `streams`, `basins`, `sinks`, `delta`, or `trace`) makes the same views
 scriptable. `MOPPE_LAB_STAGE` selects a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
+`MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
+stage for automated Lab captures.
 
 The three `WAVES` counters are integer spatial frequencies: how many periods
 fit around one fundamental side of the torus.  They are not literal counts of
@@ -245,7 +248,11 @@ program.source.recipe.mountains.cycles = 8;
 program.source.recipe.blend.mountain_weight = 0.9f;
 program.transforms.emplace_back (moppe::terrain::HydraulicErosion {
   .droplets = 100000,
-  .batch_size = 256
+  .batch_size = 256,
+  .max_steps = 512,
+  .minimum_water = 0.01f,
+  .sediment_at_termination =
+    moppe::terrain::SedimentDisposition::Deposit
 });
 moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
@@ -257,6 +264,20 @@ deterministic CPU implementation of the work boundary a future compute kernel
 can execute in parallel.  Terrain Lab exposes batch-size presets of 1, 64,
 256, and 1024 as well as the numeric knob, making the visual effect of more
 simultaneous erosion directly comparable.
+
+Maximum lifetime is a first-class natural-number parameter too. The Lab has
+one-click experiment presets for droplet count (100K, 300K, 1M, 1.5M), maximum
+lifetime (64, 128, 256, 512), and batch size. Droplet plus/minus controls move
+through coarse 1-3-5-style values so each expensive rebuild changes the
+experiment materially.
+
+Every hydraulic evaluation returns a `HydraulicErosionReport`. The Map
+Readings window displays eroded, deposited, and discarded sediment; mean
+lifetime and final water; and termination counts for the safety cap, water
+cutoff, and flat terrain. The compatibility defaults still reproduce the old
+64-step/discard behavior when a stage omits the new fields. Newly added stages
+and the canonical world instead stop naturally at 1% water and settle their
+remaining load, closing the sediment ledger.
 
 The present CPU implementation still evaluates droplets serially inside that
 logical batch.  A prototype using a persistent CPU worker team and two barriers
@@ -306,8 +327,22 @@ game:
 ./build/terrain-pipeline-demo /tmp/tuned.png 257 123 combined \
   warp-amplitude=0.28 mountain-frequency=9 mountain-weight=0.9
 ./build/terrain-pipeline-demo /tmp/eroded.png 257 123 combined \
-  power=1.15 hydraulic=10000 thermal=2,0.003
+  power=1.15 hydraulic=10000,256,512,0.01,deposit thermal=2,0.003
 ```
+
+The controlled lifetime sweep used to choose those defaults is reproducible:
+
+```sh
+./build/terrain-erosion-experiment 513 1783728698 300000 1 \
+  64,128,256,305,512
+./build/terrain-erosion-experiment 513 1783728698 300000 1 \
+  512 0.01 settle
+```
+
+The command reports runtime, sinks, stream cells, maximum drainage area,
+longest receiver path, the sediment ledger, mean lifetime, and termination
+causes as CSV. The full measurements and falsified footprint experiment live
+in `research/terrain/erosion-lifetime-experiment.md`.
 
 Every default program starts with normalization.  `raw` clears its transforms;
 `normalize` appends normalization explicitly; `world` selects the complete,
