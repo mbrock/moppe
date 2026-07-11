@@ -93,6 +93,25 @@ namespace game {
     dl.end ();
   }
 
+  static void
+  loading_arc (render::DrawList& dl, float cx, float cy, float radius,
+	       float thickness, float progress, float alpha) {
+    constexpr float pi = 3.14159265f;
+    constexpr int segments = 96;
+    progress = std::clamp (progress, 0.0f, 1.0f);
+    dl.color (0.78f, 0.96f, 0.82f, alpha);
+    dl.begin (render::Prim::TriangleStrip);
+    for (int i = 0; i <= segments; ++i) {
+      const float a = -0.5f * pi + 2.0f * pi * progress * i / segments;
+      const float x = std::cos (a);
+      const float y = std::sin (a);
+      dl.vertex (cx + x * (radius - thickness),
+		 cy + y * (radius - thickness));
+      dl.vertex (cx + x * radius, cy + y * radius);
+    }
+    dl.end ();
+  }
+
   static std::string
   terrain_cache_path (const WorldParams& world,
 		      terrain::TerrainGenerationProfile profile,
@@ -268,13 +287,10 @@ namespace game {
       m_hud.load (r);
       m_terrain_lab.load (r);
       m_loading_title_font.reset
-	(new render::FontAtlas (r, "AvenirNext-DemiBold", 46,
+	(new render::FontAtlas (r, "AvenirNext-DemiBold", 52,
 				r.scale_factor ()));
       m_loading_font.reset
-	(new render::FontAtlas (r, "AvenirNext-DemiBold", 28,
-				r.scale_factor ()));
-      m_loading_detail_font.reset
-	(new render::FontAtlas (r, "AvenirNext-Medium", 16,
+	(new render::FontAtlas (r, "AvenirNext-Medium", 24,
 				r.scale_factor ()));
       m_dust.load (r);
       m_blob.load (r);
@@ -1252,7 +1268,7 @@ namespace game {
 		   floor);
 	m_terrain.setup
 	  (r, m_loading_map, m_world, render::TerrainProjection::Plane,
-	   false, true);
+	   true, true);
 	m_loading_terrain_state = 1;
 	m_loading_terrain_reveal = sky_time;
       } else if (loading_heights && m_loading_terrain_state == 1) {
@@ -1260,7 +1276,7 @@ namespace game {
 		   m_loading_map.raw_heights ());
 	m_terrain.setup
 	  (r, m_loading_map, m_world, render::TerrainProjection::Plane,
-	   false, true);
+	   true, true);
 	m_loading_terrain_state = 2;
 	const std::lock_guard<std::mutex> lock (m_loading_mutex);
 	m_loading_heights.reset ();
@@ -1330,26 +1346,30 @@ namespace game {
       m_hud_dl.lit (false);
       m_hud_dl.fogged (false);
 
-      static const char* stages[] = {
-	"Starting up...",
-	"Building city...",
-	"Loading Pico Island DEM...",
-	"Generating terrain...",
-	"Eroding terrain...",
-	"Computing normals, planting things...",
-	"Uploading to the GPU...",
-	"Loading cached terrain...",
-      };
       const int stage = m_gen_stage;
-      const char* text = stages[stage < 0 ? 0 : stage > 7 ? 7 : stage];
-      std::string erosion_text;
-      if (stage == 4) {
-	const int done = m_loading_work_done;
-	const int total = std::max (1, (int) m_loading_work_total.load ());
-	erosion_text = "Carving rivers  " + std::to_string (done / 1000)
-	  + "k / " + std::to_string (total / 1000) + "k droplets";
-	text = erosion_text.c_str ();
-      }
+      static const char* headlines[] = {
+	"Opening the horizon",
+	"Laying out the streets",
+	"Reading the island",
+	"Raising the land",
+	"Letting the rivers run",
+	"Bringing the world to life",
+	"The world is nearly ready",
+	"Returning to this place",
+      };
+      static const char* details[] = {
+	"A new landscape is beginning",
+	"Making room for a city",
+	"Finding the shape of the shore",
+	"Stone, soil, height, and distance",
+	"Water is finding its way",
+	"Light, water, and living things",
+	"Gathering everything together",
+	"A familiar world, remembered",
+      };
+      const int clamped_stage = std::clamp (stage, 0, 7);
+      const std::string headline = headlines[clamped_stage];
+      const std::string detail = details[clamped_stage];
 
       float target_progress = 0.04f;
       if (stage == 3)
@@ -1372,76 +1392,41 @@ namespace game {
 	(target_progress - m_loading_progress_display)
 	* (1.0f - std::exp (-7.0f * frame_dt));
 
-      const float panel_width = std::min (700.0f, w - 48.0f);
-      const float panel_height = 244.0f;
-      const float panel_x = (w - panel_width) * 0.5f;
-      const float panel_y = std::min
-	(h - panel_height - 28.0f, std::max (32.0f, h * 0.57f));
+      // A quiet cinematic instrument: the full ring is possibility, the
+      // luminous arc is the real eased world-generation progress.
+      const float center_x = w * 0.5f;
+      const float dial_y = std::clamp
+	(h * 0.42f, 105.0f, std::max (105.0f, h - 190.0f));
+      const float pulse = 0.5f + 0.5f * std::sin (sky_time * 2.2f);
+      loading_arc (m_hud_dl, center_x, dial_y, 49.0f, 2.0f,
+		   1.0f, 0.20f);
+      loading_arc (m_hud_dl, center_x, dial_y, 49.0f, 4.5f,
+		   m_loading_progress_display, 0.92f);
+      m_hud_dl.color (0.88f, 1.0f, 0.83f, 0.10f + 0.08f * pulse);
+      fill_rounded_rect (m_hud_dl, center_x - 12.0f, dial_y - 12.0f,
+			 24.0f, 24.0f, 12.0f);
+      m_hud_dl.color (0.94f, 1.0f, 0.89f, 0.92f);
+      fill_rounded_rect (m_hud_dl, center_x - 4.0f, dial_y - 4.0f,
+			 8.0f, 8.0f, 4.0f);
 
-      // Terrain Lab's cool instrument surface, allowed to float over the
-      // world sky which is being prepared behind it.
-      m_hud_dl.color (0.0f, 0.008f, 0.01f, 0.28f);
-      fill_rounded_rect (m_hud_dl, panel_x + 6, panel_y + 9,
-			 panel_width, panel_height, 17);
-      m_hud_dl.color (0.44f, 0.39f, 0.24f, 0.92f);
-      fill_rounded_rect (m_hud_dl, panel_x, panel_y,
-			 panel_width, panel_height, 16);
-      m_hud_dl.color (0.08f, 0.25f, 0.24f, 0.99f);
-      fill_rounded_rect (m_hud_dl, panel_x + 1, panel_y + 1,
-			 panel_width - 2, panel_height - 2, 15);
-      m_hud_dl.color (0.025f, 0.065f, 0.065f, 0.97f);
-      fill_rounded_rect (m_hud_dl, panel_x + 3, panel_y + 3,
-			 panel_width - 6, panel_height - 6, 13);
-      m_hud_dl.color (0.39f, 0.78f, 0.68f, 0.42f);
-      m_hud_dl.line (panel_x + 20, panel_y + 3,
-		     panel_x + panel_width - 20, panel_y + 3, 1.0f);
-
+      const float headline_y = dial_y + 112.0f;
       if (m_loading_title_font && m_loading_title_font->ok ()) {
-	m_hud_dl.color (0.91f, 0.98f, 0.90f, 1.0f);
+	const float x = center_x
+	  - m_loading_title_font->measure (headline) * 0.5f;
+	// A soft shadow is enough separation from the landscape; no card.
+	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.48f);
 	m_loading_title_font->draw
-	  (m_hud_dl, panel_x + 34, panel_y + 66, "MAKING A WORLD");
-      }
-      if (m_loading_detail_font && m_loading_detail_font->ok ()) {
-	m_hud_dl.color (0.47f, 0.72f, 0.68f, 0.98f);
-	const std::string detail = "SEED " + std::to_string (m_seed)
-	  + "  /  "
-	  + std::string (terrain::profile_id (m_generation_profile));
-	m_loading_detail_font->draw
-	  (m_hud_dl, panel_x + 36, panel_y + 96, detail);
+	  (m_hud_dl, x + 2.0f, headline_y + 3.0f, headline);
+	m_hud_dl.color (0.95f, 1.0f, 0.91f, 1.0f);
+	m_loading_title_font->draw (m_hud_dl, x, headline_y, headline);
       }
       if (m_loading_font && m_loading_font->ok ()) {
-	m_hud_dl.color (0.84f, 0.94f, 0.92f, 1.0f);
+	const float x = center_x - m_loading_font->measure (detail) * 0.5f;
+	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.42f);
 	m_loading_font->draw
-	  (m_hud_dl, panel_x + 35, panel_y + 151, text);
-      }
-
-      // Stage lights communicate real progress; a soft traveling highlight
-      // keeps long erosion steps visibly alive without pretending to know a
-      // percentage within the stage.
-      const double t = platform::now ();
-      const float pulse =
-	0.5f + 0.5f * (float) std::sin (t * 2.6);
-      const float track_x = panel_x + 36;
-      const float track_y = panel_y + 188;
-      const float track_width = panel_width - 72;
-      m_hud_dl.color (0.02f, 0.12f, 0.12f, 0.98f);
-      fill_rounded_rect
-	(m_hud_dl, track_x, track_y, track_width, 8, 4);
-      const float completed = track_width * m_loading_progress_display;
-      m_hud_dl.color (0.32f, 0.70f, 0.61f, 0.92f);
-      fill_rounded_rect
-	(m_hud_dl, track_x, track_y, completed, 8, 4);
-      const float scan_x = track_x + std::max
-	(0.0f, completed - 18.0f - 10.0f * pulse);
-      m_hud_dl.color (0.76f, 0.92f, 0.66f, 0.42f + 0.32f * pulse);
-      fill_rounded_rect (m_hud_dl, scan_x, track_y - 1,
-			 std::min (24.0f, completed), 10, 5);
-
-      if (m_loading_detail_font && m_loading_detail_font->ok ()) {
-	m_hud_dl.color (0.42f, 0.67f, 0.63f, 0.9f);
-	m_loading_detail_font->draw
-	  (m_hud_dl, track_x, panel_y + 222,
-	   "FORMING LAND  /  MOVING WATER  /  GROWING A PLACE");
+	  (m_hud_dl, x + 1.5f, headline_y + 46.0f, detail);
+	m_hud_dl.color (0.82f, 0.94f, 0.87f, 0.96f);
+	m_loading_font->draw (m_hud_dl, x, headline_y + 44.0f, detail);
       }
 
       bool captured_loading = false;
@@ -1782,7 +1767,6 @@ namespace game {
     Hud m_hud;
     std::unique_ptr<render::FontAtlas> m_loading_title_font;
     std::unique_ptr<render::FontAtlas> m_loading_font;
-    std::unique_ptr<render::FontAtlas> m_loading_detail_font;
 
     render::Renderer* m_renderer;
     bool m_start_in_terrain_lab;
