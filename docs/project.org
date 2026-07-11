@@ -283,6 +283,41 @@ Detailed engineering guidance remains in
 
 * Log
 
+** 2026-07-11 Water becomes transparent over ridable channels
+
+Design rule from riding the world: anything worth rendering as water gets
+a real channel, and water transparency follows its actual column.
+
+- Channel carving no longer scales depth down for sub-cell streams; every
+  visible reach earns its full 0.4-2.5 m bed, so the motorcycle physically
+  drops into any stream it crosses (the carve writes the authoritative
+  heightmap).  The shared width law widened to =clamp(0.012 sqrt(A),
+  1.5, 24)= so trunk rivers read as rivers inside their AGE-scale valleys.
+- Ribbons now pack the true water column into the green vertex channel
+  (span constant shared with the shader).  Transparency, deep-water color,
+  and the bank contact line all key on real depth: a hand-deep stream is
+  glass over its bed, a meter reads as a body, and shallow streams carry
+  no bank foam at all.
+- Dropping opacity exposed strip self-overlap as dark wedges at bends.  A
+  curvature-clamped width was tried and rejected (D8 splines pinch
+  everywhere); the real fix is a stencil plane on the scene depth target
+  (=Depth32Float_Stencil8=): the river pass blends first-fragment-wins
+  (NotEqual 1 / Replace), so bends and confluence overlaps never
+  double-blend.  Confluences still show a seam where strips meet — the
+  junction-mesh item remains open — but no darkening.
+- The standing-water grid is now RG32F: level plus a per-body wave
+  amplitude from the lake census classification (sea 1.0, lake 0.10, pond
+  0.04, puddle 0).  Only the ocean carries the full Gerstner swells, which
+  removes the "waving sheet lifting off the shore" artifact on lakes and
+  calms mountain tarns.
+
+Seed-123 captures: rivers are translucent glass in incised channels with
+clean waterlines; the cascade keeps its foam; the hanging tarn sits calm;
+rider-spawn lakes lie flat and mirror-like against their shores.  The
+rider capture reads 60 FPS (vsync-flat graph).  Not done here: rider
+water-contact feedback when crossing channels, and the visible confluence
+seam.
+
 ** 2026-07-11 Rivers fill their carved channels
 
 The rendering pass that carving was for.  Ribbon cross-sections are now

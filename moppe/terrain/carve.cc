@@ -44,21 +44,19 @@ namespace moppe::terrain {
   float
   channel_width_m (float area_m2) noexcept
   {
-    return std::clamp (0.008f * std::sqrt (area_m2), 1.2f, 12.0f);
+    // Wider than strict hydraulic geometry: rivers must read as rivers
+    // from a motorcycle, and their valleys are AGE-scaled.
+    return std::clamp (0.012f * std::sqrt (area_m2), 1.5f, 24.0f);
   }
 
   float
-  channel_depth_m (float area_m2, float cell_spacing_m,
-		   const ChannelCarving& parameters) noexcept
+  channel_depth_m (float area_m2, const ChannelCarving& parameters) noexcept
   {
-    const float depth = std::clamp
+    // Every visible reach earns its full depth: a stream you can see is
+    // a channel you can ride into, never a painted-on film.
+    return std::clamp
       (parameters.depth_per_sqrt_m2 * std::sqrt (area_m2),
        parameters.minimum_depth_m, parameters.maximum_depth_m);
-    // Channels narrower than a cell become proportionally shallower
-    // notches instead of full-depth cell-wide trenches.
-    const float coverage = std::clamp
-      (channel_width_m (area_m2) / cell_spacing_m, 0.35f, 1.0f);
-    return depth * coverage;
   }
 
   ChannelCarvingResult
@@ -94,8 +92,7 @@ namespace moppe::terrain {
     };
     const auto depth_m = [&] (std::uint32_t cell) {
       return channel_depth_m
-	(drainage.contributing_area.values ()[cell], grid.spacing_x,
-	 parameters);
+	(drainage.contributing_area.values ()[cell], parameters);
     };
     const auto water_cell = [&] (std::uint32_t cell) {
       return census.body[cell] != LakeCensus::dry || flood.ocean[cell];

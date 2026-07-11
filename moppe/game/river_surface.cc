@@ -13,12 +13,17 @@ namespace moppe::game {
     // its stamped depth, leaving the rest as visible bank freeboard.
     constexpr float channel_fill = 0.75f;
 
+    // Water column under the surface, packed into the green vertex
+    // channel as a fraction of this span so the shader can recover
+    // meters.  Kept in sync with MOPPE_RIVER_DEPTH_SPAN in river.metal.
+    constexpr float depth_span_m = 2.0f;
+
     struct RibbonPoint {
       Vector3D position;
       float width;
       float distance;
       float rapid;
-      float discharge;
+      float depth;
       float waterfall;
       float opacity;
       bool water;
@@ -30,15 +35,6 @@ namespace moppe::game {
       else if (delta < -period / 2)
 	delta += period;
       return delta;
-    }
-
-    float river_width (float area) {
-      return std::clamp (0.008f * std::sqrt (area), 1.2f, 12.0f);
-    }
-
-    float discharge_signal (float area, float minimum_area) {
-      const float ratio = std::max (1.0f, area / minimum_area);
-      return std::clamp (std::log2 (ratio) / 10.0f, 0.0f, 1.0f);
     }
 
     float rapid_signal (float slope) {
@@ -97,7 +93,7 @@ namespace moppe::game {
 	    .width = interpolate (from.width, to.width, t),
 	    .distance = 0.0f,
 	    .rapid = interpolate (from.rapid, to.rapid, t),
-	    .discharge = interpolate (from.discharge, to.discharge, t),
+	    .depth = interpolate (from.depth, to.depth, t),
 	    .waterfall = interpolate (from.waterfall, to.waterfall, t),
 	    .opacity = interpolate (from.opacity, to.opacity, t),
 	    .water = from.water || to.water
@@ -212,10 +208,14 @@ namespace moppe::game {
 	// Dry reaches fill the channel carved under them: the heightmap
 	// already carries the stamped bed, so the surface rides at a fixed
 	// fraction of the shared depth law above it.
+	const float fill_depth = channel_fill
+	  * terrain::channel_depth_m (area);
 	const float y = water
 	  ? flood.water_level.values ()[cell] * scale.y + 0.06f
-	  : map.get (x, z) * scale.y + channel_fill
-	    * terrain::channel_depth_m (area, drainage.source_grid.spacing_x);
+	  : map.get (x, z) * scale.y + fill_depth;
+	const float column = water
+	  ? flood.water_depth.values ()[cell] * scale.y
+	  : fill_depth;
 	const float mouth_step = i >= first_water
 	  ? static_cast<float> (i - first_water) : 0.0f;
 	const float mouth_fraction = water_points > 1 && i >= first_water
@@ -227,11 +227,11 @@ namespace moppe::game {
 	const float slope = drainage.slope.values ()[slope_cell];
 	raw_points.push_back ({
 	  .position = Vector3D (world_x, y, world_z),
-	  .width = river_width (area) * (water ? 1.35f + 0.55f * mouth_fraction
-					     : 1.0f),
+	  .width = terrain::channel_width_m (area)
+	    * (water ? 1.35f + 0.55f * mouth_fraction : 1.0f),
 	  .distance = distance,
 	  .rapid = rapid_signal (slope),
-	  .discharge = discharge_signal (area, rivers.minimum_area_m2),
+	  .depth = std::clamp (column / depth_span_m, 0.0f, 1.0f),
 	  .waterfall = rivers.waterfall_by_cell[cell]
 	    != terrain::Waterfall::no_id ? 1.0f : 0.0f,
 	  .opacity = joins_downstream_reach ? 0.12f
@@ -249,6 +249,7 @@ namespace moppe::game {
       draw.begin (render::Prim::QuadStrip);
       for (std::size_t i = 0; i < points.size (); ++i) {
 	const Vector3D before = points[i == 0 ? 0 : i - 1].position;
+	const Vector3D current = points[i].position;
 	const Vector3D after = points[i + 1 == points.size () ? i : i + 1]
 	  .position;
 	Vector3D tangent (after.x - before.x, 0.0f, after.z - before.z);
@@ -265,10 +266,13 @@ namespace moppe::game {
 	  : (after.y - before.y) / run;
 	const Vector3D normal = Vector3D
 	  (-tangent.x * drop, 1.0f, -tangent.z * drop).normalized ();
+	// Cross-sections overlap freely on the inside of bends; the river
+	// pass blends first-fragment-wins through the stencil, so the
+	// overlap never double-darkens.
 	const float half_width = 0.5f * points[i].width;
-	const Vector3D left = points[i].position - across * half_width;
-	const Vector3D right = points[i].position + across * half_width;
-	draw.color (points[i].rapid, points[i].discharge,
+	const Vector3D left = current - across * half_width;
+	const Vector3D right = current + across * half_width;
+	draw.color (points[i].rapid, points[i].depth,
 		    points[i].waterfall, points[i].opacity);
 	draw.normal (normal);
 	draw.uv (0.0f, points[i].distance);
