@@ -149,4 +149,3 @@ that it explains the flow instead of covering it with generic noise.
   evaluated procedurally in the fragment shader?
 - At what scale do actual dynamic waves become visible enough to justify a
   simulation instead of advected normal detail?
-
