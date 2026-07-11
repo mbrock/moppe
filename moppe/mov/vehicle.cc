@@ -17,6 +17,8 @@ namespace mov {
   static const seconds_t boost_full_burn_time = 3.0f;
   static const seconds_t boost_recharge_time = 5.0f;
   static const seconds_t boost_recharge_pause = 0.65f;
+  static const float boost_reserve_charge = 0.06f;
+  static const float boost_emergency_level = 0.18f;
 
   Vehicle::Vehicle (const Vector3D& position,
 		    degrees_t orientation,
@@ -263,18 +265,21 @@ namespace mov {
     // burn and is deliberately slower in the air, so feathering the
     // jets cannot produce permanent flight.
     if (m_boost_input > 0.001f) {
-      if (m_boost_charge > 0) {
+      if (m_boost_charge > boost_reserve_charge) {
 	const float available =
-	  m_boost_charge * boost_full_burn_time / dt;
+	  (m_boost_charge - boost_reserve_charge)
+	  * boost_full_burn_time / dt;
 	m_boost_level = std::min (m_boost_input, available);
 	m_boost_charge = std::max
-	  (0.0f, m_boost_charge
+	  (boost_reserve_charge, m_boost_charge
 	   - m_boost_level * dt / boost_full_burn_time);
 	m_boost_flight = true;
       } else
-	m_boost_level = 0;
-      // An empty trigger must be released before recharge starts; this
-      // avoids a sputtering free impulse every time a sliver returns.
+	// The reserve cannot sustain flight, but it always supplies enough
+	// thrust to take the cruelty out of a long fall.
+	m_boost_level = boost_emergency_level * m_boost_input;
+      // The trigger must be released before recharge starts; this avoids
+      // alternating reserve thrust and tiny rechargeable impulses.
       m_boost_recharge_delay = boost_recharge_pause;
     } else {
       m_boost_level = 0;

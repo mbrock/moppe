@@ -766,8 +766,21 @@ namespace game {
       {
 	const int picked = m_stars.update (vpos, m_total_time, dt);
 	if (picked > 0) {
-	  m_dust.emit (m_stars.last_pos (), Vector3D (0, 3, 0), 16,
-		       Vector3D (1.0f, 0.85f, 0.2f));
+	  Dust::Style sparkle;
+	  sparkle.size = 0.38f;
+	  sparkle.life = 0.85f;
+	  sparkle.gravity = -1.5f;
+	  sparkle.spread = 1.7f;
+	  sparkle.additive = true;
+	  m_dust.emit (m_stars.last_pos (), Vector3D (0, 4, 0), 32,
+		       Vector3D (1.0f, 0.72f, 0.12f), sparkle);
+	  Dust::Style flash;
+	  flash.size = 0.9f;
+	  flash.life = 0.35f;
+	  flash.spread = 0.25f;
+	  flash.additive = true;
+	  m_dust.emit (m_stars.last_pos (), Vector3D (), 5,
+		       Vector3D (1.0f, 0.95f, 0.55f), flash);
 	  m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
 	  av.replenish_boost (0.25f * picked);
 	}
