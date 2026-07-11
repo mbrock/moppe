@@ -171,6 +171,10 @@ namespace render {
     // terrain grid; an empty span retains the single full-swell sea plane.
     virtual void set_ocean (const OceanSetup& setup,
 			    std::span<const float> water_levels) = 0;
+    // Ground moisture in [0,1] following the terrain grid; vegetation
+    // reads it for blade height, color, and density. Optional.
+    virtual void set_terrain_moisture (std::span<const float> moisture)
+    { (void) moisture; }
 
     // -- frame -------------------------------------------------------
     virtual bool begin_frame (const FrameParams& params) = 0;

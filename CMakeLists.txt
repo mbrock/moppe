@@ -156,6 +156,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/flood.cc
   moppe/terrain/analytical_erosion.cc
   moppe/terrain/carve.cc
+  moppe/terrain/moisture.cc
   moppe/terrain/geological.cc
   moppe/terrain/program.cc
   moppe/terrain/image.cc
@@ -210,6 +211,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/flood_test.cc
     tests/terrain/analytical_erosion_test.cc
     tests/terrain/carve_test.cc
+    tests/terrain/moisture_test.cc
   )
   target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
   add_test(NAME moppe-unit-tests COMMAND moppe-unit-tests)

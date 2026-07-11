@@ -190,6 +190,7 @@ namespace render {
     void render_terrain_shadow (const Mat4& light_view_proj) override;
     void set_ocean (const OceanSetup& setup,
 		    std::span<const float> water_levels) override;
+    void set_terrain_moisture (std::span<const float> moisture) override;
 
     // frame
     bool begin_frame (const FrameParams& params) override;
@@ -313,6 +314,8 @@ namespace render {
     float m_ocean_level = 0;
     id<MTLTexture> m_water_levels = nil;
     bool m_have_water_levels = false;
+    id<MTLTexture> m_moisture = nil;
+    bool m_have_moisture = false;
 
     // streaming
     dispatch_semaphore_t m_inflight;
@@ -1011,6 +1014,29 @@ namespace render {
     }
   }
 
+  void
+  MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
+    const std::size_t expected = static_cast<std::size_t>
+      (m_terrain_params.width) * m_terrain_params.height;
+    m_have_moisture = moisture.size () == expected;
+    if (!m_have_moisture)
+      return;
+    const int width = m_terrain_params.width;
+    const int height = m_terrain_params.height;
+    if (!m_moisture
+	|| m_moisture.width != static_cast<NSUInteger> (width)
+	|| m_moisture.height != static_cast<NSUInteger> (height)) {
+      MTLTextureDescriptor* td = [MTLTextureDescriptor
+	texture2DDescriptorWithPixelFormat: MTLPixelFormatR32Float
+				     width: width height: height
+				 mipmapped: NO];
+      td.storageMode = MTLStorageModePrivate;
+      td.usage = MTLTextureUsageShaderRead;
+      m_moisture = [m_device newTextureWithDescriptor: td];
+    }
+    upload_texture (m_moisture, moisture.data (), width, height, 4, false);
+  }
+
   // -- targets -------------------------------------------------------
 
   id<MTLTexture>
@@ -1505,6 +1531,9 @@ namespace render {
 		  atIndex: MOPPE_BUF_DRAW];
 	[enc setMeshTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
 	[enc setMeshTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
+	[enc setMeshTexture: m_have_moisture ? m_moisture
+		    : ((MetalTexture*) m_white.get ())->texture
+		     atIndex: MOPPE_TEX_MOISTURE];
 	const NSUInteger total = (NSUInteger) patches_x
 	  * (NSUInteger) patches_z;
 	[enc drawMeshThreadgroups: MTLSizeMake ((total + 63) / 64, 1, 1)
@@ -1521,6 +1550,9 @@ namespace render {
 		 atIndex: MOPPE_BUF_DRAW];
     [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
     [enc setVertexTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
+    [enc setVertexTexture: m_have_moisture ? m_moisture
+		 : ((MetalTexture*) m_white.get ())->texture
+		  atIndex: MOPPE_TEX_MOISTURE];
     const NSUInteger vertices = 18u
       * (NSUInteger) params.blades_per_cell;
     const NSUInteger instances = (NSUInteger) side * (NSUInteger) side;
