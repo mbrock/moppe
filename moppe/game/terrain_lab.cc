@@ -2050,6 +2050,9 @@ namespace game {
     m_ui.begin (dl);
     const UiRect panel = friendly_panel_rect (height);
     m_ui.surface (dl, panel);
+    dl.color (0.42f, 0.68f, 0.58f, 0.18f);
+    dl.line (36, 91, 500, 91, 1.0f);
+    dl.line (36, 225, 500, 225, 1.0f);
 
     constexpr const char* action_labels[] = {
       "NEW WORLD", "CENTER", "EXPERT"

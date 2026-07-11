@@ -416,16 +416,38 @@ namespace game {
   void
   InspectorUi::surface (render::DrawList& dl, const UiRect& bounds) const
   {
-    const UiRect shadow { bounds.x + 3, bounds.y + 5,
+    const UiRect deep_shadow { bounds.x + 5, bounds.y + 8,
+			       bounds.width, bounds.height };
+    dl.color (0.0f, 0.006f, 0.008f, 0.24f);
+    fill_rounded_rect (dl, deep_shadow, 14.0f);
+    const UiRect shadow { bounds.x + 2, bounds.y + 4,
 			  bounds.width, bounds.height };
-    dl.color (0.005f, 0.012f, 0.014f, 0.42f);
+    dl.color (0.005f, 0.012f, 0.014f, 0.62f);
     fill_rounded_rect (dl, shadow, 13.0f);
-    dl.color (0.16f, 0.29f, 0.27f, 0.92f);
+    // A muted brass rim and cool inner edge give the panel some physical
+    // depth without turning it into an ornate frame.
+    dl.color (0.42f, 0.38f, 0.25f, 0.90f);
     fill_rounded_rect (dl, bounds, 13.0f);
-    dl.color (0.035f, 0.075f, 0.073f, 0.96f);
+    dl.color (0.12f, 0.32f, 0.30f, 0.98f);
     const UiRect inner { bounds.x + 1, bounds.y + 1,
 			 bounds.width - 2, bounds.height - 2 };
     fill_rounded_rect (dl, inner, 12.0f);
+    dl.color (0.026f, 0.064f, 0.064f, 0.985f);
+    const UiRect face { bounds.x + 2, bounds.y + 2,
+			bounds.width - 4, bounds.height - 4 };
+    fill_rounded_rect (dl, face, 11.0f);
+
+    dl.color (0.39f, 0.78f, 0.68f, 0.34f);
+    dl.line (bounds.x + 16, bounds.y + 2,
+	     bounds.x + bounds.width - 16, bounds.y + 2, 1.0f);
+
+    for (float x : { bounds.x + 11.0f,
+		     bounds.x + bounds.width - 11.0f }) {
+      dl.color (0.01f, 0.025f, 0.025f, 0.95f);
+      draw_circle (dl, x, bounds.y + 11.0f, 3.5f);
+      dl.color (0.52f, 0.48f, 0.30f, 0.88f);
+      draw_circle (dl, x, bounds.y + 11.0f, 1.7f);
+    }
 
     // Barely-visible contour lines keep the surface from feeling like an
     // empty black rectangle without competing with the controls.
@@ -488,21 +510,38 @@ namespace game {
      bool hot, bool pressed, bool selected, bool featured) const
   {
     const bool pushed = hot && pressed;
-    dl.color (selected ? 0.50f : featured ? 0.32f : 0.18f,
-	      selected ? 0.82f : featured ? 0.62f : 0.39f,
-	      selected ? 0.68f : featured ? 0.54f : 0.35f, 0.95f);
+    const UiRect button_shadow { bounds.x + 1, bounds.y + 3,
+				 bounds.width, bounds.height };
+    dl.color (0.0f, 0.012f, 0.014f, 0.55f);
+    fill_rounded_rect (dl, button_shadow, 8.0f);
+    if (selected) {
+      const UiRect glow { bounds.x - 2, bounds.y - 2,
+			  bounds.width + 4, bounds.height + 4 };
+      dl.color (0.20f, 0.92f, 0.82f, 0.16f);
+      fill_rounded_rect (dl, glow, 10.0f);
+    }
+    dl.color (selected ? 0.48f : featured ? 0.69f : 0.20f,
+	      selected ? 0.96f : featured ? 0.53f : 0.44f,
+	      selected ? 0.86f : featured ? 0.26f : 0.40f, 0.96f);
     fill_rounded_rect (dl, bounds, 8.0f);
     if (selected)
-      dl.color (0.16f, 0.48f, 0.42f, 0.98f);
+      dl.color (0.075f, 0.30f, 0.29f, 0.99f);
     else if (pushed)
-      dl.color (0.10f, 0.24f, 0.22f, 0.99f);
-    else if (hot || featured)
-      dl.color (0.14f, 0.34f, 0.31f, 0.98f);
+      dl.color (0.065f, 0.16f, 0.16f, 0.99f);
+    else if (hot)
+      dl.color (0.10f, 0.28f, 0.27f, 0.99f);
+    else if (featured)
+      dl.color (0.19f, 0.20f, 0.13f, 0.99f);
     else
-      dl.color (0.085f, 0.19f, 0.18f, 0.98f);
+      dl.color (0.055f, 0.14f, 0.14f, 0.99f);
     const UiRect inner { bounds.x + 1, bounds.y + 1,
 			 bounds.width - 2, bounds.height - 2 };
     fill_rounded_rect (dl, inner, 7.0f);
+    dl.color (selected ? 0.55f : featured ? 0.76f : 0.34f,
+	      selected ? 1.0f : featured ? 0.64f : 0.58f,
+	      selected ? 0.90f : featured ? 0.34f : 0.52f, 0.36f);
+    dl.line (bounds.x + 8, bounds.y + 2,
+	     bounds.x + bounds.width - 8, bounds.y + 2, 1.0f);
     if (m_friendly_body) {
       dl.color (0.94f, 0.96f, 0.84f, 1.0f);
       const float title_y = detail.empty ()
@@ -529,6 +568,22 @@ namespace game {
      bool active) const
   {
     normalized = std::clamp (normalized, 0.0f, 1.0f);
+    float accent_r = 0.36f;
+    float accent_g = 0.82f;
+    float accent_b = 0.68f;
+    if (title == "AGE") {
+      accent_r = 0.94f;
+      accent_g = 0.75f;
+      accent_b = 0.35f;
+    } else if (title == "RAINFALL") {
+      accent_r = 0.28f;
+      accent_g = 0.78f;
+      accent_b = 0.94f;
+    } else if (title == "MOUNTAINS") {
+      accent_r = 0.72f;
+      accent_g = 0.86f;
+      accent_b = 0.58f;
+    }
     draw_control_icon (dl, bounds, title);
     if (m_friendly_body) {
       dl.color (0.89f, 0.93f, 0.82f, 1.0f);
@@ -553,15 +608,17 @@ namespace game {
     }
     dl.color (0.12f, 0.25f, 0.22f, 0.95f);
     dl.line (rail_x, y, rail_x + rail_width, y, 7.0f);
-    dl.color (0.25f, 0.68f, 0.58f, 1.0f);
+    dl.color (accent_r, accent_g, accent_b, 0.95f);
     dl.line (rail_x, y, rail_x + rail_width * normalized, y, 4.0f);
     const float cx = rail_x + rail_width * normalized;
-    dl.color (0.29f, 0.82f, 0.65f, active ? 0.30f : 0.13f);
-    draw_circle (dl, cx, y, active ? 13.0f : 11.0f);
-    dl.color (active ? 0.91f : hot ? 0.82f : 0.72f,
-	      active ? 0.98f : 0.91f,
-	      active ? 0.73f : 0.69f, 1.0f);
+    dl.color (accent_r, accent_g, accent_b, active ? 0.24f : 0.12f);
+    draw_circle (dl, cx, y, active ? 15.0f : 12.5f);
+    dl.color (0.015f, 0.035f, 0.035f, 1.0f);
+    draw_circle (dl, cx, y, 9.0f);
+    dl.color (accent_r, accent_g, accent_b, 1.0f);
     draw_circle (dl, cx, y, 7.0f);
+    dl.color (0.96f, 0.98f, 0.78f, 0.92f);
+    draw_circle (dl, cx - 1.5f, y - 1.5f, 3.4f);
   }
 }
 }
