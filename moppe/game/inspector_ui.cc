@@ -138,11 +138,14 @@ namespace game {
     m_key.reset
       (new render::FontAtlas (renderer, "Menlo", 11.0f, scale));
     m_display.reset
-      (new render::FontAtlas (renderer, "Avenir Next", 25.0f, scale));
+      (new render::FontAtlas
+	(renderer, "AvenirNext-DemiBold", 29.0f, scale));
     m_friendly_body.reset
-      (new render::FontAtlas (renderer, "Avenir Next", 16.0f, scale));
+      (new render::FontAtlas
+	(renderer, "AvenirNext-Medium", 18.0f, scale));
     m_friendly_label.reset
-      (new render::FontAtlas (renderer, "Avenir Next", 13.0f, scale));
+      (new render::FontAtlas
+	(renderer, "AvenirNext-Medium", 14.0f, scale));
   }
 
   void
@@ -502,7 +505,9 @@ namespace game {
     fill_rounded_rect (dl, inner, 7.0f);
     if (m_friendly_body) {
       dl.color (0.94f, 0.96f, 0.84f, 1.0f);
-      m_friendly_body->draw (dl, bounds.x + 12, bounds.y + 22, title);
+      const float title_y = detail.empty ()
+	? bounds.y + bounds.height * 0.5f + 6.0f : bounds.y + 25.0f;
+      m_friendly_body->draw (dl, bounds.x + 12, title_y, title);
     }
     if (!detail.empty () && m_friendly_label) {
       dl.color (0.60f, 0.72f, 0.67f, 0.98f);
@@ -527,7 +532,7 @@ namespace game {
     draw_control_icon (dl, bounds, title);
     if (m_friendly_body) {
       dl.color (0.89f, 0.93f, 0.82f, 1.0f);
-      m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 16, title);
+      m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 19, title);
     }
     if (m_friendly_label) {
       dl.color (0.52f, 0.64f, 0.59f, 0.98f);
@@ -538,7 +543,7 @@ namespace game {
 	(dl, bounds.x + bounds.width - high_width,
 	 bounds.y + bounds.height, high);
     }
-    const float y = bounds.y + 29.0f;
+    const float y = bounds.y + 35.0f;
     dl.color (0.25f, 0.43f, 0.39f, 0.65f);
     for (int i = 0; i <= 4; ++i) {
       const float tick_x = bounds.x + bounds.width * i / 4.0f;

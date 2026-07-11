@@ -64,6 +64,11 @@ namespace game {
   }
 
   static float
+  terrain_lab_sun_height () {
+    return std::max (SUN_HEIGHT, 0.72f);
+  }
+
+  static float
   smooth_curve (float edge0, float edge1, float x) {
     float t = (x - edge0) / (edge1 - edge0);
     clamp (t, 0.0f, 1.0f);
@@ -243,7 +248,7 @@ namespace game {
       m_hud.load (r);
       m_terrain_lab.load (r);
       m_loading_font.reset
-	(new render::FontAtlas (r, "Helvetica", 14,
+	(new render::FontAtlas (r, "AvenirNext-Medium", 18,
 				r.scale_factor ()));
       m_dust.load (r);
       m_blob.load (r);
@@ -553,7 +558,7 @@ namespace game {
       if (m_start_in_terrain_lab) {
 	m_terrain_lab.enter
 	  (r, m_map, m_terrain, m_world, m_seed,
-	   sun_direction_for (SUN_HEIGHT));
+	   sun_direction_for (terrain_lab_sun_height ()));
 	m_start_in_terrain_lab = false;
       }
       if (::getenv ("MOPPE_REGENERATE_ONCE")
@@ -930,8 +935,11 @@ namespace game {
 	: m_fog;
       const float scene_fog = terrain_lab ? 0.0f : m_world.fog_scale;
       fp.fog_scale = scene_fog;
-      fp.sun_dir = sun_direction_for (SUN_HEIGHT);
-      sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
+      const float render_sun_height = terrain_lab
+	? terrain_lab_sun_height () : SUN_HEIGHT;
+      fp.sun_dir = sun_direction_for (render_sun_height);
+      sun_light_colors
+	(render_sun_height, fp.sun_diffuse, fp.sun_specular);
       fp.sun_specular = fp.sun_specular * 0.5f;   // material specular
       const float daylight = daylight_for (SUN_HEIGHT);
       // Open terrain receives substantial skylight even when a mountain
@@ -939,6 +947,14 @@ namespace game {
       // color instead of collapsing into near-black silhouettes.
       fp.ambient = Vector3D (0.39f, 0.43f, 0.49f)
         * (0.35f + 0.65f * daylight);
+      if (terrain_lab) {
+	// The lab is a place for reading landform, not dramatic driving
+	// lighting.  A stronger neutral skylight keeps valleys and vegetation
+	// legible while retaining the directional shape of the afternoon sun.
+	fp.ambient = Vector3D (0.60f, 0.64f, 0.70f);
+	fp.sun_diffuse = fp.sun_diffuse * 1.25f;
+	fp.exposure_bias = 1.22f;
+      }
       fp.time = m_total_time;
       fp.profile = true;
 
@@ -1255,7 +1271,8 @@ namespace game {
 	input_go (0);
 	input_boost (0);
 	m_terrain_lab.enter (*m_renderer, m_map, m_terrain, m_world,
-			     m_seed, sun_direction_for (SUN_HEIGHT));
+			     m_seed,
+			     sun_direction_for (terrain_lab_sun_height ()));
 	return;
       }
 

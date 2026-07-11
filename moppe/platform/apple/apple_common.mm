@@ -162,13 +162,20 @@ namespace platform {
 				     kCTFontOrientationHorizontal,
 				     &glyph, &box, 1);
 
-    const int pad = 1;
-    const int w = (int) ceil (box.size.width) + pad * 2;
-    const int h = (int) ceil (box.size.height) + pad * 2;
+    // Align both sides independently.  ceil(width) is insufficient when a
+    // fractional origin makes the outline cross one more pixel boundary;
+    // that clipped curved edges and descenders on letters such as p and g.
+    const int pad = 2;
+    const float min_x = (float) floor (CGRectGetMinX (box));
+    const float min_y = (float) floor (CGRectGetMinY (box));
+    const float max_x = (float) ceil (CGRectGetMaxX (box));
+    const float max_y = (float) ceil (CGRectGetMaxY (box));
+    const int w = (int) (max_x - min_x) + pad * 2;
+    const int h = (int) (max_y - min_y) + pad * 2;
     out.advance = (float) advance.width / scale;
-    out.bearing_x = (int) floor (box.origin.x) - pad;
+    out.bearing_x = min_x - pad;
     // Distance from baseline up to the bitmap's top edge.
-    out.bearing_y = (int) ceil (box.origin.y + box.size.height) + pad;
+    out.bearing_y = max_y + pad;
     out.width = w > pad * 2 ? w : 0;
     out.height = h > pad * 2 ? h : 0;
     if (out.width == 0 || out.height == 0) {
@@ -188,12 +195,18 @@ namespace platform {
       CFRelease (font);
       return false;
     }
+    CGContextSetAllowsAntialiasing (ctx, true);
+    CGContextSetShouldAntialias (ctx, true);
+    CGContextSetAllowsFontSmoothing (ctx, true);
+    CGContextSetShouldSmoothFonts (ctx, true);
+    CGContextSetAllowsFontSubpixelPositioning (ctx, true);
+    CGContextSetShouldSubpixelPositionFonts (ctx, true);
+    CGContextSetTextMatrix (ctx, CGAffineTransformIdentity);
     CGContextSetGrayFillColor (ctx, 1.0, 1.0);
     // Place the glyph so its bounding box lands inside the bitmap;
     // CG user space has a bottom-left origin, but the buffer's
     // row 0 is already the TOP scanline -- no flip needed.
-    CGPoint pos = CGPointMake (-box.origin.x + pad,
-			       -box.origin.y + pad);
+    CGPoint pos = CGPointMake (-min_x + pad, -min_y + pad);
     CTFontDrawGlyphs (font, &glyph, &pos, 1, ctx);
     CGContextRelease (ctx);
     CFRelease (font);

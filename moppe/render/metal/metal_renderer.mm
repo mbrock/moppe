@@ -2177,7 +2177,7 @@ namespace render {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = 1;
-      q.tint.w = m_exposure;
+      q.tint.w = m_exposure * m_fp.exposure_bias;
       q.params.x = 1;
       quad_pass (GpuPass::Bloom, @"Bloom bright pass",
 		 m_bloom_bright, m_current, m_bloom_a, q);
@@ -2233,7 +2233,7 @@ namespace render {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = 1;
-      q.tint.w = m_exposure;
+      q.tint.w = m_exposure * m_fp.exposure_bias;
       q.params.x = 1;
       q.params.y = m_fp.time;
 #if !TARGET_OS_IPHONE
@@ -2261,7 +2261,8 @@ namespace render {
 	    q.sun.y = 1.0f - (ny * 0.5f + 0.5f);
 	    // Exposure folds in so the flare adapts with the eye.
 	    q.sun.z = m_fp.sun_visibility
-	      * (edge > 1.0f ? 1.0f : edge) * m_exposure;
+	      * (edge > 1.0f ? 1.0f : edge)
+	      * m_exposure * m_fp.exposure_bias;
 	    q.sun.w = (float) m_target_w / (float) m_target_h;
 	  }
 	}
