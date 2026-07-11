@@ -41,6 +41,7 @@
 #include <filesystem>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -214,6 +215,8 @@ namespace game {
 	m_generation_profile (generation_profile),
 	m_map (world.resolution, world.resolution, world.map_size,
 	       m_seed, world.topology ()),
+	m_loading_map (world.resolution, world.resolution, world.map_size,
+		       m_seed, world.topology ()),
 	m_camera (18, 6.5f * one_meter),
 	// Dirt-bike figures: 2600 N of launch, 30 kW of engine --
 	// hard low-end punch, ~125 km/h against drag (the old
@@ -416,6 +419,19 @@ namespace game {
 	  evaluator.evaluate
 	    (program, [this] (std::size_t,
 			      const terrain::TerrainTransform& transform) {
+	      // Normalization and lowland shaping have run when the first erosion
+	      // stage is announced.  Publish that coherent newborn landform for
+	      // the loading-screen renderer rather than racing the GPU against
+	      // the map as erosion mutates it on this worker thread.
+	      if (std::holds_alternative<terrain::AnalyticalErosion>
+		  (transform)) {
+		const std::size_t count = static_cast<std::size_t>
+		  (m_map.width ()) * m_map.height ();
+		auto heights = std::make_shared<const std::vector<float>>
+		  (m_map.raw_heights (), m_map.raw_heights () + count);
+		const std::lock_guard<std::mutex> lock (m_loading_mutex);
+		m_loading_heights = std::move (heights);
+	      }
 	      if (std::holds_alternative<terrain::HydraulicErosion>
 		  (transform))
 		m_gen_stage = 4;
@@ -1194,16 +1210,64 @@ namespace game {
       const float h = (float) r.height_pts ();
       const float aspect = w / std::max (1.0f, h);
       const float sky_time = (float) platform::now ();
-      const Vector3D eye (0, 34, 0);
-      const Vector3D target (0, 27, -100);
+      std::shared_ptr<const std::vector<float>> loading_heights;
+      {
+	const std::lock_guard<std::mutex> lock (m_loading_mutex);
+	loading_heights = m_loading_heights;
+      }
+
+      // Give Metal one frame with a quiet low plain, then upload the newborn
+      // geological field.  Interactive-preview terrain retains the previous
+      // height texture and grows smoothly between the two without repeated
+      // CPU uploads.
+      if (loading_heights && m_loading_terrain_state == 0) {
+	const float floor = *std::min_element
+	  (loading_heights->begin (), loading_heights->end ());
+	std::fill (m_loading_map.raw_heights (),
+		   m_loading_map.raw_heights () + loading_heights->size (),
+		   floor);
+	m_terrain.setup
+	  (r, m_loading_map, m_world, render::TerrainProjection::Plane,
+	   false, true);
+	m_loading_terrain_state = 1;
+	m_loading_terrain_reveal = sky_time;
+      } else if (loading_heights && m_loading_terrain_state == 1) {
+	std::copy (loading_heights->begin (), loading_heights->end (),
+		   m_loading_map.raw_heights ());
+	m_terrain.setup
+	  (r, m_loading_map, m_world, render::TerrainProjection::Plane,
+	   false, true);
+	m_loading_terrain_state = 2;
+	const std::lock_guard<std::mutex> lock (m_loading_mutex);
+	m_loading_heights.reset ();
+      }
+
+      const bool show_terrain = m_loading_terrain_state > 0;
+      Vector3D eye (0, 34, 0);
+      Vector3D target (0, 27, -100);
+      if (show_terrain) {
+	const float orbit = sky_time * 0.035f;
+	const float radius = m_world.map_size.x * 0.64f;
+	target = Vector3D (m_world.map_size.x * 0.5f,
+			   m_world.map_size.y * 0.12f,
+			   m_world.map_size.z * 0.5f);
+	eye = target + Vector3D (std::sin (orbit) * radius,
+				m_world.map_size.y * 0.70f,
+				std::cos (orbit) * radius);
+      }
+      const Vector3D forward = (target - eye).normalized ();
 
       render::FrameParams fp;
       fp.clear_color = horizon_color_for (SUN_HEIGHT);
       fp.view = Mat4::look_at (eye, target, Vector3D (0, 1, 0));
       fp.proj = Mat4::perspective_reversed
-	(degrees_to_radians (64.0f), aspect, 0.5f, 9000.0f);
+	(degrees_to_radians (show_terrain ? 52.0f : 64.0f), aspect,
+	 0.5f, std::max (9000.0f, m_world.map_size.x * 2.0f));
       fp.camera_pos = eye;
       fp.sun_dir = sun_direction_for (SUN_HEIGHT);
+      sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
+      fp.ambient = Vector3D (0.45f, 0.49f, 0.55f);
+      fp.fog_scale = show_terrain ? m_world.fog_scale * 1.35f : 0.0f;
       fp.time = sky_time;
       fp.exposure_bias = 0.88f;
       if (!r.begin_frame (fp))
@@ -1216,6 +1280,15 @@ namespace game {
       sky.sun_dir = fp.sun_dir;
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);
+
+      if (show_terrain) {
+	const float reveal_age = sky_time - m_loading_terrain_reveal;
+	// Let the first low plain breathe for a moment before it rises.  The
+	// terrain transition itself lasts about a second in the Metal backend.
+	if (m_loading_terrain_state == 2 || reveal_age > 0.0f)
+	  m_terrain.render
+	    (r, eye, forward, m_world.map_size.x * 1.8f);
+      }
 
       m_hud_dl.clear ();
       render::DrawState s;
@@ -1609,6 +1682,11 @@ namespace game {
     int m_seed;
     terrain::TerrainGenerationProfile m_generation_profile;
     map::RandomHeightMap m_map;
+    map::RandomHeightMap m_loading_map;
+    std::mutex m_loading_mutex;
+    std::shared_ptr<const std::vector<float>> m_loading_heights;
+    int m_loading_terrain_state = 0;
+    float m_loading_terrain_reveal = 0.0f;
     std::optional<terrain::FloodField> m_standing_water;
     std::optional<terrain::LakeCensus> m_lake_census;
     std::optional<terrain::DrainageGraph> m_drainage;
