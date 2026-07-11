@@ -184,6 +184,30 @@ namespace render {
   }
 
   void
+  DrawList::append (const DrawList& baked) {
+    assert (!m_in_begin);
+    const uint32_t base = (uint32_t) m_vertices.size ();
+    m_vertices.insert (m_vertices.end (),
+		       baked.m_vertices.begin (),
+		       baked.m_vertices.end ());
+    for (const Run& r : baked.m_runs) {
+      if (r.count == 0)
+	continue;
+      if (!m_runs.empty ()) {
+	Run& b = m_runs.back ();
+	if (b.state == r.state && b.texture == r.texture
+	    && b.first + b.count == base + r.first) {
+	  b.count += r.count;
+	  continue;
+	}
+      }
+      Run nr = r;
+      nr.first += base;
+      m_runs.push_back (nr);
+    }
+  }
+
+  void
   DrawList::begin (Prim p) {
     assert (!m_in_begin);
     m_in_begin = true;

@@ -73,6 +73,9 @@ namespace game {
 			 int width_pts, int height_pts);
 
   private:
+    void rebuild_static (int width_pts, int height_pts,
+			 bool low_fuel);
+
     std::unique_ptr<render::FontAtlas> m_helv10;   // dial labels
     std::unique_ptr<render::FontAtlas> m_helv12;   // ON FOOT etc.
     std::unique_ptr<render::FontAtlas> m_display24; // digital speed
@@ -81,6 +84,16 @@ namespace game {
     float m_fps;
     int m_fps_cursor;
     int m_fps_count;
+
+    // Everything that only depends on the layout (dial faces, ticks,
+    // panels, fixed labels) is tessellated once into this list and
+    // spliced into the frame each draw; only needles, arcs, bars, and
+    // live text re-record.  The low-fuel warning ring has two alpha
+    // states, so it keys the bake alongside the window size.
+    render::DrawList m_static;
+    int m_static_width;
+    int m_static_height;
+    bool m_static_low_fuel;
   };
 }
 }

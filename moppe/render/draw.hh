@@ -82,6 +82,14 @@ namespace render {
     // is measured after transformation in final HUD coordinates.
     void line (float x0, float y0, float x1, float y1, float width);
 
+    // Splice another recorded list into this one verbatim: a bulk
+    // vertex copy plus run fixups, no re-transformation.  This is how
+    // geometry baked once (e.g. the static parts of the HUD) replays
+    // per frame without paying record cost again.  The other list's
+    // vertices are already world-space, so the matrix stack does not
+    // apply; adjacent compatible runs coalesce.
+    void append (const DrawList& baked);
+
     // -- results -----------------------------------------------------
     const std::vector<Vertex>& vertices () const { return m_vertices; }
     const std::vector<Run>& runs () const { return m_runs; }

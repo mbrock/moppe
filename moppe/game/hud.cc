@@ -262,12 +262,25 @@ namespace game {
       dl.fogged (true);
       dl.color (1, 1, 1, 1);
     }
+
+    // Panel rectangles used by both the static bake and the live
+    // overlays drawn on top of them.
+    Rect compass_rect (float width_pts) {
+      const float w = std::min (230.0f, width_pts * 0.38f);
+      return Rect ((width_pts - w) * 0.5f, 8.0f, w, 43.0f);
+    }
+
+    Rect ecu_rect (float width_pts) {
+      return Rect (width_pts - 126.0f, 8.0f, 116.0f, 43.0f);
+    }
   }
 
   // ---- the cluster itself -------------------------------------------
 
   Hud::Hud ()
-    : m_fps (0), m_fps_cursor (0), m_fps_count (0)
+    : m_fps (0), m_fps_cursor (0), m_fps_count (0),
+      m_static_width (-1), m_static_height (-1),
+      m_static_low_fuel (false)
   {
     std::fill (m_fps_history, m_fps_history + 48, 0.0f);
   }
@@ -284,6 +297,120 @@ namespace game {
       (new render::FontAtlas (renderer, "Menlo", 24.0f, s));
     m_times24.reset
       (new render::FontAtlas (renderer, "Times New Roman", 24.0f, s));
+  }
+
+  // Tessellate the layout-static parts of the overlay once.  Every
+  // live element drawn per frame sits strictly on top of these (or
+  // doesn't overlap them), so splicing the bake first preserves the
+  // original paint order.
+  void
+  Hud::rebuild_static (int width_pts, int height_pts, bool low_fuel)
+  {
+    DrawList& dl = m_static;
+    dl.clear ();
+
+    const HudLayout layout ((float) width_pts, (float) height_pts);
+    hud_state_on (dl);
+
+    // ---- instrument cluster ----
+    dl.push ();
+    dl.translate (layout.cluster_anchor.x,
+		  layout.cluster_anchor.y, 0);
+
+    // Fuel: face, reserve-zone marker, ticks (the needle is live).
+    hud_dial_face (dl, layout.fuel);
+    hud_ring (dl, layout.fuel, 0.62f, 0.88f, 132, 160,
+	      0.95f, 0.32f, 0.04f, low_fuel ? 0.9f : 0.45f);
+    hud_ticks (dl, layout.fuel, 5, 160, 20, 0.66f, 0.86f,
+	       1.5f, 0.88f, 0.9f, 0.94f, 0.9f);
+
+    // Boost: face and the lightning-bolt mark inside the charge arc.
+    hud_dial_face (dl, layout.boost);
+    const Point boost = layout.boost.center;
+    dl.color (0.9f, 0.96f, 1.0f, 0.95f);
+    dl.begin (Prim::Triangles);
+    dl.vertex (boost.x + 2, boost.y - 14);
+    dl.vertex (boost.x - 9, boost.y + 2);
+    dl.vertex (boost.x, boost.y + 1);
+    dl.vertex (boost.x, boost.y - 1);
+    dl.vertex (boost.x + 9, boost.y - 2);
+    dl.vertex (boost.x - 3, boost.y + 14);
+    dl.end ();
+
+    // Speedometer: face, quiet track with redline, ticks, unit label.
+    hud_dial_face (dl, layout.speed);
+    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 210,
+	      0.32f, 0.36f, 0.40f, 0.55f);
+    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 10,
+	      0.92f, 0.12f, 0.08f, 0.8f);
+    hud_ticks (dl, layout.speed, 11, 210, -30, 0.66f, 0.75f,
+	       1.4f, 0.85f, 0.88f, 0.92f, 0.85f);
+    dl.color (0.72f, 0.75f, 0.8f);
+    const std::string unit = "KM/H";
+    m_helv10->draw
+      (dl, layout.speed.center.x - m_helv10->measure (unit) * 0.5f,
+       layout.speed.center.y + 18, unit);
+
+    // Fuel endpoints; the boost dial uses the bolt symbol above.
+    dl.color (0.8f, 0.3f, 0.2f);
+    m_helv10->draw
+      (dl, layout.fuel.center.x - layout.fuel.radius * 0.95f,
+       layout.fuel.center.y - layout.fuel.radius * 0.24f, "E");
+    dl.color (0.8f, 0.85f, 0.9f);
+    m_helv10->draw
+      (dl, layout.fuel.center.x + layout.fuel.radius * 0.82f,
+       layout.fuel.center.y - layout.fuel.radius * 0.24f, "F");
+
+    dl.pop ();
+
+    // ---- status panel: backdrop, empty health bar, star badge ----
+    dl.push ();
+    dl.translate (layout.status.x, layout.status.y, 0);
+    hud_panel (dl, 0, 0, layout.status.width,
+	       layout.status.height, 11.0f, 0.78f);
+
+    const float bar_x = 10, bar_y = 38;
+    const float bar_width = 142, bar_height = 8;
+    dl.color (0.015f, 0.025f, 0.04f, 0.88f);
+    dl.begin (Prim::Quads);
+    dl.vertex (bar_x, bar_y);
+    dl.vertex (bar_x + bar_width, bar_y);
+    dl.vertex (bar_x + bar_width, bar_y + bar_height);
+    dl.vertex (bar_x, bar_y + bar_height);
+    dl.end ();
+
+    const Point star (21, 20);
+    dl.color (1.0f, 0.85f, 0.15f, 0.98f);
+    dl.begin (Prim::TriangleFan);
+    dl.vertex (star.x, star.y);
+    for (int i = 0; i <= 10; ++i) {
+      const float a = (-90.0f + i * 36.0f) * PI / 180.0f;
+      const float r = (i % 2 == 0) ? 12.0f : 5.2f;
+      dl.vertex (star.x + r * std::cos (a),
+		 star.y + r * std::sin (a));
+    }
+    dl.end ();
+    dl.pop ();
+
+    // ---- heading ribbon and ECU panels ----
+    {
+      const Rect c = compass_rect ((float) width_pts);
+      hud_panel (dl, c.x, c.y, c.x + c.width, c.y + c.height,
+		 7.0f, 0.62f);
+
+      const Rect e = ecu_rect ((float) width_pts);
+      hud_panel (dl, e.x, e.y, e.x + e.width, e.y + e.height,
+		 7.0f, 0.62f);
+      dl.color (0.48f, 0.58f, 0.68f, 0.9f);
+      m_helv10->draw (dl, e.x + 7, e.y + 13, "ECU");
+      dl.color (0.22f, 0.3f, 0.35f, 0.65f);
+      dl.line (e.x + 7, e.y + e.height - 6,
+	       e.x + e.width - 7, e.y + e.height - 6, 1.0f);
+    }
+
+    m_static_width = width_pts;
+    m_static_height = height_pts;
+    m_static_low_fuel = low_fuel;
   }
 
   void
@@ -310,49 +437,30 @@ namespace game {
 
     hud_state_on (dl);
 
+    // Splice in the baked static geometry (dial faces, ticks, panels,
+    // fixed labels), re-tessellating only when its key changes.
+    const bool low_fuel = fuel < 20.0f;
+    if (m_static_width != width_pts || m_static_height != height_pts
+	|| m_static_low_fuel != low_fuel)
+      rebuild_static (width_pts, height_pts, low_fuel);
+    dl.append (m_static);
+
     // All cluster geometry is local to one bottom-right anchor.
     dl.push ();
     dl.translate (layout.cluster_anchor.x,
 		  layout.cluster_anchor.y, 0);
 
     // ==================== FUEL GAUGE ====================
-    hud_dial_face (dl, layout.fuel);
-    const float low_fuel_alpha = fuel < 20.0f ? 0.9f : 0.45f;
-    hud_ring (dl, layout.fuel, 0.62f, 0.88f, 132, 160,
-	      0.95f, 0.32f, 0.04f, low_fuel_alpha);
-    hud_ticks (dl, layout.fuel, 5, 160, 20, 0.66f, 0.86f,
-	       1.5f, 0.88f, 0.9f, 0.94f, 0.9f);
     hud_needle (dl, layout.fuel,
 		160.0f - 140.0f * (fuel / 100.0f),
 		0.74f, 0.2f, 2.2f, 0.92f, 0.92f, 0.95f);
 
     // ==================== BOOST GAUGE ====================
-    hud_dial_face (dl, layout.boost);
     hud_ring (dl, layout.boost, 0.67f, 0.84f, 210,
 	      210.0f + 240.0f * charge,
 	      0.12f, 0.62f, 1.0f, 0.9f);
 
-    // Lightning-bolt boost mark, centered on the boost dial.
-    const Point boost = layout.boost.center;
-    dl.color (0.9f, 0.96f, 1.0f, 0.95f);
-    dl.begin (Prim::Triangles);
-    dl.vertex (boost.x + 2, boost.y - 14);
-    dl.vertex (boost.x - 9, boost.y + 2);
-    dl.vertex (boost.x, boost.y + 1);
-    dl.vertex (boost.x, boost.y - 1);
-    dl.vertex (boost.x + 9, boost.y - 2);
-    dl.vertex (boost.x - 3, boost.y + 14);
-    dl.end ();
-
     // ==================== SPEEDOMETER ====================
-    hud_dial_face (dl, layout.speed);
-
-    // Quiet track behind the live arc, with a short redline segment.
-    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 210,
-	      0.32f, 0.36f, 0.40f, 0.55f);
-    hud_ring (dl, layout.speed, 0.78f, 0.88f, -30, 10,
-	      0.92f, 0.12f, 0.08f, 0.8f);
-
     // Live speed arc, green through amber to red.
     if (speed_fraction > 0.003f) {
       const int segs = (int) (44 * speed_fraction) + 1;
@@ -370,9 +478,6 @@ namespace game {
       dl.end ();
     }
 
-    hud_ticks (dl, layout.speed, 11, 210, -30, 0.66f, 0.75f,
-	       1.4f, 0.85f, 0.88f, 0.92f, 0.85f);
-
     // Large digital speed and a small odometer readout.
     {
       const std::string speed = std::to_string ((int) (kmh + 0.5f));
@@ -381,11 +486,6 @@ namespace game {
 	(dl, layout.speed.center.x
 	 - m_display24->measure (speed) * 0.5f,
 	 layout.speed.center.y + 4, speed);
-      dl.color (0.72f, 0.75f, 0.8f);
-      const std::string unit = "KM/H";
-      m_helv10->draw
-	(dl, layout.speed.center.x - m_helv10->measure (unit) * 0.5f,
-	 layout.speed.center.y + 18, unit);
 
       char buf[16];
       snprintf (buf, sizeof buf, "%07.1f", st.odometer_m / 1000.0);
@@ -394,16 +494,6 @@ namespace game {
 	(dl, layout.speed.center.x - m_helv10->measure (buf) * 0.5f,
 	 layout.speed.center.y + 35, buf);
     }
-
-    // Fuel endpoints; the boost dial uses the bolt symbol above.
-    dl.color (0.8f, 0.3f, 0.2f);
-    m_helv10->draw
-      (dl, layout.fuel.center.x - layout.fuel.radius * 0.95f,
-       layout.fuel.center.y - layout.fuel.radius * 0.24f, "E");
-    dl.color (0.8f, 0.85f, 0.9f);
-    m_helv10->draw
-      (dl, layout.fuel.center.x + layout.fuel.radius * 0.82f,
-       layout.fuel.center.y - layout.fuel.radius * 0.24f, "F");
 
     if (st.on_foot) {
       const std::string label = "ON FOOT";
@@ -417,22 +507,13 @@ namespace game {
 
     // The status contents use panel-local coordinates, so moving or
     // resizing the panel cannot separate its icon, bar, and hearts.
+    // The panel, empty bar, and star badge come from the bake.
     dl.push ();
     dl.translate (layout.status.x, layout.status.y, 0);
-    hud_panel (dl, 0, 0, layout.status.width,
-	       layout.status.height, 11.0f, 0.78f);
 
     const float health = clamp01 (st.health01);
     const float bar_x = 10, bar_y = 38;
     const float bar_width = 142, bar_height = 8;
-    dl.color (0.015f, 0.025f, 0.04f, 0.88f);
-    dl.begin (Prim::Quads);
-    dl.vertex (bar_x, bar_y);
-    dl.vertex (bar_x + bar_width, bar_y);
-    dl.vertex (bar_x + bar_width, bar_y + bar_height);
-    dl.vertex (bar_x, bar_y + bar_height);
-    dl.end ();
-
     dl.color (0.9f - 0.72f * health,
 	      0.18f + 0.7f * health, 0.12f, 0.98f);
     dl.begin (Prim::Quads);
@@ -445,18 +526,6 @@ namespace game {
     // A one-point highlight keeps the narrow bar crisp on Retina.
     dl.color (0.9f, 1.0f, 0.9f, 0.28f);
     dl.line (bar_x, bar_y, bar_x + bar_width * health, bar_y, 1.0f);
-
-    const Point star (21, 20);
-    dl.color (1.0f, 0.85f, 0.15f, 0.98f);
-    dl.begin (Prim::TriangleFan);
-    dl.vertex (star.x, star.y);
-    for (int i = 0; i <= 10; ++i) {
-      const float a = (-90.0f + i * 36.0f) * PI / 180.0f;
-      const float r = (i % 2 == 0) ? 12.0f : 5.2f;
-      dl.vertex (star.x + r * std::cos (a),
-		 star.y + r * std::sin (a));
-    }
-    dl.end ();
 
     for (int i = 0; i < 10; ++i)
       hud_heart (dl, 11.0f + i * 15.6f, 62.0f,
@@ -508,15 +577,15 @@ namespace game {
 
     // Heading ribbon.  World +Z is north and +X is east, matching
     // the coordinate convention used by vehicle and walker headings.
+    // The panel itself comes from the bake.
     {
-      const float width = std::min (230.0f, width_pts * 0.38f);
-      const float x = (width_pts - width) * 0.5f;
-      const float y = 8.0f;
-      const float height = 43.0f;
+      const Rect rect = compass_rect ((float) width_pts);
+      const float width = rect.width;
+      const float x = rect.x;
+      const float y = rect.y;
       const float center = x + width * 0.5f;
       const float heading = st.heading_radians * 180.0f / PI;
       const float pixels_per_degree = (width - 20.0f) / 180.0f;
-      hud_panel (dl, x, y, x + width, y + height, 7.0f, 0.62f);
 
       static const char* labels[8] = {
 	"N", "", "E", "", "S", "", "W", ""
@@ -560,15 +629,14 @@ namespace game {
 
     // A compact ECU module: useful frame telemetry disguised as one
     // more instrument on the bike, with a short rolling pace trace.
+    // The panel, label, and graph baseline come from the bake.
     {
-      const float x = (float) width_pts - 126.0f;
-      const float y = 8.0f;
-      const float w = 116.0f;
-      const float h = 43.0f;
-      hud_panel (dl, x, y, x + w, y + h, 7.0f, 0.62f);
+      const Rect rect = ecu_rect ((float) width_pts);
+      const float x = rect.x;
+      const float y = rect.y;
+      const float w = rect.width;
+      const float h = rect.height;
 
-      dl.color (0.48f, 0.58f, 0.68f, 0.9f);
-      m_helv10->draw (dl, x + 7, y + 13, "ECU");
       char fps[16];
       snprintf (fps, sizeof fps, "%3.0f FPS", m_fps);
       dl.color (0.72f, 0.9f, 0.92f, 0.94f);
@@ -577,8 +645,6 @@ namespace game {
 
       const float gx0 = x + 7, gx1 = x + w - 7;
       const float gy0 = y + 20, gy1 = y + h - 6;
-      dl.color (0.22f, 0.3f, 0.35f, 0.65f);
-      dl.line (gx0, gy1, gx1, gy1, 1.0f);
 
       dl.color (0.2f, 0.78f, 0.76f, 0.84f);
       for (int i = 1; i < m_fps_count; ++i) {
