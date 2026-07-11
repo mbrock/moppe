@@ -1,0 +1,41 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "xcode",
+      "displayName": "Xcode (macOS)",
+      "description": "Generate the Moppe macOS project for Xcode.",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build-xcode",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF",
+        "MOPPE_BUILD_DEVELOPER_TOOLS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "xcode-debug",
+      "displayName": "Xcode Debug",
+      "configurePreset": "xcode",
+      "configuration": "Debug",
+      "targets": [
+        "moppe"
+      ]
+    },
+    {
+      "name": "xcode-relwithdebinfo",
+      "displayName": "Xcode RelWithDebInfo",
+      "configurePreset": "xcode",
+      "configuration": "RelWithDebInfo",
+      "targets": [
+        "moppe"
+      ]
+    }
+  ]
+}

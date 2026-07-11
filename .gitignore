@@ -1,4 +1,5 @@
 build/
+build-xcode/
 build-ios/
 build-ios-dev/
 build-ios-device/
@@ -8,3 +9,4 @@ dist/
 test.tga
 field-demo.png
 terrain-lab.png
+*.xcworkspace/xcuserdata/
