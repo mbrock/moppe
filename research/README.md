@@ -127,4 +127,3 @@ text is not open access.
 
 See `terrain/README.md` for the terrain papers, their relationship to Moppe's
 current implementation, and the experiments they have already informed.
-
