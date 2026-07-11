@@ -394,6 +394,13 @@ namespace map {
     constexpr float deposit_k = 0.3f;
     constexpr float evaporate = 0.015f;
     constexpr float gravity = 4.0f;
+    // Interactive-trace momentum: rolling friction bleeds speed every
+    // step so a coasting droplet cannot wander forever, climbing costs
+    // extra energy beyond the plain gravity exchange, and below the
+    // rest speed the droplet settles where it stands.
+    constexpr float friction = 0.035f;
+    constexpr float climb_drag = 3.0f;
+    constexpr float rest_speed = 0.05f;
     if (max_steps <= 0 || !std::isfinite (minimum_water)
 	|| minimum_water < 0.0f || minimum_water >= 1.0f)
       throw std::invalid_argument ("invalid traced hydraulic droplet");
@@ -473,8 +480,12 @@ namespace map {
 
     for (int step = 0; step < max_steps; ++step) {
       const Sample here = sample (px, py);
-      dirx = dirx * inertia - here.gradx * (1 - inertia);
-      diry = diry * inertia - here.grady * (1 - inertia);
+      // A fast droplet holds its heading; a slow one defers to the
+      // gradient, so it turns downhill rather than plowing upslope.
+      const float heading_inertia = std::clamp
+	(inertia + speed * 0.45f, inertia, 0.85f);
+      dirx = dirx * heading_inertia - here.gradx * (1 - heading_inertia);
+      diry = diry * heading_inertia - here.grady * (1 - heading_inertia);
       const float length = std::hypot (dirx, diry);
       if (length < 1e-10f) {
 	trace.termination = HydraulicDropletTermination::Flat;
@@ -495,10 +506,20 @@ namespace map {
 
       const Sample next = sample (nx, ny);
       const float dh = next.height - here.height;
-      if (carving_rule == terrain::CarvingRule::PathMonotone
-	  && dh >= 0.0f) {
-	trace.termination = HydraulicDropletTermination::Flat;
-	break;
+      if (dh > 0.0f && speed * speed < dh * gravity * climb_drag) {
+	// Not enough kinetic energy to crest this rise: shed the
+	// blocked momentum and slosh back; friction settles the
+	// droplet at the basin floor within a few reversals.
+	dirx = -dirx;
+	diry = -diry;
+	speed *= 0.5f;
+	if (speed < rest_speed) {
+	  trace.termination = HydraulicDropletTermination::Settled;
+	  break;
+	}
+	trace.points.push_back
+	  ({ px, py, here.height, 0, 0, speed, water, sediment });
+	continue;
       }
       const float capacity = std::max (-dh, min_slope)
 	* speed * water * capacity_k;
@@ -521,14 +542,20 @@ namespace map {
 	trace.eroded -= amount;
       }
 
+      const float slope_drag = dh > 0.0f ? climb_drag : 1.0f;
       speed = std::sqrt
-	(std::max (0.0f, speed * speed - dh * gravity));
+	(std::max (0.0f, speed * speed - dh * gravity * slope_drag));
+      speed *= 1.0f - friction;
       water *= 1.0f - evaporate;
       px = nx;
       py = ny;
       trace.points.push_back
 	({ px, py, sample (px, py).height, eroded, deposited,
 	   speed, water, sediment });
+      if (speed < rest_speed && dh >= -1e-6f) {
+	trace.termination = HydraulicDropletTermination::Settled;
+	break;
+      }
       if (minimum_water > 0.0f && water <= minimum_water) {
 	trace.termination = HydraulicDropletTermination::WaterCutoff;
 	break;

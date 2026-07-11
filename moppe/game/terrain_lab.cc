@@ -405,8 +405,9 @@ namespace game {
       m_active (false), m_map_pristine (false),
       m_program (terrain::make_geological_program (0)),
       m_droplet_overlay_points (0),
-      m_droplet_progress (0.0f), m_droplet_armed (false),
-      m_droplet_follow (false),
+      m_droplet_progress (0.0f), m_droplet_settle (0.0f),
+      m_droplet_armed (false), m_droplet_follow (false),
+      m_time (0.0f),
       m_overlay (OverlayMode::None),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
@@ -515,6 +516,7 @@ namespace game {
     m_droplet_overlay.clear ();
     m_droplet_overlay_points = 0;
     m_droplet_progress = 0.0f;
+    m_droplet_settle = 0.0f;
     m_droplet_armed = false;
     m_droplet_follow = false;
     m_overlay_status = "NO READING — terrain materials";
@@ -561,6 +563,15 @@ namespace game {
       if (std::getline (input, sx, ',') && std::getline (input, sy))
 	launch_droplet (std::stof (sx), std::stof (sy));
     }
+    if (const char* arm = std::getenv ("MOPPE_LAB_ARM_SCREEN")) {
+      std::istringstream input (arm);
+      std::string sx, sy;
+      if (std::getline (input, sx, ',') && std::getline (input, sy)) {
+	m_droplet_armed = true;
+	m_droplet_target = terrain_point_at_screen
+	  (std::stof (sx), std::stof (sy));
+      }
+    }
   }
 
   void
@@ -584,6 +595,7 @@ namespace game {
     m_droplet_overlay.clear ();
     m_droplet_overlay_points = 0;
     m_droplet_draw.clear ();
+    m_droplet_settle = 0.0f;
     m_droplet_armed = false;
     m_droplet_follow = false;
     m_orbit_left = m_orbit_right = false;
@@ -983,7 +995,6 @@ namespace game {
   {
     if (!m_map)
       return;
-    const Vector3D map_scale = m_map->scale ();
 
     m_droplet_draw.clear ();
     render::DrawState state;
@@ -993,36 +1004,78 @@ namespace game {
     state.cull = false;
     m_droplet_draw.state (state);
     m_droplet_draw.lit (false);
-    m_droplet_draw.fogged (true);
+    // Unfogged: the target dot and bead are interface cues that must
+    // stay legible even from the kilometres-out overview orbit.
+    m_droplet_draw.fogged (false);
 
     if (m_droplet_armed && m_droplet_target) {
-      const float radius = std::clamp
-	(1.4f * std::max (map_scale.x, map_scale.z), 18.0f, 55.0f);
-      const auto ring = [&] (float width, float alpha) {
-	m_droplet_draw.color (0.25f, 0.94f, 1.0f, alpha);
-	m_droplet_draw.begin (render::Prim::Quads);
-	for (int i = 0; i < 40; ++i) {
-	  const float a0 = PI2 * static_cast<float> (i) / 40.0f;
-	  const float a1 = PI2 * static_cast<float> (i + 1) / 40.0f;
-	  const auto point = [&] (float angle, float r) {
-	    const float x = m_droplet_target->x + std::cos (angle) * r;
-	    const float z = m_droplet_target->z + std::sin (angle) * r;
-	    return Vector3D
-	      (x, m_map->interpolated_height (x, z) + 3.0f, z);
-	  };
-	  m_droplet_draw.vertex (point (a0, radius - width));
-	  m_droplet_draw.vertex (point (a0, radius + width));
-	  m_droplet_draw.vertex (point (a1, radius + width));
-	  m_droplet_draw.vertex (point (a1, radius - width));
-	}
-	m_droplet_draw.end ();
-      };
-      ring (7.0f, 0.10f);
-      ring (2.0f, 0.82f);
+      // A camera-facing glow point: a draped ring smears into a huge
+      // oval on steep slopes, but a billboard disc stays a dot from
+      // every angle.  Sized by distance so it reads the same zoomed
+      // out or close in, with a soft breathing pulse while armed.
+      const Vector3D ground
+	(m_droplet_target->x,
+	 m_map->interpolated_height (m_droplet_target->x,
+				     m_droplet_target->z),
+	 m_droplet_target->z);
+      Vector3D to_camera = camera - ground;
+      const float distance = to_camera.length ();
+      if (distance > 1.0f) {
+	to_camera = to_camera * (1.0f / distance);
+	Vector3D side = to_camera.cross (Vector3D (0, 1, 0));
+	if (side.length2 () < 1e-6f)
+	  side = Vector3D (1, 0, 0);
+	side.normalize ();
+	const Vector3D lift = side.cross (to_camera).normalized ();
+	const float pulse = 0.85f + 0.15f
+	  * std::sin (m_time * 4.2f);
+	// Proportional to distance, so the dot keeps a constant
+	// on-screen size from valley floor to orbital overview.
+	const float size = std::clamp (distance * 0.02f, 4.0f, 320.0f)
+	  * pulse;
+	const Vector3D center = ground
+	  + to_camera * (3.0f + size * 0.35f);
+	const auto glow = [&] (float radius, float core_alpha) {
+	  m_droplet_draw.begin (render::Prim::TriangleFan);
+	  m_droplet_draw.color (0.55f, 0.97f, 1.0f, core_alpha);
+	  m_droplet_draw.vertex (center);
+	  m_droplet_draw.color (0.25f, 0.94f, 1.0f, 0.0f);
+	  for (int i = 0; i <= 24; ++i) {
+	    const float angle = PI2 * static_cast<float> (i) / 24.0f;
+	    m_droplet_draw.vertex
+	      (center + (side * std::cos (angle)
+			 + lift * std::sin (angle)) * radius);
+	  }
+	  m_droplet_draw.end ();
+	};
+	glow (size, 0.55f);
+	glow (size * 0.4f, 0.95f);
+      }
     }
 
-    if (m_droplet_trace.points.size () >= 2) {
-      const Vector3D bead = droplet_world_position (m_droplet_progress);
+    // When the drop arrives it wobbles like landing jelly, then melts
+    // into a spreading puddle and fades, so the end of the run reads
+    // as an ending rather than the bead just freezing in place.
+    constexpr float melt_duration = 1.8f;
+    const float melt = m_droplet_progress
+      >= static_cast<float> (m_droplet_trace.points.size ()) - 1.0f
+      ? std::clamp (m_droplet_settle / melt_duration, 0.0f, 1.0f)
+      : 0.0f;
+    if (m_droplet_trace.points.size () >= 2 && melt < 1.0f) {
+      const Vector3D bead = droplet_world_position (m_droplet_progress)
+	- Vector3D (0.0f, melt * 1.8f, 0.0f);
+      const float fade = 1.0f - melt;
+      // The wake and nose cap describe motion; snuff them quickly
+      // once the drop has stopped.
+      const float motion_fade = std::max (0.0f, 1.0f - melt * 4.0f);
+      const float wobble = melt > 0.0f
+	? std::exp (-m_droplet_settle * 2.4f)
+	  * std::sin (m_droplet_settle * 16.0f)
+	: 0.0f;
+      const float squash = (1.0f + 0.45f * wobble)
+	* (1.0f - 0.85f * melt);
+      const float spread = (1.0f - 0.25f * wobble)
+	* (1.0f + 1.6f * melt);
 
       Vector3D direction = bead - droplet_world_position
 	(std::max (0.0f, m_droplet_progress - 0.65f));
@@ -1036,6 +1089,8 @@ namespace game {
 	wake_side = Vector3D (1, 0, 0);
       wake_side.normalize ();
       const auto wake = [&] (float length, float width, float alpha) {
+	if (alpha <= 0.0f)
+	  return;
 	m_droplet_draw.color (0.12f, 0.72f, 1.0f, alpha);
 	m_droplet_draw.begin (render::Prim::Triangles);
 	m_droplet_draw.vertex (bead - direction * length);
@@ -1043,39 +1098,47 @@ namespace game {
 	m_droplet_draw.vertex (bead - direction * 2.0f + wake_side * width);
 	m_droplet_draw.end ();
       };
-      wake (30.0f, 8.0f, 0.10f);
-      wake (19.0f, 3.8f, 0.42f);
+      wake (30.0f, 8.0f, 0.10f * motion_fade);
+      wake (19.0f, 3.8f, 0.42f * motion_fade);
 
       // A small pointed cap makes the direction legible even in a still
       // frame; the ellipsoid behind it supplies the rounded water volume.
       Vector3D nose_up = direction.cross (wake_side).normalized ();
-      m_droplet_draw.color (0.34f, 0.92f, 1.0f, 0.82f);
-      m_droplet_draw.begin (render::Prim::TriangleFan);
-      m_droplet_draw.vertex (bead + direction * 11.0f);
-      for (int i = 0; i <= 10; ++i) {
-	const float angle = PI2 * static_cast<float> (i) / 10.0f;
-	const Vector3D radial = wake_side * std::cos (angle)
-	  + nose_up * std::sin (angle);
-	m_droplet_draw.vertex (bead - direction * 1.5f + radial * 5.2f);
+      if (motion_fade > 0.0f) {
+	m_droplet_draw.color (0.34f, 0.92f, 1.0f, 0.82f * motion_fade);
+	m_droplet_draw.begin (render::Prim::TriangleFan);
+	m_droplet_draw.vertex (bead + direction * 11.0f);
+	for (int i = 0; i <= 10; ++i) {
+	  const float angle = PI2 * static_cast<float> (i) / 10.0f;
+	  const Vector3D radial = wake_side * std::cos (angle)
+	    + nose_up * std::sin (angle);
+	  m_droplet_draw.vertex (bead - direction * 1.5f + radial * 5.2f);
+	}
+	m_droplet_draw.end ();
       }
-      m_droplet_draw.end ();
 
       const Vector3D up (0, 1, 0);
-      Vector3D axis = up.cross (direction);
+      // While melting, the blob relaxes upright regardless of its
+      // final travel direction.
+      Vector3D lean = direction + (up - direction) * melt;
+      if (lean.length2 () < 1e-6f)
+	lean = up;
+      lean.normalize ();
+      Vector3D axis = up.cross (lean);
       const float angle = std::acos
-	(std::clamp (up.dot (direction), -1.0f, 1.0f));
+	(std::clamp (up.dot (lean), -1.0f, 1.0f));
       m_droplet_draw.push ();
       m_droplet_draw.translate (bead);
       if (axis.length2 () > 1e-6f)
 	m_droplet_draw.rotate (angle, axis.normalized ());
-      m_droplet_draw.color (0.18f, 0.82f, 1.0f, 0.92f);
-      m_droplet_draw.scale (5.5f, 10.0f, 5.5f);
+      m_droplet_draw.color (0.18f, 0.82f, 1.0f, 0.92f * fade);
+      m_droplet_draw.scale (5.5f * spread, 10.0f * squash, 5.5f * spread);
       m_droplet_draw.sphere (1.0f, 14, 9);
       m_droplet_draw.pop ();
       m_droplet_draw.push ();
       m_droplet_draw.translate (bead + Vector3D (-2.0f, 2.0f, 0));
-      m_droplet_draw.color (0.88f, 1.0f, 1.0f, 0.50f);
-      m_droplet_draw.sphere (2.2f, 8, 6);
+      m_droplet_draw.color (0.88f, 1.0f, 1.0f, 0.50f * fade);
+      m_droplet_draw.sphere (2.2f * (0.4f + 0.6f * fade), 8, 6);
       m_droplet_draw.pop ();
     }
     if (!m_droplet_draw.empty ())
@@ -1147,6 +1210,7 @@ namespace game {
     // Hold briefly on the release point so a click on a summit visibly
     // begins there before the erosion step starts running downhill.
     m_droplet_progress = -8.0f;
+    m_droplet_settle = 0.0f;
     m_droplet_armed = false;
     m_droplet_target.reset ();
     m_droplet_follow = m_droplet_trace.points.size () > 1;
@@ -2255,21 +2319,32 @@ namespace game {
     if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
       run_pending_parameter_rebuild ();
 
+    m_time += dt;
     if (m_droplet_trace.points.size () > 1) {
       const float last = static_cast<float> (m_droplet_trace.points.size () - 1);
       m_droplet_progress = std::min
 	(last, m_droplet_progress + dt * 16.0f);
+      const bool arrived = m_droplet_progress >= last;
+      if (arrived)
+	m_droplet_settle += dt;
       if (m_droplet_follow) {
-	const Vector3D desired = droplet_world_position (m_droplet_progress);
-	// Begin from the view in which the drop was placed, then ease toward its
-	// route.  Interpolated trace positions keep this slow chase fluid.
-	const float follow_response = 1.0f - std::exp (-dt * 2.2f);
+	// Begin from the view in which the drop was placed, then ease
+	// toward its route.  Chase a blend of the bead and a point a
+	// little further along the trace: the lead frames where the
+	// drop is heading and averages out the per-cell zigzag.
+	const Vector3D bead = droplet_world_position (m_droplet_progress);
+	const Vector3D lead = droplet_world_position
+	  (std::min (last, m_droplet_progress + 6.0f));
+	const Vector3D desired = bead + (lead - bead) * 0.45f;
+	const float follow_response = 1.0f - std::exp (-dt * 2.6f);
 	m_target += (desired - m_target) * follow_response;
 	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 650.0f);
-	const float clear_pitch = visible_droplet_pitch (desired);
+	const float clear_pitch = visible_droplet_pitch (bead);
 	if (clear_pitch > m_pitch)
 	  m_pitch += (clear_pitch - m_pitch) * follow_response;
-	if (m_droplet_progress >= last)
+	// Linger through the settle animation before releasing the
+	// camera, so the melt is watched rather than abandoned.
+	if (arrived && m_droplet_settle > 2.0f)
 	  m_droplet_follow = false;
       }
       update_droplet_overlay ();
