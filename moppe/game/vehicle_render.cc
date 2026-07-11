@@ -162,9 +162,9 @@ namespace game {
     const Vector3D pos = v.position ();
     dl.translate (pos.x, pos.y + v.susp (), pos.z);
 
-    // Orient the bike along its heading, upright on the smoothed
-    // terrain normal (the raw one jitters at speed)
-    Vector3D fwd   = v.orientation ().normalized ();
+    // Follow the smoothed surface frame on the ground and the velocity arc
+    // in flight.
+    Vector3D fwd   = v.render_orientation ().normalized ();
     Vector3D right = v.render_normal ().cross (fwd).normalized ();
     Vector3D up    = fwd.cross (right);
 

@@ -17,6 +17,79 @@ namespace game {
       dl.end ();
     }
 
+    void fill_rounded_rect (render::DrawList& dl, const UiRect& bounds,
+			    float radius) {
+      radius = std::clamp
+	(radius, 0.0f, std::min (bounds.width, bounds.height) * 0.5f);
+      constexpr int corner_steps = 5;
+      dl.begin (render::Prim::TriangleFan);
+      dl.vertex (bounds.x + bounds.width * 0.5f,
+		 bounds.y + bounds.height * 0.5f);
+      for (int corner = 0; corner < 4; ++corner) {
+	const float cx = corner == 0 || corner == 3
+	  ? bounds.x + radius : bounds.x + bounds.width - radius;
+	const float cy = corner < 2
+	  ? bounds.y + radius : bounds.y + bounds.height - radius;
+	const float start = 3.14159265f + corner * 1.57079633f;
+	for (int i = 0; i <= corner_steps; ++i) {
+	  const float angle = start + i * 1.57079633f / corner_steps;
+	  dl.vertex (cx + std::cos (angle) * radius,
+		     cy + std::sin (angle) * radius);
+	}
+      }
+      // Close on the first perimeter point.  Closing on the top edge instead
+      // creates one giant overlapping triangle across the whole rectangle,
+      // which is visible as a dark diagonal seam under alpha blending.
+      dl.vertex (bounds.x, bounds.y + radius);
+      dl.end ();
+    }
+
+    void draw_circle (render::DrawList& dl, float x, float y, float radius) {
+      constexpr int steps = 20;
+      dl.begin (render::Prim::TriangleFan);
+      dl.vertex (x, y);
+      for (int i = 0; i <= steps; ++i) {
+	const float angle = i * 2.0f * 3.14159265f / steps;
+	dl.vertex (x + std::cos (angle) * radius,
+		   y + std::sin (angle) * radius);
+      }
+      dl.end ();
+    }
+
+    void draw_control_icon (render::DrawList& dl, const UiRect& bounds,
+			    const std::string& title) {
+      const float x = bounds.x + 7.0f;
+      const float y = bounds.y + 10.0f;
+      dl.color (0.45f, 0.72f, 0.62f, 0.92f);
+      if (title == "MOUNTAINS") {
+	dl.line (x, y + 7, x + 7, y, 1.5f);
+	dl.line (x + 7, y, x + 12, y + 5, 1.5f);
+	dl.line (x + 12, y + 5, x + 17, y + 1, 1.5f);
+	dl.line (x + 17, y + 1, x + 24, y + 7, 1.5f);
+      } else if (title == "WILD RIDGES") {
+	dl.line (x, y + 5, x + 5, y + 1, 1.5f);
+	dl.line (x + 5, y + 1, x + 11, y + 7, 1.5f);
+	dl.line (x + 11, y + 7, x + 17, y, 1.5f);
+	dl.line (x + 17, y, x + 24, y + 5, 1.5f);
+      } else if (title == "AGE") {
+	for (int i = 0; i < 12; ++i) {
+	  const float a0 = i * 2.0f * 3.14159265f / 12.0f;
+	  const float a1 = (i + 1) * 2.0f * 3.14159265f / 12.0f;
+	  dl.line (x + 7 + std::cos (a0) * 7,
+		   y + 4 + std::sin (a0) * 7,
+		   x + 7 + std::cos (a1) * 7,
+		   y + 4 + std::sin (a1) * 7, 1.0f);
+	}
+	dl.line (x + 7, y + 4, x + 7, y, 1.2f);
+	dl.line (x + 7, y + 4, x + 11, y + 6, 1.2f);
+      } else {
+	dl.line (x + 7, y - 3, x + 1, y + 5, 1.2f);
+	dl.line (x + 1, y + 5, x + 7, y + 10, 1.2f);
+	dl.line (x + 7, y + 10, x + 13, y + 5, 1.2f);
+	dl.line (x + 13, y + 5, x + 7, y - 3, 1.2f);
+      }
+    }
+
     void bevel (render::DrawList& dl, const UiRect& bounds,
 		 bool pressed) {
       if (pressed)
@@ -64,6 +137,15 @@ namespace game {
       (new render::FontAtlas (renderer, "Helvetica", 15.0f, scale));
     m_key.reset
       (new render::FontAtlas (renderer, "Menlo", 11.0f, scale));
+    m_display.reset
+      (new render::FontAtlas
+	(renderer, "AvenirNext-DemiBold", 29.0f, scale));
+    m_friendly_body.reset
+      (new render::FontAtlas
+	(renderer, "AvenirNext-Medium", 18.0f, scale));
+    m_friendly_label.reset
+      (new render::FontAtlas
+	(renderer, "AvenirNext-Medium", 14.0f, scale));
   }
 
   void
@@ -329,6 +411,214 @@ namespace game {
 	value_box.x + (value_box.width - value_width) * 0.5f,
 	value_box.y + value_box.height * 0.5f + 4, value);
     }
+  }
+
+  void
+  InspectorUi::surface (render::DrawList& dl, const UiRect& bounds) const
+  {
+    const UiRect deep_shadow { bounds.x + 5, bounds.y + 8,
+			       bounds.width, bounds.height };
+    dl.color (0.0f, 0.006f, 0.008f, 0.24f);
+    fill_rounded_rect (dl, deep_shadow, 14.0f);
+    const UiRect shadow { bounds.x + 2, bounds.y + 4,
+			  bounds.width, bounds.height };
+    dl.color (0.005f, 0.012f, 0.014f, 0.62f);
+    fill_rounded_rect (dl, shadow, 13.0f);
+    // A muted brass rim and cool inner edge give the panel some physical
+    // depth without turning it into an ornate frame.
+    dl.color (0.42f, 0.38f, 0.25f, 0.90f);
+    fill_rounded_rect (dl, bounds, 13.0f);
+    dl.color (0.12f, 0.32f, 0.30f, 0.98f);
+    const UiRect inner { bounds.x + 1, bounds.y + 1,
+			 bounds.width - 2, bounds.height - 2 };
+    fill_rounded_rect (dl, inner, 12.0f);
+    dl.color (0.026f, 0.064f, 0.064f, 0.985f);
+    const UiRect face { bounds.x + 2, bounds.y + 2,
+			bounds.width - 4, bounds.height - 4 };
+    fill_rounded_rect (dl, face, 11.0f);
+
+    dl.color (0.39f, 0.78f, 0.68f, 0.34f);
+    dl.line (bounds.x + 16, bounds.y + 2,
+	     bounds.x + bounds.width - 16, bounds.y + 2, 1.0f);
+
+    for (float x : { bounds.x + 11.0f,
+		     bounds.x + bounds.width - 11.0f }) {
+      dl.color (0.01f, 0.025f, 0.025f, 0.95f);
+      draw_circle (dl, x, bounds.y + 11.0f, 3.5f);
+      dl.color (0.52f, 0.48f, 0.30f, 0.88f);
+      draw_circle (dl, x, bounds.y + 11.0f, 1.7f);
+    }
+
+    // Barely-visible contour lines keep the surface from feeling like an
+    // empty black rectangle without competing with the controls.
+    dl.color (0.16f, 0.34f, 0.29f, 0.022f);
+    for (int row = 0; row < 8; ++row) {
+      const float base_y = bounds.y + 88.0f + row * 82.0f;
+      if (base_y > bounds.y + bounds.height - 18.0f)
+	break;
+      float previous_x = bounds.x + 18.0f;
+      float previous_y = base_y;
+      for (int segment = 1; segment <= 12; ++segment) {
+	const float x = bounds.x + 18.0f
+	  + segment * (bounds.width - 36.0f) / 12.0f;
+	const float y = base_y
+	  + std::sin (segment * 0.86f + row * 0.7f) * 5.0f;
+	dl.line (previous_x, previous_y, x, y, 1.0f);
+	previous_x = x;
+	previous_y = y;
+      }
+    }
+  }
+
+  void
+  InspectorUi::heading (render::DrawList& dl, float x, float y,
+			const std::string& text) const
+  {
+    if (!m_display)
+      return;
+    dl.color (0.95f, 0.94f, 0.77f, 1.0f);
+    m_display->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::paragraph (render::DrawList& dl, float x, float y,
+			  const std::string& text, bool bright) const
+  {
+    if (!m_friendly_body)
+      return;
+    if (bright)
+      dl.color (0.91f, 0.95f, 0.89f, 0.99f);
+    else
+      dl.color (0.67f, 0.76f, 0.72f, 0.98f);
+    m_friendly_body->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::caption (render::DrawList& dl, float x, float y,
+			const std::string& text) const
+  {
+    if (!m_friendly_label)
+      return;
+    dl.color (0.65f, 0.75f, 0.69f, 0.98f);
+    m_friendly_label->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::friendly_button
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, const std::string& detail,
+     bool hot, bool pressed, bool selected, bool featured) const
+  {
+    const bool pushed = hot && pressed;
+    const UiRect button_shadow { bounds.x + 1, bounds.y + 3,
+				 bounds.width, bounds.height };
+    dl.color (0.0f, 0.012f, 0.014f, 0.55f);
+    fill_rounded_rect (dl, button_shadow, 8.0f);
+    if (selected) {
+      const UiRect glow { bounds.x - 2, bounds.y - 2,
+			  bounds.width + 4, bounds.height + 4 };
+      dl.color (0.20f, 0.92f, 0.82f, 0.16f);
+      fill_rounded_rect (dl, glow, 10.0f);
+    }
+    dl.color (selected ? 0.48f : featured ? 0.69f : 0.20f,
+	      selected ? 0.96f : featured ? 0.53f : 0.44f,
+	      selected ? 0.86f : featured ? 0.26f : 0.40f, 0.96f);
+    fill_rounded_rect (dl, bounds, 8.0f);
+    if (selected)
+      dl.color (0.075f, 0.30f, 0.29f, 0.99f);
+    else if (pushed)
+      dl.color (0.065f, 0.16f, 0.16f, 0.99f);
+    else if (hot)
+      dl.color (0.10f, 0.28f, 0.27f, 0.99f);
+    else if (featured)
+      dl.color (0.19f, 0.20f, 0.13f, 0.99f);
+    else
+      dl.color (0.055f, 0.14f, 0.14f, 0.99f);
+    const UiRect inner { bounds.x + 1, bounds.y + 1,
+			 bounds.width - 2, bounds.height - 2 };
+    fill_rounded_rect (dl, inner, 7.0f);
+    dl.color (selected ? 0.55f : featured ? 0.76f : 0.34f,
+	      selected ? 1.0f : featured ? 0.64f : 0.58f,
+	      selected ? 0.90f : featured ? 0.34f : 0.52f, 0.36f);
+    dl.line (bounds.x + 8, bounds.y + 2,
+	     bounds.x + bounds.width - 8, bounds.y + 2, 1.0f);
+    if (m_friendly_body) {
+      dl.color (0.94f, 0.96f, 0.84f, 1.0f);
+      const float title_y = detail.empty ()
+	? bounds.y + bounds.height * 0.5f + 6.0f : bounds.y + 25.0f;
+      m_friendly_body->draw (dl, bounds.x + 12, title_y, title);
+    }
+    if (!detail.empty () && m_friendly_label) {
+      dl.color (0.60f, 0.72f, 0.67f, 0.98f);
+      m_friendly_label->draw
+	(dl, bounds.x + 12, bounds.y + bounds.height - 10, detail);
+    }
+    if (selected) {
+      dl.color (0.78f, 1.0f, 0.72f, 0.98f);
+      draw_circle
+	(dl, bounds.x + bounds.width - 13.0f, bounds.y + 13.0f, 3.5f);
+    }
+  }
+
+  void
+  InspectorUi::friendly_slider
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, const std::string& low,
+     const std::string& high, float normalized, bool hot,
+     bool active) const
+  {
+    normalized = std::clamp (normalized, 0.0f, 1.0f);
+    float accent_r = 0.36f;
+    float accent_g = 0.82f;
+    float accent_b = 0.68f;
+    if (title == "AGE") {
+      accent_r = 0.94f;
+      accent_g = 0.75f;
+      accent_b = 0.35f;
+    } else if (title == "RAINFALL") {
+      accent_r = 0.28f;
+      accent_g = 0.78f;
+      accent_b = 0.94f;
+    } else if (title == "MOUNTAINS") {
+      accent_r = 0.72f;
+      accent_g = 0.86f;
+      accent_b = 0.58f;
+    }
+    draw_control_icon (dl, bounds, title);
+    if (m_friendly_body) {
+      dl.color (0.89f, 0.93f, 0.82f, 1.0f);
+      m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 19, title);
+    }
+    if (m_friendly_label) {
+      dl.color (0.52f, 0.64f, 0.59f, 0.98f);
+      m_friendly_label->draw
+	(dl, bounds.x, bounds.y + bounds.height, low);
+      const float high_width = m_friendly_label->measure (high);
+      m_friendly_label->draw
+	(dl, bounds.x + bounds.width - high_width,
+	 bounds.y + bounds.height, high);
+    }
+    const float rail_x = bounds.x + 9.0f;
+    const float rail_width = bounds.width - 18.0f;
+    const float y = bounds.y + 35.0f;
+    dl.color (0.25f, 0.43f, 0.39f, 0.65f);
+    for (int i = 0; i <= 4; ++i) {
+      const float tick_x = rail_x + rail_width * i / 4.0f;
+      dl.line (tick_x, y - 4, tick_x, y + 4, 1.0f);
+    }
+    dl.color (0.12f, 0.25f, 0.22f, 0.95f);
+    dl.line (rail_x, y, rail_x + rail_width, y, 7.0f);
+    dl.color (accent_r, accent_g, accent_b, 0.95f);
+    dl.line (rail_x, y, rail_x + rail_width * normalized, y, 4.0f);
+    const float cx = rail_x + rail_width * normalized;
+    dl.color (accent_r, accent_g, accent_b, active ? 0.24f : 0.12f);
+    draw_circle (dl, cx, y, active ? 15.0f : 12.5f);
+    dl.color (0.015f, 0.035f, 0.035f, 1.0f);
+    draw_circle (dl, cx, y, 9.0f);
+    dl.color (accent_r, accent_g, accent_b, 1.0f);
+    draw_circle (dl, cx, y, 7.0f);
+    dl.color (0.96f, 0.98f, 0.78f, 0.92f);
+    draw_circle (dl, cx - 1.5f, y - 1.5f, 3.4f);
   }
 }
 }

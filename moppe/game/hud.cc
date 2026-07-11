@@ -457,7 +457,46 @@ namespace game {
     dl.color (0.95f, 0.96f, 0.98f);
     m_helv12->draw (dl, 41, 25,
 		    "x " + std::to_string (st.stars));
+    const std::string score = std::to_string (st.score) + " PTS";
+    dl.color (0.95f, 0.78f, 0.24f, 0.95f);
+    m_helv10->draw (dl, layout.status.width - 9
+		    - m_helv10->measure (score), 24, score);
     dl.pop ();
+
+    // Long-jump callout. Each new tenth briefly punches the live counter
+    // larger; a landing banks the score, bounces once, then swishes away.
+    if (st.airtime_s >= 3.0f) {
+      const float tenth = st.airtime_s * 10.0f;
+      const float tick = 1.0f - (tenth - std::floor (tenth));
+      const float build = clamp01 ((st.airtime_s - 3.0f) / 5.0f);
+      const float scale = 1.0f + 0.18f * build + 0.10f * tick * tick;
+      char text[32];
+      snprintf (text, sizeof text, "AIR  %.1f s", st.airtime_s);
+      dl.push ();
+      dl.translate (width_pts * 0.5f, height_pts * 0.28f, 0);
+      dl.scale (scale, scale, 1);
+      dl.color (1.0f, 0.82f + 0.12f * tick, 0.2f, 0.96f);
+      m_display24->draw
+	(dl, -m_display24->measure (text) * 0.5f, 0, text);
+      dl.pop ();
+    } else if (st.landed_age_s < 1.8f && st.landed_points > 0) {
+      const float age = st.landed_age_s;
+      const float fade = clamp01 ((1.8f - age) / 0.65f);
+      const float bounce = 1.0f + 0.22f * std::exp (-4.0f * age)
+	* std::sin (18.0f * age);
+      const float swish = age * age * 75.0f;
+      char text[48];
+      snprintf (text, sizeof text, "LANDED %.1f s  +%d",
+		st.landed_airtime_s, st.landed_points);
+      dl.push ();
+      dl.translate (width_pts * 0.5f + swish,
+		    height_pts * 0.28f - age * 18.0f, 0);
+      dl.scale (bounce, bounce, 1);
+      dl.color (1.0f, 0.78f, 0.12f, fade);
+      m_display24->draw
+	(dl, -m_display24->measure (text) * 0.5f, 0, text);
+      dl.pop ();
+    }
 
     // Heading ribbon.  World +Z is north and +X is east, matching
     // the coordinate convention used by vehicle and walker headings.

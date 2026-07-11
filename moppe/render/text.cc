@@ -8,14 +8,14 @@ namespace moppe {
 namespace render {
   namespace {
     // Shelf-pack the glyph bitmaps left-to-right into rows of the
-    // given atlas width (1 px spacing against filter bleed).
+    // given atlas width (2 px spacing against linear-filter bleed).
     // Optionally records each glyph's position; returns the packed
     // height, or 0 when nothing needed pixels.
     int shelf_pack (const platform::GlyphBitmap* bitmaps,
 		    const bool* ok, int count, int atlas_w,
 		    int* out_x, int* out_y)
     {
-      const int spacing = 1;
+      const int spacing = 2;
       int pen_x = spacing;
       int pen_y = spacing;
       int row_h = 0;

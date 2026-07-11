@@ -28,6 +28,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -56,6 +57,20 @@ namespace render {
     const int PROBE_W = 32;       // auto-exposure luminance probe
     const int PROBE_H = 16;
     const int MAX_TIMESTAMP_SAMPLES = 64;
+
+    float scene_render_scale (int width, int height) {
+#if TARGET_OS_IPHONE
+      (void) width;
+      (void) height;
+      return 1.0f;
+#else
+      float scale = static_cast<std::int64_t> (width) * height > 12000000
+	? 0.5f : 1.0f;
+      if (const char* requested = std::getenv ("MOPPE_RENDERSCALE"))
+	scale = static_cast<float> (std::atof (requested));
+      return std::clamp (scale, 0.25f, 1.0f);
+#endif
+    }
 
     enum class GpuPass {
       Terrain, Sky, Water, Grass, Scene, Post, Bloom, Exposure, Present, Count
@@ -1236,10 +1251,13 @@ namespace render {
 
   void
   MetalRenderer::ensure_targets () {
-    const int w = (int) m_view.drawableSize.width;
-    const int h = (int) m_view.drawableSize.height;
-    if (w == 0 || h == 0)
+    const int drawable_w = (int) m_view.drawableSize.width;
+    const int drawable_h = (int) m_view.drawableSize.height;
+    if (drawable_w == 0 || drawable_h == 0)
       return;
+    const float scale = scene_render_scale (drawable_w, drawable_h);
+    const int w = std::max (1, (int) std::round (drawable_w * scale));
+    const int h = std::max (1, (int) std::round (drawable_h * scale));
     if (w == m_target_w && h == m_target_h && m_msaa_color)
       return;
 
@@ -1347,7 +1365,7 @@ namespace render {
 
     const CGSize points = m_view.bounds.size;
     m_scale = points.width > 0
-      ? m_target_w / (float) points.width : 1.0f;
+      ? (float) m_view.drawableSize.width / (float) points.width : 1.0f;
 #if !TARGET_OS_IPHONE
     if (m_view.window) {
       NSScreen* screen = m_view.window.screen;
@@ -2167,7 +2185,7 @@ namespace render {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = 1;
-      q.tint.w = m_exposure;
+      q.tint.w = m_exposure * m_fp.exposure_bias;
       q.params.x = 1;
       quad_pass (GpuPass::Bloom, @"Bloom bright pass",
 		 m_bloom_bright, m_current, m_bloom_a, q);
@@ -2223,7 +2241,7 @@ namespace render {
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = 1;
-      q.tint.w = m_exposure;
+      q.tint.w = m_exposure * m_fp.exposure_bias;
       q.params.x = 1;
       q.params.y = m_fp.time;
 #if !TARGET_OS_IPHONE
@@ -2251,7 +2269,8 @@ namespace render {
 	    q.sun.y = 1.0f - (ny * 0.5f + 0.5f);
 	    // Exposure folds in so the flare adapts with the eye.
 	    q.sun.z = m_fp.sun_visibility
-	      * (edge > 1.0f ? 1.0f : edge) * m_exposure;
+	      * (edge > 1.0f ? 1.0f : edge)
+	      * m_exposure * m_fp.exposure_bias;
 	    q.sun.w = (float) m_target_w / (float) m_target_h;
 	  }
 	}
