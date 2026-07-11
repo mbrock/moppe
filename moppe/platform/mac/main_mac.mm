@@ -3,6 +3,7 @@
 
 #import <AppKit/AppKit.h>
 #import <MetalKit/MetalKit.h>
+#import <QuartzCore/CAMetalDisplayLink.h>
 
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
@@ -220,18 +221,20 @@ static void match_screen_refresh_rate (MoppeView* view) {
 
 static void match_screen_render_size (MoppeView* view) {
   const NSSize points = view.bounds.size;
-  // The drawable is the final presentation surface, so it must stay at the
-  // screen's native backing resolution.  The Metal renderer applies the
-  // optional scene render scale only to its expensive offscreen 3D targets;
-  // keeping the drawable native lets the HUD remain Retina-sharp.
+  // Present one drawable pixel per logical view point.  Rendering a 2x
+  // Retina surface would quadruple scene and final-composite fill cost for a
+  // modest HUD sharpness gain; the optional scene scale can reduce 3D work
+  // further without changing this presentation surface.
   //
   // Do not derive this from convertSizeToBacking:.  MTKView can fold a
   // manually overridden drawableSize back into that conversion after a
   // Space/focus transition.  The window's backing scale is stable.
   const CGFloat backing = view.window ? view.window.backingScaleFactor
                                       : NSScreen.mainScreen.backingScaleFactor;
-  const CGSize wanted = CGSizeMake (std::round (points.width * backing),
-                                    std::round (points.height * backing));
+  const CGFloat drawable_scale = 1.0 / std::max (1.0, (double)backing);
+  const CGSize wanted =
+    CGSizeMake (std::round (points.width * backing * drawable_scale),
+                std::round (points.height * backing * drawable_scale));
   view.autoResizeDrawable = NO;
   if (view.drawableSize.width != wanted.width ||
       view.drawableSize.height != wanted.height)
@@ -280,10 +283,13 @@ static void log_runtime_parameters (MoppeView* view) {
 
 // ------------------------------------------------------------------
 
-@interface MoppeDelegate
-    : NSObject <MTKViewDelegate, NSApplicationDelegate, NSWindowDelegate>
+@interface MoppeDelegate : NSObject <MTKViewDelegate,
+                                     NSApplicationDelegate,
+                                     NSWindowDelegate,
+                                     CAMetalDisplayLinkDelegate>
 @property (nonatomic, assign) Game* game;
 @property (nonatomic, assign) moppe::render::Renderer* renderer;
+- (void)startDisplayLinkForView:(MoppeView*)view;
 @end
 
 @implementation MoppeDelegate {
@@ -294,6 +300,8 @@ static void log_runtime_parameters (MoppeView* view) {
   double m_frame_max;
   int m_profile_frames;
   bool m_profile_cpu;
+  CAMetalDisplayLink* m_display_link;
+  MoppeView* m_view;
 }
 
 - (instancetype)init {
@@ -305,10 +313,12 @@ static void log_runtime_parameters (MoppeView* view) {
   m_frame_max = 0;
   m_profile_frames = 0;
   m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
+  m_display_link = nil;
+  m_view = nil;
   return self;
 }
 
-- (void)drawInMTKView:(MTKView*)view {
+- (void)drawFrame:(MTKView*)view {
   const double t = moppe::platform::now ();
   float dt = m_last_time > 0 ? (float)(t - m_last_time) : 1.0f / 60;
   m_last_time = t;
@@ -344,6 +354,33 @@ static void log_runtime_parameters (MoppeView* view) {
   }
 }
 
+- (void)drawInMTKView:(MTKView*)view {
+  [self drawFrame:view];
+}
+
+- (void)startDisplayLinkForView:(MoppeView*)view {
+  if (@available (macOS 14.0, *)) {
+    m_view = view;
+    view.paused = YES;
+    m_display_link =
+      [[CAMetalDisplayLink alloc] initWithMetalLayer:(CAMetalLayer*)view.layer];
+    m_display_link.delegate = self;
+    const float hz = (float)view.preferredFramesPerSecond;
+    m_display_link.preferredFrameRateRange = CAFrameRateRangeMake (hz, hz, hz);
+    [m_display_link addToRunLoop:NSRunLoop.mainRunLoop
+                         forMode:NSRunLoopCommonModes];
+    std::cerr << "moppe: CAMetalDisplayLink pacing at " << hz << " Hz"
+              << std::endl;
+  }
+}
+
+- (void)metalDisplayLink:(CAMetalDisplayLink*)link
+             needsUpdate:(CAMetalDisplayLinkUpdate*)update {
+  moppe::render::set_metal_drawable (*self.renderer,
+                                     (__bridge void*)update.drawable);
+  [self drawFrame:m_view];
+}
+
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
   self.game->resize ((int)view.bounds.size.width, (int)view.bounds.size.height);
 }
@@ -364,6 +401,11 @@ static void log_runtime_parameters (MoppeView* view) {
     MoppeView* view = (MoppeView*)window.contentView;
     match_screen_refresh_rate (view);
     match_screen_render_size (view);
+    if (m_display_link) {
+      const float hz = (float)view.preferredFramesPerSecond;
+      m_display_link.preferredFrameRateRange =
+        CAFrameRateRangeMake (hz, hz, hz);
+    }
   }
 }
 
@@ -374,6 +416,7 @@ static void log_runtime_parameters (MoppeView* view) {
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
+  [m_display_link invalidate];
   return NSTerminateNow;
 }
 @end
@@ -437,6 +480,8 @@ namespace moppe {
         view.delegate = delegate;
         window.delegate = delegate;
         NSApp.delegate = delegate;
+
+        [delegate startDisplayLinkForView:view];
 
         [window makeKeyAndOrderFront:nil];
         [window makeFirstResponder:view];

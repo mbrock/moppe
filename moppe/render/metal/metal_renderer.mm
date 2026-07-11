@@ -260,6 +260,9 @@ namespace moppe {
 
       // frame
       bool begin_frame (const FrameParams& params) override;
+      void set_next_drawable (id<CAMetalDrawable> drawable) {
+        m_pending_drawable = drawable;
+      }
       void draw_terrain (const ChunkDraw* chunks, int count) override;
       void draw_sky (const SkyParams& params) override;
       void draw_ocean (const OceanParams& params) override;
@@ -414,6 +417,7 @@ namespace moppe {
       id<MTLCommandBuffer> m_cmd = nil;
       id<MTLRenderCommandEncoder> m_enc = nil;
       id<CAMetalDrawable> m_drawable = nil;
+      id<CAMetalDrawable> m_pending_drawable = nil;
       id<MTLTexture> m_current = nil; // scene_a or scene_b
       bool m_scene_pass_done = false;
       FrameParams m_fp;
@@ -1444,7 +1448,12 @@ namespace moppe {
       dispatch_semaphore_wait (m_inflight, DISPATCH_TIME_FOREVER);
       const double inflight_done = cpu_time ();
 
-      m_drawable = m_view.currentDrawable;
+      if (m_pending_drawable) {
+        m_drawable = m_pending_drawable;
+        m_pending_drawable = nil;
+      } else {
+        m_drawable = m_view.currentDrawable;
+      }
       const double drawable_done = cpu_time ();
       if (!m_drawable) {
         dispatch_semaphore_signal (m_inflight);
@@ -2628,6 +2637,11 @@ namespace moppe {
     Renderer* create_metal_renderer (void* mtk_view,
                                      const std::string& lib_path) {
       return new MetalRenderer ((__bridge MTKView*)mtk_view, lib_path);
+    }
+
+    void set_metal_drawable (Renderer& renderer, void* drawable) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      metal.set_next_drawable ((__bridge id<CAMetalDrawable>)drawable);
     }
   }
 }

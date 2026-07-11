@@ -52,6 +52,10 @@ amended the first draft. The deltas, now integrated below, were:
   extended-linear sRGB RGBA16Float drawable and requests live EDR headroom;
   the filmic SDR grade stays below 1.0 while scene highlights can exceed it.
   iOS keeps an 8-bit SDR drawable.
+- macOS frame pacing uses **CAMetalDisplayLink** on the main run loop and
+  renders into the drawable supplied with each update. MTKView remains the
+  input/view host and its automatic draw loop is the fallback on systems
+  without CAMetalDisplayLink.
 - One metallib **per SDK** (macosx / iphoneos / iphonesimulator) via
   xcrun -sdk. A macOS Command Line Tools build without the offline Metal
   compiler bundles combined MSL source for runtime compilation instead.
@@ -78,11 +82,12 @@ amended the first draft. The deltas, now integrated below, were:
   atmosphere noticeably.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
   bug is documented at main.cc:3182). HUD coordinates are view **points**;
-  on macOS the 3D scene defaults to one pixel per view point, so a 2x Retina
-  drawable uses a 0.5 scene render scale while the HUD and final composite
-  remain backing-pixel sharp. `MOPPE_RENDERSCALE` overrides that default.
-  Safe-area insets offset HUD anchors and touch zones on iOS, and "Times" maps
-  to "Times New Roman" on iOS.
+  on macOS the drawable and 3D scene default to one pixel per view point, so
+  a 2x Retina screen presents at half its physical width and height. This
+  avoids spending four times the fill bandwidth on a sharper HUD and final
+  composite. `MOPPE_RENDERSCALE` can reduce the 3D scene further without
+  changing the drawable. Safe-area insets offset HUD anchors and touch zones
+  on iOS, and "Times" maps to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.
