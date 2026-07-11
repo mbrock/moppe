@@ -1,8 +1,10 @@
 #include <moppe/game/terrain_lab.hh>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -23,6 +25,10 @@ namespace game {
     constexpr float stage_row_height = 38.0f;
     constexpr float stage_row_stride = 41.0f;
     constexpr int visible_stage_rows = 7;
+    constexpr float readings_x = 548.0f;
+    constexpr float readings_y = 14.0f;
+    constexpr float readings_width = 292.0f;
+    constexpr float readings_height = 228.0f;
 
     constexpr terrain::GeologicalLayer layers[] = {
       terrain::GeologicalLayer::Combined,
@@ -40,6 +46,24 @@ namespace game {
 
     UiRect window_rect ()
     { return { window_x, window_y, window_width, window_height }; }
+
+    UiRect readings_rect ()
+    { return { readings_x, readings_y, readings_width, readings_height }; }
+
+    bool ui_contains (float x, float y) {
+      return window_rect ().contains (x, y)
+	|| readings_rect ().contains (x, y);
+    }
+
+    UiRect overlay_rect (int index) {
+      constexpr float gap = 4.0f;
+      constexpr float margin = 10.0f;
+      constexpr float width = (readings_width - 2 * margin - 3 * gap) / 4;
+      const int row = index / 4;
+      const int column = index % 4;
+      return { readings_x + margin + column * (width + gap),
+	       readings_y + 42 + row * 34, width, 28 };
+    }
 
     UiRect close_rect ()
     { return { 505, 20, 22, 22 }; }
@@ -227,9 +251,11 @@ namespace game {
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false),
       m_program (terrain::make_geological_program (0)),
+      m_overlay (OverlayMode::None), m_analysis_dirty (true),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
-      m_pointer_down (false), m_camera_drag (false), m_pan_drag (false),
+      m_pointer_down (false), m_camera_drag (false),
+      m_camera_drag_distance (0.0f), m_pan_drag (false),
       m_parameter_drag (false), m_drag_property (-1),
       m_drag_start_y (0.0f), m_drag_start_normalized (0.0f),
       m_parameter_rebuild_pending (false),
@@ -278,6 +304,22 @@ namespace game {
     m_drag_property = -1;
     m_parameter_rebuild_pending = false;
     m_parameter_rebuild_delay = 0.0f;
+    m_overlay = OverlayMode::None;
+    if (const char* overlay = std::getenv ("MOPPE_LAB_OVERLAY")) {
+      const std::string name (overlay);
+      if (name == "height") m_overlay = OverlayMode::Height;
+      else if (name == "slope") m_overlay = OverlayMode::Slope;
+      else if (name == "flow") m_overlay = OverlayMode::Flow;
+      else if (name == "streams") m_overlay = OverlayMode::Streams;
+      else if (name == "basins") m_overlay = OverlayMode::Basins;
+      else if (name == "sinks") m_overlay = OverlayMode::Sinks;
+      else if (name == "delta") m_overlay = OverlayMode::HeightDelta;
+      else if (name == "trace") m_overlay = OverlayMode::Trace;
+    }
+    m_analysis_dirty = true;
+    m_drainage.reset ();
+    m_inspected_cell.reset ();
+    m_overlay_status = "NO READING — terrain materials";
     m_view = ViewMode::Cover;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
@@ -289,6 +331,20 @@ namespace game {
 			    map.raw_heights () + count);
     m_active = true;
     rebuild_program ();
+    if (const char* stage = std::getenv ("MOPPE_LAB_STAGE")) {
+      const int selected = std::atoi (stage);
+      if (selected >= 0
+	  && selected < static_cast<int> (m_program.transforms.size ())) {
+	m_selected_stage = selected;
+	update_overlay ();
+      }
+    }
+    if (m_overlay == OverlayMode::Trace) {
+      const char* trace_x = std::getenv ("MOPPE_LAB_TRACE_X");
+      const char* trace_y = std::getenv ("MOPPE_LAB_TRACE_Y");
+      if (trace_x && trace_y)
+	inspect_drainage (std::atof (trace_x), std::atof (trace_y));
+    }
   }
 
   void
@@ -296,6 +352,9 @@ namespace game {
   {
     if (!m_active)
       return;
+    m_overlay = OverlayMode::None;
+    if (m_renderer)
+      m_renderer->clear_terrain_overlay ();
     restore_game_map ();
     m_saved_heights.clear ();
     m_saved_heights.shrink_to_fit ();
@@ -399,6 +458,7 @@ namespace game {
       m_checkpoints.push_back (m_evaluator->checkpoint ());
       m_evaluator->apply (transform);
     }
+    invalidate_analysis ();
     refresh ();
   }
 
@@ -429,7 +489,280 @@ namespace game {
 	m_checkpoints.push_back (m_evaluator->checkpoint ());
       m_evaluator->apply (m_program.transforms[i]);
     }
+    invalidate_analysis ();
     refresh ();
+  }
+
+  void
+  TerrainLab::invalidate_analysis ()
+  {
+    m_analysis_dirty = true;
+    m_drainage.reset ();
+    m_inspected_cell.reset ();
+  }
+
+  const terrain::DrainageGraph&
+  TerrainLab::drainage ()
+  {
+    if (!m_map)
+      throw std::logic_error ("drainage requested without terrain");
+    if (!m_drainage || m_analysis_dirty) {
+      const auto start = std::chrono::steady_clock::now ();
+      m_drainage = terrain::analyze_drainage (m_map->terrain_view ());
+      m_analysis_dirty = false;
+      const double milliseconds = std::chrono::duration<double, std::milli>
+	(std::chrono::steady_clock::now () - start).count ();
+      std::ostringstream status;
+      status << m_drainage->sinks.size () << " sinks | "
+	     << std::fixed << std::setprecision (0) << milliseconds
+	     << " ms analysis";
+      m_analysis_status = status.str ();
+    }
+    return *m_drainage;
+  }
+
+  void
+  TerrainLab::set_overlay (OverlayMode mode)
+  {
+    if (m_overlay == mode)
+      return;
+    m_overlay = mode;
+    update_overlay ();
+  }
+
+  void
+  TerrainLab::inspect_drainage (float x, float y)
+  {
+    if (!m_map || !m_renderer || m_view == ViewMode::Torus) {
+      m_overlay_status = "TRACE — use Tile or Cover view";
+      return;
+    }
+    const float width = static_cast<float> (m_renderer->width_pts ());
+    const float height = static_cast<float> (m_renderer->height_pts ());
+    const float aspect = width / std::max (1.0f, height);
+    const float tangent = std::tan (degrees_to_radians (70.0f) * 0.5f);
+    const float screen_x = 2.0f * x / width - 1.0f;
+    const float screen_y = 1.0f - 2.0f * y / height;
+    const Vector3D direction_forward = forward ();
+    const Vector3D direction_right = direction_forward
+      .cross (Vector3D (0, 1, 0)).normalized ();
+    const Vector3D direction_up = direction_right
+      .cross (direction_forward).normalized ();
+    const Vector3D direction =
+      (direction_forward + direction_right * (screen_x * aspect * tangent)
+	+ direction_up * (screen_y * tangent)).normalized ();
+    const Vector3D origin = position ();
+
+    float previous_t = 0.0f;
+    float previous_clearance = origin.y
+      - m_map->interpolated_height (origin.x, origin.z);
+    bool hit = false;
+    float hit_t = 0.0f;
+    for (float t = 20.0f; t <= 14000.0f; t += 20.0f) {
+      const Vector3D point = origin + direction * t;
+      const float clearance = point.y
+	- m_map->interpolated_height (point.x, point.z);
+      if (previous_clearance > 0.0f && clearance <= 0.0f) {
+	float low = previous_t, high = t;
+	for (int i = 0; i < 10; ++i) {
+	  const float middle = 0.5f * (low + high);
+	  const Vector3D candidate = origin + direction * middle;
+	  if (candidate.y > m_map->interpolated_height
+	      (candidate.x, candidate.z))
+	    low = middle;
+	  else
+	    high = middle;
+	}
+	hit_t = 0.5f * (low + high);
+	hit = true;
+	break;
+      }
+      previous_t = t;
+      previous_clearance = clearance;
+    }
+    if (!hit) {
+      m_overlay_status = "TRACE — no terrain under pointer";
+      return;
+    }
+
+    const Vector3D point = origin + direction * hit_t;
+    const Vector3D period = m_map->size ();
+    const Vector3D scale = m_map->scale ();
+    const auto wrap = [] (float value, float size) {
+      value = std::fmod (value, size);
+      return value < 0.0f ? value + size : value;
+    };
+    const std::size_t grid_x = static_cast<std::size_t>
+      (std::floor (wrap (point.x, period.x) / scale.x))
+      % static_cast<std::size_t> (m_map->unique_width ());
+    const std::size_t grid_y = static_cast<std::size_t>
+      (std::floor (wrap (point.z, period.z) / scale.z))
+      % static_cast<std::size_t> (m_map->unique_height ());
+    m_inspected_cell = static_cast<std::uint32_t>
+      (grid_y * m_map->unique_width () + grid_x);
+    update_overlay ();
+  }
+
+  void
+  TerrainLab::update_overlay ()
+  {
+    if (!m_renderer || !m_map)
+      return;
+    if (m_overlay == OverlayMode::None) {
+      m_renderer->clear_terrain_overlay ();
+      m_overlay_status = "NO READING — terrain materials";
+      return;
+    }
+
+    const int width = m_map->width ();
+    const int height = m_map->height ();
+    const std::size_t count = static_cast<std::size_t> (width) * height;
+    std::vector<float> values (count, 0.0f);
+    render::TerrainOverlayParams params {
+      .width = width,
+      .height = height,
+      .minimum = 0.0f,
+      .maximum = 1.0f
+    };
+
+    if (m_overlay == OverlayMode::Height) {
+      std::copy_n (m_map->raw_heights (), count, values.begin ());
+      const auto [minimum, maximum] = std::minmax_element
+	(values.begin (), values.end ());
+      params.minimum = *minimum;
+      params.maximum = *maximum;
+      params.ramp = render::TerrainOverlayRamp::Heat;
+      m_overlay_status = "HEIGHT — normalized elevation";
+    } else if (m_overlay == OverlayMode::HeightDelta) {
+      if (m_selected_stage < 0
+	  || m_selected_stage >= static_cast<int> (m_checkpoints.size ())) {
+	m_renderer->clear_terrain_overlay ();
+	m_overlay_status = "DELTA — select a pipeline stage";
+	return;
+      }
+      const std::vector<float>& before =
+	m_checkpoints[static_cast<std::size_t> (m_selected_stage)].heights;
+      const float* after = m_selected_stage + 1
+	< static_cast<int> (m_checkpoints.size ())
+	? m_checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
+	    .heights.data () : m_map->raw_heights ();
+      float magnitude = 0.0f;
+      for (std::size_t i = 0; i < count; ++i) {
+	values[i] = after[i] - before[i];
+	magnitude = std::max (magnitude, std::fabs (values[i]));
+      }
+      params.minimum = -magnitude;
+      params.maximum = magnitude;
+      params.ramp = render::TerrainOverlayRamp::Diverging;
+      m_overlay_status = "DELTA — blue removal / orange addition";
+    } else {
+      const terrain::DrainageGraph& graph = drainage ();
+      const std::size_t unique_width = graph.width ();
+      const std::size_t unique_height = graph.height ();
+      std::vector<float> unique (unique_width * unique_height, 0.0f);
+      if (m_overlay == OverlayMode::Slope) {
+	std::copy (graph.slope.values ().begin (), graph.slope.values ().end (),
+		   unique.begin ());
+	params.maximum = *std::max_element (unique.begin (), unique.end ());
+	params.ramp = render::TerrainOverlayRamp::Heat;
+	m_overlay_status = "SLOPE — physical rise / run | " + m_analysis_status;
+      } else if (m_overlay == OverlayMode::Flow
+		 || m_overlay == OverlayMode::Streams) {
+	const float cell_area = graph.source_grid.spacing_x
+	  * graph.source_grid.spacing_y;
+	float maximum = 0.0f;
+	for (std::size_t i = 0; i < unique.size (); ++i) {
+	  unique[i] = std::log2
+	    (std::max (1.0f, graph.contributing_area.values ()[i]
+			       / cell_area));
+	  maximum = std::max (maximum, unique[i]);
+	}
+	params.minimum = m_overlay == OverlayMode::Streams ? 6.0f : 0.0f;
+	params.maximum = maximum;
+	params.ramp = m_overlay == OverlayMode::Streams
+	  ? render::TerrainOverlayRamp::Streams
+	  : render::TerrainOverlayRamp::Flow;
+	m_overlay_status = (m_overlay == OverlayMode::Streams
+	  ? "STREAMS — drainage area >= 64 cells | "
+	  : "FLOW — logarithmic contributing area | ") + m_analysis_status;
+      } else if (m_overlay == OverlayMode::Basins) {
+	for (std::size_t i = 0; i < unique.size (); ++i)
+	  unique[i] = static_cast<float> (graph.basin[i]);
+	params.ramp = render::TerrainOverlayRamp::Categorical;
+	params.opacity = 0.40f;
+	m_overlay_status = "BASINS — shared sink catchments | "
+	  + m_analysis_status;
+      } else if (m_overlay == OverlayMode::Sinks) {
+	for (const std::uint32_t sink : graph.sinks) {
+	  const int sx = static_cast<int> (sink % unique_width);
+	  const int sy = static_cast<int> (sink / unique_width);
+	  for (int dy = -2; dy <= 2; ++dy)
+	    for (int dx = -2; dx <= 2; ++dx) {
+	      const std::size_t x = static_cast<std::size_t>
+		((sx + dx + static_cast<int> (unique_width))
+		 % static_cast<int> (unique_width));
+	      const std::size_t y = static_cast<std::size_t>
+		((sy + dy + static_cast<int> (unique_height))
+		 % static_cast<int> (unique_height));
+	      unique[y * unique_width + x] =
+		std::max (unique[y * unique_width + x],
+			  1.0f - 0.18f * static_cast<float>
+			    (std::hypot (dx, dy)));
+	    }
+	}
+	params.ramp = render::TerrainOverlayRamp::Marker;
+	params.opacity = 0.95f;
+	m_overlay_status = "SINKS — local drainage minima | "
+	  + m_analysis_status;
+      } else {
+	if (!m_inspected_cell || *m_inspected_cell >= unique.size ()) {
+	  m_renderer->clear_terrain_overlay ();
+	  m_overlay_status = "TRACE — click terrain to follow its receiver path";
+	  return;
+	}
+	std::uint32_t cell = *m_inspected_cell;
+	const std::uint32_t basin_id = graph.basin[cell];
+	std::size_t catchment_cells = 0;
+	for (std::size_t i = 0; i < unique.size (); ++i)
+	  if (graph.basin[i] == basin_id) {
+	    unique[i] = 0.16f;
+	    ++catchment_cells;
+	  }
+	std::size_t steps = 0;
+	while (steps++ < unique.size ()) {
+	  const int cx = static_cast<int> (cell % unique_width);
+	  const int cy = static_cast<int> (cell / unique_width);
+	  for (int dy = -2; dy <= 2; ++dy)
+	    for (int dx = -2; dx <= 2; ++dx) {
+	      const std::size_t px = static_cast<std::size_t>
+		((cx + dx + static_cast<int> (unique_width))
+		 % static_cast<int> (unique_width));
+	      const std::size_t py = static_cast<std::size_t>
+		((cy + dy + static_cast<int> (unique_height))
+		 % static_cast<int> (unique_height));
+	      unique[py * unique_width + px] = 1.0f;
+	    }
+	  const std::uint32_t next = graph.receiver[cell];
+	  if (next == cell)
+	    break;
+	  cell = next;
+	}
+	params.ramp = render::TerrainOverlayRamp::Marker;
+	params.opacity = 0.98f;
+	const float area = graph.contributing_area.values ()[*m_inspected_cell];
+	std::ostringstream trace;
+	trace << "TRACE — " << steps << " to sink; " << catchment_cells
+	      << "-cell basin | area " << std::fixed << std::setprecision (0)
+	      << area << " m2";
+	m_overlay_status = trace.str ();
+      }
+      for (int y = 0; y < height; ++y)
+	for (int x = 0; x < width; ++x)
+	  values[static_cast<std::size_t> (y) * width + x] = unique
+	    [(static_cast<std::size_t> (y) % unique_height) * unique_width
+	     + static_cast<std::size_t> (x) % unique_width];
+    }
+    m_renderer->set_terrain_overlay (params, values);
   }
 
   void
@@ -722,6 +1055,16 @@ namespace game {
   void
   TerrainLab::handle_click (float x, float y)
   {
+    constexpr OverlayMode overlay_modes[] = {
+      OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
+      OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
+      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace
+    };
+    for (int i = 0; i < 9; ++i)
+      if (overlay_rect (i).contains (x, y)) {
+	set_overlay (overlay_modes[i]);
+	return;
+      }
     if (close_rect ().contains (x, y)) {
       leave ();
       return;
@@ -754,6 +1097,8 @@ namespace game {
     }
     if (source_rect ().contains (x, y)) {
       m_selected_stage = -1;
+      if (m_overlay == OverlayMode::HeightDelta)
+	update_overlay ();
       return;
     }
     for (int row = 0; row < visible_stage_rows; ++row) {
@@ -761,6 +1106,8 @@ namespace game {
       if (stage < static_cast<int> (m_program.transforms.size ())
 	  && stage_rect (row).contains (x, y)) {
 	m_selected_stage = stage;
+	if (m_overlay == OverlayMode::HeightDelta)
+	  update_overlay ();
 	return;
       }
     }
@@ -846,6 +1193,7 @@ namespace game {
       (*m_renderer, *m_map, display, projection, repeat,
 	interactive_preview);
     m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
+    update_overlay ();
   }
 
   void
@@ -953,6 +1301,7 @@ namespace game {
     }
     if (!m_camera_drag)
       return;
+    m_camera_drag_distance += std::hypot (dx, dy);
     m_yaw -= dx * 0.006f;
     m_pitch += dy * 0.006f;
     m_pitch = std::clamp (m_pitch, 0.18f, 1.28f);
@@ -984,10 +1333,11 @@ namespace game {
 	  m_drag_start_normalized = selected_property_normalized (row);
 	  return;
 	}
-	if (window_rect ().contains (x, y)) {
+	if (ui_contains (x, y)) {
 	  handle_click (x, y);
 	} else {
 	  m_camera_drag = true;
+	  m_camera_drag_distance = 0.0f;
 	}
       } else {
 	if (m_parameter_drag) {
@@ -995,6 +1345,9 @@ namespace game {
 	  m_drag_property = -1;
 	  run_pending_parameter_rebuild ();
 	}
+	if (m_camera_drag && m_camera_drag_distance < 4.0f
+	    && m_overlay == OverlayMode::Trace)
+	  inspect_drainage (x, y);
 	m_camera_drag = false;
       }
     } else {
@@ -1009,7 +1362,7 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
-    if (window_rect ().contains (x, y)) {
+    if (ui_contains (x, y)) {
       if (stage_list_rect ().contains (x, y)
 	  && m_program.transforms.size () > visible_stage_rows) {
 	m_stage_scroll += delta > 0.0f ? -1 : 1;
@@ -1207,6 +1560,36 @@ namespace game {
       (dl, right_x + 8, 558, "DIAL", "continuous value");
     m_ui.key_hint
       (dl, right_x + 8, 584, "- / +", "whole-number count");
+
+    m_ui.panel
+      (dl, readings_x, readings_y, readings_width, readings_height,
+       "MAP READINGS");
+    constexpr const char* overlay_labels[] = {
+      "MATERIAL", "HEIGHT", "SLOPE", "FLOW",
+      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE"
+    };
+    constexpr OverlayMode overlay_modes[] = {
+      OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
+      OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
+      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace
+    };
+    for (int i = 0; i < 9; ++i) {
+      const UiRect bounds = overlay_rect (i);
+      m_ui.button (dl, bounds, overlay_labels[i], hot (bounds),
+		   m_pointer_down, m_overlay == overlay_modes[i]);
+    }
+    const std::size_t separator = m_overlay_status.find (" | ");
+    m_ui.label
+      (dl, readings_x + 10, readings_y + 152,
+       separator == std::string::npos
+	? m_overlay_status : m_overlay_status.substr (0, separator), true);
+    if (separator != std::string::npos)
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 174,
+	 m_overlay_status.substr (separator + 3));
+    m_ui.label
+      (dl, readings_x + 10, readings_y + 199,
+       "Readings color the surface; geometry stays terrain.");
     m_ui.end (dl);
   }
 }
