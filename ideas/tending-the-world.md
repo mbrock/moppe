@@ -22,6 +22,11 @@ The game can be about **tending the world**: encountering a generated land,
 learning what it is trying to become, and helping some of its possibilities
 become durable places.
 
+The companion [structure-of-space essay](structure-of-space.md) develops the
+proposed physical and computational substrate for those places: an irregular
+surface tissue draped over continuous terrain, with sparse three-dimensional
+construction growing where centers take material form.
+
 This does not retreat from procedural generation.  The generator remains the
 first author, capable of making geology, water, and conjunctions no person
 would have drawn.  Its purpose is not to manufacture disposable finished

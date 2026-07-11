@@ -306,3 +306,8 @@ The first author makes the world true. The second author makes it
 and the system's last and best output is not terrain at all, but the
 sentence a rider says to another rider, years from now, about a place
 neither of us placed: *you have to see it. I'll give you the beta.*
+
+The companion `structure-of-space.md` essay develops a possible cellular
+substrate for this unfolding. It is not an implemented architecture: it asks
+how continuous terrain might become discrete places, construction, and
+memory without reducing the smooth world to a voxel grid.
