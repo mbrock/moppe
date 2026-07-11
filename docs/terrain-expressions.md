@@ -134,6 +134,23 @@ height then gives deterministic upstream-area accumulation and basin
 assignment without graph cycles. Depression filling or breaching is a future
 policy, not a hidden part of this first reference interpretation.
 
+Standing water is a second structured reading over the same samples:
+
+```text
+TerrainView + sea level -> FloodField
+                           |-> water surface w
+                           |-> standing depth w - z
+                           |-> spill receiver per cell
+                           |-> sea-level outlets
+```
+
+A deterministic D8 priority flood begins at every submerged ocean cell and
+propagates the lowest possible spill elevation over the unique torus. An
+all-land torus uses its global minimum as an explicit endorheic fallback.
+Every spill-receiver chain is acyclic and reaches one of those roots. This is
+currently an observational reading: dry drainage and hydraulic erosion do not
+yet route across its water surface.
+
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
 
@@ -188,16 +205,18 @@ The separate **Map Readings** window keeps geometry and interpretation
 independent. Material restores the ordinary terrain textures; Height and
 Slope drape scalar palettes over the current surface; Flow shows logarithmic
 contributing area; Streams thresholds that reading at 64 upstream cells;
-Basins colors shared sink catchments; Sinks marks local minima; and Delta
-shows signed height change across the selected pipeline stage. Trace accepts
-a click on terrain in Tile or Cover view, follows receiver links to a sink,
-and highlights the complete basin faintly beneath the path.
+Basins colors shared sink catchments; Sinks marks local minima; Delta shows
+signed height change across the selected pipeline stage; and Water shows
+priority-flood standing depth. Trace accepts a click on terrain in Tile or
+Cover view, follows receiver links to a sink, and highlights the complete
+basin faintly beneath the path.
 
 These are all presentations of reusable analysis values. The renderer knows
 only an R32F scalar overlay, value range, opacity, and palette; it has no
 drainage-specific API. `MOPPE_LAB_OVERLAY` (`height`, `slope`, `flow`,
-`streams`, `basins`, `sinks`, `delta`, or `trace`) makes the same views
-scriptable. `MOPPE_LAB_STAGE` selects a stage for Delta, while
+`streams`, `basins`, `sinks`, `delta`, `trace`, or `water`) makes the same
+views scriptable; `lakes` is an alias for `water`. `MOPPE_LAB_STAGE` selects
+a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 `MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
 stage for automated Lab captures.

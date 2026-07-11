@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iomanip>
+#include <span>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -262,7 +263,7 @@ namespace game {
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false),
       m_program (terrain::make_geological_program (0)),
-      m_overlay (OverlayMode::None), m_analysis_dirty (true),
+      m_overlay (OverlayMode::None),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
       m_pointer_down (false), m_camera_drag (false),
@@ -340,9 +341,11 @@ namespace game {
       else if (name == "sinks") m_overlay = OverlayMode::Sinks;
       else if (name == "delta") m_overlay = OverlayMode::HeightDelta;
       else if (name == "trace") m_overlay = OverlayMode::Trace;
+      else if (name == "water" || name == "lakes")
+	m_overlay = OverlayMode::StandingWater;
     }
-    m_analysis_dirty = true;
     m_drainage.reset ();
+    m_flood.reset ();
     m_inspected_cell.reset ();
     m_overlay_status = "NO READING — terrain materials";
     m_view = ViewMode::Cover;
@@ -531,9 +534,38 @@ namespace game {
   void
   TerrainLab::invalidate_analysis ()
   {
-    m_analysis_dirty = true;
     m_drainage.reset ();
+    m_flood.reset ();
     m_inspected_cell.reset ();
+  }
+
+  const terrain::FloodField&
+  TerrainLab::standing_water ()
+  {
+    if (!m_map || !m_world)
+      throw std::logic_error ("standing water requested without terrain");
+    if (!m_flood) {
+      const auto start = std::chrono::steady_clock::now ();
+      const float sea_level = m_world->water_level / m_world->map_size.y;
+      m_flood = terrain::analyze_standing_water
+	(m_map->terrain_view (), sea_level);
+      const double milliseconds = std::chrono::duration<double, std::milli>
+	(std::chrono::steady_clock::now () - start).count ();
+      std::size_t wet_cells = 0;
+      float maximum_depth = 0.0f;
+      for (const float depth : m_flood->water_depth.values ()) {
+	if (depth > 1e-7f)
+	  ++wet_cells;
+	maximum_depth = std::max (maximum_depth, depth);
+      }
+      std::ostringstream status;
+      status << format_count (static_cast<int> (wet_cells))
+	     << " wet cells | " << std::fixed << std::setprecision (1)
+	     << maximum_depth * m_world->map_size.y << "m max | "
+	     << std::setprecision (0) << milliseconds << "ms flood";
+      m_flood_status = status.str ();
+    }
+    return *m_flood;
   }
 
   const terrain::DrainageGraph&
@@ -541,10 +573,9 @@ namespace game {
   {
     if (!m_map)
       throw std::logic_error ("drainage requested without terrain");
-    if (!m_drainage || m_analysis_dirty) {
+    if (!m_drainage) {
       const auto start = std::chrono::steady_clock::now ();
       m_drainage = terrain::analyze_drainage (m_map->terrain_view ());
-      m_analysis_dirty = false;
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::ostringstream status;
@@ -690,6 +721,21 @@ namespace game {
       params.maximum = magnitude;
       params.ramp = render::TerrainOverlayRamp::Diverging;
       m_overlay_status = "DELTA — blue removal / orange addition";
+    } else if (m_overlay == OverlayMode::StandingWater) {
+      const terrain::FloodField& flood = standing_water ();
+      const std::size_t unique_width = flood.width ();
+      const std::size_t unique_height = flood.height ();
+      const std::span<const float> unique = flood.water_depth.values ();
+      const float maximum = *std::max_element (unique.begin (), unique.end ());
+      params.maximum = maximum > 0.0f ? maximum : 1.0f;
+      params.ramp = render::TerrainOverlayRamp::Water;
+      params.opacity = 0.88f;
+      m_overlay_status = "WATER — standing depth w - z | " + m_flood_status;
+      for (int y = 0; y < height; ++y)
+	for (int x = 0; x < width; ++x)
+	  values[static_cast<std::size_t> (y) * width + x] = unique
+	    [(static_cast<std::size_t> (y) % unique_height) * unique_width
+	     + static_cast<std::size_t> (x) % unique_width];
     } else {
       const terrain::DrainageGraph& graph = drainage ();
       const std::size_t unique_width = graph.width ();
@@ -1123,9 +1169,10 @@ namespace game {
     constexpr OverlayMode overlay_modes[] = {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
-      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace
+      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
+      OverlayMode::StandingWater
     };
-    for (int i = 0; i < 9; ++i)
+    for (int i = 0; i < 10; ++i)
       if (overlay_rect (i).contains (x, y)) {
 	set_overlay (overlay_modes[i]);
 	return;
@@ -1659,14 +1706,15 @@ namespace game {
        "MAP READINGS");
     constexpr const char* overlay_labels[] = {
       "MATERIAL", "HEIGHT", "SLOPE", "FLOW",
-      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE"
+      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE", "WATER"
     };
     constexpr OverlayMode overlay_modes[] = {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
-      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace
+      OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
+      OverlayMode::StandingWater
     };
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 10; ++i) {
       const UiRect bounds = overlay_rect (i);
       m_ui.button (dl, bounds, overlay_labels[i], hot (bounds),
 		   m_pointer_down, m_overlay == overlay_modes[i]);

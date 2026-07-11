@@ -9,6 +9,7 @@
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/drainage.hh>
+#include <moppe/terrain/flood.hh>
 
 #include <memory>
 #include <optional>
@@ -68,7 +69,8 @@ namespace game {
       Basins,
       Sinks,
       HeightDelta,
-      Trace
+      Trace,
+      StandingWater
     };
 
     void select (terrain::GeologicalLayer layer);
@@ -95,6 +97,7 @@ namespace game {
     void update_overlay ();
     void invalidate_analysis ();
     const terrain::DrainageGraph& drainage ();
+    const terrain::FloodField& standing_water ();
     void inspect_drainage (float x, float y);
 
     InspectorUi m_ui;
@@ -112,10 +115,11 @@ namespace game {
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;
+    std::optional<terrain::FloodField> m_flood;
     OverlayMode m_overlay;
-    bool m_analysis_dirty;
     std::string m_overlay_status;
     std::string m_analysis_status;
+    std::string m_flood_status;
     std::optional<std::uint32_t> m_inspected_cell;
     int m_selected_stage;
     int m_stage_scroll;

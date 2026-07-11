@@ -73,7 +73,9 @@ a 512-step safety cap, batch size 256, and settlement of residual sediment.
 The legacy 64-step/discard defaults remain available for exact replay.
 
 The remaining sink population is not a lifetime or simple footprint problem.
-The next analysis boundary should represent standing water explicitly: a
-priority-flood water surface seeded from the sea, first as a lake-depth
-reading and then as depression-aware routing. That separates native basins,
-erosion-created pits, and deposition dams before changing erosion again.
+The first standing-water checkpoint now represents it explicitly as a
+priority-flood surface seeded from the sea, with water depth and spill
+receivers available as a pure reading. The next checkpoint is
+depression-aware routing over that surface. Keeping those steps separate lets
+the Lab distinguish native basins, erosion-created pits, and deposition dams
+before changing erosion again.

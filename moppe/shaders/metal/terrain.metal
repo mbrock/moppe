@@ -387,6 +387,14 @@ terrain_overlay_color (float value, constant MoppeTerrainUniforms& u)
   }
   if (ramp == 5)
     return float4 (float3 (1.0, 0.12, 0.75), opacity * t);
+  if (ramp == 6) {
+    if (value <= 1e-7)
+      return float4 (0.0);
+    const float3 deep (0.015, 0.10, 0.32);
+    const float3 shallow (0.08, 0.78, 1.0);
+    return float4 (mix (shallow, deep, sqrt (t)),
+		   opacity * (0.45 + 0.55 * sqrt (t)));
+  }
   return float4 (terrain_heat_palette (t), opacity);
 }
 
