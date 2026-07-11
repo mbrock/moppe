@@ -365,6 +365,27 @@ terrain_layer_triplanar (texture2d<float> tex, sampler smp,
   return x * w.x + y * w.y + z * w.z;
 }
 
+// Reconstruct a small-scale world-space normal from the screen derivatives of
+// the composed material signal. This lets the existing color assets carry
+// useful grain immediately; authored normal maps can later replace the height
+// proxy without changing the lighting model.
+static inline float3
+terrain_detail_normal (float3 world, float3 normal, float signal,
+		       float strength)
+{
+  const float3 dpdx = dfdx (world);
+  const float3 dpdy = dfdy (world);
+  const float dhdx = dfdx (signal);
+  const float dhdy = dfdy (signal);
+  const float3 r1 = cross (dpdy, normal);
+  const float3 r2 = cross (normal, dpdx);
+  const float denom = dot (dpdx, r1);
+  if (abs (denom) < 1e-7)
+    return normal;
+  const float3 gradient = (r1 * dhdx + r2 * dhdy) / denom;
+  return normalize (normal - gradient * strength);
+}
+
 static inline float3
 terrain_heat_palette (float t)
 {
@@ -444,7 +465,7 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   if (fog_factor >= 0.995)
     return float4 (fog_c, 1.0);
 
-  const float3 n = normalize (in.normal);
+  float3 n = normalize (in.normal);
   const float height = in.height;
   const float sea_level = u.params1.y;
 
@@ -488,8 +509,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   const float grass_value = dot (grass_c,
 				 float3 (0.299, 0.587, 0.114));
   const float3 grass_palette = grass_value
-    * moppe_srgb (float3 (0.70, 1.18, 0.50));
-  grass_c = mix (grass_c, grass_palette, 0.58);
+    * moppe_srgb (float3 (0.62, 0.94, 0.46));
+  grass_c = mix (grass_c, grass_palette, 0.78);
   grass_c *= 0.65 + 0.95 * coarse;
   grass_c *= mix (float3 (0.72, 0.88, 0.64),
 		  float3 (1.08, 1.04, 0.88), macro);
@@ -543,6 +564,16 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
     texel = mix (texel, overlay.rgb, overlay.a);
   }
 
+  // Grass and soil are softly irregular; exposed stone has stronger relief;
+  // snow remains comparatively smooth. Fade the perturbation before the
+  // texture itself loses detail to keep distant terrain stable.
+  const float detail_strength = (0.08 + 0.42 * cliff_coef
+	+ 0.12 * scree_coef) * (1.0 - 0.8 * far_blend)
+    * (1.0 - 0.85 * snow_coef);
+  const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
+  n = terrain_detail_normal
+    (in.world_pos, n, material_signal, detail_strength);
+
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor
     (in.shadow_coord, in.fog, n, l, u.params1.z,
@@ -559,9 +590,16 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb
     + moppe_hemisphere_light (u.ambient.rgb, n);
 
-  // Snowfields sparkle in the sun (into HDR headroom, for bloom).
+  // Material roughness gives rock and snow distinct grazing response instead
+  // of treating the whole heightfield as one matte sheet.
   const float3 h = normalize (l - view_dir);
-  lit += snow_coef * shadow * pow (max (dot (n, h), 0.0), 32.0) * 0.65;
+  const float roughness = mix (0.92, 0.68, cliff_coef);
+  const float material_spec = (0.012 + 0.035 * (1.0 - roughness))
+    * pow (max (dot (n, h), 0.0), mix (18.0, 72.0, 1.0 - roughness));
+  lit += u.sun_specular.rgb * shadow * material_spec;
+  // Snowfields retain a broader crystalline sparkle into HDR headroom.
+  lit += snow_coef * u.sun_specular.rgb * shadow
+    * pow (max (dot (n, h), 0.0), 32.0) * 0.5;
 
   const float3 color = texel * lit;
   return float4 (mix (color, fog_c, fog_factor), 1.0);

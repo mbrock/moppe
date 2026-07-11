@@ -75,7 +75,8 @@ uber_fragment (UberVaryings in [[stage_in]],
     // Separate specular (global material, shininess 64).
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
     const float3 h = normalize (l + v);
-    lit += frame.sun_specular.rgb * sun_visibility
+    const float3 specular_tint = mix (base.rgb, float3 (1.0), 0.20);
+    lit += specular_tint * frame.sun_specular.rgb * sun_visibility * 0.22
       * pow (max (dot (n, h), 0.0), 64.0);
 
     // A restrained sky rim separates moving silhouettes from the

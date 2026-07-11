@@ -134,4 +134,29 @@ inline float3 moppe_warmed_fog (float3 fog_color, float3 view_dir,
 	 + tight * (0.04 + 0.10 * golden));
 }
 
+// Lightweight environment radiance for reflective materials. It follows the
+// same sun and horizon palette as the atmospheric shader, but unlike fog it
+// varies with the reflected direction: upward-facing water sees cool sky,
+// grazing water sees the bright horizon, and only the solar direction carries
+// a warm highlight. This is deliberately cheap enough for rivers and lakes.
+inline float3 moppe_sky_radiance (float3 fog_color, float3 direction,
+				  float3 sun_dir) {
+  const float3 d = normalize (direction);
+  const float up = saturate (d.y);
+  const float horizon = pow (1.0 - up, 2.2);
+  const float3 zenith = fog_color * float3 (0.48, 0.72, 1.05);
+  float3 sky = mix (zenith, fog_color * 1.12, horizon);
+
+  const float daylight = smoothstep (-0.08, 0.18, sun_dir.y);
+  const float golden = daylight
+    * (1.0 - smoothstep (0.15, 0.65, sun_dir.y));
+  const float3 solar = mix (moppe_srgb (float3 (1.0, 0.95, 0.80)),
+			    moppe_srgb (float3 (1.0, 0.55, 0.24)),
+			    golden);
+  const float sun_dot = max (dot (d, normalize (sun_dir)), 0.0);
+  sky += solar * daylight
+    * (0.12 * pow (sun_dot, 12.0) + 0.65 * pow (sun_dot, 96.0));
+  return sky;
+}
+
 #endif

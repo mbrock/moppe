@@ -148,6 +148,7 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   n = normalize (n);
 
   const float3 v = normalize (-to_frag);
+  const float3 reflection_dir = reflect (-v, n);
   const float sun_visibility = moppe_sun_visibility
     (in.world_pos, n, u.sun_dir.xyz, in.fog, u.light_matrix,
      u.shadow.x, u.shadow.y, shadow_map);
@@ -218,8 +219,10 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   const float3 fog_c = moppe_warmed_fog (u.fog_color.rgb,
 					 to_frag / max (dist, 1e-4),
 					 sun);
+  const float3 sky_reflection = moppe_sky_radiance
+    (u.fog_color.rgb, reflection_dir, sun);
 
-  const float3 color = mix (water, fog_c, 0.55 * fresnel)
+  const float3 color = mix (water, sky_reflection, 0.55 * fresnel)
       + glint_color * spec * daylight * sun_visibility;
 
   // Identical fog curve to the terrain so shorelines match.
