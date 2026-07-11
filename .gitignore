@@ -1,5 +1,6 @@
 build/
 build-homebrew/
+build-tracy/
 build-xcode/
 build-ios/
 build-ios-dev/

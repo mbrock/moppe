@@ -32,6 +32,24 @@ set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
 option(MOPPE_BUILD_DEVELOPER_TOOLS
   "Build demos, experiments, testbeds, and command-line tools" ON)
+option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
+
+if(MOPPE_ENABLE_TRACY)
+  include(FetchContent)
+  set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
+  set(TRACY_ON_DEMAND ON CACHE BOOL "Record only with a connected viewer"
+    FORCE)
+  set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "Accept only local Tracy clients"
+    FORCE)
+  set(TRACY_NO_BROADCAST ON CACHE BOOL "Disable Tracy network discovery"
+    FORCE)
+  FetchContent_Declare(tracy
+    URL https://github.com/wolfpld/tracy/archive/refs/tags/v0.13.1.tar.gz
+    URL_HASH
+      SHA256=d4efc50ebcb0bfcfdbba148995aeb75044c0d80f5d91223aebfaa8fa9e563d2b
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+  FetchContent_MakeAvailable(tracy)
+endif()
 
 if(APPLE)
   enable_language(OBJCXX)
@@ -252,6 +270,9 @@ add_library(moppe_game STATIC
 target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_game PUBLIC moppe_render)
 target_link_libraries(moppe_game PUBLIC moppe_terrain)
+if(MOPPE_ENABLE_TRACY)
+  target_link_libraries(moppe_game PUBLIC Tracy::TracyClient)
+endif()
 
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-map-tests
@@ -299,6 +320,9 @@ if(APPLE)
   target_link_libraries(moppe_metal PUBLIC moppe_render
     "-framework Metal" "-framework MetalKit" "-framework QuartzCore"
     "-framework ImageIO")
+  if(MOPPE_ENABLE_TRACY)
+    target_link_libraries(moppe_metal PUBLIC Tracy::TracyClient)
+  endif()
   add_dependencies(moppe_metal moppe_shaders)
 
   add_library(moppe_apple STATIC

@@ -27,6 +27,18 @@
         "BUILD_TESTING": "OFF",
         "MOPPE_BUILD_DEVELOPER_TOOLS": "OFF"
       }
+    },
+    {
+      "name": "tracy",
+      "displayName": "Tracy profiling (macOS)",
+      "description": "Optimized Moppe build with on-demand Tracy profiling.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-tracy",
+      "cacheVariables": {
+        "BUILD_TESTING": "OFF",
+        "MOPPE_BUILD_DEVELOPER_TOOLS": "OFF",
+        "MOPPE_ENABLE_TRACY": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -40,6 +52,14 @@
       "displayName": "Xcode Debug",
       "configurePreset": "xcode",
       "configuration": "Debug",
+      "targets": [
+        "moppe"
+      ]
+    },
+    {
+      "name": "tracy",
+      "displayName": "Tracy profiling",
+      "configurePreset": "tracy",
       "targets": [
         "moppe"
       ]

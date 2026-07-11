@@ -221,6 +221,15 @@ may not survive into runtime symbols, so qualified names, mangled names, image
 offsets, and source locations would participate in the join.  Uncertain joins
 should remain marked as uncertain.
 
+Moppe now has an initial Tracy vocabulary for this layer.  `make tracy` builds
+an optimized, on-demand instrumented game.  With Tracy installed from
+Homebrew, `make tracy-capture` records a finite Terrain Lab session to
+`build-tracy/moppe.tracy`; `tracy-profiler build-tracy/moppe.tracy` opens it.
+The original capture remains the ground-truth event stream, while
+`tracy-csvexport -u` provides the first bridge into DuckDB and Parquet.  The
+capture script performs this import automatically; an existing trace can be
+added with `make tracy-import TRACE=path/to/file.tracy`.
+
 The combined atlas could show:
 
 - static channels colored by observed discharge;

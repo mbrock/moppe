@@ -20,6 +20,7 @@
 #import <ImageIO/ImageIO.h>
 #endif
 
+#include <moppe/profile.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
 
@@ -1528,6 +1529,7 @@ namespace moppe {
     // -- frame ---------------------------------------------------------
 
     bool MetalRenderer::begin_frame (const FrameParams& params) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::begin_frame");
       const double frame_start = cpu_time ();
       ensure_targets (params.scene_scale, params.render_scale_override);
       const double targets_done = cpu_time ();
@@ -2626,6 +2628,7 @@ namespace moppe {
     }
 
     void MetalRenderer::end_frame () {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::end_frame");
       end_scene_encoder (); // in case nothing was drawn
 
 #if !TARGET_OS_IPHONE

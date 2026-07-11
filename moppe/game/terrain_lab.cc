@@ -1,4 +1,5 @@
 #include <moppe/game/terrain_lab.hh>
+#include <moppe/profile.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -2320,6 +2321,7 @@ namespace moppe {
     }
 
     void TerrainLab::tick (float dt) {
+      MOPPE_PROFILE_ZONE ("TerrainLab::tick");
       if (m_parameter_rebuild_delay > 0.0f)
         m_parameter_rebuild_delay -= dt;
       // Iterative terrain transforms can take longer than a frame on the

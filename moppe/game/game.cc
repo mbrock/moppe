@@ -4,6 +4,7 @@
 // exact pass order of the GL build's render_scene().
 
 #include <moppe/platform/platform.hh>
+#include <moppe/profile.hh>
 #include <moppe/render/renderer.hh>
 #include <moppe/render/text.hh>
 
@@ -395,6 +396,8 @@ namespace moppe {
       }
 
       void generate_world () {
+        MOPPE_PROFILE_THREAD ("World generation");
+        MOPPE_PROFILE_ZONE ("MoppeGame::generate_world");
         // Exceptions must not escape the GCD block (std::terminate).
         // A world that failed to generate is a broken build or broken
         // inputs, not a state to idle in: log and exit with failure.
@@ -407,6 +410,7 @@ namespace moppe {
       }
 
       void generate_world_inner () {
+        MOPPE_PROFILE_ZONE ("MoppeGame::generate_world_inner");
         if (m_terrain_lab_preview) {
           m_gen_stage = 3;
           const terrain::TerrainProgram program =
@@ -671,6 +675,7 @@ namespace moppe {
       // -- simulation --------------------------------------------------
 
       void tick (float dt) override {
+        MOPPE_PROFILE_ZONE ("MoppeGame::tick");
         if (m_benchmark) {
           dt = GRAPHICS_BENCHMARK_DT;
           if (m_benchmark_submitted) {
@@ -1044,6 +1049,8 @@ namespace moppe {
       // -- rendering ---------------------------------------------------
 
       void render (render::Renderer& r) override {
+        MOPPE_PROFILE_FRAME ();
+        MOPPE_PROFILE_ZONE ("MoppeGame::render");
         if (!m_ready) {
           render_loading (r);
           return;
@@ -1985,6 +1992,8 @@ namespace moppe {
 
 int main (int argc, char** argv) {
   using namespace moppe;
+  MOPPE_PROFILE_THREAD ("Main");
+  MOPPE_PROFILE_ZONE ("main");
 
   game::WorldParams world;
   game::GraphicsSettings graphics = game::high_graphics_settings ();
