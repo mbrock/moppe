@@ -867,7 +867,7 @@ allows human and procedural judgment to continue the same unfolding.
 [edpcg-paper]: https://yannakakis.net/wp-content/uploads/2019/02/EDPCG.pdf
 [editable-wfc]: https://www.boristhebrave.com/2022/04/25/editable-wfc/
 [erosion-three-ways]: https://github.com/dandrino/terrain-erosion-3-ways
-[explainable-cocreation]: https://arxiv.org/abs/1806.04029
+[explainable-cocreation]: https://sebastianrisi.com/wp-content/uploads/zhu_cig18.pdf
 [friendly-pcg]: https://arxiv.org/abs/2005.09324
 [extract-physics]: https://ceur-ws.org/Vol-2862/paper11.pdf
 [fastflow]: https://www-sop.inria.fr/reves/Basilic/2024/JKGFC24/FastFlowPG2024_Author_Version.pdf

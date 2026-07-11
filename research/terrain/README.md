@@ -6,6 +6,21 @@ copies rather than depending on browser bookmarks.
 
 ## Papers
 
+- `barnes-2016-priority-flood.pdf` — Richard Barnes, Clarence Lehman, and
+  David Mulla, “Priority-Flood: An Optimal Depression-Filling and
+  Watershed-Labeling Algorithm,” *Computers & Geosciences* 62, 2014.  The
+  archived arXiv version includes filling, watershed, and flow-direction
+  variants. [arXiv](https://arxiv.org/abs/1511.04463)
+- `genevaux-2013-hydrology-based-terrain.pdf` — Jean-David Genevaux et al.,
+  “Terrain Generation Using Procedural Models Based on Hydrology,” *ACM
+  Transactions on Graphics* 32(4), 2013.  River networks are primary modeling
+  features from which the surrounding terrain is constructed.
+  [author copy](https://www.cs.purdue.edu/cgvlab/www/resources/papers/Genevaux-ACM_Trans_Graph-2013-Terrain_Generation_Using_Procedural_Models_Based_on_Hydrology.pdf)
+- `cordonnier-2016-uplift-fluvial-erosion.pdf` — Guillaume Cordonnier et al.,
+  “Large Scale Terrain Generation from Tectonic Uplift and Fluvial Erosion,”
+  *Computer Graphics Forum* 35(2), 2016.  Couples user-controlled uplift,
+  stream-power erosion, a drainage graph, and landform kernels.
+  [author copy](https://www.cs.purdue.edu/cgvlab/www/resources/papers/Cordonnier-Computer_Graphics_Forum-2016-Large_Scale_Terrain_Generation_from_Tectonic_Uplift_and_Fluvial_.pdf)
 - `tzathas-2024-analytical-erosion.pdf` — Petros Tzathas, Boris
   Gailleton, Philippe Steer, and Guillaume Cordonnier, "Physically-based
   Analytical Erosion for fast Terrain Generation," *Computer Graphics
