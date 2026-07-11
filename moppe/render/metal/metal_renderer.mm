@@ -421,6 +421,7 @@ namespace moppe {
       GpuPass m_current_gpu_pass = GpuPass::Count;
       bool m_draw_boundary_timestamps = false;
       bool m_stage_boundary_timestamps = false;
+      bool m_logged_initial_targets = false;
 
       int m_width_pts = 0, m_height_pts = 0;
       float m_scale = 1.0f;
@@ -546,6 +547,12 @@ namespace moppe {
 #endif
       if (@available (macOS 13.0, iOS 16.0, *))
         m_mesh_shaders_ok = [m_device supportsFamily:MTLGPUFamilyMetal3];
+
+      std::cerr << "moppe: Metal: device=" << m_device.name.UTF8String
+                << ", frames-in-flight=" << FRAMES_IN_FLIGHT
+                << ", memoryless=" << (m_memoryless_ok ? "yes" : "no")
+                << ", mesh-shaders=" << (m_mesh_shaders_ok ? "yes" : "no")
+                << std::endl;
 
       NSError* error = nil;
       NSString* path = [NSString stringWithUTF8String:lib_path.c_str ()];
@@ -1363,6 +1370,13 @@ namespace moppe {
       const int bh = h / 4 > 0 ? h / 4 : 1;
       m_bloom_a = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
       m_bloom_b = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
+      if (!m_logged_initial_targets) {
+        std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
+                  << drawable_h << ", scene=" << w << 'x' << h
+                  << ", render-scale=" << scale << ", msaa=" << MSAA_SAMPLES
+                  << 'x' << std::endl;
+        m_logged_initial_targets = true;
+      }
       if (!m_probe_tex) {
         m_probe_tex =
           make_target (MTLPixelFormatRGBA32Float, PROBE_W, PROBE_H, 1, false);

@@ -238,6 +238,46 @@ static void match_screen_render_size (MoppeView* view) {
     view.drawableSize = wanted;
 }
 
+static const char* pixel_format_name (MTLPixelFormat format) {
+  switch (format) {
+  case MTLPixelFormatBGRA8Unorm:
+    return "BGRA8Unorm";
+  case MTLPixelFormatRGBA16Float:
+    return "RGBA16Float";
+  case MTLPixelFormatDepth32Float_Stencil8:
+    return "Depth32Float_Stencil8";
+  case MTLPixelFormatInvalid:
+    return "none";
+  default:
+    return "other";
+  }
+}
+
+static void log_runtime_parameters (MoppeView* view) {
+  NSScreen* screen = view.window.screen;
+  CAMetalLayer* layer = (CAMetalLayer*)view.layer;
+  const NSSize points = view.bounds.size;
+  const CGSize pixels = view.drawableSize;
+  const NSInteger maximum_fps = screen ? screen.maximumFramesPerSecond : 0;
+  const CGFloat backing = view.window ? view.window.backingScaleFactor : 1.0;
+
+  std::cerr << "moppe: runtime parameters\n"
+            << "  display: maximum-fps=" << maximum_fps
+            << ", preferred-fps=" << view.preferredFramesPerSecond
+            << ", display-sync=" << (layer.displaySyncEnabled ? "on" : "off")
+            << '\n'
+            << "  view: " << (int)points.width << 'x' << (int)points.height
+            << " points, " << (int)pixels.width << 'x' << (int)pixels.height
+            << " pixels, backing-scale=" << backing << '\n'
+            << "  drawable: color=" << pixel_format_name (view.colorPixelFormat)
+            << ", depth=" << pixel_format_name (view.depthStencilPixelFormat)
+            << ", samples=" << view.sampleCount
+            << ", framebuffer-only=" << (view.framebufferOnly ? "yes" : "no")
+            << ", edr="
+            << (layer.wantsExtendedDynamicRangeContent ? "on" : "off")
+            << std::endl;
+}
+
 // ------------------------------------------------------------------
 
 @interface MoppeDelegate
@@ -352,6 +392,7 @@ namespace moppe {
         std::string lib = asset_path (MOPPE_SHADER_NAME);
         render::Renderer* renderer =
           render::create_metal_renderer ((__bridge void*)view, lib);
+        log_runtime_parameters (view);
 
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
         delegate.game = &game;
