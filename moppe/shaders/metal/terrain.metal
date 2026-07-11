@@ -496,8 +496,12 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   const float scree_coef = smoothstep (0.38, 0.58, hj);
   const float snow_coef = smoothstep (0.55, 0.68, hj)
     * smoothstep (0.58, 0.78, n.y);
-  const float beach_coef = (1.0 - smoothstep (sea_level + 0.004,
-					      sea_level + 0.030, hj))
+  // Match vegetation's world-space shoreline rule. The old normalized 0.03
+  // band could mean tens of metres, leaving full grass fields growing from
+  // visually sandy ground on tall worlds.
+  const float beach_low = sea_level + 0.5 / u.params1.x;
+  const float beach_high = sea_level + 3.0 / u.params1.x;
+  const float beach_coef = (1.0 - smoothstep (beach_low, beach_high, hj))
     * smoothstep (0.55, 0.75, n.y);
 
   // -- grass ------------------------------------------------------
@@ -521,6 +525,18 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   grass_c *= mix (float3 (1.04, 1.00, 0.90),
 		  float3 (0.96, 1.02, 0.92),
 		  smoothstep (0.08, 0.30, height));
+
+  // Dense full-geometry grass occludes the soil and lower stalks beneath it.
+  // Mirror the CPU clump field so the ground darkens where blades grow, then
+  // fade the treatment with the 90 m geometry radius.
+  const float grass_patch = saturate (0.52
+    + 0.28 * sin (in.world_pos.x * 0.036
+	+ 1.7 * sin (in.world_pos.z * 0.019))
+    + 0.20 * sin (in.world_pos.z * 0.071
+	- in.world_pos.x * 0.043));
+  const float grass_ground = (1.0 - smoothstep (55.0, 90.0, dist))
+    * grass_patch * (1.0 - beach_coef) * (1.0 - cliff_coef);
+  grass_c *= 1.0 - 0.24 * grass_ground;
 
   // -- scree / cliff / snow ---------------------------------------
   float3 scree_c = terrain_layer (dirt, smp, tc, far_blend);
