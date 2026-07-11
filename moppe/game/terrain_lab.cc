@@ -70,36 +70,36 @@ namespace game {
     }
 
     UiRect friendly_panel_rect (int height) {
-      return { 18, 18, 460,
+      return { 18, 18, 500,
 	       static_cast<float> (std::max (480, height - 36)) };
     }
 
     UiRect friendly_action_rect (int index) {
       constexpr float gap = 6.0f;
-      constexpr float width = (428.0f - gap * 2.0f) / 3.0f;
-      return { 34 + index * (width + gap), 91, width, 42 };
+      constexpr float width = (464.0f - gap * 2.0f) / 3.0f;
+      return { 36 + index * (width + gap), 98, width, 48 };
     }
 
     UiRect friendly_preset_rect (int index) {
       constexpr float gap = 8.0f;
-      constexpr float width = (428.0f - gap) / 2.0f;
+      constexpr float width = (464.0f - gap) / 2.0f;
       const int row = index / 2;
       const int column = index % 2;
-      return { 34 + column * (width + gap), 171 + row * 65.0f,
-	       width, 57 };
+      return { 36 + column * (width + gap), 184 + row * 72.0f,
+	       width, 64 };
     }
 
     UiRect friendly_slider_rect (int index) {
-      return { 34, 337 + index * 59.0f, 428, 50 };
+      return { 36, 353 + index * 68.0f, 464, 58 };
     }
 
     UiRect friendly_lens_rect (int index, int width) {
-      constexpr float button_width = 102.0f;
-      constexpr float gap = 7.0f;
+      constexpr float button_width = 112.0f;
+      constexpr float gap = 8.0f;
       const float start = std::max
-	(490.0f, width - (button_width * 4.0f + gap * 3.0f + 18.0f));
+	(530.0f, width - (button_width * 4.0f + gap * 3.0f + 18.0f));
       return { start + index * (button_width + gap), 18,
-	       button_width, 46 };
+	       button_width, 50 };
     }
 
     bool friendly_ui_contains (float x, float y, int width, int height) {
@@ -2039,8 +2039,8 @@ namespace game {
     };
     m_ui.begin (dl);
     m_ui.surface (dl, friendly_panel_rect (height));
-    m_ui.heading (dl, 34, 53, "WORLD SHAPER");
-    m_ui.paragraph (dl, 35, 76, "Make a landscape, then let time shape it.");
+    m_ui.heading (dl, 36, 58, "WORLD SHAPER");
+    m_ui.paragraph (dl, 37, 84, "Make a landscape, then let time shape it.");
 
     constexpr const char* action_labels[] = {
       "NEW WORLD", "FRAME WORLD", "EXPERT"
@@ -2052,7 +2052,7 @@ namespace game {
 	 false, i == 0);
     }
 
-    m_ui.caption (dl, 35, 157, "START WITH A STORY");
+    m_ui.caption (dl, 37, 171, "START WITH A STORY");
     constexpr const char* preset_titles[] = {
       "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
     };
@@ -2067,7 +2067,7 @@ namespace game {
 	 m_pointer_down, m_friendly_preset == i, false);
     }
 
-    m_ui.caption (dl, 35, 322, "SHAPE THIS WORLD");
+    m_ui.caption (dl, 37, 338, "SHAPE THIS WORLD");
     constexpr const char* slider_titles[] = {
       "MOUNTAINS", "WILD RIDGES", "AGE", "RAINFALL"
     };
@@ -2085,7 +2085,7 @@ namespace game {
 	 m_friendly_drag && m_friendly_drag_control == i);
     }
 
-    if (height >= 720) {
+    if (height >= 790) {
       constexpr const char* story_titles[] = {
 	"A NEW WORLD IS WAITING",
 	"LAND RISES  >  PEAKS STAY SHARP",
@@ -2101,16 +2101,17 @@ namespace game {
 	"Old rivers have worked deep into strong rock."
       };
       const int story = m_friendly_preset + 1;
-      m_ui.caption (dl, 35, 590, "THIS WORLD'S STORY");
-      const UiRect story_bounds { 34, 604, 428, 70 };
+      m_ui.caption (dl, 37, 638, "THIS WORLD'S STORY");
+      const UiRect story_bounds { 36, 654, 464, 82 };
       m_ui.friendly_button
 	(dl, story_bounds, story_titles[story], story_details[story],
 	 false, false, false, false);
     }
 
-    const float hint_y = std::max (602.0f, static_cast<float> (height - 27));
+    const float hint_y = std::max (748.0f, static_cast<float> (height - 27));
     m_ui.caption
-      (dl, 35, hint_y, "DRAG THE LAND TO ORBIT  -  SCROLL TO ZOOM  -  T BACK");
+      (dl, 37, hint_y,
+       "DRAG THE LAND TO ORBIT  -  SCROLL TO ZOOM  -  T BACK");
 
     constexpr const char* lens_titles[] = {
       "LAND", "STEEP", "WATER", "DROP RAIN"
@@ -2133,7 +2134,7 @@ namespace game {
       ? "Click anywhere on the land and follow the raindrop."
       : "The living surface, without a map reading.";
     m_ui.paragraph
-      (dl, std::max (490.0f, static_cast<float> (width - 438)), 88,
+      (dl, std::max (530.0f, static_cast<float> (width - 478)), 94,
        lens_help, m_overlay != OverlayMode::None);
     m_ui.end (dl);
   }

@@ -34,6 +34,9 @@ namespace render {
     Vector3D sun_diffuse;
     Vector3D sun_specular;
     Vector3D ambient;
+    // Art-direction multiplier applied after automatic exposure.  Tools can
+    // favor legibility without changing adaptation for normal gameplay.
+    float exposure_bias = 1.0f;
     float time = 0.0f;
     // How much of the sun the camera can actually see (0..1); the
     // game raymarches the heightmap and folds in cloud cover.
