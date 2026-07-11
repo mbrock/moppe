@@ -31,7 +31,8 @@ namespace moppe::map {
        const terrain::FieldEvaluator* source_evaluator = nullptr);
 
     void begin (const terrain::TerrainProgram& program);
-    void apply (const terrain::TerrainTransform& transform);
+    terrain::TerrainTransformReport apply
+      (const terrain::TerrainTransform& transform);
     void evaluate (const terrain::TerrainProgram& program,
 		   const Progress& progress = { });
 

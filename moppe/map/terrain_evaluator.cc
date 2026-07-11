@@ -27,9 +27,10 @@ namespace moppe::map {
       m_target.materialize (field);
   }
 
-  void
+  terrain::TerrainTransformReport
   TerrainEvaluator::apply (const terrain::TerrainTransform& transform)
   {
+    terrain::TerrainTransformReport report;
     if (std::holds_alternative<terrain::NormalizeHeights> (transform))
       m_target.normalize ();
     else if (const auto* power =
@@ -37,12 +38,15 @@ namespace moppe::map {
       m_target.exponentiate (power->exponent);
     else if (const auto* hydraulic =
 	     std::get_if<terrain::HydraulicErosion> (&transform))
-      m_target.erode_hydraulically
-	(m_randomness, hydraulic->droplets, hydraulic->batch_size);
+      report = m_target.erode_hydraulically
+	(m_randomness, hydraulic->droplets, hydraulic->batch_size,
+	 hydraulic->max_steps, hydraulic->minimum_water,
+	 hydraulic->sediment_at_termination);
     else if (const auto* thermal =
 	     std::get_if<terrain::ThermalErosion> (&transform))
       m_target.erode_thermally (thermal->iterations, thermal->talus);
     m_target.synchronize_periodic_edges ();
+    return report;
   }
 
   void

@@ -2,6 +2,7 @@
 #define MOPPE_TERRAIN_PROGRAM_HH
 
 #include <moppe/terrain/geological.hh>
+#include <moppe/terrain/erosion.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +20,10 @@ namespace moppe::terrain {
   struct HydraulicErosion {
     int droplets;
     int batch_size = 256;
+    int max_steps = 64;
+    float minimum_water = 0.0f;
+    SedimentDisposition sediment_at_termination =
+      SedimentDisposition::Discard;
   };
 
   struct ThermalErosion {
@@ -28,6 +33,9 @@ namespace moppe::terrain {
 
   using TerrainTransform = std::variant
     <NormalizeHeights, PowerHeights, HydraulicErosion, ThermalErosion>;
+
+  using TerrainTransformReport = std::variant
+    <std::monostate, HydraulicErosionReport>;
 
   // These two axes describe what an evaluator must observe, without
   // prescribing whether it uses a CPU loop, a GPU kernel, or something

@@ -23,8 +23,11 @@ namespace moppe::terrain {
     // Slight lowland squash; roughly 10-15% becomes ocean.
     program.transforms.emplace_back (PowerHeights { 1.15f });
     program.transforms.emplace_back (HydraulicErosion {
-      .droplets = 1500000,
-      .batch_size = 256
+      .droplets = 300000,
+      .batch_size = 256,
+      .max_steps = 512,
+      .minimum_water = 0.01f,
+      .sediment_at_termination = SedimentDisposition::Deposit
     });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
     program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
@@ -42,10 +45,14 @@ namespace moppe::terrain {
 	    throw std::invalid_argument
 	      ("height exponent must be positive and finite");
 	} else if constexpr (std::is_same_v<T, HydraulicErosion>) {
-	  if (operation.droplets < 0 || operation.batch_size <= 0)
+	  if (operation.droplets < 0 || operation.batch_size <= 0
+	      || operation.max_steps <= 0
+	      || !std::isfinite (operation.minimum_water)
+	      || operation.minimum_water < 0.0f
+	      || operation.minimum_water >= 1.0f)
 	    throw std::invalid_argument
 	      ("hydraulic erosion needs a non-negative droplet count "
-	       "and a positive batch size");
+	       "and positive batch size and lifetime");
 	} else if constexpr (std::is_same_v<T, ThermalErosion>) {
 	  if (operation.iterations < 0
 	      || !std::isfinite (operation.talus)
