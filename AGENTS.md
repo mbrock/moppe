@@ -26,6 +26,8 @@
     `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
     `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames`.
+    Analyze a completed CSV with
+    `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`
