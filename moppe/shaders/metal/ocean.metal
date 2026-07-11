@@ -54,29 +54,39 @@ ocean_grid_height (float2 world_xz,
   return ocean_grid_sample (world_xz, u, grid).x;
 }
 
-vertex OceanVaryings
-ocean_vertex (uint vid [[vertex_id]],
-	      const device packed_float3* verts [[buffer(MOPPE_BUF_VERTICES)]],
-	      constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
-	      texture2d<float, access::read> heights
-		[[texture(MOPPE_TEX_HEIGHTS)]],
-	      texture2d<float, access::read> water_levels
-		[[texture(MOPPE_TEX_WATER_LEVELS)]])
+// Swell amplitude at a surface point, averaged over a small footprint:
+// a point sample flickers cell-to-cell across shallow shelves and the
+// whole surface reads as a checkerboard.
+static float
+ocean_wave_scale (float2 world_xz,
+		  constant MoppeOceanUniforms& u,
+		  texture2d<float, access::read> heights,
+		  texture2d<float, access::read> water_levels)
 {
-  float3 p = float3 (verts[vid]);
-  p += u.world_offset.xyz;
-  const float time = u.params.x;
-
-  float wave_scale = 1.0;
-  if (u.params.w > 0.5) {
-    const float ground = ocean_grid_height (p.xz, u, heights);
-    const float2 water = ocean_grid_sample (p.xz, u, water_levels);
-    p.y = water.x;
-    // Waves vanish at lake and ocean shores instead of climbing dry
-    // ground, and inland bodies only ripple with their per-body
-    // amplitude: a tarn must not heave like the open sea.
-    wave_scale = smoothstep (0.15, 6.0, p.y - ground) * water.y;
+  const float step = 3.0 / u.shore.x;
+  const float2 taps[5] = {
+    float2 (0, 0), float2 (step, 0), float2 (-step, 0),
+    float2 (0, step), float2 (0, -step)
+  };
+  float scale = 0.0;
+  for (int i = 0; i < 5; ++i) {
+    const float2 water = ocean_grid_sample
+      (world_xz + taps[i], u, water_levels);
+    const float ground = ocean_grid_height
+      (world_xz + taps[i], u, heights);
+    scale += smoothstep (0.15, 6.0, water.x - ground) * water.y;
   }
+  return 0.2 * scale;
+}
+
+// Swells, Gerstner crest displacement, analytic normal, and haze for a
+// point of the water surface; shared by the coarse grid vertex stage
+// and the lattice tile mesh stage so both surfaces move as one.
+static OceanVaryings
+ocean_surface_point (float3 p, float wave_scale,
+		     constant MoppeOceanUniforms& u)
+{
+  const float time = u.params.x;
 
   // Three overlapping swells with different directions and speeds.
   const float a1 = p.x * 0.020 + time * 1.1;
@@ -112,6 +122,166 @@ ocean_vertex (uint vid [[vertex_id]],
   return out;
 }
 
+vertex OceanVaryings
+ocean_vertex (uint vid [[vertex_id]],
+	      const device packed_float3* verts [[buffer(MOPPE_BUF_VERTICES)]],
+	      constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
+	      texture2d<float, access::read> heights
+		[[texture(MOPPE_TEX_HEIGHTS)]],
+	      texture2d<float, access::read> water_levels
+		[[texture(MOPPE_TEX_WATER_LEVELS)]])
+{
+  float3 p = float3 (verts[vid]);
+  p += u.world_offset.xyz;
+
+  float wave_scale = 1.0;
+  if (u.params.w > 0.5) {
+    // Waves vanish at lake and ocean shores instead of climbing dry
+    // ground, and inland bodies only ripple with their per-body
+    // amplitude: a tarn must not heave like the open sea.
+    p.y = ocean_grid_sample (p.xz, u, water_levels).x;
+    wave_scale = ocean_wave_scale (p.xz, u, heights, water_levels);
+  }
+  return ocean_surface_point (p, wave_scale, u);
+}
+
+// ---- lattice water tiles (mesh pipeline) ---------------------------
+
+// A tile is 15x15 terrain cells: a 16x16 vertex lattice (256, the
+// meshlet limit) and 450 triangles. The object stage walks a window of
+// tiles around the camera and keeps only wet, visible ones; the mesh
+// stage emits the water surface on the terrain's own sample lattice,
+// so near shorelines resolve at terrain resolution instead of the
+// coarse grid's.
+#define WATER_TILE_CELLS 15
+#define WATER_OBJECT_THREADS 64
+
+struct WaterTilePayload {
+  uint count;
+  uint2 tiles[WATER_OBJECT_THREADS];
+};
+
+using WaterTileMesh = metal::mesh<OceanVaryings, void, 256,
+				  WATER_TILE_CELLS * WATER_TILE_CELLS * 2,
+				  metal::topology::triangle>;
+
+[[object]] void
+water_tile_object (object_data WaterTilePayload& payload [[payload]],
+		   metal::mesh_grid_properties mesh_grid,
+		   uint thread_id [[thread_index_in_threadgroup]],
+		   uint3 grid_pos [[thread_position_in_grid]],
+		   constant MoppeOceanUniforms& u
+		     [[buffer(MOPPE_BUF_FRAME)]],
+		   texture2d<float, access::read> heights
+		     [[texture(MOPPE_TEX_HEIGHTS)]],
+		   texture2d<float, access::read> water_levels
+		     [[texture(MOPPE_TEX_WATER_LEVELS)]]) {
+  threadgroup atomic_uint survivors;
+  if (thread_id == 0u)
+    atomic_store_explicit (&survivors, 0u, metal::memory_order_relaxed);
+  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+
+  const uint tiles_side = uint (u.tiles.z);
+  const uint index = grid_pos.x;
+  bool valid = index < tiles_side * tiles_side;
+  const uint tile_x = index % max (tiles_side, 1u);
+  const uint tile_z = index / max (tiles_side, 1u);
+
+  if (valid) {
+    const float spacing = 1.0 / u.shore.x;
+    const float tile_world = WATER_TILE_CELLS * spacing;
+    const float2 base = (float2 (int2 (u.tiles.xy))
+			 + float2 (tile_x, tile_z)) * tile_world;
+    const float2 center = base + 0.5 * tile_world;
+    const float fine_radius = -u.tiles.w;
+    const float distance = length (center - u.camera_pos.xz);
+    valid = distance < fine_radius + 0.75 * tile_world;
+
+    if (valid) {
+      // Wet probe on a 5x5 lattice: permanent bodies are far larger
+      // than the probe stride, so a dry result is trustworthy.
+      bool wet = false;
+      float level = 0.0;
+      for (uint pz = 0; pz < 5u && !wet; ++pz)
+	for (uint px = 0; px < 5u; ++px) {
+	  const float2 world = base
+	    + float2 (px, pz) * (tile_world / 4.0);
+	  const float2 water = ocean_grid_sample (world, u, water_levels);
+	  const float ground = ocean_grid_height (world, u, heights);
+	  if (water.x > ground + 0.05) {
+	    wet = true;
+	    level = water.x;
+	    break;
+	  }
+	}
+      valid = wet;
+
+      if (valid) {
+	const float4 clip = u.view_proj
+	  * float4 (center.x, level, center.y, 1.0);
+	const float margin = 1.35 * clip.w + 2.5 * tile_world;
+	valid = clip.w > -tile_world
+	  && abs (clip.x) < margin && abs (clip.y) < margin;
+      }
+    }
+
+    if (valid) {
+      const uint slot = atomic_fetch_add_explicit
+	(&survivors, 1u, metal::memory_order_relaxed);
+      payload.tiles[slot] = uint2 (tile_x, tile_z);
+    }
+  }
+
+  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+  if (thread_id == 0u) {
+    payload.count = atomic_load_explicit
+      (&survivors, metal::memory_order_relaxed);
+    mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
+  }
+}
+
+[[mesh]] void
+water_tile_mesh (WaterTileMesh out,
+		 object_data const WaterTilePayload& payload [[payload]],
+		 uint mesh_id [[threadgroup_position_in_grid]],
+		 uint thread_id [[thread_index_in_threadgroup]],
+		 constant MoppeOceanUniforms& u
+		   [[buffer(MOPPE_BUF_FRAME)]],
+		 texture2d<float, access::read> heights
+		   [[texture(MOPPE_TEX_HEIGHTS)]],
+		 texture2d<float, access::read> water_levels
+		   [[texture(MOPPE_TEX_WATER_LEVELS)]]) {
+  constexpr uint side = WATER_TILE_CELLS + 1;
+  if (thread_id == 0u)
+    out.set_primitive_count (WATER_TILE_CELLS * WATER_TILE_CELLS * 2);
+
+  const uint2 tile = payload.tiles[min (mesh_id, payload.count - 1u)];
+  const float spacing = 1.0 / u.shore.x;
+  const uint vx = thread_id % side;
+  const uint vz = thread_id / side;
+  const float2 world_xz = ((float2 (int2 (u.tiles.xy))
+			    + float2 (tile)) * float (WATER_TILE_CELLS)
+			   + float2 (vx, vz)) * spacing;
+
+  const float2 water = ocean_grid_sample (world_xz, u, water_levels);
+  const float wave_scale = ocean_wave_scale
+    (world_xz, u, heights, water_levels);
+  out.set_vertex (thread_id, ocean_surface_point
+    (float3 (world_xz.x, water.x, world_xz.y), wave_scale, u));
+
+  if (vx < WATER_TILE_CELLS && vz < WATER_TILE_CELLS) {
+    const uint cell = vz * WATER_TILE_CELLS + vx;
+    const uint v0 = vz * side + vx;
+    const uint base = 6u * cell;
+    out.set_index (base + 0u, v0);
+    out.set_index (base + 1u, v0 + side);
+    out.set_index (base + 2u, v0 + 1u);
+    out.set_index (base + 3u, v0 + 1u);
+    out.set_index (base + 4u, v0 + side);
+    out.set_index (base + 5u, v0 + side + 1u);
+  }
+}
+
 // Bilinear ground height under a point, in world meters.  R32F
 // must be read() at integer coords, so filter by hand.
 fragment float4
@@ -127,6 +297,15 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
 
+  // The lattice tiles own the water inside the fine radius and the
+  // coarse grid owns everything beyond it; both discard on the same
+  // predicate so the two surfaces partition exactly.
+  const float planar = length (in.world_pos.xz - u.camera_pos.xz);
+  if (u.tiles.w > 0.5 && planar < u.tiles.w)
+    discard_fragment ();
+  if (u.tiles.w < -0.5 && planar > -u.tiles.w)
+    discard_fragment ();
+
   const float ground = ocean_grid_height (in.world_pos.xz, u, heights);
   const float surface = u.params.w > 0.5
     ? ocean_grid_height (in.world_pos.xz, u, water_levels) : u.params.y;
@@ -138,13 +317,19 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 
   // Small-scale ripples sparkling on top of the big swells, faded
   // with distance so the horizon doesn't shimmer with aliasing.
+  // Drifting value noise: crossed plane-wave sines interfere into a
+  // checkerboard across the whole surface at grazing angles.
   const float ripple_fade = exp (-dist * 0.002);
+  const float2 ripple1 = in.world_pos.xz * 0.35
+    + float2 (time * 0.9, -time * 0.7);
+  const float2 ripple2 = in.world_pos.xz * 0.11
+    - float2 (time * 0.4, time * 0.5);
   n.x += ripple_fade
-      * (0.10 * sin (in.world_pos.x * 0.31 + time * 2.3)
-	 + 0.05 * sin (in.world_pos.z * 0.83 - time * 3.1));
+    * (0.16 * (moppe_value_noise (ripple1) - 0.5)
+       + 0.12 * (moppe_value_noise (ripple2) - 0.5));
   n.z += ripple_fade
-      * (0.10 * sin (in.world_pos.z * 0.27 - time * 2.0)
-	 + 0.05 * sin (in.world_pos.x * 0.71 + time * 2.7));
+    * (0.16 * (moppe_value_noise (ripple1 + 7.3) - 0.5)
+       + 0.12 * (moppe_value_noise (ripple2 + 3.1) - 0.5));
   n = normalize (n);
 
   const float3 v = normalize (-to_frag);

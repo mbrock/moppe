@@ -255,6 +255,7 @@ namespace render {
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
     id<MTLRenderPipelineState> m_grass_pipeline = nil;
     id<MTLRenderPipelineState> m_grass_mesh_pipeline = nil;
+    id<MTLRenderPipelineState> m_water_tiles_pipeline = nil;
     bool m_mesh_shaders_ok = false;
     id<MTLRenderPipelineState> m_river = nil;
 
@@ -546,6 +547,46 @@ namespace render {
 					       error: &error];
 	  if (!m_grass_mesh_pipeline)
 	    std::cerr << "moppe: grass mesh pipeline failed: "
+		      << (error
+			  ? error.localizedDescription.UTF8String : "?")
+		      << std::endl;
+	}
+
+	// Lattice water tiles: the near standing-water surface on the
+	// terrain's own sample grid, sharing the ocean fragment shader.
+	MTLMeshRenderPipelineDescriptor* w =
+	  [[MTLMeshRenderPipelineDescriptor alloc] init];
+	w.objectFunction =
+	  [m_library newFunctionWithName: @"water_tile_object"];
+	w.meshFunction =
+	  [m_library newFunctionWithName: @"water_tile_mesh"];
+	w.fragmentFunction =
+	  [m_library newFunctionWithName: @"ocean_fragment"];
+	w.rasterSampleCount = MSAA_SAMPLES;
+	w.colorAttachments[0].pixelFormat = scene;
+	w.colorAttachments[0].blendingEnabled = YES;
+	w.colorAttachments[0].sourceRGBBlendFactor =
+	  MTLBlendFactorSourceAlpha;
+	w.colorAttachments[0].destinationRGBBlendFactor =
+	  MTLBlendFactorOneMinusSourceAlpha;
+	w.colorAttachments[0].sourceAlphaBlendFactor =
+	  MTLBlendFactorSourceAlpha;
+	w.colorAttachments[0].destinationAlphaBlendFactor =
+	  MTLBlendFactorOneMinusSourceAlpha;
+	w.depthAttachmentPixelFormat = depth;
+	w.stencilAttachmentPixelFormat = depth;
+	w.payloadMemoryLength = 1024;
+	w.maxTotalThreadsPerObjectThreadgroup = 64;
+	w.maxTotalThreadsPerMeshThreadgroup = 256;
+	if (w.objectFunction && w.meshFunction && w.fragmentFunction) {
+	  NSError* error = nil;
+	  m_water_tiles_pipeline = [m_device
+	    newRenderPipelineStateWithMeshDescriptor: w
+					     options: MTLPipelineOptionNone
+					  reflection: nil
+					       error: &error];
+	  if (!m_water_tiles_pipeline)
+	    std::cerr << "moppe: water tile pipeline failed: "
 		      << (error
 			  ? error.localizedDescription.UTF8String : "?")
 		      << std::endl;
@@ -1464,6 +1505,24 @@ namespace render {
     if (m_shadow_map)
       [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
 
+    // Near standing water renders on the terrain lattice through the
+    // mesh pipeline; the coarse grid keeps the horizon. Both passes
+    // discard on the same radius so they partition exactly.
+    const bool lattice = m_water_tiles_pipeline && m_have_water_levels
+      && m_have_terrain && m_heights;
+    const float fine_radius = 700.0f;
+    const float tile_world = 15.0f * m_terrain_params.scale.x;
+    const int tiles_side = (int) std::ceil
+      ((2.0f * fine_radius) / tile_world);
+    if (lattice) {
+      u.tiles.x = std::floor
+	((m_fp.camera_pos.x - fine_radius) / tile_world);
+      u.tiles.y = std::floor
+	((m_fp.camera_pos.z - fine_radius) / tile_world);
+      u.tiles.z = (float) tiles_side;
+      u.tiles.w = fine_radius;
+    }
+
     [enc setVertexBuffer: m_ocean_verts offset: 0
 		 atIndex: MOPPE_BUF_VERTICES];
     [enc setVertexBytes: &u length: sizeof (u)
@@ -1473,6 +1532,31 @@ namespace render {
     [enc drawPrimitives: MTLPrimitiveTypeTriangle
 	    vertexStart: 0
 	    vertexCount: m_ocean_vcount];
+
+    if (lattice) {
+      if (@available (macOS 13.0, iOS 16.0, *)) {
+	MoppeOceanUniforms t = u;
+	t.tiles.w = -fine_radius;
+	[enc setRenderPipelineState: m_water_tiles_pipeline];
+	[enc setObjectBytes: &t length: sizeof (t)
+		    atIndex: MOPPE_BUF_FRAME];
+	[enc setObjectTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
+	[enc setObjectTexture: m_water_levels
+		      atIndex: MOPPE_TEX_WATER_LEVELS];
+	[enc setMeshBytes: &t length: sizeof (t)
+		  atIndex: MOPPE_BUF_FRAME];
+	[enc setMeshTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
+	[enc setMeshTexture: m_water_levels
+		    atIndex: MOPPE_TEX_WATER_LEVELS];
+	[enc setFragmentBytes: &t length: sizeof (t)
+		      atIndex: MOPPE_BUF_FRAME];
+	const NSUInteger total = (NSUInteger) tiles_side
+	  * (NSUInteger) tiles_side;
+	[enc drawMeshThreadgroups: MTLSizeMake ((total + 63) / 64, 1, 1)
+	  threadsPerObjectThreadgroup: MTLSizeMake (64, 1, 1)
+	     threadsPerMeshThreadgroup: MTLSizeMake (256, 1, 1)];
+      }
+    }
   }
 
   void

@@ -116,6 +116,9 @@ struct MoppeOceanUniforms {
 			      // z=height_scale, w=grid width (0=off)
   MoppeFloat4 world_offset;
   MoppeFloat4 shadow;         // x=strength, y=shadow texel
+  MoppeFloat4 tiles;          // xy=origin tile indices, z=tiles per side,
+			      // w=fine radius (+: coarse pass discards
+			      // inside; -: lattice pass discards outside)
 };
 
 struct MoppeGrassUniforms {

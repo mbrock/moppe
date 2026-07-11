@@ -289,7 +289,13 @@ iterative problem rather than part of the pointwise graph.
   priority-flood water surface (RG32F: level plus per-body wave amplitude)
   for ocean and inland lake elevation. Waves fade at shore, scale with the
   body's classification so tarns do not heave like the sea, and dry
-  fragments are discarded.
+  fragments are discarded. On Metal3 hardware, standing water within 700 m
+  additionally renders through a mesh pipeline on the terrain sample
+  lattice (object stage walks 15×15-cell tiles, probes wetness, culls;
+  mesh stage emits 16×16 lattices sharing ocean_fragment); the coarse grid
+  keeps the horizon, both passes discarding on the same radius so they
+  partition exactly. Grass uses the same object/mesh pattern over 4×2-cell
+  blade patches, with an instanced vertex fallback.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was
