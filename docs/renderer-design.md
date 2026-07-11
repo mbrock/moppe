@@ -183,7 +183,7 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
     scene pass  (MSAA 4x → resolve into sceneA, Depth32F reversed-Z)
        terrain → sky → city sectors → vegetation sectors → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
-       blob shadows) → river ribbons → ocean → dust
+       blob shadows) → water (sea, lakes, and painted rivers) → dust
     post passes (ping-pong sceneA/sceneB as needed)
        underwater grade (when camera submerged)
        motion-blur ghosts: current += 3 zoomed alpha quads of prevFrame
@@ -197,44 +197,29 @@ original gamma-space look. The sky shader forces depth to the far plane
 (z = 0 under reversed-Z) and tests against cleared depth, so terrain still
 occludes the expensive cloud shader.
 
-River ribbons are retained `DrawList` meshes but use a dedicated translucent
-scene pipeline.  Their UVs encode across-stream position and cumulative
-downstream distance; packed vertex color carries rapid strength, the water
-column depth (normalized by a shared span constant), and clustered
-fall-candidate strength.  The shader advects two value-noise layers
-downstream at different speeds and derives normal ripple, restrained
-churn/cascade foam, a depth-gated bank contact line, Fresnel sky
-reflection, and sun glint from those readings.  Transparency follows the
-actual water column, so shallow streams are glass over their carved beds.
-The pass depth-tests without writing depth and blends first-fragment-wins
-through the scene stencil plane (reference 1 over cleared 0), so strip
-self-overlap at bends and confluences never double-darkens.  It draws
-before the standing-water grid.  The mesh is presentation-only: the
-ordered `RiverNetwork` and terrain remain the authoritative routing and
-bed data.
+Rivers are not separate meshes: `terrain::paint_watercourses` paints them
+into the same per-cell sheets the sea and lakes render from.  The surface
+sheet starts as the permanent standing-water raster (ground height in dry
+cells) and stamps each reach's level along its centerline — bed plus a
+fixed fraction of the carved channel depth, bounded by the banks actually
+probed beside the channel so a backwater-floored mouth reach cannot flood
+the flats around it, monotone non-increasing downstream, and capped a
+couple of meters over the local ground so a cascade's sheet hugs the
+falling bed instead of bridging the drop.  A second sheet carries a flow
+arrow per wet cell (direction from the drainage path, speed from the slope
+and waterfall laws); overlapping stamps at a confluence average by weight,
+which is the entire junction treatment — there is no seam because there is
+no object.  The ocean shader advects its surface detail along the arrows
+with a two-phase flow map (each copy drifts briefly and hands over before
+it shears), whips up churn where the arrows run fast, suppresses tidal
+swash and beach foam on running water, and shortens the underwater
+extinction length so silty rivers read as bodies instead of glass.  The
+sheets are presentation-only readings: the ordered `RiverNetwork` and the
+terrain remain the authoritative routing and bed data.
 
-Cross-sections are level and ride at a fixed fraction of the shared
-`channel_depth_m` law above the carved bed, so the water plane meets the
-stamped banks and the depth test cuts the waterline; sides are never draped
-onto terrain.  Each section's normal is the water plane tilted by the local
-downstream drop.
-
-Before baking, each ordered reach is resampled twice per receiver edge with a
-cubic Hermite curve. Horizontal tangents are capped at one edge length and
-exact source and downstream endpoints are retained. Width, discharge, rapid,
-cascade, and surface height interpolate on the same curve; the carved bed
-under the spline stays within the bank blend of the stamped centerline, so
-interpolated surface heights keep a clean waterline. This is presentation
-geometry only; it rounds D8 corners without moving a confluence, lake inlet,
-or outlet away from its authoritative cell.
-
-At a standing-water boundary the final cross-section widens and fades into the
-standing surface. It follows one additional wet receiver only when that
-receiver is D8-adjacent; the body-level graph is allowed to transfer directly
-to a distant outlet and must not be interpreted as a drawable local segment.
-Upstream reach endpoints also reduce opacity at a confluence so independently
-blended strips do not all claim the shared receiver at full strength. A tested
-fan overlay was discarded because translucent overlap made the join darker.
+The legacy ribbon meshes (`game::RiverSurface`, river.metal) still build
+behind `MOPPE_RIVER_RIBBONS=1` for comparison captures and remain in use
+by the terrain lab overlay.
 
 Feature-targeted visual checks use
 `tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `river`,
@@ -286,15 +271,18 @@ iterative problem rather than part of the pointwise graph.
 - sky.frag (228 lines, fully procedural) → MSL 1:1; uniforms time, sunHeight,
   cloudiness, sunDir, fogColor.
 - ocean.vert/frag → MSL on a regular grid mesh; the vertex stage samples the
-  priority-flood water surface (RG32F: level plus per-body wave amplitude)
-  for ocean and inland lake elevation. Waves fade at shore, scale with the
-  body's classification so tarns do not heave like the sea, and dry
-  fragments are discarded. On Metal3 hardware, standing water within 700 m
-  additionally renders through a mesh pipeline on the terrain sample
-  lattice (object stage walks 15×15-cell tiles, probes wetness, culls;
-  mesh stage emits 16×16 lattices sharing ocean_fragment); the coarse grid
-  keeps the horizon, both passes discarding on the same radius so they
-  partition exactly. Grass uses the same object/mesh pattern over 4×2-cell
+  painted water surface (RG32F: level plus per-body wave amplitude) for
+  ocean, lake, and river elevation, and the fragment stage reads a second
+  RG16F sheet of flow arrows for the river advection. Waves fade at shore,
+  scale with the body's classification so tarns do not heave like the sea,
+  and dry fragments are discarded. On Metal3 hardware, standing water
+  within 700 m additionally renders through a mesh pipeline on the terrain
+  sample lattice (object stage walks 15×15-cell tiles, probes every tile
+  corner for wetness — exact, since water-minus-ground is bilinear per
+  cell, so a river a cell and a half wide cannot slip between probes —
+  and culls; mesh stage emits 16×16 lattices sharing ocean_fragment); the
+  coarse grid keeps the horizon, both passes discarding on the same radius
+  so they partition exactly. Grass uses the same object/mesh pattern over 4×2-cell
   blade patches, with an instanced vertex fallback.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest

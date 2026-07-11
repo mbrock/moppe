@@ -29,6 +29,7 @@
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <algorithm>
 #include <atomic>
@@ -447,7 +448,10 @@ namespace game {
       render::Renderer& r = *m_renderer;
 
       m_terrain.setup (r, m_map, m_world);
-      if (m_rivers)
+      // Rivers are painted into the water sheets below; the ribbon
+      // meshes stay available behind an env var while the painted
+      // rendering proves itself against the reference captures.
+      if (m_rivers && ::getenv ("MOPPE_RIVER_RIBBONS"))
 	m_river_surface.rebuild
 	  (r, m_map, *m_standing_water, *m_lake_census,
 	   *m_drainage, *m_rivers);
@@ -467,34 +471,22 @@ namespace game {
 	? 0.55f * m_world.map_size.x : 5500 * one_meter;
       ocean.cells = 300;
       std::vector<float> water_levels;
-      if (m_standing_water) {
-	const terrain::ScalarRaster permanent =
-	  terrain::permanent_water_surface
-	    (*m_standing_water, *m_lake_census);
-	// Interleaved (surface level, wave amplitude) per sample. Only the
-	// ocean carries full swells; inland bodies calm with their class,
-	// so a mountain tarn stops heaving like the open sea.
+      std::vector<float> water_flow;
+      if (m_standing_water && m_drainage && m_rivers) {
+	// The complete waterscape painted onto the terrain lattice:
+	// lakes, sea, and rivers in one surface sheet, per-body wave
+	// amplitude, and a flow arrow in every wet cell. Rivers render
+	// through the same lattice water pass as the lakes; the flow
+	// sheet is what carries their motion.
+	const terrain::WaterSheets sheets = terrain::paint_watercourses
+	  (m_map.terrain_view (), *m_standing_water, *m_lake_census,
+	   *m_drainage, *m_rivers);
 	water_levels.resize
 	  (2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
-	const std::span<const float> unique =
-	  permanent.values ();
+	water_flow.resize (water_levels.size ());
+	const std::span<const float> unique = sheets.surface.values ();
 	const std::size_t unique_width = m_standing_water->width ();
 	const std::size_t unique_height = m_standing_water->height ();
-	const auto wave_amplitude = [&] (std::size_t cell) -> float {
-	  if (m_standing_water->ocean[cell])
-	    return 1.0f;
-	  const std::uint32_t body = m_lake_census->body[cell];
-	  if (body == terrain::LakeCensus::dry
-	      || body >= m_lake_census->bodies.size ())
-	    return 0.0f;
-	  switch (m_lake_census->bodies[body].classification) {
-	  case terrain::WaterBodyClass::Sea: return 1.0f;
-	  case terrain::WaterBodyClass::Lake: return 0.10f;
-	  case terrain::WaterBodyClass::Pond: return 0.04f;
-	  case terrain::WaterBodyClass::Puddle: return 0.0f;
-	  }
-	  return 0.0f;
-	};
 	for (int y = 0; y < m_map.height (); ++y)
 	  for (int x = 0; x < m_map.width (); ++x) {
 	    const std::size_t cell =
@@ -503,10 +495,13 @@ namespace game {
 	    const std::size_t out = 2
 	      * (static_cast<std::size_t> (y) * m_map.width () + x);
 	    water_levels[out] = unique[cell];
-	    water_levels[out + 1] = wave_amplitude (cell);
+	    water_levels[out + 1] = sheets.amplitude[cell];
+	    water_flow[out] = sheets.flow[2 * cell];
+	    water_flow[out + 1] = sheets.flow[2 * cell + 1];
 	  }
       }
       r.set_ocean (ocean, water_levels);
+      r.set_water_flow (water_flow);
 
       if (m_standing_water && m_drainage) {
 	// Ground moisture from the hydrology: vegetation reads it for
