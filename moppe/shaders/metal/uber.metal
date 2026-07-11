@@ -49,6 +49,7 @@ fragment float4
 uber_fragment (UberVaryings in [[stage_in]],
 	       constant MoppeFrameUniforms& frame [[buffer(MOPPE_BUF_FRAME)]],
 	       texture2d<float> tex [[texture(MOPPE_TEX_COLOR)]],
+	       depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]],
 	       sampler smp [[sampler(0)]])
 {
   float4 base = in.color * tex.sample (smp, in.uv);
@@ -58,23 +59,30 @@ uber_fragment (UberVaryings in [[stage_in]],
     const float3 n = normalize (in.normal);
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
+    const float dist = length (in.world_pos - frame.camera_pos.xyz);
+    const float fog = moppe_distance_fog (dist, frame.fog_color.w);
+    const float sun_visibility = moppe_sun_visibility
+      (in.world_pos, n, l, fog, frame.light_matrix,
+       frame.shadow.x, frame.shadow.y, shadow_map);
 
     // AMBIENT_AND_DIFFUSE color material: both terms scale the
     // vertex color.
     float3 lit = base.rgb * (moppe_hemisphere_light
-                             (frame.ambient.rgb, n)
-			     + frame.sun_diffuse.rgb * lambert);
+			     (frame.ambient.rgb, n)
+			     + frame.sun_diffuse.rgb * lambert
+			       * sun_visibility);
 
     // Separate specular (global material, shininess 64).
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
     const float3 h = normalize (l + v);
-    lit += frame.sun_specular.rgb * pow (max (dot (n, h), 0.0), 64.0);
+    lit += frame.sun_specular.rgb * sun_visibility
+      * pow (max (dot (n, h), 0.0), 64.0);
 
     // A restrained sky rim separates moving silhouettes from the
     // landscape, especially on their shadowed side.
     const float rim = pow (1.0 - max (dot (n, v), 0.0), 3.0)
       * (0.35 + 0.65 * max (n.y, 0.0));
-    lit += base.rgb * float3 (0.07, 0.11, 0.18) * rim;
+    lit += base.rgb * float3 (0.025, 0.04, 0.065) * rim;
 
     color = lit;
   }

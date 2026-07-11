@@ -1092,6 +1092,7 @@ namespace render {
     m_fp = params;
     std::memset (&m_fu, 0, sizeof (m_fu));
     m_fu.view_proj = m4 (params.proj * params.view);
+    m_fu.light_matrix = m4 (m_light_biased);
     m_fu.camera_pos = f4 (params.camera_pos);
     m_fu.sun_dir = f4 (params.sun_dir);
     m_fu.sun_diffuse = f4lin (params.sun_diffuse);
@@ -1099,6 +1100,10 @@ namespace render {
     m_fu.ambient = f4lin (params.ambient);
     m_fu.fog_color = f4lin (params.clear_color, params.fog_scale);
     m_fu.misc.x = params.time;
+    m_fu.shadow.x = m_have_shadow
+      ? m_terrain_params.shadow_strength : 0.0f;
+    m_fu.shadow.y = m_shadow_map
+      ? 1.0f / (float) m_shadow_map.width : 1.0f / 4096.0f;
 
     update_exposure ();
 
@@ -1355,8 +1360,12 @@ namespace render {
     MoppeOceanUniforms u;
     std::memset (&u, 0, sizeof (u));
     u.view_proj = m_fu.view_proj;
+    u.light_matrix = m4 (m_light_biased);
     u.camera_pos = m_fu.camera_pos;
     u.sun_dir = m_fu.sun_dir;
+    u.sun_diffuse = m_fu.sun_diffuse;
+    u.sun_specular = m_fu.sun_specular;
+    u.ambient = m_fu.ambient;
     u.fog_color = f4lin (params.fog_color, params.fog_scale);
     u.params.x = params.time;
     u.params.y = m_ocean_level;
@@ -1364,6 +1373,10 @@ namespace render {
     u.params.w = m_have_water_levels ? 1.0f : 0.0f;
     u.world_offset.x = params.world_offset.x;
     u.world_offset.z = params.world_offset.z;
+    u.shadow.x = m_have_shadow
+      ? m_terrain_params.shadow_strength : 0.0f;
+    u.shadow.y = m_shadow_map
+      ? 1.0f / (float) m_shadow_map.width : 1.0f / 4096.0f;
 
     // Shore data: the fragment shader reads the height texture to
     // find the seabed for foam and shallows.
@@ -1380,6 +1393,8 @@ namespace render {
     [enc setVertexTexture: water atIndex: MOPPE_TEX_WATER_LEVELS];
     [enc setFragmentTexture: water
 		    atIndex: MOPPE_TEX_WATER_LEVELS_FRAGMENT];
+    if (m_shadow_map)
+      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
 
     [enc setVertexBuffer: m_ocean_verts offset: 0
 		 atIndex: MOPPE_BUF_VERTICES];
@@ -1439,6 +1454,8 @@ namespace render {
     if (!mt)
       mt = (const MetalTexture*) m_white.get ();
     [enc setFragmentTexture: mt->texture atIndex: MOPPE_TEX_COLOR];
+    if (!hud && m_shadow_map)
+      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
     [enc setFragmentSamplerState: mt->sampler atIndex: 0];
   }
 
@@ -1542,6 +1559,8 @@ namespace render {
 		atIndex: MOPPE_BUF_FRAME];
     [enc setFragmentBytes: &m_fu length: sizeof (m_fu)
 		  atIndex: MOPPE_BUF_FRAME];
+    if (m_shadow_map)
+      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
     [enc setVertexBuffer: m.vertices offset: 0
 		 atIndex: MOPPE_BUF_VERTICES];
     for (const DrawList::Run& run : m.runs)

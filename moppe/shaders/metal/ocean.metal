@@ -120,7 +120,8 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 		texture2d<float, access::read> heights
 		  [[texture(MOPPE_TEX_HEIGHTS)]],
 		texture2d<float, access::read> water_levels
-		  [[texture(MOPPE_TEX_WATER_LEVELS_FRAGMENT)]])
+		  [[texture(MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
+		depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]])
 {
   const float time = u.params.x;
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -147,6 +148,9 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   n = normalize (n);
 
   const float3 v = normalize (-to_frag);
+  const float sun_visibility = moppe_sun_visibility
+    (in.world_pos, n, u.sun_dir.xyz, in.fog, u.light_matrix,
+     u.shadow.x, u.shadow.y, shadow_map);
 
   // Schlick fresnel with a proper F0 floor.
   const float fresnel = 0.02
@@ -202,8 +206,11 @@ ocean_fragment (OceanVaryings in [[stage_in]],
     }
     foam = saturate (foam) * (0.35 + 0.65 * daylight);
 
-    water = mix (water, moppe_srgb (float3 (0.93, 0.97, 1.0)),
-		 foam);
+    const float3 foam_albedo = moppe_srgb (float3 (0.93, 0.97, 1.0));
+    const float3 foam_light = moppe_hemisphere_light (u.ambient.rgb, n)
+      + u.sun_diffuse.rgb * (0.35 + 0.65 * max (dot (n, sun), 0.0))
+        * sun_visibility;
+    water = mix (water, foam_albedo * foam_light, foam);
     alpha = max (alpha, foam * 0.9);
   }
 
@@ -213,7 +220,7 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 					 sun);
 
   const float3 color = mix (water, fog_c, 0.55 * fresnel)
-      + glint_color * spec * daylight;
+      + glint_color * spec * daylight * sun_visibility;
 
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);

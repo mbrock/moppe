@@ -74,6 +74,37 @@ inline float3 moppe_hemisphere_light (float3 ambient, float3 normal) {
   return ambient * mix (ground, sky, hemi);
 }
 
+// Shared terrain occlusion for every sun-lit scene material. Only direct
+// sunlight and sun specular use this value; sky fill and reflections remain
+// visible in a mountain's shadow.
+inline float moppe_sun_visibility (float3 world_pos, float3 normal,
+				   float3 sun_dir, float fog,
+				   float4x4 light_matrix,
+				   float shadow_strength,
+				   float shadow_texel,
+				   depth2d<float> shadow_map) {
+  if (shadow_strength < 0.01)
+    return 1.0;
+  const float4 shadow_coord = light_matrix * float4 (world_pos, 1.0);
+  const float3 proj = shadow_coord.xyz / shadow_coord.w;
+  if (any (proj < 0.0) || any (proj > 1.0))
+    return 1.0;
+  const float3 n = normalize (normal);
+  const float3 l = normalize (sun_dir);
+  const float bias = 0.0006 + 0.0025 * (1.0 - max (dot (n, l), 0.0));
+  const float z = proj.z - bias;
+  constexpr sampler smp (coord::normalized, address::clamp_to_edge,
+			 filter::linear, compare_func::less_equal);
+  float visibility = 0.4 * shadow_map.sample_compare (smp, proj.xy, z);
+  for (float dy = -1.5; dy <= 1.5; dy += 3.0)
+    for (float dx = -1.5; dx <= 1.5; dx += 3.0)
+      visibility += 0.15 * shadow_map.sample_compare
+	(smp, proj.xy + float2 (dx, dy) * shadow_texel, z);
+  visibility = pow (visibility, 1.3);
+  const float fade = saturate (2.5 * (1.0 - fog));
+  return mix (1.0, visibility, shadow_strength * fade);
+}
+
 // Aerial perspective: haze brightens and warms toward the sun (two
 // scatter lobes) and cools slightly opposite it, so panning across
 // the horizon reads as one continuous atmosphere.

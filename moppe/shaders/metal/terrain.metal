@@ -345,6 +345,26 @@ terrain_layer (texture2d<float> tex, sampler smp, float2 tc,
   return mix (near_c, far_c, far_blend);
 }
 
+// Steep faces cannot use the ground's XZ projection without smearing the
+// texture vertically. Blend three world-space projections by surface normal;
+// squaring the weights keeps broad faces crisp while rounding transitions.
+static inline float3
+terrain_layer_triplanar (texture2d<float> tex, sampler smp,
+			  float3 world, float3 normal, float scale,
+			  float far_blend)
+{
+  float3 w = abs (normalize (normal));
+  w = w * w;
+  w /= max (w.x + w.y + w.z, 1e-4);
+  const float3 x = terrain_layer (tex, smp, world.zy * scale,
+				  far_blend);
+  const float3 y = terrain_layer (tex, smp, world.xz * scale,
+				  far_blend);
+  const float3 z = terrain_layer (tex, smp, world.xy * scale,
+				  far_blend);
+  return x * w.x + y * w.y + z * w.z;
+}
+
 static inline float3
 terrain_heat_palette (float t)
 {
@@ -431,6 +451,13 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
 
+  // Independent landscape-scale variation survives after the source texture
+  // has mipmapped away. Two octaves avoid tinting every hill uniformly.
+  const float macro = 0.65 * moppe_value_noise
+    (in.world_pos.xz * 0.0027 + float2 (19.1, 7.3))
+    + 0.35 * moppe_value_noise
+      (in.world_pos.xz * 0.0091 + float2 (3.7, 31.9));
+
   // Large-scale variation shared by every layer; its luminance also
   // jitters the splat thresholds so band edges wander organically
   // instead of tracing contour lines.
@@ -438,7 +465,7 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 			    (smp, tc * 0.083 + float2 (0.37, 0.19)).rgb,
 			    float3 (0.299, 0.587, 0.114));
   const float jitter = coarse - 0.5;
-  const float hj = height + 0.045 * jitter;
+  const float hj = height + 0.045 * jitter + 0.012 * (macro - 0.5);
 
   // Texture bands: by altitude AND slope.  Stony cliffs break
   // through on steep faces, dry scree takes over up high, snow only
@@ -464,6 +491,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
     * moppe_srgb (float3 (0.70, 1.18, 0.50));
   grass_c = mix (grass_c, grass_palette, 0.58);
   grass_c *= 0.65 + 0.95 * coarse;
+  grass_c *= mix (float3 (0.72, 0.88, 0.64),
+		  float3 (1.08, 1.04, 0.88), macro);
 
   // Altitude tint: sun-dried gold near the coast, lusher higher up.
   grass_c *= mix (float3 (1.10, 0.96, 0.78),
@@ -481,7 +510,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 
   // The stones texture is olive; pull it toward a dry granite gray
   // and let the macro variation streak it.
-  float3 cliff_c = terrain_layer (rock, smp, tc * 1.7, far_blend);
+  float3 cliff_c = terrain_layer_triplanar
+    (rock, smp, in.world_pos, n, u.params0.w * 1.7, far_blend);
   const float cliff_value = dot (cliff_c,
 				 float3 (0.299, 0.587, 0.114));
   cliff_c = mix (cliff_c,
