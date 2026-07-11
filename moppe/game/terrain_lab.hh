@@ -126,6 +126,7 @@ namespace game {
     Vector3D droplet_world_position (std::size_t index) const;
     Vector3D droplet_world_position (float progress) const;
     float visible_droplet_pitch (const Vector3D& droplet) const;
+    void update_droplet_overlay (bool force = false);
 
     InspectorUi m_ui;
     render::Renderer* m_renderer;
@@ -142,6 +143,8 @@ namespace game {
     terrain::TerrainProgram m_program;
     map::HydraulicDropletTrace m_droplet_trace;
     std::optional<Vector3D> m_droplet_target;
+    std::vector<float> m_droplet_overlay;
+    std::size_t m_droplet_overlay_points;
     render::DrawList m_droplet_draw;
     float m_droplet_progress;
     bool m_droplet_armed;
