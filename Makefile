@@ -1,5 +1,5 @@
-.PHONY: all archive callgraph check-format complexity format hooks phone profile \
-	terrain-lab-shot testflight xcode
+.PHONY: all archive callgraph callgraph-analyze check-format complexity format \
+	hooks phone profile terrain-lab-shot testflight xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -17,6 +17,10 @@ complexity:
 # Extract the static C++ call graph as CSV data.
 callgraph:
 	./tools/callgraph-report
+
+# Combine call-graph centrality, communities, and source complexity.
+callgraph-analyze: callgraph
+	./tools/callgraph-analyze
 
 # Check formatting without changing files (also used by the Git hook).
 check-format:
