@@ -133,8 +133,8 @@ Acceptance evidence:
 - [X] Near-field ribbons remain above the sampled bed without visible z-fight.
 - [X] Rendering consumes derived readings and does not edit terrain.
 
-This is a first visible slice, not finished river morphology.  Cell-center
-polylines can still bend sharply, confluences have no fitted junction surface,
+This is a first visible slice, not finished river morphology.  Confluences have
+no non-overlapping junction surface, standing-water shores expose their grid,
 and a steep reach is only shaded as a rapid rather than turned into a vertical
 fall or spray system.  Those limitations are now visible enough to guide the
 next iterations.
@@ -143,7 +143,14 @@ next iterations.
 
 - [X] Resample reach centerlines with bounded cubic tangents while preserving
   exact source/downstream endpoints, periodic continuity, and terrain contact.
-- Build explicit junction and lake/ocean mouth geometry.
+- [X] Fade lake/ocean mouths into standing water, extending the current only
+  when the next wet receiver is an adjacent D8 cell rather than a body-level
+  routing shortcut.
+- [ ] Build a non-overlapping junction mesh. A blended fan was rejected after
+  feature-targeted captures showed that it darkened the already overlapping
+  reach strips.
+- [X] Add deterministic clean captures for a river, confluence, mouth,
+  waterfall candidate, or lake selected from the hydrology itself.
 - [X] Cluster steep visible-channel steps into deterministic fall candidates,
   expose them in FALLS and TRACE, and intensify cascade foam from that reading.
 - [ ] Distinguish free-falling lips from steep continuous cascades using a
@@ -268,6 +275,26 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Water features get deterministic inspection cameras
+
+- Added =tools/capture-water OUTPUT FEATURE= and the corresponding
+  =--water-screenshot FEATURE OUTPUT= mode for =river=, =confluence=, =mouth=,
+  =waterfall=, and =lake=.
+- Each shot deterministically scores the structured hydrology, reports its
+  selected cell and score, frames it with a fixed inspection camera, and hides
+  actors, vegetation, and HUD while retaining the final drawable composite.
+- Added a D8-adjacency guard before extending inlet current through standing
+  water. The first mouth capture exposed that a wet receiver may jump directly
+  to a body outlet; treating it as local geometry drew a sheet across the lake.
+- Added endpoint opacity to the river material so mouths dissolve into the
+  standing surface and upstream reach ownership is reduced at confluences.
+- Tested and rejected a blended confluence fan because overlap made a dark
+  polygon. Exact endpoints remain, but a proper non-overlapping union is open.
+- Seed 123 now has clean river, confluence, mouth, waterfall-candidate, and lake
+  views. They expose remaining sawtooth shores, strip overlap, and the fact
+  that a steep candidate is not yet a free fall; the ordinary rider capture
+  returned to 115 FPS after removing the fan.
 
 ** 2026-07-11 River ribbons stop tracing cell-center corners
 

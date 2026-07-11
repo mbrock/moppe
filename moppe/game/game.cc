@@ -11,6 +11,7 @@
 #include <moppe/game/terrain.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/terrain_lab.hh>
+#include <moppe/game/water_capture.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/vegetation.hh>
@@ -40,6 +41,8 @@
 #include <optional>
 #include <random>
 #include <sstream>
+#include <stdexcept>
+#include <string>
 #include <variant>
 
 namespace moppe {
@@ -178,6 +181,7 @@ namespace game {
     MoppeGame (const WorldParams& world, bool start_in_terrain_lab,
 	       bool terrain_lab_preview, int seed,
 	       std::string screenshot_path,
+	       std::optional<WaterShot> water_shot,
 	       terrain::TerrainGenerationProfile generation_profile)
       : m_world (world),
 	m_spawn_position (world.spawn_position ()),
@@ -197,6 +201,7 @@ namespace game {
 	m_start_in_terrain_lab (start_in_terrain_lab),
 	m_terrain_lab_preview (terrain_lab_preview),
 	m_screenshot_path (std::move (screenshot_path)),
+	m_water_shot (water_shot),
 	m_screenshot_frames (0),
 	m_ready (false),
 	m_gen_stage (0),
@@ -399,6 +404,19 @@ namespace game {
 	m_rivers = terrain::extract_river_network
 	  (*m_standing_water, *m_lake_census, *m_drainage,
 	   visible_river_minimum_area (m_drainage->source_grid));
+	if (m_water_shot) {
+	  m_water_inspection = choose_water_inspection
+	    (*m_water_shot, m_map, *m_standing_water, *m_lake_census,
+	     *m_drainage, *m_rivers);
+	  if (!m_water_inspection)
+	    throw std::runtime_error
+	      ("no " + std::string (water_shot_name (*m_water_shot))
+	       + " available for water screenshot");
+	  std::cerr << "water screenshot: "
+		    << water_shot_name (*m_water_shot)
+		    << " cell=" << m_water_inspection->cell
+		    << " score=" << m_water_inspection->score << '\n';
+	}
       }
 
       if (!m_terrain_lab_preview) {
@@ -474,6 +492,9 @@ namespace game {
 	m_vehicle.set_heading (Vector3D (std::sin (a), 0,
 				       std::cos (a)));
       }
+      if (m_water_inspection)
+	m_camera.place
+	  (m_water_inspection->eye, m_water_inspection->target);
 
       m_ready = true;
       remember_seed (m_world, m_generation_profile, m_seed);
@@ -511,7 +532,7 @@ namespace game {
       // Screenshot autopilot for headless verification: rides in a
       // lazy arc with periodic boost-assisted leaps.
       static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
-      if (demo) {
+      if (demo && !m_water_inspection) {
 	input_go (1.0f);
 	input_turn (0.35f * std::sin (total_time * 0.25f));
 	input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
@@ -746,6 +767,11 @@ namespace game {
 			   av.velocity (), dt);
 	m_camera.limit (m_map);
       }
+      if (m_water_inspection) {
+	m_camera.place
+	  (m_water_inspection->eye, m_water_inspection->target);
+	m_camera.limit (m_map);
+      }
 
       // Speed widens the field of view a touch.
       {
@@ -773,7 +799,8 @@ namespace game {
       const float aspect =
 	(float) r.width_pts () / std::max (1, r.height_pts ());
       const bool terrain_lab = m_terrain_lab.active ();
-      const float fov = terrain_lab ? 70.0f : 100.0f + 9.0f * m_fov_k;
+      const float fov = terrain_lab || m_water_inspection
+	? 70.0f : 100.0f + 9.0f * m_fov_k;
       fp.proj = Mat4::perspective_reversed
 	(degrees_to_radians (fov), aspect, 0.5f,
 	 m_world.pico_mode ? 30000.0f : 9000.0f);
@@ -782,7 +809,7 @@ namespace game {
       // view can't dip below the terrain.
       Mat4 view = terrain_lab
 	? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
-      if (!terrain_lab && m_shake > 0.005f) {
+      if (!terrain_lab && !m_water_inspection && m_shake > 0.005f) {
 	const Vector3D cam = m_camera.position ();
 	const float ground =
 	  m_map.interpolated_height (cam.x, cam.z);
@@ -850,6 +877,10 @@ namespace game {
       const bool captured = !m_screenshot_path.empty ()
 	&& ++m_screenshot_frames >= 30;
       if (captured) {
+	if (m_water_inspection)
+	  std::cerr << "water screenshot camera: eye="
+		    << m_camera.position () << " target="
+		    << m_water_inspection->target << '\n';
 	r.request_screenshot (m_screenshot_path);
       }
       if (!r.begin_frame (fp))
@@ -883,7 +914,7 @@ namespace game {
 	r.draw_sky (sky);
       }
 
-      if (!terrain_lab) {
+      if (!terrain_lab && !m_water_inspection) {
 	// The world draw list, in the GL build's draw order.  Terrain lab
 	// deliberately hides every placed object so generator differences are
 	// not confused with stale vegetation or actor positions.
@@ -965,7 +996,7 @@ namespace game {
 	r.height_pts () - (int) (si.top + si.bottom);
       if (terrain_lab) {
 	m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
-      } else {
+      } else if (!m_water_inspection) {
 	HudState hs;
 	hs.speed_kmh = (m_mode == M_FOOT)
 	  ? 0.0f : active_vehicle ().velocity ().length () * 3.6f;
@@ -983,6 +1014,8 @@ namespace game {
 	hs.heading_radians = std::atan2 (heading.x, heading.z);
 	m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
       }
+      // Even a clean inspection capture needs this empty HUD pass: it is
+      // also the final post-chain composite into the drawable.
       r.draw_hud (m_hud_dl);
 
       r.end_frame ();
@@ -1364,6 +1397,8 @@ namespace game {
     bool m_terrain_lab_preview;
     bool m_automated_regeneration_done = false;
     std::string m_screenshot_path;
+    std::optional<WaterShot> m_water_shot;
+    std::optional<WaterInspection> m_water_inspection;
     int m_screenshot_frames;
     std::atomic<bool> m_ready;
     std::atomic<int> m_gen_stage;
@@ -1408,6 +1443,7 @@ main (int argc, char** argv) {
   bool start_in_terrain_lab = false;
   bool terrain_lab_preview = false;
   std::string screenshot_path;
+  std::optional<game::WaterShot> water_shot;
   int seed = -1;
   terrain::TerrainGenerationProfile generation_profile =
     terrain::TerrainGenerationProfile::Play;
@@ -1475,6 +1511,20 @@ main (int argc, char** argv) {
       }
       screenshot_path = argv[++i];
       config.fullscreen = false;
+    } else if (arg == "--water-screenshot") {
+      if (i + 2 >= argc) {
+	std::cerr << "--water-screenshot requires a feature and PNG path\n";
+	return -1;
+      }
+      const std::string feature = argv[++i];
+      water_shot = game::parse_water_shot (feature);
+      if (!water_shot) {
+	std::cerr << "unknown water feature: " << feature
+		  << " (use river, confluence, mouth, waterfall, or lake)\n";
+	return -1;
+      }
+      screenshot_path = argv[++i];
+      config.fullscreen = false;
     } else if (arg == "--seed") {
       if (i + 1 >= argc) {
 	std::cerr << "--seed requires an integer\n";
@@ -1501,7 +1551,7 @@ main (int argc, char** argv) {
 
   game::MoppeGame game
     (world, start_in_terrain_lab, terrain_lab_preview, seed,
-	     std::move (screenshot_path), generation_profile);
+	     std::move (screenshot_path), water_shot, generation_profile);
 
   try {
     return platform::run (game, config);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 namespace moppe::game {
@@ -14,6 +15,7 @@ namespace moppe::game {
       float rapid;
       float discharge;
       float waterfall;
+      float opacity;
       bool water;
     };
 
@@ -95,6 +97,7 @@ namespace moppe::game {
 	    .rapid = interpolate (from.rapid, to.rapid, t),
 	    .discharge = interpolate (from.discharge, to.discharge, t),
 	    .waterfall = interpolate (from.waterfall, to.waterfall, t),
+	    .opacity = interpolate (from.opacity, to.opacity, t),
 	    .water = touches_water
 	  });
 	}
@@ -158,6 +161,29 @@ namespace moppe::game {
 	drainage.receiver[reach.cells.back ()];
       if (receiver != reach.cells.back ())
 	cells.push_back (receiver);
+      std::size_t first_water = cells.size ();
+      if (water_cell (cells.back ())) {
+	first_water = cells.size () - 1;
+	for (int step = 0; step < 1; ++step) {
+	  const std::uint32_t next = drainage.receiver[cells.back ()];
+	  if (next == cells.back () || !water_cell (next))
+	    break;
+	  int dx = static_cast<int> (next % drainage.width ())
+	    - static_cast<int> (cells.back () % drainage.width ());
+	  int dz = static_cast<int> (next / drainage.width ())
+	    - static_cast<int> (cells.back () / drainage.width ());
+	  if (periodic) {
+	    dx = minimum_image_delta (dx, width);
+	    dz = minimum_image_delta (dz, height);
+	  }
+	  if (std::abs (dx) > 1 || std::abs (dz) > 1)
+	    break;
+	  cells.push_back (next);
+	}
+      }
+
+      const std::size_t water_points = first_water < cells.size ()
+	? cells.size () - first_water : 0;
 
       float world_x = static_cast<float> (cells[0] % width) * scale.x;
       float world_z = static_cast<float> (cells[0] / width) * scale.z;
@@ -186,18 +212,29 @@ namespace moppe::game {
 	  ? flood.water_level.values ()[cell] * scale.y + 0.06f
 	  : map.get (x, z) * scale.y + 0.10f;
 	const float area = drainage.contributing_area.values ()[cell];
+	const float mouth_step = i >= first_water
+	  ? static_cast<float> (i - first_water) : 0.0f;
+	const float mouth_fraction = water_points > 1 && i >= first_water
+	  ? mouth_step / static_cast<float> (water_points - 1) : 0.0f;
+	const bool joins_downstream_reach = i + 1 == cells.size ()
+	  && reach.downstream_reach != terrain::RiverReach::no_id;
 	const std::uint32_t slope_cell = i + 1 == cells.size () && i > 0
 	  ? cells[i - 1] : cell;
 	const float slope = drainage.slope.values ()[slope_cell];
 	raw_points.push_back ({
 	  .position = Vector3D (world_x, y, world_z),
 	  .normal = map.normal (x, z),
-	  .width = river_width (area),
+	  .width = river_width (area) * (water ? 1.35f + 0.55f * mouth_fraction
+					     : 1.0f),
 	  .distance = distance,
 	  .rapid = rapid_signal (slope),
 	  .discharge = discharge_signal (area, rivers.minimum_area_m2),
 	  .waterfall = rivers.waterfall_by_cell[cell]
 	    != terrain::Waterfall::no_id ? 1.0f : 0.0f,
+	  .opacity = joins_downstream_reach ? 0.12f
+	    : water ? (water_points > 1
+		       ? 0.78f * (1.0f - mouth_fraction) : 0.0f)
+	    : 1.0f,
 	  .water = water
 	});
       }
@@ -225,7 +262,7 @@ namespace moppe::game {
 	  right.y = map.interpolated_height (right.x, right.z) + 0.10f;
 	}
 	draw.color (points[i].rapid, points[i].discharge,
-		    points[i].waterfall, 1.0f);
+		    points[i].waterfall, points[i].opacity);
 	draw.normal (points[i].normal);
 	draw.uv (0.0f, points[i].distance);
 	draw.vertex (left);

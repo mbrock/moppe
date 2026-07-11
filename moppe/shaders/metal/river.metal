@@ -12,6 +12,7 @@ struct RiverVaryings {
   float rapid;
   float discharge;
   float waterfall;
+  float opacity;
 };
 
 vertex RiverVaryings
@@ -34,6 +35,7 @@ river_vertex (uint vid [[vertex_id]],
   out.rapid = float (v.color.r) / 255.0;
   out.discharge = float (v.color.g) / 255.0;
   out.waterfall = float (v.color.b) / 255.0;
+  out.opacity = float (v.color.a) / 255.0;
   return out;
 }
 
@@ -85,6 +87,6 @@ river_fragment (RiverVaryings in [[stage_in]],
 
   const float alpha = edge
     * (0.44 + 0.14 * fresnel + 0.18 * foam
-       + 0.20 * in.waterfall);
+       + 0.20 * in.waterfall) * in.opacity;
   return float4 (color, alpha);
 }

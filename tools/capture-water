@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+output=${1:-"$root/water.png"}
+feature=${2:-river}
+seed=${MOPPE_SEED:-123}
+profile=${MOPPE_TERRAIN_PROFILE:-fast}
+
+if [ ! -f "$build_dir/build.ninja" ]; then
+  cmake -S "$root" -B "$build_dir" -G Ninja
+fi
+
+cmake --build "$build_dir" --target moppe
+mkdir -p "$(dirname -- "$output")"
+
+MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
+  "$build_dir/moppe.app/Contents/MacOS/moppe" \
+  --water-screenshot "$feature" "$output" --seed "$seed" \
+  --terrain-quality "$profile"
+
+echo "$output"
