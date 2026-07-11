@@ -225,6 +225,11 @@ namespace game {
 	m_cam_mode (CAM_CHASE),
 	m_car_exists (false),
 	m_combo (0),
+	m_score (0),
+	m_jump_airtime (0),
+	m_landed_airtime (0),
+	m_landed_points (0),
+	m_landed_age (10),
 	m_fx_rng (7)
     { }
 
@@ -623,6 +628,23 @@ namespace game {
 
       const bool in_water = vpos.y < m_world.water_level + 1.0f;
       const bool driving = (m_mode != M_FOOT);
+
+      // Long jumps become score events after three seconds. Keep the last
+      // airborne time locally because Vehicle clears its timer on touchdown.
+      if (driving && av.airtime () > 0.0f) {
+	m_jump_airtime = av.airtime ();
+	m_landed_age += dt;
+      } else {
+	if (driving && m_jump_airtime >= 3.0f) {
+	  m_landed_airtime = m_jump_airtime;
+	  m_landed_points = (int) std::round
+	    (100.0f * m_jump_airtime * m_jump_airtime);
+	  m_score += m_landed_points;
+	  m_landed_age = 0.0f;
+	}
+	m_jump_airtime = 0.0f;
+	m_landed_age += dt;
+      }
       const Vector3D dust_color (0.60f, 0.52f, 0.40f);
       const Vector3D clod_color (0.42f, 0.34f, 0.24f);
       const Vector3D spray_color (0.85f, 0.92f, 1.0f);
@@ -1078,6 +1100,11 @@ namespace game {
 	hs.odometer_m = (float) m_odometer;
 	hs.lives = m_lives;
 	hs.stars = m_stars.collected ();
+	hs.score = m_score;
+	hs.airtime_s = m_jump_airtime;
+	hs.landed_airtime_s = m_landed_airtime;
+	hs.landed_points = m_landed_points;
+	hs.landed_age_s = m_landed_age;
 	hs.on_foot = (m_mode == M_FOOT);
 	hs.frame_time_s = m_frame_time;
 	const Vector3D heading = m_mode == M_FOOT
@@ -1418,6 +1445,8 @@ namespace game {
       m_fuel = 100.0f;
       m_shake = 0.0f;
       m_shake_time = 0.0f;
+      m_jump_airtime = 0.0f;
+      m_landed_age = 10.0f;
       m_mode = M_BIKE;
       // Back to the start, but ON the ground rather than 600 m
       // over it.
@@ -1501,6 +1530,11 @@ namespace game {
     Vector3D m_fp_eye;
     bool m_car_exists;
     int m_combo;
+    int m_score;
+    float m_jump_airtime;
+    float m_landed_airtime;
+    int m_landed_points;
+    float m_landed_age;
     std::mt19937 m_fx_rng;
   };
 }

@@ -123,6 +123,7 @@ namespace mov {
     // Accumulated wheel roll angle, radians in [0, 2pi).
     float wheel_spin () const { return m_wheel_spin; }
     bool airborne () const { return m_airborne_time > 0.15f; }
+    float airtime () const { return m_airborne_time; }
     radians_t yaw () const { return m_yaw; }
     Vector3D render_normal () const { return m_render_normal; }
     Vector3D render_orientation () const { return m_render_heading; }
