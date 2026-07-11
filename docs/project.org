@@ -79,13 +79,14 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Puddle, pond, lake, and sea classifications.
 - [X] Area/depth/volume permanence policy for rendered inland water.
 - [X] Standing lakes rendered in the random game world.
-- [ ] Depression-aware drainage through lakes.
+- [X] Depression-aware drainage through lakes with topological accumulation.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
-The current =DrainageGraph= describes only strict descent on bare terrain.
-The =FloodField= describes where water stands, but its receiver forest is not
-yet the promised wet-surface drainage network.  Keeping that distinction
-explicit is the most important boundary in the present water work.
+The dry drainage reference still describes strict descent on bare terrain.
+Terrain Lab now interprets the =FloodField= as a wet drainage surface: strict
+downhill D8 routes on slopes and deterministic spill-forest routes across
+level water.  Body-level ocean identity and exact named lake spills remain
+unfinished; hydraulic erosion does not yet consume the wet graph.
 
 ** Riding and presentation
 
@@ -100,17 +101,17 @@ explicit is the most important boundary in the present water work.
 
 * Active work
 
-** TODO Make hydrology internally coherent
+** TODO Finish body-level water routing
 
-The next meaningful milestone is a drainage reading that crosses standing
-water correctly.  Dry cells should descend on rock; flow entering a lake
-should reach that body's spill without cycles; the outlet should carry the
-whole basin's accumulated discharge.
+Wet drainage now crosses standing water without cycles and carries accumulated
+area to an outlet.  The next boundary is to consolidate connected sea cells
+into ocean bodies and make every inland body's spill a direct, tested part of
+its identity rather than a nearby census candidate.
 
 Acceptance evidence:
 
-- FLOW, STREAMS, and BASINS overlays no longer terminate at every depression.
 - Every non-endorheic water body has a tested spill identity.
+- Connected ocean cells share body-level outlet semantics.
 - Routing is deterministic and periodic.
 - This remains a reading: it does not silently edit terrain.
 
@@ -138,6 +139,25 @@ water, transfer discharge to a classified outlet, and incise spillways under
 the basin's full flow.  This should allow ponds to fill, outlets to retreat,
 and drainage networks to mature instead of treating every sink as a terminal
 error.
+
+** NEXT Compare erosion scales
+
+Keep droplet erosion, but test it as the detailed finishing stage after a
+global stream-power pass.  The first experiment should be a deterministic CPU
+transform with age, uplift, erodibility, drainage-area exponent, and hillslope
+strength.  Compare geological source, stream power, droplets, and the combined
+pipeline on the same seeds.  Analytical age-based erosion and FastFlow-style
+GPU routing remain follow-on experiments, not prerequisites.
+
+** NEXT Let hydrology drive water rendering
+
+Build rendering inputs from the same structured water account used by
+erosion: surface level, depth, body identity, flow direction, discharge,
+surface slope, shore distance, and turbulence.  Use body scale to distinguish
+calm ponds and lakes from ocean swell; extract high-discharge routes as river
+ribbons with flow-aligned detail; derive rapids, falls, foam, and spray from
+discharge and changes in the longitudinal bed profile.  Rivers should first
+be an inspectable rendering layer, before any channel-carving transform.
 
 ** NEXT Make the random world a more legible ride
 
@@ -190,6 +210,14 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 Wet drainage crosses standing water
+
+- Added a wet drainage interpretation over the priority-flood surface.
+- Kept steepest D8 descent on dry slopes and used the acyclic spill forest to
+  cross equal-height lake interiors.
+- Switched Terrain Lab flow, stream, basin, and outlet readings to the wet
+  graph while leaving erosion and geometry unchanged.
 
 ** 2026-07-11 Documentation reorganization
 

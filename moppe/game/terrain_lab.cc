@@ -593,11 +593,12 @@ namespace game {
       throw std::logic_error ("drainage requested without terrain");
     if (!m_drainage) {
       const auto start = std::chrono::steady_clock::now ();
-      m_drainage = terrain::analyze_drainage (m_map->terrain_view ());
+      m_drainage = terrain::analyze_wet_drainage
+	(m_map->terrain_view (), standing_water ());
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::ostringstream status;
-      status << m_drainage->sinks.size () << " sinks | "
+      status << m_drainage->sinks.size () << " outlets | "
 	     << std::fixed << std::setprecision (0) << milliseconds
 	     << " ms analysis";
       m_analysis_status = status.str ();

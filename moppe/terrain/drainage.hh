@@ -8,6 +8,8 @@
 #include <vector>
 
 namespace moppe::terrain {
+  struct FloodField;
+
   enum class DrainageRouting {
     D8
   };
@@ -16,9 +18,9 @@ namespace moppe::terrain {
     DrainageRouting routing = DrainageRouting::D8;
   };
 
-  // A compact functional graph: every cell points to one strictly lower
-  // receiver, or to itself when it is a sink. Rasters contain unique torus
-  // samples, without the duplicated rendering seam.
+  // A compact functional graph. Dry drainage uses strictly lower receivers;
+  // wet drainage may also follow acyclic equal-surface routes through water.
+  // Rasters contain unique torus samples without the duplicated render seam.
   struct DrainageGraph {
     TerrainGrid source_grid;
     std::vector<std::uint32_t> receiver;
@@ -38,6 +40,9 @@ namespace moppe::terrain {
 
   DrainageGraph analyze_drainage
     (const TerrainView& terrain,
+     const DrainageParameters& parameters = { });
+  DrainageGraph analyze_wet_drainage
+    (const TerrainView& terrain, const FloodField& flood,
      const DrainageParameters& parameters = { });
 }
 
