@@ -32,10 +32,13 @@
 #include <cmath>
 #include <cstring>
 #include <ctime>
+#include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <memory>
-#include <random>
 #include <optional>
+#include <random>
+#include <sstream>
 #include <variant>
 
 namespace moppe {
@@ -58,6 +61,61 @@ namespace game {
     float t = (x - edge0) / (edge1 - edge0);
     clamp (t, 0.0f, 1.0f);
     return t * t * (3.0f - 2.0f * t);
+  }
+
+  static std::string
+  terrain_cache_path (const WorldParams& world,
+		      terrain::TerrainGenerationProfile profile,
+		      int seed) {
+    std::ostringstream name;
+    name << "terrain-" << platform::executable_build_id () << '-'
+	 << terrain::profile_id (profile) << '-' << world.resolution << '-'
+	 << seed << (world.toroidal () ? "-torus.map" : "-bounded.map");
+    return platform::cache_path (name.str ());
+  }
+
+  static std::string
+  last_seed_path (const WorldParams& world,
+		  terrain::TerrainGenerationProfile profile) {
+    std::ostringstream name;
+    name << "last-seed-" << platform::executable_build_id () << '-'
+	 << terrain::profile_id (profile) << '-' << world.resolution << ".txt";
+    return platform::cache_path (name.str ());
+  }
+
+  static void
+  remember_seed (const WorldParams& world,
+		 terrain::TerrainGenerationProfile profile, int seed) {
+    std::ofstream output (last_seed_path (world, profile));
+    if (output)
+      output << seed << '\n';
+  }
+
+  static int
+  remembered_seed (const WorldParams& world,
+		   terrain::TerrainGenerationProfile profile) {
+    std::ifstream input (last_seed_path (world, profile));
+    int seed = -1;
+    if (input >> seed && seed >= 0)
+      return seed;
+    return static_cast<int> (::time (0));
+  }
+
+  static void
+  prune_obsolete_terrain_caches () {
+    const std::string build_id = platform::executable_build_id ();
+    std::error_code error;
+    const std::filesystem::path root (platform::cache_path (""));
+    for (const std::filesystem::directory_entry& entry :
+	 std::filesystem::directory_iterator (root, error)) {
+      if (error || !entry.is_regular_file ())
+	continue;
+      const std::string name = entry.path ().filename ().string ();
+      const bool terrain_file = name.starts_with ("terrain-")
+	|| name.starts_with ("last-seed-");
+      if (terrain_file && name.find (build_id) == std::string::npos)
+	std::filesystem::remove (entry.path (), error);
+    }
   }
 
   static float
@@ -118,10 +176,12 @@ namespace game {
   public:
     MoppeGame (const WorldParams& world, bool start_in_terrain_lab,
 	       bool terrain_lab_preview, int seed,
-	       std::string screenshot_path)
+	       std::string screenshot_path,
+	       terrain::TerrainGenerationProfile generation_profile)
       : m_world (world),
 	m_spawn_position (world.spawn_position ()),
-	m_seed (seed >= 0 ? seed : static_cast<int> (::time (0))),
+	m_seed (seed),
+	m_generation_profile (generation_profile),
 	m_map (world.resolution, world.resolution, world.map_size,
 	       m_seed, world.topology ()),
 	m_camera (18, 6.5f * one_meter),
@@ -295,17 +355,19 @@ namespace game {
 	m_map.load_raw_u16 (platform::asset_path ("data/pico.u16"),
 			    0.1f, m_world.map_size.y);
       } else {
-	// MOPPE_MAPCACHE=<file>: load the finished heightfield when
-	// the file exists, otherwise generate as usual and save it.
-	// Skipping the erosion simulation turns a ~30 s boot into a
-	// couple of seconds for screenshot iteration.
-	const char* cache = ::getenv ("MOPPE_MAPCACHE");
+	// Reuse the automatic build/profile/seed cache when possible.
+	// MOPPE_MAPCACHE=<file> remains an explicit experiment override.
+	const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
+	const std::string automatic_cache = terrain_cache_path
+	  (m_world, m_generation_profile, m_seed);
+	const char* cache = cache_override ? cache_override
+	  : automatic_cache.c_str ();
 	if (cache && m_map.try_load_cache (cache)) {
 	  m_gen_stage = 7;
 	} else {
 	  m_gen_stage = 3;
-	  const terrain::TerrainProgram program =
-	    terrain::make_default_world_program (m_seed);
+	  const terrain::TerrainProgram program = terrain::make_world_program
+	    (m_seed, m_generation_profile);
 	  map::TerrainEvaluator evaluator (m_map);
 	  evaluator.evaluate
 	    (program, [this] (std::size_t,
@@ -328,6 +390,7 @@ namespace game {
 	const float sea_level = m_world.water_level / m_world.map_size.y;
 	m_standing_water = terrain::analyze_standing_water
 	  (m_map.terrain_view (), sea_level);
+	m_lake_census = terrain::census_lakes (*m_standing_water);
       }
 
       if (!m_terrain_lab_preview) {
@@ -365,10 +428,13 @@ namespace game {
       ocean.cells = 300;
       std::vector<float> water_levels;
       if (m_standing_water) {
+	const terrain::ScalarRaster permanent =
+	  terrain::permanent_water_surface
+	    (*m_standing_water, *m_lake_census);
 	water_levels.resize
 	  (static_cast<std::size_t> (m_map.width ()) * m_map.height ());
 	const std::span<const float> unique =
-	  m_standing_water->water_level.values ();
+	  permanent.values ();
 	const std::size_t unique_width = m_standing_water->width ();
 	const std::size_t unique_height = m_standing_water->height ();
 	for (int y = 0; y < m_map.height (); ++y)
@@ -398,10 +464,18 @@ namespace game {
       }
 
       m_ready = true;
-      if (m_start_in_terrain_lab)
+      remember_seed (m_world, m_generation_profile, m_seed);
+      if (m_start_in_terrain_lab) {
 	m_terrain_lab.enter
 	  (r, m_map, m_terrain, m_world, m_seed,
 	   sun_direction_for (SUN_HEIGHT));
+	m_start_in_terrain_lab = false;
+      }
+      if (::getenv ("MOPPE_REGENERATE_ONCE")
+	  && !m_automated_regeneration_done) {
+	m_automated_regeneration_done = true;
+	regenerate_world ();
+      }
     }
 
     // -- simulation --------------------------------------------------
@@ -924,7 +998,7 @@ namespace game {
 	"Building city...",
 	"Loading Pico Island DEM...",
 	"Generating terrain...",
-	"Eroding (1.5 million droplets)...",
+	"Eroding terrain...",
 	"Computing normals, planting things...",
 	"Uploading to the GPU...",
 	"Loading cached terrain...",
@@ -932,6 +1006,14 @@ namespace game {
       };
       const int stage = m_gen_stage;
       const char* text = stages[stage < 0 ? 0 : stage > 8 ? 8 : stage];
+      std::string erosion_text;
+      if (stage == 4) {
+	erosion_text = "Eroding (" + std::to_string
+	  (terrain::profile_droplet_count (m_generation_profile))
+	  + " droplets, "
+	  + std::string (terrain::profile_id (m_generation_profile)) + ")...";
+	text = erosion_text.c_str ();
+      }
 
       const float w = (float) r.width_pts ();
       const float h = (float) r.height_pts ();
@@ -1030,6 +1112,11 @@ namespace game {
 	return;
       }
 
+      if (k == Key::N && down && m_ready) {
+	regenerate_world ();
+	return;
+      }
+
       // The secret dismount combo: 7, then 5, then R.  Arrow keys
       // bypass it (they were "special" codes dispatched before the
       // combo machine in the GLUT build).
@@ -1093,6 +1180,24 @@ namespace game {
 
     mov::Vehicle& active_vehicle ()
     { return m_mode == M_CAR ? m_car : m_vehicle; }
+
+    void regenerate_world () {
+      input_turn (0.0f);
+      input_go (0.0f);
+      input_boost (0.0f);
+      m_ready = false;
+      m_gen_stage = 0;
+      m_standing_water.reset ();
+      m_lake_census.reset ();
+      ++m_seed;
+      m_mode = M_BIKE;
+      m_car_exists = false;
+      m_game_over = false;
+      m_health = 100.0f;
+      m_fuel = 100.0f;
+      platform::async (&MoppeGame::generate_thunk,
+		       &MoppeGame::finish_thunk, this);
+    }
 
     void input_turn (float v) {
       m_turn_input = v;
@@ -1209,8 +1314,10 @@ namespace game {
     WorldParams m_world;
     Vector3D m_spawn_position;
     int m_seed;
+    terrain::TerrainGenerationProfile m_generation_profile;
     map::RandomHeightMap m_map;
     std::optional<terrain::FloodField> m_standing_water;
+    std::optional<terrain::LakeCensus> m_lake_census;
     Terrain m_terrain;
     TerrainLab m_terrain_lab;
     ChaseCamera m_camera;
@@ -1230,6 +1337,7 @@ namespace game {
     render::Renderer* m_renderer;
     bool m_start_in_terrain_lab;
     bool m_terrain_lab_preview;
+    bool m_automated_regeneration_done = false;
     std::string m_screenshot_path;
     int m_screenshot_frames;
     std::atomic<bool> m_ready;
@@ -1276,6 +1384,8 @@ main (int argc, char** argv) {
   bool terrain_lab_preview = false;
   std::string screenshot_path;
   int seed = -1;
+  terrain::TerrainGenerationProfile generation_profile =
+    terrain::TerrainGenerationProfile::Play;
   config.title = "Moppe";
   config.fullscreen = true;
 
@@ -1298,6 +1408,24 @@ main (int argc, char** argv) {
       config.fullscreen = true;
     } else if (arg == "--windowed") {
       config.fullscreen = false;
+    } else if (arg == "--fast") {
+      generation_profile = terrain::TerrainGenerationProfile::Fast;
+    } else if (arg == "--terrain-quality") {
+      if (i + 1 >= argc) {
+	std::cerr << "--terrain-quality requires fast, play, or research\n";
+	return -1;
+      }
+      const std::string quality = argv[++i];
+      if (quality == "fast")
+	generation_profile = terrain::TerrainGenerationProfile::Fast;
+      else if (quality == "play")
+	generation_profile = terrain::TerrainGenerationProfile::Play;
+      else if (quality == "research")
+	generation_profile = terrain::TerrainGenerationProfile::Research;
+      else {
+	std::cerr << "unknown terrain quality: " << quality << '\n';
+	return -1;
+      }
     } else if (arg == "--terrain-lab") {
       start_in_terrain_lab = true;
     } else if (arg == "--terrain-lab-preview") {
@@ -1332,9 +1460,15 @@ main (int argc, char** argv) {
   }
   if (terrain_lab_preview)
     config.fullscreen = false;
+  if (generation_profile == terrain::TerrainGenerationProfile::Fast
+      && !world.city_mode && !world.pico_mode && !terrain_lab_preview)
+    world.resolution = 1025;
   config.capture_frames = !screenshot_path.empty ();
   if (!screenshot_path.empty () && seed < 0)
     seed = 123;
+  game::prune_obsolete_terrain_caches ();
+  if (seed < 0)
+    seed = game::remembered_seed (world, generation_profile);
 
   // Debug: override the sun height (e.g. 0.55 for long shadows).
   if (const char* sh = ::getenv ("MOPPE_SUNHEIGHT"))
@@ -1342,7 +1476,7 @@ main (int argc, char** argv) {
 
   game::MoppeGame game
     (world, start_in_terrain_lab, terrain_lab_preview, seed,
-     std::move (screenshot_path));
+	     std::move (screenshot_path), generation_profile);
 
   try {
     return platform::run (game, config);

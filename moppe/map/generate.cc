@@ -373,18 +373,20 @@ namespace map {
   terrain::HydraulicErosionReport
   RandomHeightMap::erode_hydraulically
     (int droplets, int batch_size, int max_steps, float minimum_water,
-     terrain::SedimentDisposition sediment_at_termination)
+     terrain::SedimentDisposition sediment_at_termination,
+     terrain::CarvingRule carving_rule)
   {
     return erode_hydraulically
       (m_rng, droplets, batch_size, max_steps, minimum_water,
-       sediment_at_termination);
+       sediment_at_termination, carving_rule);
   }
 
   terrain::HydraulicErosionReport
   RandomHeightMap::erode_hydraulically
     (std::mt19937& randomness, int droplets, int batch_size, int max_steps,
      float minimum_water,
-     terrain::SedimentDisposition sediment_at_termination)
+     terrain::SedimentDisposition sediment_at_termination,
+     terrain::CarvingRule carving_rule)
   {
     // Droplet erosion after Beyer (2015): each raindrop rolls
     // downhill, picking up sediment while it accelerates and
@@ -457,20 +459,35 @@ namespace map {
       std::vector<std::size_t> touched;
       touched.reserve (static_cast<std::size_t> (batch_size) * 16);
 
-      const auto add_change = [&] (int x, int y, float amount) {
+      const auto add_change = [&] (int x, int y, float amount,
+				   float minimum_height) {
 	const std::size_t index = static_cast<std::size_t> (y) * m_width + x;
 	if (!marked[index]) {
 	  marked[index] = 1;
 	  touched.push_back (index);
 	}
-	changes[index] += amount;
+	float applied = amount;
+	if (amount < 0.0f) {
+	  const float current = get (x, y) + changes[index];
+	  const float available = std::max (0.0f, current - minimum_height);
+	  applied = std::max (amount, -available);
+	}
+	changes[index] += applied;
+	return applied;
       };
-      const auto add_at_sample = [&] (const Sample& at, float amount) {
-	add_change (at.x0, at.y0,
-	  amount * (1 - at.fx) * (1 - at.fy));
-	add_change (at.x1, at.y0, amount * at.fx * (1 - at.fy));
-	add_change (at.x0, at.y1, amount * (1 - at.fx) * at.fy);
-	add_change (at.x1, at.y1, amount * at.fx * at.fy);
+      const auto add_at_sample = [&] (const Sample& at, float amount,
+				      float minimum_height =
+					-std::numeric_limits<float>::infinity ()) {
+	float applied = 0.0f;
+	applied += add_change (at.x0, at.y0,
+	  amount * (1 - at.fx) * (1 - at.fy), minimum_height);
+	applied += add_change
+	  (at.x1, at.y0, amount * at.fx * (1 - at.fy), minimum_height);
+	applied += add_change
+	  (at.x0, at.y1, amount * (1 - at.fx) * at.fy, minimum_height);
+	applied += add_change
+	  (at.x1, at.y1, amount * at.fx * at.fy, minimum_height);
+	return applied;
       };
       const auto commit_changes = [&] {
 	for (std::size_t index : touched) {
@@ -535,20 +552,25 @@ namespace map {
 	    const float capacity = std::max (-dh, min_slope)
 	      * drop.speed * drop.water * capacity_k;
 
-	    float amount;
-	    if (drop.sediment > capacity || dh > 0) {
+	float amount;
+	if (drop.sediment > capacity || dh > 0) {
 	      amount = dh > 0 ? std::min (dh, drop.sediment)
 		: (drop.sediment - capacity) * deposit_k;
-	      drop.sediment -= amount;
-	      report.deposited += amount;
-	    } else {
-	      amount = -std::min
-		((capacity - drop.sediment) * erode_k, -dh);
-	      drop.sediment -= amount;
-	      report.eroded -= amount;
-	    }
-
-	    add_at_sample (here, amount);
+	  amount = add_at_sample (here, amount);
+	  drop.sediment -= amount;
+	  report.deposited += amount;
+	} else {
+	  amount = -std::min
+	    ((capacity - drop.sediment) * erode_k, -dh);
+	  // A bilinear footprint may not undercut the elevation at which the
+	  // droplet hands off downstream. This keeps batched carving
+	  // path-monotone and prevents a trajectory from minting a pit behind it.
+	  const float floor = carving_rule == terrain::CarvingRule::PathMonotone
+	    ? next.height : -std::numeric_limits<float>::infinity ();
+	  amount = add_at_sample (here, amount, floor);
+	  drop.sediment -= amount;
+	  report.eroded -= amount;
+	}
 
 	    drop.speed = std::sqrt (std::max
 	      (0.0f, drop.speed * drop.speed - dh * gravity));
@@ -675,17 +697,33 @@ namespace map {
 	      }
 	    else
 	      {
-		// Accelerating: scoop material, but never dig
-		// deeper than the drop just travelled
-		const float amount =
+		// Accelerating: scoop material without leaving any node in the
+		// bilinear footprint below the downstream handoff elevation.
+		const float requested =
 		  std::min ((capacity - sediment) * erode_k, -dh);
+		const float floor = carving_rule
+		  == terrain::CarvingRule::PathMonotone
+		  ? nheight : -std::numeric_limits<float>::infinity ();
+		const float a00 = std::min
+		  (requested * (1 - fx) * (1 - fy),
+		   std::max (0.0f, h00 - floor));
+		const float a10 = std::min
+		  (requested * fx * (1 - fy),
+		   std::max (0.0f, h10 - floor));
+		const float a01 = std::min
+		  (requested * (1 - fx) * fy,
+		   std::max (0.0f, h01 - floor));
+		const float a11 = std::min
+		  (requested * fx * fy,
+		   std::max (0.0f, h11 - floor));
+		const float amount = a00 + a10 + a01 + a11;
 		sediment += amount;
 		report.eroded += amount;
 
-		set (xi, yi, h00 - amount * (1 - fx) * (1 - fy));
-		set (xi + 1, yi, h10 - amount * fx * (1 - fy));
-		set (xi, yi + 1, h01 - amount * (1 - fx) * fy);
-		set (xi + 1, yi + 1, h11 - amount * fx * fy);
+		set (xi, yi, h00 - a00);
+		set (xi + 1, yi, h10 - a10);
+		set (xi, yi + 1, h01 - a01);
+		set (xi + 1, yi + 1, h11 - a11);
 	      }
 
 	    speed = std::sqrt (std::max (0.0f,

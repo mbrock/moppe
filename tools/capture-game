@@ -5,6 +5,7 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
 output=${1:-"$root/game.png"}
 seed=${MOPPE_SEED:-123}
+profile=${MOPPE_TERRAIN_PROFILE:-fast}
 
 if [ ! -f "$build_dir/build.ninja" ]; then
   cmake -S "$root" -B "$build_dir" -G Ninja
@@ -15,6 +16,6 @@ mkdir -p "$(dirname -- "$output")"
 
 MOPPE_DEMO=1 MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
   "$build_dir/moppe.app/Contents/MacOS/moppe" \
-  --screenshot "$output" --seed "$seed"
+  --screenshot "$output" --seed "$seed" --terrain-quality "$profile"
 
 echo "$output"

@@ -9,6 +9,11 @@ namespace moppe::terrain {
     Deposit
   };
 
+  enum class CarvingRule {
+    Unconstrained,
+    PathMonotone
+  };
+
   // Operational reading produced by one hydraulic erosion stage. Amounts are
   // measured in normalized terrain-height units; the balance is independent
   // of the physical cell area shared by every term.

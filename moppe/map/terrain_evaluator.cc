@@ -41,7 +41,7 @@ namespace moppe::map {
       report = m_target.erode_hydraulically
 	(m_randomness, hydraulic->droplets, hydraulic->batch_size,
 	 hydraulic->max_steps, hydraulic->minimum_water,
-	 hydraulic->sediment_at_termination);
+	 hydraulic->sediment_at_termination, hydraulic->carving_rule);
     else if (const auto* thermal =
 	     std::get_if<terrain::ThermalErosion> (&transform))
       m_target.erode_thermally (thermal->iterations, thermal->talus);

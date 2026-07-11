@@ -18,6 +18,7 @@ namespace game {
     const Vector3D size = map.size ();
     m_period = size;
     m_periodic = map.periodic ();
+    m_collected = 0;
 
     m_stars.clear ();
     while ((int) m_stars.size () < count) {

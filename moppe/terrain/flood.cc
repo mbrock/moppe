@@ -142,4 +142,130 @@ namespace moppe::terrain {
       .outlets = std::move (outlets)
     };
   }
+
+  LakeCensus
+  census_lakes (const FloodField& flood, float wet_epsilon)
+  {
+    if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
+      throw std::invalid_argument ("lake census epsilon must be non-negative");
+    const std::size_t width = flood.width ();
+    const std::size_t height = flood.height ();
+    const std::size_t count = width * height;
+    const bool periodic = flood.source_grid.topology == Topology::Torus;
+    const std::span<const float> depth = flood.water_depth.values ();
+    const std::span<const float> level = flood.water_level.values ();
+    LakeCensus census {
+      .body = std::vector<std::uint32_t> (count, LakeCensus::dry)
+    };
+    std::queue<std::uint32_t> frontier;
+    const float cell_area = flood.source_grid.spacing_x
+      * flood.source_grid.spacing_y;
+    const float height_scale = flood.source_grid.height_scale;
+
+    for (std::uint32_t origin = 0; origin < count; ++origin) {
+      if (depth[origin] <= wet_epsilon
+	  || census.body[origin] != LakeCensus::dry)
+	continue;
+      const std::uint32_t id = static_cast<std::uint32_t>
+	(census.bodies.size ());
+      WaterBody body {
+	.id = id,
+	.cells = 0,
+	.area_m2 = 0.0f,
+	.maximum_depth_m = 0.0f,
+	.volume_m3 = 0.0f,
+	.surface_level_m = 0.0f,
+	.spill_cell = origin,
+	.classification = WaterBodyClass::Puddle
+      };
+      float spill_error = std::numeric_limits<float>::infinity ();
+      double surface_sum_m = 0.0;
+      census.body[origin] = id;
+      frontier.push (origin);
+      while (!frontier.empty ()) {
+	const std::uint32_t cell = frontier.front ();
+	frontier.pop ();
+	const std::size_t x = cell % width;
+	const std::size_t y = cell / width;
+	const float depth_m = depth[cell] * height_scale;
+	++body.cells;
+	body.maximum_depth_m = std::max (body.maximum_depth_m, depth_m);
+	body.volume_m3 += depth_m * cell_area;
+	surface_sum_m += static_cast<double> (level[cell]) * height_scale;
+	for (const Offset offset : neighbors) {
+	  const int raw_x = static_cast<int> (x) + offset.x;
+	  const int raw_y = static_cast<int> (y) + offset.y;
+	  if (!periodic && (raw_x < 0 || raw_y < 0
+			    || raw_x >= static_cast<int> (width)
+			    || raw_y >= static_cast<int> (height)))
+	    continue;
+	  const std::size_t nx = periodic ? wrapped (raw_x, width)
+					  : static_cast<std::size_t> (raw_x);
+	  const std::size_t ny = periodic ? wrapped (raw_y, height)
+					  : static_cast<std::size_t> (raw_y);
+	  const std::uint32_t next = static_cast<std::uint32_t>
+	    (ny * width + nx);
+	  if (depth[next] > wet_epsilon) {
+	    if (census.body[next] == LakeCensus::dry) {
+	      census.body[next] = id;
+	      frontier.push (next);
+	    }
+	  } else {
+	    const float terrain_height = level[next] - depth[next];
+	    const float error = std::fabs (terrain_height - level[cell]);
+	    if (error < spill_error
+		|| (error == spill_error && next < body.spill_cell)) {
+	      spill_error = error;
+	      body.spill_cell = next;
+	    }
+	  }
+	}
+      }
+      body.area_m2 = static_cast<float> (body.cells) * cell_area;
+      body.surface_level_m = static_cast<float>
+	(surface_sum_m / static_cast<double> (body.cells));
+      if (std::fabs (body.surface_level_m
+		    - flood.sea_level * height_scale) < 1e-3f)
+	body.classification = WaterBodyClass::Sea;
+      else if (body.area_m2 < 600.0f || body.maximum_depth_m < 0.25f
+	       || body.volume_m3 < 100.0f)
+	body.classification = WaterBodyClass::Puddle;
+      else if (body.area_m2 < 50000.0f)
+	body.classification = WaterBodyClass::Pond;
+      else
+	body.classification = WaterBodyClass::Lake;
+      census.bodies.push_back (body);
+    }
+    return census;
+  }
+
+  ScalarRaster
+  permanent_water_surface (const FloodField& flood,
+			   const LakeCensus& census,
+			   const WaterPermanence& permanence)
+  {
+    const std::size_t count = flood.width () * flood.height ();
+    if (census.body.size () != count)
+      throw std::invalid_argument ("lake census does not match flood field");
+    if (permanence.minimum_area_m2 < 0.0f
+	|| permanence.minimum_depth_m < 0.0f
+	|| permanence.minimum_volume_m3 < 0.0f)
+      throw std::invalid_argument ("water permanence must be non-negative");
+    const std::span<const float> level = flood.water_level.values ();
+    const std::span<const float> depth = flood.water_depth.values ();
+    std::vector<float> surface (count);
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      const std::uint32_t id = census.body[cell];
+      bool permanent = false;
+      if (id != LakeCensus::dry) {
+	const WaterBody& body = census.bodies[id];
+	permanent = body.classification == WaterBodyClass::Sea
+	  || (body.area_m2 >= permanence.minimum_area_m2
+	      && body.maximum_depth_m >= permanence.minimum_depth_m
+	      && body.volume_m3 >= permanence.minimum_volume_m3);
+      }
+      surface[cell] = permanent ? level[cell] : level[cell] - depth[cell];
+    }
+    return ScalarRaster (flood.water_level.domain (), std::move (surface));
+  }
 }

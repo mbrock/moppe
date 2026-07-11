@@ -88,3 +88,41 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
     MOPPE_CHECK (steps < count);
   }
 }
+
+MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
+  const std::array heights {
+    0.f, 0.f, 0.f, 0.f, 0.f,
+    0.f, 3.f, 2.f, 3.f, 0.f,
+    0.f, 3.f, 1.f, 3.f, 0.f,
+    0.f, 3.f, 3.f, 3.f, 0.f,
+    0.f, 0.f, 0.f, 0.f, 0.f
+  };
+  const TerrainView terrain
+    ({ .width = 5, .height = 5, .spacing_x = 2.0f,
+	.height_scale = 10.0f }, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+
+  MOPPE_CHECK (census.bodies.size () == 1);
+  MOPPE_CHECK (census.bodies[0].cells == 1);
+  MOPPE_CHECK_NEAR (census.bodies[0].area_m2, 2.0f, 0.0f);
+  MOPPE_CHECK_NEAR (census.bodies[0].maximum_depth_m, 10.0f, 0.0f);
+  MOPPE_CHECK_NEAR (census.bodies[0].volume_m3, 20.0f, 0.0f);
+  MOPPE_CHECK
+    (census.bodies[0].classification == WaterBodyClass::Puddle);
+}
+
+MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
+  const std::array heights { -2.f, -1.f, 1.f, 2.f };
+  const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const ScalarRaster permanent = permanent_water_surface
+    (flood, census, { .minimum_area_m2 = 1000000.0f });
+
+  MOPPE_CHECK (census.bodies.size () == 1);
+  MOPPE_CHECK
+    (census.bodies[0].classification == WaterBodyClass::Sea);
+  MOPPE_CHECK_NEAR (permanent.at (0, 0), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (permanent.at (1, 0), 0.0f, 0.0f);
+}

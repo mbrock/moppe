@@ -87,6 +87,11 @@ namespace platform {
   // executable/source directory for loose development builds.
   std::string asset_path (const std::string& relative);
 
+  // Stable for one linked executable and different when any byte of that
+  // executable changes. Cache paths live in the platform's user cache root.
+  std::string executable_build_id ();
+  std::string cache_path (const std::string& relative);
+
   // Monotonic time in seconds; never wall-clock.
   double now ();
 

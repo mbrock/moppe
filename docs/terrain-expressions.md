@@ -170,7 +170,7 @@ local context, whole-terrain knowledge, and historical evolution.  The code
 keeps the plain operational names because the axes overlap: normalization is
 global but not historical, while drainage is both global and evolving.
 
-The canonical game profile is now exactly:
+The reproducible research profile remains exactly:
 
 ```text
 geological source
@@ -184,6 +184,22 @@ geological source
 Terrain Lab retains a program value too.  Game generation, command-line
 experiments, and interactive inspection therefore use the same evaluator.
 The saved random-stream offset preserves the former erosion sequence.
+
+Gameplay selects an explicit `TerrainGenerationProfile`: **Fast** uses a
+1025-square map and 30,000 droplets, **Play** uses a 2049-square map and
+100,000 droplets, and **Research** uses the reference 2049-square map and
+300,000 droplets. `--fast` is shorthand for the fast profile;
+`--terrain-quality fast|play|research` selects all three directly. Pressing
+`N` during play increments the seed and builds a new world behind the loading
+screen.
+
+Finished random worlds are cached automatically. The cache key includes the
+profile, resolution, topology, seed, and a runtime hash of the linked
+executable. An unchanged binary reuses its last seed and heightmap; any relink
+gets a new identity and cannot trust an older binary's terrain. The explicit
+`MOPPE_MAPCACHE` path remains an override for controlled experiments. On
+startup Moppe removes automatic terrain caches belonging to obsolete build
+identities, so ordinary source iteration does not accumulate abandoned maps.
 
 ### Field Algebra Tycoon UI
 
@@ -210,16 +226,17 @@ independent. Material restores the ordinary terrain textures; Height and
 Slope drape scalar palettes over the current surface; Flow shows logarithmic
 contributing area; Streams thresholds that reading at 64 upstream cells;
 Basins colors shared sink catchments; Sinks marks local minima; Delta shows
-signed height change across the selected pipeline stage; and Water shows
-priority-flood standing depth. Trace accepts a click on terrain in Tile or
+signed height change across the selected pipeline stage; Water shows every
+priority-flood standing depth; and Lakes applies the permanence census used
+by gameplay. Trace accepts a click on terrain in Tile or
 Cover view, follows receiver links to a sink, and highlights the complete
 basin faintly beneath the path.
 
 These are all presentations of reusable analysis values. The renderer knows
 only an R32F scalar overlay, value range, opacity, and palette; it has no
 drainage-specific API. `MOPPE_LAB_OVERLAY` (`height`, `slope`, `flow`,
-`streams`, `basins`, `sinks`, `delta`, `trace`, or `water`) makes the same
-views scriptable; `lakes` is an alias for `water`. `MOPPE_LAB_STAGE` selects
+`streams`, `basins`, `sinks`, `delta`, `trace`, `water`, or `lakes`) makes the
+same views scriptable. `MOPPE_LAB_STAGE` selects
 a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 `MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
@@ -256,12 +273,16 @@ wildlife setup.  The full build-and-capture loop is scriptable:
 ```sh
 make terrain-lab-shot
 tools/capture-terrain-lab /tmp/lab.png
+tools/capture-game /tmp/game.png
 ```
 
 The capture command defaults to seed 123, reads the completed Metal drawable
 back directly, writes an 8-bit sRGB PNG, and exits.  It does not need window
 automation or screen-capture tooling.  `MOPPE_SEED` and `MOPPE_RENDERSCALE`
 override its deterministic seed and output scale.
+`capture-game` uses the Fast profile unless `MOPPE_TERRAIN_PROFILE` selects a
+different one. `MOPPE_REGENERATE_ONCE=1` exercises one complete in-process
+new-world cycle before its screenshot.
 
 In C++, a scripted experiment is ordinary value manipulation:
 
@@ -275,7 +296,8 @@ program.transforms.emplace_back (moppe::terrain::HydraulicErosion {
   .max_steps = 512,
   .minimum_water = 0.01f,
   .sediment_at_termination =
-    moppe::terrain::SedimentDisposition::Deposit
+    moppe::terrain::SedimentDisposition::Deposit,
+  .carving_rule = moppe::terrain::CarvingRule::PathMonotone
 });
 moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
@@ -297,10 +319,17 @@ experiment materially.
 Every hydraulic evaluation returns a `HydraulicErosionReport`. The Map
 Readings window displays eroded, deposited, and discarded sediment; mean
 lifetime and final water; and termination counts for the safety cap, water
-cutoff, and flat terrain. The compatibility defaults still reproduce the old
-64-step/discard behavior when a stage omits the new fields. Newly added stages
-and the canonical world instead stop naturally at 1% water and settle their
-remaining load, closing the sediment ledger.
+cutoff, and flat terrain. Explicit 64-step, discard-at-death, unconstrained
+values reproduce the historical behavior. Generation profiles instead stop
+naturally at 1% water, settle their remaining load, and carve path-monotonely,
+closing the sediment ledger while avoiding footprint pits.
+
+Carving policy is another explicit enum. `Unconstrained` retains the earlier
+bilinear footprint behavior. `PathMonotone` clamps every affected sample so a
+drop cannot leave its footprint below the downstream handoff elevation; the
+clamp observes pending changes from every droplet in the current batch. This
+prevents the carve itself from minting a pit while preserving deterministic
+batch semantics and the sediment ledger.
 
 The present CPU implementation still evaluates droplets serially inside that
 logical batch.  A prototype using a persistent CPU worker team and two barriers
@@ -369,7 +398,7 @@ in `research/terrain/erosion-lifetime-experiment.md`.
 
 Every default program starts with normalization.  `raw` clears its transforms;
 `normalize` appends normalization explicitly; `world` selects the complete,
-slow canonical game profile.  Recipe overrides include `warp-amplitude`, the
+slow reference research profile. Recipe overrides include `warp-amplitude`, the
 three layer frequencies, mask edges, and blend weights.  Geological layer IDs
 are `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and
 `warp-y`.

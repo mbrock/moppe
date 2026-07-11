@@ -262,8 +262,8 @@ namespace map {
 		       float meters_per_unit,
 		       float max_height_m);
 
-    // Development cache: save/load the finished heightfield so a
-    // boot can skip the erosion simulation (see MOPPE_MAPCACHE).
+    // Save/load the finished heightfield. Gameplay supplies an automatic
+    // build/profile/seed-keyed path; MOPPE_MAPCACHE can override it.
     // Loading fails quietly (returns false) on a missing file or a
     // dimension mismatch.
     bool try_load_cache (const std::string& path);
@@ -275,12 +275,16 @@ namespace map {
       (int droplets, int batch_size = 256, int max_steps = 64,
        float minimum_water = 0.0f,
        terrain::SedimentDisposition sediment_at_termination =
-	 terrain::SedimentDisposition::Discard);
+	 terrain::SedimentDisposition::Discard,
+       terrain::CarvingRule carving_rule =
+	 terrain::CarvingRule::PathMonotone);
     terrain::HydraulicErosionReport erode_hydraulically
       (std::mt19937& randomness, int droplets, int batch_size = 256,
        int max_steps = 64, float minimum_water = 0.0f,
        terrain::SedimentDisposition sediment_at_termination =
-	 terrain::SedimentDisposition::Discard);
+	 terrain::SedimentDisposition::Discard,
+       terrain::CarvingRule carving_rule =
+	 terrain::CarvingRule::PathMonotone);
 
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.

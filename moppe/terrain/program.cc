@@ -19,11 +19,37 @@ namespace moppe::terrain {
 
   TerrainProgram make_default_world_program
     (std::uint32_t root_seed) {
+    return make_world_program
+      (root_seed, TerrainGenerationProfile::Research);
+  }
+
+  int profile_droplet_count
+    (TerrainGenerationProfile profile) noexcept {
+    switch (profile) {
+    case TerrainGenerationProfile::Fast: return 30000;
+    case TerrainGenerationProfile::Play: return 100000;
+    case TerrainGenerationProfile::Research: return 300000;
+    }
+    return 100000;
+  }
+
+  std::string_view profile_id
+    (TerrainGenerationProfile profile) noexcept {
+    switch (profile) {
+    case TerrainGenerationProfile::Fast: return "fast";
+    case TerrainGenerationProfile::Play: return "play";
+    case TerrainGenerationProfile::Research: return "research";
+    }
+    return "play";
+  }
+
+  TerrainProgram make_world_program
+    (std::uint32_t root_seed, TerrainGenerationProfile profile) {
     TerrainProgram program = make_geological_program (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
     program.transforms.emplace_back (PowerHeights { 1.15f });
     program.transforms.emplace_back (HydraulicErosion {
-      .droplets = 300000,
+      .droplets = profile_droplet_count (profile),
       .batch_size = 256,
       .max_steps = 512,
       .minimum_water = 0.01f,
