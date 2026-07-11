@@ -1,7 +1,10 @@
+#include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 
 #include <tests/test.hh>
 
+#include <bit>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -67,4 +70,27 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
   MOPPE_CHECK (text.find ("ocean=on(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("bloom=off(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("terrain-shadows=off(not-hot)") != std::string::npos);
+}
+
+MOPPE_TEST (graphics_benchmark_visits_every_hot_mask_in_gray_order) {
+  const int bits = game::hot_graphics_feature_count ();
+  MOPPE_CHECK (bits == 8);
+  std::set<uint32_t> masks;
+  uint32_t previous = game::gray_code (0);
+  for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
+    const uint32_t mask = game::gray_code (epoch);
+    masks.insert (mask);
+    if (epoch > 0)
+      MOPPE_CHECK (std::popcount (mask ^ previous) == 1);
+    previous = mask;
+  }
+  MOPPE_CHECK (masks.size () == (1u << bits));
+}
+
+MOPPE_TEST (graphics_benchmark_input_tape_is_repeatable) {
+  const platform::ControlState a = game::benchmark_input (731);
+  const platform::ControlState b = game::benchmark_input (731);
+  MOPPE_CHECK_NEAR (a.steer, b.steer, 0.0f);
+  MOPPE_CHECK_NEAR (a.drive, b.drive, 0.0f);
+  MOPPE_CHECK_NEAR (a.boost, b.boost, 0.0f);
 }

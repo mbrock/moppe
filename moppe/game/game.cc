@@ -12,6 +12,7 @@
 #include <moppe/game/city.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/game_state.hh>
+#include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/river_surface.hh>
@@ -60,6 +61,13 @@ namespace moppe {
                        std::sin (el),
                        std::cos (el) * std::cos (SUN_AZIMUTH));
     }
+
+    struct GraphicsBenchmarkConfig {
+      std::string output_path;
+      int prelude_frames = 480;
+      int settle_frames = 30;
+      int measured_frames = 120;
+    };
 
     static float smooth_curve (float edge0, float edge1, float x) {
       float t = (x - edge0) / (edge1 - edge0);
@@ -225,7 +233,8 @@ namespace moppe {
                  int seed,
                  std::string screenshot_path,
                  std::optional<WaterShot> water_shot,
-                 terrain::TerrainGenerationProfile generation_profile)
+                 terrain::TerrainGenerationProfile generation_profile,
+                 std::optional<GraphicsBenchmarkConfig> benchmark)
           : m_world (world), m_graphics (graphics),
             m_spawn_position (world.spawn_position ()), m_seed (seed),
             m_generation_profile (generation_profile),
@@ -249,7 +258,8 @@ namespace moppe {
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
-            m_gen_stage (0) {}
+            m_gen_stage (0), m_benchmark (std::move (benchmark)),
+            m_benchmark_baseline (graphics) {}
 
       GameState state () const {
         return { static_cast<const GameLogicState&> (*this),
@@ -661,6 +671,44 @@ namespace moppe {
       // -- simulation --------------------------------------------------
 
       void tick (float dt) override {
+        if (m_benchmark) {
+          dt = GRAPHICS_BENCHMARK_DT;
+          if (m_benchmark_submitted) {
+            m_benchmark_measured = false;
+            if (m_renderer->benchmark_complete () &&
+                !m_benchmark_results_written) {
+              m_renderer->write_benchmark_results ();
+              m_benchmark_results_written = true;
+              platform::request_quit ();
+            }
+            return;
+          }
+          if (m_benchmark_checkpoint) {
+            const int epoch_frames =
+              m_benchmark->settle_frames + m_benchmark->measured_frames;
+            if (m_benchmark_frame == epoch_frames) {
+              ++m_benchmark_epoch;
+              const int configurations = 1 << hot_graphics_feature_count ();
+              if (m_benchmark_epoch == configurations) {
+                m_benchmark_submitted = true;
+                m_benchmark_measured = false;
+                return;
+              }
+              restore (*m_benchmark_checkpoint);
+              m_renderer->reset_temporal_state ();
+              m_graphics = m_benchmark_baseline;
+              m_benchmark_mask = gray_code (m_benchmark_epoch);
+              apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+              m_benchmark_frame = 0;
+            }
+            controls (benchmark_input (m_benchmark_frame));
+            m_benchmark_measured =
+              m_benchmark_frame >= m_benchmark->settle_frames;
+          } else {
+            controls (benchmark_input (m_benchmark_prelude_frame));
+            m_benchmark_measured = false;
+          }
+        }
         m_frame_time = dt;
         if (!m_ready || m_game_over)
           return;
@@ -972,6 +1020,25 @@ namespace moppe {
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
           m_fov_k += (k - m_fov_k) * (1.0f - std::exp (-5.0f * dt));
         }
+
+        if (m_benchmark) {
+          if (m_benchmark_checkpoint) {
+            ++m_benchmark_frame;
+          } else if (++m_benchmark_prelude_frame ==
+                     m_benchmark->prelude_frames) {
+            m_benchmark_checkpoint = state ();
+            m_renderer->reset_temporal_state ();
+            m_benchmark_mask = gray_code (0);
+            m_graphics = m_benchmark_baseline;
+            apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+            m_benchmark_frame = 0;
+            std::cerr << "moppe: graphics benchmark: "
+                      << (1 << hot_graphics_feature_count ())
+                      << " configurations, " << m_benchmark->settle_frames
+                      << " settle + " << m_benchmark->measured_frames
+                      << " measured frames each\n";
+          }
+        }
       }
 
       // -- rendering ---------------------------------------------------
@@ -1059,6 +1126,10 @@ namespace moppe {
         fp.auto_exposure = m_graphics.auto_exposure;
         fp.lens_flare = m_graphics.lens_flare;
         fp.profile = true;
+        fp.benchmark_mask = m_benchmark_mask;
+        fp.benchmark_epoch = m_benchmark_epoch;
+        fp.benchmark_frame = m_benchmark_frame > 0 ? m_benchmark_frame - 1 : 0;
+        fp.benchmark_measured = m_benchmark_measured;
 
         // Lens-flare occlusion: march toward the sun through the
         // heightmap; any ridge above the ray kills the flare.  Cloud
@@ -1895,6 +1966,16 @@ namespace moppe {
       int m_screenshot_frames;
       std::atomic<bool> m_ready;
       std::atomic<int> m_gen_stage;
+      std::optional<GraphicsBenchmarkConfig> m_benchmark;
+      GraphicsSettings m_benchmark_baseline;
+      std::optional<GameState> m_benchmark_checkpoint;
+      int m_benchmark_prelude_frame = 0;
+      int m_benchmark_epoch = 0;
+      int m_benchmark_frame = 0;
+      uint32_t m_benchmark_mask = 0;
+      bool m_benchmark_measured = false;
+      bool m_benchmark_submitted = false;
+      bool m_benchmark_results_written = false;
 
       render::DrawList m_world_dl;
       render::DrawList m_hud_dl;
@@ -1915,6 +1996,7 @@ int main (int argc, char** argv) {
   int seed = -1;
   terrain::TerrainGenerationProfile generation_profile =
     terrain::TerrainGenerationProfile::Play;
+  std::optional<game::GraphicsBenchmarkConfig> graphics_benchmark;
   config.title = "Moppe";
 
   for (int i = 1; i < argc; ++i) {
@@ -1960,6 +2042,29 @@ int main (int argc, char** argv) {
         std::cerr << error << '\n';
         return -1;
       }
+    } else if (arg == "--graphics-benchmark") {
+      if (i + 1 >= argc) {
+        std::cerr << "--graphics-benchmark requires a CSV path\n";
+        return -1;
+      }
+      graphics_benchmark = game::GraphicsBenchmarkConfig {};
+      graphics_benchmark->output_path = argv[++i];
+      config.fullscreen = false;
+    } else if (arg == "--benchmark-frames" || arg == "--benchmark-settle" ||
+               arg == "--benchmark-prelude") {
+      if (i + 1 >= argc) {
+        std::cerr << arg << " requires a positive frame count\n";
+        return -1;
+      }
+      if (!graphics_benchmark)
+        graphics_benchmark = game::GraphicsBenchmarkConfig {};
+      const int value = std::max (1, std::atoi (argv[++i]));
+      if (arg == "--benchmark-frames")
+        graphics_benchmark->measured_frames = value;
+      else if (arg == "--benchmark-settle")
+        graphics_benchmark->settle_frames = value;
+      else
+        graphics_benchmark->prelude_frames = value;
     } else if (arg == "--fast") {
       generation_profile = terrain::TerrainGenerationProfile::Fast;
     } else if (arg == "--terrain-quality") {
@@ -2032,6 +2137,26 @@ int main (int argc, char** argv) {
     return -1;
   }
   game::print_graphics_settings (std::cerr, graphics);
+  if (graphics_benchmark) {
+    if (graphics_benchmark->output_path.empty ()) {
+      std::cerr << "--graphics-benchmark is required with benchmark options\n";
+      return -1;
+    }
+    const int expected = graphics_benchmark->measured_frames *
+                         (1 << game::hot_graphics_feature_count ());
+    ::setenv (
+      "MOPPE_BENCHMARK_OUTPUT", graphics_benchmark->output_path.c_str (), 1);
+    const std::string expected_text = std::to_string (expected);
+    ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
+    std::string feature_names;
+    for (const game::GraphicsFeature* feature : game::graphics_features)
+      if (feature->hot) {
+        if (!feature_names.empty ())
+          feature_names += ',';
+        feature_names += feature->name;
+      }
+    ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
+  }
   if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
       !world.city_mode && !world.pico_mode && !terrain_lab_preview)
     world.resolution = 1025;
@@ -2049,7 +2174,8 @@ int main (int argc, char** argv) {
                         seed,
                         std::move (screenshot_path),
                         water_shot,
-                        generation_profile);
+                        generation_profile,
+                        graphics_benchmark);
 
   try {
     return platform::run (game, config);

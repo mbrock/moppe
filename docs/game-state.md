@@ -34,6 +34,25 @@ The intended experiment loop is:
 4. Tag every timing sample with the graphics-feature mask, replay epoch, and
    logical frame number.
 
+The built-in graphics benchmark implements this loop at a fixed 120 Hz. It
+constructs the checkpoint after a deterministic scripted prelude, then visits
+all Boolean combinations of hot graphics features in Gray-code order. Every
+epoch restores `GameState`, resets renderer temporal history, replays the same
+input segment, discards settling frames, and records command-buffer GPU time
+for the remaining frames. For example:
+
+```sh
+./build/moppe.app/Contents/MacOS/moppe \
+  --graphics-benchmark /tmp/moppe-gpu.csv \
+  --windowed --seed 123 --terrain-quality fast
+```
+
+The CSV contains epoch, mask, logical frame, GPU milliseconds, and one Boolean
+column per hot feature. Defaults are 480 prelude frames, 30 settling frames,
+and 120 measured frames per configuration. The three counts can be overridden
+with `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for
+quick smoke runs.
+
 Subsystem state structs should remain plain values. When another mutable
 system joins the checkpoint, it should expose `state()` and `restore()` while
 keeping configuration and resource ownership outside the returned value.
