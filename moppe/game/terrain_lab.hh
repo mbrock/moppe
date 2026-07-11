@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_TERRAIN_LAB_HH
 #define MOPPE_GAME_TERRAIN_LAB_HH
 
+#include <moppe/game/graphics_settings.hh>
 #include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/terrain.hh>
@@ -35,6 +36,7 @@ namespace moppe {
                   map::RandomHeightMap& map,
                   Terrain& terrain,
                   const WorldParams& world,
+                  const GraphicsSettings& graphics,
                   const terrain::TerrainProgram& program,
                   const Vector3D& sun_dir);
       void leave ();
@@ -138,6 +140,7 @@ namespace moppe {
       std::unique_ptr<map::TerrainEvaluator> m_evaluator;
       Terrain* m_terrain;
       const WorldParams* m_world;
+      const GraphicsSettings* m_graphics;
       Vector3D m_sun_dir;
       std::vector<float> m_saved_heights;
 

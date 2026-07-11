@@ -63,16 +63,18 @@ namespace moppe {
           .count ();
       }
 
-      float scene_render_scale (float backing_scale, float requested_scale) {
+      float scene_render_scale (float backing_scale,
+                                float requested_scale,
+                                float scale_override) {
 #if TARGET_OS_IPHONE
         (void)backing_scale;
-        return requested_scale;
+        float scale = requested_scale;
 #else
         float scale = requested_scale / std::max (1.0f, backing_scale);
-        if (const char* requested = std::getenv ("MOPPE_RENDERSCALE"))
-          scale = static_cast<float> (std::atof (requested));
-        return std::clamp (scale, 0.25f, 1.0f);
 #endif
+        if (scale_override > 0.0f)
+          scale = scale_override;
+        return std::clamp (scale, 0.25f, 1.0f);
       }
 
       enum class GpuPass {
@@ -289,7 +291,7 @@ namespace moppe {
 
     private:
       void build_pipelines ();
-      void ensure_targets (float requested_scale);
+      void ensure_targets (float requested_scale, float scale_override);
       id<MTLTexture> make_target (
         MTLPixelFormat fmt, int w, int h, int samples, bool memoryless);
       void upload_texture (id<MTLTexture> tex,
@@ -1367,7 +1369,8 @@ namespace moppe {
       return [m_device newTextureWithDescriptor:td];
     }
 
-    void MetalRenderer::ensure_targets (float requested_scale) {
+    void MetalRenderer::ensure_targets (float requested_scale,
+                                        float scale_override) {
       const int drawable_w = (int)m_view.drawableSize.width;
       const int drawable_h = (int)m_view.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
@@ -1375,7 +1378,8 @@ namespace moppe {
       const CGSize points = m_view.bounds.size;
       const float backing_scale =
         points.width > 0 ? drawable_w / (float)points.width : 1.0f;
-      const float scale = scene_render_scale (backing_scale, requested_scale);
+      const float scale =
+        scene_render_scale (backing_scale, requested_scale, scale_override);
       const int w = std::max (1, (int)std::round (drawable_w * scale));
       const int h = std::max (1, (int)std::round (drawable_h * scale));
       if (w == m_target_w && h == m_target_h && m_msaa_color)
@@ -1439,7 +1443,7 @@ namespace moppe {
 
     bool MetalRenderer::begin_frame (const FrameParams& params) {
       const double frame_start = cpu_time ();
-      ensure_targets (params.scene_scale);
+      ensure_targets (params.scene_scale, params.render_scale_override);
       const double targets_done = cpu_time ();
       if (!m_msaa_color)
         return false;

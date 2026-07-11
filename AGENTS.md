@@ -15,6 +15,8 @@
   - Modes: `--city`, `--pico`, `--terrain-lab`,
     `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|high`
+    - Override Boolean graphics features with comma-separated
+      `--graphics-enable <names>` and `--graphics-disable <names>` lists.
   - Fast deterministic UI capture: `make terrain-lab-shot` (writes
     `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.

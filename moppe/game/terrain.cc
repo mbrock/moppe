@@ -44,6 +44,7 @@ namespace moppe {
     void Terrain::setup (render::Renderer& r,
                          const map::RandomHeightMap& map,
                          const WorldParams& world,
+                         const GraphicsSettings& graphics,
                          render::TerrainProjection projection,
                          bool repeat_periodically,
                          bool interactive_preview) {
@@ -61,16 +62,14 @@ namespace moppe {
       params.height_scale = world.map_size.y;
       params.sea_level_norm = world.water_level / world.map_size.y;
       params.tex_scale = 0.5f * one_meter / m_scale.x;
-      // Debug: MOPPE_NOSHADOW=1 disables the cast-shadow lookup.
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
-                                   world.low_graphics ||
-                                   ::getenv ("MOPPE_NOSHADOW")
+                                   !graphics.terrain_shadows
                                  ? 0.0f
                                  : 0.85f;
       params.shadow_resolution = interactive_preview ? 1024 : 4096;
       params.shadow_sample_step = interactive_preview ? 2 : 1;
       params.fog_scale = world.fog_scale;
-      params.topology_overlay = ::getenv ("MOPPE_TERRAIN_TOPOLOGY") != nullptr;
+      params.topology_overlay = graphics.terrain_topology;
       params.periodic = map.periodic ();
       params.projection = projection;
       const float shortest_period = std::min (m_period.x, m_period.z);

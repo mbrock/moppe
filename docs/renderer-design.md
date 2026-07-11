@@ -347,6 +347,15 @@ vegetation/grass, ocean surface, decorative particles, motion blur, bloom,
 exposure probe, or lens flare. `--graphics-quality high` is the default full
 presentation. The low preset retains terrain, vehicles, physics, sky, rivers,
 and HUD so it remains playable while isolating optional rendering cost.
+Presets resolve into a typed graphics-settings value rather than remaining a
+quality-mode branch. Boolean features can then be changed independently with
+`--graphics-enable` and `--graphics-disable`; each accepts a comma-separated
+list such as `--graphics-quality low --graphics-enable ocean,bloom`. Startup
+prints every resolved feature and numeric graphics setting so scripted
+performance runs record the actual configuration. The legacy
+`MOPPE_RENDERSCALE`, `MOPPE_GRASS`, `MOPPE_NOSHADOW`,
+`MOPPE_RIVER_RIBBONS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
+controls remain supported but are resolved centrally into the same settings.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set
