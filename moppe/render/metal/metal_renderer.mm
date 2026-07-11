@@ -1428,12 +1428,13 @@ namespace render {
       ((2.0f * params.radius) / params.spacing);
     MoppeGrassUniforms u;
     std::memset (&u, 0, sizeof (u));
+    // The window origin travels as exact integer cell indices; the shader
+    // derives both seeds and world positions from them, so blades stay
+    // bit-stable while the window follows the camera.
     u.grid.x = std::floor
-      ((m_fp.camera_pos.x - params.radius) / params.spacing)
-      * params.spacing;
+      ((m_fp.camera_pos.x - params.radius) / params.spacing);
     u.grid.y = std::floor
-      ((m_fp.camera_pos.z - params.radius) / params.spacing)
-      * params.spacing;
+      ((m_fp.camera_pos.z - params.radius) / params.spacing);
     u.grid.z = params.spacing;
     u.grid.w = (float) side;
     u.terrain.x = m_terrain_params.scale.x;

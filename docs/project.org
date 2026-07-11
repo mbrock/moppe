@@ -283,6 +283,33 @@ Detailed engineering guidance remains in
 
 * Log
 
+** 2026-07-11 GPU grass loses its jitter, terraces, and stripes
+
+Three defects in the new procedural grass shared one theme: derived
+data where exact data was available.
+
+1. Blade seeds recovered the window's integer origin by dividing floats
+   (=uint(origin_world / spacing)= with an unrepresentable spacing), so
+   the truncation flickered by one cell as the camera moved and re-rolled
+   every seed in the field — the full-field jitter.  The uniforms now
+   carry the origin as exact integer cell indices and both seeds and
+   world positions derive from them.
+2. Roots sampled terrain height and normal nearest-neighbor, so every
+   blade in a terrain cell snapped to one height (terraced rows on
+   slopes) and one normal (per-cell shading patchwork).  Both samples
+   are now bilinear.
+3. The patchiness field was plane-wave sines, which band into stripes —
+   the same plaid failure the ocean foam had.  It is now two octaves of
+   =moppe_value_noise=.
+
+Also in this pass: whole blades reject early (radius, terrain band,
+frustum with sway margin) before any styling math and clip out with a
+degenerate position, valid per-blade since every vertex agrees; the
+outer density LOD starts earlier; blades lean slightly downhill with
+the ground normal; and the grass fragment shadow dropped from five PCF
+taps to one — per-blade color and occlusion variation hides the
+penumbra completely.  Rider capture 88 FPS at the twin-lake spawn.
+
 ** 2026-07-11 Water becomes transparent over ridable channels
 
 Design rule from riding the world: anything worth rendering as water gets
