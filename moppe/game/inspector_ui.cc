@@ -95,6 +95,11 @@ namespace game {
 	     control.height - 4 };
   }
 
+  UiRect friendly_slider_rail_rect (const UiRect& bounds) {
+    return { bounds.x + 38.0f, bounds.y + 34.0f,
+	     bounds.width - 50.0f, 1.0f };
+  }
+
   void
   InspectorUi::load (render::Renderer& renderer)
   {
@@ -110,10 +115,10 @@ namespace game {
 	(renderer, "AvenirNext-DemiBold", 29.0f, scale));
     m_friendly_body.reset
       (new render::FontAtlas
-	(renderer, "AvenirNext-Medium", 18.0f, scale));
+	(renderer, "AvenirNext-DemiBold", 14.0f, scale));
     m_friendly_label.reset
       (new render::FontAtlas
-	(renderer, "AvenirNext-Medium", 14.0f, scale));
+	(renderer, "AvenirNext-Medium", 11.0f, scale));
 
     tga::TGAImg icons;
     const std::string icon_path =
@@ -399,40 +404,38 @@ namespace game {
   {
     const UiRect deep_shadow { bounds.x + 5, bounds.y + 8,
 			       bounds.width, bounds.height };
-    dl.color (0.0f, 0.006f, 0.008f, 0.24f);
+    dl.color (0.0f, 0.012f, 0.024f, 0.28f);
     fill_rounded_rect (dl, deep_shadow, 14.0f);
     const UiRect shadow { bounds.x + 2, bounds.y + 4,
 			  bounds.width, bounds.height };
-    dl.color (0.005f, 0.012f, 0.014f, 0.62f);
+    dl.color (0.005f, 0.02f, 0.035f, 0.64f);
     fill_rounded_rect (dl, shadow, 13.0f);
-    // A muted brass rim and cool inner edge give the panel some physical
-    // depth without turning it into an ornate frame.
-    dl.color (0.42f, 0.38f, 0.25f, 0.90f);
+    dl.color (0.14f, 0.34f, 0.45f, 0.94f);
     fill_rounded_rect (dl, bounds, 13.0f);
-    dl.color (0.12f, 0.32f, 0.30f, 0.98f);
+    dl.color (0.17f, 0.42f, 0.54f, 0.98f);
     const UiRect inner { bounds.x + 1, bounds.y + 1,
 			 bounds.width - 2, bounds.height - 2 };
     fill_rounded_rect (dl, inner, 12.0f);
-    dl.color (0.026f, 0.064f, 0.064f, 0.985f);
+    dl.color (0.025f, 0.095f, 0.14f, 0.965f);
     const UiRect face { bounds.x + 2, bounds.y + 2,
 			bounds.width - 4, bounds.height - 4 };
     fill_rounded_rect (dl, face, 11.0f);
 
-    dl.color (0.39f, 0.78f, 0.68f, 0.34f);
+    dl.color (0.43f, 0.76f, 0.91f, 0.44f);
     dl.line (bounds.x + 16, bounds.y + 2,
 	     bounds.x + bounds.width - 16, bounds.y + 2, 1.0f);
 
     for (float x : { bounds.x + 11.0f,
 		     bounds.x + bounds.width - 11.0f }) {
-      dl.color (0.01f, 0.025f, 0.025f, 0.95f);
+      dl.color (0.005f, 0.025f, 0.045f, 0.95f);
       draw_circle (dl, x, bounds.y + 11.0f, 3.5f);
-      dl.color (0.52f, 0.48f, 0.30f, 0.88f);
+      dl.color (0.39f, 0.69f, 0.81f, 0.88f);
       draw_circle (dl, x, bounds.y + 11.0f, 1.7f);
     }
 
     // Barely-visible contour lines keep the surface from feeling like an
     // empty black rectangle without competing with the controls.
-    dl.color (0.16f, 0.34f, 0.29f, 0.022f);
+    dl.color (0.30f, 0.64f, 0.78f, 0.030f);
     for (int row = 0; row < 8; ++row) {
       const float base_y = bounds.y + 88.0f + row * 82.0f;
       if (base_y > bounds.y + bounds.height - 18.0f)
@@ -480,8 +483,147 @@ namespace game {
   {
     if (!m_friendly_label)
       return;
-    dl.color (0.65f, 0.75f, 0.69f, 0.98f);
+    dl.color (0.58f, 0.73f, 0.81f, 0.98f);
     m_friendly_label->draw (dl, x, y, text);
+  }
+
+  void
+  InspectorUi::friendly_section
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title) const
+  {
+    if (!m_friendly_label)
+      return;
+    dl.color (0.55f, 0.75f, 0.86f, 0.98f);
+    m_friendly_label->draw
+      (dl, bounds.x + 13.0f, bounds.y + bounds.height - 5.0f, title);
+    const float text_width = m_friendly_label->measure (title);
+    const float y = bounds.y + bounds.height - 9.0f;
+    dl.color (0.24f, 0.52f, 0.65f, 0.58f);
+    dl.line (bounds.x + 22.0f + text_width, y,
+	     bounds.x + bounds.width - 9.0f, y, 1.0f);
+    dl.line (bounds.x, bounds.y + bounds.height - 3.0f,
+	     bounds.x, bounds.y + bounds.height + 4.0f, 1.0f);
+    dl.line (bounds.x + bounds.width, bounds.y + bounds.height - 3.0f,
+	     bounds.x + bounds.width, bounds.y + bounds.height + 4.0f, 1.0f);
+  }
+
+  void
+  InspectorUi::session_button
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, bool hot, bool pressed, int icon) const
+  {
+    const bool pushed = hot && pressed;
+    dl.color (0.13f, hot ? 0.38f : 0.27f, hot ? 0.50f : 0.37f, 0.92f);
+    fill_rounded_rect (dl, bounds, 8.0f);
+    const UiRect inner { bounds.x + 1, bounds.y + 1,
+			 bounds.width - 2, bounds.height - 2 };
+    dl.color (0.035f, pushed ? 0.12f : hot ? 0.13f : 0.095f,
+	      pushed ? 0.17f : hot ? 0.19f : 0.145f, 0.98f);
+    fill_rounded_rect (dl, inner, 7.0f);
+    const float icon_size = 35.0f;
+    friendly_icon
+      (dl, { bounds.x + (bounds.width - icon_size) * 0.5f,
+	     bounds.y + 8.0f, icon_size, icon_size }, icon, 0.94f);
+    if (m_friendly_body) {
+      dl.color (0.91f, 0.96f, 0.98f, 1.0f);
+      const float width = m_friendly_body->measure (title);
+      m_friendly_body->draw
+	(dl, bounds.x + (bounds.width - width) * 0.5f,
+	 bounds.y + bounds.height - 10.0f, title);
+    }
+  }
+
+  void
+  InspectorUi::preset_card
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, bool hot, bool pressed,
+     bool selected, int icon) const
+  {
+    if (selected) {
+      dl.color (0.20f, 0.95f, 0.94f, 0.18f);
+      fill_rounded_rect
+	(dl, { bounds.x - 3, bounds.y - 3,
+	       bounds.width + 6, bounds.height + 6 }, 9.0f);
+    }
+    dl.color (selected ? 0.24f : hot ? 0.22f : 0.12f,
+	      selected ? 0.88f : hot ? 0.54f : 0.38f,
+	      selected ? 0.90f : hot ? 0.66f : 0.50f, 0.96f);
+    fill_rounded_rect (dl, bounds, 7.0f);
+    const UiRect image { bounds.x + 2, bounds.y + 2,
+			 bounds.width - 4, bounds.height - 31 };
+    dl.color (0.055f, pressed ? 0.13f : 0.16f,
+	      pressed ? 0.18f : 0.23f, 0.98f);
+    fill_rounded_rect (dl, image, 5.0f);
+    // The atlas emblems are deliberately enlarged and cool-tinted here.
+    // This region can later be replaced by truthful rendered thumbnails
+    // without changing card geometry or interaction.
+    const float icon_size = std::min (image.height - 8.0f, 76.0f);
+    friendly_icon
+      (dl, { image.x + (image.width - icon_size) * 0.5f,
+	     image.y + (image.height - icon_size) * 0.5f,
+	     icon_size, icon_size }, icon, selected ? 1.0f : 0.82f,
+	selected ? 0.72f : 0.55f, selected ? 1.0f : 0.82f, 1.0f);
+    const UiRect caption { bounds.x + 2, bounds.y + bounds.height - 30,
+			   bounds.width - 4, 28 };
+    dl.color (0.018f, 0.065f, 0.10f, 0.99f);
+    fill_rounded_rect (dl, caption, 5.0f);
+    if (m_friendly_body) {
+      dl.color (0.94f, 0.97f, 0.99f, 1.0f);
+      const float width = m_friendly_body->measure (title);
+      m_friendly_body->draw
+	(dl, caption.x + (caption.width - width) * 0.5f,
+	 caption.y + 20.0f, title);
+    }
+  }
+
+  void
+  InspectorUi::tool_button
+    (render::DrawList& dl, const UiRect& bounds,
+     const std::string& title, const std::string& key,
+     bool hot, bool pressed, bool selected, int icon) const
+  {
+    if (selected) {
+      dl.color (0.05f, 0.95f, 1.0f, 0.18f);
+      fill_rounded_rect
+	(dl, { bounds.x - 4, bounds.y - 4,
+	       bounds.width + 8, bounds.height + 8 }, 11.0f);
+    }
+    dl.color (selected ? 0.12f : hot ? 0.18f : 0.11f,
+	      selected ? 0.90f : hot ? 0.55f : 0.37f,
+	      selected ? 0.96f : hot ? 0.67f : 0.49f, 0.98f);
+    fill_rounded_rect (dl, bounds, 8.0f);
+    const UiRect inner { bounds.x + 2, bounds.y + 2,
+			 bounds.width - 4, bounds.height - 4 };
+    dl.color (0.035f, pressed ? 0.12f : selected ? 0.19f : 0.095f,
+	      pressed ? 0.17f : selected ? 0.26f : 0.145f, 0.99f);
+    fill_rounded_rect (dl, inner, 6.0f);
+    friendly_icon
+      (dl, { bounds.x + (bounds.width - 44.0f) * 0.5f,
+	     bounds.y + 10.0f, 44.0f, 44.0f }, icon, 0.98f,
+	selected ? 0.70f : 0.78f, 0.96f, 1.0f);
+    if (m_friendly_body) {
+      dl.color (0.91f, 0.96f, 0.99f, 1.0f);
+      const float width = m_friendly_body->measure (title);
+      m_friendly_body->draw
+	(dl, bounds.x + (bounds.width - width) * 0.5f,
+	 bounds.y + 72.0f, title);
+    }
+    if (m_friendly_label) {
+      const UiRect badge { bounds.x + bounds.width * 0.5f - 8.0f,
+			   bounds.y + bounds.height - 19.0f, 16.0f, 15.0f };
+      dl.color (0.10f, 0.25f, 0.34f, 0.98f);
+      fill_rounded_rect (dl, badge, 3.0f);
+      dl.color (0.58f, 0.76f, 0.85f, 1.0f);
+      const float width = m_friendly_label->measure (key);
+      m_friendly_label->draw
+	(dl, badge.x + (badge.width - width) * 0.5f, badge.y + 12.0f, key);
+    }
+    if (selected) {
+      dl.color (0.75f, 1.0f, 0.74f, 1.0f);
+      draw_circle
+	(dl, bounds.x + bounds.width - 12.0f, bounds.y + 12.0f, 3.5f);
+    }
   }
 
   void
@@ -579,10 +721,10 @@ namespace game {
       : title == "WILD RIDGES" ? 8
       : title == "AGE" ? 9 : 10;
     friendly_icon
-      (dl, { bounds.x, bounds.y - 1.0f, 27.0f, 27.0f }, icon, 0.92f);
+      (dl, { bounds.x, bounds.y - 1.0f, 25.0f, 25.0f }, icon, 0.88f);
     if (m_friendly_body) {
       dl.color (0.89f, 0.93f, 0.82f, 1.0f);
-      m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 19, title);
+      m_friendly_body->draw (dl, bounds.x + 31, bounds.y + 17, title);
     }
     if (m_friendly_label) {
       dl.color (0.52f, 0.64f, 0.59f, 0.98f);
@@ -593,32 +735,35 @@ namespace game {
 	(dl, bounds.x + bounds.width - high_width,
 	 bounds.y + bounds.height, high);
     }
-    const float rail_x = bounds.x + 9.0f;
-    const float rail_width = bounds.width - 18.0f;
-    const float y = bounds.y + 35.0f;
-    dl.color (0.25f, 0.43f, 0.39f, 0.65f);
-    for (int i = 0; i <= 4; ++i) {
-      const float tick_x = rail_x + rail_width * i / 4.0f;
-      dl.line (tick_x, y - 4, tick_x, y + 4, 1.0f);
+    const UiRect rail = friendly_slider_rail_rect (bounds);
+    const float rail_x = rail.x;
+    const float rail_width = rail.width;
+    const float y = rail.y;
+    dl.color (0.28f, 0.52f, 0.62f, 0.52f);
+    for (int i = 0; i <= 20; ++i) {
+      const float tick_x = rail_x + rail_width * i / 20.0f;
+      const float tick = i % 5 == 0 ? 4.0f : 2.0f;
+      dl.line (tick_x, y + 5.0f, tick_x, y + 5.0f + tick, 1.0f);
     }
-    dl.color (0.12f, 0.25f, 0.22f, 0.95f);
-    dl.line (rail_x, y, rail_x + rail_width, y, 7.0f);
+    dl.color (0.12f, 0.28f, 0.35f, 0.95f);
+    dl.line (rail_x, y, rail_x + rail_width, y, 4.0f);
     dl.color (accent_r, accent_g, accent_b, 0.95f);
-    dl.line (rail_x, y, rail_x + rail_width * normalized, y, 4.0f);
+    dl.line (rail_x, y, rail_x + rail_width * normalized, y, 2.0f);
     const float cx = rail_x + rail_width * normalized;
     dl.color (accent_r, accent_g, accent_b, active ? 0.24f : 0.12f);
-    draw_circle (dl, cx, y, active ? 15.0f : 12.5f);
+    draw_circle (dl, cx, y, active ? 12.0f : 10.0f);
     dl.color (0.015f, 0.035f, 0.035f, 1.0f);
-    draw_circle (dl, cx, y, 9.0f);
+    draw_circle (dl, cx, y, 7.5f);
     dl.color (accent_r, accent_g, accent_b, 1.0f);
-    draw_circle (dl, cx, y, 7.0f);
+    draw_circle (dl, cx, y, 5.7f);
     dl.color (0.96f, 0.98f, 0.78f, 0.92f);
-    draw_circle (dl, cx - 1.5f, y - 1.5f, 3.4f);
+    draw_circle (dl, cx - 1.0f, y - 1.0f, 2.5f);
   }
 
   void
   InspectorUi::friendly_icon
-    (render::DrawList& dl, const UiRect& bounds, int icon, float alpha) const
+    (render::DrawList& dl, const UiRect& bounds, int icon, float alpha,
+     float red, float green, float blue) const
   {
     if (!m_friendly_icons || icon < 0 || icon >= 15)
       return;
@@ -630,7 +775,7 @@ namespace game {
     const float u1 = (column + 1) / cells;
     const float v1 = (row + 1) / cells;
     dl.set_texture (m_friendly_icons.get ());
-    dl.color (1.0f, 1.0f, 1.0f, alpha);
+    dl.color (red, green, blue, alpha);
     dl.begin (render::Prim::Quads);
     dl.uv (u0, v0); dl.vertex (bounds.x, bounds.y);
     dl.uv (u1, v0); dl.vertex (bounds.x + bounds.width, bounds.y);

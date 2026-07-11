@@ -70,45 +70,63 @@ namespace game {
     }
 
     UiRect friendly_panel_rect (int height) {
-      return { 18, 18, 500,
-	       static_cast<float> (std::min (580, std::max (480, height - 36))) };
+      return { 18, 18, 426,
+	       static_cast<float> (std::min (862, std::max (620, height - 36))) };
     }
 
-    UiRect friendly_action_rect (int index) {
-      constexpr float gap = 6.0f;
-      constexpr float width = (464.0f - gap * 2.0f) / 3.0f;
-      return { 36 + index * (width + gap), 36, width, 48 };
+    float friendly_vertical_scale (int height) {
+      return std::min (1.0f, friendly_panel_rect (height).height / 862.0f);
     }
 
-    UiRect friendly_preset_rect (int index) {
-      constexpr float gap = 8.0f;
-      constexpr float width = (464.0f - gap) / 2.0f;
+    float friendly_scaled_y (float target, int height) {
+      return 18.0f + (target - 18.0f) * friendly_vertical_scale (height);
+    }
+
+    UiRect friendly_action_rect (int index, int height) {
+      constexpr float gap = 12.0f;
+      constexpr float width = (378.0f - gap * 2.0f) / 3.0f;
+      const float scale = friendly_vertical_scale (height);
+      return { 42 + index * (width + gap), friendly_scaled_y (58, height),
+	       width, 72 * scale };
+    }
+
+    UiRect friendly_preset_rect (int index, int height) {
+      constexpr float gap = 12.0f;
+      constexpr float width = (378.0f - gap) / 2.0f;
       const int row = index / 2;
       const int column = index % 2;
-      return { 36 + column * (width + gap), 100 + row * 62.0f,
-	       width, 54 };
+      const float scale = friendly_vertical_scale (height);
+      return { 42 + column * (width + gap),
+	       friendly_scaled_y (190 + row * 128.0f, height),
+	       width, 116 * scale };
     }
 
-    UiRect friendly_slider_rect (int index) {
-      return { 36, 238 + index * 68.0f, 464, 58 };
+    UiRect friendly_slider_rect (int index, int height) {
+      const float scale = friendly_vertical_scale (height);
+      return { 50, friendly_scaled_y (512 + index * 69.0f, height),
+	       362, 58 * scale };
     }
 
     UiRect friendly_lens_rect (int index, int width) {
-      constexpr float button_width = 136.0f;
-      constexpr float gap = 8.0f;
+      constexpr float button_width = 92.0f;
+      constexpr float gap = 10.0f;
       const float start = std::max
-	(530.0f, width - (button_width * 4.0f + gap * 3.0f + 18.0f));
-      return { start + index * (button_width + gap), 18,
-	       button_width, 50 };
+	(474.0f, width - 434.0f);
+      return { start + index * (button_width + gap), 54,
+	       button_width, 104 };
+    }
+
+    UiRect friendly_lens_surface_rect (int width) {
+      const UiRect first = friendly_lens_rect (0, width);
+      const UiRect last = friendly_lens_rect (3, width);
+      return { first.x - 18.0f, 18.0f,
+	       last.x + last.width - first.x + 36.0f, 158.0f };
     }
 
     bool friendly_ui_contains (float x, float y, int width, int height) {
       if (friendly_panel_rect (height).contains (x, y))
 	return true;
-      for (int i = 0; i < 4; ++i)
-	if (friendly_lens_rect (i, width).contains (x, y))
-	  return true;
-      return false;
+      return friendly_lens_surface_rect (width).contains (x, y);
     }
 
     UiRect expert_back_rect ()
@@ -1962,7 +1980,7 @@ namespace game {
   TerrainLab::handle_friendly_click (float x, float y)
   {
     for (int i = 0; i < 3; ++i) {
-      if (!friendly_action_rect (i).contains (x, y))
+      if (!friendly_action_rect (i, m_ui_height).contains (x, y))
 	continue;
       if (i == 0) {
 	const std::uint32_t seed = m_program.randomness.seed + 1;
@@ -1978,7 +1996,7 @@ namespace game {
       return;
     }
     for (int i = 0; i < 4; ++i) {
-      if (friendly_preset_rect (i).contains (x, y)) {
+      if (friendly_preset_rect (i, m_ui_height).contains (x, y)) {
 	apply_friendly_preset (i);
 	return;
       }
@@ -2256,10 +2274,40 @@ namespace game {
       return;
 
     switch (key) {
-    case Key::One:   select (terrain::GeologicalLayer::Combined); break;
-    case Key::Two:   select (terrain::GeologicalLayer::Continent); break;
-    case Key::Three: select (terrain::GeologicalLayer::Plains); break;
-    case Key::Four:  select (terrain::GeologicalLayer::Mountains); break;
+    case Key::One:
+      if (m_expert_ui)
+	select (terrain::GeologicalLayer::Combined);
+      else {
+	m_droplet_armed = false;
+	set_overlay (OverlayMode::None);
+      }
+      break;
+    case Key::Two:
+      if (m_expert_ui)
+	select (terrain::GeologicalLayer::Continent);
+      else {
+	m_droplet_armed = false;
+	set_overlay (OverlayMode::Slope);
+      }
+      break;
+    case Key::Three:
+      if (m_expert_ui)
+	select (terrain::GeologicalLayer::Plains);
+      else {
+	m_droplet_armed = false;
+	set_overlay (OverlayMode::StandingWater);
+      }
+      break;
+    case Key::Four:
+      if (m_expert_ui)
+	select (terrain::GeologicalLayer::Mountains);
+      else {
+	m_droplet_armed = true;
+	m_droplet_follow = false;
+	set_overlay (OverlayMode::None);
+	m_overlay_status = "DROP — click land to release";
+      }
+      break;
     case Key::Five:  select (terrain::GeologicalLayer::MountainMask); break;
     case Key::Six:   select (terrain::GeologicalLayer::WarpX); break;
     case Key::Seven: select (terrain::GeologicalLayer::WarpY); break;
@@ -2299,9 +2347,11 @@ namespace game {
 	: terrain_point_at_screen (x, y);
     }
     if (m_friendly_drag) {
-      const UiRect bounds = friendly_slider_rect (m_friendly_drag_control);
-      const float rail_x = bounds.x + 9.0f;
-      const float rail_width = bounds.width - 18.0f;
+      const UiRect bounds = friendly_slider_rect
+	(m_friendly_drag_control, m_ui_height);
+      const UiRect rail = friendly_slider_rail_rect (bounds);
+      const float rail_x = rail.x;
+      const float rail_width = rail.width;
       const float normalized = rail_width > 0.0f
 	? (x - rail_x) / rail_width : 0.0f;
       if (set_friendly_control_normalized
@@ -2350,7 +2400,7 @@ namespace game {
       if (down) {
 	if (!m_expert_ui) {
 	  for (int control = 0; control < 4; ++control) {
-	    const UiRect bounds = friendly_slider_rect (control);
+	    const UiRect bounds = friendly_slider_rect (control, m_ui_height);
 	    if (!bounds.contains (x, y))
 	      continue;
 	    const bool has_age = std::any_of
@@ -2380,8 +2430,9 @@ namespace game {
 	      });
 	    m_friendly_drag = true;
 	    m_friendly_drag_control = control;
-	    const float rail_x = bounds.x + 9.0f;
-	    const float rail_width = bounds.width - 18.0f;
+	    const UiRect rail = friendly_slider_rail_rect (bounds);
+	    const float rail_x = rail.x;
+	    const float rail_width = rail.width;
 	    set_friendly_control_normalized
 	      (control, (x - rail_x) / rail_width);
 	    return;
@@ -2505,29 +2556,40 @@ namespace game {
     };
     m_ui.begin (dl);
     const UiRect panel = friendly_panel_rect (height);
+    const float vertical_scale = friendly_vertical_scale (height);
     m_ui.surface (dl, panel);
-    dl.color (0.42f, 0.68f, 0.58f, 0.18f);
-    dl.line (36, 91, 500, 91, 1.0f);
-    dl.line (36, 225, 500, 225, 1.0f);
+    m_ui.friendly_section
+      (dl, { 28, friendly_scaled_y (26, height), 388,
+	     18 * vertical_scale }, "SESSION");
+    m_ui.friendly_section
+      (dl, { 28, friendly_scaled_y (158, height), 388,
+	     18 * vertical_scale }, "WORLD PRESETS");
+    m_ui.friendly_section
+      (dl, { 28, friendly_scaled_y (458, height), 388,
+	     18 * vertical_scale }, "TERRAIN PARAMETERS");
 
     constexpr const char* action_labels[] = {
       "NEW WORLD", "CENTER", "EXPERT"
     };
     for (int i = 0; i < 3; ++i) {
-      const UiRect bounds = friendly_action_rect (i);
-      m_ui.friendly_button
-	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down,
-	 false, i == 0, i);
+      const UiRect bounds = friendly_action_rect (i, height);
+      m_ui.session_button
+	(dl, bounds, action_labels[i], hot (bounds), m_pointer_down, i);
     }
     constexpr const char* preset_titles[] = {
       "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
     };
     for (int i = 0; i < 4; ++i) {
-      const UiRect bounds = friendly_preset_rect (i);
-      m_ui.friendly_button
-	(dl, bounds, preset_titles[i], "", hot (bounds),
-	 m_pointer_down, m_friendly_preset == i, false, i + 3);
+      const UiRect bounds = friendly_preset_rect (i, height);
+      m_ui.preset_card
+	(dl, bounds, preset_titles[i], hot (bounds), m_pointer_down,
+	 m_friendly_preset == i, i + 3);
     }
+
+    const UiRect parameter_surface {
+      38, friendly_scaled_y (490, height), 390, 304 * vertical_scale
+    };
+    m_ui.surface (dl, parameter_surface);
 
     constexpr const char* slider_titles[] = {
       "MOUNTAINS", "WILD RIDGES", "AGE", "RAINFALL"
@@ -2539,7 +2601,7 @@ namespace game {
       "TALL", "TWISTED", "ANCIENT", "SOAKED"
     };
     for (int i = 0; i < 4; ++i) {
-      const UiRect bounds = friendly_slider_rect (i);
+      const UiRect bounds = friendly_slider_rect (i, height);
       m_ui.friendly_slider
 	(dl, bounds, slider_titles[i], slider_low[i], slider_high[i],
 	 friendly_control_normalized (i), hot (bounds),
@@ -2557,19 +2619,18 @@ namespace game {
       OverlayMode::None, OverlayMode::Slope,
       OverlayMode::StandingWater, OverlayMode::Trace
     };
-    const UiRect first_lens = friendly_lens_rect (0, width);
-    const UiRect last_lens = friendly_lens_rect (3, width);
-    const UiRect lens_surface {
-      first_lens.x - 10.0f, 10.0f,
-      last_lens.x + last_lens.width - first_lens.x + 20.0f, 66.0f
-    };
+    const UiRect lens_surface = friendly_lens_surface_rect (width);
     m_ui.surface (dl, lens_surface);
+    m_ui.friendly_section
+      (dl, { lens_surface.x + 10.0f, lens_surface.y + 7.0f,
+	     lens_surface.width - 20.0f, 18.0f }, "TOOLS");
+    constexpr const char* lens_keys[] = { "1", "2", "3", "4" };
     for (int i = 0; i < 4; ++i) {
       const UiRect bounds = friendly_lens_rect (i, width);
-      m_ui.friendly_button
-	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
-	 i == 3 ? m_droplet_armed : m_overlay == lens_modes[i],
-	 i == 3, i + 11);
+      m_ui.tool_button
+	(dl, bounds, lens_titles[i], lens_keys[i], hot (bounds),
+	 m_pointer_down,
+	 i == 3 ? m_droplet_armed : m_overlay == lens_modes[i], i + 11);
     }
     if (m_droplet_armed
 	&& !friendly_ui_contains
