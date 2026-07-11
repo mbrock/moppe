@@ -4,6 +4,7 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/render/draw.hh>
+#include <moppe/render/renderer.hh>
 
 #include <vector>
 
@@ -21,7 +22,7 @@ namespace game {
     // Checks pickups; returns how many were grabbed this tick
     int update (const Vector3D& vehicle_pos, float time, float dt);
 
-    void render (render::DrawList& dl, const FrameEnv& env);
+    void render (render::Renderer& r, const FrameEnv& env);
 
     int collected () const { return m_collected; }
     const Vector3D& last_pos () const { return m_last_pos; }
@@ -35,6 +36,8 @@ namespace game {
     };
 
     std::vector<Star> m_stars;
+    render::MeshPtr m_body;
+    render::MeshPtr m_halo;
     int m_collected;
     Vector3D m_last_pos;
     Vector3D m_period;

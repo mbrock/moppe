@@ -234,8 +234,6 @@ add_library(moppe_game STATIC
   moppe/game/dust.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
-  moppe/game/fish.cc
-  moppe/game/wildlife.cc
   moppe/game/city.cc
   moppe/game/model.cc
   moppe/game/walker.cc
@@ -376,6 +374,9 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe MACOSX_BUNDLE moppe/game/game.cc)
   target_link_libraries(moppe PRIVATE moppe_game moppe_platform_mac)
   set_target_properties(moppe PROPERTIES
+    XCODE_GENERATE_SCHEME TRUE
+    XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
     MACOSX_BUNDLE_INFO_PLIST
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
