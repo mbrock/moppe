@@ -18,7 +18,7 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
   };
 
   MOPPE_CHECK_NEAR
-    (game::visible_river_minimum_area (grid), 6144.0f, 0.0f);
+    (game::visible_river_minimum_area (grid), 98304.0f, 0.0f);
 }
 
 MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
