@@ -147,8 +147,10 @@ namespace game {
     std::size_t m_droplet_overlay_points;
     render::DrawList m_droplet_draw;
     float m_droplet_progress;
+    float m_droplet_settle;
     bool m_droplet_armed;
     bool m_droplet_follow;
+    float m_time;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;

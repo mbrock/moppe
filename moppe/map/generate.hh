@@ -20,6 +20,7 @@ namespace moppe {
 namespace map {
   enum class HydraulicDropletTermination {
     Flat,
+    Settled,
     Boundary,
     WaterCutoff,
     StepLimit
