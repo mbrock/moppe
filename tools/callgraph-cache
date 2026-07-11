@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if ! command -v duckdb >/dev/null 2>&1; then
+  echo "DuckDB is required (brew install duckdb)" >&2
+  exit 1
+fi
+
+if [ -n "${MOPPE_ANALYSIS_CACHE:-}" ]; then
+  cache=$MOPPE_ANALYSIS_CACHE
+else
+  common=$(git -C "$root" rev-parse --git-common-dir)
+  case $common in
+    /*) cache=$common/moppe-analysis-cache/v1 ;;
+    *) cache=$root/$common/moppe-analysis-cache/v1 ;;
+  esac
+fi
+
+catalog=$cache/catalog.duckdb
+if [ ! -f "$catalog" ]; then
+  echo "No analysis cache yet; run make callgraph-diff first." >&2
+  exit 1
+fi
+
+exec duckdb "$catalog" "$@"
