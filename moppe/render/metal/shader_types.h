@@ -41,6 +41,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 
 struct MoppeFrameUniforms {
   MoppeMat4 view_proj;
+  MoppeMat4 light_matrix;    // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;     // xyz; w unused
   MoppeFloat4 sun_dir;        // xyz world-space toward sun
   MoppeFloat4 sun_diffuse;    // rgb
@@ -48,6 +49,7 @@ struct MoppeFrameUniforms {
   MoppeFloat4 ambient;        // rgb
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
   MoppeFloat4 misc;           // x = time
+  MoppeFloat4 shadow;         // x=strength, y=shadow texel
 };
 
 // Per-draw transform for retained meshes (identity for draw lists,
@@ -99,14 +101,19 @@ struct MoppeSkyUniforms {
 
 struct MoppeOceanUniforms {
   MoppeMat4 view_proj;
+  MoppeMat4 light_matrix;    // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
+  MoppeFloat4 sun_diffuse;
+  MoppeFloat4 sun_specular;
+  MoppeFloat4 ambient;
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
   MoppeFloat4 params;         // x=time, y=sea level, z=periodic,
 			      // w=standing-water raster enabled
   MoppeFloat4 shore;          // x=1/step_x, y=1/step_z,
 			      // z=height_scale, w=grid width (0=off)
   MoppeFloat4 world_offset;
+  MoppeFloat4 shadow;         // x=strength, y=shadow texel
 };
 
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,

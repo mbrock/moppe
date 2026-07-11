@@ -876,7 +876,10 @@ namespace game {
       sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
       fp.sun_specular = fp.sun_specular * 0.5f;   // material specular
       const float daylight = daylight_for (SUN_HEIGHT);
-      fp.ambient = Vector3D (0.28f, 0.30f, 0.34f)
+      // Open terrain receives substantial skylight even when a mountain
+      // blocks the sun. Keep the fill cool so cast shadows retain shape and
+      // color instead of collapsing into near-black silhouettes.
+      fp.ambient = Vector3D (0.39f, 0.43f, 0.49f)
         * (0.35f + 0.65f * daylight);
       fp.time = m_total_time;
 

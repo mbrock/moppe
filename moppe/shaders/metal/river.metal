@@ -49,7 +49,8 @@ river_vertex (uint vid [[vertex_id]],
 fragment float4
 river_fragment (RiverVaryings in [[stage_in]],
 		 constant MoppeFrameUniforms& frame
-		   [[buffer(MOPPE_BUF_FRAME)]])
+		   [[buffer(MOPPE_BUF_FRAME)]],
+		 depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]])
 {
   const float time = frame.misc.x;
   const float edge = smoothstep (0.0, 0.08, in.uv.x)
@@ -84,6 +85,9 @@ river_fragment (RiverVaryings in [[stage_in]],
   const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
   const float distance = length (to_frag);
   const float fog = moppe_distance_fog (distance, frame.fog_color.w);
+  const float sun_visibility = moppe_sun_visibility
+    (in.world_pos, n, frame.sun_dir.xyz, fog, frame.light_matrix,
+     frame.shadow.x, frame.shadow.y, shadow_map);
   const float3 fog_color = moppe_warmed_fog
     (frame.fog_color.rgb, to_frag / max (distance, 1e-4),
      frame.sun_dir.xyz);
@@ -108,12 +112,16 @@ river_fragment (RiverVaryings in [[stage_in]],
     * (0.18 + 0.30 * surface) * smoothstep (0.30, 0.75, surface)
     * smoothstep (0.25, 0.9, depth_m) * (1.0 - in.waterfall);
   const float foam = saturate (max (max (churn, fall), bank));
-  color = mix (color, moppe_srgb (float3 (0.87, 0.95, 0.97)), foam);
+  const float3 foam_albedo = moppe_srgb (float3 (0.87, 0.95, 0.97));
+  const float3 foam_light = moppe_hemisphere_light (frame.ambient.rgb, n)
+    + frame.sun_diffuse.rgb * (0.35 + 0.65
+      * max (dot (n, frame.sun_dir.xyz), 0.0)) * sun_visibility;
+  color = mix (color, foam_albedo * foam_light, foam);
 
   const float3 half_vector = normalize (frame.sun_dir.xyz + view);
   const float glint = pow (max (dot (n, half_vector), 0.0), 96.0)
     * (0.35 + 0.65 * fresnel);
-  color += frame.sun_specular.rgb * glint;
+  color += frame.sun_specular.rgb * glint * sun_visibility;
 
   color = mix (color, fog_color, smoothstep (0.0, 0.9, fog));
 
