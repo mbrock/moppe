@@ -283,6 +283,25 @@ Detailed engineering guidance remains in
 
 * Log
 
+** 2026-07-11 Swash at the waterline, grass in hillside shade
+
+Rider feedback pass on the new mesh-shader surfaces.
+
+- The lattice waterline no longer stands still: a value-noise-phased
+  swash term breathes the effective water column across the shallow
+  shelf, the foam surge follows the run-up, and the edge alpha
+  feathers over the last centimeters instead of ending at the discard
+  cliff.
+- Grass blades now inherit their hillside's light: a per-blade ground
+  shade from the terrain normal against the sun keeps swards on
+  sun-averted slopes dark instead of glowing against shaded terrain.
+  A distance floor on blade width stops sub-pixel shimmer.
+
+Agreed next milestone: retire the river ribbons onto the lattice
+water machinery — splat reach surface levels and flow vectors into
+rasters so the wet-tile mesh pipeline renders rivers too, with
+world-space flow-map advection replacing the ribbon uv streaks.
+
 ** 2026-07-11 Mesh shaders arrive: grass patches, lattice water, moisture
 
 The first Metal mesh pipelines (gated on =MTLGPUFamilyMetal3=, with

@@ -13,6 +13,7 @@ struct GrassVaryings {
   float3 normal;
   float3 color;
   float height01;
+  float ground_shade;
   float fog;
 };
 
@@ -68,6 +69,7 @@ struct GrassBlade {
   float half_width;
   float sway;
   float distance;
+  float ground_shade;
   float3 base_color;
   float3 tip_color;
 };
@@ -149,6 +151,11 @@ grass_blade (uint world_cell_x, uint world_cell_z, uint blade,
 
   b.ground_normal = grass_ground_normal
     (grid, terrain_limit - 1.0, normals);
+  // Blades inherit their hillside's light: a slope facing away from
+  // the sun shades its whole sward, so grass stops glowing against
+  // dark terrain.
+  b.ground_shade = 0.30 + 0.70 * saturate
+    (1.3 * dot (b.ground_normal, normalize (frame.sun_dir.xyz)));
   const float angle = tau * grass_random (seed + 4u);
   b.direction = float2 (cos (angle), sin (angle));
   b.side = float2 (-b.direction.y, b.direction.x);
@@ -176,7 +183,10 @@ static GrassVaryings
 grass_blade_vertex (const GrassBlade b, float t, float side_sign,
 		    constant MoppeFrameUniforms& frame,
 		    constant MoppeGrassUniforms& grass) {
-  const float width = b.half_width * (1.0 - 0.86 * t);
+  // A distance floor on width keeps far blades at least a pixel wide
+  // instead of shimmering sub-pixel slivers.
+  const float width = max (b.half_width, 0.0012 * b.distance)
+    * (1.0 - 0.86 * t);
   float3 world = b.root
     + float3 (b.direction.x * b.bend * t * t,
 	      b.height * t,
@@ -199,6 +209,7 @@ grass_blade_vertex (const GrassBlade b, float t, float side_sign,
   out.normal = normal;
   out.color = moppe_srgb (mix (b.base_color, b.tip_color, t));
   out.height01 = t;
+  out.ground_shade = b.ground_shade;
   out.fog = moppe_distance_fog (b.distance, frame.fog_color.w);
   return out;
 }
@@ -238,6 +249,7 @@ grass_vertex (uint vid [[vertex_id]], uint iid [[instance_id]],
     out.normal = float3 (0, 1, 0);
     out.color = float3 (0);
     out.height01 = 0.0;
+    out.ground_shade = 1.0;
     out.fog = 1.0;
     return out;
   }
@@ -385,6 +397,7 @@ grass_mesh (GrassMesh out,
     dead.normal = float3 (0, 1, 0);
     dead.color = float3 (0);
     dead.height01 = 0.0;
+    dead.ground_shade = 1.0;
     dead.fog = 1.0;
     for (uint v = 0; v < 8u; ++v)
       out.set_vertex (v_base + v, dead);
@@ -449,13 +462,14 @@ grass_fragment (GrassVaryings in [[stage_in]],
 
   const float root_occlusion = mix
     (0.46, 1.0, smoothstep (0.0, 0.85, in.height01));
+  const float sun = visibility * in.ground_shade;
   float3 light = moppe_hemisphere_light (frame.ambient.rgb, n)
-    * root_occlusion + frame.sun_diffuse.rgb * lambert * visibility;
-  light += frame.sun_specular.rgb * visibility * 0.07
+    * root_occlusion + frame.sun_diffuse.rgb * lambert * sun;
+  light += frame.sun_specular.rgb * sun * 0.07
     * pow (max (dot (n, h), 0.0), 30.0);
   const float backlight = pow (max (dot (-n, l), 0.0), 1.5)
     * (0.20 + 0.80 * in.height01);
-  light += frame.sun_diffuse.rgb * visibility * backlight * 0.32;
+  light += frame.sun_diffuse.rgb * sun * backlight * 0.32;
   float3 color = in.color * light;
 
   const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
