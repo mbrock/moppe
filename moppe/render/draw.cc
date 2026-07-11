@@ -10,6 +10,8 @@ namespace render {
     : m_top (0),
       m_normal_dirty (true),
       m_normal (0, 0, 1),
+      m_world_normal (0, 0, 1),
+      m_world_normal_dirty (true),
       m_u (0), m_v (0),
       m_lit (true),
       m_fogged (true),
@@ -27,6 +29,8 @@ namespace render {
     m_normal_dirty = true;
     m_color = Color ();
     m_normal = Vector3D (0, 0, 1);
+    m_world_normal = Vector3D (0, 0, 1);
+    m_world_normal_dirty = true;
     m_u = m_v = 0;
     m_lit = true;
     m_fogged = true;
@@ -51,17 +55,17 @@ namespace render {
   void DrawList::pop () {
     assert (m_top > 0);
     --m_top;
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   void DrawList::load_identity () {
     m_stack[m_top] = Mat4 ();
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   void DrawList::translate (const Vector3D& v) {
     m_stack[m_top] = m_stack[m_top] * Mat4::translation (v);
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   void DrawList::translate (float x, float y, float z)
@@ -69,7 +73,7 @@ namespace render {
 
   void DrawList::rotate (radians_t angle, const Vector3D& axis) {
     m_stack[m_top] = m_stack[m_top] * Mat4::rotation (angle, axis);
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   void DrawList::rotate_deg (degrees_t angle,
@@ -79,7 +83,7 @@ namespace render {
 
   void DrawList::scale (const Vector3D& v) {
     m_stack[m_top] = m_stack[m_top] * Mat4::scaling (v);
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   void DrawList::scale (float x, float y, float z)
@@ -87,7 +91,7 @@ namespace render {
 
   void DrawList::mult (const Mat4& m) {
     m_stack[m_top] = m_stack[m_top] * m;
-    m_normal_dirty = true;
+    m_normal_dirty = m_world_normal_dirty = true;
   }
 
   const NormalMat&
@@ -97,6 +101,18 @@ namespace render {
       m_normal_dirty = false;
     }
     return m_normal_mat;
+  }
+
+  const Vector3D&
+  DrawList::world_normal () {
+    // Normals are transformed lazily: recording runs of vertices
+    // under one normal and one matrix (the common case by far) pays
+    // for the inverse-transpose multiply and normalize once.
+    if (m_world_normal_dirty) {
+      m_world_normal = normal_matrix ().apply (m_normal);
+      m_world_normal_dirty = false;
+    }
+    return m_world_normal;
   }
 
   // -- attributes ----------------------------------------------------
@@ -114,7 +130,12 @@ namespace render {
 
   void DrawList::set_texture (const Texture* t) { m_texture = t; }
 
-  void DrawList::normal (const Vector3D& n) { m_normal = n; }
+  void DrawList::normal (const Vector3D& n) {
+    if (n.x == m_normal.x && n.y == m_normal.y && n.z == m_normal.z)
+      return;
+    m_normal = n;
+    m_world_normal_dirty = true;
+  }
 
   void DrawList::uv (float u, float v) { m_u = u; m_v = v; }
 
@@ -126,7 +147,7 @@ namespace render {
   DrawList::make_vertex (float x, float y, float z) {
     const Mat4& m = m_stack[m_top];
     const Vector3D p = m.transform_point (Vector3D (x, y, z));
-    const Vector3D n = normal_matrix ().apply (m_normal);
+    const Vector3D& n = world_normal ();
 
     Vertex v;
     v.px = p.x; v.py = p.y; v.pz = p.z;
@@ -163,12 +184,6 @@ namespace render {
   }
 
   void
-  DrawList::emit_raw (const Vertex& v) {
-    m_vertices.push_back (v);
-    m_runs.back ().count++;
-  }
-
-  void
   DrawList::begin (Prim p) {
     assert (!m_in_begin);
     m_in_begin = true;
@@ -197,43 +212,62 @@ namespace render {
 
     flush_run_state ();
 
+    // Triangulate in bulk: size the output once, append with plain
+    // push_backs (or one range copy), and account for the run at the
+    // end.  This path is per-vertex-hot for the whole immediate-mode
+    // HUD, so no per-vertex bookkeeping.
+    std::vector<Vertex>& out = m_vertices;
+    const size_t start = out.size ();
+
+    size_t need = 0;
+    switch (m_prim) {
+    case Prim::Triangles:     need = n - n % 3; break;
+    case Prim::TriangleStrip:
+    case Prim::TriangleFan:
+    case Prim::Polygon:       need = n >= 3 ? (n - 2) * 3 : 0; break;
+    case Prim::Quads:         need = (n / 4) * 6; break;
+    case Prim::QuadStrip:     need = n >= 4 ? ((n - 2) / 2) * 6 : 0; break;
+    case Prim::Lines:         need = (n / 2) * 6; break;
+    case Prim::LineStrip:     need = n >= 2 ? (n - 1) * 6 : 0; break;
+    }
+    out.reserve (start + need);
+
     switch (m_prim) {
     case Prim::Triangles:
-      for (size_t i = 0; i + 2 < n; i += 3) {
-	emit_raw (s[i]); emit_raw (s[i + 1]); emit_raw (s[i + 2]);
-      }
+      out.insert (out.end (), s.begin (), s.begin () + (n - n % 3));
       break;
 
     case Prim::TriangleStrip:
       for (size_t i = 0; i + 2 < n; ++i) {
 	// Flip odd triangles to keep winding consistent.
 	if (i % 2 == 0) {
-	  emit_raw (s[i]); emit_raw (s[i + 1]); emit_raw (s[i + 2]);
+	  out.push_back (s[i]); out.push_back (s[i + 1]);
 	} else {
-	  emit_raw (s[i + 1]); emit_raw (s[i]); emit_raw (s[i + 2]);
+	  out.push_back (s[i + 1]); out.push_back (s[i]);
 	}
+	out.push_back (s[i + 2]);
       }
       break;
 
     case Prim::TriangleFan:
     case Prim::Polygon:
       for (size_t i = 1; i + 1 < n; ++i) {
-	emit_raw (s[0]); emit_raw (s[i]); emit_raw (s[i + 1]);
+	out.push_back (s[0]); out.push_back (s[i]); out.push_back (s[i + 1]);
       }
       break;
 
     case Prim::Quads:
       for (size_t i = 0; i + 3 < n; i += 4) {
-	emit_raw (s[i]); emit_raw (s[i + 1]); emit_raw (s[i + 2]);
-	emit_raw (s[i]); emit_raw (s[i + 2]); emit_raw (s[i + 3]);
+	out.push_back (s[i]); out.push_back (s[i + 1]); out.push_back (s[i + 2]);
+	out.push_back (s[i]); out.push_back (s[i + 2]); out.push_back (s[i + 3]);
       }
       break;
 
     case Prim::QuadStrip:
       // Quad k is vertices (2k, 2k+1, 2k+3, 2k+2) in GL order.
       for (size_t i = 0; i + 3 < n; i += 2) {
-	emit_raw (s[i]); emit_raw (s[i + 1]); emit_raw (s[i + 3]);
-	emit_raw (s[i]); emit_raw (s[i + 3]); emit_raw (s[i + 2]);
+	out.push_back (s[i]); out.push_back (s[i + 1]); out.push_back (s[i + 3]);
+	out.push_back (s[i]); out.push_back (s[i + 3]); out.push_back (s[i + 2]);
       }
       break;
 
@@ -248,6 +282,7 @@ namespace render {
       break;
     }
 
+    m_runs.back ().count += (uint32_t) (out.size () - start);
     m_prim_scratch.clear ();
   }
 
@@ -266,8 +301,11 @@ namespace render {
     c.px -= ox; c.py -= oy;
     d.px -= ox; d.py -= oy;
 
-    emit_raw (a); emit_raw (b); emit_raw (c);
-    emit_raw (a); emit_raw (c); emit_raw (d);
+    // Callers (end() and line()) account these into the current run.
+    m_vertices.push_back (a); m_vertices.push_back (b);
+    m_vertices.push_back (c);
+    m_vertices.push_back (a); m_vertices.push_back (c);
+    m_vertices.push_back (d);
   }
 
   void
@@ -277,8 +315,10 @@ namespace render {
     // lines obey the same safe-area/layout transforms as vertex-based
     // geometry.
     flush_run_state ();
+    const size_t start = m_vertices.size ();
     emit_line (make_vertex (x0, y0, 0),
 	       make_vertex (x1, y1, 0), w);
+    m_runs.back ().count += (uint32_t) (m_vertices.size () - start);
   }
 
   // -- solid primitives ----------------------------------------------

@@ -77,14 +77,22 @@ namespace game {
       return value - 360.0f * std::floor ((value + 180.0f) / 360.0f);
     }
 
+    // Segment count for a screen-space arc: one segment per ~4px of
+    // arc length reads as a smooth curve at HUD scale.
+    int arc_segs (float radius_px, float sweep_deg) {
+      const float arc = std::fabs (sweep_deg) * (PI / 180.0f) * radius_px;
+      return std::max (8, std::min (48, (int) (arc * 0.25f)));
+    }
+
     void hud_disc (DrawList& dl, const Point& center, float r,
 		   float cr, float cg, float cb, float ca)
     {
+      const int segs = arc_segs (r, 360);
       dl.color (cr, cg, cb, ca);
       dl.begin (Prim::TriangleFan);
       dl.vertex (center.x, center.y);
-      for (int i = 0; i <= 40; ++i) {
-	const float a = 2.0f * PI * i / 40;
+      for (int i = 0; i <= segs; ++i) {
+	const float a = 2.0f * PI * i / segs;
 	dl.vertex (center.x + r * std::cos (a),
 		   center.y + r * std::sin (a));
       }
@@ -99,13 +107,13 @@ namespace game {
     {
       dl.color (cr, cg, cb, ca);
       dl.begin (Prim::TriangleStrip);
-      const int segs = 48;
+      const int segs = arc_segs (dial.radius * r1, a1 - a0);
+      const float ri = dial.radius * r0, ro = dial.radius * r1;
       for (int i = 0; i <= segs; ++i) {
-	const float a = a0 + (a1 - a0) * i / segs;
-	const Point outer = dial.at (r1, a);
-	const Point inner = dial.at (r0, a);
-	dl.vertex (outer.x, outer.y);
-	dl.vertex (inner.x, inner.y);
+	const float a = (a0 + (a1 - a0) * i / segs) * (PI / 180.0f);
+	const float ca_ = std::cos (a), sa = std::sin (a);
+	dl.vertex (dial.center.x + ro * ca_, dial.center.y - ro * sa);
+	dl.vertex (dial.center.x + ri * ca_, dial.center.y - ri * sa);
       }
       dl.end ();
     }

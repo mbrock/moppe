@@ -89,10 +89,10 @@ namespace render {
 
   private:
     void emit_line (const Vertex& a, const Vertex& b, float width);
-    void emit_raw (const Vertex& v);   // no matrix transform (prebaked)
     void flush_run_state ();
     Vertex make_vertex (float x, float y, float z);
     const NormalMat& normal_matrix ();
+    const Vector3D& world_normal ();
 
     static const int MAX_DEPTH = 32;
     Mat4 m_stack[MAX_DEPTH];
@@ -102,6 +102,8 @@ namespace render {
 
     Color m_color;
     Vector3D m_normal;
+    Vector3D m_world_normal;      // m_normal through the normal matrix
+    bool m_world_normal_dirty;
     float m_u, m_v;
     bool m_lit;
     bool m_fogged;
