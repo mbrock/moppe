@@ -692,6 +692,8 @@ namespace moppe {
               if (m_benchmark_epoch == configurations) {
                 m_benchmark_submitted = true;
                 m_benchmark_measured = false;
+                platform::set_window_title (
+                  "Moppe benchmark - finishing GPU samples");
                 return;
               }
               restore (*m_benchmark_checkpoint);
@@ -700,6 +702,7 @@ namespace moppe {
               m_benchmark_mask = gray_code (m_benchmark_epoch);
               apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
               m_benchmark_frame = 0;
+              update_benchmark_title ();
             }
             controls (benchmark_input (m_benchmark_frame));
             m_benchmark_measured =
@@ -1032,6 +1035,7 @@ namespace moppe {
             m_graphics = m_benchmark_baseline;
             apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
             m_benchmark_frame = 0;
+            update_benchmark_title ();
             std::cerr << "moppe: graphics benchmark: "
                       << (1 << hot_graphics_feature_count ())
                       << " configurations, " << m_benchmark->settle_frames
@@ -1765,6 +1769,30 @@ namespace moppe {
       }
 
     private:
+      void update_benchmark_title () const {
+        if (!m_benchmark)
+          return;
+        const int configurations = 1 << hot_graphics_feature_count ();
+        std::ostringstream title;
+        title << "Moppe benchmark " << (m_benchmark_epoch + 1) << '/'
+              << configurations << " - ";
+        bool any = false;
+        int bit = 0;
+        for (const GraphicsFeature* feature : graphics_features)
+          if (feature->hot) {
+            if (m_benchmark_mask & (1u << bit)) {
+              if (any)
+                title << " + ";
+              title << feature->name;
+              any = true;
+            }
+            ++bit;
+          }
+        if (!any)
+          title << "none";
+        platform::set_window_title (title.str ());
+      }
+
       mov::Vehicle& active_vehicle () {
         return m_mode == M_CAR ? m_car : m_vehicle;
       }
