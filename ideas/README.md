@@ -18,6 +18,9 @@ committed roadmap.
 - `geometry-from-fields.md` proposes grass, debris, gravel, living water,
   and weather effects as GPU-evaluated functions over the generator's field
   data — solid wins and speculative ideas, with a suggested order.
+- `terrain-lab-spectacles.md` collects playful hydrology demonstrations which
+  make erosion, watersheds, deep time, and intervention visible in Terrain
+  Lab.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
