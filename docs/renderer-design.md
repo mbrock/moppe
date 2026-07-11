@@ -356,6 +356,12 @@ performance runs record the actual configuration. The legacy
 `MOPPE_RENDERSCALE`, `MOPPE_GRASS`, `MOPPE_NOSHADOW`,
 `MOPPE_RIVER_RIBBONS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
 controls remain supported but are resolved centrally into the same settings.
+Each Boolean feature descriptor also records whether it is hot-switchable:
+changing a hot feature's stored value is sufficient for the next frame, with
+no resource rebuild or renderer-state reset. Grass, ocean, particles, vehicle
+and star effects, bloom, automatic exposure, and lens flare are currently hot.
+Terrain shadows, vegetation, river ribbons, motion blur, and the terrain
+topology overlay are conservatively marked not hot.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

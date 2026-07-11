@@ -36,6 +36,10 @@ namespace moppe::game {
   struct GraphicsFeature {
     std::string_view name;
     bool GraphicsSettings::* member;
+    // Hot features need no work beyond changing their stored value.  The next
+    // frame observes the change without rebuilding resources or resetting
+    // renderer state.
+    bool hot;
 
     bool enabled (const GraphicsSettings& settings) const {
       return settings.*member;
@@ -46,40 +50,43 @@ namespace moppe::game {
   };
 
   inline constexpr GraphicsFeature terrain_shadows_feature {
-    "terrain-shadows", &GraphicsSettings::terrain_shadows
+    "terrain-shadows", &GraphicsSettings::terrain_shadows, false
   };
   inline constexpr GraphicsFeature vegetation_feature {
-    "vegetation", &GraphicsSettings::vegetation
+    "vegetation", &GraphicsSettings::vegetation, false
   };
   inline constexpr GraphicsFeature grass_feature { "grass",
-                                                   &GraphicsSettings::grass };
+                                                   &GraphicsSettings::grass,
+                                                   true };
   inline constexpr GraphicsFeature ocean_feature { "ocean",
-                                                   &GraphicsSettings::ocean };
+                                                   &GraphicsSettings::ocean,
+                                                   true };
   inline constexpr GraphicsFeature river_ribbons_feature {
-    "river-ribbons", &GraphicsSettings::river_ribbons
+    "river-ribbons", &GraphicsSettings::river_ribbons, false
   };
   inline constexpr GraphicsFeature particles_feature {
-    "particles", &GraphicsSettings::particles
+    "particles", &GraphicsSettings::particles, true
   };
   inline constexpr GraphicsFeature vehicle_effects_feature {
-    "vehicle-effects", &GraphicsSettings::vehicle_effects
+    "vehicle-effects", &GraphicsSettings::vehicle_effects, true
   };
   inline constexpr GraphicsFeature star_effects_feature {
-    "star-effects", &GraphicsSettings::star_effects
+    "star-effects", &GraphicsSettings::star_effects, true
   };
   inline constexpr GraphicsFeature motion_blur_feature {
-    "motion-blur", &GraphicsSettings::motion_blur
+    "motion-blur", &GraphicsSettings::motion_blur, false
   };
   inline constexpr GraphicsFeature bloom_feature { "bloom",
-                                                   &GraphicsSettings::bloom };
+                                                   &GraphicsSettings::bloom,
+                                                   true };
   inline constexpr GraphicsFeature auto_exposure_feature {
-    "auto-exposure", &GraphicsSettings::auto_exposure
+    "auto-exposure", &GraphicsSettings::auto_exposure, true
   };
   inline constexpr GraphicsFeature lens_flare_feature {
-    "lens-flare", &GraphicsSettings::lens_flare
+    "lens-flare", &GraphicsSettings::lens_flare, true
   };
   inline constexpr GraphicsFeature terrain_topology_feature {
-    "terrain-topology", &GraphicsSettings::terrain_topology
+    "terrain-topology", &GraphicsSettings::terrain_topology, false
   };
 
   inline constexpr std::array<const GraphicsFeature*, 13> graphics_features {
