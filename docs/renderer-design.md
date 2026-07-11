@@ -327,8 +327,12 @@ post effects, bloom, exposure probe, and present/HUD encoders. Encoder stages
 can overlap on tile-based GPUs, so those spans diagnose expensive work but do
 not necessarily add up to the command-buffer duration. Devices supporting
 draw-boundary timestamps additionally split the scene into terrain, sky,
-water, grass, and other scene geometry. To create a trace for Xcode's Metal
-debugger, run
+water, grass, and other scene geometry. `MOPPE_PROFILE_CPU=1` reports the
+effective callback rate and CPU time in the game tick and render call. It also
+splits renderer time into render-target maintenance, in-flight command-buffer
+waiting, drawable acquisition, and Metal encoding/submission, making a missed
+frame deadline distinguishable from compositor or drawable back-pressure.
+To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set
 `MOPPE_METAL_CAPTURE_FRAMES` to another count. Both capture and the timing

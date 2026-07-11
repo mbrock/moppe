@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -55,6 +56,12 @@ namespace moppe {
       const int PROBE_W = 32; // auto-exposure luminance probe
       const int PROBE_H = 16;
       const int MAX_TIMESTAMP_SAMPLES = 64;
+
+      double cpu_time () {
+        using Clock = std::chrono::steady_clock;
+        return std::chrono::duration<double> (Clock::now ().time_since_epoch ())
+          .count ();
+      }
 
       float scene_render_scale (int width, int height) {
 #if TARGET_OS_IPHONE
@@ -428,6 +435,15 @@ namespace moppe {
       std::string m_screenshot_path;
       bool m_profile_gpu = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
+      bool m_profile_cpu = false;
+      double m_cpu_frame_start = 0;
+      double m_cpu_encode_start = 0;
+      double m_cpu_interval_start = 0;
+      double m_cpu_targets_total = 0;
+      double m_cpu_inflight_total = 0;
+      double m_cpu_drawable_total = 0;
+      double m_cpu_encode_total = 0;
+      int m_cpu_frames = 0;
 #if !TARGET_OS_IPHONE
       bool m_capture_active = false;
       int m_capture_frames = 0;
@@ -444,6 +460,7 @@ namespace moppe {
       m_queue = [m_device newCommandQueue];
 
       m_profile_gpu = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
+      m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
 
@@ -1417,16 +1434,27 @@ namespace moppe {
     // -- frame ---------------------------------------------------------
 
     bool MetalRenderer::begin_frame (const FrameParams& params) {
+      const double frame_start = cpu_time ();
       ensure_targets ();
+      const double targets_done = cpu_time ();
       if (!m_msaa_color)
         return false;
 
       dispatch_semaphore_wait (m_inflight, DISPATCH_TIME_FOREVER);
+      const double inflight_done = cpu_time ();
 
       m_drawable = m_view.currentDrawable;
+      const double drawable_done = cpu_time ();
       if (!m_drawable) {
         dispatch_semaphore_signal (m_inflight);
         return false;
+      }
+      if (m_profile_cpu) {
+        m_cpu_frame_start = frame_start;
+        m_cpu_encode_start = drawable_done;
+        m_cpu_targets_total += targets_done - frame_start;
+        m_cpu_inflight_total += inflight_done - targets_done;
+        m_cpu_drawable_total += drawable_done - inflight_done;
       }
 
       m_slot = (m_slot + 1) % FRAMES_IN_FLIGHT;
@@ -2539,6 +2567,28 @@ namespace moppe {
         dispatch_semaphore_signal (sem);
       }];
       [m_cmd commit];
+      if (m_profile_cpu && m_cpu_frame_start > 0) {
+        const double now = cpu_time ();
+        if (m_cpu_interval_start == 0)
+          m_cpu_interval_start = m_cpu_frame_start;
+        m_cpu_encode_total += now - m_cpu_encode_start;
+        ++m_cpu_frames;
+        const double elapsed = now - m_cpu_interval_start;
+        if (elapsed >= 1.0) {
+          const double scale = 1000.0 / m_cpu_frames;
+          std::cerr << "  renderer CPU: targets=" << m_cpu_targets_total * scale
+                    << " ms, inflight-wait=" << m_cpu_inflight_total * scale
+                    << " ms, drawable-wait=" << m_cpu_drawable_total * scale
+                    << " ms, encode+submit=" << m_cpu_encode_total * scale
+                    << " ms" << std::endl;
+          m_cpu_interval_start = now;
+          m_cpu_targets_total = 0;
+          m_cpu_inflight_total = 0;
+          m_cpu_drawable_total = 0;
+          m_cpu_encode_total = 0;
+          m_cpu_frames = 0;
+        }
+      }
 
 #if !TARGET_OS_IPHONE
       if (m_capture_active && m_profile_this_frame &&

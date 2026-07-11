@@ -288,11 +288,23 @@ static void log_runtime_parameters (MoppeView* view) {
 
 @implementation MoppeDelegate {
   double m_last_time;
+  double m_profile_start;
+  double m_tick_total;
+  double m_render_total;
+  double m_frame_max;
+  int m_profile_frames;
+  bool m_profile_cpu;
 }
 
 - (instancetype)init {
   self = [super init];
   m_last_time = 0;
+  m_profile_start = 0;
+  m_tick_total = 0;
+  m_render_total = 0;
+  m_frame_max = 0;
+  m_profile_frames = 0;
+  m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
   return self;
 }
 
@@ -302,9 +314,34 @@ static void log_runtime_parameters (MoppeView* view) {
   m_last_time = t;
   if (dt > 0.05f)
     dt = 0.05f; // anti-tunneling clamp, as in the GL build
+  const double tick_start = moppe::platform::now ();
   if (dt > 0)
     self.game->tick (dt);
+  const double render_start = moppe::platform::now ();
   self.game->render (*self.renderer);
+  const double frame_end = moppe::platform::now ();
+  if (m_profile_cpu) {
+    if (m_profile_start == 0)
+      m_profile_start = t;
+    m_tick_total += render_start - tick_start;
+    m_render_total += frame_end - render_start;
+    m_frame_max = std::max (m_frame_max, frame_end - tick_start);
+    ++m_profile_frames;
+    const double elapsed = frame_end - m_profile_start;
+    if (elapsed >= 1.0) {
+      const double scale = 1000.0 / m_profile_frames;
+      std::cerr << "frame CPU: " << m_profile_frames / elapsed
+                << " Hz (preferred=" << view.preferredFramesPerSecond
+                << "), tick=" << m_tick_total * scale
+                << " ms, render=" << m_render_total * scale
+                << " ms, max=" << m_frame_max * 1000.0 << " ms" << std::endl;
+      m_profile_start = frame_end;
+      m_tick_total = 0;
+      m_render_total = 0;
+      m_frame_max = 0;
+      m_profile_frames = 0;
+    }
+  }
 }
 
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
