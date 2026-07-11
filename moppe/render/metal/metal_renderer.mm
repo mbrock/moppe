@@ -243,6 +243,7 @@ namespace render {
     void draw_list (const DrawList& list) override;
     void apply_underwater (float time) override;
     void apply_motion_blur (float strength) override;
+    void apply_scene_blur () override;
     void draw_hud (const DrawList& list) override;
     void request_screenshot (const std::string& path) override;
     void end_frame () override;
@@ -290,6 +291,7 @@ namespace render {
     id<MTLRenderPipelineState> m_uber_add = nil;
     id<MTLRenderPipelineState> m_hud = nil;
     id<MTLRenderPipelineState> m_present = nil, m_ghost = nil;
+    id<MTLRenderPipelineState> m_copy = nil;
     id<MTLRenderPipelineState> m_underwater = nil;
     id<MTLRenderPipelineState> m_bloom_bright = nil;
     id<MTLRenderPipelineState> m_bloom_blur = nil;
@@ -619,6 +621,8 @@ namespace render {
 			       false);
     m_ghost = make_pipeline (@"quad_vertex", @"quad_fragment",
 			     scene, MTLPixelFormatInvalid, 1, true);
+    m_copy = make_pipeline (@"quad_vertex", @"quad_fragment",
+			    scene, MTLPixelFormatInvalid, 1, false);
     m_underwater = make_pipeline (@"quad_vertex",
 				  @"underwater_fragment",
 				  scene, MTLPixelFormatInvalid, 1,
@@ -2147,6 +2151,54 @@ namespace render {
     id<MTLBlitCommandEncoder> blit = [m_cmd blitCommandEncoder];
     [blit copyFromTexture: m_current toTexture: m_prev_frame];
     [blit endEncoding];
+  }
+
+  void
+  MetalRenderer::apply_scene_blur () {
+    if (!m_copy || !m_bloom_blur || !m_bloom_a || !m_bloom_b)
+      return;
+    end_scene_encoder ();
+
+    const auto pass = [this]
+      (NSString* label, id<MTLRenderPipelineState> pipeline,
+       id<MTLTexture> src, id<MTLTexture> dst,
+       const MoppeQuadUniforms& q) {
+      MTLRenderPassDescriptor* rp =
+	[MTLRenderPassDescriptor renderPassDescriptor];
+      rp.colorAttachments[0].texture = dst;
+      rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+      attach_gpu_pass (rp, GpuPass::Post);
+      id<MTLRenderCommandEncoder> enc =
+	[m_cmd renderCommandEncoderWithDescriptor:rp];
+      enc.label = label;
+      begin_gpu_pass (enc, GpuPass::Post);
+      [enc setRenderPipelineState:pipeline];
+      [enc setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
+      [enc setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
+      [enc setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
+      [enc drawPrimitives:MTLPrimitiveTypeTriangle
+	      vertexStart:0 vertexCount:3];
+      [enc endEncoding];
+    };
+
+    MoppeQuadUniforms q;
+    std::memset (&q, 0, sizeof (q));
+    q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+    q.params.x = 1;
+    pass (@"Loading background downsample", m_copy,
+	  m_current, m_bloom_a, q);
+    q.params.z = 2.0f / (float) m_bloom_a.width;
+    pass (@"Loading background horizontal blur", m_bloom_blur,
+	  m_bloom_a, m_bloom_b, q);
+    q.params.z = 0;
+    q.params.w = 2.0f / (float) m_bloom_a.height;
+    pass (@"Loading background vertical blur", m_bloom_blur,
+	  m_bloom_b, m_bloom_a, q);
+    q.params.w = 0;
+    id<MTLTexture> dst = m_current == m_scene_a ? m_scene_b : m_scene_a;
+    pass (@"Loading background upsample", m_copy, m_bloom_a, dst, q);
+    m_current = dst;
   }
 
   // -- hud + present ---------------------------------------------------

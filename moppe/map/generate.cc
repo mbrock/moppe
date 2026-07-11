@@ -555,7 +555,8 @@ namespace map {
     (std::mt19937& randomness, int droplets, int batch_size, int max_steps,
      float minimum_water,
      terrain::SedimentDisposition sediment_at_termination,
-     terrain::CarvingRule carving_rule)
+     terrain::CarvingRule carving_rule,
+     const std::function<void (int, int)>& progress)
   {
     // Droplet erosion after Beyer (2015): each raindrop rolls
     // downhill, picking up sediment while it accelerates and
@@ -768,6 +769,8 @@ namespace map {
 	    finish (drop, sample (drop.px, drop.py),
 		    report.stopped_at_step_limit);
 	commit_changes ();
+	if (progress)
+	  progress (first + count, droplets);
       }
       synchronize_periodic_edges ();
       return report;
@@ -918,6 +921,9 @@ namespace map {
 	  }
 	if (!terminated)
 	  finish (report.stopped_at_step_limit);
+	if (progress
+	    && ((d + 1) % batch_size == 0 || d + 1 == droplets))
+	  progress (d + 1, droplets);
       }
     return report;
   }
