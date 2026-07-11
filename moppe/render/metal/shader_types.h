@@ -36,6 +36,8 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
 #define MOPPE_TEX_NORMALS  1   /* vertex stage */
 #define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
+#define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
+#define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1
 
 struct MoppeFrameUniforms {
   MoppeMat4 view_proj;
@@ -100,7 +102,8 @@ struct MoppeOceanUniforms {
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
   MoppeFloat4 fog_color;      // rgb; w = fog_scale
-  MoppeFloat4 params;         // x=time, y=sea level (world y)
+  MoppeFloat4 params;         // x=time, y=sea level, z=periodic,
+			      // w=standing-water raster enabled
   MoppeFloat4 shore;          // x=1/step_x, y=1/step_z,
 			      // z=height_scale, w=grid width (0=off)
   MoppeFloat4 world_offset;

@@ -14,29 +14,76 @@ struct OceanVaryings {
   float fog;
 };
 
+// Bilinear grid height under a point, in world meters. R32F textures must be
+// read at integer coordinates, so filtering is explicit. This is shared by
+// terrain and standing-water lookups.
+static float
+ocean_grid_height (float2 world_xz,
+		   constant MoppeOceanUniforms& u,
+		   texture2d<float, access::read> grid)
+{
+  const float sample_edge = u.shore.w - 2.0;
+  const float period = u.shore.w - 1.0;
+  float gx = world_xz.x * u.shore.x;
+  float gz = world_xz.y * u.shore.y;
+  if (u.params.z > 0.5) {
+    gx -= floor (gx / period) * period;
+    gz -= floor (gz / period) * period;
+  } else {
+    gx = clamp (gx, 0.0, sample_edge);
+    gz = clamp (gz, 0.0, sample_edge);
+  }
+  const uint2 i = uint2 ((uint) gx, (uint) gz);
+  const float fx = gx - (float) i.x;
+  const float fz = gz - (float) i.y;
+  const float h00 = grid.read (i).r;
+  const float h10 = grid.read (i + uint2 (1, 0)).r;
+  const float h01 = grid.read (i + uint2 (0, 1)).r;
+  const float h11 = grid.read (i + uint2 (1, 1)).r;
+  return mix (mix (h00, h10, fx), mix (h01, h11, fx), fz)
+    * u.shore.z;
+}
+
 vertex OceanVaryings
 ocean_vertex (uint vid [[vertex_id]],
 	      const device packed_float3* verts [[buffer(MOPPE_BUF_VERTICES)]],
-	      constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]])
+	      constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
+	      texture2d<float, access::read> heights
+		[[texture(MOPPE_TEX_HEIGHTS)]],
+	      texture2d<float, access::read> water_levels
+		[[texture(MOPPE_TEX_WATER_LEVELS)]])
 {
   float3 p = float3 (verts[vid]);
   p += u.world_offset.xyz;
   const float time = u.params.x;
+
+  float wave_scale = 1.0;
+  if (u.params.w > 0.5) {
+    const float ground = ocean_grid_height (p.xz, u, heights);
+    p.y = ocean_grid_height (p.xz, u, water_levels);
+    // Waves vanish at lake and ocean shores instead of climbing dry ground.
+    wave_scale = smoothstep (0.15, 6.0, p.y - ground);
+  }
 
   // Three overlapping swells with different directions and speeds.
   const float a1 = p.x * 0.020 + time * 1.1;
   const float a2 = p.z * 0.023 - time * 0.9;
   const float a3 = (p.x + p.z) * 0.011 + time * 0.6;
 
-  p.y += 1.2 * sin (a1) + 1.0 * sin (a2) + 1.8 * sin (a3);
+  p.y += wave_scale
+    * (1.2 * sin (a1) + 1.0 * sin (a2) + 1.8 * sin (a3));
 
   // Gerstner-style horizontal displacement sharpens the crests.
-  p.x -= 0.8 * 1.2 * cos (a1) + 0.5 * 1.8 * cos (a3);
-  p.z -= 0.8 * 1.0 * cos (a2) + 0.5 * 1.8 * cos (a3);
+  p.x -= wave_scale
+    * (0.8 * 1.2 * cos (a1) + 0.5 * 1.8 * cos (a3));
+  p.z -= wave_scale
+    * (0.8 * 1.0 * cos (a2) + 0.5 * 1.8 * cos (a3));
 
   // Analytic surface normal from the wave derivatives.
-  const float dx = 1.2 * 0.020 * cos (a1) + 1.8 * 0.011 * cos (a3);
-  const float dz = 1.0 * 0.023 * cos (a2) + 1.8 * 0.011 * cos (a3);
+  const float dx = wave_scale
+    * (1.2 * 0.020 * cos (a1) + 1.8 * 0.011 * cos (a3));
+  const float dz = wave_scale
+    * (1.0 * 0.023 * cos (a2) + 1.8 * 0.011 * cos (a3));
 
   OceanVaryings out;
   out.position = u.view_proj * float4 (p, 1.0);
@@ -54,41 +101,24 @@ ocean_vertex (uint vid [[vertex_id]],
 
 // Bilinear ground height under a point, in world meters.  R32F
 // must be read() at integer coords, so filter by hand.
-static float
-ocean_ground_height (float2 world_xz,
-		     constant MoppeOceanUniforms& u,
-		     texture2d<float, access::read> heights)
-{
-  const float sample_edge = u.shore.w - 2.0;
-  const float period = u.shore.w - 1.0;
-  float gx = world_xz.x * u.shore.x;
-  float gz = world_xz.y * u.shore.y;
-  if (u.params.z > 0.5) {
-    gx -= floor (gx / period) * period;
-    gz -= floor (gz / period) * period;
-  } else {
-    gx = clamp (gx, 0.0, sample_edge);
-    gz = clamp (gz, 0.0, sample_edge);
-  }
-  const uint2 i = uint2 ((uint) gx, (uint) gz);
-  const float fx = gx - (float) i.x;
-  const float fz = gz - (float) i.y;
-  const float h00 = heights.read (i).r;
-  const float h10 = heights.read (i + uint2 (1, 0)).r;
-  const float h01 = heights.read (i + uint2 (0, 1)).r;
-  const float h11 = heights.read (i + uint2 (1, 1)).r;
-  return mix (mix (h00, h10, fx), mix (h01, h11, fx), fz)
-    * u.shore.z;
-}
-
 fragment float4
 ocean_fragment (OceanVaryings in [[stage_in]],
 		constant MoppeOceanUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
-		texture2d<float, access::read> heights [[texture(MOPPE_TEX_HEIGHTS)]])
+		texture2d<float, access::read> heights
+		  [[texture(MOPPE_TEX_HEIGHTS)]],
+		texture2d<float, access::read> water_levels
+		  [[texture(MOPPE_TEX_WATER_LEVELS_FRAGMENT)]])
 {
   const float time = u.params.x;
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
+
+  const float ground = ocean_grid_height (in.world_pos.xz, u, heights);
+  const float surface = u.params.w > 0.5
+    ? ocean_grid_height (in.world_pos.xz, u, water_levels) : u.params.y;
+  const float depth_m = max (surface - ground, 0.0);
+  if (u.params.w > 0.5 && depth_m <= 0.04)
+    discard_fragment ();
 
   float3 n = normalize (in.normal);
 
@@ -134,10 +164,6 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   // Shoreline: the seabed shows through glassy turquoise shallows,
   // and a band of animated foam hugs the waterline.
   if (u.shore.w > 0.5) {
-    const float ground = ocean_ground_height (in.world_pos.xz, u,
-					      heights);
-    const float depth_m = max (u.params.y - ground, 0.0);
-
     // Clarity by water column: tropical turquoise over the sand.
     const float clarity = exp (-depth_m * 0.14);
     water = mix (water, moppe_srgb (float3 (0.13, 0.52, 0.50)),

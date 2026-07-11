@@ -149,7 +149,11 @@ propagates the lowest possible spill elevation over the unique torus. An
 all-land torus uses its global minimum as an explicit endorheic fallback.
 Every spill-receiver chain is acyclic and reaches one of those roots. This is
 currently an observational reading: dry drainage and hydraulic erosion do not
-yet route across its water surface.
+yet route across its water surface. In random-world gameplay, however, the
+same `FloodField::water_level` raster drives the animated water grid: vertices
+sample the local lake elevation, dry fragments are discarded, and wave
+amplitude fades toward each shore. This changes presentation and spawn-site
+selection without yet changing vehicle or sediment physics.
 
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:

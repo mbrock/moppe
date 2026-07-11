@@ -156,7 +156,11 @@ namespace render {
     // Renders the one-time terrain shadow map from the fixed sun.
     // light_view_proj maps world to light NDC (conventional Z).
     virtual void render_terrain_shadow (const Mat4& light_view_proj) = 0;
-    virtual void set_ocean (const OceanSetup& setup) = 0;
+    // Optional normalized water levels turn the ocean grid into the complete
+    // standing-water surface: sea plus inland lakes. The raster follows the
+    // terrain grid and an empty span retains the single sea plane.
+    virtual void set_ocean (const OceanSetup& setup,
+			    std::span<const float> water_levels) = 0;
 
     // -- frame -------------------------------------------------------
     virtual bool begin_frame (const FrameParams& params) = 0;
