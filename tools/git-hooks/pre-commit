@@ -2,4 +2,7 @@
 set -eu
 
 root=$(git rev-parse --show-toplevel)
-exec "$root/tools/format" --check
+"$root/tools/format" --check
+
+echo "Complexity hotspots (informational; scores do not reject commits):"
+make -C "$root" --no-print-directory complexity

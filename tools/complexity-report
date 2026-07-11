@@ -21,7 +21,10 @@ COGNITIVE_RE = re.compile(
 
 
 def run(command, **kwargs):
-  print("+ " + " ".join(map(str, command)), file=sys.stderr)
+  display = command
+  if len(command) > 12:
+    display = [*command[:5], "...", f"({len(command)} arguments)"]
+  print("+ " + " ".join(map(str, display)), file=sys.stderr)
   return subprocess.run(command, check=True, **kwargs)
 
 
