@@ -307,7 +307,13 @@ for the pass.
 On macOS the Metal performance HUD is enabled by default. It shows frame rate,
 GPU frame time, and current resource memory; set `MOPPE_METAL_HUD=0` for a
 clean window. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
-time summaries to stderr. To create a trace for Xcode's Metal debugger, run
+time summaries to stderr, including timestamp-counter spans for the scene,
+post effects, bloom, exposure probe, and present/HUD encoders. Encoder stages
+can overlap on tile-based GPUs, so those spans diagnose expensive work but do
+not necessarily add up to the command-buffer duration. Devices supporting
+draw-boundary timestamps additionally split the scene into terrain, sky,
+water, grass, and other scene geometry. To create a trace for Xcode's Metal
+debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set
 `MOPPE_METAL_CAPTURE_FRAMES` to another count. Both capture and the timing

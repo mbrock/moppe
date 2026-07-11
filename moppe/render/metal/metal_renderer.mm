@@ -24,6 +24,7 @@
 #include <moppe/render/metal/shader_types.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdint>
@@ -54,6 +55,16 @@ namespace render {
     };
     const int PROBE_W = 32;       // auto-exposure luminance probe
     const int PROBE_H = 16;
+    const int MAX_TIMESTAMP_SAMPLES = 64;
+
+    enum class GpuPass {
+      Terrain, Sky, Water, Grass, Scene, Post, Bloom, Exposure, Present, Count
+    };
+    constexpr int GPU_PASS_COUNT = static_cast<int> (GpuPass::Count);
+    const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = {
+      "terrain", "sky", "water", "grass", "scene", "post",
+      "bloom", "exposure", "present"
+    };
 
     struct FrameTiming {
       std::mutex mutex;
@@ -61,6 +72,7 @@ namespace render {
       double gpu_total_ms = 0;
       double gpu_min_ms = std::numeric_limits<double>::max ();
       double gpu_max_ms = 0;
+      std::array<double, GPU_PASS_COUNT> pass_total_ms { };
       int frames = 0;
     };
 
@@ -249,6 +261,9 @@ namespace render {
     void set_run_state (id<MTLRenderCommandEncoder> enc,
 			const DrawState& s, const Texture* tex,
 			bool hud);
+    void begin_gpu_pass (id<MTLRenderCommandEncoder> enc, GpuPass pass);
+    void finish_gpu_pass (id<MTLRenderCommandEncoder> enc);
+    void attach_gpu_pass (MTLRenderPassDescriptor* desc, GpuPass pass);
 
     MTKView* m_view;
     id<MTLDevice> m_device;
@@ -348,6 +363,13 @@ namespace render {
     FrameParams m_fp;
     MoppeFrameUniforms m_fu;
     bool m_profile_this_frame = false;
+    id<MTLCounterSampleBuffer> m_timestamp_samples[FRAMES_IN_FLIGHT] { };
+    id<MTLBuffer> m_timestamp_results[FRAMES_IN_FLIGHT] { };
+    std::vector<GpuPass> m_sample_passes;
+    int m_timestamp_count = 0;
+    GpuPass m_current_gpu_pass = GpuPass::Count;
+    bool m_draw_boundary_timestamps = false;
+    bool m_stage_boundary_timestamps = false;
 
     int m_width_pts = 0, m_height_pts = 0;
     float m_scale = 1.0f;
@@ -374,6 +396,57 @@ namespace render {
     m_profile_gpu = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
     if (m_profile_gpu)
       m_frame_timing = std::make_shared<FrameTiming> ();
+
+    if (m_profile_gpu) {
+      if (@available (macOS 11.0, iOS 14.0, *)) {
+	id<MTLCounterSet> timestamps = nil;
+	for (id<MTLCounterSet> set in m_device.counterSets)
+	  if ([set.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+	    timestamps = set;
+	    break;
+	  }
+	m_draw_boundary_timestamps = timestamps && [m_device
+	  supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary];
+	m_stage_boundary_timestamps = timestamps && [m_device
+	  supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
+	if (timestamps
+	    && (m_draw_boundary_timestamps || m_stage_boundary_timestamps)) {
+	  if (!m_draw_boundary_timestamps && m_stage_boundary_timestamps)
+	    std::cerr << "moppe: GPU pass timing uses encoder-stage timestamps; "
+		      << "spans may overlap" << std::endl;
+	  for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+	    MTLCounterSampleBufferDescriptor* desc =
+	      [[MTLCounterSampleBufferDescriptor alloc] init];
+	    desc.counterSet = timestamps;
+	    desc.storageMode = MTLStorageModePrivate;
+	    desc.sampleCount = MAX_TIMESTAMP_SAMPLES;
+	    desc.label = @"Moppe frame pass timestamps";
+	    NSError* error = nil;
+	    m_timestamp_samples[i] = [m_device
+	      newCounterSampleBufferWithDescriptor:desc error:&error];
+	    m_timestamp_results[i] = [m_device
+	      newBufferWithLength:MAX_TIMESTAMP_SAMPLES
+		* sizeof (MTLCounterResultTimestamp)
+		       options:MTLResourceStorageModeShared];
+	    if (!m_timestamp_samples[i]) {
+	      std::cerr << "moppe: GPU pass timestamps unavailable: "
+			<< error.localizedDescription.UTF8String << std::endl;
+	      break;
+	    }
+	  }
+	} else {
+	  std::cerr << "moppe: per-pass GPU timestamps unsupported"
+		    << " (timestamp set=" << (timestamps ? "yes" : "no")
+		    << ", draw-boundary="
+		    << ([m_device supportsCounterSampling:
+			 MTLCounterSamplingPointAtDrawBoundary] ? "yes" : "no")
+		    << ", stage-boundary="
+		    << ([m_device supportsCounterSampling:
+			 MTLCounterSamplingPointAtStageBoundary] ? "yes" : "no")
+		    << ")" << std::endl;
+	}
+      }
+    }
 
 #if !TARGET_OS_IPHONE
     if (const char* requested = ::getenv ("MOPPE_METAL_CAPTURE")) {
@@ -1246,6 +1319,9 @@ namespace render {
     m_slot = (m_slot + 1) % FRAMES_IN_FLIGHT;
     m_stream_used = 0;
     m_profile_this_frame = params.profile;
+    m_timestamp_count = 0;
+    m_sample_passes.clear ();
+    m_current_gpu_pass = GpuPass::Count;
 
 #if !TARGET_OS_IPHONE
     if (params.profile && !m_capture_path.empty ()
@@ -1333,10 +1409,55 @@ namespace render {
     rp.stencilAttachment.loadAction = MTLLoadActionClear;
     rp.stencilAttachment.storeAction = MTLStoreActionDontCare;
     rp.stencilAttachment.clearStencil = 0;
+    attach_gpu_pass (rp, GpuPass::Scene);
 
     m_enc = [m_cmd renderCommandEncoderWithDescriptor: rp];
+    m_enc.label = @"World scene";
     [m_enc setFrontFacingWinding: MTLWindingCounterClockwise];
     return m_enc;
+  }
+
+  void
+  MetalRenderer::begin_gpu_pass (id<MTLRenderCommandEncoder> enc,
+				 GpuPass pass) {
+    if (!m_draw_boundary_timestamps || !m_profile_this_frame
+	|| !m_timestamp_samples[m_slot]
+	|| pass == m_current_gpu_pass
+	|| m_timestamp_count >= MAX_TIMESTAMP_SAMPLES - 1)
+      return;
+    [enc sampleCountersInBuffer:m_timestamp_samples[m_slot]
+		  atSampleIndex:m_timestamp_count withBarrier:YES];
+    ++m_timestamp_count;
+    m_sample_passes.push_back (pass);
+    m_current_gpu_pass = pass;
+  }
+
+  void
+  MetalRenderer::finish_gpu_pass (id<MTLRenderCommandEncoder> enc) {
+    if (!m_draw_boundary_timestamps || !m_profile_this_frame
+	|| !m_timestamp_samples[m_slot]
+	|| m_timestamp_count == 0
+	|| m_timestamp_count >= MAX_TIMESTAMP_SAMPLES)
+      return;
+    [enc sampleCountersInBuffer:m_timestamp_samples[m_slot]
+		  atSampleIndex:m_timestamp_count withBarrier:YES];
+    ++m_timestamp_count;
+    m_current_gpu_pass = GpuPass::Count;
+  }
+
+  void
+  MetalRenderer::attach_gpu_pass (MTLRenderPassDescriptor* desc,
+				  GpuPass pass) {
+    if (!m_stage_boundary_timestamps || !m_profile_this_frame
+	|| !m_timestamp_samples[m_slot]
+	|| m_timestamp_count + 2 > MAX_TIMESTAMP_SAMPLES)
+      return;
+    MTLRenderPassSampleBufferAttachmentDescriptor* attachment =
+      desc.sampleBufferAttachments[0];
+    attachment.sampleBuffer = m_timestamp_samples[m_slot];
+    attachment.startOfVertexSampleIndex = m_timestamp_count++;
+    attachment.endOfFragmentSampleIndex = m_timestamp_count++;
+    m_sample_passes.push_back (pass);
   }
 
   void
@@ -1359,6 +1480,7 @@ namespace render {
     if (!m_terrain || !m_have_terrain || count == 0)
       return;
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Terrain);
 
     [enc setRenderPipelineState: m_terrain];
     [enc setDepthStencilState: m_ds[1][1]];
@@ -1514,6 +1636,7 @@ namespace render {
     }
 
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Sky);
     [enc setRenderPipelineState: m_sky];
     // Depth test on, write off: terrain occludes the cloud shader.
     [enc setDepthStencilState: m_ds[1][0]];
@@ -1549,6 +1672,7 @@ namespace render {
       return;
 
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Water);
     [enc setRenderPipelineState: m_ocean];
     [enc setDepthStencilState: m_ds[1][1]];
     [enc setCullMode: MTLCullModeNone];   // visible from below too
@@ -1684,6 +1808,7 @@ namespace render {
     u.mesh.y = (float) patches_z;
 
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Grass);
     [enc setDepthStencilState: m_ds[1][1]];
     [enc setCullMode: MTLCullModeNone];
     [enc setFragmentBytes: &m_fu length: sizeof (m_fu)
@@ -1814,6 +1939,7 @@ namespace render {
     if (list.empty ())
       return;
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Scene);
 
     MoppeDrawUniforms du;
     std::memset (&du, 0, sizeof (du));
@@ -1835,6 +1961,7 @@ namespace render {
     if (!m.vertices)
       return;
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Scene);
 
     MoppeDrawUniforms du;
     std::memset (&du, 0, sizeof (du));
@@ -1869,6 +1996,7 @@ namespace render {
     if (!m_river || !m.vertices)
       return;
     id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    begin_gpu_pass (enc, GpuPass::Water);
     [enc setRenderPipelineState: m_river];
     [enc setDepthStencilState: m_ds_river];
     [enc setStencilReferenceValue: 1];
@@ -1913,9 +2041,12 @@ namespace render {
     rp.colorAttachments[0].texture = dst;
     rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    attach_gpu_pass (rp, GpuPass::Post);
 
     id<MTLRenderCommandEncoder> enc =
       [m_cmd renderCommandEncoderWithDescriptor: rp];
+    enc.label = @"Underwater post-process";
+    begin_gpu_pass (enc, GpuPass::Post);
     MoppeQuadUniforms q;
     std::memset (&q, 0, sizeof (q));
     q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
@@ -1958,9 +2089,12 @@ namespace render {
     rp.colorAttachments[0].texture = m_current;
     rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    attach_gpu_pass (rp, GpuPass::Post);
 
     id<MTLRenderCommandEncoder> enc =
       [m_cmd renderCommandEncoderWithDescriptor: rp];
+    enc.label = @"Motion blur";
+    begin_gpu_pass (enc, GpuPass::Post);
     [enc setRenderPipelineState: m_ghost];
     for (int i = 1; i <= 3; ++i) {
       MoppeQuadUniforms q;
@@ -1992,7 +2126,8 @@ namespace render {
     end_scene_encoder ();
 
     // One fullscreen pass into `dst` reading `src`.
-    auto quad_pass = [&] (id<MTLRenderPipelineState> pso,
+    auto quad_pass = [&] (GpuPass pass, NSString* label,
+			  id<MTLRenderPipelineState> pso,
 			  id<MTLTexture> src, id<MTLTexture> dst,
 			  const MoppeQuadUniforms& q) {
       MTLRenderPassDescriptor* p =
@@ -2000,8 +2135,11 @@ namespace render {
       p.colorAttachments[0].texture = dst;
       p.colorAttachments[0].loadAction = MTLLoadActionDontCare;
       p.colorAttachments[0].storeAction = MTLStoreActionStore;
+      attach_gpu_pass (p, pass);
       id<MTLRenderCommandEncoder> e =
 	[m_cmd renderCommandEncoderWithDescriptor: p];
+      e.label = label;
+      begin_gpu_pass (e, pass);
       [e setRenderPipelineState: pso];
       [e setVertexBytes: &q length: sizeof (q)
 		atIndex: MOPPE_BUF_FRAME];
@@ -2023,14 +2161,17 @@ namespace render {
       q.tint.x = q.tint.y = q.tint.z = 1;
       q.tint.w = m_exposure;
       q.params.x = 1;
-      quad_pass (m_bloom_bright, m_current, m_bloom_a, q);
+      quad_pass (GpuPass::Bloom, @"Bloom bright pass",
+		 m_bloom_bright, m_current, m_bloom_a, q);
 
       q.params.z = 1.0f / (float) m_bloom_a.width;
       q.params.w = 0;
-      quad_pass (m_bloom_blur, m_bloom_a, m_bloom_b, q);
+      quad_pass (GpuPass::Bloom, @"Bloom horizontal blur",
+		 m_bloom_blur, m_bloom_a, m_bloom_b, q);
       q.params.z = 0;
       q.params.w = 1.0f / (float) m_bloom_a.height;
-      quad_pass (m_bloom_blur, m_bloom_b, m_bloom_a, q);
+      quad_pass (GpuPass::Bloom, @"Bloom vertical blur",
+		 m_bloom_blur, m_bloom_b, m_bloom_a, q);
     }
 
     // Auto-exposure probe: a 32x16 average of this frame, blitted
@@ -2041,7 +2182,8 @@ namespace render {
       std::memset (&q, 0, sizeof (q));
       q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
       q.params.x = 1;
-      quad_pass (m_probe, m_current, m_probe_tex, q);
+      quad_pass (GpuPass::Exposure, @"Exposure probe",
+		 m_probe, m_current, m_probe_tex, q);
 
       id<MTLBlitCommandEncoder> blit = [m_cmd blitCommandEncoder];
       [blit copyFromTexture: m_probe_tex
@@ -2061,9 +2203,12 @@ namespace render {
     rp.colorAttachments[0].texture = m_drawable.texture;
     rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    attach_gpu_pass (rp, GpuPass::Present);
 
     id<MTLRenderCommandEncoder> enc =
       [m_cmd renderCommandEncoderWithDescriptor: rp];
+    enc.label = @"Present and HUD";
+    begin_gpu_pass (enc, GpuPass::Present);
 
     // Scene quad with the tonemap, grade, bloom, and lens flare.
     if (m_present) {
@@ -2132,6 +2277,7 @@ namespace render {
       play_list (enc, list.vertices (), list.runs (), true);
     }
 
+    finish_gpu_pass (enc);
     [enc endEncoding];
   }
 
@@ -2180,6 +2326,19 @@ namespace render {
        )
       [m_cmd presentDrawable: m_drawable];
 
+    id<MTLBuffer> timestamp_results = nil;
+    const int timestamp_count = m_timestamp_count;
+    const std::vector<GpuPass> sample_passes = m_sample_passes;
+    if (timestamp_count > 1 && m_timestamp_samples[m_slot]) {
+      timestamp_results = m_timestamp_results[m_slot];
+      id<MTLBlitCommandEncoder> resolve = [m_cmd blitCommandEncoder];
+      resolve.label = @"Resolve frame timestamps";
+      [resolve resolveCounters:m_timestamp_samples[m_slot]
+		       inRange:NSMakeRange (0, timestamp_count)
+	     destinationBuffer:timestamp_results destinationOffset:0];
+      [resolve endEncoding];
+    }
+
     dispatch_semaphore_t sem = m_inflight;
     std::shared_ptr<FrameTiming> timing = m_profile_this_frame
       ? m_frame_timing : nullptr;
@@ -2187,12 +2346,38 @@ namespace render {
       if (timing && command.GPUEndTime >= command.GPUStartTime) {
 	const double gpu_ms = 1000.0
 	  * (command.GPUEndTime - command.GPUStartTime);
+	std::array<double, GPU_PASS_COUNT> pass_ms { };
+	if (timestamp_results && timestamp_count > 1) {
+	  const auto* samples = static_cast<const MTLCounterResultTimestamp*>
+	    (timestamp_results.contents);
+	  if (sample_passes.size () + 1 == (size_t) timestamp_count) {
+	    for (int i = 0; i + 1 < timestamp_count; ++i) {
+	      const uint64_t a = samples[i].timestamp;
+	      const uint64_t b = samples[i + 1].timestamp;
+	      if (a != MTLCounterErrorValue && b != MTLCounterErrorValue
+		  && b >= a)
+		pass_ms[static_cast<int> (sample_passes[i])]
+		  += (b - a) / 1000000.0;
+	    }
+	  } else if (sample_passes.size () * 2 == (size_t) timestamp_count) {
+	    for (size_t i = 0; i < sample_passes.size (); ++i) {
+	      const uint64_t a = samples[i * 2].timestamp;
+	      const uint64_t b = samples[i * 2 + 1].timestamp;
+	      if (a != MTLCounterErrorValue && b != MTLCounterErrorValue
+		  && b >= a)
+		pass_ms[static_cast<int> (sample_passes[i])]
+		  += (b - a) / 1000000.0;
+	    }
+	  }
+	}
 	std::lock_guard<std::mutex> lock (timing->mutex);
 	if (timing->interval_start == 0)
 	  timing->interval_start = command.GPUEndTime;
 	timing->gpu_total_ms += gpu_ms;
 	timing->gpu_min_ms = std::min (timing->gpu_min_ms, gpu_ms);
 	timing->gpu_max_ms = std::max (timing->gpu_max_ms, gpu_ms);
+	for (int i = 0; i < GPU_PASS_COUNT; ++i)
+	  timing->pass_total_ms[i] += pass_ms[i];
 	++timing->frames;
 	const double elapsed = command.GPUEndTime - timing->interval_start;
 	if (elapsed >= 1.0) {
@@ -2200,10 +2385,18 @@ namespace render {
 		    << " ms avg, " << timing->gpu_min_ms << " ms min, "
 		    << timing->gpu_max_ms << " ms max (" << timing->frames
 		    << " frames)" << std::endl;
+	  std::cerr << "  encoder spans (may overlap):";
+	  for (int i = 0; i < GPU_PASS_COUNT; ++i)
+	    if (timing->pass_total_ms[i] > 0)
+	      std::cerr << " " << GPU_PASS_NAMES[i] << "="
+			<< timing->pass_total_ms[i] / timing->frames
+			<< " ms";
+	  std::cerr << std::endl;
 	  timing->interval_start = command.GPUEndTime;
 	  timing->gpu_total_ms = 0;
 	  timing->gpu_min_ms = std::numeric_limits<double>::max ();
 	  timing->gpu_max_ms = 0;
+	  timing->pass_total_ms.fill (0);
 	  timing->frames = 0;
 	}
       }
