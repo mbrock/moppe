@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -338,14 +339,15 @@ namespace game {
     }
 
     void generate_world () {
-      // Exceptions must not escape the GCD block (std::terminate);
-      // surface them on the loading screen instead.
+      // Exceptions must not escape the GCD block (std::terminate).
+      // A world that failed to generate is a broken build or broken
+      // inputs, not a state to idle in: log and exit with failure.
       try {
 	generate_world_inner ();
       } catch (const std::exception& e) {
 	std::cerr << "world generation failed: " << e.what ()
 		  << std::endl;
-	m_gen_stage = 8;
+	std::_Exit (-1);
       }
     }
 
@@ -443,8 +445,6 @@ namespace game {
     }
 
     void finish_setup () {
-      if (m_gen_stage == 8)
-	return;   // generation failed; loading screen shows why
       render::Renderer& r = *m_renderer;
 
       m_terrain.setup (r, m_map, m_world);
@@ -1101,10 +1101,9 @@ namespace game {
 	"Computing normals, planting things...",
 	"Uploading to the GPU...",
 	"Loading cached terrain...",
-	"World generation failed -- see the log.",
       };
       const int stage = m_gen_stage;
-      const char* text = stages[stage < 0 ? 0 : stage > 8 ? 8 : stage];
+      const char* text = stages[stage < 0 ? 0 : stage > 7 ? 7 : stage];
       std::string erosion_text;
       if (stage == 4) {
 	erosion_text = "Eroding (" + std::to_string
