@@ -25,16 +25,19 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <vector>
 
 namespace moppe {
@@ -103,6 +106,22 @@ namespace moppe {
         double gpu_max_ms = 0;
         std::array<double, GPU_PASS_COUNT> pass_total_ms {};
         int frames = 0;
+      };
+
+      struct BenchmarkSample {
+        uint32_t mask;
+        uint32_t epoch;
+        uint32_t frame;
+        double gpu_ms;
+      };
+
+      struct BenchmarkOutput {
+        std::mutex mutex;
+        std::vector<BenchmarkSample> samples;
+        std::atomic<int> completed { 0 };
+        int expected = 0;
+        std::string path;
+        std::vector<std::string> feature_names;
       };
 
 #if !TARGET_OS_IPHONE
@@ -280,6 +299,9 @@ namespace moppe {
       void draw_hud (const DrawList& list) override;
       void request_screenshot (const std::string& path) override;
       void end_frame () override;
+      bool benchmark_complete () const override;
+      void reset_temporal_state () override;
+      void write_benchmark_results () override;
 
       int width_pts () const override {
         return m_width_pts;
@@ -444,6 +466,7 @@ namespace moppe {
       bool m_profile_gpu = false;
       bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
+      std::shared_ptr<BenchmarkOutput> m_benchmark;
       bool m_profile_cpu = false;
       double m_cpu_frame_start = 0;
       double m_cpu_encode_start = 0;
@@ -474,6 +497,18 @@ namespace moppe {
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
+      if (const char* path = ::getenv ("MOPPE_BENCHMARK_OUTPUT")) {
+        m_benchmark = std::make_shared<BenchmarkOutput> ();
+        m_benchmark->path = path;
+        if (const char* expected = ::getenv ("MOPPE_BENCHMARK_EXPECTED"))
+          m_benchmark->expected = std::max (1, ::atoi (expected));
+        if (const char* names = ::getenv ("MOPPE_BENCHMARK_FEATURES")) {
+          std::istringstream input (names);
+          std::string name;
+          while (std::getline (input, name, ','))
+            m_benchmark->feature_names.push_back (name);
+        }
+      }
 
       if (m_profile_gpu_passes) {
         if (@available (macOS 11.0, iOS 14.0, *)) {
@@ -2647,7 +2682,24 @@ namespace moppe {
       dispatch_semaphore_t sem = m_inflight;
       std::shared_ptr<FrameTiming> timing =
         m_profile_this_frame ? m_frame_timing : nullptr;
+      std::shared_ptr<BenchmarkOutput> benchmark =
+        m_fp.benchmark_measured ? m_benchmark : nullptr;
+      const uint32_t benchmark_mask = m_fp.benchmark_mask;
+      const uint32_t benchmark_epoch = m_fp.benchmark_epoch;
+      const uint32_t benchmark_frame = m_fp.benchmark_frame;
       [m_cmd addCompletedHandler:^(id<MTLCommandBuffer> command) {
+        if (benchmark && command.GPUEndTime >= command.GPUStartTime) {
+          const BenchmarkSample sample { benchmark_mask,
+                                         benchmark_epoch,
+                                         benchmark_frame,
+                                         1000.0 * (command.GPUEndTime -
+                                                   command.GPUStartTime) };
+          {
+            std::lock_guard<std::mutex> lock (benchmark->mutex);
+            benchmark->samples.push_back (sample);
+          }
+          ++benchmark->completed;
+        }
         if (timing && command.GPUEndTime >= command.GPUStartTime) {
           const double gpu_ms =
             1000.0 * (command.GPUEndTime - command.GPUStartTime);
@@ -2764,6 +2816,55 @@ namespace moppe {
       m_cmd = nil;
       m_drawable = nil;
       m_current = nil;
+    }
+
+    bool MetalRenderer::benchmark_complete () const {
+      return m_benchmark && m_benchmark->expected > 0 &&
+             m_benchmark->completed.load () >= m_benchmark->expected;
+    }
+
+    void MetalRenderer::reset_temporal_state () {
+      // Epoch changes restore CPU state while previous frames may still be in
+      // flight. A queue fence keeps their exposure blits from racing this
+      // reset; transition time is outside the measured frame block.
+      id<MTLCommandBuffer> fence = [m_queue commandBuffer];
+      [fence commit];
+      [fence waitUntilCompleted];
+      m_prev_valid = false;
+      m_exposure = 1.0f;
+      for (id<MTLBuffer> buffer : m_probe_buf)
+        if (buffer)
+          std::memset (buffer.contents, 0, buffer.length);
+    }
+
+    void MetalRenderer::write_benchmark_results () {
+      if (!m_benchmark || m_benchmark->path.empty ())
+        return;
+      std::vector<BenchmarkSample> samples;
+      {
+        std::lock_guard<std::mutex> lock (m_benchmark->mutex);
+        samples = m_benchmark->samples;
+      }
+      std::sort (
+        samples.begin (), samples.end (), [] (const auto& a, const auto& b) {
+          return a.epoch == b.epoch ? a.frame < b.frame : a.epoch < b.epoch;
+        });
+      std::ofstream output (m_benchmark->path);
+      output << "epoch,mask,logical_frame,gpu_ms";
+      for (const std::string& name : m_benchmark->feature_names)
+        output << ',' << name;
+      output << '\n';
+      for (const BenchmarkSample& sample : samples) {
+        output << sample.epoch << ',' << sample.mask << ',' << sample.frame
+               << ',' << sample.gpu_ms;
+        for (std::size_t bit = 0; bit < m_benchmark->feature_names.size ();
+             ++bit)
+          output << ',' << ((sample.mask & (1u << bit)) ? 1 : 0);
+        output << '\n';
+      }
+      std::cerr << "moppe: wrote " << samples.size ()
+                << " graphics benchmark samples to " << m_benchmark->path
+                << std::endl;
     }
 
     // ------------------------------------------------------------------

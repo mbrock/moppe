@@ -47,6 +47,10 @@ namespace moppe {
       // Development profiling and GPU capture should ignore loading/UI-only
       // frames and measure the complete world render.
       bool profile = false;
+      uint32_t benchmark_mask = 0;
+      uint32_t benchmark_epoch = 0;
+      uint32_t benchmark_frame = 0;
+      bool benchmark_measured = false;
     };
 
     // World-change-time terrain setup.  Heights/normals are the same
@@ -239,6 +243,11 @@ namespace moppe {
         (void)path;
       }
       virtual void end_frame () = 0;
+      virtual bool benchmark_complete () const {
+        return false;
+      }
+      virtual void reset_temporal_state () {}
+      virtual void write_benchmark_results () {}
 
       // -- geometry of the drawable -------------------------------------
       virtual int width_pts () const = 0;
