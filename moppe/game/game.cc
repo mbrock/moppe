@@ -499,8 +499,9 @@ namespace moppe {
         }
 
         if (!m_terrain_lab_preview) {
-          m_vegetation.generate (
-            m_map, m_world, Vegetation::population_for (m_world));
+          if (!m_world.low_graphics)
+            m_vegetation.generate (
+              m_map, m_world, Vegetation::population_for (m_world));
           m_stars.generate (m_map,
                             m_world,
                             m_world.pico_mode   ? 250
@@ -535,8 +536,10 @@ namespace moppe {
                                    *m_drainage,
                                    *m_rivers);
         if (!m_terrain_lab_preview) {
-          m_terrain.render_shadow (r, m_map, sun_direction_for (SUN_HEIGHT));
-          m_vegetation.load (r);
+          if (!m_world.low_graphics)
+            m_terrain.render_shadow (r, m_map, sun_direction_for (SUN_HEIGHT));
+          if (!m_world.low_graphics)
+            m_vegetation.load (r);
         }
         if (m_world.city_mode)
           m_city.load (r);
@@ -1032,6 +1035,10 @@ namespace moppe {
           fp.exposure_bias = 0.88f;
         }
         fp.time = m_total_time;
+        fp.scene_scale = m_world.low_graphics ? 0.5f : 1.0f;
+        fp.bloom = !m_world.low_graphics;
+        fp.auto_exposure = !m_world.low_graphics;
+        fp.lens_flare = !m_world.low_graphics;
         fp.profile = true;
 
         // Lens-flare occlusion: march toward the sun through the
@@ -1124,7 +1131,8 @@ namespace moppe {
           m_world_dl.clear ();
           if (m_world.city_mode)
             m_city.render (r, m_world_dl, env);
-          m_vegetation.render (r, env);
+          if (!m_world.low_graphics)
+            m_vegetation.render (r, env);
 
           // Soft blob shadows under the movers.
           m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
@@ -1150,11 +1158,13 @@ namespace moppe {
           // Additive glow after the solid list, so it blends over
           // everything already drawn: exhaust and jump-jet flames, then
           // the star pickups' halos.
-          if (!(helmet && m_mode == M_BIKE))
+          if (!m_world.low_graphics && !(helmet && m_mode == M_BIKE))
             render_vehicle_flames (r, m_vehicle, m_total_time);
-          if (m_car_exists && !(helmet && m_mode == M_CAR))
+          if (!m_world.low_graphics && m_car_exists &&
+              !(helmet && m_mode == M_CAR))
             render_vehicle_flames (r, m_car, m_total_time);
-          m_stars.render (r, env);
+          if (!m_world.low_graphics)
+            m_stars.render (r, env);
         }
 
         // Translucent water late so the seabed and fish show
@@ -1167,8 +1177,11 @@ namespace moppe {
         // The lab keeps the game's painted water while the map is the
         // game's own; a rebuilt map invalidates the water sheets, so
         // they disappear until the lab's own analysis draws ribbons.
-        if (!terrain_lab ||
-            (!m_terrain_lab.torus_view () && m_terrain_lab.map_pristine ())) {
+        const bool draw_ocean =
+          !m_world.low_graphics &&
+          (!terrain_lab ||
+           (!m_terrain_lab.torus_view () && m_terrain_lab.map_pristine ()));
+        if (draw_ocean) {
           render::OceanParams ocean;
           ocean.time = m_total_time;
           ocean.fog_color = m_fog;
@@ -1185,7 +1198,7 @@ namespace moppe {
         if (terrain_lab)
           m_terrain_lab.render_droplet (r, cam);
 
-        if (!terrain_lab) {
+        if (!terrain_lab && !m_world.low_graphics) {
           m_dust_dl.clear ();
           m_dust.render (m_dust_dl, env);
           r.draw_list (m_dust_dl);
@@ -1200,7 +1213,7 @@ namespace moppe {
                               : active_vehicle ().velocity ().length () * 3.6f;
           float k = (kmh - 90.0f) / 160.0f;
           clamp (k, 0.0f, 1.0f);
-          if (k > 0.01f)
+          if (!m_world.low_graphics && k > 0.01f)
             r.apply_motion_blur (k);
         }
 
@@ -1931,6 +1944,20 @@ int main (int argc, char** argv) {
       config.fullscreen = true;
     } else if (arg == "--windowed") {
       config.fullscreen = false;
+    } else if (arg == "--graphics-quality") {
+      if (i + 1 >= argc) {
+        std::cerr << "--graphics-quality requires low or high\n";
+        return -1;
+      }
+      const std::string quality = argv[++i];
+      if (quality == "low")
+        world.low_graphics = true;
+      else if (quality == "high")
+        world.low_graphics = false;
+      else {
+        std::cerr << "unknown graphics quality: " << quality << '\n';
+        return -1;
+      }
     } else if (arg == "--fast") {
       generation_profile = terrain::TerrainGenerationProfile::Fast;
     } else if (arg == "--terrain-quality") {
@@ -1997,6 +2024,8 @@ int main (int argc, char** argv) {
   }
   if (terrain_lab_preview)
     config.fullscreen = false;
+  std::cerr << "moppe: graphics quality: "
+            << (world.low_graphics ? "low" : "high") << std::endl;
   if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
       !world.city_mode && !world.pico_mode && !terrain_lab_preview)
     world.resolution = 1025;

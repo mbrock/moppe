@@ -63,6 +63,7 @@ namespace moppe {
       params.tex_scale = 0.5f * one_meter / m_scale.x;
       // Debug: MOPPE_NOSHADOW=1 disables the cast-shadow lookup.
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
+                                   world.low_graphics ||
                                    ::getenv ("MOPPE_NOSHADOW")
                                  ? 0.0f
                                  : 0.85f;

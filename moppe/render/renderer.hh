@@ -39,6 +39,10 @@ namespace moppe {
       // game raymarches the heightmap and folds in cloud cover.
       // Drives the present pass's lens flare.
       float sun_visibility = 0.0f;
+      float scene_scale = 1.0f;
+      bool bloom = true;
+      bool auto_exposure = true;
+      bool lens_flare = true;
       // Development profiling and GPU capture should ignore loading/UI-only
       // frames and measure the complete world render.
       bool profile = false;

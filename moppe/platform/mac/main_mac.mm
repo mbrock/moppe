@@ -355,6 +355,8 @@ static void log_runtime_parameters (MoppeView* view) {
 }
 
 - (void)drawInMTKView:(MTKView*)view {
+  if (m_display_link)
+    return;
   [self drawFrame:view];
 }
 

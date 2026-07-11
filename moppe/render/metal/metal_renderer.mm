@@ -63,12 +63,12 @@ namespace moppe {
           .count ();
       }
 
-      float scene_render_scale (float backing_scale) {
+      float scene_render_scale (float backing_scale, float requested_scale) {
 #if TARGET_OS_IPHONE
         (void)backing_scale;
-        return 1.0f;
+        return requested_scale;
 #else
-        float scale = 1.0f / std::max (1.0f, backing_scale);
+        float scale = requested_scale / std::max (1.0f, backing_scale);
         if (const char* requested = std::getenv ("MOPPE_RENDERSCALE"))
           scale = static_cast<float> (std::atof (requested));
         return std::clamp (scale, 0.25f, 1.0f);
@@ -289,7 +289,7 @@ namespace moppe {
 
     private:
       void build_pipelines ();
-      void ensure_targets ();
+      void ensure_targets (float requested_scale);
       id<MTLTexture> make_target (
         MTLPixelFormat fmt, int w, int h, int samples, bool memoryless);
       void upload_texture (id<MTLTexture> tex,
@@ -430,7 +430,6 @@ namespace moppe {
       GpuPass m_current_gpu_pass = GpuPass::Count;
       bool m_draw_boundary_timestamps = false;
       bool m_stage_boundary_timestamps = false;
-      bool m_logged_initial_targets = false;
 
       int m_width_pts = 0, m_height_pts = 0;
       float m_scale = 1.0f;
@@ -1368,7 +1367,7 @@ namespace moppe {
       return [m_device newTextureWithDescriptor:td];
     }
 
-    void MetalRenderer::ensure_targets () {
+    void MetalRenderer::ensure_targets (float requested_scale) {
       const int drawable_w = (int)m_view.drawableSize.width;
       const int drawable_h = (int)m_view.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
@@ -1376,7 +1375,7 @@ namespace moppe {
       const CGSize points = m_view.bounds.size;
       const float backing_scale =
         points.width > 0 ? drawable_w / (float)points.width : 1.0f;
-      const float scale = scene_render_scale (backing_scale);
+      const float scale = scene_render_scale (backing_scale, requested_scale);
       const int w = std::max (1, (int)std::round (drawable_w * scale));
       const int h = std::max (1, (int)std::round (drawable_h * scale));
       if (w == m_target_w && h == m_target_h && m_msaa_color)
@@ -1395,13 +1394,10 @@ namespace moppe {
       const int bh = h / 4 > 0 ? h / 4 : 1;
       m_bloom_a = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
       m_bloom_b = make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
-      if (!m_logged_initial_targets) {
-        std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
-                  << drawable_h << ", scene=" << w << 'x' << h
-                  << ", render-scale=" << scale << ", msaa=" << MSAA_SAMPLES
-                  << 'x' << std::endl;
-        m_logged_initial_targets = true;
-      }
+      std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
+                << drawable_h << ", scene=" << w << 'x' << h
+                << ", render-scale=" << scale << ", msaa=" << MSAA_SAMPLES
+                << 'x' << std::endl;
       if (!m_probe_tex) {
         m_probe_tex =
           make_target (MTLPixelFormatRGBA32Float, PROBE_W, PROBE_H, 1, false);
@@ -1443,7 +1439,7 @@ namespace moppe {
 
     bool MetalRenderer::begin_frame (const FrameParams& params) {
       const double frame_start = cpu_time ();
-      ensure_targets ();
+      ensure_targets (params.scene_scale);
       const double targets_done = cpu_time ();
       if (!m_msaa_color)
         return false;
@@ -2317,7 +2313,8 @@ namespace moppe {
       // Bloom: bright-pass into quarter res, then a separable blur
       // (a -> b horizontal, b -> a vertical).  The bright pass sees
       // the exposed scene so the glow tracks the eye's adaptation.
-      const bool bloom_ok = m_bloom_bright && m_bloom_blur && m_bloom_a;
+      const bool bloom_ok =
+        m_fp.bloom && m_bloom_bright && m_bloom_blur && m_bloom_a;
       if (bloom_ok) {
         MoppeQuadUniforms q;
         std::memset (&q, 0, sizeof (q));
@@ -2352,7 +2349,7 @@ namespace moppe {
       // Auto-exposure probe: a 32x16 average of this frame, blitted
       // to a CPU-visible buffer and read FRAMES_IN_FLIGHT frames
       // later in update_exposure().
-      if (m_probe && m_probe_tex && m_probe_buf[m_slot]) {
+      if (m_fp.auto_exposure && m_probe && m_probe_tex && m_probe_buf[m_slot]) {
         MoppeQuadUniforms q;
         std::memset (&q, 0, sizeof (q));
         q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
@@ -2404,7 +2401,7 @@ namespace moppe {
 
         // Project the sun onto the screen for the flare; the game
         // supplies the occlusion term, we add the edge fade.
-        if (m_fp.sun_visibility > 0.001f) {
+        if (m_fp.lens_flare && m_fp.sun_visibility > 0.001f) {
           const Mat4 vp = m_fp.proj * m_fp.view;
           const Vector3D sp = m_fp.camera_pos + m_fp.sun_dir * 4000.0f;
           const float* m = vp.m;
