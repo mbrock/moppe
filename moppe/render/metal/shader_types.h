@@ -39,6 +39,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
 #define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
 #define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1
+#define MOPPE_TEX_WATER_FLOW_FRAGMENT 2
 
 struct MoppeFrameUniforms {
   MoppeMat4 view_proj;
@@ -119,6 +120,7 @@ struct MoppeOceanUniforms {
   MoppeFloat4 tiles;          // xy=origin tile indices, z=tiles per side,
 			      // w=fine radius (+: coarse pass discards
 			      // inside; -: lattice pass discards outside)
+  MoppeFloat4 current;        // x=flow raster enabled
 };
 
 struct MoppeGrassUniforms {

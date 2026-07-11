@@ -190,6 +190,7 @@ namespace render {
     void render_terrain_shadow (const Mat4& light_view_proj) override;
     void set_ocean (const OceanSetup& setup,
 		    std::span<const float> water_levels) override;
+    void set_water_flow (std::span<const float> flow) override;
     void set_terrain_moisture (std::span<const float> moisture) override;
 
     // frame
@@ -315,6 +316,8 @@ namespace render {
     float m_ocean_level = 0;
     id<MTLTexture> m_water_levels = nil;
     bool m_have_water_levels = false;
+    id<MTLTexture> m_water_flow = nil;
+    bool m_have_water_flow = false;
     id<MTLTexture> m_moisture = nil;
     bool m_have_moisture = false;
 
@@ -1056,6 +1059,34 @@ namespace render {
   }
 
   void
+  MetalRenderer::set_water_flow (std::span<const float> flow) {
+    // Interleaved (x, z) meters per second per terrain sample; half
+    // precision carries river currents with headroom to spare.
+    const std::size_t expected = 2 * static_cast<std::size_t>
+      (m_terrain_params.width) * m_terrain_params.height;
+    m_have_water_flow = flow.size () == expected;
+    if (!m_have_water_flow)
+      return;
+    const int width = m_terrain_params.width;
+    const int height = m_terrain_params.height;
+    if (!m_water_flow
+	|| m_water_flow.width != static_cast<NSUInteger> (width)
+	|| m_water_flow.height != static_cast<NSUInteger> (height)) {
+      MTLTextureDescriptor* td = [MTLTextureDescriptor
+	texture2DDescriptorWithPixelFormat: MTLPixelFormatRG16Float
+				     width: width height: height
+				 mipmapped: NO];
+      td.storageMode = MTLStorageModePrivate;
+      td.usage = MTLTextureUsageShaderRead;
+      m_water_flow = [m_device newTextureWithDescriptor: td];
+    }
+    std::vector<__fp16> halves (flow.size ());
+    for (std::size_t i = 0; i < flow.size (); ++i)
+      halves[i] = static_cast<__fp16> (flow[i]);
+    upload_texture (m_water_flow, halves.data (), width, height, 4, false);
+  }
+
+  void
   MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
     const std::size_t expected = static_cast<std::size_t>
       (m_terrain_params.width) * m_terrain_params.height;
@@ -1502,6 +1533,9 @@ namespace render {
     [enc setVertexTexture: water atIndex: MOPPE_TEX_WATER_LEVELS];
     [enc setFragmentTexture: water
 		    atIndex: MOPPE_TEX_WATER_LEVELS_FRAGMENT];
+    u.current.x = m_have_water_flow ? 1.0f : 0.0f;
+    [enc setFragmentTexture: m_have_water_flow ? m_water_flow : water
+		    atIndex: MOPPE_TEX_WATER_FLOW_FRAGMENT];
     if (m_shadow_map)
       [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
 

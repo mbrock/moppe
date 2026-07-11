@@ -16,12 +16,12 @@ struct OceanVaryings {
 
 // Bilinear grid sample under a point. Float textures must be read at
 // integer coordinates, so filtering is explicit. This is shared by the
-// R32F terrain heights and the RG32F standing-water grid; x is height
-// in world meters, y carries the water grid's wave amplitude factor.
+// R32F terrain heights, the RG32F standing-water grid, and the RG16F
+// flow grid, so all three sheets agree on addressing.
 static float2
-ocean_grid_sample (float2 world_xz,
-		   constant MoppeOceanUniforms& u,
-		   texture2d<float, access::read> grid)
+ocean_grid_sample_raw (float2 world_xz,
+		       constant MoppeOceanUniforms& u,
+		       texture2d<float, access::read> grid)
 {
   const float sample_edge = u.shore.w - 2.0;
   const float period = u.shore.w - 1.0;
@@ -41,9 +41,34 @@ ocean_grid_sample (float2 world_xz,
   const float2 s10 = grid.read (i + uint2 (1, 0)).rg;
   const float2 s01 = grid.read (i + uint2 (0, 1)).rg;
   const float2 s11 = grid.read (i + uint2 (1, 1)).rg;
-  float2 sample = mix (mix (s00, s10, fx), mix (s01, s11, fx), fz);
+  return mix (mix (s00, s10, fx), mix (s01, s11, fx), fz);
+}
+
+// Height-bearing sheets: x is height in world meters, y carries the
+// water grid's wave amplitude factor.
+static float2
+ocean_grid_sample (float2 world_xz,
+		   constant MoppeOceanUniforms& u,
+		   texture2d<float, access::read> grid)
+{
+  float2 sample = ocean_grid_sample_raw (world_xz, u, grid);
   sample.x *= u.shore.z;
   return sample;
+}
+
+// One exact lattice sample: the wet probe walks tile corners, and a
+// corner read must not smear across the duplicated periodic seam.
+static float2
+ocean_grid_texel (int2 texel,
+		  constant MoppeOceanUniforms& u,
+		  texture2d<float, access::read> grid)
+{
+  const int period = int (u.shore.w) - 1;
+  if (u.params.z > 0.5)
+    texel = (texel % period + period) % period;
+  else
+    texel = clamp (texel, 0, period);
+  return grid.read (uint2 (texel)).rg;
 }
 
 static float
@@ -198,22 +223,24 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
     valid = distance < fine_radius + 0.75 * tile_world;
 
     if (valid) {
-      // Wet probe on a 5x5 lattice: permanent bodies are far larger
-      // than the probe stride, so a dry result is trustworthy.
+      // Wet probe on every lattice corner of the tile. Water minus
+      // ground is bilinear inside each cell, so its maximum sits on a
+      // corner: this probe is exact, and a painted river a cell and a
+      // half wide cannot slip between the samples.
       bool wet = false;
       float level = 0.0;
-      for (uint pz = 0; pz < 5u && !wet; ++pz)
-	for (uint px = 0; px < 5u; ++px) {
-	  const float2 world = base
-	    + float2 (px, pz) * (tile_world / 4.0);
-	  const float2 water = ocean_grid_sample (world, u, water_levels);
-	  const float ground = ocean_grid_height (world, u, heights);
-	  if (water.x > ground + 0.05) {
-	    wet = true;
-	    level = water.x;
-	    break;
-	  }
+      const int2 origin = (int2 (u.tiles.xy) + int2 (tile_x, tile_z))
+	* WATER_TILE_CELLS;
+      for (uint probe = 0; probe < 256u && !wet; ++probe) {
+	const int2 texel = origin
+	  + int2 (probe % 16u, probe / 16u);
+	const float water = ocean_grid_texel (texel, u, water_levels).x;
+	const float ground = ocean_grid_texel (texel, u, heights).x;
+	if (water > ground + 0.05 / u.shore.z) {
+	  wet = true;
+	  level = water * u.shore.z;
 	}
+      }
       valid = wet;
 
       if (valid) {
@@ -291,6 +318,8 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 		  [[texture(MOPPE_TEX_HEIGHTS)]],
 		texture2d<float, access::read> water_levels
 		  [[texture(MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
+		texture2d<float, access::read> water_flow
+		  [[texture(MOPPE_TEX_WATER_FLOW_FRAGMENT)]],
 		depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]])
 {
   const float time = u.params.x;
@@ -311,14 +340,57 @@ ocean_fragment (OceanVaryings in [[stage_in]],
     ? ocean_grid_height (in.world_pos.xz, u, water_levels) : u.params.y;
   const float still_depth = surface - ground;
 
+  // The flow sheet: which way the water moves and how fast, painted
+  // per terrain cell. Rivers carry strong arrows, lakes almost none,
+  // and at a confluence the painted arrows already blend, so the same
+  // shading swirls two currents into one with no seam to sew.
+  float flowing = 0.0;
+  float rapid = 0.0;
+  float flow_detail = 0.5;
+  float2 flow_grad = float2 (0.0);
+  const float flow_fade = exp (-dist * 0.0012);
+  if (u.current.x > 0.5 && u.shore.w > 0.5) {
+    const float2 flow = ocean_grid_sample_raw
+      (in.world_pos.xz, u, water_flow);
+    const float speed = length (flow);
+    flowing = smoothstep (0.25, 1.0, speed) * flow_fade;
+    rapid = smoothstep (4.0, 7.5, speed);
+    if (flowing > 1e-3) {
+      // Flow map, two phases: a copy of the surface detail drifts
+      // with the current for one cycle and hands over to a fresh copy
+      // before it shears apart. Foam on real water is just as
+      // short-lived, so the handover reads as nature, not a loop.
+      const float cycle = 1.7;
+      const float t0 = fract (time / cycle);
+      const float t1 = fract (t0 + 0.5);
+      const float blend = abs (2.0 * t0 - 1.0);
+      const float2 base_uv = in.world_pos.xz * 0.85;
+      const float2 drift = flow * (0.85 * cycle);
+      const float2 uv0 = base_uv - drift * (t0 - 0.5);
+      const float2 uv1 = base_uv - drift * (t1 - 0.5);
+      const float n0 = moppe_value_noise (uv0);
+      const float n1 = moppe_value_noise (uv1);
+      const float2 g0 = float2
+	(moppe_value_noise (uv0 + float2 (0.31, 0.0)) - n0,
+	 moppe_value_noise (uv0 + float2 (0.0, 0.29)) - n0);
+      const float2 g1 = float2
+	(moppe_value_noise (uv1 + float2 (0.31, 0.0)) - n1,
+	 moppe_value_noise (uv1 + float2 (0.0, 0.29)) - n1);
+      flow_detail = mix (n0, n1, blend);
+      flow_grad = mix (g0, g1, blend);
+    }
+  }
+
   // Swash: the waterline breathes across the shallow shelf instead of
   // standing still. The phase drifts along the shore through value
   // noise so the edge crawls rather than pulsing in lockstep, and the
-  // retreat is deepest where the water is already thin.
+  // retreat is deepest where the water is already thin. Running water
+  // doesn't breathe: rivers keep their waterline and churn instead.
   const float shore_band = 1.0 - smoothstep (0.0, 1.5, still_depth);
   const float swash_phase = sin (time * 1.15
     + 6.28318 * moppe_value_noise (in.world_pos.xz * 0.045));
-  const float swash = shore_band * 0.22 * (1.0 + swash_phase);
+  const float swash = shore_band * 0.22 * (1.0 + swash_phase)
+    * (1.0 - flowing);
   const float depth_m = max (still_depth - swash, 0.0);
   if (u.params.w > 0.5 && still_depth <= 0.005)
     discard_fragment ();
@@ -328,8 +400,11 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   // Small-scale ripples sparkling on top of the big swells, faded
   // with distance so the horizon doesn't shimmer with aliasing.
   // Drifting value noise: crossed plane-wave sines interfere into a
-  // checkerboard across the whole surface at grazing angles.
-  const float ripple_fade = exp (-dist * 0.002);
+  // checkerboard across the whole surface at grazing angles.  Where
+  // the water flows, the directionless drift yields to the advected
+  // detail riding the current.
+  const float ripple_fade = exp (-dist * 0.002)
+    * (1.0 - 0.75 * flowing);
   const float2 ripple1 = in.world_pos.xz * 0.35
     + float2 (time * 0.9, -time * 0.7);
   const float2 ripple2 = in.world_pos.xz * 0.11
@@ -340,6 +415,9 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   n.z += ripple_fade
     * (0.16 * (moppe_value_noise (ripple1 + 7.3) - 0.5)
        + 0.12 * (moppe_value_noise (ripple2 + 3.1) - 0.5));
+  const float flow_bump = flowing * (0.14 + 0.20 * rapid);
+  n.x += flow_bump * flow_grad.x;
+  n.z += flow_bump * flow_grad.y;
   n = normalize (n);
 
   const float3 v = normalize (-to_frag);
@@ -378,7 +456,10 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   // and a band of animated foam hugs the waterline.
   if (u.shore.w > 0.5) {
     // Clarity by water column: tropical turquoise over the sand.
-    const float clarity = exp (-depth_m * 0.14);
+    // Rivers run murkier than the sea — silt rides the current — so
+    // flow shortens the extinction length and a metre of moving
+    // water reads as a body instead of glass over gravel.
+    const float clarity = exp (-depth_m * mix (0.14, 0.55, flowing));
     water = mix (water, moppe_srgb (float3 (0.13, 0.52, 0.50)),
 		 0.6 * clarity);
     alpha = mix (alpha, 0.35, clarity * (1.0 - 0.5 * fresnel));
@@ -391,7 +472,7 @@ ocean_fragment (OceanVaryings in [[stage_in]],
     // beach, thinning as it drains back.
     const float surge = 0.5 + 0.5 * swash_phase;
     float foam = pow (1.0 - smoothstep (0.0, 1.2, depth_m), 1.7)
-      * (0.65 + 0.45 * surge);
+      * (0.65 + 0.45 * surge) * (1.0 - flowing);
     // The breakup noise only runs inside the shore band; deep water
     // keeps its zero foam without paying for it.
     if (foam > 1e-3) {
@@ -402,6 +483,15 @@ ocean_fragment (OceanVaryings in [[stage_in]],
       foam *= 0.25 + 0.75 * smoothstep (0.25, 0.80,
 					0.55 * b1 + 0.45 * b2);
     }
+    // Flowing water trades the tidal foam for churn: broken water
+    // rides the advected detail wherever the arrows run fast — which
+    // is exactly the steep, quick squares where the land makes
+    // rapids. Calm shallow streams get none at all, so they stay
+    // clear water instead of white tubes.
+    const float churn = flowing
+      * (0.10 + 0.90 * rapid)
+      * smoothstep (0.55, 0.92, flow_detail + 0.30 * rapid);
+    foam = max (foam, saturate (churn));
     foam = saturate (foam) * (0.35 + 0.65 * daylight);
 
     const float3 foam_albedo = moppe_srgb (float3 (0.93, 0.97, 1.0));

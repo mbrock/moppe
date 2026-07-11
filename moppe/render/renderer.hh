@@ -171,6 +171,12 @@ namespace render {
     // terrain grid; an empty span retains the single full-swell sea plane.
     virtual void set_ocean (const OceanSetup& setup,
 			    std::span<const float> water_levels) = 0;
+    // Water flow following the terrain grid: interleaved (x, z) world
+    // velocity in meters per second per sample. Rivers carry strong
+    // downstream arrows, lakes almost none; the water shader advects
+    // its surface detail along them. Optional; an empty span clears.
+    virtual void set_water_flow (std::span<const float> flow)
+    { (void) flow; }
     // Ground moisture in [0,1] following the terrain grid; vegetation
     // reads it for blade height, color, and density. Optional.
     virtual void set_terrain_moisture (std::span<const float> moisture)
