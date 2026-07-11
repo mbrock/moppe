@@ -2413,6 +2413,10 @@ namespace game {
 	 i == 3 ? m_droplet_armed : m_overlay == lens_modes[i],
 	 i == 3, i + 11);
     }
+    if (m_droplet_armed
+	&& !friendly_ui_contains
+	  (m_pointer_x, m_pointer_y, m_ui_width, m_ui_height))
+      m_ui.friendly_tool_cursor (dl, m_pointer_x, m_pointer_y, 14);
     m_ui.end (dl);
   }
 
