@@ -1,5 +1,5 @@
-.PHONY: all archive check-format format hooks phone profile terrain-lab-shot \
-	testflight xcode
+.PHONY: all archive check-format complexity format hooks phone profile \
+	terrain-lab-shot testflight xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -9,6 +9,10 @@ all:
 # Format all tracked C, C++, Objective-C, and Metal sources.
 format:
 	./tools/format
+
+# Measure per-function cyclomatic and cognitive complexity.
+complexity:
+	./tools/complexity-report
 
 # Check formatting without changing files (also used by the Git hook).
 check-format:

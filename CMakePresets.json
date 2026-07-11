@@ -7,6 +7,17 @@
   },
   "configurePresets": [
     {
+      "name": "homebrew-llvm",
+      "displayName": "Homebrew LLVM (macOS)",
+      "description": "Configure with Homebrew LLVM and export compile commands.",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-homebrew",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/homebrew-llvm.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
       "name": "xcode",
       "displayName": "Xcode (macOS)",
       "description": "Generate the Moppe macOS project for Xcode.",
@@ -19,6 +30,11 @@
     }
   ],
   "buildPresets": [
+    {
+      "name": "homebrew-llvm",
+      "displayName": "Homebrew LLVM",
+      "configurePreset": "homebrew-llvm"
+    },
     {
       "name": "xcode-debug",
       "displayName": "Xcode Debug",

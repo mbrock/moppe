@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Generate per-function C++ complexity metrics as CSV."""
+
+import argparse
+import csv
+import json
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+BUILD = ROOT / "build-homebrew"
+COGNITIVE_RE = re.compile(
+    r"^(.*?):(\d+):\d+: warning: function '.*' has cognitive "
+    r"complexity of (\d+) \(threshold 0\)"
+)
+
+
+def run(command, **kwargs):
+  print("+ " + " ".join(map(str, command)), file=sys.stderr)
+  return subprocess.run(command, check=True, **kwargs)
+
+
+def homebrew_llvm_prefix():
+  for formula in ("llvm@20", "llvm"):
+    result = subprocess.run(
+        ["brew", "--prefix", formula], text=True, capture_output=True)
+    if result.returncode == 0:
+      return pathlib.Path(result.stdout.strip())
+  raise SystemExit("Homebrew LLVM is required: brew install llvm")
+
+
+def relative(path):
+  return pathlib.Path(path).resolve().relative_to(ROOT).as_posix()
+
+
+def percentile(values, fraction):
+  if not values:
+    return 0
+  return sorted(values)[round((len(values) - 1) * fraction)]
+
+
+def main():
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument(
+      "-o", "--output", type=pathlib.Path,
+      default=BUILD / "complexity.csv",
+      help="output CSV (default: build-homebrew/complexity.csv)")
+  parser.add_argument(
+      "--top", type=int, default=20,
+      help="number of function hotspots to print (default: 20)")
+  parser.add_argument(
+      "-j", "--jobs", type=int, default=8,
+      help="parallel clang-tidy jobs (default: 8)")
+  args = parser.parse_args()
+
+  if not shutil.which("brew"):
+    raise SystemExit("Homebrew is required")
+  if not shutil.which("uvx"):
+    raise SystemExit("uvx is required to run Lizard")
+
+  llvm = homebrew_llvm_prefix()
+  clang_tidy = llvm / "bin/clang-tidy"
+  run_clang_tidy = llvm / "bin/run-clang-tidy"
+  if not clang_tidy.exists() or not run_clang_tidy.exists():
+    raise SystemExit(f"clang-tidy tools not found under {llvm}")
+
+  run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
+  commands = json.loads((BUILD / "compile_commands.json").read_text())
+  sources = sorted({
+      pathlib.Path(entry["file"]).resolve()
+      for entry in commands
+      if pathlib.Path(entry["file"]).resolve().is_relative_to(ROOT / "moppe")
+      and pathlib.Path(entry["file"]).suffix in (".cc", ".cpp", ".mm")
+  })
+
+  with tempfile.TemporaryDirectory(prefix="moppe-complexity-") as tmp:
+    tmp = pathlib.Path(tmp)
+    lizard_csv = tmp / "lizard.csv"
+    run([
+        "uvx", "--from", "lizard", "lizard",
+        *map(str, sources), "--csv", "-o", str(lizard_csv), "-i", "-1",
+    ], cwd=ROOT)
+
+    tidy = run([
+        str(run_clang_tidy), "-p", str(BUILD), "-j", str(args.jobs),
+        "-clang-tidy-binary", str(clang_tidy),
+        "-checks=-*,readability-function-cognitive-complexity",
+        "-config={CheckOptions: {readability-function-cognitive-complexity."
+        "Threshold: 0, readability-function-cognitive-complexity."
+        "DescribeBasicIncrements: false}}",
+        r".*moppe/.*\.(cc|cpp|mm)$",
+    ], cwd=ROOT, text=True, stdout=subprocess.PIPE,
+       stderr=subprocess.STDOUT)
+    errors = [line for line in tidy.stdout.splitlines() if "error:" in line]
+    if errors:
+      print("\n".join(errors[:20]), file=sys.stderr)
+      raise SystemExit(
+          f"clang-tidy reported {len(errors)} errors; report not written")
+
+    cognitive = {}
+    for line in tidy.stdout.splitlines():
+      match = COGNITIVE_RE.match(line)
+      if match:
+        key = (relative(match.group(1)), int(match.group(2)))
+        cognitive[key] = int(match.group(3))
+
+    rows = []
+    with lizard_csv.open(newline="") as input_file:
+      for item in csv.reader(input_file):
+        filename = relative(item[6])
+        line = int(item[9])
+        parts = pathlib.PurePosixPath(filename).parts
+        module = "/".join(parts[:2])
+        rows.append({
+            "module": module,
+            "file": filename,
+            "line": line,
+            "function": item[7],
+            "nloc": int(item[0]),
+            "cyclomatic": int(item[1]),
+            "cognitive": cognitive.get((filename, line), 0),
+            "tokens": int(item[2]),
+            "parameters": int(item[3]),
+            "length": int(item[4]),
+        })
+
+  args.output.parent.mkdir(parents=True, exist_ok=True)
+  fields = list(rows[0])
+  with args.output.open("w", newline="") as output_file:
+    writer = csv.DictWriter(output_file, fieldnames=fields)
+    writer.writeheader()
+    writer.writerows(rows)
+
+  print(f"\nWrote {len(rows)} functions to {args.output}")
+  print("\nTop functions")
+  print(f"{'cog':>4} {'cyc':>4} {'nloc':>5}  location  function")
+  ranked = sorted(
+      rows, key=lambda row: (row["cognitive"], row["cyclomatic"]),
+      reverse=True)
+  for row in ranked[:args.top]:
+    location = f'{row["file"]}:{row["line"]}'
+    print(f'{row["cognitive"]:4} {row["cyclomatic"]:4} '
+          f'{row["nloc"]:5}  {location}  {row["function"]}')
+
+  print("\nModules")
+  print(f"{'functions':>9} {'nloc':>6} {'cog p90':>7} "
+        f"{'cog max':>7}  module")
+  modules = {}
+  for row in rows:
+    modules.setdefault(row["module"], []).append(row)
+  for module, items in sorted(
+      modules.items(), key=lambda pair: -sum(x["nloc"] for x in pair[1])):
+    cognitive_values = [item["cognitive"] for item in items]
+    print(f'{len(items):9} {sum(x["nloc"] for x in items):6} '
+          f'{percentile(cognitive_values, 0.9):7} '
+          f'{max(cognitive_values, default=0):7}  {module}')
+
+
+if __name__ == "__main__":
+  main()
