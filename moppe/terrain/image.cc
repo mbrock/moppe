@@ -24,6 +24,12 @@ namespace moppe::terrain {
 		    bytes.size ());
     }
 
+    uInt zlib_size (std::size_t size) {
+      if (size > std::numeric_limits<uInt>::max ())
+	throw std::invalid_argument ("PNG chunk exceeds zlib size limit");
+      return static_cast<uInt> (size);
+    }
+
     void write_chunk (std::ostream& stream,
 		      const std::array<unsigned char, 4>& type,
 		      std::span<const unsigned char> data) {
@@ -34,8 +40,8 @@ namespace moppe::terrain {
 		    static_cast<std::streamsize> (data.size ()));
 
       uLong crc = crc32 (0, Z_NULL, 0);
-      crc = crc32 (crc, type.data (), type.size ());
-      crc = crc32 (crc, data.data (), data.size ());
+      crc = crc32 (crc, type.data (), zlib_size (type.size ()));
+      crc = crc32 (crc, data.data (), zlib_size (data.size ()));
       write_u32 (stream, static_cast<std::uint32_t> (crc));
     }
   }
