@@ -252,6 +252,11 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     moppe/terrain/pipeline_demo.cc
   )
   target_link_libraries(terrain-pipeline-demo PRIVATE moppe_game)
+
+  add_executable(terrain-erosion-experiment
+    moppe/terrain/erosion_experiment.cc
+  )
+  target_link_libraries(terrain-erosion-experiment PRIVATE moppe_game)
 endif()
 
 # ---------------------------------------------------------------
