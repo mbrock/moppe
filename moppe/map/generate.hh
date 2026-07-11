@@ -4,6 +4,7 @@
 
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/evaluator.hh>
+#include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/topology.hh>
@@ -270,9 +271,16 @@ namespace map {
 
     // Particle-based hydraulic erosion: carves gullies into the
     // slopes and settles sediment on the plains.
-    void erode_hydraulically (int droplets, int batch_size = 256);
-    void erode_hydraulically (std::mt19937& randomness,
-			      int droplets, int batch_size = 256);
+    terrain::HydraulicErosionReport erode_hydraulically
+      (int droplets, int batch_size = 256, int max_steps = 64,
+       float minimum_water = 0.0f,
+       terrain::SedimentDisposition sediment_at_termination =
+	 terrain::SedimentDisposition::Discard);
+    terrain::HydraulicErosionReport erode_hydraulically
+      (std::mt19937& randomness, int droplets, int batch_size = 256,
+       int max_steps = 64, float minimum_water = 0.0f,
+       terrain::SedimentDisposition sediment_at_termination =
+	 terrain::SedimentDisposition::Discard);
 
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.

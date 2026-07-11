@@ -7,6 +7,7 @@
 #include <tests/test.hh>
 
 #include <bit>
+#include <cmath>
 #include <cstdint>
 
 namespace {
@@ -211,4 +212,75 @@ MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
   evaluate (sixty_four_at_a_time, batched);
 
   MOPPE_CHECK (!maps_match (one_at_a_time, sixty_four_at_a_time));
+}
+
+MOPPE_TEST (hydraulic_report_balances_the_sediment_ledger) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map
+    (65, 65, Vector3D (100, 20, 100), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map);
+  const TerrainProgram source = make_geological_program (912);
+  evaluator.begin (source);
+  const TerrainTransformReport result = evaluator.apply
+    (HydraulicErosion { .droplets = 1000, .batch_size = 1,
+			.max_steps = 64 });
+  const auto& report = std::get<HydraulicErosionReport> (result);
+
+  MOPPE_CHECK (report.droplets == 1000);
+  MOPPE_CHECK
+    (report.stopped_flat + report.stopped_at_boundary
+     + report.stopped_at_step_limit == report.droplets);
+  MOPPE_CHECK_NEAR
+    (static_cast<float> (report.eroded),
+     static_cast<float> (report.deposited + report.discarded_sediment),
+     static_cast<float> (report.eroded * 2e-5 + 1e-7));
+}
+
+MOPPE_TEST (hydraulic_maximum_lifetime_is_part_of_the_recipe) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (100, 20, 100);
+  TerrainProgram short_lived = make_geological_program (654);
+  short_lived.transforms.emplace_back (HydraulicErosion {
+    .droplets = 512, .batch_size = 1, .max_steps = 16
+  });
+  TerrainProgram long_lived = short_lived;
+  std::get<HydraulicErosion> (long_lived.transforms.back ()).max_steps = 128;
+  map::RandomHeightMap short_map
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap long_map
+    (65, 65, size, 0, Topology::Torus);
+
+  evaluate (short_map, short_lived);
+  evaluate (long_map, long_lived);
+
+  MOPPE_CHECK (!maps_match (short_map, long_map));
+}
+
+MOPPE_TEST (water_termination_can_settle_the_remaining_sediment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map
+    (65, 65, Vector3D (100, 20, 100), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map);
+  evaluator.begin (make_geological_program (444));
+  const auto result = evaluator.apply (HydraulicErosion {
+    .droplets = 1000,
+    .batch_size = 1,
+    .max_steps = 512,
+    .minimum_water = 0.01f,
+    .sediment_at_termination = SedimentDisposition::Deposit
+  });
+  const auto& report = std::get<HydraulicErosionReport> (result);
+
+  MOPPE_CHECK
+    (report.stopped_at_water_cutoff + report.stopped_flat
+     == report.droplets);
+  MOPPE_CHECK_NEAR
+    (static_cast<float> (report.discarded_sediment), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR
+    (static_cast<float> (report.eroded),
+     static_cast<float> (report.deposited),
+     static_cast<float> (report.eroded * 2e-5 + 1e-7));
 }

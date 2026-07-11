@@ -29,9 +29,18 @@ MOPPE_TEST (default_world_program_records_every_transform) {
   MOPPE_CHECK (terrain_transform_id (program.transforms[3]) == "thermal");
   MOPPE_CHECK
     (std::get<HydraulicErosion> (program.transforms[2]).droplets
-     == 1500000);
+     == 300000);
   MOPPE_CHECK
     (std::get<HydraulicErosion> (program.transforms[2]).batch_size == 256);
+  MOPPE_CHECK
+    (std::get<HydraulicErosion> (program.transforms[2]).max_steps == 512);
+  MOPPE_CHECK_NEAR
+    (std::get<HydraulicErosion>
+     (program.transforms[2]).minimum_water, 0.01f, 0.0f);
+  MOPPE_CHECK
+    (std::get<HydraulicErosion>
+     (program.transforms[2]).sediment_at_termination
+     == SedimentDisposition::Deposit);
 }
 
 MOPPE_TEST (transform_semantics_describe_execution_requirements) {
@@ -79,6 +88,19 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   program.transforms.emplace_back (HydraulicErosion {
     .droplets = 10,
     .batch_size = 0
+  });
+  threw = false;
+  try {
+    validate_program (program);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
+
+  program = make_geological_program (123);
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = 10,
+    .minimum_water = 1.0f
   });
   threw = false;
   try {

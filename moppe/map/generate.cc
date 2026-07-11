@@ -370,15 +370,21 @@ namespace map {
 	     (size_t) m_width * m_height * sizeof (float));
   }
 
-  void
-  RandomHeightMap::erode_hydraulically (int droplets, int batch_size)
+  terrain::HydraulicErosionReport
+  RandomHeightMap::erode_hydraulically
+    (int droplets, int batch_size, int max_steps, float minimum_water,
+     terrain::SedimentDisposition sediment_at_termination)
   {
-    erode_hydraulically (m_rng, droplets, batch_size);
+    return erode_hydraulically
+      (m_rng, droplets, batch_size, max_steps, minimum_water,
+       sediment_at_termination);
   }
 
-  void
+  terrain::HydraulicErosionReport
   RandomHeightMap::erode_hydraulically
-    (std::mt19937& randomness, int droplets, int batch_size)
+    (std::mt19937& randomness, int droplets, int batch_size, int max_steps,
+     float minimum_water,
+     terrain::SedimentDisposition sediment_at_termination)
   {
     // Droplet erosion after Beyer (2015): each raindrop rolls
     // downhill, picking up sediment while it accelerates and
@@ -391,11 +397,14 @@ namespace map {
     const float deposit_k  = 0.3f;
     const float evaporate  = 0.015f;
     const float gravity    = 4.0f;
-    const int   max_steps  = 64;
-
-    if (batch_size <= 0)
+    if (droplets < 0 || batch_size <= 0 || max_steps <= 0
+	|| !std::isfinite (minimum_water) || minimum_water < 0.0f
+	|| minimum_water >= 1.0f)
       throw std::invalid_argument
-	("hydraulic erosion batch size must be positive");
+	("hydraulic erosion batch size and lifetime must be positive");
+
+    terrain::HydraulicErosionReport report;
+    report.droplets = static_cast<std::uint64_t> (droplets);
 
     realgen_t g (randomness, 0, 1);
 
@@ -456,6 +465,36 @@ namespace map {
 	}
 	changes[index] += amount;
       };
+      const auto add_at_sample = [&] (const Sample& at, float amount) {
+	add_change (at.x0, at.y0,
+	  amount * (1 - at.fx) * (1 - at.fy));
+	add_change (at.x1, at.y0, amount * at.fx * (1 - at.fy));
+	add_change (at.x0, at.y1, amount * (1 - at.fx) * at.fy);
+	add_change (at.x1, at.y1, amount * at.fx * at.fy);
+      };
+      const auto commit_changes = [&] {
+	for (std::size_t index : touched) {
+	  const int x = static_cast<int> (index % m_width);
+	  const int y = static_cast<int> (index / m_width);
+	  set (x, y, get (x, y) + changes[index]);
+	  changes[index] = 0.0f;
+	  marked[index] = 0;
+	}
+      };
+      const auto finish = [&] (Droplet& drop, const Sample& at,
+			       std::uint64_t& reason) {
+	if (sediment_at_termination
+	    == terrain::SedimentDisposition::Deposit) {
+	  add_at_sample (at, drop.sediment);
+	  report.deposited += drop.sediment;
+	} else {
+	  report.discarded_sediment += drop.sediment;
+	}
+	report.final_water += drop.water;
+	++reason;
+	drop.sediment = 0.0f;
+	drop.active = false;
+      };
 
       for (int first = 0; first < droplets; first += batch_size) {
 	const int count = std::min (batch_size, droplets - first);
@@ -481,7 +520,7 @@ namespace map {
 	    const float len = std::sqrt
 	      (drop.dirx * drop.dirx + drop.diry * drop.diry);
 	    if (len < 1e-10f) {
-	      drop.active = false;
+	      finish (drop, here, report.stopped_flat);
 	      continue;
 	    }
 	    drop.dirx /= len;
@@ -501,42 +540,41 @@ namespace map {
 	      amount = dh > 0 ? std::min (dh, drop.sediment)
 		: (drop.sediment - capacity) * deposit_k;
 	      drop.sediment -= amount;
+	      report.deposited += amount;
 	    } else {
 	      amount = -std::min
 		((capacity - drop.sediment) * erode_k, -dh);
 	      drop.sediment -= amount;
+	      report.eroded -= amount;
 	    }
 
-	    add_change (here.x0, here.y0,
-		amount * (1 - here.fx) * (1 - here.fy));
-	    add_change (here.x1, here.y0,
-		amount * here.fx * (1 - here.fy));
-	    add_change (here.x0, here.y1,
-		amount * (1 - here.fx) * here.fy);
-	    add_change (here.x1, here.y1,
-		amount * here.fx * here.fy);
+	    add_at_sample (here, amount);
 
 	    drop.speed = std::sqrt (std::max
 	      (0.0f, drop.speed * drop.speed - dh * gravity));
 	    drop.water *= (1 - evaporate);
 	    drop.px = nx;
 	    drop.py = ny;
-	    any_active = true;
+	    ++report.steps;
+	    if (minimum_water > 0.0f && drop.water <= minimum_water)
+	      finish (drop, next, report.stopped_at_water_cutoff);
+	    else
+	      any_active = true;
 	  }
 
-	  for (std::size_t index : touched) {
-	    const int x = static_cast<int> (index % m_width);
-	    const int y = static_cast<int> (index / m_width);
-	    set (x, y, get (x, y) + changes[index]);
-	    changes[index] = 0.0f;
-	    marked[index] = 0;
-	  }
+	  commit_changes ();
 	  if (!any_active)
 	    break;
 	}
+	touched.clear ();
+	for (Droplet& drop : batch)
+	  if (drop.active)
+	    finish (drop, sample (drop.px, drop.py),
+		    report.stopped_at_step_limit);
+	commit_changes ();
       }
       synchronize_periodic_edges ();
-      return;
+      return report;
     }
 
     for (int d = 0; d < droplets; ++d)
@@ -545,6 +583,30 @@ namespace map {
 	float py = 1.0f + g () * (m_height - 3);
 	float dirx = 0, diry = 0;
 	float speed = 1, water = 1, sediment = 0;
+	bool terminated = false;
+	const auto finish = [&] (std::uint64_t& reason) {
+	  if (sediment_at_termination
+	      == terrain::SedimentDisposition::Deposit) {
+	    const int x = static_cast<int> (px);
+	    const int y = static_cast<int> (py);
+	    const float fx = px - x, fy = py - y;
+	    set (x, y, get (x, y)
+		 + sediment * (1 - fx) * (1 - fy));
+	    set (x + 1, y, get (x + 1, y)
+		 + sediment * fx * (1 - fy));
+	    set (x, y + 1, get (x, y + 1)
+		 + sediment * (1 - fx) * fy);
+	    set (x + 1, y + 1, get (x + 1, y + 1)
+		 + sediment * fx * fy);
+	    report.deposited += sediment;
+	  } else {
+	    report.discarded_sediment += sediment;
+	  }
+	  report.final_water += water;
+	  ++reason;
+	  sediment = 0.0f;
+	  terminated = true;
+	};
 
 	for (int step = 0; step < max_steps; ++step)
 	  {
@@ -569,16 +631,20 @@ namespace map {
 	    dirx = dirx * inertia - gradx * (1 - inertia);
 	    diry = diry * inertia - grady * (1 - inertia);
 	    const float len = std::sqrt (dirx * dirx + diry * diry);
-	    if (len < 1e-10f)
+	    if (len < 1e-10f) {
+	      finish (report.stopped_flat);
 	      break;
+	    }
 	    dirx /= len;
 	    diry /= len;
 
 	    const float nx = px + dirx;
 	    const float ny = py + diry;
 	    if (nx < 1 || nx >= m_width - 2 ||
-		ny < 1 || ny >= m_height - 2)
+		ny < 1 || ny >= m_height - 2) {
+	      finish (report.stopped_at_boundary);
 	      break;
+	    }
 
 	    const int nxi = (int) nx, nyi = (int) ny;
 	    const float nfx = nx - nxi, nfy = ny - nyi;
@@ -600,6 +666,7 @@ namespace map {
 		  ? std::min (dh, sediment)
 		  : (sediment - capacity) * deposit_k;
 		sediment -= amount;
+		report.deposited += amount;
 
 		set (xi, yi,         h00 + amount * (1 - fx) * (1 - fy));
 		set (xi + 1, yi,     h10 + amount * fx * (1 - fy));
@@ -613,10 +680,11 @@ namespace map {
 		const float amount =
 		  std::min ((capacity - sediment) * erode_k, -dh);
 		sediment += amount;
+		report.eroded += amount;
 
-		set (xi, yi,         h00 - amount * (1 - fx) * (1 - fy));
-		set (xi + 1, yi,     h10 - amount * fx * (1 - fy));
-		set (xi, yi + 1,     h01 - amount * (1 - fx) * fy);
+		set (xi, yi, h00 - amount * (1 - fx) * (1 - fy));
+		set (xi + 1, yi, h10 - amount * fx * (1 - fy));
+		set (xi, yi + 1, h01 - amount * (1 - fx) * fy);
 		set (xi + 1, yi + 1, h11 - amount * fx * fy);
 	      }
 
@@ -625,8 +693,16 @@ namespace map {
 	    water *= (1 - evaporate);
 	    px = nx;
 	    py = ny;
+	    ++report.steps;
+	    if (minimum_water > 0.0f && water <= minimum_water) {
+	      finish (report.stopped_at_water_cutoff);
+	      break;
+	    }
 	  }
+	if (!terminated)
+	  finish (report.stopped_at_step_limit);
       }
+    return report;
   }
 
   void
