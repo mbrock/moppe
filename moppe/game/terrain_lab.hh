@@ -124,6 +124,7 @@ namespace game {
     std::optional<Vector3D> terrain_point_at_screen (float x, float y) const;
     void launch_droplet (float x, float y);
     Vector3D droplet_world_position (std::size_t index) const;
+    Vector3D droplet_world_position (float progress) const;
     float visible_droplet_pitch (const Vector3D& droplet) const;
 
     InspectorUi m_ui;
