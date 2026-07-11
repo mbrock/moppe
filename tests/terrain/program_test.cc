@@ -88,6 +88,12 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
   MOPPE_CHECK
     (terrain_transform_semantics (HydraulicErosion { 10 })
        .evaluation_order == EvaluationOrder::Iterative);
+  MOPPE_CHECK
+    (terrain_transform_semantics (AnalyticalErosion { }).spatial_scope
+     == SpatialScope::Global);
+  MOPPE_CHECK
+    (terrain_transform_semantics (AnalyticalErosion { }).evaluation_order
+     == EvaluationOrder::Iterative);
 }
 
 MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
@@ -118,6 +124,18 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   program.transforms.emplace_back (HydraulicErosion {
     .droplets = 10,
     .minimum_water = 1.0f
+  });
+  threw = false;
+  try {
+    validate_program (program);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
+
+  program = make_geological_program (123);
+  program.transforms.emplace_back (AnalyticalErosion {
+    .erodibility = 0.0f
   });
   threw = false;
   try {

@@ -192,6 +192,46 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
       (first.get (i, 0) == first.get (i, first.height () - 1));
 }
 
+MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (5000, 650, 5000);
+  TerrainProgram program = make_geological_program (2468);
+  program.transforms.emplace_back (PowerHeights { 1.15f });
+  program.transforms.emplace_back (AnalyticalErosion {
+    .time_years = 100000.0f,
+    .fixed_point_iterations = 2,
+    .relaxation = 0.5f
+  });
+  map::RandomHeightMap first
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap second
+    (65, 65, size, 1, Topology::Torus);
+  map::TerrainEvaluator first_evaluator (first);
+  map::TerrainEvaluator second_evaluator (second);
+
+  first_evaluator.begin (program);
+  second_evaluator.begin (program);
+  TerrainTransformReport first_report;
+  TerrainTransformReport second_report;
+  for (const TerrainTransform& transform : program.transforms) {
+    first_report = first_evaluator.apply (transform);
+    second_report = second_evaluator.apply (transform);
+  }
+
+  MOPPE_CHECK (maps_match (first, second));
+  const auto& report = std::get<AnalyticalErosionReport> (first_report);
+  MOPPE_CHECK (report.lowered_volume_m3 > 0.0);
+  MOPPE_CHECK (report.fixed_point_iterations == 2);
+  for (int i = 0; i < first.width (); ++i) {
+    MOPPE_CHECK (first.get (i, 0) == first.get (i, first.height () - 1));
+    MOPPE_CHECK (first.get (0, i) == first.get (first.width () - 1, i));
+  }
+  MOPPE_CHECK
+    (std::get<AnalyticalErosionReport> (second_report).lowered_volume_m3
+     == report.lowered_volume_m3);
+}
+
 MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
   using namespace moppe;
   using namespace moppe::terrain;

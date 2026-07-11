@@ -1,5 +1,7 @@
 #include <moppe/map/terrain_evaluator.hh>
 
+#include <moppe/terrain/analytical_erosion.hh>
+
 #include <algorithm>
 #include <stdexcept>
 #include <variant>
@@ -42,6 +44,18 @@ namespace moppe::map {
 	(m_randomness, hydraulic->droplets, hydraulic->batch_size,
 	 hydraulic->max_steps, hydraulic->minimum_water,
 	 hydraulic->sediment_at_termination, hydraulic->carving_rule);
+    else if (const auto* analytical =
+	     std::get_if<terrain::AnalyticalErosion> (&transform)) {
+      terrain::AnalyticalErosionResult result = terrain::erode_analytically
+	(m_target.terrain_view (), *analytical);
+      const std::size_t width = m_target.unique_width ();
+      const std::size_t height = m_target.unique_height ();
+      for (std::size_t y = 0; y < height; ++y)
+	for (std::size_t x = 0; x < width; ++x)
+	  m_target.set (static_cast<int> (x), static_cast<int> (y),
+			result.heights[y * width + x]);
+      report = result.report;
+    }
     else if (const auto* thermal =
 	     std::get_if<terrain::ThermalErosion> (&transform))
       m_target.erode_thermally (thermal->iterations, thermal->talus);

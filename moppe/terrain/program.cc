@@ -79,6 +79,22 @@ namespace moppe::terrain {
 	    throw std::invalid_argument
 	      ("hydraulic erosion needs a non-negative droplet count "
 	       "and positive batch size and lifetime");
+	} else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
+	  if (!std::isfinite (operation.time_years)
+	      || operation.time_years < 0.0f
+	      || !std::isfinite (operation.uplift_m_per_year)
+	      || operation.uplift_m_per_year < 0.0f
+	      || !std::isfinite (operation.erodibility)
+	      || operation.erodibility <= 0.0f
+	      || !std::isfinite (operation.area_exponent)
+	      || operation.area_exponent < 0.0f
+	      || !std::isfinite (operation.sea_level)
+	      || operation.fixed_point_iterations <= 0
+	      || !std::isfinite (operation.relaxation)
+	      || operation.relaxation <= 0.0f
+	      || operation.relaxation > 1.0f)
+	    throw std::invalid_argument
+	      ("analytical erosion parameters are invalid");
 	} else if constexpr (std::is_same_v<T, ThermalErosion>) {
 	  if (operation.iterations < 0
 	      || !std::isfinite (operation.talus)
@@ -100,6 +116,8 @@ namespace moppe::terrain {
 	return "power";
       else if constexpr (std::is_same_v<T, HydraulicErosion>)
 	return "hydraulic";
+      else if constexpr (std::is_same_v<T, AnalyticalErosion>)
+	return "analytical";
       else
 	return "thermal";
     }, transform);

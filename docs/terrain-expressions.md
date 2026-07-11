@@ -92,6 +92,7 @@ of these runtime variants:
 
 - `NormalizeHeights`
 - `PowerHeights`
+- `AnalyticalErosion`
 - `HydraulicErosion`
 - `ThermalErosion`
 
@@ -184,6 +185,7 @@ descriptions for tools and evaluators, not a class hierarchy:
 | Power | `Pointwise` | `Direct` |
 | Normalize | `Global` | `Reduction` |
 | Thermal erosion | `Neighborhood` | `Iterative` |
+| Analytical erosion | `Global` | `Iterative` |
 | Hydraulic erosion | `Global` | `Iterative` |
 
 In more abstract language these roughly separate timeless field algebra,
@@ -227,7 +229,8 @@ identities, so ordinary source iteration does not accumulate abandoned maps.
 The Terrain Lab window presents the system as a small construction game:
 
 - the geological source and every materialized stage are selectable rows;
-- normalization, power, hydraulic, and thermal stages can be appended;
+- normalization, power, analytical age, droplet, and thermal stages can be
+  appended independently and combined in any order;
 - selected stages can be moved, copied, deleted, and edited in place;
 - continuous values use synth-style rotary controls with vertical dragging;
 - natural-number values such as periodic wave counts, erosion droplets,
@@ -245,7 +248,7 @@ The Terrain Lab window presents the system as a small construction game:
 The separate **Map Readings** window keeps geometry and interpretation
 independent. Material restores the ordinary terrain textures; Height and
 Slope drape scalar palettes over the current surface; Flow shows logarithmic
-contributing area; Streams thresholds that reading at 64 upstream cells;
+contributing area; Streams thresholds that reading at 1,024 upstream cells;
 Basins colors shared sink catchments; Sinks marks local minima; Delta shows
 signed height change across the selected pipeline stage; Water shows every
 priority-flood standing depth; and Lakes applies the permanence census used
@@ -261,7 +264,8 @@ same views scriptable. `MOPPE_LAB_STAGE` selects
 a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 `MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
-stage for automated Lab captures.
+stage for automated Lab captures. `MOPPE_LAB_ANALYTICAL=1` appends the
+finite-time stream-power stage.
 
 The three `WAVES` counters are integer spatial frequencies: how many periods
 fit around one fundamental side of the torus.  They are not literal counts of
@@ -322,6 +326,28 @@ program.transforms.emplace_back (moppe::terrain::HydraulicErosion {
 });
 moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
+
+`AnalyticalErosion` is the first finite-time `n = 1` stream-power slice from
+Tzathas et al. It computes one depression-aware drainage graph, traverses its
+trees from fixed ocean cells toward ridges, and evaluates the characteristic
+solution
+
+```text
+z(x,t) = z0(D(x,t)) + integral[D(x,t), x] u(s) / (k A(s)^m) ds
+```
+
+where travel time from `D` to `x` is `t`. Age, uplift, `k`, `m`, sea level,
+fixed-point routing passes, and relaxation are explicit transform parameters
+in physical units. The detachment-limited erosion term cannot raise terrain,
+so the implementation caps change at the prescribed tectonic uplift even
+when a depression route crosses a dry saddle. Ocean cells remain fixed.
+
+The pass is deterministic and much cheaper than the droplet stage, but it is
+not the paper's complete solver yet. Fixed routing produces cell-scale
+discontinuities; relaxed routing passes improve agreement but do not replace
+the paper's coarse-to-fine iteration and hillslope correction. Terrain Lab
+therefore exposes analytical age separately from Talus and reports lowered
+and raised volume plus mean and maximum physical change.
 
 Hydraulic batches advance their droplets in lockstep.  Every droplet reads
 the same heightfield for one simulation step, sparse erosion/deposition deltas
@@ -416,6 +442,18 @@ The command reports runtime, sinks, stream cells, maximum drainage area,
 longest receiver path, the sediment ledger, mean lifetime, and termination
 causes as CSV. The full measurements and falsified footprint experiment live
 in `research/terrain/erosion-lifetime-experiment.md`.
+
+The fixed-seed method comparison replays every mode from one physical-world
+checkpoint and can also write its height images:
+
+```sh
+./build/terrain-stream-power-experiment \
+  257 123 200000 4 30000 /tmp/moppe-stream
+```
+
+It reports source, analytical, analytical-plus-talus, droplets, combined, and
+combined-plus-talus metrics. The first recorded result and its negative
+findings live in `research/terrain/stream-power-experiment.md`.
 
 Every default program starts with normalization.  `raw` clears its transforms;
 `normalize` appends normalization explicitly; `world` selects the complete,

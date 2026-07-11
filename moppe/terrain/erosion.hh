@@ -1,6 +1,7 @@
 #ifndef MOPPE_TERRAIN_EROSION_HH
 #define MOPPE_TERRAIN_EROSION_HH
 
+#include <cstddef>
 #include <cstdint>
 
 namespace moppe::terrain {
@@ -40,6 +41,29 @@ namespace moppe::terrain {
     double discarded_fraction () const noexcept {
       return eroded > 0.0 ? discarded_sediment / eroded : 0.0;
     }
+  };
+
+  // Finite-time n=1 stream-power evolution.  SI units keep age, uplift,
+  // erodibility, drainage area, and terrain scale comparable across grid
+  // resolutions.  sea_level is expressed in the source heightfield's units.
+  struct AnalyticalErosion {
+    float time_years = 100000.0f;
+    float uplift_m_per_year = 0.0f;
+    float erodibility = 2e-5f;
+    float area_exponent = 0.4f;
+    float sea_level = 50.0f / 650.0f;
+    int fixed_point_iterations = 1;
+    float relaxation = 1.0f;
+  };
+
+  struct AnalyticalErosionReport {
+    std::size_t cells = 0;
+    std::size_t fixed_boundaries = 0;
+    int fixed_point_iterations = 0;
+    double lowered_volume_m3 = 0.0;
+    double raised_volume_m3 = 0.0;
+    double mean_absolute_change_m = 0.0;
+    double maximum_absolute_change_m = 0.0;
   };
 }
 
