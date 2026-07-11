@@ -61,10 +61,35 @@ namespace game {
 		  const std::string& label, const std::string& value,
 		  bool minus_hot, bool plus_hot, bool pressed) const;
 
+    // Spacious, friendly skin used by the public-facing Terrain Lab.  The
+    // old inspector widgets above deliberately remain available for the
+    // expert editor.
+    void surface (render::DrawList& dl, const UiRect& bounds) const;
+    void heading (render::DrawList& dl, float x, float y,
+		  const std::string& text) const;
+    void paragraph (render::DrawList& dl, float x, float y,
+		    const std::string& text, bool bright = false) const;
+    void caption (render::DrawList& dl, float x, float y,
+		  const std::string& text) const;
+    void friendly_button (render::DrawList& dl, const UiRect& bounds,
+			  const std::string& title,
+			  const std::string& detail,
+			  bool hot, bool pressed,
+			  bool selected = false) const;
+    void friendly_slider (render::DrawList& dl, const UiRect& bounds,
+			  const std::string& title,
+			  const std::string& low,
+			  const std::string& high,
+			  float normalized, bool hot,
+			  bool active) const;
+
   private:
     std::unique_ptr<render::FontAtlas> m_body;
     std::unique_ptr<render::FontAtlas> m_title;
     std::unique_ptr<render::FontAtlas> m_key;
+    std::unique_ptr<render::FontAtlas> m_display;
+    std::unique_ptr<render::FontAtlas> m_friendly_body;
+    std::unique_ptr<render::FontAtlas> m_friendly_label;
   };
 }
 }

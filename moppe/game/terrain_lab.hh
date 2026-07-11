@@ -93,6 +93,13 @@ namespace game {
     void queue_parameter_rebuild ();
     void run_pending_parameter_rebuild ();
     void handle_click (float x, float y);
+    void handle_friendly_click (float x, float y);
+    float friendly_control_normalized (int control) const;
+    bool set_friendly_control_normalized (int control, float value);
+    void apply_friendly_preset (int preset);
+    void draw_friendly (render::DrawList& dl, int width_pts,
+			int height_pts) const;
+    void draw_expert (render::DrawList& dl) const;
     void ensure_selected_stage_visible ();
     void refresh (bool inspection_fog = true);
     void restore_game_map ();
@@ -141,6 +148,12 @@ namespace game {
     float m_camera_drag_distance;
     bool m_pan_drag;
     bool m_parameter_drag;
+    bool m_friendly_drag;
+    int m_friendly_drag_control;
+    bool m_expert_ui;
+    int m_friendly_preset;
+    mutable int m_ui_width;
+    mutable int m_ui_height;
     int m_drag_property;
     float m_drag_start_y;
     float m_drag_start_normalized;
