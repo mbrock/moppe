@@ -1,4 +1,9 @@
-.PHONY: archive phone terrain-lab-shot testflight
+.PHONY: all archive phone terrain-lab-shot testflight
+
+# Configure (if needed) and build everything for macOS.
+all:
+	@[ -f build/build.ninja ] || cmake -B build -G Ninja
+	cmake --build build
 
 # Produce a signed App Store archive without uploading it.
 archive:
