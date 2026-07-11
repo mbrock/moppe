@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required" >&2
+  exit 1
+fi
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv is required" >&2
+  exit 1
+fi
+
+if llvm=$(brew --prefix llvm@20 2>/dev/null); then
+  :
+elif llvm=$(brew --prefix llvm 2>/dev/null); then
+  :
+else
+  echo "Homebrew LLVM is required: brew install llvm" >&2
+  exit 1
+fi
+
+major=$($llvm/bin/clang --version | sed -n 's/.*version \([0-9][0-9]*\).*/\1/p' |
+  head -1)
+export LIBCLANG_LIBRARY_FILE="$llvm/lib/libclang.dylib"
+export LIBCLANG_RESOURCE_DIR="$llvm/lib/clang/$major"
+
+exec uv run --quiet --with "clang==$major.*" \
+  python "$root/tools/callgraph_report.py" "$@"
