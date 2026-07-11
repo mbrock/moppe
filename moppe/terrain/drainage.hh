@@ -12,9 +12,7 @@ namespace moppe::terrain {
   struct FloodField;
   struct LakeCensus;
 
-  enum class DrainageRouting {
-    D8
-  };
+  enum class DrainageRouting { D8 };
 
   struct DrainageParameters {
     DrainageRouting routing = DrainageRouting::D8;
@@ -106,20 +104,22 @@ namespace moppe::terrain {
     std::vector<Waterfall> waterfalls;
   };
 
-  DrainageGraph analyze_drainage
-    (const TerrainView& terrain,
-     const DrainageParameters& parameters = { });
-  DrainageGraph analyze_wet_drainage
-    (const TerrainView& terrain, const FloodField& flood,
-     const LakeCensus& census,
-     const DrainageParameters& parameters = { });
-  WaterNetwork analyze_water_network
-    (const FloodField& flood, const LakeCensus& census,
-     const DrainageGraph& drainage);
-  RiverNetwork extract_river_network
-    (const FloodField& flood, const LakeCensus& census,
-     const DrainageGraph& drainage, float minimum_area_m2,
-     const WaterfallParameters& waterfall_parameters = { });
+  DrainageGraph analyze_drainage (const TerrainView& terrain,
+                                  const DrainageParameters& parameters = {});
+  DrainageGraph
+  analyze_wet_drainage (const TerrainView& terrain,
+                        const FloodField& flood,
+                        const LakeCensus& census,
+                        const DrainageParameters& parameters = {});
+  WaterNetwork analyze_water_network (const FloodField& flood,
+                                      const LakeCensus& census,
+                                      const DrainageGraph& drainage);
+  RiverNetwork
+  extract_river_network (const FloodField& flood,
+                         const LakeCensus& census,
+                         const DrainageGraph& drainage,
+                         float minimum_area_m2,
+                         const WaterfallParameters& waterfall_parameters = {});
 }
 
 #endif

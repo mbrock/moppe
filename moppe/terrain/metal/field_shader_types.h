@@ -14,11 +14,11 @@ typedef std::uint32_t MoppeFieldUInt;
 typedef std::int32_t MoppeFieldInt;
 #endif
 
-#define MOPPE_FIELD_OUTPUT_BUFFER       0
-#define MOPPE_FIELD_DOMAIN_BUFFER       1
-#define MOPPE_FIELD_PARAMETER_BUFFER    2
-#define MOPPE_FIELD_NOISE_BUFFER        3
-#define MOPPE_FIELD_PERMUTATION_BUFFER  4
+#define MOPPE_FIELD_OUTPUT_BUFFER 0
+#define MOPPE_FIELD_DOMAIN_BUFFER 1
+#define MOPPE_FIELD_PARAMETER_BUFFER 2
+#define MOPPE_FIELD_NOISE_BUFFER 3
+#define MOPPE_FIELD_PERMUTATION_BUFFER 4
 
 struct MoppeFieldDomain {
   MoppeFieldUInt width;

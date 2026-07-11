@@ -6,8 +6,7 @@
 
 namespace moppe::terrain {
   namespace {
-    std::uint32_t bounded_random (std::mt19937& rng,
-				  std::uint32_t bound) {
+    std::uint32_t bounded_random (std::mt19937& rng, std::uint32_t bound) {
       // Match libc++'s unbiased bit-mask rejection, which the original
       // macOS generator used.  Keeping it explicit also makes geological
       // seeds independent of the standard-library implementation.
@@ -19,7 +18,7 @@ namespace moppe::terrain {
       mask |= mask >> 16;
       std::uint32_t value;
       do
-	value = rng () & mask;
+        value = rng () & mask;
       while (value >= bound);
       return value;
     }
@@ -31,16 +30,16 @@ namespace moppe::terrain {
     for (std::int32_t i = 0; i < 256; ++i)
       shuffled[static_cast<std::size_t> (i)] = i;
     for (int i = 255; i > 0; --i) {
-      const int j = static_cast<int>
-	(bounded_random (rng, static_cast<std::uint32_t> (i + 1)));
+      const int j = static_cast<int> (
+        bounded_random (rng, static_cast<std::uint32_t> (i + 1)));
       std::swap (shuffled[static_cast<std::size_t> (i)],
-		 shuffled[static_cast<std::size_t> (j)]);
+                 shuffled[static_cast<std::size_t> (j)]);
     }
 
     PerlinPermutation result;
     for (int i = 0; i < 512; ++i)
       result[static_cast<std::size_t> (i)] =
-	shuffled[static_cast<std::size_t> (i & 255)];
+        shuffled[static_cast<std::size_t> (i & 255)];
     return result;
   }
 }

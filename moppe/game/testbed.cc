@@ -13,32 +13,35 @@
 using namespace moppe;
 
 namespace {
-  class Testbed: public platform::Game {
+  class Testbed : public platform::Game {
   public:
     Testbed () : m_time (0), m_frames (0), m_max_frames (0) {
       if (const char* f = ::getenv ("MOPPE_FRAMES"))
-	m_max_frames = ::atoi (f);
+        m_max_frames = ::atoi (f);
     }
 
     void setup (render::Renderer&, int, int) override {}
 
-    void tick (float dt) override { m_time += dt; }
+    void tick (float dt) override {
+      m_time += dt;
+    }
 
     void key (platform::Key k, bool down) override {
       if (k == platform::Key::Escape && down)
-	platform::request_quit ();
+        platform::request_quit ();
     }
 
     void render (render::Renderer& r) override {
       render::FrameParams fp;
       const float orbit = m_time * 0.4f;
-      const Vector3D eye (std::sin (orbit) * 18, 8,
-			  std::cos (orbit) * 18);
+      const Vector3D eye (std::sin (orbit) * 18, 8, std::cos (orbit) * 18);
       const Vector3D at (0, 2, 0);
       fp.view = Mat4::look_at (eye, at, Vector3D (0, 1, 0));
-      fp.proj = Mat4::perspective_reversed
-	(degrees_to_radians (60),
-	 (float) r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
+      fp.proj =
+        Mat4::perspective_reversed (degrees_to_radians (60),
+                                    (float)r.width_pts () / r.height_pts (),
+                                    0.5f,
+                                    9000.0f);
       fp.camera_pos = eye;
       fp.cam_right = Vector3D (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
       fp.cam_up = Vector3D (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
@@ -52,7 +55,7 @@ namespace {
       fp.time = m_time;
 
       if (!r.begin_frame (fp))
-	return;
+        return;
 
       m_list.clear ();
 
@@ -149,9 +152,8 @@ namespace {
       const float cx = 60, cy = 110, rad = 18;
       m_hud.vertex (cx, cy);
       for (int i = 0; i <= 24; ++i) {
-	const float a = PI2 * i / 24;
-	m_hud.vertex (cx + rad * std::cos (a),
-		      cy - rad * std::sin (a));
+        const float a = PI2 * i / 24;
+        m_hud.vertex (cx + rad * std::cos (a), cy - rad * std::sin (a));
       }
       m_hud.end ();
 
@@ -159,7 +161,7 @@ namespace {
       r.end_frame ();
 
       if (m_max_frames > 0 && ++m_frames >= m_max_frames)
-	platform::request_quit ();
+        platform::request_quit ();
     }
 
   private:
@@ -170,9 +172,9 @@ namespace {
   };
 }
 
-int
-main (int argc, char** argv) {
-  (void) argc; (void) argv;
+int main (int argc, char** argv) {
+  (void)argc;
+  (void)argv;
   Testbed game;
   platform::Config config;
   config.title = "moppe metal testbed";

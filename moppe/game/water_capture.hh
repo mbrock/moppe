@@ -11,13 +11,7 @@
 #include <string_view>
 
 namespace moppe::game {
-  enum class WaterShot {
-    River,
-    Confluence,
-    Mouth,
-    Waterfall,
-    Lake
-  };
+  enum class WaterShot { River, Confluence, Mouth, Waterfall, Lake };
 
   struct WaterInspection {
     WaterShot kind;
@@ -30,12 +24,13 @@ namespace moppe::game {
   std::optional<WaterShot> parse_water_shot (std::string_view name) noexcept;
   std::string_view water_shot_name (WaterShot shot) noexcept;
 
-  std::optional<WaterInspection> choose_water_inspection
-    (WaterShot shot, const map::HeightMap& map,
-     const terrain::FloodField& flood,
-     const terrain::LakeCensus& census,
-     const terrain::DrainageGraph& drainage,
-     const terrain::RiverNetwork& rivers);
+  std::optional<WaterInspection>
+  choose_water_inspection (WaterShot shot,
+                           const map::HeightMap& map,
+                           const terrain::FloodField& flood,
+                           const terrain::LakeCensus& census,
+                           const terrain::DrainageGraph& drainage,
+                           const terrain::RiverNetwork& rivers);
 }
 
 #endif

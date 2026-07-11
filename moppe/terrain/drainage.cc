@@ -17,10 +17,14 @@ namespace moppe::terrain {
       int y;
     };
 
-    constexpr std::array<Offset, 8> neighbors {{
-      { -1, -1 }, { 0, -1 }, { 1, -1 }, { -1, 0 },
-      { 1, 0 }, { -1, 1 }, { 0, 1 }, { 1, 1 }
-    }};
+    constexpr std::array<Offset, 8> neighbors { { { -1, -1 },
+                                                  { 0, -1 },
+                                                  { 1, -1 },
+                                                  { -1, 0 },
+                                                  { 1, 0 },
+                                                  { -1, 1 },
+                                                  { 0, 1 },
+                                                  { 1, 1 } } };
 
     std::size_t wrapped (int value, std::size_t period) {
       const int n = static_cast<int> (period);
@@ -28,30 +32,32 @@ namespace moppe::terrain {
       return static_cast<std::size_t> (result < 0 ? result + n : result);
     }
 
-    float receiver_distance (std::uint32_t cell, std::uint32_t receiver,
-			     const TerrainGrid& grid) {
+    float receiver_distance (std::uint32_t cell,
+                             std::uint32_t receiver,
+                             const TerrainGrid& grid) {
       const int width = static_cast<int> (grid.unique_width ());
       const int height = static_cast<int> (grid.unique_height ());
-      int dx = static_cast<int> (cell % width)
-	- static_cast<int> (receiver % width);
-      int dy = static_cast<int> (cell / width)
-	- static_cast<int> (receiver / width);
+      int dx =
+        static_cast<int> (cell % width) - static_cast<int> (receiver % width);
+      int dy =
+        static_cast<int> (cell / width) - static_cast<int> (receiver / width);
       if (grid.topology == Topology::Torus) {
-	if (dx > width / 2) dx -= width;
-	if (dx < -width / 2) dx += width;
-	if (dy > height / 2) dy -= height;
-	if (dy < -height / 2) dy += height;
+        if (dx > width / 2)
+          dx -= width;
+        if (dx < -width / 2)
+          dx += width;
+        if (dy > height / 2)
+          dy -= height;
+        if (dy < -height / 2)
+          dy += height;
       }
-      return std::hypot
-	(static_cast<float> (dx) * grid.spacing_x,
-	 static_cast<float> (dy) * grid.spacing_y);
+      return std::hypot (static_cast<float> (dx) * grid.spacing_x,
+                         static_cast<float> (dy) * grid.spacing_y);
     }
   }
 
-  DrainageGraph
-  analyze_drainage (const TerrainView& terrain,
-		    const DrainageParameters& parameters)
-  {
+  DrainageGraph analyze_drainage (const TerrainView& terrain,
+                                  const DrainageParameters& parameters) {
     if (parameters.routing != DrainageRouting::D8)
       throw std::invalid_argument ("unsupported drainage routing");
 
@@ -75,19 +81,18 @@ namespace moppe::terrain {
         for (const Offset offset : neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic && (raw_x < 0 || raw_y < 0
-			    || raw_x >= static_cast<int> (width)
-			    || raw_y >= static_cast<int> (height)))
+          if (!periodic &&
+              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+               raw_y >= static_cast<int> (height)))
             continue;
           const std::size_t nx = periodic ? wrapped (raw_x, width)
-					  : static_cast<std::size_t> (raw_x);
+                                          : static_cast<std::size_t> (raw_x);
           const std::size_t ny = periodic ? wrapped (raw_y, height)
-					  : static_cast<std::size_t> (raw_y);
+                                          : static_cast<std::size_t> (raw_y);
           const float neighbor_elevation =
-		    terrain.at (nx, ny) * source_grid.height_scale;
-          const float distance = std::hypot
-		    (offset.x * source_grid.spacing_x,
-		     offset.y * source_grid.spacing_y);
+            terrain.at (nx, ny) * source_grid.height_scale;
+          const float distance = std::hypot (offset.x * source_grid.spacing_x,
+                                             offset.y * source_grid.spacing_y);
           const float candidate = (elevation - neighbor_elevation) / distance;
           if (candidate > steepest) {
             steepest = candidate;
@@ -99,8 +104,8 @@ namespace moppe::terrain {
 
     std::vector<std::uint32_t> order (count);
     std::iota (order.begin (), order.end (), 0u);
-    std::stable_sort
-      (order.begin (), order.end (), [&] (std::uint32_t a, std::uint32_t b) {
+    std::stable_sort (
+      order.begin (), order.end (), [&] (std::uint32_t a, std::uint32_t b) {
         const std::size_t ax = a % width, ay = a / width;
         const std::size_t bx = b % width, by = b / width;
         return terrain.at (ax, ay) > terrain.at (bx, by);
@@ -131,22 +136,18 @@ namespace moppe::terrain {
       .max_x = source_grid.spacing_x * static_cast<float> (width),
       .max_y = source_grid.spacing_y * static_cast<float> (height)
     };
-    return {
-      .source_grid = source_grid,
-      .receiver = std::move (receiver),
-      .slope = ScalarRaster (domain, std::move (slope)),
-      .contributing_area = ScalarRaster (domain, std::move (area)),
-      .basin = std::move (basin),
-      .sinks = std::move (sinks)
-    };
+    return { .source_grid = source_grid,
+             .receiver = std::move (receiver),
+             .slope = ScalarRaster (domain, std::move (slope)),
+             .contributing_area = ScalarRaster (domain, std::move (area)),
+             .basin = std::move (basin),
+             .sinks = std::move (sinks) };
   }
 
-  DrainageGraph
-  analyze_wet_drainage (const TerrainView& terrain,
-			const FloodField& flood,
-			const LakeCensus& census,
-			const DrainageParameters& parameters)
-  {
+  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
+                                      const FloodField& flood,
+                                      const LakeCensus& census,
+                                      const DrainageParameters& parameters) {
     if (parameters.routing != DrainageRouting::D8)
       throw std::invalid_argument ("unsupported drainage routing");
 
@@ -154,11 +155,11 @@ namespace moppe::terrain {
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
-    if (flood.width () != width || flood.height () != height
-	|| flood.source_grid.topology != grid.topology
-	|| flood.source_grid.spacing_x != grid.spacing_x
-	|| flood.source_grid.spacing_y != grid.spacing_y
-	|| flood.source_grid.height_scale != grid.height_scale)
+    if (flood.width () != width || flood.height () != height ||
+        flood.source_grid.topology != grid.topology ||
+        flood.source_grid.spacing_x != grid.spacing_x ||
+        flood.source_grid.spacing_y != grid.spacing_y ||
+        flood.source_grid.height_scale != grid.height_scale)
       throw std::invalid_argument ("flood field does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
@@ -173,31 +174,31 @@ namespace moppe::terrain {
     std::vector<float> slope (count, 0.0f);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x) {
-	const std::size_t cell = index (x, y);
-	receiver[cell] = flood.spill_receiver[cell];
-	float steepest = 0.0f;
-	for (const Offset offset : neighbors) {
-	  const int raw_x = static_cast<int> (x) + offset.x;
-	  const int raw_y = static_cast<int> (y) + offset.y;
-	  if (!periodic && (raw_x < 0 || raw_y < 0
-			      || raw_x >= static_cast<int> (width)
-			      || raw_y >= static_cast<int> (height)))
-	    continue;
-	  const std::size_t nx = periodic ? wrapped (raw_x, width)
-				    : static_cast<std::size_t> (raw_x);
-	  const std::size_t ny = periodic ? wrapped (raw_y, height)
-				    : static_cast<std::size_t> (raw_y);
-	  const std::size_t next = index (nx, ny);
-	  const float distance = std::hypot
-	    (offset.x * grid.spacing_x, offset.y * grid.spacing_y);
-	  const float candidate = (surface[cell] - surface[next])
-	    * grid.height_scale / distance;
-	  if (candidate > steepest) {
-	    steepest = candidate;
-	    receiver[cell] = static_cast<std::uint32_t> (next);
-	  }
-	}
-	slope[cell] = steepest;
+        const std::size_t cell = index (x, y);
+        receiver[cell] = flood.spill_receiver[cell];
+        float steepest = 0.0f;
+        for (const Offset offset : neighbors) {
+          const int raw_x = static_cast<int> (x) + offset.x;
+          const int raw_y = static_cast<int> (y) + offset.y;
+          if (!periodic &&
+              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+               raw_y >= static_cast<int> (height)))
+            continue;
+          const std::size_t nx = periodic ? wrapped (raw_x, width)
+                                          : static_cast<std::size_t> (raw_x);
+          const std::size_t ny = periodic ? wrapped (raw_y, height)
+                                          : static_cast<std::size_t> (raw_y);
+          const std::size_t next = index (nx, ny);
+          const float distance =
+            std::hypot (offset.x * grid.spacing_x, offset.y * grid.spacing_y);
+          const float candidate =
+            (surface[cell] - surface[next]) * grid.height_scale / distance;
+          if (candidate > steepest) {
+            steepest = candidate;
+            receiver[cell] = static_cast<std::uint32_t> (next);
+          }
+        }
+        slope[cell] = steepest;
       }
 
     // A flat inland body has one route-proven spill. Replace any incidental
@@ -207,34 +208,34 @@ namespace moppe::terrain {
     std::queue<std::uint32_t> body_frontier;
     for (const WaterBody& body : census.bodies) {
       if (body.ocean_connected || body.outlet_cell == WaterBody::no_cell)
-	continue;
+        continue;
       receiver[body.outlet_cell] = body.spill_cell;
       routed[body.outlet_cell] = 1;
       body_frontier.push (body.outlet_cell);
       while (!body_frontier.empty ()) {
-	const std::uint32_t cell = body_frontier.front ();
-	body_frontier.pop ();
-	const std::size_t x = cell % width;
-	const std::size_t y = cell / width;
-	for (const Offset offset : neighbors) {
-	  const int raw_x = static_cast<int> (x) + offset.x;
-	  const int raw_y = static_cast<int> (y) + offset.y;
-	  if (!periodic && (raw_x < 0 || raw_y < 0
-			      || raw_x >= static_cast<int> (width)
-			      || raw_y >= static_cast<int> (height)))
-	    continue;
-	  const std::size_t nx = periodic ? wrapped (raw_x, width)
-				    : static_cast<std::size_t> (raw_x);
-	  const std::size_t ny = periodic ? wrapped (raw_y, height)
-				    : static_cast<std::size_t> (raw_y);
-	  const std::uint32_t next = static_cast<std::uint32_t>
-	    (index (nx, ny));
-	  if (routed[next] || census.body[next] != body.id)
-	    continue;
-	  routed[next] = 1;
-	  receiver[next] = cell;
-	  body_frontier.push (next);
-	}
+        const std::uint32_t cell = body_frontier.front ();
+        body_frontier.pop ();
+        const std::size_t x = cell % width;
+        const std::size_t y = cell / width;
+        for (const Offset offset : neighbors) {
+          const int raw_x = static_cast<int> (x) + offset.x;
+          const int raw_y = static_cast<int> (y) + offset.y;
+          if (!periodic &&
+              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+               raw_y >= static_cast<int> (height)))
+            continue;
+          const std::size_t nx = periodic ? wrapped (raw_x, width)
+                                          : static_cast<std::size_t> (raw_x);
+          const std::size_t ny = periodic ? wrapped (raw_y, height)
+                                          : static_cast<std::size_t> (raw_y);
+          const std::uint32_t next =
+            static_cast<std::uint32_t> (index (nx, ny));
+          if (routed[next] || census.body[next] != body.id)
+            continue;
+          routed[next] = 1;
+          receiver[next] = cell;
+          body_frontier.push (next);
+        }
       }
     }
 
@@ -244,13 +245,15 @@ namespace moppe::terrain {
     std::vector<std::uint32_t> donors (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell)
       if (receiver[cell] != cell)
-	++donors[receiver[cell]];
+        ++donors[receiver[cell]];
 
-    std::priority_queue<std::uint32_t, std::vector<std::uint32_t>,
-			std::greater<std::uint32_t>> ready;
+    std::priority_queue<std::uint32_t,
+                        std::vector<std::uint32_t>,
+                        std::greater<std::uint32_t>>
+      ready;
     for (std::uint32_t cell = 0; cell < count; ++cell)
       if (donors[cell] == 0)
-	ready.push (cell);
+        ready.push (cell);
 
     const float cell_area = grid.spacing_x * grid.spacing_y;
     std::vector<float> area (count, cell_area);
@@ -261,11 +264,11 @@ namespace moppe::terrain {
       ready.pop ();
       order.push_back (cell);
       if (receiver[cell] == cell)
-	continue;
+        continue;
       const std::uint32_t next = receiver[cell];
       area[next] += area[cell];
       if (--donors[next] == 0)
-	ready.push (next);
+        ready.push (next);
     }
     if (order.size () != count)
       throw std::logic_error ("wet drainage routing contains a cycle");
@@ -275,72 +278,63 @@ namespace moppe::terrain {
     for (auto i = order.rbegin (); i != order.rend (); ++i) {
       const std::uint32_t cell = *i;
       if (receiver[cell] == cell) {
-	basin[cell] = cell;
-	sinks.push_back (cell);
+        basin[cell] = cell;
+        sinks.push_back (cell);
       } else {
-	basin[cell] = basin[receiver[cell]];
+        basin[cell] = basin[receiver[cell]];
       }
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const Domain2D domain {
-      .width = width,
-      .height = height,
-      .max_x = grid.spacing_x * static_cast<float> (width),
-      .max_y = grid.spacing_y * static_cast<float> (height)
-    };
-    return {
-      .source_grid = grid,
-      .receiver = std::move (receiver),
-      .slope = ScalarRaster (domain, std::move (slope)),
-      .contributing_area = ScalarRaster (domain, std::move (area)),
-      .basin = std::move (basin),
-      .sinks = std::move (sinks)
-    };
+    const Domain2D domain { .width = width,
+                            .height = height,
+                            .max_x =
+                              grid.spacing_x * static_cast<float> (width),
+                            .max_y =
+                              grid.spacing_y * static_cast<float> (height) };
+    return { .source_grid = grid,
+             .receiver = std::move (receiver),
+             .slope = ScalarRaster (domain, std::move (slope)),
+             .contributing_area = ScalarRaster (domain, std::move (area)),
+             .basin = std::move (basin),
+             .sinks = std::move (sinks) };
   }
 
-  WaterNetwork
-  analyze_water_network (const FloodField& flood,
-			 const LakeCensus& census,
-			 const DrainageGraph& drainage)
-  {
+  WaterNetwork analyze_water_network (const FloodField& flood,
+                                      const LakeCensus& census,
+                                      const DrainageGraph& drainage) {
     const std::size_t count = flood.width () * flood.height ();
-    if (census.body.size () != count
-	|| drainage.width () != flood.width ()
-	|| drainage.height () != flood.height ())
+    if (census.body.size () != count || drainage.width () != flood.width () ||
+        drainage.height () != flood.height ())
       throw std::invalid_argument ("water analyses do not share a domain");
 
     WaterNetwork network;
     network.bodies.reserve (census.bodies.size ());
     for (const WaterBody& body : census.bodies) {
-      WaterBodyFlow flow {
-	.body_id = body.id,
-	.inflow_area_m2 = 0.0f,
-	.outlet_cell = body.outlet_cell,
-	.spill_cell = body.spill_cell,
-	.downstream_cell = WaterBodyFlow::no_cell,
-	.outflow_area_m2 = 0.0f
-      };
+      WaterBodyFlow flow { .body_id = body.id,
+                           .inflow_area_m2 = 0.0f,
+                           .outlet_cell = body.outlet_cell,
+                           .spill_cell = body.spill_cell,
+                           .downstream_cell = WaterBodyFlow::no_cell,
+                           .outflow_area_m2 = 0.0f };
       if (body.spill_cell != WaterBody::no_cell) {
-	flow.downstream_cell = drainage.receiver[body.spill_cell];
-	flow.outflow_area_m2 =
-	  drainage.contributing_area.values ()[body.spill_cell];
+        flow.downstream_cell = drainage.receiver[body.spill_cell];
+        flow.outflow_area_m2 =
+          drainage.contributing_area.values ()[body.spill_cell];
       }
       network.bodies.push_back (std::move (flow));
     }
 
     for (std::uint32_t cell = 0; cell < count; ++cell) {
       const std::uint32_t next = drainage.receiver[cell];
-      if (next == cell || census.body[cell] != LakeCensus::dry
-	  || census.body[next] == LakeCensus::dry)
-	continue;
+      if (next == cell || census.body[cell] != LakeCensus::dry ||
+          census.body[next] == LakeCensus::dry)
+        continue;
       WaterBodyFlow& flow = network.bodies[census.body[next]];
       const float area = drainage.contributing_area.values ()[cell];
-      flow.inlets.push_back ({
-	.upstream_cell = cell,
-	.water_cell = next,
-	.contributing_area_m2 = area
-      });
+      flow.inlets.push_back ({ .upstream_cell = cell,
+                               .water_cell = next,
+                               .contributing_area_m2 = area });
       flow.inflow_area_m2 += area;
     }
     return network;
@@ -348,152 +342,145 @@ namespace moppe::terrain {
 
   RiverNetwork
   extract_river_network (const FloodField& flood,
-			 const LakeCensus& census,
-			 const DrainageGraph& drainage,
-			 float minimum_area_m2,
-			 const WaterfallParameters& waterfall_parameters)
-  {
+                         const LakeCensus& census,
+                         const DrainageGraph& drainage,
+                         float minimum_area_m2,
+                         const WaterfallParameters& waterfall_parameters) {
     const std::size_t count = flood.width () * flood.height ();
     if (!std::isfinite (minimum_area_m2) || minimum_area_m2 < 0.0f)
       throw std::invalid_argument ("river area threshold must be finite");
-    if (!std::isfinite (waterfall_parameters.minimum_drop_m)
-	|| waterfall_parameters.minimum_drop_m < 0.0f
-	|| !std::isfinite (waterfall_parameters.minimum_slope)
-	|| waterfall_parameters.minimum_slope < 0.0f)
+    if (!std::isfinite (waterfall_parameters.minimum_drop_m) ||
+        waterfall_parameters.minimum_drop_m < 0.0f ||
+        !std::isfinite (waterfall_parameters.minimum_slope) ||
+        waterfall_parameters.minimum_slope < 0.0f)
       throw std::invalid_argument ("waterfall thresholds must be finite");
-    if (census.body.size () != count || flood.ocean.size () != count
-	|| drainage.width () != flood.width ()
-	|| drainage.height () != flood.height ())
+    if (census.body.size () != count || flood.ocean.size () != count ||
+        drainage.width () != flood.width () ||
+        drainage.height () != flood.height ())
       throw std::invalid_argument ("river analyses do not share a domain");
 
     std::vector<std::uint8_t> eligible (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell)
-      eligible[cell] = census.body[cell] == LakeCensus::dry
-	&& !flood.ocean[cell]
-	&& drainage.receiver[cell] != cell
-	&& drainage.contributing_area.values ()[cell] >= minimum_area_m2;
+      eligible[cell] =
+        census.body[cell] == LakeCensus::dry && !flood.ocean[cell] &&
+        drainage.receiver[cell] != cell &&
+        drainage.contributing_area.values ()[cell] >= minimum_area_m2;
 
     std::vector<std::uint32_t> river_donors (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell) {
       const std::uint32_t next = drainage.receiver[cell];
       if (eligible[cell] && eligible[next])
-	++river_donors[next];
+        ++river_donors[next];
     }
 
-    std::vector<std::uint32_t> body_at_spill
-      (count, RiverReach::no_id);
+    std::vector<std::uint32_t> body_at_spill (count, RiverReach::no_id);
     std::uint32_t ocean_body = RiverReach::no_id;
     for (const WaterBody& body : census.bodies) {
       if (body.spill_cell != WaterBody::no_cell)
-	body_at_spill[body.spill_cell] = body.id;
-      if (body.classification == WaterBodyClass::Sea
-	  && ocean_body == RiverReach::no_id)
-	ocean_body = body.id;
+        body_at_spill[body.spill_cell] = body.id;
+      if (body.classification == WaterBodyClass::Sea &&
+          ocean_body == RiverReach::no_id)
+        ocean_body = body.id;
     }
 
     RiverNetwork network {
       .minimum_area_m2 = minimum_area_m2,
       .waterfall_parameters = waterfall_parameters,
-      .reach_by_cell = std::vector<std::uint32_t>
-	(count, RiverReach::no_id),
-      .waterfall_by_cell = std::vector<std::uint32_t>
-	(count, Waterfall::no_id)
+      .reach_by_cell = std::vector<std::uint32_t> (count, RiverReach::no_id),
+      .waterfall_by_cell = std::vector<std::uint32_t> (count, Waterfall::no_id)
     };
     for (std::uint32_t start = 0; start < count; ++start) {
-      if (!eligible[start] || network.reach_by_cell[start] != RiverReach::no_id
-	  || (river_donors[start] == 1
-	      && body_at_spill[start] == RiverReach::no_id))
-	continue;
+      if (!eligible[start] ||
+          network.reach_by_cell[start] != RiverReach::no_id ||
+          (river_donors[start] == 1 &&
+           body_at_spill[start] == RiverReach::no_id))
+        continue;
       RiverReach reach {
-	.id = static_cast<std::uint32_t> (network.reaches.size ()),
-	.upstream_body = body_at_spill[start],
-	.downstream_body = RiverReach::no_id,
-	.downstream_ocean = false,
-	.downstream_reach = RiverReach::no_id,
-	.upstream_area_m2 = drainage.contributing_area.values ()[start],
-	.downstream_area_m2 = drainage.contributing_area.values ()[start],
-	.maximum_slope = 0.0f
+        .id = static_cast<std::uint32_t> (network.reaches.size ()),
+        .upstream_body = body_at_spill[start],
+        .downstream_body = RiverReach::no_id,
+        .downstream_ocean = false,
+        .downstream_reach = RiverReach::no_id,
+        .upstream_area_m2 = drainage.contributing_area.values ()[start],
+        .downstream_area_m2 = drainage.contributing_area.values ()[start],
+        .maximum_slope = 0.0f
       };
       std::uint32_t cell = start;
-      while (eligible[cell]
-	     && network.reach_by_cell[cell] == RiverReach::no_id) {
-	network.reach_by_cell[cell] = reach.id;
-	reach.cells.push_back (cell);
-	reach.downstream_area_m2 =
-	  drainage.contributing_area.values ()[cell];
-	reach.maximum_slope = std::max
-	  (reach.maximum_slope, drainage.slope.values ()[cell]);
-	const std::uint32_t next = drainage.receiver[cell];
-	if (!eligible[next] || river_donors[next] != 1)
-	  break;
-	cell = next;
+      while (eligible[cell] &&
+             network.reach_by_cell[cell] == RiverReach::no_id) {
+        network.reach_by_cell[cell] = reach.id;
+        reach.cells.push_back (cell);
+        reach.downstream_area_m2 = drainage.contributing_area.values ()[cell];
+        reach.maximum_slope =
+          std::max (reach.maximum_slope, drainage.slope.values ()[cell]);
+        const std::uint32_t next = drainage.receiver[cell];
+        if (!eligible[next] || river_donors[next] != 1)
+          break;
+        cell = next;
       }
       const std::uint32_t next = drainage.receiver[reach.cells.back ()];
       if (census.body[next] != LakeCensus::dry)
-	reach.downstream_body = census.body[next];
+        reach.downstream_body = census.body[next];
       else if (flood.ocean[next]) {
-	reach.downstream_ocean = true;
-	if (ocean_body != RiverReach::no_id)
-	  reach.downstream_body = ocean_body;
+        reach.downstream_ocean = true;
+        if (ocean_body != RiverReach::no_id)
+          reach.downstream_body = ocean_body;
       }
       network.reaches.push_back (std::move (reach));
     }
 
     for (RiverReach& reach : network.reaches) {
-      const std::uint32_t next =
-	drainage.receiver[reach.cells.back ()];
+      const std::uint32_t next = drainage.receiver[reach.cells.back ()];
       if (eligible[next])
-	reach.downstream_reach = network.reach_by_cell[next];
+        reach.downstream_reach = network.reach_by_cell[next];
     }
 
     for (const RiverReach& reach : network.reaches) {
-      const float reference_area = std::max
-	(minimum_area_m2, drainage.source_grid.spacing_x
-	 * drainage.source_grid.spacing_y);
-      Waterfall selected { };
+      const float reference_area = std::max (minimum_area_m2,
+                                             drainage.source_grid.spacing_x *
+                                               drainage.source_grid.spacing_y);
+      Waterfall selected {};
       bool has_selected = false;
       std::size_t last_candidate = 0;
       float selected_score = 0.0f;
       const auto emit_selected = [&] {
-	if (!has_selected)
-	  return;
-	selected.id = static_cast<std::uint32_t> (network.waterfalls.size ());
-	network.waterfall_by_cell[selected.lip_cell] = selected.id;
-	network.waterfalls.push_back (selected);
-	has_selected = false;
-	selected_score = 0.0f;
+        if (!has_selected)
+          return;
+        selected.id = static_cast<std::uint32_t> (network.waterfalls.size ());
+        network.waterfall_by_cell[selected.lip_cell] = selected.id;
+        network.waterfalls.push_back (selected);
+        has_selected = false;
+        selected_score = 0.0f;
       };
       for (std::size_t i = 0; i < reach.cells.size (); ++i) {
-	const std::uint32_t cell = reach.cells[i];
-	const std::uint32_t next = drainage.receiver[cell];
-	const float distance = receiver_distance
-	  (cell, next, drainage.source_grid);
-	const float slope = drainage.slope.values ()[cell];
-	const float drop = slope * distance;
-	if (drop < waterfall_parameters.minimum_drop_m
-	    || slope < waterfall_parameters.minimum_slope)
-	  continue;
-	if (has_selected
-	    && i > last_candidate + waterfall_parameters.separation_cells)
-	  emit_selected ();
-	last_candidate = i;
-	const float area = drainage.contributing_area.values ()[cell];
-	const float score = drop * std::sqrt
-	  (std::max (1.0f, area / reference_area));
-	if (!has_selected || score > selected_score
-	    || (score == selected_score && cell < selected.lip_cell)) {
-	  selected = {
-	    .reach_id = reach.id,
-	    .lip_cell = cell,
-	    .foot_cell = next,
-	    .drop_m = drop,
-	    .horizontal_distance_m = distance,
-	    .slope = slope,
-	    .contributing_area_m2 = area
-	  };
-	  has_selected = true;
-	  selected_score = score;
-	}
+        const std::uint32_t cell = reach.cells[i];
+        const std::uint32_t next = drainage.receiver[cell];
+        const float distance =
+          receiver_distance (cell, next, drainage.source_grid);
+        const float slope = drainage.slope.values ()[cell];
+        const float drop = slope * distance;
+        if (drop < waterfall_parameters.minimum_drop_m ||
+            slope < waterfall_parameters.minimum_slope)
+          continue;
+        if (has_selected &&
+            i > last_candidate + waterfall_parameters.separation_cells)
+          emit_selected ();
+        last_candidate = i;
+        const float area = drainage.contributing_area.values ()[cell];
+        const float score =
+          drop * std::sqrt (std::max (1.0f, area / reference_area));
+        if (!has_selected || score > selected_score ||
+            (score == selected_score && cell < selected.lip_cell)) {
+          selected = { .reach_id = reach.id,
+                       .lip_cell = cell,
+                       .foot_cell = next,
+                       .drop_m = drop,
+                       .horizontal_distance_m = distance,
+                       .slope = slope,
+                       .contributing_area_m2 = area };
+          has_selected = true;
+          selected_score = score;
+        }
       }
       emit_selected ();
     }

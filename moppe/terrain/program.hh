@@ -1,8 +1,8 @@
 #ifndef MOPPE_TERRAIN_PROGRAM_HH
 #define MOPPE_TERRAIN_PROGRAM_HH
 
-#include <moppe/terrain/geological.hh>
 #include <moppe/terrain/erosion.hh>
+#include <moppe/terrain/geological.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace moppe::terrain {
-  struct NormalizeHeights { };
+  struct NormalizeHeights {};
 
   struct PowerHeights {
     float exponent;
@@ -22,8 +22,7 @@ namespace moppe::terrain {
     int batch_size = 256;
     int max_steps = 64;
     float minimum_water = 0.0f;
-    SedimentDisposition sediment_at_termination =
-      SedimentDisposition::Discard;
+    SedimentDisposition sediment_at_termination = SedimentDisposition::Discard;
     CarvingRule carving_rule = CarvingRule::PathMonotone;
   };
 
@@ -32,29 +31,25 @@ namespace moppe::terrain {
     float talus;
   };
 
-  using TerrainTransform = std::variant
-    <NormalizeHeights, PowerHeights, AnalyticalErosion,
-     HydraulicErosion, ThermalErosion, ChannelCarving>;
+  using TerrainTransform = std::variant<NormalizeHeights,
+                                        PowerHeights,
+                                        AnalyticalErosion,
+                                        HydraulicErosion,
+                                        ThermalErosion,
+                                        ChannelCarving>;
 
-  using TerrainTransformReport = std::variant
-    <std::monostate, AnalyticalErosionReport, HydraulicErosionReport,
-     ChannelCarvingReport>;
+  using TerrainTransformReport = std::variant<std::monostate,
+                                              AnalyticalErosionReport,
+                                              HydraulicErosionReport,
+                                              ChannelCarvingReport>;
 
   // These two axes describe what an evaluator must observe, without
   // prescribing whether it uses a CPU loop, a GPU kernel, or something
   // else.  In more abstract language they distinguish pointwise maps,
   // local context, and operations whose answer depends on the whole terrain.
-  enum class SpatialScope {
-    Pointwise,
-    Neighborhood,
-    Global
-  };
+  enum class SpatialScope { Pointwise, Neighborhood, Global };
 
-  enum class EvaluationOrder {
-    Direct,
-    Reduction,
-    Iterative
-  };
+  enum class EvaluationOrder { Direct, Reduction, Iterative };
 
   struct TransformSemantics {
     SpatialScope spatial_scope;
@@ -83,27 +78,23 @@ namespace moppe::terrain {
     std::vector<TerrainTransform> transforms;
   };
 
-  enum class TerrainGenerationProfile {
-    Fast,
-    Play,
-    Research
-  };
+  enum class TerrainGenerationProfile { Fast, Play, Research };
 
-  TerrainProgram make_geological_program
-    (std::uint32_t root_seed,
-     GeologicalLayer layer = GeologicalLayer::Combined);
+  TerrainProgram
+  make_geological_program (std::uint32_t root_seed,
+                           GeologicalLayer layer = GeologicalLayer::Combined);
   TerrainProgram make_default_world_program (std::uint32_t root_seed);
-  TerrainProgram make_world_program
-    (std::uint32_t root_seed, TerrainGenerationProfile profile);
+  TerrainProgram make_world_program (std::uint32_t root_seed,
+                                     TerrainGenerationProfile profile);
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept;
-  int profile_stream_power_iterations
-    (TerrainGenerationProfile profile) noexcept;
+  int profile_stream_power_iterations (
+    TerrainGenerationProfile profile) noexcept;
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
 
   void validate_program (const TerrainProgram& program);
   std::string_view terrain_transform_id (const TerrainTransform& transform);
-  TransformSemantics terrain_transform_semantics
-    (const TerrainTransform& transform);
+  TransformSemantics
+  terrain_transform_semantics (const TerrainTransform& transform);
 }
 
 #endif

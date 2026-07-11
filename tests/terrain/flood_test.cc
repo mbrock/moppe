@@ -8,13 +8,9 @@
 using namespace moppe::terrain;
 
 MOPPE_TEST (priority_flood_fills_a_basin_to_its_lowest_spill) {
-  const std::array heights {
-    0.f, 0.f, 0.f, 0.f, 0.f,
-    0.f, 3.f, 2.f, 3.f, 0.f,
-    0.f, 3.f, 1.f, 3.f, 0.f,
-    0.f, 3.f, 3.f, 3.f, 0.f,
-    0.f, 0.f, 0.f, 0.f, 0.f
-  };
+  const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
+                             0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
+                             3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
   const TerrainView terrain ({ .width = 5, .height = 5 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
@@ -38,13 +34,9 @@ MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
 }
 
 MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
-  const std::array heights {
-    -1.f, -1.f, -1.f, -1.f, -1.f,
-    -1.f,  3.f,  3.f,  3.f, -1.f,
-    -1.f,  3.f, -2.f,  3.f, -1.f,
-    -1.f,  3.f,  3.f,  3.f, -1.f,
-    -1.f, -1.f, -1.f, -1.f, -1.f
-  };
+  const std::array heights { -1.f, -1.f, -1.f, -1.f, -1.f, -1.f, 3.f,  3.f, 3.f,
+                             -1.f, -1.f, 3.f,  -2.f, 3.f,  -1.f, -1.f, 3.f, 3.f,
+                             3.f,  -1.f, -1.f, -1.f, -1.f, -1.f, -1.f };
   const TerrainView terrain ({ .width = 5, .height = 5 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
@@ -59,14 +51,10 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
 }
 
 MOPPE_TEST (periodic_flood_can_spill_across_the_duplicated_seam) {
-  const std::array heights {
-    1.f, 3.f, 0.f, 1.f,
-    1.f, 3.f, 0.f, 1.f,
-    1.f, 3.f, 0.f, 1.f,
-    1.f, 3.f, 0.f, 1.f
-  };
-  const TerrainView terrain
-    ({ .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 1.f, 3.f, 0.f, 1.f, 1.f, 3.f, 0.f, 1.f,
+                             1.f, 3.f, 0.f, 1.f, 1.f, 3.f, 0.f, 1.f };
+  const TerrainView terrain (
+    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
   MOPPE_CHECK (flood.width () == 3);
@@ -74,14 +62,10 @@ MOPPE_TEST (periodic_flood_can_spill_across_the_duplicated_seam) {
 }
 
 MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
-  const std::array heights {
-    4.f, 3.f, 2.f, 4.f,
-    4.f, 1.f, 3.f, 4.f,
-    4.f, 4.f, 4.f, 4.f,
-    4.f, 3.f, 2.f, 4.f
-  };
-  const TerrainView terrain
-    ({ .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 4.f, 3.f, 2.f, 4.f, 4.f, 1.f, 3.f, 4.f,
+                             4.f, 4.f, 4.f, 4.f, 4.f, 3.f, 2.f, 4.f };
+  const TerrainView terrain (
+    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
   MOPPE_CHECK (flood.outlets.size () == 1);
@@ -91,14 +75,10 @@ MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
 }
 
 MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
-  const std::array heights {
-    0.f, 4.f, 3.f, 0.f,
-    2.f, 1.f, 5.f, 2.f,
-    3.f, 2.f, 4.f, 3.f,
-    0.f, 4.f, 3.f, 0.f
-  };
-  const TerrainView terrain
-    ({ .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 0.f, 4.f, 3.f, 0.f, 2.f, 1.f, 5.f, 2.f,
+                             3.f, 2.f, 4.f, 3.f, 0.f, 4.f, 3.f, 0.f };
+  const TerrainView terrain (
+    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const std::size_t count = flood.width () * flood.height ();
 
@@ -107,8 +87,8 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
     std::size_t steps = 0;
     while (flood.spill_receiver[cell] != cell && steps < count) {
       const std::uint32_t next = flood.spill_receiver[cell];
-      MOPPE_CHECK (flood.water_level.values ()[next]
-		   <= flood.water_level.values ()[cell]);
+      MOPPE_CHECK (flood.water_level.values ()[next] <=
+                   flood.water_level.values ()[cell]);
       cell = next;
       ++steps;
     }
@@ -117,16 +97,12 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
 }
 
 MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
-  const std::array heights {
-    0.f, 0.f, 0.f, 0.f, 0.f,
-    0.f, 3.f, 2.f, 3.f, 0.f,
-    0.f, 3.f, 1.f, 3.f, 0.f,
-    0.f, 3.f, 3.f, 3.f, 0.f,
-    0.f, 0.f, 0.f, 0.f, 0.f
-  };
-  const TerrainView terrain
-    ({ .width = 5, .height = 5, .spacing_x = 2.0f,
-	.height_scale = 10.0f }, heights);
+  const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
+                             0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
+                             3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+  const TerrainView terrain (
+    { .width = 5, .height = 5, .spacing_x = 2.0f, .height_scale = 10.0f },
+    heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
@@ -139,31 +115,24 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   MOPPE_CHECK (!census.bodies[0].ocean_connected);
   MOPPE_CHECK (census.bodies[0].outlet_cell == 12);
   MOPPE_CHECK (census.bodies[0].spill_cell == 7);
-  MOPPE_CHECK
-    (census.bodies[0].classification == WaterBodyClass::Puddle);
+  MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Puddle);
 }
 
 MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
-  const TerrainGrid grid {
-    .width = 3,
-    .height = 3
-  };
+  const TerrainGrid grid { .width = 3, .height = 3 };
   const std::vector<float> level (9, 1.0f);
-  const std::vector<float> depth {
-    1.0f, 0.0f, 0.0f,
-    0.0f, 1.0f, 0.0f,
-    0.0f, 0.0f, 0.0f
-  };
-  const FloodField flood {
-    .source_grid = grid,
-    .sea_level = 0.0f,
-    .has_ocean = false,
-    .water_level = ScalarRaster ({ .width = 3, .height = 3 }, level),
-    .water_depth = ScalarRaster ({ .width = 3, .height = 3 }, depth),
-    .ocean = std::vector<std::uint8_t> (9, 0),
-    .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 },
-    .outlets = { 8 }
-  };
+  const std::vector<float> depth { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                                   0.0f, 0.0f, 0.0f, 0.0f };
+  const FloodField flood { .source_grid = grid,
+                           .sea_level = 0.0f,
+                           .has_ocean = false,
+                           .water_level =
+                             ScalarRaster ({ .width = 3, .height = 3 }, level),
+                           .water_depth =
+                             ScalarRaster ({ .width = 3, .height = 3 }, depth),
+                           .ocean = std::vector<std::uint8_t> (9, 0),
+                           .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 },
+                           .outlets = { 8 } };
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.bodies.size () == 1);
@@ -176,12 +145,11 @@ MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
   const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
-  const ScalarRaster permanent = permanent_water_surface
-    (flood, census, { .minimum_area_m2 = 1000000.0f });
+  const ScalarRaster permanent =
+    permanent_water_surface (flood, census, { .minimum_area_m2 = 1000000.0f });
 
   MOPPE_CHECK (census.bodies.size () == 1);
-  MOPPE_CHECK
-    (census.bodies[0].classification == WaterBodyClass::Sea);
+  MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Sea);
   MOPPE_CHECK_NEAR (permanent.at (0, 0), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (permanent.at (1, 0), 0.0f, 0.0f);
 }

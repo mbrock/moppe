@@ -5,15 +5,9 @@
 #include <cstdint>
 
 namespace moppe::terrain {
-  enum class SedimentDisposition {
-    Discard,
-    Deposit
-  };
+  enum class SedimentDisposition { Discard, Deposit };
 
-  enum class CarvingRule {
-    Unconstrained,
-    PathMonotone
-  };
+  enum class CarvingRule { Unconstrained, PathMonotone };
 
   // Operational reading produced by one hydraulic erosion stage. Amounts are
   // measured in normalized terrain-height units; the balance is independent

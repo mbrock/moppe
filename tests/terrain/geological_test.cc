@@ -17,8 +17,8 @@ namespace {
     for (float value : raster.values ()) {
       const std::uint32_t bits = std::bit_cast<std::uint32_t> (value);
       for (int byte = 0; byte < 4; ++byte) {
-	hash ^= (bits >> (byte * 8)) & 0xff;
-	hash *= 1099511628211ull;
+        hash ^= (bits >> (byte * 8)) & 0xff;
+        hash *= 1099511628211ull;
       }
     }
     return hash;
@@ -39,25 +39,24 @@ MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
     GoldenLayer { GeologicalLayer::WarpX, 0x6c928009ffd5c17aull },
     GoldenLayer { GeologicalLayer::WarpY, 0x3f8851268f877c20ull }
   };
-  const GeologicalFields fields = make_geological_fields
-    (derive_geological_seeds (123));
+  const GeologicalFields fields =
+    make_geological_fields (derive_geological_seeds (123));
   const Domain2D domain { .width = 65, .height = 65 };
 
   for (const GoldenLayer& expected : golden) {
-    const ScalarRaster raster = normalize
-      (CpuEvaluator ().evaluate
-	(geological_layer (fields, expected.layer), domain));
+    const ScalarRaster raster = normalize (CpuEvaluator ().evaluate (
+      geological_layer (fields, expected.layer), domain));
     MOPPE_CHECK (raster_hash (raster) == expected.hash);
   }
 }
 
 MOPPE_TEST (geological_fields_share_warp_subexpressions) {
-  const GeologicalFields fields = make_geological_fields
-    ({ .base = 1, .ridge = 2, .warp = 3 });
-  const auto& warped_x = std::get<expression::MultiplyAdd>
-    (fields.warped_x.node ()->operation);
-  const auto& warped_y = std::get<expression::MultiplyAdd>
-    (fields.warped_y.node ()->operation);
+  const GeologicalFields fields =
+    make_geological_fields ({ .base = 1, .ridge = 2, .warp = 3 });
+  const auto& warped_x =
+    std::get<expression::MultiplyAdd> (fields.warped_x.node ()->operation);
+  const auto& warped_y =
+    std::get<expression::MultiplyAdd> (fields.warped_y.node ()->operation);
 
   MOPPE_CHECK (warped_x.multiplicand == fields.warp_x.node ());
   MOPPE_CHECK (warped_y.multiplicand == fields.warp_y.node ());
@@ -66,17 +65,13 @@ MOPPE_TEST (geological_fields_share_warp_subexpressions) {
 
 MOPPE_TEST (geological_layer_ids_round_trip) {
   constexpr GeologicalLayer layers[] = {
-    GeologicalLayer::Combined,
-    GeologicalLayer::Continent,
-    GeologicalLayer::Plains,
-    GeologicalLayer::Mountains,
-    GeologicalLayer::MountainMask,
-    GeologicalLayer::WarpX,
+    GeologicalLayer::Combined,     GeologicalLayer::Continent,
+    GeologicalLayer::Plains,       GeologicalLayer::Mountains,
+    GeologicalLayer::MountainMask, GeologicalLayer::WarpX,
     GeologicalLayer::WarpY
   };
   for (GeologicalLayer layer : layers) {
-    const auto parsed = geological_layer_from_id
-      (geological_layer_id (layer));
+    const auto parsed = geological_layer_from_id (geological_layer_id (layer));
     MOPPE_CHECK (parsed && *parsed == layer);
   }
   MOPPE_CHECK (!geological_layer_from_id ("not-a-layer"));
@@ -93,12 +88,11 @@ MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
   MOPPE_CHECK (recipe.mountains.cycles == 6);
 
   recipe.mountains.cycles = 8;
-  const ScalarRaster changed = CpuEvaluator ().evaluate
-    (make_geological_fields (recipe).mountains,
-     { .width = 17, .height = 17 });
-  const ScalarRaster original = CpuEvaluator ().evaluate
-    (make_geological_fields (make_geological_recipe (123)).mountains,
-     { .width = 17, .height = 17 });
+  const ScalarRaster changed = CpuEvaluator ().evaluate (
+    make_geological_fields (recipe).mountains, { .width = 17, .height = 17 });
+  const ScalarRaster original = CpuEvaluator ().evaluate (
+    make_geological_fields (make_geological_recipe (123)).mountains,
+    { .width = 17, .height = 17 });
   MOPPE_CHECK (changed.at (8, 8) != original.at (8, 8));
 }
 
@@ -107,7 +101,7 @@ MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
   recipe.blend.mask_high = recipe.blend.mask_low;
   bool threw = false;
   try {
-    (void) make_geological_fields (recipe);
+    (void)make_geological_fields (recipe);
   } catch (const std::invalid_argument&) {
     threw = true;
   }
@@ -115,22 +109,18 @@ MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
 }
 
 MOPPE_TEST (every_geological_layer_is_periodic) {
-  const GeologicalFields fields = make_geological_fields
-    (make_geological_recipe (123));
+  const GeologicalFields fields =
+    make_geological_fields (make_geological_recipe (123));
   constexpr GeologicalLayer layers[] = {
-    GeologicalLayer::Combined,
-    GeologicalLayer::Continent,
-    GeologicalLayer::Plains,
-    GeologicalLayer::Mountains,
-    GeologicalLayer::MountainMask,
-    GeologicalLayer::WarpX,
+    GeologicalLayer::Combined,     GeologicalLayer::Continent,
+    GeologicalLayer::Plains,       GeologicalLayer::Mountains,
+    GeologicalLayer::MountainMask, GeologicalLayer::WarpX,
     GeologicalLayer::WarpY
   };
 
   for (GeologicalLayer layer : layers) {
-    const ScalarRaster raster = CpuEvaluator ().evaluate
-      (geological_layer (fields, layer),
-       { .width = 65, .height = 65 });
+    const ScalarRaster raster = CpuEvaluator ().evaluate (
+      geological_layer (fields, layer), { .width = 65, .height = 65 });
     for (std::size_t i = 0; i < 65; ++i) {
       MOPPE_CHECK_NEAR (raster.at (0, i), raster.at (64, i), 1e-5f);
       MOPPE_CHECK_NEAR (raster.at (i, 0), raster.at (i, 64), 1e-5f);

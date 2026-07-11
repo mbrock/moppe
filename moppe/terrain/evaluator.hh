@@ -21,8 +21,12 @@ namespace moppe::terrain {
   public:
     ScalarRaster (Domain2D domain, std::vector<float> values);
 
-    const Domain2D& domain () const noexcept { return m_domain; }
-    std::span<const float> values () const noexcept { return m_values; }
+    const Domain2D& domain () const noexcept {
+      return m_domain;
+    }
+    std::span<const float> values () const noexcept {
+      return m_values;
+    }
 
     float at (std::size_t x, std::size_t y) const;
     float min_value () const;
@@ -40,8 +44,8 @@ namespace moppe::terrain {
   public:
     virtual ~FieldEvaluator () = default;
 
-    virtual ScalarRaster evaluate
-      (const ScalarField& field, const Domain2D& domain) const = 0;
+    virtual ScalarRaster evaluate (const ScalarField& field,
+                                   const Domain2D& domain) const = 0;
   };
 
   // A materialization barrier: remaps the sampled minimum and maximum to

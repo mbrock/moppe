@@ -17,20 +17,20 @@ struct UberVaryings {
   float grass;
 };
 
-vertex UberVaryings
-uber_vertex (uint vid [[vertex_id]],
-	     const device MoppeVertexIn* verts [[buffer(MOPPE_BUF_VERTICES)]],
-	     constant MoppeFrameUniforms& frame [[buffer(MOPPE_BUF_FRAME)]],
-	     constant MoppeDrawUniforms& draw [[buffer(MOPPE_BUF_DRAW)]])
-{
+vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
+                                 const device MoppeVertexIn* verts
+                                 [[buffer (MOPPE_BUF_VERTICES)]],
+                                 constant MoppeFrameUniforms& frame
+                                 [[buffer (MOPPE_BUF_FRAME)]],
+                                 constant MoppeDrawUniforms& draw
+                                 [[buffer (MOPPE_BUF_DRAW)]]) {
   const MoppeVertexIn v = verts[vid];
 
   float4 world = draw.model * float4 (float3 (v.position), 1.0);
   const float3x3 nrm (draw.nrm0.xyz, draw.nrm1.xyz, draw.nrm2.xyz);
 
   if (v.flags.z)
-    world.xyz = moppe_wind (world.xyz, float (v.flags.z) / 255.0,
-			    frame.misc.x);
+    world.xyz = moppe_wind (world.xyz, float (v.flags.z) / 255.0, frame.misc.x);
 
   UberVaryings out;
   out.position = frame.view_proj * world;
@@ -47,14 +47,15 @@ uber_vertex (uint vid [[vertex_id]],
   return out;
 }
 
-fragment float4
-uber_fragment (UberVaryings in [[stage_in]],
-	       constant MoppeFrameUniforms& frame [[buffer(MOPPE_BUF_FRAME)]],
-	       texture2d<float> tex [[texture(MOPPE_TEX_COLOR)]],
-	       depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]],
-	       sampler smp [[sampler(0)]],
-	       bool front_facing [[front_facing]])
-{
+fragment float4 uber_fragment (UberVaryings in [[stage_in]],
+                               constant MoppeFrameUniforms& frame
+                               [[buffer (MOPPE_BUF_FRAME)]],
+                               texture2d<float> tex
+                               [[texture (MOPPE_TEX_COLOR)]],
+                               depth2d<float> shadow_map
+                               [[texture (MOPPE_TEX_SHADOW)]],
+                               sampler smp [[sampler (0)]],
+                               bool front_facing [[front_facing]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
 
   float3 color = base.rgb;
@@ -62,29 +63,31 @@ uber_fragment (UberVaryings in [[stage_in]],
     float3 n = normalize (in.normal);
     if (in.grass > 0.5) {
       if (!front_facing)
-	n = -n;
+        n = -n;
       // Approximate a narrow rounded blade, then turn its upper normals
       // toward the sky to create the characteristic bright grass tips.
-      n = normalize (mix (n, float3 (0, 1, 0),
-			  0.25 + 0.60 * in.uv.y));
+      n = normalize (mix (n, float3 (0, 1, 0), 0.25 + 0.60 * in.uv.y));
     }
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
     const float dist = length (in.world_pos - frame.camera_pos.xyz);
     const float fog = moppe_distance_fog (dist, frame.fog_color.w);
-    const float sun_visibility = moppe_sun_visibility
-      (in.world_pos, n, l, fog, frame.light_matrix,
-       frame.shadow.x, frame.shadow.y, shadow_map);
+    const float sun_visibility = moppe_sun_visibility (in.world_pos,
+                                                       n,
+                                                       l,
+                                                       fog,
+                                                       frame.light_matrix,
+                                                       frame.shadow.x,
+                                                       frame.shadow.y,
+                                                       shadow_map);
 
     // AMBIENT_AND_DIFFUSE color material: both terms scale the
     // vertex color.
-    const float root_occlusion = in.grass > 0.5
-      ? mix (0.52, 1.0, smoothstep (0.0, 0.85, in.uv.y)) : 1.0;
-    float3 lit = base.rgb * (moppe_hemisphere_light
-                             (frame.ambient.rgb, n)
-			     * root_occlusion
-			     + frame.sun_diffuse.rgb * lambert
-			       * sun_visibility);
+    const float root_occlusion =
+      in.grass > 0.5 ? mix (0.52, 1.0, smoothstep (0.0, 0.85, in.uv.y)) : 1.0;
+    float3 lit = base.rgb * (moppe_hemisphere_light (frame.ambient.rgb, n) *
+                               root_occlusion +
+                             frame.sun_diffuse.rgb * lambert * sun_visibility);
 
     // Separate specular (global material, shininess 64).
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
@@ -92,21 +95,21 @@ uber_fragment (UberVaryings in [[stage_in]],
     const float3 specular_tint = mix (base.rgb, float3 (1.0), 0.20);
     const float specular_power = in.grass > 0.5 ? 28.0 : 64.0;
     const float specular_amount = in.grass > 0.5 ? 0.08 : 0.22;
-    lit += specular_tint * frame.sun_specular.rgb * sun_visibility
-      * specular_amount * pow (max (dot (n, h), 0.0), specular_power);
+    lit += specular_tint * frame.sun_specular.rgb * sun_visibility *
+           specular_amount * pow (max (dot (n, h), 0.0), specular_power);
 
     if (in.grass > 0.5) {
       // Thin leaves transmit sunlight when viewed from the shaded side.
-      const float backlight = pow (max (dot (-n, l), 0.0), 1.5)
-	* (0.25 + 0.75 * in.uv.y);
-      lit += base.rgb * frame.sun_diffuse.rgb * sun_visibility
-	* backlight * 0.34;
+      const float backlight =
+        pow (max (dot (-n, l), 0.0), 1.5) * (0.25 + 0.75 * in.uv.y);
+      lit +=
+        base.rgb * frame.sun_diffuse.rgb * sun_visibility * backlight * 0.34;
     }
 
     // A restrained sky rim separates moving silhouettes from the
     // landscape, especially on their shadowed side.
-    const float rim = pow (1.0 - max (dot (n, v), 0.0), 3.0)
-      * (0.35 + 0.65 * max (n.y, 0.0));
+    const float rim =
+      pow (1.0 - max (dot (n, v), 0.0), 3.0) * (0.35 + 0.65 * max (n.y, 0.0));
     lit += base.rgb * float3 (0.025, 0.04, 0.065) * rim;
 
     color = lit;
@@ -116,9 +119,8 @@ uber_fragment (UberVaryings in [[stage_in]],
     const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
     const float dist = length (to_frag);
     const float fog = moppe_distance_fog (dist, frame.fog_color.w);
-    const float3 fog_c = moppe_warmed_fog (frame.fog_color.rgb,
-					   to_frag / max (dist, 1e-4),
-					   frame.sun_dir.xyz);
+    const float3 fog_c = moppe_warmed_fog (
+      frame.fog_color.rgb, to_frag / max (dist, 1e-4), frame.sun_dir.xyz);
     color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
   }
 
@@ -134,11 +136,11 @@ struct HudVaryings {
   float4 color;
 };
 
-vertex HudVaryings
-hud_vertex (uint vid [[vertex_id]],
-	    const device MoppeVertexIn* verts [[buffer(MOPPE_BUF_VERTICES)]],
-	    constant MoppeHudUniforms& hud [[buffer(MOPPE_BUF_FRAME)]])
-{
+vertex HudVaryings hud_vertex (uint vid [[vertex_id]],
+                               const device MoppeVertexIn* verts
+                               [[buffer (MOPPE_BUF_VERTICES)]],
+                               constant MoppeHudUniforms& hud
+                               [[buffer (MOPPE_BUF_FRAME)]]) {
   const MoppeVertexIn v = verts[vid];
   HudVaryings out;
   out.position = hud.proj * float4 (float3 (v.position), 1.0);
@@ -147,12 +149,12 @@ hud_vertex (uint vid [[vertex_id]],
   return out;
 }
 
-fragment float4
-hud_fragment (HudVaryings in [[stage_in]],
-	      constant MoppeHudUniforms& hud [[buffer(MOPPE_BUF_FRAME)]],
-	      texture2d<float> tex [[texture(MOPPE_TEX_COLOR)]],
-	      sampler smp [[sampler(0)]])
-{
+fragment float4 hud_fragment (HudVaryings in [[stage_in]],
+                              constant MoppeHudUniforms& hud
+                              [[buffer (MOPPE_BUF_FRAME)]],
+                              texture2d<float> tex
+                              [[texture (MOPPE_TEX_COLOR)]],
+                              sampler smp [[sampler (0)]]) {
   float4 color = in.color * tex.sample (smp, in.uv);
   if (hud.params.x > 0.5)
     color.rgb = pow (color.rgb, 2.2);

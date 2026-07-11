@@ -5,7 +5,7 @@
 #include <iostream>
 
 namespace moppe {
-  const float PI  = 3.14159;
+  const float PI = 3.14159;
   const float PI2 = 3.14159 * 2;
 
   const float one_meter = 1;
@@ -16,8 +16,9 @@ namespace moppe {
   typedef float seconds_t;
   typedef float meters_t;
 
-  inline radians_t degrees_to_radians (degrees_t x)
-  { return x * (PI2 / 360); }
+  inline radians_t degrees_to_radians (degrees_t x) {
+    return x * (PI2 / 360);
+  }
 
   template <typename T>
   void clamp (T& x, const T& min, const T& max) {
@@ -28,14 +29,19 @@ namespace moppe {
   }
 
   template <typename T>
-  T max (T a, T b) { return a > b ? a : b; }
+  T max (T a, T b) {
+    return a > b ? a : b;
+  }
 
   template <typename T>
-  T min (T a, T b) { return a < b ? a : b; }
+  T min (T a, T b) {
+    return a < b ? a : b;
+  }
 
   template <typename T>
-  T linear_interpolate (const T& x, const T& y, const T& alpha)
-  { return (1 - alpha) * x + alpha * y; }
+  T linear_interpolate (const T& x, const T& y, const T& alpha) {
+    return (1 - alpha) * x + alpha * y;
+  }
 
   template <typename T>
   struct Vector3DG {
@@ -43,47 +49,66 @@ namespace moppe {
 
     T x, y, z;
 
-    Vector3DG ()                   : x (0),   y (0),   z (0)   { }
-    Vector3DG (T x, T y, T z)      : x (x),   y (y),   z (z)   { }
-    Vector3DG (const Vector3DG& v) : x (v.x), y (v.y), z (v.z) { }
+    Vector3DG () : x (0), y (0), z (0) {}
+    Vector3DG (T x, T y, T z) : x (x), y (y), z (z) {}
+    Vector3DG (const Vector3DG& v) : x (v.x), y (v.y), z (v.z) {}
 
-    inline Vector3DG& operator += (const Vector3DG& v)
-    { x += v.x; y += v.y; z += v.z; return *this; }
-    inline Vector3DG& operator -= (const Vector3DG& v)
-    { x -= v.x; y -= v.y; z -= v.z; return *this; }
-
-    inline Vector3DG& operator *= (T k)
-    { x *= k; y *= k; z *= k; return *this; }
-    inline Vector3DG& operator /= (T k)
-    { x /= k; y /= k; z /= k; return *this; }
-
-    inline Vector3DG operator - ()
-    { return *this * (-1); }
-
-    inline bool operator == (const Vector3DG& v) const
-    { return (x == v.x) && (y == v.y) && (z == v.z); }
-
-    inline T length  () const { return std::sqrt (length2 ()); }
-    inline T length2 () const { return dot (*this); }
-
-    void normalize ()
-    {
-      const T k = length2 ();
-      if (k != 0.0)
-	*this /= std::sqrt (k);
+    inline Vector3DG& operator+= (const Vector3DG& v) {
+      x += v.x;
+      y += v.y;
+      z += v.z;
+      return *this;
+    }
+    inline Vector3DG& operator-= (const Vector3DG& v) {
+      x -= v.x;
+      y -= v.y;
+      z -= v.z;
+      return *this;
     }
 
-    Vector3DG normalized () const
-    {
+    inline Vector3DG& operator*= (T k) {
+      x *= k;
+      y *= k;
+      z *= k;
+      return *this;
+    }
+    inline Vector3DG& operator/= (T k) {
+      x /= k;
+      y /= k;
+      z /= k;
+      return *this;
+    }
+
+    inline Vector3DG operator- () {
+      return *this * (-1);
+    }
+
+    inline bool operator== (const Vector3DG& v) const {
+      return (x == v.x) && (y == v.y) && (z == v.z);
+    }
+
+    inline T length () const {
+      return std::sqrt (length2 ());
+    }
+    inline T length2 () const {
+      return dot (*this);
+    }
+
+    void normalize () {
+      const T k = length2 ();
+      if (k != 0.0)
+        *this /= std::sqrt (k);
+    }
+
+    Vector3DG normalized () const {
       Vector3DG t (*this);
       t.normalize ();
       return t;
     }
 
     Vector3DG cross (const Vector3DG& v) const {
-      return Vector3DG (y * v.z - z * v.y,
-			z * v.x - x * v.z,
-			x * v.y - y * v.x);
+      return Vector3DG (
+        y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
     }
 
     T dot (const Vector3DG& v) const {
@@ -96,85 +121,83 @@ namespace moppe {
   };
 
   template <typename T>
-  inline Vector3DG<T> operator + (Vector3DG<T> a, const Vector3DG<T>& b)
-  { a += b; return a; }
+  inline Vector3DG<T> operator+ (Vector3DG<T> a, const Vector3DG<T>& b) {
+    a += b;
+    return a;
+  }
 
   template <typename T>
-  inline Vector3DG<T> operator - (Vector3DG<T> a, const Vector3DG<T>& b)
-  { a -= b; return a; }
+  inline Vector3DG<T> operator- (Vector3DG<T> a, const Vector3DG<T>& b) {
+    a -= b;
+    return a;
+  }
 
   // The scalar is a non-deduced parameter so that e.g. v * 10
   // converts the int instead of failing deduction.
   template <typename T>
-  inline Vector3DG<T> operator * (Vector3DG<T> v,
-				  typename Vector3DG<T>::scalar_type k)
-  { v *= k; return v; }
+  inline Vector3DG<T> operator* (Vector3DG<T> v,
+                                 typename Vector3DG<T>::scalar_type k) {
+    v *= k;
+    return v;
+  }
 
   template <typename T>
-  inline Vector3DG<T> operator * (typename Vector3DG<T>::scalar_type k,
-				  Vector3DG<T> v)
-  { v *= k; return v; }
+  inline Vector3DG<T> operator* (typename Vector3DG<T>::scalar_type k,
+                                 Vector3DG<T> v) {
+    v *= k;
+    return v;
+  }
 
   template <typename T>
-  inline Vector3DG<T> operator / (Vector3DG<T> v,
-				  typename Vector3DG<T>::scalar_type k)
-  { v /= k; return v; }
+  inline Vector3DG<T> operator/ (Vector3DG<T> v,
+                                 typename Vector3DG<T>::scalar_type k) {
+    v /= k;
+    return v;
+  }
 
   template <typename T>
-  inline bool operator != (const Vector3DG<T>& a, const Vector3DG<T>& b)
-  { return !(a == b); }
+  inline bool operator!= (const Vector3DG<T>& a, const Vector3DG<T>& b) {
+    return !(a == b);
+  }
 
   template <typename T>
-  std::ostream& operator << (std::ostream& os,
-			     const Vector3DG<T>& v) {
+  std::ostream& operator<< (std::ostream& os, const Vector3DG<T>& v) {
     return os << "<" << v.x << " " << v.y << " " << v.z << ">";
   }
 
   template <typename T>
-  Vector3DG<T>
-  linear_vector_interpolate (const Vector3DG<T>& from,
-			     const Vector3DG<T>& to,
-			     const T& alpha)
-  {
+  Vector3DG<T> linear_vector_interpolate (const Vector3DG<T>& from,
+                                          const Vector3DG<T>& to,
+                                          const T& alpha) {
     return Vector3DG<T> (linear_interpolate (from.x, to.x, alpha),
-			 linear_interpolate (from.y, to.y, alpha),
-			 linear_interpolate (from.z, to.z, alpha));
+                         linear_interpolate (from.y, to.y, alpha),
+                         linear_interpolate (from.z, to.z, alpha));
   }
-
 
   template <typename T>
   struct QuaternionG {
     T x, y, z, w;
 
-    QuaternionG (T x, T y, T z, T w) 
-      : x (x), y (y), z (z), w (w) { }
+    QuaternionG (T x, T y, T z, T w) : x (x), y (y), z (z), w (w) {}
 
     QuaternionG (const Vector3DG<T>& v, T w)
-      : x (v.x), y (v.y), z (v.z), w (w)
-    { }
-    
+        : x (v.x), y (v.y), z (v.z), w (w) {}
+
     // Make a rotation quaternion from an axis and an angle.
-    static inline QuaternionG
-    rotation (const Vector3DG<T>& axis, float angle)
-    {
-      return QuaternionG (std::sin (angle / 2) * axis,
-			  std::cos (angle / 2));
+    static inline QuaternionG rotation (const Vector3DG<T>& axis, float angle) {
+      return QuaternionG (std::sin (angle / 2) * axis, std::cos (angle / 2));
     }
 
     // Rotate a vector around an axis by an angle.
     static inline Vector3DG<T>
-    rotate (const Vector3DG<T>& v,
-	    const Vector3DG<T>& axis,
-	    float angle)
-    {
+    rotate (const Vector3DG<T>& v, const Vector3DG<T>& axis, float angle) {
       QuaternionG r = rotation (axis, angle);
       return rotate (v, r);
     }
 
     // Apply a rotation quaternion to a vector.
-    static inline Vector3DG<T>
-    rotate (const Vector3DG<T>& v, const QuaternionG& q)
-    {
+    static inline Vector3DG<T> rotate (const Vector3DG<T>& v,
+                                       const QuaternionG& q) {
       QuaternionG r (q);
       const QuaternionG rc (r.conjugate ());
 
@@ -185,33 +208,37 @@ namespace moppe {
     }
 
     // Return my non-w components as a 3D vector.
-    inline Vector3DG<T> vector () const { return Vector3DG<T> (x, y, z); }
+    inline Vector3DG<T> vector () const {
+      return Vector3DG<T> (x, y, z);
+    }
 
-    QuaternionG& operator *= (const QuaternionG& q)
-    {
+    QuaternionG& operator*= (const QuaternionG& q) {
       const QuaternionG a (*this);
 
-      x = a.w*q.x + a.x*q.w + a.y*q.z - a.z*q.y;
-      y = a.w*q.y - a.x*q.z + a.y*q.w + a.z*q.x;
-      z = a.w*q.z + a.x*q.y - a.y*q.x + a.z*q.w;
-      w = a.w*q.w - a.x*q.x - a.y*q.y - a.z*q.z;
+      x = a.w * q.x + a.x * q.w + a.y * q.z - a.z * q.y;
+      y = a.w * q.y - a.x * q.z + a.y * q.w + a.z * q.x;
+      z = a.w * q.z + a.x * q.y - a.y * q.x + a.z * q.w;
+      w = a.w * q.w - a.x * q.x - a.y * q.y - a.z * q.z;
 
       return *this;
     }
-    
-    inline QuaternionG conjugate () const
-    { return QuaternionG (-x, -y, -z, w); }
 
-    T length () const
-    { return std::sqrt (x*x + y*y + z*z + w*w); }
+    inline QuaternionG conjugate () const {
+      return QuaternionG (-x, -y, -z, w);
+    }
+
+    T length () const {
+      return std::sqrt (x * x + y * y + z * z + w * w);
+    }
   };
 
   template <typename T>
-  inline QuaternionG<T> operator * (QuaternionG<T> a,
-				    const QuaternionG<T>& b)
-  { a *= b; return a; }
+  inline QuaternionG<T> operator* (QuaternionG<T> a, const QuaternionG<T>& b) {
+    a *= b;
+    return a;
+  }
 
-  typedef Vector3DG<float>   Vector3D;
+  typedef Vector3DG<float> Vector3D;
   typedef QuaternionG<float> Quaternion;
 }
 

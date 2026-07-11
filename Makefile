@@ -1,9 +1,22 @@
-.PHONY: all archive phone profile terrain-lab-shot testflight xcode
+.PHONY: all archive check-format format hooks phone profile terrain-lab-shot \
+	testflight xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
 	cmake --build build
+
+# Format all tracked C, C++, Objective-C, and Metal sources.
+format:
+	./tools/format
+
+# Check formatting without changing files (also used by the Git hook).
+check-format:
+	./tools/format --check
+
+# Opt this checkout into the repository's Git hooks.
+hooks:
+	git config core.hooksPath tools/git-hooks
 
 # Generate and open the macOS Xcode workspace.
 xcode:

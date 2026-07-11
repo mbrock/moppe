@@ -15,10 +15,10 @@ namespace moppe::terrain {
     float drainage_span_log2 = 14.0f;
   };
 
-  ScalarRaster analyze_moisture
-    (const FloodField& flood, const LakeCensus& census,
-     const DrainageGraph& drainage,
-     const MoistureParameters& parameters = { });
+  ScalarRaster analyze_moisture (const FloodField& flood,
+                                 const LakeCensus& census,
+                                 const DrainageGraph& drainage,
+                                 const MoistureParameters& parameters = {});
 }
 
 #endif

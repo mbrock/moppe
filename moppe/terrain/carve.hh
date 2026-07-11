@@ -17,10 +17,10 @@ namespace moppe::terrain {
   // and rendering so water surfaces fill the beds carved under them.
   float channel_width_m (float area_m2) noexcept;
   float channel_depth_m (float area_m2,
-			 const ChannelCarving& parameters = { }) noexcept;
+                         const ChannelCarving& parameters = {}) noexcept;
 
-  ChannelCarvingResult carve_channels
-    (const TerrainView& terrain, const ChannelCarving& parameters);
+  ChannelCarvingResult carve_channels (const TerrainView& terrain,
+                                       const ChannelCarving& parameters);
 }
 
 #endif

@@ -15,33 +15,28 @@ namespace {
     std::vector<float> heights (9 * 9);
     for (int y = 0; y < 9; ++y)
       for (int x = 0; x < 9; ++x)
-	heights[static_cast<std::size_t> (y) * 9 + x] = y == 8
-	  ? -0.1f
-	  : 0.6f - 0.06f * y + 0.03f * std::abs (x - 4);
+        heights[static_cast<std::size_t> (y) * 9 + x] =
+          y == 8 ? -0.1f : 0.6f - 0.06f * y + 0.03f * std::abs (x - 4);
     return heights;
   }
 
   TerrainGrid valley_grid () {
-    return {
-      .width = 9,
-      .height = 9,
-      .spacing_x = 5.0f,
-      .spacing_y = 5.0f,
-      .height_scale = 100.0f
-    };
+    return { .width = 9,
+             .height = 9,
+             .spacing_x = 5.0f,
+             .spacing_y = 5.0f,
+             .height_scale = 100.0f };
   }
 
-  constexpr ChannelCarving valley_parameters {
-    .sea_level = 0.0f,
-    .minimum_area_cells = 4.0f
-  };
+  constexpr ChannelCarving valley_parameters { .sea_level = 0.0f,
+                                               .minimum_area_cells = 4.0f };
 }
 
 MOPPE_TEST (carving_cuts_a_monotone_bed_along_the_trunk_river) {
   const std::vector<float> original = valley_to_sea ();
   const TerrainView terrain (valley_grid (), original);
-  const ChannelCarvingResult result = carve_channels
-    (terrain, valley_parameters);
+  const ChannelCarvingResult result =
+    carve_channels (terrain, valley_parameters);
 
   MOPPE_CHECK (result.heights.size () == original.size ());
   MOPPE_CHECK (result.report.reaches >= 1);
@@ -63,10 +58,10 @@ MOPPE_TEST (carving_cuts_a_monotone_bed_along_the_trunk_river) {
 MOPPE_TEST (carving_is_deterministic) {
   const std::vector<float> original = valley_to_sea ();
   const TerrainView terrain (valley_grid (), original);
-  const ChannelCarvingResult first = carve_channels
-    (terrain, valley_parameters);
-  const ChannelCarvingResult second = carve_channels
-    (terrain, valley_parameters);
+  const ChannelCarvingResult first =
+    carve_channels (terrain, valley_parameters);
+  const ChannelCarvingResult second =
+    carve_channels (terrain, valley_parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
 }
@@ -82,22 +77,21 @@ MOPPE_TEST (carving_never_raises_a_periodic_terrain) {
       const int dx = std::min (std::abs (ux - 2), 5 - std::abs (ux - 2));
       const int dy = std::min (std::abs (uy - 2), 5 - std::abs (uy - 2));
       heights[static_cast<std::size_t> (y) * 6 + x] =
-	0.1f * (dx + dy) + 0.001f * ux;
+        0.1f * (dx + dy) + 0.001f * ux;
     }
-  const TerrainView terrain ({
-    .width = 6,
-    .height = 6,
-    .spacing_x = 5.0f,
-    .spacing_y = 5.0f,
-    .height_scale = 100.0f,
-    .topology = Topology::Torus
-  }, heights);
-  const ChannelCarvingResult result = carve_channels
-    (terrain, { .sea_level = -1.0f, .minimum_area_cells = 2.0f });
+  const TerrainView terrain ({ .width = 6,
+                               .height = 6,
+                               .spacing_x = 5.0f,
+                               .spacing_y = 5.0f,
+                               .height_scale = 100.0f,
+                               .topology = Topology::Torus },
+                             heights);
+  const ChannelCarvingResult result = carve_channels (
+    terrain, { .sea_level = -1.0f, .minimum_area_cells = 2.0f });
 
   MOPPE_CHECK (result.heights.size () == 25);
   for (int y = 0; y < 5; ++y)
     for (int x = 0; x < 5; ++x)
-      MOPPE_CHECK (result.heights[static_cast<std::size_t> (y) * 5 + x]
-		   <= heights[static_cast<std::size_t> (y) * 6 + x] + 1e-7f);
+      MOPPE_CHECK (result.heights[static_cast<std::size_t> (y) * 5 + x] <=
+                   heights[static_cast<std::size_t> (y) * 6 + x] + 1e-7f);
 }
