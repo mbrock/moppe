@@ -63,6 +63,27 @@ namespace moppe::terrain {
     std::vector<WaterBodyFlow> bodies;
   };
 
+  struct RiverReach {
+    static constexpr std::uint32_t no_id =
+      std::numeric_limits<std::uint32_t>::max ();
+
+    std::uint32_t id;
+    std::vector<std::uint32_t> cells;
+    std::uint32_t upstream_body;
+    std::uint32_t downstream_body;
+    bool downstream_ocean;
+    std::uint32_t downstream_reach;
+    float upstream_area_m2;
+    float downstream_area_m2;
+    float maximum_slope;
+  };
+
+  struct RiverNetwork {
+    float minimum_area_m2;
+    std::vector<std::uint32_t> reach_by_cell;
+    std::vector<RiverReach> reaches;
+  };
+
   DrainageGraph analyze_drainage
     (const TerrainView& terrain,
      const DrainageParameters& parameters = { });
@@ -73,6 +94,9 @@ namespace moppe::terrain {
   WaterNetwork analyze_water_network
     (const FloodField& flood, const LakeCensus& census,
      const DrainageGraph& drainage);
+  RiverNetwork extract_river_network
+    (const FloodField& flood, const LakeCensus& census,
+     const DrainageGraph& drainage, float minimum_area_m2);
 }
 
 #endif

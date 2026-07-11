@@ -19,6 +19,7 @@ namespace moppe::terrain {
     bool has_ocean;
     ScalarRaster water_level;
     ScalarRaster water_depth;
+    std::vector<std::uint8_t> ocean;
     std::vector<std::uint32_t> spill_receiver;
     std::vector<std::uint32_t> outlets;
 

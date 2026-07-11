@@ -326,4 +326,97 @@ namespace moppe::terrain {
     }
     return network;
   }
+
+  RiverNetwork
+  extract_river_network (const FloodField& flood,
+			 const LakeCensus& census,
+			 const DrainageGraph& drainage,
+			 float minimum_area_m2)
+  {
+    const std::size_t count = flood.width () * flood.height ();
+    if (!std::isfinite (minimum_area_m2) || minimum_area_m2 < 0.0f)
+      throw std::invalid_argument ("river area threshold must be finite");
+    if (census.body.size () != count || flood.ocean.size () != count
+	|| drainage.width () != flood.width ()
+	|| drainage.height () != flood.height ())
+      throw std::invalid_argument ("river analyses do not share a domain");
+
+    std::vector<std::uint8_t> eligible (count, 0);
+    for (std::uint32_t cell = 0; cell < count; ++cell)
+      eligible[cell] = census.body[cell] == LakeCensus::dry
+	&& !flood.ocean[cell]
+	&& drainage.receiver[cell] != cell
+	&& drainage.contributing_area.values ()[cell] >= minimum_area_m2;
+
+    std::vector<std::uint32_t> river_donors (count, 0);
+    for (std::uint32_t cell = 0; cell < count; ++cell) {
+      const std::uint32_t next = drainage.receiver[cell];
+      if (eligible[cell] && eligible[next])
+	++river_donors[next];
+    }
+
+    std::vector<std::uint32_t> body_at_spill
+      (count, RiverReach::no_id);
+    std::uint32_t ocean_body = RiverReach::no_id;
+    for (const WaterBody& body : census.bodies) {
+      if (body.spill_cell != WaterBody::no_cell)
+	body_at_spill[body.spill_cell] = body.id;
+      if (body.classification == WaterBodyClass::Sea
+	  && ocean_body == RiverReach::no_id)
+	ocean_body = body.id;
+    }
+
+    RiverNetwork network {
+      .minimum_area_m2 = minimum_area_m2,
+      .reach_by_cell = std::vector<std::uint32_t>
+	(count, RiverReach::no_id)
+    };
+    for (std::uint32_t start = 0; start < count; ++start) {
+      if (!eligible[start] || network.reach_by_cell[start] != RiverReach::no_id
+	  || (river_donors[start] == 1
+	      && body_at_spill[start] == RiverReach::no_id))
+	continue;
+      RiverReach reach {
+	.id = static_cast<std::uint32_t> (network.reaches.size ()),
+	.upstream_body = body_at_spill[start],
+	.downstream_body = RiverReach::no_id,
+	.downstream_ocean = false,
+	.downstream_reach = RiverReach::no_id,
+	.upstream_area_m2 = drainage.contributing_area.values ()[start],
+	.downstream_area_m2 = drainage.contributing_area.values ()[start],
+	.maximum_slope = 0.0f
+      };
+      std::uint32_t cell = start;
+      while (eligible[cell]
+	     && network.reach_by_cell[cell] == RiverReach::no_id) {
+	network.reach_by_cell[cell] = reach.id;
+	reach.cells.push_back (cell);
+	reach.downstream_area_m2 =
+	  drainage.contributing_area.values ()[cell];
+	reach.maximum_slope = std::max
+	  (reach.maximum_slope, drainage.slope.values ()[cell]);
+	const std::uint32_t next = drainage.receiver[cell];
+	if (!eligible[next] || river_donors[next] != 1)
+	  break;
+	cell = next;
+      }
+      const std::uint32_t next = drainage.receiver[reach.cells.back ()];
+      if (census.body[next] != LakeCensus::dry)
+	reach.downstream_body = census.body[next];
+      else if (flood.ocean[next]) {
+	reach.downstream_ocean = true;
+	if (ocean_body != RiverReach::no_id)
+	  reach.downstream_body = ocean_body;
+      }
+      network.reaches.push_back (std::move (reach));
+    }
+
+    for (RiverReach& reach : network.reaches) {
+      const std::uint32_t next =
+	drainage.receiver[reach.cells.back ()];
+      if (eligible[next])
+	reach.downstream_reach = network.reach_by_cell[next];
+    }
+    return network;
+  }
 }

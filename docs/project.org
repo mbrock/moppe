@@ -82,6 +82,7 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Depression-aware drainage through lakes with topological accumulation.
 - [X] Explicit global-ocean identity and route-proven inland body spills.
 - [X] Body inlet and outflow catchment ledgers for rendering and erosion.
+- [X] Directed dry river reaches split at confluences and water bodies.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
@@ -105,20 +106,21 @@ consume the wet graph.
 
 * Active work
 
-** TODO Turn the water network into visible reaches
+** TODO Render river ribbons from reaches
 
-Body-level routing now has enough identity for its first visible consumer.
-Extract coherent stream reaches above a configurable contributing-area
-threshold, stop them at lake inlets, and resume them at spills.  Preserve
-reach direction, slope, and discharge as rendering inputs before generating
-or carving any river geometry.
+Terrain Lab now shows coherent dry reaches above a contributing-area
+threshold, stopping at lake inlets and resuming at spills.  The next step is a
+world-space ribbon representation that follows those ordered cells, widens
+with discharge, stays slightly above its bed, and carries flow coordinates for
+animated detail.  It should remain presentation only until its alignment has
+been judged from the motorcycle.
 
 Acceptance evidence:
 
-- Reaches join at confluences and do not draw bookkeeping paths across lakes.
-- Every reach retains direction, contributing area, and bed slope.
-- The extracted network is deterministic, periodic, and inspectable.
-- Extraction remains a reading and does not silently edit terrain.
+- Ribbons join cleanly at confluences and water-body boundaries.
+- Width and animation direction visibly agree with discharge and routing.
+- Near-field rivers survive rider-scale inspection without excessive z-fight.
+- Rendering remains downstream of the reading and does not edit terrain.
 
 ** TODO Improve lake identity and inspection
 
@@ -227,11 +229,21 @@ Detailed engineering guidance remains in
 
 ** 2026-07-11 Water bodies gain routing identity
 
-- Consolidated submerged cells into one outlet tree per connected sea.
+- Chose the largest connected below-sea component as the torus's explicit
+  global ocean and gave it one outlet tree.
 - Replaced approximate boundary spill candidates with route-proven outlet and
   spill pairs, and forced each inland body to discharge through that pair.
 - Added =WaterNetwork= inlet and outflow catchment ledgers and exposed body
   depth, inlet count, and catchment area through Terrain Lab tracing.
+
+** 2026-07-11 Water routes become visible river reaches
+
+- Extracted deterministic directed reaches above a physical drainage-area
+  threshold, split at sources, confluences, lake inlets, and proven spills.
+- Excluded standing-water and global-ocean cells so the visible stream layer
+  never exposes the arbitrary bookkeeping routes across flat water.
+- Switched Terrain Lab STREAMS to the reach value and added reach identity,
+  discharge, slope, and destination to TRACE inspection.
 
 ** 2026-07-11 Documentation reorganization
 
