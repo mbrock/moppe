@@ -46,6 +46,10 @@ namespace {
       program.transforms.emplace_back (NormalizeHeights { });
       return;
     }
+    if (option == "carve") {
+      program.transforms.emplace_back (ChannelCarving { });
+      return;
+    }
 
     const std::size_t equals = option.find ('=');
     if (equals == std::string_view::npos)
@@ -122,6 +126,36 @@ namespace {
 	.minimum_water = minimum_water,
 	.sediment_at_termination = disposition
       });
+    }
+    else if (name == "carve") {
+      std::vector<std::string_view> parts;
+      std::size_t start = 0;
+      while (start <= value.size ()) {
+	const std::size_t comma = value.find (',', start);
+	parts.push_back (value.substr
+	  (start, comma == std::string_view::npos
+	   ? value.size () - start : comma - start));
+	if (comma == std::string_view::npos)
+	  break;
+	start = comma + 1;
+      }
+      if (parts.empty () || parts.size () > 6)
+	throw std::invalid_argument
+	  ("carve expects area_cells[,depth_scale,min_depth,max_depth,"
+	   "sea,blend]");
+      ChannelCarving carving;
+      carving.minimum_area_cells = parse_float (parts[0]);
+      if (parts.size () > 1)
+	carving.depth_per_sqrt_m2 = parse_float (parts[1]);
+      if (parts.size () > 2)
+	carving.minimum_depth_m = parse_float (parts[2]);
+      if (parts.size () > 3)
+	carving.maximum_depth_m = parse_float (parts[3]);
+      if (parts.size () > 4)
+	carving.sea_level = parse_float (parts[4]);
+      if (parts.size () > 5)
+	carving.bank_blend_m = parse_float (parts[5]);
+      program.transforms.emplace_back (carving);
     }
     else if (name == "thermal") {
       const std::size_t comma = value.find (',');
@@ -212,6 +246,14 @@ int main (int argc, char** argv) {
 		  << " raised_m3=" << report->raised_volume_m3
 		  << " mean_change_m=" << report->mean_absolute_change_m
 		  << " max_change_m=" << report->maximum_absolute_change_m
+		  << "\n";
+      else if (const auto* report =
+	       std::get_if<ChannelCarvingReport> (&result))
+	std::cout << "carve: reaches=" << report->reaches
+		  << " cells=" << report->carved_cells
+		  << " lowered_m3=" << report->lowered_volume_m3
+		  << " mean_m=" << report->mean_lowering_m
+		  << " max_m=" << report->maximum_lowering_m
 		  << "\n";
       else if (const auto* report =
 	       std::get_if<HydraulicErosionReport> (&result))

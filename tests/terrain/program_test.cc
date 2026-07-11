@@ -22,24 +22,29 @@ MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
 MOPPE_TEST (default_world_program_records_every_transform) {
   const TerrainProgram program = make_default_world_program (123);
 
-  MOPPE_CHECK (program.transforms.size () == 4);
+  MOPPE_CHECK (program.transforms.size () == 6);
   MOPPE_CHECK (terrain_transform_id (program.transforms[0]) == "normalize");
   MOPPE_CHECK (terrain_transform_id (program.transforms[1]) == "power");
-  MOPPE_CHECK (terrain_transform_id (program.transforms[2]) == "hydraulic");
-  MOPPE_CHECK (terrain_transform_id (program.transforms[3]) == "thermal");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[2]) == "analytical");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[3]) == "hydraulic");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[4]) == "thermal");
+  MOPPE_CHECK (terrain_transform_id (program.transforms[5]) == "carve");
+  MOPPE_CHECK_NEAR
+    (std::get<AnalyticalErosion> (program.transforms[2]).time_years,
+     200000.0f, 0.0f);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (program.transforms[2]).droplets
+    (std::get<HydraulicErosion> (program.transforms[3]).droplets
      == 300000);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (program.transforms[2]).batch_size == 256);
+    (std::get<HydraulicErosion> (program.transforms[3]).batch_size == 256);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (program.transforms[2]).max_steps == 512);
+    (std::get<HydraulicErosion> (program.transforms[3]).max_steps == 512);
   MOPPE_CHECK_NEAR
     (std::get<HydraulicErosion>
-     (program.transforms[2]).minimum_water, 0.01f, 0.0f);
+     (program.transforms[3]).minimum_water, 0.01f, 0.0f);
   MOPPE_CHECK
     (std::get<HydraulicErosion>
-     (program.transforms[2]).sediment_at_termination
+     (program.transforms[3]).sediment_at_termination
      == SedimentDisposition::Deposit);
 }
 
@@ -52,11 +57,20 @@ MOPPE_TEST (generation_profiles_only_change_the_erosion_budget) {
     (123, TerrainGenerationProfile::Research);
 
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (fast.transforms[2]).droplets == 30000);
+    (std::get<HydraulicErosion> (fast.transforms[3]).droplets == 30000);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (play.transforms[2]).droplets == 100000);
+    (std::get<HydraulicErosion> (play.transforms[3]).droplets == 100000);
   MOPPE_CHECK
-    (std::get<HydraulicErosion> (research.transforms[2]).droplets == 300000);
+    (std::get<HydraulicErosion> (research.transforms[3]).droplets == 300000);
+  MOPPE_CHECK
+    (std::get<AnalyticalErosion>
+     (fast.transforms[2]).fixed_point_iterations == 2);
+  MOPPE_CHECK
+    (std::get<AnalyticalErosion>
+     (play.transforms[2]).fixed_point_iterations == 4);
+  MOPPE_CHECK
+    (std::get<AnalyticalErosion>
+     (research.transforms[2]).fixed_point_iterations == 4);
   MOPPE_CHECK (profile_id (TerrainGenerationProfile::Fast) == "fast");
 }
 
@@ -136,6 +150,18 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   program = make_geological_program (123);
   program.transforms.emplace_back (AnalyticalErosion {
     .erodibility = 0.0f
+  });
+  threw = false;
+  try {
+    validate_program (program);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
+
+  program = make_geological_program (123);
+  program.transforms.emplace_back (ChannelCarving {
+    .minimum_area_cells = 0.0f
   });
   threw = false;
   try {

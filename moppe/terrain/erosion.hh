@@ -65,6 +65,28 @@ namespace moppe::terrain {
     double mean_absolute_change_m = 0.0;
     double maximum_absolute_change_m = 0.0;
   };
+
+  // Deterministic channel stamping along the extracted river network.
+  // Bed depth follows catchment area (hydraulic-geometry style) and beds
+  // are monotone downstream, so every carved channel drains to its mouth.
+  // Depths and widths are in meters; area threshold is in terrain cells so
+  // carved channels match the renderer's visible-river extraction.
+  struct ChannelCarving {
+    float sea_level = 50.0f / 650.0f;
+    float minimum_area_cells = 1024.0f;
+    float depth_per_sqrt_m2 = 0.0015f;
+    float minimum_depth_m = 0.4f;
+    float maximum_depth_m = 2.5f;
+    float bank_blend_m = 6.0f;
+  };
+
+  struct ChannelCarvingReport {
+    std::size_t reaches = 0;
+    std::size_t carved_cells = 0;
+    double lowered_volume_m3 = 0.0;
+    double mean_lowering_m = 0.0;
+    double maximum_lowering_m = 0.0;
+  };
 }
 
 #endif
