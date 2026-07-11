@@ -1,0 +1,229 @@
+#+title: Moppe project
+#+startup: overview
+
+* Purpose
+
+Moppe is currently a motorcycle game and a laboratory for generated worlds.
+It has several inherited or experimental modes, but the main line of work is
+the random world: generate a landscape, understand how it formed, render it
+convincingly, and ride through it.
+
+The immediate goal is not yet to build a large game around that world.  It is
+to make the world coherent enough that riding it produces places worth
+noticing: waterways that make sense, terrain with a readable history, and
+routes and obstacles that arise from the land rather than being scattered on
+top of it.
+
+The more speculative ambition is an inhabited procedural world.  The
+[[file:../ideas/second-author.md][second-author notes]] explore how geology might
+eventually support paths, roads, centers, and settlements.  That is a
+promising design direction, not a current subsystem or settled roadmap.
+
+* Current product
+
+** Random world
+
+This is the most active and interesting game mode.  A =TerrainProgram=
+combines a geological source, explicit random-stream state, and an ordered
+sequence of transforms.  The normal play profile generates periodic terrain,
+applies hydraulic and thermal erosion, computes standing water, chooses a
+safe spawn, and puts the motorcycle into the result.
+
+The world is topologically periodic.  Terrain lookup and the newer analysis
+passes respect that topology; it is not merely a rendering trick at the map
+edge.
+
+** Terrain Lab
+
+Terrain Lab is the instrument panel for the random-world pipeline.  It edits
+the terrain program, regenerates previews, and displays derived readings such
+as slope, drainage area, basins, streams, standing water, and lake classes.
+It is already central to development, but it is still an engineering tool
+rather than a polished player-facing mode.
+
+** Other modes
+
+- City mode is an older, bounded generated city and obstacle-play mode.
+- Pico mode loads a fixed real-world heightmap.
+- The renderer testbed exercises the portable rendering layer.
+
+These modes are real and should remain healthy, but they do not currently add
+up to a single designed game structure.  New world-generation work should
+not be forced to justify all of them or prematurely unify them.
+
+* What is implemented
+
+** Terrain language and evaluation
+
+- [X] Runtime scalar-field expression DAG and geological recipes.
+- [X] First-class =TerrainProgram= with source, randomness, and transforms.
+- [X] CPU evaluation shared by tools and game generation.
+- [X] Metal compilation for pointwise terrain fields.
+- [X] Fast, play, and research generation profiles.
+- [X] Periodic generation and seam-aware tests.
+- [ ] Stable program serialization.
+- [ ] Cross-toolchain golden terrain corpus.
+
+Deterministic replay is tested within the current evaluator and toolchain.
+Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
+
+** Water and erosion
+
+- [X] Periodic D8 dry-surface drainage with slope, contributing area,
+  basins, and sinks.
+- [X] Hydraulic erosion reports with sediment and termination ledgers.
+- [X] Explicit residual-sediment deposition; recorded experiments close the
+  sediment ledger.
+- [X] Path-monotone carving option, now the default in =HydraulicErosion=.
+- [X] Priority-flood standing-water surface and deterministic lake census.
+- [X] Puddle, pond, lake, and sea classifications.
+- [X] Area/depth/volume permanence policy for rendered inland water.
+- [X] Standing lakes rendered in the random game world.
+- [ ] Depression-aware drainage through lakes.
+- [ ] Erosion coupled to lake infill and spillway incision.
+
+The current =DrainageGraph= describes only strict descent on bare terrain.
+The =FloodField= describes where water stands, but its receiver forest is not
+yet the promised wet-surface drainage network.  Keeping that distinction
+explicit is the most important boundary in the present water work.
+
+** Riding and presentation
+
+- [X] Metal renderer on macOS and iOS.
+- [X] Terrain LOD, vegetation, atmosphere, water, shadows, post-processing,
+  and vehicle effects.
+- [X] Motorcycle physics and generated-world spawn selection.
+- [X] Desktop, simulator, and physical-phone workflows.
+- [ ] A clear game loop built specifically around discovering a generated
+  world.
+- [ ] Persistent places, routes, or player traces in generated worlds.
+
+* Active work
+
+** TODO Make hydrology internally coherent
+
+The next meaningful milestone is a drainage reading that crosses standing
+water correctly.  Dry cells should descend on rock; flow entering a lake
+should reach that body's spill without cycles; the outlet should carry the
+whole basin's accumulated discharge.
+
+Acceptance evidence:
+
+- FLOW, STREAMS, and BASINS overlays no longer terminate at every depression.
+- Every non-endorheic water body has a tested spill identity.
+- Routing is deterministic and periodic.
+- This remains a reading: it does not silently edit terrain.
+
+** TODO Improve lake identity and inspection
+
+- [ ] Distinguish ocean connectivity from merely sharing sea level.
+- [ ] Add mean depth and an exact per-body spill contract.
+- [ ] Add a lake inspector and distribution export.
+- [ ] Make =WaterPermanence= editable program data rather than a default C++
+  policy at the rendering boundary.
+
+** TODO Measure the carving rule
+
+Path-monotone carving reduced sinks and small water bodies in the recorded
+257x257 comparison while preserving its large lakes.  It is intentionally
+strong.  Add clamp-frequency and pit-attribution instrumentation before
+deciding that it is the final physical rule.
+
+* Near horizon
+
+** NEXT Couple erosion to standing water
+
+Once wet routing is trustworthy, droplets can deposit on entering still
+water, transfer discharge to a classified outlet, and incise spillways under
+the basin's full flow.  This should allow ponds to fill, outlets to retreat,
+and drainage networks to mature instead of treating every sink as a terminal
+error.
+
+** NEXT Make the random world a more legible ride
+
+Hydrology should pay off in play.  Lakes can become boundaries, spill points
+can become gates, valleys can guide motion, and regenerated worlds can offer
+recognizable destinations.  The first experiments should use overlays or
+temporary markers and remain reversible; they do not require committing to a
+settlement simulation.
+
+** NEXT Define a repeatable ride-and-judge loop
+
+The project has fast deterministic captures and analytical readings.  It also
+needs a small human evaluation routine: generate a named seed/profile, inspect
+its readings, ride it, and record what was memorable or broken.  This is the
+bridge between terrain metrics and the actual game.
+
+* Later / ideas under consideration
+
+** LATER Centers and routes
+
+The strongest part of the second-author proposal is its first small step:
+derive candidate places from terrain readings, show why they were selected,
+and test whether they feel meaningful from the motorcycle.  A later route
+network could connect accepted places under different movement costs before
+any terrain carving occurs.
+
+This direction should begin as observation and overlays.  =CenterSet= and
+=RouteNetwork= are names from a design essay, not existing types or promised
+architecture.
+
+** LATER Roads, settlements, and world memory
+
+Road carving, settlement formation, traffic ledgers, and player-made desire
+paths are compelling possible consequences of good terrain and routing.
+They are deliberately not decomposed into implementation tasks yet.  The
+project does not know enough about its places or movement networks to specify
+them honestly.
+
+* Working rules
+
+- Keep generated-world behavior reproducible and seeds reportable.
+- Make derived knowledge inspectable before making it authoritative.
+- Keep readings non-mutating; make terrain edits explicit transforms.
+- Prefer small experiments with a visible or numerical acceptance test.
+- Treat negative experimental results as progress when they narrow the model.
+- Keep important policies as named values rather than hidden thresholds.
+- Judge changes both in Terrain Lab and from the motorcycle.
+
+Detailed engineering guidance remains in
+[[file:working-practices.md][working-practices.md]].
+
+* Log
+
+** 2026-07-11 Documentation reorganization
+
+- Separated speculative design essays into =ideas/=.
+- Replaced the orientation and hydrology snapshots with this living ledger.
+- Cross-checked the ledger against the terrain, drainage, flood, and game
+  generation code and the July 10-11 commit sequence.
+
+** 2026-07-11 Water becomes visible in play
+
+- Added standing-water analysis, deterministic lake census, Terrain Lab
+  overlays, and random-world lake rendering.
+- Closed the hydraulic sediment ledger and recorded the droplet-lifetime
+  experiment.
+- Added and measured path-monotone carving; it reduces but does not eliminate
+  erosion-created pits.
+
+** 2026-07-10 Random worlds become programmable
+
+- Introduced terrain expressions, recipes, pipelines, and =TerrainProgram=.
+- Made the generated world periodic and removed special map boundaries.
+- Added Terrain Lab editing, preview, capture, readings, and faster evaluation.
+
+** 2026-07-09 Revival baseline
+
+- Replaced the OpenGL-era platform and renderer with portable renderer APIs
+  and a Metal backend.
+- Brought the game to macOS and iOS while retaining city, Pico, and random
+  terrain modes.
+
+* Maintaining this file
+
+Update this ledger when a change alters project state or priorities, not for
+every commit.  Move completed active items into =What is implemented= and add
+a short dated log entry.  Keep =Active work= small.  If an item has no clear
+next experiment or acceptance evidence, it probably belongs under =Later= or
+in an essay in =ideas/=.

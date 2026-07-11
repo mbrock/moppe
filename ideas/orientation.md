@@ -69,16 +69,14 @@ honest books.
 
 ## Where to go next
 
-- `docs/terrain-expressions.md` — the terrain language: sources,
+- `../docs/project.org` — current state, priorities, and progress log.
+- `../docs/terrain-expressions.md` — the terrain language: sources,
   fields, transforms, readings.
-- `docs/theory-of-the-world.md` — the conceptual model underneath the
-  code.
-- `docs/working-practices.md` — the methods that keep changes safe and
+- `theory-of-the-world.md` — the conceptual model underneath the code.
+- `../docs/working-practices.md` — the methods that keep changes safe and
   honest.
-- `docs/hydrology-frontier.md` — current state and the sequenced plan
-  for water.
-- `docs/second-author.md` — the long-range design: centers, paths,
-  movers, settlements.
+- `second-author.md` — the long-range design: centers, paths, movers,
+  settlements.
 
 The project's acceptance test, stated once so you know the direction
 of "better": a generated world passes when one of its places could
