@@ -13,6 +13,23 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
   MOPPE_CHECK (game::find_graphics_feature ("not-a-feature") == nullptr);
 }
 
+MOPPE_TEST (graphics_features_describe_hot_switchability) {
+  MOPPE_CHECK (game::grass_feature.hot);
+  MOPPE_CHECK (game::ocean_feature.hot);
+  MOPPE_CHECK (game::particles_feature.hot);
+  MOPPE_CHECK (game::vehicle_effects_feature.hot);
+  MOPPE_CHECK (game::star_effects_feature.hot);
+  MOPPE_CHECK (game::bloom_feature.hot);
+  MOPPE_CHECK (game::auto_exposure_feature.hot);
+  MOPPE_CHECK (game::lens_flare_feature.hot);
+
+  MOPPE_CHECK (!game::terrain_shadows_feature.hot);
+  MOPPE_CHECK (!game::vegetation_feature.hot);
+  MOPPE_CHECK (!game::river_ribbons_feature.hot);
+  MOPPE_CHECK (!game::motion_blur_feature.hot);
+  MOPPE_CHECK (!game::terrain_topology_feature.hot);
+}
+
 MOPPE_TEST (graphics_feature_lists_apply_to_settings) {
   game::GraphicsSettings settings = game::low_graphics_settings ();
   std::string error;
@@ -47,6 +64,7 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
   const std::string text = output.str ();
   MOPPE_CHECK (text.find ("scene-scale=0.5") != std::string::npos);
   MOPPE_CHECK (text.find ("grass-density=1") != std::string::npos);
-  MOPPE_CHECK (text.find ("ocean=on") != std::string::npos);
-  MOPPE_CHECK (text.find ("bloom=off") != std::string::npos);
+  MOPPE_CHECK (text.find ("ocean=on(hot)") != std::string::npos);
+  MOPPE_CHECK (text.find ("bloom=off(hot)") != std::string::npos);
+  MOPPE_CHECK (text.find ("terrain-shadows=off(not-hot)") != std::string::npos);
 }

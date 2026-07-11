@@ -126,7 +126,8 @@ namespace moppe::game {
            << " sun-height=" << settings.sun_height;
     for (const GraphicsFeature* feature : graphics_features)
       output << ' ' << feature->name << '='
-             << (feature->enabled (settings) ? "on" : "off");
+             << (feature->enabled (settings) ? "on" : "off") << '('
+             << (feature->hot ? "hot" : "not-hot") << ')';
     output << '\n';
   }
 }
