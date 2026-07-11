@@ -1226,7 +1226,14 @@ namespace game {
       const float w = (float) r.width_pts ();
       const float h = (float) r.height_pts ();
       const float aspect = w / std::max (1.0f, h);
-      const float sky_time = (float) platform::now ();
+      const double now = platform::now ();
+      if (m_loading_clock_start == 0.0)
+	m_loading_clock_start = now;
+      // Animation shaders use floats, so give them elapsed loading time.
+      // Casting absolute uptime first quantizes motion badly after a Mac has
+      // been running for days: many 120 Hz frames receive the same timestamp.
+      const float sky_time = static_cast<float>
+	(now - m_loading_clock_start);
       std::shared_ptr<const std::vector<float>> loading_heights;
       {
 	const std::lock_guard<std::mutex> lock (m_loading_mutex);
@@ -1605,6 +1612,7 @@ namespace game {
       m_loading_work_total = 1;
       m_loading_progress_display = 0.0f;
       m_loading_progress_time = 0.0;
+      m_loading_clock_start = 0.0;
       m_standing_water.reset ();
       m_lake_census.reset ();
       m_drainage.reset ();
@@ -1748,6 +1756,7 @@ namespace game {
     std::atomic<int> m_loading_work_total = 1;
     float m_loading_progress_display = 0.0f;
     double m_loading_progress_time = 0.0;
+    double m_loading_clock_start = 0.0;
     bool m_loading_capture_done = false;
     int m_loading_terrain_state = 0;
     float m_loading_terrain_reveal = 0.0f;
