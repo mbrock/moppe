@@ -75,7 +75,8 @@ namespace game {
 			  const std::string& title,
 			  const std::string& detail,
 			  bool hot, bool pressed,
-			  bool selected = false) const;
+			  bool selected = false,
+			  bool featured = false) const;
     void friendly_slider (render::DrawList& dl, const UiRect& bounds,
 			  const std::string& title,
 			  const std::string& low,
