@@ -1,5 +1,6 @@
 
 #include <moppe/map/generate.hh>
+#include <moppe/terrain/readings.hh>
 #include <moppe/map/tga.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/terrain/cpu_evaluator.hh>
@@ -127,16 +128,31 @@ namespace map {
     float* values = m_data.raw ();
     const std::size_t count = static_cast<std::size_t>
       (m_width) * m_height;
-    const auto [minimum, maximum] = std::minmax_element
-      (values, values + count);
-    const float offset = 0.0f - *minimum;
+    const terrain::HeightRange range =
+      terrain::measure_height_range (terrain_view ());
+    const float offset = 0.0f - range.minimum;
     // Preserve the old translate-then-max arithmetic exactly while reducing
     // four full raster passes to two contiguous ones.
-    const float translated_maximum = *maximum + offset;
+    const float translated_maximum = range.maximum + offset;
     const float scale = translated_maximum != 0.0f
       ? 1.0f / translated_maximum : 1.0f;
     for (float* value = values; value != values + count; ++value)
       *value = (*value + offset) * scale;
+  }
+
+  terrain::TerrainView
+  RandomHeightMap::terrain_view () const
+  {
+    return terrain::TerrainView
+      ({ .width = static_cast<std::size_t> (m_width),
+	 .height = static_cast<std::size_t> (m_height),
+	 .spacing_x = m_scale.x,
+	 .spacing_y = m_scale.z,
+	 .height_scale = m_scale.y,
+	 .topology = periodic () ? terrain::Topology::Torus
+				 : terrain::Topology::Bounded },
+       std::span<const float>
+	 (m_data.raw (), static_cast<std::size_t> (m_width) * m_height));
   }
 
   void
