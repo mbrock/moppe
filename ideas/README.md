@@ -15,6 +15,8 @@ committed roadmap.
 - `structure-of-space.md` develops the irregular cellular tissue through
   which continuous terrain can become places, construction, and persistent
   history.
+- `reading-map.md` is an annotated collection of papers, books, talks, games,
+  and repositories around these overlapping design and technical questions.
 
 Current architecture belongs in `docs/`.  Current status and priorities live
 in `docs/project.org`.
