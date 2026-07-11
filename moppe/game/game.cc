@@ -64,11 +64,6 @@ namespace game {
   }
 
   static float
-  terrain_lab_sun_height () {
-    return std::max (SUN_HEIGHT, 0.72f);
-  }
-
-  static float
   smooth_curve (float edge0, float edge1, float x) {
     float t = (x - edge0) / (edge1 - edge0);
     clamp (t, 0.0f, 1.0f);
@@ -558,7 +553,7 @@ namespace game {
       if (m_start_in_terrain_lab) {
 	m_terrain_lab.enter
 	  (r, m_map, m_terrain, m_world, m_seed,
-	   sun_direction_for (terrain_lab_sun_height ()));
+	   sun_direction_for (SUN_HEIGHT));
 	m_start_in_terrain_lab = false;
       }
       if (::getenv ("MOPPE_REGENERATE_ONCE")
@@ -578,6 +573,22 @@ namespace game {
       m_total_time += dt;
       const float total_time = m_total_time;
 
+      // Weather remains part of the world while actors are paused.  This
+      // also initializes the shared horizon color when the game starts
+      // directly in Terrain Lab.
+      float cloudiness =
+	std::sin (total_time * 0.0003f) * 0.4f + 0.5f
+	+ 0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f)
+	+ std::sin (total_time * 0.02f) * 0.05f;
+      clamp (cloudiness, 0.0f, 1.0f);
+      m_cloudiness = cloudiness;
+
+      // Fog stays mostly sky-blue.  Directional warmth is added in
+      // the shaders only when looking toward the sun.
+      const Vector3D horizon = horizon_color_for (SUN_HEIGHT);
+      m_fog = horizon * 0.82f
+	+ Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
+
       // Terrain inspection pauses actors and vehicle physics, but keeps the
       // visual clock alive so sky and water remain a useful frame of
       // reference around the heightmap.
@@ -594,20 +605,6 @@ namespace game {
 	input_turn (0.35f * std::sin (total_time * 0.25f));
 	input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
       }
-
-      // Weather: slowly drifting cloudiness with passing fronts.
-      float cloudiness =
-	std::sin (total_time * 0.0003f) * 0.4f + 0.5f
-	+ 0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f)
-	+ std::sin (total_time * 0.02f) * 0.05f;
-      clamp (cloudiness, 0.0f, 1.0f);
-      m_cloudiness = cloudiness;
-
-      // Fog stays mostly sky-blue.  Directional warmth is added in
-      // the shaders only when looking toward the sun.
-      const Vector3D horizon = horizon_color_for (SUN_HEIGHT);
-      m_fog = horizon * 0.82f
-        + Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
 
       m_vehicle.update (dt);
       if (m_car_exists)
@@ -928,18 +925,13 @@ namespace game {
       fp.cam_right = Vector3D (view.m[0], view.m[4], view.m[8]);
       fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
       fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
-      fp.clear_color = terrain_lab
-	? (m_terrain_lab.cover_view ()
-	   ? Vector3D (0.10f, 0.13f, 0.16f)
-	   : Vector3D (0.012f, 0.016f, 0.022f))
-	: m_fog;
+      fp.clear_color = m_fog;
+      // The sky and horizon stay atmospheric, but distance fog over the
+      // heightfield itself would veil almost the entire map from this high.
       const float scene_fog = terrain_lab ? 0.0f : m_world.fog_scale;
       fp.fog_scale = scene_fog;
-      const float render_sun_height = terrain_lab
-	? terrain_lab_sun_height () : SUN_HEIGHT;
-      fp.sun_dir = sun_direction_for (render_sun_height);
-      sun_light_colors
-	(render_sun_height, fp.sun_diffuse, fp.sun_specular);
+      fp.sun_dir = sun_direction_for (SUN_HEIGHT);
+      sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
       fp.sun_specular = fp.sun_specular * 0.5f;   // material specular
       const float daylight = daylight_for (SUN_HEIGHT);
       // Open terrain receives substantial skylight even when a mountain
@@ -948,12 +940,10 @@ namespace game {
       fp.ambient = Vector3D (0.39f, 0.43f, 0.49f)
         * (0.35f + 0.65f * daylight);
       if (terrain_lab) {
-	// The lab is a place for reading landform, not dramatic driving
-	// lighting.  A stronger neutral skylight keeps valleys and vegetation
-	// legible while retaining the directional shape of the afternoon sun.
-	fp.ambient = Vector3D (0.60f, 0.64f, 0.70f);
-	fp.sun_diffuse = fp.sun_diffuse * 1.25f;
-	fp.exposure_bias = 1.22f;
+	// Keep the same time of day while giving the high overview a small
+	// legibility lift after automatic exposure.
+	fp.ambient = fp.ambient * 1.15f;
+	fp.exposure_bias = 0.88f;
       }
       fp.time = m_total_time;
       fp.profile = true;
@@ -1005,6 +995,26 @@ namespace game {
       env.cam_forward = fp.cam_forward;
       env.time = m_total_time;
 
+      const auto draw_world_sky = [&] {
+	render::SkyParams sky;
+	 sky.time = m_total_time;
+	 sky.sun_height = SUN_HEIGHT;
+	 // A world-shaping overview should keep the game world's moving sky,
+	 // without letting a passing front hide the land being edited.
+	 sky.cloudiness = terrain_lab
+	   ? std::min (m_cloudiness, 0.35f) : m_cloudiness;
+	sky.sun_dir = fp.sun_dir;
+	sky.fog_color = m_fog;
+	r.draw_sky (sky);
+      };
+
+      // At this extreme altitude, drawing the far-plane dome after terrain
+      // exposes depth precision at the horizon.  Paint it first in the lab;
+      // terrain then covers it deterministically.  Gameplay retains the
+      // cheaper depth-culled order below.
+      if (terrain_lab)
+	draw_world_sky ();
+
       // Terrain first, chunk-culled to the haze horizon.
       m_terrain.render (r, cam,
 		terrain_lab ? m_terrain_lab.forward () : m_camera.forward (),
@@ -1013,15 +1023,8 @@ namespace game {
 
       // Sky AFTER the terrain: depth testing kills the expensive
       // cloud shader wherever terrain covers it.
-      if (!terrain_lab) {
-	render::SkyParams sky;
-	sky.time = m_total_time;
-	sky.sun_height = SUN_HEIGHT;
-	sky.cloudiness = m_cloudiness;
-	sky.sun_dir = fp.sun_dir;
-	sky.fog_color = m_fog;
-	r.draw_sky (sky);
-      }
+      if (!terrain_lab)
+	draw_world_sky ();
 
       if (!terrain_lab && !m_water_inspection) {
 	// The world draw list, in the GL build's draw order.  Terrain lab
@@ -1271,8 +1274,7 @@ namespace game {
 	input_go (0);
 	input_boost (0);
 	m_terrain_lab.enter (*m_renderer, m_map, m_terrain, m_world,
-			     m_seed,
-			     sun_direction_for (terrain_lab_sun_height ()));
+			     m_seed, sun_direction_for (SUN_HEIGHT));
 	return;
       }
 

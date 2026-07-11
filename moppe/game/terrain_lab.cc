@@ -529,8 +529,13 @@ namespace game {
       m_pitch = 0.48f;
       m_distance = 4700.0f;
     } else if (m_view == ViewMode::Cover) {
-      m_pitch = 0.88f;
-      m_distance = 7200.0f;
+      // High and oblique rather than top-down: the player sees the same
+      // atmospheric horizon as the riding camera, only from a god's-eye
+      // vantage over the whole landscape.
+      // Leave enough of the upper hemisphere in frame for the sky to read
+      // blue rather than showing only its pale, hazy horizon band.
+      m_pitch = 0.20f;
+      m_distance = 8000.0f;
     } else {
       m_pitch = 1.22f;
       m_distance = 6500.0f;
@@ -1749,10 +1754,11 @@ namespace game {
     if (!interactive_preview)
       m_map->recompute_normals ();
     WorldParams display = *m_world;
-    if (inspection_fog) {
-      display.fog_scale = m_view == ViewMode::Cover
-	? 0.00011f : 0.0f;
-    }
+    // The game sky supplies the atmospheric frame.  Applying an additional
+    // material fog across a multi-kilometre overview veils the very landform
+    // the lab is meant to inspect.
+    if (inspection_fog)
+      display.fog_scale = 0.0f;
     const render::TerrainProjection projection =
       inspection_fog && m_view == ViewMode::Torus
       ? render::TerrainProjection::Torus
@@ -2120,6 +2126,13 @@ namespace game {
       OverlayMode::None, OverlayMode::Slope,
       OverlayMode::StandingWater, OverlayMode::Trace
     };
+    const UiRect first_lens = friendly_lens_rect (0, width);
+    const UiRect last_lens = friendly_lens_rect (3, width);
+    const UiRect lens_surface {
+      first_lens.x - 10.0f, 10.0f,
+      last_lens.x + last_lens.width - first_lens.x + 20.0f, 104.0f
+    };
+    m_ui.surface (dl, lens_surface);
     for (int i = 0; i < 4; ++i) {
       const UiRect bounds = friendly_lens_rect (i, width);
       m_ui.friendly_button
