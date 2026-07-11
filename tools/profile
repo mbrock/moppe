@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+template=${MOPPE_PROFILE_TEMPLATE:-"Metal System Trace"}
+
+if [ ! -f "$build_dir/build.ninja" ]; then
+  cmake -S "$root" -B "$build_dir" -G Ninja
+fi
+
+cmake --build "$build_dir" --target moppe
+
+mkdir -p "$root/traces"
+trace="$root/traces/moppe-$(date +%Y%m%d-%H%M%S).trace"
+
+# Play as long as you like; recording ends by itself when the game
+# exits (Escape), and the finished trace opens in Instruments.  Time
+# Profiler rides along so CPU stacks land in the same trace as the
+# GPU timeline.
+xcrun xctrace record --template "$template" \
+  --instrument "Time Profiler" \
+  --output "$trace" \
+  --launch -- "$build_dir/moppe.app/Contents/MacOS/moppe"
+
+open "$trace"

@@ -5,6 +5,7 @@ build-ios-dev/
 build-ios-device/
 build-ios-testflight/
 dist/
+traces/
 .DS_Store
 test.tga
 field-demo.png
