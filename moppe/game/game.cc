@@ -1147,8 +1147,13 @@ namespace game {
 
 	r.draw_list (m_world_dl);
 
-	// Star pickups last among the solids: their additive halos
-	// blend over everything already drawn.
+	// Additive glow after the solid list, so it blends over
+	// everything already drawn: exhaust and jump-jet flames, then
+	// the star pickups' halos.
+	if (!(helmet && m_mode == M_BIKE))
+	  render_vehicle_flames (r, m_vehicle, m_total_time);
+	if (m_car_exists && !(helmet && m_mode == M_CAR))
+	  render_vehicle_flames (r, m_car, m_total_time);
 	m_stars.render (r, env);
       }
 

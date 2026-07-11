@@ -204,6 +204,76 @@ namespace game {
       } ();
       return meshes;
     }
+
+    // -- baked flame cones --------------------------------------------
+    //
+    // Each additive layer is a unit cone (base radius 1 at z=0, apex
+    // at z=1) with its color and glow state baked in; per frame only
+    // the model matrix changes, stretching the cone with thrust and
+    // engine flicker.  Unlit, so the non-uniform scale needs no
+    // normal correction.
+    struct FlameMeshes {
+      render::MeshPtr lick_outer;    // exhaust flame, warm sheath
+      render::MeshPtr lick_core;     // exhaust flame, pale core
+      render::MeshPtr plume_sheath;  // jump jet, wide warm wrap
+      render::MeshPtr plume_body;    // jump jet, orange body
+      render::MeshPtr plume_core;    // jump jet, white-hot core
+    };
+
+    render::MeshPtr
+    record_flame_cone (render::Renderer& r, int slices, int stacks,
+		       float cr, float cg, float cb, float ca) {
+      render::DrawList dl;
+      render::DrawState glow;
+      glow.blend = true;
+      glow.additive = true;
+      glow.depth_write = false;
+      dl.state (glow);
+      dl.lit (false);
+      dl.color (cr, cg, cb, ca);
+      dl.cone (1.0f, 1.0f, slices, stacks);
+      return r.create_mesh (dl);
+    }
+
+    const FlameMeshes&
+    flame_meshes (render::Renderer& r) {
+      static const FlameMeshes meshes = [&r] {
+	FlameMeshes f;
+	f.lick_outer   = record_flame_cone (r, 8, 2,
+					    1.0f, 0.45f, 0.08f, 0.55f);
+	f.lick_core    = record_flame_cone (r, 8, 2,
+					    1.0f, 0.85f, 0.45f, 0.75f);
+	f.plume_sheath = record_flame_cone (r, 10, 3,
+					    1.0f, 0.42f, 0.10f, 0.28f);
+	f.plume_body   = record_flame_cone (r, 10, 3,
+					    1.0f, 0.62f, 0.18f, 0.55f);
+	f.plume_core   = record_flame_cone (r, 8, 3,
+					    0.90f, 0.95f, 1.0f, 0.85f);
+	return f;
+      } ();
+      return meshes;
+    }
+
+    // The vehicle's model-to-world matrix, shared by render_vehicle's
+    // matrix stack and the late flame pass so the two cannot drift.
+    Mat4
+    vehicle_frame (const mov::Vehicle& v) {
+      const Vector3D pos = v.position ();
+      const Vector3D fwd = v.render_orientation ().normalized ();
+      const Vector3D right = v.render_normal ().cross (fwd).normalized ();
+      const Vector3D up = fwd.cross (right);
+
+      // Follow the smoothed surface frame on the ground and the
+      // velocity arc in flight; lean into the corner; chunkier bike,
+      // easier to see from the chase camera, lifted so the scaled
+      // wheels still touch the ground.
+      return Mat4::translation (Vector3D (pos.x, pos.y + v.susp (),
+					  pos.z))
+	* Mat4::basis (right, up, fwd)
+	* Mat4::rotation (v.lean (), Vector3D (0, 0, 1))
+	* Mat4::translation (Vector3D (0, 0.5f, 0))
+	* Mat4::scaling (Vector3D (1.5f, 1.5f, 1.5f));
+    }
   }
 
   // A commandeered car (or truck), drawn in place of the bike.
@@ -280,61 +350,16 @@ namespace game {
         dl.lit (true);
       }
 
-    // And of course the continuously gimballed jump jets work in a car.
-    if (v.boost_level () > 0.001f)
-      {
-        const float k = v.boost_level ();
-        const float flicker = 0.88f
-          + 0.12f * std::sin (t * 39.0f) * std::sin (t * 26.0f + 1.1f);
-        const float len = k * flicker;
-
-        render::DrawState glow;
-        glow.blend = true;
-        glow.additive = true;
-        glow.depth_write = false;
-        dl.state (glow);
-        dl.lit (false);
-        for (int s = -1; s <= 1; s += 2)
-          {
-            dl.push ();
-            dl.translate (s * 0.6f, 0.25f, -0.4f);
-            dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
-            dl.color (1.0f, 0.42f, 0.10f, 0.28f);
-            dl.cone (0.24f, 2.1f * len, 10, 3);
-            dl.color (1.0f, 0.62f, 0.18f, 0.55f);
-            dl.cone (0.14f, 2.7f * len, 10, 3);
-            dl.color (0.90f, 0.95f, 1.0f, 0.85f);
-            dl.cone (0.065f, 3.2f * len, 8, 3);
-            dl.pop ();
-          }
-        dl.lit (true);
-        dl.state (render::DrawState ());
-      }
+    // The continuously gimballed jump jets still work in a car; their
+    // additive plumes draw in the late flame pass
+    // (render_vehicle_flames), over the already-drawn solids.
   }
 
   void
   render_vehicle (render::Renderer& r, render::DrawList& dl,
                   const mov::Vehicle& v, float time) {
     dl.push ();
-
-    const Vector3D pos = v.position ();
-    dl.translate (pos.x, pos.y + v.susp (), pos.z);
-
-    // Follow the smoothed surface frame on the ground and the velocity arc
-    // in flight.
-    Vector3D fwd   = v.render_orientation ().normalized ();
-    Vector3D right = v.render_normal ().cross (fwd).normalized ();
-    Vector3D up    = fwd.cross (right);
-
-    dl.mult (Mat4::basis (right, up, fwd));
-
-    // Lean into the corner
-    dl.rotate_deg (v.lean () * 57.2958f, 0, 0, 1);
-
-    // Chunkier bike, easier to see from the chase camera; lifted so
-    // the scaled wheels still touch the ground
-    dl.translate (0, 0.5f, 0);
-    dl.scale (1.5f, 1.5f, 1.5f);
+    dl.mult (vehicle_frame (v));
 
     if (v.body_kind () != 0)
       {
@@ -409,68 +434,86 @@ namespace game {
 		     (degrees_to_radians (boost_nozzle_angle (v)),
 		      x_axis));
 
+    dl.pop ();
+  }
+
+  // The additive exhaust lick and jump-jet plumes, replayed as baked
+  // unit cones under breathing scale matrices.  Called after the
+  // world draw list plays so the glow blends over the solids, the
+  // same reason the star halos draw last.
+  void
+  render_vehicle_flames (render::Renderer& r, const mov::Vehicle& v,
+                         float time) {
+    const bool bike = (v.body_kind () == 0);
+    const float thrust = std::abs (v.thrust ());
+    const bool exhaust = bike && thrust > 0.1f;
+    const bool boosting = v.boost_level () > 0.001f;
+    if (!exhaust && !boosting)
+      return;
+
+    const FlameMeshes& fm = flame_meshes (r);
+    const Mat4 frame = vehicle_frame (v);
+    const Vector3D x_axis (1, 0, 0), y_axis (0, 1, 0);
+
     // Exhaust flame licking out of the muffler under load: an
     // additive two-layer lick with a pale core.
-    if (std::abs (v.thrust ()) > 0.1)
+    if (exhaust)
       {
-        const float th = std::abs (v.thrust ());
         const float lick = 0.85f + 0.15f
           * std::sin (time * 47.0f + std::sin (time * 31.0f));
-
-        render::DrawState glow;
-        glow.blend = true;
-        glow.additive = true;
-        glow.depth_write = false;
-        dl.state (glow);
-        dl.lit (false);
-        dl.push ();
-        dl.translate (0.17f, -0.30f, -0.80f);
-        dl.rotate_deg (180, 0, 1, 0);
-        dl.color (1.0f, 0.45f, 0.08f, 0.55f);
-        dl.cone (0.07f, (0.16f + 0.30f * th) * lick, 8, 2);
-        dl.color (1.0f, 0.85f, 0.45f, 0.75f);
-        dl.cone (0.035f, (0.22f + 0.36f * th) * lick, 8, 2);
-        dl.pop ();
-        dl.lit (true);
-        dl.state (render::DrawState ());
+        const Mat4 muffler = frame
+          * Mat4::translation (Vector3D (0.17f, -0.30f, -0.80f))
+          * Mat4::rotation (degrees_to_radians (180.0f), y_axis);
+        r.draw_mesh (*fm.lick_outer, muffler * Mat4::scaling
+                     (Vector3D (0.07f, 0.07f,
+                                (0.16f + 0.30f * thrust) * lick)));
+        r.draw_mesh (*fm.lick_core, muffler * Mat4::scaling
+                     (Vector3D (0.035f, 0.035f,
+                                (0.22f + 0.36f * thrust) * lick)));
       }
 
     // Live jump-jet output: a layered additive plume -- a wide warm
     // sheath around an orange body around a white-hot core, all
     // shivering with engine flicker.  Additive layers sum where
     // they overlap, so the middle reads as incandescent.
-    if (v.boost_level () > 0.001f)
+    if (boosting)
       {
         const float k = v.boost_level ();
-        const float flicker = 0.88f
-          + 0.12f * std::sin (time * 41.0f)
-                  * std::sin (time * 27.0f + 1.7f);
+        const float flicker = bike
+          ? 0.88f + 0.12f * std::sin (time * 41.0f)
+                          * std::sin (time * 27.0f + 1.7f)
+          : 0.88f + 0.12f * std::sin (time * 39.0f)
+                          * std::sin (time * 26.0f + 1.1f);
         const float len = k * flicker;
 
-        render::DrawState glow;
-        glow.blend = true;
-        glow.additive = true;
-        glow.depth_write = false;
-        dl.state (glow);
-        dl.lit (false);
+        // Nozzle placement and plume proportions per body: under the
+        // bike frame, or under the commandeered car's floor.
+        const Vector3D nozzle = bike
+          ? Vector3D (0.14f, -0.55f, -0.35f)
+          : Vector3D (0.6f, -0.75f, -0.4f);
+        const float sheath_r = bike ? 0.21f  : 0.24f;
+        const float body_r   = bike ? 0.12f  : 0.14f;
+        const float core_r   = bike ? 0.055f : 0.065f;
+        const float sheath_l = bike ? 1.9f : 2.1f;
+        const float body_l   = bike ? 2.5f : 2.7f;
+        const float core_l   = bike ? 3.0f : 3.2f;
+
         for (int s = -1; s <= 1; s += 2)
           {
-            dl.push ();
-            dl.translate (s * 0.14f, -0.55f, -0.35f);
-            dl.rotate_deg (boost_nozzle_angle (v), 1, 0, 0);
-            dl.color (1.0f, 0.42f, 0.10f, 0.28f);
-            dl.cone (0.21f, 1.9f * len, 10, 3);
-            dl.color (1.0f, 0.62f, 0.18f, 0.55f);
-            dl.cone (0.12f, 2.5f * len, 10, 3);
-            dl.color (0.90f, 0.95f, 1.0f, 0.85f);
-            dl.cone (0.055f, 3.0f * len, 8, 3);
-            dl.pop ();
+            const Mat4 jet = frame
+              * Mat4::translation (Vector3D (s * nozzle.x, nozzle.y,
+                                             nozzle.z))
+              * Mat4::rotation
+                (degrees_to_radians (boost_nozzle_angle (v)), x_axis);
+            r.draw_mesh (*fm.plume_sheath, jet * Mat4::scaling
+                         (Vector3D (sheath_r, sheath_r,
+                                    sheath_l * len)));
+            r.draw_mesh (*fm.plume_body, jet * Mat4::scaling
+                         (Vector3D (body_r, body_r, body_l * len)));
+            r.draw_mesh (*fm.plume_core, jet * Mat4::scaling
+                         (Vector3D (core_r, core_r, core_l * len)));
           }
-        dl.lit (true);
-        dl.state (render::DrawState ());
       }
-
-    dl.pop ();
   }
 }
 }
