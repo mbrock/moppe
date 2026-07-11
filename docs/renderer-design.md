@@ -304,6 +304,13 @@ clock as heightfield transitions, so a lowering mountain never receives the
 stale shadow of its old geometry. `MOPPE_PROFILE_SHADOW=1` prints the GPU time
 for the pass.
 
+On macOS the Metal performance HUD is enabled by default. It shows frame rate,
+GPU frame time, and current resource memory; set `MOPPE_METAL_HUD=0` for a
+clean window. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
+time summaries to stderr. To create a trace for Xcode's Metal debugger, run
+with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
+captured by default, or set `MOPPE_METAL_CAPTURE_FRAMES` to another count.
+
 The light matrices are computed with our own Mat4 (ortho + lookAt), replacing
 the "do matrix math on the GL projection stack" trick in shadow.cc. Bias
 matrix maps x,y to [0,1]; z is already [0,1] in Metal (adjusted for

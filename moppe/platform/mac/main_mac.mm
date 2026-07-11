@@ -297,6 +297,13 @@ namespace platform {
   int
   run (Game& game, const Config& config) {
     @autoreleasepool {
+      // Metal reads its HUD configuration before the device is created.
+      const char* hud = ::getenv ("MOPPE_METAL_HUD");
+      if (!hud || std::string (hud) != "0")
+        ::setenv ("MTL_HUD_ENABLED", "1", 0);
+      if (::getenv ("MOPPE_METAL_CAPTURE"))
+        ::setenv ("MTL_CAPTURE_ENABLED", "1", 0);
+
       [NSApplication sharedApplication];
       [NSApp setActivationPolicy: NSApplicationActivationPolicyRegular];
 

@@ -29,6 +29,9 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 namespace moppe {
@@ -51,6 +54,15 @@ namespace render {
     };
     const int PROBE_W = 32;       // auto-exposure luminance probe
     const int PROBE_H = 16;
+
+    struct FrameTiming {
+      std::mutex mutex;
+      double interval_start = 0;
+      double gpu_total_ms = 0;
+      double gpu_min_ms = std::numeric_limits<double>::max ();
+      double gpu_max_ms = 0;
+      int frames = 0;
+    };
 
 #if !TARGET_OS_IPHONE
     float half_to_float (std::uint16_t half) {
@@ -339,6 +351,14 @@ namespace render {
     int m_width_pts = 0, m_height_pts = 0;
     float m_scale = 1.0f;
     std::string m_screenshot_path;
+    bool m_profile_gpu = false;
+    std::shared_ptr<FrameTiming> m_frame_timing;
+#if !TARGET_OS_IPHONE
+    bool m_capture_active = false;
+    int m_capture_frames = 0;
+    int m_capture_frame_limit = 120;
+    std::string m_capture_path;
+#endif
   };
 
   // ------------------------------------------------------------------
@@ -349,6 +369,33 @@ namespace render {
     m_device = view.device ? view.device
       : MTLCreateSystemDefaultDevice ();
     m_queue = [m_device newCommandQueue];
+
+    m_profile_gpu = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
+    if (m_profile_gpu)
+      m_frame_timing = std::make_shared<FrameTiming> ();
+
+#if !TARGET_OS_IPHONE
+    if (const char* requested = ::getenv ("MOPPE_METAL_CAPTURE")) {
+      m_capture_path = requested;
+      if (const char* frames = ::getenv ("MOPPE_METAL_CAPTURE_FRAMES"))
+	m_capture_frame_limit = std::max (1, ::atoi (frames));
+
+      NSString* path = [NSString stringWithUTF8String:requested];
+      MTLCaptureDescriptor* descriptor = [[MTLCaptureDescriptor alloc] init];
+      descriptor.captureObject = m_queue;
+      descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+      descriptor.outputURL = [NSURL fileURLWithPath:path];
+      NSError* error = nil;
+      m_capture_active = [[MTLCaptureManager sharedCaptureManager]
+	startCaptureWithDescriptor:descriptor error:&error];
+      if (m_capture_active)
+	std::cerr << "moppe: capturing " << m_capture_frame_limit
+		  << " frames to " << m_capture_path << std::endl;
+      else
+	std::cerr << "moppe: failed to start Metal capture: "
+		  << error.localizedDescription.UTF8String << std::endl;
+    }
+#endif
 
     view.device = m_device;
 #if TARGET_OS_IPHONE
@@ -2125,10 +2172,44 @@ namespace render {
       [m_cmd presentDrawable: m_drawable];
 
     dispatch_semaphore_t sem = m_inflight;
-    [m_cmd addCompletedHandler: ^(id<MTLCommandBuffer>) {
+    std::shared_ptr<FrameTiming> timing = m_frame_timing;
+    [m_cmd addCompletedHandler: ^(id<MTLCommandBuffer> command) {
+      if (timing && command.GPUEndTime >= command.GPUStartTime) {
+	const double gpu_ms = 1000.0
+	  * (command.GPUEndTime - command.GPUStartTime);
+	std::lock_guard<std::mutex> lock (timing->mutex);
+	if (timing->interval_start == 0)
+	  timing->interval_start = command.GPUEndTime;
+	timing->gpu_total_ms += gpu_ms;
+	timing->gpu_min_ms = std::min (timing->gpu_min_ms, gpu_ms);
+	timing->gpu_max_ms = std::max (timing->gpu_max_ms, gpu_ms);
+	++timing->frames;
+	const double elapsed = command.GPUEndTime - timing->interval_start;
+	if (elapsed >= 1.0) {
+	  std::cerr << "frame GPU: " << timing->gpu_total_ms / timing->frames
+		    << " ms avg, " << timing->gpu_min_ms << " ms min, "
+		    << timing->gpu_max_ms << " ms max (" << timing->frames
+		    << " frames)" << std::endl;
+	  timing->interval_start = command.GPUEndTime;
+	  timing->gpu_total_ms = 0;
+	  timing->gpu_min_ms = std::numeric_limits<double>::max ();
+	  timing->gpu_max_ms = 0;
+	  timing->frames = 0;
+	}
+      }
       dispatch_semaphore_signal (sem);
     }];
     [m_cmd commit];
+
+#if !TARGET_OS_IPHONE
+    if (m_capture_active && ++m_capture_frames >= m_capture_frame_limit) {
+      [m_cmd waitUntilCompleted];
+      [[MTLCaptureManager sharedCaptureManager] stopCapture];
+      m_capture_active = false;
+      std::cerr << "moppe: wrote Metal capture " << m_capture_path
+		<< std::endl;
+    }
+#endif
 
 #if !TARGET_OS_IPHONE
     if (capture) {
