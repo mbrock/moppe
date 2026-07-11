@@ -309,8 +309,18 @@ ocean_fragment (OceanVaryings in [[stage_in]],
   const float ground = ocean_grid_height (in.world_pos.xz, u, heights);
   const float surface = u.params.w > 0.5
     ? ocean_grid_height (in.world_pos.xz, u, water_levels) : u.params.y;
-  const float depth_m = max (surface - ground, 0.0);
-  if (u.params.w > 0.5 && depth_m <= 0.04)
+  const float still_depth = surface - ground;
+
+  // Swash: the waterline breathes across the shallow shelf instead of
+  // standing still. The phase drifts along the shore through value
+  // noise so the edge crawls rather than pulsing in lockstep, and the
+  // retreat is deepest where the water is already thin.
+  const float shore_band = 1.0 - smoothstep (0.0, 1.5, still_depth);
+  const float swash_phase = sin (time * 1.15
+    + 6.28318 * moppe_value_noise (in.world_pos.xz * 0.045));
+  const float swash = shore_band * 0.22 * (1.0 + swash_phase);
+  const float depth_m = max (still_depth - swash, 0.0);
+  if (u.params.w > 0.5 && still_depth <= 0.005)
     discard_fragment ();
 
   float3 n = normalize (in.normal);
@@ -377,9 +387,11 @@ ocean_fragment (OceanVaryings in [[stage_in]],
     // wide shallow shelf doesn't stripe), pulsing gently, broken up
     // by drifting value noise (plane-wave products read as plaid
     // moire from the air).
-    const float surge = 0.5 + 0.5 * sin (time * 1.3 - depth_m * 2.4);
+    // Foam surges with the swash: brightest as the water runs up the
+    // beach, thinning as it drains back.
+    const float surge = 0.5 + 0.5 * swash_phase;
     float foam = pow (1.0 - smoothstep (0.0, 1.2, depth_m), 1.7)
-      * (0.80 + 0.20 * surge);
+      * (0.65 + 0.45 * surge);
     // The breakup noise only runs inside the shore band; deep water
     // keeps its zero foam without paying for it.
     if (foam > 1e-3) {
@@ -409,6 +421,12 @@ ocean_fragment (OceanVaryings in [[stage_in]],
 
   const float3 color = mix (water, sky_reflection, 0.55 * fresnel)
       + glint_color * spec * daylight * sun_visibility;
+
+  // Feathered waterline: alpha fades out over the last few centimeters
+  // of water column instead of ending at a discard cliff.
+  if (u.params.w > 0.5)
+    alpha *= smoothstep (0.0, 0.12,
+			 depth_m + 0.18 * swash * (1.0 + swash_phase));
 
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);
