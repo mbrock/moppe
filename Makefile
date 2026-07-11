@@ -1,4 +1,4 @@
-.PHONY: all archive phone terrain-lab-shot testflight xcode
+.PHONY: all archive phone profile terrain-lab-shot testflight xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -9,6 +9,11 @@ all:
 xcode:
 	cmake --preset xcode
 	open moppe.xcworkspace
+
+# Build, then record a Metal System Trace (with CPU stacks) while you
+# play; quitting the game ends the recording and opens Instruments.
+profile:
+	./tools/profile
 
 # Produce a signed App Store archive without uploading it.
 archive:
