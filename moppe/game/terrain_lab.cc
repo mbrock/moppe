@@ -90,7 +90,7 @@ namespace game {
     }
 
     UiRect friendly_slider_rect (int index) {
-      return { 38, 337 + index * 59.0f, 420, 50 };
+      return { 34, 337 + index * 59.0f, 428, 50 };
     }
 
     UiRect friendly_lens_rect (int index, int width) {
@@ -2043,12 +2043,13 @@ namespace game {
     m_ui.paragraph (dl, 35, 76, "Make a landscape, then let time shape it.");
 
     constexpr const char* action_labels[] = {
-      "NEW WORLD", "CENTER", "EXPERT"
+      "NEW WORLD", "FRAME WORLD", "EXPERT"
     };
     for (int i = 0; i < 3; ++i) {
       const UiRect bounds = friendly_action_rect (i);
       m_ui.friendly_button
-	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down);
+	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down,
+	 false, i == 0);
     }
 
     m_ui.caption (dl, 35, 157, "START WITH A STORY");
@@ -2063,7 +2064,7 @@ namespace game {
       const UiRect bounds = friendly_preset_rect (i);
       m_ui.friendly_button
 	(dl, bounds, preset_titles[i], preset_details[i], hot (bounds),
-	 m_pointer_down, m_friendly_preset == i);
+	 m_pointer_down, m_friendly_preset == i, false);
     }
 
     m_ui.caption (dl, 35, 322, "SHAPE THIS WORLD");
@@ -2084,6 +2085,29 @@ namespace game {
 	 m_friendly_drag && m_friendly_drag_control == i);
     }
 
+    if (height >= 720) {
+      constexpr const char* story_titles[] = {
+	"A NEW WORLD IS WAITING",
+	"LAND RISES  >  PEAKS STAY SHARP",
+	"LAND RISES  >  RAIN FALLS  >  HILLS SOFTEN",
+	"RAIN FALLS  >  WATER GATHERS  >  RIVERS GROW",
+	"LAND RISES  >  RIVERS CUT  >  CANYONS DEEPEN"
+      };
+      constexpr const char* story_details[] = {
+	"Choose a story above, then make it your own.",
+	"A young landscape with little weathering.",
+	"Time and gravity have rounded the high ground.",
+	"Abundant water gathers into lakes and streams.",
+	"Old rivers have worked deep into strong rock."
+      };
+      const int story = m_friendly_preset + 1;
+      m_ui.caption (dl, 35, 590, "THIS WORLD'S STORY");
+      const UiRect story_bounds { 34, 604, 428, 70 };
+      m_ui.friendly_button
+	(dl, story_bounds, story_titles[story], story_details[story],
+	 false, false, false, false);
+    }
+
     const float hint_y = std::max (602.0f, static_cast<float> (height - 27));
     m_ui.caption
       (dl, 35, hint_y, "DRAG THE LAND TO ORBIT  -  SCROLL TO ZOOM  -  T BACK");
@@ -2099,12 +2123,18 @@ namespace game {
       const UiRect bounds = friendly_lens_rect (i, width);
       m_ui.friendly_button
 	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
-	 m_overlay == lens_modes[i]);
+	 m_overlay == lens_modes[i], i == 3);
     }
-    if (m_overlay == OverlayMode::Trace)
-      m_ui.paragraph
-	(dl, std::max (490.0f, static_cast<float> (width - 438)), 88,
-	 "Click anywhere on the land and follow the raindrop.", true);
+    const char* lens_help = m_overlay == OverlayMode::Slope
+      ? "Bright ground is steep. Dark ground is gentle."
+      : m_overlay == OverlayMode::StandingWater
+      ? "See where water gathers, rests, and finds the sea."
+      : m_overlay == OverlayMode::Trace
+      ? "Click anywhere on the land and follow the raindrop."
+      : "The living surface, without a map reading.";
+    m_ui.paragraph
+      (dl, std::max (490.0f, static_cast<float> (width - 438)), 88,
+       lens_help, m_overlay != OverlayMode::None);
     m_ui.end (dl);
   }
 

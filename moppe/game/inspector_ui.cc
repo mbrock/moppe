@@ -37,8 +37,57 @@ namespace game {
 		     cy + std::sin (angle) * radius);
 	}
       }
-      dl.vertex (bounds.x + radius, bounds.y);
+      // Close on the first perimeter point.  Closing on the top edge instead
+      // creates one giant overlapping triangle across the whole rectangle,
+      // which is visible as a dark diagonal seam under alpha blending.
+      dl.vertex (bounds.x, bounds.y + radius);
       dl.end ();
+    }
+
+    void draw_circle (render::DrawList& dl, float x, float y, float radius) {
+      constexpr int steps = 20;
+      dl.begin (render::Prim::TriangleFan);
+      dl.vertex (x, y);
+      for (int i = 0; i <= steps; ++i) {
+	const float angle = i * 2.0f * 3.14159265f / steps;
+	dl.vertex (x + std::cos (angle) * radius,
+		   y + std::sin (angle) * radius);
+      }
+      dl.end ();
+    }
+
+    void draw_control_icon (render::DrawList& dl, const UiRect& bounds,
+			    const std::string& title) {
+      const float x = bounds.x + 7.0f;
+      const float y = bounds.y + 10.0f;
+      dl.color (0.45f, 0.72f, 0.62f, 0.92f);
+      if (title == "MOUNTAINS") {
+	dl.line (x, y + 7, x + 7, y, 1.5f);
+	dl.line (x + 7, y, x + 12, y + 5, 1.5f);
+	dl.line (x + 12, y + 5, x + 17, y + 1, 1.5f);
+	dl.line (x + 17, y + 1, x + 24, y + 7, 1.5f);
+      } else if (title == "WILD RIDGES") {
+	dl.line (x, y + 5, x + 5, y + 1, 1.5f);
+	dl.line (x + 5, y + 1, x + 11, y + 7, 1.5f);
+	dl.line (x + 11, y + 7, x + 17, y, 1.5f);
+	dl.line (x + 17, y, x + 24, y + 5, 1.5f);
+      } else if (title == "AGE") {
+	for (int i = 0; i < 12; ++i) {
+	  const float a0 = i * 2.0f * 3.14159265f / 12.0f;
+	  const float a1 = (i + 1) * 2.0f * 3.14159265f / 12.0f;
+	  dl.line (x + 7 + std::cos (a0) * 7,
+		   y + 4 + std::sin (a0) * 7,
+		   x + 7 + std::cos (a1) * 7,
+		   y + 4 + std::sin (a1) * 7, 1.0f);
+	}
+	dl.line (x + 7, y + 4, x + 7, y, 1.2f);
+	dl.line (x + 7, y + 4, x + 11, y + 6, 1.2f);
+      } else {
+	dl.line (x + 7, y - 3, x + 1, y + 5, 1.2f);
+	dl.line (x + 1, y + 5, x + 7, y + 10, 1.2f);
+	dl.line (x + 7, y + 10, x + 13, y + 5, 1.2f);
+	dl.line (x + 13, y + 5, x + 7, y - 3, 1.2f);
+      }
     }
 
     void bevel (render::DrawList& dl, const UiRect& bounds,
@@ -374,6 +423,26 @@ namespace game {
     const UiRect inner { bounds.x + 1, bounds.y + 1,
 			 bounds.width - 2, bounds.height - 2 };
     fill_rounded_rect (dl, inner, 12.0f);
+
+    // Barely-visible contour lines keep the surface from feeling like an
+    // empty black rectangle without competing with the controls.
+    dl.color (0.16f, 0.34f, 0.29f, 0.022f);
+    for (int row = 0; row < 8; ++row) {
+      const float base_y = bounds.y + 88.0f + row * 82.0f;
+      if (base_y > bounds.y + bounds.height - 18.0f)
+	break;
+      float previous_x = bounds.x + 18.0f;
+      float previous_y = base_y;
+      for (int segment = 1; segment <= 12; ++segment) {
+	const float x = bounds.x + 18.0f
+	  + segment * (bounds.width - 36.0f) / 12.0f;
+	const float y = base_y
+	  + std::sin (segment * 0.86f + row * 0.7f) * 5.0f;
+	dl.line (previous_x, previous_y, x, y, 1.0f);
+	previous_x = x;
+	previous_y = y;
+      }
+    }
   }
 
   void
@@ -413,18 +482,18 @@ namespace game {
   InspectorUi::friendly_button
     (render::DrawList& dl, const UiRect& bounds,
      const std::string& title, const std::string& detail,
-     bool hot, bool pressed, bool selected) const
+     bool hot, bool pressed, bool selected, bool featured) const
   {
     const bool pushed = hot && pressed;
-    dl.color (selected ? 0.38f : 0.18f,
-	      selected ? 0.72f : 0.39f,
-	      selected ? 0.61f : 0.35f, 0.95f);
+    dl.color (selected ? 0.50f : featured ? 0.32f : 0.18f,
+	      selected ? 0.82f : featured ? 0.62f : 0.39f,
+	      selected ? 0.68f : featured ? 0.54f : 0.35f, 0.95f);
     fill_rounded_rect (dl, bounds, 8.0f);
     if (selected)
       dl.color (0.16f, 0.48f, 0.42f, 0.98f);
     else if (pushed)
       dl.color (0.10f, 0.24f, 0.22f, 0.99f);
-    else if (hot)
+    else if (hot || featured)
       dl.color (0.14f, 0.34f, 0.31f, 0.98f);
     else
       dl.color (0.085f, 0.19f, 0.18f, 0.98f);
@@ -440,6 +509,11 @@ namespace game {
       m_friendly_label->draw
 	(dl, bounds.x + 12, bounds.y + bounds.height - 10, detail);
     }
+    if (selected) {
+      dl.color (0.78f, 1.0f, 0.72f, 0.98f);
+      draw_circle
+	(dl, bounds.x + bounds.width - 13.0f, bounds.y + 13.0f, 3.5f);
+    }
   }
 
   void
@@ -450,9 +524,10 @@ namespace game {
      bool active) const
   {
     normalized = std::clamp (normalized, 0.0f, 1.0f);
+    draw_control_icon (dl, bounds, title);
     if (m_friendly_body) {
       dl.color (0.89f, 0.93f, 0.82f, 1.0f);
-      m_friendly_body->draw (dl, bounds.x, bounds.y + 16, title);
+      m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 16, title);
     }
     if (m_friendly_label) {
       dl.color (0.52f, 0.64f, 0.59f, 0.98f);
@@ -464,17 +539,23 @@ namespace game {
 	 bounds.y + bounds.height, high);
     }
     const float y = bounds.y + 29.0f;
+    dl.color (0.25f, 0.43f, 0.39f, 0.65f);
+    for (int i = 0; i <= 4; ++i) {
+      const float tick_x = bounds.x + bounds.width * i / 4.0f;
+      dl.line (tick_x, y - 4, tick_x, y + 4, 1.0f);
+    }
     dl.color (0.04f, 0.095f, 0.09f, 1.0f);
     dl.line (bounds.x, y, bounds.x + bounds.width, y, 7.0f);
     dl.color (0.25f, 0.68f, 0.58f, 1.0f);
     dl.line (bounds.x, y,
 	     bounds.x + bounds.width * normalized, y, 4.0f);
     const float cx = bounds.x + bounds.width * normalized;
+    dl.color (0.29f, 0.82f, 0.65f, active ? 0.30f : 0.13f);
+    draw_circle (dl, cx, y, active ? 13.0f : 11.0f);
     dl.color (active ? 0.91f : hot ? 0.82f : 0.72f,
 	      active ? 0.98f : 0.91f,
 	      active ? 0.73f : 0.69f, 1.0f);
-    const UiRect thumb { cx - 7, y - 7, 14, 14 };
-    fill_rounded_rect (dl, thumb, 7.0f);
+    draw_circle (dl, cx, y, 7.0f);
   }
 }
 }
