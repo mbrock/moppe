@@ -144,6 +144,9 @@ this, not Vulkan-esque generality. Three tiers:
   `(DrawState, range)` runs. Built by `MeshBuilder`. Replaces display lists;
   used for vegetation/city sectors, sky dome, ocean grid, solid primitives.
 - Terrain is special-cased (see below), not a Mesh.
+- Terrain inspection can bind one generic R32F surface overlay with a value
+  range, opacity, and palette. The renderer does not know whether its values
+  mean slope, drainage area, basins, sinks, or stage differences.
 
 ### 2. DrawList — the immediate-mode layer
 

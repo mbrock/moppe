@@ -8,8 +8,11 @@
 #include <moppe/map/generate.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/platform/platform.hh>
+#include <moppe/terrain/drainage.hh>
 
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace moppe {
@@ -56,6 +59,18 @@ namespace game {
 	       int height_pts) const;
 
   private:
+    enum class OverlayMode {
+      None,
+      Height,
+      Slope,
+      Flow,
+      Streams,
+      Basins,
+      Sinks,
+      HeightDelta,
+      Trace
+    };
+
     void select (terrain::GeologicalLayer layer);
     void reset_program ();
     void rebuild_program ();
@@ -76,6 +91,11 @@ namespace game {
     void restore_game_map ();
     void fit_view ();
     void cycle_view ();
+    void set_overlay (OverlayMode mode);
+    void update_overlay ();
+    void invalidate_analysis ();
+    const terrain::DrainageGraph& drainage ();
+    void inspect_drainage (float x, float y);
 
     InspectorUi m_ui;
     render::Renderer* m_renderer;
@@ -90,6 +110,12 @@ namespace game {
     bool m_active;
     terrain::TerrainProgram m_program;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
+    std::optional<terrain::DrainageGraph> m_drainage;
+    OverlayMode m_overlay;
+    bool m_analysis_dirty;
+    std::string m_overlay_status;
+    std::string m_analysis_status;
+    std::optional<std::uint32_t> m_inspected_cell;
     int m_selected_stage;
     int m_stage_scroll;
 
@@ -97,6 +123,7 @@ namespace game {
     float m_pointer_y;
     bool m_pointer_down;
     bool m_camera_drag;
+    float m_camera_drag_distance;
     bool m_pan_drag;
     bool m_parameter_drag;
     int m_drag_property;

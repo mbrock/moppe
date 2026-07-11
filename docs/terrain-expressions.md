@@ -1,11 +1,12 @@
 # Terrain expressions, recipes, and pipelines
 
-Moppe's portable terrain subsystem separates four kinds of value:
+Moppe's portable terrain subsystem separates five kinds of value:
 
 1. `ScalarField` is a lazy expression DAG.
 2. `GeologicalSource` retains the recipe and selected field to materialize.
 3. `TerrainTransform` describes a terrain-to-terrain operation.
 4. `TerrainProgram` composes one source with an ordered transform sequence.
+5. `TerrainView` lends materialized samples to readings and analyses.
 
 The game, Terrain Lab, unit tests, and command-line tools share these types.
 None of them contains renderer or platform graphics API state.
@@ -105,6 +106,34 @@ buffer.  This lets erosion participate in the terrain language without
 pretending that it is a pointwise `ScalarField`, and without requiring a new
 2049-square allocation after every operation.
 
+## Materialized readings and drainage
+
+`TerrainView` is a borrowed description of concrete terrain samples. It
+carries physical horizontal spacing, vertical scale, and bounded-versus-torus
+topology, which are deliberately absent from the normalized sampling
+`Domain2D` used by pointwise field evaluation. `RandomHeightMap::terrain_view`
+is the shared bridge used by transforms, tools, and the Lab.
+
+A reading consumes that materialized view without changing it. The first
+small reading, `measure_height_range`, returns the minimum and maximum that
+normalization already needed. Drainage is a larger structured analysis:
+
+```text
+TerrainView -> DrainageGraph
+                 |-> receiver per cell
+                 |-> physical slope
+                 |-> contributing area
+                 |-> basin / sink identity
+```
+
+The periodic D8 analysis works on the unique torus samples, omitting the
+duplicated rendering seam. Each cell stores one `uint32_t` receiver rather
+than an adjacency matrix. Receivers must be strictly lower; a cell with no
+lower neighbor points to itself and is an explicit sink. Sorting cells by
+height then gives deterministic upstream-area accumulation and basin
+assignment without graph cycles. Depression filling or breaching is a future
+policy, not a hidden part of this first reference interpretation.
+
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
 
@@ -153,6 +182,22 @@ The Terrain Lab window presents the system as a small construction game:
 - Cover View repeats the square around the camera through the existing
   gameplay LOD path and fades the finite draw horizon into distance haze;
 - Donut View embeds the periodic heightfield as an actual torus on the GPU.
+
+The separate **Map Readings** window keeps geometry and interpretation
+independent. Material restores the ordinary terrain textures; Height and
+Slope drape scalar palettes over the current surface; Flow shows logarithmic
+contributing area; Streams thresholds that reading at 64 upstream cells;
+Basins colors shared sink catchments; Sinks marks local minima; and Delta
+shows signed height change across the selected pipeline stage. Trace accepts
+a click on terrain in Tile or Cover view, follows receiver links to a sink,
+and highlights the complete basin faintly beneath the path.
+
+These are all presentations of reusable analysis values. The renderer knows
+only an R32F scalar overlay, value range, opacity, and palette; it has no
+drainage-specific API. `MOPPE_LAB_OVERLAY` (`height`, `slope`, `flow`,
+`streams`, `basins`, `sinks`, `delta`, or `trace`) makes the same views
+scriptable. `MOPPE_LAB_STAGE` selects a stage for Delta, while
+`MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 
 The three `WAVES` counters are integer spatial frequencies: how many periods
 fit around one fundamental side of the torus.  They are not literal counts of
@@ -243,7 +288,8 @@ Profiling the actual Terrain Lab controls then reduced a recipe-parameter click
 from about 102 ms to roughly 23--25 ms.  Interactive previews reuse evaluator
 buffers, height and normal textures, and terrain index buffers; normalize in
 two CPU passes; derive preview normals from the height texture in the terrain
-vertex shader; use conservative chunk bounds; and debounce shadow refreshes.
+vertex shader; use conservative chunk bounds; and maintain a live
+reduced-quality shadow map.
 The exact CPU normal map is rebuilt when returning to gameplay.
 
 The field preview evaluates one lazy field:
