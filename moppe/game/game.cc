@@ -11,6 +11,9 @@
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/city.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/game_state.hh>
+#include <moppe/game/graphics_benchmark.hh>
+#include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/stars.hh>
@@ -52,14 +55,19 @@ namespace moppe {
     // THE sun: one fixed direction shared by the light, the shadow
     // map, the sky's sun disc, and the ocean glint.
     static const float SUN_AZIMUTH = 0.8f;
-    static float SUN_HEIGHT = 0.62f; // low, vivid golden afternoon
-
     static Vector3D sun_direction_for (float height) {
       const float el = (height - 0.5f) * 3.14159f;
       return Vector3D (std::cos (el) * std::sin (SUN_AZIMUTH),
                        std::sin (el),
                        std::cos (el) * std::cos (SUN_AZIMUTH));
     }
+
+    struct GraphicsBenchmarkConfig {
+      std::string output_path;
+      int prelude_frames = 480;
+      int settle_frames = 30;
+      int measured_frames = 120;
+    };
 
     static float smooth_curve (float edge0, float edge1, float x) {
       float t = (x - edge0) / (edge1 - edge0);
@@ -216,17 +224,20 @@ namespace moppe {
       return base * (1.0f - warmth) + warm_horizon * warmth;
     }
 
-    class MoppeGame : public platform::Game {
+    class MoppeGame : public platform::Game, private GameLogicState {
     public:
       MoppeGame (const WorldParams& world,
+                 const GraphicsSettings& graphics,
                  bool start_in_terrain_lab,
                  bool terrain_lab_preview,
                  int seed,
                  std::string screenshot_path,
                  std::optional<WaterShot> water_shot,
-                 terrain::TerrainGenerationProfile generation_profile)
-          : m_world (world), m_spawn_position (world.spawn_position ()),
-            m_seed (seed), m_generation_profile (generation_profile),
+                 terrain::TerrainGenerationProfile generation_profile,
+                 std::optional<GraphicsBenchmarkConfig> benchmark)
+          : m_world (world), m_graphics (graphics),
+            m_spawn_position (world.spawn_position ()), m_seed (seed),
+            m_generation_profile (generation_profile),
             m_map (world.resolution,
                    world.resolution,
                    world.map_size,
@@ -247,13 +258,28 @@ namespace moppe {
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
-            m_gen_stage (0), m_total_time (0), m_frame_time (1.0f / 60.0f),
-            m_shake (0), m_shake_time (0), m_health (100.0f), m_fov_k (0),
-            m_lives (10), m_game_over (false), m_fuel (100.0f), m_odometer (0),
-            m_turn_input (0), m_go_input (0), m_boost_input (0),
-            m_mode (M_BIKE), m_cam_mode (CAM_CHASE), m_car_exists (false),
-            m_combo (0), m_score (0), m_jump_airtime (0), m_landed_airtime (0),
-            m_landed_points (0), m_landed_age (10), m_fx_rng (7) {}
+            m_gen_stage (0), m_benchmark (std::move (benchmark)),
+            m_benchmark_baseline (graphics) {}
+
+      GameState state () const {
+        return { static_cast<const GameLogicState&> (*this),
+                 m_vehicle.state (),
+                 m_car.state (),
+                 m_walker.state (),
+                 m_camera.state (),
+                 m_stars.state (),
+                 m_dust.state () };
+      }
+
+      void restore (const GameState& state) {
+        static_cast<GameLogicState&> (*this) = state.logic;
+        m_vehicle.restore (state.vehicle);
+        m_car.restore (state.car);
+        m_walker.restore (state.walker);
+        m_camera.restore (state.camera);
+        m_stars.restore (state.stars);
+        m_dust.restore (state.dust);
+      }
 
       // -- lifecycle ---------------------------------------------------
 
@@ -268,7 +294,6 @@ namespace moppe {
           r, "AvenirNext-DemiBold", 52, r.scale_factor ()));
         m_loading_font.reset (new render::FontAtlas (
           r, "AvenirNext-Medium", 24, r.scale_factor ()));
-        m_dust.load (r);
         m_blob.load (r);
 
         platform::async (
@@ -499,7 +524,8 @@ namespace moppe {
         }
 
         if (!m_terrain_lab_preview) {
-          if (!m_world.low_graphics)
+          m_vegetation.prepare (m_map, m_world);
+          if (m_graphics.vegetation)
             m_vegetation.generate (
               m_map, m_world, Vegetation::population_for (m_world));
           m_stars.generate (m_map,
@@ -524,11 +550,10 @@ namespace moppe {
       void finish_setup () {
         render::Renderer& r = *m_renderer;
 
-        m_terrain.setup (r, m_map, m_world);
-        // Rivers are painted into the water sheets below; the ribbon
-        // meshes stay available behind an env var while the painted
-        // rendering proves itself against the reference captures.
-        if (m_rivers && ::getenv ("MOPPE_RIVER_RIBBONS"))
+        m_terrain.setup (r, m_map, m_world, m_graphics);
+        // Rivers are painted into the water sheets below; the optional ribbon
+        // meshes remain independently selectable for comparison captures.
+        if (m_rivers && m_graphics.river_ribbons)
           m_river_surface.rebuild (r,
                                    m_map,
                                    *m_standing_water,
@@ -536,9 +561,10 @@ namespace moppe {
                                    *m_drainage,
                                    *m_rivers);
         if (!m_terrain_lab_preview) {
-          if (!m_world.low_graphics)
-            m_terrain.render_shadow (r, m_map, sun_direction_for (SUN_HEIGHT));
-          if (!m_world.low_graphics)
+          if (m_graphics.terrain_shadows)
+            m_terrain.render_shadow (
+              r, m_map, sun_direction_for (m_graphics.sun_height));
+          if (m_graphics.vegetation)
             m_vegetation.load (r);
         }
         if (m_world.city_mode)
@@ -630,8 +656,9 @@ namespace moppe {
                                m_map,
                                m_terrain,
                                m_world,
+                               m_graphics,
                                lab_program (),
-                               sun_direction_for (SUN_HEIGHT));
+                               sun_direction_for (m_graphics.sun_height));
           m_start_in_terrain_lab = false;
         }
         if (::getenv ("MOPPE_REGENERATE_ONCE") &&
@@ -644,6 +671,44 @@ namespace moppe {
       // -- simulation --------------------------------------------------
 
       void tick (float dt) override {
+        if (m_benchmark) {
+          dt = GRAPHICS_BENCHMARK_DT;
+          if (m_benchmark_submitted) {
+            m_benchmark_measured = false;
+            if (m_renderer->benchmark_complete () &&
+                !m_benchmark_results_written) {
+              m_renderer->write_benchmark_results ();
+              m_benchmark_results_written = true;
+              platform::request_quit ();
+            }
+            return;
+          }
+          if (m_benchmark_checkpoint) {
+            const int epoch_frames =
+              m_benchmark->settle_frames + m_benchmark->measured_frames;
+            if (m_benchmark_frame == epoch_frames) {
+              ++m_benchmark_epoch;
+              const int configurations = 1 << hot_graphics_feature_count ();
+              if (m_benchmark_epoch == configurations) {
+                m_benchmark_submitted = true;
+                m_benchmark_measured = false;
+                return;
+              }
+              restore (*m_benchmark_checkpoint);
+              m_renderer->reset_temporal_state ();
+              m_graphics = m_benchmark_baseline;
+              m_benchmark_mask = gray_code (m_benchmark_epoch);
+              apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+              m_benchmark_frame = 0;
+            }
+            controls (benchmark_input (m_benchmark_frame));
+            m_benchmark_measured =
+              m_benchmark_frame >= m_benchmark->settle_frames;
+          } else {
+            controls (benchmark_input (m_benchmark_prelude_frame));
+            m_benchmark_measured = false;
+          }
+        }
         m_frame_time = dt;
         if (!m_ready || m_game_over)
           return;
@@ -663,7 +728,7 @@ namespace moppe {
 
         // Fog stays mostly sky-blue.  Directional warmth is added in
         // the shaders only when looking toward the sun.
-        const Vector3D horizon = horizon_color_for (SUN_HEIGHT);
+        const Vector3D horizon = horizon_color_for (m_graphics.sun_height);
         m_fog = horizon * 0.82f + Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
 
         // Terrain inspection pauses actors and vehicle physics, but keeps the
@@ -955,6 +1020,25 @@ namespace moppe {
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
           m_fov_k += (k - m_fov_k) * (1.0f - std::exp (-5.0f * dt));
         }
+
+        if (m_benchmark) {
+          if (m_benchmark_checkpoint) {
+            ++m_benchmark_frame;
+          } else if (++m_benchmark_prelude_frame ==
+                     m_benchmark->prelude_frames) {
+            m_benchmark_checkpoint = state ();
+            m_renderer->reset_temporal_state ();
+            m_benchmark_mask = gray_code (0);
+            m_graphics = m_benchmark_baseline;
+            apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+            m_benchmark_frame = 0;
+            std::cerr << "moppe: graphics benchmark: "
+                      << (1 << hot_graphics_feature_count ())
+                      << " configurations, " << m_benchmark->settle_frames
+                      << " settle + " << m_benchmark->measured_frames
+                      << " measured frames each\n";
+          }
+        }
       }
 
       // -- rendering ---------------------------------------------------
@@ -1019,10 +1103,11 @@ namespace moppe {
                                   ? m_terrain_lab.scene_fog (m_world.fog_scale)
                                   : m_world.fog_scale;
         fp.fog_scale = scene_fog;
-        fp.sun_dir = sun_direction_for (SUN_HEIGHT);
-        sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
+        fp.sun_dir = sun_direction_for (m_graphics.sun_height);
+        sun_light_colors (
+          m_graphics.sun_height, fp.sun_diffuse, fp.sun_specular);
         fp.sun_specular = fp.sun_specular * 0.5f; // material specular
-        const float daylight = daylight_for (SUN_HEIGHT);
+        const float daylight = daylight_for (m_graphics.sun_height);
         // Open terrain receives substantial skylight even when a mountain
         // blocks the sun. Keep the fill cool so cast shadows retain shape and
         // color instead of collapsing into near-black silhouettes.
@@ -1035,11 +1120,16 @@ namespace moppe {
           fp.exposure_bias = 0.88f;
         }
         fp.time = m_total_time;
-        fp.scene_scale = m_world.low_graphics ? 0.5f : 1.0f;
-        fp.bloom = !m_world.low_graphics;
-        fp.auto_exposure = !m_world.low_graphics;
-        fp.lens_flare = !m_world.low_graphics;
+        fp.scene_scale = m_graphics.scene_scale;
+        fp.render_scale_override = m_graphics.render_scale_override;
+        fp.bloom = m_graphics.bloom;
+        fp.auto_exposure = m_graphics.auto_exposure;
+        fp.lens_flare = m_graphics.lens_flare;
         fp.profile = true;
+        fp.benchmark_mask = m_benchmark_mask;
+        fp.benchmark_epoch = m_benchmark_epoch;
+        fp.benchmark_frame = m_benchmark_frame > 0 ? m_benchmark_frame - 1 : 0;
+        fp.benchmark_measured = m_benchmark_measured;
 
         // Lens-flare occlusion: march toward the sun through the
         // heightmap; any ridge above the ray kills the flare.  Cloud
@@ -1095,7 +1185,7 @@ namespace moppe {
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = m_total_time;
-          sky.sun_height = SUN_HEIGHT;
+          sky.sun_height = m_graphics.sun_height;
           // A world-shaping overview should keep the game world's moving sky,
           // without letting a passing front hide the land being edited.
           sky.cloudiness =
@@ -1131,8 +1221,12 @@ namespace moppe {
           m_world_dl.clear ();
           if (m_world.city_mode)
             m_city.render (r, m_world_dl, env);
-          if (!m_world.low_graphics)
-            m_vegetation.render (r, env);
+          if (m_graphics.vegetation || m_graphics.grass)
+            m_vegetation.render (r,
+                                 env,
+                                 m_graphics.vegetation,
+                                 m_graphics.grass ? m_graphics.grass_density
+                                                  : 0.0f);
 
           // Soft blob shadows under the movers.
           m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
@@ -1158,12 +1252,12 @@ namespace moppe {
           // Additive glow after the solid list, so it blends over
           // everything already drawn: exhaust and jump-jet flames, then
           // the star pickups' halos.
-          if (!m_world.low_graphics && !(helmet && m_mode == M_BIKE))
+          if (m_graphics.vehicle_effects && !(helmet && m_mode == M_BIKE))
             render_vehicle_flames (r, m_vehicle, m_total_time);
-          if (!m_world.low_graphics && m_car_exists &&
+          if (m_graphics.vehicle_effects && m_car_exists &&
               !(helmet && m_mode == M_CAR))
             render_vehicle_flames (r, m_car, m_total_time);
-          if (!m_world.low_graphics)
+          if (m_graphics.star_effects)
             m_stars.render (r, env);
         }
 
@@ -1178,9 +1272,8 @@ namespace moppe {
         // game's own; a rebuilt map invalidates the water sheets, so
         // they disappear until the lab's own analysis draws ribbons.
         const bool draw_ocean =
-          !m_world.low_graphics &&
-          (!terrain_lab ||
-           (!m_terrain_lab.torus_view () && m_terrain_lab.map_pristine ()));
+          m_graphics.ocean && (!terrain_lab || (!m_terrain_lab.torus_view () &&
+                                                m_terrain_lab.map_pristine ()));
         if (draw_ocean) {
           render::OceanParams ocean;
           ocean.time = m_total_time;
@@ -1198,10 +1291,8 @@ namespace moppe {
         if (terrain_lab)
           m_terrain_lab.render_droplet (r, cam);
 
-        if (!terrain_lab && !m_world.low_graphics) {
-          m_dust_dl.clear ();
-          m_dust.render (m_dust_dl, env);
-          r.draw_list (m_dust_dl);
+        if (!terrain_lab && m_graphics.particles) {
+          m_dust.render (r);
         }
 
         // Post effects.
@@ -1213,7 +1304,7 @@ namespace moppe {
                               : active_vehicle ().velocity ().length () * 3.6f;
           float k = (kmh - 90.0f) / 160.0f;
           clamp (k, 0.0f, 1.0f);
-          if (!m_world.low_graphics && k > 0.01f)
+          if (m_graphics.motion_blur && k > 0.01f)
             r.apply_motion_blur (k);
         }
 
@@ -1291,6 +1382,7 @@ namespace moppe {
           m_terrain.setup (r,
                            m_loading_map,
                            m_world,
+                           m_graphics,
                            render::TerrainProjection::Plane,
                            true,
                            true);
@@ -1303,6 +1395,7 @@ namespace moppe {
           m_terrain.setup (r,
                            m_loading_map,
                            m_world,
+                           m_graphics,
                            render::TerrainProjection::Plane,
                            true,
                            true);
@@ -1603,8 +1696,9 @@ namespace moppe {
                                m_map,
                                m_terrain,
                                m_world,
+                               m_graphics,
                                lab_program (),
-                               sun_direction_for (SUN_HEIGHT));
+                               sun_direction_for (m_graphics.sun_height));
           return;
         }
 
@@ -1671,9 +1765,6 @@ namespace moppe {
       }
 
     private:
-      enum Mode { M_BIKE, M_FOOT, M_CAR };
-      enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
-
       mov::Vehicle& active_vehicle () {
         return m_mode == M_CAR ? m_car : m_vehicle;
       }
@@ -1823,6 +1914,7 @@ namespace moppe {
       }
 
       WorldParams m_world;
+      GraphicsSettings m_graphics;
       Vector3D m_spawn_position;
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
@@ -1874,40 +1966,19 @@ namespace moppe {
       int m_screenshot_frames;
       std::atomic<bool> m_ready;
       std::atomic<int> m_gen_stage;
+      std::optional<GraphicsBenchmarkConfig> m_benchmark;
+      GraphicsSettings m_benchmark_baseline;
+      std::optional<GameState> m_benchmark_checkpoint;
+      int m_benchmark_prelude_frame = 0;
+      int m_benchmark_epoch = 0;
+      int m_benchmark_frame = 0;
+      uint32_t m_benchmark_mask = 0;
+      bool m_benchmark_measured = false;
+      bool m_benchmark_submitted = false;
+      bool m_benchmark_results_written = false;
 
       render::DrawList m_world_dl;
-      render::DrawList m_dust_dl;
       render::DrawList m_hud_dl;
-
-      // double: a float accumulator quantizes 60 Hz ticks after ~18 h
-      // and stops advancing entirely after ~24 days.
-      double m_total_time;
-      float m_frame_time;
-      float m_cloudiness = 0.5f;
-      float m_flare = 0.0f;
-      Vector3D m_fog;
-      float m_shake;
-      float m_shake_time;
-      float m_health;
-      float m_fov_k;
-      int m_lives;
-      bool m_game_over;
-      float m_fuel;
-      double m_odometer;
-      float m_turn_input;
-      float m_go_input;
-      float m_boost_input;
-      Mode m_mode;
-      CamMode m_cam_mode;
-      Vector3D m_fp_eye;
-      bool m_car_exists;
-      int m_combo;
-      int m_score;
-      float m_jump_airtime;
-      float m_landed_airtime;
-      int m_landed_points;
-      float m_landed_age;
-      std::mt19937 m_fx_rng;
     };
   }
 }
@@ -1916,6 +1987,7 @@ int main (int argc, char** argv) {
   using namespace moppe;
 
   game::WorldParams world;
+  game::GraphicsSettings graphics = game::high_graphics_settings ();
   platform::Config config;
   bool start_in_terrain_lab = false;
   bool terrain_lab_preview = false;
@@ -1924,6 +1996,7 @@ int main (int argc, char** argv) {
   int seed = -1;
   terrain::TerrainGenerationProfile generation_profile =
     terrain::TerrainGenerationProfile::Play;
+  std::optional<game::GraphicsBenchmarkConfig> graphics_benchmark;
   config.title = "Moppe";
 
   for (int i = 1; i < argc; ++i) {
@@ -1951,13 +2024,47 @@ int main (int argc, char** argv) {
       }
       const std::string quality = argv[++i];
       if (quality == "low")
-        world.low_graphics = true;
+        graphics = game::low_graphics_settings ();
       else if (quality == "high")
-        world.low_graphics = false;
+        graphics = game::high_graphics_settings ();
       else {
         std::cerr << "unknown graphics quality: " << quality << '\n';
         return -1;
       }
+    } else if (arg == "--graphics-enable" || arg == "--graphics-disable") {
+      if (i + 1 >= argc) {
+        std::cerr << arg << " requires a comma-separated feature list\n";
+        return -1;
+      }
+      std::string error;
+      const bool enabled = arg == "--graphics-enable";
+      if (!game::set_graphics_features (graphics, argv[++i], enabled, error)) {
+        std::cerr << error << '\n';
+        return -1;
+      }
+    } else if (arg == "--graphics-benchmark") {
+      if (i + 1 >= argc) {
+        std::cerr << "--graphics-benchmark requires a CSV path\n";
+        return -1;
+      }
+      graphics_benchmark = game::GraphicsBenchmarkConfig {};
+      graphics_benchmark->output_path = argv[++i];
+      config.fullscreen = false;
+    } else if (arg == "--benchmark-frames" || arg == "--benchmark-settle" ||
+               arg == "--benchmark-prelude") {
+      if (i + 1 >= argc) {
+        std::cerr << arg << " requires a positive frame count\n";
+        return -1;
+      }
+      if (!graphics_benchmark)
+        graphics_benchmark = game::GraphicsBenchmarkConfig {};
+      const int value = std::max (1, std::atoi (argv[++i]));
+      if (arg == "--benchmark-frames")
+        graphics_benchmark->measured_frames = value;
+      else if (arg == "--benchmark-settle")
+        graphics_benchmark->settle_frames = value;
+      else
+        graphics_benchmark->prelude_frames = value;
     } else if (arg == "--fast") {
       generation_profile = terrain::TerrainGenerationProfile::Fast;
     } else if (arg == "--terrain-quality") {
@@ -2024,8 +2131,32 @@ int main (int argc, char** argv) {
   }
   if (terrain_lab_preview)
     config.fullscreen = false;
-  std::cerr << "moppe: graphics quality: "
-            << (world.low_graphics ? "low" : "high") << std::endl;
+  std::string graphics_error;
+  if (!game::apply_graphics_environment (graphics, graphics_error)) {
+    std::cerr << graphics_error << '\n';
+    return -1;
+  }
+  game::print_graphics_settings (std::cerr, graphics);
+  if (graphics_benchmark) {
+    if (graphics_benchmark->output_path.empty ()) {
+      std::cerr << "--graphics-benchmark is required with benchmark options\n";
+      return -1;
+    }
+    const int expected = graphics_benchmark->measured_frames *
+                         (1 << game::hot_graphics_feature_count ());
+    ::setenv (
+      "MOPPE_BENCHMARK_OUTPUT", graphics_benchmark->output_path.c_str (), 1);
+    const std::string expected_text = std::to_string (expected);
+    ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
+    std::string feature_names;
+    for (const game::GraphicsFeature* feature : game::graphics_features)
+      if (feature->hot) {
+        if (!feature_names.empty ())
+          feature_names += ',';
+        feature_names += feature->name;
+      }
+    ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
+  }
   if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
       !world.city_mode && !world.pico_mode && !terrain_lab_preview)
     world.resolution = 1025;
@@ -2036,17 +2167,15 @@ int main (int argc, char** argv) {
   if (seed < 0)
     seed = game::remembered_seed (world, generation_profile);
 
-  // Debug: override the sun height (e.g. 0.55 for long shadows).
-  if (const char* sh = ::getenv ("MOPPE_SUNHEIGHT"))
-    game::SUN_HEIGHT = (float)::atof (sh);
-
   game::MoppeGame game (world,
+                        graphics,
                         start_in_terrain_lab,
                         terrain_lab_preview,
                         seed,
                         std::move (screenshot_path),
                         water_shot,
-                        generation_profile);
+                        generation_profile,
+                        graphics_benchmark);
 
   try {
     return platform::run (game, config);

@@ -599,6 +599,16 @@ namespace moppe {
       m_plants.push_back (plant);
     }
 
+    void Vegetation::prepare (const map::HeightMap& map,
+                              const WorldParams& world) {
+      m_map_size = world.map_size;
+      m_lean = world.pico_mode;
+      m_periodic = map.periodic ();
+      m_map = &map;
+      m_water = world.water_level;
+      m_height = world.map_size.y;
+    }
+
     void Vegetation::generate (const map::HeightMap& map,
                                const WorldParams& world,
                                const Population& population) {
@@ -615,12 +625,7 @@ namespace moppe {
       };
 
       const Vector3D size = map.size ();
-      m_map_size = world.map_size;
-      m_lean = world.pico_mode;
-      m_periodic = map.periodic ();
-      m_map = &map;
-      m_water = world.water_level;
-      m_height = world.map_size.y;
+      prepare (map, world);
       m_plants.clear ();
       m_plants.reserve (trees + bushes + max_tufts + max_flowers + reed_count);
 
@@ -1009,7 +1014,10 @@ namespace moppe {
         }
     }
 
-    void Vegetation::render (render::Renderer& r, const FrameEnv& env) {
+    void Vegetation::render (render::Renderer& r,
+                             const FrameEnv& env,
+                             bool draw_vegetation,
+                             float grass_density) {
       if (m_map_size.x <= 0 || m_map_size.z <= 0)
         return;
 
@@ -1019,24 +1027,25 @@ namespace moppe {
       const float density = env.fog_scale * 1.35f;
       const float fog_reach =
         density > 0 ? 1.9f / density : std::max (m_map_size.x, m_map_size.z);
-      render_grid (r, m_meshes, STRUCTURE_GRID, fog_reach, env.camera_pos);
+      if (draw_vegetation) {
+        render_grid (r, m_meshes, STRUCTURE_GRID, fog_reach, env.camera_pos);
 
-      // Fine detail only registers near the camera; past that the
-      // structural canopies carry the silhouette.
-      render_grid (
-        r, m_detail, DETAIL_GRID, std::min (fog_reach, 560.0f), env.camera_pos);
+        // Fine detail only registers near the camera; past that the
+        // structural canopies carry the silhouette.
+        render_grid (r,
+                     m_detail,
+                     DETAIL_GRID,
+                     std::min (fog_reach, 560.0f),
+                     env.camera_pos);
+      }
 
       if (m_map) {
-        // Blade count goes with (radius / spacing)^2, so MOPPE_GRASS
+        // Blade count goes with (radius / spacing)^2, so grass_density
         // scales cost quadratically: 1 is the laptop-friendly default,
         // ~1.7 restores the original 90 m / 0.32 m field, 0 mows the
         // lawn entirely.
-        static const float lush = [] {
-          const char* g = ::getenv ("MOPPE_GRASS");
-          return g ? std::strtof (g, nullptr) : 1.0f;
-        }();
-        if (lush > 0.0f) {
-          const float s = std::sqrt (lush);
+        if (grass_density > 0.0f) {
+          const float s = std::sqrt (grass_density);
           render::GrassParams grass;
           grass.radius = 65.0f * s;
           grass.spacing = 0.40f / s;

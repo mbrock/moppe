@@ -25,16 +25,19 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <vector>
 
 namespace moppe {
@@ -63,16 +66,18 @@ namespace moppe {
           .count ();
       }
 
-      float scene_render_scale (float backing_scale, float requested_scale) {
+      float scene_render_scale (float backing_scale,
+                                float requested_scale,
+                                float scale_override) {
 #if TARGET_OS_IPHONE
         (void)backing_scale;
-        return requested_scale;
+        float scale = requested_scale;
 #else
         float scale = requested_scale / std::max (1.0f, backing_scale);
-        if (const char* requested = std::getenv ("MOPPE_RENDERSCALE"))
-          scale = static_cast<float> (std::atof (requested));
-        return std::clamp (scale, 0.25f, 1.0f);
 #endif
+        if (scale_override > 0.0f)
+          scale = scale_override;
+        return std::clamp (scale, 0.25f, 1.0f);
       }
 
       enum class GpuPass {
@@ -101,6 +106,22 @@ namespace moppe {
         double gpu_max_ms = 0;
         std::array<double, GPU_PASS_COUNT> pass_total_ms {};
         int frames = 0;
+      };
+
+      struct BenchmarkSample {
+        uint32_t mask;
+        uint32_t epoch;
+        uint32_t frame;
+        double gpu_ms;
+      };
+
+      struct BenchmarkOutput {
+        std::mutex mutex;
+        std::vector<BenchmarkSample> samples;
+        std::atomic<int> completed { 0 };
+        int expected = 0;
+        std::string path;
+        std::vector<std::string> feature_names;
       };
 
 #if !TARGET_OS_IPHONE
@@ -267,6 +288,8 @@ namespace moppe {
       void draw_sky (const SkyParams& params) override;
       void draw_ocean (const OceanParams& params) override;
       void draw_grass (const GrassParams& params) override;
+      void draw_dust (std::span<const DustEmission> emissions,
+                      float logical_time) override;
       void draw_rivers (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh, const Mat4& model) override;
       void draw_list (const DrawList& list) override;
@@ -276,6 +299,9 @@ namespace moppe {
       void draw_hud (const DrawList& list) override;
       void request_screenshot (const std::string& path) override;
       void end_frame () override;
+      bool benchmark_complete () const override;
+      void reset_temporal_state () override;
+      void write_benchmark_results () override;
 
       int width_pts () const override {
         return m_width_pts;
@@ -289,7 +315,7 @@ namespace moppe {
 
     private:
       void build_pipelines ();
-      void ensure_targets (float requested_scale);
+      void ensure_targets (float requested_scale, float scale_override);
       id<MTLTexture> make_target (
         MTLPixelFormat fmt, int w, int h, int samples, bool memoryless);
       void upload_texture (id<MTLTexture> tex,
@@ -342,6 +368,9 @@ namespace moppe {
       id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
       id<MTLRenderPipelineState> m_grass_pipeline = nil;
       id<MTLRenderPipelineState> m_grass_mesh_pipeline = nil;
+      id<MTLRenderPipelineState> m_dust_soft = nil, m_dust_add = nil;
+      id<MTLRenderPipelineState> m_dust_mesh_soft = nil;
+      id<MTLRenderPipelineState> m_dust_mesh_add = nil;
       id<MTLRenderPipelineState> m_water_tiles_pipeline = nil;
       bool m_mesh_shaders_ok = false;
       id<MTLRenderPipelineState> m_river = nil;
@@ -437,6 +466,7 @@ namespace moppe {
       bool m_profile_gpu = false;
       bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
+      std::shared_ptr<BenchmarkOutput> m_benchmark;
       bool m_profile_cpu = false;
       double m_cpu_frame_start = 0;
       double m_cpu_encode_start = 0;
@@ -467,6 +497,18 @@ namespace moppe {
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
+      if (const char* path = ::getenv ("MOPPE_BENCHMARK_OUTPUT")) {
+        m_benchmark = std::make_shared<BenchmarkOutput> ();
+        m_benchmark->path = path;
+        if (const char* expected = ::getenv ("MOPPE_BENCHMARK_EXPECTED"))
+          m_benchmark->expected = std::max (1, ::atoi (expected));
+        if (const char* names = ::getenv ("MOPPE_BENCHMARK_FEATURES")) {
+          std::istringstream input (names);
+          std::string name;
+          while (std::getline (input, name, ','))
+            m_benchmark->feature_names.push_back (name);
+        }
+      }
 
       if (m_profile_gpu_passes) {
         if (@available (macOS 11.0, iOS 14.0, *)) {
@@ -755,6 +797,15 @@ namespace moppe {
         @"sky_vertex", @"sky_fragment", scene, depth, MSAA_SAMPLES, false);
       m_ocean = make_pipeline (
         @"ocean_vertex", @"ocean_fragment", scene, depth, MSAA_SAMPLES, true);
+      m_dust_soft = make_pipeline (
+        @"dust_vertex", @"dust_fragment", scene, depth, MSAA_SAMPLES, true);
+      m_dust_add = make_pipeline (@"dust_vertex",
+                                  @"dust_fragment",
+                                  scene,
+                                  depth,
+                                  MSAA_SAMPLES,
+                                  true,
+                                  true);
       if (m_mesh_shaders_ok) {
         if (@available (macOS 13.0, iOS 16.0, *)) {
           // The mesh grass path: an object stage culls patches and a mesh
@@ -785,6 +836,43 @@ namespace moppe {
                         << (error ? error.localizedDescription.UTF8String : "?")
                         << std::endl;
           }
+
+          const auto make_dust_mesh = [&] (bool additive) {
+            MTLMeshRenderPipelineDescriptor* p =
+              [[MTLMeshRenderPipelineDescriptor alloc] init];
+            p.meshFunction = [m_library newFunctionWithName:@"dust_mesh"];
+            p.fragmentFunction =
+              [m_library newFunctionWithName:@"dust_fragment"];
+            p.rasterSampleCount = MSAA_SAMPLES;
+            p.colorAttachments[0].pixelFormat = scene;
+            p.colorAttachments[0].blendingEnabled = YES;
+            p.colorAttachments[0].sourceRGBBlendFactor =
+              MTLBlendFactorSourceAlpha;
+            p.colorAttachments[0].destinationRGBBlendFactor =
+              additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
+            p.colorAttachments[0].sourceAlphaBlendFactor =
+              MTLBlendFactorSourceAlpha;
+            p.colorAttachments[0].destinationAlphaBlendFactor =
+              MTLBlendFactorOneMinusSourceAlpha;
+            p.depthAttachmentPixelFormat = depth;
+            p.stencilAttachmentPixelFormat = depth;
+            p.maxTotalThreadsPerMeshThreadgroup = 64;
+            if (!p.meshFunction || !p.fragmentFunction)
+              return (id<MTLRenderPipelineState>)nil;
+            NSError* error = nil;
+            id<MTLRenderPipelineState> result = [m_device
+              newRenderPipelineStateWithMeshDescriptor:p
+                                               options:MTLPipelineOptionNone
+                                            reflection:nil
+                                                 error:&error];
+            if (!result)
+              std::cerr << "moppe: dust mesh pipeline failed: "
+                        << (error ? error.localizedDescription.UTF8String : "?")
+                        << std::endl;
+            return result;
+          };
+          m_dust_mesh_soft = make_dust_mesh (false);
+          m_dust_mesh_add = make_dust_mesh (true);
 
           // Lattice water tiles: the near standing-water surface on the
           // terrain's own sample grid, sharing the ocean fragment shader.
@@ -1367,7 +1455,8 @@ namespace moppe {
       return [m_device newTextureWithDescriptor:td];
     }
 
-    void MetalRenderer::ensure_targets (float requested_scale) {
+    void MetalRenderer::ensure_targets (float requested_scale,
+                                        float scale_override) {
       const int drawable_w = (int)m_view.drawableSize.width;
       const int drawable_h = (int)m_view.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
@@ -1375,7 +1464,8 @@ namespace moppe {
       const CGSize points = m_view.bounds.size;
       const float backing_scale =
         points.width > 0 ? drawable_w / (float)points.width : 1.0f;
-      const float scale = scene_render_scale (backing_scale, requested_scale);
+      const float scale =
+        scene_render_scale (backing_scale, requested_scale, scale_override);
       const int w = std::max (1, (int)std::round (drawable_w * scale));
       const int h = std::max (1, (int)std::round (drawable_h * scale));
       if (w == m_target_w && h == m_target_h && m_msaa_color)
@@ -1439,7 +1529,7 @@ namespace moppe {
 
     bool MetalRenderer::begin_frame (const FrameParams& params) {
       const double frame_start = cpu_time ();
-      ensure_targets (params.scene_scale);
+      ensure_targets (params.scene_scale, params.render_scale_override);
       const double targets_done = cpu_time ();
       if (!m_msaa_color)
         return false;
@@ -1983,6 +2073,82 @@ namespace moppe {
             instanceCount:instances];
     }
 
+    void MetalRenderer::draw_dust (std::span<const DustEmission> emissions,
+                                   float logical_time) {
+      if (emissions.empty () || !m_dust_soft || !m_dust_add)
+        return;
+
+      MoppeDustUniforms uniforms {};
+      uniforms.camera_right = f4 (m_fp.cam_right);
+      uniforms.camera_up = f4 (m_fp.cam_up);
+      uniforms.params.x = logical_time;
+
+      for (int pass = 0; pass < 2; ++pass) {
+        const bool additive = pass == 1;
+        std::vector<MoppeDustEmission> packed;
+        packed.reserve (emissions.size ());
+        for (const DustEmission& emission : emissions) {
+          if (emission.additive != additive || emission.particle_count == 0)
+            continue;
+          MoppeDustEmission p {};
+          p.position_birth = f4 (emission.position, emission.birth_time);
+          p.velocity_count = f4 (emission.velocity,
+                                 static_cast<float> (emission.particle_count));
+          p.color_id =
+            f4 (emission.color, static_cast<float> (emission.id & 0x00ffffffu));
+          p.style.x = emission.size;
+          p.style.y = emission.life;
+          p.style.z = emission.gravity;
+          p.style.w = emission.spread;
+          packed.push_back (p);
+        }
+        if (packed.empty ())
+          continue;
+
+        id<MTLRenderCommandEncoder> enc = scene_encoder ();
+        [enc setDepthStencilState:m_ds[1][0]];
+        [enc setCullMode:MTLCullModeNone];
+        id<MTLRenderPipelineState> mesh_pipeline =
+          additive ? m_dust_mesh_add : m_dust_mesh_soft;
+        if (mesh_pipeline) {
+          if (@available (macOS 13.0, iOS 16.0, *)) {
+            id<MTLBuffer> buffer = [m_device
+              newBufferWithBytes:packed.data ()
+                          length:packed.size () * sizeof (MoppeDustEmission)
+                         options:MTLResourceStorageModeShared];
+            [enc setRenderPipelineState:mesh_pipeline];
+            [enc setMeshBuffer:buffer offset:0 atIndex:MOPPE_BUF_VERTICES];
+            [enc setMeshBytes:&m_fu
+                       length:sizeof (m_fu)
+                      atIndex:MOPPE_BUF_FRAME];
+            [enc setMeshBytes:&uniforms
+                       length:sizeof (uniforms)
+                      atIndex:MOPPE_BUF_DRAW];
+            [enc drawMeshThreadgroups:MTLSizeMake (packed.size (), 1, 1)
+              threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+                threadsPerMeshThreadgroup:MTLSizeMake (64, 1, 1)];
+            continue;
+          }
+        }
+
+        [enc setRenderPipelineState:additive ? m_dust_add : m_dust_soft];
+        [enc setVertexBytes:&m_fu length:sizeof (m_fu) atIndex:MOPPE_BUF_FRAME];
+        [enc setVertexBytes:&uniforms
+                     length:sizeof (uniforms)
+                    atIndex:MOPPE_BUF_DRAW];
+        for (const MoppeDustEmission& emission : packed) {
+          [enc setVertexBytes:&emission
+                       length:sizeof (emission)
+                      atIndex:MOPPE_BUF_VERTICES];
+          [enc
+            drawPrimitives:MTLPrimitiveTypeTriangle
+               vertexStart:0
+               vertexCount:6
+             instanceCount:static_cast<NSUInteger> (emission.velocity_count.w)];
+        }
+      }
+    }
+
     // -- draw lists ----------------------------------------------------
 
     size_t MetalRenderer::stream_vertices (const std::vector<Vertex>& verts) {
@@ -2516,7 +2682,24 @@ namespace moppe {
       dispatch_semaphore_t sem = m_inflight;
       std::shared_ptr<FrameTiming> timing =
         m_profile_this_frame ? m_frame_timing : nullptr;
+      std::shared_ptr<BenchmarkOutput> benchmark =
+        m_fp.benchmark_measured ? m_benchmark : nullptr;
+      const uint32_t benchmark_mask = m_fp.benchmark_mask;
+      const uint32_t benchmark_epoch = m_fp.benchmark_epoch;
+      const uint32_t benchmark_frame = m_fp.benchmark_frame;
       [m_cmd addCompletedHandler:^(id<MTLCommandBuffer> command) {
+        if (benchmark && command.GPUEndTime >= command.GPUStartTime) {
+          const BenchmarkSample sample { benchmark_mask,
+                                         benchmark_epoch,
+                                         benchmark_frame,
+                                         1000.0 * (command.GPUEndTime -
+                                                   command.GPUStartTime) };
+          {
+            std::lock_guard<std::mutex> lock (benchmark->mutex);
+            benchmark->samples.push_back (sample);
+          }
+          ++benchmark->completed;
+        }
         if (timing && command.GPUEndTime >= command.GPUStartTime) {
           const double gpu_ms =
             1000.0 * (command.GPUEndTime - command.GPUStartTime);
@@ -2633,6 +2816,55 @@ namespace moppe {
       m_cmd = nil;
       m_drawable = nil;
       m_current = nil;
+    }
+
+    bool MetalRenderer::benchmark_complete () const {
+      return m_benchmark && m_benchmark->expected > 0 &&
+             m_benchmark->completed.load () >= m_benchmark->expected;
+    }
+
+    void MetalRenderer::reset_temporal_state () {
+      // Epoch changes restore CPU state while previous frames may still be in
+      // flight. A queue fence keeps their exposure blits from racing this
+      // reset; transition time is outside the measured frame block.
+      id<MTLCommandBuffer> fence = [m_queue commandBuffer];
+      [fence commit];
+      [fence waitUntilCompleted];
+      m_prev_valid = false;
+      m_exposure = 1.0f;
+      for (id<MTLBuffer> buffer : m_probe_buf)
+        if (buffer)
+          std::memset (buffer.contents, 0, buffer.length);
+    }
+
+    void MetalRenderer::write_benchmark_results () {
+      if (!m_benchmark || m_benchmark->path.empty ())
+        return;
+      std::vector<BenchmarkSample> samples;
+      {
+        std::lock_guard<std::mutex> lock (m_benchmark->mutex);
+        samples = m_benchmark->samples;
+      }
+      std::sort (
+        samples.begin (), samples.end (), [] (const auto& a, const auto& b) {
+          return a.epoch == b.epoch ? a.frame < b.frame : a.epoch < b.epoch;
+        });
+      std::ofstream output (m_benchmark->path);
+      output << "epoch,mask,logical_frame,gpu_ms";
+      for (const std::string& name : m_benchmark->feature_names)
+        output << ',' << name;
+      output << '\n';
+      for (const BenchmarkSample& sample : samples) {
+        output << sample.epoch << ',' << sample.mask << ',' << sample.frame
+               << ',' << sample.gpu_ms;
+        for (std::size_t bit = 0; bit < m_benchmark->feature_names.size ();
+             ++bit)
+          output << ',' << ((sample.mask & (1u << bit)) ? 1 : 0);
+        output << '\n';
+      }
+      std::cerr << "moppe: wrote " << samples.size ()
+                << " graphics benchmark samples to " << m_benchmark->path
+                << std::endl;
     }
 
     // ------------------------------------------------------------------

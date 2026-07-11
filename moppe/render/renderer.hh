@@ -40,12 +40,17 @@ namespace moppe {
       // Drives the present pass's lens flare.
       float sun_visibility = 0.0f;
       float scene_scale = 1.0f;
+      float render_scale_override = 0.0f;
       bool bloom = true;
       bool auto_exposure = true;
       bool lens_flare = true;
       // Development profiling and GPU capture should ignore loading/UI-only
       // frames and measure the complete world render.
       bool profile = false;
+      uint32_t benchmark_mask = 0;
+      uint32_t benchmark_epoch = 0;
+      uint32_t benchmark_frame = 0;
+      bool benchmark_measured = false;
     };
 
     // World-change-time terrain setup.  Heights/normals are the same
@@ -145,6 +150,20 @@ namespace moppe {
       int blades_per_cell = 3;
     };
 
+    struct DustEmission {
+      uint64_t id = 0;
+      float birth_time = 0.0f;
+      Vector3D position;
+      Vector3D velocity;
+      Vector3D color;
+      float size = 1.0f;
+      float life = 1.0f;
+      float gravity = 0.0f;
+      float spread = 1.0f;
+      uint32_t particle_count = 0;
+      bool additive = false;
+    };
+
     // The renderer: a game-shaped interface, not a general RHI.  Sky,
     // ocean, terrain and the post effects are backend features with
     // dedicated shaders; a WebGPU backend reimplements this interface
@@ -203,6 +222,11 @@ namespace moppe {
       virtual void draw_grass (const GrassParams& params) {
         (void)params;
       }
+      virtual void draw_dust (std::span<const DustEmission> emissions,
+                              float logical_time) {
+        (void)emissions;
+        (void)logical_time;
+      }
       virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_list (const DrawList& list) = 0;
@@ -219,6 +243,11 @@ namespace moppe {
         (void)path;
       }
       virtual void end_frame () = 0;
+      virtual bool benchmark_complete () const {
+        return false;
+      }
+      virtual void reset_temporal_state () {}
+      virtual void write_benchmark_results () {}
 
       // -- geometry of the drawable -------------------------------------
       virtual int width_pts () const = 0;

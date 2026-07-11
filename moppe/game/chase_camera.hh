@@ -13,6 +13,17 @@ namespace moppe {
     // independent.
     class ChaseCamera {
     public:
+      struct State {
+        Vector3D position {};
+        Vector3D target {};
+        Vector3D avg_orientation {};
+        Vector3D ahead {};
+        Vector3D position_velocity {};
+        Vector3D target_velocity {};
+        float speed {};
+        bool is_uninitialized {};
+      };
+
       ChaseCamera (degrees_t pitch_offset, meters_t distance)
           : m_pitch_offset (degrees_to_radians (pitch_offset)),
             m_distance (distance), m_speed (0), m_is_uninitialized (true) {}
@@ -22,6 +33,28 @@ namespace moppe {
                    const Vector3D& velocity,
                    seconds_t dt);
       void limit (const map::HeightMap& map);
+
+      State state () const {
+        return { m_position,
+                 m_target,
+                 m_avg_orientation,
+                 m_ahead,
+                 m_position_velocity,
+                 m_target_velocity,
+                 m_speed,
+                 m_is_uninitialized };
+      }
+
+      void restore (const State& state) {
+        m_position = state.position;
+        m_target = state.target;
+        m_avg_orientation = state.avg_orientation;
+        m_ahead = state.ahead;
+        m_position_velocity = state.position_velocity;
+        m_target_velocity = state.target_velocity;
+        m_speed = state.speed;
+        m_is_uninitialized = state.is_uninitialized;
+      }
 
       // Directly position the camera (first-person mode bypasses the
       // chase smoothing entirely).
