@@ -55,7 +55,8 @@ feeding every result into the same heightmap renderer.
 - `erosion-lifetime-experiment.md` records the fixed-seed droplet-lifetime,
   sediment-ledger, and erosion-footprint sweeps. It explains why the default
   now uses natural water termination and explicit settlement, and why the
-  remaining sink problem points toward a standing-water/flood-field reading.
+  remaining sink problem led to the standing-water/flood-field reading now
+  exposed in the Terrain Lab.
 
 ## Moppe implementation direction
 

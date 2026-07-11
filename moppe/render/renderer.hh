@@ -69,7 +69,8 @@ namespace render {
     Streams,
     Categorical,
     Diverging,
-    Marker
+    Marker,
+    Water
   };
 
   struct TerrainOverlayParams {
