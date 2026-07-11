@@ -39,6 +39,9 @@ namespace render {
     // game raymarches the heightmap and folds in cloud cover.
     // Drives the present pass's lens flare.
     float sun_visibility = 0.0f;
+    // Development profiling and GPU capture should ignore loading/UI-only
+    // frames and measure the complete world render.
+    bool profile = false;
   };
 
   // World-change-time terrain setup.  Heights/normals are the same

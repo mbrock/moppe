@@ -897,6 +897,7 @@ namespace game {
       fp.ambient = Vector3D (0.39f, 0.43f, 0.49f)
         * (0.35f + 0.65f * daylight);
       fp.time = m_total_time;
+      fp.profile = true;
 
       // Lens-flare occlusion: march toward the sun through the
       // heightmap; any ridge above the ray kills the flare.  Cloud

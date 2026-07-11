@@ -347,6 +347,7 @@ namespace render {
     bool m_scene_pass_done = false;
     FrameParams m_fp;
     MoppeFrameUniforms m_fu;
+    bool m_profile_this_frame = false;
 
     int m_width_pts = 0, m_height_pts = 0;
     float m_scale = 1.0f;
@@ -379,21 +380,6 @@ namespace render {
       m_capture_path = requested;
       if (const char* frames = ::getenv ("MOPPE_METAL_CAPTURE_FRAMES"))
 	m_capture_frame_limit = std::max (1, ::atoi (frames));
-
-      NSString* path = [NSString stringWithUTF8String:requested];
-      MTLCaptureDescriptor* descriptor = [[MTLCaptureDescriptor alloc] init];
-      descriptor.captureObject = m_queue;
-      descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
-      descriptor.outputURL = [NSURL fileURLWithPath:path];
-      NSError* error = nil;
-      m_capture_active = [[MTLCaptureManager sharedCaptureManager]
-	startCaptureWithDescriptor:descriptor error:&error];
-      if (m_capture_active)
-	std::cerr << "moppe: capturing " << m_capture_frame_limit
-		  << " frames to " << m_capture_path << std::endl;
-      else
-	std::cerr << "moppe: failed to start Metal capture: "
-		  << error.localizedDescription.UTF8String << std::endl;
     }
 #endif
 
@@ -1259,6 +1245,29 @@ namespace render {
 
     m_slot = (m_slot + 1) % FRAMES_IN_FLIGHT;
     m_stream_used = 0;
+    m_profile_this_frame = params.profile;
+
+#if !TARGET_OS_IPHONE
+    if (params.profile && !m_capture_path.empty ()
+	&& !m_capture_active && m_capture_frames == 0) {
+      NSString* path = [NSString stringWithUTF8String:m_capture_path.c_str ()];
+      MTLCaptureDescriptor* descriptor = [[MTLCaptureDescriptor alloc] init];
+      descriptor.captureObject = m_queue;
+      descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+      descriptor.outputURL = [NSURL fileURLWithPath:path];
+      NSError* error = nil;
+      m_capture_active = [[MTLCaptureManager sharedCaptureManager]
+	startCaptureWithDescriptor:descriptor error:&error];
+      if (m_capture_active)
+	std::cerr << "moppe: capturing " << m_capture_frame_limit
+		  << " gameplay frames to " << m_capture_path << std::endl;
+      else {
+	++m_capture_frames; // Do not retry and spam every frame.
+	std::cerr << "moppe: failed to start Metal capture: "
+		  << error.localizedDescription.UTF8String << std::endl;
+      }
+    }
+#endif
 
     const CGSize points = m_view.bounds.size;
     m_scale = points.width > 0
@@ -2172,7 +2181,8 @@ namespace render {
       [m_cmd presentDrawable: m_drawable];
 
     dispatch_semaphore_t sem = m_inflight;
-    std::shared_ptr<FrameTiming> timing = m_frame_timing;
+    std::shared_ptr<FrameTiming> timing = m_profile_this_frame
+      ? m_frame_timing : nullptr;
     [m_cmd addCompletedHandler: ^(id<MTLCommandBuffer> command) {
       if (timing && command.GPUEndTime >= command.GPUStartTime) {
 	const double gpu_ms = 1000.0
@@ -2202,7 +2212,8 @@ namespace render {
     [m_cmd commit];
 
 #if !TARGET_OS_IPHONE
-    if (m_capture_active && ++m_capture_frames >= m_capture_frame_limit) {
+    if (m_capture_active && m_profile_this_frame
+	&& ++m_capture_frames >= m_capture_frame_limit) {
       [m_cmd waitUntilCompleted];
       [[MTLCaptureManager sharedCaptureManager] stopCapture];
       m_capture_active = false;
