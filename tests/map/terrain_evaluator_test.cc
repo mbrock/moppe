@@ -412,7 +412,11 @@ MOPPE_TEST (path_monotone_droplet_settles_in_a_local_basin) {
     (8.5f, 16.5f, 128, 0.01f, SedimentDisposition::Deposit,
      CarvingRule::PathMonotone);
 
-  MOPPE_CHECK (trace.termination == map::HydraulicDropletTermination::Flat);
-  MOPPE_CHECK (trace.points.back ().x >= 15.0f);
-  MOPPE_CHECK (trace.points.back ().x <= 17.0f);
+  // With momentum the droplet overshoots the basin floor, sloshes up
+  // the far wall, and friction settles it near the bottom instead of
+  // stopping dead at the first uphill cell.
+  MOPPE_CHECK (trace.termination
+	       == map::HydraulicDropletTermination::Settled);
+  MOPPE_CHECK (trace.points.back ().x >= 14.0f);
+  MOPPE_CHECK (trace.points.back ().x <= 18.0f);
 }
