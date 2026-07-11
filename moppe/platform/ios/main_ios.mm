@@ -368,6 +368,8 @@ namespace moppe {
       // iOS apps don't exit programmatically.
     }
 
+    void set_window_title (const std::string&) {}
+
     Insets safe_insets () {
       Insets r;
       UIWindow* w = nil;

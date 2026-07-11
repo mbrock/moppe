@@ -53,6 +53,20 @@ and 120 measured frames per configuration. The three counts can be overridden
 with `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for
 quick smoke runs.
 
+Analyze a completed CSV with DuckDB:
+
+```sh
+tools/graphics-benchmark-analyze /tmp/moppe-gpu.csv
+```
+
+The resulting directory contains `graphics-benchmark.duckdb` plus CSV exports
+for configuration statistics, the 1,024 directed edges of the eight-dimensional
+Boolean cube, average feature effects, pairwise interactions, balanced-feature
+correlations, logical-frame sensitivity, and 120/60 Hz deadline summaries.
+Every feature effect pairs the same logical frame across configurations before
+aggregation; every interaction is a difference of differences over one square
+face of the cube.
+
 Subsystem state structs should remain plain values. When another mutable
 system joins the checkpoint, it should expose `state()` and `restore()` while
 keeping configuration and resource ownership outside the returned value.
