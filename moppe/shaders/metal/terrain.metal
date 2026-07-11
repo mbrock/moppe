@@ -16,6 +16,7 @@ struct TerrainVaryings {
   float fog;               // haze factor incl. valley mist
   float4 shadow_coord;
   float2 uv;
+  float2 field_uv;
 };
 
 static inline float
@@ -276,6 +277,8 @@ terrain_vertex (uint index [[vertex_id]],
   out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
   out.uv = (u.params2.x > 0.5 ? canonical_xz : world.xz)
     * u.params0.w;
+  out.field_uv = grid / float2 (heights.get_width () - 1,
+				heights.get_height () - 1);
   return out;
 }
 
@@ -342,6 +345,51 @@ terrain_layer (texture2d<float> tex, sampler smp, float2 tc,
   return mix (near_c, far_c, far_blend);
 }
 
+static inline float3
+terrain_heat_palette (float t)
+{
+  const float3 cold (0.035, 0.12, 0.28);
+  const float3 middle (0.05, 0.78, 0.58);
+  const float3 hot (1.0, 0.72, 0.08);
+  return t < 0.5 ? mix (cold, middle, t * 2.0)
+    : mix (middle, hot, (t - 0.5) * 2.0);
+}
+
+static inline float4
+terrain_overlay_color (float value, constant MoppeTerrainUniforms& u)
+{
+  const int ramp = int (u.params4.x) - 1;
+  const float span = max (u.params4.z - u.params4.y, 1e-20);
+  const float t = saturate ((value - u.params4.y) / span);
+  const float opacity = u.params4.w;
+  if (ramp == 1)
+    return float4 (mix (float3 (0.01, 0.08, 0.18),
+			float3 (0.15, 0.92, 1.0), sqrt (t)),
+		   opacity * (0.18 + 0.82 * sqrt (t)));
+  if (ramp == 2)
+    return float4 (float3 (0.08, 0.72, 1.0),
+		   opacity * smoothstep (0.08, 0.16, t));
+  if (ramp == 3) {
+    const float hue = fract (value * 0.61803398875);
+    const float3 color = 0.48 + 0.48 * cos
+      (6.2831853 * (hue + float3 (0.0, 0.33, 0.67)));
+    return float4 (color, opacity);
+  }
+  if (ramp == 4) {
+    const float signed_t = clamp (value / max (abs (u.params4.y),
+					       abs (u.params4.z)), -1.0, 1.0);
+    const float3 negative (0.12, 0.48, 1.0);
+    const float3 neutral (0.16, 0.18, 0.17);
+    const float3 positive (1.0, 0.28, 0.08);
+    return float4 (signed_t < 0.0
+	? mix (neutral, negative, -signed_t)
+	: mix (neutral, positive, signed_t), opacity);
+  }
+  if (ramp == 5)
+    return float4 (float3 (1.0, 0.12, 0.75), opacity * t);
+  return float4 (terrain_heat_palette (t), opacity);
+}
+
 fragment float4
 terrain_fragment (TerrainVaryings in [[stage_in]],
 		  constant MoppeTerrainUniforms& u [[buffer(MOPPE_BUF_FRAME)]],
@@ -352,6 +400,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 		  depth2d<float> shadow_map [[texture(MOPPE_TEX_SHADOW)]],
 		  depth2d<float> previous_shadow_map
 		    [[texture(MOPPE_TEX_PREVIOUS_SHADOW)]],
+		  texture2d<float, access::read> terrain_overlay
+		    [[texture(MOPPE_TEX_TERRAIN_OVERLAY)]],
 		  sampler smp [[sampler(0)]])
 {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -444,6 +494,16 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // hue shifts run stronger in linear light.
   const float3 sand_c = scree_c * float3 (1.28, 1.20, 0.98);
   texel = mix (texel, sand_c, beach_coef);
+  if (u.params4.x > 0.5) {
+    const uint2 overlay_limit
+      (terrain_overlay.get_width () - 1, terrain_overlay.get_height () - 1);
+    const uint2 overlay_position = uint2
+      (clamp (round (in.field_uv * float2 (overlay_limit)),
+	      float2 (0.0), float2 (overlay_limit)));
+    const float overlay_value = terrain_overlay.read (overlay_position).r;
+    const float4 overlay = terrain_overlay_color (overlay_value, u);
+    texel = mix (texel, overlay.rgb, overlay.a);
+  }
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor

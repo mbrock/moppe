@@ -30,6 +30,7 @@ struct MoppeFloat4 { float x, y, z, w; };
 #define MOPPE_TEX_SHADOW   3
 #define MOPPE_TEX_ROCK     4
 #define MOPPE_TEX_PREVIOUS_SHADOW 5
+#define MOPPE_TEX_TERRAIN_OVERLAY 6
 #define MOPPE_TEX_SCENE    0
 #define MOPPE_TEX_BLOOM    1   /* post passes */
 #define MOPPE_TEX_HEIGHTS  0   /* vertex stage */
@@ -67,6 +68,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 params2;        // x=projection, y=torus R, z=torus r, w=height scale
   MoppeFloat4 params3;        // x=derive normals, y=periodic
                               // z=height blend, w=previous shadow texel
+  MoppeFloat4 params4;        // x=overlay ramp + 1, y=min, z=max, w=opacity
 };
 
 // Per-chunk terrain instance data.
