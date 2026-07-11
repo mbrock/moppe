@@ -25,6 +25,7 @@
 
 #include <moppe/map/generate.hh>
 #include <moppe/mov/vehicle.hh>
+#include <moppe/terrain/flood.hh>
 
 #include <algorithm>
 #include <atomic>
@@ -34,6 +35,7 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <optional>
 #include <variant>
 
 namespace moppe {
@@ -200,6 +202,24 @@ namespace game {
       int good_count = 0;
       float fallback_score = -1000000.0f;
 
+      const auto standing_depth = [this] (float x, float z) {
+	if (!m_standing_water)
+	  return 0.0f;
+	const terrain::TerrainGrid& grid = m_standing_water->source_grid;
+	const auto wrap = [] (float value, float period) {
+	  value = std::fmod (value, period);
+	  return value < 0.0f ? value + period : value;
+	};
+	const std::size_t gx = static_cast<std::size_t>
+	  (wrap (x, m_world.map_size.x) / grid.spacing_x)
+	  % m_standing_water->width ();
+	const std::size_t gz = static_cast<std::size_t>
+	  (wrap (z, m_world.map_size.z) / grid.spacing_y)
+	  % m_standing_water->height ();
+	return m_standing_water->water_depth.at (gx, gz)
+	  * m_world.map_size.y;
+      };
+
       for (int i = 0; i < 6000; ++i) {
 	const float x = random_x (m_fx_rng);
 	const float z = random_z (m_fx_rng);
@@ -214,6 +234,10 @@ namespace game {
 	  (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
 	const float relief = high - low;
 	const float up = m_map.interpolated_normal (x, z).y;
+	const float lake_depth = std::max
+	  ({ standing_depth (x, z), standing_depth (x - patch, z),
+	     standing_depth (x + patch, z), standing_depth (x, z - patch),
+	     standing_depth (x, z + patch) });
 
 	// Always retain the best fallback.  The large shore penalty makes
 	// even an unusual generated map prefer dry ground over a flat seabed.
@@ -222,13 +246,14 @@ namespace game {
 	const float alpine_penalty =
 	  std::max (0.0f, h - max_ground) * 0.03f;
 	const float score = up * 20.0f - relief * 0.2f
-	  - shore_penalty - alpine_penalty;
+	  - shore_penalty - alpine_penalty
+	  - (lake_depth > 0.1f ? 10000.0f : 0.0f);
 	if (score > fallback_score) {
 	  fallback_score = score;
 	  fallback = Vector3D (x, h + 1.2f, z);
 	}
 
-	if (low < min_ground || high > max_ground ||
+	if (lake_depth > 0.1f || low < min_ground || high > max_ground ||
 	    up < 0.94f || relief > 3.5f * one_meter)
 	  continue;
 
@@ -296,6 +321,15 @@ namespace game {
       m_gen_stage = 5;
       m_map.recompute_normals ();
 
+      // The random world's sea and lakes are one priority-flood surface.
+      // Keep this as a reading: terrain and erosion remain authoritative.
+      if (!m_terrain_lab_preview
+	  && !m_world.city_mode && !m_world.pico_mode) {
+	const float sea_level = m_world.water_level / m_world.map_size.y;
+	m_standing_water = terrain::analyze_standing_water
+	  (m_map.terrain_view (), sea_level);
+      }
+
       if (!m_terrain_lab_preview) {
 	m_vegetation.generate
 	  (m_map, m_world, Vegetation::population_for (m_world));
@@ -329,7 +363,22 @@ namespace game {
       ocean.half_extent = m_world.pico_mode
 	? 0.55f * m_world.map_size.x : 5500 * one_meter;
       ocean.cells = 300;
-      r.set_ocean (ocean);
+      std::vector<float> water_levels;
+      if (m_standing_water) {
+	water_levels.resize
+	  (static_cast<std::size_t> (m_map.width ()) * m_map.height ());
+	const std::span<const float> unique =
+	  m_standing_water->water_level.values ();
+	const std::size_t unique_width = m_standing_water->width ();
+	const std::size_t unique_height = m_standing_water->height ();
+	for (int y = 0; y < m_map.height (); ++y)
+	  for (int x = 0; x < m_map.width (); ++x)
+	    water_levels[static_cast<std::size_t> (y) * m_map.width () + x]
+	      = unique[(static_cast<std::size_t> (y) % unique_height)
+		       * unique_width
+		       + static_cast<std::size_t> (x) % unique_width];
+      }
+      r.set_ocean (ocean, water_levels);
 
       m_vehicle.set_water_level (m_world.water_level);
       m_car.set_water_level (m_world.water_level);
@@ -712,7 +761,7 @@ namespace game {
 	fp.sun_visibility = terrain_lab ? 0.0f : m_flare;
       }
 
-      const bool captured = terrain_lab && !m_screenshot_path.empty ()
+      const bool captured = !m_screenshot_path.empty ()
 	&& ++m_screenshot_frames >= 30;
       if (captured) {
 	r.request_screenshot (m_screenshot_path);
@@ -1161,6 +1210,7 @@ namespace game {
     Vector3D m_spawn_position;
     int m_seed;
     map::RandomHeightMap m_map;
+    std::optional<terrain::FloodField> m_standing_water;
     Terrain m_terrain;
     TerrainLab m_terrain_lab;
     ChaseCamera m_camera;
@@ -1265,6 +1315,13 @@ main (int argc, char** argv) {
       terrain_lab_preview = true;
       config.fullscreen = false;
       world.resolution = 1025;
+    } else if (arg == "--screenshot") {
+      if (i + 1 >= argc) {
+	std::cerr << "--screenshot requires a PNG path\n";
+	return -1;
+      }
+      screenshot_path = argv[++i];
+      config.fullscreen = false;
     } else if (arg == "--seed") {
       if (i + 1 >= argc) {
 	std::cerr << "--seed requires an integer\n";

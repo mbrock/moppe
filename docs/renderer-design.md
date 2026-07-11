@@ -239,8 +239,9 @@ iterative problem rather than part of the pointwise graph.
 
 - sky.frag (228 lines, fully procedural) → MSL 1:1; uniforms time, sunHeight,
   cloudiness, sunDir, fogColor.
-- ocean.vert/frag → MSL 1:1 on an indexed 301² grid mesh; waves stay in the
-  vertex shader.
+- ocean.vert/frag → MSL on a regular grid mesh; the vertex stage samples the
+  priority-flood water surface for ocean and inland lake elevation, while
+  waves fade at shore and dry fragments are discarded.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was

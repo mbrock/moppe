@@ -188,7 +188,8 @@ namespace render {
        std::span<const float> values) override;
     void clear_terrain_overlay () override;
     void render_terrain_shadow (const Mat4& light_view_proj) override;
-    void set_ocean (const OceanSetup& setup) override;
+    void set_ocean (const OceanSetup& setup,
+		    std::span<const float> water_levels) override;
 
     // frame
     bool begin_frame (const FrameParams& params) override;
@@ -303,6 +304,8 @@ namespace render {
     id<MTLBuffer> m_ocean_verts = nil;
     uint32_t m_ocean_vcount = 0;
     float m_ocean_level = 0;
+    id<MTLTexture> m_water_levels = nil;
+    bool m_have_water_levels = false;
 
     // streaming
     dispatch_semaphore_t m_inflight;
@@ -882,10 +885,11 @@ namespace render {
   }
 
   void
-  MetalRenderer::set_ocean (const OceanSetup& setup) {
-    // Flat indexed-as-triangles grid at sea level; the vertex shader
-    // does the waving.  Built as plain triangles to keep the mesh a
-    // single draw.
+  MetalRenderer::set_ocean (const OceanSetup& setup,
+			    std::span<const float> water_levels) {
+    // Regular triangle water grid. The vertex shader samples the
+    // optional standing-water surface and does the waving. Built as plain
+    // triangles to keep sea and lakes in one draw.
     const int cells = setup.cells;
     const float step = 2 * setup.half_extent / cells;
     const float x0 = setup.center.x - setup.half_extent;
@@ -915,6 +919,27 @@ namespace render {
       newBufferWithBytes: verts.data ()
 		  length: verts.size () * sizeof (float)
 		 options: MTLResourceStorageModeShared];
+
+    const std::size_t expected = static_cast<std::size_t>
+      (m_terrain_params.width) * m_terrain_params.height;
+    m_have_water_levels = water_levels.size () == expected;
+    if (m_have_water_levels) {
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_water_levels
+	  || m_water_levels.width != static_cast<NSUInteger> (width)
+	  || m_water_levels.height != static_cast<NSUInteger> (height)) {
+	MTLTextureDescriptor* td = [MTLTextureDescriptor
+	  texture2DDescriptorWithPixelFormat: MTLPixelFormatR32Float
+				       width: width height: height
+				   mipmapped: NO];
+	td.storageMode = MTLStorageModePrivate;
+	td.usage = MTLTextureUsageShaderRead;
+	m_water_levels = [m_device newTextureWithDescriptor: td];
+      }
+      upload_texture (m_water_levels, water_levels.data (), width, height,
+		      4, false);
+    }
   }
 
   // -- targets -------------------------------------------------------
@@ -1304,6 +1329,7 @@ namespace render {
     u.params.x = params.time;
     u.params.y = m_ocean_level;
     u.params.z = m_terrain_params.periodic ? 1.0f : 0.0f;
+    u.params.w = m_have_water_levels ? 1.0f : 0.0f;
     u.world_offset.x = params.world_offset.x;
     u.world_offset.z = params.world_offset.z;
 
@@ -1316,7 +1342,12 @@ namespace render {
       u.shore.w = (float) m_terrain_params.width;
       [enc setFragmentTexture: m_heights
 		      atIndex: MOPPE_TEX_HEIGHTS];
+      [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
     }
+    id<MTLTexture> water = m_have_water_levels ? m_water_levels : m_heights;
+    [enc setVertexTexture: water atIndex: MOPPE_TEX_WATER_LEVELS];
+    [enc setFragmentTexture: water
+		    atIndex: MOPPE_TEX_WATER_LEVELS_FRAGMENT];
 
     [enc setVertexBuffer: m_ocean_verts offset: 0
 		 atIndex: MOPPE_BUF_VERTICES];
