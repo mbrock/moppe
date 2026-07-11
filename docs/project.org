@@ -141,8 +141,8 @@ next iterations.
 
 ** TODO Make channels read as watercourses rather than routed ribbons
 
-- Smooth or fit reach centerlines while preserving confluences and periodic
-  continuity.
+- [X] Resample reach centerlines with bounded cubic tangents while preserving
+  exact source/downstream endpoints, periodic continuity, and terrain contact.
 - Build explicit junction and lake/ocean mouth geometry.
 - [X] Cluster steep visible-channel steps into deterministic fall candidates,
   expose them in FALLS and TRACE, and intensify cascade foam from that reading.
@@ -268,6 +268,17 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-11 River ribbons stop tracing cell-center corners
+
+- Added two-sample cubic Hermite resampling per receiver edge, with horizontal
+  tangents clamped to one edge length to prevent loops and overshoot.
+- Resampled dry height and normals from the terrain; interpolated lake-entry
+  height, width, discharge, rapid, and cascade signals along the same curve.
+- Preserved exact reach endpoints so confluences and lake/ocean boundaries do
+  not move away from the authoritative =RiverNetwork=.
+- Rejected three samples per edge after a 59 FPS capture; two samples retained
+  the visible rounding at 114 FPS versus the 115 FPS unsmoothed baseline.
 
 ** 2026-07-11 Steep river steps become inspectable cascade candidates
 
