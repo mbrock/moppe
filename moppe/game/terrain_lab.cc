@@ -451,7 +451,7 @@ namespace moppe {
     }
 
     TerrainLab::TerrainLab ()
-        : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
+        : m_renderer (0), m_map (0), m_terrain (0), m_world (0), m_graphics (0),
           m_active (false), m_map_pristine (false),
           m_program (terrain::make_geological_program (0)),
           m_droplet_overlay_points (0), m_droplet_progress (0.0f),
@@ -480,6 +480,7 @@ namespace moppe {
                             map::RandomHeightMap& map,
                             Terrain& terrain,
                             const WorldParams& world,
+                            const GraphicsSettings& graphics,
                             const terrain::TerrainProgram& program,
                             const Vector3D& sun_dir) {
       if (m_active)
@@ -493,6 +494,7 @@ namespace moppe {
         map, m_source_evaluator.get ());
       m_terrain = &terrain;
       m_world = &world;
+      m_graphics = &graphics;
       m_sun_dir = sun_dir;
       m_program = program;
       bool env_stages = false;
@@ -2287,7 +2289,7 @@ namespace moppe {
     }
 
     void TerrainLab::refresh (bool inspection_fog) {
-      if (!m_renderer || !m_map || !m_terrain || !m_world)
+      if (!m_renderer || !m_map || !m_terrain || !m_world || !m_graphics)
         return;
       // A pristine map is the game's own terrain with baked normals:
       // render it at full quality.  Preview quality (GPU-derived
@@ -2305,9 +2307,15 @@ namespace moppe {
           ? render::TerrainProjection::Torus
           : render::TerrainProjection::Plane;
       const bool repeat = !inspection_fog || m_view == ViewMode::Cover;
-      m_terrain->setup (
-        *m_renderer, *m_map, display, projection, repeat, interactive_preview);
-      m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
+      m_terrain->setup (*m_renderer,
+                        *m_map,
+                        display,
+                        *m_graphics,
+                        projection,
+                        repeat,
+                        interactive_preview);
+      if (m_graphics->terrain_shadows)
+        m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
       update_overlay ();
     }
 

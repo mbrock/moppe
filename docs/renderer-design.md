@@ -313,6 +313,11 @@ iterative problem rather than part of the pointwise graph.
   deliberate small visual improvement).
 - HUD uses a separate 2D pipeline (no lighting/fog, y-down ortho, scissor
   none, blend on).
+- Dust, spray, smoke, and sparkles are bounded emission events. Metal derives
+  deterministic particles from an integer counter hash and expands each live
+  emission into billboard quads with a mesh shader (instanced vertex fallback),
+  in separate soft-alpha and additive passes. Particle poses are analytic in
+  logical time, so replay does not require a mutable particle array or RNG.
 
 ## Shadow map
 
@@ -347,6 +352,21 @@ vegetation/grass, ocean surface, decorative particles, motion blur, bloom,
 exposure probe, or lens flare. `--graphics-quality high` is the default full
 presentation. The low preset retains terrain, vehicles, physics, sky, rivers,
 and HUD so it remains playable while isolating optional rendering cost.
+Presets resolve into a typed graphics-settings value rather than remaining a
+quality-mode branch. Boolean features can then be changed independently with
+`--graphics-enable` and `--graphics-disable`; each accepts a comma-separated
+list such as `--graphics-quality low --graphics-enable ocean,bloom`. Startup
+prints every resolved feature and numeric graphics setting so scripted
+performance runs record the actual configuration. The legacy
+`MOPPE_RENDERSCALE`, `MOPPE_GRASS`, `MOPPE_NOSHADOW`,
+`MOPPE_RIVER_RIBBONS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
+controls remain supported but are resolved centrally into the same settings.
+Each Boolean feature descriptor also records whether it is hot-switchable:
+changing a hot feature's stored value is sufficient for the next frame, with
+no resource rebuild or renderer-state reset. Grass, ocean, particles, vehicle
+and star effects, bloom, automatic exposure, and lens flare are currently hot.
+Terrain shadows, vegetation, river ribbons, motion blur, and the terrain
+topology overlay are conservatively marked not hot.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

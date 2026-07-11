@@ -16,7 +16,31 @@ namespace moppe {
     // WorldParams and the figure records into a DrawList.
     class Walker {
     public:
+      struct State {
+        Vector3D position {};
+        Vector3D heading {};
+        float vertical_velocity {};
+        float turn {};
+        float walk {};
+        float animation_distance {};
+        bool grounded {};
+      };
+
       Walker ();
+
+      State state () const {
+        return { m_pos, m_heading, m_vy, m_turn, m_walk, m_anim, m_grounded };
+      }
+
+      void restore (const State& state) {
+        m_pos = state.position;
+        m_heading = state.heading;
+        m_vy = state.vertical_velocity;
+        m_turn = state.turn;
+        m_walk = state.walk;
+        m_anim = state.animation_distance;
+        m_grounded = state.grounded;
+      }
 
       void spawn (const Vector3D& pos, const Vector3D& heading);
 

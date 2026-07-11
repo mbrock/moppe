@@ -39,6 +39,10 @@ namespace moppe {
 
       static Population population_for (const WorldParams& world);
 
+      // Retains the terrain inputs needed by procedural grass even when the
+      // placed vegetation component is disabled.
+      void prepare (const map::HeightMap& map, const WorldParams& world);
+
       void generate (const map::HeightMap& map,
                      const WorldParams& world,
                      const Population& population);
@@ -48,7 +52,10 @@ namespace moppe {
 
       // Draws the sectors within fog reach, detail cells within
       // detail reach.
-      void render (render::Renderer& r, const FrameEnv& env);
+      void render (render::Renderer& r,
+                   const FrameEnv& env,
+                   bool draw_vegetation,
+                   float grass_density);
 
     private:
       static const int STRUCTURE_GRID = 6;

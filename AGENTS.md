@@ -15,11 +15,17 @@
   - Modes: `--city`, `--pico`, `--terrain-lab`,
     `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|high`
+    - Override Boolean graphics features with comma-separated
+      `--graphics-enable <names>` and `--graphics-disable <names>` lists.
   - Fast deterministic UI capture: `make terrain-lab-shot` (writes
     `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `river`, `confluence`, `mouth`, `waterfall`, and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
+  - Exhaustive hot-feature GPU benchmark:
+    `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
+    --windowed --seed 123 --terrain-quality fast`. Development overrides are
+    `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`
@@ -43,6 +49,8 @@
   `ios/`, and shared `apple/` layers (MTKView; CoreText glyph rasterizer).
 - `moppe/game/` — the game systems, one file each (terrain, city,
   vegetation, wildlife, dust, HUD, vehicle rendering; glue in game.cc).
+  Mutable replay state is gathered incrementally in `game/game_state.hh`; see
+  `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
 - `moppe/terrain/` is the portable runtime field-expression DAG, recipe and
