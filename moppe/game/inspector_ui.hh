@@ -26,6 +26,7 @@ namespace game {
   UiRect parameter_control_rect (const UiRect& bounds);
   UiRect counter_minus_rect (const UiRect& bounds);
   UiRect counter_plus_rect (const UiRect& bounds);
+  UiRect friendly_slider_rail_rect (const UiRect& bounds);
 
   // Small immediate-mode inspector skin built on the renderer's existing
   // DrawList and FontAtlas.  It intentionally owns no widget state: tools
@@ -71,6 +72,17 @@ namespace game {
 		    const std::string& text, bool bright = false) const;
     void caption (render::DrawList& dl, float x, float y,
 		  const std::string& text) const;
+    void friendly_section (render::DrawList& dl, const UiRect& bounds,
+			   const std::string& title) const;
+    void session_button (render::DrawList& dl, const UiRect& bounds,
+			 const std::string& title, bool hot, bool pressed,
+			 int icon) const;
+    void preset_card (render::DrawList& dl, const UiRect& bounds,
+		      const std::string& title, bool hot, bool pressed,
+		      bool selected, int icon) const;
+    void tool_button (render::DrawList& dl, const UiRect& bounds,
+		      const std::string& title, const std::string& key,
+		      bool hot, bool pressed, bool selected, int icon) const;
     void friendly_button (render::DrawList& dl, const UiRect& bounds,
 			  const std::string& title,
 			  const std::string& detail,
@@ -95,7 +107,9 @@ namespace game {
     render::TexturePtr m_friendly_icons;
 
     void friendly_icon (render::DrawList& dl, const UiRect& bounds,
-			int icon, float alpha = 1.0f) const;
+			int icon, float alpha = 1.0f,
+			float red = 0.82f, float green = 0.94f,
+			float blue = 1.0f) const;
   };
 }
 }
