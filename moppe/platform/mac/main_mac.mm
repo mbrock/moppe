@@ -299,7 +299,7 @@ namespace platform {
     @autoreleasepool {
       // Metal reads its HUD configuration before the device is created.
       const char* hud = ::getenv ("MOPPE_METAL_HUD");
-      if (!hud || std::string (hud) != "0")
+      if (hud && std::string (hud) != "0")
         ::setenv ("MTL_HUD_ENABLED", "1", 0);
       if (::getenv ("MOPPE_METAL_CAPTURE"))
         ::setenv ("MTL_CAPTURE_ENABLED", "1", 0);
