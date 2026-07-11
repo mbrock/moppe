@@ -319,9 +319,9 @@ clock as heightfield transitions, so a lowering mountain never receives the
 stale shadow of its old geometry. `MOPPE_PROFILE_SHADOW=1` prints the GPU time
 for the pass.
 
-On macOS the Metal performance HUD is enabled by default. It shows frame rate,
-GPU frame time, and current resource memory; set `MOPPE_METAL_HUD=0` for a
-clean window. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
+On macOS the Metal performance HUD is disabled by default; set
+`MOPPE_METAL_HUD=1` when its frame rate, GPU time, and resource-memory readouts
+are useful. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
 time summaries to stderr, including timestamp-counter spans for the scene,
 post effects, bloom, exposure probe, and present/HUD encoders. Encoder stages
 can overlap on tile-based GPUs, so those spans diagnose expensive work but do
