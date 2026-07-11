@@ -975,6 +975,37 @@ namespace game {
       if (direction.length2 () < 1e-6f)
 	direction = Vector3D (0, -1, 0);
       direction.normalize ();
+      Vector3D wake_side = direction.cross (camera - bead);
+      if (wake_side.length2 () < 1e-6f)
+	wake_side = direction.cross (Vector3D (0, 1, 0));
+      if (wake_side.length2 () < 1e-6f)
+	wake_side = Vector3D (1, 0, 0);
+      wake_side.normalize ();
+      const auto wake = [&] (float length, float width, float alpha) {
+	m_droplet_draw.color (0.12f, 0.72f, 1.0f, alpha);
+	m_droplet_draw.begin (render::Prim::Triangles);
+	m_droplet_draw.vertex (bead - direction * length);
+	m_droplet_draw.vertex (bead - direction * 2.0f - wake_side * width);
+	m_droplet_draw.vertex (bead - direction * 2.0f + wake_side * width);
+	m_droplet_draw.end ();
+      };
+      wake (30.0f, 8.0f, 0.10f);
+      wake (19.0f, 3.8f, 0.42f);
+
+      // A small pointed cap makes the direction legible even in a still
+      // frame; the ellipsoid behind it supplies the rounded water volume.
+      Vector3D nose_up = direction.cross (wake_side).normalized ();
+      m_droplet_draw.color (0.34f, 0.92f, 1.0f, 0.82f);
+      m_droplet_draw.begin (render::Prim::TriangleFan);
+      m_droplet_draw.vertex (bead + direction * 11.0f);
+      for (int i = 0; i <= 10; ++i) {
+	const float angle = PI2 * static_cast<float> (i) / 10.0f;
+	const Vector3D radial = wake_side * std::cos (angle)
+	  + nose_up * std::sin (angle);
+	m_droplet_draw.vertex (bead - direction * 1.5f + radial * 5.2f);
+      }
+      m_droplet_draw.end ();
+
       const Vector3D up (0, 1, 0);
       Vector3D axis = up.cross (direction);
       const float angle = std::acos
@@ -2174,7 +2205,7 @@ namespace game {
 	// route.  Interpolated trace positions keep this slow chase fluid.
 	const float follow_response = 1.0f - std::exp (-dt * 2.2f);
 	m_target += (desired - m_target) * follow_response;
-	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 850.0f);
+	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 650.0f);
 	const float clear_pitch = visible_droplet_pitch (desired);
 	if (clear_pitch > m_pitch)
 	  m_pitch += (clear_pitch - m_pitch) * follow_response;
@@ -2438,10 +2469,19 @@ namespace game {
   TerrainLab::position () const
   {
     const float horizontal = std::cos (m_pitch) * m_distance;
-    return m_target + Vector3D
+    Vector3D camera = m_target + Vector3D
       (std::sin (m_yaw) * horizontal,
        std::sin (m_pitch) * m_distance,
        std::cos (m_yaw) * horizontal);
+    if (m_map && m_view != ViewMode::Torus) {
+      // Orbiting changes x/z as well as altitude.  Keep the camera body
+      // above the height field at every frame so neither a manual orbit nor
+      // the automatic chase can tunnel through an intervening ridge.
+      const float terrain_height =
+	m_map->interpolated_height (camera.x, camera.z);
+      camera.y = std::max (camera.y, terrain_height + 30.0f);
+    }
+    return camera;
   }
 
   Vector3D
