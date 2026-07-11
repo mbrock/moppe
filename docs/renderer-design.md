@@ -215,6 +215,21 @@ and water-boundary height interpolate on the same curve. This is presentation
 geometry only; it rounds D8 corners without moving a confluence, lake inlet,
 or outlet away from its authoritative cell.
 
+At a standing-water boundary the final cross-section widens and fades into the
+standing surface. It follows one additional wet receiver only when that
+receiver is D8-adjacent; the body-level graph is allowed to transfer directly
+to a distant outlet and must not be interpreted as a drawable local segment.
+Upstream reach endpoints also reduce opacity at a confluence so independently
+blended strips do not all claim the shared receiver at full strength. A tested
+fan overlay was discarded because translucent overlap made the join darker.
+
+Feature-targeted visual checks use
+`tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `river`,
+`confluence`, `mouth`, `waterfall`, or `lake`. The selector consumes the same
+hydrology data, logs the chosen cell and score, uses a fixed clean camera, and
+still runs the empty HUD pass because that pass performs the final post-chain
+composite into the screenshot drawable.
+
 ## Terrain: vertex pulling (the big modernization)
 
 Today: regenerate() builds ~8.4 M vertices of non-indexed strip soup (fine +

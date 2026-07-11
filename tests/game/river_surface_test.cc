@@ -1,4 +1,5 @@
 #include <moppe/game/river_surface.hh>
+#include <moppe/game/water_capture.hh>
 
 #include <tests/test.hh>
 
@@ -132,4 +133,142 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
       ++waterfall_vertices;
   MOPPE_CHECK (fall_draw.vertices ().size () == 36);
   MOPPE_CHECK (waterfall_vertices > 0);
+}
+
+MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
+  constexpr std::size_t count = 25;
+  map::RandomHeightMap map (5, 5, Vector3D (50, 10, 50), 0);
+  for (int z = 0; z < map.height (); ++z)
+    for (int x = 0; x < map.width (); ++x)
+      map.set (x, z, 0.3f);
+  map.recompute_normals ();
+
+  const terrain::TerrainGrid grid = map.terrain_view ().grid ();
+  const terrain::Domain2D domain { .width = 5, .height = 5 };
+  std::vector<std::uint32_t> receiver (count);
+  for (std::uint32_t cell = 0; cell < count; ++cell)
+    receiver[cell] = cell;
+  receiver[1] = 6;
+  receiver[6] = 7;
+  receiver[2] = 7;
+  receiver[7] = 8;
+  receiver[8] = 9;
+  receiver[9] = 14;
+  receiver[14] = 19;
+  receiver[19] = 24;
+  std::vector<float> water_level (count, 0.0f);
+  std::vector<float> water_depth (count, 0.0f);
+  std::vector<std::uint32_t> body
+    (count, terrain::LakeCensus::dry);
+  for (const std::uint32_t cell : { 14u, 19u, 24u }) {
+    water_level[cell] = 0.3f;
+    water_depth[cell] = 0.1f;
+    body[cell] = 0;
+  }
+  const terrain::FloodField flood {
+    .source_grid = grid,
+    .sea_level = 0.0f,
+    .has_ocean = false,
+    .water_level = terrain::ScalarRaster
+      (domain, std::move (water_level)),
+    .water_depth = terrain::ScalarRaster
+      (domain, std::move (water_depth)),
+    .ocean = std::vector<std::uint8_t> (count, 0),
+    .spill_receiver = receiver,
+    .outlets = { 24 }
+  };
+  const terrain::LakeCensus census { .body = std::move (body) };
+  std::vector<float> area (count, 25000.0f);
+  area[7] = 100000.0f;
+  area[8] = 250000.0f;
+  area[9] = 500000.0f;
+  area[14] = 600000.0f;
+  area[19] = 700000.0f;
+  area[24] = 800000.0f;
+  const terrain::DrainageGraph drainage {
+    .source_grid = grid,
+    .receiver = receiver,
+    .slope = terrain::ScalarRaster
+      (domain, std::vector<float> (count, 0.02f)),
+    .contributing_area = terrain::ScalarRaster (domain, std::move (area)),
+    .basin = std::vector<std::uint32_t> (count, 24),
+    .sinks = { 24 }
+  };
+  const terrain::RiverNetwork rivers {
+    .minimum_area_m2 = 25000.0f,
+    .reach_by_cell = std::vector<std::uint32_t>
+      (count, terrain::RiverReach::no_id),
+    .waterfall_by_cell = std::vector<std::uint32_t>
+      (count, terrain::Waterfall::no_id),
+    .reaches = {
+      {
+	.id = 0,
+	.cells = { 1, 6 },
+	.upstream_body = terrain::RiverReach::no_id,
+	.downstream_body = terrain::RiverReach::no_id,
+	.downstream_ocean = false,
+	.downstream_reach = 2
+      },
+      {
+	.id = 1,
+	.cells = { 2 },
+	.upstream_body = terrain::RiverReach::no_id,
+	.downstream_body = terrain::RiverReach::no_id,
+	.downstream_ocean = false,
+	.downstream_reach = 2
+      },
+      {
+	.id = 2,
+	.cells = { 7, 8, 9 },
+	.upstream_body = terrain::RiverReach::no_id,
+	.downstream_body = 0,
+	.downstream_ocean = false,
+	.downstream_reach = terrain::RiverReach::no_id
+      }
+    }
+  };
+
+  const render::DrawList draw = game::build_river_ribbons
+    (map, flood, census, drainage, rivers);
+
+  MOPPE_CHECK (draw.runs ().size () == 1);
+  MOPPE_CHECK (draw.vertices ().size () == 84);
+  float maximum_z = 0.0f;
+  std::size_t soft_vertices = 0;
+  std::size_t junction_fade_vertices = 0;
+  for (const render::Vertex& vertex : draw.vertices ()) {
+    maximum_z = std::max (maximum_z, vertex.pz);
+    if (vertex.color.a == 0)
+      ++soft_vertices;
+    if (vertex.color.a == render::Color::quantize (0.12f))
+      ++junction_fade_vertices;
+  }
+  MOPPE_CHECK (maximum_z >= 30.0f);
+  MOPPE_CHECK (soft_vertices > 0);
+  MOPPE_CHECK (junction_fade_vertices > 0);
+
+  terrain::DrainageGraph shortcut = drainage;
+  shortcut.receiver[14] = 24;
+  const render::DrawList shortcut_draw = game::build_river_ribbons
+    (map, flood, census, shortcut, rivers);
+  MOPPE_CHECK (shortcut_draw.vertices ().size () == 72);
+  for (const render::Vertex& vertex : shortcut_draw.vertices ())
+    MOPPE_CHECK (vertex.pz < 25.0f);
+
+  const std::optional<game::WaterInspection> confluence =
+    game::choose_water_inspection
+      (game::WaterShot::Confluence, map, flood, census, drainage, rivers);
+  const std::optional<game::WaterInspection> mouth =
+    game::choose_water_inspection
+      (game::WaterShot::Mouth, map, flood, census, drainage, rivers);
+  MOPPE_CHECK (confluence.has_value ());
+  MOPPE_CHECK (confluence->cell == 7);
+  MOPPE_CHECK (mouth.has_value ());
+  MOPPE_CHECK (mouth->cell == 14);
+  MOPPE_CHECK (std::isfinite (mouth->eye.x));
+  MOPPE_CHECK (std::isfinite (mouth->eye.y));
+  MOPPE_CHECK (std::isfinite (mouth->eye.z));
+  MOPPE_CHECK
+    (game::parse_water_shot ("fall") == game::WaterShot::Waterfall);
+  MOPPE_CHECK (!game::parse_water_shot ("bogus").has_value ());
 }

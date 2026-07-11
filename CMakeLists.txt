@@ -220,6 +220,7 @@ add_library(moppe_game STATIC
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
   moppe/game/river_surface.cc
+  moppe/game/water_capture.cc
   moppe/game/chase_camera.cc
   moppe/game/vegetation.cc
   moppe/game/stars.cc
