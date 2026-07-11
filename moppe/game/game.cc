@@ -70,6 +70,28 @@ namespace game {
     return t * t * (3.0f - 2.0f * t);
   }
 
+  static void
+  fill_rounded_rect (render::DrawList& dl, float x, float y,
+		     float width, float height, float radius) {
+    radius = std::clamp (radius, 0.0f, std::min (width, height) * 0.5f);
+    constexpr int corner_steps = 6;
+    dl.begin (render::Prim::TriangleFan);
+    dl.vertex (x + width * 0.5f, y + height * 0.5f);
+    for (int corner = 0; corner < 4; ++corner) {
+      const float cx = corner == 0 || corner == 3
+	? x + radius : x + width - radius;
+      const float cy = corner < 2 ? y + radius : y + height - radius;
+      const float start = 3.14159265f + corner * 1.57079633f;
+      for (int i = 0; i <= corner_steps; ++i) {
+	const float angle = start + i * 1.57079633f / corner_steps;
+	dl.vertex (cx + std::cos (angle) * radius,
+		   cy + std::sin (angle) * radius);
+      }
+    }
+    dl.vertex (x, y + radius);
+    dl.end ();
+  }
+
   static std::string
   terrain_cache_path (const WorldParams& world,
 		      terrain::TerrainGenerationProfile profile,
@@ -242,8 +264,14 @@ namespace game {
       // runs behind the loading screen.
       m_hud.load (r);
       m_terrain_lab.load (r);
+      m_loading_title_font.reset
+	(new render::FontAtlas (r, "AvenirNext-DemiBold", 36,
+				r.scale_factor ()));
       m_loading_font.reset
-	(new render::FontAtlas (r, "AvenirNext-Medium", 18,
+	(new render::FontAtlas (r, "AvenirNext-Medium", 23,
+				r.scale_factor ()));
+      m_loading_detail_font.reset
+	(new render::FontAtlas (r, "AvenirNext-Medium", 14,
 				r.scale_factor ()));
       m_dust.load (r);
       m_blob.load (r);
@@ -1162,12 +1190,32 @@ namespace game {
     }
 
     void render_loading (render::Renderer& r) {
+      const float w = (float) r.width_pts ();
+      const float h = (float) r.height_pts ();
+      const float aspect = w / std::max (1.0f, h);
+      const float sky_time = (float) platform::now ();
+      const Vector3D eye (0, 34, 0);
+      const Vector3D target (0, 27, -100);
+
       render::FrameParams fp;
-      fp.clear_color = Vector3D (0.06f, 0.07f, 0.09f);
-      fp.view = Mat4 ();
-      fp.proj = Mat4 ();
+      fp.clear_color = horizon_color_for (SUN_HEIGHT);
+      fp.view = Mat4::look_at (eye, target, Vector3D (0, 1, 0));
+      fp.proj = Mat4::perspective_reversed
+	(degrees_to_radians (64.0f), aspect, 0.5f, 9000.0f);
+      fp.camera_pos = eye;
+      fp.sun_dir = sun_direction_for (SUN_HEIGHT);
+      fp.time = sky_time;
+      fp.exposure_bias = 0.88f;
       if (!r.begin_frame (fp))
 	return;
+
+      render::SkyParams sky;
+      sky.time = sky_time;
+      sky.sun_height = SUN_HEIGHT;
+      sky.cloudiness = 0.32f;
+      sky.sun_dir = fp.sun_dir;
+      sky.fog_color = fp.clear_color;
+      r.draw_sky (sky);
 
       m_hud_dl.clear ();
       render::DrawState s;
@@ -1200,25 +1248,77 @@ namespace game {
 	text = erosion_text.c_str ();
       }
 
-      const float w = (float) r.width_pts ();
-      const float h = (float) r.height_pts ();
+      const float panel_width = std::min (620.0f, w - 48.0f);
+      const float panel_height = 206.0f;
+      const float panel_x = (w - panel_width) * 0.5f;
+      const float panel_y = std::min
+	(h - panel_height - 28.0f, std::max (32.0f, h * 0.56f));
+
+      // Terrain Lab's cool instrument surface, allowed to float over the
+      // world sky which is being prepared behind it.
+      m_hud_dl.color (0.0f, 0.008f, 0.01f, 0.28f);
+      fill_rounded_rect (m_hud_dl, panel_x + 6, panel_y + 9,
+			 panel_width, panel_height, 17);
+      m_hud_dl.color (0.44f, 0.39f, 0.24f, 0.92f);
+      fill_rounded_rect (m_hud_dl, panel_x, panel_y,
+			 panel_width, panel_height, 16);
+      m_hud_dl.color (0.08f, 0.25f, 0.24f, 0.99f);
+      fill_rounded_rect (m_hud_dl, panel_x + 1, panel_y + 1,
+			 panel_width - 2, panel_height - 2, 15);
+      m_hud_dl.color (0.025f, 0.065f, 0.065f, 0.97f);
+      fill_rounded_rect (m_hud_dl, panel_x + 3, panel_y + 3,
+			 panel_width - 6, panel_height - 6, 13);
+      m_hud_dl.color (0.39f, 0.78f, 0.68f, 0.42f);
+      m_hud_dl.line (panel_x + 20, panel_y + 3,
+		     panel_x + panel_width - 20, panel_y + 3, 1.0f);
+
+      if (m_loading_title_font && m_loading_title_font->ok ()) {
+	m_hud_dl.color (0.91f, 0.98f, 0.90f, 1.0f);
+	m_loading_title_font->draw
+	  (m_hud_dl, panel_x + 30, panel_y + 53, "MAKING A WORLD");
+      }
+      if (m_loading_detail_font && m_loading_detail_font->ok ()) {
+	m_hud_dl.color (0.47f, 0.72f, 0.68f, 0.98f);
+	const std::string detail = "SEED " + std::to_string (m_seed)
+	  + "  /  "
+	  + std::string (terrain::profile_id (m_generation_profile));
+	m_loading_detail_font->draw
+	  (m_hud_dl, panel_x + 32, panel_y + 80, detail);
+      }
       if (m_loading_font && m_loading_font->ok ()) {
-	m_hud_dl.color (0.85f, 0.87f, 0.9f);
-	const float tw = m_loading_font->measure (text);
-	m_loading_font->draw (m_hud_dl, (w - tw) / 2, h / 2, text);
+	m_hud_dl.color (0.84f, 0.94f, 0.92f, 1.0f);
+	m_loading_font->draw
+	  (m_hud_dl, panel_x + 31, panel_y + 126, text);
       }
 
-      // A pulsing bar so the screen visibly lives during erosion.
+      // Stage lights communicate real progress; a soft traveling highlight
+      // keeps long erosion steps visibly alive without pretending to know a
+      // percentage within the stage.
       const double t = platform::now ();
       const float pulse =
 	0.5f + 0.5f * (float) std::sin (t * 2.6);
-      m_hud_dl.color (0.35f + 0.3f * pulse, 0.5f, 0.85f, 0.9f);
-      m_hud_dl.begin (render::Prim::Quads);
-      m_hud_dl.vertex (w / 2 - 120, h / 2 + 24);
-      m_hud_dl.vertex (w / 2 + 120, h / 2 + 24);
-      m_hud_dl.vertex (w / 2 + 120, h / 2 + 30);
-      m_hud_dl.vertex (w / 2 - 120, h / 2 + 30);
-      m_hud_dl.end ();
+      const float track_x = panel_x + 32;
+      const float track_y = panel_y + 161;
+      const float track_width = panel_width - 64;
+      m_hud_dl.color (0.02f, 0.12f, 0.12f, 0.98f);
+      fill_rounded_rect
+	(m_hud_dl, track_x, track_y, track_width, 8, 4);
+      const float completed = track_width * (stage + 1) / 8.0f;
+      m_hud_dl.color (0.32f, 0.70f, 0.61f, 0.92f);
+      fill_rounded_rect
+	(m_hud_dl, track_x, track_y, completed, 8, 4);
+      const float scan_x = track_x + std::max
+	(0.0f, completed - 18.0f - 10.0f * pulse);
+      m_hud_dl.color (0.76f, 0.92f, 0.66f, 0.42f + 0.32f * pulse);
+      fill_rounded_rect (m_hud_dl, scan_x, track_y - 1,
+			 std::min (24.0f, completed), 10, 5);
+
+      if (m_loading_detail_font && m_loading_detail_font->ok ()) {
+	m_hud_dl.color (0.42f, 0.67f, 0.63f, 0.9f);
+	m_loading_detail_font->draw
+	  (m_hud_dl, track_x, panel_y + 190,
+	   "FORMING LAND  /  MOVING WATER  /  GROWING A PLACE");
+      }
 
       r.draw_hud (m_hud_dl);
       r.end_frame ();
@@ -1529,7 +1629,9 @@ namespace game {
     City m_city;
     Walker m_walker;
     Hud m_hud;
+    std::unique_ptr<render::FontAtlas> m_loading_title_font;
     std::unique_ptr<render::FontAtlas> m_loading_font;
+    std::unique_ptr<render::FontAtlas> m_loading_detail_font;
 
     render::Renderer* m_renderer;
     bool m_start_in_terrain_lab;
