@@ -3,6 +3,7 @@
 
 #include <tests/test.hh>
 
+#include <atomic>
 #include <cmath>
 #include <numbers>
 
@@ -50,6 +51,25 @@ MOPPE_TEST (large_cpu_evaluation_preserves_field_values) {
   MOPPE_CHECK_NEAR (raster.at (0, 0), 0.0f, 1e-6f);
   MOPPE_CHECK_NEAR (raster.at (128, 128), 1.5f, 1e-6f);
   MOPPE_CHECK_NEAR (raster.at (256, 256), 3.0f, 1e-6f);
+}
+
+MOPPE_TEST (cpu_evaluator_reports_materialization_progress) {
+  const Domain2D domain { .width = 257, .height = 257 };
+  std::atomic<std::size_t> latest = 0;
+  std::atomic<bool> correct_total = true;
+  const CpuEvaluator evaluator
+    ([&] (std::size_t completed, std::size_t total) {
+      if (total != 257)
+	correct_total = false;
+      std::size_t observed = latest.load ();
+      while (observed < completed
+	     && !latest.compare_exchange_weak (observed, completed)) { }
+    });
+
+  (void) evaluator.evaluate (coordinate_x (), domain);
+
+  MOPPE_CHECK (correct_total);
+  MOPPE_CHECK (latest == 257);
 }
 
 MOPPE_TEST (cpu_evaluator_rejects_degenerate_domains) {

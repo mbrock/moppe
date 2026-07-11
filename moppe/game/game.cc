@@ -460,6 +460,14 @@ namespace game {
 		m_loading_work_done = completed;
 		m_loading_work_total = total;
 	      }
+	    },
+	    [this] (std::size_t completed, std::size_t total) {
+	      int observed = m_loading_source_done.load ();
+	      const int value = static_cast<int> (completed);
+	      while (observed < value
+		     && !m_loading_source_done.compare_exchange_weak
+		       (observed, value)) { }
+	      m_loading_source_total = static_cast<int> (total);
 	    });
 	  if (cache)
 	    m_map.save_cache (cache);
@@ -1303,22 +1311,34 @@ namespace game {
 	(degrees_to_radians (show_terrain ? 52.0f : 64.0f), aspect,
 	 0.5f, std::max (9000.0f, m_world.map_size.x * 2.0f));
       fp.camera_pos = eye;
-      constexpr float loading_sun_height = 0.72f;
+      const float sunrise = smooth_curve (0.0f, 14.0f, sky_time);
+      const float loading_sun_height = 0.48f + 0.18f * sunrise;
+      const float sun_elevation =
+	(loading_sun_height - 0.5f) * 3.14159265f;
+      const Vector3D horizon_forward =
+	Vector3D (forward.x, 0.0f, forward.z).normalized ();
+      const Vector3D horizon_side
+	(-horizon_forward.z, 0.0f, horizon_forward.x);
+      const Vector3D loading_sun_dir =
+	(horizon_forward * std::cos (sun_elevation)
+	 + horizon_side * 0.22f
+	 + Vector3D (0, 1, 0) * std::sin (sun_elevation)).normalized ();
       fp.clear_color = horizon_color_for (loading_sun_height);
-      fp.sun_dir = sun_direction_for (loading_sun_height);
+      fp.sun_dir = loading_sun_dir;
       sun_light_colors
 	(loading_sun_height, fp.sun_diffuse, fp.sun_specular);
       fp.ambient = Vector3D (0.53f, 0.57f, 0.62f);
       fp.fog_scale = show_terrain ? m_world.fog_scale * 1.35f : 0.0f;
       fp.time = sky_time;
-      fp.exposure_bias = 0.88f;
+      fp.exposure_bias = 0.82f + 0.08f * sunrise;
+      fp.sun_visibility = 0.20f + 0.72f * sunrise;
       if (!r.begin_frame (fp))
 	return;
 
       render::SkyParams sky;
       sky.time = sky_time;
       sky.sun_height = loading_sun_height;
-      sky.cloudiness = 0.18f;
+      sky.cloudiness = 0.32f - 0.16f * sunrise;
       sky.sun_dir = fp.sun_dir;
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);
@@ -1368,12 +1388,24 @@ namespace game {
 	"A familiar world, remembered",
       };
       const int clamped_stage = std::clamp (stage, 0, 7);
-      const std::string headline = headlines[clamped_stage];
-      const std::string detail = details[clamped_stage];
+      if (m_loading_display_stage < 0)
+	m_loading_display_stage = clamped_stage;
+      else if (clamped_stage != m_loading_display_stage) {
+	m_loading_stage_log.push_back (m_loading_display_stage);
+	if (m_loading_stage_log.size () > 3)
+	  m_loading_stage_log.erase (m_loading_stage_log.begin ());
+	m_loading_display_stage = clamped_stage;
+	m_loading_stage_transition = sky_time;
+      }
+      const std::string headline = headlines[m_loading_display_stage];
+      const std::string detail = details[m_loading_display_stage];
 
       float target_progress = 0.04f;
-      if (stage == 3)
-	target_progress = 0.20f;
+      if (stage == 3) {
+	const float source = (float) m_loading_source_done.load ()
+	  / std::max (1.0f, (float) m_loading_source_total.load ());
+	target_progress = 0.04f + 0.16f * source;
+      }
       else if (stage == 4) {
 	const float erosion = (float) m_loading_work_done.load ()
 	  / std::max (1.0f, (float) m_loading_work_total.load ());
@@ -1410,28 +1442,63 @@ namespace game {
 			 8.0f, 8.0f, 4.0f);
 
       const float headline_y = dial_y + 112.0f;
+      const float transition = m_loading_stage_log.empty () ? 1.0f
+	: smooth_curve
+	  (0.0f, 0.50f, sky_time - m_loading_stage_transition);
+
+      // The most recently completed entry falls out of the headline and
+      // settles into the log. Older entries remain below it like field notes.
+      if (!m_loading_stage_log.empty () && m_loading_title_font
+	  && m_loading_title_font->ok ()) {
+	const int previous = m_loading_stage_log.back ();
+	const std::string previous_text = headlines[previous];
+	const float settle = std::sqrt (transition);
+	const float scale = 1.0f - 0.56f * settle;
+	const float y = headline_y + 100.0f * settle;
+	m_hud_dl.push ();
+	m_hud_dl.translate (center_x, y, 0.0f);
+	m_hud_dl.scale (scale, scale, 1.0f);
+	m_hud_dl.color (0.72f, 0.88f, 0.78f, 0.62f);
+	m_loading_title_font->draw
+	  (m_hud_dl, -m_loading_title_font->measure (previous_text) * 0.5f,
+	   0.0f, previous_text);
+	m_hud_dl.pop ();
+
+	if (m_loading_font && m_loading_font->ok ()) {
+	  float log_y = headline_y + 132.0f;
+	  for (int i = static_cast<int> (m_loading_stage_log.size ()) - 2;
+	       i >= 0; --i, log_y += 27.0f) {
+	    const std::string line = headlines[m_loading_stage_log[i]];
+	    const float x = center_x - m_loading_font->measure (line) * 0.5f;
+	    m_hud_dl.color (0.66f, 0.80f, 0.72f, 0.42f);
+	    m_loading_font->draw (m_hud_dl, x, log_y, line);
+	  }
+	}
+      }
+
       if (m_loading_title_font && m_loading_title_font->ok ()) {
 	const float x = center_x
 	  - m_loading_title_font->measure (headline) * 0.5f;
+	const float y = headline_y - 22.0f * (1.0f - transition);
 	// A soft shadow is enough separation from the landscape; no card.
-	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.48f);
+	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.48f * transition);
 	m_loading_title_font->draw
-	  (m_hud_dl, x + 2.0f, headline_y + 3.0f, headline);
-	m_hud_dl.color (0.95f, 1.0f, 0.91f, 1.0f);
-	m_loading_title_font->draw (m_hud_dl, x, headline_y, headline);
+	  (m_hud_dl, x + 2.0f, y + 3.0f, headline);
+	m_hud_dl.color (0.95f, 1.0f, 0.91f, transition);
+	m_loading_title_font->draw (m_hud_dl, x, y, headline);
       }
       if (m_loading_font && m_loading_font->ok ()) {
 	const float x = center_x - m_loading_font->measure (detail) * 0.5f;
-	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.42f);
+	m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.42f * transition);
 	m_loading_font->draw
 	  (m_hud_dl, x + 1.5f, headline_y + 46.0f, detail);
-	m_hud_dl.color (0.82f, 0.94f, 0.87f, 0.96f);
+	m_hud_dl.color (0.82f, 0.94f, 0.87f, 0.96f * transition);
 	m_loading_font->draw (m_hud_dl, x, headline_y + 44.0f, detail);
       }
 
       bool captured_loading = false;
       if (!m_loading_capture_done && show_terrain
-	  && m_loading_progress_display > 0.28f) {
+	  && m_loading_progress_display > 0.40f) {
 	if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
 	  r.request_screenshot (path);
 	  m_loading_capture_done = true;
@@ -1595,9 +1662,13 @@ namespace game {
       m_gen_stage = 0;
       m_loading_work_done = 0;
       m_loading_work_total = 1;
+      m_loading_source_done = 0;
+      m_loading_source_total = 1;
       m_loading_progress_display = 0.0f;
       m_loading_progress_time = 0.0;
       m_loading_clock_start = 0.0;
+      m_loading_display_stage = -1;
+      m_loading_stage_log.clear ();
       m_standing_water.reset ();
       m_lake_census.reset ();
       m_drainage.reset ();
@@ -1739,9 +1810,14 @@ namespace game {
     std::shared_ptr<const std::vector<float>> m_loading_heights;
     std::atomic<int> m_loading_work_done = 0;
     std::atomic<int> m_loading_work_total = 1;
+    std::atomic<int> m_loading_source_done = 0;
+    std::atomic<int> m_loading_source_total = 1;
     float m_loading_progress_display = 0.0f;
     double m_loading_progress_time = 0.0;
     double m_loading_clock_start = 0.0;
+    int m_loading_display_stage = -1;
+    float m_loading_stage_transition = 0.0f;
+    std::vector<int> m_loading_stage_log;
     bool m_loading_capture_done = false;
     int m_loading_terrain_state = 0;
     float m_loading_terrain_reveal = 0.0f;

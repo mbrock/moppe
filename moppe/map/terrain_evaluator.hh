@@ -27,17 +27,20 @@ namespace moppe::map {
       <void (std::size_t, const terrain::TerrainTransform&)>;
     using IterationProgress = std::function
       <void (std::size_t, const terrain::TerrainTransform&, int, int)>;
+    using SourceProgress = std::function<void (std::size_t, std::size_t)>;
 
     explicit TerrainEvaluator
       (RandomHeightMap& target,
        const terrain::FieldEvaluator* source_evaluator = nullptr);
 
-    void begin (const terrain::TerrainProgram& program);
+    void begin (const terrain::TerrainProgram& program,
+		const SourceProgress& source_progress = { });
     terrain::TerrainTransformReport apply
       (const terrain::TerrainTransform& transform);
     void evaluate (const terrain::TerrainProgram& program,
 		   const Progress& progress = { },
-		   const IterationProgress& iteration_progress = { });
+		   const IterationProgress& iteration_progress = { },
+		   const SourceProgress& source_progress = { });
 
     TerrainCheckpoint checkpoint () const;
     void restore (const TerrainCheckpoint& checkpoint);

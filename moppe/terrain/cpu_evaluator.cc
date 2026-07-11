@@ -340,6 +340,7 @@ namespace moppe::terrain {
     const float inv_y = 1.0f / static_cast<float> (domain.height - 1);
 
     std::atomic<std::size_t> next_row = 0;
+    std::atomic<std::size_t> completed_rows = 0;
     const auto evaluate_rows = [&] {
       std::vector<float> registers (program.instructions.size ());
       for (;;) {
@@ -413,6 +414,10 @@ namespace moppe::terrain {
 
 	  output[y * domain.width + x] = registers[program.output];
 	}
+	const std::size_t completed = completed_rows.fetch_add
+	  (1, std::memory_order_relaxed) + 1;
+	if (m_progress && (completed % 8 == 0 || completed == domain.height))
+	  m_progress (completed, domain.height);
       }
     };
 
