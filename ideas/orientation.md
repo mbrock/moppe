@@ -79,6 +79,8 @@ honest books.
   settlements.
 - `tending-the-world.md` — the game as an ongoing practice of riding,
   understanding, and caring for one generated world.
+- `structure-of-space.md` — the proposed cellular tissue between continuous
+  landscape fields and discrete places, buildings, and memory.
 
 The project's acceptance test, stated once so you know the direction
 of "better": a generated world passes when one of its places could
