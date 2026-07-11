@@ -29,6 +29,12 @@ namespace game {
     int lives;
     // m_star_field.collected(): the "x N" star counter.
     int stars;
+    // Accumulated stunt score and the current/resulting long jump.
+    int score;
+    float airtime_s;
+    float landed_airtime_s;
+    int landed_points;
+    float landed_age_s;
     // m_mode == M_FOOT: zeroes the speed, parks the boost dial and
     // shows the "ON FOOT" tag.
     bool on_foot;
@@ -40,6 +46,8 @@ namespace game {
     HudState ()
       : speed_kmh (0), fuel (100.0f), boost_ready01 (1.0f),
 	health01 (1.0f), odometer_m (0), lives (10), stars (0),
+	score (0), airtime_s (0), landed_airtime_s (0),
+	landed_points (0), landed_age_s (10),
 	on_foot (false), frame_time_s (1.0f / 60.0f),
 	heading_radians (0.0f)
     { }
