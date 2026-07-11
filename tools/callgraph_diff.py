@@ -2,7 +2,12 @@
 
 import argparse
 import concurrent.futures
+import datetime
+import hashlib
+import json
+import os
 import pathlib
+import platform
 import shutil
 import subprocess
 import sys
@@ -22,6 +27,16 @@ TOOL_FILES = [
     "tools/callgraph_report.py",
     "tools/complexity-report",
 ]
+ANALYSIS_TOOL_FILES = [path for path in TOOL_FILES if path != ".gitignore"]
+CACHE_VERSION = 1
+CACHE_TABLES = [
+    "nodes", "edges", "edge_ids", "pagerank", "betweenness",
+    "components", "communities", "entrypoint_exposure",
+]
+SOURCE_SUFFIXES = {
+    ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
+    ".m", ".mm",
+}
 
 
 def run(command, **kwargs):
@@ -34,6 +49,172 @@ def git(*arguments):
       ["git", "-C", str(ROOT), *arguments], check=True,
       text=True, stdout=subprocess.PIPE)
   return result.stdout.strip()
+
+
+def command_output(command):
+  return subprocess.run(
+      command, check=True, text=True, stdout=subprocess.PIPE
+  ).stdout.strip()
+
+
+def relevant_source_objects(revision):
+  rows = []
+  listing = git("ls-tree", "-r", "--full-tree", revision)
+  for line in listing.splitlines():
+    metadata, path = line.split("\t", 1)
+    suffix = pathlib.PurePosixPath(path).suffix.lower()
+    if (suffix in SOURCE_SUFFIXES or path == "CMakeLists.txt" or
+        path.startswith("cmake/") or path.startswith("CMakePresets")):
+      _, kind, object_id = metadata.split()
+      if kind == "blob":
+        rows.append((path, object_id))
+  return rows
+
+
+def file_digest(paths):
+  digest = hashlib.sha256()
+  for path in paths:
+    digest.update(str(path.relative_to(ROOT)).encode())
+    digest.update(b"\0")
+    digest.update(path.read_bytes())
+    digest.update(b"\0")
+  return digest.hexdigest()
+
+
+def cache_manifest(revision):
+  source_objects = relevant_source_objects(revision)
+  source_digest = hashlib.sha256(
+      json.dumps(source_objects, separators=(",", ":")).encode()
+  ).hexdigest()
+  tool_paths = [ROOT / path for path in ANALYSIS_TOOL_FILES
+                if (ROOT / path).is_file()]
+  try:
+    llvm = command_output(["brew", "--prefix", "llvm@20"])
+  except subprocess.CalledProcessError:
+    llvm = command_output(["brew", "--prefix", "llvm"])
+  clang_version = command_output([str(pathlib.Path(llvm) / "bin/clang"),
+                                  "--version"]).splitlines()[0]
+  duckdb_version = duckdb.__version__
+  identity = {
+      "cache_version": CACHE_VERSION,
+      "source_digest": source_digest,
+      "tool_digest": file_digest(tool_paths),
+      "clang_version": clang_version,
+      "duckdb_version": duckdb_version,
+      "system": platform.system(),
+      "architecture": platform.machine(),
+  }
+  key = hashlib.sha256(
+      json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+  ).hexdigest()
+  return {
+      **identity,
+      "cache_key": key,
+      "revision": revision,
+      "source_files": len(source_objects),
+  }
+
+
+def default_cache_root():
+  override = os.environ.get("MOPPE_ANALYSIS_CACHE")
+  if override:
+    return pathlib.Path(override).expanduser().resolve()
+  common = pathlib.Path(git("rev-parse", "--git-common-dir"))
+  if not common.is_absolute():
+    common = ROOT / common
+  return common.resolve() / "moppe-analysis-cache" / f"v{CACHE_VERSION}"
+
+
+def snapshot_dir(cache_root, manifest):
+  return cache_root / "snapshots" / manifest["cache_key"]
+
+
+def export_parquet(connection, table, path, cache_key):
+  key = cache_key.replace("'", "''")
+  connection.execute(
+      f"COPY (SELECT '{key}' AS cache_key, * FROM {table}) "
+      f"TO '{sql_path(path)}' (FORMAT PARQUET, COMPRESSION ZSTD)")
+
+
+def store_snapshot(cache_root, source_db, manifest):
+  destination = snapshot_dir(cache_root, manifest)
+  if (destination / "snapshot.duckdb").is_file():
+    return destination / "snapshot.duckdb"
+  destination.parent.mkdir(parents=True, exist_ok=True)
+  staging = pathlib.Path(tempfile.mkdtemp(
+      prefix=destination.name + ".tmp-", dir=destination.parent))
+  cached_db = staging / "snapshot.duckdb"
+  shutil.copy2(source_db, cached_db)
+  connection = duckdb.connect(str(cached_db))
+  connection.execute("CREATE TABLE analysis_snapshot AS SELECT ? AS cache_key, "
+                     "? AS revision, ? AS source_digest, ? AS tool_digest, "
+                     "? AS clang_version, ? AS duckdb_version, "
+                     "? AS system, ? AS architecture, ? AS source_files, "
+                     "?::TIMESTAMPTZ AS created_at", [
+                         manifest["cache_key"], manifest["revision"],
+                         manifest["source_digest"], manifest["tool_digest"],
+                         manifest["clang_version"], manifest["duckdb_version"],
+                         manifest["system"], manifest["architecture"],
+                         manifest["source_files"],
+                         datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                     ])
+  for table in CACHE_TABLES:
+    export_parquet(connection, table, staging / f"{table}.parquet",
+                   manifest["cache_key"])
+  connection.close()
+  (staging / "manifest.json").write_text(
+      json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+  try:
+    staging.rename(destination)
+  except FileExistsError:
+    shutil.rmtree(staging)
+  return destination / "snapshot.duckdb"
+
+
+def refresh_catalog(cache_root, observed_manifests=()):
+  cache_root.mkdir(parents=True, exist_ok=True)
+  catalog_path = cache_root / "catalog.duckdb"
+  connection = duckdb.connect(str(catalog_path))
+  connection.execute("DROP TABLE IF EXISTS snapshots")
+  connection.execute("""
+    CREATE TABLE snapshots (
+      cache_key VARCHAR PRIMARY KEY, revision VARCHAR, source_digest VARCHAR,
+      tool_digest VARCHAR, clang_version VARCHAR, duckdb_version VARCHAR,
+      system VARCHAR, architecture VARCHAR, source_files BIGINT,
+      snapshot_path VARCHAR
+    )
+  """)
+  connection.execute("""
+    CREATE TABLE IF NOT EXISTS revisions (
+      revision VARCHAR, cache_key VARCHAR, observed_at TIMESTAMPTZ,
+      PRIMARY KEY (revision, cache_key)
+    )
+  """)
+  rows = []
+  for path in sorted((cache_root / "snapshots").glob("*/manifest.json")):
+    manifest = json.loads(path.read_text())
+    rows.append(tuple(manifest[name] for name in (
+        "cache_key", "revision", "source_digest", "tool_digest",
+        "clang_version", "duckdb_version", "system", "architecture",
+        "source_files")) + (str(path.parent / "snapshot.duckdb"),))
+  if rows:
+    connection.executemany("INSERT INTO snapshots VALUES (?, ?, ?, ?, ?, ?, "
+                           "?, ?, ?, ?)", rows)
+    parquet_root = sql_path(cache_root / "snapshots" / "*" / "{}.parquet")
+    for table in CACHE_TABLES:
+      connection.execute(
+          f"CREATE OR REPLACE VIEW {table} AS SELECT * FROM "
+          f"read_parquet('{parquet_root.format(table)}', union_by_name=true)")
+  connection.execute(
+      "DELETE FROM revisions WHERE cache_key NOT IN "
+      "(SELECT cache_key FROM snapshots)")
+  now = datetime.datetime.now(datetime.timezone.utc)
+  for manifest in observed_manifests:
+    connection.execute(
+        "INSERT OR REPLACE INTO revisions VALUES (?, ?, ?)",
+        [manifest["revision"], manifest["cache_key"], now])
+  connection.close()
+  return catalog_path
 
 
 def sql_path(path):
@@ -67,6 +248,22 @@ def analyze_snapshot(worktree, log_path):
         stdout=log, stderr=subprocess.STDOUT)
   return (worktree / "build-homebrew/callgraph/analysis/"
           "callgraph.duckdb")
+
+
+def analyze_or_restore(revision, manifest, worktree, log_path, cache_root,
+                       use_cache):
+  cached_db = snapshot_dir(cache_root, manifest) / "snapshot.duckdb"
+  if use_cache and cached_db.is_file():
+    print(f"Cache hit {manifest['cache_key'][:12]} for "
+          f"{revision[:12]}", file=sys.stderr)
+    return cached_db, manifest, True
+  print(f"Cache miss {manifest['cache_key'][:12]} for "
+        f"{revision[:12]}", file=sys.stderr)
+  prepare_snapshot(revision, worktree)
+  database = analyze_snapshot(worktree, log_path)
+  if use_cache:
+    database = store_snapshot(cache_root, database, manifest)
+  return database, manifest, False
 
 
 def remove_worktree(worktree):
@@ -334,6 +531,12 @@ def main():
   parser.add_argument("base", nargs="?", default="HEAD^")
   parser.add_argument("target", nargs="?", default="HEAD")
   parser.add_argument("-o", "--output", type=pathlib.Path)
+  parser.add_argument(
+      "--cache-dir", type=pathlib.Path,
+      help="content-addressed cache (default: shared Git directory)")
+  parser.add_argument(
+      "--no-cache", action="store_true",
+      help="rerun both analyses without reading or writing the cache")
   args = parser.parse_args()
   base = git("rev-parse", args.base)
   target = git("rev-parse", args.target)
@@ -345,21 +548,33 @@ def main():
       ROOT / "build-homebrew/callgraph/diffs" /
       f"{short_base}..{short_target}")
   output.mkdir(parents=True, exist_ok=True)
+  cache_root = (args.cache_dir.expanduser().resolve()
+                if args.cache_dir else default_cache_root())
+  use_cache = not args.no_cache
   temporary = pathlib.Path(tempfile.mkdtemp(prefix="moppe-callgraph-diff-"))
   base_worktree = temporary / "base"
   target_worktree = temporary / "target"
   try:
-    print(f"Analyzing base {short_base}...", file=sys.stderr)
-    prepare_snapshot(base, base_worktree)
-    print(f"Analyzing target {short_target}...", file=sys.stderr)
-    prepare_snapshot(target, target_worktree)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-      base_future = executor.submit(
-          analyze_snapshot, base_worktree, output / "base-analysis.log")
-      target_future = executor.submit(
-          analyze_snapshot, target_worktree, output / "target-analysis.log")
-      base_db = base_future.result()
-      target_db = target_future.result()
+    base_manifest = cache_manifest(base)
+    target_manifest = cache_manifest(target)
+    if (use_cache and
+        base_manifest["cache_key"] == target_manifest["cache_key"]):
+      base_db, base_manifest, base_hit = analyze_or_restore(
+          base, base_manifest, base_worktree, output / "base-analysis.log",
+          cache_root, use_cache)
+      target_db, target_hit = base_db, True
+      print("Base and target have identical analysis inputs; reusing the "
+            "snapshot.", file=sys.stderr)
+    else:
+      with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        base_future = executor.submit(
+            analyze_or_restore, base, base_manifest, base_worktree,
+            output / "base-analysis.log", cache_root, use_cache)
+        target_future = executor.submit(
+            analyze_or_restore, target, target_manifest, target_worktree,
+            output / "target-analysis.log", cache_root, use_cache)
+        base_db, base_manifest, base_hit = base_future.result()
+        target_db, target_manifest, target_hit = target_future.result()
     saved_base_db = output / "base.duckdb"
     shutil.copy2(base_db, saved_base_db)
     remove_worktree(base_worktree)
@@ -382,6 +597,16 @@ def main():
     write_summary(connection, output, short_base, short_target)
     print_summary(connection, output)
     connection.close()
+    provenance = {
+        "base": {**base_manifest, "cache_hit": base_hit},
+        "target": {**target_manifest, "cache_hit": target_hit},
+    }
+    (output / "provenance.json").write_text(
+        json.dumps(provenance, indent=2, sort_keys=True) + "\n")
+    if use_cache:
+      catalog = refresh_catalog(cache_root, (base_manifest, target_manifest))
+      print(f"\nAnalysis cache: {cache_root}")
+      print(f"Query catalog:  {catalog}")
   finally:
     for worktree in (base_worktree, target_worktree):
       remove_worktree(worktree)

@@ -231,6 +231,40 @@ The combined atlas could show:
 - flash floods: rare stacks responsible for long frames;
 - sampled paths responsible for most of a subsystem's transported complexity.
 
+## A sedimentary archive
+
+Clang extraction is expensive enough that its output should be treated as an
+observation, not a disposable intermediate file.  A snapshot can be keyed by
+the source blobs which affect compilation, the analysis-tool sources, and the
+compiler, database, operating-system, and architecture identities.  This is
+more useful than keying by commit alone: two commits which differ only in
+prose have the same static program, while the same commit analyzed by a new
+Clang is a genuinely new observation.
+
+Each immutable snapshot can contain the complete DuckDB database and Parquet
+copies of its principal relations.  DuckDB is convenient for opening one
+landscape in detail; Parquet makes the whole archive directly queryable as a
+time series without repeatedly attaching databases.  A small catalog maps
+the content key back to revisions and provenance.  Comparisons then become
+cheap derived artifacts rather than reasons to run Clang again.
+
+For the current tools, `make callgraph-diff` fills this archive in the shared
+Git directory, so every worktree sees it.  `make callgraph-cache` opens its
+catalog.  For example, all archived functions can be compared directly with:
+
+```sql
+SELECT cache_key, name, cognitive, cyclomatic
+FROM nodes
+ORDER BY cognitive DESC;
+```
+
+This provenance pattern also fits future runtime experiments, although their
+identity is richer.  A deterministic graphics run needs commit and build
+identity, machine and GPU, seed, replay-tape version, feature mask, logical
+frame, repetition, and timestamps.  Static snapshots and runtime runs should
+not be forced into one fact table, but they can share the same idea of
+append-only observations whose exact inputs remain recoverable.
+
 Moppe would then contain two related landscape instruments.  One reads water
 moving through generated terrain.  The other reads execution moving through
 the program which generates it.  Each can lend the other vocabulary, methods,

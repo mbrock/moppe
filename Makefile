@@ -1,4 +1,5 @@
-.PHONY: all archive callgraph callgraph-analyze callgraph-diff check-format \
+.PHONY: all archive callgraph callgraph-analyze callgraph-cache callgraph-diff \
+	check-format \
 	complexity format hooks phone profile terrain-lab-shot testflight xcode
 
 # Configure (if needed) and build everything for macOS.
@@ -25,6 +26,10 @@ callgraph-analyze: callgraph
 # Compare call-graph and complexity metrics for HEAD^ and HEAD.
 callgraph-diff:
 	./tools/callgraph-diff
+
+# Open the shared content-addressed analysis catalog in DuckDB.
+callgraph-cache:
+	./tools/callgraph-cache
 
 # Check formatting without changing files (also used by the Git hook).
 check-format:
