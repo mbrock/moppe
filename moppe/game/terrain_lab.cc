@@ -831,6 +831,21 @@ namespace game {
        point.y * scale.z);
   }
 
+  Vector3D
+  TerrainLab::droplet_world_position (float progress) const
+  {
+    if (m_droplet_trace.points.empty ())
+      return { };
+    const float last = static_cast<float> (m_droplet_trace.points.size () - 1);
+    const float position = std::clamp (progress, 0.0f, last);
+    const std::size_t before = static_cast<std::size_t> (position);
+    const std::size_t after = std::min
+      (before + 1, m_droplet_trace.points.size () - 1);
+    const float fraction = position - static_cast<float> (before);
+    const Vector3D a = droplet_world_position (before);
+    return a + (droplet_world_position (after) - a) * fraction;
+  }
+
   float
   TerrainLab::visible_droplet_pitch (const Vector3D& droplet) const
   {
@@ -874,11 +889,12 @@ namespace game {
   {
     if (m_droplet_trace.points.size () < 2)
       return;
-    const std::size_t visible = std::min
+    const std::size_t completed = std::min
       (m_droplet_trace.points.size () - 1,
        static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)));
-    if (visible == 0)
-      return;
+    const std::size_t visible = std::min
+      (completed + 1, m_droplet_trace.points.size () - 1);
+    const Vector3D bead = droplet_world_position (m_droplet_progress);
 
     m_droplet_draw.clear ();
     render::DrawState state;
@@ -892,8 +908,10 @@ namespace game {
     m_droplet_draw.begin (render::Prim::Quads);
     for (std::size_t i = 1; i <= visible; ++i) {
       const Vector3D a = droplet_world_position (i - 1);
-      const Vector3D b = droplet_world_position (i);
+      const Vector3D b = i == visible ? bead : droplet_world_position (i);
       const Vector3D segment = b - a;
+      if (segment.length2 () < 1e-6f)
+	continue;
       if (segment.length () > 8.0f * std::max
 	  (m_map->scale ().x, m_map->scale ().z))
 	continue;
@@ -919,7 +937,6 @@ namespace game {
     }
     m_droplet_draw.end ();
 
-    const Vector3D bead = droplet_world_position (visible);
     m_droplet_draw.push ();
     m_droplet_draw.translate (bead);
     m_droplet_draw.color (0.30f, 0.90f, 1.0f, 0.90f);
@@ -2097,12 +2114,11 @@ namespace game {
       m_droplet_progress = std::min
 	(last, m_droplet_progress + dt * 22.0f);
       if (m_droplet_follow) {
-	const std::size_t index = std::min
-	  (m_droplet_trace.points.size () - 1,
-	   static_cast<std::size_t> (m_droplet_progress));
-	const Vector3D desired = droplet_world_position (index);
-	const float response = 1.0f - std::exp (-dt * 3.5f);
-	m_target += (desired - m_target) * response;
+	const Vector3D desired = droplet_world_position (m_droplet_progress);
+	// The old eased target trailed fast downhill runs by much of the screen.
+	// Interpolation already makes the bead move smoothly, so keep the orbit
+	// centered on its actual position.
+	m_target = desired;
 	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 850.0f);
 	const float clear_pitch = visible_droplet_pitch (desired);
 	if (clear_pitch > m_pitch)
