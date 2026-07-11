@@ -13,7 +13,8 @@
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
   - Modes: `--city`, `--pico`, `--terrain-lab`,
-    `--terrain-lab-preview`, `--fullscreen`, `--windowed`
+    `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
+    `--graphics-quality low|high`
   - Fast deterministic UI capture: `make terrain-lab-shot` (writes
     `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.

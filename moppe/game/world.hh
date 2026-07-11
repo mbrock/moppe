@@ -16,11 +16,12 @@ namespace moppe {
       float fog_scale;   // haze density per meter
       bool pico_mode;
       bool city_mode;
+      bool low_graphics;
 
       WorldParams ()
           : map_size (5000 * one_meter, 650 * one_meter, 5000 * one_meter),
             resolution (2049), water_level (50.0f), fog_scale (0.0004f),
-            pico_mode (false), city_mode (false) {}
+            pico_mode (false), city_mode (false), low_graphics (false) {}
 
       Vector3D spawn_position () const {
         if (pico_mode)

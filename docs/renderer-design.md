@@ -340,6 +340,13 @@ waiting, drawable acquisition, and Metal encoding/submission, making a missed
 frame deadline distinguishable from compositor or drawable back-pressure.
 `MOPPE_PROFILE_GPU_SIMPLE=1` reports only command-buffer GPU time without
 injecting the more intrusive per-encoder counter samples.
+
+The supported `--graphics-quality low` preset is a deliberately severe
+performance baseline: half-resolution 3D scene, no terrain shadows,
+vegetation/grass, ocean surface, decorative particles, motion blur, bloom,
+exposure probe, or lens flare. `--graphics-quality high` is the default full
+presentation. The low preset retains terrain, vehicles, physics, sky, rivers,
+and HUD so it remains playable while isolating optional rendering cost.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set
