@@ -110,6 +110,7 @@ namespace game {
     bool m_active;
     terrain::TerrainProgram m_program;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
+    std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;
     OverlayMode m_overlay;
     bool m_analysis_dirty;

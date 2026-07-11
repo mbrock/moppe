@@ -27,8 +27,8 @@ namespace game {
     constexpr int visible_stage_rows = 7;
     constexpr float readings_x = 548.0f;
     constexpr float readings_y = 14.0f;
-    constexpr float readings_width = 292.0f;
-    constexpr float readings_height = 228.0f;
+    constexpr float readings_width = 360.0f;
+    constexpr float readings_height = 360.0f;
 
     constexpr terrain::GeologicalLayer layers[] = {
       terrain::GeologicalLayer::Combined,
@@ -80,10 +80,11 @@ namespace game {
     UiRect view_rect ()
     { return { 330, 52, 112, 28 }; }
 
-    UiRect batch_preset_rect (int index) {
+    UiRect hydraulic_preset_rect (int group, int index) {
       const float gap = 4.0f;
       const float width = (right_width - 3 * gap) / 4.0f;
-      return { right_x + index * (width + gap), 350, width, 28 };
+      return { right_x + index * (width + gap),
+	       378.0f + group * 56.0f, width, 28 };
     }
 
     UiRect layer_rect (int index) {
@@ -141,6 +142,12 @@ namespace game {
       return text;
     }
 
+    std::string format_ledger (double value) {
+      std::ostringstream stream;
+      stream << std::scientific << std::setprecision (2) << value;
+      return stream.str ();
+    }
+
     std::string stage_name (const terrain::TerrainTransform& stage) {
       if (std::holds_alternative<terrain::NormalizeHeights> (stage))
 	return "NORMALIZE";
@@ -160,7 +167,8 @@ namespace game {
       if (const auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage))
 	return format_count (hydraulic->droplets) + " drops / "
-	  + format_count (hydraulic->batch_size) + " batch";
+	  + format_count (hydraulic->batch_size) + " batch / "
+	  + format_count (hydraulic->max_steps) + " steps";
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
       return std::to_string (thermal.iterations) + " passes @ "
 	+ format_float (thermal.talus, 4);
@@ -218,7 +226,7 @@ namespace game {
       if (std::holds_alternative<terrain::PowerHeights> (stage))
 	return 1;
       if (std::holds_alternative<terrain::HydraulicErosion> (stage))
-	return 2;
+	return 3;
       if (std::holds_alternative<terrain::ThermalErosion> (stage))
 	return 2;
       return 0;
@@ -235,7 +243,10 @@ namespace game {
 	if (row == 0)
 	  return { "DROPLETS", format_count (hydraulic->droplets),
 	    ParameterDomain::Natural };
-	return { "BATCH SIZE", format_count (hydraulic->batch_size),
+	if (row == 1)
+	  return { "BATCH SIZE", format_count (hydraulic->batch_size),
+	    ParameterDomain::Natural };
+	return { "MAX STEPS", format_count (hydraulic->max_steps),
 	  ParameterDomain::Natural };
       }
       const auto& thermal = std::get<terrain::ThermalErosion> (stage);
@@ -295,6 +306,20 @@ namespace game {
     m_sun_dir = sun_dir;
     m_program = terrain::make_geological_program
       (static_cast<std::uint32_t> (seed));
+    if (const char* erosion = std::getenv ("MOPPE_LAB_EROSION")) {
+      std::istringstream input (erosion);
+      std::string part;
+      int values[] = { 100000, 256, 512 };
+      for (int i = 0; i < 3 && std::getline (input, part, ','); ++i)
+	values[i] = std::stoi (part);
+      m_program.transforms.emplace_back (terrain::HydraulicErosion {
+	.droplets = values[0],
+	.batch_size = values[1],
+	.max_steps = values[2],
+	.minimum_water = 0.01f,
+	.sediment_at_termination = terrain::SedimentDisposition::Deposit
+      });
+    }
     m_selected_stage = -1;
     m_stage_scroll = 0;
     m_pointer_down = false;
@@ -360,6 +385,8 @@ namespace game {
     m_saved_heights.shrink_to_fit ();
     m_checkpoints.clear ();
     m_checkpoints.shrink_to_fit ();
+    m_reports.clear ();
+    m_reports.shrink_to_fit ();
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -451,12 +478,13 @@ namespace game {
       return;
     m_evaluator->begin (m_program);
     m_checkpoints.clear ();
+    m_reports.clear ();
     for (const terrain::TerrainTransform& transform : m_program.transforms) {
       // A checkpoint is the input to a stage.  The final output is already
       // resident in m_map, so copying it would only duplicate 16 MiB at the
       // default lab resolution on every recipe edit.
       m_checkpoints.push_back (m_evaluator->checkpoint ());
-      m_evaluator->apply (transform);
+      m_reports.push_back (m_evaluator->apply (transform));
     }
     invalidate_analysis ();
     refresh ();
@@ -483,11 +511,18 @@ namespace game {
 	static_cast<std::size_t> (first_stage + 1));
     if (m_checkpoints.size () > retained)
       m_checkpoints.resize (retained);
+    if (m_reports.size () > static_cast<std::size_t> (first_stage))
+      m_reports.resize (static_cast<std::size_t> (first_stage));
     for (std::size_t i = static_cast<std::size_t> (first_stage);
 	 i < m_program.transforms.size (); ++i) {
       if (i >= m_checkpoints.size ())
 	m_checkpoints.push_back (m_evaluator->checkpoint ());
-      m_evaluator->apply (m_program.transforms[i]);
+      const terrain::TerrainTransformReport report =
+	m_evaluator->apply (m_program.transforms[i]);
+      if (i >= m_reports.size ())
+	m_reports.push_back (report);
+      else
+	m_reports[i] = report;
     }
     invalidate_analysis ();
     refresh ();
@@ -869,8 +904,9 @@ namespace game {
       return unit (power->exponent, 0.1f, 4.0f);
     if (const auto* hydraulic =
 	std::get_if<terrain::HydraulicErosion> (&stage))
-      return row == 0 ? unit (hydraulic->droplets, 0.0f, 2000000.0f)
-	: unit (hydraulic->batch_size, 1.0f, 4096.0f);
+      return row == 0 ? unit (hydraulic->droplets, 0.0f, 5000000.0f)
+	: row == 1 ? unit (hydraulic->batch_size, 1.0f, 4096.0f)
+	: unit (hydraulic->max_steps, 1.0f, 2048.0f);
     if (const auto* thermal =
 	std::get_if<terrain::ThermalErosion> (&stage))
       return row == 0 ? unit (thermal->iterations, 0.0f, 20.0f)
@@ -961,12 +997,17 @@ namespace game {
 	std::get_if<terrain::HydraulicErosion> (&stage)) {
       if (row == 0) {
 	const int old = hydraulic->droplets;
-	hydraulic->droplets = std::lround (mix (0.0f, 2000000.0f));
+	hydraulic->droplets = std::lround (mix (0.0f, 5000000.0f));
 	return hydraulic->droplets != old;
       }
-      const int old = hydraulic->batch_size;
-      hydraulic->batch_size = std::lround (mix (1.0f, 4096.0f));
-      return hydraulic->batch_size != old;
+      if (row == 1) {
+	const int old = hydraulic->batch_size;
+	hydraulic->batch_size = std::lround (mix (1.0f, 4096.0f));
+	return hydraulic->batch_size != old;
+      }
+      const int old = hydraulic->max_steps;
+      hydraulic->max_steps = std::lround (mix (1.0f, 2048.0f));
+      return hydraulic->max_steps != old;
     }
     if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
       if (row == 0) {
@@ -1004,14 +1045,38 @@ namespace game {
       m_program.transforms[m_selected_stage];
     if (auto* hydraulic =
 	std::get_if<terrain::HydraulicErosion> (&stage)) {
-      int& value = row == 0 ? hydraulic->droplets : hydraulic->batch_size;
-      const int step = row == 0 ? 25000 : 64;
-      const int low = row == 0 ? 0 : 1;
-      const int high = row == 0 ? 2000000 : 4096;
-      const int changed = std::clamp (value + direction * step, low, high);
-      if (changed == value)
+      int* value = row == 0 ? &hydraulic->droplets
+	: row == 1 ? &hydraulic->batch_size : &hydraulic->max_steps;
+      int changed = *value;
+      if (row == 0) {
+	constexpr int choices[] = {
+	  0, 10000, 30000, 100000, 300000, 500000, 1000000,
+	  1500000, 2000000, 3000000, 5000000
+	};
+	if (direction > 0) {
+	  for (int choice : choices)
+	    if (choice > *value) { changed = choice; break; }
+	} else {
+	  for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
+	    if (*i < *value) { changed = *i; break; }
+	}
+      } else if (row == 1) {
+	changed = std::clamp (*value + direction * 64, 1, 4096);
+      } else {
+	constexpr int choices[] = {
+	  8, 16, 32, 64, 128, 256, 512, 1024, 2048
+	};
+	if (direction > 0) {
+	  for (int choice : choices)
+	    if (choice > *value) { changed = choice; break; }
+	} else {
+	  for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
+	    if (*i < *value) { changed = *i; break; }
+	}
+      }
+      if (changed == *value)
 	return false;
-      value = changed;
+      *value = changed;
       return true;
     }
     if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
@@ -1119,7 +1184,14 @@ namespace game {
       else if (i == 1)
 	append_stage (terrain::PowerHeights { 1.15f });
       else if (i == 2)
-	append_stage (terrain::HydraulicErosion { 100000 });
+	append_stage (terrain::HydraulicErosion {
+	  .droplets = 100000,
+	  .batch_size = 256,
+	  .max_steps = 512,
+	  .minimum_water = 0.01f,
+	  .sediment_at_termination =
+	    terrain::SedimentDisposition::Deposit
+	});
       else
 	append_stage (terrain::ThermalErosion { 2, 0.003f });
       return;
@@ -1160,13 +1232,23 @@ namespace game {
 	m_program.transforms[m_selected_stage];
       if (auto* hydraulic =
 	  std::get_if<terrain::HydraulicErosion> (&stage)) {
-	constexpr int presets[] = { 1, 64, 256, 1024 };
-	for (int i = 0; i < 4; ++i)
-	  if (batch_preset_rect (i).contains (x, y)) {
-	    hydraulic->batch_size = presets[i];
-	    rerun_program_from (m_selected_stage);
-	    return;
-	  }
+	constexpr int presets[3][4] = {
+	  { 100000, 300000, 1000000, 1500000 },
+	  { 64, 128, 256, 512 },
+	  { 1, 64, 256, 1024 }
+	};
+	for (int group = 0; group < 3; ++group)
+	  for (int i = 0; i < 4; ++i)
+	    if (hydraulic_preset_rect (group, i).contains (x, y)) {
+	      int& value = group == 0 ? hydraulic->droplets
+		: group == 1 ? hydraulic->max_steps
+		: hydraulic->batch_size;
+	      if (value != presets[group][i]) {
+		value = presets[group][i];
+		rerun_program_from (m_selected_stage);
+	      }
+	      return;
+	    }
       }
     }
   }
@@ -1514,32 +1596,43 @@ namespace game {
 	     hot (counter_plus_rect (bounds)), m_pointer_down);
 	}
       }
-      m_ui.label (dl, right_x + 8, 270,
+      m_ui.label (dl, right_x + 8, 294,
 		  stage_name (stage), true);
-      m_ui.label (dl, right_x + 8, 292,
-		  stage_detail (stage));
       m_ui.label (dl, right_x + 8, 316,
+		  stage_detail (stage));
+      m_ui.label (dl, right_x + 8, 338,
 		  semantics_detail (stage), true);
       if (std::holds_alternative<terrain::NormalizeHeights> (stage)) {
-	m_ui.label (dl, right_x + 8, 344,
+	m_ui.label (dl, right_x + 8, 366,
 		    "A whole-raster materialization barrier.");
-	m_ui.label (dl, right_x + 8, 364,
+	m_ui.label (dl, right_x + 8, 386,
 		    "It can be moved, copied, or deleted.");
       } else if (std::holds_alternative<terrain::HydraulicErosion> (stage)) {
-	m_ui.label (dl, right_x + 8, 342, "BATCH EXPERIMENT", true);
-	constexpr const char* labels[] = { "1", "64", "256", "1024" };
-	const int batch =
-	  std::get<terrain::HydraulicErosion> (stage).batch_size;
-	constexpr int presets[] = { 1, 64, 256, 1024 };
-	for (int i = 0; i < 4; ++i) {
-	  const UiRect bounds = batch_preset_rect (i);
-	  m_ui.button (dl, bounds, labels[i], hot (bounds),
-		       m_pointer_down, batch == presets[i]);
+	const auto& hydraulic = std::get<terrain::HydraulicErosion> (stage);
+	constexpr const char* headings[] = {
+	  "DROP COUNT", "MAXIMUM LIFETIME", "BATCH SIZE"
+	};
+	constexpr const char* labels[3][4] = {
+	  { "100K", "300K", "1M", "1.5M" },
+	  { "64", "128", "256", "512" },
+	  { "1", "64", "256", "1024" }
+	};
+	constexpr int presets[3][4] = {
+	  { 100000, 300000, 1000000, 1500000 },
+	  { 64, 128, 256, 512 },
+	  { 1, 64, 256, 1024 }
+	};
+	for (int group = 0; group < 3; ++group) {
+	  m_ui.label (dl, right_x + 8, 362 + group * 56,
+		      headings[group], true);
+	  const int value = group == 0 ? hydraulic.droplets
+	    : group == 1 ? hydraulic.max_steps : hydraulic.batch_size;
+	  for (int i = 0; i < 4; ++i) {
+	    const UiRect bounds = hydraulic_preset_rect (group, i);
+	    m_ui.button (dl, bounds, labels[group][i], hot (bounds),
+			 m_pointer_down, value == presets[group][i]);
+	  }
 	}
-	m_ui.label (dl, right_x + 8, 394,
-		    "A batch advances together, then commits.");
-	m_ui.label (dl, right_x + 8, 414,
-		    "Larger batches make erosion more simultaneous.");
       }
     }
 
@@ -1590,6 +1683,48 @@ namespace game {
     m_ui.label
       (dl, readings_x + 10, readings_y + 199,
        "Readings color the surface; geometry stays terrain.");
+    const terrain::HydraulicErosionReport* erosion_report = nullptr;
+    const terrain::HydraulicErosion* erosion_stage = nullptr;
+    if (m_selected_stage >= 0
+	&& m_selected_stage < static_cast<int> (m_reports.size ())) {
+      erosion_report = std::get_if<terrain::HydraulicErosionReport>
+	(&m_reports[static_cast<std::size_t> (m_selected_stage)]);
+      erosion_stage = std::get_if<terrain::HydraulicErosion>
+	(&m_program.transforms[static_cast<std::size_t> (m_selected_stage)]);
+    }
+    if (erosion_report) {
+      const auto& report = *erosion_report;
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 232,
+	 erosion_stage && erosion_stage->sediment_at_termination
+	   == terrain::SedimentDisposition::Deposit
+	 ? "SEDIMENT LEDGER — SETTLE AT DEATH"
+	 : "SEDIMENT LEDGER — DISCARD AT DEATH", true);
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 254,
+	 "ERODED " + format_ledger (report.eroded)
+	 + "  DEPOSITED " + format_ledger (report.deposited));
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 276,
+	 "LOST " + format_ledger (report.discarded_sediment)
+	 + "  (" + format_float
+	   (static_cast<float> (100.0 * report.discarded_fraction ()), 1)
+	 + "%)");
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 298,
+	 "MEAN LIFE " + format_float
+	   (static_cast<float> (report.mean_steps ()), 1)
+	 + "  FINAL WATER " + format_float
+	   (static_cast<float> (report.mean_final_water ()), 3));
+      m_ui.label
+	(dl, readings_x + 10, readings_y + 320,
+	 "CAP " + format_count
+	   (static_cast<int> (report.stopped_at_step_limit))
+	 + "  WATER " + format_count
+	   (static_cast<int> (report.stopped_at_water_cutoff))
+	 + "  FLAT " + format_count
+	   (static_cast<int> (report.stopped_flat)));
+    }
     m_ui.end (dl);
   }
 }
