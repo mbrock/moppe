@@ -1532,6 +1532,8 @@ namespace render {
       u.params4.w = m_terrain_overlay_params.opacity;
     }
     u.params5.x = m_terrain_params.topology_overlay ? 0.24f : 0.0f;
+    u.params5.y = m_have_water_levels ? 1.0f : 0.0f;
+    u.params5.z = m_have_moisture ? 1.0f : 0.0f;
 
     [enc setVertexBytes: &u length: sizeof (u)
 		atIndex: MOPPE_BUF_FRAME];
@@ -1568,6 +1570,11 @@ namespace render {
     if (m_terrain_overlay)
       [enc setFragmentTexture: m_terrain_overlay
 		      atIndex: MOPPE_TEX_TERRAIN_OVERLAY];
+    [enc setFragmentTexture: (m_have_moisture ? m_moisture : m_heights)
+		      atIndex: MOPPE_TEX_TERRAIN_MOISTURE];
+    [enc setFragmentTexture:
+      (m_have_water_levels ? m_water_levels : m_heights)
+		      atIndex: MOPPE_TEX_TERRAIN_WATER];
 
     for (int i = 0; i < count; ++i) {
       const int lod = std::max

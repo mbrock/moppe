@@ -452,6 +452,21 @@ terrain_layer_triplanar (texture2d<float> tex, sampler smp,
   return x * w.x + y * w.y + z * w.z;
 }
 
+static inline float4
+terrain_field_sample (float2 uv, texture2d<float, access::read> field)
+{
+  const uint2 limit (field.get_width () - 1, field.get_height () - 1);
+  const float2 grid = clamp (uv, 0.0, 1.0) * float2 (limit);
+  const uint2 p00 = uint2 (floor (grid));
+  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const float2 f = fract (grid);
+  const float4 a = mix (field.read (p00),
+                        field.read (uint2 (p11.x, p00.y)), f.x);
+  const float4 b = mix (field.read (uint2 (p00.x, p11.y)),
+                        field.read (p11), f.x);
+  return mix (a, b, f.y);
+}
+
 // Reconstruct a small-scale world-space normal from the screen derivatives of
 // the composed material signal. This lets the existing color assets carry
 // useful grain immediately; authored normal maps can later replace the height
@@ -538,6 +553,10 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 		    [[texture(MOPPE_TEX_PREVIOUS_SHADOW)]],
 		  texture2d<float, access::read> terrain_overlay
 		    [[texture(MOPPE_TEX_TERRAIN_OVERLAY)]],
+		  texture2d<float, access::read> terrain_moisture
+		    [[texture(MOPPE_TEX_TERRAIN_MOISTURE)]],
+		  texture2d<float, access::read> terrain_water
+		    [[texture(MOPPE_TEX_TERRAIN_WATER)]],
 		  sampler smp [[sampler(0)]])
 {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
@@ -555,6 +574,18 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   float3 n = normalize (in.normal);
   const float height = in.height;
   const float sea_level = u.params1.y;
+
+  // Hydrology is material information as well as vegetation information.
+  // Standing water makes its bed fully wet; the moisture field feathers that
+  // treatment into banks, drainage lines, and damp low ground.
+  const float moisture = u.params5.z > 0.5
+    ? saturate (terrain_field_sample (in.field_uv, terrain_moisture).r)
+    : 0.0;
+  const float water_level = u.params5.y > 0.5
+    ? terrain_field_sample (in.field_uv, terrain_water).r : -1.0;
+  const float water_depth = max ((water_level - height) * u.params1.x, 0.0);
+  const float submerged = smoothstep (0.015, 0.22, water_depth);
+  const float damp = max (submerged, smoothstep (0.22, 0.82, moisture));
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -600,11 +631,11 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 				 float3 (0.299, 0.587, 0.114));
   const float3 grass_palette = grass_value
     * moppe_srgb (float3 (0.68, 1.00, 0.52));
-  grass_c = mix (grass_c, grass_palette, 0.35);
+  grass_c = mix (grass_c, grass_palette, 0.34);
   // The diffuse source is calibrated without baked illumination; compensate
   // for the legacy terrain energy scale before applying live lighting.
-  grass_c *= 1.45;
-  grass_c *= 0.65 + 0.95 * coarse;
+  grass_c *= 1.36;
+  grass_c *= 0.88 + 0.55 * coarse;
   grass_c *= mix (float3 (0.84, 0.95, 0.76),
 		  float3 (1.10, 1.06, 0.92), macro);
 
@@ -612,6 +643,8 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   grass_c *= mix (float3 (1.04, 1.00, 0.90),
 		  float3 (0.96, 1.02, 0.92),
 		  smoothstep (0.08, 0.30, height));
+  grass_c *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70),
+		  damp * 0.55);
 
   // Dense full-geometry grass occludes the soil and lower stalks beneath it.
   // Mirror the CPU clump field so the ground darkens where blades grow, then
@@ -630,9 +663,9 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   scree_c *= 0.7 + 0.6 * dirt.sample (smp, tc * 0.061).r;
   // Rein in the linear-space saturation of the pink gravel (ACES
   // pushes warm midtones hard).
+  const float scree_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
   scree_c = mix (scree_c,
-		 float3 (dot (scree_c, float3 (0.299, 0.587, 0.114))),
-		 0.18);
+		 scree_value * float3 (1.00, 0.96, 0.86), 0.72);
 
   // The stones texture is olive; pull it toward a dry granite gray
   // and let the macro variation streak it.
@@ -640,10 +673,13 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
     (rock, smp, in.world_pos, n, u.params0.w * 1.7, far_blend);
   const float cliff_value = dot (cliff_c,
 				 float3 (0.299, 0.587, 0.114));
-  cliff_c = mix (cliff_c,
-		 cliff_value * moppe_srgb (float3 (1.01, 0.97, 0.94)),
-		 0.65);
-  cliff_c *= 0.75 + 0.7 * coarse;
+  const float strata = 0.5 + 0.5 * sin (in.world_pos.y * 0.075
+    + 3.5 * moppe_value_noise (in.world_pos.xz * 0.006));
+  const float3 strata_tint = mix (float3 (0.72, 0.77, 0.80),
+				  float3 (0.92, 0.83, 0.68),
+				  0.22 * strata);
+  cliff_c = mix (cliff_c, cliff_value * strata_tint, 0.92);
+  cliff_c *= 0.82 + 0.42 * coarse + 0.10 * strata;
 
   float3 snow_c = terrain_layer (snow, smp, tc, far_blend);
   snow_c *= 0.75 + 0.5 * snow.sample (smp, tc * 0.053
@@ -656,8 +692,16 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   texel = mix (texel, snow_c, snow_coef);
   // Gentler warm ratio than the display-era tint: multiplicative
   // hue shifts run stronger in linear light.
-  const float3 sand_c = scree_c * float3 (1.28, 1.20, 0.98);
+  const float sand_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
+  const float3 sand_c = mix
+    (scree_c, sand_value * float3 (1.12, 1.03, 0.82), 0.82);
   texel = mix (texel, sand_c, beach_coef);
+  // Wet soil loses diffuse energy and saturation. Underwater ground is
+  // darkest; moisture alone is a quieter bank/lowland treatment.
+  const float wetness = max (0.62 * damp, submerged);
+  const float wet_luma = dot (texel, float3 (0.299, 0.587, 0.114));
+  texel = mix (texel, mix (texel, float3 (wet_luma), 0.20)
+               * float3 (0.52, 0.58, 0.60), wetness * 0.58);
   if (u.params4.x > 0.5) {
     const uint2 overlay_limit
       (terrain_overlay.get_width () - 1, terrain_overlay.get_height () - 1);
@@ -678,6 +722,17 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
   n = terrain_detail_normal
     (in.world_pos, n, material_signal, detail_strength);
+  // Close wet flats pick up rounded pebble-scale relief. This is deliberately
+  // subtle: it breaks the perfectly smooth underwater bed without pretending
+  // to alter collision geometry.
+  const float pebble = 0.68 * moppe_value_noise
+    (in.world_pos.xz * 1.55 + float2 (7.1, 19.3))
+    + 0.32 * moppe_value_noise
+      (in.world_pos.xz * 4.2 + float2 (31.7, 3.9));
+  const float pebble_strength = submerged * smoothstep (0.45, 0.92, n.y)
+    * (1.0 - smoothstep (18.0, 120.0, dist)) * 0.28;
+  n = terrain_detail_normal
+    (in.world_pos, n, pebble, pebble_strength);
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor
@@ -705,6 +760,12 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // Snowfields retain a broader crystalline sparkle into HDR headroom.
   lit += snow_coef * u.sun_specular.rgb * shadow
     * pow (max (dot (n, h), 0.0), 32.0) * 0.5;
+  // Damp ground has a broad, low-energy sheen; shallow submerged stones can
+  // catch a tighter glint through the translucent water surface.
+  const float wet_spec = wetness * pow (max (dot (n, h), 0.0),
+					mix (18.0, 52.0, submerged));
+  lit += u.sun_specular.rgb * shadow * wet_spec
+    * mix (0.035, 0.11, submerged);
 
   float3 color = texel * lit;
   if (u.params5.x > 0.0) {

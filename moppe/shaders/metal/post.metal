@@ -162,12 +162,19 @@ present_fragment (QuadVaryings in [[stage_in]],
   color = moppe_aces (color);
   color = pow (color, 1.0 / 2.2);
 
-  // Colorist grade, ASC-CDL style in the teal-orange direction:
-  // warm slope, faintly cool lift, a whisper of per-channel power.
-  color = color * float3 (1.05, 1.00, 0.94)
-        + float3 (-0.006, 0.000, 0.012);
+  // Warm print-film base with cyan-blue shadow density. Keep the treatment
+  // restrained: mustard grass, coral earth, turquoise water, and creamy
+  // highlights should feel designed without flattening the time of day.
+  color = color * float3 (1.045, 1.005, 0.955)
+        + float3 (-0.004, 0.002, 0.012);
   color = pow (max (color, float3 (0.0)),
 	       float3 (1.05, 1.02, 1.00));
+
+  const float grade_luma = dot (color, float3 (0.299, 0.587, 0.114));
+  const float shadow_tone = 1.0 - smoothstep (0.10, 0.48, grade_luma);
+  const float highlight_tone = smoothstep (0.58, 0.96, grade_luma);
+  color += shadow_tone * float3 (-0.004, 0.004, 0.010);
+  color += highlight_tone * float3 (0.010, 0.006, -0.004);
 
   // Vibrance: muted pixels gain saturation faster than rich ones,
   // so grass and sky deepen while skin-tone-ish dust stays natural.
@@ -175,7 +182,7 @@ present_fragment (QuadVaryings in [[stage_in]],
   const float maxc = max (color.r, max (color.g, color.b));
   const float minc = min (color.r, min (color.g, color.b));
   color = mix (float3 (luma), color,
-	       1.0 + 0.14 * (1.0 - (maxc - minc)));
+	       1.0 + 0.10 * (1.0 - (maxc - minc)));
 
   // Animated film grain, stronger in the shadows.  Hashed from the
   // pixel coordinate (bounded first: sin() loses precision on big

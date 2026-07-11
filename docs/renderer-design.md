@@ -264,6 +264,13 @@ light matrix, shadow strength) instead of gl_* built-ins. Lighting moves to
 world space (the eye-space detour existed only because fixed-function GL
 transformed lights by the modelview).
 
+Terrain materials also consume the hydrology's standing-water and moisture
+rasters. Submerged beds and damp banks lose diffuse energy and gain a restrained
+wet sheen; close shallow beds receive procedural pebble-scale bump detail.
+Grass responds more quietly to moisture, while cliff material uses triplanar
+projection, a slate/taupe palette, and world-height strata to avoid stretched
+red faces. These are shading effects only and do not alter collision geometry.
+
 The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
 and runs in a compute kernel.  Terrain Lab currently reads the result back to
 the authoritative CPU heightmap before normalization, erosion, and texture
