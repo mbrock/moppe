@@ -186,26 +186,19 @@ match_screen_refresh_rate (MoppeView* view) {
 static void
 match_screen_render_size (MoppeView* view) {
   const NSSize points = view.bounds.size;
-  // Do not derive this from convertSizeToBacking:.  MTKView can fold its
+  // The drawable is the final presentation surface, so it must stay at the
+  // screen's native backing resolution.  The Metal renderer applies the
+  // optional scene render scale only to its expensive offscreen 3D targets;
+  // keeping the drawable native lets the HUD remain Retina-sharp.
+  //
+  // Do not derive this from convertSizeToBacking:.  MTKView can fold a
   // manually overridden drawableSize back into that conversion after a
-  // Space/focus transition, so applying MOPPE_RENDERSCALE again makes the
-  // target shrink geometrically on every Alt-Tab.  The window's physical
-  // backing scale is the stable source of truth.
+  // Space/focus transition.  The window's backing scale is stable.
   const CGFloat backing = view.window
     ? view.window.backingScaleFactor : NSScreen.mainScreen.backingScaleFactor;
-  const NSSize native = NSMakeSize
-    (points.width * backing, points.height * backing);
-  float scale = native.width * native.height > 12000000.0
-    ? 0.5f : 1.0f;
-
-  if (const char* requested = ::getenv ("MOPPE_RENDERSCALE")) {
-    scale = (float) ::atof (requested);
-    scale = std::max (0.25f, std::min (1.0f, scale));
-  }
-
   const CGSize wanted = CGSizeMake
-    (std::round (native.width * scale),
-     std::round (native.height * scale));
+    (std::round (points.width * backing),
+     std::round (points.height * backing));
   view.autoResizeDrawable = NO;
   if (view.drawableSize.width != wanted.width ||
       view.drawableSize.height != wanted.height)
