@@ -70,7 +70,7 @@ namespace moppe::terrain {
     std::queue<std::uint32_t> sea_frontier;
     std::vector<std::uint8_t> submerged_seen (count, 0);
     std::vector<std::uint32_t> component;
-    std::vector<std::uint32_t> ocean;
+    std::vector<std::uint32_t> global_ocean;
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (submerged_seen[origin]
 	  || terrain.at (origin % width, origin / width) > sea_level)
@@ -102,15 +102,15 @@ namespace moppe::terrain {
 	  sea_frontier.push (next);
 	}
       }
-      if (component.size () > ocean.size ())
-	ocean = component;
+      if (component.size () > global_ocean.size ())
+	global_ocean = component;
     }
 
-    if (!ocean.empty ()) {
-      std::vector<std::uint8_t> ocean_cell (count, 0);
-      for (const std::uint32_t cell : ocean)
+    std::vector<std::uint8_t> ocean_cell (count, 0);
+    if (!global_ocean.empty ()) {
+      for (const std::uint32_t cell : global_ocean)
 	ocean_cell[cell] = 1;
-      const std::uint32_t root = ocean.front ();
+      const std::uint32_t root = global_ocean.front ();
       water[root] = sea_level;
       receiver[root] = root;
       visited[root] = 1;
@@ -143,7 +143,7 @@ namespace moppe::terrain {
 	}
       }
     }
-    const bool has_ocean = !ocean.empty ();
+    const bool has_ocean = !global_ocean.empty ();
 
     // An all-land torus has no geometric boundary. Root its minimax water
     // surface at the deterministic global minimum so the analysis remains
@@ -209,6 +209,7 @@ namespace moppe::terrain {
       .has_ocean = has_ocean,
       .water_level = ScalarRaster (domain, std::move (water)),
       .water_depth = ScalarRaster (domain, std::move (depth)),
+      .ocean = std::move (ocean_cell),
       .spill_receiver = std::move (receiver),
       .outlets = std::move (outlets)
     };

@@ -82,6 +82,23 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   MOPPE_CHECK (flow.downstream_cell == wet.receiver[lake.spill_cell]);
   MOPPE_CHECK (flow.outflow_area_m2 > flow.inflow_area_m2);
 
+  const RiverNetwork rivers =
+    extract_river_network (flood, census, wet, 1.0f);
+  bool enters_lake = false;
+  bool leaves_lake = false;
+  for (const RiverReach& reach : rivers.reaches) {
+    enters_lake |= reach.downstream_body == lake.id;
+    leaves_lake |= reach.upstream_body == lake.id;
+    for (const std::uint32_t member : reach.cells) {
+      MOPPE_CHECK (census.body[member] == LakeCensus::dry);
+      MOPPE_CHECK (!flood.ocean[member]);
+    }
+  }
+  MOPPE_CHECK (enters_lake);
+  MOPPE_CHECK (leaves_lake);
+  MOPPE_CHECK (rivers.reach_by_cell[lake.outlet_cell]
+	       == RiverReach::no_id);
+
   std::uint32_t cell = 12;
   std::size_t steps = 0;
   while (wet.receiver[cell] != cell && steps < heights.size ()) {
@@ -132,12 +149,18 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     analyze_water_network (flood_a, census_a, graph_a);
   const WaterNetwork network_b =
     analyze_water_network (flood_b, census_b, graph_b);
+  const RiverNetwork rivers_a =
+    extract_river_network (flood_a, census_a, graph_a, 1.0f);
+  const RiverNetwork rivers_b =
+    extract_river_network (flood_b, census_b, graph_b, 1.0f);
 
   MOPPE_CHECK (flood_a.spill_receiver == flood_b.spill_receiver);
   MOPPE_CHECK (graph_a.receiver == graph_b.receiver);
   MOPPE_CHECK (graph_a.basin == graph_b.basin);
   MOPPE_CHECK (graph_a.sinks == graph_b.sinks);
   MOPPE_CHECK (network_a.bodies.size () == network_b.bodies.size ());
+  MOPPE_CHECK (rivers_a.reach_by_cell == rivers_b.reach_by_cell);
+  MOPPE_CHECK (rivers_a.reaches.size () == rivers_b.reaches.size ());
   for (std::size_t i = 0; i < graph_a.contributing_area.values ().size ();
        ++i)
     MOPPE_CHECK_NEAR (graph_a.contributing_area.values ()[i],
@@ -151,5 +174,16 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     MOPPE_CHECK (a.downstream_cell == b.downstream_cell);
     MOPPE_CHECK_NEAR (a.inflow_area_m2, b.inflow_area_m2, 0.0f);
     MOPPE_CHECK_NEAR (a.outflow_area_m2, b.outflow_area_m2, 0.0f);
+  }
+  for (std::size_t i = 0; i < rivers_a.reaches.size (); ++i) {
+    const RiverReach& a = rivers_a.reaches[i];
+    const RiverReach& b = rivers_b.reaches[i];
+    MOPPE_CHECK (a.cells == b.cells);
+    MOPPE_CHECK (a.upstream_body == b.upstream_body);
+    MOPPE_CHECK (a.downstream_body == b.downstream_body);
+    MOPPE_CHECK (a.downstream_ocean == b.downstream_ocean);
+    MOPPE_CHECK (a.downstream_reach == b.downstream_reach);
+    MOPPE_CHECK_NEAR (a.downstream_area_m2, b.downstream_area_m2, 0.0f);
+    MOPPE_CHECK_NEAR (a.maximum_slope, b.maximum_slope, 0.0f);
   }
 }

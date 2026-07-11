@@ -551,6 +551,7 @@ namespace game {
   {
     m_drainage.reset ();
     m_water_network.reset ();
+    m_rivers.reset ();
     m_flood.reset ();
     m_lakes.reset ();
     m_inspected_cell.reset ();
@@ -611,6 +612,10 @@ namespace game {
 	(m_map->terrain_view (), standing_water (), *m_lakes);
       m_water_network = terrain::analyze_water_network
 	(*m_flood, *m_lakes, *m_drainage);
+      const float cell_area = m_drainage->source_grid.spacing_x
+	* m_drainage->source_grid.spacing_y;
+      m_rivers = terrain::extract_river_network
+	(*m_flood, *m_lakes, *m_drainage, 64.0f * cell_area);
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::ostringstream status;
@@ -619,7 +624,7 @@ namespace game {
 	inlets += flow.inlets.size ();
       status << m_drainage->sinks.size () << " outlets, "
 	     << format_count (static_cast<int> (inlets))
-	     << " body entry edges | "
+	     << " entries, " << m_rivers->reaches.size () << " reaches | "
 	     << std::fixed << std::setprecision (0) << milliseconds
 	     << " ms analysis";
       m_analysis_status = status.str ();
@@ -804,11 +809,21 @@ namespace game {
 	const float cell_area = graph.source_grid.spacing_x
 	  * graph.source_grid.spacing_y;
 	float maximum = 0.0f;
-	for (std::size_t i = 0; i < unique.size (); ++i) {
-	  unique[i] = std::log2
-	    (std::max (1.0f, graph.contributing_area.values ()[i]
-			       / cell_area));
-	  maximum = std::max (maximum, unique[i]);
+	if (m_overlay == OverlayMode::Flow) {
+	  for (std::size_t i = 0; i < unique.size (); ++i) {
+	    unique[i] = std::log2
+	      (std::max (1.0f, graph.contributing_area.values ()[i]
+				 / cell_area));
+	    maximum = std::max (maximum, unique[i]);
+	  }
+	} else {
+	  for (const terrain::RiverReach& reach : m_rivers->reaches)
+	    for (const std::uint32_t cell : reach.cells) {
+	      unique[cell] = std::log2
+		(std::max (1.0f, graph.contributing_area.values ()[cell]
+				 / cell_area));
+	      maximum = std::max (maximum, unique[cell]);
+	    }
 	}
 	params.minimum = m_overlay == OverlayMode::Streams ? 6.0f : 0.0f;
 	params.maximum = maximum;
@@ -816,7 +831,7 @@ namespace game {
 	  ? render::TerrainOverlayRamp::Streams
 	  : render::TerrainOverlayRamp::Flow;
 	m_overlay_status = (m_overlay == OverlayMode::Streams
-	  ? "STREAMS — drainage area >= 64 cells | "
+	  ? "STREAMS — dry reaches >= 64 cells | "
 	  : "FLOW — logarithmic contributing area | ") + m_analysis_status;
       } else if (m_overlay == OverlayMode::Basins) {
 	for (std::size_t i = 0; i < unique.size (); ++i)
@@ -897,6 +912,21 @@ namespace game {
 		<< std::setprecision (0)
 		<< (body.ocean_connected ? flow.inflow_area_m2
 		    : flow.outflow_area_m2) << " m2";
+	} else if (m_rivers->reach_by_cell[*m_inspected_cell]
+		   != terrain::RiverReach::no_id) {
+	  const terrain::RiverReach& reach = m_rivers->reaches
+	    [m_rivers->reach_by_cell[*m_inspected_cell]];
+	  trace << "TRACE — REACH #" << reach.id << " | "
+		<< reach.cells.size () << " cells | area " << std::fixed
+		<< std::setprecision (0) << reach.downstream_area_m2
+		<< " m2 | slope " << std::setprecision (3)
+		<< reach.maximum_slope;
+	  if (reach.downstream_ocean)
+	    trace << " | to ocean";
+	  else if (reach.downstream_body != terrain::RiverReach::no_id)
+	    trace << " | to body #" << reach.downstream_body;
+	  else if (reach.downstream_reach != terrain::RiverReach::no_id)
+	    trace << " | to reach #" << reach.downstream_reach;
 	} else {
 	  trace << "TRACE — " << steps << " to outlet; " << catchment_cells
 		<< "-cell basin | area " << std::fixed

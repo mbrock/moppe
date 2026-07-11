@@ -167,6 +167,15 @@ sample the local lake elevation, dry fragments are discarded, and wave
 amplitude fades toward each shore. This changes presentation and spawn-site
 selection without yet changing vehicle or sediment physics.
 
+A `RiverNetwork` is the first consumer of the body-aware graph. Given a
+physical contributing-area threshold, it selects dry flowing cells outside
+the global ocean and groups them into directed reaches. Reaches split at
+sources and confluences, terminate at water-body inlets, restart at proven
+spills, and link to their downstream reach or ocean. Each retains its ordered
+cells, upstream and downstream catchment area, and maximum physical slope.
+The arbitrary receiver tree used to carry bookkeeping across a flat lake is
+therefore absent from the visible stream reading.
+
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
 
