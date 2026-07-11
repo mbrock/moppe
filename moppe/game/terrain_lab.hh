@@ -141,6 +141,7 @@ namespace game {
     bool m_map_pristine;
     terrain::TerrainProgram m_program;
     map::HydraulicDropletTrace m_droplet_trace;
+    std::optional<Vector3D> m_droplet_target;
     render::DrawList m_droplet_draw;
     float m_droplet_progress;
     bool m_droplet_armed;

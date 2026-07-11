@@ -492,6 +492,7 @@ namespace game {
     m_lakes.reset ();
     m_inspected_cell.reset ();
     m_droplet_trace = { };
+    m_droplet_target.reset ();
     m_droplet_progress = 0.0f;
     m_droplet_armed = false;
     m_droplet_follow = false;
@@ -558,6 +559,7 @@ namespace game {
     m_reports.shrink_to_fit ();
     m_river_surface.clear ();
     m_droplet_trace = { };
+    m_droplet_target.reset ();
     m_droplet_draw.clear ();
     m_droplet_armed = false;
     m_droplet_follow = false;
@@ -887,14 +889,9 @@ namespace game {
   TerrainLab::render_droplet (render::Renderer& renderer,
 			      const Vector3D& camera)
   {
-    if (m_droplet_trace.points.size () < 2)
+    if (!m_map)
       return;
-    const std::size_t completed = std::min
-      (m_droplet_trace.points.size () - 1,
-       static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)));
-    const std::size_t visible = std::min
-      (completed + 1, m_droplet_trace.points.size () - 1);
-    const Vector3D bead = droplet_world_position (m_droplet_progress);
+    const Vector3D map_scale = m_map->scale ();
 
     m_droplet_draw.clear ();
     render::DrawState state;
@@ -905,46 +902,99 @@ namespace game {
     m_droplet_draw.state (state);
     m_droplet_draw.lit (false);
     m_droplet_draw.fogged (true);
-    m_droplet_draw.begin (render::Prim::Quads);
-    for (std::size_t i = 1; i <= visible; ++i) {
-      const Vector3D a = droplet_world_position (i - 1);
-      const Vector3D b = i == visible ? bead : droplet_world_position (i);
-      const Vector3D segment = b - a;
-      if (segment.length2 () < 1e-6f)
-	continue;
-      if (segment.length () > 8.0f * std::max
-	  (m_map->scale ().x, m_map->scale ().z))
-	continue;
-      const Vector3D middle = (a + b) * 0.5f;
-      Vector3D side = segment.cross (camera - middle);
-      if (side.length2 () < 1e-6f)
-	side = segment.cross (Vector3D (0, 1, 0));
-      side.normalize ();
-      const float activity = std::min
-	(1.0f, 1800.0f * (m_droplet_trace.points[i].eroded
-			    + m_droplet_trace.points[i].deposited));
-      const float width = 1.5f + 3.5f * activity;
-      side *= width;
-      if (m_droplet_trace.points[i].deposited
-	  > m_droplet_trace.points[i].eroded)
-	m_droplet_draw.color (0.08f, 0.52f, 1.0f, 0.62f);
-      else
-	m_droplet_draw.color (1.0f, 0.28f, 0.035f, 0.68f);
-      m_droplet_draw.vertex (a - side);
-      m_droplet_draw.vertex (a + side);
-      m_droplet_draw.vertex (b + side);
-      m_droplet_draw.vertex (b - side);
-    }
-    m_droplet_draw.end ();
 
-    m_droplet_draw.push ();
-    m_droplet_draw.translate (bead);
-    m_droplet_draw.color (0.30f, 0.90f, 1.0f, 0.90f);
-    m_droplet_draw.sphere (7.0f, 10, 6);
-    m_droplet_draw.color (0.75f, 0.97f, 1.0f, 0.36f);
-    m_droplet_draw.sphere (11.0f, 10, 6);
-    m_droplet_draw.pop ();
-    renderer.draw_list (m_droplet_draw);
+    if (m_droplet_armed && m_droplet_target) {
+      const float radius = std::clamp
+	(1.4f * std::max (map_scale.x, map_scale.z), 18.0f, 55.0f);
+      const auto ring = [&] (float width, float alpha) {
+	m_droplet_draw.color (0.25f, 0.94f, 1.0f, alpha);
+	m_droplet_draw.begin (render::Prim::Quads);
+	for (int i = 0; i < 40; ++i) {
+	  const float a0 = PI2 * static_cast<float> (i) / 40.0f;
+	  const float a1 = PI2 * static_cast<float> (i + 1) / 40.0f;
+	  const auto point = [&] (float angle, float r) {
+	    const float x = m_droplet_target->x + std::cos (angle) * r;
+	    const float z = m_droplet_target->z + std::sin (angle) * r;
+	    return Vector3D
+	      (x, m_map->interpolated_height (x, z) + 3.0f, z);
+	  };
+	  m_droplet_draw.vertex (point (a0, radius - width));
+	  m_droplet_draw.vertex (point (a0, radius + width));
+	  m_droplet_draw.vertex (point (a1, radius + width));
+	  m_droplet_draw.vertex (point (a1, radius - width));
+	}
+	m_droplet_draw.end ();
+      };
+      ring (7.0f, 0.10f);
+      ring (2.0f, 0.82f);
+    }
+
+    if (m_droplet_trace.points.size () >= 2) {
+      const std::size_t completed = std::min
+	(m_droplet_trace.points.size () - 1,
+	 static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)));
+      const std::size_t visible = std::min
+	(completed + 1, m_droplet_trace.points.size () - 1);
+      const Vector3D bead = droplet_world_position (m_droplet_progress);
+
+      const auto ribbon = [&] (float extra_width, float alpha,
+			       const Vector3D& color) {
+	m_droplet_draw.begin (render::Prim::Quads);
+	for (std::size_t i = 1; i <= visible; ++i) {
+	  const Vector3D a = droplet_world_position (i - 1);
+	  const Vector3D b = i == visible
+	    ? bead : droplet_world_position (i);
+	  const Vector3D segment = b - a;
+	  if (segment.length2 () < 1e-6f
+	      || segment.length () > 8.0f * std::max
+		(map_scale.x, map_scale.z))
+	    continue;
+	  const Vector3D middle = (a + b) * 0.5f;
+	  Vector3D side = segment.cross (camera - middle);
+	  if (side.length2 () < 1e-6f)
+	    side = segment.cross (Vector3D (0, 1, 0));
+	  side.normalize ();
+	  const float activity = std::min
+	    (1.0f, 1800.0f * (m_droplet_trace.points[i].eroded
+			      + m_droplet_trace.points[i].deposited));
+	  side *= 1.25f + 2.2f * activity + extra_width;
+	  m_droplet_draw.color (color, alpha);
+	  m_droplet_draw.vertex (a - side);
+	  m_droplet_draw.vertex (a + side);
+	  m_droplet_draw.vertex (b + side);
+	  m_droplet_draw.vertex (b - side);
+	}
+	m_droplet_draw.end ();
+      };
+      ribbon (7.0f, 0.08f, Vector3D (0.05f, 0.52f, 1.0f));
+      ribbon (2.5f, 0.28f, Vector3D (0.02f, 0.72f, 1.0f));
+      ribbon (0.0f, 0.78f, Vector3D (0.42f, 0.94f, 1.0f));
+
+      Vector3D direction = bead - droplet_world_position
+	(std::max (0.0f, m_droplet_progress - 0.65f));
+      if (direction.length2 () < 1e-6f)
+	direction = Vector3D (0, -1, 0);
+      direction.normalize ();
+      const Vector3D up (0, 1, 0);
+      Vector3D axis = up.cross (direction);
+      const float angle = std::acos
+	(std::clamp (up.dot (direction), -1.0f, 1.0f));
+      m_droplet_draw.push ();
+      m_droplet_draw.translate (bead);
+      if (axis.length2 () > 1e-6f)
+	m_droplet_draw.rotate (angle, axis.normalized ());
+      m_droplet_draw.color (0.18f, 0.82f, 1.0f, 0.92f);
+      m_droplet_draw.scale (5.5f, 10.0f, 5.5f);
+      m_droplet_draw.sphere (1.0f, 14, 9);
+      m_droplet_draw.pop ();
+      m_droplet_draw.push ();
+      m_droplet_draw.translate (bead + Vector3D (-2.0f, 2.0f, 0));
+      m_droplet_draw.color (0.88f, 1.0f, 1.0f, 0.50f);
+      m_droplet_draw.sphere (2.2f, 8, 6);
+      m_droplet_draw.pop ();
+    }
+    if (!m_droplet_draw.empty ())
+      renderer.draw_list (m_droplet_draw);
   }
 
   std::optional<Vector3D>
@@ -1006,8 +1056,11 @@ namespace game {
       (hit->x / scale.x, hit->z / scale.z, 512, 0.01f,
        terrain::SedimentDisposition::Deposit,
        terrain::CarvingRule::PathMonotone);
-    m_droplet_progress = 0.0f;
+    // Hold briefly on the release point so a click on a summit visibly
+    // begins there before the erosion step starts running downhill.
+    m_droplet_progress = -8.0f;
     m_droplet_armed = false;
+    m_droplet_target.reset ();
     m_droplet_follow = m_droplet_trace.points.size () > 1;
     m_map_pristine = false;
     invalidate_analysis ();
@@ -1908,10 +1961,12 @@ namespace game {
 	if (i == 3) {
 	  m_droplet_armed = true;
 	  m_droplet_follow = false;
+	  m_droplet_target.reset ();
 	  set_overlay (OverlayMode::None);
 	  m_overlay_status = "DROP — click land to release";
 	} else {
 	  m_droplet_armed = false;
+	  m_droplet_target.reset ();
 	  set_overlay (modes[i]);
 	}
 	return;
@@ -2112,17 +2167,17 @@ namespace game {
     if (m_droplet_trace.points.size () > 1) {
       const float last = static_cast<float> (m_droplet_trace.points.size () - 1);
       m_droplet_progress = std::min
-	(last, m_droplet_progress + dt * 22.0f);
+	(last, m_droplet_progress + dt * 16.0f);
       if (m_droplet_follow) {
 	const Vector3D desired = droplet_world_position (m_droplet_progress);
-	// The old eased target trailed fast downhill runs by much of the screen.
-	// Interpolation already makes the bead move smoothly, so keep the orbit
-	// centered on its actual position.
-	m_target = desired;
+	// Begin from the view in which the drop was placed, then ease toward its
+	// route.  Interpolated trace positions keep this slow chase fluid.
+	const float follow_response = 1.0f - std::exp (-dt * 2.2f);
+	m_target += (desired - m_target) * follow_response;
 	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 850.0f);
 	const float clear_pitch = visible_droplet_pitch (desired);
 	if (clear_pitch > m_pitch)
-	  m_pitch = clear_pitch;
+	  m_pitch += (clear_pitch - m_pitch) * follow_response;
 	if (m_droplet_progress >= last)
 	  m_droplet_follow = false;
       }
@@ -2141,7 +2196,8 @@ namespace game {
     m_scroll_zoom_target *= std::exp (zoom * dt * 1.1f);
     m_scroll_zoom_target = std::clamp
       (m_scroll_zoom_target, 500.0f, 16000.0f);
-    const float zoom_response = 1.0f - std::exp (-dt * 14.0f);
+    const float zoom_speed = m_droplet_follow ? 2.2f : 14.0f;
+    const float zoom_response = 1.0f - std::exp (-dt * zoom_speed);
     m_distance += (m_scroll_zoom_target - m_distance) * zoom_response;
   }
 
@@ -2205,6 +2261,12 @@ namespace game {
       return;
     m_pointer_x = x;
     m_pointer_y = y;
+    if (m_droplet_armed) {
+      const bool over_ui = m_expert_ui ? ui_contains (x, y)
+	: friendly_ui_contains (x, y, m_ui_width, m_ui_height);
+      m_droplet_target = over_ui ? std::nullopt
+	: terrain_point_at_screen (x, y);
+    }
     if (m_friendly_drag) {
       const UiRect bounds = friendly_slider_rect (m_friendly_drag_control);
       const float rail_x = bounds.x + 9.0f;
