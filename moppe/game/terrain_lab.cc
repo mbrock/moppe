@@ -94,7 +94,7 @@ namespace game {
     }
 
     UiRect friendly_lens_rect (int index, int width) {
-      constexpr float button_width = 112.0f;
+      constexpr float button_width = 136.0f;
       constexpr float gap = 8.0f;
       const float start = std::max
 	(530.0f, width - (button_width * 4.0f + gap * 3.0f + 18.0f));
@@ -2061,7 +2061,7 @@ namespace game {
       const UiRect bounds = friendly_action_rect (i);
       m_ui.friendly_button
 	(dl, bounds, action_labels[i], "", hot (bounds), m_pointer_down,
-	 false, i == 0);
+	 false, i == 0, i);
     }
     constexpr const char* preset_titles[] = {
       "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "CANYON LAND"
@@ -2070,7 +2070,7 @@ namespace game {
       const UiRect bounds = friendly_preset_rect (i);
       m_ui.friendly_button
 	(dl, bounds, preset_titles[i], "", hot (bounds),
-	 m_pointer_down, m_friendly_preset == i, false);
+	 m_pointer_down, m_friendly_preset == i, false, i + 3);
     }
 
     constexpr const char* slider_titles[] = {
@@ -2112,7 +2112,7 @@ namespace game {
       const UiRect bounds = friendly_lens_rect (i, width);
       m_ui.friendly_button
 	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
-	 m_overlay == lens_modes[i], i == 3);
+	 m_overlay == lens_modes[i], i == 3, i + 11);
     }
     m_ui.end (dl);
   }
