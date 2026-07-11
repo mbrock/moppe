@@ -133,14 +133,15 @@ def parse_arguments(entry):
   return result
 
 
-def load_complexity(sources, refresh):
+def load_complexity(sources, refresh, jobs):
   report = BUILD / "complexity.csv"
   stale = not report.exists()
   if not stale:
     stale = any(source.stat().st_mtime > report.stat().st_mtime
                 for source in sources)
   if refresh or stale:
-    run([str(ROOT / "tools/complexity-report"), "--top", "0"], cwd=ROOT)
+    run([str(ROOT / "tools/complexity-report"), "--top", "0",
+         "--jobs", str(jobs)], cwd=ROOT)
   values = {}
   with report.open(newline="") as input_file:
     for row in csv.DictReader(input_file):
@@ -403,7 +404,7 @@ def main():
     entries = {source: entries[source] for source in sources}
   if not sources:
     raise SystemExit("no source files matched")
-  complexity = load_complexity(sources, args.refresh_complexity)
+  complexity = load_complexity(sources, args.refresh_complexity, args.jobs)
 
   nodes = {}
   edges = []
