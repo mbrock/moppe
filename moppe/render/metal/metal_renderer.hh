@@ -13,6 +13,10 @@ namespace moppe {
     // compiled library or runtime-compilable source inside the assets.
     Renderer* create_metal_renderer (void* mtk_view,
                                      const std::string& shader_path);
+
+    // Supplies a drawable acquired by CAMetalDisplayLink for the next frame.
+    // When none is supplied, the backend acquires MTKView.currentDrawable.
+    void set_metal_drawable (Renderer& renderer, void* drawable);
   }
 }
 
