@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_TERRAIN_HH
 #define MOPPE_GAME_TERRAIN_HH
 
+#include <moppe/game/graphics_settings.hh>
 #include <moppe/game/world.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/render/renderer.hh>
@@ -22,6 +23,7 @@ namespace moppe {
         render::Renderer& r,
         const map::RandomHeightMap& map,
         const WorldParams& world,
+        const GraphicsSettings& graphics,
         render::TerrainProjection projection = render::TerrainProjection::Plane,
         bool repeat_periodically = true,
         bool interactive_preview = false);

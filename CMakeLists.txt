@@ -226,6 +226,7 @@ endif()
 
 # Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
+  moppe/game/graphics_settings.cc
   moppe/map/generate.cc
   moppe/map/terrain_evaluator.cc
   moppe/mov/vehicle.cc
@@ -254,6 +255,7 @@ target_link_libraries(moppe_game PUBLIC moppe_terrain)
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-map-tests
     tests/test_main.cc
+    tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
     tests/map/terrain_evaluator_test.cc
   )
