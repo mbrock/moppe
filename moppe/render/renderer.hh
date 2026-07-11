@@ -125,6 +125,15 @@ namespace render {
     Vector3D world_offset;
   };
 
+  // Camera-centered procedural full-geometry grass. The backend samples the
+  // authoritative terrain textures and expands compact grid instances into
+  // blades on the GPU; no per-blade CPU geometry crosses the API.
+  struct GrassParams {
+    float radius = 90.0f;
+    float spacing = 0.70f;
+    int blades_per_cell = 3;
+  };
+
   // The renderer: a game-shaped interface, not a general RHI.  Sky,
   // ocean, terrain and the post effects are backend features with
   // dedicated shaders; a WebGPU backend reimplements this interface
@@ -168,6 +177,7 @@ namespace render {
     virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
     virtual void draw_sky (const SkyParams& params) = 0;
     virtual void draw_ocean (const OceanParams& params) = 0;
+    virtual void draw_grass (const GrassParams& params) { (void) params; }
     virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
     virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;
     virtual void draw_list (const DrawList& list) = 0;

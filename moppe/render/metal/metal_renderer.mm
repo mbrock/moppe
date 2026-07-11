@@ -196,6 +196,7 @@ namespace render {
     void draw_terrain (const ChunkDraw* chunks, int count) override;
     void draw_sky (const SkyParams& params) override;
     void draw_ocean (const OceanParams& params) override;
+    void draw_grass (const GrassParams& params) override;
     void draw_rivers (const Mesh& mesh, const Mat4& model) override;
     void draw_mesh (const Mesh& mesh, const Mat4& model) override;
     void draw_list (const DrawList& list) override;
@@ -251,6 +252,7 @@ namespace render {
     id<MTLRenderPipelineState> m_probe = nil;
     id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
     id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
+    id<MTLRenderPipelineState> m_grass_pipeline = nil;
     id<MTLRenderPipelineState> m_river = nil;
 
     // depth-stencil: index [test][write], reversed-Z (>=)
@@ -510,6 +512,8 @@ namespace render {
 			   scene, depth, MSAA_SAMPLES, false);
     m_ocean = make_pipeline (@"ocean_vertex", @"ocean_fragment",
 			     scene, depth, MSAA_SAMPLES, true);
+    m_grass_pipeline = make_pipeline (@"grass_vertex", @"grass_fragment",
+				      scene, depth, MSAA_SAMPLES, false);
     m_river = make_pipeline (@"river_vertex", @"river_fragment",
 			     scene, depth, MSAA_SAMPLES, true);
 
@@ -1406,6 +1410,58 @@ namespace render {
     [enc drawPrimitives: MTLPrimitiveTypeTriangle
 	    vertexStart: 0
 	    vertexCount: m_ocean_vcount];
+  }
+
+  void
+  MetalRenderer::draw_grass (const GrassParams& params) {
+    if (!m_grass_pipeline || !m_have_terrain || !m_heights || !m_normals
+	|| params.radius <= 0 || params.spacing <= 0
+	|| params.blades_per_cell <= 0)
+      return;
+
+    id<MTLRenderCommandEncoder> enc = scene_encoder ();
+    [enc setRenderPipelineState: m_grass_pipeline];
+    [enc setDepthStencilState: m_ds[1][1]];
+    [enc setCullMode: MTLCullModeNone];
+
+    const int side = (int) std::ceil
+      ((2.0f * params.radius) / params.spacing);
+    MoppeGrassUniforms u;
+    std::memset (&u, 0, sizeof (u));
+    u.grid.x = std::floor
+      ((m_fp.camera_pos.x - params.radius) / params.spacing)
+      * params.spacing;
+    u.grid.y = std::floor
+      ((m_fp.camera_pos.z - params.radius) / params.spacing)
+      * params.spacing;
+    u.grid.z = params.spacing;
+    u.grid.w = (float) side;
+    u.terrain.x = m_terrain_params.scale.x;
+    u.terrain.y = m_terrain_params.scale.y;
+    u.terrain.z = m_terrain_params.scale.z;
+    u.terrain.w = params.radius;
+    u.limits.x = m_terrain_params.sea_level_norm;
+    u.limits.y = 0.42f;
+    u.limits.z = m_terrain_params.periodic ? 1.0f : 0.0f;
+    u.limits.w = (float) params.blades_per_cell;
+
+    [enc setVertexBytes: &m_fu length: sizeof (m_fu)
+		 atIndex: MOPPE_BUF_FRAME];
+    [enc setFragmentBytes: &m_fu length: sizeof (m_fu)
+		   atIndex: MOPPE_BUF_FRAME];
+    [enc setVertexBytes: &u length: sizeof (u)
+		 atIndex: MOPPE_BUF_DRAW];
+    [enc setVertexTexture: m_heights atIndex: MOPPE_TEX_HEIGHTS];
+    [enc setVertexTexture: m_normals atIndex: MOPPE_TEX_NORMALS];
+    if (m_shadow_map)
+      [enc setFragmentTexture: m_shadow_map atIndex: MOPPE_TEX_SHADOW];
+
+    const NSUInteger vertices = 18u
+      * (NSUInteger) params.blades_per_cell;
+    const NSUInteger instances = (NSUInteger) side * (NSUInteger) side;
+    [enc drawPrimitives: MTLPrimitiveTypeTriangle
+	    vertexStart: 0 vertexCount: vertices
+	  instanceCount: instances];
   }
 
   // -- draw lists ----------------------------------------------------
