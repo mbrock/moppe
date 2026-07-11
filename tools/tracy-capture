@@ -1,0 +1,40 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+output=${1:-"$root/build-tracy/moppe.tracy"}
+seconds=${MOPPE_TRACY_SECONDS:-30}
+frames=${MOPPE_TRACY_FRAMES:-300}
+seed=${MOPPE_SEED:-123}
+
+if ! command -v tracy-capture >/dev/null 2>&1; then
+  echo "tracy-capture is required: brew install tracy" >&2
+  exit 1
+fi
+
+cmake --preset tracy
+cmake --build --preset tracy
+mkdir -p "$(dirname -- "$output")"
+
+shot=$(mktemp -t moppe-tracy.XXXXXX).png
+cleanup() {
+  if [ -n "${game_pid:-}" ]; then
+    kill "$game_pid" 2>/dev/null || true
+    wait "$game_pid" 2>/dev/null || true
+  fi
+  rm -f "$shot"
+}
+trap cleanup EXIT INT TERM
+
+MOPPE_SCREENSHOT_FRAMES=$frames MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
+  "$root/build-tracy/moppe.app/Contents/MacOS/moppe" \
+  --terrain-lab-screenshot "$shot" --seed "$seed" &
+game_pid=$!
+
+tracy-capture -o "$output" -f -s "$seconds"
+wait "$game_pid"
+game_pid=
+
+echo "$output"
+"$root/tools/tracy-import" "$output" --executable \
+  "$root/build-tracy/moppe.app/Contents/MacOS/moppe"

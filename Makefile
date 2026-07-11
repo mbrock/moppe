@@ -1,6 +1,7 @@
 .PHONY: all archive callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks phone profile terrain-lab-shot testflight xcode
+	complexity format hooks phone profile terrain-lab-shot testflight tracy \
+	tracy-capture tracy-import xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -48,6 +49,20 @@ xcode:
 # play; quitting the game ends the recording and opens Instruments.
 profile:
 	./tools/profile
+
+# Build Moppe with low-overhead, on-demand Tracy instrumentation.
+tracy:
+	cmake --preset tracy
+	cmake --build --preset tracy
+
+# Record a finite gameplay trace to build-tracy/moppe.tracy.
+tracy-capture:
+	./tools/tracy-capture
+
+# Import an existing capture: make tracy-import TRACE=path/to/file.tracy
+tracy-import:
+	@test -n "$(TRACE)" || (echo "TRACE is required" >&2; exit 1)
+	./tools/tracy-import "$(TRACE)"
 
 # Produce a signed App Store archive without uploading it.
 archive:
