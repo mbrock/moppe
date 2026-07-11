@@ -386,6 +386,8 @@ namespace game {
     : m_renderer (0), m_map (0), m_terrain (0), m_world (0),
       m_active (false), m_map_pristine (false),
       m_program (terrain::make_geological_program (0)),
+      m_droplet_progress (0.0f), m_droplet_armed (false),
+      m_droplet_follow (false),
       m_overlay (OverlayMode::None),
       m_selected_stage (-1), m_stage_scroll (0),
       m_pointer_x (0), m_pointer_y (0),
@@ -489,6 +491,10 @@ namespace game {
     m_flood.reset ();
     m_lakes.reset ();
     m_inspected_cell.reset ();
+    m_droplet_trace = { };
+    m_droplet_progress = 0.0f;
+    m_droplet_armed = false;
+    m_droplet_follow = false;
     m_overlay_status = "NO READING — terrain materials";
     m_view = ViewMode::Cover;
     m_orbit_left = m_orbit_right = false;
@@ -527,6 +533,12 @@ namespace game {
       if (trace_x && trace_y)
 	inspect_drainage (std::atof (trace_x), std::atof (trace_y));
     }
+    if (const char* drop = std::getenv ("MOPPE_LAB_DROP_SCREEN")) {
+      std::istringstream input (drop);
+      std::string sx, sy;
+      if (std::getline (input, sx, ',') && std::getline (input, sy))
+	launch_droplet (std::stof (sx), std::stof (sy));
+    }
   }
 
   void
@@ -545,6 +557,10 @@ namespace game {
     m_reports.clear ();
     m_reports.shrink_to_fit ();
     m_river_surface.clear ();
+    m_droplet_trace = { };
+    m_droplet_draw.clear ();
+    m_droplet_armed = false;
+    m_droplet_follow = false;
     m_orbit_left = m_orbit_right = false;
     m_zoom_in = m_zoom_out = false;
     m_tilt_up = m_tilt_down = false;
@@ -801,6 +817,154 @@ namespace game {
     if (m_map_pristine)
       return;
     m_river_surface.draw (renderer, camera);
+  }
+
+  Vector3D
+  TerrainLab::droplet_world_position (std::size_t index) const
+  {
+    if (!m_map || index >= m_droplet_trace.points.size ())
+      return { };
+    const map::HydraulicDropletPoint& point = m_droplet_trace.points[index];
+    const Vector3D scale = m_map->scale ();
+    return Vector3D
+      (point.x * scale.x, point.height * scale.y + 2.2f,
+       point.y * scale.z);
+  }
+
+  void
+  TerrainLab::render_droplet (render::Renderer& renderer,
+			      const Vector3D& camera)
+  {
+    if (m_droplet_trace.points.size () < 2)
+      return;
+    const std::size_t visible = std::min
+      (m_droplet_trace.points.size () - 1,
+       static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)));
+    if (visible == 0)
+      return;
+
+    m_droplet_draw.clear ();
+    render::DrawState state;
+    state.blend = true;
+    state.additive = true;
+    state.depth_write = false;
+    state.cull = false;
+    m_droplet_draw.state (state);
+    m_droplet_draw.lit (false);
+    m_droplet_draw.fogged (true);
+    m_droplet_draw.begin (render::Prim::Quads);
+    for (std::size_t i = 1; i <= visible; ++i) {
+      const Vector3D a = droplet_world_position (i - 1);
+      const Vector3D b = droplet_world_position (i);
+      const Vector3D segment = b - a;
+      if (segment.length () > 8.0f * std::max
+	  (m_map->scale ().x, m_map->scale ().z))
+	continue;
+      const Vector3D middle = (a + b) * 0.5f;
+      Vector3D side = segment.cross (camera - middle);
+      if (side.length2 () < 1e-6f)
+	side = segment.cross (Vector3D (0, 1, 0));
+      side.normalize ();
+      const float activity = std::min
+	(1.0f, 1800.0f * (m_droplet_trace.points[i].eroded
+			    + m_droplet_trace.points[i].deposited));
+      const float width = 1.5f + 3.5f * activity;
+      side *= width;
+      if (m_droplet_trace.points[i].deposited
+	  > m_droplet_trace.points[i].eroded)
+	m_droplet_draw.color (0.08f, 0.52f, 1.0f, 0.62f);
+      else
+	m_droplet_draw.color (1.0f, 0.28f, 0.035f, 0.68f);
+      m_droplet_draw.vertex (a - side);
+      m_droplet_draw.vertex (a + side);
+      m_droplet_draw.vertex (b + side);
+      m_droplet_draw.vertex (b - side);
+    }
+    m_droplet_draw.end ();
+
+    const Vector3D bead = droplet_world_position (visible);
+    m_droplet_draw.push ();
+    m_droplet_draw.translate (bead);
+    m_droplet_draw.color (0.30f, 0.90f, 1.0f, 0.90f);
+    m_droplet_draw.sphere (7.0f, 10, 6);
+    m_droplet_draw.color (0.75f, 0.97f, 1.0f, 0.36f);
+    m_droplet_draw.sphere (11.0f, 10, 6);
+    m_droplet_draw.pop ();
+    renderer.draw_list (m_droplet_draw);
+  }
+
+  std::optional<Vector3D>
+  TerrainLab::terrain_point_at_screen (float x, float y) const
+  {
+    if (!m_map || !m_renderer || m_view == ViewMode::Torus)
+      return std::nullopt;
+    const float width = static_cast<float> (m_renderer->width_pts ());
+    const float height = static_cast<float> (m_renderer->height_pts ());
+    const float aspect = width / std::max (1.0f, height);
+    const float tangent = std::tan (degrees_to_radians (70.0f) * 0.5f);
+    const float screen_x = 2.0f * x / width - 1.0f;
+    const float screen_y = 1.0f - 2.0f * y / height;
+    const Vector3D direction_forward = forward ();
+    const Vector3D direction_right = direction_forward
+      .cross (Vector3D (0, 1, 0)).normalized ();
+    const Vector3D direction_up = direction_right
+      .cross (direction_forward).normalized ();
+    const Vector3D direction =
+      (direction_forward + direction_right * (screen_x * aspect * tangent)
+	+ direction_up * (screen_y * tangent)).normalized ();
+    const Vector3D origin = position ();
+    float previous_t = 0.0f;
+    float previous_clearance = origin.y
+      - m_map->interpolated_height (origin.x, origin.z);
+    for (float t = 20.0f; t <= 14000.0f; t += 20.0f) {
+      const Vector3D point = origin + direction * t;
+      const float clearance = point.y
+	- m_map->interpolated_height (point.x, point.z);
+      if (previous_clearance > 0.0f && clearance <= 0.0f) {
+	float low = previous_t, high = t;
+	for (int i = 0; i < 10; ++i) {
+	  const float middle = 0.5f * (low + high);
+	  const Vector3D candidate = origin + direction * middle;
+	  if (candidate.y > m_map->interpolated_height
+	      (candidate.x, candidate.z))
+	    low = middle;
+	  else
+	    high = middle;
+	}
+	return origin + direction * (0.5f * (low + high));
+      }
+      previous_t = t;
+      previous_clearance = clearance;
+    }
+    return std::nullopt;
+  }
+
+  void
+  TerrainLab::launch_droplet (float x, float y)
+  {
+    const std::optional<Vector3D> hit = terrain_point_at_screen (x, y);
+    if (!hit || !m_map) {
+      m_overlay_status = "DROP — no terrain under pointer";
+      return;
+    }
+    const Vector3D scale = m_map->scale ();
+    m_droplet_trace = m_map->trace_hydraulic_droplet
+      (hit->x / scale.x, hit->z / scale.z, 512, 0.01f,
+       terrain::SedimentDisposition::Deposit,
+       terrain::CarvingRule::PathMonotone);
+    m_droplet_progress = 0.0f;
+    m_droplet_armed = false;
+    m_droplet_follow = m_droplet_trace.points.size () > 1;
+    m_map_pristine = false;
+    invalidate_analysis ();
+    refresh ();
+    std::ostringstream status;
+    const float eroded_volume = m_droplet_trace.eroded
+      * scale.x * scale.y * scale.z;
+    status << "DROP — " << m_droplet_trace.points.size () - 1
+	   << " steps, " << std::fixed << std::setprecision (3)
+	   << eroded_volume << " m3 moved";
+    m_overlay_status = status.str ();
   }
 
   void
@@ -1687,7 +1851,15 @@ namespace game {
     };
     for (int i = 0; i < 4; ++i) {
       if (friendly_lens_rect (i, m_ui_width).contains (x, y)) {
-	set_overlay (modes[i]);
+	if (i == 3) {
+	  m_droplet_armed = true;
+	  m_droplet_follow = false;
+	  set_overlay (OverlayMode::None);
+	  m_overlay_status = "DROP — click land to release";
+	} else {
+	  m_droplet_armed = false;
+	  set_overlay (modes[i]);
+	}
 	return;
       }
     }
@@ -1883,6 +2055,23 @@ namespace game {
     if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
       run_pending_parameter_rebuild ();
 
+    if (m_droplet_trace.points.size () > 1) {
+      const float last = static_cast<float> (m_droplet_trace.points.size () - 1);
+      m_droplet_progress = std::min
+	(last, m_droplet_progress + dt * 22.0f);
+      if (m_droplet_follow) {
+	const std::size_t index = std::min
+	  (m_droplet_trace.points.size () - 1,
+	   static_cast<std::size_t> (m_droplet_progress));
+	const Vector3D desired = droplet_world_position (index);
+	const float response = 1.0f - std::exp (-dt * 3.5f);
+	m_target += (desired - m_target) * response;
+	m_scroll_zoom_target = std::min (m_scroll_zoom_target, 850.0f);
+	if (m_droplet_progress >= last)
+	  m_droplet_follow = false;
+      }
+    }
+
     const float orbit = (m_orbit_right ? 1.0f : 0.0f)
       - (m_orbit_left ? 1.0f : 0.0f);
     const float tilt = (m_tilt_up ? 1.0f : 0.0f)
@@ -1991,6 +2180,8 @@ namespace game {
     }
     if (!m_camera_drag)
       return;
+    if (std::hypot (dx, dy) > 0.0f)
+      m_droplet_follow = false;
     m_camera_drag_distance += std::hypot (dx, dy);
     m_yaw -= dx * 0.006f;
     m_pitch += dy * 0.006f;
@@ -2087,9 +2278,12 @@ namespace game {
 	  m_drag_property = -1;
 	  run_pending_parameter_rebuild ();
 	}
-	if (m_camera_drag && m_camera_drag_distance < 4.0f
-	    && m_overlay == OverlayMode::Trace)
-	  inspect_drainage (x, y);
+	if (m_camera_drag && m_camera_drag_distance < 4.0f) {
+	  if (m_droplet_armed)
+	    launch_droplet (x, y);
+	  else if (m_overlay == OverlayMode::Trace)
+	    inspect_drainage (x, y);
+	}
 	m_camera_drag = false;
       }
     } else {
@@ -2216,7 +2410,7 @@ namespace game {
       const UiRect bounds = friendly_lens_rect (i, width);
       m_ui.friendly_button
 	(dl, bounds, lens_titles[i], "", hot (bounds), m_pointer_down,
-	 m_overlay == lens_modes[i], i == 3);
+	 i == 3 ? m_droplet_armed : m_overlay == lens_modes[i], i == 3);
     }
     m_ui.end (dl);
   }

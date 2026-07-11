@@ -381,6 +381,170 @@ namespace map {
        sediment_at_termination, carving_rule);
   }
 
+  HydraulicDropletTrace
+  RandomHeightMap::trace_hydraulic_droplet
+    (float px, float py, int max_steps, float minimum_water,
+     terrain::SedimentDisposition sediment_at_termination,
+     terrain::CarvingRule carving_rule)
+  {
+    constexpr float inertia = 0.05f;
+    constexpr float capacity_k = 4.0f;
+    constexpr float min_slope = 0.005f;
+    constexpr float erode_k = 0.3f;
+    constexpr float deposit_k = 0.3f;
+    constexpr float evaporate = 0.015f;
+    constexpr float gravity = 4.0f;
+    if (max_steps <= 0 || !std::isfinite (minimum_water)
+	|| minimum_water < 0.0f || minimum_water >= 1.0f)
+      throw std::invalid_argument ("invalid traced hydraulic droplet");
+
+    struct Sample {
+      int x0, x1, y0, y1;
+      float fx, fy, height, gradx, grady;
+    };
+    const int grid_width = periodic () ? unique_width () : m_width;
+    const int grid_height = periodic () ? unique_height () : m_height;
+    const auto sample = [&] (float x, float y) {
+      Sample s;
+      const float floor_x = std::floor (x);
+      const float floor_y = std::floor (y);
+      int ix = static_cast<int> (floor_x);
+      int iy = static_cast<int> (floor_y);
+      if (periodic ()) {
+	s.x0 = terrain::wrap_index (ix, grid_width);
+	s.y0 = terrain::wrap_index (iy, grid_height);
+	s.x1 = terrain::wrap_index (s.x0 + 1, grid_width);
+	s.y1 = terrain::wrap_index (s.y0 + 1, grid_height);
+      } else {
+	s.x0 = std::clamp (ix, 0, m_width - 2);
+	s.y0 = std::clamp (iy, 0, m_height - 2);
+	s.x1 = s.x0 + 1;
+	s.y1 = s.y0 + 1;
+      }
+      s.fx = x - floor_x;
+      s.fy = y - floor_y;
+      const float h00 = get (s.x0, s.y0);
+      const float h10 = get (s.x1, s.y0);
+      const float h01 = get (s.x0, s.y1);
+      const float h11 = get (s.x1, s.y1);
+      s.gradx = (h10 - h00) * (1 - s.fy)
+	+ (h11 - h01) * s.fy;
+      s.grady = (h01 - h00) * (1 - s.fx)
+	+ (h11 - h10) * s.fx;
+      s.height = h00 * (1 - s.fx) * (1 - s.fy)
+	+ h10 * s.fx * (1 - s.fy)
+	+ h01 * (1 - s.fx) * s.fy + h11 * s.fx * s.fy;
+      return s;
+    };
+    const auto add = [&] (const Sample& s, float amount,
+			  float minimum_height) {
+      float applied = 0.0f;
+      const int xs[] = { s.x0, s.x1, s.x0, s.x1 };
+      const int ys[] = { s.y0, s.y0, s.y1, s.y1 };
+      const float weights[] = {
+	(1 - s.fx) * (1 - s.fy), s.fx * (1 - s.fy),
+	(1 - s.fx) * s.fy, s.fx * s.fy
+      };
+      for (int i = 0; i < 4; ++i) {
+	float change = amount * weights[i];
+	if (change < 0.0f)
+	  change = std::max
+	    (change, -std::max (0.0f, get (xs[i], ys[i]) - minimum_height));
+	set (xs[i], ys[i], get (xs[i], ys[i]) + change);
+	applied += change;
+      }
+      return applied;
+    };
+
+    if (periodic ()) {
+      px = terrain::wrap_coordinate (px, static_cast<float> (grid_width));
+      py = terrain::wrap_coordinate (py, static_cast<float> (grid_height));
+    } else {
+      px = std::clamp (px, 1.0f, static_cast<float> (m_width - 2));
+      py = std::clamp (py, 1.0f, static_cast<float> (m_height - 2));
+    }
+
+    HydraulicDropletTrace trace;
+    float dirx = 0.0f, diry = 0.0f;
+    float speed = 1.0f, water = 1.0f, sediment = 0.0f;
+    const Sample start = sample (px, py);
+    trace.points.push_back
+      ({ px, py, start.height, 0, 0, speed, water, sediment });
+
+    for (int step = 0; step < max_steps; ++step) {
+      const Sample here = sample (px, py);
+      dirx = dirx * inertia - here.gradx * (1 - inertia);
+      diry = diry * inertia - here.grady * (1 - inertia);
+      const float length = std::hypot (dirx, diry);
+      if (length < 1e-10f) {
+	trace.termination = HydraulicDropletTermination::Flat;
+	break;
+      }
+      dirx /= length;
+      diry /= length;
+
+      float nx = px + dirx, ny = py + diry;
+      if (periodic ()) {
+	nx = terrain::wrap_coordinate (nx, static_cast<float> (grid_width));
+	ny = terrain::wrap_coordinate (ny, static_cast<float> (grid_height));
+      } else if (nx < 1.0f || nx >= m_width - 2
+		 || ny < 1.0f || ny >= m_height - 2) {
+	trace.termination = HydraulicDropletTermination::Boundary;
+	break;
+      }
+
+      const Sample next = sample (nx, ny);
+      const float dh = next.height - here.height;
+      const float capacity = std::max (-dh, min_slope)
+	* speed * water * capacity_k;
+      float eroded = 0.0f, deposited = 0.0f;
+      if (sediment > capacity || dh > 0.0f) {
+	float amount = dh > 0.0f ? std::min (dh, sediment)
+	  : (sediment - capacity) * deposit_k;
+	amount = add (here, amount,
+		      -std::numeric_limits<float>::infinity ());
+	sediment -= amount;
+	deposited = amount;
+	trace.deposited += amount;
+      } else {
+	float amount = -std::min ((capacity - sediment) * erode_k, -dh);
+	const float floor = carving_rule == terrain::CarvingRule::PathMonotone
+	  ? next.height : -std::numeric_limits<float>::infinity ();
+	amount = add (here, amount, floor);
+	sediment -= amount;
+	eroded = -amount;
+	trace.eroded -= amount;
+      }
+
+      speed = std::sqrt
+	(std::max (0.0f, speed * speed - dh * gravity));
+      water *= 1.0f - evaporate;
+      px = nx;
+      py = ny;
+      trace.points.push_back
+	({ px, py, sample (px, py).height, eroded, deposited,
+	   speed, water, sediment });
+      if (minimum_water > 0.0f && water <= minimum_water) {
+	trace.termination = HydraulicDropletTermination::WaterCutoff;
+	break;
+      }
+      if (step == max_steps - 1)
+	trace.termination = HydraulicDropletTermination::StepLimit;
+    }
+
+    if (sediment_at_termination == terrain::SedimentDisposition::Deposit
+	&& sediment > 0.0f) {
+      const Sample last = sample (px, py);
+      const float deposited = add
+	(last, sediment, -std::numeric_limits<float>::infinity ());
+      trace.deposited += deposited;
+      trace.points.back ().deposited += deposited;
+      trace.points.back ().sediment = 0.0f;
+    }
+    synchronize_periodic_edges ();
+    return trace;
+  }
+
   terrain::HydraulicErosionReport
   RandomHeightMap::erode_hydraulically
     (std::mt19937& randomness, int droplets, int batch_size, int max_steps,

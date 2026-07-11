@@ -18,6 +18,32 @@
 
 namespace moppe {
 namespace map {
+  enum class HydraulicDropletTermination {
+    Flat,
+    Boundary,
+    WaterCutoff,
+    StepLimit
+  };
+
+  struct HydraulicDropletPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+    float height = 0.0f;
+    float eroded = 0.0f;
+    float deposited = 0.0f;
+    float speed = 1.0f;
+    float water = 1.0f;
+    float sediment = 0.0f;
+  };
+
+  struct HydraulicDropletTrace {
+    std::vector<HydraulicDropletPoint> points;
+    HydraulicDropletTermination termination =
+      HydraulicDropletTermination::StepLimit;
+    float eroded = 0.0f;
+    float deposited = 0.0f;
+  };
+
   // Contiguous row-major 2D array; at (y, x) preserves the old
   // boost::multi_array m_data[y][x] indexing.
   template <typename T>
@@ -276,6 +302,17 @@ namespace map {
        float minimum_water = 0.0f,
        terrain::SedimentDisposition sediment_at_termination =
 	 terrain::SedimentDisposition::Discard,
+       terrain::CarvingRule carving_rule =
+	 terrain::CarvingRule::PathMonotone);
+
+    // Run one explicitly placed droplet through the same local hydraulic
+    // model as bulk erosion. The returned per-step ledger drives Terrain
+    // Lab's hero-droplet spectacle; changes are committed to this map.
+    HydraulicDropletTrace trace_hydraulic_droplet
+      (float x, float y, int max_steps = 512,
+       float minimum_water = 0.01f,
+       terrain::SedimentDisposition sediment_at_termination =
+	 terrain::SedimentDisposition::Deposit,
        terrain::CarvingRule carving_rule =
 	 terrain::CarvingRule::PathMonotone);
     terrain::HydraulicErosionReport erode_hydraulically
