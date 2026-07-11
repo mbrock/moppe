@@ -808,6 +808,47 @@ inspectable enough to become play.
   is valuable partly because its tradeoffs around reproducibility,
   explainability, and geological history differ sharply from Moppe's.
 
+## 18. Rendering water that belongs to the terrain
+
+Once channels and water depth exist, water rendering becomes a structured
+problem rather than a translucent ribbon problem.  The most relevant sources
+form a progression from cheap flow-map animation through local velocity
+fields to physically richer waves and foam.
+
+- **Begin here:** Alex Vlachos,
+  [*Water Flow in Portal 2*][portal-water].  The enduring production technique:
+  distort two phases of detail with a flow map and cross-fade them to hide
+  resets.  A second flow can carry dirt, debris, or foam.
+- **Begin here:** Adrien Peytavie et al.,
+  [*Procedural Riverscapes*][procedural-riverscapes].  The full pipeline:
+  hydrological trajectories, carved beds, water elevation, blended flow
+  primitives, rapids, hydraulic jumps, foam, and carried leaves.
+- Qizhi Yu et al.,
+  [*Scalable Real-Time Animation of Rivers*][scalable-rivers].  Locally solves
+  velocity around boundaries and obstacles, then carries screen-space sampled
+  wave details over very large rivers.
+- Qizhi Yu et al.,
+  [*Lagrangian Texture Advection*][lagrangian-advection].  Maintains texture
+  spectrum while details follow the velocity field; relevant to normal maps,
+  color, foam, and debris.
+- Tim Burrell et al.,
+  [*Advected River Textures*][advected-rivers].  Couples a coarse fluid model
+  to procedural, advected surface detail for long real-time rivers.
+- Stefan Jeschke et al., [*Water Surface Wavelets*][water-wavelets].  A richer
+  real-time wave representation for large domains, fine detail, and moving
+  obstacles.
+- Jesus Ojeda and Antonio Susin,
+  [*Real-time Rendering of Enhanced Shallow Water Fluid
+  Simulations*][enhanced-shallow-water].  Advected foam and detail together
+  with screen-space reflection, refraction, and caustics.
+- Florian Bagar et al.,
+  [*A Layered Particle-Based Fluid Model for Real-Time Rendering of
+  Water*][layered-water].  Treats water and foam as separate depth-bounded
+  volumes for efficient attenuation.
+
+The locally archived copies and a Moppe-specific implementation order are in
+`research/water/README.md`.
+
 ## Questions to carry back into Moppe
 
 The bibliography becomes useful when it changes the questions asked of a
@@ -838,6 +879,7 @@ allows human and procedural judgment to continue the same unfolding.
 <!-- Reference links -->
 [astar]: https://www.redblobgames.com/pathfinding/a-star/introduction.html
 [active-walker]: https://arxiv.org/abs/cond-mat/9806097
+[advected-rivers]: https://web.cs.dal.ca/~sbrooks/projects/waterRendering/AdvectedRiverTextures.pdf
 [alexander-urban-design]: https://www.mdpi.com/2413-8851/2/3/86
 [animal-networks]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4191085/
 [attachment-affordance]: https://doi.org/10.1016/j.jenvp.2026.102977
@@ -896,6 +938,8 @@ allows human and procedural judgment to continue the same unfolding.
 [iquilez]: https://iquilezles.org/articles/
 [landlab]: https://landlab.github.io/
 [landlab-space]: https://landlab.readthedocs.io/en/latest/tutorials/landscape_evolution/space/SPACE_user_guide_and_examples.html
+[lagrangian-advection]: https://inria.hal.science/inria-00536064/document
+[layered-water]: https://www.cg.tuwien.ac.at/research/publications/2010/bagar2010/bagar2010-draft.pdf
 [lague-erosion]: https://github.com/SebLague/Hydraulic-Erosion
 [least-cost-archaeology]: https://www.osti.gov/pages/biblio/1311302
 [leitner]: https://patterntheory.org/wiki.cgi
@@ -936,6 +980,8 @@ allows human and procedural judgment to continue the same unfolding.
 [procedural-buildings]: https://doi.org/10.1145/1179352.1141931
 [procedural-cities]: https://doi.org/10.1145/383259.383292
 [procedural-roads]: https://doi.org/10.1111/j.1467-8659.2010.01751.x
+[procedural-riverscapes]: https://www.cs.purdue.edu/cgvlab/www/resources/papers/Peytavie-Computer_Graphics_Forum-2019-Procedural_Riverscapes.pdf
+[portal-water]: https://alex.vlachos.com/graphics/Vlachos-SIGGRAPH10-WaterFlow.pdf
 [prospect-refuge]: https://link.springer.com/article/10.1186/s40410-016-0033-1
 [physarum]: https://doi.org/10.1126/science.1177894
 [priority-flood]: https://arxiv.org/abs/1511.04463
@@ -947,6 +993,7 @@ allows human and procedural judgment to continue the same unfolding.
 [ridge-spacing]: https://doi.org/10.1038/nature06092
 [richdem]: https://github.com/r-barnes/richdem
 [salingaros]: https://patterns.architexturez.net/doc/az-cf-172638
+[scalable-rivers]: https://inria.hal.science/inria-00345903/document
 [search-pcg]: https://julian.togelius.com/Togelius2011Searchbased.pdf
 [search-racetracks]: https://www.ijeei.org/docs-1804133866588e9f62ade3b.pdf
 [seamon-seven-rules]: https://christopher-alexander-ces-archive.org/wp-content/uploads/2024/06/DOC.20240508.13678.2019.I.D.1-1.pdf
@@ -969,6 +1016,7 @@ allows human and procedural judgment to continue the same unfolding.
 [taichi-paper]: https://yuanming.taichi.graphics/publication/2019-taichi/
 [tanagra]: https://doi.org/10.1145/1822348.1822376
 [terrain-visibility]: https://arxiv.org/abs/1810.01946
+[enhanced-shallow-water]: https://web.mat.upc.edu/toni.susin/files/hybrid_lbmsw_rend_new.pdf
 [terrain-review]: https://doi.org/10.1111/cgf.13657
 [terrain-survey]: https://doi.org/10.1111/cgf.12084
 [terra-nil]: https://www.terranil.com/
@@ -986,6 +1034,7 @@ allows human and procedural judgment to continue the same unfolding.
 [route-underdetermination]: https://www.repository.cam.ac.uk/items/82c84f62-f367-4023-8154-8fb4aa37f873
 [uplift-erosion]: https://doi.org/10.1111/cgf.12820
 [wfc]: https://github.com/mxgmn/WaveFunctionCollapse
+[water-wavelets]: https://research-explorer.ista.ac.at/download/134/5744/2018_ACM_Jeschke.pdf
 [wfc-3d]: https://github.com/marian42/wavefunctioncollapse
 [wholeness-graph]: https://arxiv.org/abs/1502.03554
 [wildmender]: https://wildmender.com/
