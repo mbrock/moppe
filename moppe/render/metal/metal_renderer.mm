@@ -436,6 +436,7 @@ namespace moppe {
       float m_scale = 1.0f;
       std::string m_screenshot_path;
       bool m_profile_gpu = false;
+      bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
       bool m_profile_cpu = false;
       double m_cpu_frame_start = 0;
@@ -461,12 +462,14 @@ namespace moppe {
       m_device = view.device ? view.device : MTLCreateSystemDefaultDevice ();
       m_queue = [m_device newCommandQueue];
 
-      m_profile_gpu = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
+      m_profile_gpu_passes = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
+      m_profile_gpu = m_profile_gpu_passes ||
+                      ::getenv ("MOPPE_PROFILE_GPU_SIMPLE") != nullptr;
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
         m_frame_timing = std::make_shared<FrameTiming> ();
 
-      if (m_profile_gpu) {
+      if (m_profile_gpu_passes) {
         if (@available (macOS 11.0, iOS 14.0, *)) {
           id<MTLCounterSet> timestamps = nil;
           for (id<MTLCounterSet> set in m_device.counterSets)
@@ -2560,12 +2563,15 @@ namespace moppe {
                       << " ms avg, " << timing->gpu_min_ms << " ms min, "
                       << timing->gpu_max_ms << " ms max (" << timing->frames
                       << " frames)" << std::endl;
-            std::cerr << "  encoder spans (may overlap):";
-            for (int i = 0; i < GPU_PASS_COUNT; ++i)
-              if (timing->pass_total_ms[i] > 0)
-                std::cerr << " " << GPU_PASS_NAMES[i] << "="
-                          << timing->pass_total_ms[i] / timing->frames << " ms";
-            std::cerr << std::endl;
+            if (timestamp_results) {
+              std::cerr << "  encoder spans (may overlap):";
+              for (int i = 0; i < GPU_PASS_COUNT; ++i)
+                if (timing->pass_total_ms[i] > 0)
+                  std::cerr << " " << GPU_PASS_NAMES[i] << "="
+                            << timing->pass_total_ms[i] / timing->frames
+                            << " ms";
+              std::cerr << std::endl;
+            }
             timing->interval_start = command.GPUEndTime;
             timing->gpu_total_ms = 0;
             timing->gpu_min_ms = std::numeric_limits<double>::max ();
