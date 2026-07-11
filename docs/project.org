@@ -283,6 +283,42 @@ Detailed engineering guidance remains in
 
 * Log
 
+** 2026-07-11 Mesh shaders arrive: grass patches, lattice water, moisture
+
+The first Metal mesh pipelines (gated on =MTLGPUFamilyMetal3=, with
+fallbacks), plus the hydrology feeding vegetation directly.
+
+- Grass: blade construction factored into shared per-blade functions;
+  an object stage culls 4x2-cell patches (distance, terrain band,
+  frustum) and a mesh stage emits surviving blades as indexed
+  triangles, 32 per meshlet at 8 vertices / 6 primitives.  The
+  instanced vertex path remains as fallback and shares all styling.
+- Moisture: =terrain/moisture.cc= derives ground moisture from the
+  flood census and drainage (multi-source BFS to standing water plus a
+  drainage term, torus-aware, unit-tested).  Grass samples it for
+  height, dryness color, and density: lush banks, bleached ridges, and
+  a few FPS back because dry ground grows fewer blades.
+- Lattice water: near standing water renders through a mesh pipeline
+  on the terrain's own sample grid — an object stage walks a 700 m
+  window of 15x15-cell tiles, probes wetness from the same RG water
+  raster, and culls dry or unseen tiles; the mesh stage emits 16x16
+  vertex lattices sharing the ocean fragment shader.  The coarse 300
+  grid keeps the horizon; both passes discard on the same radius so
+  they partition exactly.  Near shorelines now resolve at terrain
+  resolution.
+- The lake checkerboard from the paused shoreline investigation is
+  solved, and it was never grid aliasing: the fragment ripple normals
+  were crossed plane-wave sines interfering into a plaid — the third
+  appearance of that failure (ocean foam, grass patches, now ripples).
+  Drifting value noise replaced them; swell amplitude also averages a
+  five-tap footprint so shallow shelves stop flickering per cell.
+
+Seed-123 captures: lakes are continuous organic water with shorelines
+that hug the banks; the mouth bay reads clean turquoise.  Rider capture
+93 FPS with grass, lattice water, and moisture all on.  Remaining known
+seams: the fine/coarse water boundary can show a subtle tone shift at
+700 m, and shore foam still blobs at mouth aprons.
+
 ** 2026-07-11 GPU grass loses its jitter, terraces, and stripes
 
 Three defects in the new procedural grass shared one theme: derived
