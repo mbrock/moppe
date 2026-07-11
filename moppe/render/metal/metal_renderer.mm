@@ -63,14 +63,12 @@ namespace moppe {
           .count ();
       }
 
-      float scene_render_scale (int width, int height) {
+      float scene_render_scale (float backing_scale) {
 #if TARGET_OS_IPHONE
-        (void)width;
-        (void)height;
+        (void)backing_scale;
         return 1.0f;
 #else
-        float scale =
-          static_cast<std::int64_t> (width) * height > 12000000 ? 0.5f : 1.0f;
+        float scale = 1.0f / std::max (1.0f, backing_scale);
         if (const char* requested = std::getenv ("MOPPE_RENDERSCALE"))
           scale = static_cast<float> (std::atof (requested));
         return std::clamp (scale, 0.25f, 1.0f);
@@ -354,7 +352,7 @@ namespace moppe {
       id<MTLSamplerState> m_sampler_clamp = nil;
       TexturePtr m_white;
 
-      // render targets (drawable-sized; bloom at quarter res)
+      // render targets (scene-scaled; bloom at quarter scene resolution)
       id<MTLTexture> m_msaa_color = nil, m_msaa_depth = nil;
       id<MTLTexture> m_scene_a = nil, m_scene_b = nil;
       id<MTLTexture> m_prev_frame = nil;
@@ -1368,7 +1366,10 @@ namespace moppe {
       const int drawable_h = (int)m_view.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
         return;
-      const float scale = scene_render_scale (drawable_w, drawable_h);
+      const CGSize points = m_view.bounds.size;
+      const float backing_scale =
+        points.width > 0 ? drawable_w / (float)points.width : 1.0f;
+      const float scale = scene_render_scale (backing_scale);
       const int w = std::max (1, (int)std::round (drawable_w * scale));
       const int h = std::max (1, (int)std::round (drawable_h * scale));
       if (w == m_target_w && h == m_target_h && m_msaa_color)

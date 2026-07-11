@@ -78,10 +78,11 @@ amended the first draft. The deltas, now integrated below, were:
   atmosphere noticeably.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
   bug is documented at main.cc:3182). HUD coordinates are view **points**;
-  drawable pixels per point may be lower than the screen backing scale when
-  macOS halves extreme resolutions above 12 MP. `MOPPE_RENDERSCALE` overrides
-  that heuristic. Safe-area insets offset HUD anchors and touch zones on iOS,
-  and "Times" maps to "Times New Roman" on iOS.
+  on macOS the 3D scene defaults to one pixel per view point, so a 2x Retina
+  drawable uses a 0.5 scene render scale while the HUD and final composite
+  remain backing-pixel sharp. `MOPPE_RENDERSCALE` overrides that default.
+  Safe-area insets offset HUD anchors and touch zones on iOS, and "Times" maps
+  to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.
