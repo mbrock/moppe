@@ -11,6 +11,10 @@
 #include <moppe/platform/platform.hh>
 
 #include <chrono>
+#include <cstdint>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <sys/stat.h>
 
 namespace moppe {
@@ -45,6 +49,49 @@ namespace platform {
     if (res)
       return std::string (res.UTF8String) + "/" + relative;
     return relative;
+  }
+
+  std::string
+  executable_build_id () {
+    static std::string cached;
+    if (!cached.empty ())
+      return cached;
+    NSString* executable = [[NSBundle mainBundle] executablePath];
+    if (!executable)
+      return "unknown";
+    std::ifstream input (executable.UTF8String, std::ios::binary);
+    if (!input)
+      return "unknown";
+
+    // FNV-1a is used as a cache identity, not as a security boundary. Hashing
+    // the linked executable makes dirty local rebuilds invalidate naturally.
+    std::uint64_t hash = 14695981039346656037ull;
+    char bytes[64 * 1024];
+    while (input) {
+      input.read (bytes, sizeof (bytes));
+      for (std::streamsize i = 0; i < input.gcount (); ++i) {
+	hash ^= static_cast<unsigned char> (bytes[i]);
+	hash *= 1099511628211ull;
+      }
+    }
+    std::ostringstream text;
+    text << std::hex << std::setfill ('0') << std::setw (16) << hash;
+    cached = text.str ();
+    return cached;
+  }
+
+  std::string
+  cache_path (const std::string& relative) {
+    NSArray<NSURL*>* roots = [[NSFileManager defaultManager]
+      URLsForDirectory: NSCachesDirectory inDomains: NSUserDomainMask];
+    NSURL* base = roots.firstObject;
+    if (!base)
+      return relative;
+    NSURL* directory = [base URLByAppendingPathComponent: @"Moppe"];
+    [[NSFileManager defaultManager]
+      createDirectoryAtURL: directory
+       withIntermediateDirectories: YES attributes: nil error: nil];
+    return std::string (directory.path.UTF8String) + "/" + relative;
   }
 
   double

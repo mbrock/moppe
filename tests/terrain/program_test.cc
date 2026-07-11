@@ -43,6 +43,23 @@ MOPPE_TEST (default_world_program_records_every_transform) {
      == SedimentDisposition::Deposit);
 }
 
+MOPPE_TEST (generation_profiles_only_change_the_erosion_budget) {
+  const TerrainProgram fast = make_world_program
+    (123, TerrainGenerationProfile::Fast);
+  const TerrainProgram play = make_world_program
+    (123, TerrainGenerationProfile::Play);
+  const TerrainProgram research = make_world_program
+    (123, TerrainGenerationProfile::Research);
+
+  MOPPE_CHECK
+    (std::get<HydraulicErosion> (fast.transforms[2]).droplets == 30000);
+  MOPPE_CHECK
+    (std::get<HydraulicErosion> (play.transforms[2]).droplets == 100000);
+  MOPPE_CHECK
+    (std::get<HydraulicErosion> (research.transforms[2]).droplets == 300000);
+  MOPPE_CHECK (profile_id (TerrainGenerationProfile::Fast) == "fast");
+}
+
 MOPPE_TEST (transform_semantics_describe_execution_requirements) {
   MOPPE_CHECK
     (terrain_transform_semantics (PowerHeights { 1.2f }).spatial_scope

@@ -79,3 +79,21 @@ receivers available as a pure reading. The next checkpoint is
 depression-aware routing over that surface. Keeping those steps separate lets
 the Lab distinguish native basins, erosion-created pits, and deposition dams
 before changing erosion again.
+
+## Path-monotone carving trial
+
+The first lake census made the footprint-pit hypothesis directly testable.
+On the fixed 257-square seed `1783728698`, with 30,000 droplets, batches of
+256, natural termination at step 305, and settlement at death:
+
+| carving | sinks | puddles | ponds | lakes | water volume (m3) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| unconstrained | 636 | 384 | 83 | 3 | 45,874,200 |
+| path-monotone | 416 | 207 | 40 | 3 | 44,543,000 |
+
+Path monotonicity removed 35% of dry sinks, 46% of puddles, and 52% of ponds
+without changing the three large lakes. Eroded and deposited material still
+balanced exactly in both runs. This supports the footprint-pit diagnosis
+without claiming that every remaining small body is an artifact: the census
+now preserves those remaining bodies for depression-aware routing and infill
+experiments.

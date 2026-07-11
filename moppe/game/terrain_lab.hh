@@ -70,7 +70,8 @@ namespace game {
       Sinks,
       HeightDelta,
       Trace,
-      StandingWater
+      StandingWater,
+      PermanentWater
     };
 
     void select (terrain::GeologicalLayer layer);
@@ -116,10 +117,12 @@ namespace game {
     std::vector<terrain::TerrainTransformReport> m_reports;
     std::optional<terrain::DrainageGraph> m_drainage;
     std::optional<terrain::FloodField> m_flood;
+    std::optional<terrain::LakeCensus> m_lakes;
     OverlayMode m_overlay;
     std::string m_overlay_status;
     std::string m_analysis_status;
     std::string m_flood_status;
+    std::string m_census_status;
     std::optional<std::uint32_t> m_inspected_cell;
     int m_selected_stage;
     int m_stage_scroll;

@@ -214,6 +214,36 @@ MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
   MOPPE_CHECK (!maps_match (one_at_a_time, sixty_four_at_a_time));
 }
 
+MOPPE_TEST (path_monotone_carving_is_an_explicit_recipe_choice) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vector3D size (100, 20, 100);
+  map::RandomHeightMap unconstrained_map
+    (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap monotone_map
+    (65, 65, size, 0, Topology::Torus);
+  map::TerrainEvaluator unconstrained (unconstrained_map);
+  map::TerrainEvaluator monotone (monotone_map);
+  const TerrainProgram source = make_geological_program (731);
+  unconstrained.begin (source);
+  monotone.begin (source);
+  const HydraulicErosion erosion {
+    .droplets = 2000,
+    .batch_size = 64,
+    .max_steps = 128,
+    .carving_rule = CarvingRule::Unconstrained
+  };
+  const auto old_result = unconstrained.apply (erosion);
+  HydraulicErosion constrained = erosion;
+  constrained.carving_rule = CarvingRule::PathMonotone;
+  const auto new_result = monotone.apply (constrained);
+  const auto& old_report = std::get<HydraulicErosionReport> (old_result);
+  const auto& new_report = std::get<HydraulicErosionReport> (new_result);
+
+  MOPPE_CHECK (!maps_match (unconstrained_map, monotone_map));
+  MOPPE_CHECK (new_report.eroded <= old_report.eroded);
+}
+
 MOPPE_TEST (hydraulic_report_balances_the_sediment_ledger) {
   using namespace moppe;
   using namespace moppe::terrain;

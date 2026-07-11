@@ -341,11 +341,13 @@ namespace game {
       else if (name == "sinks") m_overlay = OverlayMode::Sinks;
       else if (name == "delta") m_overlay = OverlayMode::HeightDelta;
       else if (name == "trace") m_overlay = OverlayMode::Trace;
-      else if (name == "water" || name == "lakes")
+      else if (name == "water")
 	m_overlay = OverlayMode::StandingWater;
+      else if (name == "lakes") m_overlay = OverlayMode::PermanentWater;
     }
     m_drainage.reset ();
     m_flood.reset ();
+    m_lakes.reset ();
     m_inspected_cell.reset ();
     m_overlay_status = "NO READING — terrain materials";
     m_view = ViewMode::Cover;
@@ -536,6 +538,7 @@ namespace game {
   {
     m_drainage.reset ();
     m_flood.reset ();
+    m_lakes.reset ();
     m_inspected_cell.reset ();
   }
 
@@ -549,6 +552,7 @@ namespace game {
       const float sea_level = m_world->water_level / m_world->map_size.y;
       m_flood = terrain::analyze_standing_water
 	(m_map->terrain_view (), sea_level);
+      m_lakes = terrain::census_lakes (*m_flood);
       const double milliseconds = std::chrono::duration<double, std::milli>
 	(std::chrono::steady_clock::now () - start).count ();
       std::size_t wet_cells = 0;
@@ -564,6 +568,20 @@ namespace game {
 	     << maximum_depth * m_world->map_size.y << "m max | "
 	     << std::setprecision (0) << milliseconds << "ms flood";
       m_flood_status = status.str ();
+
+      int puddles = 0, ponds = 0, lakes = 0;
+      for (const terrain::WaterBody& body : m_lakes->bodies)
+	switch (body.classification) {
+	case terrain::WaterBodyClass::Puddle: ++puddles; break;
+	case terrain::WaterBodyClass::Pond: ++ponds; break;
+	case terrain::WaterBodyClass::Lake: ++lakes; break;
+	case terrain::WaterBodyClass::Sea: break;
+	}
+      std::ostringstream census_status;
+      census_status << format_count (puddles) << " puddles, "
+		    << format_count (ponds) << " ponds, "
+		    << format_count (lakes) << " lakes";
+      m_census_status = census_status.str ();
     }
     return *m_flood;
   }
@@ -721,16 +739,28 @@ namespace game {
       params.maximum = magnitude;
       params.ramp = render::TerrainOverlayRamp::Diverging;
       m_overlay_status = "DELTA — blue removal / orange addition";
-    } else if (m_overlay == OverlayMode::StandingWater) {
+    } else if (m_overlay == OverlayMode::StandingWater
+	       || m_overlay == OverlayMode::PermanentWater) {
       const terrain::FloodField& flood = standing_water ();
       const std::size_t unique_width = flood.width ();
       const std::size_t unique_height = flood.height ();
-      const std::span<const float> unique = flood.water_depth.values ();
+      const terrain::ScalarRaster permanent =
+	m_overlay == OverlayMode::PermanentWater
+	? terrain::permanent_water_surface (flood, *m_lakes)
+	: flood.water_level;
+      const std::span<const float> level = permanent.values ();
+      const std::span<const float> ground = flood.water_depth.values ();
+      std::vector<float> unique (level.size ());
+      for (std::size_t i = 0; i < unique.size (); ++i)
+	unique[i] = level[i]
+	  - (flood.water_level.values ()[i] - ground[i]);
       const float maximum = *std::max_element (unique.begin (), unique.end ());
       params.maximum = maximum > 0.0f ? maximum : 1.0f;
       params.ramp = render::TerrainOverlayRamp::Water;
       params.opacity = 0.88f;
-      m_overlay_status = "WATER — standing depth w - z | " + m_flood_status;
+      m_overlay_status = m_overlay == OverlayMode::PermanentWater
+	? "LAKES — permanent water census | " + m_census_status
+	: "WATER — every standing depth w - z | " + m_flood_status;
       for (int y = 0; y < height; ++y)
 	for (int x = 0; x < width; ++x)
 	  values[static_cast<std::size_t> (y) * width + x] = unique
@@ -1170,9 +1200,9 @@ namespace game {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
       OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
-      OverlayMode::StandingWater
+      OverlayMode::StandingWater, OverlayMode::PermanentWater
     };
-    for (int i = 0; i < 10; ++i)
+    for (int i = 0; i < 11; ++i)
       if (overlay_rect (i).contains (x, y)) {
 	set_overlay (overlay_modes[i]);
 	return;
@@ -1706,15 +1736,16 @@ namespace game {
        "MAP READINGS");
     constexpr const char* overlay_labels[] = {
       "MATERIAL", "HEIGHT", "SLOPE", "FLOW",
-      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE", "WATER"
+      "STREAMS", "BASINS", "SINKS", "DELTA", "TRACE", "WATER",
+      "LAKES"
     };
     constexpr OverlayMode overlay_modes[] = {
       OverlayMode::None, OverlayMode::Height, OverlayMode::Slope,
       OverlayMode::Flow, OverlayMode::Streams, OverlayMode::Basins,
       OverlayMode::Sinks, OverlayMode::HeightDelta, OverlayMode::Trace,
-      OverlayMode::StandingWater
+      OverlayMode::StandingWater, OverlayMode::PermanentWater
     };
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 11; ++i) {
       const UiRect bounds = overlay_rect (i);
       m_ui.button (dl, bounds, overlay_labels[i], hot (bounds),
 		   m_pointer_down, m_overlay == overlay_modes[i]);

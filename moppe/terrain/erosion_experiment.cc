@@ -1,6 +1,7 @@
 #include <moppe/map/generate.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/drainage.hh>
+#include <moppe/terrain/flood.hh>
 #include <moppe/terrain/program.hh>
 
 #include <algorithm>
@@ -67,6 +68,9 @@ int main (int argc, char** argv) {
       (argc > 5 ? argv[5] : "64,128,256,512");
     const float minimum_water = argc > 6 ? std::stof (argv[6]) : 0.0f;
     const bool settle = argc > 7 && std::string (argv[7]) == "settle";
+    const CarvingRule carving_rule = argc > 8
+	&& std::string (argv[8]) == "unconstrained"
+      ? CarvingRule::Unconstrained : CarvingRule::PathMonotone;
 
     map::RandomHeightMap map
       (resolution, resolution, Vector3D (5000, 650, 5000), seed,
@@ -81,7 +85,7 @@ int main (int argc, char** argv) {
     std::cout
       << "steps,erosion_ms,drainage_ms,sinks,stream_cells,max_area_cells,"
       << "longest_path,eroded,deposited,discarded,lost_fraction,mean_steps,"
-      << "mean_final_water,cap,water,flat\n";
+      << "mean_final_water,cap,water,flat,puddles,ponds,lakes,water_m3\n";
     for (const int max_steps : lifetimes) {
       evaluator.restore (base);
       const Clock::time_point erosion_start = Clock::now ();
@@ -92,7 +96,8 @@ int main (int argc, char** argv) {
 			    .minimum_water = minimum_water,
 			    .sediment_at_termination = settle
 			      ? SedimentDisposition::Deposit
-			      : SedimentDisposition::Discard });
+			      : SedimentDisposition::Discard,
+			    .carving_rule = carving_rule });
       const double erosion_ms = milliseconds_since (erosion_start);
       const auto& report = std::get<HydraulicErosionReport> (result);
 
@@ -108,6 +113,22 @@ int main (int argc, char** argv) {
 	if (area >= 64.0f * cell_area)
 	  ++stream_cells;
       }
+      const FloodField flood = analyze_standing_water
+	(map.terrain_view (), 50.0f / 650.0f);
+      const LakeCensus census = census_lakes (flood);
+      int puddles = 0, ponds = 0, lakes = 0;
+      double water_volume = 0.0;
+      for (const WaterBody& body : census.bodies) {
+	switch (body.classification) {
+	case WaterBodyClass::Puddle:
+	  ++puddles; water_volume += body.volume_m3; break;
+	case WaterBodyClass::Pond:
+	  ++ponds; water_volume += body.volume_m3; break;
+	case WaterBodyClass::Lake:
+	  ++lakes; water_volume += body.volume_m3; break;
+	case WaterBodyClass::Sea: break;
+	}
+      }
 
       std::cout << max_steps << ',' << erosion_ms << ',' << drainage_ms
 		<< ',' << graph.sinks.size () << ',' << stream_cells
@@ -119,7 +140,9 @@ int main (int argc, char** argv) {
 		<< ',' << report.mean_final_water ()
 		<< ',' << report.stopped_at_step_limit
 		<< ',' << report.stopped_at_water_cutoff
-		<< ',' << report.stopped_flat << '\n';
+		<< ',' << report.stopped_flat
+		<< ',' << puddles << ',' << ponds << ',' << lakes
+		<< ',' << water_volume << '\n';
     }
   } catch (const std::exception& error) {
     std::cerr << "terrain erosion experiment: " << error.what () << '\n';
