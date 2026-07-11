@@ -207,6 +207,14 @@ without writing depth and is drawn before the standing-water grid.  The mesh
 is presentation-only: the ordered `RiverNetwork` and terrain remain the
 authoritative routing and bed data.
 
+Before baking, each ordered reach is resampled twice per receiver edge with a
+cubic Hermite curve. Horizontal tangents are capped at one edge length, exact
+source and downstream endpoints are retained, and dry height/normals are read
+back from the terrain at every new point. Width, discharge, rapid, cascade,
+and water-boundary height interpolate on the same curve. This is presentation
+geometry only; it rounds D8 corners without moving a confluence, lake inlet,
+or outlet away from its authoritative cell.
+
 ## Terrain: vertex pulling (the big modernization)
 
 Today: regenerate() builds ~8.4 M vertices of non-indexed strip soup (fine +

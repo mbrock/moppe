@@ -37,6 +37,81 @@ namespace moppe::game {
     float rapid_signal (float slope) {
       return std::clamp ((slope - 0.035f) / 0.24f, 0.0f, 1.0f);
     }
+
+    Vector3D limited_tangent (const Vector3D& value, float limit) {
+      Vector3D tangent (value.x, 0.0f, value.z);
+      const float length = tangent.length ();
+      if (length > limit && length > 1e-6f)
+	tangent *= limit / length;
+      return tangent;
+    }
+
+    float interpolate (float from, float to, float t) {
+      return from + (to - from) * t;
+    }
+
+    std::vector<RibbonPoint>
+    smooth_centerline (const std::vector<RibbonPoint>& raw,
+		       const map::HeightMap& map)
+    {
+      constexpr int subdivisions = 2;
+      std::vector<RibbonPoint> result;
+      if (raw.empty ())
+	return result;
+      result.reserve (1 + (raw.size () - 1) * subdivisions);
+      result.push_back (raw.front ());
+      for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
+	const RibbonPoint& before = raw[segment == 0 ? 0 : segment - 1];
+	const RibbonPoint& from = raw[segment];
+	const RibbonPoint& to = raw[segment + 1];
+	const RibbonPoint& after = raw
+	  [segment + 2 < raw.size () ? segment + 2 : segment + 1];
+	const Vector3D edge = to.position - from.position;
+	const float edge_length = std::hypot (edge.x, edge.z);
+	const Vector3D from_tangent = limited_tangent
+	  ((to.position - before.position) * 0.5f, edge_length);
+	const Vector3D to_tangent = limited_tangent
+	  ((after.position - from.position) * 0.5f, edge_length);
+	for (int step = 1; step <= subdivisions; ++step) {
+	  const float t = static_cast<float> (step) / subdivisions;
+	  const float t2 = t * t;
+	  const float t3 = t2 * t;
+	  const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+	  const float h10 = t3 - 2.0f * t2 + t;
+	  const float h01 = -2.0f * t3 + 3.0f * t2;
+	  const float h11 = t3 - t2;
+	  Vector3D position = from.position * h00 + from_tangent * h10
+	    + to.position * h01 + to_tangent * h11;
+	  const bool touches_water = from.water || to.water;
+	  position.y = touches_water
+	    ? interpolate (from.position.y, to.position.y, t)
+	    : map.interpolated_height (position.x, position.z) + 0.10f;
+	  result.push_back ({
+	    .position = position,
+	    .normal = touches_water ? Vector3D (0, 1, 0)
+	      : map.interpolated_normal (position.x, position.z).normalized (),
+	    .width = interpolate (from.width, to.width, t),
+	    .distance = 0.0f,
+	    .rapid = interpolate (from.rapid, to.rapid, t),
+	    .discharge = interpolate (from.discharge, to.discharge, t),
+	    .waterfall = interpolate (from.waterfall, to.waterfall, t),
+	    .water = touches_water
+	  });
+	}
+      }
+      result.front ().normal = raw.front ().normal;
+      result.back ().normal = raw.back ().normal;
+      result.front ().water = raw.front ().water;
+      result.back ().water = raw.back ().water;
+      float distance = 0.0f;
+      result.front ().distance = 0.0f;
+      for (std::size_t i = 1; i < result.size (); ++i) {
+	const Vector3D delta = result[i].position - result[i - 1].position;
+	distance += std::hypot (delta.x, delta.z);
+	result[i].distance = distance;
+      }
+      return result;
+    }
   }
 
   float
@@ -73,11 +148,11 @@ namespace moppe::game {
 	|| flood.ocean[cell];
     };
 
-    std::vector<RibbonPoint> points;
+    std::vector<RibbonPoint> raw_points;
     for (const terrain::RiverReach& reach : rivers.reaches) {
       if (reach.cells.empty ())
 	continue;
-      points.clear ();
+      raw_points.clear ();
       std::vector<std::uint32_t> cells = reach.cells;
       const std::uint32_t receiver =
 	drainage.receiver[reach.cells.back ()];
@@ -114,7 +189,7 @@ namespace moppe::game {
 	const std::uint32_t slope_cell = i + 1 == cells.size () && i > 0
 	  ? cells[i - 1] : cell;
 	const float slope = drainage.slope.values ()[slope_cell];
-	points.push_back ({
+	raw_points.push_back ({
 	  .position = Vector3D (world_x, y, world_z),
 	  .normal = map.normal (x, z),
 	  .width = river_width (area),
@@ -126,6 +201,8 @@ namespace moppe::game {
 	  .water = water
 	});
       }
+      const std::vector<RibbonPoint> points = smooth_centerline
+	(raw_points, map);
       if (points.size () < 2)
 	continue;
 

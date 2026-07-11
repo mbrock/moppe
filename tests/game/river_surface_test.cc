@@ -39,9 +39,9 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     .water_depth = terrain::ScalarRaster
       (domain, std::vector<float> (count, 0.0f)),
     .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = { 1, 2, 3, 3, 4, 5, 6, 7,
+    .spill_receiver = { 1, 5, 2, 3, 4, 9, 6, 7,
 			8, 9, 10, 11, 12, 13, 14, 15 },
-    .outlets = { 3 }
+    .outlets = { 2, 3, 4, 6, 9 }
   };
   const terrain::LakeCensus census {
     .body = std::vector<std::uint32_t>
@@ -49,8 +49,8 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   };
   std::vector<float> area (count, 25000.0f);
   area[1] = 100000.0f;
-  area[2] = 400000.0f;
-  area[3] = 1000000.0f;
+  area[5] = 400000.0f;
+  area[9] = 1000000.0f;
   const terrain::DrainageGraph drainage {
     .source_grid = grid,
     .receiver = flood.spill_receiver,
@@ -67,7 +67,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
       (count, terrain::Waterfall::no_id),
     .reaches = {{
       .id = 0,
-      .cells = { 0, 1, 2 },
+      .cells = { 0, 1, 5 },
       .upstream_body = terrain::RiverReach::no_id,
       .downstream_body = terrain::RiverReach::no_id,
       .downstream_ocean = false,
@@ -82,7 +82,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     (map, flood, census, drainage, rivers);
 
   MOPPE_CHECK (draw.runs ().size () == 1);
-  MOPPE_CHECK (draw.vertices ().size () == 18);
+  MOPPE_CHECK (draw.vertices ().size () == 36);
   const render::Vertex& first_left = draw.vertices ()[0];
   const render::Vertex& first_right = draw.vertices ()[1];
   const render::Vertex& second_right = draw.vertices ()[2];
@@ -92,6 +92,20 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   const float second_width = std::hypot
     (second_left.px - second_right.px, second_left.pz - second_right.pz);
   MOPPE_CHECK (second_width > first_width);
+  MOPPE_CHECK_NEAR
+    (0.5f * (first_left.px + first_right.px), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR
+    (0.5f * (first_left.pz + first_right.pz), 0.0f, 1e-6f);
+  const render::Vertex& final_right = draw.vertices ()[32];
+  const render::Vertex& final_left = draw.vertices ()[35];
+  MOPPE_CHECK_NEAR
+    (0.5f * (final_left.px + final_right.px), 10.0f, 1e-5f);
+  MOPPE_CHECK_NEAR
+    (0.5f * (final_left.pz + final_right.pz), 20.0f, 1e-5f);
+  const render::Vertex& curved_right = draw.vertices ()[14];
+  const render::Vertex& curved_left = draw.vertices ()[17];
+  const float curved_x = 0.5f * (curved_right.px + curved_left.px);
+  MOPPE_CHECK (curved_x > 10.1f);
   for (const render::Vertex& vertex : draw.vertices ()) {
     MOPPE_CHECK (std::isfinite (vertex.px));
     MOPPE_CHECK (std::isfinite (vertex.py));
@@ -104,7 +118,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     .id = 0,
     .reach_id = 0,
     .lip_cell = 1,
-    .foot_cell = 2,
+    .foot_cell = 5,
     .drop_m = 1.0f,
     .horizontal_distance_m = 10.0f,
     .slope = 0.1f,
@@ -116,6 +130,6 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   for (const render::Vertex& vertex : fall_draw.vertices ())
     if (vertex.color.b == 255)
       ++waterfall_vertices;
-  MOPPE_CHECK (fall_draw.vertices ().size () == 18);
+  MOPPE_CHECK (fall_draw.vertices ().size () == 36);
   MOPPE_CHECK (waterfall_vertices > 0);
 }

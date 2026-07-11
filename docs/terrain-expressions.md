@@ -187,6 +187,12 @@ cascade foam on the continuous ribbon. A tested vertical-quad prototype was
 discarded because a heightfield step is still a continuous slope: the quad
 intersected terrain and visually disconnected the river.
 
+The retained ribbon renderer resamples those ordered cells twice per edge with
+bounded cubic tangents. It preserves exact reach endpoints and recomputes dry
+height and normals from the terrain, so this smoothing cannot alter routing or
+move an inlet, spill, or confluence. Interpolated flow distance and attributes
+drive the same shader material along the smoother presentation curve.
+
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
 
