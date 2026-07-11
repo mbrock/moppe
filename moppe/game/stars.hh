@@ -28,6 +28,7 @@ namespace game {
 
   private:
     struct Star {
+      Vector3D home;
       Vector3D pos;
       float phase;
       float respawn;
