@@ -33,14 +33,14 @@ namespace game {
     // per-frame near-field grass so they read as one field.  `dry`
     // pushes toward straw, `j` is per-blade jitter.
     inline Vector3D blade_base (float dry, float j) {
-      return Vector3D (0.10f + 0.14f * dry + j,
-		       0.26f + 0.01f * dry + 2 * j,
-		       0.055f + 0.03f * dry);
+      return Vector3D (0.09f + 0.14f * dry + j,
+		       0.20f + 0.02f * dry + 2 * j,
+		       0.05f + 0.04f * dry);
     }
     inline Vector3D blade_tip (float dry, float j) {
-      return Vector3D (0.34f + 0.24f * dry + 2 * j,
-		       0.56f - 0.06f * dry + 2 * j,
-		       0.14f + 0.06f * dry);
+      return Vector3D (0.26f + 0.18f * dry + 2 * j,
+		       0.40f - 0.04f * dry + 2 * j,
+		       0.12f + 0.07f * dry);
     }
 
     const float FLOWER_PETALS[5][3] = {

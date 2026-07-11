@@ -503,21 +503,23 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // -- grass ------------------------------------------------------
   float3 grass_c = terrain_layer (grass, smp, tc, far_blend);
 
-  // The source grass is an extremely saturated photographic green.
-  // Pull it toward a sunlit emerald/olive palette before applying
-  // large-scale variation and lighting.
+  // The source is already a restrained diffuse capture. A light palette pull
+  // keeps it coherent with generated blades without crushing its soil tones.
   const float grass_value = dot (grass_c,
 				 float3 (0.299, 0.587, 0.114));
   const float3 grass_palette = grass_value
-    * moppe_srgb (float3 (0.62, 0.94, 0.46));
-  grass_c = mix (grass_c, grass_palette, 0.78);
+    * moppe_srgb (float3 (0.68, 1.00, 0.52));
+  grass_c = mix (grass_c, grass_palette, 0.35);
+  // The diffuse source is calibrated without baked illumination; compensate
+  // for the legacy terrain energy scale before applying live lighting.
+  grass_c *= 1.45;
   grass_c *= 0.65 + 0.95 * coarse;
-  grass_c *= mix (float3 (0.72, 0.88, 0.64),
-		  float3 (1.08, 1.04, 0.88), macro);
+  grass_c *= mix (float3 (0.84, 0.95, 0.76),
+		  float3 (1.10, 1.06, 0.92), macro);
 
   // Altitude tint: sun-dried gold near the coast, lusher higher up.
-  grass_c *= mix (float3 (1.10, 0.96, 0.78),
-		  float3 (0.96, 1.00, 0.88),
+  grass_c *= mix (float3 (1.04, 1.00, 0.90),
+		  float3 (0.96, 1.02, 0.92),
 		  smoothstep (0.08, 0.30, height));
 
   // -- scree / cliff / snow ---------------------------------------
