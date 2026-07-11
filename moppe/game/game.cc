@@ -18,8 +18,6 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/blob_shadow.hh>
-#include <moppe/game/fish.hh>
-#include <moppe/game/wildlife.hh>
 #include <moppe/game/city.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/game/vehicle_render.hh>
@@ -521,8 +519,6 @@ namespace game {
 	m_stars.generate (m_map, m_world,
 			  m_world.pico_mode ? 250
 			  : m_world.city_mode ? 130 : 80);
-	m_fish.generate (m_map, m_world);
-	m_wildlife.generate (m_map, m_world);
       }
       m_gen_stage = 6;
     }
@@ -1130,7 +1126,6 @@ namespace game {
 	if (m_world.city_mode)
 	  m_city.render (r, m_world_dl, env);
 	m_vegetation.render (r, env);
-	m_stars.render (m_world_dl, env);
 
 	// Soft blob shadows under the movers.
 	m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
@@ -1144,15 +1139,17 @@ namespace game {
 	// In helmet cam you ARE the rider: don't draw yourself.
 	const bool helmet = (m_cam_mode == CAM_HELMET);
 	if (!(helmet && m_mode == M_BIKE))
-	  render_vehicle (m_world_dl, m_vehicle, m_total_time);
+	  render_vehicle (r, m_world_dl, m_vehicle, m_total_time);
 	if (m_car_exists && !(helmet && m_mode == M_CAR))
-	  render_vehicle (m_world_dl, m_car, m_total_time);
+	  render_vehicle (r, m_world_dl, m_car, m_total_time);
 	if (m_mode == M_FOOT && !helmet)
 	  m_walker.render (m_world_dl, m_total_time);
 
-	m_fish.render (m_world_dl, env);
-	m_wildlife.render (m_world_dl, env);
 	r.draw_list (m_world_dl);
+
+	// Star pickups last among the solids: their additive halos
+	// blend over everything already drawn.
+	m_stars.render (r, env);
       }
 
       // Translucent water late so the seabed and fish show
@@ -1836,8 +1833,6 @@ namespace game {
     Stars m_stars;
     Dust m_dust;
     BlobShadow m_blob;
-    Fish m_fish;
-    Wildlife m_wildlife;
     City m_city;
     Walker m_walker;
     Hud m_hud;

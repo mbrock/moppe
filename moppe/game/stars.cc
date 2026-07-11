@@ -90,13 +90,38 @@ namespace game {
   }
 
   void
-  Stars::render (render::DrawList& dl, const FrameEnv& env)
+  Stars::render (render::Renderer& r, const FrameEnv& env)
   {
     const Vector3D& cam = env.camera_pos;
     const float time = env.time;
 
-    dl.set_texture (0); // the GL code disabled all texture units here
-    dl.lit (false);
+    // One shared ring-and-core mesh and one halo mesh, baked on the
+    // first frame; each visible star is then just two draw calls.
+    if (!m_body) {
+      render::DrawList dl;
+      dl.lit (false);
+      dl.color (1.0f, 0.85f, 0.15f);
+      dl.torus (0.16f, 0.75f, 10, 18);
+      dl.color (1.0f, 0.95f, 0.6f);
+      dl.sphere (0.3f, 8, 8);
+      m_body = r.create_mesh (dl);
+
+      // A breathing additive halo turns each pickup into a beacon
+      // (the bloom pass picks it up from far off); the per-star
+      // pulse rides on the model matrix.
+      dl.clear ();
+      dl.lit (false);
+      render::DrawState glow;
+      glow.blend = true;
+      glow.additive = true;
+      glow.depth_write = false;
+      dl.state (glow);
+      dl.color (1.0f, 0.80f, 0.30f, 0.15f);
+      dl.sphere (1.15f, 10, 8);
+      m_halo = r.create_mesh (dl);
+    }
+
+    const Vector3D y_axis (0, 1, 0), x_axis (1, 0, 0);
     for (size_t i = 0; i < m_stars.size (); ++i) {
       const Star& s = m_stars[i];
       if (s.respawn > 0)
@@ -111,34 +136,22 @@ namespace game {
       if (dx * dx + dz * dz > 900.0f * 900.0f)
 	continue;
 
-      dl.push ();
-      dl.translate (position.x,
-		    position.y + 0.35f * std::sin (time * 2.0f + s.phase),
-		    position.z);
-      dl.rotate_deg (time * 150.0f + s.phase, 0, 1, 0);
-      dl.rotate_deg (time * 95.0f + s.phase * 0.7f, 1, 0, 0);
-      dl.color (1.0f, 0.85f, 0.15f);
-      dl.torus (0.16f, 0.75f, 10, 18);
-      dl.color (1.0f, 0.95f, 0.6f);
-      dl.sphere (0.3f, 8, 8);
+      const Mat4 place = Mat4::translation
+	(Vector3D (position.x,
+		   position.y + 0.35f * std::sin (time * 2.0f + s.phase),
+		   position.z));
+      r.draw_mesh (*m_body, place
+		   * Mat4::rotation (degrees_to_radians
+				     (time * 150.0f + s.phase), y_axis)
+		   * Mat4::rotation (degrees_to_radians
+				     (time * 95.0f + s.phase * 0.7f),
+				     x_axis));
 
-      // A breathing additive halo turns each pickup into a beacon
-      // (the bloom pass picks it up from far off).
-      {
-	render::DrawState glow;
-	glow.blend = true;
-	glow.additive = true;
-	glow.depth_write = false;
-	dl.state (glow);
-	const float pulse =
-	  1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
-	dl.color (1.0f, 0.80f, 0.30f, 0.15f);
-	dl.sphere (1.15f * pulse, 10, 8);
-	dl.state (render::DrawState ());
-      }
-      dl.pop ();
+      const float pulse =
+	1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
+      r.draw_mesh (*m_halo, place
+		   * Mat4::scaling (Vector3D (pulse, pulse, pulse)));
     }
-    dl.lit (true);
   }
 }
 }
