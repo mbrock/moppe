@@ -1,123 +1,66 @@
 #include <moppe/game/dust.hh>
-#include <moppe/game/sprites.hh>
 
-#include <cmath>
+#include <algorithm>
 
-namespace moppe {
-  namespace game {
-    Dust::Dust () : m_particles (), m_rng (99) {}
+namespace moppe::game {
+  Dust::Dust () = default;
 
-    void Dust::load (render::Renderer& r) {
-      m_tex = make_soft_disc_texture (r);
+  Dust::State Dust::state () const {
+    return { m_emissions, m_next_id, m_logical_time };
+  }
+
+  void Dust::restore (const State& state) {
+    m_emissions = state.emissions;
+    m_next_id = state.next_id;
+    m_logical_time = state.logical_time;
+  }
+
+  void Dust::emit (const Vector3D& pos,
+                   const Vector3D& vel,
+                   int count,
+                   const Vector3D& color) {
+    emit (pos, vel, count, color, Style ());
+  }
+
+  void Dust::emit (const Vector3D& pos,
+                   const Vector3D& vel,
+                   int count,
+                   const Vector3D& color,
+                   const Style& style) {
+    std::size_t live_particles = 0;
+    for (const render::DustEmission& emission : m_emissions)
+      live_particles += emission.particle_count;
+    const int available = std::max (0, 500 - static_cast<int> (live_particles));
+    const int accepted = std::clamp (count, 0, available);
+    if (accepted == 0)
+      return;
+    for (int remaining = accepted; remaining > 0;) {
+      render::DustEmission emission;
+      emission.id = m_next_id++;
+      emission.birth_time = m_logical_time;
+      emission.position = pos;
+      emission.velocity = vel;
+      emission.color = color;
+      emission.size = style.size;
+      emission.life = style.life;
+      emission.gravity = style.gravity;
+      emission.spread = style.spread;
+      emission.particle_count =
+        static_cast<uint32_t> (std::min (remaining, 64));
+      emission.additive = style.additive;
+      m_emissions.push_back (emission);
+      remaining -= emission.particle_count;
     }
+  }
 
-    void Dust::emit (const Vector3D& pos,
-                     const Vector3D& vel,
-                     int count,
-                     const Vector3D& color) {
-      emit (pos, vel, count, color, Style ());
-    }
+  void Dust::update (float dt) {
+    m_logical_time += dt;
+    std::erase_if (m_emissions, [this] (const render::DustEmission& emission) {
+      return m_logical_time - emission.birth_time > emission.life * 0.9f;
+    });
+  }
 
-    void Dust::emit (const Vector3D& pos,
-                     const Vector3D& vel,
-                     int count,
-                     const Vector3D& color,
-                     const Style& style) {
-      std::uniform_real_distribution<float> u (-1.0f, 1.0f);
-      for (int i = 0; i < count && m_particles.size () < 500; ++i) {
-        Particle p;
-        p.pos = pos + Vector3D (u (m_rng), 0.4f * u (m_rng), u (m_rng)) *
-                        (0.7f * style.spread);
-        p.vel = vel + Vector3D (3.0f * u (m_rng),
-                                2.5f + 2.0f * u (m_rng),
-                                3.0f * u (m_rng)) *
-                        style.spread;
-        p.max_life = style.life * (0.5f + 0.4f * (0.5f + 0.5f * u (m_rng)));
-        p.life = p.max_life;
-        p.size = style.size * (0.7f + 0.4f * u (m_rng));
-        p.rot = 3.14159f * u (m_rng);
-        p.rot_v = 2.2f * u (m_rng);
-        p.gravity = style.gravity;
-        p.additive = style.additive;
-        // Slight per-particle value variation keeps a plume from
-        // reading as one flat-colored blob.
-        p.color = color * (0.88f + 0.16f * (0.5f + 0.5f * u (m_rng)));
-        m_particles.push_back (p);
-      }
-    }
-
-    void Dust::update (float dt) {
-      size_t j = 0;
-      for (size_t i = 0; i < m_particles.size (); ++i) {
-        Particle p = m_particles[i];
-        p.life -= dt;
-        if (p.life <= 0)
-          continue;
-        p.vel *= std::exp (-2.0f * dt); // air drag
-        p.vel.y -= p.gravity * dt;      // clods arc, smoke rises
-        p.pos += p.vel * dt;
-        p.rot += p.rot_v * dt;
-        m_particles[j++] = p;
-      }
-      m_particles.resize (j);
-    }
-
-    void Dust::render (render::DrawList& dl, const FrameEnv& env) {
-      if (m_particles.empty ())
-        return;
-
-      // Billboard axes straight from the camera basis
-      const Vector3D& right = env.cam_right;
-      const Vector3D& up = env.cam_up;
-
-      render::DrawState soft;
-      soft.blend = true;
-      soft.depth_write = false; // soft puffs, no z-fighting each other
-      render::DrawState glow = soft;
-      glow.additive = true;
-
-      dl.lit (false);
-      dl.set_texture (m_tex.get ());
-
-      // Two passes: soft alpha-blended dust, then additive embers on
-      // top (runs with no vertices cost nothing).
-      for (int pass = 0; pass < 2; ++pass) {
-        const bool additive = (pass == 1);
-        dl.state (additive ? glow : soft);
-
-        dl.begin (render::Prim::Quads);
-        for (size_t i = 0; i < m_particles.size (); ++i) {
-          const Particle& p = m_particles[i];
-          if (p.additive != additive)
-            continue;
-          const float a = p.life / p.max_life;
-          const float s = p.size * (1.7f - 0.7f * a); // grow as it fades
-
-          // spin the billboard so puffs tumble
-          const float ca = std::cos (p.rot), sa = std::sin (p.rot);
-          const Vector3D r2 = (right * ca + up * sa) * s;
-          const Vector3D u2 = (up * ca - right * sa) * s;
-
-          // Quick fade-in so puffs don't pop, long fade-out; capped
-          // below the old 0.75 so plumes stay translucent.
-          const float age = 1.0f - a;
-          const float fade_in = std::min (1.0f, age * 8.0f);
-          dl.color (p.color, (additive ? 0.85f : 0.6f) * fade_in * a);
-          dl.uv (0, 0);
-          dl.vertex (p.pos - r2 - u2);
-          dl.uv (1, 0);
-          dl.vertex (p.pos + r2 - u2);
-          dl.uv (1, 1);
-          dl.vertex (p.pos + r2 + u2);
-          dl.uv (0, 1);
-          dl.vertex (p.pos - r2 + u2);
-        }
-        dl.end ();
-      }
-
-      dl.set_texture (0);
-      dl.lit (true);
-      dl.state (render::DrawState ());
-    }
+  void Dust::render (render::Renderer& renderer) const {
+    renderer.draw_dust (m_emissions, m_logical_time);
   }
 }

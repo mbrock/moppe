@@ -10,14 +10,15 @@ graphics settings.
 camera effects, player mode and inputs, health/fuel/scoring values, gameplay
 timers, and the effects random-number generator. `game::GameState` combines
 that value with snapshots of both vehicles, the walker, the chase camera, and
-the mutable portion of the generated star set.
+the mutable portion of the generated star set, and a bounded dust-emission
+event log.
 Restoring those subsystem values changes only their mutable state; immutable
 terrain references, obstacle references, and vehicle physical parameters stay
 attached to the live objects.
 
 This is the first replayable slice, not yet a claim of complete determinism.
-Dust/particle populations, city actors, and any renderer history are not yet
-in `GameState`. World generation, terrain analysis,
+City actors and renderer history are not in `GameState`. World generation,
+terrain analysis,
 uploaded meshes and textures, window state, and asynchronous loading state do
 not belong there. Renderer history should get its own reset boundary rather
 than being copied into logical game state.
@@ -36,3 +37,11 @@ The intended experiment loop is:
 Subsystem state structs should remain plain values. When another mutable
 system joins the checkpoint, it should expose `state()` and `restore()` while
 keeping configuration and resource ownership outside the returned value.
+
+Dust is deliberately represented by emission events rather than mutable
+particles or an RNG stream. Particle variation is a counter hash of emission
+id, particle index, and property index; position, rotation, size, and lifetime
+are evaluated from event age. Metal expands those values into billboard quads
+with a mesh shader and retains an instanced vertex fallback. Rewinding dust
+therefore restores logical time and the small event log, not hundreds of
+individually integrated particles.

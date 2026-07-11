@@ -269,6 +269,8 @@ namespace moppe {
       void draw_sky (const SkyParams& params) override;
       void draw_ocean (const OceanParams& params) override;
       void draw_grass (const GrassParams& params) override;
+      void draw_dust (std::span<const DustEmission> emissions,
+                      float logical_time) override;
       void draw_rivers (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh, const Mat4& model) override;
       void draw_list (const DrawList& list) override;
@@ -344,6 +346,9 @@ namespace moppe {
       id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
       id<MTLRenderPipelineState> m_grass_pipeline = nil;
       id<MTLRenderPipelineState> m_grass_mesh_pipeline = nil;
+      id<MTLRenderPipelineState> m_dust_soft = nil, m_dust_add = nil;
+      id<MTLRenderPipelineState> m_dust_mesh_soft = nil;
+      id<MTLRenderPipelineState> m_dust_mesh_add = nil;
       id<MTLRenderPipelineState> m_water_tiles_pipeline = nil;
       bool m_mesh_shaders_ok = false;
       id<MTLRenderPipelineState> m_river = nil;
@@ -757,6 +762,15 @@ namespace moppe {
         @"sky_vertex", @"sky_fragment", scene, depth, MSAA_SAMPLES, false);
       m_ocean = make_pipeline (
         @"ocean_vertex", @"ocean_fragment", scene, depth, MSAA_SAMPLES, true);
+      m_dust_soft = make_pipeline (
+        @"dust_vertex", @"dust_fragment", scene, depth, MSAA_SAMPLES, true);
+      m_dust_add = make_pipeline (@"dust_vertex",
+                                  @"dust_fragment",
+                                  scene,
+                                  depth,
+                                  MSAA_SAMPLES,
+                                  true,
+                                  true);
       if (m_mesh_shaders_ok) {
         if (@available (macOS 13.0, iOS 16.0, *)) {
           // The mesh grass path: an object stage culls patches and a mesh
@@ -787,6 +801,43 @@ namespace moppe {
                         << (error ? error.localizedDescription.UTF8String : "?")
                         << std::endl;
           }
+
+          const auto make_dust_mesh = [&] (bool additive) {
+            MTLMeshRenderPipelineDescriptor* p =
+              [[MTLMeshRenderPipelineDescriptor alloc] init];
+            p.meshFunction = [m_library newFunctionWithName:@"dust_mesh"];
+            p.fragmentFunction =
+              [m_library newFunctionWithName:@"dust_fragment"];
+            p.rasterSampleCount = MSAA_SAMPLES;
+            p.colorAttachments[0].pixelFormat = scene;
+            p.colorAttachments[0].blendingEnabled = YES;
+            p.colorAttachments[0].sourceRGBBlendFactor =
+              MTLBlendFactorSourceAlpha;
+            p.colorAttachments[0].destinationRGBBlendFactor =
+              additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
+            p.colorAttachments[0].sourceAlphaBlendFactor =
+              MTLBlendFactorSourceAlpha;
+            p.colorAttachments[0].destinationAlphaBlendFactor =
+              MTLBlendFactorOneMinusSourceAlpha;
+            p.depthAttachmentPixelFormat = depth;
+            p.stencilAttachmentPixelFormat = depth;
+            p.maxTotalThreadsPerMeshThreadgroup = 64;
+            if (!p.meshFunction || !p.fragmentFunction)
+              return (id<MTLRenderPipelineState>)nil;
+            NSError* error = nil;
+            id<MTLRenderPipelineState> result = [m_device
+              newRenderPipelineStateWithMeshDescriptor:p
+                                               options:MTLPipelineOptionNone
+                                            reflection:nil
+                                                 error:&error];
+            if (!result)
+              std::cerr << "moppe: dust mesh pipeline failed: "
+                        << (error ? error.localizedDescription.UTF8String : "?")
+                        << std::endl;
+            return result;
+          };
+          m_dust_mesh_soft = make_dust_mesh (false);
+          m_dust_mesh_add = make_dust_mesh (true);
 
           // Lattice water tiles: the near standing-water surface on the
           // terrain's own sample grid, sharing the ocean fragment shader.
@@ -1985,6 +2036,82 @@ namespace moppe {
               vertexStart:0
               vertexCount:vertices
             instanceCount:instances];
+    }
+
+    void MetalRenderer::draw_dust (std::span<const DustEmission> emissions,
+                                   float logical_time) {
+      if (emissions.empty () || !m_dust_soft || !m_dust_add)
+        return;
+
+      MoppeDustUniforms uniforms {};
+      uniforms.camera_right = f4 (m_fp.cam_right);
+      uniforms.camera_up = f4 (m_fp.cam_up);
+      uniforms.params.x = logical_time;
+
+      for (int pass = 0; pass < 2; ++pass) {
+        const bool additive = pass == 1;
+        std::vector<MoppeDustEmission> packed;
+        packed.reserve (emissions.size ());
+        for (const DustEmission& emission : emissions) {
+          if (emission.additive != additive || emission.particle_count == 0)
+            continue;
+          MoppeDustEmission p {};
+          p.position_birth = f4 (emission.position, emission.birth_time);
+          p.velocity_count = f4 (emission.velocity,
+                                 static_cast<float> (emission.particle_count));
+          p.color_id =
+            f4 (emission.color, static_cast<float> (emission.id & 0x00ffffffu));
+          p.style.x = emission.size;
+          p.style.y = emission.life;
+          p.style.z = emission.gravity;
+          p.style.w = emission.spread;
+          packed.push_back (p);
+        }
+        if (packed.empty ())
+          continue;
+
+        id<MTLRenderCommandEncoder> enc = scene_encoder ();
+        [enc setDepthStencilState:m_ds[1][0]];
+        [enc setCullMode:MTLCullModeNone];
+        id<MTLRenderPipelineState> mesh_pipeline =
+          additive ? m_dust_mesh_add : m_dust_mesh_soft;
+        if (mesh_pipeline) {
+          if (@available (macOS 13.0, iOS 16.0, *)) {
+            id<MTLBuffer> buffer = [m_device
+              newBufferWithBytes:packed.data ()
+                          length:packed.size () * sizeof (MoppeDustEmission)
+                         options:MTLResourceStorageModeShared];
+            [enc setRenderPipelineState:mesh_pipeline];
+            [enc setMeshBuffer:buffer offset:0 atIndex:MOPPE_BUF_VERTICES];
+            [enc setMeshBytes:&m_fu
+                       length:sizeof (m_fu)
+                      atIndex:MOPPE_BUF_FRAME];
+            [enc setMeshBytes:&uniforms
+                       length:sizeof (uniforms)
+                      atIndex:MOPPE_BUF_DRAW];
+            [enc drawMeshThreadgroups:MTLSizeMake (packed.size (), 1, 1)
+              threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+                threadsPerMeshThreadgroup:MTLSizeMake (64, 1, 1)];
+            continue;
+          }
+        }
+
+        [enc setRenderPipelineState:additive ? m_dust_add : m_dust_soft];
+        [enc setVertexBytes:&m_fu length:sizeof (m_fu) atIndex:MOPPE_BUF_FRAME];
+        [enc setVertexBytes:&uniforms
+                     length:sizeof (uniforms)
+                    atIndex:MOPPE_BUF_DRAW];
+        for (const MoppeDustEmission& emission : packed) {
+          [enc setVertexBytes:&emission
+                       length:sizeof (emission)
+                      atIndex:MOPPE_BUF_VERTICES];
+          [enc
+            drawPrimitives:MTLPrimitiveTypeTriangle
+               vertexStart:0
+               vertexCount:6
+             instanceCount:static_cast<NSUInteger> (emission.velocity_count.w)];
+        }
+      }
     }
 
     // -- draw lists ----------------------------------------------------

@@ -116,6 +116,34 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   MOPPE_CHECK_NEAR (restored.stars[0].respawn, initial.stars[0].respawn, 1e-6f);
 }
 
+MOPPE_TEST (dust_state_is_a_bounded_deterministic_emission_log) {
+  using namespace moppe;
+  game::Dust dust;
+  game::Dust::Style style;
+  style.life = 2.0f;
+  style.spread = 1.5f;
+  style.additive = true;
+  dust.emit (Vector3D (1, 2, 3),
+             Vector3D (4, 5, 6),
+             90,
+             Vector3D (0.8f, 0.6f, 0.2f),
+             style);
+  const game::Dust::State saved = dust.state ();
+  MOPPE_CHECK (saved.emissions.size () == 2);
+  MOPPE_CHECK (saved.emissions[0].particle_count == 64);
+  MOPPE_CHECK (saved.emissions[1].particle_count == 26);
+  MOPPE_CHECK (saved.emissions[0].id != saved.emissions[1].id);
+
+  dust.update (2.0f);
+  MOPPE_CHECK (dust.state ().emissions.empty ());
+  dust.restore (saved);
+  const game::Dust::State restored = dust.state ();
+  MOPPE_CHECK (restored.emissions.size () == 2);
+  MOPPE_CHECK (restored.next_id == saved.next_id);
+  MOPPE_CHECK_NEAR (restored.logical_time, saved.logical_time, 1e-6f);
+  check_vector (restored.emissions[0].position, saved.emissions[0].position);
+}
+
 MOPPE_TEST (game_state_is_an_independent_value) {
   static_assert (std::is_copy_constructible_v<moppe::game::GameState>);
   static_assert (std::is_copy_assignable_v<moppe::game::GameState>);

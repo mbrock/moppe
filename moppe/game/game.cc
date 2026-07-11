@@ -257,7 +257,8 @@ namespace moppe {
                  m_car.state (),
                  m_walker.state (),
                  m_camera.state (),
-                 m_stars.state () };
+                 m_stars.state (),
+                 m_dust.state () };
       }
 
       void restore (const GameState& state) {
@@ -267,6 +268,7 @@ namespace moppe {
         m_walker.restore (state.walker);
         m_camera.restore (state.camera);
         m_stars.restore (state.stars);
+        m_dust.restore (state.dust);
       }
 
       // -- lifecycle ---------------------------------------------------
@@ -282,7 +284,6 @@ namespace moppe {
           r, "AvenirNext-DemiBold", 52, r.scale_factor ()));
         m_loading_font.reset (new render::FontAtlas (
           r, "AvenirNext-Medium", 24, r.scale_factor ()));
-        m_dust.load (r);
         m_blob.load (r);
 
         platform::async (
@@ -1220,9 +1221,7 @@ namespace moppe {
           m_terrain_lab.render_droplet (r, cam);
 
         if (!terrain_lab && m_graphics.particles) {
-          m_dust_dl.clear ();
-          m_dust.render (m_dust_dl, env);
-          r.draw_list (m_dust_dl);
+          m_dust.render (r);
         }
 
         // Post effects.
@@ -1898,7 +1897,6 @@ namespace moppe {
       std::atomic<int> m_gen_stage;
 
       render::DrawList m_world_dl;
-      render::DrawList m_dust_dl;
       render::DrawList m_hud_dl;
     };
   }
