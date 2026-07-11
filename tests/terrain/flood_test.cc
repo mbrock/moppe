@@ -30,6 +30,31 @@ MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
   MOPPE_CHECK_NEAR (flood.water_level.at (0, 0), 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (flood.water_depth.at (0, 0), 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (flood.water_depth.at (1, 0), 1.0f, 0.0f);
+  MOPPE_CHECK (flood.has_ocean);
+  MOPPE_CHECK (flood.outlets.size () == 1);
+  MOPPE_CHECK (flood.outlets[0] == 0);
+  MOPPE_CHECK (flood.spill_receiver[1] == 0);
+}
+
+MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
+  const std::array heights {
+    -1.f, -1.f, -1.f, -1.f, -1.f,
+    -1.f,  3.f,  3.f,  3.f, -1.f,
+    -1.f,  3.f, -2.f,  3.f, -1.f,
+    -1.f,  3.f,  3.f,  3.f, -1.f,
+    -1.f, -1.f, -1.f, -1.f, -1.f
+  };
+  const TerrainView terrain ({ .width = 5, .height = 5 }, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+
+  MOPPE_CHECK (flood.outlets.size () == 1);
+  MOPPE_CHECK_NEAR (flood.water_level.at (2, 2), 3.0f, 0.0f);
+  MOPPE_CHECK (census.bodies.size () == 2);
+  MOPPE_CHECK (census.bodies[0].ocean_connected);
+  MOPPE_CHECK (!census.bodies[1].ocean_connected);
+  MOPPE_CHECK (census.bodies[1].outlet_cell == 12);
+  MOPPE_CHECK (census.bodies[1].spill_cell != WaterBody::no_cell);
 }
 
 MOPPE_TEST (periodic_flood_can_spill_across_the_duplicated_seam) {
@@ -59,6 +84,7 @@ MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
   MOPPE_CHECK (flood.outlets.size () == 1);
+  MOPPE_CHECK (!flood.has_ocean);
   MOPPE_CHECK (flood.outlets[0] == 4);
   MOPPE_CHECK (flood.spill_receiver[4] == 4);
 }
@@ -107,7 +133,11 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   MOPPE_CHECK (census.bodies[0].cells == 1);
   MOPPE_CHECK_NEAR (census.bodies[0].area_m2, 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (census.bodies[0].maximum_depth_m, 10.0f, 0.0f);
+  MOPPE_CHECK_NEAR (census.bodies[0].mean_depth_m, 10.0f, 0.0f);
   MOPPE_CHECK_NEAR (census.bodies[0].volume_m3, 20.0f, 0.0f);
+  MOPPE_CHECK (!census.bodies[0].ocean_connected);
+  MOPPE_CHECK (census.bodies[0].outlet_cell == 12);
+  MOPPE_CHECK (census.bodies[0].spill_cell == 7);
   MOPPE_CHECK
     (census.bodies[0].classification == WaterBodyClass::Puddle);
 }

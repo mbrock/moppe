@@ -140,18 +140,28 @@ TerrainView + sea level -> FloodField
                            |-> water surface w
                            |-> standing depth w - z
                            |-> spill receiver per cell
-                           |-> sea-level outlets
+                           |-> one outlet for the global ocean
 ```
 
-A deterministic D8 priority flood begins at every submerged ocean cell and
-propagates the lowest possible spill elevation over the unique torus. An
+On a torus there is no exterior boundary to identify the ocean. The largest
+connected component at or below sea level is therefore the explicit global
+ocean, with scan order breaking equal-size ties. A deterministic D8 priority
+flood begins across that component and propagates the lowest possible spill
+elevation over the unique torus. Enclosed terrain below nominal sea level is
+allowed to rise to its own spill instead of becoming a false ocean. An
 all-land torus uses its global minimum as an explicit endorheic fallback.
-Every spill-receiver chain is acyclic and reaches one of those roots. The wet
-drainage interpretation chooses strict downhill D8 routes on this filled
-surface and follows the spill forest to resolve equal-height lake interiors.
-Its general topological accumulation carries the full upstream area across
-lakes without mutating terrain. Hydraulic erosion does not yet consume this
-route. In random-world gameplay, however, the
+Every spill-receiver chain is acyclic and reaches the chosen root.
+
+The lake census labels connected wet bodies and records physical area,
+maximum and mean depth, volume, surface level, ocean connectivity, and the
+route-proven pair of last wet cell and first dry spill cell. The wet drainage
+interpretation chooses strict downhill D8 routes on the filled surface, gives
+each inland body one deterministic tree leading to its spill, and uses a
+general topological pass to carry the full upstream area across equal-height
+water. A `WaterNetwork` then records every dry-to-water inlet edge and its
+accumulated catchment area, plus each inland body's outflow area and downstream
+cell. These remain readings and do not mutate terrain. Hydraulic erosion does
+not yet consume them. In random-world gameplay, however, the
 same `FloodField::water_level` raster drives the animated water grid: vertices
 sample the local lake elevation, dry fragments are discarded, and wave
 amplitude fades toward each shore. This changes presentation and spawn-site

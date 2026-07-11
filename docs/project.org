@@ -80,13 +80,17 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Area/depth/volume permanence policy for rendered inland water.
 - [X] Standing lakes rendered in the random game world.
 - [X] Depression-aware drainage through lakes with topological accumulation.
+- [X] Explicit global-ocean identity and route-proven inland body spills.
+- [X] Body inlet and outflow catchment ledgers for rendering and erosion.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
 Terrain Lab now interprets the =FloodField= as a wet drainage surface: strict
-downhill D8 routes on slopes and deterministic spill-forest routes across
-level water.  Body-level ocean identity and exact named lake spills remain
-unfinished; hydraulic erosion does not yet consume the wet graph.
+downhill D8 routes on slopes and one deterministic route through each level
+water body.  The largest connected below-sea component is the explicit ocean;
+enclosed low basins fill to their own spills.  Inland bodies expose exact
+spills, inlets, and accumulated outflow.  Hydraulic erosion does not yet
+consume the wet graph.
 
 ** Riding and presentation
 
@@ -101,25 +105,27 @@ unfinished; hydraulic erosion does not yet consume the wet graph.
 
 * Active work
 
-** TODO Finish body-level water routing
+** TODO Turn the water network into visible reaches
 
-Wet drainage now crosses standing water without cycles and carries accumulated
-area to an outlet.  The next boundary is to consolidate connected sea cells
-into ocean bodies and make every inland body's spill a direct, tested part of
-its identity rather than a nearby census candidate.
+Body-level routing now has enough identity for its first visible consumer.
+Extract coherent stream reaches above a configurable contributing-area
+threshold, stop them at lake inlets, and resume them at spills.  Preserve
+reach direction, slope, and discharge as rendering inputs before generating
+or carving any river geometry.
 
 Acceptance evidence:
 
-- Every non-endorheic water body has a tested spill identity.
-- Connected ocean cells share body-level outlet semantics.
-- Routing is deterministic and periodic.
-- This remains a reading: it does not silently edit terrain.
+- Reaches join at confluences and do not draw bookkeeping paths across lakes.
+- Every reach retains direction, contributing area, and bed slope.
+- The extracted network is deterministic, periodic, and inspectable.
+- Extraction remains a reading and does not silently edit terrain.
 
 ** TODO Improve lake identity and inspection
 
-- [ ] Distinguish ocean connectivity from merely sharing sea level.
-- [ ] Add mean depth and an exact per-body spill contract.
-- [ ] Add a lake inspector and distribution export.
+- [X] Distinguish the global ocean from enclosed below-sea basins.
+- [X] Add mean depth and an exact per-body spill contract.
+- [X] Show body class, mean depth, inlet count, and catchment in TRACE.
+- [ ] Add lake-size distribution export.
 - [ ] Make =WaterPermanence= editable program data rather than a default C++
   policy at the rendering boundary.
 
@@ -218,6 +224,14 @@ Detailed engineering guidance remains in
   cross equal-height lake interiors.
 - Switched Terrain Lab flow, stream, basin, and outlet readings to the wet
   graph while leaving erosion and geometry unchanged.
+
+** 2026-07-11 Water bodies gain routing identity
+
+- Consolidated submerged cells into one outlet tree per connected sea.
+- Replaced approximate boundary spill candidates with route-proven outlet and
+  spill pairs, and forced each inland body to discharge through that pair.
+- Added =WaterNetwork= inlet and outflow catchment ledgers and exposed body
+  depth, inlet count, and catchment area through Terrain Lab tracing.
 
 ** 2026-07-11 Documentation reorganization
 
