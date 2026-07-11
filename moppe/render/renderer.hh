@@ -204,6 +204,8 @@ namespace render {
     // Post effects; call between world drawing and draw_hud.
     virtual void apply_underwater (float time) = 0;
     virtual void apply_motion_blur (float strength) = 0;
+    // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.
+    virtual void apply_scene_blur () = 0;
     // 2D overlay in point coordinates, y-down, origin top-left.
     virtual void draw_hud (const DrawList& list) = 0;
     // Development capture: the backend writes the next completed frame.

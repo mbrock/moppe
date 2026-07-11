@@ -44,7 +44,12 @@ namespace moppe::map {
       report = m_target.erode_hydraulically
 	(m_randomness, hydraulic->droplets, hydraulic->batch_size,
 	 hydraulic->max_steps, hydraulic->minimum_water,
-	 hydraulic->sediment_at_termination, hydraulic->carving_rule);
+	 hydraulic->sediment_at_termination, hydraulic->carving_rule,
+	 [this, &transform] (int completed, int total) {
+	   if (m_iteration_progress)
+	     m_iteration_progress
+	       (m_transform_index, transform, completed, total);
+	 });
     else if (const auto* analytical =
 	     std::get_if<terrain::AnalyticalErosion> (&transform)) {
       terrain::AnalyticalErosionResult result = terrain::erode_analytically
@@ -78,14 +83,18 @@ namespace moppe::map {
 
   void
   TerrainEvaluator::evaluate
-    (const terrain::TerrainProgram& program, const Progress& progress)
+    (const terrain::TerrainProgram& program, const Progress& progress,
+     const IterationProgress& iteration_progress)
   {
     begin (program);
+    m_iteration_progress = iteration_progress;
     for (std::size_t i = 0; i < program.transforms.size (); ++i) {
+      m_transform_index = i;
       if (progress)
 	progress (i, program.transforms[i]);
       apply (program.transforms[i]);
     }
+    m_iteration_progress = { };
   }
 
   TerrainCheckpoint

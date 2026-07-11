@@ -10,6 +10,7 @@
 #include <moppe/terrain/topology.hh>
 
 #include <cmath>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -321,7 +322,8 @@ namespace map {
        terrain::SedimentDisposition sediment_at_termination =
 	 terrain::SedimentDisposition::Discard,
        terrain::CarvingRule carving_rule =
-	 terrain::CarvingRule::PathMonotone);
+	 terrain::CarvingRule::PathMonotone,
+       const std::function<void (int, int)>& progress = { });
 
     // Talus relaxation: material on too-steep slopes slides to the
     // foot, smoothing single-cell erosion spikes into scree.

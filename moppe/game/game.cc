@@ -268,13 +268,13 @@ namespace game {
       m_hud.load (r);
       m_terrain_lab.load (r);
       m_loading_title_font.reset
-	(new render::FontAtlas (r, "AvenirNext-DemiBold", 36,
+	(new render::FontAtlas (r, "AvenirNext-DemiBold", 46,
 				r.scale_factor ()));
       m_loading_font.reset
-	(new render::FontAtlas (r, "AvenirNext-Medium", 23,
+	(new render::FontAtlas (r, "AvenirNext-DemiBold", 28,
 				r.scale_factor ()));
       m_loading_detail_font.reset
-	(new render::FontAtlas (r, "AvenirNext-Medium", 14,
+	(new render::FontAtlas (r, "AvenirNext-Medium", 16,
 				r.scale_factor ()));
       m_dust.load (r);
       m_blob.load (r);
@@ -435,6 +435,15 @@ namespace game {
 	      if (std::holds_alternative<terrain::HydraulicErosion>
 		  (transform))
 		m_gen_stage = 4;
+	    },
+	    [this] (std::size_t,
+		    const terrain::TerrainTransform& transform,
+		    int completed, int total) {
+	      if (std::holds_alternative<terrain::HydraulicErosion>
+		  (transform)) {
+		m_loading_work_done = completed;
+		m_loading_work_total = total;
+	      }
 	    });
 	  if (cache)
 	    m_map.save_cache (cache);
@@ -1266,15 +1275,17 @@ namespace game {
       const Vector3D forward = (target - eye).normalized ();
 
       render::FrameParams fp;
-      fp.clear_color = horizon_color_for (SUN_HEIGHT);
       fp.view = Mat4::look_at (eye, target, Vector3D (0, 1, 0));
       fp.proj = Mat4::perspective_reversed
 	(degrees_to_radians (show_terrain ? 52.0f : 64.0f), aspect,
 	 0.5f, std::max (9000.0f, m_world.map_size.x * 2.0f));
       fp.camera_pos = eye;
-      fp.sun_dir = sun_direction_for (SUN_HEIGHT);
-      sun_light_colors (SUN_HEIGHT, fp.sun_diffuse, fp.sun_specular);
-      fp.ambient = Vector3D (0.45f, 0.49f, 0.55f);
+      constexpr float loading_sun_height = 0.72f;
+      fp.clear_color = horizon_color_for (loading_sun_height);
+      fp.sun_dir = sun_direction_for (loading_sun_height);
+      sun_light_colors
+	(loading_sun_height, fp.sun_diffuse, fp.sun_specular);
+      fp.ambient = Vector3D (0.53f, 0.57f, 0.62f);
       fp.fog_scale = show_terrain ? m_world.fog_scale * 1.35f : 0.0f;
       fp.time = sky_time;
       fp.exposure_bias = 0.88f;
@@ -1283,8 +1294,8 @@ namespace game {
 
       render::SkyParams sky;
       sky.time = sky_time;
-      sky.sun_height = SUN_HEIGHT;
-      sky.cloudiness = 0.32f;
+      sky.sun_height = loading_sun_height;
+      sky.cloudiness = 0.18f;
       sky.sun_dir = fp.sun_dir;
       sky.fog_color = fp.clear_color;
       r.draw_sky (sky);
@@ -1297,6 +1308,10 @@ namespace game {
 	  m_terrain.render
 	    (r, eye, forward, m_world.map_size.x * 1.8f);
       }
+
+      // Keep the endlessly tiled world atmospheric and subordinate to the
+      // typography. This pass affects only the 3D scene; the HUD stays crisp.
+      r.apply_scene_blur ();
 
       m_hud_dl.clear ();
       render::DrawState s;
@@ -1322,18 +1337,39 @@ namespace game {
       const char* text = stages[stage < 0 ? 0 : stage > 7 ? 7 : stage];
       std::string erosion_text;
       if (stage == 4) {
-	erosion_text = "Eroding (" + std::to_string
-	  (terrain::profile_droplet_count (m_generation_profile))
-	  + " droplets, "
-	  + std::string (terrain::profile_id (m_generation_profile)) + ")...";
+	const int done = m_loading_work_done;
+	const int total = std::max (1, (int) m_loading_work_total.load ());
+	erosion_text = "Carving rivers  " + std::to_string (done / 1000)
+	  + "k / " + std::to_string (total / 1000) + "k droplets";
 	text = erosion_text.c_str ();
       }
 
-      const float panel_width = std::min (620.0f, w - 48.0f);
-      const float panel_height = 206.0f;
+      float target_progress = 0.04f;
+      if (stage == 3)
+	target_progress = 0.20f;
+      else if (stage == 4) {
+	const float erosion = (float) m_loading_work_done.load ()
+	  / std::max (1.0f, (float) m_loading_work_total.load ());
+	target_progress = 0.25f + 0.57f * erosion;
+      } else if (stage == 5)
+	target_progress = 0.88f;
+      else if (stage == 6)
+	target_progress = 0.97f;
+      else if (stage == 7)
+	target_progress = 0.92f;
+      const float frame_dt = m_loading_progress_time > 0.0
+	? std::min (0.1f, (float) (sky_time - m_loading_progress_time))
+	: 1.0f / 60.0f;
+      m_loading_progress_time = sky_time;
+      m_loading_progress_display +=
+	(target_progress - m_loading_progress_display)
+	* (1.0f - std::exp (-7.0f * frame_dt));
+
+      const float panel_width = std::min (700.0f, w - 48.0f);
+      const float panel_height = 244.0f;
       const float panel_x = (w - panel_width) * 0.5f;
       const float panel_y = std::min
-	(h - panel_height - 28.0f, std::max (32.0f, h * 0.56f));
+	(h - panel_height - 28.0f, std::max (32.0f, h * 0.57f));
 
       // Terrain Lab's cool instrument surface, allowed to float over the
       // world sky which is being prepared behind it.
@@ -1356,7 +1392,7 @@ namespace game {
       if (m_loading_title_font && m_loading_title_font->ok ()) {
 	m_hud_dl.color (0.91f, 0.98f, 0.90f, 1.0f);
 	m_loading_title_font->draw
-	  (m_hud_dl, panel_x + 30, panel_y + 53, "MAKING A WORLD");
+	  (m_hud_dl, panel_x + 34, panel_y + 66, "MAKING A WORLD");
       }
       if (m_loading_detail_font && m_loading_detail_font->ok ()) {
 	m_hud_dl.color (0.47f, 0.72f, 0.68f, 0.98f);
@@ -1364,12 +1400,12 @@ namespace game {
 	  + "  /  "
 	  + std::string (terrain::profile_id (m_generation_profile));
 	m_loading_detail_font->draw
-	  (m_hud_dl, panel_x + 32, panel_y + 80, detail);
+	  (m_hud_dl, panel_x + 36, panel_y + 96, detail);
       }
       if (m_loading_font && m_loading_font->ok ()) {
 	m_hud_dl.color (0.84f, 0.94f, 0.92f, 1.0f);
 	m_loading_font->draw
-	  (m_hud_dl, panel_x + 31, panel_y + 126, text);
+	  (m_hud_dl, panel_x + 35, panel_y + 151, text);
       }
 
       // Stage lights communicate real progress; a soft traveling highlight
@@ -1378,13 +1414,13 @@ namespace game {
       const double t = platform::now ();
       const float pulse =
 	0.5f + 0.5f * (float) std::sin (t * 2.6);
-      const float track_x = panel_x + 32;
-      const float track_y = panel_y + 161;
-      const float track_width = panel_width - 64;
+      const float track_x = panel_x + 36;
+      const float track_y = panel_y + 188;
+      const float track_width = panel_width - 72;
       m_hud_dl.color (0.02f, 0.12f, 0.12f, 0.98f);
       fill_rounded_rect
 	(m_hud_dl, track_x, track_y, track_width, 8, 4);
-      const float completed = track_width * (stage + 1) / 8.0f;
+      const float completed = track_width * m_loading_progress_display;
       m_hud_dl.color (0.32f, 0.70f, 0.61f, 0.92f);
       fill_rounded_rect
 	(m_hud_dl, track_x, track_y, completed, 8, 4);
@@ -1397,12 +1433,23 @@ namespace game {
       if (m_loading_detail_font && m_loading_detail_font->ok ()) {
 	m_hud_dl.color (0.42f, 0.67f, 0.63f, 0.9f);
 	m_loading_detail_font->draw
-	  (m_hud_dl, track_x, panel_y + 190,
+	  (m_hud_dl, track_x, panel_y + 222,
 	   "FORMING LAND  /  MOVING WATER  /  GROWING A PLACE");
       }
 
+      bool captured_loading = false;
+      if (!m_loading_capture_done && show_terrain
+	  && m_loading_progress_display > 0.28f) {
+	if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
+	  r.request_screenshot (path);
+	  m_loading_capture_done = true;
+	  captured_loading = true;
+	}
+      }
       r.draw_hud (m_hud_dl);
       r.end_frame ();
+      if (captured_loading)
+	platform::request_quit ();
     }
 
     void render_game_over (render::Renderer& r) {
@@ -1554,6 +1601,10 @@ namespace game {
       input_boost (0.0f);
       m_ready = false;
       m_gen_stage = 0;
+      m_loading_work_done = 0;
+      m_loading_work_total = 1;
+      m_loading_progress_display = 0.0f;
+      m_loading_progress_time = 0.0;
       m_standing_water.reset ();
       m_lake_census.reset ();
       m_drainage.reset ();
@@ -1693,6 +1744,11 @@ namespace game {
     map::RandomHeightMap m_loading_map;
     std::mutex m_loading_mutex;
     std::shared_ptr<const std::vector<float>> m_loading_heights;
+    std::atomic<int> m_loading_work_done = 0;
+    std::atomic<int> m_loading_work_total = 1;
+    float m_loading_progress_display = 0.0f;
+    double m_loading_progress_time = 0.0;
+    bool m_loading_capture_done = false;
     int m_loading_terrain_state = 0;
     float m_loading_terrain_reveal = 0.0f;
     std::optional<terrain::FloodField> m_standing_water;

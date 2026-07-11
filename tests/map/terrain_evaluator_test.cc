@@ -192,6 +192,28 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
       (first.get (i, 0) == first.get (i, first.height () - 1));
 }
 
+MOPPE_TEST (hydraulic_progress_reports_each_completed_batch) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  TerrainProgram program = make_geological_program (123);
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = 130,
+    .batch_size = 64
+  });
+  map::RandomHeightMap map
+    (65, 65, Vector3D (100, 20, 100), 0, Topology::Torus);
+  std::vector<int> completed;
+  map::TerrainEvaluator evaluator (map);
+  evaluator.evaluate
+    (program, { },
+     [&completed] (std::size_t, const TerrainTransform&, int done, int total) {
+       MOPPE_CHECK (total == 130);
+       completed.push_back (done);
+     });
+
+  MOPPE_CHECK (completed == std::vector<int> ({ 64, 128, 130 }));
+}
+
 MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   using namespace moppe;
   using namespace moppe::terrain;

@@ -418,8 +418,12 @@ namespace moppe::terrain {
 
     const std::size_t hardware_threads = std::max
       (1u, std::thread::hardware_concurrency ());
+    // Keep one logical CPU available for the animated loading screen and
+    // other main-thread work while large fields are materialized.
+    const std::size_t available_threads = hardware_threads > 1
+      ? hardware_threads - 1 : 1;
     const std::size_t worker_count = output.size () < 65536
-      ? 1 : std::min (domain.height, hardware_threads);
+      ? 1 : std::min (domain.height, available_threads);
     if (worker_count == 1) {
       evaluate_rows ();
     } else {
