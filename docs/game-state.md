@@ -9,14 +9,15 @@ graphics settings.
 `game::GameLogicState` currently gathers the game clock, derived weather and
 camera effects, player mode and inputs, health/fuel/scoring values, gameplay
 timers, and the effects random-number generator. `game::GameState` combines
-that value with snapshots of both vehicles, the walker, and the chase camera.
+that value with snapshots of both vehicles, the walker, the chase camera, and
+the mutable portion of the generated star set.
 Restoring those subsystem values changes only their mutable state; immutable
 terrain references, obstacle references, and vehicle physical parameters stay
 attached to the live objects.
 
 This is the first replayable slice, not yet a claim of complete determinism.
-Mutable stars, dust/particle populations, city actors, and any renderer
-history are not yet in `GameState`. World generation, terrain analysis,
+Dust/particle populations, city actors, and any renderer history are not yet
+in `GameState`. World generation, terrain analysis,
 uploaded meshes and textures, window state, and asynchronous loading state do
 not belong there. Renderer history should get its own reset boundary rather
 than being copied into logical game state.

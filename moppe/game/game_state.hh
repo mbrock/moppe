@@ -2,6 +2,7 @@
 #define MOPPE_GAME_GAME_STATE_HH
 
 #include <moppe/game/chase_camera.hh>
+#include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/mov/vehicle.hh>
@@ -48,14 +49,15 @@ namespace moppe::game {
 
   // First replayable slice of the running game.  Immutable world/resource
   // references remain attached to their live systems when this value is
-  // restored.  Stars, dust, and mutable city actors are the next subsystems to
-  // join the snapshot.
+  // restored.  Dust and mutable city actors are the next subsystems to join
+  // the snapshot.
   struct GameState {
     GameLogicState logic;
     mov::Vehicle::State vehicle;
     mov::Vehicle::State car;
     Walker::State walker;
     ChaseCamera::State camera;
+    Stars::State stars;
   };
 }
 
