@@ -461,6 +461,353 @@ argue with.
 - [Red Blob Games' pathfinding pages][redblob-pathfinding] — executable,
   inspectable versions of graph search and cost-field ideas.
 
+## 11. Desire paths, animal trails, and networks that make themselves
+
+This was one of the richest trails in the original research conversation and
+deserves its own section.  A path need not begin as a solved route between two
+fixed endpoints.  It can emerge through stigmergy: movement leaves a trace;
+the trace makes later movement easier; repeated use consolidates some lines;
+unused lines recover.  Human and animal trail research adds limited
+perception, different bodies, route redundancy, and environmental change.
+
+- **Begin here:** Dirk Helbing et al.,
+  [*Active Walker Model for the Formation of Human and Animal Trail
+  Systems*][active-walker].  This may be the closest paper to the “pilgrims
+  whose gravity is desire” idea.  Walkers are attracted toward destinations
+  while modifying a field that influences subsequent walkers; trace creation
+  and decay shape the resulting network.
+- Dirk Helbing, Joachim Keltsch, and Peter Molnar,
+  [*Modelling the Evolution of Human Trail Systems*][human-trails].  A shorter
+  account focused on the feedback between walkers, landscape, and network
+  topology.
+- Hata and Amemiya,
+  [*Mountain Trail Formation and the Active Walker Model*][mountain-trails].
+  Especially relevant because it takes the active-walker mechanism onto
+  sloped terrain rather than an abstract flat plane.
+- **Begin here:** Perna et al.,
+  [*Animal Transportation Networks*][animal-networks].  A delightful review
+  of networks created by repeated physical improvement, external signals such
+  as scent, and explicit construction.  It frames infrastructure as a balance
+  among construction cost, travel efficiency, and redundancy.
+- Devin White,
+  [*The Basics of Least Cost Analysis for Archaeological
+  Applications*][least-cost-archaeology].  A clear baseline and a useful
+  warning: least-cost models commonly assume rational travelers with complete
+  knowledge.  A generated route should name those assumptions.
+- Joseph Lewis,
+  [*Explaining Known Past Routes, Underdetermination, and the Use of Multiple
+  Cost Functions*][route-underdetermination].  Several plausible cost models
+  can explain the same observed route.  Slope-only routing can look objective
+  while silently choosing one hypothesis among many.
+- Ko, Shim, and Jung,
+  [*Multiplicity and Path Dependency in Historical Routes*][path-dependency].
+  Adds hillslope position—bench, shoulder, valley margin—to ordinary slope
+  cost and models how earlier routes bias later ones.
+- Pinto and Keitt, [*Beyond the Least-Cost Path*][beyond-lcp].  In landscape
+  ecology, connectivity may be a bundle of near-good corridors whose
+  redundancy matters, not one optimal pixel-wide line.
+- Atsushi Tero et al.,
+  [*Rules for Biologically Inspired Adaptive Network Design*][physarum].  The
+  famous Physarum work is valuable here as adaptive conductance: useful flow
+  strengthens edges while weak connections decay, balancing efficiency,
+  total material, and resilience.
+- David Levinson and Bhanu Yerra,
+  [*Self-Organization of Surface Transportation Networks*][self-organizing-roads].
+  A human-transport counterpart in which demand, cost, revenue, and
+  reinvestment produce a road hierarchy rather than receiving one in advance.
+
+Together these suggest an experiment more interesting than A* followed by a
+spline.  Give movers imperfect knowledge and body-specific costs; let passage
+slightly improve a trace; let weather and disuse erase it; and preserve a
+corridor of near-good alternatives before declaring any single centerline.
+
+## 12. Paths belong to water, landform, and history
+
+Trails are small earthworks.  Their alignment determines whether they shed
+water, become muddy, widen, incise into gullies, or disappear.  The practical
+trail literature is unusually valuable because it joins geomorphology,
+embodied travel, construction, maintenance, and long observation.
+
+- **Begin here:** Meadema et al.,
+  [*The Influence of Layout on Appalachian Trail Soil Loss, Widening, and
+  Muddiness*][trail-soil-loss].  Direct-ascent alignments tend to collect
+  surface flow and incise; rolling side-hill alignments allow water to cross
+  the tread.
+- The US Forest Service,
+  [*Trail Construction and Maintenance Notebook*][forest-trails].  A
+  surprisingly generative document about rolling contour alignment, grade
+  reversals, drainage crossings, switchbacks, and fitting a trail to the
+  landform.
+- California State Parks,
+  [*Principles of Trail Layout and Design*][california-trails].  Another strong
+  procedural manual: a sequence of local decisions constrained by soil,
+  sideslope, drainage, users, and desired experience.
+- Bill Hillier et al. on
+  [metric and topo-geometric street properties][street-properties].  Locally,
+  distance matters; at larger scales, directional continuity, topology, and
+  turns can dominate.  A visually continuous route can become important
+  without being the shortest.
+- Penn et al., [*Natural Movement*][natural-movement].  Street configuration
+  affects movement; movement attracts land uses; those uses become
+  destinations and intensify the network.  Centers can therefore be effects
+  of paths as well as their causes.
+- Lake, Ortega, and Saalman,
+  [*A Least-Cost Network Neutral Landscape Model of Human Sites and
+  Routes*][sites-and-routes].  A particularly close model in which sites arise
+  from least-cost catchments and a route network is then developed among
+  them.
+
+A useful Moppe reading falls directly out of these sources:
+
+```text
+trail vulnerability =
+    traffic
+  × trail grade
+  × alignment with downhill flow
+  × intercepted contributing area
+  × soil erodibility
+```
+
+That reading can act as a hydrological veto without insisting that every
+vulnerable path vanish.  A muddy fall-line shortcut may remain compelling
+while a durable contour road develops beside it.  The two lines then possess
+different biographies.
+
+## 13. Physics-first routes, jumps, and diverse kinds of fun
+
+The earlier game-oriented search found a second missing cluster.  The central
+lesson is simple: generate a trajectory—or a family of trajectories—before
+committing to geometry.  A line is playable because an embodied state can
+move through it, not because its spline looks road-like from above.
+
+- **Begin here:** Douglas Gregory,
+  [*Path-First Platformer Generation*][path-first].  The system samples a
+  trajectory using the game's movement physics and then constructs geometry
+  that supports it.  For Moppe, substitute a bike state containing velocity,
+  heading, drift, boost, grounded state, and landing condition.
+- Graham Todd et al., [*Momentum*][momentum].  Autonomous agents, parameter
+  sweeps, and structured crash reports validate runtime-generated endless-
+  runner content.  The genre differs, but “generate, drive, and classify the
+  failure” transfers directly.
+- Kapania, Subosits, and Gerdes's
+  [racing-trajectory algorithm][racing-trajectories] is already listed above;
+  its separation of speed-profile estimation from line optimization is a
+  useful critic for a route corridor after the corridor exists.
+- Lucas et al.,
+  [*Search-Based Procedural Content Generation for Race
+  Tracks*][search-racetracks].  Evolves parameterized tracks under several
+  objectives.  It offers representations and evaluation machinery while also
+  demonstrating why “more curvature variety” is not yet a theory of fun.
+- Cardamone et al., [*TrackGen*][trackgen].  Interactive evolution of playable
+  TORCS racetracks: an important precedent for a human choosing among
+  generated alternatives rather than accepting one automatic optimum.
+- Volz et al.,
+  [*Extracting Physics from Blended Platformer Game Levels*][extract-physics].
+  A useful conceptual precedent for inferring the movement model that makes
+  level geometry meaningful.
+- Daniele Gravina et al.,
+  [*Procedural Content Generation through Quality
+  Diversity*][pcg-quality-diversity].  Instead of one scalar “fun” optimum,
+  retain good routes across dimensions such as airtime, speed, drift, risk,
+  intervention, hydrological fit, and number of viable lines.
+- Antonios Liapis et al.,
+  [*Constrained Novelty Search*][constrained-novelty].  Search for meaningful
+  difference while preserving hard validity constraints: physics first,
+  interesting variation second.
+- Georgios Yannakakis and Julian Togelius's
+  [experience-driven PCG paper][edpcg-paper].  The eventual critic should
+  include actual play: braking, takeoffs, landings, crashes, turnarounds,
+  retries, informal shortcuts, and places where someone stops to look.
+
+For jump generation, these references point toward searching backward from a
+generous landing region.  Choose acceptable approach and impact envelopes,
+integrate candidate flights, find terrain capable of providing the takeoff,
+and then test many imperfect riders.  The desired result is not one exact
+successful input sequence but a tube containing a slow safe line, an intended
+line, a risky fast line, recoveries, and failures interesting enough to invite
+another attempt.
+
+## 14. Hydrology, landform readings, and executable landscapes
+
+The first research pass was grounded in Moppe's immediate terrain work.  Much
+of this material also disappeared from the shorter bibliography.  It belongs
+here because paths and centers can only respond to land if the land has
+legible causal structure.
+
+- **Begin here:** Richard Barnes, Lehman, and Mulla,
+  [*Priority-Flood*][priority-flood].  The foundation beneath depression
+  filling and watershed labeling; the flow-direction and watershed variants
+  matter as much as the filled elevation surface.
+- Guillaume Cordonnier et al.,
+  [*Hierarchical Watersheds for Procedural Stream
+  Networks*][hierarchical-watersheds].  Treats river-network hierarchy as a
+  controllable procedural object while preserving watershed logic.
+- Richard Barnes,
+  [*Parallel Priority-Flood Depression Filling for Trillion Cell
+  DEMs*][parallel-priority-flood].  Over-scale for Moppe, but clarifies which
+  parts of depression routing are local and which require global agreement.
+- Jain et al., [*FastFlow*][fastflow].  Recasts depression routing as a
+  minimum-spanning-tree problem and accumulation as a parallel tree scan.
+- Braun and Willett,
+  [*A Very Efficient, Implicit and Parallel Method to Solve the Stream Power
+  Equation*][fastscape-paper].  The conceptual root of FastScape-style
+  incision and a good precursor to an explicit age/uplift/erodibility
+  transform.
+- Hergarten, [*The Stream Power Law*][stream-power-law].  A conceptual review
+  of what its common exponents mean and where the model ceases to be
+  physically convincing.
+- Perron, Kirchner, and Dietrich,
+  [*Formation of Evenly Spaced Ridges and Valleys*][ridge-spacing].  A
+  beautiful demonstration that drainage competition can select visible
+  characteristic spacing.
+- Bonetti et al., [*Channelization Cascade in Landscape
+  Evolution*][channelization].  Channel networks emerge through instabilities
+  and interactions among scales, rather than decorative river placement.
+- Jasiewicz and Stepinski, [*Geomorphons*][geomorphons].  Horizon comparisons
+  identify ridges, valleys, shoulders, spurs, hollows, slopes, and flats
+  without relying only on noisy local derivatives.
+- Kirmse and de Ferranti,
+  [*Calculating the Prominence and Isolation of Every Mountain in the
+  World*][mountain-prominence].  Peak-saddle hierarchy is useful far beyond a
+  list of summits: it supplies nested terrain centers.
+- Funke, Huning, and Sanders,
+  [*A Sweep-Plane Algorithm for Calculating the Isolation of
+  Mountains*][mountain-isolation].  A modest lonely hill may be a stronger
+  destination than a higher subordinate summit.
+- Haverkort and Toma,
+  [*Visibility Computation on Massive Grid Terrains*][terrain-visibility].
+  Rotating-ray and horizon methods give a basis for viewshed and reveal-point
+  readings.
+- [Landlab][landlab] and its [SPACE example][landlab-space] form the best
+  executable encyclopedia in this cluster: grid, flow routing, depression
+  handling, incision, sediment, diffusion, vegetation, and shallow water as
+  distinct components.
+- [fastscapelib][fastscapelib] is useful for its composable process boundaries;
+  [RichDEM][richdem] for focused C++ terrain algorithms; [HighMap][highmap] for
+  a contemporary C++ heightfield library; and
+  [terrain-erosion-3-ways][erosion-three-ways] for a small visual comparison
+  among simulation, drainage-first construction, and learning.
+
+## 15. More primary Alexander material recovered from the conversation
+
+The main Alexander section contains the core reading route, but the earlier
+search also found unusually useful primary-source archives and operational
+studies.
+
+- The [Christopher Alexander CES Archive][ces-archive] now makes lectures,
+  drafts, project records, and hard-to-find source texts directly available.
+- The archive's excerpt on
+  [structure-preserving transformations][spt-excerpt] uses simple diagrams
+  that make differentiation and preservation concrete.
+- Alexander's [*Generative Codes*][generative-codes] emphasizes that the order
+  of operations is as important as the ingredients.  This is one of his
+  closest approaches to executable procedural generation.
+- *A New Theory of Urban Design*, with an
+  [overview and bibliographic entry][new-urban-theory], records a group
+  incrementally making a model city under seven rules.  David Seamon's
+  [analysis of those rules][seamon-seven-rules] is a helpful guide.
+- The CES Archive's [Oregon Experiment collection][oregon-experiment]
+  documents a long attempt to replace fixed master planning with organic
+  order, diagnosis, participation, coordination, and piecemeal growth.
+- Dawes and Ostwald,
+  [*The Mathematical Structure of Alexander's A Pattern
+  Language*][pattern-language-graph], analyzes 253 patterns and more than
+  1,800 relationships as a network.
+- Alice Rauber and Romulo Krafta,
+  [*Alexander's Theories Applied to Urban Design*][alexander-urban-design]
+  attempts to formulate centers and harmony-seeking computation in an urban
+  analytical model.
+- David Seamon,
+  [*Christopher Alexander's Theory of Wholeness as a Tetrad of Creative
+  Activity*][seamon-tetrad], is a readable explanation of centers as regions
+  of intensified physical and experiential order.
+- [*Architecture and the Self*][architecture-self] experimentally studies
+  Alexander's paired-image judgments with 192 participants.  Pairwise choice
+  remains a promising human instrument when a scalar Beautimeter becomes too
+  confident.
+- [*Living Geometry, AI Tools, and Alexander's 15
+  Properties*][living-geometry-ai] explores computer vision, eye tracking,
+  and generative AI as diagnostic instruments.  It is interesting precisely
+  where caution is needed: detecting a thick boundary is not equivalent to
+  understanding what that boundary supports.
+
+## 16. Legibility, revelation, and attachment over time
+
+The original search also distinguished a good-looking candidate site from a
+place that becomes important through approach, use, and memory.  This matters
+because no terrain generator can install attachment in one pass.
+
+- Kevin Lynch's [*The City Image and Its Elements*][lynch-elements] develops
+  paths, edges, districts, nodes, and landmarks as components of an imaginable
+  city.  They transfer surprisingly well to a landscape and suggest a blunt
+  but useful test: can someone explain how to return without coordinates?
+- Appleton's prospect–refuge theory is a familiar account of environmental
+  preference.  A [meta-analysis][prospect-refuge] finds stronger evidence for
+  prospect than refuge.  For Moppe, the richer unit may be the sequence from
+  enclosure to exposure: a path that climbs through confinement and suddenly
+  releases a view.
+- Leila Scannell and Robert Gifford,
+  [*Defining Place Attachment: A Tripartite Organizing
+  Framework*][place-attachment] separates person, psychological process, and
+  place.  It helps prevent “place quality” from becoming a property of
+  geometry alone.
+- Kyle et al.,
+  [*Linking Place Preferences with Place Meaning*][trail-attachment], studies
+  Appalachian Trail users and distinguishes place identity from place
+  dependence.  The same physical setting can matter differently to different
+  users.
+- A recent [affordance-oriented place-attachment study][attachment-affordance]
+  connects naturalness, spatial definition, variety, views, focal points, and
+  places to sit with the experiences they afford.  The feature does not cause
+  attachment directly; a history of meaningful activity mediates it.
+
+This implies at least three separate records: candidate affordances in the
+land, encounter history, and event or social history.  Crashes, discoveries,
+storms, repeated approaches, shared paths, and names can promote a candidate
+center into an irreplaceable place.
+
+## 17. Implementation side roads found in the first project survey
+
+These sources are less about the speculative world and more about preserving
+Moppe's unusually clear technical language while it grows.  They were part of
+the original research because architecture determines which ideas remain
+inspectable enough to become play.
+
+- Ragan-Kelley et al.,
+  [*Halide: Decoupling Algorithms from Schedules*][halide-paper], with the
+  [Halide repository][halide].  The meaning of a field computation and the
+  strategy used to execute it are separate values.  The important warning is
+  that global graph algorithms and historical transforms should not be
+  disguised as pointwise scalar expressions.
+- Hu et al., [*Taichi*][taichi-paper], with the [Taichi repository][taichi].
+  A small field-oriented language grows to encompass iterative simulation,
+  reductions, sparse storage, differentiation, and several backends.
+- Conal Elliott, [*Compiling to Categories*][compiling-categories].  A more
+  abstract but lovely account of compiling a compositional language by
+  interpreting it into different semantic categories.
+- Losasso and Hoppe, [*Geometry Clipmaps*][geometry-clipmaps], alongside the
+  [GPU Gems implementation][geometry-clipmaps-gpu].  Reusable regular meshes,
+  height textures, nested LOD, and parent-surface morphing are close relatives
+  of Moppe's terrain renderer.
+- Filip Strugar, [CDLOD][cdlod].  A direct implementation reference for
+  distance-dependent terrain LOD, morph intervals, visibility ranges, and
+  crack prevention.
+- Eric Bruneton and Fabrice Neyret,
+  [*Precomputed Atmospheric Scattering*][atmospheric-scattering].  More
+  physical machinery than Moppe necessarily wants, but good background for
+  deciding which relationships in sky and distance should remain coupled.
+- Sebastien Lagarde and Charles de Rousiers,
+  [*Moving Frostbite to Physically Based Rendering*][frostbite-pbr].  Useful
+  lighting, exposure, and material vocabulary without implying that Moppe
+  should surrender its art direction to generic PBR.
+- [Inigo Quilez's articles][iquilez] remain exceptionally useful practical
+  reading on analytical noise derivatives, terrain normals, atmosphere, and
+  procedural texturing.
+- [InfiniteDiffusion][infinite-diffusion] is an instructive contrasting answer
+  to terrain authorship: learned refinement of coarse procedural controls.  It
+  is valuable partly because its tradeoffs around reproducibility,
+  explainability, and geological history differ sharply from Moppe's.
+
 ## Questions to carry back into Moppe
 
 The bibliography becomes useful when it changes the questions asked of a
@@ -490,12 +837,25 @@ allows human and procedural judgment to continue the same unfolding.
 
 <!-- Reference links -->
 [astar]: https://www.redblobgames.com/pathfinding/a-star/introduction.html
+[active-walker]: https://arxiv.org/abs/cond-mat/9806097
+[alexander-urban-design]: https://www.mdpi.com/2413-8851/2/3/86
+[animal-networks]: https://pmc.ncbi.nlm.nih.gov/articles/PMC4191085/
+[attachment-affordance]: https://doi.org/10.1016/j.jenvp.2026.102977
+[atmospheric-scattering]: https://inria.hal.science/inria-00288758
+[architecture-self]: https://escholarship.org/content/qt2h86h5cg/qt2h86h5cg_noSplash_6d7a6a0e4af76c64493cacd79e3355a3.pdf
 [beautimeter]: https://arxiv.org/abs/2411.19094
+[beyond-lcp]: https://hero.epa.gov/reference/8026222/
 [casual-creators]: https://computationalcreativity.net/iccc2015/proceedings/10_2Compton.pdf
+[california-trails]: https://www.parks.ca.gov/pages/1324/files/Chapter%205%20-%20Principles%20of%20Trail%20Layout%20and%20Design.FINAL.04.03.19.pdf
+[cdlod]: https://github.com/fstrugar/CDLOD
+[ces-archive]: https://christopher-alexander-ces-archive.org/
+[channelization]: https://doi.org/10.1073/pnas.1911817117
 [city-not-tree]: https://www.patternlanguage.com/archive/cityisnotatree.html
 [citybound]: https://github.com/citybound/citybound
 [cloud-gardens]: https://www.noio.nl/cloud-gardens-presskit/
 [complex-wholeness]: https://doi.org/10.1016/j.physa.2016.08.038
+[compiling-categories]: http://conal.net/papers/compiling-to-categories/
+[constrained-novelty]: https://direct.mit.edu/evco/article/23/1/101/979/Constrained-Novelty-Search-A-Study-on-Game-Content
 [danesh]: https://www.gamesbyangelina.org/wp-content/uploads/2018/03/danesh.pdf
 [death-stranding]: https://store.steampowered.com/app/1850570/DEATH_STRANDING_DIRECTORS_CUT/
 [dec-course]: https://www.cs.cmu.edu/~kmcrane/Projects/DDG/
@@ -504,21 +864,45 @@ allows human and procedural judgment to continue the same unfolding.
 [dorfromantik]: https://www.toukana.com/dorfromantik
 [eco]: https://play.eco/
 [edpcg]: https://pure.itu.dk/en/publications/experience-driven-procedural-content-generation/
+[edpcg-paper]: https://yannakakis.net/wp-content/uploads/2019/02/EDPCG.pdf
 [editable-wfc]: https://www.boristhebrave.com/2022/04/25/editable-wfc/
+[erosion-three-ways]: https://github.com/dandrino/terrain-erosion-3-ways
 [explainable-cocreation]: https://arxiv.org/abs/1806.04029
 [friendly-pcg]: https://arxiv.org/abs/2005.09324
+[extract-physics]: https://ceur-ws.org/Vol-2862/paper11.pdf
+[fastflow]: https://www-sop.inria.fr/reves/Basilic/2024/JKGFC24/FastFlowPG2024_Author_Version.pdf
+[fastscape-paper]: https://doi.org/10.1016/j.geomorph.2012.10.008
+[fastscapelib]: https://github.com/fastscape-lem/fastscapelib
+[forest-trails]: https://www.fs.usda.gov/t-d/pubs/pdfpubs/pdf11232804/pdf11232804dpi100.pdf
+[frostbite-pbr]: https://media.contentapi.ea.com/content/dam/eacom/frostbite/files/course-notes-moving-frostbite-to-pbr-v2.pdf
+[generative-codes]: https://christopher-alexander-ces-archive.org/wp-content/uploads/2025/04/DOC.20250425.31022.2005.I.C.1.pdf
+[geomorphons]: https://doi.org/10.1016/j.geomorph.2012.11.005
+[geometry-clipmaps]: https://hhoppe.com/geomclipmap.pdf
+[geometry-clipmaps-gpu]: https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry
 [harmony]: https://www.cs.york.ac.uk/nature/workshop/papers/Harmony-Seeking_Computation.pdf
+[hierarchical-watersheds]: https://doi.org/10.1145/3306346.3322993
+[highmap]: https://github.com/otto-link/HighMap
+[halide]: https://github.com/halide/Halide
+[halide-paper]: https://people.csail.mit.edu/jrk/halide12/
 [hillier-alexander]: https://discovery.ucl.ac.uk/id/eprint/10148515/
 [hydrology-terrain]: https://www.cs.purdue.edu/cgvlab/www/resources/papers/Genevaux-ACM_Trans_Graph-2013-Terrain_Generation_Using_Procedural_Models_Based_on_Hydrology.pdf
+[human-trails]: https://arxiv.org/abs/cond-mat/9805158
 [infinite-cities]: https://doi.org/10.1145/1101389.1101396
 [instant-meshes]: https://igl.ethz.ch/projects/instant-meshes/
 [instant-meshes-code]: https://github.com/wjakob/instant-meshes
 [interactive-erosion]: https://doi.org/10.1145/3592787
 [interactive-streets]: https://doi.org/10.1145/1399504.1360702
+[infinite-diffusion]: https://github.com/xandergos/terrain-diffusion
+[iquilez]: https://iquilezles.org/articles/
+[landlab]: https://landlab.github.io/
+[landlab-space]: https://landlab.readthedocs.io/en/latest/tutorials/landscape_evolution/space/SPACE_user_guide_and_examples.html
 [lague-erosion]: https://github.com/SebLague/Hydraulic-Erosion
+[least-cost-archaeology]: https://www.osti.gov/pages/biblio/1311302
 [leitner]: https://patterntheory.org/wiki.cgi
 [living-images]: https://arxiv.org/abs/2301.01814
 [living-structure]: https://doi.org/10.3390/urbansci3030096
+[living-geometry-ai]: https://doi.org/10.1016/j.foar.2025.01.002
+[lynch-elements]: https://www.taylorfrancis.com/chapters/edit/10.4324/9780429261732-67/city-image-elements-kevin-lynch
 [mapgen4]: https://www.redblobgames.com/maps/mapgen4/
 [mapgen4-code]: https://github.com/redblobgames/mapgen4
 [mario-track]: https://julian.togelius.com/Shaker2011The.pdf
@@ -528,34 +912,63 @@ allows human and procedural judgment to continue the same unfolding.
 [mixed-initiative]: https://www.antoniosliapis.com/articles/pcgbook_mixedinit.php
 [miq]: https://www.vr.rwth-aachen.de/publication/0344/
 [model-synthesis]: https://paulmerrell.org/model-synthesis/
+[momentum]: https://arxiv.org/abs/2605.01783
+[mountain-isolation]: https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.ESA.2023.51
+[mountain-prominence]: https://doi.org/10.1177/0309133317738163
+[mountain-trails]: https://arxiv.org/abs/0812.1536
 [morphogenesis]: https://doi.org/10.1007/s43762-025-00193-x
 [mpcc]: https://arxiv.org/abs/1711.07300
 [origins-pattern]: https://www.patternlanguage.com/archive/ieee/ieeetext.htm
+[natural-movement]: https://www.sciencedirect.com/science/article/pii/S1353829218306737
+[new-urban-theory]: https://books.google.com/books/about/A_New_Theory_of_Urban_Design.html?id=nOtUAAAAMAAJ
+[oregon-experiment]: https://christopher-alexander-ces-archive.org/research/master-planning-as-a-dynamic-process-organic-order-and-piecemeal-growth/
+[parallel-priority-flood]: https://arxiv.org/abs/1606.06204
+[path-dependency]: https://snu.elsevierpure.com/en/publications/multiplicity-and-path-dependency-in-the-modeling-of-historical-ro/
+[path-first]: https://dmgregory.github.io/path-first.html
+[pattern-language-graph]: https://doi.org/10.1177/2399808318761396
 [pcg-book]: https://www.pcgbook.com/
+[pcg-quality-diversity]: https://arxiv.org/abs/1907.04053
 [platform-analysis]: https://expressiveintelligence.github.io/papers/smith-sandbox-08.pdf
 [platform-design]: https://ojs.aaai.org/index.php/AIIDE/article/view/18755
+[place-attachment]: https://docslib.org/doc/2163388/defining-place-attachment-a-tripartite-organizing-framework
 [polygonal-dec]: https://doi.org/10.1016/j.cagd.2021.102002
 [procedural-authorship]: https://electronicbookreview.com/publications/writing-facade-a-case-study-in-procedural-authorship/
 [procedural-buildings]: https://doi.org/10.1145/1179352.1141931
 [procedural-cities]: https://doi.org/10.1145/383259.383292
 [procedural-roads]: https://doi.org/10.1111/j.1467-8659.2010.01751.x
+[prospect-refuge]: https://link.springer.com/article/10.1186/s40410-016-0033-1
+[physarum]: https://doi.org/10.1126/science.1177894
+[priority-flood]: https://arxiv.org/abs/1511.04463
 [racetrack-dissertation]: https://etd.ohiolink.edu/acprod/odb_etd/etd/r/1501/10?clear=10&p10_accession_num=osu175441440371678
 [racing-trajectories]: https://arxiv.org/abs/1902.00606
 [redblob-pathfinding]: https://www.redblobgames.com/pathfinding/
 [riders-republic]: https://news.ubisoft.com/en-gb/article/7Jdttfpxq3rykQWpGsVFDa/using-algorithms-to-create-riders-republics-trail-network
 [riders-republic-game]: https://www.ubisoft.com/game/riders-republic
+[ridge-spacing]: https://doi.org/10.1038/nature06092
+[richdem]: https://github.com/r-barnes/richdem
 [salingaros]: https://patterns.architexturez.net/doc/az-cf-172638
 [search-pcg]: https://julian.togelius.com/Togelius2011Searchbased.pdf
+[search-racetracks]: https://www.ijeei.org/docs-1804133866588e9f62ade3b.pdf
+[seamon-seven-rules]: https://christopher-alexander-ces-archive.org/wp-content/uploads/2024/06/DOC.20240508.13678.2019.I.D.1-1.pdf
+[seamon-tetrad]: https://www.mdpi.com/2413-8851/3/2/46
+[self-organizing-roads]: https://doi.org/10.1287/trsc.1050.0132
 [sentient-sketchbook]: https://www.antoniosliapis.com/papers/sentient_sketchbook.pdf
 [shape-grammar]: https://doi.org/10.1068/b070343
 [space-cognition]: https://discovery.ucl.ac.uk/id/eprint/2111/
 [space-machine]: https://discovery.ucl.ac.uk/id/eprint/3881/
+[sites-and-routes]: https://link.springer.com/article/10.1007/s10980-024-01836-w
+[spt-excerpt]: https://christopher-alexander-ces-archive.org/wp-content/uploads/2025/04/DOC.20250425.30157.2002.I.NoO_.2.2.2.pdf
 [stava-erosion]: https://dcgi.fel.cvut.cz/publications/2008/stava-sca-erosion/
+[stream-power-law]: https://doi.org/10.1016/j.geomorph.2020.107142
+[street-properties]: https://discovery.ucl.ac.uk/18583/
 [street-networks]: https://doi.org/10.1016/j.jtrangeo.2015.08.002
 [structural-beauty]: https://arxiv.org/abs/2104.11100
 [sustainable-wholeness]: https://arxiv.org/abs/1909.11755
 [sylves]: https://github.com/BorisTheBrave/sylves
+[taichi]: https://github.com/taichi-dev/taichi
+[taichi-paper]: https://yuanming.taichi.graphics/publication/2019-taichi/
 [tanagra]: https://doi.org/10.1145/1822348.1822376
+[terrain-visibility]: https://arxiv.org/abs/1810.01946
 [terrain-review]: https://doi.org/10.1111/cgf.13657
 [terrain-survey]: https://doi.org/10.1111/cgf.12084
 [terra-nil]: https://www.terranil.com/
@@ -567,6 +980,10 @@ allows human and procedural judgment to continue the same unfolding.
 [townscaper-talk]: https://compaec.github.io/news/2020/06/29/StalbergTalk.html
 [townscaper-works]: https://www.gamedeveloper.com/game-platforms/how-townscaper-works-a-story-four-games-in-the-making
 [trackmania]: https://www.trackmania.com/
+[trackgen]: https://www.sciencedirect.com/science/article/pii/S1568494614005705
+[trail-soil-loss]: https://www.sciencedirect.com/science/article/pii/S0301479719317049
+[trail-attachment]: https://www.sciencedirect.com/science/article/pii/S0272494404000052
+[route-underdetermination]: https://www.repository.cam.ac.uk/items/82c84f62-f367-4023-8154-8fb4aa37f873
 [uplift-erosion]: https://doi.org/10.1111/cgf.12820
 [wfc]: https://github.com/mxgmn/WaveFunctionCollapse
 [wfc-3d]: https://github.com/marian42/wavefunctioncollapse
