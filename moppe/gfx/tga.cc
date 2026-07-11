@@ -228,8 +228,10 @@ int TGAImg::ReadHeader() // Examine the header and populate our class attributes
   // Bits per Pixel
   iBPP=pData[16];
  
-  // Check flip / interleave byte
-   if(pData[17]>32) // Interleaved data
+  // Bits 6-7 select unsupported interleaving.  Bits 0-3 describe alpha
+  // depth and bit 5 selects top origin; valid 32-bit RGBA files commonly
+  // use 0x28 (top origin plus eight alpha bits).
+   if((pData[17] & 0xc0)!=0)
     return IMG_ERR_UNSUPPORTED;
  
   // Calculate image size

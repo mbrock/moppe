@@ -1,5 +1,7 @@
 #include <moppe/game/inspector_ui.hh>
 
+#include <moppe/gfx/tga.hh>
+#include <moppe/platform/platform.hh>
 #include <moppe/render/renderer.hh>
 
 #include <algorithm>
@@ -54,40 +56,6 @@ namespace game {
 		   y + std::sin (angle) * radius);
       }
       dl.end ();
-    }
-
-    void draw_control_icon (render::DrawList& dl, const UiRect& bounds,
-			    const std::string& title) {
-      const float x = bounds.x + 7.0f;
-      const float y = bounds.y + 10.0f;
-      dl.color (0.45f, 0.72f, 0.62f, 0.92f);
-      if (title == "MOUNTAINS") {
-	dl.line (x, y + 7, x + 7, y, 1.5f);
-	dl.line (x + 7, y, x + 12, y + 5, 1.5f);
-	dl.line (x + 12, y + 5, x + 17, y + 1, 1.5f);
-	dl.line (x + 17, y + 1, x + 24, y + 7, 1.5f);
-      } else if (title == "WILD RIDGES") {
-	dl.line (x, y + 5, x + 5, y + 1, 1.5f);
-	dl.line (x + 5, y + 1, x + 11, y + 7, 1.5f);
-	dl.line (x + 11, y + 7, x + 17, y, 1.5f);
-	dl.line (x + 17, y, x + 24, y + 5, 1.5f);
-      } else if (title == "AGE") {
-	for (int i = 0; i < 12; ++i) {
-	  const float a0 = i * 2.0f * 3.14159265f / 12.0f;
-	  const float a1 = (i + 1) * 2.0f * 3.14159265f / 12.0f;
-	  dl.line (x + 7 + std::cos (a0) * 7,
-		   y + 4 + std::sin (a0) * 7,
-		   x + 7 + std::cos (a1) * 7,
-		   y + 4 + std::sin (a1) * 7, 1.0f);
-	}
-	dl.line (x + 7, y + 4, x + 7, y, 1.2f);
-	dl.line (x + 7, y + 4, x + 11, y + 6, 1.2f);
-      } else {
-	dl.line (x + 7, y - 3, x + 1, y + 5, 1.2f);
-	dl.line (x + 1, y + 5, x + 7, y + 10, 1.2f);
-	dl.line (x + 7, y + 10, x + 13, y + 5, 1.2f);
-	dl.line (x + 13, y + 5, x + 7, y - 3, 1.2f);
-      }
     }
 
     void bevel (render::DrawList& dl, const UiRect& bounds,
@@ -146,6 +114,19 @@ namespace game {
     m_friendly_label.reset
       (new render::FontAtlas
 	(renderer, "AvenirNext-Medium", 14.0f, scale));
+
+    tga::TGAImg icons;
+    const std::string icon_path =
+      platform::asset_path ("textures/ui/terrain-lab-icons.tga");
+    if (icons.Load (const_cast<char*> (icon_path.c_str ())) == IMG_OK) {
+      render::TextureDesc desc;
+      desc.width = icons.GetWidth ();
+      desc.height = icons.GetHeight ();
+      desc.format = render::TextureFormat::RGBA8;
+      desc.filter = render::TextureFilter::Linear;
+      desc.wrap = render::TextureWrap::Clamp;
+      m_friendly_icons = renderer.create_texture (desc, icons.GetImg ());
+    }
   }
 
   void
@@ -507,7 +488,7 @@ namespace game {
   InspectorUi::friendly_button
     (render::DrawList& dl, const UiRect& bounds,
      const std::string& title, const std::string& detail,
-     bool hot, bool pressed, bool selected, bool featured) const
+     bool hot, bool pressed, bool selected, bool featured, int icon) const
   {
     const bool pushed = hot && pressed;
     const UiRect button_shadow { bounds.x + 1, bounds.y + 3,
@@ -542,11 +523,21 @@ namespace game {
 	      selected ? 0.90f : featured ? 0.34f : 0.52f, 0.36f);
     dl.line (bounds.x + 8, bounds.y + 2,
 	     bounds.x + bounds.width - 8, bounds.y + 2, 1.0f);
+    float text_x = bounds.x + 12.0f;
+    if (icon >= 0) {
+      const float size = std::min (40.0f, bounds.height - 10.0f);
+      const UiRect icon_bounds {
+	bounds.x + 6.0f, bounds.y + (bounds.height - size) * 0.5f,
+	size, size
+      };
+      friendly_icon (dl, icon_bounds, icon);
+      text_x = icon_bounds.x + icon_bounds.width + 7.0f;
+    }
     if (m_friendly_body) {
       dl.color (0.94f, 0.96f, 0.84f, 1.0f);
       const float title_y = detail.empty ()
 	? bounds.y + bounds.height * 0.5f + 6.0f : bounds.y + 25.0f;
-      m_friendly_body->draw (dl, bounds.x + 12, title_y, title);
+      m_friendly_body->draw (dl, text_x, title_y, title);
     }
     if (!detail.empty () && m_friendly_label) {
       dl.color (0.60f, 0.72f, 0.67f, 0.98f);
@@ -584,7 +575,11 @@ namespace game {
       accent_g = 0.86f;
       accent_b = 0.58f;
     }
-    draw_control_icon (dl, bounds, title);
+    const int icon = title == "MOUNTAINS" ? 7
+      : title == "WILD RIDGES" ? 8
+      : title == "AGE" ? 9 : 10;
+    friendly_icon
+      (dl, { bounds.x, bounds.y - 1.0f, 27.0f, 27.0f }, icon, 0.92f);
     if (m_friendly_body) {
       dl.color (0.89f, 0.93f, 0.82f, 1.0f);
       m_friendly_body->draw (dl, bounds.x + 35, bounds.y + 19, title);
@@ -619,6 +614,32 @@ namespace game {
     draw_circle (dl, cx, y, 7.0f);
     dl.color (0.96f, 0.98f, 0.78f, 0.92f);
     draw_circle (dl, cx - 1.5f, y - 1.5f, 3.4f);
+  }
+
+  void
+  InspectorUi::friendly_icon
+    (render::DrawList& dl, const UiRect& bounds, int icon, float alpha) const
+  {
+    if (!m_friendly_icons || icon < 0 || icon >= 15)
+      return;
+    constexpr float cells = 4.0f;
+    const int column = icon % 4;
+    const int row = icon / 4;
+    const float u0 = column / cells;
+    const float v0 = row / cells;
+    const float u1 = (column + 1) / cells;
+    const float v1 = (row + 1) / cells;
+    dl.set_texture (m_friendly_icons.get ());
+    dl.color (1.0f, 1.0f, 1.0f, alpha);
+    dl.begin (render::Prim::Quads);
+    dl.uv (u0, v0); dl.vertex (bounds.x, bounds.y);
+    dl.uv (u1, v0); dl.vertex (bounds.x + bounds.width, bounds.y);
+    dl.uv (u1, v1);
+    dl.vertex (bounds.x + bounds.width, bounds.y + bounds.height);
+    dl.uv (u0, v1); dl.vertex (bounds.x, bounds.y + bounds.height);
+    dl.end ();
+    dl.set_texture (nullptr);
+    dl.uv (0.0f, 0.0f);
   }
 }
 }
