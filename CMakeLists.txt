@@ -255,6 +255,7 @@ target_link_libraries(moppe_game PUBLIC moppe_terrain)
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-map-tests
     tests/test_main.cc
+    tests/game/game_state_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
     tests/map/terrain_evaluator_test.cc

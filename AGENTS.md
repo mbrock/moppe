@@ -45,6 +45,8 @@
   `ios/`, and shared `apple/` layers (MTKView; CoreText glyph rasterizer).
 - `moppe/game/` — the game systems, one file each (terrain, city,
   vegetation, wildlife, dust, HUD, vehicle rendering; glue in game.cc).
+  Mutable replay state is gathered incrementally in `game/game_state.hh`; see
+  `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
 - `moppe/terrain/` is the portable runtime field-expression DAG, recipe and

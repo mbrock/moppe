@@ -43,6 +43,64 @@ namespace moppe {
       fall_to_ground ();
     }
 
+    Vehicle::State Vehicle::state () const {
+      return { m_position,
+               m_velocity,
+               m_heading,
+               m_thrust_orientation,
+               m_yaw,
+               m_yaw_target,
+               m_lean,
+               m_render_heading,
+               m_render_normal,
+               m_susp,
+               m_susp_v,
+               m_wheel_spin,
+               m_boost_flight,
+               m_thrust,
+               m_boost_input,
+               m_boost_drive,
+               m_boost_level,
+               m_boost_charge,
+               m_boost_recharge_delay,
+               m_water_level,
+               m_airborne_time,
+               m_impact,
+               m_fall_top,
+               m_fall_drop,
+               m_body_kind,
+               m_body_color };
+    }
+
+    void Vehicle::restore (const State& state) {
+      m_position = state.position;
+      m_velocity = state.velocity;
+      m_heading = state.heading;
+      m_thrust_orientation = state.thrust_orientation;
+      m_yaw = state.yaw;
+      m_yaw_target = state.yaw_target;
+      m_lean = state.lean;
+      m_render_heading = state.render_heading;
+      m_render_normal = state.render_normal;
+      m_susp = state.susp;
+      m_susp_v = state.susp_v;
+      m_wheel_spin = state.wheel_spin;
+      m_boost_flight = state.boost_flight;
+      m_thrust = state.thrust;
+      m_boost_input = state.boost_input;
+      m_boost_drive = state.boost_drive;
+      m_boost_level = state.boost_level;
+      m_boost_charge = state.boost_charge;
+      m_boost_recharge_delay = state.boost_recharge_delay;
+      m_water_level = state.water_level;
+      m_airborne_time = state.airborne_time;
+      m_impact = state.impact;
+      m_fall_top = state.fall_top;
+      m_fall_drop = state.fall_drop;
+      m_body_kind = state.body_kind;
+      m_body_color = state.body_color;
+    }
+
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
         Vector3D n = m_map.interpolated_normal (m_position.x, m_position.z);
