@@ -17,7 +17,7 @@ terrain references, obstacle references, and vehicle physical parameters stay
 attached to the live objects.
 
 This is the first replayable slice, not yet a claim of complete determinism.
-City actors and renderer history are not in `GameState`. World generation,
+Renderer history is not in `GameState`. World generation,
 terrain analysis,
 uploaded meshes and textures, window state, and asynchronous loading state do
 not belong there. Renderer history should get its own reset boundary rather

@@ -16,7 +16,7 @@ namespace moppe {
       m_top = 0;
       m_stack[0] = Mat4 ();
       m_normal_dirty = true;
-      m_color = Color ();
+      m_color = PackedRgba8 ();
       m_normal = Vector3D (0, 0, 1);
       m_world_normal = Vector3D (0, 0, 1);
       m_world_normal_dirty = true;
@@ -106,11 +106,11 @@ namespace moppe {
     // -- attributes ----------------------------------------------------
 
     void DrawList::color (float r, float g, float b, float a) {
-      m_color = Color (r, g, b, a);
+      m_color = PackedRgba8 (r, g, b, a);
     }
 
-    void DrawList::color (const Vector3D& c, float a) {
-      m_color = Color (c.x, c.y, c.z, a);
+    void DrawList::color (DisplayColor c, float a) {
+      m_color = PackedRgba8 (c.red, c.green, c.blue, a);
     }
 
     void DrawList::lit (bool on) {
@@ -120,7 +120,7 @@ namespace moppe {
       m_fogged = on;
     }
     void DrawList::wind (proportion_t w) {
-      m_wind = Color::quantize (scalar_value (w));
+      m_wind = PackedRgba8::quantize (scalar_value (w));
     }
     void DrawList::grass (bool on) {
       m_grass = on;

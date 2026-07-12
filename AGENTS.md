@@ -12,8 +12,7 @@
   demo grid is unit-scale, so metric carve defaults suit the game world)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
-  - Modes: `--city`, `--pico`, `--terrain-lab`,
-    `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
+  - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|high`
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.

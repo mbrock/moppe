@@ -4,27 +4,31 @@
 #include <mp-units/framework.h>
 #include <mp-units/systems/si.h>
 
-// Moppe's own quantity vocabulary.  "Dimensionless" is an erasure:
-// ISO calls these "quantities of dimension one" precisely because
-// there are many distinct ones.  A mask is not a slope is not a
-// throttle, even though every one of them is stored in a float.
-// These specs are non-kind children of dimensionless, so they convert
-// implicitly toward plain numbers at unit-blind boundaries while
-// still naming what a value means where it is declared.
 namespace moppe {
-  // A convex weight in [0, 1]: blend masks, moisture, cover, sway,
-  // fade.  The complement (1 - w) of a proportion is a proportion;
-  // a proportion of a proportion is a proportion.
-  QUANTITY_SPEC (proportion, mp_units::dimensionless);
 
-  // A proportion whose basis is an ensemble of events.  Rate * time
-  // is the usual way one of these appears in a frame loop.
-  QUANTITY_SPEC (probability, proportion);
+  using mp_units::non_negative;
+  using mp_units::quantity_spec;
 
-  // A normalized actuator command in [-1, 1]: throttle, steering
-  // drive, boost.  It amplifies a capability (gain * max_force), it
-  // is not a fraction of anything.
-  QUANTITY_SPEC (gain, mp_units::dimensionless);
+  inline constexpr auto dimensionless = mp_units::dimensionless;
+
+  inline constexpr struct control_signal : quantity_spec<dimensionless> {
+  } control_signal;
+
+  inline constexpr struct noise_signal : quantity_spec<dimensionless> {
+  } noise_signal;
+
+  // theoretically we could distinguish e.g. single-octave noise signals
+  // so that fBm noise is constructed from such signals, which would be
+  // a nice example of how to get semantic type safety from dimensionless
+  // quantity types... so many interesting possibilities...
+
+  inline constexpr struct proportion
+      : quantity_spec<dimensionless, non_negative> {
+  } proportion;
+
+  inline constexpr struct probability
+      : quantity_spec<dimensionless, non_negative> {
+  } probability;
 }
 
 #endif

@@ -104,7 +104,7 @@ namespace moppe {
       render::MeshPtr m_meshes[STRUCTURE_GRID * STRUCTURE_GRID];
       render::MeshPtr m_detail[DETAIL_GRID * DETAIL_GRID];
       Vector3D m_map_size;
-      bool m_lean; // pico mode: cheaper per-plant geometry
+      bool m_lean;
       bool m_periodic = false;
 
       // Near-field grass: a deterministic hash grid of tufts around

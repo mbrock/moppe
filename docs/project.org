@@ -49,7 +49,6 @@ rather than a polished player-facing mode.
 
 ** Other modes
 
-- City mode is an older, bounded generated city and obstacle-play mode.
 - Pico mode loads a fixed real-world heightmap.
 - The renderer testbed exercises the portable rendering layer.
 

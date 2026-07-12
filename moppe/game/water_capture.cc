@@ -7,7 +7,7 @@
 
 namespace moppe::game {
   namespace {
-    int minimum_image_delta (int delta, int period) {
+    int capture_minimum_image_delta (int delta, int period) {
       if (delta > period / 2)
         delta -= period;
       else if (delta < -period / 2)
@@ -44,8 +44,8 @@ namespace moppe::game {
       int dx = to_x - from_x;
       int dz = to_z - from_z;
       if (map.periodic ()) {
-        dx = minimum_image_delta (dx, width);
-        dz = minimum_image_delta (dz, height);
+        dx = capture_minimum_image_delta (dx, width);
+        dz = capture_minimum_image_delta (dz, height);
       }
       Vector3D result (dx * map.scale ().x, 0.0f, dz * map.scale ().z);
       if (result.length2 () < 1e-6f)

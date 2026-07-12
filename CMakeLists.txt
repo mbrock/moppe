@@ -36,8 +36,26 @@ add_compile_options(-Wall)
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
 option(MOPPE_BUILD_DEVELOPER_TOOLS
-  "Build demos, experiments, testbeds, and command-line tools" ON)
+  "Build demos, experiments, testbeds, and command-line tools" OFF)
+option(MOPPE_UNITY_BUILD
+  "Compile each target as a single unity translation unit" ON)
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
+
+# Moppe's implementation files are deliberately small, but compiling every one
+# separately makes heavily-templated headers (notably mp-units) dominate build
+# time and memory.  A very large batch size gives each target one translation
+# unit per source language.  CMake still splits C++ from Objective-C++, which is
+# required by AppleClang, but a normal game build no longer launches dozens of
+# redundant C++ compiler processes.
+if(MOPPE_UNITY_BUILD)
+  set(CMAKE_UNITY_BUILD ON)
+  set(CMAKE_UNITY_BUILD_BATCH_SIZE 1000)
+  # A plain `cmake --build build` should remain usable while a large unity
+  # source is instantiating templates.  Ninja otherwise starts one compiler
+  # for every ready target and can consume the whole machine.
+  set_property(GLOBAL PROPERTY JOB_POOLS moppe_compile_pool=2)
+  set(CMAKE_JOB_POOL_COMPILE moppe_compile_pool)
+endif()
 
 # Keep the units vocabulary available to every target without forcing a
 # large-scale conversion of existing float-based APIs.  Consumers opt in with
@@ -222,51 +240,20 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_dependencies(moppe_terrain_metal moppe_shaders)
 
   if(MOPPE_BUILD_DEVELOPER_TOOLS)
-    add_executable(terrain-metal-demo
+    add_executable(terrain-metal-demo EXCLUDE_FROM_ALL
       moppe/terrain/metal/metal_field_demo.cc)
     target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
     target_compile_definitions(terrain-metal-demo PRIVATE
       MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
   endif()
 
-  if(BUILD_TESTING)
-    add_executable(moppe-metal-tests
-      tests/test_main.cc
-      tests/terrain/metal_evaluator_test.cc
-    )
-    target_link_libraries(moppe-metal-tests PRIVATE moppe_terrain_metal)
-    target_compile_definitions(moppe-metal-tests PRIVATE
-      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
-    add_test(NAME moppe-metal-tests COMMAND moppe-metal-tests)
-  endif()
 endif()
 
 if(MOPPE_BUILD_DEVELOPER_TOOLS AND
    NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  add_executable(terrain-field-demo moppe/terrain/field_demo.cc)
+  add_executable(terrain-field-demo EXCLUDE_FROM_ALL
+    moppe/terrain/field_demo.cc)
   target_link_libraries(terrain-field-demo PRIVATE moppe_terrain)
-endif()
-
-if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  add_executable(moppe-unit-tests
-    tests/test_main.cc
-    tests/units_test.cc
-    tests/terrain/field_test.cc
-    tests/terrain/cpu_evaluator_test.cc
-    tests/terrain/geological_test.cc
-    tests/terrain/program_test.cc
-    tests/terrain/image_test.cc
-    tests/terrain/readings_test.cc
-    tests/terrain/drainage_test.cc
-    tests/terrain/flood_test.cc
-    tests/terrain/analytical_erosion_test.cc
-    tests/terrain/carve_test.cc
-    tests/terrain/moisture_test.cc
-    tests/terrain/watercourse_test.cc
-  )
-  target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain
-    mp-units::mp-units)
-  add_test(NAME moppe-unit-tests COMMAND moppe-unit-tests)
 endif()
 
 # Game logic + simulation (GL-free since the cutover).
@@ -285,7 +272,6 @@ add_library(moppe_game STATIC
   moppe/game/dust.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
-  moppe/game/city.cc
   moppe/game/model.cc
   moppe/game/walker.cc
   moppe/game/vehicle_render.cc
@@ -300,35 +286,23 @@ if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_game PUBLIC Tracy::TracyClient)
 endif()
 
-if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  add_executable(moppe-map-tests
-    tests/test_main.cc
-    tests/game/game_state_test.cc
-    tests/game/graphics_settings_test.cc
-    tests/game/river_surface_test.cc
-    tests/map/terrain_evaluator_test.cc
-  )
-  target_link_libraries(moppe-map-tests PRIVATE moppe_game)
-  add_test(NAME moppe-map-tests COMMAND moppe-map-tests)
-endif()
-
 # Developer tools for inspecting and iterating on terrain generation.
 if(MOPPE_BUILD_DEVELOPER_TOOLS AND
    NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
-  add_executable(map-test moppe/map/test.cc)
+  add_executable(map-test EXCLUDE_FROM_ALL moppe/map/test.cc)
   target_link_libraries(map-test PRIVATE moppe_game)
 
-  add_executable(terrain-pipeline-demo
+  add_executable(terrain-pipeline-demo EXCLUDE_FROM_ALL
     moppe/terrain/pipeline_demo.cc
   )
   target_link_libraries(terrain-pipeline-demo PRIVATE moppe_game)
 
-  add_executable(terrain-erosion-experiment
+  add_executable(terrain-erosion-experiment EXCLUDE_FROM_ALL
     moppe/terrain/erosion_experiment.cc
   )
   target_link_libraries(terrain-erosion-experiment PRIVATE moppe_game)
 
-  add_executable(terrain-stream-power-experiment
+  add_executable(terrain-stream-power-experiment EXCLUDE_FROM_ALL
     moppe/terrain/stream_power_experiment.cc
   )
   target_link_libraries(terrain-stream-power-experiment PRIVATE moppe_game)
@@ -360,6 +334,46 @@ if(APPLE)
     mp-units::mp-units
     "-framework Foundation" "-framework CoreText"
     "-framework CoreGraphics" "-framework AVFoundation")
+endif()
+
+# Keep the entire portable test suite behind one executable and one unity
+# translation unit.  The macOS Metal evaluator test joins the same binary when
+# that backend is available; it does not need its own copy of test_main.cc.
+if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(moppe-tests
+    tests/test_main.cc
+    tests/units_test.cc
+    tests/terrain/field_test.cc
+    tests/terrain/cpu_evaluator_test.cc
+    tests/terrain/geological_test.cc
+    tests/terrain/program_test.cc
+    tests/terrain/image_test.cc
+    tests/terrain/readings_test.cc
+    tests/terrain/drainage_test.cc
+    tests/terrain/flood_test.cc
+    tests/terrain/analytical_erosion_test.cc
+    tests/terrain/carve_test.cc
+    tests/terrain/moisture_test.cc
+    tests/terrain/watercourse_test.cc
+    tests/game/game_state_test.cc
+    tests/game/graphics_settings_test.cc
+    tests/game/river_surface_test.cc
+    tests/map/terrain_evaluator_test.cc
+  )
+  target_link_libraries(moppe-tests PRIVATE moppe_game)
+  if(TARGET moppe_terrain_metal)
+    target_sources(moppe-tests PRIVATE
+      tests/terrain/metal_evaluator_test.cc)
+    target_link_libraries(moppe-tests PRIVATE moppe_terrain_metal)
+    target_compile_definitions(moppe-tests PRIVATE
+      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+  endif()
+  if(APPLE)
+    # A unity-built moppe_game archive is one object, so tests pull its
+    # platform-facing helpers along with the systems under test.
+    target_link_libraries(moppe-tests PRIVATE moppe_platform_mac)
+  endif()
+  add_test(NAME moppe-tests COMMAND moppe-tests)
 endif()
 
 if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
@@ -427,7 +441,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
   if(MOPPE_BUILD_DEVELOPER_TOOLS)
     # Renderer testbed: spinning solids + HUD shapes, no game.
-    add_executable(moppe-testbed moppe/game/testbed.cc)
+    add_executable(moppe-testbed EXCLUDE_FROM_ALL moppe/game/testbed.cc)
     target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
   endif()
 

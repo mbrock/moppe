@@ -1,6 +1,7 @@
 #ifndef MOPPE_RENDER_DRAW_HH
 #define MOPPE_RENDER_DRAW_HH
 
+#include <moppe/color.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/types.hh>
@@ -49,7 +50,7 @@ namespace moppe {
 
       // -- attribute / state -------------------------------------------
       void color (float r, float g, float b, float a = 1.0f);
-      void color (const Vector3D& c, float a = 1.0f);
+      void color (DisplayColor c, float a = 1.0f);
       void lit (bool on);
       void fogged (bool on);
       // Wind sway weight for subsequent vertices (0 = anchored, 1 =
@@ -118,7 +119,7 @@ namespace moppe {
       NormalMat m_normal_mat;
       bool m_normal_dirty;
 
-      Color m_color;
+      PackedRgba8 m_color;
       Vector3D m_normal;
       Vector3D m_world_normal; // m_normal through the normal matrix
       bool m_world_normal_dirty;

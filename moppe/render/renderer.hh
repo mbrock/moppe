@@ -1,6 +1,7 @@
 #ifndef MOPPE_RENDER_RENDERER_HH
 #define MOPPE_RENDER_RENDERER_HH
 
+#include <moppe/color.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
@@ -23,14 +24,14 @@ namespace moppe {
       Mat4 proj; // reversed-Z perspective
       Vector3D camera_pos;
       Vector3D cam_right, cam_up, cam_forward;
-      Vector3D clear_color; // also the fog/haze color
+      DisplayColor clear_color; // also the fog/haze color
       float fog_scale = 0.0f;
       Vector3D sun_dir; // world space, toward the sun
       // Art-directed sun products.  Ambient is the strength/color fed
       // into the shaders' cool-sky / warm-ground hemisphere fill.
-      Vector3D sun_diffuse;
-      Vector3D sun_specular;
-      Vector3D ambient;
+      DisplayColor sun_diffuse;
+      DisplayColor sun_specular;
+      DisplayColor ambient;
       // Art-direction multiplier applied after automatic exposure.  Tools can
       // favor legibility without changing adaptation for normal gameplay.
       float exposure_bias = 1.0f;
@@ -125,7 +126,7 @@ namespace moppe {
       float sun_height;
       float cloudiness;
       Vector3D sun_dir;
-      Vector3D fog_color;
+      DisplayColor fog_color;
     };
 
     struct OceanSetup {
@@ -137,7 +138,7 @@ namespace moppe {
 
     struct OceanParams {
       float time;
-      Vector3D fog_color;
+      DisplayColor fog_color;
       float fog_scale;
       Vector3D world_offset;
     };
@@ -158,7 +159,7 @@ namespace moppe {
       float birth_time = 0.0f;
       Vector3D position;
       Vector3D velocity;
-      Vector3D color;
+      DisplayColor color;
       float size = 1.0f;
       float life = 1.0f;
       float gravity = 0.0f;

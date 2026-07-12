@@ -1,6 +1,6 @@
 #include <moppe/gfx/tga.hh>
 
-namespace tga {
+namespace tga_image {
   TGAImg::TGAImg () {
     pImage = pPalette = pData = NULL;
     iWidth = iHeight = iBPP = bEnc = 0;

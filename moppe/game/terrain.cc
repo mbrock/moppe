@@ -24,7 +24,7 @@ namespace moppe {
 
       render::TexturePtr load_tga (render::Renderer& r,
                                    const std::string& rel) {
-        tga::TGAImg img;
+        tga_image::TGAImg img;
         const std::string path = platform::asset_path (rel);
         if (img.Load (const_cast<char*> (path.c_str ())) != IMG_OK)
           throw std::runtime_error ("failed to load texture: " + path);

@@ -36,7 +36,8 @@ namespace moppe {
   // Dimension-one kinds from moppe/quantities.hh.
   using proportion_t = quantity<proportion[one], float>;
   using probability_t = quantity<probability[one], float>;
-  using gain_t = quantity<gain[one], float>;
+  using control_signal_t = quantity<control_signal[one], float>;
+  using noise_signal_t = quantity<noise_signal[one], float>;
 
   // The inverse time constant of exponential decay (ISQ calls the
   // quantity a damping coefficient).  Every 1 - exp (-k * dt)

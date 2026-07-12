@@ -1,10 +1,13 @@
+#ifndef MOPPE_GFX_TGA_HH
+#define MOPPE_GFX_TGA_HH
+
 // TGA Loader - 16/11/04 Codehead
 
 #include <fstream>
 #include <iostream>
 #include <memory.h>
 
-namespace tga {
+namespace tga_image {
 #define IMG_OK 0x1
 #define IMG_ERR_NO_FILE 0x2
 #define IMG_ERR_MEM_FAIL 0x4
@@ -37,3 +40,5 @@ namespace tga {
     void FlipImg ();
   };
 }
+
+#endif

@@ -229,7 +229,6 @@ namespace moppe {
     // speed, braking breaks traction outright, and an ongoing slide
     // keeps breathing instead of snapping straight.
     void Vehicle::apply_grip (seconds_t dt, const Vector3D& n) {
-      const float dt_s = seconds_value (dt);
       Vector3D fwd = m_heading - n * m_heading.dot (n);
       if (fwd.length2 () < 0.000001f)
         return;

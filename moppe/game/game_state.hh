@@ -23,7 +23,7 @@ namespace moppe::game {
     float m_frame_time = 1.0f / 60.0f;
     float m_cloudiness = 0.5f;
     float m_flare = 0.0f;
-    Vector3D m_fog;
+    DisplayColor m_fog;
     float m_shake = 0.0f;
     float m_shake_time = 0.0f;
     float m_health = 100.0f;

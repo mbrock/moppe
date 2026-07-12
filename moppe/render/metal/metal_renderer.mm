@@ -237,13 +237,22 @@ namespace moppe {
         return r;
       }
 
+      MoppeFloat4 f4 (DisplayColor color, float w = 0.0f) {
+        MoppeFloat4 r;
+        r.x = color.red;
+        r.y = color.green;
+        r.z = color.blue;
+        r.w = w;
+        return r;
+      }
+
       // Game-side colors are authored in display space; the scene
       // lights in linear.  Decode at the uniform boundary.
-      MoppeFloat4 f4lin (const Vector3D& v, float w = 0.0f) {
+      MoppeFloat4 f4lin (DisplayColor color, float w = 0.0f) {
         MoppeFloat4 r;
-        r.x = std::pow (std::max (v.x, 0.0f), 2.2f);
-        r.y = std::pow (std::max (v.y, 0.0f), 2.2f);
-        r.z = std::pow (std::max (v.z, 0.0f), 2.2f);
+        r.x = std::pow (std::max (color.red, 0.0f), 2.2f);
+        r.y = std::pow (std::max (color.green, 0.0f), 2.2f);
+        r.z = std::pow (std::max (color.blue, 0.0f), 2.2f);
         r.w = w;
         return r;
       }
@@ -1704,9 +1713,9 @@ namespace moppe {
       rp.colorAttachments[0].loadAction = MTLLoadActionClear;
       rp.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
       rp.colorAttachments[0].clearColor =
-        MTLClearColorMake (std::pow (m_fp.clear_color.x, 2.2f),
-                           std::pow (m_fp.clear_color.y, 2.2f),
-                           std::pow (m_fp.clear_color.z, 2.2f),
+        MTLClearColorMake (std::pow (m_fp.clear_color.red, 2.2f),
+                           std::pow (m_fp.clear_color.green, 2.2f),
+                           std::pow (m_fp.clear_color.blue, 2.2f),
                            1.0);
       rp.depthAttachment.texture = m_msaa_depth;
       rp.depthAttachment.loadAction = MTLLoadActionClear;
