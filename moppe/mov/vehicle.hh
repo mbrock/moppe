@@ -55,9 +55,9 @@ namespace moppe {
       Vehicle (const Vector3D& position,
                degrees_t orientation,
                const HeightMap& map,
-               magnitude_t max_thrust,
-               magnitude_t power,
-               magnitude_t mass);
+               newtons_t max_thrust,
+               watts_t power,
+               kilograms_t mass);
 
       void update (seconds_t dt);
 
@@ -256,10 +256,10 @@ namespace moppe {
 
       const HeightMap& m_map;
 
-      const magnitude_t m_max_thrust;
-      const magnitude_t m_power;
-      magnitude_t m_thrust;
-      magnitude_t m_mass;
+      const newtons_t m_max_thrust;
+      const watts_t m_power;
+      magnitude_t m_thrust; // throttle in [-1, 1]
+      kilograms_t m_mass;
 
       float m_boost_input;
       float m_boost_drive;

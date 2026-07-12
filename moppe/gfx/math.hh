@@ -26,6 +26,10 @@ namespace moppe {
   using degrees_t = quantity<si::degree, float>;
   using radians_t = quantity<si::radian, float>;
   using magnitude_t = quantity<one, float>;
+  using speed_t = quantity<si::metre / si::second, float>;
+  using newtons_t = quantity<si::newton, float>;
+  using watts_t = quantity<si::watt, float>;
+  using kilograms_t = quantity<si::kilogram, float>;
 
   inline constexpr meters_t one_meter = 1.0f * si::metre;
 
@@ -46,6 +50,9 @@ namespace moppe {
   }
   inline float scalar_value (magnitude_t q) {
     return q.numerical_value_in (one);
+  }
+  inline float newtons_value (newtons_t q) {
+    return q.numerical_value_in (si::newton);
   }
 
   // Trig on typed angles.  Degrees convert implicitly at the call

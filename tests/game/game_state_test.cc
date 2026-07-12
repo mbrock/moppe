@@ -21,8 +21,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
     9, 9, Vector3D (100, 20, 100), 1, terrain::Topology::Torus);
   map.randomize_geologically ();
   map.recompute_normals ();
-  mov::Vehicle vehicle (
-    Vector3D (20, 0, 20), 15 * u::deg, map, 1000, 10000, 100);
+  mov::Vehicle vehicle (Vector3D (20, 0, 20),
+                        15 * u::deg,
+                        map,
+                        1000 * u::N,
+                        10 * u::kW,
+                        100 * u::kg);
   vehicle.set_thrust (0.8f);
   vehicle.set_yaw (25 * u::deg);
   vehicle.set_boost (0.7f, 0.5f);
