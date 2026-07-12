@@ -107,7 +107,7 @@ namespace moppe {
         m_boost_drive = 0;
         m_boost_level = 0;
         m_boost_charge = 1;
-        m_boost_recharge_delay = 0;
+        m_boost_recharge_delay = seconds (0);
         m_boost_flight = false;
         m_impact = 0;
         m_render_heading = m_heading;
@@ -180,10 +180,10 @@ namespace moppe {
         return m_wheel_spin;
       }
       bool airborne () const {
-        return m_airborne_time > 0.15f;
+        return m_airborne_time > seconds (0.15f);
       }
       float airtime () const {
-        return m_airborne_time;
+        return seconds_value (m_airborne_time);
       }
       radians_t yaw () const {
         return m_yaw;
