@@ -16,49 +16,63 @@ namespace moppe::game {
   }
 
   void
-  Dust::emit (const Vec3& pos, const Vec3& vel, int count, DisplayColor color) {
+  Dust::emit (position_t pos, velocity_t vel, int count, DisplayColor color) {
     emit (pos, vel, count, color, Style ());
   }
 
-  void Dust::emit (const Vec3& pos,
-                   const Vec3& vel,
+  void Dust::emit (position_t pos,
+                   velocity_t vel,
                    int count,
                    DisplayColor color,
                    const Style& style) {
     std::size_t live_particles = 0;
-    for (const render::DustEmission& emission : m_emissions)
+    for (const Emission& emission : m_emissions)
       live_particles += emission.particle_count;
     const int available = std::max (0, 500 - static_cast<int> (live_particles));
     const int accepted = std::clamp (count, 0, available);
     if (accepted == 0)
       return;
     for (int remaining = accepted; remaining > 0;) {
-      render::DustEmission emission;
+      Emission emission;
       emission.id = m_next_id++;
       emission.birth_time = m_logical_time;
       emission.position = pos;
       emission.velocity = vel;
       emission.color = color;
-      emission.size = style.size;
-      emission.life = style.life;
-      emission.gravity = style.gravity;
-      emission.spread = style.spread;
+      emission.style = style;
       emission.particle_count =
         static_cast<uint32_t> (std::min (remaining, 64));
-      emission.additive = style.additive;
       m_emissions.push_back (emission);
       remaining -= emission.particle_count;
     }
   }
 
-  void Dust::update (float dt) {
+  void Dust::update (seconds_t dt) {
     m_logical_time += dt;
-    std::erase_if (m_emissions, [this] (const render::DustEmission& emission) {
-      return m_logical_time - emission.birth_time > emission.life * 0.9f;
+    std::erase_if (m_emissions, [this] (const Emission& emission) {
+      return m_logical_time - emission.birth_time >
+             emission.style.lifetime * 0.9f;
     });
   }
 
   void Dust::render (render::Renderer& renderer) const {
-    renderer.draw_dust (m_emissions, m_logical_time);
+    std::vector<render::DustEmission> payload;
+    payload.reserve (m_emissions.size ());
+    for (const Emission& emission : m_emissions) {
+      payload.push_back (
+        { .id = emission.id,
+          .birth_time = seconds_value (emission.birth_time),
+          .position = position_value (emission.position),
+          .velocity = velocity_value (emission.velocity),
+          .color = emission.color,
+          .size = meters_value (emission.style.size),
+          .life = seconds_value (emission.style.lifetime),
+          .gravity = emission.style.downward_acceleration.numerical_value_in (
+            u::m / pow<2> (u::s)),
+          .spread = scalar_value (emission.style.spread),
+          .particle_count = emission.particle_count,
+          .additive = emission.style.additive });
+    }
+    renderer.draw_dust (payload, seconds_value (m_logical_time));
   }
 }

@@ -14,23 +14,23 @@ namespace moppe {
     class ChaseCamera {
     public:
       struct State {
-        Vec3 position {};
-        Vec3 target {};
+        position_t position {};
+        position_t target {};
         Vec3 avg_orientation {};
-        Vec3 ahead {};
-        Vec3 position_velocity {};
-        Vec3 target_velocity {};
-        float speed {};
+        displacement_t ahead {};
+        velocity_t position_velocity {};
+        velocity_t target_velocity {};
+        speed_t speed {};
         bool is_uninitialized {};
       };
 
       ChaseCamera (degrees_t pitch_offset, meters_t distance)
-          : m_pitch_offset (pitch_offset), m_distance (distance), m_speed (0),
-            m_is_uninitialized (true) {}
+          : m_pitch_offset (pitch_offset), m_distance (distance),
+            m_speed (0 * u::m / u::s), m_is_uninitialized (true) {}
 
-      void update (const Vec3& position,
+      void update (position_t position,
                    const Vec3& orientation,
-                   const Vec3& velocity,
+                   velocity_t velocity,
                    seconds_t dt);
       void limit (const map::HeightMap& map);
 
@@ -64,36 +64,39 @@ namespace moppe {
       // Directly position the camera (first-person mode bypasses the
       // chase smoothing entirely).
       void place (const Vec3& eye, const Vec3& target) {
-        m_position = eye;
-        m_target = target;
-        m_position_velocity = Vec3 ();
-        m_target_velocity = Vec3 ();
+        m_position = moppe::position (eye);
+        m_target = moppe::position (target);
+        m_position_velocity = moppe::velocity (Vec3 ());
+        m_target_velocity = moppe::velocity (Vec3 ());
         m_is_uninitialized = false;
       }
 
       Mat4 view_matrix () const {
-        return Mat4::look_at (m_position, m_target, Vec3 (0, 1, 0));
+        return Mat4::look_at (position_value (m_position),
+                              position_value (m_target),
+                              Vec3 (0, 1, 0));
       }
 
       Vec3 position () const {
-        return m_position;
+        return position_value (m_position);
       }
 
       Vec3 forward () const {
-        return normalized (m_target - m_position);
+        return normalized (position_value (m_target) -
+                           position_value (m_position));
       }
 
     private:
       radians_t m_pitch_offset;
       meters_t m_distance;
 
-      Vec3 m_position;
-      Vec3 m_target;
+      position_t m_position;
+      position_t m_target;
       Vec3 m_avg_orientation;
-      Vec3 m_ahead;
-      Vec3 m_position_velocity;
-      Vec3 m_target_velocity;
-      float m_speed;
+      displacement_t m_ahead;
+      velocity_t m_position_velocity;
+      velocity_t m_target_velocity;
+      speed_t m_speed;
       bool m_is_uninitialized;
       float m_horizontal_scale = 1.0f;
       float m_vertical_scale = 1.0f;

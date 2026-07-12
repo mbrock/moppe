@@ -59,9 +59,10 @@ namespace moppe {
       params.width = map.width ();
       params.height = map.height ();
       params.scale = m_scale;
-      params.height_scale = world.map_size[1];
+      const Vec3& world_extent = extent_value (world.map_size);
+      params.height_scale = world_extent[1];
       params.sea_level_norm =
-        meters_value (world.water_level) / world.map_size[1];
+        meters_value (world.water_level) / world_extent[1];
       params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
                                    !graphics.terrain_shadows
@@ -69,7 +70,7 @@ namespace moppe {
                                  : 0.85f;
       params.shadow_resolution = interactive_preview ? 1024 : 4096;
       params.shadow_sample_step = interactive_preview ? 2 : 1;
-      params.fog_scale = world.fog_scale;
+      params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.periodic = map.periodic ();
       params.projection = projection;

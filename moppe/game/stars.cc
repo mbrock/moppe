@@ -113,8 +113,8 @@ namespace moppe {
     }
 
     void Stars::render (render::Renderer& r, const FrameEnv& env) {
-      const Vec3& cam = env.camera_pos;
-      const float time = env.time;
+      const Vec3& cam = position_value (env.camera_pos);
+      const float time = seconds_value (env.time);
 
       // One shared ring-and-core mesh and one halo mesh, baked on the
       // first frame; each visible star is then just two draw calls.

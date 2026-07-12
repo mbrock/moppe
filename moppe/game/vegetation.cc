@@ -593,12 +593,13 @@ namespace moppe {
 
     void Vegetation::prepare (const map::HeightMap& map,
                               const WorldParams& world) {
-      m_map_size = world.map_size;
+      const Vec3& world_extent = extent_value (world.map_size);
+      m_map_size = world_extent;
       m_lean = false;
       m_periodic = map.periodic ();
       m_map = &map;
       m_water = meters_value (world.water_level);
-      m_height = world.map_size[1];
+      m_height = world_extent[1];
     }
 
     void Vegetation::generate (const map::HeightMap& map,
@@ -621,7 +622,7 @@ namespace moppe {
       m_plants.clear ();
       m_plants.reserve (trees + bushes + max_tufts + max_flowers + reed_count);
 
-      const float H = world.map_size[1];
+      const float H = extent_value (world.map_size)[1];
       const float water = meters_value (world.water_level);
 
       // Grove centers first: most trees cluster into woods with
@@ -1021,11 +1022,15 @@ namespace moppe {
       // Only sectors within fog-visibility range get drawn.  The GL
       // build fogged vegetation at fog_scale * 1.35; the unified haze
       // replaces the fog, but the factor lives on in the reach.
-      const float density = env.fog_scale * 1.35f;
+      const float density = attenuation_value (env.fog_scale) * 1.35f;
       const float fog_reach =
         density > 0 ? 1.9f / density : std::max (m_map_size[0], m_map_size[2]);
       if (draw_vegetation) {
-        render_grid (r, m_meshes, STRUCTURE_GRID, fog_reach, env.camera_pos);
+        render_grid (r,
+                     m_meshes,
+                     STRUCTURE_GRID,
+                     fog_reach,
+                     position_value (env.camera_pos));
 
         // Fine detail only registers near the camera; past that the
         // structural canopies carry the silhouette.
@@ -1033,7 +1038,7 @@ namespace moppe {
                      m_detail,
                      DETAIL_GRID,
                      std::min (fog_reach, 560.0f),
-                     env.camera_pos);
+                     position_value (env.camera_pos));
       }
 
       if (m_map) {
@@ -1068,8 +1073,9 @@ namespace moppe {
       const float radius = 90.0f;
       const float detail_radius = 40.0f;
       const int span = (int)(radius / cell) + 1;
-      const int cx = (int)std::floor (env.camera_pos[0] / cell);
-      const int cz = (int)std::floor (env.camera_pos[2] / cell);
+      const Vec3& camera = position_value (env.camera_pos);
+      const int cx = (int)std::floor (camera[0] / cell);
+      const int cz = (int)std::floor (camera[2] / cell);
 
       for (int gz = cz - span; gz <= cz + span; ++gz)
         for (int gx = cx - span; gx <= cx + span; ++gx) {
@@ -1089,8 +1095,8 @@ namespace moppe {
           if (!m_map->in_bounds (x, z))
             continue;
 
-          const float dx = x - env.camera_pos[0];
-          const float dz2 = z - env.camera_pos[2];
+          const float dx = x - camera[0];
+          const float dz2 = z - camera[2];
           const float d2 = dx * dx + dz2 * dz2;
           if (d2 > radius * radius)
             continue;
