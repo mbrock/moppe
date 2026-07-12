@@ -7,11 +7,12 @@ different systems agree, makes parameters portable across resolutions, and
 lets us compare a simulation with measurements from geomorphology, hydrology,
 soil science, ecology, and atmospheric science.
 
-This document is both a reference for quantities we already use and a unit
-policy for systems we may build. It does not claim that every current process
-is physically calibrated. In particular, the procedural field graph and the
-particle hydraulic erosion model contain normalized and empirical quantities.
-Their unit boundaries should be recorded rather than hidden.
+This document is a reference for quantities we already use or may want to
+model. It does not prescribe the C++ types, API shapes, storage units, or naming
+conventions that should represent them. Those choices are being worked out as
+Moppe adopts mp-units. Nor does it claim that every current process is
+physically calibrated: the procedural field graph and particle hydraulic
+erosion model contain normalized and empirical quantities.
 
 Several examples below come from the project's research corpus. Parenthetical
 identifiers such as `#ZHQFZP` name the supporting excerpt in that corpus. They
@@ -20,7 +21,8 @@ should be checked in the original paper before becoming simulation defaults.
 
 ## Conventions
 
-Use SI internally unless there is a strong domain reason not to:
+SI provides the common vocabulary used here unless there is a strong domain
+reason to show another unit:
 
 | Dimension | Preferred unit | Symbol |
 | --- | --- | --- |
@@ -47,15 +49,13 @@ For geological rates, `mm/yr`, `m/kyr`, and `m/Myr` are often more readable
 than very small `m/s` values.
 
 Unit symbols are case-sensitive: `m` is metre, `s` is second, `Pa` is pascal,
-and `K` is kelvin. Spell out ambiguous words in prose. In identifiers, encode
-units at boundaries and for otherwise ambiguous scalars: `depth_m`,
-`area_m2`, `volume_m3`, `speed_m_s`, `uplift_m_per_year`. A dimensionless
-quantity may use a descriptive name such as `slope`, `porosity`, or
-`saturation`, but its definition and range should still be documented.
+and `K` is kelvin. Spell out ambiguous words in prose. A dimensionless
+quantity still needs a definition and expected range: `slope`, `porosity`,
+and `saturation` are dimensionless for different reasons.
 
-Prefer base-unit storage and convert for display. A UI may show kilometres,
-hectares, litres per second, millimetres of rain, degrees Celsius, or years,
-but those presentation choices should not leak into the model.
+A UI or paper may reasonably show kilometres, hectares, litres per second,
+millimetres of rain, degrees Celsius, or years. The quantity remains the same
+under a change of unit; the representation strategy is outside this document.
 
 ## The terrain unit boundary
 
@@ -65,8 +65,8 @@ heightfield:
 - `TerrainGrid::spacing_x` and `spacing_y` are horizontal metres between
   samples;
 - `TerrainGrid::height_scale` is metres per stored height unit;
-- stored height samples, flood surfaces, and sea level are normalized height
-  values unless a field or identifier explicitly says `_m`;
+- stored height samples, flood surfaces, and sea level are currently
+  normalized height values in this subsystem;
 - physical elevation is `height * height_scale` metres;
 - one cell represents `spacing_x * spacing_y` square metres.
 
@@ -86,7 +86,7 @@ weights currently describe a procedural recipe in a normalized domain. They
 are intentionally scale-free until materialization. Frequency there means
 cycles across the chosen domain, not automatically cycles per metre. If a
 future geological process depends on wavelength, correlation length, or fault
-width, express that parameter in metres and convert it using the domain size.
+width, the model must relate that physical length to the sampling domain.
 
 ## Geometry and topography
 
@@ -312,8 +312,8 @@ paper without copying its complete formulation and unit convention.
 Moppe's analytical erosion uses `n = 1`, `time_years`, uplift in m/yr,
 physical area in m², and physical path distance in m. Its `erodibility`
 parameter therefore follows the model-year dimensional convention above; it
-is not dimensionless despite its unsuffixed historical name. Sea level remains
-normalized at the terrain API boundary.
+is not dimensionless. Sea level remains normalized at the terrain analysis
+boundary in the current implementation.
 
 The corpus illustrates plausible orders of magnitude without establishing
 defaults for Moppe. One experiment uses a 50 km by 50 km domain, uplift of
@@ -436,11 +436,11 @@ mol/m³. Always retain the basis. pH is dimensionless and logarithmic.
 Vegetation models may use leaf area index (one-sided leaf area per ground
 area, dimensionless), biomass in kg/m², canopy height in m, growth rate in
 kg/(m² s), and fractional cover in `[0, 1]`. Habitat suitability and Moppe's
-current moisture value are indices, not measurements, and should not be given
-physical unit suffixes.
+current moisture value are indices rather than physical measurements.
 
-Air temperature is K internally; degrees Celsius are suitable for display and
-temperature differences because a change of 1 C equals a change of 1 K.
+Thermodynamic temperature is measured in K; degrees Celsius are also common
+for environmental observations and temperature differences because a change
+of 1 C equals a change of 1 K.
 Pressure is Pa, air density kg/m³, wind velocity m/s, humidity as either a
 dimensionless relative humidity or a specifically defined mass ratio, and
 radiative or turbulent flux W/m².
@@ -574,35 +574,29 @@ its model and spatial scale.
 | moisture raster | dimensionless visual/ecological index `[0, 1]` |
 | frame/game animation time | s |
 
-The table is a snapshot, not permission to perpetuate ambiguous boundaries.
-When an existing normalized quantity becomes an input to another physical
-system, convert it once at a named boundary and keep the downstream system in
-physical units.
+The table is a snapshot of the code during the mp-units migration, not a
+proposed end state. It records enough context to interpret current algorithms
+while their eventual types and boundaries are still being designed.
 
-## Rules for new systems
+## Questions for new systems
 
 1. Start each equation on paper with named quantities, units, and sign
    conventions. Check that both sides have the same dimensions.
-2. Store SI values internally. Convert to normalized terrain coordinates,
-   texture encodings, or display units only at explicit boundaries.
-3. Put units in public identifiers where the type system does not carry them.
-   Never rely on a nearby comment for two same-typed lengths in different
-   units.
-4. Give dimensionless values a definition, expected range, and normalization
+2. Give dimensionless values a definition, expected range, and normalization
    basis. "Strength", "amount", and "scale" are not definitions.
-5. Separate state from flux and rate: water volume (m³), discharge (m³/s),
+3. Separate state from flux and rate: water volume (m³), discharge (m³/s),
    and rainfall intensity (m/s) are different quantities.
-6. Separate counts from measures: cells are not m², iterations are not s,
+4. Separate counts from measures: cells are not m², iterations are not s,
    and droplets are not m³.
-7. Include unit conversions and resolution changes in tests. The same physical
+5. Include unit conversions and resolution changes in tests. The same physical
    plane sampled at two resolutions should have the same slope and area;
    volume integrations should converge rather than scale with cell count.
-8. Reports and serialized artifacts should include units in field names,
-   column headers, or schema metadata. A bare CSV column named `water` will
-   eventually be misread.
-9. Record empirical calibration alongside the world scale, resolution,
+6. State units in reports and serialized artifacts. A bare CSV column named
+   `water` will eventually be misread, regardless of how its value is typed in
+   the program.
+7. Record empirical calibration alongside the world scale, resolution,
    timestep, and climate assumptions for which it was made.
-10. If a model is deliberately artistic, say so. A clearly named empirical
+8. If a model is deliberately artistic, say so. A clearly defined empirical
     control is safer and more useful than a physical-sounding parameter with
     inconsistent dimensions.
 
