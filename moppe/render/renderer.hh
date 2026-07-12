@@ -22,11 +22,11 @@ namespace moppe {
     struct FrameParams {
       Mat4 view;
       Mat4 proj; // reversed-Z perspective
-      Vector3D camera_pos;
-      Vector3D cam_right, cam_up, cam_forward;
+      Vec3 camera_pos;
+      Vec3 cam_right, cam_up, cam_forward;
       DisplayColor clear_color; // also the fog/haze color
       float fog_scale = 0.0f;
-      Vector3D sun_dir; // world space, toward the sun
+      Vec3 sun_dir; // world space, toward the sun
       // Art-directed sun products.  Ambient is the strength/color fed
       // into the shaders' cool-sky / warm-ground hemisphere fill.
       DisplayColor sun_diffuse;
@@ -61,7 +61,7 @@ namespace moppe {
     struct TerrainParams {
       int width; // grid samples (2049)
       int height;
-      Vector3D scale;       // grid step x/z, height scale y
+      Vec3 scale;           // grid step x/z, height scale y
       float height_scale;   // world meters at height 1.0
       float sea_level_norm; // sea level / height_scale
       float tex_scale;      // texture repeats per world meter
@@ -125,13 +125,13 @@ namespace moppe {
       float time;
       float sun_height;
       float cloudiness;
-      Vector3D sun_dir;
+      Vec3 sun_dir;
       DisplayColor fog_color;
     };
 
     struct OceanSetup {
       float level;
-      Vector3D center;
+      Vec3 center;
       float half_extent;
       int cells; // 300
     };
@@ -140,7 +140,7 @@ namespace moppe {
       float time;
       DisplayColor fog_color;
       float fog_scale;
-      Vector3D world_offset;
+      Vec3 world_offset;
     };
 
     // Camera-centered procedural full-geometry grass. The backend samples the
@@ -157,8 +157,8 @@ namespace moppe {
     struct DustEmission {
       uint64_t id = 0;
       float birth_time = 0.0f;
-      Vector3D position;
-      Vector3D velocity;
+      Vec3 position;
+      Vec3 velocity;
       DisplayColor color;
       float size = 1.0f;
       float life = 1.0f;
@@ -188,7 +188,7 @@ namespace moppe {
       // -- world setup -------------------------------------------------
       virtual void set_terrain (const TerrainParams& params,
                                 const float* heights,
-                                const Vector3D* normals) = 0;
+                                const Vec3* normals) = 0;
       virtual void set_terrain_textures (TexturePtr grass,
                                          TexturePtr dirt,
                                          TexturePtr rock,

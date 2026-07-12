@@ -56,7 +56,7 @@ namespace moppe {
                    const FrameEnv& env,
                    bool draw_vegetation,
                    float grass_density,
-                   const Vector3D& grass_scale = Vector3D (1, 1, 1));
+                   const Vec3& grass_scale = Vec3 (1, 1, 1));
 
     private:
       static const int STRUCTURE_GRID = 6;
@@ -74,22 +74,22 @@ namespace moppe {
 
       struct Plant {
         Species species;
-        uint8_t palette;   // flower/bush bloom color index
-        Vector3D position; // ground point
-        Vector3D ground_normal;
+        uint8_t palette; // flower/bush bloom color index
+        Vec3 position;   // ground point
+        Vec3 ground_normal;
         float scale;
         float tint;    // per-plant color variance
         uint32_t seed; // deterministic per-plant detail
       };
 
       void append_plant (Species species,
-                         const Vector3D& position,
-                         const Vector3D& normal,
+                         const Vec3& position,
+                         const Vec3& normal,
                          float scale,
                          float tint,
                          uint32_t seed,
                          uint8_t palette = 0);
-      int cell_of (const Vector3D& position, int grid) const;
+      int cell_of (const Vec3& position, int grid) const;
       void record_structure (render::DrawList& dl, const Plant& plant) const;
       void record_shadow (render::DrawList& dl, const Plant& plant) const;
       void record_detail (render::DrawList& dl, const Plant& plant) const;
@@ -97,13 +97,13 @@ namespace moppe {
                         const render::MeshPtr* meshes,
                         int grid,
                         float reach,
-                        const Vector3D& camera) const;
+                        const Vec3& camera) const;
       void record_near_grass (const FrameEnv& env);
 
       std::vector<Plant> m_plants;
       render::MeshPtr m_meshes[STRUCTURE_GRID * STRUCTURE_GRID];
       render::MeshPtr m_detail[DETAIL_GRID * DETAIL_GRID];
-      Vector3D m_map_size;
+      Vec3 m_map_size;
       bool m_lean;
       bool m_periodic = false;
 

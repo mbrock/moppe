@@ -32,27 +32,27 @@ namespace moppe {
       // sun, world space.
       void render_shadow (render::Renderer& r,
                           const map::HeightMap& map,
-                          const Vector3D& sun_dir);
+                          const Vec3& sun_dir);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // a conservative behind-camera test.  Five nested LODs run from
       // a bilinearly subdivided near field to a stride-8 haze ring.
       void render (render::Renderer& r,
-                   const Vector3D& cam,
-                   const Vector3D& view_dir,
+                   const Vec3& cam,
+                   const Vec3& view_dir,
                    float max_dist);
 
     private:
       struct Chunk {
         int x0, z0; // grid origin
-        Vector3D center;
+        Vec3 center;
         float radius;
       };
 
       std::vector<Chunk> m_chunks;
       std::vector<render::ChunkDraw> m_draws;
-      Vector3D m_scale;
-      Vector3D m_period;
+      Vec3 m_scale;
+      Vec3 m_period;
       float m_lod_scale = 1;
       bool m_periodic = false;
       bool m_repeat_periodically = true;

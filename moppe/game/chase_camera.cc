@@ -8,24 +8,24 @@ namespace moppe {
     namespace {
       // damping_ratio is the dimensionless zeta of the second-order
       // system, not a rate: 1 is critical, below rings, above crawls.
-      void spring (Vector3D& value,
-                   Vector3D& velocity,
-                   const Vector3D& target,
+      void spring (Vec3& value,
+                   Vec3& velocity,
+                   const Vec3& target,
                    frequency_t frequency,
                    float damping_ratio,
                    seconds_t dt) {
         const float omega = PI2 * frequency.numerical_value_in (u::Hz);
         const float dt_s = seconds_value (dt);
-        const Vector3D acceleration = (target - value) * (omega * omega) -
-                                      velocity * (2.0f * damping_ratio * omega);
+        const Vec3 acceleration = (target - value) * (omega * omega) -
+                                  velocity * (2.0f * damping_ratio * omega);
         velocity += acceleration * dt_s;
         value += velocity * dt_s;
       }
     }
 
-    void ChaseCamera::update (const Vector3D& position,
-                              const Vector3D& orientation,
-                              const Vector3D& velocity,
+    void ChaseCamera::update (const Vec3& position,
+                              const Vec3& orientation,
+                              const Vec3& velocity,
                               seconds_t dt) {
       // dt-correct smoothing (3.1/s reproduces the old 0.05 @ 60Hz)
       float alpha = smoothing_alpha (3.1f / u::s, dt);
@@ -34,43 +34,43 @@ namespace moppe {
       const bool reset = m_is_uninitialized;
       if (reset) {
         alpha = fast = 1;
-        m_ahead = Vector3D ();
+        m_ahead = Vec3 ();
       }
 
       m_avg_orientation =
         linear_vector_interpolate (m_avg_orientation, orientation, alpha);
-      m_avg_orientation.normalize ();
+      normalize (m_avg_orientation);
 
       // Sit behind the heading, tilted up by the pitch offset around
       // a well-defined horizontal right axis.
-      Vector3D o = m_avg_orientation;
-      Vector3D right = Vector3D (0, 1, 0).cross (o);
-      if (right.length2 () < 1e-6f)
-        right = Vector3D (1, 0, 0);
-      right.normalize ();
+      Vec3 o = m_avg_orientation;
+      Vec3 right = cross (Vec3 (0, 1, 0), o);
+      if (length2 (right) < 1e-6f)
+        right = Vec3 (1, 0, 0);
+      normalize (right);
 
-      Vector3D d = Quaternion::rotate (-o, right, m_pitch_offset);
-      d.normalize ();
+      Vec3 d = Quaternion::rotate (-o, right, m_pitch_offset);
+      normalize (d);
 
       // Look slightly ahead of the motion so corners open up; the
       // look-ahead is low-passed because velocity is discontinuous.
-      Vector3D ahead = velocity * 0.15f;
-      const float ahead_len = ahead.length ();
+      Vec3 ahead = velocity * 0.15f;
+      const float ahead_len = length (ahead);
       if (ahead_len > 8.0f)
         ahead *= 8.0f / ahead_len;
       m_ahead = linear_vector_interpolate (m_ahead, ahead, fast);
 
-      Vector3D want_target = position + m_ahead;
+      Vec3 want_target = position + m_ahead;
       const float dist = meters_value (m_distance);
-      const Vector3D scaled_offset (d.x * dist / m_horizontal_scale,
-                                    d.y * dist / m_vertical_scale,
-                                    d.z * dist / m_horizontal_scale);
-      const Vector3D want_position = position + scaled_offset;
+      const Vec3 scaled_offset (d[0] * dist / m_horizontal_scale,
+                                d[1] * dist / m_vertical_scale,
+                                d[2] * dist / m_horizontal_scale);
+      const Vec3 want_position = position + scaled_offset;
       if (reset) {
         m_target = want_target;
         m_position = want_position;
-        m_target_velocity = Vector3D ();
-        m_position_velocity = Vector3D ();
+        m_target_velocity = Vec3 ();
+        m_position_velocity = Vec3 ();
         m_is_uninitialized = false;
       } else {
         // The target remains responsive while the camera body has a
@@ -89,18 +89,19 @@ namespace moppe {
       // Clamp the HORIZONTAL trail only, against a smoothed speed so
       // collisions can't shrink the window in one frame.
       m_speed +=
-        (velocity.length () - m_speed) * smoothing_alpha (6.0f / u::s, dt);
+        (length (velocity) - m_speed) * smoothing_alpha (6.0f / u::s, dt);
 
-      Vector3D offset = m_position - position;
-      const float horiz = std::sqrt (offset.x * offset.x + offset.z * offset.z);
+      Vec3 offset = m_position - position;
+      const float horiz =
+        std::sqrt (offset[0] * offset[0] + offset[2] * offset[2]);
       const float max_len =
         meters_value (m_distance) / m_horizontal_scale + 0.06f * m_speed;
       if (horiz > max_len) {
         const float s = max_len / horiz;
-        m_position.x = position.x + offset.x * s;
-        m_position.z = position.z + offset.z * s;
-        Vector3D outward (offset.x / horiz, 0, offset.z / horiz);
-        const float outward_speed = m_position_velocity.dot (outward);
+        m_position[0] = position[0] + offset[0] * s;
+        m_position[2] = position[2] + offset[2] * s;
+        Vec3 outward (offset[0] / horiz, 0, offset[2] / horiz);
+        const float outward_speed = dot (m_position_velocity, outward);
         if (outward_speed > 0)
           m_position_velocity -= outward * outward_speed;
       }
@@ -111,35 +112,35 @@ namespace moppe {
       // carries it across rolling terrain.
       const float target_floor =
         0.35f / m_vertical_scale +
-        map.interpolated_height (m_target.x, m_target.z);
-      if (m_target.y < target_floor) {
-        m_target.y = target_floor;
-        if (m_target_velocity.y < 0)
-          m_target_velocity.y = 0;
+        map.interpolated_height (m_target[0], m_target[2]);
+      if (m_target[1] < target_floor) {
+        m_target[1] = target_floor;
+        if (m_target_velocity[1] < 0)
+          m_target_velocity[1] = 0;
       }
 
       float needed = 2.2f / m_vertical_scale +
-                     map.interpolated_height (m_position.x, m_position.z);
+                     map.interpolated_height (m_position[0], m_position[2]);
 
       // The sight line toward the bike must clear the terrain too;
       // twelve taps catch narrow ridges that the old four-tap check
       // could step straight across. Clearance tapers toward the bike.
       for (int i = 1; i <= 10; ++i) {
         const float t = i / 12.0f;
-        const float sx = m_position.x + (m_target.x - m_position.x) * t;
-        const float sz = m_position.z + (m_target.z - m_position.z) * t;
+        const float sx = m_position[0] + (m_target[0] - m_position[0]) * t;
+        const float sz = m_position[2] + (m_target[2] - m_position[2]) * t;
         const float clearance = (0.3f + 1.9f * (1 - t)) / m_vertical_scale;
         const float g = clearance + map.interpolated_height (sx, sz);
 
-        needed = max (needed, (g - m_target.y * t) / (1 - t));
+        needed = max (needed, (g - m_target[1] * t) / (1 - t));
       }
 
       // Collision correction is immediate; descent remains spring-smoothed
       // by update(), so safety does not add a second competing camera motion.
-      if (m_position.y < needed) {
-        m_position.y = needed;
-        if (m_position_velocity.y < 0)
-          m_position_velocity.y = 0;
+      if (m_position[1] < needed) {
+        m_position[1] = needed;
+        if (m_position_velocity[1] < 0)
+          m_position_velocity[1] = 0;
       }
     }
   }

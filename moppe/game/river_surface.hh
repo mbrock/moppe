@@ -24,14 +24,14 @@ namespace moppe::game {
                   const terrain::DrainageGraph& drainage,
                   const terrain::RiverNetwork& rivers);
     void clear ();
-    void draw (render::Renderer& renderer, const Vector3D& camera) const;
+    void draw (render::Renderer& renderer, const Vec3& camera) const;
     bool empty () const {
       return !m_mesh;
     }
 
   private:
     render::MeshPtr m_mesh;
-    Vector3D m_period;
+    Vec3 m_period;
     bool m_periodic = false;
   };
 }

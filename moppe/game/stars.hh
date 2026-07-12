@@ -19,7 +19,7 @@ namespace moppe {
       static constexpr std::size_t MAX_STARS = 250;
 
       struct StarState {
-        Vector3D position {};
+        Vec3 position {};
         float phase = 0.0f;
         float respawn = 0.0f;
       };
@@ -28,7 +28,7 @@ namespace moppe {
         std::array<StarState, MAX_STARS> stars {};
         std::size_t count = 0;
         int collected = 0;
-        Vector3D last_position {};
+        Vec3 last_position {};
       };
 
       Stars ();
@@ -38,7 +38,7 @@ namespace moppe {
                      int count);
 
       // Checks pickups; returns how many were grabbed this tick
-      int update (const Vector3D& vehicle_pos, float time, float dt);
+      int update (const Vec3& vehicle_pos, float time, float dt);
 
       void render (render::Renderer& r, const FrameEnv& env);
 
@@ -48,14 +48,14 @@ namespace moppe {
       int collected () const {
         return m_collected;
       }
-      const Vector3D& last_pos () const {
+      const Vec3& last_pos () const {
         return m_last_pos;
       }
 
     private:
       struct Star {
-        Vector3D home;
-        Vector3D pos;
+        Vec3 home;
+        Vec3 pos;
         float phase;
         float respawn;
       };
@@ -64,8 +64,8 @@ namespace moppe {
       render::MeshPtr m_body;
       render::MeshPtr m_halo;
       int m_collected;
-      Vector3D m_last_pos;
-      Vector3D m_period;
+      Vec3 m_last_pos;
+      Vec3 m_period;
       bool m_periodic = false;
     };
   }

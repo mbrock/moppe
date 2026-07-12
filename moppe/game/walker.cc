@@ -11,12 +11,12 @@ namespace moppe {
         : m_pos (), m_heading (0, 0, 1), m_vy (0), m_turn (0), m_walk (0),
           m_anim (0), m_grounded (true) {}
 
-    void Walker::spawn (const Vector3D& pos, const Vector3D& heading) {
+    void Walker::spawn (const Vec3& pos, const Vec3& heading) {
       m_pos = pos;
-      m_heading = Vector3D (heading.x, 0, heading.z);
-      if (m_heading.length2 () < 0.01f)
-        m_heading = Vector3D (0, 0, 1);
-      m_heading.normalize ();
+      m_heading = Vec3 (heading[0], 0, heading[2]);
+      if (length2 (m_heading) < 0.01f)
+        m_heading = Vec3 (0, 0, 1);
+      normalize (m_heading);
       m_vy = 0;
       m_turn = 0;
       m_walk = 0;
@@ -33,32 +33,32 @@ namespace moppe {
                          const WorldParams& world) {
       if (std::abs (m_turn) > 0.01f)
         m_heading = Quaternion::rotate (
-          m_heading, Vector3D (0, 1, 0), (-m_turn * 2.4f * dt) * u::rad);
+          m_heading, Vec3 (0, 1, 0), (-m_turn * 2.4f * dt) * u::rad);
 
       float speed = 6.0f;
-      if (m_pos.y < meters_value (world.water_level) + 0.5f)
+      if (m_pos[1] < meters_value (world.water_level) + 0.5f)
         speed = 2.0f; // wading
 
-      m_pos.x += m_heading.x * m_walk * speed * dt;
-      m_pos.z += m_heading.z * m_walk * speed * dt;
+      m_pos[0] += m_heading[0] * m_walk * speed * dt;
+      m_pos[2] += m_heading[2] * m_walk * speed * dt;
       m_anim += std::abs (m_walk) * speed * dt;
 
       collide (boxes);
 
       // ground is the terrain, or a roof once we're up on one
-      float g = map.interpolated_height (m_pos.x, m_pos.z);
+      float g = map.interpolated_height (m_pos[0], m_pos[2]);
       for (size_t i = 0; i < boxes.size (); ++i) {
         const mov::Box& b = boxes[i];
-        if (m_pos.x > b.x0 && m_pos.x < b.x1 && m_pos.z > b.z0 &&
-            m_pos.z < b.z1 && m_pos.y > b.top - 1.0f && b.top > g)
+        if (m_pos[0] > b.x0 && m_pos[0] < b.x1 && m_pos[2] > b.z0 &&
+            m_pos[2] < b.z1 && m_pos[1] > b.top - 1.0f && b.top > g)
           g = b.top;
       }
 
       m_vy -= 9.82f * dt;
-      m_pos.y += m_vy * dt;
+      m_pos[1] += m_vy * dt;
       m_grounded = false;
-      if (m_pos.y <= g) {
-        m_pos.y = g;
+      if (m_pos[1] <= g) {
+        m_pos[1] = g;
         m_vy = 0;
         m_grounded = true;
       }
@@ -68,33 +68,33 @@ namespace moppe {
       const float r = 0.4f;
       for (size_t i = 0; i < boxes.size (); ++i) {
         const mov::Box& b = boxes[i];
-        if (m_pos.y >= b.top - 0.1f)
+        if (m_pos[1] >= b.top - 0.1f)
           continue; // up on the roof
 
-        const float dx0 = m_pos.x - (b.x0 - r);
-        const float dx1 = (b.x1 + r) - m_pos.x;
-        const float dz0 = m_pos.z - (b.z0 - r);
-        const float dz1 = (b.z1 + r) - m_pos.z;
+        const float dx0 = m_pos[0] - (b.x0 - r);
+        const float dx1 = (b.x1 + r) - m_pos[0];
+        const float dz0 = m_pos[2] - (b.z0 - r);
+        const float dz1 = (b.z1 + r) - m_pos[2];
         if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
           continue;
 
         // every building has a door in the middle of its +z wall;
         // people fit through, motorcycles do not
-        if (Door::in_doorway (b, m_pos.x, m_pos.z))
+        if (Door::in_doorway (b, m_pos[0], m_pos[2]))
           continue;
 
         const float px = std::min (dx0, dx1);
         const float pz = std::min (dz0, dz1);
         if (px < pz)
-          m_pos.x = (dx0 < dx1) ? b.x0 - r : b.x1 + r;
+          m_pos[0] = (dx0 < dx1) ? b.x0 - r : b.x1 + r;
         else
-          m_pos.z = (dz0 < dz1) ? b.z0 - r : b.z1 + r;
+          m_pos[2] = (dz0 < dz1) ? b.z0 - r : b.z1 + r;
       }
     }
 
     void Walker::render (render::DrawList& dl,
                          float time,
-                         const Vector3D& visual_scale) const {
+                         const Vec3& visual_scale) const {
       dl.set_texture (nullptr);
 
       // The rider, dismounted: the same guy in the same gear, with
@@ -105,8 +105,8 @@ namespace moppe {
       const float breathe = moving ? 0.0f : 0.006f * std::sin (time * 2.0f);
 
       dl.push ();
-      dl.translate (m_pos.x, m_pos.y + bob, m_pos.z);
-      dl.rotate (std::atan2 (m_heading.x, m_heading.z) * u::rad, 0, 1, 0);
+      dl.translate (m_pos[0], m_pos[1] + bob, m_pos[2]);
+      dl.rotate (std::atan2 (m_heading[0], m_heading[2]) * u::rad, 0, 1, 0);
       dl.scale (visual_scale);
 
       // Legs: the thigh swings from the hip, the shin lags behind

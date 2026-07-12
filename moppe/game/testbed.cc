@@ -34,18 +34,18 @@ namespace {
     void render (render::Renderer& r) override {
       render::FrameParams fp;
       const float orbit = m_time * 0.4f;
-      const Vector3D eye (std::sin (orbit) * 18, 8, std::cos (orbit) * 18);
-      const Vector3D at (0, 2, 0);
-      fp.view = Mat4::look_at (eye, at, Vector3D (0, 1, 0));
+      const Vec3 eye (std::sin (orbit) * 18, 8, std::cos (orbit) * 18);
+      const Vec3 at (0, 2, 0);
+      fp.view = Mat4::look_at (eye, at, Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (
         60 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
       fp.camera_pos = eye;
-      fp.cam_right = Vector3D (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
-      fp.cam_up = Vector3D (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
-      fp.cam_forward = (at - eye).normalized ();
+      fp.cam_right = Vec3 (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
+      fp.cam_up = Vec3 (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
+      fp.cam_forward = normalized (at - eye);
       fp.clear_color = DisplayColor (0.55f, 0.65f, 0.85f);
       fp.fog_scale = 0.004f;
-      fp.sun_dir = Vector3D (0.5f, 0.8f, 0.3f).normalized ();
+      fp.sun_dir = normalized (Vec3 (0.5f, 0.8f, 0.3f));
       fp.sun_diffuse = DisplayColor (1.0f, 0.9f, 0.75f);
       fp.sun_specular = DisplayColor (0.5f, 0.5f, 0.5f);
       fp.ambient = DisplayColor (0.35f, 0.35f, 0.4f);
@@ -59,7 +59,7 @@ namespace {
       // Ground: a big lit quad.
       m_list.color (0.3f, 0.55f, 0.25f);
       m_list.begin (render::Prim::Quads);
-      m_list.normal (Vector3D (0, 1, 0));
+      m_list.normal (Vec3 (0, 1, 0));
       m_list.vertex (-60, 0, -60);
       m_list.vertex (-60, 0, 60);
       m_list.vertex (60, 0, 60);
@@ -111,7 +111,7 @@ namespace {
       m_list.lit (false);
       m_list.color (1.0f, 1.0f, 1.0f, 0.35f);
       m_list.begin (render::Prim::Quads);
-      m_list.normal (Vector3D (0, 1, 0));
+      m_list.normal (Vec3 (0, 1, 0));
       m_list.vertex (-30, 1.0f, -30);
       m_list.vertex (-30, 1.0f, 30);
       m_list.vertex (30, 1.0f, 30);

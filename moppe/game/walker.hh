@@ -17,8 +17,8 @@ namespace moppe {
     class Walker {
     public:
       struct State {
-        Vector3D position {};
-        Vector3D heading {};
+        Vec3 position {};
+        Vec3 heading {};
         float vertical_velocity {};
         float turn {};
         float walk {};
@@ -42,7 +42,7 @@ namespace moppe {
         m_grounded = state.grounded;
       }
 
-      void spawn (const Vector3D& pos, const Vector3D& heading);
+      void spawn (const Vec3& pos, const Vec3& heading);
 
       void set_turn (float t) {
         m_turn = t;
@@ -57,22 +57,22 @@ namespace moppe {
                    const std::vector<mov::Box>& boxes,
                    const WorldParams& world);
 
-      Vector3D position () const {
+      Vec3 position () const {
         return m_pos;
       }
-      Vector3D heading () const {
+      Vec3 heading () const {
         return m_heading;
       }
 
       // The walk cycle runs off distance; time only drives idle breathing.
       void render (render::DrawList& dl,
                    float time,
-                   const Vector3D& visual_scale = Vector3D (1, 1, 1)) const;
+                   const Vec3& visual_scale = Vec3 (1, 1, 1)) const;
 
     private:
       void collide (const std::vector<mov::Box>& boxes);
 
-      Vector3D m_pos, m_heading;
+      Vec3 m_pos, m_heading;
       float m_vy, m_turn, m_walk, m_anim;
       bool m_grounded;
     };

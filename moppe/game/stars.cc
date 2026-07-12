@@ -42,7 +42,7 @@ namespace moppe {
         throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
-      const Vector3D size = map.size ();
+      const Vec3 size = map.size ();
       m_period = size;
       m_periodic = map.periodic ();
       m_collected = 0;
@@ -50,16 +50,16 @@ namespace moppe {
       m_stars.clear ();
       while ((int)m_stars.size () < count) {
         Star s;
-        s.pos.x = size.x * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
-        s.pos.z = size.z * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
+        s.pos[0] = size[0] * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
+        s.pos[2] = size[2] * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
 
-        float ground = map.interpolated_height (s.pos.x, s.pos.z);
+        float ground = map.interpolated_height (s.pos[0], s.pos[2]);
         if (ground < meters_value (params.water_level) + 2)
           continue; // land only
 
         // Every fourth star hangs high up: jump-jet territory
         bool high = (m_stars.size () % 4 == 0);
-        s.pos.y = ground + (high ? 14.0f + 8.0f * u (rng) : 2.5f);
+        s.pos[1] = ground + (high ? 14.0f + 8.0f * u (rng) : 2.5f);
         s.home = s.pos;
         s.phase = 360.0f * u (rng);
         s.respawn = 0;
@@ -67,7 +67,7 @@ namespace moppe {
       }
     }
 
-    int Stars::update (const Vector3D& vehicle_pos, float, float dt) {
+    int Stars::update (const Vec3& vehicle_pos, float, float dt) {
       int picked = 0;
       for (size_t i = 0; i < m_stars.size (); ++i) {
         Star& s = m_stars[i];
@@ -77,32 +77,32 @@ namespace moppe {
             s.pos = s.home;
           continue;
         }
-        Vector3D delta = s.pos - vehicle_pos;
+        Vec3 delta = s.pos - vehicle_pos;
         if (m_periodic) {
-          delta.x = terrain::minimum_image_delta (delta.x, m_period.x);
-          delta.z = terrain::minimum_image_delta (delta.z, m_period.z);
+          delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
+          delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
         }
-        const float distance = delta.length ();
+        const float distance = length (delta);
         if (distance < 22.0f && distance > 0.001f) {
           // Once noticed, a star spirals into the rider. Attraction ramps up
           // smoothly at the edge and wins over the orbit near collection.
           const float pull = 1.0f - distance / 22.0f;
           const float alpha =
             smoothing_alpha ((1.2f + 7.0f * pull * pull) / u::s, dt * u::s);
-          Vector3D tangent (-delta.z, 0, delta.x);
-          if (tangent.length2 () > 0.0001f)
-            tangent.normalize ();
+          Vec3 tangent (-delta[2], 0, delta[0]);
+          if (length2 (tangent) > 0.0001f)
+            normalize (tangent);
           const float orbit = 4.5f * pull * (1.0f - pull);
           s.pos -= delta * alpha;
           s.pos += tangent * (orbit * dt);
           s.phase += dt * (180.0f + 540.0f * pull);
           delta = s.pos - vehicle_pos;
           if (m_periodic) {
-            delta.x = terrain::minimum_image_delta (delta.x, m_period.x);
-            delta.z = terrain::minimum_image_delta (delta.z, m_period.z);
+            delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
+            delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
           }
         }
-        if (delta.length2 () < 3.0f * 3.0f) {
+        if (length2 (delta) < 3.0f * 3.0f) {
           s.respawn = 60.0f; // comes back later
           ++m_collected;
           ++picked;
@@ -113,7 +113,7 @@ namespace moppe {
     }
 
     void Stars::render (render::Renderer& r, const FrameEnv& env) {
-      const Vector3D& cam = env.camera_pos;
+      const Vec3& cam = env.camera_pos;
       const float time = env.time;
 
       // One shared ring-and-core mesh and one halo mesh, baked on the
@@ -142,25 +142,27 @@ namespace moppe {
         m_halo = r.create_mesh (dl);
       }
 
-      const Vector3D y_axis (0, 1, 0), x_axis (1, 0, 0);
+      const Vec3 y_axis (0, 1, 0), x_axis (1, 0, 0);
       for (size_t i = 0; i < m_stars.size (); ++i) {
         const Star& s = m_stars[i];
         if (s.respawn > 0)
           continue;
 
-        Vector3D position = s.pos;
+        Vec3 position = s.pos;
         if (m_periodic) {
-          position.x = terrain::nearest_image (position.x, cam.x, m_period.x);
-          position.z = terrain::nearest_image (position.z, cam.z, m_period.z);
+          position[0] =
+            terrain::nearest_image (position[0], cam[0], m_period[0]);
+          position[2] =
+            terrain::nearest_image (position[2], cam[2], m_period[2]);
         }
-        const float dx = cam.x - position.x, dz = cam.z - position.z;
+        const float dx = cam[0] - position[0], dz = cam[2] - position[2];
         if (dx * dx + dz * dz > 900.0f * 900.0f)
           continue;
 
         const Mat4 place = Mat4::translation (
-          Vector3D (position.x,
-                    position.y + 0.35f * std::sin (time * 2.0f + s.phase),
-                    position.z));
+          Vec3 (position[0],
+                position[1] + 0.35f * std::sin (time * 2.0f + s.phase),
+                position[2]));
         r.draw_mesh (
           *m_body,
           place * Mat4::rotation ((time * 150.0f + s.phase) * u::deg, y_axis) *
@@ -168,7 +170,7 @@ namespace moppe {
 
         const float pulse = 1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
         r.draw_mesh (*m_halo,
-                     place * Mat4::scaling (Vector3D (pulse, pulse, pulse)));
+                     place * Mat4::scaling (Vec3 (pulse, pulse, pulse)));
       }
     }
   }

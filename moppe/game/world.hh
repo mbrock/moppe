@@ -11,7 +11,7 @@ namespace moppe {
     // globals (map_size, resolution, water_level, fog_scale, mode
     // flags), now passed explicitly.
     struct WorldParams {
-      Vector3D map_size;    // world metres (x, height, z)
+      Vec3 map_size;        // world metres (x, height, z)
       int resolution;       // heightmap samples per side
       meters_t water_level; // sea level above the model zero datum
       float fog_scale;      // haze density per metre
@@ -19,8 +19,8 @@ namespace moppe {
           : map_size (5000, 650, 5000), resolution (2049),
             water_level (50 * u::m), fog_scale (0.0004f) {}
 
-      Vector3D spawn_position () const {
-        return Vector3D (50, 600, 50);
+      Vec3 spawn_position () const {
+        return Vec3 (50, 600, 50);
       }
 
       bool toroidal () const {
@@ -39,9 +39,9 @@ namespace moppe {
     struct FrameEnv {
       DisplayColor fog_color;
       float fog_scale;
-      Vector3D sun_dir; // world space, toward the sun
-      Vector3D camera_pos;
-      Vector3D cam_right, cam_up, cam_forward;
+      Vec3 sun_dir; // world space, toward the sun
+      Vec3 camera_pos;
+      Vec3 cam_right, cam_up, cam_forward;
       float time; // total game time (animation clock)
     };
   }

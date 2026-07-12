@@ -228,11 +228,11 @@ namespace moppe {
       }
 #endif
 
-      MoppeFloat4 f4 (const Vector3D& v, float w = 0.0f) {
+      MoppeFloat4 f4 (const Vec3& v, float w = 0.0f) {
         MoppeFloat4 r;
-        r.x = v.x;
-        r.y = v.y;
-        r.z = v.z;
+        r.x = v[0];
+        r.y = v[1];
+        r.z = v[2];
         r.w = w;
         return r;
       }
@@ -287,7 +287,7 @@ namespace moppe {
       // world setup
       void set_terrain (const TerrainParams& params,
                         const float* heights,
-                        const Vector3D* normals) override;
+                        const Vec3* normals) override;
       void set_terrain_textures (TexturePtr grass,
                                  TexturePtr dirt,
                                  TexturePtr rock,
@@ -1124,7 +1124,7 @@ namespace moppe {
 
     void MetalRenderer::set_terrain (const TerrainParams& params,
                                      const float* heights,
-                                     const Vector3D* normals) {
+                                     const Vec3* normals) {
       const int w = params.width, h = params.height;
       const bool transition = params.derive_normals && m_have_terrain &&
                               m_heights && m_heights.width == (NSUInteger)w &&
@@ -1167,8 +1167,8 @@ namespace moppe {
       if (!params.derive_normals) {
         std::vector<int16_t> packed ((size_t)w * h * 2);
         for (size_t i = 0; i < (size_t)w * h; ++i) {
-          const Vector3D& n = normals[i];
-          float x = n.x, z = n.z;
+          const Vec3& n = normals[i];
+          float x = n[0], z = n[2];
           if (x < -1)
             x = -1;
           if (x > 1)
@@ -1341,9 +1341,9 @@ namespace moppe {
       MoppeTerrainUniforms u;
       std::memset (&u, 0, sizeof (u));
       u.view_proj = m4 (light_view_proj);
-      u.params0.x = m_terrain_params.scale.x;
-      u.params0.y = m_terrain_params.scale.y;
-      u.params0.z = m_terrain_params.scale.z;
+      u.params0.x = m_terrain_params.scale[0];
+      u.params0.y = m_terrain_params.scale[1];
+      u.params0.z = m_terrain_params.scale[2];
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setVertexTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
 
@@ -1393,8 +1393,8 @@ namespace moppe {
       // triangles to keep sea and lakes in one draw.
       const int cells = setup.cells;
       const float step = 2 * setup.half_extent / cells;
-      const float x0 = setup.center.x - setup.half_extent;
-      const float z0 = setup.center.z - setup.half_extent;
+      const float x0 = setup.center[0] - setup.half_extent;
+      const float z0 = setup.center[2] - setup.half_extent;
 
       std::vector<float> verts;
       verts.reserve ((size_t)cells * cells * 6 * 3);
@@ -1815,9 +1815,9 @@ namespace moppe {
       u.ambient = m_fu.ambient;
       u.fog_color = m_fu.fog_color;
       u.fog_color.w = m_terrain_params.fog_scale;
-      u.params0.x = m_terrain_params.scale.x;
-      u.params0.y = m_terrain_params.scale.y;
-      u.params0.z = m_terrain_params.scale.z;
+      u.params0.x = m_terrain_params.scale[0];
+      u.params0.y = m_terrain_params.scale[1];
+      u.params0.z = m_terrain_params.scale[2];
       u.params0.w = m_terrain_params.tex_scale;
       u.params1.x = m_terrain_params.height_scale;
       u.params1.y = m_terrain_params.sea_level_norm;
@@ -2006,8 +2006,8 @@ namespace moppe {
       u.params.y = m_ocean_level;
       u.params.z = m_terrain_params.periodic ? 1.0f : 0.0f;
       u.params.w = m_have_water_levels ? 1.0f : 0.0f;
-      u.world_offset.x = params.world_offset.x;
-      u.world_offset.z = params.world_offset.z;
+      u.world_offset.x = params.world_offset[0];
+      u.world_offset.z = params.world_offset[2];
       u.shadow.x = m_have_shadow ? m_terrain_params.shadow_strength : 0.0f;
       u.shadow.y =
         m_shadow_map ? 1.0f / (float)m_shadow_map.width : 1.0f / 4096.0f;
@@ -2015,9 +2015,9 @@ namespace moppe {
       // Shore data: the fragment shader reads the height texture to
       // find the seabed for foam and shallows.
       if (m_have_terrain && m_heights) {
-        u.shore.x = 1.0f / m_terrain_params.scale.x;
-        u.shore.y = 1.0f / m_terrain_params.scale.z;
-        u.shore.z = m_terrain_params.scale.y;
+        u.shore.x = 1.0f / m_terrain_params.scale[0];
+        u.shore.y = 1.0f / m_terrain_params.scale[2];
+        u.shore.z = m_terrain_params.scale[1];
         u.shore.w = (float)m_terrain_params.width;
         [enc setFragmentTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
         [enc setVertexTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
@@ -2037,11 +2037,13 @@ namespace moppe {
       const bool lattice = m_water_tiles_pipeline && m_have_water_levels &&
                            m_have_terrain && m_heights;
       const float fine_radius = 700.0f;
-      const float tile_world = 15.0f * m_terrain_params.scale.x;
+      const float tile_world = 15.0f * m_terrain_params.scale[0];
       const int tiles_side = (int)std::ceil ((2.0f * fine_radius) / tile_world);
       if (lattice) {
-        u.tiles.x = std::floor ((m_fp.camera_pos.x - fine_radius) / tile_world);
-        u.tiles.y = std::floor ((m_fp.camera_pos.z - fine_radius) / tile_world);
+        u.tiles.x =
+          std::floor ((m_fp.camera_pos[0] - fine_radius) / tile_world);
+        u.tiles.y =
+          std::floor ((m_fp.camera_pos[2] - fine_radius) / tile_world);
         u.tiles.z = (float)tiles_side;
         u.tiles.w = fine_radius;
       }
@@ -2090,14 +2092,14 @@ namespace moppe {
       // derives both seeds and world positions from them, so blades stay
       // bit-stable while the window follows the camera.
       u.grid.x =
-        std::floor ((m_fp.camera_pos.x - params.radius) / params.spacing);
+        std::floor ((m_fp.camera_pos[0] - params.radius) / params.spacing);
       u.grid.y =
-        std::floor ((m_fp.camera_pos.z - params.radius) / params.spacing);
+        std::floor ((m_fp.camera_pos[2] - params.radius) / params.spacing);
       u.grid.z = params.spacing;
       u.grid.w = (float)side;
-      u.terrain.x = m_terrain_params.scale.x;
-      u.terrain.y = m_terrain_params.scale.y;
-      u.terrain.z = m_terrain_params.scale.z;
+      u.terrain.x = m_terrain_params.scale[0];
+      u.terrain.y = m_terrain_params.scale[1];
+      u.terrain.z = m_terrain_params.scale[2];
       u.terrain.w = params.radius;
       u.limits.x = m_terrain_params.sea_level_norm;
       u.limits.y = 0.42f;
@@ -2695,11 +2697,11 @@ namespace moppe {
         // supplies the occlusion term, we add the edge fade.
         if (m_fp.lens_flare && m_fp.sun_visibility > 0.001f) {
           const Mat4 vp = m_fp.proj * m_fp.view;
-          const Vector3D sp = m_fp.camera_pos + m_fp.sun_dir * 4000.0f;
+          const Vec3 sp = m_fp.camera_pos + m_fp.sun_dir * 4000.0f;
           const float* m = vp.m;
-          const float cx = m[0] * sp.x + m[4] * sp.y + m[8] * sp.z + m[12];
-          const float cy = m[1] * sp.x + m[5] * sp.y + m[9] * sp.z + m[13];
-          const float cw = m[3] * sp.x + m[7] * sp.y + m[11] * sp.z + m[15];
+          const float cx = m[0] * sp[0] + m[4] * sp[1] + m[8] * sp[2] + m[12];
+          const float cy = m[1] * sp[0] + m[5] * sp[1] + m[9] * sp[2] + m[13];
+          const float cw = m[3] * sp[0] + m[7] * sp[1] + m[11] * sp[2] + m[15];
           if (cw > 0.01f) {
             const float nx = cx / cw, ny = cy / cw;
             const float edge =

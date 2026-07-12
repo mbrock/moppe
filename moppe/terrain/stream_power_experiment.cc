@@ -104,11 +104,8 @@ int main (int argc, char** argv) {
       { "analytical_droplets_talus", { analytical, hydraulic, thermal } }
     };
 
-    map::RandomHeightMap map (resolution,
-                              resolution,
-                              Vector3D (5000, 650, 5000),
-                              seed,
-                              Topology::Torus);
+    map::RandomHeightMap map (
+      resolution, resolution, Vec3 (5000, 650, 5000), seed, Topology::Torus);
     map::TerrainEvaluator evaluator (map);
     const TerrainProgram source = make_geological_program (seed);
     evaluator.begin (source);

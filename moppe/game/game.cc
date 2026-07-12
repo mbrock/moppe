@@ -56,11 +56,11 @@ namespace moppe {
     // THE sun: one fixed direction shared by the light, the shadow
     // map, the sky's sun disc, and the ocean glint.
     static const float SUN_AZIMUTH = 0.8f;
-    static Vector3D sun_direction_for (float height) {
+    static Vec3 sun_direction_for (float height) {
       const float el = (height - 0.5f) * 3.14159f;
-      return Vector3D (std::cos (el) * std::sin (SUN_AZIMUTH),
-                       std::sin (el),
-                       std::cos (el) * std::cos (SUN_AZIMUTH));
+      return Vec3 (std::cos (el) * std::sin (SUN_AZIMUTH),
+                   std::sin (el),
+                   std::cos (el) * std::cos (SUN_AZIMUTH));
     }
 
     struct GraphicsBenchmarkConfig {
@@ -321,23 +321,23 @@ namespace moppe {
         ((MoppeGame*)self)->finish_setup ();
       }
 
-      Vector3D choose_landscape_spawn () {
+      Vec3 choose_landscape_spawn () {
         // The generated landscape has no authored start.  Sample the
         // finished terrain for a dry, grassy, locally flat patch rather
         // than trusting the old fixed coordinate near the map corner.
-        const float margin_x = 0.08f * m_world.map_size.x;
-        const float margin_z = 0.08f * m_world.map_size.z;
+        const float margin_x = 0.08f * m_world.map_size[0];
+        const float margin_z = 0.08f * m_world.map_size[2];
         const float patch = 20.0f; // metres
         const float min_ground = meters_value (m_world.water_level) + 25.0f;
-        const float max_ground = 0.32f * m_world.map_size.y;
+        const float max_ground = 0.32f * m_world.map_size[1];
 
         std::uniform_real_distribution<float> random_x (
-          margin_x, m_world.map_size.x - margin_x);
+          margin_x, m_world.map_size[0] - margin_x);
         std::uniform_real_distribution<float> random_z (
-          margin_z, m_world.map_size.z - margin_z);
+          margin_z, m_world.map_size[2] - margin_z);
 
-        Vector3D chosen;
-        Vector3D fallback;
+        Vec3 chosen;
+        Vec3 fallback;
         int good_count = 0;
         float fallback_score = -1000000.0f;
 
@@ -350,14 +350,15 @@ namespace moppe {
             return value < 0.0f ? value + period : value;
           };
           const std::size_t gx =
-            static_cast<std::size_t> (wrap (x, m_world.map_size.x) /
+            static_cast<std::size_t> (wrap (x, m_world.map_size[0]) /
                                       grid.spacing_x) %
             m_standing_water->width ();
           const std::size_t gz =
-            static_cast<std::size_t> (wrap (z, m_world.map_size.z) /
+            static_cast<std::size_t> (wrap (z, m_world.map_size[2]) /
                                       grid.spacing_y) %
             m_standing_water->height ();
-          return m_standing_water->water_depth.at (gx, gz) * m_world.map_size.y;
+          return m_standing_water->water_depth.at (gx, gz) *
+                 m_world.map_size[1];
         };
 
         for (int i = 0; i < 6000; ++i) {
@@ -373,7 +374,7 @@ namespace moppe {
           const float high =
             std::max (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
           const float relief = high - low;
-          const float up = m_map.interpolated_normal (x, z).y;
+          const float up = m_map.interpolated_normal (x, z)[1];
           const float lake_depth = std::max ({ standing_depth (x, z),
                                                standing_depth (x - patch, z),
                                                standing_depth (x + patch, z),
@@ -389,7 +390,7 @@ namespace moppe {
                               (lake_depth > 0.1f ? 10000.0f : 0.0f);
           if (score > fallback_score) {
             fallback_score = score;
-            fallback = Vector3D (x, h + 1.2f, z);
+            fallback = Vec3 (x, h + 1.2f, z);
           }
 
           if (lake_depth > 0.1f || low < min_ground || high > max_ground ||
@@ -402,7 +403,7 @@ namespace moppe {
           ++good_count;
           std::uniform_int_distribution<int> keep (1, good_count);
           if (keep (m_fx_rng) == 1)
-            chosen = Vector3D (x, h + 1.2f, z);
+            chosen = Vec3 (x, h + 1.2f, z);
         }
 
         return good_count > 0 ? chosen : fallback;
@@ -494,7 +495,7 @@ namespace moppe {
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview) {
           const float sea_level =
-            meters_value (m_world.water_level) / m_world.map_size.y;
+            meters_value (m_world.water_level) / m_world.map_size[1];
           m_standing_water =
             terrain::analyze_standing_water (m_map.terrain_view (), sea_level);
           m_lake_census = terrain::census_lakes (*m_standing_water);
@@ -574,7 +575,7 @@ namespace moppe {
         render::OceanSetup ocean;
         ocean.level = meters_value (m_world.water_level);
         ocean.center =
-          Vector3D (m_world.map_size.x / 2, 0, m_world.map_size.z / 2);
+          Vec3 (m_world.map_size[0] / 2, 0, m_world.map_size[2] / 2);
         ocean.half_extent = 5500.0f;
         ocean.cells = 300;
         std::vector<float> water_levels;
@@ -643,7 +644,7 @@ namespace moppe {
 
           std::uniform_real_distribution<float> heading (0.0f, 2.0f * 3.14159f);
           const float a = heading (m_fx_rng);
-          m_vehicle.set_heading (Vector3D (std::sin (a), 0, std::cos (a)));
+          m_vehicle.set_heading (Vec3 (std::sin (a), 0, std::cos (a)));
         }
         if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
@@ -767,9 +768,9 @@ namespace moppe {
         if (m_mode == M_FOOT)
           m_walker.update (dt, m_map, m_obstacles, m_world);
 
-        const Vector3D vpos = (m_mode == M_FOOT)  ? m_walker.position ()
-                              : (m_mode == M_CAR) ? m_car.position ()
-                                                  : m_vehicle.position ();
+        const Vec3 vpos = (m_mode == M_FOOT)  ? m_walker.position ()
+                          : (m_mode == M_CAR) ? m_car.position ()
+                                              : m_vehicle.position ();
         mov::Vehicle& av = active_vehicle ();
 
         // Parked vehicles' impacts shouldn't linger until remount.
@@ -783,7 +784,7 @@ namespace moppe {
         }
 
         const bool in_water =
-          vpos.y < meters_value (m_world.water_level) + 1.0f;
+          vpos[1] < meters_value (m_world.water_level) + 1.0f;
         const bool driving = (m_mode != M_FOOT);
 
         // Long jumps become score events after three seconds. Keep the last
@@ -805,8 +806,8 @@ namespace moppe {
         const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
         const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
         const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
-        const Vector3D fwd = av.orientation ();
-        const Vector3D rear_wheel = vpos - fwd * 1.4f + Vector3D (0, -0.7f, 0);
+        const Vec3 fwd = av.orientation ();
+        const Vec3 rear_wheel = vpos - fwd * 1.4f + Vec3 (0, -0.7f, 0);
 
         // Drift kicks up dirt from the rear wheel (or spray).
         if (driving && av.grounded () && av.drift_speed () > 6.0f) {
@@ -821,7 +822,7 @@ namespace moppe {
         // off the rear knobby, heaviest when the engine is winning
         // against the ground (launches, corner exits).
         if (driving && av.grounded () && !in_water && av.thrust () > 0.6f) {
-          const float speed = av.velocity ().length ();
+          const float speed = length (av.velocity ());
           const float slip = scalar_value (av.thrust ()) *
                              (1.0f - std::min (1.0f, speed / 30.0f));
           if (slip > 0.15f) {
@@ -832,7 +833,7 @@ namespace moppe {
             roost.spread = 0.5f;
             m_dust.emit (rear_wheel,
                          fwd * (-6.0f - 14.0f * slip) +
-                           Vector3D (0, 3.5f + 3.0f * slip, 0),
+                           Vec3 (0, 3.5f + 3.0f * slip, 0),
                          1 + (int)(slip * 3.0f),
                          clod_color,
                          roost);
@@ -854,9 +855,9 @@ namespace moppe {
             ember.gravity = 6.0f;
             ember.spread = 0.3f;
             ember.additive = true;
-            m_dust.emit (vpos - fwd * 0.5f + Vector3D (0, -0.5f, 0),
+            m_dust.emit (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0),
                          av.velocity () * 0.5f - fwd * 2.0f +
-                           Vector3D (0, -4.0f, 0),
+                           Vec3 (0, -4.0f, 0),
                          1,
                          DisplayColor (1.0f, 0.55f, 0.18f),
                          ember);
@@ -874,7 +875,7 @@ namespace moppe {
             smoke.life = 0.8f;
             smoke.gravity = -2.5f; // buoyant
             smoke.spread = 0.25f;
-            m_dust.emit (vpos - fwd * 1.2f + Vector3D (0, -0.4f, 0),
+            m_dust.emit (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0),
                          av.velocity () * 0.25f,
                          1,
                          DisplayColor (0.45f, 0.45f, 0.48f),
@@ -883,11 +884,9 @@ namespace moppe {
         }
 
         // Wading fast throws up a bow wave.
-        if (driving && in_water && av.velocity ().length () > 15.0f)
-          m_dust.emit (vpos + Vector3D (0, -0.5f, 0),
-                       av.velocity () * 0.3f,
-                       3,
-                       spray_color);
+        if (driving && in_water && length (av.velocity ()) > 15.0f)
+          m_dust.emit (
+            vpos + Vec3 (0, -0.5f, 0), av.velocity () * 0.3f, 3, spray_color);
 
         // Hard landings shake the camera and burst dirt outward:
         // a low pancake of dust plus a ring of ballistic clods.
@@ -895,7 +894,7 @@ namespace moppe {
         if (impact > 8.0f) {
           m_shake = std::min (0.28f, 0.010f * impact);
           m_shake_time = 0.0f;
-          m_dust.emit (vpos + Vector3D (0, -0.7f, 0),
+          m_dust.emit (vpos + Vec3 (0, -0.7f, 0),
                        av.velocity () * 0.2f,
                        12,
                        in_water ? spray_color : dust_color);
@@ -905,9 +904,9 @@ namespace moppe {
             burst.life = 1.1f;
             burst.gravity = 10.0f;
             burst.spread = 1.4f;
-            m_dust.emit (vpos + Vector3D (0, -0.6f, 0),
+            m_dust.emit (vpos + Vec3 (0, -0.6f, 0),
                          av.velocity () * 0.15f +
-                           Vector3D (0, 2.0f + 0.15f * impact, 0),
+                           Vec3 (0, 2.0f + 0.15f * impact, 0),
                          (int)std::min (10.0f, impact * 0.5f),
                          clod_color,
                          burst);
@@ -923,7 +922,7 @@ namespace moppe {
         m_health = std::min (100.0f, m_health + 1.5f * dt);
         if (m_health <= 0.0f) {
           m_dust.emit (
-            vpos, Vector3D (0, 6, 0), 40, DisplayColor (1.0f, 0.5f, 0.1f));
+            vpos, Vec3 (0, 6, 0), 40, DisplayColor (1.0f, 0.5f, 0.1f));
           --m_lives;
           if (m_lives <= 0) {
             m_game_over = true;
@@ -936,8 +935,8 @@ namespace moppe {
             // Respawn where you crashed, upright on the ground.
             // (Deaths used to teleport you 600 m above the map
             // corner -- it read as falling through the cosmos.)
-            const float ground = m_map.interpolated_height (vpos.x, vpos.z);
-            av.reset (Vector3D (vpos.x, ground + 1.2f, vpos.z));
+            const float ground = m_map.interpolated_height (vpos[0], vpos[2]);
+            av.reset (Vec3 (vpos[0], ground + 1.2f, vpos[2]));
             m_health = 100.0f;
             m_shake = 1.0f;
             m_shake_time = 0.0f;
@@ -955,7 +954,7 @@ namespace moppe {
             sparkle.spread = 1.7f;
             sparkle.additive = true;
             m_dust.emit (m_stars.last_pos (),
-                         Vector3D (0, 4, 0),
+                         Vec3 (0, 4, 0),
                          32,
                          DisplayColor (1.0f, 0.72f, 0.12f),
                          sparkle);
@@ -965,7 +964,7 @@ namespace moppe {
             flash.spread = 0.25f;
             flash.additive = true;
             m_dust.emit (m_stars.last_pos (),
-                         Vector3D (),
+                         Vec3 (),
                          5,
                          DisplayColor (1.0f, 0.95f, 0.55f),
                          flash);
@@ -979,7 +978,7 @@ namespace moppe {
         if (driving) {
           m_fuel = std::max (
             0.0f, m_fuel - scalar_value (abs (av.thrust ())) * 0.9f * dt);
-          m_odometer += av.velocity ().length () * dt;
+          m_odometer += length (av.velocity ()) * dt;
 
           const float want =
             m_go_input * ((m_fuel <= 0.5f && m_go_input > 0) ? 0.3f : 1.0f);
@@ -993,14 +992,13 @@ namespace moppe {
         if (m_cam_mode == CAM_HELMET) {
           // Ride inside the rider's head; lightly smoothed so
           // terrain bumps don't rattle the eyeballs.
-          Vector3D eye, look;
+          Vec3 eye, look;
           if (m_mode == M_FOOT) {
-            eye = m_walker.position () +
-                  Vector3D (0, 1.55f / m_landscape_scale_y, 0);
+            eye =
+              m_walker.position () + Vec3 (0, 1.55f / m_landscape_scale_y, 0);
             look = m_walker.heading ();
           } else {
-            eye = av.position () +
-                  Vector3D (0, 0.95f / m_landscape_scale_y, 0) +
+            eye = av.position () + Vec3 (0, 0.95f / m_landscape_scale_y, 0) +
                   av.orientation () * (0.4f / m_landscape_scale_x);
             look = av.orientation ();
           }
@@ -1013,9 +1011,9 @@ namespace moppe {
           const float flip = (m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
           if (m_mode == M_FOOT)
             m_camera.update (m_walker.position () +
-                               Vector3D (0, 1.0f / m_landscape_scale_y, 0),
+                               Vec3 (0, 1.0f / m_landscape_scale_y, 0),
                              m_walker.heading () * flip,
-                             Vector3D (),
+                             Vec3 (),
                              seconds (dt));
           else
             m_camera.update (av.position (),
@@ -1031,7 +1029,7 @@ namespace moppe {
 
         // Speed widens the field of view a touch.
         {
-          const float kmh = driving ? av.velocity ().length () * 3.6f : 0.0f;
+          const float kmh = driving ? length (av.velocity ()) * 3.6f : 0.0f;
           const float k =
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
           m_fov_k += (k - m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
@@ -1093,9 +1091,9 @@ namespace moppe {
         Mat4 view =
           terrain_lab ? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
         if (!terrain_lab && !m_water_inspection && m_shake > 0.005f) {
-          const Vector3D cam = m_camera.position ();
-          const float ground = m_map.interpolated_height (cam.x, cam.z);
-          const float clearance = cam.y - ground;
+          const Vec3 cam = m_camera.position ();
+          const float ground = m_map.interpolated_height (cam[0], cam[2]);
+          const float clearance = cam[1] - ground;
           const float room =
             std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
 
@@ -1104,17 +1102,17 @@ namespace moppe {
             pulse * std::sin (2.0f * PI * 15.0f * m_shake_time);
           const float pitch =
             pulse * 0.55f * std::sin (2.0f * PI * 19.0f * m_shake_time + 0.7f);
-          view = view * Mat4::rotation (roll * u::deg, Vector3D (0, 0, 1)) *
-                 Mat4::rotation (pitch * u::deg, Vector3D (1, 0, 0));
+          view = view * Mat4::rotation (roll * u::deg, Vec3 (0, 0, 1)) *
+                 Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
         }
         fp.view = view;
 
-        const Vector3D cam =
+        const Vec3 cam =
           terrain_lab ? m_terrain_lab.position () : m_camera.position ();
         fp.camera_pos = cam;
-        fp.cam_right = Vector3D (view.m[0], view.m[4], view.m[8]);
-        fp.cam_up = Vector3D (view.m[1], view.m[5], view.m[9]);
-        fp.cam_forward = Vector3D (-view.m[2], -view.m[6], -view.m[10]);
+        fp.cam_right = Vec3 (view.m[0], view.m[4], view.m[8]);
+        fp.cam_up = Vec3 (view.m[1], view.m[5], view.m[9]);
+        fp.cam_forward = Vec3 (-view.m[2], -view.m[6], -view.m[10]);
         // The lab's plane views render the game's own sky and haze; the
         // torus is an abstract inspection object on a dark backdrop.
         fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
@@ -1159,15 +1157,15 @@ namespace moppe {
         // as hills sweep past the sun.
         {
           float vis = 1.0f;
-          if (cam.y < meters_value (m_world.water_level))
+          if (cam[1] < meters_value (m_world.water_level))
             vis = 0.0f;
           else {
             for (int i = 1; i <= 40; ++i) {
               const float t = 90.0f * i;
-              const Vector3D p = cam + fp.sun_dir * t;
-              if (!m_map.in_bounds (p.x, p.z))
+              const Vec3 p = cam + fp.sun_dir * t;
+              if (!m_map.in_bounds (p[0], p[2]))
                 break;
-              if (m_map.interpolated_height (p.x, p.z) > p.y) {
+              if (m_map.interpolated_height (p[0], p[2]) > p[1]) {
                 vis = 0.0f;
                 break;
               }
@@ -1256,7 +1254,7 @@ namespace moppe {
           if (m_mode == M_FOOT)
             m_blob.draw (m_world_dl,
                          m_map,
-                         m_walker.position () + Vector3D (0, 0.5f, 0),
+                         m_walker.position () + Vec3 (0, 0.5f, 0),
                          0.8f);
 
           // In helmet cam you ARE the rider: don't draw yourself.
@@ -1309,10 +1307,10 @@ namespace moppe {
           ocean.fog_color = m_fog;
           ocean.fog_scale = scene_fog;
           if (m_world.toroidal ()) {
-            const Vector3D center (
-              0.5f * m_world.map_size.x, 0, 0.5f * m_world.map_size.z);
-            ocean.world_offset.x = cam.x - center.x;
-            ocean.world_offset.z = cam.z - center.z;
+            const Vec3 center (
+              0.5f * m_world.map_size[0], 0, 0.5f * m_world.map_size[2]);
+            ocean.world_offset[0] = cam[0] - center[0];
+            ocean.world_offset[2] = cam[2] - center[2];
           }
           r.draw_ocean (ocean);
         }
@@ -1325,12 +1323,12 @@ namespace moppe {
         }
 
         // Post effects.
-        if (!terrain_lab && cam.y < meters_value (m_world.water_level))
+        if (!terrain_lab && cam[1] < meters_value (m_world.water_level))
           r.apply_underwater (m_total_time);
         if (!terrain_lab) {
           const float kmh = (m_mode == M_FOOT)
                               ? 0.0f
-                              : active_vehicle ().velocity ().length () * 3.6f;
+                              : length (active_vehicle ().velocity ()) * 3.6f;
           float k = (kmh - 90.0f) / 160.0f;
           clamp (k, 0.0f, 1.0f);
           if (m_graphics.motion_blur && k > 0.01f)
@@ -1349,7 +1347,7 @@ namespace moppe {
           HudState hs;
           hs.speed_kmh = (m_mode == M_FOOT)
                            ? 0.0f
-                           : active_vehicle ().velocity ().length () * 3.6f;
+                           : length (active_vehicle ().velocity ()) * 3.6f;
           hs.fuel = m_fuel;
           hs.boost_ready01 =
             (m_mode == M_FOOT) ? 1.0f : active_vehicle ().boost_charge ();
@@ -1364,10 +1362,10 @@ namespace moppe {
           hs.landed_age_s = m_landed_age;
           hs.on_foot = (m_mode == M_FOOT);
           hs.frame_time_s = m_frame_time;
-          const Vector3D heading = m_mode == M_FOOT
-                                     ? m_walker.heading ()
-                                     : active_vehicle ().orientation ();
-          hs.heading_radians = std::atan2 (heading.x, heading.z);
+          const Vec3 heading = m_mode == M_FOOT
+                                 ? m_walker.heading ()
+                                 : active_vehicle ().orientation ();
+          hs.heading_radians = std::atan2 (heading[0], heading[2]);
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
           if (m_game_ui_open) {
             m_game_ui_slider_x = std::max (44.0f, hud_width - 364.0f);
@@ -1474,39 +1472,37 @@ namespace moppe {
         }
 
         const bool show_terrain = m_loading_terrain_state > 0;
-        Vector3D eye (0, 34, 0);
-        Vector3D target (0, 27, -100);
+        Vec3 eye (0, 34, 0);
+        Vec3 target (0, 27, -100);
         if (show_terrain) {
           const float orbit = sky_time * 0.035f;
-          const float radius = m_world.map_size.x * 0.64f;
-          target = Vector3D (m_world.map_size.x * 0.5f,
-                             m_world.map_size.y * 0.12f,
-                             m_world.map_size.z * 0.5f);
-          eye = target + Vector3D (std::sin (orbit) * radius,
-                                   m_world.map_size.y * 0.70f,
-                                   std::cos (orbit) * radius);
+          const float radius = m_world.map_size[0] * 0.64f;
+          target = Vec3 (m_world.map_size[0] * 0.5f,
+                         m_world.map_size[1] * 0.12f,
+                         m_world.map_size[2] * 0.5f);
+          eye = target + Vec3 (std::sin (orbit) * radius,
+                               m_world.map_size[1] * 0.70f,
+                               std::cos (orbit) * radius);
         }
-        const Vector3D forward = (target - eye).normalized ();
+        const Vec3 forward = normalized (target - eye);
 
         render::FrameParams fp;
-        fp.view = Mat4::look_at (eye, target, Vector3D (0, 1, 0));
+        fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
         fp.proj = Mat4::perspective_reversed (
           (show_terrain ? 52.0f : 64.0f) * u::deg,
           aspect,
           0.5f,
-          std::max (9000.0f, m_world.map_size.x * 2.0f));
+          std::max (9000.0f, m_world.map_size[0] * 2.0f));
         fp.camera_pos = eye;
         const float sunrise = smooth_curve (0.0f, 14.0f, sky_time);
         const float loading_sun_height = 0.48f + 0.18f * sunrise;
         const float sun_elevation = (loading_sun_height - 0.5f) * 3.14159265f;
-        const Vector3D horizon_forward =
-          Vector3D (forward.x, 0.0f, forward.z).normalized ();
-        const Vector3D horizon_side (
-          -horizon_forward.z, 0.0f, horizon_forward.x);
-        const Vector3D loading_sun_dir =
-          (horizon_forward * std::cos (sun_elevation) + horizon_side * 0.22f +
-           Vector3D (0, 1, 0) * std::sin (sun_elevation))
-            .normalized ();
+        const Vec3 horizon_forward =
+          normalized (Vec3 (forward[0], 0.0f, forward[2]));
+        const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
+        const Vec3 loading_sun_dir = normalized (
+          horizon_forward * std::cos (sun_elevation) + horizon_side * 0.22f +
+          Vec3 (0, 1, 0) * std::sin (sun_elevation));
         fp.clear_color = horizon_color_for (loading_sun_height);
         fp.sun_dir = loading_sun_dir;
         sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
@@ -1532,7 +1528,7 @@ namespace moppe {
           // terrain transition itself lasts about a second in the Metal
           // backend.
           if (m_loading_terrain_state == 2 || reveal_age > 0.0f)
-            m_terrain.render (r, eye, forward, m_world.map_size.x * 1.8f);
+            m_terrain.render (r, eye, forward, m_world.map_size[0] * 1.8f);
         }
 
         // Keep the endlessly tiled world atmospheric and subordinate to the
@@ -1872,10 +1868,10 @@ namespace moppe {
           m_landscape_scale_y = scale;
       }
 
-      Vector3D landscape_visual_scale () const {
-        return Vector3D (1.0f / m_landscape_scale_x,
-                         1.0f / m_landscape_scale_y,
-                         1.0f / m_landscape_scale_x);
+      Vec3 landscape_visual_scale () const {
+        return Vec3 (1.0f / m_landscape_scale_x,
+                     1.0f / m_landscape_scale_y,
+                     1.0f / m_landscape_scale_x);
       }
 
       void update_benchmark_title () const {
@@ -1970,8 +1966,8 @@ namespace moppe {
         if (m_mode != M_FOOT) {
           // Step off to the side of whatever we're driving.
           mov::Vehicle& av = active_vehicle ();
-          const Vector3D h = av.orientation ();
-          const Vector3D side (h.z, 0, -h.x);
+          const Vec3 h = av.orientation ();
+          const Vec3 side (h[2], 0, -h[0]);
           m_walker.spawn (
             av.position () + side * (m_mode == M_CAR ? 2.4f : 1.8f), h);
           av.set_thrust (0);
@@ -1984,7 +1980,7 @@ namespace moppe {
         }
 
         // On foot: bike first, then our parked car, then grand theft.
-        if ((m_walker.position () - m_vehicle.position ()).length2 () <
+        if (length2 (m_walker.position () - m_vehicle.position ()) <
             5.0f * 5.0f) {
           m_vehicle.set_thrust (0);
           m_vehicle.set_yaw (0 * u::deg);
@@ -1996,8 +1992,7 @@ namespace moppe {
         }
 
         if (m_car_exists &&
-            (m_walker.position () - m_car.position ()).length2 () <
-              6.0f * 6.0f) {
+            length2 (m_walker.position () - m_car.position ()) < 6.0f * 6.0f) {
           m_car.set_thrust (0);
           m_car.set_yaw (0 * u::deg);
           m_mode = M_CAR;
@@ -2020,9 +2015,9 @@ namespace moppe {
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
-          m_map.interpolated_height (m_spawn_position.x, m_spawn_position.z);
+          m_map.interpolated_height (m_spawn_position[0], m_spawn_position[2]);
         m_vehicle.reset (
-          Vector3D (m_spawn_position.x, ground + 1.2f, m_spawn_position.z));
+          Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
         // Key releases were swallowed during the game-over screen;
         // don't resume with the throttle stuck open.
         m_turn_input = 0;
@@ -2036,7 +2031,7 @@ namespace moppe {
 
       WorldParams m_world;
       GraphicsSettings m_graphics;
-      Vector3D m_spawn_position;
+      Vec3 m_spawn_position;
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;

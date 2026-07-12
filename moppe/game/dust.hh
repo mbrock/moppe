@@ -31,12 +31,10 @@ namespace moppe {
         float logical_time = 0.0f;
       };
 
-      void emit (const Vector3D& pos,
-                 const Vector3D& vel,
-                 int count,
-                 DisplayColor color);
-      void emit (const Vector3D& pos,
-                 const Vector3D& vel,
+      void
+      emit (const Vec3& pos, const Vec3& vel, int count, DisplayColor color);
+      void emit (const Vec3& pos,
+                 const Vec3& vel,
                  int count,
                  DisplayColor color,
                  const Style& style);

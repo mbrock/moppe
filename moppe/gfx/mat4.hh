@@ -32,82 +32,81 @@ namespace moppe {
       return Mat4 ();
     }
 
-    static Mat4 translation (const Vector3D& v) {
+    static Mat4 translation (const Vec3& v) {
       Mat4 r;
-      r.m[12] = v.x;
-      r.m[13] = v.y;
-      r.m[14] = v.z;
+      r.m[12] = v[0];
+      r.m[13] = v[1];
+      r.m[14] = v[2];
       return r;
     }
 
-    static Mat4 scaling (const Vector3D& v) {
+    static Mat4 scaling (const Vec3& v) {
       Mat4 r;
-      r.m[0] = v.x;
-      r.m[5] = v.y;
-      r.m[10] = v.z;
+      r.m[0] = v[0];
+      r.m[5] = v[1];
+      r.m[10] = v[2];
       return r;
     }
 
     // Rotation about an arbitrary (not necessarily unit) axis.
-    static Mat4 rotation (radians_t angle, const Vector3D& axis) {
-      const Vector3D a = axis.normalized ();
+    static Mat4 rotation (radians_t angle, const Vec3& axis) {
+      const Vec3 a = normalized (axis);
       const float c = cos (angle), s = sin (angle);
       const float t = 1.0f - c;
 
       Mat4 r;
-      r.m[0] = t * a.x * a.x + c;
-      r.m[1] = t * a.x * a.y + s * a.z;
-      r.m[2] = t * a.x * a.z - s * a.y;
-      r.m[4] = t * a.x * a.y - s * a.z;
-      r.m[5] = t * a.y * a.y + c;
-      r.m[6] = t * a.y * a.z + s * a.x;
-      r.m[8] = t * a.x * a.z + s * a.y;
-      r.m[9] = t * a.y * a.z - s * a.x;
-      r.m[10] = t * a.z * a.z + c;
+      r.m[0] = t * a[0] * a[0] + c;
+      r.m[1] = t * a[0] * a[1] + s * a[2];
+      r.m[2] = t * a[0] * a[2] - s * a[1];
+      r.m[4] = t * a[0] * a[1] - s * a[2];
+      r.m[5] = t * a[1] * a[1] + c;
+      r.m[6] = t * a[1] * a[2] + s * a[0];
+      r.m[8] = t * a[0] * a[2] + s * a[1];
+      r.m[9] = t * a[1] * a[2] - s * a[0];
+      r.m[10] = t * a[2] * a[2] + c;
       return r;
     }
 
     // Columns of the upper-left 3x3 (a basis frame) plus an origin.
-    static Mat4 basis (const Vector3D& x,
-                       const Vector3D& y,
-                       const Vector3D& z,
-                       const Vector3D& origin = Vector3D ()) {
+    static Mat4 basis (const Vec3& x,
+                       const Vec3& y,
+                       const Vec3& z,
+                       const Vec3& origin = Vec3 ()) {
       Mat4 r;
-      r.m[0] = x.x;
-      r.m[1] = x.y;
-      r.m[2] = x.z;
-      r.m[4] = y.x;
-      r.m[5] = y.y;
-      r.m[6] = y.z;
-      r.m[8] = z.x;
-      r.m[9] = z.y;
-      r.m[10] = z.z;
-      r.m[12] = origin.x;
-      r.m[13] = origin.y;
-      r.m[14] = origin.z;
+      r.m[0] = x[0];
+      r.m[1] = x[1];
+      r.m[2] = x[2];
+      r.m[4] = y[0];
+      r.m[5] = y[1];
+      r.m[6] = y[2];
+      r.m[8] = z[0];
+      r.m[9] = z[1];
+      r.m[10] = z[2];
+      r.m[12] = origin[0];
+      r.m[13] = origin[1];
+      r.m[14] = origin[2];
       return r;
     }
 
     // View matrix a la gluLookAt.
-    static Mat4
-    look_at (const Vector3D& eye, const Vector3D& center, const Vector3D& up) {
-      const Vector3D f = (center - eye).normalized ();
-      const Vector3D s = f.cross (up).normalized ();
-      const Vector3D u = s.cross (f);
+    static Mat4 look_at (const Vec3& eye, const Vec3& center, const Vec3& up) {
+      const Vec3 f = normalized (center - eye);
+      const Vec3 s = normalized (cross (f, up));
+      const Vec3 u = cross (s, f);
 
       Mat4 r;
-      r.m[0] = s.x;
-      r.m[4] = s.y;
-      r.m[8] = s.z;
-      r.m[1] = u.x;
-      r.m[5] = u.y;
-      r.m[9] = u.z;
-      r.m[2] = -f.x;
-      r.m[6] = -f.y;
-      r.m[10] = -f.z;
-      r.m[12] = -s.dot (eye);
-      r.m[13] = -u.dot (eye);
-      r.m[14] = f.dot (eye);
+      r.m[0] = s[0];
+      r.m[4] = s[1];
+      r.m[8] = s[2];
+      r.m[1] = u[0];
+      r.m[5] = u[1];
+      r.m[9] = u[2];
+      r.m[2] = -f[0];
+      r.m[6] = -f[1];
+      r.m[10] = -f[2];
+      r.m[12] = -dot (s, eye);
+      r.m[13] = -dot (u, eye);
+      r.m[14] = dot (f, eye);
       return r;
     }
 
@@ -164,16 +163,16 @@ namespace moppe {
       return r;
     }
 
-    Vector3D transform_point (const Vector3D& v) const {
-      return Vector3D (m[0] * v.x + m[4] * v.y + m[8] * v.z + m[12],
-                       m[1] * v.x + m[5] * v.y + m[9] * v.z + m[13],
-                       m[2] * v.x + m[6] * v.y + m[10] * v.z + m[14]);
+    Vec3 transform_point (const Vec3& v) const {
+      return Vec3 (m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12],
+                   m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13],
+                   m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14]);
     }
 
-    Vector3D transform_vector (const Vector3D& v) const {
-      return Vector3D (m[0] * v.x + m[4] * v.y + m[8] * v.z,
-                       m[1] * v.x + m[5] * v.y + m[9] * v.z,
-                       m[2] * v.x + m[6] * v.y + m[10] * v.z);
+    Vec3 transform_vector (const Vec3& v) const {
+      return Vec3 (m[0] * v[0] + m[4] * v[1] + m[8] * v[2],
+                   m[1] * v[0] + m[5] * v[1] + m[9] * v[2],
+                   m[2] * v[0] + m[6] * v[1] + m[10] * v[2]);
     }
   };
 
@@ -181,7 +180,7 @@ namespace moppe {
   // for normals under non-uniform scaling (what fixed-function GL
   // did, with GL_NORMALIZE folded in by the caller normalizing).
   struct NormalMat {
-    Vector3D c0, c1, c2;
+    Vec3 c0, c1, c2;
 
     static NormalMat from (const Mat4& m) {
       const float a = m.m[0], b = m.m[4], c = m.m[8];
@@ -198,17 +197,16 @@ namespace moppe {
       // cofactor matrix (adj(M) = cof(M)^T would give plain
       // inverse(M) and counter-rotate normals).
       NormalMat n;
-      n.c0 = Vector3D (A, c * h - b * i, b * f - c * e) * k;
-      n.c1 = Vector3D (B, a * i - c * g, c * d - a * f) * k;
-      n.c2 = Vector3D (C, b * g - a * h, a * e - b * d) * k;
+      n.c0 = Vec3 (A, c * h - b * i, b * f - c * e) * k;
+      n.c1 = Vec3 (B, a * i - c * g, c * d - a * f) * k;
+      n.c2 = Vec3 (C, b * g - a * h, a * e - b * d) * k;
       return n;
     }
 
-    Vector3D apply (const Vector3D& v) const {
-      return Vector3D (c0.x * v.x + c1.x * v.y + c2.x * v.z,
-                       c0.y * v.x + c1.y * v.y + c2.y * v.z,
-                       c0.z * v.x + c1.z * v.y + c2.z * v.z)
-        .normalized ();
+    Vec3 apply (const Vec3& v) const {
+      return normalized (Vec3 (c0[0] * v[0] + c1[0] * v[1] + c2[0] * v[2],
+                               c0[1] * v[0] + c1[1] * v[1] + c2[1] * v[2],
+                               c0[2] * v[0] + c1[2] * v[1] + c2[2] * v[2]));
     }
   };
 }
