@@ -53,8 +53,10 @@ int main (int argc, char** argv) {
 
     const ScalarField field = preset_field (preset, seed);
 
-    const Domain2D domain { .width = static_cast<std::size_t> (resolution),
-                            .height = static_cast<std::size_t> (resolution) };
+    const RecipeDomain2D domain { .width =
+                                    static_cast<std::size_t> (resolution),
+                                  .height =
+                                    static_cast<std::size_t> (resolution) };
     const ScalarRaster raster =
       normalize (CpuEvaluator ().evaluate (field, domain));
 

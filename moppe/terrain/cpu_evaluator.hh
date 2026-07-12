@@ -18,7 +18,7 @@ namespace moppe::terrain {
         : m_progress (std::move (progress)) {}
 
     ScalarRaster evaluate (const ScalarField& field,
-                           const Domain2D& domain) const override;
+                           const RecipeDomain2D& domain) const override;
 
   private:
     Progress m_progress;

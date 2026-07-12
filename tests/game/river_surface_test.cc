@@ -30,7 +30,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   map.recompute_normals ();
 
   const terrain::TerrainGrid grid = map.terrain_view ().grid ();
-  const terrain::Domain2D domain { .width = 4, .height = 4 };
+  const terrain::RecipeDomain2D domain { .width = 4, .height = 4 };
   const terrain::FloodField flood {
     .source_grid = grid,
     .sea_level = 0.0f,
@@ -139,7 +139,7 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
   map.recompute_normals ();
 
   const terrain::TerrainGrid grid = map.terrain_view ().grid ();
-  const terrain::Domain2D domain { .width = 5, .height = 5 };
+  const terrain::RecipeDomain2D domain { .width = 5, .height = 5 };
   std::vector<terrain::CellIndex> receiver (count);
   for (std::uint32_t cell = 0; cell < count; ++cell)
     receiver[cell] = cell;

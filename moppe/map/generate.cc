@@ -114,15 +114,23 @@ namespace moppe {
 
     terrain::TerrainView RandomHeightMap::terrain_view () const {
       return terrain::TerrainView (
-        { .width = static_cast<std::size_t> (m_width),
-          .height = static_cast<std::size_t> (m_height),
+        discretization ().grid (),
+        std::span<const float> (m_data.raw (),
+                                static_cast<std::size_t> (m_width) * m_height));
+    }
+
+    terrain::TerrainDiscretization RandomHeightMap::discretization () const {
+      const std::size_t width = static_cast<std::size_t> (m_width);
+      const std::size_t height = static_cast<std::size_t> (m_height);
+      return terrain::TerrainDiscretization (
+        { .width = width, .height = height },
+        { .width = width,
+          .height = height,
           .spacing_x = m_scale[0] * mp_units::si::metre,
           .spacing_y = m_scale[2] * mp_units::si::metre,
           .height_scale = m_scale[1] * mp_units::si::metre,
           .topology = periodic () ? terrain::Topology::Torus
-                                  : terrain::Topology::Bounded },
-        std::span<const float> (m_data.raw (),
-                                static_cast<std::size_t> (m_width) * m_height));
+                                  : terrain::Topology::Bounded });
     }
 
     void RandomHeightMap::translate (float d) {
@@ -241,11 +249,9 @@ namespace moppe {
     void
     RandomHeightMap::materialize (const terrain::ScalarField& field,
                                   const terrain::FieldEvaluator& evaluator) {
-      const terrain::Domain2D domain { .width =
-                                         static_cast<std::size_t> (m_width),
-                                       .height =
-                                         static_cast<std::size_t> (m_height) };
-      const terrain::ScalarRaster raster = evaluator.evaluate (field, domain);
+      const terrain::TerrainDiscretization sampling = discretization ();
+      const terrain::ScalarRaster raster =
+        evaluator.evaluate (field, sampling.recipe_domain ());
 
       std::copy (
         raster.values ().begin (), raster.values ().end (), m_data.raw ());

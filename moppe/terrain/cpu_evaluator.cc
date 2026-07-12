@@ -332,7 +332,7 @@ namespace moppe::terrain {
       return program;
     }
 
-    void validate (const Domain2D& domain) {
+    void validate (const RecipeDomain2D& domain) {
       if (domain.width < 2 || domain.height < 2)
         throw std::invalid_argument (
           "a field domain needs at least two samples per axis");
@@ -345,7 +345,7 @@ namespace moppe::terrain {
     }
   }
 
-  ScalarRaster::ScalarRaster (Domain2D domain, std::vector<float> values)
+  ScalarRaster::ScalarRaster (RecipeDomain2D domain, std::vector<float> values)
       : m_domain (domain), m_values (std::move (values)) {
     if (m_values.size () != m_domain.width * m_domain.height)
       throw std::invalid_argument (
@@ -367,7 +367,7 @@ namespace moppe::terrain {
   }
 
   ScalarRaster CpuEvaluator::evaluate (const ScalarField& field,
-                                       const Domain2D& domain) const {
+                                       const RecipeDomain2D& domain) const {
     validate (domain);
     const Program program = compile (field);
     std::vector<float> output (domain.width * domain.height);

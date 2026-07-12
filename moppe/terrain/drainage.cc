@@ -132,7 +132,7 @@ namespace moppe::terrain {
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const Domain2D domain {
+    const RecipeDomain2D domain {
       .width = width,
       .height = height,
       .max_x = source_grid.spacing_x_m () * static_cast<float> (width),
@@ -291,7 +291,7 @@ namespace moppe::terrain {
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const Domain2D domain {
+    const RecipeDomain2D domain {
       .width = width,
       .height = height,
       .max_x = grid.spacing_x_m () * static_cast<float> (width),

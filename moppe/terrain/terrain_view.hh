@@ -2,49 +2,14 @@
 #define MOPPE_TERRAIN_TERRAIN_VIEW_HH
 
 #include <moppe/quantities.hh>
-#include <moppe/terrain/field.hh>
-#include <moppe/terrain/topology.hh>
+#include <moppe/terrain/discretization.hh>
 
 #include <cstddef>
 #include <span>
 #include <stdexcept>
 
 namespace moppe::terrain {
-  struct TerrainGrid {
-    std::size_t width;
-    std::size_t height;
-    meters_t spacing_x = 1.0f * mp_units::si::metre;
-    meters_t spacing_y = 1.0f * mp_units::si::metre;
-    meters_t height_scale = 1.0f * mp_units::si::metre;
-    Topology topology = Topology::Bounded;
-
-    float spacing_x_m () const {
-      return meters_value (spacing_x);
-    }
-    float spacing_y_m () const {
-      return meters_value (spacing_y);
-    }
-    float height_scale_m () const {
-      return meters_value (height_scale);
-    }
-    square_meters_t cell_area () const {
-      return spacing_x * spacing_y;
-    }
-
-    std::size_t unique_width () const noexcept {
-      return topology == Topology::Torus ? width - 1 : width;
-    }
-
-    std::size_t unique_height () const noexcept {
-      return topology == Topology::Torus ? height - 1 : height;
-    }
-
-    std::size_t unique_size () const noexcept {
-      return unique_width () * unique_height ();
-    }
-  };
-
-  // A borrowed, materialized terrain. Unlike Domain2D, this carries the
+  // A borrowed, materialized terrain. Unlike RecipeDomain2D, this carries the
   // physical scale and topology needed by neighborhood and global analyses.
   class TerrainView {
   public:
