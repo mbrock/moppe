@@ -101,12 +101,20 @@ endif()
 # Atelier: a deliberately tiny, standalone Metal graphics workshop.
 
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  FetchContent_Declare(metal-cpp
+    GIT_REPOSITORY https://github.com/apple/metal-cpp.git
+    GIT_TAG 27c4382b7151d55a51692cdcb27aaa98752240de)
+  FetchContent_MakeAvailable(metal-cpp)
+
   add_executable(atelier MACOSX_BUNDLE EXCLUDE_FROM_ALL
     atelier/atelier.cc
+    atelier/atelier_renderer.cc
     atelier/atelier_mac.mm
   )
   set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
-  target_include_directories(atelier PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(atelier PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${metal-cpp_SOURCE_DIR})
   target_compile_options(atelier PRIVATE
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_libraries(atelier PRIVATE
