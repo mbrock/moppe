@@ -23,11 +23,11 @@ namespace moppe {
       LineStrip
     };
 
-    struct Color {
+    struct PackedRgba8 {
       uint8_t r, g, b, a;
 
-      Color () : r (255), g (255), b (255), a (255) {}
-      Color (float rf, float gf, float bf, float af = 1.0f)
+      PackedRgba8 () : r (255), g (255), b (255), a (255) {}
+      PackedRgba8 (float rf, float gf, float bf, float af = 1.0f)
           : r (quantize (rf)), g (quantize (gf)), b (quantize (bf)),
             a (quantize (af)) {}
 
@@ -45,7 +45,7 @@ namespace moppe {
       float px, py, pz;
       float nx, ny, nz;
       float u, v;
-      Color color;
+      PackedRgba8 color;
       uint8_t lit;    // Lambert + specular vs. emissive passthrough
       uint8_t fogged; // distance haze applied
       uint8_t wind;   // 0..255 sway amplitude for the vertex shader

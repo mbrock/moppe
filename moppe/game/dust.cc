@@ -18,14 +18,14 @@ namespace moppe::game {
   void Dust::emit (const Vector3D& pos,
                    const Vector3D& vel,
                    int count,
-                   const Vector3D& color) {
+                   DisplayColor color) {
     emit (pos, vel, count, color, Style ());
   }
 
   void Dust::emit (const Vector3D& pos,
                    const Vector3D& vel,
                    int count,
-                   const Vector3D& color,
+                   DisplayColor color,
                    const Style& style) {
     std::size_t live_particles = 0;
     for (const render::DustEmission& emission : m_emissions)

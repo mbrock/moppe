@@ -10,21 +10,21 @@
 
 namespace moppe::terrain {
   namespace {
-    struct Offset {
+    struct FloodOffset {
       int x;
       int y;
     };
 
-    constexpr std::array<Offset, 8> neighbors { { { -1, -1 },
-                                                  { 0, -1 },
-                                                  { 1, -1 },
-                                                  { -1, 0 },
-                                                  { 1, 0 },
-                                                  { -1, 1 },
-                                                  { 0, 1 },
-                                                  { 1, 1 } } };
+    constexpr std::array<FloodOffset, 8> flood_neighbors { { { -1, -1 },
+                                                             { 0, -1 },
+                                                             { 1, -1 },
+                                                             { -1, 0 },
+                                                             { 1, 0 },
+                                                             { -1, 1 },
+                                                             { 0, 1 },
+                                                             { 1, 1 } } };
 
-    std::size_t wrapped (int value, std::size_t period) {
+    std::size_t flood_wrapped (int value, std::size_t period) {
       const int n = static_cast<int> (period);
       const int result = value % n;
       return static_cast<std::size_t> (result < 0 ? result + n : result);
@@ -86,16 +86,16 @@ namespace moppe::terrain {
         component.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        for (const Offset offset : neighbors) {
+        for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
           if (!periodic &&
               (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
                raw_y >= static_cast<int> (height)))
             continue;
-          const std::size_t nx = periodic ? wrapped (raw_x, width)
+          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
                                           : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? wrapped (raw_y, height)
+          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
           const std::uint32_t next =
             static_cast<std::uint32_t> (index (nx, ny));
@@ -125,16 +125,16 @@ namespace moppe::terrain {
         frontier.push ({ sea_level, cell });
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        for (const Offset offset : neighbors) {
+        for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
           if (!periodic &&
               (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
                raw_y >= static_cast<int> (height)))
             continue;
-          const std::size_t nx = periodic ? wrapped (raw_x, width)
+          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
                                           : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? wrapped (raw_y, height)
+          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
           const std::uint32_t next =
             static_cast<std::uint32_t> (index (nx, ny));
@@ -174,17 +174,17 @@ namespace moppe::terrain {
       frontier.pop ();
       const std::size_t x = current.index % width;
       const std::size_t y = current.index / width;
-      for (const Offset offset : neighbors) {
+      for (const FloodOffset offset : flood_neighbors) {
         const int raw_x = static_cast<int> (x) + offset.x;
         const int raw_y = static_cast<int> (y) + offset.y;
         if (!periodic &&
             (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
              raw_y >= static_cast<int> (height)))
           continue;
-        const std::size_t nx =
-          periodic ? wrapped (raw_x, width) : static_cast<std::size_t> (raw_x);
-        const std::size_t ny =
-          periodic ? wrapped (raw_y, height) : static_cast<std::size_t> (raw_y);
+        const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
+                                        : static_cast<std::size_t> (raw_x);
+        const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
+                                        : static_cast<std::size_t> (raw_y);
         const std::uint32_t next = static_cast<std::uint32_t> (index (nx, ny));
         if (visited[next])
           continue;
@@ -265,16 +265,16 @@ namespace moppe::terrain {
         body.maximum_depth_m = std::max (body.maximum_depth_m, depth_m);
         body.volume_m3 += depth_m * cell_area;
         surface_sum_m += static_cast<double> (level[cell]) * height_scale;
-        for (const Offset offset : neighbors) {
+        for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
           if (!periodic &&
               (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
                raw_y >= static_cast<int> (height)))
             continue;
-          const std::size_t nx = periodic ? wrapped (raw_x, width)
+          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
                                           : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? wrapped (raw_y, height)
+          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);

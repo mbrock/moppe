@@ -34,11 +34,11 @@ namespace moppe {
       void emit (const Vector3D& pos,
                  const Vector3D& vel,
                  int count,
-                 const Vector3D& color);
+                 DisplayColor color);
       void emit (const Vector3D& pos,
                  const Vector3D& vel,
                  int count,
-                 const Vector3D& color,
+                 DisplayColor color,
                  const Style& style);
       void update (float dt);
       void render (render::Renderer& renderer) const;

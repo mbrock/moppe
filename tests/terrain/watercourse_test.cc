@@ -15,7 +15,7 @@ namespace {
   // The carve tests' V-valley descending toward an ocean row: every
   // column drains into the center column, which carries a visible
   // river down to the sea.
-  std::vector<float> valley_to_sea () {
+  std::vector<float> watercourse_valley_to_sea () {
     std::vector<float> heights (9 * 9);
     for (int y = 0; y < 9; ++y)
       for (int x = 0; x < 9; ++x)
@@ -24,7 +24,7 @@ namespace {
     return heights;
   }
 
-  TerrainGrid valley_grid () {
+  TerrainGrid watercourse_valley_grid () {
     return { .width = 9,
              .height = 9,
              .spacing_x = 5.0f,
@@ -32,8 +32,9 @@ namespace {
              .height_scale = 100.0f };
   }
 
-  constexpr ChannelCarving valley_parameters { .sea_level = 0.0f,
-                                               .minimum_area_cells = 4.0f };
+  constexpr ChannelCarving watercourse_valley_parameters { .sea_level = 0.0f,
+                                                           .minimum_area_cells =
+                                                             4.0f };
 
   struct PaintedValley {
     std::vector<float> carved;
@@ -45,17 +46,20 @@ namespace {
   };
 
   PaintedValley paint_valley () {
-    const std::vector<float> original = valley_to_sea ();
-    const TerrainView terrain (valley_grid (), original);
+    const std::vector<float> original = watercourse_valley_to_sea ();
+    const TerrainView terrain (watercourse_valley_grid (), original);
     std::vector<float> carved =
-      carve_channels (terrain, valley_parameters).heights;
-    const TerrainView carved_view (valley_grid (), carved);
-    FloodField flood =
-      analyze_standing_water (carved_view, valley_parameters.sea_level);
+      carve_channels (terrain, watercourse_valley_parameters).heights;
+    const TerrainView carved_view (watercourse_valley_grid (), carved);
+    FloodField flood = analyze_standing_water (
+      carved_view, watercourse_valley_parameters.sea_level);
     LakeCensus census = census_lakes (flood);
     DrainageGraph drainage = analyze_wet_drainage (carved_view, flood, census);
     RiverNetwork rivers = extract_river_network (
-      flood, census, drainage, valley_parameters.minimum_area_cells * 25.0f);
+      flood,
+      census,
+      drainage,
+      watercourse_valley_parameters.minimum_area_cells * 25.0f);
     WaterSheets sheets =
       paint_watercourses (carved_view, flood, census, drainage, rivers);
     return { std::move (carved),   std::move (flood),  std::move (census),

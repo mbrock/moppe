@@ -10,7 +10,6 @@
 
 #include <moppe/game/blob_shadow.hh>
 #include <moppe/game/chase_camera.hh>
-#include <moppe/game/city.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/graphics_benchmark.hh>
@@ -196,34 +195,36 @@ namespace moppe {
     // Sunlight is warm near the horizon and becomes a soft ivory as
     // it rises.  Intensity follows the real elevation rather than the
     // old cyclic sun-height color branches.
-    static void
-    sun_light_colors (float sun_height, Vector3D& diffuse, Vector3D& specular) {
+    static void sun_light_colors (float sun_height,
+                                  DisplayColor& diffuse,
+                                  DisplayColor& specular) {
       const float daylight = daylight_for (sun_height);
       const float golden = golden_light_for (sun_height);
-      const Vector3D warm (1.0f, 0.60f, 0.30f);
-      const Vector3D ivory (1.0f, 0.96f, 0.84f);
-      const Vector3D sun_color = ivory * (1.0f - golden) + warm * golden;
+      const DisplayColor warm (1.0f, 0.60f, 0.30f);
+      const DisplayColor ivory (1.0f, 0.96f, 0.84f);
+      const DisplayColor sun_color = mix_display (ivory, warm, golden);
 
-      diffuse = sun_color * (0.10f + 0.98f * daylight);
-      specular = (Vector3D (1.0f, 0.86f, 0.70f) * golden +
-                  Vector3D (0.92f, 0.95f, 1.0f) * (1.0f - golden)) *
-                 (0.15f + 0.85f * daylight);
+      diffuse = scale_display (sun_color, 0.10f + 0.98f * daylight);
+      specular = scale_display (mix_display (DisplayColor (0.92f, 0.95f, 1.0f),
+                                             DisplayColor (1.0f, 0.86f, 0.70f),
+                                             golden),
+                                0.15f + 0.85f * daylight);
     }
 
     // Sky horizon color (port of gfx::Sky::get_horizon_color): the
     // CPU twin of the sky shader's horizon math, used to derive the
     // fog color each tick.
-    static Vector3D horizon_color_for (float sun_height) {
+    static DisplayColor horizon_color_for (float sun_height) {
       const float daylight = daylight_for (sun_height);
       const float warmth = golden_light_for (sun_height) * 0.16f;
       // Must track sky.metal's day_horizon so distant terrain fades
       // into exactly the color the sky shows at the horizon.
-      const Vector3D day_horizon (0.55f, 0.68f, 0.84f);
-      const Vector3D night_horizon (0.035f, 0.045f, 0.09f);
-      const Vector3D warm_horizon (0.92f, 0.58f, 0.32f);
-      const Vector3D base =
-        night_horizon * (1.0f - daylight) + day_horizon * daylight;
-      return base * (1.0f - warmth) + warm_horizon * warmth;
+      const DisplayColor day_horizon (0.55f, 0.68f, 0.84f);
+      const DisplayColor night_horizon (0.035f, 0.045f, 0.09f);
+      const DisplayColor warm_horizon (0.92f, 0.58f, 0.32f);
+      return mix_display (mix_display (night_horizon, day_horizon, daylight),
+                          warm_horizon,
+                          warmth);
     }
 
     class MoppeGame : public platform::Game, private GameLogicState {
@@ -428,13 +429,6 @@ namespace moppe {
           const terrain::TerrainProgram program =
             terrain::make_geological_program (m_seed);
           map::TerrainEvaluator (m_map).evaluate (program);
-        } else if (m_world.city_mode) {
-          m_gen_stage = 1;
-          m_city.generate (m_map, m_world);
-        } else if (m_world.pico_mode) {
-          m_gen_stage = 2;
-          m_map.load_raw_u16 (
-            platform::asset_path ("data/pico.u16"), 0.1f, m_world.map_size.y);
         } else {
           // Reuse the automatic build/profile/seed cache when possible.
           // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
@@ -498,8 +492,7 @@ namespace moppe {
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
-        if (!m_terrain_lab_preview && !m_world.city_mode &&
-            !m_world.pico_mode) {
+        if (!m_terrain_lab_preview) {
           const float sea_level =
             meters_value (m_world.water_level) / m_world.map_size.y;
           m_standing_water =
@@ -545,21 +538,15 @@ namespace moppe {
           if (m_graphics.vegetation)
             m_vegetation.generate (
               m_map, m_world, Vegetation::population_for (m_world));
-          m_stars.generate (m_map,
-                            m_world,
-                            m_world.pico_mode   ? 250
-                            : m_world.city_mode ? 130
-                                                : 80);
+          m_stars.generate (m_map, m_world, 80);
         }
         m_gen_stage = 6;
       }
 
       // The recipe behind the current map: entering the lab shows the
-      // world's own pipeline instead of rebuilding a bare geological
-      // field.  City and pico maps are not program outputs; they get
-      // the geological recipe as a starting point for experiments.
+      // world's own pipeline instead of rebuilding a bare geological field.
       terrain::TerrainProgram lab_program () const {
-        if (m_terrain_lab_preview || m_world.city_mode || m_world.pico_mode)
+        if (m_terrain_lab_preview)
           return terrain::make_geological_program (m_seed);
         return terrain::make_world_program (m_seed, m_generation_profile);
       }
@@ -584,15 +571,11 @@ namespace moppe {
           if (m_graphics.vegetation)
             m_vegetation.load (r);
         }
-        if (m_world.city_mode)
-          m_city.load (r);
-
         render::OceanSetup ocean;
         ocean.level = meters_value (m_world.water_level);
         ocean.center =
           Vector3D (m_world.map_size.x / 2, 0, m_world.map_size.z / 2);
-        ocean.half_extent =
-          m_world.pico_mode ? 0.55f * m_world.map_size.x : 5500.0f;
+        ocean.half_extent = 5500.0f;
         ocean.cells = 300;
         std::vector<float> water_levels;
         std::vector<float> water_flow;
@@ -651,11 +634,10 @@ namespace moppe {
 
         m_vehicle.set_water_level (m_world.water_level);
         m_car.set_water_level (m_world.water_level);
-        m_vehicle.set_obstacles (&m_city.obstacles ());
-        m_car.set_obstacles (&m_city.obstacles ());
+        m_vehicle.set_obstacles (&m_obstacles);
+        m_car.set_obstacles (&m_obstacles);
 
-        if (!m_terrain_lab_preview && !m_world.city_mode &&
-            !m_world.pico_mode) {
+        if (!m_terrain_lab_preview) {
           m_spawn_position = choose_landscape_spawn ();
           m_vehicle.reset (m_spawn_position);
 
@@ -759,8 +741,8 @@ namespace moppe {
 
         // Fog stays mostly sky-blue.  Directional warmth is added in
         // the shaders only when looking toward the sun.
-        const Vector3D horizon = horizon_color_for (m_graphics.sun_height);
-        m_fog = horizon * 0.82f + Vector3D (0.90f, 0.94f, 1.0f) * 0.18f;
+        const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
+        m_fog = mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
 
         // Terrain inspection pauses actors and vehicle physics, but keeps the
         // visual clock, weather, and fog alive so sky and water remain a
@@ -783,7 +765,7 @@ namespace moppe {
         if (m_car_exists)
           m_car.update (seconds (dt));
         if (m_mode == M_FOOT)
-          m_walker.update (dt, m_map, m_city.obstacles (), m_world);
+          m_walker.update (dt, m_map, m_obstacles, m_world);
 
         const Vector3D vpos = (m_mode == M_FOOT)  ? m_walker.position ()
                               : (m_mode == M_CAR) ? m_car.position ()
@@ -820,9 +802,9 @@ namespace moppe {
           m_jump_airtime = 0.0f;
           m_landed_age += dt;
         }
-        const Vector3D dust_color (0.60f, 0.52f, 0.40f);
-        const Vector3D clod_color (0.42f, 0.34f, 0.24f);
-        const Vector3D spray_color (0.85f, 0.92f, 1.0f);
+        const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
+        const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
+        const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
         const Vector3D fwd = av.orientation ();
         const Vector3D rear_wheel = vpos - fwd * 1.4f + Vector3D (0, -0.7f, 0);
 
@@ -876,7 +858,7 @@ namespace moppe {
                          av.velocity () * 0.5f - fwd * 2.0f +
                            Vector3D (0, -4.0f, 0),
                          1,
-                         Vector3D (1.0f, 0.55f, 0.18f),
+                         DisplayColor (1.0f, 0.55f, 0.18f),
                          ember);
           }
         }
@@ -895,7 +877,7 @@ namespace moppe {
             m_dust.emit (vpos - fwd * 1.2f + Vector3D (0, -0.4f, 0),
                          av.velocity () * 0.25f,
                          1,
-                         Vector3D (0.45f, 0.45f, 0.48f),
+                         DisplayColor (0.45f, 0.45f, 0.48f),
                          smoke);
           }
         }
@@ -941,7 +923,7 @@ namespace moppe {
         m_health = std::min (100.0f, m_health + 1.5f * dt);
         if (m_health <= 0.0f) {
           m_dust.emit (
-            vpos, Vector3D (0, 6, 0), 40, Vector3D (1.0f, 0.5f, 0.1f));
+            vpos, Vector3D (0, 6, 0), 40, DisplayColor (1.0f, 0.5f, 0.1f));
           --m_lives;
           if (m_lives <= 0) {
             m_game_over = true;
@@ -962,16 +944,6 @@ namespace moppe {
           }
         }
 
-        // Pedestrians get bowled over, with a puff of alarm.
-        if (m_world.city_mode) {
-          if (m_city.update_people (
-                vpos, driving ? av.velocity () : Vector3D (), m_total_time) > 0)
-            m_dust.emit (m_city.last_hit (),
-                         Vector3D (0, 4, 0),
-                         10,
-                         Vector3D (0.95f, 0.85f, 0.4f));
-        }
-
         // Star pickups sparkle gold and top up fuel and boost reserves.
         {
           const int picked = m_stars.update (vpos, m_total_time, dt);
@@ -985,7 +957,7 @@ namespace moppe {
             m_dust.emit (m_stars.last_pos (),
                          Vector3D (0, 4, 0),
                          32,
-                         Vector3D (1.0f, 0.72f, 0.12f),
+                         DisplayColor (1.0f, 0.72f, 0.12f),
                          sparkle);
             Dust::Style flash;
             flash.size = 0.9f;
@@ -995,7 +967,7 @@ namespace moppe {
             m_dust.emit (m_stars.last_pos (),
                          Vector3D (),
                          5,
-                         Vector3D (1.0f, 0.95f, 0.55f),
+                         DisplayColor (1.0f, 0.95f, 0.55f),
                          flash);
             m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
             av.replenish_boost (0.25f * picked);
@@ -1114,7 +1086,7 @@ namespace moppe {
                         std::max (m_landscape_scale_x, m_landscape_scale_y),
                       0.02f,
                       0.5f),
-          m_world.pico_mode ? 30000.0f : 9000.0f);
+          9000.0f);
 
         // Hard landings produce a brief continuous vibration. Randomizing the
         // rotations each frame looked like violent camera teleportation.
@@ -1146,7 +1118,7 @@ namespace moppe {
         // The lab's plane views render the game's own sky and haze; the
         // torus is an abstract inspection object on a dark backdrop.
         fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
-                           ? Vector3D (0.012f, 0.016f, 0.022f)
+                           ? DisplayColor (0.012f, 0.016f, 0.022f)
                            : m_fog;
         const float scene_fog = terrain_lab
                                   ? m_terrain_lab.scene_fog (m_world.fog_scale)
@@ -1155,17 +1127,17 @@ namespace moppe {
         fp.sun_dir = sun_direction_for (m_graphics.sun_height);
         sun_light_colors (
           m_graphics.sun_height, fp.sun_diffuse, fp.sun_specular);
-        fp.sun_specular = fp.sun_specular * 0.5f; // material specular
+        fp.sun_specular = scale_display (fp.sun_specular, 0.5f);
         const float daylight = daylight_for (m_graphics.sun_height);
         // Open terrain receives substantial skylight even when a mountain
         // blocks the sun. Keep the fill cool so cast shadows retain shape and
         // color instead of collapsing into near-black silhouettes.
-        fp.ambient =
-          Vector3D (0.39f, 0.43f, 0.49f) * (0.35f + 0.65f * daylight);
+        fp.ambient = scale_display (DisplayColor (0.39f, 0.43f, 0.49f),
+                                    0.35f + 0.65f * daylight);
         if (terrain_lab) {
           // Keep the same time of day while giving the high overview a small
           // legibility lift after automatic exposure.
-          fp.ambient = fp.ambient * 1.15f;
+          fp.ambient = scale_display (fp.ambient, 1.15f);
           fp.exposure_bias = 0.88f;
         }
         fp.time = m_total_time;
@@ -1269,8 +1241,6 @@ namespace moppe {
           // deliberately hides every placed object so generator differences are
           // not confused with stale vegetation or actor positions.
           m_world_dl.clear ();
-          if (m_world.city_mode)
-            m_city.render (r, m_world_dl, env);
           if (m_graphics.vegetation || m_graphics.grass)
             m_vegetation.render (r,
                                  env,
@@ -1540,7 +1510,7 @@ namespace moppe {
         fp.clear_color = horizon_color_for (loading_sun_height);
         fp.sun_dir = loading_sun_dir;
         sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
-        fp.ambient = Vector3D (0.53f, 0.57f, 0.62f);
+        fp.ambient = DisplayColor (0.53f, 0.57f, 0.62f);
         fp.fog_scale = show_terrain ? m_world.fog_scale * 1.35f : 0.0f;
         fp.time = sky_time;
         fp.exposure_bias = 0.82f + 0.08f * sunrise;
@@ -1726,7 +1696,7 @@ namespace moppe {
 
       void render_game_over (render::Renderer& r) {
         render::FrameParams fp;
-        fp.clear_color = Vector3D (0, 0, 0);
+        fp.clear_color = DisplayColor (0, 0, 0);
         fp.view = Mat4 ();
         fp.proj = Mat4 ();
         if (!r.begin_frame (fp))
@@ -2036,20 +2006,6 @@ namespace moppe {
           input_boost (m_boost_input);
           return;
         }
-
-        Vector3D cpos, cdir, ccolor;
-        const int kind = m_city.take_car_near (
-          m_walker.position (), 7.0f, m_total_time, cpos, cdir, ccolor);
-        if (kind >= 0) {
-          m_car.reset (cpos);
-          m_car.set_heading (cdir);
-          m_car.set_body_style (kind + 1, ccolor);
-          m_car_exists = true;
-          m_mode = M_CAR;
-          input_turn (m_turn_input);
-          input_go (m_go_input);
-          input_boost (m_boost_input);
-        }
       }
 
       void revive () {
@@ -2115,7 +2071,7 @@ namespace moppe {
       Stars m_stars;
       Dust m_dust;
       BlobShadow m_blob;
-      City m_city;
+      std::vector<mov::Box> m_obstacles;
       Walker m_walker;
       Hud m_hud;
       InspectorUi m_game_ui;
@@ -2177,18 +2133,7 @@ int main (int argc, char** argv) {
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
-    if (arg == "--pico") {
-      // The real Pico Island: 49.4 km square, summit 2333m, sea
-      // level slightly raised so the coast reads as ocean.
-      world.pico_mode = true;
-      world.map_size = Vector3D (49400, 2400, 49400);
-      world.water_level = 15 * one_meter;
-      world.fog_scale = 0.00013f; // clear island air
-    } else if (arg == "--city") {
-      // Urban stunt island in a shallow sea.
-      world.city_mode = true;
-      world.water_level = 15 * one_meter;
-    } else if (arg == "--fullscreen") {
+    if (arg == "--fullscreen") {
       config.fullscreen = true;
     } else if (arg == "--windowed") {
       config.fullscreen = false;
@@ -2333,7 +2278,7 @@ int main (int argc, char** argv) {
     ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
   }
   if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
-      !world.city_mode && !world.pico_mode && !terrain_lab_preview)
+      !terrain_lab_preview)
     world.resolution = 1025;
   config.capture_frames = !screenshot_path.empty ();
   if (!screenshot_path.empty () && seed < 0)

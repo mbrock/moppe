@@ -212,7 +212,7 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
     maximum_z = std::max (maximum_z, vertex.pz);
     if (vertex.color.a == 0)
       ++soft_vertices;
-    if (vertex.color.a == render::Color::quantize (0.12f))
+    if (vertex.color.a == render::PackedRgba8::quantize (0.12f))
       ++junction_fade_vertices;
   }
   MOPPE_CHECK (maximum_z >= 30.0f);

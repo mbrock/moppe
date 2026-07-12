@@ -177,7 +177,7 @@ Vertex format (interleaved, 40 B): float3 pos, float3 normal, float2 uv,
 u8x4 color, u8x4 flags (x: lit, y: fogged; rest reserved).
 
 `MeshBuilder` records through the same API but bakes to an immutable Mesh —
-this is the display-list replacement, so Vegetation::generate / City::load_gl
+this is the display-list replacement, so vegetation generation
 port almost mechanically. State changes inside a bake (e.g. unlit lamp glow
 spheres) become run boundaries.
 
@@ -261,7 +261,7 @@ Physics keeps its authoritative CPU copy (HeightMap::interpolated_height/
 normal, ~10 samples/frame). Rendering and physics share the exact grid
 samples; the reconstructed near surface is bounded to each source cell's
 corner range but can differ between samples from physics's bilinear surface.
-It morphs back before the native LOD. City generation still bakes into the CPU
+It morphs back before the native LOD. Terrain generation bakes into the CPU
 heightmap and just re-uploads.
 
 The splat/shadow/haze fragment shader ports 1:1 from shaders/test.frag with
@@ -422,7 +422,7 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
 - Vehicle loses its render()/set_camera()/draw_debug_text() — simulation
   stays put; a game/vehicle_render.cc draws bikes/cars from the public pose
   API via DrawList. Same for Walker.
-- Vegetation/City keep their generate() logic but record into MeshBuilder
+- Vegetation keeps its generate() logic but records into MeshBuilder
   (and retain their plant/prop data instead of discarding it after baking).
 - Dead code goes: render_vertex_arrays, TerrainRenderer::render_directly,
   gl::FrameBufferObject, InterpolatingHeightMap, Camera (the unused one),

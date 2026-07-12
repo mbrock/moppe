@@ -40,15 +40,15 @@ namespace moppe {
       // Sunlit grass tones, shared by the baked meadow tufts and the
       // per-frame near-field grass so they read as one field.  `dry`
       // pushes toward straw, `j` is per-blade jitter.
-      inline Vector3D blade_base (float dry, float j) {
-        return Vector3D (0.22f + 0.20f * dry + j,
-                         0.38f - 0.03f * dry + 2 * j,
-                         0.09f + 0.06f * dry);
+      inline DisplayColor blade_base (float dry, float j) {
+        return DisplayColor (0.22f + 0.20f * dry + j,
+                             0.38f - 0.03f * dry + 2 * j,
+                             0.09f + 0.06f * dry);
       }
-      inline Vector3D blade_tip (float dry, float j) {
-        return Vector3D (0.48f + 0.25f * dry + 2 * j,
-                         0.66f - 0.08f * dry + 2 * j,
-                         0.16f + 0.10f * dry);
+      inline DisplayColor blade_tip (float dry, float j) {
+        return DisplayColor (0.48f + 0.25f * dry + 2 * j,
+                             0.66f - 0.08f * dry + 2 * j,
+                             0.16f + 0.10f * dry);
       }
 
       inline float grass_patch (float x, float z) {
@@ -77,8 +77,8 @@ namespace moppe {
         const Vector3D direction (
           std::cos (bend_angle), 0, std::sin (bend_angle));
         const Vector3D face (-side.z, 0.18f, side.x);
-        const Vector3D base = blade_base (dry, jitter);
-        const Vector3D tip = blade_tip (dry, jitter);
+        const DisplayColor base = blade_base (dry, jitter);
+        const DisplayColor tip = blade_tip (dry, jitter);
 
         auto center = [&] (float t) {
           return root + Vector3D (0, height * t, 0) +
@@ -88,7 +88,7 @@ namespace moppe {
           const float width = half_width * (1.0f - 0.86f * t);
           dl.normal (face);
           dl.uv (0.5f + 0.5f * side_sign, t);
-          dl.color (base * (1.0f - t) + tip * t);
+          dl.color (mix_display (base, tip, t));
           dl.wind (sway * t * t);
           dl.vertex (center (t) + side * (width * side_sign));
         };
@@ -566,12 +566,7 @@ namespace moppe {
 
     // -- placement -------------------------------------------------
 
-    Vegetation::Population
-    Vegetation::population_for (const WorldParams& world) {
-      if (world.pico_mode)
-        return Population (6000, 4000, 30000, 5200, 700);
-      if (world.city_mode)
-        return Population (500, 300, 30000, 5200, 700);
+    Vegetation::Population Vegetation::population_for (const WorldParams&) {
       return Population (3200, 2000, 30000, 5200, 700);
     }
 
@@ -602,7 +597,7 @@ namespace moppe {
     void Vegetation::prepare (const map::HeightMap& map,
                               const WorldParams& world) {
       m_map_size = world.map_size;
-      m_lean = world.pico_mode;
+      m_lean = false;
       m_periodic = map.periodic ();
       m_map = &map;
       m_water = meters_value (world.water_level);

@@ -43,12 +43,12 @@ namespace {
       fp.cam_right = Vector3D (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
       fp.cam_up = Vector3D (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
       fp.cam_forward = (at - eye).normalized ();
-      fp.clear_color = Vector3D (0.55f, 0.65f, 0.85f);
+      fp.clear_color = DisplayColor (0.55f, 0.65f, 0.85f);
       fp.fog_scale = 0.004f;
       fp.sun_dir = Vector3D (0.5f, 0.8f, 0.3f).normalized ();
-      fp.sun_diffuse = Vector3D (1.0f, 0.9f, 0.75f);
-      fp.sun_specular = Vector3D (0.5f, 0.5f, 0.5f);
-      fp.ambient = Vector3D (0.35f, 0.35f, 0.4f);
+      fp.sun_diffuse = DisplayColor (1.0f, 0.9f, 0.75f);
+      fp.sun_specular = DisplayColor (0.5f, 0.5f, 0.5f);
+      fp.ambient = DisplayColor (0.35f, 0.35f, 0.4f);
       fp.time = m_time;
 
       if (!r.begin_frame (fp))

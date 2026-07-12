@@ -2,6 +2,7 @@
 #ifndef MOPPE_VEHICLE_HH
 #define MOPPE_VEHICLE_HH
 
+#include <moppe/color.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/map/generate.hh>
 
@@ -34,7 +35,7 @@ namespace moppe {
         float susp_v {};
         float wheel_spin {};
         bool boost_flight {};
-        gain_t thrust {};
+        control_signal_t thrust {};
         float boost_input {};
         float boost_drive {};
         float boost_level {};
@@ -46,7 +47,7 @@ namespace moppe {
         float fall_top {};
         float fall_drop {};
         int body_kind {};
-        Vector3D body_color {};
+        DisplayColor body_color {};
       };
 
       // max_thrust caps the wheel force (launch punch); power caps
@@ -64,13 +65,13 @@ namespace moppe {
       State state () const;
       void restore (const State& state);
 
-      // The throttle is a gain: a normalized command in [-1, 1] that
-      // amplifies the engine's force capability.
-      void set_thrust (gain_t thrust) {
+      // The throttle is a normalized control signal in [-1, 1] that
+      // commands the engine's force capability.
+      void set_thrust (control_signal_t thrust) {
         m_thrust = thrust;
       }
 
-      gain_t thrust () const {
+      control_signal_t thrust () const {
         return m_thrust;
       }
 
@@ -82,7 +83,7 @@ namespace moppe {
         m_yaw_target += radians_t (degrees);
       }
 
-      void increase_thrust (gain_t dv) {
+      void increase_thrust (control_signal_t dv) {
         m_thrust += dv;
       }
 
@@ -127,7 +128,7 @@ namespace moppe {
 
       // What this vehicle looks like: 0 = the motorcycle,
       // 1 = civilian car, 2 = police car, 3 = fire truck
-      void set_body_style (int kind, const Vector3D& color) {
+      void set_body_style (int kind, DisplayColor color) {
         m_body_kind = kind;
         m_body_color = color;
       }
@@ -199,7 +200,7 @@ namespace moppe {
       int body_kind () const {
         return m_body_kind;
       }
-      Vector3D body_color () const {
+      DisplayColor body_color () const {
         return m_body_color;
       }
 
@@ -260,7 +261,7 @@ namespace moppe {
 
       const newtons_t m_max_thrust;
       const watts_t m_power;
-      gain_t m_thrust; // throttle command in [-1, 1]
+      control_signal_t m_thrust; // throttle command in [-1, 1]
       kilograms_t m_mass;
 
       float m_boost_input;
@@ -278,7 +279,7 @@ namespace moppe {
       const std::vector<Box>* m_obstacles;
 
       int m_body_kind;
-      Vector3D m_body_color;
+      DisplayColor m_body_color;
     };
   }
 }

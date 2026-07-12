@@ -285,8 +285,8 @@ namespace moppe {
       // model floor sits where the wheels touch
       dl.translate (0, -1.0f, 0);
 
-      const Vector3D body = v.body_color ();
-      dl.color (body.x, body.y, body.z);
+      const DisplayColor body = v.body_color ();
+      dl.color (body);
       dl.push ();
       dl.translate (0, truck ? 0.8f : 0.55f, 0);
       model::box (

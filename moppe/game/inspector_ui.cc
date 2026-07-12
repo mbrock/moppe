@@ -120,7 +120,7 @@ namespace moppe {
       m_friendly_label.reset (
         new render::FontAtlas (renderer, "AvenirNext-Medium", 11.0f, scale));
 
-      tga::TGAImg icons;
+      tga_image::TGAImg icons;
       const std::string icon_path =
         platform::asset_path ("textures/ui/terrain-lab-icons.tga");
       if (icons.Load (const_cast<char*> (icon_path.c_str ())) == IMG_OK) {

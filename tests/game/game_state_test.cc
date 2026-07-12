@@ -13,6 +13,12 @@ namespace {
     MOPPE_CHECK_NEAR (actual.y, expected.y, 1e-6f);
     MOPPE_CHECK_NEAR (actual.z, expected.z, 1e-6f);
   }
+
+  void check_color (moppe::DisplayColor actual, moppe::DisplayColor expected) {
+    MOPPE_CHECK_NEAR (actual.red, expected.red, 1e-6f);
+    MOPPE_CHECK_NEAR (actual.green, expected.green, 1e-6f);
+    MOPPE_CHECK_NEAR (actual.blue, expected.blue, 1e-6f);
+  }
 }
 
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
@@ -45,7 +51,7 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   check_vector (restored.thrust_orientation, saved.thrust_orientation);
   check_vector (restored.render_heading, saved.render_heading);
   check_vector (restored.render_normal, saved.render_normal);
-  check_vector (restored.body_color, saved.body_color);
+  check_color (restored.body_color, saved.body_color);
   MOPPE_CHECK_NEAR (
     radians_value (restored.yaw), radians_value (saved.yaw), 1e-6f);
   MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
@@ -140,7 +146,7 @@ MOPPE_TEST (dust_state_is_a_bounded_deterministic_emission_log) {
   dust.emit (Vector3D (1, 2, 3),
              Vector3D (4, 5, 6),
              90,
-             Vector3D (0.8f, 0.6f, 0.2f),
+             DisplayColor (0.8f, 0.6f, 0.2f),
              style);
   const game::Dust::State saved = dust.state ();
   MOPPE_CHECK (saved.emissions.size () == 2);
