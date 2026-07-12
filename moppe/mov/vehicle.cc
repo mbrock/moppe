@@ -14,9 +14,9 @@ namespace moppe {
 
     static const float boost_acceleration = 26.0f;
     static const float boost_max_tilt = 60.0f * PI / 180.0f;
-    static const seconds_t boost_full_burn_time = 3.0f;
-    static const seconds_t boost_recharge_time = 5.0f;
-    static const seconds_t boost_recharge_pause = 0.65f;
+    static const seconds_t boost_full_burn_time = seconds (3.0f);
+    static const seconds_t boost_recharge_time = seconds (5.0f);
+    static const seconds_t boost_recharge_pause = seconds (0.65f);
     static const float boost_reserve_charge = 0.06f;
     static const float boost_emergency_level = 0.18f;
 
@@ -35,10 +35,11 @@ namespace moppe {
           m_susp (0), m_susp_v (0), m_wheel_spin (0), m_boost_flight (false),
           m_map (map), m_max_thrust (max_thrust), m_power (power), m_thrust (0),
           m_mass (mass), m_boost_input (0), m_boost_drive (0),
-          m_boost_level (0), m_boost_charge (1), m_boost_recharge_delay (0),
-          m_water_level (-1000 * one_meter), m_airborne_time (0), m_impact (0),
-          m_fall_top (0), m_fall_drop (0), m_obstacles (0), m_body_kind (0),
-          m_body_color (0.8, 0.15, 0.1) {
+          m_boost_level (0), m_boost_charge (1),
+          m_boost_recharge_delay (seconds (0)),
+          m_water_level (-1000 * one_meter), m_airborne_time (seconds (0)),
+          m_impact (0), m_fall_top (0), m_fall_drop (0), m_obstacles (0),
+          m_body_kind (0), m_body_color (0.8, 0.15, 0.1) {
       calculate_orientation ();
       fall_to_ground ();
     }
@@ -145,7 +146,7 @@ namespace moppe {
     bool Vehicle::driving_contact () const {
       if (is_grounded ())
         return true;
-      return m_airborne_time < 0.12f &&
+      return m_airborne_time < seconds (0.12f) &&
              m_position.y - ground_height () < radius + 0.6f;
     }
 
@@ -208,6 +209,7 @@ namespace moppe {
     }
 
     void Vehicle::steer (seconds_t dt) {
+      const float dt_s = seconds_value (dt);
       if (std::abs (m_yaw) < 0.001f)
         return;
 
@@ -216,13 +218,13 @@ namespace moppe {
         // nimble at walking pace
         const float vf = std::abs (m_velocity.dot (m_heading));
         const float rate = steering_rate / (1.0f + vf / 70.0f);
-        m_heading =
-          Quaternion::rotate (m_heading, ground_normal (), -m_yaw * rate * dt);
+        m_heading = Quaternion::rotate (
+          m_heading, ground_normal (), -m_yaw * rate * dt_s);
       } else
         // Mid-air attitude control: swing the bike around, keep the
         // momentum -- landing sideways starts a drift
         m_heading = Quaternion::rotate (
-          m_heading, Vector3D (0, 1, 0), -m_yaw * air_steering_rate * dt);
+          m_heading, Vector3D (0, 1, 0), -m_yaw * air_steering_rate * dt_s);
     }
 
     // Tire grip pulls the velocity into line with where the bike
@@ -230,6 +232,7 @@ namespace moppe {
     // speed, braking breaks traction outright, and an ongoing slide
     // keeps breathing instead of snapping straight.
     void Vehicle::apply_grip (seconds_t dt, const Vector3D& n) {
+      const float dt_s = seconds_value (dt);
       Vector3D fwd = m_heading - n * m_heading.dot (n);
       if (fwd.length2 () < 0.000001f)
         return;
@@ -256,13 +259,14 @@ namespace moppe {
       if (lat.length2 () > 16.0f)
         grip = std::min (grip, 2.0f); // mid-drift hysteresis
 
-      m_velocity = fwd * vf + vn + lat * std::exp (-grip * dt);
+      m_velocity = fwd * vf + vn + lat * std::exp (-grip * dt_s);
     }
 
     void Vehicle::update (seconds_t dt) {
+      const float dt_s = seconds_value (dt);
       // Steering input ramps in rather than snapping: smooth onset
       // for the heading, the grip model, and the fork visual at once
-      m_yaw += (m_yaw_target - m_yaw) * (1.0f - std::exp (-9.0f * dt));
+      m_yaw += (m_yaw_target - m_yaw) * (1.0f - std::exp (-9.0f * dt_s));
 
       steer (dt);
       calculate_orientation ();
@@ -274,12 +278,13 @@ namespace moppe {
       // jets cannot produce permanent flight.
       if (m_boost_input > 0.001f) {
         if (m_boost_charge > boost_reserve_charge) {
-          const float available =
-            (m_boost_charge - boost_reserve_charge) * boost_full_burn_time / dt;
+          const float available = (m_boost_charge - boost_reserve_charge) *
+                                  seconds_value (boost_full_burn_time) / dt_s;
           m_boost_level = std::min (m_boost_input, available);
-          m_boost_charge = std::max (boost_reserve_charge,
-                                     m_boost_charge - m_boost_level * dt /
-                                                        boost_full_burn_time);
+          m_boost_charge =
+            std::max (boost_reserve_charge,
+                      m_boost_charge - m_boost_level * dt_s /
+                                         seconds_value (boost_full_burn_time));
           m_boost_flight = true;
         } else
           // The reserve cannot sustain flight, but it always supplies enough
@@ -290,12 +295,14 @@ namespace moppe {
         m_boost_recharge_delay = boost_recharge_pause;
       } else {
         m_boost_level = 0;
-        if (m_boost_recharge_delay > 0)
+        if (m_boost_recharge_delay > seconds (0))
           m_boost_recharge_delay -= dt;
         else {
           const float recharge_scale = is_grounded () ? 1.0f : 0.35f;
-          m_boost_charge = std::min (
-            1.0f, m_boost_charge + recharge_scale * dt / boost_recharge_time);
+          m_boost_charge =
+            std::min (1.0f,
+                      m_boost_charge + recharge_scale * dt_s /
+                                         seconds_value (boost_recharge_time));
         }
       }
 
@@ -331,7 +338,7 @@ namespace moppe {
           a -= n * into_ground;
       }
 
-      m_velocity += a * dt;
+      m_velocity += a * dt_s;
 
       if (is_grounded ()) {
         const float normal_speed = m_velocity.dot (n);
@@ -341,15 +348,15 @@ namespace moppe {
       if (contact) {
         // Jets progressively unload the tires instead of turning grip
         // off at the slightest touch.
-        const float grip_dt = dt * (1.0f - 0.8f * m_boost_level);
+        const seconds_t grip_dt = dt * (1.0f - 0.8f * m_boost_level);
         apply_grip (grip_dt, n);
       }
 
       // Wading through the ocean is slow going
       if (m_position.y - radius < m_water_level)
-        m_velocity *= std::exp (-1.4 * dt);
+        m_velocity *= std::exp (-1.4f * dt_s);
 
-      m_position += m_velocity * dt;
+      m_position += m_velocity * dt_s;
 
       bound ();
       check_ground_collision ();
@@ -360,7 +367,7 @@ namespace moppe {
       // parallel to a downhill slope is gentle no matter how fast the
       // descent was.
       if (is_grounded ()) {
-        if (m_airborne_time > 0.25f) {
+        if (m_airborne_time > seconds (0.25f)) {
           m_impact = std::max (0.0f, -m_velocity.dot (ground_normal ()));
           // Boost-assisted landings are partly forgiven: the jets
           // flare on touchdown, or so the story goes.
@@ -371,7 +378,7 @@ namespace moppe {
         }
         if (m_boost_level <= 0)
           m_boost_flight = false;
-        m_airborne_time = 0;
+        m_airborne_time = seconds (0);
         m_fall_top = m_position.y;
       } else {
         m_airborne_time += dt;
@@ -387,7 +394,7 @@ namespace moppe {
           target = std::atan2 (vf * (-m_yaw * rate), 9.82f);
           target = std::max (-0.7f, std::min (0.7f, target));
         }
-        m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt));
+        m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt_s));
       }
 
       // Visual attitude is separate from the steering heading. In flight the
@@ -409,7 +416,7 @@ namespace moppe {
         pose_rate = 4.5f;
       }
 
-      const float pose_alpha = 1.0f - std::exp (-pose_rate * dt);
+      const float pose_alpha = 1.0f - std::exp (-pose_rate * dt_s);
       m_render_heading =
         linear_vector_interpolate (m_render_heading, pose_forward, pose_alpha);
       m_render_normal =
@@ -420,8 +427,8 @@ namespace moppe {
         m_render_normal.normalize ();
 
       // Visual suspension spring: kicked by landings, settles fast
-      m_susp_v += (-70.0f * m_susp - 9.0f * m_susp_v) * dt;
-      m_susp += m_susp_v * dt;
+      m_susp_v += (-70.0f * m_susp - 9.0f * m_susp_v) * dt_s;
+      m_susp += m_susp_v * dt_s;
       m_susp = std::max (-0.35f, std::min (0.15f, m_susp));
 
       // Wheel roll for the renderer: ground speed while rolling, a
@@ -431,7 +438,8 @@ namespace moppe {
         float rate = m_velocity.dot (m_heading) / 0.68f;
         if (!contact && std::abs (m_thrust) > 0.1f)
           rate = 40.0f * m_thrust;
-        m_wheel_spin = std::fmod (m_wheel_spin + rate * dt, 2.0f * 3.14159265f);
+        m_wheel_spin =
+          std::fmod (m_wheel_spin + rate * dt_s, 2.0f * 3.14159265f);
       }
     }
 

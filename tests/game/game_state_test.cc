@@ -25,12 +25,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   vehicle.set_thrust (0.8f);
   vehicle.set_yaw (25.0f);
   vehicle.set_boost (0.7f, 0.5f);
-  vehicle.update (1.0f / 60.0f);
+  vehicle.update (seconds (1.0f / 60.0f));
   const mov::Vehicle::State saved = vehicle.state ();
 
   vehicle.set_thrust (-1.0f);
   vehicle.set_yaw (-70.0f);
-  vehicle.update (0.5f);
+  vehicle.update (seconds (0.5f));
   vehicle.restore (saved);
   const mov::Vehicle::State restored = vehicle.state ();
 
@@ -53,9 +53,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK_NEAR (restored.boost_drive, saved.boost_drive, 1e-6f);
   MOPPE_CHECK_NEAR (restored.boost_level, saved.boost_level, 1e-6f);
   MOPPE_CHECK_NEAR (restored.boost_charge, saved.boost_charge, 1e-6f);
-  MOPPE_CHECK_NEAR (
-    restored.boost_recharge_delay, saved.boost_recharge_delay, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.airborne_time, saved.airborne_time, 1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (restored.boost_recharge_delay),
+                    seconds_value (saved.boost_recharge_delay),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (seconds_value (restored.airborne_time),
+                    seconds_value (saved.airborne_time),
+                    1e-6f);
   MOPPE_CHECK_NEAR (restored.impact, saved.impact, 1e-6f);
   MOPPE_CHECK_NEAR (restored.fall_top, saved.fall_top, 1e-6f);
   MOPPE_CHECK_NEAR (restored.fall_drop, saved.fall_drop, 1e-6f);
@@ -65,8 +68,10 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 MOPPE_TEST (camera_and_walker_state_round_trip) {
   using namespace moppe;
   game::ChaseCamera camera (18, 6.5f);
-  camera.update (
-    Vector3D (10, 2, 20), Vector3D (0, 0, 1), Vector3D (4, 0, 2), 1.0f / 60.0f);
+  camera.update (Vector3D (10, 2, 20),
+                 Vector3D (0, 0, 1),
+                 Vector3D (4, 0, 2),
+                 seconds (1.0f / 60.0f));
   const game::ChaseCamera::State camera_state = camera.state ();
   camera.place (Vector3D (100, 100, 100), Vector3D ());
   camera.restore (camera_state);

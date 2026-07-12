@@ -768,9 +768,9 @@ namespace moppe {
           input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
         }
 
-        m_vehicle.update (dt);
+        m_vehicle.update (seconds (dt));
         if (m_car_exists)
-          m_car.update (dt);
+          m_car.update (seconds (dt));
         if (m_mode == M_FOOT)
           m_walker.update (dt, m_map, m_city.obstacles (), m_world);
 
@@ -1027,10 +1027,12 @@ namespace moppe {
                                Vector3D (0, 1.0f / m_landscape_scale_y, 0),
                              m_walker.heading () * flip,
                              Vector3D (),
-                             dt);
+                             seconds (dt));
           else
-            m_camera.update (
-              av.position (), av.orientation () * flip, av.velocity (), dt);
+            m_camera.update (av.position (),
+                             av.orientation () * flip,
+                             av.velocity (),
+                             seconds (dt));
           m_camera.limit (m_map);
         }
         if (m_water_inspection) {
