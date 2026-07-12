@@ -1,7 +1,7 @@
 #ifndef MOPPE_TERRAIN_EVALUATOR_HH
 #define MOPPE_TERRAIN_EVALUATOR_HH
 
-#include <moppe/terrain/field.hh>
+#include <moppe/terrain/discretization.hh>
 
 #include <cstddef>
 #include <span>
@@ -10,20 +10,11 @@
 #include <vector>
 
 namespace moppe::terrain {
-  struct Domain2D {
-    std::size_t width;
-    std::size_t height;
-    float min_x = 0.0f;
-    float max_x = 1.0f;
-    float min_y = 0.0f;
-    float max_y = 1.0f;
-  };
-
   class ScalarRaster {
   public:
-    ScalarRaster (Domain2D domain, std::vector<float> values);
+    ScalarRaster (RecipeDomain2D domain, std::vector<float> values);
 
-    const Domain2D& domain () const noexcept {
+    const RecipeDomain2D& domain () const noexcept {
       return m_domain;
     }
     std::span<const float> values () const noexcept {
@@ -35,7 +26,7 @@ namespace moppe::terrain {
     float max_value () const;
 
   private:
-    Domain2D m_domain;
+    RecipeDomain2D m_domain;
     std::vector<float> m_values;
   };
 
@@ -53,7 +44,7 @@ namespace moppe::terrain {
     const ScalarRaster& untyped () const noexcept {
       return m_raster;
     }
-    const Domain2D& domain () const noexcept {
+    const RecipeDomain2D& domain () const noexcept {
       return m_raster.domain ();
     }
     std::span<const float> values () const noexcept {
@@ -70,6 +61,48 @@ namespace moppe::terrain {
   using NormalizedRaster = Raster<normalized_sample[mp_units::one]>;
   using RelativeElevationRaster = Raster<relative_elevation[mp_units::one]>;
 
+  // A raster whose recipe coordinates and physical terrain geometry remain
+  // coupled to the samples that materialized them.
+  template <auto R>
+    requires mp_units::Reference<std::remove_const_t<decltype (R)>>
+  class TerrainRaster {
+  public:
+    TerrainRaster (Raster<R> raster, TerrainDiscretization discretization)
+        : m_raster (std::move (raster)),
+          m_discretization (std::move (discretization)) {
+      if (m_raster.domain () != m_discretization.recipe_domain ())
+        throw std::invalid_argument (
+          "raster domain differs from terrain discretization");
+    }
+
+    const Raster<R>& raster () const noexcept {
+      return m_raster;
+    }
+    const TerrainDiscretization& discretization () const noexcept {
+      return m_discretization;
+    }
+    std::span<const float> values () const noexcept {
+      return m_raster.values ();
+    }
+    mp_units::quantity<R, float> sample (std::size_t x, std::size_t y) const {
+      return m_raster.sample (x, y);
+    }
+    RecipePosition2D recipe_position (std::size_t x, std::size_t y) const {
+      return m_discretization.recipe_position (x, y);
+    }
+    HorizontalPosition2D physical_position (std::size_t x,
+                                            std::size_t y) const {
+      return m_discretization.physical_position (x, y);
+    }
+
+  private:
+    Raster<R> m_raster;
+    TerrainDiscretization m_discretization;
+  };
+
+  using TerrainRelativeElevationRaster =
+    TerrainRaster<relative_elevation[mp_units::one]>;
+
   // Materializes a pointwise field over a concrete sampling domain.  CPU,
   // Metal, and future portable GPU implementations share this value-level
   // boundary; only the lowering and execution strategy differs.
@@ -78,7 +111,7 @@ namespace moppe::terrain {
     virtual ~FieldEvaluator () = default;
 
     virtual ScalarRaster evaluate (const ScalarField& field,
-                                   const Domain2D& domain) const = 0;
+                                   const RecipeDomain2D& domain) const = 0;
   };
 
   // A materialization barrier: remaps the sampled minimum and maximum to
@@ -89,9 +122,19 @@ namespace moppe::terrain {
   template <auto QS>
   Raster<QS[mp_units::one]> materialize (const FieldEvaluator& evaluator,
                                          const Field<QS>& field,
-                                         const Domain2D& domain) {
+                                         const RecipeDomain2D& domain) {
     return Raster<QS[mp_units::one]> (
       evaluator.evaluate (field.untyped (), domain));
+  }
+
+  template <auto QS>
+  TerrainRaster<QS[mp_units::one]>
+  materialize (const FieldEvaluator& evaluator,
+               const Field<QS>& field,
+               const TerrainDiscretization& discretization) {
+    return TerrainRaster<QS[mp_units::one]> (
+      materialize (evaluator, field, discretization.recipe_domain ()),
+      discretization);
   }
 
   template <auto R>

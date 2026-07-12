@@ -355,6 +355,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-tests
     tests/test_main.cc
     tests/units_test.cc
+    tests/terrain/discretization_test.cc
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc

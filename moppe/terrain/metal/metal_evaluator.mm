@@ -57,7 +57,7 @@ namespace moppe::terrain::metal {
       std::string structure_key;
     };
 
-    void check_domain (const Domain2D& domain) {
+    void check_domain (const RecipeDomain2D& domain) {
       if (domain.width < 2 || domain.height < 2)
         throw std::invalid_argument (
           "a field domain needs at least two samples per axis");
@@ -283,7 +283,8 @@ namespace moppe::terrain::metal {
       }
     }
 
-    ScalarRaster evaluate (const ScalarField& field, const Domain2D& domain) {
+    ScalarRaster evaluate (const ScalarField& field,
+                           const RecipeDomain2D& domain) {
       check_domain (domain);
       PreparedField prepared = prepare (field);
       std::scoped_lock lock (m_mutex);
@@ -602,7 +603,7 @@ namespace moppe::terrain::metal {
   MetalEvaluator::operator= (MetalEvaluator&&) noexcept = default;
 
   ScalarRaster MetalEvaluator::evaluate (const ScalarField& field,
-                                         const Domain2D& domain) const {
+                                         const RecipeDomain2D& domain) const {
     return m_impl->evaluate (field, domain);
   }
 

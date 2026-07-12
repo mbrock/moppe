@@ -35,7 +35,7 @@ int main (int argc, char** argv) {
     const ScalarField field =
       make_geological_fields (make_geological_recipe (seed))
         .combined.untyped ();
-    const Domain2D domain { .width = side, .height = side };
+    const RecipeDomain2D domain { .width = side, .height = side };
 
     const auto [cpu, cpu_seconds] =
       timed ([&] { return CpuEvaluator ().evaluate (field, domain); });

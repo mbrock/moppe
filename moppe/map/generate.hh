@@ -276,6 +276,7 @@ namespace moppe {
       }
 
       terrain::TerrainView terrain_view () const;
+      terrain::TerrainDiscretization discretization () const;
 
       void normalize ();
       void translate (float d);
