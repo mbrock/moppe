@@ -1924,9 +1924,9 @@ namespace moppe {
         return true;
       }
       if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
-        int* value = row == 0   ? &hydraulic->droplets
-                     : row == 1 ? &hydraulic->batch_size
-                                : &hydraulic->max_steps;
+        int* value = row == 0   ? &hydraulic->droplets.value
+                     : row == 1 ? &hydraulic->batch_size.value
+                                : &hydraulic->max_steps.value;
         int changed = *value;
         if (row == 0) {
           constexpr int choices[] = { 0,       10000,   30000,   100000,
@@ -2297,9 +2297,9 @@ namespace moppe {
           for (int group = 0; group < 3; ++group)
             for (int i = 0; i < 4; ++i)
               if (hydraulic_preset_rect (group, i).contains (x, y)) {
-                int& value = group == 0   ? hydraulic->droplets
-                             : group == 1 ? hydraulic->max_steps
-                                          : hydraulic->batch_size;
+                int& value = group == 0   ? hydraulic->droplets.value
+                             : group == 1 ? hydraulic->max_steps.value
+                                          : hydraulic->batch_size.value;
                 if (value != presets[group][i]) {
                   value = presets[group][i];
                   rerun_program_from (m_selected_stage);
@@ -2990,9 +2990,9 @@ namespace moppe {
           for (int group = 0; group < 3; ++group) {
             m_ui.label (
               dl, right_x + 8, 362 + group * 56, headings[group], true);
-            const int value = group == 0   ? hydraulic.droplets
-                              : group == 1 ? hydraulic.max_steps
-                                           : hydraulic.batch_size;
+            const int value = group == 0   ? hydraulic.droplets.value
+                              : group == 1 ? hydraulic.max_steps.value
+                                           : hydraulic.batch_size.value;
             for (int i = 0; i < 4; ++i) {
               const UiRect bounds = hydraulic_preset_rect (group, i);
               m_ui.button (dl,

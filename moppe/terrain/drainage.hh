@@ -86,7 +86,7 @@ namespace moppe::terrain {
   struct WaterfallParameters {
     meters_t minimum_drop = 3.0f * mp_units::si::metre;
     slope_t minimum_slope = 0.6f * terrain_slope[mp_units::one];
-    std::size_t separation_cells = 1;
+    SeparationCellCount separation_cells = 1;
   };
 
   struct Waterfall {

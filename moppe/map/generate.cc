@@ -664,7 +664,7 @@ namespace moppe {
           }
         };
         const auto finish =
-          [&] (Droplet& drop, const Sample& at, std::uint64_t& reason) {
+          [&] (Droplet& drop, const Sample& at, terrain::EventCount& reason) {
             if (sediment_at_termination ==
                 terrain::SedimentDisposition::Deposit) {
               add_at_sample (at, drop.sediment);
@@ -774,7 +774,7 @@ namespace moppe {
         float dirx = 0, diry = 0;
         float speed = 1, water = 1, sediment = 0;
         bool terminated = false;
-        const auto finish = [&] (std::uint64_t& reason) {
+        const auto finish = [&] (terrain::EventCount& reason) {
           if (sediment_at_termination ==
               terrain::SedimentDisposition::Deposit) {
             const int x = static_cast<int> (px);

@@ -1,6 +1,8 @@
 #ifndef MOPPE_TERRAIN_EROSION_HH
 #define MOPPE_TERRAIN_EROSION_HH
 
+#include <moppe/terrain/types.hh>
+
 #include <cstddef>
 #include <cstdint>
 
@@ -13,12 +15,12 @@ namespace moppe::terrain {
   // measured in normalized terrain-height units; the balance is independent
   // of the physical cell area shared by every term.
   struct HydraulicErosionReport {
-    std::uint64_t droplets = 0;
-    std::uint64_t steps = 0;
-    std::uint64_t stopped_flat = 0;
-    std::uint64_t stopped_at_boundary = 0;
-    std::uint64_t stopped_at_step_limit = 0;
-    std::uint64_t stopped_at_water_cutoff = 0;
+    EventCount droplets = 0;
+    EventCount steps = 0;
+    EventCount stopped_flat = 0;
+    EventCount stopped_at_boundary = 0;
+    EventCount stopped_at_step_limit = 0;
+    EventCount stopped_at_water_cutoff = 0;
     double eroded = 0.0;
     double deposited = 0.0;
     double discarded_sediment = 0.0;
@@ -47,14 +49,14 @@ namespace moppe::terrain {
     float erodibility = 2e-5f;
     float area_exponent = 0.4f;
     float sea_level = 50.0f / 650.0f;
-    int fixed_point_iterations = 1;
+    IterationCount fixed_point_iterations = 1;
     float relaxation = 1.0f;
   };
 
   struct AnalyticalErosionReport {
-    std::size_t cells = 0;
-    std::size_t fixed_boundaries = 0;
-    int fixed_point_iterations = 0;
+    CellCount cells = 0;
+    CellCount fixed_boundaries = 0;
+    IterationCount fixed_point_iterations = 0;
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t raised_volume =
@@ -78,8 +80,8 @@ namespace moppe::terrain {
   };
 
   struct ChannelCarvingReport {
-    std::size_t reaches = 0;
-    std::size_t carved_cells = 0;
+    ReachCount reaches = 0;
+    CellCount carved_cells = 0;
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     meters_f64_t mean_lowering = 0.0 * mp_units::si::metre;

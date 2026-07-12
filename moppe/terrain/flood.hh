@@ -39,7 +39,7 @@ namespace moppe::terrain {
     static constexpr CellIndex no_cell = terrain::no_cell;
 
     WaterBodyId id;
-    std::size_t cells;
+    CellCount cells;
     square_meters_t area;
     meters_t maximum_depth;
     meters_t mean_depth;
