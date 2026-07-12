@@ -48,6 +48,7 @@ namespace moppe {
       // frames and measure the complete world render.
       bool profile = false;
       uint32_t benchmark_mask = 0;
+      uint32_t benchmark_partition_mask = 0;
       uint32_t benchmark_epoch = 0;
       uint32_t benchmark_frame = 0;
       bool benchmark_measured = false;

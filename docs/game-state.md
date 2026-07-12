@@ -36,7 +36,12 @@ The intended experiment loop is:
 
 The built-in graphics benchmark implements this loop at a fixed 120 Hz. It
 constructs the checkpoint after a deterministic scripted prelude, then visits
-all Boolean combinations of hot graphics features in Gray-code order. Every
+all Boolean combinations of a graphics-feature partition in Gray-code order.
+The current riding partition preserves grass, ocean, bloom, and automatic
+exposure as separate blocks and identifies particles, vehicle effects, star
+effects, and lens flare as one `small-effects` block. This reduces the ordinary
+sweep from 256 configurations to 32 without pretending those features no
+longer exist. Every
 epoch restores `GameState`, resets renderer temporal history, replays the same
 input segment, discards settling frames, and records command-buffer GPU time
 for the remaining frames. For example:
@@ -47,11 +52,12 @@ for the remaining frames. For example:
   --windowed --seed 123 --terrain-quality fast
 ```
 
-The CSV contains epoch, mask, logical frame, GPU milliseconds, and one Boolean
-column per hot feature. Defaults are 480 prelude frames, 30 settling frames,
-and 120 measured frames per configuration. The three counts can be overridden
-with `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for
-quick smoke runs.
+The CSV contains epoch, the resolved feature mask, the quotient-space partition
+mask, logical frame, GPU milliseconds, and one Boolean column per hot feature.
+Defaults are 480 prelude frames, 30 settling frames, and 120 measured frames
+per configuration. The three counts can be overridden with
+`--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for quick
+smoke runs.
 
 Analyze a completed CSV with DuckDB:
 
@@ -60,12 +66,18 @@ tools/graphics-benchmark-analyze /tmp/moppe-gpu.csv
 ```
 
 The resulting directory contains `graphics-benchmark.duckdb` plus CSV exports
-for configuration statistics, the 1,024 directed edges of the eight-dimensional
-Boolean cube, average feature effects, pairwise interactions, balanced-feature
-correlations, logical-frame sensitivity, and 120/60 Hz deadline summaries.
-Every feature effect pairs the same logical frame across configurations before
-aggregation; every interaction is a difference of differences over one square
-face of the cube.
+for configuration statistics, the directed edges of the five-dimensional
+quotient cube, average block effects, pairwise block interactions,
+balanced-feature correlations, logical-frame sensitivity, and 120/60 Hz
+deadline summaries. Every block effect pairs the same logical frame across
+configurations before aggregation; every interaction is a difference of
+differences over one square face of the quotient cube.
+
+The general `Partition<Map, Element, Block>` concept in `moppe/partition.hh`
+represents a partition by its quotient map. Each particular partition chooses
+its own equality-comparable block type; no global block-ID enumeration is
+required. `RidingGraphicsPartition` refines that algebraic idea with a finite,
+stably ordered, named block set needed by the benchmark UI and traversal.
 
 For a synchronized CPU and Metal trace of the cube, run:
 

@@ -7,6 +7,22 @@
 #include <string_view>
 
 namespace moppe::game {
+  enum class GraphicsFeatureId {
+    terrain_shadows,
+    vegetation,
+    grass,
+    ocean,
+    river_ribbons,
+    particles,
+    vehicle_effects,
+    star_effects,
+    motion_blur,
+    bloom,
+    auto_exposure,
+    lens_flare,
+    terrain_topology,
+  };
+
   struct GraphicsSettings {
     float scene_scale = 1.0f;
     // Zero uses scene_scale relative to the point-resolution baseline.
@@ -34,6 +50,7 @@ namespace moppe::game {
   // value lives.  The same entities drive command-line parsing and resolved
   // configuration output.
   struct GraphicsFeature {
+    GraphicsFeatureId id;
     std::string_view name;
     bool GraphicsSettings::* member;
     // Hot features need no work beyond changing their stored value.  The next
@@ -50,43 +67,73 @@ namespace moppe::game {
   };
 
   inline constexpr GraphicsFeature terrain_shadows_feature {
-    "terrain-shadows", &GraphicsSettings::terrain_shadows, false
+    GraphicsFeatureId::terrain_shadows,
+    "terrain-shadows",
+    &GraphicsSettings::terrain_shadows,
+    false
   };
   inline constexpr GraphicsFeature vegetation_feature {
-    "vegetation", &GraphicsSettings::vegetation, false
+    GraphicsFeatureId::vegetation,
+    "vegetation",
+    &GraphicsSettings::vegetation,
+    false
   };
-  inline constexpr GraphicsFeature grass_feature { "grass",
-                                                   &GraphicsSettings::grass,
-                                                   true };
-  inline constexpr GraphicsFeature ocean_feature { "ocean",
-                                                   &GraphicsSettings::ocean,
-                                                   true };
+  inline constexpr GraphicsFeature grass_feature {
+    GraphicsFeatureId::grass, "grass", &GraphicsSettings::grass, true
+  };
+  inline constexpr GraphicsFeature ocean_feature {
+    GraphicsFeatureId::ocean, "ocean", &GraphicsSettings::ocean, true
+  };
   inline constexpr GraphicsFeature river_ribbons_feature {
-    "river-ribbons", &GraphicsSettings::river_ribbons, false
+    GraphicsFeatureId::river_ribbons,
+    "river-ribbons",
+    &GraphicsSettings::river_ribbons,
+    false
   };
   inline constexpr GraphicsFeature particles_feature {
-    "particles", &GraphicsSettings::particles, true
+    GraphicsFeatureId::particles,
+    "particles",
+    &GraphicsSettings::particles,
+    true
   };
   inline constexpr GraphicsFeature vehicle_effects_feature {
-    "vehicle-effects", &GraphicsSettings::vehicle_effects, true
+    GraphicsFeatureId::vehicle_effects,
+    "vehicle-effects",
+    &GraphicsSettings::vehicle_effects,
+    true
   };
   inline constexpr GraphicsFeature star_effects_feature {
-    "star-effects", &GraphicsSettings::star_effects, true
+    GraphicsFeatureId::star_effects,
+    "star-effects",
+    &GraphicsSettings::star_effects,
+    true
   };
   inline constexpr GraphicsFeature motion_blur_feature {
-    "motion-blur", &GraphicsSettings::motion_blur, false
+    GraphicsFeatureId::motion_blur,
+    "motion-blur",
+    &GraphicsSettings::motion_blur,
+    false
   };
-  inline constexpr GraphicsFeature bloom_feature { "bloom",
-                                                   &GraphicsSettings::bloom,
-                                                   true };
+  inline constexpr GraphicsFeature bloom_feature {
+    GraphicsFeatureId::bloom, "bloom", &GraphicsSettings::bloom, true
+  };
   inline constexpr GraphicsFeature auto_exposure_feature {
-    "auto-exposure", &GraphicsSettings::auto_exposure, true
+    GraphicsFeatureId::auto_exposure,
+    "auto-exposure",
+    &GraphicsSettings::auto_exposure,
+    true
   };
   inline constexpr GraphicsFeature lens_flare_feature {
-    "lens-flare", &GraphicsSettings::lens_flare, true
+    GraphicsFeatureId::lens_flare,
+    "lens-flare",
+    &GraphicsSettings::lens_flare,
+    true
   };
   inline constexpr GraphicsFeature terrain_topology_feature {
-    "terrain-topology", &GraphicsSettings::terrain_topology, false
+    GraphicsFeatureId::terrain_topology,
+    "terrain-topology",
+    &GraphicsSettings::terrain_topology,
+    false
   };
 
   inline constexpr std::array<const GraphicsFeature*, 13> graphics_features {

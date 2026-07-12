@@ -121,6 +121,7 @@ namespace moppe {
 
       struct BenchmarkSample {
         uint32_t mask;
+        uint32_t partition_mask;
         uint32_t epoch;
         uint32_t frame;
         double gpu_ms;
@@ -2803,11 +2804,13 @@ namespace moppe {
       std::shared_ptr<BenchmarkOutput> benchmark =
         m_fp.benchmark_measured ? m_benchmark : nullptr;
       const uint32_t benchmark_mask = m_fp.benchmark_mask;
+      const uint32_t benchmark_partition_mask = m_fp.benchmark_partition_mask;
       const uint32_t benchmark_epoch = m_fp.benchmark_epoch;
       const uint32_t benchmark_frame = m_fp.benchmark_frame;
       [m_cmd addCompletedHandler:^(id<MTLCommandBuffer> command) {
         if (benchmark && command.GPUEndTime >= command.GPUStartTime) {
           const BenchmarkSample sample { benchmark_mask,
+                                         benchmark_partition_mask,
                                          benchmark_epoch,
                                          benchmark_frame,
                                          1000.0 * (command.GPUEndTime -
@@ -2971,13 +2974,14 @@ namespace moppe {
           return a.epoch == b.epoch ? a.frame < b.frame : a.epoch < b.epoch;
         });
       std::ofstream output (m_benchmark->path);
-      output << "epoch,mask,logical_frame,gpu_ms";
+      output << "epoch,mask,partition_mask,logical_frame,gpu_ms";
       for (const std::string& name : m_benchmark->feature_names)
         output << ',' << name;
       output << '\n';
       for (const BenchmarkSample& sample : samples) {
-        output << sample.epoch << ',' << sample.mask << ',' << sample.frame
-               << ',' << sample.gpu_ms;
+        output << sample.epoch << ',' << sample.mask << ','
+               << sample.partition_mask << ',' << sample.frame << ','
+               << sample.gpu_ms;
         for (std::size_t bit = 0; bit < m_benchmark->feature_names.size ();
              ++bit)
           output << ',' << ((sample.mask & (1u << bit)) ? 1 : 0);

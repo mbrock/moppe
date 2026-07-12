@@ -139,6 +139,8 @@ def initialize(connection):
     SELECT capture_id, point_index,
            min(timestamp_ns) AS timestamp_ns,
            max(value) FILTER (name='benchmark.mask')::UINTEGER AS mask,
+           max(value) FILTER (name='benchmark.partition_mask')::UINTEGER
+             AS partition_mask,
            max(value) FILTER (name='benchmark.epoch')::UINTEGER AS epoch,
            max(value) FILTER (name='benchmark.logical_frame')::UINTEGER
              AS logical_frame,
@@ -148,14 +150,14 @@ def initialize(connection):
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_gpu_zones AS
-    SELECT g.*, f.point_index AS frame_index, f.mask, f.epoch,
+    SELECT g.*, f.point_index AS frame_index, f.mask, f.partition_mask, f.epoch,
            f.logical_frame, f.measured
     FROM gpu_zones g ASOF JOIN benchmark_frame_coordinates f
       ON g.capture_id=f.capture_id AND g.start_ns >= f.timestamp_ns
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_cpu_zones AS
-    SELECT z.*, f.point_index AS frame_index, f.mask, f.epoch,
+    SELECT z.*, f.point_index AS frame_index, f.mask, f.partition_mask, f.epoch,
            f.logical_frame, f.measured
     FROM zones z ASOF JOIN benchmark_frame_coordinates f
       ON z.capture_id=f.capture_id
@@ -163,23 +165,26 @@ def initialize(connection):
   """)
   connection.execute("""
     CREATE OR REPLACE TABLE benchmark_features(bit, name) AS VALUES
-      (0, 'grass'), (1, 'ocean'), (2, 'particles'),
-      (3, 'vehicle-effects'), (4, 'star-effects'), (5, 'bloom'),
-      (6, 'auto-exposure'), (7, 'lens-flare')
+      (0, 'grass'), (1, 'ocean'), (2, 'bloom'),
+      (3, 'auto-exposure'), (4, 'small-effects')
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_gpu_frame_zones AS
-    SELECT capture_id, frame_index, mask, epoch, logical_frame, name,
+    SELECT capture_id, frame_index, mask, partition_mask, epoch,
+           logical_frame, name,
            sum(duration_ns) AS duration_ns, count(*) AS instances
     FROM benchmark_gpu_zones WHERE measured
-    GROUP BY capture_id, frame_index, mask, epoch, logical_frame, name
+    GROUP BY capture_id, frame_index, mask, partition_mask, epoch,
+             logical_frame, name
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_cpu_frame_zones AS
-    SELECT capture_id, frame_index, mask, epoch, logical_frame, name,
+    SELECT capture_id, frame_index, mask, partition_mask, epoch,
+           logical_frame, name,
            sum(duration_ns) AS duration_ns, count(*) AS instances
     FROM benchmark_cpu_zones WHERE measured
-    GROUP BY capture_id, frame_index, mask, epoch, logical_frame, name
+    GROUP BY capture_id, frame_index, mask, partition_mask, epoch,
+             logical_frame, name
   """)
   connection.execute("""
     CREATE OR REPLACE VIEW benchmark_zone_feature_effects AS
@@ -193,7 +198,7 @@ def initialize(connection):
       SELECT DISTINCT capture_id, domain, name FROM raw_zones
     ), all_zones AS (
       SELECT f.capture_id, n.domain, n.name, f.point_index AS frame_index,
-             f.mask, f.epoch, f.logical_frame,
+             f.mask, f.partition_mask, f.epoch, f.logical_frame,
              coalesce(z.duration_ns, 0) AS duration_ns,
              coalesce(z.instances, 0) AS instances
       FROM frames f JOIN names n USING (capture_id)
@@ -205,11 +210,12 @@ def initialize(connection):
              f.name AS feature,
              (on_zone.duration_ns-off.duration_ns) / 1000000.0 AS delta_ms
       FROM benchmark_features f
-      JOIN all_zones off ON (off.mask & (1 << f.bit))=0
+      JOIN all_zones off ON (off.partition_mask & (1 << f.bit))=0
       JOIN all_zones on_zone
         ON on_zone.capture_id=off.capture_id
        AND on_zone.domain=off.domain AND on_zone.name=off.name
-       AND on_zone.mask=(off.mask | (1 << f.bit))
+       AND on_zone.partition_mask=
+             (off.partition_mask | (1 << f.bit))
        AND on_zone.logical_frame=off.logical_frame
     )
     SELECT capture_id, domain, name, bit, feature,
@@ -307,7 +313,9 @@ def main():
       for row in csv.DictReader(stream):
         feature_values = {
             name: value for name, value in row.items()
-            if name not in {"epoch", "mask", "logical_frame", "gpu_ms"}
+            if name not in {
+                "epoch", "mask", "partition_mask", "logical_frame", "gpu_ms"
+            }
         }
         benchmark_rows.append((
             identity, int(row["epoch"]), int(row["mask"]),
