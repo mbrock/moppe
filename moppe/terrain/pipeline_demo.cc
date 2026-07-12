@@ -34,7 +34,7 @@ namespace {
     using namespace moppe::terrain;
     if (option == "world") {
       const GeologicalLayer layer = program.source.layer;
-      program = make_default_world_program (program.randomness.seed);
+      program = make_default_world_program (program.randomness.seed.value);
       program.source.layer = layer;
       return;
     }

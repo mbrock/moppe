@@ -1,6 +1,8 @@
 #ifndef MOPPE_TERRAIN_FIELD_HH
 #define MOPPE_TERRAIN_FIELD_HH
 
+#include <moppe/terrain/types.hh>
+
 #include <moppe/quantities.hh>
 
 #include <mp-units/framework.h>
@@ -56,13 +58,13 @@ namespace moppe::terrain {
     };
 
     struct PerlinNoise {
-      std::uint32_t seed;
+      Seed seed;
       NodePtr x;
       NodePtr y;
     };
 
     struct FbmNoise {
-      std::uint32_t seed;
+      Seed seed;
       NodePtr x;
       NodePtr y;
       int octaves;
@@ -71,7 +73,7 @@ namespace moppe::terrain {
     };
 
     struct RidgedNoise {
-      std::uint32_t seed;
+      Seed seed;
       NodePtr x;
       NodePtr y;
       int octaves;
@@ -80,7 +82,7 @@ namespace moppe::terrain {
     };
 
     struct PeriodicFbmNoise {
-      std::uint32_t seed;
+      Seed seed;
       NodePtr x;
       NodePtr y;
       int period_x;
@@ -91,7 +93,7 @@ namespace moppe::terrain {
     };
 
     struct PeriodicRidgedNoise {
-      std::uint32_t seed;
+      Seed seed;
       NodePtr x;
       NodePtr y;
       int period_x;
@@ -147,20 +149,20 @@ namespace moppe::terrain {
                             const ScalarField& addend);
   ScalarField smoothstep (float edge0, float edge1, const ScalarField& operand);
   ScalarField
-  perlin_noise (std::uint32_t seed, const ScalarField& x, const ScalarField& y);
-  ScalarField fbm_noise (std::uint32_t seed,
+  perlin_noise (Seed seed, const ScalarField& x, const ScalarField& y);
+  ScalarField fbm_noise (Seed seed,
                          const ScalarField& x,
                          const ScalarField& y,
                          int octaves,
                          float lacunarity,
                          float gain);
-  ScalarField ridged_noise (std::uint32_t seed,
+  ScalarField ridged_noise (Seed seed,
                             const ScalarField& x,
                             const ScalarField& y,
                             int octaves,
                             float lacunarity,
                             float gain);
-  ScalarField periodic_fbm_noise (std::uint32_t seed,
+  ScalarField periodic_fbm_noise (Seed seed,
                                   const ScalarField& x,
                                   const ScalarField& y,
                                   int period_x,
@@ -168,7 +170,7 @@ namespace moppe::terrain {
                                   int octaves,
                                   int lacunarity,
                                   float gain);
-  ScalarField periodic_ridged_noise (std::uint32_t seed,
+  ScalarField periodic_ridged_noise (Seed seed,
                                      const ScalarField& x,
                                      const ScalarField& y,
                                      int period_x,
@@ -362,22 +364,21 @@ namespace moppe::terrain {
 
   // Noise samples a lattice, so its inputs are domain coordinates and its
   // output is explicitly a procedural signal rather than generic scalar data.
-  NoiseField perlin_noise (std::uint32_t seed,
-                           const CoordinateField& x,
-                           const CoordinateField& y);
-  NoiseField fbm_noise (std::uint32_t seed,
+  NoiseField
+  perlin_noise (Seed seed, const CoordinateField& x, const CoordinateField& y);
+  NoiseField fbm_noise (Seed seed,
                         const CoordinateField& x,
                         const CoordinateField& y,
                         int octaves,
                         float lacunarity,
                         float gain);
-  NoiseField ridged_noise (std::uint32_t seed,
+  NoiseField ridged_noise (Seed seed,
                            const CoordinateField& x,
                            const CoordinateField& y,
                            int octaves,
                            float lacunarity,
                            float gain);
-  NoiseField periodic_fbm_noise (std::uint32_t seed,
+  NoiseField periodic_fbm_noise (Seed seed,
                                  const CoordinateField& x,
                                  const CoordinateField& y,
                                  int period_x,
@@ -385,7 +386,7 @@ namespace moppe::terrain {
                                  int octaves,
                                  int lacunarity,
                                  float gain);
-  NoiseField periodic_ridged_noise (std::uint32_t seed,
+  NoiseField periodic_ridged_noise (Seed seed,
                                     const CoordinateField& x,
                                     const CoordinateField& y,
                                     int period_x,

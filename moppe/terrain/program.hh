@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/geological.hh>
+#include <moppe/terrain/types.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -60,8 +61,8 @@ namespace moppe::terrain {
   // stages.  The offset preserves the historical sequence after the
   // geological source consumed its three component seeds.
   struct RandomSequence {
-    std::uint32_t seed;
-    std::uint64_t offset;
+    Seed seed;
+    SequenceOffset offset;
   };
 
   // A source is a value in its own right, rather than an implicit prelude to

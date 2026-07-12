@@ -87,8 +87,8 @@ namespace moppe::terrain::metal {
         return slot;
       };
 
-      const auto table_for = [&] (std::uint32_t seed) {
-        if (const auto found = table_offsets.find (seed);
+      const auto table_for = [&] (Seed seed) {
+        if (const auto found = table_offsets.find (seed.value);
             found != table_offsets.end ())
           return found->second;
         if (result.permutations.size () >
@@ -96,14 +96,15 @@ namespace moppe::terrain::metal {
           throw std::length_error ("too many scalar field noise tables");
         const auto offset =
           static_cast<std::uint32_t> (result.permutations.size ());
-        const PerlinPermutation permutation = make_perlin_permutation (seed);
+        const PerlinPermutation permutation =
+          make_perlin_permutation (seed.value);
         result.permutations.insert (
           result.permutations.end (), permutation.begin (), permutation.end ());
-        table_offsets.emplace (seed, offset);
+        table_offsets.emplace (seed.value, offset);
         return offset;
       };
 
-      const auto noise = [&] (std::uint32_t seed,
+      const auto noise = [&] (Seed seed,
                               int period_x,
                               int period_y,
                               int octaves,

@@ -9,7 +9,8 @@ namespace moppe::terrain {
                                           GeologicalLayer layer) {
     return { .source = { .recipe = make_geological_recipe (root_seed),
                          .layer = layer },
-             .randomness = { .seed = root_seed, .offset = 3 },
+             .randomness = { .seed = Seed { root_seed },
+                             .offset = SequenceOffset { 3 } },
              .transforms = { NormalizeHeights {} } };
   }
 

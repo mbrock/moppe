@@ -31,7 +31,9 @@ namespace moppe::terrain {
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed) {
     std::mt19937 rng (root_seed);
-    return { .base = rng (), .ridge = rng (), .warp = rng () };
+    return { .base = Seed { rng () },
+             .ridge = Seed { rng () },
+             .warp = Seed { rng () } };
   }
 
   GeologicalRecipe make_geological_recipe (std::uint32_t root_seed) {

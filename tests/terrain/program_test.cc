@@ -12,8 +12,8 @@ MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
     make_geological_program (123, GeologicalLayer::Mountains);
 
   MOPPE_CHECK (program.source.layer == GeologicalLayer::Mountains);
-  MOPPE_CHECK (program.randomness.seed == 123);
-  MOPPE_CHECK (program.randomness.offset == 3);
+  MOPPE_CHECK (program.randomness.seed == Seed { 123 });
+  MOPPE_CHECK (program.randomness.offset == SequenceOffset { 3 });
   MOPPE_CHECK (program.transforms.size () == 1);
   MOPPE_CHECK (
     std::holds_alternative<NormalizeHeights> (program.transforms[0]));

@@ -728,8 +728,8 @@ namespace moppe {
     }
 
     void TerrainLab::reset_program () {
-      m_program = terrain::make_geological_program (m_program.randomness.seed,
-                                                    m_program.source.layer);
+      m_program = terrain::make_geological_program (
+        m_program.randomness.seed.value, m_program.source.layer);
       m_selected_stage = -1;
       m_stage_scroll = 0;
       rebuild_program ();
@@ -2071,7 +2071,7 @@ namespace moppe {
     }
 
     void TerrainLab::apply_friendly_preset (int preset) {
-      const std::uint32_t seed = m_program.randomness.seed;
+      const std::uint32_t seed = m_program.randomness.seed.value;
       m_program = terrain::make_geological_program (seed);
       auto& recipe = m_program.source.recipe;
       if (preset == 0) {
@@ -2125,7 +2125,8 @@ namespace moppe {
         if (!friendly_action_rect (i, m_ui_height).contains (x, y))
           continue;
         if (i == 0) {
-          const std::uint32_t seed = m_program.randomness.seed + 1;
+          const std::uint32_t seed =
+            terrain::next_seed (m_program.randomness.seed).value;
           m_program = terrain::make_geological_program (seed);
           m_selected_stage = -1;
           m_friendly_preset = -1;
@@ -2192,9 +2193,12 @@ namespace moppe {
         return;
       }
       if (seed_rect ().contains (x, y)) {
-        const std::uint32_t seed = m_program.randomness.seed + 1;
-        m_program.source.recipe.seeds = terrain::derive_geological_seeds (seed);
-        m_program.randomness = { .seed = seed, .offset = 3 };
+        const terrain::Seed seed =
+          terrain::next_seed (m_program.randomness.seed);
+        m_program.source.recipe.seeds =
+          terrain::derive_geological_seeds (seed.value);
+        m_program.randomness = { .seed = seed,
+                                 .offset = terrain::SequenceOffset { 3 } };
         m_selected_stage = -1;
         rebuild_program ();
         return;
@@ -2473,10 +2477,11 @@ namespace moppe {
         reset_program ();
         break;
       case Key::N:
-        m_program.randomness.seed += 1;
+        m_program.randomness.seed =
+          terrain::next_seed (m_program.randomness.seed);
         m_program.source.recipe.seeds =
-          terrain::derive_geological_seeds (m_program.randomness.seed);
-        m_program.randomness.offset = 3;
+          terrain::derive_geological_seeds (m_program.randomness.seed.value);
+        m_program.randomness.offset = terrain::SequenceOffset { 3 };
         m_selected_stage = -1;
         rebuild_program ();
         break;
@@ -2832,7 +2837,7 @@ namespace moppe {
         dl, reset_rect (), "RESET", hot (reset_rect ()), m_pointer_down);
 
       std::ostringstream seed;
-      seed << "SEED " << m_program.randomness.seed << " >";
+      seed << "SEED " << m_program.randomness.seed.value << " >";
       m_ui.button (
         dl, seed_rect (), seed.str (), hot (seed_rect ()), m_pointer_down);
       m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()), m_pointer_down);

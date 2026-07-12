@@ -256,7 +256,9 @@ namespace moppe {
     void
     RandomHeightMap::randomize_geologically (terrain::GeologicalLayer layer) {
       terrain::GeologicalRecipe recipe;
-      recipe.seeds = { .base = m_rng (), .ridge = m_rng (), .warp = m_rng () };
+      recipe.seeds = { .base = terrain::Seed { m_rng () },
+                       .ridge = terrain::Seed { m_rng () },
+                       .warp = terrain::Seed { m_rng () } };
       const terrain::GeologicalFields fields =
         terrain::make_geological_fields (recipe);
       materialize (terrain::geological_layer (fields, layer));
