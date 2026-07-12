@@ -255,6 +255,33 @@ namespace moppe {
   // constructing a vector whose individual elements are quantities.
   using position_t = quantity<isq::position_vector[si::metre], Vec3>;
   using velocity_t = quantity<isq::velocity[si::metre / si::second], Vec3>;
+  using acceleration_t =
+    quantity<isq::acceleration[si::metre / pow<2> (si::second)], Vec3>;
+  using force_t = quantity<isq::force[si::newton], Vec3>;
+
+  inline position_t position (const Vec3& value) {
+    return value * isq::position_vector[si::metre];
+  }
+
+  inline velocity_t velocity (const Vec3& value) {
+    return value * isq::velocity[si::metre / si::second];
+  }
+
+  inline const Vec3& position_value (const position_t& value) {
+    return value.numerical_value_ref_in (si::metre);
+  }
+
+  inline Vec3& position_value (position_t& value) {
+    return value.numerical_value_ref_in (si::metre);
+  }
+
+  inline const Vec3& velocity_value (const velocity_t& value) {
+    return value.numerical_value_ref_in (si::metre / si::second);
+  }
+
+  inline Vec3& velocity_value (velocity_t& value) {
+    return value.numerical_value_ref_in (si::metre / si::second);
+  }
 }
 
 #endif

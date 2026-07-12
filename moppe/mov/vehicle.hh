@@ -22,8 +22,8 @@ namespace moppe {
     class Vehicle {
     public:
       struct State {
-        Vec3 position {};
-        Vec3 velocity {};
+        position_t position {};
+        velocity_t velocity {};
         Vec3 heading {};
         Vec3 thrust_orientation {};
         radians_t yaw {};
@@ -53,7 +53,7 @@ namespace moppe {
       // max_thrust caps the wheel force (launch punch); power caps
       // force * speed, so acceleration tapers like a real engine
       // instead of shoving at 3 g all the way to the horizon.
-      Vehicle (const Vec3& position,
+      Vehicle (position_t position,
                degrees_t orientation,
                const HeightMap& map,
                newtons_t max_thrust,
@@ -104,8 +104,8 @@ namespace moppe {
 
       // Respawn: back to a spot, stationary, jets cooled down
       void reset (const Vec3& position) {
-        m_position = position;
-        m_velocity = Vec3 ();
+        m_position = moppe::position (position);
+        m_velocity = moppe::velocity (Vec3 ());
         m_boost_input = 0;
         m_boost_drive = 0;
         m_boost_level = 0;
@@ -140,8 +140,9 @@ namespace moppe {
       // Sideways speed relative to where the bike points; big when
       // drifting, ~zero when rolling straight
       float drift_speed () const {
-        float vf = dot (m_velocity, m_heading);
-        return length (m_velocity - m_heading * vf);
+        const Vec3& v = velocity_value (m_velocity);
+        float vf = dot (v, m_heading);
+        return length (v - m_heading * vf);
       }
 
       // Downward speed of the last hard landing; reading it clears it
@@ -205,12 +206,18 @@ namespace moppe {
       }
 
       Vec3 position () const {
+        return position_value (m_position);
+      }
+      position_t physical_position () const {
         return m_position;
       }
       Vec3 orientation () const {
         return m_heading;
       }
       Vec3 velocity () const {
+        return velocity_value (m_velocity);
+      }
+      velocity_t physical_velocity () const {
         return m_velocity;
       }
 
@@ -232,19 +239,21 @@ namespace moppe {
       Vec3 ground_normal () const {
         if (roof_under ())
           return Vec3 (0, 1, 0);
-        return m_map.interpolated_normal (m_position[0], m_position[2]);
+        const Vec3& p = position_value (m_position);
+        return m_map.interpolated_normal (p[0], p[2]);
       }
 
       float ground_height () const {
         const Box* roof = roof_under ();
         if (roof)
           return roof->top;
-        return m_map.interpolated_height (m_position[0], m_position[2]);
+        const Vec3& p = position_value (m_position);
+        return m_map.interpolated_height (p[0], p[2]);
       }
 
     private:
-      Vec3 m_position;
-      Vec3 m_velocity;
+      position_t m_position;
+      velocity_t m_velocity;
       Vec3 m_heading;
       Vec3 m_thrust_orientation;
 

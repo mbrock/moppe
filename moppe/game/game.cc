@@ -255,13 +255,13 @@ namespace moppe {
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
             // 5000 N constant force topped out near 300).
-            m_vehicle (world.spawn_position (),
+            m_vehicle (position (world.spawn_position ()),
                        45 * u::deg,
                        m_map,
                        2600 * u::N,
                        30 * u::kW,
                        150 * u::kg),
-            m_car (world.spawn_position (),
+            m_car (position (world.spawn_position ()),
                    45 * u::deg,
                    m_map,
                    14 * u::kN,

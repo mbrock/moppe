@@ -20,13 +20,13 @@ namespace moppe {
     static const float boost_reserve_charge = 0.06f;
     static const float boost_emergency_level = 0.18f;
 
-    Vehicle::Vehicle (const Vec3& position,
+    Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
                       const HeightMap& map,
                       newtons_t max_thrust,
                       watts_t power,
                       kilograms_t mass)
-        : m_position (position), m_velocity (),
+        : m_position (position), m_velocity (moppe::velocity (Vec3 ())),
           m_heading (sin (orientation), 0, cos (orientation)),
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
           m_lean (0), m_render_heading (m_heading), m_render_normal (0, 1, 0),
@@ -102,7 +102,8 @@ namespace moppe {
 
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
-        Vec3 n = m_map.interpolated_normal (m_position[0], m_position[2]);
+        const Vec3& p = position_value (m_position);
+        Vec3 n = m_map.interpolated_normal (p[0], p[2]);
 
         // Keep the heading tangent to the ground; the heading itself
         // is steered explicitly, and grip drags the velocity along,
@@ -119,22 +120,25 @@ namespace moppe {
     }
 
     void Vehicle::fall_to_ground () {
-      m_position[1] = ground_height ();
+      position_value (m_position)[1] = ground_height ();
     }
 
     void Vehicle::check_ground_collision () {
-      m_position[1] = max (ground_height () + radius, m_position[1]);
+      Vec3& p = position_value (m_position);
+      p[1] = max (ground_height () + radius, p[1]);
     }
 
     bool Vehicle::is_grounded () const {
-      return std::abs (ground_height () - m_position[1]) < (radius + 0.1f);
+      return std::abs (ground_height () - position_value (m_position)[1]) <
+             (radius + 0.1f);
     }
 
     Vec3 Vehicle::drag () const {
       // Linear rolling drag plus quadratic air drag: terminal speed
       // lands near the speedometer's 300 km/h, and fall speeds stay
       // survivable
-      return m_velocity * -(0.05f + 0.0035f * length (m_velocity));
+      const Vec3& v = velocity_value (m_velocity);
+      return v * -(0.05f + 0.0035f * length (v));
     }
 
     // Grounded, or close enough that a micro-hop over a bump should
@@ -144,7 +148,7 @@ namespace moppe {
       if (is_grounded ())
         return true;
       return m_airborne_time < seconds (0.12f) &&
-             m_position[1] - ground_height () < radius + 0.6f;
+             position_value (m_position)[1] - ground_height () < radius + 0.6f;
     }
 
     // The obstacle box whose roof is the effective ground under the
@@ -155,13 +159,13 @@ namespace moppe {
         return 0;
 
       const Box* found = 0;
-      float best = m_map.interpolated_height (m_position[0], m_position[2]);
+      const Vec3& p = position_value (m_position);
+      float best = m_map.interpolated_height (p[0], p[2]);
 
       for (size_t i = 0; i < m_obstacles->size (); ++i) {
         const Box& b = (*m_obstacles)[i];
-        if (m_position[0] >= b.x0 && m_position[0] <= b.x1 &&
-            m_position[2] >= b.z0 && m_position[2] <= b.z1 &&
-            m_position[1] > b.top - 2 * radius && b.top > best) {
+        if (p[0] >= b.x0 && p[0] <= b.x1 && p[2] >= b.z0 && p[2] <= b.z1 &&
+            p[1] > b.top - 2 * radius && b.top > best) {
           best = b.top;
           found = &b;
         }
@@ -174,16 +178,18 @@ namespace moppe {
       if (!m_obstacles)
         return;
 
+      Vec3& p = position_value (m_position);
+      Vec3& v = velocity_value (m_velocity);
       for (size_t i = 0; i < m_obstacles->size (); ++i) {
         const Box& b = (*m_obstacles)[i];
 
-        if (m_position[1] - radius >= b.top - 0.05f)
+        if (p[1] - radius >= b.top - 0.05f)
           continue; // on or above the roof
 
-        const float dx0 = m_position[0] - (b.x0 - radius);
-        const float dx1 = (b.x1 + radius) - m_position[0];
-        const float dz0 = m_position[2] - (b.z0 - radius);
-        const float dz1 = (b.z1 + radius) - m_position[2];
+        const float dx0 = p[0] - (b.x0 - radius);
+        const float dx1 = (b.x1 + radius) - p[0];
+        const float dz0 = p[2] - (b.z0 - radius);
+        const float dz1 = (b.z1 + radius) - p[2];
 
         if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
           continue; // clear of this block
@@ -194,13 +200,13 @@ namespace moppe {
         const float pz = std::min (dz0, dz1);
 
         if (px < pz) {
-          m_position[0] = (dx0 < dx1) ? b.x0 - radius : b.x1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (m_velocity[0]));
-          m_velocity[0] *= -0.35f;
+          p[0] = (dx0 < dx1) ? b.x0 - radius : b.x1 + radius;
+          m_impact = std::max (m_impact, 0.4f * std::abs (v[0]));
+          v[0] *= -0.35f;
         } else {
-          m_position[2] = (dz0 < dz1) ? b.z0 - radius : b.z1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (m_velocity[2]));
-          m_velocity[2] *= -0.35f;
+          p[2] = (dz0 < dz1) ? b.z0 - radius : b.z1 + radius;
+          m_impact = std::max (m_impact, 0.4f * std::abs (v[2]));
+          v[2] *= -0.35f;
         }
       }
     }
@@ -213,7 +219,8 @@ namespace moppe {
       if (driving_contact ()) {
         // Full lock turns slower at speed: stable at 250 km/h,
         // nimble at walking pace
-        const float vf = std::abs (dot (m_velocity, m_heading));
+        const float vf =
+          std::abs (dot (velocity_value (m_velocity), m_heading));
         const float rate = steering_rate / (1.0f + vf / 70.0f);
         m_heading = Quaternion::rotate (
           m_heading, ground_normal (), -m_yaw * rate * dt_s);
@@ -229,6 +236,7 @@ namespace moppe {
     // speed, braking breaks traction outright, and an ongoing slide
     // keeps breathing instead of snapping straight.
     void Vehicle::apply_grip (seconds_t dt, const Vec3& n) {
+      Vec3& velocity = velocity_value (m_velocity);
       Vec3 fwd = m_heading - n * dot (m_heading, n);
       if (length2 (fwd) < 0.000001f)
         return;
@@ -237,9 +245,9 @@ namespace moppe {
       // Split velocity into forward, surface-normal, and in-plane
       // lateral parts; only the lateral part is gripped, so a launch
       // (normal component) survives the coyote-contact window
-      const float vf = dot (m_velocity, fwd);
-      const Vec3 vn = n * dot (m_velocity, n);
-      const Vec3 lat = m_velocity - fwd * vf - vn;
+      const float vf = dot (velocity, fwd);
+      const Vec3 vn = n * dot (velocity, n);
+      const Vec3 lat = velocity - fwd * vf - vn;
 
       const float steer_amt =
         std::min (1.0f, scalar_value (abs (m_yaw) / (0.8f * u::rad)));
@@ -256,7 +264,7 @@ namespace moppe {
       if (length2 (lat) > 16.0f)
         grip = std::min (grip, 2.0f / u::s); // mid-drift hysteresis
 
-      m_velocity = fwd * vf + vn + lat * decay (grip, dt);
+      velocity = fwd * vf + vn + lat * decay (grip, dt);
     }
 
     void Vehicle::update (seconds_t dt) {
@@ -318,7 +326,8 @@ namespace moppe {
       // tapering pull, a real top speed against drag.
       if (contact) {
         const speed_t vf =
-          std::abs (dot (m_velocity, m_thrust_orientation)) * (u::m / u::s);
+          std::abs (dot (velocity_value (m_velocity), m_thrust_orientation)) *
+          (u::m / u::s);
         const newtons_t force =
           std::min (m_max_thrust,
                     newtons_t (m_power / std::max (vf, 0.5f * (u::m / u::s))));
@@ -336,12 +345,13 @@ namespace moppe {
           a -= n * into_ground;
       }
 
-      m_velocity += a * dt_s;
+      Vec3& velocity = velocity_value (m_velocity);
+      velocity += a * dt_s;
 
       if (is_grounded ()) {
-        const float normal_speed = dot (m_velocity, n);
+        const float normal_speed = dot (velocity, n);
         if (dot (a, n) <= 0.001f || normal_speed < 0)
-          m_velocity -= n * normal_speed;
+          velocity -= n * normal_speed;
       }
       if (contact) {
         // Jets progressively unload the tires instead of turning grip
@@ -351,10 +361,10 @@ namespace moppe {
       }
 
       // Wading through the ocean is slow going
-      if (m_position[1] - radius < m_water_level)
+      if (position_value (m_position)[1] - radius < m_water_level)
         m_velocity *= decay (1.4f / u::s, dt);
 
-      m_position += m_velocity * dt_s;
+      m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
 
       bound ();
       check_ground_collision ();
@@ -366,28 +376,28 @@ namespace moppe {
       // descent was.
       if (is_grounded ()) {
         if (m_airborne_time > seconds (0.25f)) {
-          m_impact = std::max (0.0f, -dot (m_velocity, ground_normal ()));
+          m_impact = std::max (0.0f, -dot (velocity, ground_normal ()));
           // Boost-assisted landings are partly forgiven: the jets
           // flare on touchdown, or so the story goes.
           if (m_boost_flight)
             m_impact *= 0.75f;
           m_susp_v -= 0.10f * m_impact;
-          m_fall_drop = m_fall_top - m_position[1];
+          m_fall_drop = m_fall_top - position_value (m_position)[1];
         }
         if (m_boost_level <= 0)
           m_boost_flight = false;
         m_airborne_time = seconds (0);
-        m_fall_top = m_position[1];
+        m_fall_top = position_value (m_position)[1];
       } else {
         m_airborne_time += dt;
-        m_fall_top = std::max (m_fall_top, m_position[1]);
+        m_fall_top = std::max (m_fall_top, position_value (m_position)[1]);
       }
 
       // Lean into corners: balance the turn against gravity
       {
         float target = 0;
         if (driving_contact ()) {
-          const float vf = dot (m_velocity, m_heading);
+          const float vf = dot (velocity, m_heading);
           const float rate = steering_rate / (1.0f + std::abs (vf) / 70.0f);
           target = std::atan2 (vf * radians_value (-m_yaw) * rate, 9.82f);
           target = std::max (-0.7f, std::min (0.7f, target));
@@ -402,8 +412,8 @@ namespace moppe {
       Vec3 pose_forward = m_heading;
       Vec3 pose_up = ground_normal ();
       damping_t pose_rate = 10.0f / u::s;
-      if (airborne () && length2 (m_velocity) > 4.0f) {
-        pose_forward = normalized (m_velocity);
+      if (airborne () && length2 (velocity) > 4.0f) {
+        pose_forward = normalized (velocity);
         Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
         if (length2 (right) < 0.0001f)
           right = cross (m_render_normal, m_render_heading);
@@ -433,7 +443,7 @@ namespace moppe {
       // throttle-driven spin-up in the air.  ~0.68 m wheel radius as
       // drawn.  Kept in [0, 2pi) so precision survives long rides.
       {
-        float rate = dot (m_velocity, m_heading) / 0.68f;
+        float rate = dot (velocity, m_heading) / 0.68f;
         if (!contact && abs (m_thrust) > 0.1f)
           rate = scalar_value (40.0f * m_thrust);
         m_wheel_spin =
@@ -458,31 +468,33 @@ namespace moppe {
       const float max_x = (m_map.width () - 2) * m_map.scale ()[0] - margin;
       const float max_z = (m_map.height () - 2) * m_map.scale ()[2] - margin;
 
+      Vec3& position = position_value (m_position);
+      Vec3& velocity = velocity_value (m_velocity);
       float bounced = 0;
-      if (m_position[0] < margin) {
-        m_position[0] = margin;
-        if (m_velocity[0] < 0) {
-          bounced = -m_velocity[0];
-          m_velocity[0] *= -0.35f;
+      if (position[0] < margin) {
+        position[0] = margin;
+        if (velocity[0] < 0) {
+          bounced = -velocity[0];
+          velocity[0] *= -0.35f;
         }
-      } else if (m_position[0] > max_x) {
-        m_position[0] = max_x;
-        if (m_velocity[0] > 0) {
-          bounced = m_velocity[0];
-          m_velocity[0] *= -0.35f;
+      } else if (position[0] > max_x) {
+        position[0] = max_x;
+        if (velocity[0] > 0) {
+          bounced = velocity[0];
+          velocity[0] *= -0.35f;
         }
       }
-      if (m_position[2] < margin) {
-        m_position[2] = margin;
-        if (m_velocity[2] < 0) {
-          bounced = max (bounced, -m_velocity[2]);
-          m_velocity[2] *= -0.35f;
+      if (position[2] < margin) {
+        position[2] = margin;
+        if (velocity[2] < 0) {
+          bounced = max (bounced, -velocity[2]);
+          velocity[2] *= -0.35f;
         }
-      } else if (m_position[2] > max_z) {
-        m_position[2] = max_z;
-        if (m_velocity[2] > 0) {
-          bounced = max (bounced, m_velocity[2]);
-          m_velocity[2] *= -0.35f;
+      } else if (position[2] > max_z) {
+        position[2] = max_z;
+        if (velocity[2] > 0) {
+          bounced = max (bounced, velocity[2]);
+          velocity[2] *= -0.35f;
         }
       }
 
