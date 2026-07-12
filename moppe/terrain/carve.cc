@@ -201,7 +201,8 @@ namespace moppe::terrain {
         }
     }
 
-    ChannelCarvingReport report { .reaches = rivers.reaches.size () };
+    ChannelCarvingReport report { .reaches =
+                                    reach_count (rivers.reaches.size ()) };
     const double cell_area =
       static_cast<double> (square_meters_value (grid.cell_area ()));
     double total_lowering = 0.0;
@@ -221,8 +222,9 @@ namespace moppe::terrain {
                             mp_units::si::metre * mp_units::si::metre;
     report.maximum_lowering = maximum_lowering_m * mp_units::si::metre;
     if (report.carved_cells)
-      report.mean_lowering =
-        total_lowering / report.carved_cells * mp_units::si::metre;
+      report.mean_lowering = total_lowering /
+                             count_value (report.carved_cells) *
+                             mp_units::si::metre;
     return { .heights = std::move (carved), .report = report };
   }
 }

@@ -109,7 +109,7 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.bodies.size () == 1);
-  MOPPE_CHECK (census.bodies[0].cells == 1);
+  MOPPE_CHECK (census.bodies[0].cells == cell_count (1));
   MOPPE_CHECK_NEAR (
     moppe::square_meters_value (census.bodies[0].area), 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (

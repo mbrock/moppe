@@ -239,7 +239,7 @@ namespace moppe::terrain {
       const WaterBodyId id { static_cast<std::uint32_t> (
         census.bodies.size ()) };
       WaterBody body { .id = id,
-                       .cells = 0,
+                       .cells = cell_count (0),
                        .area = 0.0f * mp_units::si::metre * mp_units::si::metre,
                        .maximum_depth = 0.0f * mp_units::si::metre,
                        .mean_depth = 0.0f * mp_units::si::metre,

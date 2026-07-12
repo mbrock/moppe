@@ -86,16 +86,16 @@ int main (int argc, char** argv) {
       .erodibility = 2e-5f,
       .area_exponent = 0.4f,
       .sea_level = 50.0f / 650.0f,
-      .fixed_point_iterations = routing_passes,
+      .fixed_point_iterations = iteration_count (routing_passes),
       .relaxation = routing_passes > 1 ? 0.5f : 1.0f
     };
-    const HydraulicErosion hydraulic { .droplets = droplets,
-                                       .batch_size = 256,
-                                       .max_steps = 512,
+    const HydraulicErosion hydraulic { .droplets = droplet_count (droplets),
+                                       .batch_size = batch_size (256),
+                                       .max_steps = step_count (512),
                                        .minimum_water = 0.01f,
                                        .sediment_at_termination =
                                          SedimentDisposition::Deposit };
-    const ThermalErosion thermal { 2, 0.003f };
+    const ThermalErosion thermal { iteration_count (2), 0.003f };
     const std::vector<Mode> modes {
       { "source", {} },
       { "analytical", { analytical } },

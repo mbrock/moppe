@@ -42,9 +42,9 @@ namespace moppe::map {
                std::get_if<terrain::HydraulicErosion> (&transform))
       report = m_target.erode_hydraulically (
         m_randomness,
-        hydraulic->droplets,
-        hydraulic->batch_size,
-        hydraulic->max_steps,
+        terrain::count_value (hydraulic->droplets),
+        terrain::count_value (hydraulic->batch_size),
+        terrain::count_value (hydraulic->max_steps),
         hydraulic->minimum_water,
         hydraulic->sediment_at_termination,
         hydraulic->carving_rule,
@@ -67,7 +67,8 @@ namespace moppe::map {
       report = result.report;
     } else if (const auto* thermal =
                  std::get_if<terrain::ThermalErosion> (&transform))
-      m_target.erode_thermally (thermal->iterations, thermal->talus);
+      m_target.erode_thermally (terrain::count_value (thermal->iterations),
+                                thermal->talus);
     else if (const auto* carving =
                std::get_if<terrain::ChannelCarving> (&transform)) {
       terrain::ChannelCarvingResult result =

@@ -36,11 +36,11 @@ MOPPE_TEST (default_world_program_records_every_transform) {
     200000.0f,
     0.0f);
   MOPPE_CHECK (std::get<HydraulicErosion> (program.transforms[4]).droplets ==
-               500000);
+               droplet_count (500000));
   MOPPE_CHECK (std::get<HydraulicErosion> (program.transforms[4]).batch_size ==
-               256);
+               batch_size (256));
   MOPPE_CHECK (std::get<HydraulicErosion> (program.transforms[4]).max_steps ==
-               512);
+               step_count (512));
   MOPPE_CHECK_NEAR (
     std::get<HydraulicErosion> (program.transforms[4]).minimum_water,
     0.01f,
@@ -58,19 +58,19 @@ MOPPE_TEST (generation_profiles_only_change_the_erosion_budget) {
     make_world_program (123, TerrainGenerationProfile::Research);
 
   MOPPE_CHECK (std::get<HydraulicErosion> (fast.transforms[4]).droplets ==
-               100000);
+               droplet_count (100000));
   MOPPE_CHECK (std::get<HydraulicErosion> (play.transforms[4]).droplets ==
-               300000);
+               droplet_count (300000));
   MOPPE_CHECK (std::get<HydraulicErosion> (research.transforms[4]).droplets ==
-               500000);
+               droplet_count (500000));
   MOPPE_CHECK (
     std::get<AnalyticalErosion> (fast.transforms[2]).fixed_point_iterations ==
-    4);
+    iteration_count (4));
   MOPPE_CHECK (
     std::get<AnalyticalErosion> (play.transforms[2]).fixed_point_iterations ==
-    4);
+    iteration_count (4));
   MOPPE_CHECK (std::get<AnalyticalErosion> (research.transforms[2])
-                 .fixed_point_iterations == 4);
+                 .fixed_point_iterations == iteration_count (4));
   MOPPE_CHECK (profile_id (TerrainGenerationProfile::Fast) == "fast");
 }
 
@@ -90,17 +90,18 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
     EvaluationOrder::Reduction);
 
   MOPPE_CHECK (
-    terrain_transform_semantics (ThermalErosion { 1, 0.01f }).spatial_scope ==
-    SpatialScope::Neighborhood);
-  MOPPE_CHECK (terrain_transform_semantics (ThermalErosion { 1, 0.01f })
-                 .evaluation_order == EvaluationOrder::Iterative);
+    terrain_transform_semantics (ThermalErosion { iteration_count (1), 0.01f })
+      .spatial_scope == SpatialScope::Neighborhood);
+  MOPPE_CHECK (
+    terrain_transform_semantics (ThermalErosion { iteration_count (1), 0.01f })
+      .evaluation_order == EvaluationOrder::Iterative);
 
   MOPPE_CHECK (
-    terrain_transform_semantics (HydraulicErosion { 10 }).spatial_scope ==
-    SpatialScope::Global);
+    terrain_transform_semantics (HydraulicErosion { droplet_count (10) })
+      .spatial_scope == SpatialScope::Global);
   MOPPE_CHECK (
-    terrain_transform_semantics (HydraulicErosion { 10 }).evaluation_order ==
-    EvaluationOrder::Iterative);
+    terrain_transform_semantics (HydraulicErosion { droplet_count (10) })
+      .evaluation_order == EvaluationOrder::Iterative);
   MOPPE_CHECK (
     terrain_transform_semantics (AnalyticalErosion {}).spatial_scope ==
     SpatialScope::Global);
@@ -111,7 +112,7 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
 
 MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   TerrainProgram program = make_geological_program (123);
-  program.transforms.emplace_back (HydraulicErosion { -1 });
+  program.transforms.emplace_back (HydraulicErosion { droplet_count (-1) });
   bool threw = false;
   try {
     validate_program (program);
@@ -121,8 +122,8 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   MOPPE_CHECK (threw);
 
   program = make_geological_program (123);
-  program.transforms.emplace_back (
-    HydraulicErosion { .droplets = 10, .batch_size = 0 });
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = droplet_count (10), .batch_size = batch_size (0) });
   threw = false;
   try {
     validate_program (program);
@@ -133,7 +134,7 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
 
   program = make_geological_program (123);
   program.transforms.emplace_back (
-    HydraulicErosion { .droplets = 10, .minimum_water = 1.0f });
+    HydraulicErosion { .droplets = droplet_count (10), .minimum_water = 1.0f });
   threw = false;
   try {
     validate_program (program);

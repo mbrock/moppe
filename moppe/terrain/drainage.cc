@@ -482,7 +482,8 @@ namespace moppe::terrain {
             slope < waterfall_parameters.minimum_slope)
           continue;
         if (has_selected &&
-            i > last_candidate + waterfall_parameters.separation_cells)
+            i > last_candidate +
+                  count_value (waterfall_parameters.separation_cells))
           emit_selected ();
         last_candidate = i;
         const square_meters_t area = drainage.contributing_area.sample (

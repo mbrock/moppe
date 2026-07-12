@@ -39,8 +39,8 @@ MOPPE_TEST (carving_cuts_a_monotone_bed_along_the_trunk_river) {
     carve_channels (terrain, valley_parameters);
 
   MOPPE_CHECK (result.heights.size () == original.size ());
-  MOPPE_CHECK (result.report.reaches >= 1);
-  MOPPE_CHECK (result.report.carved_cells > 0);
+  MOPPE_CHECK (result.report.reaches >= reach_count (1));
+  MOPPE_CHECK (result.report.carved_cells > cell_count (0));
   MOPPE_CHECK (result.report.lowered_volume > 0.0);
 
   for (std::size_t i = 0; i < original.size (); ++i)

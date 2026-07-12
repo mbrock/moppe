@@ -90,9 +90,9 @@ int main (int argc, char** argv) {
       evaluator.restore (base);
       const Clock::time_point erosion_start = Clock::now ();
       const TerrainTransformReport result = evaluator.apply (HydraulicErosion {
-        .droplets = droplets,
-        .batch_size = batch_size,
-        .max_steps = max_steps,
+        .droplets = droplet_count (droplets),
+        .batch_size = terrain::batch_size (batch_size),
+        .max_steps = step_count (max_steps),
         .minimum_water = minimum_water,
         .sediment_at_termination =
           settle ? SedimentDisposition::Deposit : SedimentDisposition::Discard,

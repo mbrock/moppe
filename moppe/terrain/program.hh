@@ -20,8 +20,8 @@ namespace moppe::terrain {
 
   struct HydraulicErosion {
     DropletCount droplets;
-    BatchSize batch_size = 256;
-    StepCount max_steps = 64;
+    BatchSize batch_size = terrain::batch_size (256);
+    StepCount max_steps = step_count (64);
     float minimum_water = 0.0f;
     SedimentDisposition sediment_at_termination = SedimentDisposition::Discard;
     CarvingRule carving_rule = CarvingRule::PathMonotone;

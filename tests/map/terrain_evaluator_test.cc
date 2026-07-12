@@ -53,8 +53,9 @@ MOPPE_TEST (evaluator_replays_the_direct_generation_sequence) {
 
   TerrainProgram program = make_geological_program (123);
   program.transforms.emplace_back (PowerHeights { 1.15f });
-  program.transforms.emplace_back (HydraulicErosion { 200 });
-  program.transforms.emplace_back (ThermalErosion { 1, 0.003f });
+  program.transforms.emplace_back (HydraulicErosion { droplet_count (200) });
+  program.transforms.emplace_back (
+    ThermalErosion { iteration_count (1), 0.003f });
   map::RandomHeightMap replayed (65, 65, size, 999);
   evaluate (replayed, program);
 
@@ -66,7 +67,7 @@ MOPPE_TEST (evaluating_a_program_twice_is_deterministic) {
   using namespace moppe::terrain;
   const Vec3 size (1, 1, 1);
   TerrainProgram program = make_geological_program (77);
-  program.transforms.emplace_back (HydraulicErosion { 100 });
+  program.transforms.emplace_back (HydraulicErosion { droplet_count (100) });
   map::RandomHeightMap first (33, 33, size, 0);
   map::RandomHeightMap second (33, 33, size, 1);
 
@@ -81,9 +82,10 @@ MOPPE_TEST (evaluator_checkpoint_resume_matches_complete_replay) {
   const Vec3 size (100, 20, 100);
   TerrainProgram program = make_geological_program (77);
   program.transforms.emplace_back (PowerHeights { 1.15f });
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = droplet_count (257), .batch_size = batch_size (64) });
   program.transforms.emplace_back (
-    HydraulicErosion { .droplets = 257, .batch_size = 64 });
-  program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+    ThermalErosion { iteration_count (2), 0.003f });
   map::RandomHeightMap replayed (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap resumed (65, 65, size, 0, Topology::Torus);
 
@@ -92,7 +94,8 @@ MOPPE_TEST (evaluator_checkpoint_resume_matches_complete_replay) {
   evaluator.begin (program);
   evaluator.apply (program.transforms[0]);
   const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
-  evaluator.apply (HydraulicErosion { .droplets = 3, .batch_size = 1 });
+  evaluator.apply (HydraulicErosion { .droplets = droplet_count (3),
+                                      .batch_size = batch_size (1) });
   evaluator.restore (checkpoint);
   for (std::size_t i = 1; i < program.transforms.size (); ++i)
     evaluator.apply (program.transforms[i]);
@@ -107,8 +110,9 @@ MOPPE_TEST (periodic_program_preserves_height_and_normal_seams) {
   map::RandomHeightMap map (65, 33, size, 123, Topology::Torus);
   TerrainProgram program = make_geological_program (123);
   program.transforms.emplace_back (PowerHeights { 1.15f });
-  program.transforms.emplace_back (HydraulicErosion { 400 });
-  program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+  program.transforms.emplace_back (HydraulicErosion { droplet_count (400) });
+  program.transforms.emplace_back (
+    ThermalErosion { iteration_count (2), 0.003f });
   evaluate (map, program);
   map.recompute_normals ();
 
@@ -168,8 +172,8 @@ MOPPE_TEST (periodic_hydraulic_batches_are_deterministic) {
   using namespace moppe::terrain;
   const Vec3 size (100, 20, 100);
   TerrainProgram program = make_geological_program (987);
-  program.transforms.emplace_back (
-    HydraulicErosion { .droplets = 513, .batch_size = 64 });
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = droplet_count (513), .batch_size = batch_size (64) });
   map::RandomHeightMap first (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap second (65, 65, size, 1, Topology::Torus);
 
@@ -185,8 +189,8 @@ MOPPE_TEST (hydraulic_progress_reports_each_completed_batch) {
   using namespace moppe;
   using namespace moppe::terrain;
   TerrainProgram program = make_geological_program (123);
-  program.transforms.emplace_back (
-    HydraulicErosion { .droplets = 130, .batch_size = 64 });
+  program.transforms.emplace_back (HydraulicErosion {
+    .droplets = droplet_count (130), .batch_size = batch_size (64) });
   map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), 0, Topology::Torus);
   std::vector<int> completed;
   map::TerrainEvaluator evaluator (map);
@@ -209,7 +213,7 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   program.transforms.emplace_back (PowerHeights { 1.15f });
   program.transforms.emplace_back (AnalyticalErosion {
     .duration = 100000.0f * mp_units::astronomy::Julian_year,
-    .fixed_point_iterations = 2,
+    .fixed_point_iterations = iteration_count (2),
     .relaxation = 0.5f });
   map::RandomHeightMap first (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap second (65, 65, size, 1, Topology::Torus);
@@ -228,7 +232,7 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   MOPPE_CHECK (maps_match (first, second));
   const auto& report = std::get<AnalyticalErosionReport> (first_report);
   MOPPE_CHECK (report.lowered_volume > 0.0);
-  MOPPE_CHECK (report.fixed_point_iterations == 2);
+  MOPPE_CHECK (report.fixed_point_iterations == iteration_count (2));
   for (int i = 0; i < first.width (); ++i) {
     MOPPE_CHECK (first.get (i, 0) == first.get (i, first.height () - 1));
     MOPPE_CHECK (first.get (0, i) == first.get (first.width () - 1, i));
@@ -243,10 +247,11 @@ MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {
   using namespace moppe::terrain;
   const Vec3 size (100, 20, 100);
   TerrainProgram serial = make_geological_program (321);
-  serial.transforms.emplace_back (
-    HydraulicErosion { .droplets = 256, .batch_size = 1 });
+  serial.transforms.emplace_back (HydraulicErosion {
+    .droplets = droplet_count (256), .batch_size = batch_size (1) });
   TerrainProgram batched = serial;
-  std::get<HydraulicErosion> (batched.transforms.back ()).batch_size = 64;
+  std::get<HydraulicErosion> (batched.transforms.back ()).batch_size =
+    batch_size (64);
   map::RandomHeightMap one_at_a_time (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap sixty_four_at_a_time (65, 65, size, 0, Topology::Torus);
 
@@ -267,9 +272,9 @@ MOPPE_TEST (path_monotone_carving_is_an_explicit_recipe_choice) {
   const TerrainProgram source = make_geological_program (731);
   unconstrained.begin (source);
   monotone.begin (source);
-  const HydraulicErosion erosion { .droplets = 2000,
-                                   .batch_size = 64,
-                                   .max_steps = 128,
+  const HydraulicErosion erosion { .droplets = droplet_count (2000),
+                                   .batch_size = batch_size (64),
+                                   .max_steps = step_count (128),
                                    .carving_rule = CarvingRule::Unconstrained };
   const auto old_result = unconstrained.apply (erosion);
   HydraulicErosion constrained = erosion;
@@ -289,11 +294,13 @@ MOPPE_TEST (hydraulic_report_balances_the_sediment_ledger) {
   map::TerrainEvaluator evaluator (map);
   const TerrainProgram source = make_geological_program (912);
   evaluator.begin (source);
-  const TerrainTransformReport result = evaluator.apply (
-    HydraulicErosion { .droplets = 1000, .batch_size = 1, .max_steps = 64 });
+  const TerrainTransformReport result =
+    evaluator.apply (HydraulicErosion { .droplets = droplet_count (1000),
+                                        .batch_size = batch_size (1),
+                                        .max_steps = step_count (64) });
   const auto& report = std::get<HydraulicErosionReport> (result);
 
-  MOPPE_CHECK (report.droplets == 1000);
+  MOPPE_CHECK (report.droplets == event_count (1000));
   MOPPE_CHECK (report.stopped_flat + report.stopped_at_boundary +
                  report.stopped_at_step_limit ==
                report.droplets);
@@ -309,9 +316,12 @@ MOPPE_TEST (hydraulic_maximum_lifetime_is_part_of_the_recipe) {
   const Vec3 size (100, 20, 100);
   TerrainProgram short_lived = make_geological_program (654);
   short_lived.transforms.emplace_back (
-    HydraulicErosion { .droplets = 512, .batch_size = 1, .max_steps = 16 });
+    HydraulicErosion { .droplets = droplet_count (512),
+                       .batch_size = batch_size (1),
+                       .max_steps = step_count (16) });
   TerrainProgram long_lived = short_lived;
-  std::get<HydraulicErosion> (long_lived.transforms.back ()).max_steps = 128;
+  std::get<HydraulicErosion> (long_lived.transforms.back ()).max_steps =
+    step_count (128);
   map::RandomHeightMap short_map (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap long_map (65, 65, size, 0, Topology::Torus);
 
@@ -328,9 +338,9 @@ MOPPE_TEST (water_termination_can_settle_the_remaining_sediment) {
   map::TerrainEvaluator evaluator (map);
   evaluator.begin (make_geological_program (444));
   const auto result = evaluator.apply (HydraulicErosion {
-    .droplets = 1000,
-    .batch_size = 1,
-    .max_steps = 512,
+    .droplets = droplet_count (1000),
+    .batch_size = batch_size (1),
+    .max_steps = step_count (512),
     .minimum_water = 0.01f,
     .sediment_at_termination = SedimentDisposition::Deposit });
   const auto& report = std::get<HydraulicErosionReport> (result);
