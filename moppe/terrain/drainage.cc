@@ -77,7 +77,8 @@ namespace moppe::terrain {
       for (std::size_t x = 0; x < width; ++x) {
         const std::size_t cell = index (x, y);
         receiver[cell] = static_cast<std::uint32_t> (cell);
-        const meters_t elevation = terrain.elevation_at (x, y);
+        const meters_t elevation = terrain.elevation_at (grid_point (
+          static_cast<std::ptrdiff_t> (x), static_cast<std::ptrdiff_t> (y)));
         auto steepest = 0.0f * mp_units::one;
         for (const Offset offset : neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
@@ -90,7 +91,9 @@ namespace moppe::terrain {
                                           : static_cast<std::size_t> (raw_x);
           const std::size_t ny = periodic ? wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
-          const meters_t neighbor_elevation = terrain.elevation_at (nx, ny);
+          const meters_t neighbor_elevation = terrain.elevation_at (
+            grid_point (static_cast<std::ptrdiff_t> (nx),
+                        static_cast<std::ptrdiff_t> (ny)));
           const meters_t distance =
             std::hypot (offset.x * source_grid.spacing_x_m (),
                         offset.y * source_grid.spacing_y_m ()) *

@@ -40,12 +40,25 @@ namespace moppe::terrain {
       return m_heights[y * m_grid.width + x];
     }
 
+    float at (GridPointIndex index) const {
+      const auto [x, y] = m_grid.coordinates (index);
+      return m_heights[y * m_grid.width + x];
+    }
+
     auto relative_elevation_at (std::size_t x, std::size_t y) const {
       return at (x, y) * relative_elevation[mp_units::one];
     }
 
+    auto relative_elevation_at (GridPointIndex index) const {
+      return at (index) * relative_elevation[mp_units::one];
+    }
+
     meters_t elevation_at (std::size_t x, std::size_t y) const {
       return at (x, y) * m_grid.height_scale;
+    }
+
+    meters_t elevation_at (GridPointIndex index) const {
+      return at (index) * m_grid.height_scale;
     }
 
   private:

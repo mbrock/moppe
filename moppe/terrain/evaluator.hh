@@ -87,12 +87,17 @@ namespace moppe::terrain {
     mp_units::quantity<R, float> sample (std::size_t x, std::size_t y) const {
       return m_raster.sample (x, y);
     }
-    RecipePosition2D recipe_position (std::size_t x, std::size_t y) const {
-      return m_discretization.recipe_position (x, y);
+    mp_units::quantity<R, float> sample (GridPointIndex index) const {
+      (void)m_discretization.physical_position (index);
+      return m_raster.sample (
+        static_cast<std::size_t> (column_number (index.column)),
+        static_cast<std::size_t> (row_number (index.row)));
     }
-    HorizontalPosition2D physical_position (std::size_t x,
-                                            std::size_t y) const {
-      return m_discretization.physical_position (x, y);
+    RecipePosition2D recipe_position (GridPointIndex index) const {
+      return m_discretization.recipe_position (index);
+    }
+    HorizontalPosition2D physical_position (GridPointIndex index) const {
+      return m_discretization.physical_position (index);
     }
 
   private:
