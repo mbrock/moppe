@@ -24,6 +24,8 @@ namespace {
 
   static_assert (QuantityOf<moppe::position_t, isq::position_vector>);
   static_assert (QuantityOf<moppe::velocity_t, isq::velocity>);
+  static_assert (QuantityOf<moppe::acceleration_t, isq::acceleration>);
+  static_assert (QuantityOf<moppe::force_t, isq::force>);
 
   MOPPE_TEST (vector3d_is_a_vector_quantity_representation) {
     const quantity displacement = moppe::Vec3 (3, 4, 0) * isq::displacement[m];

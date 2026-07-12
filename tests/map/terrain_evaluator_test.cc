@@ -146,7 +146,7 @@ MOPPE_TEST (vehicle_coordinates_remain_unwrapped_on_the_torus) {
     9, 9, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
   map.randomize_geologically ();
   map.recompute_normals ();
-  mov::Vehicle vehicle (Vec3 (112.5f, 0, -7.5f),
+  mov::Vehicle vehicle (position (Vec3 (112.5f, 0, -7.5f)),
                         0 * u::deg,
                         map,
                         1000 * u::N,

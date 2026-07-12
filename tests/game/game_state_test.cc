@@ -13,6 +13,18 @@ namespace {
     MOPPE_CHECK_NEAR (actual[2], expected[2], 1e-6f);
   }
 
+  void check_position (const moppe::position_t& actual,
+                       const moppe::position_t& expected) {
+    check_vector (moppe::position_value (actual),
+                  moppe::position_value (expected));
+  }
+
+  void check_velocity (const moppe::velocity_t& actual,
+                       const moppe::velocity_t& expected) {
+    check_vector (moppe::velocity_value (actual),
+                  moppe::velocity_value (expected));
+  }
+
   void check_color (moppe::DisplayColor actual, moppe::DisplayColor expected) {
     MOPPE_CHECK_NEAR (actual.red, expected.red, 1e-6f);
     MOPPE_CHECK_NEAR (actual.green, expected.green, 1e-6f);
@@ -26,8 +38,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
     9, 9, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
   map.randomize_geologically ();
   map.recompute_normals ();
-  mov::Vehicle vehicle (
-    Vec3 (20, 0, 20), 15 * u::deg, map, 1000 * u::N, 10 * u::kW, 100 * u::kg);
+  mov::Vehicle vehicle (position (Vec3 (20, 0, 20)),
+                        15 * u::deg,
+                        map,
+                        1000 * u::N,
+                        10 * u::kW,
+                        100 * u::kg);
   vehicle.set_thrust (0.8f);
   vehicle.set_yaw (25 * u::deg);
   vehicle.set_boost (0.7f, 0.5f);
@@ -40,8 +56,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   vehicle.restore (saved);
   const mov::Vehicle::State restored = vehicle.state ();
 
-  check_vector (restored.position, saved.position);
-  check_vector (restored.velocity, saved.velocity);
+  static_assert (
+    std::is_same_v<decltype (vehicle.physical_position ()), position_t>);
+  static_assert (
+    std::is_same_v<decltype (vehicle.physical_velocity ()), velocity_t>);
+  check_position (restored.position, saved.position);
+  check_velocity (restored.velocity, saved.velocity);
   check_vector (restored.heading, saved.heading);
   check_vector (restored.thrust_orientation, saved.thrust_orientation);
   check_vector (restored.render_heading, saved.render_heading);
