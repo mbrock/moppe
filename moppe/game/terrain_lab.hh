@@ -38,6 +38,7 @@ namespace moppe {
                   const WorldParams& world,
                   const GraphicsSettings& graphics,
                   const terrain::TerrainProgram& program,
+                  const std::vector<std::vector<float>>& history,
                   const Vec3& sun_dir);
       void leave ();
 
@@ -131,6 +132,8 @@ namespace moppe {
       Vec3 droplet_world_position (float progress) const;
       float visible_droplet_pitch (const Vec3& droplet) const;
       void update_droplet_overlay (bool force = false);
+      void show_history_snapshot (std::size_t index);
+      std::string history_snapshot_name (std::size_t index) const;
 
       InspectorUi m_ui;
       render::Renderer* m_renderer;
@@ -142,6 +145,10 @@ namespace moppe {
       const GraphicsSettings* m_graphics;
       Vec3 m_sun_dir;
       std::vector<float> m_saved_heights;
+      const std::vector<std::vector<float>>* m_history;
+      std::size_t m_history_index;
+      float m_history_age;
+      bool m_history_playing;
 
       bool m_active;
       bool m_map_pristine;
