@@ -1,47 +1,37 @@
 #import <Cocoa/Cocoa.h>
-#import <MetalKit/MetalKit.h>
-#import <QuartzCore/QuartzCore.h>
 
 #include "atelier/atelier_renderer.hh"
 
 #include <memory>
 
-@interface AtelierRenderer : NSObject <MTKViewDelegate>
+@interface AtelierView : NSView
 @end
 
-@implementation AtelierRenderer {
+@implementation AtelierView {
   std::unique_ptr<atelier::Renderer> _renderer;
-  CFTimeInterval _started_at;
+  NSTimer* _timer;
 }
 
-- (instancetype)initWithView:(MTKView*)view {
-  self = [super init];
-  if (!self)
-    return nil;
-
-  _renderer =
-    std::make_unique<atelier::Renderer> ((__bridge MTL::Device*)view.device);
-  _started_at = CACurrentMediaTime ();
+- (instancetype)initWithFrame:(NSRect)frame {
+  self = [super initWithFrame:frame];
+  if (self) {
+    _renderer = std::make_unique<atelier::Renderer> ();
+    self.wantsLayer = YES;
+    self.layer = (__bridge CALayer*)_renderer->native_layer ();
+    _timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
+                                              target:self
+                                            selector:@selector (drawFrame:)
+                                            userInfo:nil
+                                             repeats:YES];
+  }
   return self;
 }
 
-- (void)drawInMTKView:(MTKView*)view {
-  id<CAMetalDrawable> drawable = view.currentDrawable;
-  MTLRenderPassDescriptor* pass = view.currentRenderPassDescriptor;
-  if (!drawable || !pass)
-    return;
-
-  const CGSize size = view.drawableSize;
-  const float aspect = static_cast<float> (size.width / size.height);
-  _renderer->draw ((__bridge MTL::RenderPassDescriptor*)pass,
-                   (__bridge CA::MetalDrawable*)drawable,
-                   static_cast<float> (CACurrentMediaTime () - _started_at),
-                   aspect);
-}
-
-- (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
-  (void)view;
-  (void)size;
+- (void)drawFrame:(NSTimer*)timer {
+  (void)timer;
+  const NSRect pixels = [self convertRectToBacking:self.bounds];
+  _renderer->resize (pixels.size.width, pixels.size.height);
+  _renderer->draw ();
 }
 
 @end
@@ -51,17 +41,10 @@
 
 @implementation AtelierApplication {
   NSWindow* _window;
-  AtelierRenderer* _renderer;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
   (void)notification;
-  id<MTLDevice> device = MTLCreateSystemDefaultDevice ();
-  if (!device)
-    @throw [NSException exceptionWithName:@"AtelierMetalError"
-                                   reason:@"Metal is unavailable"
-                                 userInfo:nil];
-
   const NSRect frame = NSMakeRect (0, 0, 900, 650);
   _window = [[NSWindow alloc]
     initWithContentRect:frame
@@ -71,16 +54,8 @@
                 backing:NSBackingStoreBuffered
                   defer:NO];
   _window.title = @"Atelier";
+  _window.contentView = [[AtelierView alloc] initWithFrame:frame];
   [_window center];
-
-  MTKView* view = [[MTKView alloc] initWithFrame:frame device:device];
-  view.colorPixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
-  view.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
-  view.clearColor = MTLClearColorMake (0.025, 0.032, 0.05, 1);
-  view.preferredFramesPerSecond = 60;
-  _renderer = [[AtelierRenderer alloc] initWithView:view];
-  view.delegate = _renderer;
-  _window.contentView = view;
   [_window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
 }
