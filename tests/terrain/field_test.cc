@@ -1,3 +1,4 @@
+#include <moppe/terrain/cpu_evaluator.hh>
 #include <moppe/terrain/field.hh>
 
 #include <tests/test.hh>
@@ -59,13 +60,23 @@ namespace {
 
   // Noise demands coordinates, not arbitrary samples.
   static_assert (!noise_coordinate<DimensionlessField>);
+  static_assert (!noise_coordinate<NoiseField>);
   static_assert (noise_coordinate<CoordinateField>);
+
+  static_assert (!addable<NoiseField, CoordinateField>);
+  static_assert (std::same_as<decltype (std::declval<CoordinateField> () *
+                                        std::declval<NoiseField> ()),
+                              CoordinateField>);
+  static_assert (
+    std::same_as<decltype (std::declval<RelativeElevationField> () *
+                           std::declval<ProportionField> ()),
+                 RelativeElevationField>);
 }
 
 MOPPE_TEST (typed_fields_share_the_untyped_dag) {
   const CoordinateField u = coordinate_u ();
   const CoordinateField shifted = u * 3.0f + 0.25f;
-  const DimensionlessField noise = perlin_noise (7u, shifted, coordinate_v ());
+  const NoiseField noise = perlin_noise (7u, shifted, coordinate_v ());
 
   // The phantom kind adds no nodes: the DAG below is the same
   // expression the untyped combinators would have built.
@@ -76,6 +87,23 @@ MOPPE_TEST (typed_fields_share_the_untyped_dag) {
   // field_cast crosses kinds without touching the DAG.
   const CoordinateField as_offset = field_cast<recipe_coordinate> (noise);
   MOPPE_CHECK (as_offset.node () == noise.node ());
+}
+
+MOPPE_TEST (typed_materialization_preserves_meaning_until_normalization) {
+  const RelativeElevationField relief = field_cast<relative_elevation> (
+    perlin_noise (9u, coordinate_u (), coordinate_v ()));
+  const RelativeElevationRaster raster =
+    materialize (CpuEvaluator (), relief, { .width = 4, .height = 3 });
+
+  static_assert (
+    mp_units::QuantityOf<decltype (raster.sample (0, 0)), relative_elevation>);
+  MOPPE_CHECK (raster.values ().size () == 12);
+
+  const NormalizedRaster normalized = normalize (raster);
+  static_assert (mp_units::QuantityOf<decltype (normalized.sample (0, 0)),
+                                      normalized_sample>);
+  MOPPE_CHECK (normalized.untyped ().min_value () == 0.0f);
+  MOPPE_CHECK (normalized.untyped ().max_value () == 1.0f);
 }
 
 MOPPE_TEST (reused_fields_form_a_dag) {
