@@ -55,7 +55,8 @@ namespace moppe {
       void render (render::Renderer& r,
                    const FrameEnv& env,
                    bool draw_vegetation,
-                   float grass_density);
+                   float grass_density,
+                   const Vector3D& grass_scale = Vector3D (1, 1, 1));
 
     private:
       static const int STRUCTURE_GRID = 6;

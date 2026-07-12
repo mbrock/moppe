@@ -2096,6 +2096,8 @@ namespace moppe {
       u.limits.w = (float)params.blades_per_cell;
       u.mesh.x = (float)patches_x;
       u.mesh.y = (float)patches_z;
+      u.mesh.z = params.horizontal_scale;
+      u.mesh.w = params.vertical_scale;
 
       id<MTLRenderCommandEncoder> enc = scene_encoder ();
       begin_gpu_pass (enc, GpuPass::Grass);

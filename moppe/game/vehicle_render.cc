@@ -251,7 +251,7 @@ namespace moppe {
 
       // The vehicle's model-to-world matrix, shared by render_vehicle's
       // matrix stack and the late flame pass so the two cannot drift.
-      Mat4 vehicle_frame (const mov::Vehicle& v, float visual_scale) {
+      Mat4 vehicle_frame (const mov::Vehicle& v, const Vector3D& visual_scale) {
         const Vector3D pos = v.position ();
         const Vector3D fwd = v.render_orientation ().normalized ();
         const Vector3D right = v.render_normal ().cross (fwd).normalized ();
@@ -269,8 +269,7 @@ namespace moppe {
                Mat4::rotation (v.lean (), Vector3D (0, 0, 1)) *
                Mat4::translation (Vector3D (0, 0.5f, 0)) *
                Mat4::translation (contact_pivot) *
-               Mat4::scaling (
-                 Vector3D (visual_scale, visual_scale, visual_scale)) *
+               Mat4::scaling (visual_scale) *
                Mat4::translation (contact_pivot * -1.0f) *
                Mat4::scaling (Vector3D (1.5f, 1.5f, 1.5f));
       }
@@ -350,7 +349,7 @@ namespace moppe {
                          render::DrawList& dl,
                          const mov::Vehicle& v,
                          float time,
-                         float visual_scale) {
+                         const Vector3D& visual_scale) {
       dl.push ();
       dl.mult (vehicle_frame (v, visual_scale));
 
@@ -438,7 +437,7 @@ namespace moppe {
     void render_vehicle_flames (render::Renderer& r,
                                 const mov::Vehicle& v,
                                 float time,
-                                float visual_scale) {
+                                const Vector3D& visual_scale) {
       const bool bike = (v.body_kind () == 0);
       const float thrust = std::abs (v.thrust ());
       const bool exhaust = bike && thrust > 0.1f;

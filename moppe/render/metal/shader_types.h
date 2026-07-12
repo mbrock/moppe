@@ -137,7 +137,7 @@ struct MoppeGrassUniforms {
   MoppeFloat4 terrain; // xyz=terrain scale, w=radius
   MoppeFloat4 limits;  // x=sea norm, y=max height norm, z=periodic
                        // w=blades per cell
-  MoppeFloat4 mesh;    // xy=patch grid dimensions (mesh path)
+  MoppeFloat4 mesh;    // xy=patch grid dimensions, zw=blade horizontal/vertical
 };
 
 struct MoppeDustEmission {

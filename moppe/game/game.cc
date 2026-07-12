@@ -1006,20 +1006,25 @@ namespace moppe {
           // terrain bumps don't rattle the eyeballs.
           Vector3D eye, look;
           if (m_mode == M_FOOT) {
-            eye = m_walker.position () + Vector3D (0, 1.55f, 0);
+            eye = m_walker.position () +
+                  Vector3D (0, 1.55f / m_landscape_scale_y, 0);
             look = m_walker.heading ();
           } else {
-            eye = av.position () + Vector3D (0, 0.95f, 0) +
-                  av.orientation () * 0.4f;
+            eye = av.position () +
+                  Vector3D (0, 0.95f / m_landscape_scale_y, 0) +
+                  av.orientation () * (0.4f / m_landscape_scale_x);
             look = av.orientation ();
           }
           m_fp_eye =
             m_fp_eye + (eye - m_fp_eye) * (1.0f - std::exp (-25.0f * dt));
           m_camera.place (m_fp_eye, m_fp_eye + look * 10.0f);
         } else {
+          m_camera.set_landscape_scale (m_landscape_scale_x,
+                                        m_landscape_scale_y);
           const float flip = (m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
           if (m_mode == M_FOOT)
-            m_camera.update (m_walker.position () + Vector3D (0, 1, 0),
+            m_camera.update (m_walker.position () +
+                               Vector3D (0, 1.0f / m_landscape_scale_y, 0),
                              m_walker.heading () * flip,
                              Vector3D (),
                              dt);
@@ -1083,11 +1088,14 @@ namespace moppe {
         const bool terrain_lab = m_terrain_lab.active ();
         const float fov =
           terrain_lab || m_water_inspection ? 70.0f : 100.0f + 9.0f * m_fov_k;
-        fp.proj =
-          Mat4::perspective_reversed (degrees_to_radians (fov),
-                                      aspect,
-                                      0.5f,
-                                      m_world.pico_mode ? 30000.0f : 9000.0f);
+        fp.proj = Mat4::perspective_reversed (
+          degrees_to_radians (fov),
+          aspect,
+          std::clamp (0.5f /
+                        std::max (m_landscape_scale_x, m_landscape_scale_y),
+                      0.02f,
+                      0.5f),
+          m_world.pico_mode ? 30000.0f : 9000.0f);
 
         // Hard landings produce a brief continuous vibration. Randomizing the
         // rotations each frame looked like violent camera teleportation.
@@ -1251,7 +1259,8 @@ namespace moppe {
                                  env,
                                  m_graphics.vegetation,
                                  m_graphics.grass ? m_graphics.grass_density
-                                                  : 0.0f);
+                                                  : 0.0f,
+                                 landscape_visual_scale ());
 
           // Soft blob shadows under the movers.
           m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
@@ -1266,13 +1275,17 @@ namespace moppe {
           // In helmet cam you ARE the rider: don't draw yourself.
           const bool helmet = (m_cam_mode == CAM_HELMET);
           if (!(helmet && m_mode == M_BIKE))
-            render_vehicle (
-              r, m_world_dl, m_vehicle, m_total_time, 1.0f / m_landscape_scale);
+            render_vehicle (r,
+                            m_world_dl,
+                            m_vehicle,
+                            m_total_time,
+                            landscape_visual_scale ());
           if (m_car_exists && !(helmet && m_mode == M_CAR))
             render_vehicle (
-              r, m_world_dl, m_car, m_total_time, 1.0f / m_landscape_scale);
+              r, m_world_dl, m_car, m_total_time, landscape_visual_scale ());
           if (m_mode == M_FOOT && !helmet)
-            m_walker.render (m_world_dl, m_total_time);
+            m_walker.render (
+              m_world_dl, m_total_time, landscape_visual_scale ());
 
           r.draw_list (m_world_dl);
 
@@ -1281,11 +1294,11 @@ namespace moppe {
           // the star pickups' halos.
           if (m_graphics.vehicle_effects && !(helmet && m_mode == M_BIKE))
             render_vehicle_flames (
-              r, m_vehicle, m_total_time, 1.0f / m_landscape_scale);
+              r, m_vehicle, m_total_time, landscape_visual_scale ());
           if (m_graphics.vehicle_effects && m_car_exists &&
               !(helmet && m_mode == M_CAR))
             render_vehicle_flames (
-              r, m_car, m_total_time, 1.0f / m_landscape_scale);
+              r, m_car, m_total_time, landscape_visual_scale ());
           if (m_graphics.star_effects)
             m_stars.render (r, env);
         }
@@ -1371,11 +1384,17 @@ namespace moppe {
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
           if (m_game_ui_open) {
             m_game_ui_slider_x = std::max (44.0f, hud_width - 364.0f);
-            const UiRect panel { m_game_ui_slider_x - 20, 24, 360, 150 };
-            const UiRect slider { m_game_ui_slider_x, 82, 320, 64 };
-            std::ostringstream label;
-            label << "LANDSCAPE SCALE  " << std::fixed << std::setprecision (2)
-                  << m_landscape_scale << 'x';
+            const UiRect panel { m_game_ui_slider_x - 20, 24, 360, 224 };
+            const UiRect horizontal { m_game_ui_slider_x, 82, 320, 64 };
+            const UiRect vertical { m_game_ui_slider_x, 156, 320, 64 };
+            std::ostringstream horizontal_label;
+            horizontal_label << "LANDSCAPE WIDTH  " << std::fixed
+                             << std::setprecision (2) << m_landscape_scale_x
+                             << 'x';
+            std::ostringstream vertical_label;
+            vertical_label << "LANDSCAPE HEIGHT  " << std::fixed
+                           << std::setprecision (2) << m_landscape_scale_y
+                           << 'x';
             m_game_ui.begin (m_hud_dl);
             m_game_ui.panel (m_hud_dl,
                              panel.x,
@@ -1385,13 +1404,22 @@ namespace moppe {
                              "WORLD FEEL");
             m_game_ui.friendly_slider (
               m_hud_dl,
-              slider,
-              label.str (),
+              horizontal,
+              horizontal_label.str (),
               "SMALLER",
               "LARGER",
-              landscape_scale_normalized (),
-              slider.contains (m_pointer_x, m_pointer_y),
-              m_game_ui_dragging);
+              landscape_scale_normalized (m_landscape_scale_x),
+              horizontal.contains (m_pointer_x, m_pointer_y),
+              m_game_ui_dragging_axis == 1);
+            m_game_ui.friendly_slider (
+              m_hud_dl,
+              vertical,
+              vertical_label.str (),
+              "LOWER",
+              "TALLER",
+              landscape_scale_normalized (m_landscape_scale_y),
+              vertical.contains (m_pointer_x, m_pointer_y),
+              m_game_ui_dragging_axis == 2);
             m_game_ui.end (m_hud_dl);
           }
         }
@@ -1706,8 +1734,8 @@ namespace moppe {
       void pointer_move (float x, float y, float dx, float dy) override {
         m_pointer_x = x;
         m_pointer_y = y;
-        if (m_game_ui_dragging)
-          set_landscape_scale_from_pointer (x);
+        if (m_game_ui_dragging_axis)
+          set_landscape_scale_from_pointer (x, m_game_ui_dragging_axis);
         else if (m_terrain_lab.active ())
           m_terrain_lab.pointer_move (x, y, dx, dy);
       }
@@ -1717,12 +1745,16 @@ namespace moppe {
                            float x,
                            float y) override {
         if (m_game_ui_open && button == platform::PointerButton::Primary) {
-          const UiRect slider { m_game_ui_slider_x, 82, 320, 64 };
-          if (down && slider.contains (x, y)) {
-            m_game_ui_dragging = true;
-            set_landscape_scale_from_pointer (x);
+          const UiRect horizontal { m_game_ui_slider_x, 82, 320, 64 };
+          const UiRect vertical { m_game_ui_slider_x, 156, 320, 64 };
+          if (down && horizontal.contains (x, y)) {
+            m_game_ui_dragging_axis = 1;
+            set_landscape_scale_from_pointer (x, 1);
+          } else if (down && vertical.contains (x, y)) {
+            m_game_ui_dragging_axis = 2;
+            set_landscape_scale_from_pointer (x, 2);
           } else if (!down) {
-            m_game_ui_dragging = false;
+            m_game_ui_dragging_axis = 0;
           }
           return;
         }
@@ -1772,7 +1804,7 @@ namespace moppe {
 
         if (k == Key::M && down && m_ready) {
           m_game_ui_open = !m_game_ui_open;
-          m_game_ui_dragging = false;
+          m_game_ui_dragging_axis = 0;
           return;
         }
 
@@ -1839,14 +1871,24 @@ namespace moppe {
       }
 
     private:
-      float landscape_scale_normalized () const {
-        return std::log (m_landscape_scale / 0.05f) / std::log (400.0f);
+      float landscape_scale_normalized (float scale) const {
+        return std::log (scale / 0.05f) / std::log (400.0f);
       }
 
-      void set_landscape_scale_from_pointer (float x) {
+      void set_landscape_scale_from_pointer (float x, int axis) {
         const float normalized =
           std::clamp ((x - m_game_ui_slider_x) / 320.0f, 0.0f, 1.0f);
-        m_landscape_scale = 0.05f * std::pow (400.0f, normalized);
+        const float scale = 0.05f * std::pow (400.0f, normalized);
+        if (axis == 1)
+          m_landscape_scale_x = scale;
+        else
+          m_landscape_scale_y = scale;
+      }
+
+      Vector3D landscape_visual_scale () const {
+        return Vector3D (1.0f / m_landscape_scale_x,
+                         1.0f / m_landscape_scale_y,
+                         1.0f / m_landscape_scale_x);
       }
 
       void update_benchmark_title () const {
@@ -2061,8 +2103,9 @@ namespace moppe {
       Hud m_hud;
       InspectorUi m_game_ui;
       bool m_game_ui_open = false;
-      bool m_game_ui_dragging = false;
-      float m_landscape_scale = 1.0f;
+      int m_game_ui_dragging_axis = 0;
+      float m_landscape_scale_x = 1.0f;
+      float m_landscape_scale_y = 1.0f;
       float m_game_ui_slider_x = 44.0f;
       float m_pointer_x = -1.0f;
       float m_pointer_y = -1.0f;

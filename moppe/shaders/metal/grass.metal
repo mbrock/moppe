@@ -121,7 +121,8 @@ static GrassBlade grass_blade (uint world_cell_x,
           terrain_height < grass.limits.y;
   if (valid && b.distance > 12.0) {
     const float4 clip =
-      frame.view_proj * float4 (b.root + float3 (0.0, 0.6, 0.0), 1.0);
+      frame.view_proj *
+      float4 (b.root + float3 (0.0, 0.6 * grass.mesh.w, 0.0), 1.0);
     const float margin = 1.30 * clip.w + 4.0;
     valid = clip.w > 0.0 && abs (clip.x) < margin && abs (clip.y) < margin;
   }
@@ -161,11 +162,12 @@ static GrassBlade grass_blade (uint world_cell_x,
     saturate (0.85 * (1.0 - moisture) + 0.20 * grass_random (seed + 5u) +
               0.10 * patch - 0.10);
   b.height =
-    mix (0.32, 0.88, grass_random (seed + 6u)) * mix (0.72, 1.27, patch) *
-    mix (0.62, 1.30, moisture) *
+    grass.mesh.w * mix (0.32, 0.88, grass_random (seed + 6u)) *
+    mix (0.72, 1.27, patch) * mix (0.62, 1.30, moisture) *
     (1.0 - smoothstep (0.88 * grass.terrain.w, grass.terrain.w, b.distance));
-  b.bend = b.height * mix (0.06, 0.34, grass_random (seed + 7u));
-  b.half_width = mix (0.016, 0.036, grass_random (seed + 8u));
+  b.bend = grass.mesh.z * b.height / grass.mesh.w *
+           mix (0.06, 0.34, grass_random (seed + 7u));
+  b.half_width = grass.mesh.z * mix (0.016, 0.036, grass_random (seed + 8u));
   b.sway = mix (0.45, 0.90, grass_random (seed + 10u));
 
   const float3 young (0.24, 0.43, 0.10);
@@ -317,7 +319,8 @@ using GrassMesh = metal::mesh<GrassVaryings,
                        patch_z * GRASS_PATCH_Z + 0.5 * GRASS_PATCH_Z);
     const float2 world_xz = center_cell * grass.grid.z;
     const float patch_radius =
-      0.5 * grass.grid.z * length (float2 (GRASS_PATCH_X, GRASS_PATCH_Z)) + 1.6;
+      0.5 * grass.grid.z * length (float2 (GRASS_PATCH_X, GRASS_PATCH_Z)) +
+      1.6 * max (grass.mesh.z, grass.mesh.w);
 
     const float distance = length (world_xz - frame.camera_pos.xz);
     valid = distance < grass.terrain.w + patch_radius;
@@ -335,9 +338,11 @@ using GrassMesh = metal::mesh<GrassVaryings,
         height > grass.limits.x - slack && height < grass.limits.y + slack;
 
       if (valid && distance > 12.0) {
-        const float4 clip =
-          frame.view_proj *
-          float4 (world_xz.x, height * grass.terrain.y + 0.6, world_xz.y, 1.0);
+        const float4 clip = frame.view_proj * float4 (world_xz.x,
+                                                      height * grass.terrain.y +
+                                                        0.6 * grass.mesh.w,
+                                                      world_xz.y,
+                                                      1.0);
         const float margin = 1.30 * clip.w + 4.0 * patch_radius;
         valid = clip.w > 0.0 && abs (clip.x) < margin && abs (clip.y) < margin;
       }
