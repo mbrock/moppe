@@ -147,8 +147,8 @@ int main (int argc, char** argv) {
       const LakeCensus census = census_lakes (flood);
       const DrainageGraph wet =
         analyze_wet_drainage (map.terrain_view (), flood, census);
-      const RiverNetwork rivers =
-        extract_river_network (flood, census, wet, 1024.0f * cell_area);
+      const RiverNetwork rivers = extract_river_network (
+        flood, census, wet, 1024.0f * drainage.source_grid.cell_area ());
       int puddles = 0, ponds = 0, lakes = 0;
       double water = 0.0;
       for (const WaterBody& body : census.bodies) {
@@ -166,12 +166,13 @@ int main (int argc, char** argv) {
                 << ',' << stream_cells << ',' << maximum_area / cell_area << ','
                 << longest_path (drainage) << ',' << puddles << ',' << ponds
                 << ',' << lakes << ',' << rivers.waterfalls.size () << ','
-                << water << ',' << analytical_report.lowered_volume_m3 << ','
-                << analytical_report.raised_volume_m3 << ','
-                << analytical_report.mean_absolute_change_m << ','
-                << analytical_report.maximum_absolute_change_m << ','
-                << hydraulic_report.eroded << ',' << hydraulic_report.deposited
-                << '\n';
+                << water << ','
+                << cubic_meters_value (analytical_report.lowered_volume) << ','
+                << cubic_meters_value (analytical_report.raised_volume) << ','
+                << meters_value (analytical_report.mean_absolute_change) << ','
+                << meters_value (analytical_report.maximum_absolute_change)
+                << ',' << hydraulic_report.eroded << ','
+                << hydraulic_report.deposited << '\n';
       if (!image_prefix.empty ())
         write_map (image_prefix + "-" + mode.name + ".png", map);
     }

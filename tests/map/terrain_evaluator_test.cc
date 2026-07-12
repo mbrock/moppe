@@ -227,15 +227,15 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
 
   MOPPE_CHECK (maps_match (first, second));
   const auto& report = std::get<AnalyticalErosionReport> (first_report);
-  MOPPE_CHECK (report.lowered_volume_m3 > 0.0);
+  MOPPE_CHECK (report.lowered_volume > 0.0);
   MOPPE_CHECK (report.fixed_point_iterations == 2);
   for (int i = 0; i < first.width (); ++i) {
     MOPPE_CHECK (first.get (i, 0) == first.get (i, first.height () - 1));
     MOPPE_CHECK (first.get (0, i) == first.get (first.width () - 1, i));
   }
   MOPPE_CHECK (
-    std::get<AnalyticalErosionReport> (second_report).lowered_volume_m3 ==
-    report.lowered_volume_m3);
+    std::get<AnalyticalErosionReport> (second_report).lowered_volume ==
+    report.lowered_volume);
 }
 
 MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {

@@ -55,10 +55,12 @@ namespace moppe::terrain {
     std::size_t cells = 0;
     std::size_t fixed_boundaries = 0;
     int fixed_point_iterations = 0;
-    double lowered_volume_m3 = 0.0;
-    double raised_volume_m3 = 0.0;
-    double mean_absolute_change_m = 0.0;
-    double maximum_absolute_change_m = 0.0;
+    cubic_meters_f64_t lowered_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t raised_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    meters_f64_t mean_absolute_change = 0.0 * mp_units::si::metre;
+    meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;
   };
 
   // Deterministic channel stamping along the extracted river network.
@@ -70,17 +72,18 @@ namespace moppe::terrain {
     float sea_level = 50.0f / 650.0f;
     float minimum_area_cells = 1024.0f;
     float depth_per_sqrt_m2 = 0.0015f;
-    float minimum_depth_m = 0.4f;
-    float maximum_depth_m = 2.5f;
-    float bank_blend_m = 6.0f;
+    meters_t minimum_depth = 0.4f * mp_units::si::metre;
+    meters_t maximum_depth = 2.5f * mp_units::si::metre;
+    meters_t bank_blend = 6.0f * mp_units::si::metre;
   };
 
   struct ChannelCarvingReport {
     std::size_t reaches = 0;
     std::size_t carved_cells = 0;
-    double lowered_volume_m3 = 0.0;
-    double mean_lowering_m = 0.0;
-    double maximum_lowering_m = 0.0;
+    cubic_meters_f64_t lowered_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    meters_f64_t mean_lowering = 0.0 * mp_units::si::metre;
+    meters_f64_t maximum_lowering = 0.0 * mp_units::si::metre;
   };
 }
 

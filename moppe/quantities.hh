@@ -12,12 +12,17 @@ namespace moppe {
   using mp_units::quantity_spec;
 
   using meters_t = mp_units::quantity<mp_units::si::metre, float>;
+  using meters_f64_t = mp_units::quantity<mp_units::si::metre, double>;
   using square_meters_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre, float>;
   using cubic_meters_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre *
                          mp_units::si::metre,
                        float>;
+  using cubic_meters_f64_t =
+    mp_units::quantity<mp_units::si::metre * mp_units::si::metre *
+                         mp_units::si::metre,
+                       double>;
   using meters_per_second_t =
     mp_units::quantity<mp_units::si::metre / mp_units::si::second, float>;
   using julian_years_t =
@@ -30,11 +35,20 @@ namespace moppe {
     return value.numerical_value_in (mp_units::si::metre);
   }
 
+  inline double meters_value (meters_f64_t value) {
+    return value.numerical_value_in (mp_units::si::metre);
+  }
+
   inline float square_meters_value (square_meters_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre);
   }
 
   inline float cubic_meters_value (cubic_meters_t value) {
+    return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre *
+                                     mp_units::si::metre);
+  }
+
+  inline double cubic_meters_value (cubic_meters_f64_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre *
                                      mp_units::si::metre);
   }

@@ -150,13 +150,13 @@ namespace {
       if (parts.size () > 1)
         carving.depth_per_sqrt_m2 = parse_float (parts[1]);
       if (parts.size () > 2)
-        carving.minimum_depth_m = parse_float (parts[2]);
+        carving.minimum_depth = parse_float (parts[2]) * mp_units::si::metre;
       if (parts.size () > 3)
-        carving.maximum_depth_m = parse_float (parts[3]);
+        carving.maximum_depth = parse_float (parts[3]) * mp_units::si::metre;
       if (parts.size () > 4)
         carving.sea_level = parse_float (parts[4]);
       if (parts.size () > 5)
-        carving.bank_blend_m = parse_float (parts[5]);
+        carving.bank_blend = parse_float (parts[5]) * mp_units::si::metre;
       program.transforms.emplace_back (carving);
     } else if (name == "thermal") {
       const std::size_t comma = value.find (',');
@@ -237,17 +237,20 @@ int main (int argc, char** argv) {
     for (const TerrainTransformReport& result : reports)
       if (const auto* report = std::get_if<AnalyticalErosionReport> (&result))
         std::cout << "analytical: fixed=" << report->fixed_boundaries
-                  << " lowered_m3=" << report->lowered_volume_m3
-                  << " raised_m3=" << report->raised_volume_m3
-                  << " mean_change_m=" << report->mean_absolute_change_m
-                  << " max_change_m=" << report->maximum_absolute_change_m
-                  << "\n";
+                  << " lowered_m3="
+                  << cubic_meters_value (report->lowered_volume)
+                  << " raised_m3=" << cubic_meters_value (report->raised_volume)
+                  << " mean_change_m="
+                  << meters_value (report->mean_absolute_change)
+                  << " max_change_m="
+                  << meters_value (report->maximum_absolute_change) << "\n";
       else if (const auto* report = std::get_if<ChannelCarvingReport> (&result))
         std::cout << "carve: reaches=" << report->reaches
-                  << " cells=" << report->carved_cells
-                  << " lowered_m3=" << report->lowered_volume_m3
-                  << " mean_m=" << report->mean_lowering_m
-                  << " max_m=" << report->maximum_lowering_m << "\n";
+                  << " cells=" << report->carved_cells << " lowered_m3="
+                  << cubic_meters_value (report->lowered_volume)
+                  << " mean_m=" << meters_value (report->mean_lowering)
+                  << " max_m=" << meters_value (report->maximum_lowering)
+                  << "\n";
       else if (const auto* report =
                  std::get_if<HydraulicErosionReport> (&result))
         std::cout << "hydraulic: eroded=" << report->eroded
