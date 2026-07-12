@@ -33,7 +33,8 @@ int main (int argc, char** argv) {
         ? static_cast<std::uint32_t> (std::strtoul (argv[2], nullptr, 10))
         : 123;
     const ScalarField field =
-      make_geological_fields (make_geological_recipe (seed)).combined;
+      make_geological_fields (make_geological_recipe (seed))
+        .combined.untyped ();
     const Domain2D domain { .width = side, .height = side };
 
     const auto [cpu, cpu_seconds] =

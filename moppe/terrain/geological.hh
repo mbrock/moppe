@@ -69,16 +69,19 @@ namespace moppe::terrain {
     GeologicalBlendParameters blend {};
   };
 
+  // The recipe's layers carry their kinds: the warp noises are pure
+  // numbers, the warped sampling positions are domain coordinates,
+  // and every relief/mask layer is a dimensionless sample.
   struct GeologicalFields {
-    ScalarField warp_x;
-    ScalarField warp_y;
-    ScalarField warped_x;
-    ScalarField warped_y;
-    ScalarField continent;
-    ScalarField plains;
-    ScalarField mountains;
-    ScalarField mountain_mask;
-    ScalarField combined;
+    DimensionlessField warp_x;
+    DimensionlessField warp_y;
+    CoordinateField warped_x;
+    CoordinateField warped_y;
+    DimensionlessField continent;
+    DimensionlessField plains;
+    DimensionlessField mountains;
+    DimensionlessField mountain_mask;
+    DimensionlessField combined;
   };
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed);

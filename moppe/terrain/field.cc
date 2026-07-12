@@ -217,4 +217,85 @@ namespace moppe::terrain {
     visit_nodes (field.node (), visited);
     return visited.size ();
   }
+
+  // --- typed recipe primitives ---------------------------------------
+
+  CoordinateField coordinate_u () {
+    return CoordinateField (coordinate_x ());
+  }
+
+  CoordinateField coordinate_v () {
+    return CoordinateField (coordinate_y ());
+  }
+
+  DimensionlessField sin (const DimensionlessField& operand) {
+    return DimensionlessField (sin (operand.untyped ()));
+  }
+
+  DimensionlessField
+  smoothstep (float edge0, float edge1, const DimensionlessField& operand) {
+    return DimensionlessField (smoothstep (edge0, edge1, operand.untyped ()));
+  }
+
+  DimensionlessField perlin_noise (std::uint32_t seed,
+                                   const CoordinateField& x,
+                                   const CoordinateField& y) {
+    return DimensionlessField (perlin_noise (seed, x.untyped (), y.untyped ()));
+  }
+
+  DimensionlessField fbm_noise (std::uint32_t seed,
+                                const CoordinateField& x,
+                                const CoordinateField& y,
+                                int octaves,
+                                float lacunarity,
+                                float gain) {
+    return DimensionlessField (
+      fbm_noise (seed, x.untyped (), y.untyped (), octaves, lacunarity, gain));
+  }
+
+  DimensionlessField ridged_noise (std::uint32_t seed,
+                                   const CoordinateField& x,
+                                   const CoordinateField& y,
+                                   int octaves,
+                                   float lacunarity,
+                                   float gain) {
+    return DimensionlessField (ridged_noise (
+      seed, x.untyped (), y.untyped (), octaves, lacunarity, gain));
+  }
+
+  DimensionlessField periodic_fbm_noise (std::uint32_t seed,
+                                         const CoordinateField& x,
+                                         const CoordinateField& y,
+                                         int period_x,
+                                         int period_y,
+                                         int octaves,
+                                         int lacunarity,
+                                         float gain) {
+    return DimensionlessField (periodic_fbm_noise (seed,
+                                                   x.untyped (),
+                                                   y.untyped (),
+                                                   period_x,
+                                                   period_y,
+                                                   octaves,
+                                                   lacunarity,
+                                                   gain));
+  }
+
+  DimensionlessField periodic_ridged_noise (std::uint32_t seed,
+                                            const CoordinateField& x,
+                                            const CoordinateField& y,
+                                            int period_x,
+                                            int period_y,
+                                            int octaves,
+                                            int lacunarity,
+                                            float gain) {
+    return DimensionlessField (periodic_ridged_noise (seed,
+                                                      x.untyped (),
+                                                      y.untyped (),
+                                                      period_x,
+                                                      period_y,
+                                                      octaves,
+                                                      lacunarity,
+                                                      gain));
+  }
 }

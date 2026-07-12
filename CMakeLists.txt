@@ -206,7 +206,9 @@ add_library(moppe_terrain STATIC
   moppe/terrain/image.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_terrain PUBLIC ZLIB::ZLIB)
+# The field DAG stays float-typed, but the recipe layer's phantom
+# quantity kinds (Field<QS>) come from mp-units.
+target_link_libraries(moppe_terrain PUBLIC ZLIB::ZLIB mp-units::mp-units)
 
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_library(moppe_terrain_metal STATIC
