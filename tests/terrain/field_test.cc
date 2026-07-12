@@ -9,7 +9,7 @@
 
 using namespace moppe::terrain;
 
-// The typed recipe algebra: kinds are phantom types over the same
+// The typed field algebra: kinds are phantom types over the same
 // float DAG, checked entirely at compile time.
 namespace {
   template <typename A, typename B>
@@ -87,7 +87,7 @@ MOPPE_TEST (typed_fields_share_the_untyped_dag) {
     std::holds_alternative<expression::PerlinNoise> (noise.node ()->operation));
 
   // field_cast crosses kinds without touching the DAG.
-  const CoordinateField as_offset = field_cast<recipe_coordinate> (noise);
+  const CoordinateField as_offset = field_cast<field_coordinate> (noise);
   MOPPE_CHECK (as_offset.node () == noise.node ());
 }
 

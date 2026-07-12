@@ -212,7 +212,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                            .height = 2,
                            .spacing_x = 2.0f * mp_units::si::metre,
                            .spacing_y = 2.0f * mp_units::si::metre };
-  const RecipeDomain2D domain { .width = 6, .height = 2 };
+  const FieldSamplingGrid2D domain { .width = 6, .height = 2 };
   const std::vector<CellIndex> receiver {
     1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11
   };

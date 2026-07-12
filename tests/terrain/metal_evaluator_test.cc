@@ -25,12 +25,12 @@ namespace {
 
 MOPPE_TEST (metal_stitching_matches_pointwise_cpu_operations) {
   using namespace moppe::terrain;
-  const RecipeDomain2D domain { .width = 31,
-                                .height = 19,
-                                .min_x = -1.0f,
-                                .max_x = 2.0f,
-                                .min_y = -0.5f,
-                                .max_y = 0.75f };
+  const FieldSamplingGrid2D domain { .width = 31,
+                                     .height = 19,
+                                     .min_x = -1.0f,
+                                     .max_x = 2.0f,
+                                     .min_y = -0.5f,
+                                     .max_y = 0.75f };
   const ScalarField field = smoothstep (
     -0.3f,
     0.8f,
@@ -46,7 +46,7 @@ MOPPE_TEST (metal_stitching_matches_pointwise_cpu_operations) {
 
 MOPPE_TEST (metal_stitching_accepts_minimal_graphs) {
   using namespace moppe::terrain;
-  const RecipeDomain2D domain { .width = 7, .height = 5 };
+  const FieldSamplingGrid2D domain { .width = 7, .height = 5 };
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);
 
   const ScalarRaster x = evaluator.evaluate (coordinate_x (), domain);
@@ -61,7 +61,7 @@ MOPPE_TEST (metal_stitching_accepts_minimal_graphs) {
 MOPPE_TEST (metal_pipeline_cache_ignores_parameter_values) {
   using namespace moppe::terrain;
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);
-  const RecipeDomain2D domain { .width = 17, .height = 11 };
+  const FieldSamplingGrid2D domain { .width = 17, .height = 11 };
 
   const ScalarField first = parameterized_wave (2.0f, 0.2f);
   const ScalarRaster first_gpu = evaluator.evaluate (first, domain);
@@ -85,7 +85,7 @@ MOPPE_TEST (metal_stitching_matches_all_noise_families) {
     ridged_noise (moppe::terrain::Seed { 13 }, x, y, 4, 1.9f, 0.52f) +
     periodic_fbm_noise (moppe::terrain::Seed { 14 }, x, y, 3, 2, 3, 2, 0.5f) +
     periodic_ridged_noise (moppe::terrain::Seed { 15 }, x, y, 3, 2, 3, 2, 0.5f);
-  const RecipeDomain2D domain { .width = 37, .height = 29 };
+  const FieldSamplingGrid2D domain { .width = 37, .height = 29 };
   const ScalarRaster cpu = CpuEvaluator ().evaluate (field, domain);
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);
   const ScalarRaster gpu = evaluator.evaluate (field, domain);
@@ -97,7 +97,7 @@ MOPPE_TEST (metal_stitching_materializes_the_geological_recipe) {
   using namespace moppe::terrain;
   const ScalarField field =
     make_geological_fields (make_geological_recipe (123)).combined.untyped ();
-  const RecipeDomain2D domain { .width = 65, .height = 65 };
+  const FieldSamplingGrid2D domain { .width = 65, .height = 65 };
   const ScalarRaster cpu = CpuEvaluator ().evaluate (field, domain);
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);
   const ScalarRaster gpu = evaluator.evaluate (field, domain);

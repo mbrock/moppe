@@ -27,11 +27,11 @@ standard-library-dependent sequences.
 
 `Field<QS>` layers an mp-units quantity specification over a `ScalarField` as
 a phantom type. Samples remain compact floats and evaluators consume the
-erased DAG through `untyped ()`, but recipe combinators compose
+erased DAG through `untyped ()`, but field combinators compose
 dimensionally: `+` and `-` require matching kinds, `*` combines quantity
 specifications, and bare numbers scale within a kind.
 
-The scale-free recipe vocabulary now distinguishes `CoordinateField`,
+The scale-free field vocabulary now distinguishes `CoordinateField`,
 `NoiseField`, `ProportionField`, and `RelativeElevationField`. Noise is not
 yet relief, a mask is not a generic scalar, and neither may be added to a
 sampling coordinate. Crossing meanings must be explicit: procedural noise is

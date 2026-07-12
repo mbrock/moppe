@@ -82,7 +82,7 @@ without applying both scales are grid-space algorithms, not physical-space
 algorithms.
 
 `ScalarField` coordinates, noise frequencies, amplitudes, masks, and blend
-weights currently describe a procedural recipe in a normalized domain. They
+weights currently describe a procedural field in a normalized domain. They
 are intentionally scale-free until materialization. Frequency there means
 cycles across the chosen domain, not automatically cycles per metre. If a
 future geological process depends on wavelength, correlation length, or fault
@@ -568,7 +568,7 @@ its model and spatial scale.
 | analytical erosion time | yr |
 | analytical uplift | m/yr |
 | analytical erodibility | dimensional, dependent on area exponent |
-| procedural field coordinates and noise | normalized recipe space |
+| procedural field coordinates and noise | normalized field space |
 | hydraulic droplet water/sediment ledger | empirical normalized units |
 | thermal erosion talus | normalized neighboring-height difference |
 | moisture raster | dimensionless visual/ecological index `[0, 1]` |

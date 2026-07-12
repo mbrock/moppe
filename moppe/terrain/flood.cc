@@ -201,7 +201,7 @@ namespace moppe::terrain {
         depth[cell] = std::max (0.0f, water[cell] - terrain.at (x, y));
       }
 
-    const RecipeDomain2D domain {
+    const FieldSamplingGrid2D domain {
       .width = width,
       .height = height,
       .max_x = grid.spacing_x_m () * static_cast<float> (width),

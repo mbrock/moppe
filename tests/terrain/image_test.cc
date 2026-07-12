@@ -10,7 +10,7 @@
 using namespace moppe::terrain;
 
 MOPPE_TEST (grayscale_png_has_expected_header) {
-  const RecipeDomain2D domain { .width = 2, .height = 2 };
+  const FieldSamplingGrid2D domain { .width = 2, .height = 2 };
   const ScalarRaster raster (domain,
                              std::vector<float> { 0.0f, 0.5f, 1.0f, 2.0f });
   std::ostringstream output (std::ios::binary);

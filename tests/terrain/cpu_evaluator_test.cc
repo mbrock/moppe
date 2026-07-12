@@ -10,12 +10,12 @@
 using namespace moppe::terrain;
 
 MOPPE_TEST (coordinates_cover_the_requested_domain) {
-  const RecipeDomain2D domain { .width = 3,
-                                .height = 3,
-                                .min_x = -1.0f,
-                                .max_x = 1.0f,
-                                .min_y = 10.0f,
-                                .max_y = 20.0f };
+  const FieldSamplingGrid2D domain { .width = 3,
+                                     .height = 3,
+                                     .min_x = -1.0f,
+                                     .max_x = 1.0f,
+                                     .min_y = 10.0f,
+                                     .max_y = 20.0f };
   const CpuEvaluator evaluator;
   const ScalarRaster x = evaluator.evaluate (coordinate_x (), domain);
   const ScalarRaster y = evaluator.evaluate (coordinate_y (), domain);
@@ -29,7 +29,7 @@ MOPPE_TEST (coordinates_cover_the_requested_domain) {
 }
 
 MOPPE_TEST (cpu_evaluator_composes_arithmetic_and_sine) {
-  const RecipeDomain2D domain { .width = 5, .height = 2 };
+  const FieldSamplingGrid2D domain { .width = 5, .height = 2 };
   const ScalarField wave =
     sin (2.0f * std::numbers::pi_v<float> * coordinate_x ());
   const ScalarRaster raster = CpuEvaluator ().evaluate (wave, domain);
@@ -42,7 +42,7 @@ MOPPE_TEST (cpu_evaluator_composes_arithmetic_and_sine) {
 }
 
 MOPPE_TEST (large_cpu_evaluation_preserves_field_values) {
-  const RecipeDomain2D domain { .width = 257, .height = 257 };
+  const FieldSamplingGrid2D domain { .width = 257, .height = 257 };
   const ScalarField field = coordinate_x () + 2.0f * coordinate_y ();
   const ScalarRaster raster = CpuEvaluator ().evaluate (field, domain);
 
@@ -52,7 +52,7 @@ MOPPE_TEST (large_cpu_evaluation_preserves_field_values) {
 }
 
 MOPPE_TEST (cpu_evaluator_reports_materialization_progress) {
-  const RecipeDomain2D domain { .width = 257, .height = 257 };
+  const FieldSamplingGrid2D domain { .width = 257, .height = 257 };
   std::atomic<std::size_t> latest = 0;
   std::atomic<bool> correct_total = true;
   const CpuEvaluator evaluator ([&] (std::size_t completed, std::size_t total) {
@@ -72,7 +72,7 @@ MOPPE_TEST (cpu_evaluator_reports_materialization_progress) {
 MOPPE_TEST (cpu_evaluator_rejects_degenerate_domains) {
   bool threw = false;
   try {
-    const RecipeDomain2D domain { .width = 1, .height = 2 };
+    const FieldSamplingGrid2D domain { .width = 1, .height = 2 };
     (void)CpuEvaluator ().evaluate (constant (0.0f), domain);
   } catch (const std::invalid_argument&) {
     threw = true;
@@ -81,7 +81,7 @@ MOPPE_TEST (cpu_evaluator_rejects_degenerate_domains) {
 }
 
 MOPPE_TEST (normalization_is_an_explicit_materialization_barrier) {
-  const RecipeDomain2D domain { .width = 3, .height = 2 };
+  const FieldSamplingGrid2D domain { .width = 3, .height = 2 };
   const ScalarRaster ramp =
     CpuEvaluator ().evaluate (2.0f + 4.0f * coordinate_x (), domain);
   const ScalarRaster normalized = normalize (ramp);
