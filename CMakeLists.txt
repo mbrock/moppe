@@ -107,6 +107,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
   target_compile_options(atelier PRIVATE -fobjc-arc)
   target_link_libraries(atelier PRIVATE
+    mp-units::mp-units
     "-framework Cocoa"
     "-framework Metal"
     "-framework MetalKit"
