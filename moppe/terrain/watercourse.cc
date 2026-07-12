@@ -25,9 +25,9 @@ namespace moppe::terrain {
 
     struct PaintPoint {
       std::uint32_t cell;
-      float level_m;
-      float width_m;
-      float speed_m_s;
+      meters_t level;
+      meters_t width;
+      meters_per_second_t speed;
       float direction_x;
       float direction_z;
       bool water;
@@ -138,15 +138,15 @@ namespace moppe::terrain {
         const float rapid = rapid_signal (drainage.slope.values ()[slope_cell]);
         const float fall =
           rivers.waterfall_by_cell[cell] != Waterfall::no_id ? 1.0f : 0.0f;
-        points.push_back ({ .cell = cell,
-                            .level_m = 0.0f,
-                            .width_m = channel_width_m (area),
-                            .speed_m_s = parameters.base_speed_m_s +
-                                         parameters.rapid_speed_m_s * rapid +
-                                         parameters.waterfall_speed_m_s * fall,
-                            .direction_x = 0.0f,
-                            .direction_z = 0.0f,
-                            .water = water_cell (cell) });
+        points.push_back (
+          { .cell = cell,
+            .level = 0.0f * mp_units::si::metre,
+            .width = channel_width_m (area) * mp_units::si::metre,
+            .speed = parameters.base_speed + parameters.rapid_speed * rapid +
+                     parameters.waterfall_speed * fall,
+            .direction_x = 0.0f,
+            .direction_z = 0.0f,
+            .water = water_cell (cell) });
       }
 
       // Downstream direction from central differences over the path,
@@ -183,7 +183,8 @@ namespace moppe::terrain {
         // The bank is the crest along the ray, not one sample: a probe
         // landing in a neighboring channel's excavation near a
         // confluence must not convince us the river has no banks.
-        const float probe = 0.5f * point.width_m + parameters.bank_probe_m;
+        const float probe =
+          meters_value (0.5f * point.width + parameters.bank_probe);
         float crest = -std::numeric_limits<float>::infinity ();
         for (const float extent : { 0.7f, 1.0f, 1.3f }) {
           int x =
@@ -218,18 +219,19 @@ namespace moppe::terrain {
           const float law =
             channel_depth_m (drainage.contributing_area.values ()[point.cell]);
           target =
-            ground + parameters.channel_fill *
-                       std::clamp (carved, parameters.minimum_depth_m, law);
+            ground +
+            parameters.channel_fill *
+              std::clamp (carved, meters_value (parameters.minimum_depth), law);
         }
         level = std::min (level, target);
-        point.level_m = level;
+        point.level = level * mp_units::si::metre;
       }
 
       for (const PaintPoint& point : points) {
         const int cx = static_cast<int> (point.cell) % width;
         const int cy = static_cast<int> (point.cell) / width;
-        const float half_width = 0.5f * point.width_m;
-        const float radius = half_width + parameters.bank_margin_m;
+        const float half_width = meters_value (0.5f * point.width);
+        const float radius = half_width + meters_value (parameters.bank_margin);
         // Metric widths on degenerate sub-metre grids must not stamp
         // arbitrarily large neighborhoods.
         constexpr int stamp_limit_cells = 16;
@@ -260,15 +262,17 @@ namespace moppe::terrain {
             if (!point.water && distance < river_distance[cell]) {
               river_distance[cell] = distance;
               river_level[cell] =
-                std::min (point.level_m,
+                std::min (meters_value (point.level),
                           ground_m (static_cast<std::uint32_t> (cell)) +
-                            parameters.depth_limit_m);
+                            meters_value (parameters.depth_limit));
             }
 
             const float weight =
               (1.0f - distance / radius) * (point.water ? 0.5f : 1.0f);
-            flow_x[cell] += weight * point.direction_x * point.speed_m_s;
-            flow_z[cell] += weight * point.direction_z * point.speed_m_s;
+            flow_x[cell] += weight * point.direction_x *
+                            meters_per_second_value (point.speed);
+            flow_z[cell] += weight * point.direction_z *
+                            meters_per_second_value (point.speed);
             flow_weight[cell] += weight;
           }
       }

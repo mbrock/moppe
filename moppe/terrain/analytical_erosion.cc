@@ -51,8 +51,11 @@ namespace moppe::terrain {
     }
 
     void validate (const AnalyticalErosion& p) {
-      if (!std::isfinite (p.time_years) || p.time_years < 0.0f ||
-          !std::isfinite (p.uplift_m_per_year) || p.uplift_m_per_year < 0.0f ||
+      if (!std::isfinite (julian_years_value (p.duration)) ||
+          p.duration < 0.0f * mp_units::astronomy::Julian_year ||
+          !std::isfinite (meters_per_julian_year_value (p.uplift_rate)) ||
+          p.uplift_rate <
+            0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
           !std::isfinite (p.erodibility) || p.erodibility <= 0.0f ||
           !std::isfinite (p.area_exponent) || p.area_exponent < 0.0f ||
           !std::isfinite (p.sea_level) || p.fixed_point_iterations <= 0 ||
@@ -72,6 +75,9 @@ namespace moppe::terrain {
     const std::size_t count = width * height;
     const float cell_area = square_meters_value (grid.cell_area ());
     const float height_scale = grid.height_scale_m ();
+    const float duration_years = julian_years_value (parameters.duration);
+    const float uplift_rate =
+      meters_per_julian_year_value (parameters.uplift_rate);
 
     std::vector<float> initial (count);
     for (std::size_t y = 0; y < height; ++y)
@@ -149,12 +155,11 @@ namespace moppe::terrain {
                                  std::pow (area, parameters.area_exponent);
             travel[cell] = travel[next] + distance / speed;
             uplift_integral[cell] =
-              uplift_integral[next] +
-              distance * parameters.uplift_m_per_year / speed;
+              uplift_integral[next] + distance * uplift_rate / speed;
           }
           path.push_back (cell);
 
-          const double target = travel[cell] - parameters.time_years;
+          const double target = travel[cell] - duration_years;
           double advected_height = 0.0;
           double advected_uplift = 0.0;
           if (target <= 0.0 || path.size () == 1) {
@@ -187,10 +192,9 @@ namespace moppe::terrain {
           // The stream-power erosion term is never positive: even when
           // depression routing crosses a dry saddle, elevation cannot rise
           // faster than the prescribed tectonic uplift.
-          predicted[cell] =
-            std::min (static_cast<float> (physical_height / height_scale),
-                      initial[cell] + parameters.uplift_m_per_year *
-                                        parameters.time_years / height_scale);
+          predicted[cell] = std::min (
+            static_cast<float> (physical_height / height_scale),
+            initial[cell] + uplift_rate * duration_years / height_scale);
           if (boundary[cell])
             predicted[cell] = initial[cell];
 

@@ -41,8 +41,9 @@ namespace moppe::terrain {
   // erodibility, drainage area, and terrain scale comparable across grid
   // resolutions.  sea_level is expressed in the source heightfield's units.
   struct AnalyticalErosion {
-    float time_years = 100000.0f;
-    float uplift_m_per_year = 0.0f;
+    julian_years_t duration = 100000.0f * mp_units::astronomy::Julian_year;
+    meters_per_julian_year_t uplift_rate =
+      0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year;
     float erodibility = 2e-5f;
     float area_exponent = 0.4f;
     float sea_level = 50.0f / 650.0f;

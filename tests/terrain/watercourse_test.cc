@@ -85,7 +85,8 @@ MOPPE_TEST (painted_rivers_wet_the_trunk_at_the_shared_fill_law) {
     const float ground = valley.carved[cell] * 100.0f;
     const float level = valley.sheets.surface.values ()[cell] * 100.0f;
     MOPPE_CHECK (level > ground + 0.05f);
-    MOPPE_CHECK (level <= ground + paint.depth_limit_m + 1e-4f);
+    MOPPE_CHECK (level <=
+                 ground + moppe::meters_value (paint.depth_limit) + 1e-4f);
     MOPPE_CHECK (level <= previous + 1e-4f);
     previous = level;
   }
@@ -94,8 +95,8 @@ MOPPE_TEST (painted_rivers_wet_the_trunk_at_the_shared_fill_law) {
 MOPPE_TEST (painted_flow_points_downstream_and_stays_in_the_speed_law) {
   const PaintedValley valley = paint_valley ();
   const WatercoursePaint paint;
-  const float maximum =
-    paint.base_speed_m_s + paint.rapid_speed_m_s + paint.waterfall_speed_m_s;
+  const float maximum = moppe::meters_per_second_value (
+    paint.base_speed + paint.rapid_speed + paint.waterfall_speed);
   for (int y = 3; y <= 7; ++y) {
     const std::size_t cell = static_cast<std::size_t> (y) * 9 + 4;
     const float x = valley.sheets.flow[2 * cell];

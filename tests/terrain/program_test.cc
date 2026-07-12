@@ -31,7 +31,8 @@ MOPPE_TEST (default_world_program_records_every_transform) {
   MOPPE_CHECK (terrain_transform_id (program.transforms[5]) == "thermal");
   MOPPE_CHECK (terrain_transform_id (program.transforms[6]) == "carve");
   MOPPE_CHECK_NEAR (
-    std::get<AnalyticalErosion> (program.transforms[2]).time_years,
+    moppe::julian_years_value (
+      std::get<AnalyticalErosion> (program.transforms[2]).duration),
     200000.0f,
     0.0f);
   MOPPE_CHECK (std::get<HydraulicErosion> (program.transforms[4]).droplets ==
