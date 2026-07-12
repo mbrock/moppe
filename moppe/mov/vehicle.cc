@@ -4,7 +4,7 @@
 
 namespace moppe {
   namespace mov {
-    static const float radius = 1 * one_meter;
+    static const float radius = 1; // metres
 
     // How fast full steering input swings the bike itself, in radians
     // per second per radian of yaw input.  Grip then drags the
@@ -12,8 +12,8 @@ namespace moppe {
     static const float steering_rate = 1.6;
     static const float air_steering_rate = 0.9;
 
-    static const float boost_acceleration = 26.0f;
-    static const float boost_max_tilt = 60.0f * PI / 180.0f;
+    static const float boost_acceleration = 26.0f; // m/s^2
+    static const radians_t boost_max_tilt = 60.0f * u::deg;
     static const seconds_t boost_full_burn_time = seconds (3.0f);
     static const seconds_t boost_recharge_time = seconds (5.0f);
     static const seconds_t boost_recharge_pause = seconds (0.65f);
@@ -27,19 +27,17 @@ namespace moppe {
                       magnitude_t power,
                       magnitude_t mass)
         : m_position (position), m_velocity (),
-          m_heading (std::sin (degrees_to_radians (orientation)),
-                     0,
-                     std::cos (degrees_to_radians (orientation))),
-          m_thrust_orientation (m_heading), m_yaw (0), m_yaw_target (0),
+          m_heading (sin (orientation), 0, cos (orientation)),
+          m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
           m_lean (0), m_render_heading (m_heading), m_render_normal (0, 1, 0),
           m_susp (0), m_susp_v (0), m_wheel_spin (0), m_boost_flight (false),
           m_map (map), m_max_thrust (max_thrust), m_power (power), m_thrust (0),
           m_mass (mass), m_boost_input (0), m_boost_drive (0),
           m_boost_level (0), m_boost_charge (1),
-          m_boost_recharge_delay (seconds (0)),
-          m_water_level (-1000 * one_meter), m_airborne_time (seconds (0)),
-          m_impact (0), m_fall_top (0), m_fall_drop (0), m_obstacles (0),
-          m_body_kind (0), m_body_color (0.8, 0.15, 0.1) {
+          m_boost_recharge_delay (seconds (0)), m_water_level (-1000),
+          m_airborne_time (seconds (0)), m_impact (0), m_fall_top (0),
+          m_fall_drop (0), m_obstacles (0), m_body_kind (0),
+          m_body_color (0.8, 0.15, 0.1) {
       calculate_orientation ();
       fall_to_ground ();
     }
@@ -129,8 +127,7 @@ namespace moppe {
     }
 
     bool Vehicle::is_grounded () const {
-      return std::abs (ground_height () - m_position.y) <
-             (radius + 0.1 * one_meter);
+      return std::abs (ground_height () - m_position.y) < (radius + 0.1f);
     }
 
     Vector3D Vehicle::drag () const {
@@ -210,7 +207,7 @@ namespace moppe {
 
     void Vehicle::steer (seconds_t dt) {
       const float dt_s = seconds_value (dt);
-      if (std::abs (m_yaw) < 0.001f)
+      if (abs (m_yaw) < 0.001f * u::rad)
         return;
 
       if (driving_contact ()) {
@@ -245,7 +242,8 @@ namespace moppe {
       const Vector3D vn = n * m_velocity.dot (n);
       const Vector3D lat = m_velocity - fwd * vf - vn;
 
-      const float steer_amt = std::min (1.0f, std::abs (m_yaw) / 0.8f);
+      const float steer_amt =
+        std::min (1.0f, scalar_value (abs (m_yaw) / (0.8f * u::rad)));
       const float speed_amt =
         std::min (1.0f, std::max (0.0f, (std::abs (vf) - 15.0f) / 10.0f));
 
@@ -306,14 +304,13 @@ namespace moppe {
         }
       }
 
-      const float tilt = boost_max_tilt * std::abs (m_boost_drive);
+      const radians_t tilt = boost_max_tilt * std::abs (m_boost_drive);
       const float drive_sign = m_boost_drive < 0 ? -1.0f : 1.0f;
       const Vector3D boost_direction =
-        Vector3D (0, std::cos (tilt), 0) +
-        m_heading * (drive_sign * std::sin (tilt));
+        Vector3D (0, cos (tilt), 0) + m_heading * (drive_sign * sin (tilt));
 
       Vector3D f;
-      const float g = -9.82 * one_meter;
+      const float g = -9.82f; // m/s^2 (was mislabeled as metres before)
       const Vector3D n = ground_normal ();
 
       // Thrust stays on through micro-hops (coyote contact); the
@@ -322,9 +319,9 @@ namespace moppe {
       // tapering pull, a real top speed against drag.
       if (contact) {
         const float vf = std::abs (m_velocity.dot (m_thrust_orientation));
-        const float force =
+        const magnitude_t force =
           std::min (m_max_thrust, m_power / std::max (vf, 0.5f));
-        f += m_thrust_orientation * m_thrust * force;
+        f += m_thrust_orientation * scalar_value (m_thrust * force);
       }
       Vector3D a (f / m_mass + drag () + Vector3D (0, g, 0) +
                   boost_direction * (boost_acceleration * m_boost_level));
@@ -391,7 +388,7 @@ namespace moppe {
         if (driving_contact ()) {
           const float vf = m_velocity.dot (m_heading);
           const float rate = steering_rate / (1.0f + std::abs (vf) / 70.0f);
-          target = std::atan2 (vf * (-m_yaw * rate), 9.82f);
+          target = std::atan2 (vf * radians_value (-m_yaw) * rate, 9.82f);
           target = std::max (-0.7f, std::min (0.7f, target));
         }
         m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt_s));
@@ -436,8 +433,8 @@ namespace moppe {
       // drawn.  Kept in [0, 2pi) so precision survives long rides.
       {
         float rate = m_velocity.dot (m_heading) / 0.68f;
-        if (!contact && std::abs (m_thrust) > 0.1f)
-          rate = 40.0f * m_thrust;
+        if (!contact && abs (m_thrust) > 0.1f)
+          rate = scalar_value (40.0f * m_thrust);
         m_wheel_spin =
           std::fmod (m_wheel_spin + rate * dt_s, 2.0f * 3.14159265f);
       }
@@ -456,7 +453,7 @@ namespace moppe {
       // walls do.  (The old build flung you across the sky toward
       // the map center at 400 km/h -- it read as a glitchy teleport,
       // especially near the corner spawn.)
-      const float margin = 2 * one_meter;
+      const float margin = 2; // metres
       const float max_x = (m_map.width () - 2) * m_map.scale ().x - margin;
       const float max_z = (m_map.height () - 2) * m_map.scale ().z - margin;
 

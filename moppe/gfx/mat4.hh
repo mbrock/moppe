@@ -51,7 +51,7 @@ namespace moppe {
     // Rotation about an arbitrary (not necessarily unit) axis.
     static Mat4 rotation (radians_t angle, const Vector3D& axis) {
       const Vector3D a = axis.normalized ();
-      const float c = std::cos (angle), s = std::sin (angle);
+      const float c = cos (angle), s = sin (angle);
       const float t = 1.0f - c;
 
       Mat4 r;
@@ -115,7 +115,7 @@ namespace moppe {
     // 0.  Pair with a GREATER_EQUAL depth test and a clear value of 0.
     static Mat4
     perspective_reversed (radians_t fovy, float aspect, float near, float far) {
-      const float f = 1.0f / std::tan (fovy / 2);
+      const float f = 1.0f / tan (fovy / 2);
       Mat4 r;
       r.m[0] = f / aspect;
       r.m[5] = f;

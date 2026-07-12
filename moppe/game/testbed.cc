@@ -37,11 +37,8 @@ namespace {
       const Vector3D eye (std::sin (orbit) * 18, 8, std::cos (orbit) * 18);
       const Vector3D at (0, 2, 0);
       fp.view = Mat4::look_at (eye, at, Vector3D (0, 1, 0));
-      fp.proj =
-        Mat4::perspective_reversed (degrees_to_radians (60),
-                                    (float)r.width_pts () / r.height_pts (),
-                                    0.5f,
-                                    9000.0f);
+      fp.proj = Mat4::perspective_reversed (
+        60 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
       fp.camera_pos = eye;
       fp.cam_right = Vector3D (fp.view.m[0], fp.view.m[4], fp.view.m[8]);
       fp.cam_up = Vector3D (fp.view.m[1], fp.view.m[5], fp.view.m[9]);
@@ -72,7 +69,7 @@ namespace {
       // Spinning solids, one of each kind.
       m_list.push ();
       m_list.translate (0, 2.5f, 0);
-      m_list.rotate_deg (m_time * 60, 0, 1, 0);
+      m_list.rotate ((m_time * 60) * u::deg, 0, 1, 0);
       m_list.color (0.8f, 0.25f, 0.2f);
       m_list.cube (2.5f);
       m_list.pop ();
@@ -91,7 +88,7 @@ namespace {
 
       m_list.push ();
       m_list.translate (0, 1, 7);
-      m_list.rotate_deg (-90, 1, 0, 0);
+      m_list.rotate (-90 * u::deg, 1, 0, 0);
       m_list.color (0.15f, 0.6f, 0.3f);
       m_list.cone (1.2f, 3.0f, 8, 2);
       m_list.pop ();

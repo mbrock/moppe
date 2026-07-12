@@ -33,10 +33,10 @@ namespace moppe {
                          const WorldParams& world) {
       if (std::abs (m_turn) > 0.01f)
         m_heading = Quaternion::rotate (
-          m_heading, Vector3D (0, 1, 0), -m_turn * 2.4f * dt);
+          m_heading, Vector3D (0, 1, 0), (-m_turn * 2.4f * dt) * u::rad);
 
       float speed = 6.0f;
-      if (m_pos.y < world.water_level + 0.5f)
+      if (m_pos.y < meters_value (world.water_level) + 0.5f)
         speed = 2.0f; // wading
 
       m_pos.x += m_heading.x * m_walk * speed * dt;
@@ -106,7 +106,7 @@ namespace moppe {
 
       dl.push ();
       dl.translate (m_pos.x, m_pos.y + bob, m_pos.z);
-      dl.rotate_deg (std::atan2 (m_heading.x, m_heading.z) * 57.2958f, 0, 1, 0);
+      dl.rotate (std::atan2 (m_heading.x, m_heading.z) * u::rad, 0, 1, 0);
       dl.scale (visual_scale);
 
       // Legs: the thigh swings from the hip, the shin lags behind
@@ -120,7 +120,7 @@ namespace moppe {
 
         dl.push ();
         dl.translate (s * 0.10f, 0.82f, 0);
-        dl.rotate_deg (thigh, 1, 0, 0);
+        dl.rotate (thigh * u::deg, 1, 0, 0);
 
         model::rider_material (dl, model::RiderMaterial::Pants);
         dl.push ();
@@ -129,7 +129,7 @@ namespace moppe {
         dl.pop ();
 
         dl.translate (0, -0.40f, 0);
-        dl.rotate_deg (knee, 1, 0, 0);
+        dl.rotate (knee * u::deg, 1, 0, 0);
         dl.push ();
         dl.translate (0, -0.17f, 0);
         model::box (dl, 0.11f, 0.36f, 0.12f);
@@ -170,7 +170,7 @@ namespace moppe {
 
         dl.push ();
         dl.translate (s * 0.24f, 1.42f, 0);
-        dl.rotate_deg (swing, 1, 0, 0);
+        dl.rotate (swing * u::deg, 1, 0, 0);
 
         model::rider_material (dl, model::RiderMaterial::Jersey);
         dl.push ();
@@ -179,11 +179,12 @@ namespace moppe {
         dl.pop ();
 
         dl.translate (0, -0.30f, 0);
-        dl.rotate_deg (moving ? -18.0f - 10.0f * std::max (0.0f, std::sin (p))
-                              : -12.0f,
-                       1,
-                       0,
-                       0);
+        dl.rotate (
+          (moving ? -18.0f - 10.0f * std::max (0.0f, std::sin (p)) : -12.0f) *
+            u::deg,
+          1,
+          0,
+          0);
         model::rider_material (dl, model::RiderMaterial::Armor);
         dl.push ();
         dl.translate (0, -0.13f, 0);

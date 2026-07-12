@@ -54,7 +54,7 @@ namespace moppe {
         s.pos.z = size.z * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
 
         float ground = map.interpolated_height (s.pos.x, s.pos.z);
-        if (ground < params.water_level + 2)
+        if (ground < meters_value (params.water_level) + 2)
           continue; // land only
 
         // Every fourth star hangs high up: jump-jet territory
@@ -163,11 +163,8 @@ namespace moppe {
                     position.z));
         r.draw_mesh (
           *m_body,
-          place *
-            Mat4::rotation (degrees_to_radians (time * 150.0f + s.phase),
-                            y_axis) *
-            Mat4::rotation (degrees_to_radians (time * 95.0f + s.phase * 0.7f),
-                            x_axis));
+          place * Mat4::rotation ((time * 150.0f + s.phase) * u::deg, y_axis) *
+            Mat4::rotation ((time * 95.0f + s.phase * 0.7f) * u::deg, x_axis));
 
         const float pulse = 1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
         r.draw_mesh (*m_halo,

@@ -73,11 +73,11 @@ namespace moppe {
       }
 
       void set_yaw (degrees_t degrees) {
-        m_yaw_target = degrees_to_radians (degrees);
+        m_yaw_target = degrees;
       }
 
       void spin (degrees_t degrees) {
-        m_yaw_target += degrees_to_radians (degrees);
+        m_yaw_target += radians_t (degrees);
       }
 
       void increase_thrust (magnitude_t dv) {
@@ -91,8 +91,8 @@ namespace moppe {
         m_boost_charge = std::min (1.0f, m_boost_charge + amount);
       }
 
-      void set_water_level (float level) {
-        m_water_level = level;
+      void set_water_level (meters_t level) {
+        m_water_level = meters_value (level);
       }
 
       void set_obstacles (const std::vector<Box>* boxes) {
@@ -169,15 +169,15 @@ namespace moppe {
       // Read-only pose and body state for the external renderer
       // (game/vehicle_render); the drawing half reads everything it
       // needs through these.
-      float lean () const {
-        return m_lean;
+      radians_t lean () const {
+        return m_lean * u::rad;
       }
       float susp () const {
         return m_susp;
       }
-      // Accumulated wheel roll angle, radians in [0, 2pi).
-      float wheel_spin () const {
-        return m_wheel_spin;
+      // Accumulated wheel roll angle in [0, 2pi).
+      radians_t wheel_spin () const {
+        return m_wheel_spin * u::rad;
       }
       bool airborne () const {
         return m_airborne_time > seconds (0.15f);

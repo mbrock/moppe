@@ -21,15 +21,16 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
     9, 9, Vector3D (100, 20, 100), 1, terrain::Topology::Torus);
   map.randomize_geologically ();
   map.recompute_normals ();
-  mov::Vehicle vehicle (Vector3D (20, 0, 20), 15, map, 1000, 10000, 100);
+  mov::Vehicle vehicle (
+    Vector3D (20, 0, 20), 15 * u::deg, map, 1000, 10000, 100);
   vehicle.set_thrust (0.8f);
-  vehicle.set_yaw (25.0f);
+  vehicle.set_yaw (25 * u::deg);
   vehicle.set_boost (0.7f, 0.5f);
   vehicle.update (seconds (1.0f / 60.0f));
   const mov::Vehicle::State saved = vehicle.state ();
 
   vehicle.set_thrust (-1.0f);
-  vehicle.set_yaw (-70.0f);
+  vehicle.set_yaw (-70 * u::deg);
   vehicle.update (seconds (0.5f));
   vehicle.restore (saved);
   const mov::Vehicle::State restored = vehicle.state ();
@@ -41,14 +42,18 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   check_vector (restored.render_heading, saved.render_heading);
   check_vector (restored.render_normal, saved.render_normal);
   check_vector (restored.body_color, saved.body_color);
-  MOPPE_CHECK_NEAR (restored.yaw, saved.yaw, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.yaw_target, saved.yaw_target, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    radians_value (restored.yaw), radians_value (saved.yaw), 1e-6f);
+  MOPPE_CHECK_NEAR (radians_value (restored.yaw_target),
+                    radians_value (saved.yaw_target),
+                    1e-6f);
   MOPPE_CHECK_NEAR (restored.lean, saved.lean, 1e-6f);
   MOPPE_CHECK_NEAR (restored.susp, saved.susp, 1e-6f);
   MOPPE_CHECK_NEAR (restored.susp_v, saved.susp_v, 1e-6f);
   MOPPE_CHECK_NEAR (restored.wheel_spin, saved.wheel_spin, 1e-6f);
   MOPPE_CHECK (restored.boost_flight == saved.boost_flight);
-  MOPPE_CHECK_NEAR (restored.thrust, saved.thrust, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    scalar_value (restored.thrust), scalar_value (saved.thrust), 1e-6f);
   MOPPE_CHECK_NEAR (restored.boost_input, saved.boost_input, 1e-6f);
   MOPPE_CHECK_NEAR (restored.boost_drive, saved.boost_drive, 1e-6f);
   MOPPE_CHECK_NEAR (restored.boost_level, saved.boost_level, 1e-6f);
@@ -67,7 +72,7 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 
 MOPPE_TEST (camera_and_walker_state_round_trip) {
   using namespace moppe;
-  game::ChaseCamera camera (18, 6.5f);
+  game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
   camera.update (Vector3D (10, 2, 20),
                  Vector3D (0, 0, 1),
                  Vector3D (4, 0, 2),
@@ -103,7 +108,7 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   map.recompute_normals ();
   game::WorldParams world;
   world.map_size = map.size ();
-  world.water_level = 0.0f;
+  world.water_level = 0 * u::m;
   game::Stars stars;
   stars.generate (map, world, 8);
   const game::Stars::State initial = stars.state ();

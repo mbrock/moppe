@@ -36,9 +36,8 @@ namespace moppe {
 
         dl.push ();
         dl.translate (midpoint);
-        dl.rotate_deg (
-          std::atan2 (direction.x, direction.z) * 57.2958f, 0, 1, 0);
-        dl.rotate_deg (-std::atan2 (direction.y, flat) * 57.2958f, 1, 0, 0);
+        dl.rotate (std::atan2 (direction.x, direction.z) * u::rad, 0, 1, 0);
+        dl.rotate (-std::atan2 (direction.y, flat) * u::rad, 1, 0, 0);
         box (dl, thickness, thickness, length);
         dl.pop ();
       }
@@ -87,7 +86,7 @@ namespace moppe {
         rider_material (dl, RiderMaterial::Armor);
         dl.push ();
         dl.translate (0, 0.125f, 0.09f);
-        dl.rotate_deg (18, 1, 0, 0);
+        dl.rotate (18 * u::deg, 1, 0, 0);
         box (dl, 0.20f, 0.02f, 0.17f);
         dl.pop ();
       }

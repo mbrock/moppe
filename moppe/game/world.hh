@@ -10,24 +10,24 @@ namespace moppe {
     // globals (map_size, resolution, water_level, fog_scale, mode
     // flags), now passed explicitly.
     struct WorldParams {
-      Vector3D map_size; // world meters (x, height, z)
-      int resolution;    // heightmap samples per side
-      float water_level; // meters
-      float fog_scale;   // haze density per meter
+      Vector3D map_size;    // world metres (x, height, z)
+      int resolution;       // heightmap samples per side
+      meters_t water_level; // sea level above the model zero datum
+      float fog_scale;      // haze density per metre
       bool pico_mode;
       bool city_mode;
 
       WorldParams ()
-          : map_size (5000 * one_meter, 650 * one_meter, 5000 * one_meter),
-            resolution (2049), water_level (50.0f), fog_scale (0.0004f),
-            pico_mode (false), city_mode (false) {}
+          : map_size (5000, 650, 5000), resolution (2049),
+            water_level (50 * u::m), fog_scale (0.0004f), pico_mode (false),
+            city_mode (false) {}
 
       Vector3D spawn_position () const {
         if (pico_mode)
           return Vector3D (0.34f * map_size.x, 3000, 0.55f * map_size.z);
         if (city_mode)
           return Vector3D (map_size.x / 2 + 20, 100, map_size.z / 2 + 20);
-        return Vector3D (50 * one_meter, 600 * one_meter, 50 * one_meter);
+        return Vector3D (50, 600, 50);
       }
 
       bool toroidal () const {
