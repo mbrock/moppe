@@ -13,3 +13,5 @@ test.tga
 field-demo.png
 terrain-lab.png
 *.xcworkspace/xcuserdata/
+.cache/
+Untitled*
