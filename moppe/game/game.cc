@@ -1584,51 +1584,89 @@ namespace moppe {
         const Vec3& world_extent = extent_value (m_world.map_size);
         Vec3 eye (0, 34, 0);
         Vec3 target (0, 27, -100);
+        float field_of_view = 64.0f;
         if (show_terrain) {
-          const float orbit = sky_time * 0.035f;
-          const float radius = world_extent[0] * 0.64f;
-          target = Vec3 (world_extent[0] * 0.5f,
-                         world_extent[1] * 0.12f,
-                         world_extent[2] * 0.5f);
-          eye = target + Vec3 (std::sin (orbit) * radius,
-                               world_extent[1] * 0.70f,
-                               std::cos (orbit) * radius);
+          struct CameraShot {
+            float angle;
+            float radius;
+            float height;
+            float target_x;
+            float target_y;
+            float target_z;
+            float field_of_view;
+            float drift;
+          };
+          // Each transform gets a composition suited to what it changes:
+          // geography, lowlands, long valleys, slopes, paths, and channels.
+          static constexpr CameraShot shots[] = {
+            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f, 0.018f },
+            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f, 0.012f },
+            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f, 0.010f },
+            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f, 0.009f },
+            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f, 0.008f },
+            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f, 0.014f },
+            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f, 0.008f },
+            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f, 0.010f },
+          };
+          const std::size_t stage = std::min<std::size_t> (
+            m_loading_snapshot_index, std::size (shots) - 1);
+          const std::size_t previous = stage > 0 ? stage - 1 : stage;
+          const float age = sky_time - m_loading_snapshot_started;
+          const float cut = smooth_curve (0.0f, 0.78f, age);
+          const auto camera_for = [&] (const CameraShot& shot) {
+            const float angle = shot.angle + shot.drift * age;
+            const Vec3 focus (world_extent[0] * (0.5f + shot.target_x),
+                              world_extent[1] * shot.target_y,
+                              world_extent[2] * (0.5f + shot.target_z));
+            const Vec3 camera =
+              focus + Vec3 (std::sin (angle) * world_extent[0] * shot.radius,
+                            world_extent[1] * shot.height,
+                            std::cos (angle) * world_extent[2] * shot.radius);
+            return std::pair { camera, focus };
+          };
+          const auto [previous_eye, previous_target] =
+            camera_for (shots[previous]);
+          const auto [current_eye, current_target] = camera_for (shots[stage]);
+          eye = previous_eye + (current_eye - previous_eye) * cut;
+          target = previous_target + (current_target - previous_target) * cut;
+          field_of_view =
+            shots[previous].field_of_view +
+            (shots[stage].field_of_view - shots[previous].field_of_view) * cut;
         }
         const Vec3 forward = normalized (target - eye);
 
         render::FrameParams fp;
         fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
         fp.proj = Mat4::perspective_reversed (
-          (show_terrain ? 52.0f : 64.0f) * u::deg,
+          field_of_view * u::deg,
           aspect,
           0.5f,
           std::max (9000.0f, world_extent[0] * 2.0f));
         fp.camera_pos = eye;
-        const float sunrise = smooth_curve (0.0f, 14.0f, sky_time);
-        const float loading_sun_height = 0.48f + 0.18f * sunrise;
-        const float sun_elevation = (loading_sun_height - 0.5f) * 3.14159265f;
+        // Golden afternoon rather than sunrise: the light comes from the
+        // camera's side, leaving the sun itself outside the composition.
+        constexpr float loading_sun_height = 0.70f;
         const Vec3 horizon_forward =
           normalized (Vec3 (forward[0], 0.0f, forward[2]));
         const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
-        const Vec3 loading_sun_dir = normalized (
-          horizon_forward * std::cos (sun_elevation) + horizon_side * 0.22f +
-          Vec3 (0, 1, 0) * std::sin (sun_elevation));
+        const Vec3 loading_sun_dir =
+          normalized (horizon_side * 0.82f + Vec3 (0, 1, 0) * 0.58f);
         fp.clear_color = horizon_color_for (loading_sun_height);
         fp.sun_dir = loading_sun_dir;
         sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
-        fp.ambient = DisplayColor (0.53f, 0.57f, 0.62f);
+        fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
         fp.fog_scale =
-          show_terrain ? attenuation_value (m_world.fog_scale * 1.35f) : 0.0f;
+          show_terrain ? attenuation_value (m_world.fog_scale * 0.20f) : 0.0f;
         fp.time = sky_time;
-        fp.exposure_bias = 0.82f + 0.08f * sunrise;
-        fp.sun_visibility = 0.20f + 0.72f * sunrise;
+        fp.exposure_bias = 1.0f;
+        fp.sun_visibility = 0.32f;
         if (!r.begin_frame (fp))
           return;
 
         render::SkyParams sky;
         sky.time = sky_time;
         sky.sun_height = loading_sun_height;
-        sky.cloudiness = 0.32f - 0.16f * sunrise;
+        sky.cloudiness = 0.14f;
         sky.sun_dir = fp.sun_dir;
         sky.fog_color = fp.clear_color;
         r.draw_sky (sky);
@@ -1756,8 +1794,13 @@ namespace moppe {
         }
 
         bool captured_loading = false;
+        int capture_stage = 1;
+        if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_STAGE"))
+          capture_stage = std::clamp (::atoi (value), 1, 8);
         if (!m_loading_capture_done && show_terrain &&
-            m_loading_progress_display > 0.40f) {
+            m_loading_progress_display > 0.40f &&
+            static_cast<int> (m_loading_snapshot_index) + 1 >= capture_stage &&
+            chapter_age >= 0.72f) {
           if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
             r.request_screenshot (path);
             m_loading_capture_done = true;
