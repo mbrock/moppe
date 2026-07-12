@@ -25,6 +25,19 @@ semantic node because the historical generator relied on fused floating-point
 results.  The Perlin shuffle also has an explicit unbiased sampler, avoiding
 standard-library-dependent sequences.
 
+`Field<QS>` layers an mp-units quantity spec over a `ScalarField` as a
+phantom type.  Samples remain plain floats and evaluators consume the erased
+DAG through `untyped ()`, but recipe combinators compose dimensionally: `+`
+and `-` require matching kinds, `*` multiplies quantity specs, and bare
+numbers scale within a kind.  The recipe domain is scale-free, so its
+quantities are dimensionless, yet distinct *kinds* (`recipe_coordinate`
+versus the plain dimensionless samples and weights) keep a mask from being
+added to a sampling position at compile time.  Noise combinators demand
+`CoordinateField` inputs and return fresh dimensionless values; crossing
+kinds -- warp noise becoming a coordinate displacement -- must be spelled
+`field_cast<...>` or carried by a constant declared with the target kind
+(`constant<recipe_coordinate> (amplitude)`).
+
 Every backend implements the `FieldEvaluator` materialization boundary.
 `CpuEvaluator` lowers unique nodes to a topologically ordered register program
 and runs it for every point in a `Domain2D`.  The macOS backend lowers the same

@@ -63,11 +63,11 @@ namespace moppe::terrain {
 
   GeologicalFields make_geological_fields (const GeologicalRecipe& recipe) {
     validate_geological_recipe (recipe);
-    const ScalarField u = coordinate_x ();
-    const ScalarField v = coordinate_y ();
+    const CoordinateField u = coordinate_u ();
+    const CoordinateField v = coordinate_v ();
 
     const int warp_cycles = recipe.warp.noise.cycles;
-    const ScalarField warp_x = periodic_fbm_noise (
+    const DimensionlessField warp_x = periodic_fbm_noise (
       recipe.seeds.warp,
       u * static_cast<float> (warp_cycles) + recipe.warp.x_offset.x,
       v * static_cast<float> (warp_cycles) + recipe.warp.x_offset.y,
@@ -76,7 +76,7 @@ namespace moppe::terrain {
       recipe.warp.noise.octaves,
       recipe.warp.noise.lacunarity,
       recipe.warp.noise.gain);
-    const ScalarField warp_y = periodic_fbm_noise (
+    const DimensionlessField warp_y = periodic_fbm_noise (
       recipe.seeds.warp,
       u * static_cast<float> (warp_cycles) + recipe.warp.y_offset.x,
       v * static_cast<float> (warp_cycles) + recipe.warp.y_offset.y,
@@ -85,13 +85,16 @@ namespace moppe::terrain {
       recipe.warp.noise.octaves,
       recipe.warp.noise.lacunarity,
       recipe.warp.noise.gain);
-    const ScalarField warped_x =
-      multiply_add (constant (recipe.warp.amplitude), warp_x, u);
-    const ScalarField warped_y =
-      multiply_add (constant (recipe.warp.amplitude), warp_y, v);
+    // The warp amplitude is a coordinate displacement per unit of
+    // noise; declaring it with the coordinate kind is what lets the
+    // pure-number warp noise land back in coordinate space.
+    const CoordinateField warp_amplitude =
+      constant<recipe_coordinate> (recipe.warp.amplitude);
+    const CoordinateField warped_x = multiply_add (warp_amplitude, warp_x, u);
+    const CoordinateField warped_y = multiply_add (warp_amplitude, warp_y, v);
 
     const int continent_cycles = recipe.continent.noise.cycles;
-    const ScalarField continent = multiply_add (
+    const DimensionlessField continent = multiply_add (
       periodic_fbm_noise (recipe.seeds.base,
                           warped_x * static_cast<float> (continent_cycles),
                           warped_y * static_cast<float> (continent_cycles),
@@ -100,10 +103,10 @@ namespace moppe::terrain {
                           recipe.continent.noise.octaves,
                           recipe.continent.noise.lacunarity,
                           recipe.continent.noise.gain),
-      constant (recipe.continent.scale),
-      constant (recipe.continent.bias));
+      constant<> (recipe.continent.scale),
+      constant<> (recipe.continent.bias));
     const int plains_cycles = recipe.plains.noise.cycles;
-    const ScalarField plains = multiply_add (
+    const DimensionlessField plains = multiply_add (
       periodic_fbm_noise (recipe.seeds.base,
                           warped_x * static_cast<float> (plains_cycles),
                           warped_y * static_cast<float> (plains_cycles),
@@ -112,10 +115,10 @@ namespace moppe::terrain {
                           recipe.plains.noise.octaves,
                           recipe.plains.noise.lacunarity,
                           recipe.plains.noise.gain),
-      constant (recipe.plains.scale),
-      constant (recipe.plains.bias));
+      constant<> (recipe.plains.scale),
+      constant<> (recipe.plains.bias));
     const int mountain_cycles = recipe.mountains.cycles;
-    const ScalarField mountains =
+    const DimensionlessField mountains =
       periodic_ridged_noise (recipe.seeds.ridge,
                              warped_x * static_cast<float> (mountain_cycles),
                              warped_y * static_cast<float> (mountain_cycles),
@@ -124,16 +127,16 @@ namespace moppe::terrain {
                              recipe.mountains.octaves,
                              recipe.mountains.lacunarity,
                              recipe.mountains.gain);
-    const ScalarField mountain_mask =
+    const DimensionlessField mountain_mask =
       smoothstep (recipe.blend.mask_low, recipe.blend.mask_high, continent);
 
-    const ScalarField lowland =
+    const DimensionlessField lowland =
       plains * recipe.blend.plains_weight * (1.0f - mountain_mask);
-    const ScalarField combined = multiply_add (
+    const DimensionlessField combined = multiply_add (
       mountains * recipe.blend.mountain_weight,
       mountain_mask,
       multiply_add (
-        continent, constant (recipe.blend.continent_weight), lowland));
+        continent, constant<> (recipe.blend.continent_weight), lowland));
 
     return { .warp_x = warp_x,
              .warp_y = warp_y,
@@ -152,25 +155,27 @@ namespace moppe::terrain {
     return make_geological_fields (recipe);
   }
 
+  // The inspection boundary erases the kinds: evaluators and artifact
+  // writers consume the untyped DAG.
   ScalarField geological_layer (const GeologicalFields& fields,
                                 GeologicalLayer layer) {
     switch (layer) {
     case GeologicalLayer::Combined:
-      return fields.combined;
+      return fields.combined.untyped ();
     case GeologicalLayer::Continent:
-      return fields.continent;
+      return fields.continent.untyped ();
     case GeologicalLayer::Plains:
-      return fields.plains;
+      return fields.plains.untyped ();
     case GeologicalLayer::Mountains:
-      return fields.mountains;
+      return fields.mountains.untyped ();
     case GeologicalLayer::MountainMask:
-      return fields.mountain_mask;
+      return fields.mountain_mask.untyped ();
     case GeologicalLayer::WarpX:
-      return fields.warp_x;
+      return fields.warp_x.untyped ();
     case GeologicalLayer::WarpY:
-      return fields.warp_y;
+      return fields.warp_y.untyped ();
     }
-    return fields.combined;
+    return fields.combined.untyped ();
   }
 
   const char* geological_layer_name (GeologicalLayer layer) {

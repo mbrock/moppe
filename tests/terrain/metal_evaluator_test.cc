@@ -95,7 +95,7 @@ MOPPE_TEST (metal_stitching_matches_all_noise_families) {
 MOPPE_TEST (metal_stitching_materializes_the_geological_recipe) {
   using namespace moppe::terrain;
   const ScalarField field =
-    make_geological_fields (make_geological_recipe (123)).combined;
+    make_geological_fields (make_geological_recipe (123)).combined.untyped ();
   const Domain2D domain { .width = 65, .height = 65 };
   const ScalarRaster cpu = CpuEvaluator ().evaluate (field, domain);
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);

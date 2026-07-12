@@ -60,7 +60,10 @@ MOPPE_TEST (geological_fields_share_warp_subexpressions) {
 
   MOPPE_CHECK (warped_x.multiplicand == fields.warp_x.node ());
   MOPPE_CHECK (warped_y.multiplicand == fields.warp_y.node ());
-  MOPPE_CHECK (unique_node_count (fields.combined) == 56);
+  // 55: the warp amplitude constant is a single shared node feeding
+  // both warped coordinates (it was duplicated before the typed
+  // recipe hoisted it).
+  MOPPE_CHECK (unique_node_count (fields.combined.untyped ()) == 55);
 }
 
 MOPPE_TEST (geological_layer_ids_round_trip) {
@@ -89,9 +92,10 @@ MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
 
   recipe.mountains.cycles = 8;
   const ScalarRaster changed = CpuEvaluator ().evaluate (
-    make_geological_fields (recipe).mountains, { .width = 17, .height = 17 });
+    make_geological_fields (recipe).mountains.untyped (),
+    { .width = 17, .height = 17 });
   const ScalarRaster original = CpuEvaluator ().evaluate (
-    make_geological_fields (make_geological_recipe (123)).mountains,
+    make_geological_fields (make_geological_recipe (123)).mountains.untyped (),
     { .width = 17, .height = 17 });
   MOPPE_CHECK (changed.at (8, 8) != original.at (8, 8));
 }
