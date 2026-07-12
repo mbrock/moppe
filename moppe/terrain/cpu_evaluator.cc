@@ -247,11 +247,11 @@ namespace moppe::terrain {
       std::unordered_map<std::uint32_t, std::shared_ptr<const PerlinTable>>
         tables;
 
-      const auto table_for = [&tables] (std::uint32_t seed) {
-        if (const auto found = tables.find (seed); found != tables.end ())
+      const auto table_for = [&tables] (Seed seed) {
+        if (const auto found = tables.find (seed.value); found != tables.end ())
           return found->second;
-        auto table = std::make_shared<const PerlinTable> (seed);
-        tables.emplace (seed, table);
+        auto table = std::make_shared<const PerlinTable> (seed.value);
+        tables.emplace (seed.value, table);
         return table;
       };
 

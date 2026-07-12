@@ -2,6 +2,7 @@
 #define MOPPE_TERRAIN_GEOLOGICAL_HH
 
 #include <moppe/terrain/field.hh>
+#include <moppe/terrain/types.hh>
 
 #include <cstdint>
 #include <optional>
@@ -19,9 +20,9 @@ namespace moppe::terrain {
   };
 
   struct GeologicalSeeds {
-    std::uint32_t base;
-    std::uint32_t ridge;
-    std::uint32_t warp;
+    Seed base;
+    Seed ridge;
+    Seed warp;
   };
 
   struct FractalNoiseParameters {

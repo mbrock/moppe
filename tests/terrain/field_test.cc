@@ -17,7 +17,8 @@ namespace {
   template <typename A, typename B>
   concept subtractable = requires (A a, B b) { a - b; };
   template <typename F>
-  concept noise_coordinate = requires (F f) { perlin_noise (1u, f, f); };
+  concept noise_coordinate =
+    requires (F f) { perlin_noise (moppe::terrain::Seed { 1 }, f, f); };
 
   // Adding or subtracting across kinds is rejected: a mask is not a
   // coordinate.
@@ -76,7 +77,8 @@ namespace {
 MOPPE_TEST (typed_fields_share_the_untyped_dag) {
   const CoordinateField u = coordinate_u ();
   const CoordinateField shifted = u * 3.0f + 0.25f;
-  const NoiseField noise = perlin_noise (7u, shifted, coordinate_v ());
+  const NoiseField noise =
+    perlin_noise (moppe::terrain::Seed { 7 }, shifted, coordinate_v ());
 
   // The phantom kind adds no nodes: the DAG below is the same
   // expression the untyped combinators would have built.
@@ -90,8 +92,9 @@ MOPPE_TEST (typed_fields_share_the_untyped_dag) {
 }
 
 MOPPE_TEST (typed_materialization_preserves_meaning_until_normalization) {
-  const RelativeElevationField relief = field_cast<relative_elevation> (
-    perlin_noise (9u, coordinate_u (), coordinate_v ()));
+  const RelativeElevationField relief =
+    field_cast<relative_elevation> (perlin_noise (
+      moppe::terrain::Seed { 9 }, coordinate_u (), coordinate_v ()));
   const RelativeElevationRaster raster =
     materialize (CpuEvaluator (), relief, { .width = 4, .height = 3 });
 

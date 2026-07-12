@@ -79,11 +79,12 @@ MOPPE_TEST (metal_stitching_matches_all_noise_families) {
   using namespace moppe::terrain;
   const ScalarField x = coordinate_x () * 3.0f - 0.31f;
   const ScalarField y = coordinate_y () * 2.0f + 0.17f;
-  const ScalarField field = perlin_noise (11, x, y) +
-                            fbm_noise (12, x, y, 3, 2.1f, 0.47f) +
-                            ridged_noise (13, x, y, 4, 1.9f, 0.52f) +
-                            periodic_fbm_noise (14, x, y, 3, 2, 3, 2, 0.5f) +
-                            periodic_ridged_noise (15, x, y, 3, 2, 3, 2, 0.5f);
+  const ScalarField field =
+    perlin_noise (moppe::terrain::Seed { 11 }, x, y) +
+    fbm_noise (moppe::terrain::Seed { 12 }, x, y, 3, 2.1f, 0.47f) +
+    ridged_noise (moppe::terrain::Seed { 13 }, x, y, 4, 1.9f, 0.52f) +
+    periodic_fbm_noise (moppe::terrain::Seed { 14 }, x, y, 3, 2, 3, 2, 0.5f) +
+    periodic_ridged_noise (moppe::terrain::Seed { 15 }, x, y, 3, 2, 3, 2, 0.5f);
   const Domain2D domain { .width = 37, .height = 29 };
   const ScalarRaster cpu = CpuEvaluator ().evaluate (field, domain);
   const metal::MetalEvaluator evaluator (MOPPE_SHADER_ASSET_PATH);

@@ -52,8 +52,8 @@ MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
 }
 
 MOPPE_TEST (geological_fields_share_warp_subexpressions) {
-  const GeologicalFields fields =
-    make_geological_fields ({ .base = 1, .ridge = 2, .warp = 3 });
+  const GeologicalFields fields = make_geological_fields (
+    { .base = Seed { 1 }, .ridge = Seed { 2 }, .warp = Seed { 3 } });
   static_assert (std::same_as<decltype (fields.warp_x), NoiseField>);
   static_assert (
     std::same_as<decltype (fields.combined), RelativeElevationField>);

@@ -107,7 +107,7 @@ MOPPE_TEST (periodic_fractal_noise_matches_on_both_seams) {
   const ScalarField x = coordinate_x ();
   const ScalarField y = coordinate_y ();
   const ScalarField field = periodic_fbm_noise (
-    42, x * 3.0f + 0.37f, y * 3.0f - 0.21f, 3, 3, 4, 2, 0.5f);
+    Seed { 42 }, x * 3.0f + 0.37f, y * 3.0f - 0.21f, 3, 3, 4, 2, 0.5f);
   const ScalarRaster raster =
     CpuEvaluator ().evaluate (field, { .width = 33, .height = 29 });
 

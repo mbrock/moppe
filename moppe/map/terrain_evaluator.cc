@@ -16,8 +16,8 @@ namespace moppe::map {
   void TerrainEvaluator::begin (const terrain::TerrainProgram& program,
                                 const SourceProgress& source_progress) {
     terrain::validate_program (program);
-    m_randomness.seed (program.randomness.seed);
-    m_randomness.discard (program.randomness.offset);
+    m_randomness.seed (program.randomness.seed.value);
+    m_randomness.discard (program.randomness.offset.value);
     const terrain::GeologicalFields fields =
       terrain::make_geological_fields (program.source.recipe);
     const terrain::ScalarField field =
