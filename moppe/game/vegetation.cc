@@ -1017,7 +1017,8 @@ namespace moppe {
     void Vegetation::render (render::Renderer& r,
                              const FrameEnv& env,
                              bool draw_vegetation,
-                             float grass_density) {
+                             float grass_density,
+                             const Vector3D& grass_scale) {
       if (m_map_size.x <= 0 || m_map_size.z <= 0)
         return;
 
@@ -1050,6 +1051,8 @@ namespace moppe {
           grass.radius = 65.0f * s;
           grass.spacing = 0.40f / s;
           grass.blades_per_cell = 4;
+          grass.horizontal_scale = grass_scale.x;
+          grass.vertical_scale = grass_scale.y;
           r.draw_grass (grass);
         }
       }

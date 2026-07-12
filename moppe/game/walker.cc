@@ -92,7 +92,9 @@ namespace moppe {
       }
     }
 
-    void Walker::render (render::DrawList& dl, float time) const {
+    void Walker::render (render::DrawList& dl,
+                         float time,
+                         const Vector3D& visual_scale) const {
       dl.set_texture (nullptr);
 
       // The rider, dismounted: the same guy in the same gear, with
@@ -105,6 +107,7 @@ namespace moppe {
       dl.push ();
       dl.translate (m_pos.x, m_pos.y + bob, m_pos.z);
       dl.rotate_deg (std::atan2 (m_heading.x, m_heading.z) * 57.2958f, 0, 1, 0);
+      dl.scale (visual_scale);
 
       // Legs: the thigh swings from the hip, the shin lags behind
       // with a knee bend that folds on the back-swing, and the boot

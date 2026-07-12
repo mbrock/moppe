@@ -149,6 +149,8 @@ namespace moppe {
       float radius = 90.0f;
       float spacing = 0.70f;
       int blades_per_cell = 3;
+      float horizontal_scale = 1.0f;
+      float vertical_scale = 1.0f;
     };
 
     struct DustEmission {

@@ -34,6 +34,11 @@ namespace moppe {
                    seconds_t dt);
       void limit (const map::HeightMap& map);
 
+      void set_landscape_scale (float horizontal, float vertical) {
+        m_horizontal_scale = horizontal;
+        m_vertical_scale = vertical;
+      }
+
       State state () const {
         return { m_position,
                  m_target,
@@ -90,6 +95,8 @@ namespace moppe {
       Vector3D m_target_velocity;
       float m_speed;
       bool m_is_uninitialized;
+      float m_horizontal_scale = 1.0f;
+      float m_vertical_scale = 1.0f;
     };
   }
 }

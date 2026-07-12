@@ -19,17 +19,18 @@ namespace moppe {
                          render::DrawList& dl,
                          const mov::Vehicle& v,
                          float time,
-                         float visual_scale = 1.0f);
+                         const Vector3D& visual_scale = Vector3D (1, 1, 1));
 
     // The exhaust lick and jump-jet plumes: baked unit cones replayed
     // with breathing scale matrices.  Additive glow must blend over the
     // already-drawn solids, so the caller invokes this after playing
     // the world draw list (alongside the star halos), not at vehicle
     // draw time.
-    void render_vehicle_flames (render::Renderer& r,
-                                const mov::Vehicle& v,
-                                float time,
-                                float visual_scale = 1.0f);
+    void
+    render_vehicle_flames (render::Renderer& r,
+                           const mov::Vehicle& v,
+                           float time,
+                           const Vector3D& visual_scale = Vector3D (1, 1, 1));
   }
 }
 

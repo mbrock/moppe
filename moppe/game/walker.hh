@@ -65,7 +65,9 @@ namespace moppe {
       }
 
       // The walk cycle runs off distance; time only drives idle breathing.
-      void render (render::DrawList& dl, float time) const;
+      void render (render::DrawList& dl,
+                   float time,
+                   const Vector3D& visual_scale = Vector3D (1, 1, 1)) const;
 
     private:
       void collide (const std::vector<mov::Box>& boxes);
