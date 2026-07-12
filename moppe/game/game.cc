@@ -135,6 +135,60 @@ namespace moppe {
       return platform::cache_path (name.str ());
     }
 
+    static bool
+    load_terrain_history (const std::string& path,
+                          std::size_t samples,
+                          std::vector<std::vector<float>>& history) {
+      std::ifstream input (path, std::ios::binary);
+      if (!input)
+        return false;
+      input.seekg (12 + static_cast<std::streamoff> (samples * sizeof (float)));
+      char magic[4] {};
+      std::uint32_t snapshot_count = 0;
+      std::uint64_t sample_count = 0;
+      input.read (magic, sizeof (magic));
+      input.read (reinterpret_cast<char*> (&snapshot_count),
+                  sizeof (snapshot_count));
+      input.read (reinterpret_cast<char*> (&sample_count),
+                  sizeof (sample_count));
+      if (!input || std::memcmp (magic, "HST1", 4) != 0 ||
+          sample_count != samples || snapshot_count > 64)
+        return false;
+      std::vector<std::vector<float>> loaded (snapshot_count,
+                                              std::vector<float> (samples));
+      for (std::vector<float>& snapshot : loaded)
+        input.read (reinterpret_cast<char*> (snapshot.data ()),
+                    static_cast<std::streamsize> (samples * sizeof (float)));
+      if (!input)
+        return false;
+      history = std::move (loaded);
+      return true;
+    }
+
+    static void
+    save_terrain_history (const std::string& path,
+                          const std::vector<std::vector<float>>& history) {
+      if (history.empty ())
+        return;
+      const std::uint64_t samples = history.front ().size ();
+      if (samples == 0 || std::any_of (history.begin (),
+                                       history.end (),
+                                       [samples] (const auto& h) {
+                                         return h.size () != samples;
+                                       }))
+        return;
+      std::ofstream output (path, std::ios::binary | std::ios::app);
+      const std::uint32_t snapshot_count =
+        static_cast<std::uint32_t> (history.size ());
+      output.write ("HST1", 4);
+      output.write (reinterpret_cast<const char*> (&snapshot_count),
+                    sizeof (snapshot_count));
+      output.write (reinterpret_cast<const char*> (&samples), sizeof (samples));
+      for (const std::vector<float>& snapshot : history)
+        output.write (reinterpret_cast<const char*> (snapshot.data ()),
+                      static_cast<std::streamsize> (samples * sizeof (float)));
+    }
+
     static std::string
     last_seed_path (const WorldParams& world,
                     terrain::TerrainGenerationProfile profile) {
@@ -439,15 +493,23 @@ namespace moppe {
           const char* cache =
             cache_override ? cache_override : automatic_cache.c_str ();
           if (cache && m_map.try_load_cache (cache)) {
+            const std::size_t count =
+              static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+            load_terrain_history (cache, count, m_terrain_history);
             m_gen_stage = 7;
           } else {
             m_gen_stage = 3;
             const terrain::TerrainProgram program =
               terrain::make_world_program (m_seed, m_generation_profile);
             map::TerrainEvaluator evaluator (m_map);
+            m_terrain_history.clear ();
             evaluator.evaluate (
               program,
               [this] (std::size_t, const terrain::TerrainTransform& transform) {
+                const std::size_t count =
+                  static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+                m_terrain_history.emplace_back (m_map.raw_heights (),
+                                                m_map.raw_heights () + count);
                 // Normalization and lowland shaping have run when the first
                 // erosion stage is announced.  Publish that coherent newborn
                 // landform for the loading-screen renderer rather than racing
@@ -484,9 +546,21 @@ namespace moppe {
                                                                      value)) {}
                 m_loading_source_total = static_cast<int> (total);
               });
-            if (cache)
+            const std::size_t count =
+              static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+            m_terrain_history.emplace_back (m_map.raw_heights (),
+                                            m_map.raw_heights () + count);
+            if (cache) {
               m_map.save_cache (cache);
+              save_terrain_history (cache, m_terrain_history);
+            }
           }
+        }
+        if (m_terrain_history.empty ()) {
+          const std::size_t count =
+            static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+          m_terrain_history.emplace_back (m_map.raw_heights (),
+                                          m_map.raw_heights () + count);
         }
         m_gen_stage = 5;
         m_map.recompute_normals ();
@@ -658,6 +732,7 @@ namespace moppe {
                                m_world,
                                m_graphics,
                                lab_program (),
+                               m_terrain_history,
                                sun_direction_for (m_graphics.sun_height));
           m_start_in_terrain_lab = false;
         }
@@ -1794,6 +1869,7 @@ namespace moppe {
                                m_world,
                                m_graphics,
                                lab_program (),
+                               m_terrain_history,
                                sun_direction_for (m_graphics.sun_height));
           return;
         }
@@ -1934,6 +2010,7 @@ namespace moppe {
         m_water_network.reset ();
         m_rivers.reset ();
         m_river_surface.clear ();
+        m_terrain_history.clear ();
         ++m_seed;
         m_mode = M_BIKE;
         m_car_exists = false;
@@ -2050,6 +2127,7 @@ namespace moppe {
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
       map::RandomHeightMap m_loading_map;
+      std::vector<std::vector<float>> m_terrain_history;
       std::mutex m_loading_mutex;
       std::shared_ptr<const std::vector<float>> m_loading_heights;
       std::atomic<int> m_loading_work_done = 0;
