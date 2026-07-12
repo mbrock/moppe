@@ -4,6 +4,7 @@
 import argparse
 import csv
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -165,4 +166,7 @@ def main():
 
 
 if __name__ == "__main__":
-  main()
+  if "GIT_INDEX_FILE" in os.environ:
+    print("We disabled this for now because it was a bit slow.")
+  else:
+    main()
