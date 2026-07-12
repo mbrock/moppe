@@ -41,11 +41,11 @@ namespace moppe {
         float boost_level {};
         float boost_charge {};
         seconds_t boost_recharge_delay {};
-        float water_level {};
+        meters_t water_level {};
         seconds_t airborne_time {};
-        float impact {};
-        float fall_top {};
-        float fall_drop {};
+        speed_t impact {};
+        meters_t fall_top {};
+        meters_t fall_drop {};
         int body_kind {};
         DisplayColor body_color {};
       };
@@ -95,7 +95,7 @@ namespace moppe {
       }
 
       void set_water_level (meters_t level) {
-        m_water_level = meters_value (level);
+        m_water_level = level;
       }
 
       void set_obstacles (const std::vector<Box>* boxes) {
@@ -112,7 +112,7 @@ namespace moppe {
         m_boost_charge = 1;
         m_boost_recharge_delay = seconds (0);
         m_boost_flight = false;
-        m_impact = 0;
+        m_impact = 0 * u::m / u::s;
         m_render_heading = m_heading;
         m_render_normal = Vec3 (0, 1, 0);
       }
@@ -147,16 +147,16 @@ namespace moppe {
 
       // Downward speed of the last hard landing; reading it clears it
       float pop_impact () {
-        float i = m_impact;
-        m_impact = 0;
-        return i;
+        const float value = m_impact.numerical_value_in (u::m / u::s);
+        m_impact = 0 * u::m / u::s;
+        return value;
       }
 
       // How far the last flight fell, peak to touchdown, in meters
       float pop_fall_drop () {
-        float d = m_fall_drop;
-        m_fall_drop = 0;
-        return d;
+        const float value = meters_value (m_fall_drop);
+        m_fall_drop = 0 * u::m;
+        return value;
       }
 
       // Stored energy and current output of the continuous jump jets.
@@ -232,7 +232,7 @@ namespace moppe {
       bool is_grounded () const;
       bool driving_contact () const;
 
-      Vec3 drag () const;
+      acceleration_t drag () const;
 
       const Box* roof_under () const;
 
@@ -278,12 +278,12 @@ namespace moppe {
       float m_boost_level;
       float m_boost_charge;
       seconds_t m_boost_recharge_delay;
-      float m_water_level;
+      meters_t m_water_level;
 
       seconds_t m_airborne_time;
-      float m_impact;
-      float m_fall_top;  // highest point of the current flight
-      float m_fall_drop; // set on landing: peak minus touchdown
+      speed_t m_impact;
+      meters_t m_fall_top;  // highest point of the current flight
+      meters_t m_fall_drop; // set on landing: peak minus touchdown
 
       const std::vector<Box>* m_obstacles;
 
