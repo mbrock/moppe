@@ -78,21 +78,21 @@ namespace moppe {
     public:
       NormalMap (int width, int height);
 
-      inline const Vector3D& at (int x, int y) const {
+      inline const Vec3& at (int x, int y) const {
         return m_data.at (y, x);
       }
 
-      inline const Vector3D* raw () const {
+      inline const Vec3* raw () const {
         return m_data.raw ();
       }
 
       void reset ();
-      void add (int x, int y, const Vector3D& v);
-      void set (int x, int y, const Vector3D& v);
+      void add (int x, int y, const Vec3& v);
+      void set (int x, int y, const Vec3& v);
       void normalize_all ();
 
     private:
-      Array2D<Vector3D> m_data;
+      Array2D<Vec3> m_data;
 
       const int m_width;
       const int m_height;
@@ -102,25 +102,26 @@ namespace moppe {
     public:
       HeightMap (int width,
                  int height,
-                 const Vector3D& size,
+                 const Vec3& size,
                  terrain::Topology topology = terrain::Topology::Bounded)
           : m_width (width), m_height (height),
-            m_scale (size.x / (topology == terrain::Topology::Torus ? width - 1
-                                                                    : width),
-                     size.y,
-                     size.z / (topology == terrain::Topology::Torus ? height - 1
-                                                                    : height)),
+            m_scale (
+              size[0] /
+                (topology == terrain::Topology::Torus ? width - 1 : width),
+              size[1],
+              size[2] /
+                (topology == terrain::Topology::Torus ? height - 1 : height)),
             m_topology (topology) {}
 
       virtual ~HeightMap () {}
 
       virtual float get (int x, int y) const = 0;
-      virtual Vector3D normal (int x, int y) const = 0;
+      virtual Vec3 normal (int x, int y) const = 0;
 
-      Vector3D vertex (int x, int y) const;
-      Vector3D
+      Vec3 vertex (int x, int y) const;
+      Vec3
       triangle_normal (int x1, int y1, int x2, int y2, int x3, int y3) const;
-      Vector3D center () const {
+      Vec3 center () const {
         return vertex (m_width / 2, m_height / 2);
       }
 
@@ -129,12 +130,12 @@ namespace moppe {
           return std::isfinite (x) && std::isfinite (y);
         // Test the floats: integer truncation would admit a strip of
         // slightly-negative coordinates on two edges
-        return x >= 0 && y >= 0 && x <= (m_width - 2) * m_scale.x &&
-               y <= (m_height - 2) * m_scale.z;
+        return x >= 0 && y >= 0 && x <= (m_width - 2) * m_scale[0] &&
+               y <= (m_height - 2) * m_scale[2];
       }
 
       float interpolated_height (float x, float y) const {
-        float gx = x / m_scale.x, gy = y / m_scale.z;
+        float gx = x / m_scale[0], gy = y / m_scale[2];
         if (periodic ()) {
           gx =
             terrain::wrap_coordinate (gx, static_cast<float> (unique_width ()));
@@ -153,13 +154,13 @@ namespace moppe {
         float r1 = linear_interpolate (get (xi, yi), get (xi + 1, yi), ax);
         float r2 =
           linear_interpolate (get (xi, yi + 1), get (xi + 1, yi + 1), ax);
-        return m_scale.y * linear_interpolate (r1, r2, ay);
+        return m_scale[1] * linear_interpolate (r1, r2, ay);
 
-        //      return m_scale.y * get (x / m_scale.x, y / m_scale.z);
+        //      return m_scale[1] * get (x / m_scale[0], y / m_scale[2]);
       }
 
-      Vector3D interpolated_normal (float x, float y) const {
-        float gx = x / m_scale.x, gy = y / m_scale.z;
+      Vec3 interpolated_normal (float x, float y) const {
+        float gx = x / m_scale[0], gy = y / m_scale[2];
         if (periodic ()) {
           gx =
             terrain::wrap_coordinate (gx, static_cast<float> (unique_width ()));
@@ -175,9 +176,9 @@ namespace moppe {
         float ax = gx - xi;
         float ay = gy - yi;
 
-        Vector3D r1 =
+        Vec3 r1 =
           linear_vector_interpolate (normal (xi, yi), normal (xi + 1, yi), ax);
-        Vector3D r2 = linear_vector_interpolate (
+        Vec3 r2 = linear_vector_interpolate (
           normal (xi, yi + 1), normal (xi + 1, yi + 1), ax);
         return linear_vector_interpolate (r1, r2, ay);
       }
@@ -198,12 +199,13 @@ namespace moppe {
         return m_topology == terrain::Topology::Torus;
       }
 
-      inline Vector3D scale () const {
+      inline Vec3 scale () const {
         return m_scale;
       }
-      inline Vector3D size () const {
-        return Vector3D (
-          m_scale.x * unique_width (), m_scale.y, m_scale.z * unique_height ());
+      inline Vec3 size () const {
+        return Vec3 (m_scale[0] * unique_width (),
+                     m_scale[1],
+                     m_scale[2] * unique_height ());
       }
 
       float min_value () const;
@@ -212,7 +214,7 @@ namespace moppe {
     protected:
       const int m_width;
       const int m_height;
-      const Vector3D m_scale;
+      const Vec3 m_scale;
       const terrain::Topology m_topology;
     };
 
@@ -224,7 +226,7 @@ namespace moppe {
       NormalComputingHeightMap (
         int width,
         int height,
-        Vector3D size,
+        Vec3 size,
         terrain::Topology topology = terrain::Topology::Bounded)
           : HeightMap (width, height, size, topology),
             m_normals (width, height) {}
@@ -233,13 +235,13 @@ namespace moppe {
         compute_normal_map (*this, m_normals);
       }
 
-      Vector3D normal (int x, int y) const {
+      Vec3 normal (int x, int y) const {
         return m_normals.at (x, y);
       }
 
       // Contiguous width*height array, row 0 first; the renderer
       // uploads it as a texture.
-      const Vector3D* raw_normals () const {
+      const Vec3* raw_normals () const {
         return m_normals.raw ();
       }
 
@@ -251,7 +253,7 @@ namespace moppe {
     public:
       RandomHeightMap (int width,
                        int height,
-                       const Vector3D& size,
+                       const Vec3& size,
                        int seed = 0,
                        terrain::Topology topology = terrain::Topology::Bounded);
 

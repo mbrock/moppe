@@ -7,11 +7,10 @@
 #include <type_traits>
 
 namespace {
-  void check_vector (const moppe::Vector3D& actual,
-                     const moppe::Vector3D& expected) {
-    MOPPE_CHECK_NEAR (actual.x, expected.x, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.y, expected.y, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.z, expected.z, 1e-6f);
+  void check_vector (const moppe::Vec3& actual, const moppe::Vec3& expected) {
+    MOPPE_CHECK_NEAR (actual[0], expected[0], 1e-6f);
+    MOPPE_CHECK_NEAR (actual[1], expected[1], 1e-6f);
+    MOPPE_CHECK_NEAR (actual[2], expected[2], 1e-6f);
   }
 
   void check_color (moppe::DisplayColor actual, moppe::DisplayColor expected) {
@@ -24,15 +23,11 @@ namespace {
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   using namespace moppe;
   map::RandomHeightMap map (
-    9, 9, Vector3D (100, 20, 100), 1, terrain::Topology::Torus);
+    9, 9, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
   map.randomize_geologically ();
   map.recompute_normals ();
-  mov::Vehicle vehicle (Vector3D (20, 0, 20),
-                        15 * u::deg,
-                        map,
-                        1000 * u::N,
-                        10 * u::kW,
-                        100 * u::kg);
+  mov::Vehicle vehicle (
+    Vec3 (20, 0, 20), 15 * u::deg, map, 1000 * u::N, 10 * u::kW, 100 * u::kg);
   vehicle.set_thrust (0.8f);
   vehicle.set_yaw (25 * u::deg);
   vehicle.set_boost (0.7f, 0.5f);
@@ -83,12 +78,10 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 MOPPE_TEST (camera_and_walker_state_round_trip) {
   using namespace moppe;
   game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
-  camera.update (Vector3D (10, 2, 20),
-                 Vector3D (0, 0, 1),
-                 Vector3D (4, 0, 2),
-                 seconds (1.0f / 60.0f));
+  camera.update (
+    Vec3 (10, 2, 20), Vec3 (0, 0, 1), Vec3 (4, 0, 2), seconds (1.0f / 60.0f));
   const game::ChaseCamera::State camera_state = camera.state ();
-  camera.place (Vector3D (100, 100, 100), Vector3D ());
+  camera.place (Vec3 (100, 100, 100), Vec3 ());
   camera.restore (camera_state);
   check_vector (camera.state ().position, camera_state.position);
   check_vector (camera.state ().target, camera_state.target);
@@ -96,11 +89,11 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
                 camera_state.position_velocity);
 
   game::Walker walker;
-  walker.spawn (Vector3D (3, 4, 5), Vector3D (1, 0, 0));
+  walker.spawn (Vec3 (3, 4, 5), Vec3 (1, 0, 0));
   walker.set_turn (0.4f);
   walker.set_walk (0.8f);
   const game::Walker::State walker_state = walker.state ();
-  walker.spawn (Vector3D (30, 40, 50), Vector3D (0, 0, -1));
+  walker.spawn (Vec3 (30, 40, 50), Vec3 (0, 0, -1));
   walker.restore (walker_state);
   check_vector (walker.state ().position, walker_state.position);
   check_vector (walker.state ().heading, walker_state.heading);
@@ -111,7 +104,7 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vector3D (100, 20, 100), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -143,11 +136,8 @@ MOPPE_TEST (dust_state_is_a_bounded_deterministic_emission_log) {
   style.life = 2.0f;
   style.spread = 1.5f;
   style.additive = true;
-  dust.emit (Vector3D (1, 2, 3),
-             Vector3D (4, 5, 6),
-             90,
-             DisplayColor (0.8f, 0.6f, 0.2f),
-             style);
+  dust.emit (
+    Vec3 (1, 2, 3), Vec3 (4, 5, 6), 90, DisplayColor (0.8f, 0.6f, 0.2f), style);
   const game::Dust::State saved = dust.state ();
   MOPPE_CHECK (saved.emissions.size () == 2);
   MOPPE_CHECK (saved.emissions[0].particle_count == 64);

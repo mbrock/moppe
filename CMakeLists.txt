@@ -306,6 +306,18 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
     moppe/terrain/stream_power_experiment.cc
   )
   target_link_libraries(terrain-stream-power-experiment PRIVATE moppe_game)
+
+  if(APPLE)
+    # Unity makes moppe_game one archive object, including the platform-facing
+    # terrain lab and texture helpers even in command-line tools.
+    foreach(tool
+        map-test
+        terrain-pipeline-demo
+        terrain-erosion-experiment
+        terrain-stream-power-experiment)
+      target_link_libraries(${tool} PRIVATE moppe_platform_mac)
+    endforeach()
+  endif()
 endif()
 
 # ---------------------------------------------------------------

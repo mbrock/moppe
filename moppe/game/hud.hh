@@ -15,7 +15,7 @@ namespace moppe {
     // Game state consumed by the compact overlay.  Hud::draw clamps
     // normalized inputs before deriving dial geometry.
     struct HudState {
-      // active_vehicle().velocity().length() * 3.6f; ignored (treated
+      // length(active_vehicle().velocity()) * 3.6f; ignored (treated
       // as 0) while on_foot, as at the old call site.
       float speed_kmh;
       // m_fuel: 0..100.  Drives the fuel needle sweep.

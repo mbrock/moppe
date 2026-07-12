@@ -26,29 +26,29 @@ namespace moppe {
     void NormalMap::reset () {
       for (int y = 0; y < m_height; ++y)
         for (int x = 0; x < m_width; ++x)
-          m_data.at (y, x) = Vector3D (0, 0, 0);
+          m_data.at (y, x) = Vec3 (0, 0, 0);
     }
 
-    void NormalMap::add (int x, int y, const Vector3D& v) {
+    void NormalMap::add (int x, int y, const Vec3& v) {
       if (((x < 0) || (x > m_width - 1) || (y < 0) || (y > m_height - 1)))
         return;
 
       m_data.at (y, x) += v;
     }
 
-    void NormalMap::set (int x, int y, const Vector3D& v) {
+    void NormalMap::set (int x, int y, const Vec3& v) {
       m_data.at (y, x) = v;
     }
 
     void NormalMap::normalize_all () {
       for (int y = 0; y < m_height; ++y)
         for (int x = 0; x < m_width; ++x)
-          m_data.at (y, x).normalize ();
+          normalize (m_data.at (y, x));
     }
 
     RandomHeightMap::RandomHeightMap (int width,
                                       int height,
-                                      const Vector3D& size,
+                                      const Vec3& size,
                                       int seed,
                                       terrain::Topology topology)
         : NormalComputingHeightMap (width, height, size, topology),
@@ -82,19 +82,19 @@ namespace moppe {
       return max;
     }
 
-    Vector3D HeightMap::vertex (int x, int y) const {
-      Vector3D r (m_scale.x * x, m_scale.y * get (x, y), m_scale.z * y);
+    Vec3 HeightMap::vertex (int x, int y) const {
+      Vec3 r (m_scale[0] * x, m_scale[1] * get (x, y), m_scale[2] * y);
       //    std::cout << x << "," << y << " -> " << r << "\n";
       return r;
     }
 
-    Vector3D HeightMap::triangle_normal (
+    Vec3 HeightMap::triangle_normal (
       int x1, int y1, int x2, int y2, int x3, int y3) const {
-      Vector3D a = vertex (x1, y1);
-      Vector3D b = vertex (x2, y2);
-      Vector3D c = vertex (x3, y3);
+      Vec3 a = vertex (x1, y1);
+      Vec3 b = vertex (x2, y2);
+      Vec3 c = vertex (x3, y3);
 
-      return (b - a).cross (c - a).normalized ();
+      return normalized (cross (b - a, c - a));
     }
 
     void RandomHeightMap::normalize () {
@@ -116,9 +116,9 @@ namespace moppe {
       return terrain::TerrainView (
         { .width = static_cast<std::size_t> (m_width),
           .height = static_cast<std::size_t> (m_height),
-          .spacing_x = m_scale.x,
-          .spacing_y = m_scale.z,
-          .height_scale = m_scale.y,
+          .spacing_x = m_scale[0],
+          .spacing_y = m_scale[2],
+          .height_scale = m_scale[1],
           .topology = periodic () ? terrain::Topology::Torus
                                   : terrain::Topology::Bounded },
         std::span<const float> (m_data.raw (),
@@ -982,9 +982,9 @@ namespace moppe {
         const int period_y = height_map.unique_height ();
         for (int y = 0; y < period_y; ++y)
           for (int x = 0; x < period_x; ++x) {
-            const Vector3D left =
+            const Vec3 left =
               height_map.triangle_normal (x, y, x, y + 1, x + 1, y + 1);
-            const Vector3D right =
+            const Vec3 right =
               height_map.triangle_normal (x, y, x + 1, y + 1, x + 1, y);
             const int x1 = terrain::wrap_index (x + 1, period_x);
             const int y1 = terrain::wrap_index (y + 1, period_y);
@@ -1008,9 +1008,8 @@ namespace moppe {
       // grid; anything fancier is far too slow at 4M vertices.
       for (int y = 0; y < height_map.height () - 1; ++y)
         for (int x = 0; x < height_map.width () - 1; ++x) {
-          Vector3D left =
-            height_map.triangle_normal (x, y, x, y + 1, x + 1, y + 1);
-          Vector3D right =
+          Vec3 left = height_map.triangle_normal (x, y, x, y + 1, x + 1, y + 1);
+          Vec3 right =
             height_map.triangle_normal (x, y, x + 1, y + 1, x + 1, y);
 
           normal_map.add (x, y, left);

@@ -11,7 +11,7 @@ int main (int argc, char** argv) {
   int seed = (argc == 2) ? atoi (argv[1]) : 0;
 
   try {
-    RandomHeightMap map (513, 513, moppe::Vector3D (1, 1, 1), seed);
+    RandomHeightMap map (513, 513, moppe::Vec3 (1, 1, 1), seed);
     std::cerr << "Randomizing...";
     map.randomize_plasmally (0.7);
     std::cerr << "\ndone.\n";

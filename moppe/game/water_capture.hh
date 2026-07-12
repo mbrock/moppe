@@ -17,8 +17,8 @@ namespace moppe::game {
     WaterShot kind;
     std::uint32_t cell;
     float score;
-    Vector3D eye;
-    Vector3D target;
+    Vec3 eye;
+    Vec3 target;
   };
 
   std::optional<WaterShot> parse_water_shot (std::string_view name) noexcept;

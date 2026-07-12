@@ -17,8 +17,8 @@ namespace moppe {
       m_stack[0] = Mat4 ();
       m_normal_dirty = true;
       m_color = PackedRgba8 ();
-      m_normal = Vector3D (0, 0, 1);
-      m_world_normal = Vector3D (0, 0, 1);
+      m_normal = Vec3 (0, 0, 1);
+      m_world_normal = Vec3 (0, 0, 1);
       m_world_normal_dirty = true;
       m_u = m_v = 0;
       m_lit = true;
@@ -52,31 +52,31 @@ namespace moppe {
       m_normal_dirty = m_world_normal_dirty = true;
     }
 
-    void DrawList::translate (const Vector3D& v) {
+    void DrawList::translate (const Vec3& v) {
       m_stack[m_top] = m_stack[m_top] * Mat4::translation (v);
       m_normal_dirty = m_world_normal_dirty = true;
     }
 
     void DrawList::translate (float x, float y, float z) {
-      translate (Vector3D (x, y, z));
+      translate (Vec3 (x, y, z));
     }
 
-    void DrawList::rotate (radians_t angle, const Vector3D& axis) {
+    void DrawList::rotate (radians_t angle, const Vec3& axis) {
       m_stack[m_top] = m_stack[m_top] * Mat4::rotation (angle, axis);
       m_normal_dirty = m_world_normal_dirty = true;
     }
 
     void DrawList::rotate (radians_t angle, float ax, float ay, float az) {
-      rotate (angle, Vector3D (ax, ay, az));
+      rotate (angle, Vec3 (ax, ay, az));
     }
 
-    void DrawList::scale (const Vector3D& v) {
+    void DrawList::scale (const Vec3& v) {
       m_stack[m_top] = m_stack[m_top] * Mat4::scaling (v);
       m_normal_dirty = m_world_normal_dirty = true;
     }
 
     void DrawList::scale (float x, float y, float z) {
-      scale (Vector3D (x, y, z));
+      scale (Vec3 (x, y, z));
     }
 
     void DrawList::mult (const Mat4& m) {
@@ -92,7 +92,7 @@ namespace moppe {
       return m_normal_mat;
     }
 
-    const Vector3D& DrawList::world_normal () {
+    const Vec3& DrawList::world_normal () {
       // Normals are transformed lazily: recording runs of vertices
       // under one normal and one matrix (the common case by far) pays
       // for the inverse-transpose multiply and normalize once.
@@ -130,8 +130,8 @@ namespace moppe {
       m_texture = t;
     }
 
-    void DrawList::normal (const Vector3D& n) {
-      if (n.x == m_normal.x && n.y == m_normal.y && n.z == m_normal.z)
+    void DrawList::normal (const Vec3& n) {
+      if (n[0] == m_normal[0] && n[1] == m_normal[1] && n[2] == m_normal[2])
         return;
       m_normal = n;
       m_world_normal_dirty = true;
@@ -150,16 +150,16 @@ namespace moppe {
 
     Vertex DrawList::make_vertex (float x, float y, float z) {
       const Mat4& m = m_stack[m_top];
-      const Vector3D p = m.transform_point (Vector3D (x, y, z));
-      const Vector3D& n = world_normal ();
+      const Vec3 p = m.transform_point (Vec3 (x, y, z));
+      const Vec3& n = world_normal ();
 
       Vertex v;
-      v.px = p.x;
-      v.py = p.y;
-      v.pz = p.z;
-      v.nx = n.x;
-      v.ny = n.y;
-      v.nz = n.z;
+      v.px = p[0];
+      v.py = p[1];
+      v.pz = p[2];
+      v.nx = n[0];
+      v.ny = n[1];
+      v.nz = n[2];
       v.u = m_u;
       v.v = m_v;
       v.color = m_color;
@@ -220,8 +220,8 @@ namespace moppe {
       m_prim_scratch.clear ();
     }
 
-    void DrawList::vertex (const Vector3D& v) {
-      vertex (v.x, v.y, v.z);
+    void DrawList::vertex (const Vec3& v) {
+      vertex (v[0], v[1], v[2]);
     }
 
     void DrawList::vertex (float x, float y, float z) {
@@ -384,7 +384,7 @@ namespace moppe {
 
     namespace {
       struct SolidVert {
-        Vector3D p, n;
+        Vec3 p, n;
       };
       typedef std::vector<SolidVert> SolidMesh;
 
@@ -404,13 +404,13 @@ namespace moppe {
           { 0, -1, 0 }, { 0, 0, 1 },  { 0, 0, -1 }
         };
         for (int i = 0; i < 6; ++i) {
-          const Vector3D n (f[i][0], f[i][1], f[i][2]);
+          const Vec3 n (f[i][0], f[i][1], f[i][2]);
           // Build a tangent frame per face.
-          const Vector3D u =
-            (std::fabs (n.y) > 0.9f) ? Vector3D (1, 0, 0) : Vector3D (0, 1, 0);
-          const Vector3D s = n.cross (u).normalized ();
-          const Vector3D t = n.cross (s);
-          const Vector3D c = n * 0.5f;
+          const Vec3 u =
+            (std::fabs (n[1]) > 0.9f) ? Vec3 (1, 0, 0) : Vec3 (0, 1, 0);
+          const Vec3 s = normalized (cross (n, u));
+          const Vec3 t = cross (n, s);
+          const Vec3 c = n * 0.5f;
           SolidVert v00 = { c - s * 0.5f - t * 0.5f, n };
           SolidVert v10 = { c + s * 0.5f - t * 0.5f, n };
           SolidVert v11 = { c + s * 0.5f + t * 0.5f, n };
@@ -429,18 +429,18 @@ namespace moppe {
           for (int j = 0; j < slices; ++j) {
             const float b0 = PI2 * (float)j / slices;
             const float b1 = PI2 * (float)(j + 1) / slices;
-            const Vector3D p00 (std::cos (a0) * std::cos (b0),
-                                std::sin (a0),
-                                std::cos (a0) * std::sin (b0));
-            const Vector3D p10 (std::cos (a0) * std::cos (b1),
-                                std::sin (a0),
-                                std::cos (a0) * std::sin (b1));
-            const Vector3D p01 (std::cos (a1) * std::cos (b0),
-                                std::sin (a1),
-                                std::cos (a1) * std::sin (b0));
-            const Vector3D p11 (std::cos (a1) * std::cos (b1),
-                                std::sin (a1),
-                                std::cos (a1) * std::sin (b1));
+            const Vec3 p00 (std::cos (a0) * std::cos (b0),
+                            std::sin (a0),
+                            std::cos (a0) * std::sin (b0));
+            const Vec3 p10 (std::cos (a0) * std::cos (b1),
+                            std::sin (a0),
+                            std::cos (a0) * std::sin (b1));
+            const Vec3 p01 (std::cos (a1) * std::cos (b0),
+                            std::sin (a1),
+                            std::cos (a1) * std::sin (b0));
+            const Vec3 p11 (std::cos (a1) * std::cos (b1),
+                            std::sin (a1),
+                            std::cos (a1) * std::sin (b1));
             SolidVert v00 = { p00, p00 }, v10 = { p10, p10 };
             SolidVert v01 = { p01, p01 }, v11 = { p11, p11 };
             tri (m, v00, v11, v10);
@@ -463,32 +463,28 @@ namespace moppe {
           for (int j = 0; j < slices; ++j) {
             const float b0 = PI2 * (float)j / slices;
             const float b1 = PI2 * (float)(j + 1) / slices;
-            const Vector3D n0 (std::cos (b0) * nz, std::sin (b0) * nz, nz);
-            const Vector3D n1 (std::cos (b1) * nz, std::sin (b1) * nz, nz);
-            SolidVert v00 = {
-              Vector3D (r0 * std::cos (b0), r0 * std::sin (b0), z0), n0
-            };
-            SolidVert v10 = {
-              Vector3D (r0 * std::cos (b1), r0 * std::sin (b1), z0), n1
-            };
-            SolidVert v01 = {
-              Vector3D (r1 * std::cos (b0), r1 * std::sin (b0), z1), n0
-            };
-            SolidVert v11 = {
-              Vector3D (r1 * std::cos (b1), r1 * std::sin (b1), z1), n1
-            };
+            const Vec3 n0 (std::cos (b0) * nz, std::sin (b0) * nz, nz);
+            const Vec3 n1 (std::cos (b1) * nz, std::sin (b1) * nz, nz);
+            SolidVert v00 = { Vec3 (r0 * std::cos (b0), r0 * std::sin (b0), z0),
+                              n0 };
+            SolidVert v10 = { Vec3 (r0 * std::cos (b1), r0 * std::sin (b1), z0),
+                              n1 };
+            SolidVert v01 = { Vec3 (r1 * std::cos (b0), r1 * std::sin (b0), z1),
+                              n0 };
+            SolidVert v11 = { Vec3 (r1 * std::cos (b1), r1 * std::sin (b1), z1),
+                              n1 };
             tri (m, v00, v10, v11);
             tri (m, v00, v11, v01);
           }
         }
         // Base cap at z=0, normal -z.
-        const Vector3D bn (0, 0, -1);
+        const Vec3 bn (0, 0, -1);
         for (int j = 0; j < slices; ++j) {
           const float b0 = PI2 * (float)j / slices;
           const float b1 = PI2 * (float)(j + 1) / slices;
-          SolidVert c = { Vector3D (0, 0, 0), bn };
-          SolidVert e0 = { Vector3D (std::cos (b0), std::sin (b0), 0), bn };
-          SolidVert e1 = { Vector3D (std::cos (b1), std::sin (b1), 0), bn };
+          SolidVert c = { Vec3 (0, 0, 0), bn };
+          SolidVert e0 = { Vec3 (std::cos (b0), std::sin (b0), 0), bn };
+          SolidVert e1 = { Vec3 (std::cos (b1), std::sin (b1), 0), bn };
           tri (m, c, e0, e1);
         }
         return m;
@@ -508,9 +504,9 @@ namespace moppe {
 
             struct Gen {
               static SolidVert at (float a, float b, float inr, float outr) {
-                const Vector3D spine (std::cos (a), std::sin (a), 0);
-                const Vector3D n =
-                  spine * std::cos (b) + Vector3D (0, 0, 1) * std::sin (b);
+                const Vec3 spine (std::cos (a), std::sin (a), 0);
+                const Vec3 n =
+                  spine * std::cos (b) + Vec3 (0, 0, 1) * std::sin (b);
                 SolidVert v = { spine * outr + n * inr, n };
                 return v;
               }
@@ -544,7 +540,7 @@ namespace moppe {
     void DrawList::cube (float size) {
       static SolidMesh mesh = make_cube ();
       push ();
-      scale (Vector3D (size, size, size));
+      scale (Vec3 (size, size, size));
       record_solid (*this, mesh);
       pop ();
     }
@@ -556,7 +552,7 @@ namespace moppe {
         mesh = make_sphere (slices, stacks);
 
       push ();
-      scale (Vector3D (radius, radius, radius));
+      scale (Vec3 (radius, radius, radius));
       record_solid (*this, mesh);
       pop ();
     }
@@ -568,7 +564,7 @@ namespace moppe {
         mesh = make_cone (slices, stacks);
 
       push ();
-      scale (Vector3D (base, base, height));
+      scale (Vec3 (base, base, height));
       record_solid (*this, mesh);
       pop ();
     }

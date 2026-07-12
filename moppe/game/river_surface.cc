@@ -19,7 +19,7 @@ namespace moppe::game {
     constexpr float depth_span_m = 2.0f;
 
     struct RibbonPoint {
-      Vector3D position;
+      Vec3 position;
       float width;
       float distance;
       float rapid;
@@ -41,11 +41,11 @@ namespace moppe::game {
       return std::clamp ((slope - 0.035f) / 0.24f, 0.0f, 1.0f);
     }
 
-    Vector3D limited_tangent (const Vector3D& value, float limit) {
-      Vector3D tangent (value.x, 0.0f, value.z);
-      const float length = tangent.length ();
-      if (length > limit && length > 1e-6f)
-        tangent *= limit / length;
+    Vec3 limited_tangent (const Vec3& value, float limit) {
+      Vec3 tangent (value[0], 0.0f, value[2]);
+      const float tangent_length = length (tangent);
+      if (tangent_length > limit && tangent_length > 1e-6f)
+        tangent *= limit / tangent_length;
       return tangent;
     }
 
@@ -67,11 +67,11 @@ namespace moppe::game {
         const RibbonPoint& to = raw[segment + 1];
         const RibbonPoint& after =
           raw[segment + 2 < raw.size () ? segment + 2 : segment + 1];
-        const Vector3D edge = to.position - from.position;
-        const float edge_length = std::hypot (edge.x, edge.z);
-        const Vector3D from_tangent =
+        const Vec3 edge = to.position - from.position;
+        const float edge_length = std::hypot (edge[0], edge[2]);
+        const Vec3 from_tangent =
           limited_tangent ((to.position - before.position) * 0.5f, edge_length);
-        const Vector3D to_tangent = limited_tangent (
+        const Vec3 to_tangent = limited_tangent (
           (after.position - from.position) * 0.5f, edge_length);
         for (int step = 1; step <= subdivisions; ++step) {
           const float t = static_cast<float> (step) / subdivisions;
@@ -81,12 +81,12 @@ namespace moppe::game {
           const float h10 = t3 - 2.0f * t2 + t;
           const float h01 = -2.0f * t3 + 3.0f * t2;
           const float h11 = t3 - t2;
-          Vector3D position = from.position * h00 + from_tangent * h10 +
-                              to.position * h01 + to_tangent * h11;
+          Vec3 position = from.position * h00 + from_tangent * h10 +
+                          to.position * h01 + to_tangent * h11;
           // Surface heights interpolate along the channel: the carved bed
           // under the spline stays within the bank blend of the stamped
           // centerline, so the water plane keeps a clean waterline.
-          position.y = interpolate (from.position.y, to.position.y, t);
+          position[1] = interpolate (from.position[1], to.position[1], t);
           result.push_back (
             { .position = position,
               .width = interpolate (from.width, to.width, t),
@@ -103,8 +103,8 @@ namespace moppe::game {
       float distance = 0.0f;
       result.front ().distance = 0.0f;
       for (std::size_t i = 1; i < result.size (); ++i) {
-        const Vector3D delta = result[i].position - result[i - 1].position;
-        distance += std::hypot (delta.x, delta.z);
+        const Vec3 delta = result[i].position - result[i - 1].position;
+        distance += std::hypot (delta[0], delta[2]);
         result[i].distance = distance;
       }
       return result;
@@ -136,7 +136,7 @@ namespace moppe::game {
 
     const int width = static_cast<int> (drainage.width ());
     const int height = static_cast<int> (drainage.height ());
-    const Vector3D scale = map.scale ();
+    const Vec3 scale = map.scale ();
     const bool periodic = map.periodic ();
     const auto water_cell = [&] (std::uint32_t cell) {
       return census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
@@ -175,8 +175,8 @@ namespace moppe::game {
       const std::size_t water_points =
         first_water < cells.size () ? cells.size () - first_water : 0;
 
-      float world_x = static_cast<float> (cells[0] % width) * scale.x;
-      float world_z = static_cast<float> (cells[0] / width) * scale.z;
+      float world_x = static_cast<float> (cells[0] % width) * scale[0];
+      float world_z = static_cast<float> (cells[0] / width) * scale[2];
       float distance = 0.0f;
       for (std::size_t i = 0; i < cells.size (); ++i) {
         const std::uint32_t cell = cells[i];
@@ -191,8 +191,8 @@ namespace moppe::game {
             dx = minimum_image_delta (dx, width);
             dz = minimum_image_delta (dz, height);
           }
-          const float step_x = static_cast<float> (dx) * scale.x;
-          const float step_z = static_cast<float> (dz) * scale.z;
+          const float step_x = static_cast<float> (dx) * scale[0];
+          const float step_z = static_cast<float> (dz) * scale[2];
           world_x += step_x;
           world_z += step_z;
           distance += std::hypot (step_x, step_z);
@@ -204,10 +204,10 @@ namespace moppe::game {
         // fraction of the shared depth law above it.
         const float fill_depth = channel_fill * terrain::channel_depth_m (area);
         const float y = water
-                          ? flood.water_level.values ()[cell] * scale.y + 0.06f
-                          : map.get (x, z) * scale.y + fill_depth;
+                          ? flood.water_level.values ()[cell] * scale[1] + 0.06f
+                          : map.get (x, z) * scale[1] + fill_depth;
         const float column =
-          water ? flood.water_depth.values ()[cell] * scale.y : fill_depth;
+          water ? flood.water_depth.values ()[cell] * scale[1] : fill_depth;
         const float mouth_step =
           i >= first_water ? static_cast<float> (i - first_water) : 0.0f;
         const float mouth_fraction =
@@ -221,7 +221,7 @@ namespace moppe::game {
           i + 1 == cells.size () && i > 0 ? cells[i - 1] : cell;
         const float slope = drainage.slope.values ()[slope_cell];
         raw_points.push_back (
-          { .position = Vector3D (world_x, y, world_z),
+          { .position = Vec3 (world_x, y, world_z),
             .width = terrain::channel_width_m (area) *
                      (water ? 1.35f + 0.55f * mouth_fraction : 1.0f),
             .distance = distance,
@@ -244,29 +244,28 @@ namespace moppe::game {
 
       draw.begin (render::Prim::QuadStrip);
       for (std::size_t i = 0; i < points.size (); ++i) {
-        const Vector3D before = points[i == 0 ? 0 : i - 1].position;
-        const Vector3D current = points[i].position;
-        const Vector3D after =
-          points[i + 1 == points.size () ? i : i + 1].position;
-        Vector3D tangent (after.x - before.x, 0.0f, after.z - before.z);
-        const float run = tangent.length ();
+        const Vec3 before = points[i == 0 ? 0 : i - 1].position;
+        const Vec3 current = points[i].position;
+        const Vec3 after = points[i + 1 == points.size () ? i : i + 1].position;
+        Vec3 tangent (after[0] - before[0], 0.0f, after[2] - before[2]);
+        const float run = length (tangent);
         if (run < 1e-5f)
-          tangent = Vector3D (1, 0, 0);
+          tangent = Vec3 (1, 0, 0);
         else
-          tangent = tangent.normalized ();
-        const Vector3D across (-tangent.z, 0.0f, tangent.x);
+          tangent = normalized (tangent);
+        const Vec3 across (-tangent[2], 0.0f, tangent[0]);
         // Cross-sections are level: the water plane meets the carved banks
         // and the depth test cuts the waterline. The normal is the surface
         // normal of that plane tilted by the downstream drop.
-        const float drop = run < 1e-5f ? 0.0f : (after.y - before.y) / run;
-        const Vector3D normal =
-          Vector3D (-tangent.x * drop, 1.0f, -tangent.z * drop).normalized ();
+        const float drop = run < 1e-5f ? 0.0f : (after[1] - before[1]) / run;
+        const Vec3 normal =
+          normalized (Vec3 (-tangent[0] * drop, 1.0f, -tangent[2] * drop));
         // Cross-sections overlap freely on the inside of bends; the river
         // pass blends first-fragment-wins through the stencil, so the
         // overlap never double-darkens.
         const float half_width = 0.5f * points[i].width;
-        const Vector3D left = current - across * half_width;
-        const Vector3D right = current + across * half_width;
+        const Vec3 left = current - across * half_width;
+        const Vec3 right = current + across * half_width;
         draw.color (points[i].rapid,
                     points[i].depth,
                     points[i].waterfall,
@@ -300,20 +299,20 @@ namespace moppe::game {
   }
 
   void RiverSurface::draw (render::Renderer& renderer,
-                           const Vector3D& camera) const {
+                           const Vec3& camera) const {
     if (!m_mesh)
       return;
     if (!m_periodic) {
       renderer.draw_rivers (*m_mesh, Mat4 ());
       return;
     }
-    const float base_x = std::floor (camera.x / m_period.x) * m_period.x;
-    const float base_z = std::floor (camera.z / m_period.z) * m_period.z;
+    const float base_x = std::floor (camera[0] / m_period[0]) * m_period[0];
+    const float base_z = std::floor (camera[2] / m_period[2]) * m_period[2];
     for (int z = -1; z <= 1; ++z)
       for (int x = -1; x <= 1; ++x)
         renderer.draw_rivers (
           *m_mesh,
           Mat4::translation (
-            Vector3D (base_x + x * m_period.x, 0.0f, base_z + z * m_period.z)));
+            Vec3 (base_x + x * m_period[0], 0.0f, base_z + z * m_period[2])));
   }
 }

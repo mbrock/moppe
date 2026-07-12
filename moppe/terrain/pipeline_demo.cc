@@ -208,7 +208,7 @@ int main (int argc, char** argv) {
       apply_option (program, argv[i]);
 
     map::RandomHeightMap map (
-      resolution, resolution, Vector3D (1, 1, 1), seed, Topology::Torus);
+      resolution, resolution, Vec3 (1, 1, 1), seed, Topology::Torus);
     map::TerrainEvaluator evaluator (map);
     evaluator.begin (program);
     std::vector<TerrainTransformReport> reports;

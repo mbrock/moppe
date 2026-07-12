@@ -17,7 +17,7 @@ namespace moppe {
 
       void draw (render::DrawList& dl,
                  const map::HeightMap& map,
-                 const Vector3D& pos,
+                 const Vec3& pos,
                  float radius);
 
     private:

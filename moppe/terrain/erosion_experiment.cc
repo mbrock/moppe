@@ -73,11 +73,8 @@ int main (int argc, char** argv) {
         ? CarvingRule::Unconstrained
         : CarvingRule::PathMonotone;
 
-    map::RandomHeightMap map (resolution,
-                              resolution,
-                              Vector3D (5000, 650, 5000),
-                              seed,
-                              Topology::Torus);
+    map::RandomHeightMap map (
+      resolution, resolution, Vec3 (5000, 650, 5000), seed, Topology::Torus);
     map::TerrainEvaluator evaluator (map);
     const TerrainProgram source = make_geological_program (seed);
     evaluator.begin (source);

@@ -25,15 +25,15 @@ namespace moppe {
       // A plant handed to the recorders (the public face of the
       // private Plant).
       struct Spot {
-        Vector3D pos;
-        Vector3D ground_n;
+        Vec3 pos;
+        Vec3 ground_n;
         float s, tint;
         uint32_t seed;
         int palette;
       };
 
       struct Blob {
-        Vector3D c;
+        Vec3 c;
         float r, squash;
       };
 
@@ -60,9 +60,9 @@ namespace moppe {
 
       // A narrow segmented strip rather than the old single triangle. The
       // quadratic centerline keeps the root upright and bends progressively
-      // toward the tip; UV.y and the grass flag drive blade shading in Metal.
+      // toward the tip; UV[1] and the grass flag drive blade shading in Metal.
       void record_blade (render::DrawList& dl,
-                         const Vector3D& root,
+                         const Vec3& root,
                          float height,
                          float bend_angle,
                          float bend,
@@ -71,18 +71,16 @@ namespace moppe {
                          float jitter,
                          float sway,
                          int segments) {
-        const Vector3D side (std::cos (bend_angle + PI * 0.5f),
-                             0,
-                             std::sin (bend_angle + PI * 0.5f));
-        const Vector3D direction (
-          std::cos (bend_angle), 0, std::sin (bend_angle));
-        const Vector3D face (-side.z, 0.18f, side.x);
+        const Vec3 side (std::cos (bend_angle + PI * 0.5f),
+                         0,
+                         std::sin (bend_angle + PI * 0.5f));
+        const Vec3 direction (std::cos (bend_angle), 0, std::sin (bend_angle));
+        const Vec3 face (-side[2], 0.18f, side[0]);
         const DisplayColor base = blade_base (dry, jitter);
         const DisplayColor tip = blade_tip (dry, jitter);
 
         auto center = [&] (float t) {
-          return root + Vector3D (0, height * t, 0) +
-                 direction * (bend * t * t);
+          return root + Vec3 (0, height * t, 0) + direction * (bend * t * t);
         };
         auto emit = [&] (float t, float side_sign) {
           const float width = half_width * (1.0f - 0.86f * t);
@@ -122,13 +120,13 @@ namespace moppe {
       int broadleaf_canopy (const Spot& p, Blob* out) {
         Rand r (p.seed);
         int n = 0;
-        Blob core = { Vector3D (0, 3.55f, 0), 1.45f, 0.80f };
+        Blob core = { Vec3 (0, 3.55f, 0), 1.45f, 0.80f };
         out[n++] = core;
         for (int k = 0; k < 3; ++k) {
           const float a = 2.09f * k + r.range (0.0f, 1.2f);
           const float d = r.range (0.65f, 1.05f);
           Blob b = {
-            Vector3D (std::cos (a) * d, r.range (3.0f, 4.2f), std::sin (a) * d),
+            Vec3 (std::cos (a) * d, r.range (3.0f, 4.2f), std::sin (a) * d),
             r.range (0.75f, 1.15f),
             0.72f
           };
@@ -140,13 +138,13 @@ namespace moppe {
       int birch_canopy (const Spot& p, Blob* out) {
         Rand r (p.seed);
         int n = 0;
-        Blob core = { Vector3D (0, 4.15f, 0), 0.95f, 0.85f };
+        Blob core = { Vec3 (0, 4.15f, 0), 0.95f, 0.85f };
         out[n++] = core;
         for (int k = 0; k < 2; ++k) {
           const float a = 3.1f * k + r.range (0.0f, 1.5f);
           const float d = r.range (0.35f, 0.65f);
           Blob b = {
-            Vector3D (std::cos (a) * d, r.range (3.4f, 4.5f), std::sin (a) * d),
+            Vec3 (std::cos (a) * d, r.range (3.4f, 4.5f), std::sin (a) * d),
             r.range (0.55f, 0.80f),
             0.80f
           };
@@ -158,17 +156,17 @@ namespace moppe {
       int bush_blobs (const Spot& p, Blob* out) {
         Rand r (p.seed);
         int n = 0;
-        Blob core = { Vector3D (0, 0.55f, 0), 0.85f, 0.72f };
+        Blob core = { Vec3 (0, 0.55f, 0), 0.85f, 0.72f };
         out[n++] = core;
         const int extra = 1 + (int)(r.next () * 2.0f);
         for (int k = 0; k < extra; ++k) {
           const float a = r.range (0, PI2);
           const float d = r.range (0.45f, 0.80f);
-          Blob b = { Vector3D (std::cos (a) * d,
-                               r.range (0.30f, 0.55f),
-                               std::sin (a) * d),
-                     r.range (0.45f, 0.70f),
-                     0.75f };
+          Blob b = {
+            Vec3 (std::cos (a) * d, r.range (0.30f, 0.55f), std::sin (a) * d),
+            r.range (0.45f, 0.70f),
+            0.75f
+          };
           out[n++] = b;
         }
         return n;
@@ -228,7 +226,7 @@ namespace moppe {
                 blobs[i],
                 (i == 0 && !lean) ? 5 : 4,
                 (i == 0 && !lean) ? 4 : 3,
-                0.06f + 0.02f * blobs[i].c.y);
+                0.06f + 0.02f * blobs[i].c[1]);
         }
         dl.pop ();
       }
@@ -288,7 +286,7 @@ namespace moppe {
           const float j = r.range (-0.03f, 0.03f);
           dl.color (
             0.27f + 0.10f * p.tint + j, 0.43f + 0.10f * p.tint + j, 0.13f);
-          blob (dl, blobs[i], 4, 3, 0.08f + 0.02f * blobs[i].c.y);
+          blob (dl, blobs[i], 4, 3, 0.08f + 0.02f * blobs[i].c[1]);
         }
         dl.pop ();
       }
@@ -316,12 +314,12 @@ namespace moppe {
                         const Spot& p,
                         float radius,
                         float alpha) {
-        const Vector3D n = p.ground_n;
-        const Vector3D h =
-          std::fabs (n.y) > 0.9f ? Vector3D (1, 0, 0) : Vector3D (0, 1, 0);
-        const Vector3D t = n.cross (h).normalized ();
-        const Vector3D b = n.cross (t);
-        const Vector3D c = p.pos + n * 0.10f;
+        const Vec3 n = p.ground_n;
+        const Vec3 h =
+          std::fabs (n[1]) > 0.9f ? Vec3 (1, 0, 0) : Vec3 (0, 1, 0);
+        const Vec3 t = normalized (cross (n, h));
+        const Vec3 b = cross (n, t);
+        const Vec3 c = p.pos + n * 0.10f;
 
         dl.begin (render::Prim::TriangleFan);
         dl.color (0, 0, 0, alpha);
@@ -337,11 +335,11 @@ namespace moppe {
 
       // -- detail pieces --------------------------------------------
 
-      void leaf_frame (const Vector3D& n, Vector3D& t, Vector3D& b) {
-        const Vector3D h =
-          std::fabs (n.y) > 0.9f ? Vector3D (1, 0, 0) : Vector3D (0, 1, 0);
-        t = n.cross (h).normalized ();
-        b = n.cross (t);
+      void leaf_frame (const Vec3& n, Vec3& t, Vec3& b) {
+        const Vec3 h =
+          std::fabs (n[1]) > 0.9f ? Vec3 (1, 0, 0) : Vec3 (0, 1, 0);
+        t = normalized (cross (n, h));
+        b = cross (n, t);
       }
 
       // Loose leaf quads scattered on the canopy surface break up the
@@ -360,17 +358,17 @@ namespace moppe {
           const float az = r.range (0, PI2);
           const float sy = r.range (-0.3f, 1.0f);
           const float cy = std::sqrt (std::max (0.0f, 1 - sy * sy));
-          const Vector3D dir (std::cos (az) * cy, sy, std::sin (az) * cy);
-          const Vector3D local =
-            b.c + Vector3D (dir.x * b.r, dir.y * b.r * b.squash, dir.z * b.r);
-          const Vector3D w = p.pos + local * p.s;
+          const Vec3 dir (std::cos (az) * cy, sy, std::sin (az) * cy);
+          const Vec3 local =
+            b.c + Vec3 (dir[0] * b.r, dir[1] * b.r * b.squash, dir[2] * b.r);
+          const Vec3 w = p.pos + local * p.s;
           const float size = r.range (0.15f, 0.26f) * p.s;
 
-          Vector3D t, bt;
+          Vec3 t, bt;
           leaf_frame (dir, t, bt);
           const float sa = r.range (0, PI2);
-          const Vector3D e1 = t * std::cos (sa) + bt * std::sin (sa);
-          const Vector3D e2 = t * -std::sin (sa) + bt * std::cos (sa);
+          const Vec3 e1 = t * std::cos (sa) + bt * std::sin (sa);
+          const Vec3 e2 = t * -std::sin (sa) + bt * std::cos (sa);
 
           const float j = r.range (-0.03f, 0.03f);
           if (autumn)
@@ -393,21 +391,21 @@ namespace moppe {
       // A flower head: two upright crossed quads plus a lifted cap so
       // it reads from every camera angle.
       void record_bloom (render::DrawList& dl,
-                         const Vector3D& c,
+                         const Vec3& c,
                          float size,
                          const float* pc,
                          float sway,
                          Rand& r) {
         const float j = r.range (0.85f, 1.10f);
         dl.color (pc[0] * j, pc[1] * j, pc[2] * j);
-        dl.normal (Vector3D (0, 1, 0));
+        dl.normal (Vec3 (0, 1, 0));
         dl.wind (sway);
         dl.begin (render::Prim::Quads);
         const float a0 = r.range (0, PI);
         for (int k = 0; k < 2; ++k) {
           const float a = a0 + k * (PI / 2);
-          const Vector3D t (std::cos (a) * size, 0, std::sin (a) * size);
-          const Vector3D up (0, size, 0);
+          const Vec3 t (std::cos (a) * size, 0, std::sin (a) * size);
+          const Vec3 up (0, size, 0);
           dl.vertex (c - t - up);
           dl.vertex (c + t - up);
           dl.vertex (c + t + up);
@@ -415,9 +413,9 @@ namespace moppe {
         }
         {
           const float a = r.range (0, PI);
-          const Vector3D t1 (std::cos (a) * size, 0, std::sin (a) * size);
-          const Vector3D t2 (-std::sin (a) * size, 0, std::cos (a) * size);
-          const Vector3D lift (0, size * 0.6f, 0);
+          const Vec3 t1 (std::cos (a) * size, 0, std::sin (a) * size);
+          const Vec3 t2 (-std::sin (a) * size, 0, std::cos (a) * size);
+          const Vec3 lift (0, size * 0.6f, 0);
           dl.vertex (c - t1 - t2 + lift);
           dl.vertex (c + t1 - t2 + lift);
           dl.vertex (c + t1 + t2 + lift);
@@ -432,15 +430,15 @@ namespace moppe {
         const float h = r.range (0.24f, 0.50f) * p.s;
         const float la = r.range (0, PI2);
         const float lm = r.range (0.0f, 0.18f) * h;
-        const Vector3D top =
-          p.pos + Vector3D (std::cos (la) * lm, h, std::sin (la) * lm);
+        const Vec3 top =
+          p.pos + Vec3 (std::cos (la) * lm, h, std::sin (la) * lm);
         const float sway = r.range (0.25f, 0.40f);
 
         dl.color (0.14f, 0.30f, 0.08f);
-        dl.normal (Vector3D (0, 1, 0));
+        dl.normal (Vec3 (0, 1, 0));
         dl.begin (render::Prim::Triangles);
         const float pa = r.range (0, PI2);
-        const Vector3D perp (std::cos (pa) * 0.014f, 0, std::sin (pa) * 0.014f);
+        const Vec3 perp (std::cos (pa) * 0.014f, 0, std::sin (pa) * 0.014f);
         dl.wind (0);
         dl.vertex (p.pos - perp);
         dl.vertex (p.pos + perp);
@@ -450,7 +448,7 @@ namespace moppe {
 
         // The head shares the stem tip's sway so they bend together.
         record_bloom (dl,
-                      top + Vector3D (0, 0.015f, 0),
+                      top + Vec3 (0, 0.015f, 0),
                       r.range (0.05f, 0.09f) * p.s,
                       FLOWER_PETALS[p.palette % 5],
                       sway,
@@ -460,15 +458,15 @@ namespace moppe {
       void record_tuft (render::DrawList& dl, const Spot& p) {
         Rand r (p.seed);
         const float dry = p.tint;
-        dl.normal (Vector3D (0, 1, 0));
+        dl.normal (Vec3 (0, 1, 0));
         dl.grass (true);
         dl.begin (render::Prim::Triangles);
         const int blades = 5 + (int)(r.next () * 3.0f);
         for (int k = 0; k < blades; ++k) {
           const float oa = r.range (0, PI2);
           const float od = r.range (0.0f, 0.34f) * p.s;
-          const Vector3D root =
-            p.pos + Vector3D (std::cos (oa) * od, 0, std::sin (oa) * od);
+          const Vec3 root =
+            p.pos + Vec3 (std::cos (oa) * od, 0, std::sin (oa) * od);
           const float h = r.range (0.26f, 0.58f) * p.s;
           const float ba = r.range (0, PI2);
           const float bm = r.range (0.06f, 0.34f) * h;
@@ -496,18 +494,18 @@ namespace moppe {
         for (int k = 0; k < stalks; ++k) {
           const float oa = r.range (0, PI2);
           const float od = r.range (0.05f, 0.50f) * p.s;
-          const Vector3D root =
-            p.pos + Vector3D (std::cos (oa) * od, 0, std::sin (oa) * od);
+          const Vec3 root =
+            p.pos + Vec3 (std::cos (oa) * od, 0, std::sin (oa) * od);
           const float h = r.range (0.9f, 1.7f) * p.s;
           const float ba = r.range (0, PI2);
           const float bm = r.range (0.02f, 0.14f) * h;
-          const Vector3D tip =
-            root + Vector3D (std::cos (ba) * bm, h, std::sin (ba) * bm);
+          const Vec3 tip =
+            root + Vec3 (std::cos (ba) * bm, h, std::sin (ba) * bm);
           const float sway = r.range (0.35f, 0.60f);
 
-          dl.normal (Vector3D (0, 1, 0));
+          dl.normal (Vec3 (0, 1, 0));
           dl.begin (render::Prim::Triangles);
-          const Vector3D perp (std::cos (oa) * 0.03f, 0, std::sin (oa) * 0.03f);
+          const Vec3 perp (std::cos (oa) * 0.03f, 0, std::sin (oa) * 0.03f);
           dl.wind (0);
           dl.color (0.13f, 0.24f, 0.09f);
           dl.vertex (root - perp);
@@ -519,15 +517,14 @@ namespace moppe {
 
           if (r.next () < 0.45f) {
             // the cattail: a stubby brown cross near the head
-            const Vector3D hc = root + (tip - root) * 0.82f;
+            const Vec3 hc = root + (tip - root) * 0.82f;
             dl.color (0.33f, 0.20f, 0.10f);
             dl.wind (sway * 0.85f);
             dl.begin (render::Prim::Quads);
             for (int q = 0; q < 2; ++q) {
               const float a = oa + q * (PI / 2);
-              const Vector3D t (
-                std::cos (a) * 0.035f, 0, std::sin (a) * 0.035f);
-              const Vector3D up (0, 0.12f, 0);
+              const Vec3 t (std::cos (a) * 0.035f, 0, std::sin (a) * 0.035f);
+              const Vec3 up (0, 0.12f, 0);
               dl.vertex (hc - t - up);
               dl.vertex (hc + t - up);
               dl.vertex (hc + t + up);
@@ -552,10 +549,10 @@ namespace moppe {
             const float az = r.range (0, PI2);
             const float sy = r.range (0.15f, 1.0f);
             const float cy = std::sqrt (std::max (0.0f, 1 - sy * sy));
-            const Vector3D dir (std::cos (az) * cy, sy, std::sin (az) * cy);
-            const Vector3D local =
-              b.c + Vector3D (dir.x * b.r, dir.y * b.r * b.squash, dir.z * b.r);
-            const Vector3D w = p.pos + local * p.s + Vector3D (0, 0.02f, 0);
+            const Vec3 dir (std::cos (az) * cy, sy, std::sin (az) * cy);
+            const Vec3 local =
+              b.c + Vec3 (dir[0] * b.r, dir[1] * b.r * b.squash, dir[2] * b.r);
+            const Vec3 w = p.pos + local * p.s + Vec3 (0, 0.02f, 0);
             record_bloom (dl, w, r.range (0.035f, 0.06f) * p.s, pc, 0.10f, r);
           }
         } else {
@@ -571,8 +568,8 @@ namespace moppe {
     }
 
     void Vegetation::append_plant (Species species,
-                                   const Vector3D& position,
-                                   const Vector3D& normal,
+                                   const Vec3& position,
+                                   const Vec3& normal,
                                    float scale,
                                    float tint,
                                    uint32_t seed,
@@ -582,10 +579,10 @@ namespace moppe {
       plant.palette = palette;
       plant.position = position;
       if (m_periodic) {
-        plant.position.x =
-          terrain::wrap_coordinate (plant.position.x, m_map_size.x);
-        plant.position.z =
-          terrain::wrap_coordinate (plant.position.z, m_map_size.z);
+        plant.position[0] =
+          terrain::wrap_coordinate (plant.position[0], m_map_size[0]);
+        plant.position[2] =
+          terrain::wrap_coordinate (plant.position[2], m_map_size[2]);
       }
       plant.ground_normal = normal;
       plant.scale = scale;
@@ -601,7 +598,7 @@ namespace moppe {
       m_periodic = map.periodic ();
       m_map = &map;
       m_water = meters_value (world.water_level);
-      m_height = world.map_size.y;
+      m_height = world.map_size[1];
     }
 
     void Vegetation::generate (const map::HeightMap& map,
@@ -619,27 +616,27 @@ namespace moppe {
         return extent * (m_periodic ? unit : 0.02f + 0.96f * unit);
       };
 
-      const Vector3D size = map.size ();
+      const Vec3 size = map.size ();
       prepare (map, world);
       m_plants.clear ();
       m_plants.reserve (trees + bushes + max_tufts + max_flowers + reed_count);
 
-      const float H = world.map_size.y;
+      const float H = world.map_size[1];
       const float water = meters_value (world.water_level);
 
       // Grove centers first: most trees cluster into woods with
       // clearings between them, instead of an even sprinkle.
       const int ngrove = std::max (8, trees / 26);
-      std::vector<Vector3D> groves;
+      std::vector<Vec3> groves;
       for (int i = 0; i < ngrove * 30 && (int)groves.size () < ngrove; ++i) {
-        const float x = random_coordinate (size.x);
-        const float z = random_coordinate (size.z);
+        const float x = random_coordinate (size[0]);
+        const float z = random_coordinate (size[2]);
         const float y = map.interpolated_height (x, z);
         if (y < water + 6 || y > 0.30f * H)
           continue;
-        if (map.interpolated_normal (x, z).y < 0.80f)
+        if (map.interpolated_normal (x, z)[1] < 0.80f)
           continue;
-        groves.push_back (Vector3D (x, y, z));
+        groves.push_back (Vec3 (x, y, z));
       }
 
       // Trees like gentle grassy ground below the rock line; only
@@ -649,32 +646,32 @@ namespace moppe {
       for (int i = 0; i < trees * 20 && placed < trees; ++i) {
         float x, z;
         if (u (rng) < 0.65f && !groves.empty ()) {
-          const Vector3D& g = groves[(int)(u (rng) * groves.size ())];
+          const Vec3& g = groves[(int)(u (rng) * groves.size ())];
           const float a = PI2 * u (rng);
           const float d = 42.0f * std::pow (u (rng), 0.7f);
-          x = g.x + std::cos (a) * d;
-          z = g.z + std::sin (a) * d;
+          x = g[0] + std::cos (a) * d;
+          z = g[2] + std::sin (a) * d;
           if (!map.in_bounds (x, z))
             continue;
         } else {
-          x = random_coordinate (size.x);
-          z = random_coordinate (size.z);
+          x = random_coordinate (size[0]);
+          z = random_coordinate (size[2]);
         }
         const float y = map.interpolated_height (x, z);
         if (y < water + 5)
           continue;
-        const Vector3D n = map.interpolated_normal (x, z);
+        const Vec3 n = map.interpolated_normal (x, z);
         const float yn = y / H;
 
         Species species;
         if (yn > 0.40f)
           continue;
         else if (yn > 0.30f) {
-          if (n.y < 0.74f)
+          if (n[1] < 0.74f)
             continue;
           species = Species::Conifer;
         } else {
-          if (n.y < 0.80f)
+          if (n[1] < 0.80f)
             continue;
           const float pcon =
             0.10f +
@@ -690,7 +687,7 @@ namespace moppe {
           scale *= 1.6f; // the occasional old giant
         const float tint = u (rng);
         const uint32_t seed = rng ();
-        append_plant (species, Vector3D (x, y, z), n, scale, tint, seed);
+        append_plant (species, Vec3 (x, y, z), n, scale, tint, seed);
         ++placed;
       }
 
@@ -698,15 +695,15 @@ namespace moppe {
       // flower.
       placed = 0;
       for (int i = 0; i < bushes * 20 && placed < bushes; ++i) {
-        const float x = random_coordinate (size.x);
-        const float z = random_coordinate (size.z);
+        const float x = random_coordinate (size[0]);
+        const float z = random_coordinate (size[2]);
         const float y = map.interpolated_height (x, z);
         if (y > 0.45f * H)
           continue;
         if (y < water + 5)
           continue;
-        const Vector3D n = map.interpolated_normal (x, z);
-        if (n.y < 0.72f)
+        const Vec3 n = map.interpolated_normal (x, z);
+        if (n[1] < 0.72f)
           continue;
 
         const uint8_t palette =
@@ -715,7 +712,7 @@ namespace moppe {
         const float tint = u (rng);
         const uint32_t seed = rng ();
         append_plant (
-          Species::Bush, Vector3D (x, y, z), n, scale, tint, seed, palette);
+          Species::Bush, Vec3 (x, y, z), n, scale, tint, seed, palette);
         ++placed;
       }
 
@@ -723,17 +720,17 @@ namespace moppe {
       // scatter), so the ground reads as fields rather than static.
       const int tufts = std::min (max_tufts, trees * 9);
       const int nmeadow = std::max (16, tufts / 90);
-      std::vector<Vector3D> meadows;
+      std::vector<Vec3> meadows;
       std::vector<uint8_t> meadow_palette;
       for (int i = 0; i < nmeadow * 30 && (int)meadows.size () < nmeadow; ++i) {
-        const float x = random_coordinate (size.x);
-        const float z = random_coordinate (size.z);
+        const float x = random_coordinate (size[0]);
+        const float z = random_coordinate (size[2]);
         const float y = map.interpolated_height (x, z);
         if (y < water + 4 || y > 0.36f * H)
           continue;
-        if (map.interpolated_normal (x, z).y < 0.78f)
+        if (map.interpolated_normal (x, z)[1] < 0.78f)
           continue;
-        meadows.push_back (Vector3D (x, y, z));
+        meadows.push_back (Vec3 (x, y, z));
         meadow_palette.push_back ((uint8_t)(u (rng) * 5));
       }
 
@@ -742,22 +739,22 @@ namespace moppe {
            ++i) {
         float x, z;
         if (u (rng) < 0.68f) {
-          const Vector3D& m = meadows[(int)(u (rng) * meadows.size ())];
+          const Vec3& m = meadows[(int)(u (rng) * meadows.size ())];
           const float a = PI2 * u (rng);
           const float d = 65.0f * std::pow (u (rng), 1.5f);
-          x = m.x + std::cos (a) * d;
-          z = m.z + std::sin (a) * d;
+          x = m[0] + std::cos (a) * d;
+          z = m[2] + std::sin (a) * d;
         } else {
-          x = random_coordinate (size.x);
-          z = random_coordinate (size.z);
+          x = random_coordinate (size[0]);
+          z = random_coordinate (size[2]);
         }
         if (!map.in_bounds (x, z))
           continue;
         const float y = map.interpolated_height (x, z);
         if (y < water + 2.5f || y > 0.40f * H)
           continue;
-        const Vector3D n = map.interpolated_normal (x, z);
-        if (n.y < 0.74f)
+        const Vec3 n = map.interpolated_normal (x, z);
+        if (n[1] < 0.74f)
           continue;
 
         const float scale = 0.75f + 0.70f * u (rng);
@@ -766,7 +763,7 @@ namespace moppe {
           std::min (1.0f, std::max (0.0f, (y / H - 0.10f) / 0.22f)) * 0.7f +
           0.3f * u (rng);
         const uint32_t seed = rng ();
-        append_plant (Species::Tuft, Vector3D (x, y, z), n, scale, tint, seed);
+        append_plant (Species::Tuft, Vec3 (x, y, z), n, scale, tint, seed);
         ++placed;
       }
 
@@ -779,18 +776,18 @@ namespace moppe {
            ++i) {
         const int mi =
           ((int)(u (rng) * (meadows.size () / 2))) * 2 % (int)meadows.size ();
-        const Vector3D& m = meadows[mi];
+        const Vec3& m = meadows[mi];
         const float a = PI2 * u (rng);
         const float d = 42.0f * std::pow (u (rng), 1.5f);
-        const float x = m.x + std::cos (a) * d;
-        const float z = m.z + std::sin (a) * d;
+        const float x = m[0] + std::cos (a) * d;
+        const float z = m[2] + std::sin (a) * d;
         if (!map.in_bounds (x, z))
           continue;
         const float y = map.interpolated_height (x, z);
         if (y < water + 3 || y > 0.36f * H)
           continue;
-        const Vector3D n = map.interpolated_normal (x, z);
-        if (n.y < 0.76f)
+        const Vec3 n = map.interpolated_normal (x, z);
+        if (n[1] < 0.76f)
           continue;
 
         uint8_t palette = meadow_palette[mi];
@@ -800,33 +797,33 @@ namespace moppe {
         const float tint = u (rng);
         const uint32_t seed = rng ();
         append_plant (
-          Species::Flower, Vector3D (x, y, z), n, scale, tint, seed, palette);
+          Species::Flower, Vec3 (x, y, z), n, scale, tint, seed, palette);
         ++placed;
       }
 
       // Reed clumps stand in the shallows band along the waterline.
       placed = 0;
       for (int i = 0; i < reed_count * 30 && placed < reed_count; ++i) {
-        const float x = random_coordinate (size.x);
-        const float z = random_coordinate (size.z);
+        const float x = random_coordinate (size[0]);
+        const float z = random_coordinate (size[2]);
         const float y = map.interpolated_height (x, z);
         if (y < water + 0.15f || y > water + 2.4f)
           continue;
-        const Vector3D n = map.interpolated_normal (x, z);
-        if (n.y < 0.70f)
+        const Vec3 n = map.interpolated_normal (x, z);
+        if (n[1] < 0.70f)
           continue;
 
         const float scale = 0.8f + 0.6f * u (rng);
         const float tint = u (rng);
         const uint32_t seed = rng ();
-        append_plant (Species::Reed, Vector3D (x, y, z), n, scale, tint, seed);
+        append_plant (Species::Reed, Vec3 (x, y, z), n, scale, tint, seed);
         ++placed;
       }
     }
 
-    int Vegetation::cell_of (const Vector3D& position, int grid) const {
-      int cx = (int)(position.x / (m_map_size.x / grid));
-      int cz = (int)(position.z / (m_map_size.z / grid));
+    int Vegetation::cell_of (const Vec3& position, int grid) const {
+      int cx = (int)(position[0] / (m_map_size[0] / grid));
+      int cz = (int)(position[2] / (m_map_size[2] / grid));
       cx = std::max (0, std::min (grid - 1, cx));
       cz = std::max (0, std::min (grid - 1, cz));
       return cz * grid + cx;
@@ -966,9 +963,9 @@ namespace moppe {
                                   const render::MeshPtr* meshes,
                                   int grid,
                                   float reach,
-                                  const Vector3D& camera) const {
-      const float width = m_map_size.x / grid;
-      const float depth = m_map_size.z / grid;
+                                  const Vec3& camera) const {
+      const float width = m_map_size[0] / grid;
+      const float depth = m_map_size[2] / grid;
       const float half_diagonal =
         0.5f * std::sqrt (width * width + depth * depth);
       const float center_reach = reach + half_diagonal;
@@ -981,27 +978,31 @@ namespace moppe {
           const float center_x = (x + 0.5f) * width;
           const float center_z = (z + 0.5f) * depth;
           const int min_tile_x =
-            m_periodic ? static_cast<int> (std::ceil (
-                           (camera.x - center_reach - center_x) / m_map_size.x))
-                       : 0;
+            m_periodic
+              ? static_cast<int> (std::ceil (
+                  (camera[0] - center_reach - center_x) / m_map_size[0]))
+              : 0;
           const int max_tile_x =
-            m_periodic ? static_cast<int> (std::floor (
-                           (camera.x + center_reach - center_x) / m_map_size.x))
-                       : 0;
+            m_periodic
+              ? static_cast<int> (std::floor (
+                  (camera[0] + center_reach - center_x) / m_map_size[0]))
+              : 0;
           const int min_tile_z =
-            m_periodic ? static_cast<int> (std::ceil (
-                           (camera.z - center_reach - center_z) / m_map_size.z))
-                       : 0;
+            m_periodic
+              ? static_cast<int> (std::ceil (
+                  (camera[2] - center_reach - center_z) / m_map_size[2]))
+              : 0;
           const int max_tile_z =
-            m_periodic ? static_cast<int> (std::floor (
-                           (camera.z + center_reach - center_z) / m_map_size.z))
-                       : 0;
+            m_periodic
+              ? static_cast<int> (std::floor (
+                  (camera[2] + center_reach - center_z) / m_map_size[2]))
+              : 0;
           for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
             for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
-              const Vector3D offset (
-                tile_x * m_map_size.x, 0, tile_z * m_map_size.z);
-              const float dx = camera.x - center_x - offset.x;
-              const float dz = camera.z - center_z - offset.z;
+              const Vec3 offset (
+                tile_x * m_map_size[0], 0, tile_z * m_map_size[2]);
+              const float dx = camera[0] - center_x - offset[0];
+              const float dz = camera[2] - center_z - offset[2];
               if (dx * dx + dz * dz >= center_reach * center_reach)
                 continue;
               r.draw_mesh (*mesh, Mat4::translation (offset));
@@ -1013,8 +1014,8 @@ namespace moppe {
                              const FrameEnv& env,
                              bool draw_vegetation,
                              float grass_density,
-                             const Vector3D& grass_scale) {
-      if (m_map_size.x <= 0 || m_map_size.z <= 0)
+                             const Vec3& grass_scale) {
+      if (m_map_size[0] <= 0 || m_map_size[2] <= 0)
         return;
 
       // Only sectors within fog-visibility range get drawn.  The GL
@@ -1022,7 +1023,7 @@ namespace moppe {
       // replaces the fog, but the factor lives on in the reach.
       const float density = env.fog_scale * 1.35f;
       const float fog_reach =
-        density > 0 ? 1.9f / density : std::max (m_map_size.x, m_map_size.z);
+        density > 0 ? 1.9f / density : std::max (m_map_size[0], m_map_size[2]);
       if (draw_vegetation) {
         render_grid (r, m_meshes, STRUCTURE_GRID, fog_reach, env.camera_pos);
 
@@ -1046,8 +1047,8 @@ namespace moppe {
           grass.radius = 65.0f * s;
           grass.spacing = 0.40f / s;
           grass.blades_per_cell = 4;
-          grass.horizontal_scale = grass_scale.x;
-          grass.vertical_scale = grass_scale.y;
+          grass.horizontal_scale = grass_scale[0];
+          grass.vertical_scale = grass_scale[1];
           r.draw_grass (grass);
         }
       }
@@ -1058,7 +1059,7 @@ namespace moppe {
       render::DrawState ds;
       ds.cull = false;
       m_near.state (ds);
-      m_near.normal (Vector3D (0, 1, 0));
+      m_near.normal (Vec3 (0, 1, 0));
 
       // Carry individual grass into the mid-field on the target Mac instead of
       // dropping directly from nearby blades to a flat terrain texture. Outer
@@ -1067,8 +1068,8 @@ namespace moppe {
       const float radius = 90.0f;
       const float detail_radius = 40.0f;
       const int span = (int)(radius / cell) + 1;
-      const int cx = (int)std::floor (env.camera_pos.x / cell);
-      const int cz = (int)std::floor (env.camera_pos.z / cell);
+      const int cx = (int)std::floor (env.camera_pos[0] / cell);
+      const int cz = (int)std::floor (env.camera_pos[2] / cell);
 
       for (int gz = cz - span; gz <= cz + span; ++gz)
         for (int gx = cx - span; gx <= cx + span; ++gx) {
@@ -1088,8 +1089,8 @@ namespace moppe {
           if (!m_map->in_bounds (x, z))
             continue;
 
-          const float dx = x - env.camera_pos.x;
-          const float dz2 = z - env.camera_pos.z;
+          const float dx = x - env.camera_pos[0];
+          const float dz2 = z - env.camera_pos[2];
           const float d2 = dx * dx + dz2 * dz2;
           if (d2 > radius * radius)
             continue;
@@ -1097,7 +1098,7 @@ namespace moppe {
           const float y = m_map->interpolated_height (x, z);
           if (y < m_water + 2.0f || y > 0.42f * m_height)
             continue;
-          if (m_map->interpolated_normal (x, z).y < 0.70f)
+          if (m_map->interpolated_normal (x, z)[1] < 0.70f)
             continue;
 
           // Blades shrink toward the rim so the field has no edge.
@@ -1112,8 +1113,8 @@ namespace moppe {
           // blooms are part of the near field everywhere, not only in
           // the baked meadows.
           if (((h >> 5) & 0x1fu) == 0 && d2 < detail_radius * detail_radius) {
-            Spot fl = { Vector3D (x, y, z),
-                        Vector3D (0, 1, 0),
+            Spot fl = { Vec3 (x, y, z),
+                        Vec3 (0, 1, 0),
                         0.9f,
                         (h >> 24) * (1.0f / 255.0f),
                         h,
@@ -1130,8 +1131,7 @@ namespace moppe {
           for (int k = 0; k < blades; ++k) {
             const float oa = r.range (0, PI2);
             const float od = r.range (0.0f, detailed ? 0.75f : 0.60f);
-            const Vector3D root (
-              x + std::cos (oa) * od, y, z + std::sin (oa) * od);
+            const Vec3 root (x + std::cos (oa) * od, y, z + std::sin (oa) * od);
             const float patch_height = 0.72f + 0.55f * patch;
             const float bh =
               r.range (detailed ? 0.28f : 0.38f, detailed ? 0.62f : 0.78f) *

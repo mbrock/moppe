@@ -11,10 +11,10 @@ namespace moppe {
 
     void BlobShadow::draw (render::DrawList& dl,
                            const map::HeightMap& map,
-                           const Vector3D& pos,
+                           const Vec3& pos,
                            float radius) {
-      const float gy = map.interpolated_height (pos.x, pos.z);
-      const float h = pos.y - gy;
+      const float gy = map.interpolated_height (pos[0], pos[2]);
+      const float h = pos[1] - gy;
       if (h > 30.0f || h < -2.0f)
         return; // too high to matter (or underground somehow)
 
@@ -23,14 +23,14 @@ namespace moppe {
 
       // Tangent frame from the interpolated ground normal, so the
       // disc lies flat on slopes
-      Vector3D n = map.interpolated_normal (pos.x, pos.z);
-      Vector3D t1 = n.cross (Vector3D (1, 0, 0));
-      if (t1.length2 () < 0.01f)
-        t1 = n.cross (Vector3D (0, 0, 1));
-      t1.normalize ();
-      Vector3D t2 = n.cross (t1);
+      Vec3 n = map.interpolated_normal (pos[0], pos[2]);
+      Vec3 t1 = cross (n, Vec3 (1, 0, 0));
+      if (length2 (t1) < 0.01f)
+        t1 = cross (n, Vec3 (0, 0, 1));
+      normalize (t1);
+      Vec3 t2 = cross (n, t1);
 
-      const Vector3D c = Vector3D (pos.x, gy, pos.z) + n * 0.14f;
+      const Vec3 c = Vec3 (pos[0], gy, pos[2]) + n * 0.14f;
 
       render::DrawState soft;
       soft.blend = true;

@@ -15,15 +15,13 @@ namespace moppe::game {
     m_logical_time = state.logical_time;
   }
 
-  void Dust::emit (const Vector3D& pos,
-                   const Vector3D& vel,
-                   int count,
-                   DisplayColor color) {
+  void
+  Dust::emit (const Vec3& pos, const Vec3& vel, int count, DisplayColor color) {
     emit (pos, vel, count, color, Style ());
   }
 
-  void Dust::emit (const Vector3D& pos,
-                   const Vector3D& vel,
+  void Dust::emit (const Vec3& pos,
+                   const Vec3& vel,
                    int count,
                    DisplayColor color,
                    const Style& style) {

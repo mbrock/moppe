@@ -19,7 +19,7 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
 
 MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   constexpr std::size_t count = 16;
-  map::RandomHeightMap map (4, 4, Vector3D (40, 10, 40), 0);
+  map::RandomHeightMap map (4, 4, Vec3 (40, 10, 40), 0);
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.4f - 0.1f * x);
@@ -121,7 +121,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
 
 MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
   constexpr std::size_t count = 25;
-  map::RandomHeightMap map (5, 5, Vector3D (50, 10, 50), 0);
+  map::RandomHeightMap map (5, 5, Vec3 (50, 10, 50), 0);
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -237,9 +237,9 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
   MOPPE_CHECK (confluence->cell == 7);
   MOPPE_CHECK (mouth.has_value ());
   MOPPE_CHECK (mouth->cell == 14);
-  MOPPE_CHECK (std::isfinite (mouth->eye.x));
-  MOPPE_CHECK (std::isfinite (mouth->eye.y));
-  MOPPE_CHECK (std::isfinite (mouth->eye.z));
+  MOPPE_CHECK (std::isfinite (mouth->eye[0]));
+  MOPPE_CHECK (std::isfinite (mouth->eye[1]));
+  MOPPE_CHECK (std::isfinite (mouth->eye[2]));
   MOPPE_CHECK (game::parse_water_shot ("fall") == game::WaterShot::Waterfall);
   MOPPE_CHECK (!game::parse_water_shot ("bogus").has_value ());
 }

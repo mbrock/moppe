@@ -37,7 +37,7 @@ namespace moppe::game {
     float m_boost_input = 0.0f;
     Mode m_mode = M_BIKE;
     CamMode m_cam_mode = CAM_CHASE;
-    Vector3D m_fp_eye;
+    Vec3 m_fp_eye;
     bool m_car_exists = false;
     int m_combo = 0;
     int m_score = 0;

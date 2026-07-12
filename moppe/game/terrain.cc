@@ -53,16 +53,16 @@ namespace moppe {
       m_periodic = map.periodic ();
       m_repeat_periodically = repeat_periodically;
       m_projection = projection;
-      m_lod_scale = std::max (m_scale.x, m_scale.z);
+      m_lod_scale = std::max (m_scale[0], m_scale[2]);
 
       render::TerrainParams params;
       params.width = map.width ();
       params.height = map.height ();
       params.scale = m_scale;
-      params.height_scale = world.map_size.y;
+      params.height_scale = world.map_size[1];
       params.sea_level_norm =
-        meters_value (world.water_level) / world.map_size.y;
-      params.tex_scale = 0.5f / m_scale.x;
+        meters_value (world.water_level) / world.map_size[1];
+      params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
                                    !graphics.terrain_shadows
                                  ? 0.0f
@@ -73,7 +73,7 @@ namespace moppe {
       params.topology_overlay = graphics.terrain_topology;
       params.periodic = map.periodic ();
       params.projection = projection;
-      const float shortest_period = std::min (m_period.x, m_period.z);
+      const float shortest_period = std::min (m_period[0], m_period[2]);
       params.torus_major_radius = 0.34f * shortest_period;
       params.torus_minor_radius = 0.10f * shortest_period;
       params.torus_height_scale = 0.45f;
@@ -106,17 +106,17 @@ namespace moppe {
                 ymax = std::max (ymax, h);
               }
           }
-          ymin *= m_scale.y;
-          ymax *= m_scale.y;
+          ymin *= m_scale[1];
+          ymax *= m_scale[1];
 
           Chunk c;
           c.x0 = cx * CHUNK;
           c.z0 = cz * CHUNK;
-          const float x0 = c.x0 * m_scale.x;
-          const float x1 = (c.x0 + CHUNK) * m_scale.x;
-          const float z0 = c.z0 * m_scale.z;
-          const float z1 = (c.z0 + CHUNK) * m_scale.z;
-          c.center = Vector3D ((x0 + x1) / 2, (ymin + ymax) / 2, (z0 + z1) / 2);
+          const float x0 = c.x0 * m_scale[0];
+          const float x1 = (c.x0 + CHUNK) * m_scale[0];
+          const float z0 = c.z0 * m_scale[2];
+          const float z1 = (c.z0 + CHUNK) * m_scale[2];
+          c.center = Vec3 ((x0 + x1) / 2, (ymin + ymax) / 2, (z0 + z1) / 2);
           const float hx = (x1 - x0) / 2, hy = (ymax - ymin) / 2,
                       hz = (z1 - z0) / 2;
           c.radius = std::sqrt (hx * hx + hy * hy + hz * hz);
@@ -126,26 +126,26 @@ namespace moppe {
 
     void Terrain::render_shadow (render::Renderer& r,
                                  const map::HeightMap& map,
-                                 const Vector3D& sun_dir) {
+                                 const Vec3& sun_dir) {
       if (m_projection == render::TerrainProjection::Torus)
         return;
-      const Vector3D bounds = map.size ();
-      const Vector3D center (bounds.x / 2, bounds.y / 2, bounds.z / 2);
-      const float radius = bounds.length () / 2;
+      const Vec3 bounds = map.size ();
+      const Vec3 center (bounds[0] / 2, bounds[1] / 2, bounds[2] / 2);
+      const float radius = length (bounds) / 2;
 
       // Ortho box big enough for the whole scene: the light sits
       // radius*3.5 out toward the sun, so the scene spans roughly
       // [2.5r, 4.5r] in light depth (same numbers as the GL build).
-      const Vector3D light_pos = center + sun_dir * (radius * 3.5f);
-      const Mat4 view = Mat4::look_at (light_pos, center, Vector3D (0, 1, 0));
+      const Vec3 light_pos = center + sun_dir * (radius * 3.5f);
+      const Mat4 view = Mat4::look_at (light_pos, center, Vec3 (0, 1, 0));
       const Mat4 proj = Mat4::ortho (
         -radius, radius, -radius, radius, radius * 0.5f, radius * 6.0f);
       r.render_terrain_shadow (proj * view);
     }
 
     void Terrain::render (render::Renderer& r,
-                          const Vector3D& cam,
-                          const Vector3D& view_dir,
+                          const Vec3& cam,
+                          const Vec3& view_dir,
                           float max_dist) {
       m_draws.clear ();
 
@@ -165,47 +165,47 @@ namespace moppe {
         return;
       }
 
-      const float half_width = 0.5f * CHUNK * m_scale.x;
-      const float half_depth = 0.5f * CHUNK * m_scale.z;
+      const float half_width = 0.5f * CHUNK * m_scale[0];
+      const float half_depth = 0.5f * CHUNK * m_scale[2];
       for (size_t i = 0; i < m_chunks.size (); ++i) {
         const Chunk& c = m_chunks[i];
         const float reach = max_dist + c.radius;
         const bool repeat = m_periodic && m_repeat_periodically;
         const int min_tile_x =
           repeat ? static_cast<int> (
-                     std::ceil ((cam.x - reach - c.center.x) / m_period.x))
+                     std::ceil ((cam[0] - reach - c.center[0]) / m_period[0]))
                  : 0;
         const int max_tile_x =
           repeat ? static_cast<int> (
-                     std::floor ((cam.x + reach - c.center.x) / m_period.x))
+                     std::floor ((cam[0] + reach - c.center[0]) / m_period[0]))
                  : 0;
         const int min_tile_z =
           repeat ? static_cast<int> (
-                     std::ceil ((cam.z - reach - c.center.z) / m_period.z))
+                     std::ceil ((cam[2] - reach - c.center[2]) / m_period[2]))
                  : 0;
         const int max_tile_z =
           repeat ? static_cast<int> (
-                     std::floor ((cam.z + reach - c.center.z) / m_period.z))
+                     std::floor ((cam[2] + reach - c.center[2]) / m_period[2]))
                  : 0;
 
         for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
           for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {
-            const Vector3D offset (tile_x * m_period.x, 0, tile_z * m_period.z);
-            const Vector3D d = c.center + offset - cam;
-            const float dist2 = d.length2 ();
+            const Vec3 offset (tile_x * m_period[0], 0, tile_z * m_period[2]);
+            const Vec3 d = c.center + offset - cam;
+            const float dist2 = length2 (d);
 
             // Too far: the haze has swallowed it.
             if (dist2 > reach * reach)
               continue;
 
             // Entirely behind the camera plane (conservative).
-            if (dist2 > c.radius * c.radius && d.dot (view_dir) < -c.radius)
+            if (dist2 > c.radius * c.radius && dot (d, view_dir) < -c.radius)
               continue;
 
             // Choose from the distance to the nearest point of the chunk,
             // rather than its center.
-            const float dx = std::max (0.0f, std::fabs (d.x) - half_width);
-            const float dz = std::max (0.0f, std::fabs (d.z) - half_depth);
+            const float dx = std::max (0.0f, std::fabs (d[0]) - half_width);
+            const float dz = std::max (0.0f, std::fabs (d[2]) - half_depth);
             const float nearest = std::sqrt (dx * dx + dz * dz);
 
             int lod = LOD_COUNT - 1;
@@ -223,8 +223,8 @@ namespace moppe {
               lod < LOD_COUNT - 1 ? LOD_MORPH_START[lod] * m_lod_scale : 0.0f;
             draw.morph_end =
               lod < LOD_COUNT - 1 ? LOD_END[lod] * m_lod_scale : 0.0f;
-            draw.offset_x = offset.x;
-            draw.offset_z = offset.z;
+            draw.offset_x = offset[0];
+            draw.offset_z = offset[2];
             m_draws.push_back (draw);
           }
       }

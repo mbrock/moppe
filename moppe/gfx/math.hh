@@ -7,6 +7,7 @@
 #include <mp-units/math.h>
 #include <mp-units/systems/isq.h>
 #include <mp-units/systems/si.h>
+#include <mp-units/utility/cartesian_vector.h>
 
 #include <cmath>
 #include <iostream>
@@ -122,173 +123,63 @@ namespace moppe {
   }
 
   template <typename T>
-  struct Vector3DG {
-    typedef T scalar_type;
-    using value_type = scalar_type;
-
-    T x, y, z;
-
-    Vector3DG () : x (0), y (0), z (0) {}
-    Vector3DG (T x, T y, T z) : x (x), y (y), z (z) {}
-    Vector3DG (const Vector3DG& v) : x (v.x), y (v.y), z (v.z) {}
-
-    Vector3DG& operator= (const Vector3DG& v) = default;
-
-    // Indexed access; also what marks this type as an order-1 (vector)
-    // representation to mp-units, together with norm() below, so
-    // quantity<si::metre, Vector3D> is a valid vector quantity.
-    T& operator[] (std::size_t i) {
-      return (&x)[i];
-    }
-    const T& operator[] (std::size_t i) const {
-      return (&x)[i];
-    }
-
-    inline Vector3DG& operator+= (const Vector3DG& v) {
-      x += v.x;
-      y += v.y;
-      z += v.z;
-      return *this;
-    }
-    inline Vector3DG& operator-= (const Vector3DG& v) {
-      x -= v.x;
-      y -= v.y;
-      z -= v.z;
-      return *this;
-    }
-
-    inline Vector3DG& operator*= (T k) {
-      x *= k;
-      y *= k;
-      z *= k;
-      return *this;
-    }
-    inline Vector3DG& operator/= (T k) {
-      x /= k;
-      y /= k;
-      z /= k;
-      return *this;
-    }
-
-    inline Vector3DG operator- () const {
-      return Vector3DG (-x, -y, -z);
-    }
-
-    inline bool operator== (const Vector3DG& v) const {
-      return (x == v.x) && (y == v.y) && (z == v.z);
-    }
-
-    inline T length () const {
-      return std::sqrt (length2 ());
-    }
-    inline T length2 () const {
-      return dot (*this);
-    }
-    // mp-units spelling of the Euclidean magnitude.
-    inline T norm () const {
-      return length ();
-    }
-
-    void normalize () {
-      const T k = length2 ();
-      if (k != 0.0)
-        *this /= std::sqrt (k);
-    }
-
-    Vector3DG normalized () const {
-      Vector3DG t (*this);
-      t.normalize ();
-      return t;
-    }
-
-    Vector3DG cross (const Vector3DG& v) const {
-      return Vector3DG (
-        y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
-    }
-
-    T dot (const Vector3DG& v) const {
-      return x * v.x + y * v.y + z * v.z;
-    }
-
-    Vector3DG scaled (const Vector3DG& v) const {
-      return Vector3DG (x * v.x, y * v.y, z * v.z);
-    }
-  };
+  using Vec3T = mp_units::utility::cartesian_vector<T, 3>;
 
   template <typename T>
-  inline Vector3DG<T> operator+ (Vector3DG<T> a, const Vector3DG<T>& b) {
-    a += b;
-    return a;
+  T length (const Vec3T<T>& value) {
+    return value.magnitude ();
   }
 
   template <typename T>
-  inline Vector3DG<T> operator- (Vector3DG<T> a, const Vector3DG<T>& b) {
-    a -= b;
-    return a;
-  }
-
-  // The scalar is a non-deduced parameter so that e.g. v * 10
-  // converts the int instead of failing deduction.
-  template <typename T>
-  inline Vector3DG<T> operator* (Vector3DG<T> v,
-                                 typename Vector3DG<T>::scalar_type k) {
-    v *= k;
-    return v;
+  T length2 (const Vec3T<T>& value) {
+    return scalar_product (value, value);
   }
 
   template <typename T>
-  inline Vector3DG<T> operator* (typename Vector3DG<T>::scalar_type k,
-                                 Vector3DG<T> v) {
-    v *= k;
-    return v;
+  void normalize (Vec3T<T>& value) {
+    value = value.unit ();
   }
 
   template <typename T>
-  inline Vector3DG<T> operator/ (Vector3DG<T> v,
-                                 typename Vector3DG<T>::scalar_type k) {
-    v /= k;
-    return v;
+  Vec3T<T> normalized (const Vec3T<T>& value) {
+    return value.unit ();
+  }
+
+  template <typename T, typename U>
+  auto dot (const Vec3T<T>& left, const Vec3T<U>& right) {
+    return scalar_product (left, right);
+  }
+
+  template <typename T, typename U>
+  auto cross (const Vec3T<T>& left, const Vec3T<U>& right) {
+    return vector_product (left, right);
+  }
+
+  template <typename T, typename U>
+  auto scaled (const Vec3T<T>& left, const Vec3T<U>& right) {
+    return Vec3T { left[0] * right[0], left[1] * right[1], left[2] * right[2] };
   }
 
   template <typename T>
-  inline bool operator!= (const Vector3DG<T>& a, const Vector3DG<T>& b) {
-    return !(a == b);
+  Vec3T<T> linear_vector_interpolate (const Vec3T<T>& from,
+                                      const Vec3T<T>& to,
+                                      const T& alpha) {
+    return Vec3T<T> (linear_interpolate (from[0], to[0], alpha),
+                     linear_interpolate (from[1], to[1], alpha),
+                     linear_interpolate (from[2], to[2], alpha));
   }
 
-  template <typename T>
-  std::ostream& operator<< (std::ostream& os, const Vector3DG<T>& v) {
-    return os << "<" << v.x << " " << v.y << " " << v.z << ">";
-  }
-
-  template <typename T>
-  Vector3DG<T> linear_vector_interpolate (const Vector3DG<T>& from,
-                                          const Vector3DG<T>& to,
-                                          const T& alpha) {
-    return Vector3DG<T> (linear_interpolate (from.x, to.x, alpha),
-                         linear_interpolate (from.y, to.y, alpha),
-                         linear_interpolate (from.z, to.z, alpha));
-  }
-
-  // Vector-quantity algebra: mp-units keeps the unit outside and the
-  // numerical Vector3DG inside (quantity<si::metre, Vector3D>), so
-  // products combine the numerical vectors and the references.
   template <Quantity Q1, Quantity Q2>
-    requires requires (const Q1& a, const Q2& b) {
-      a.numerical_value_in (Q1::unit).dot (b.numerical_value_in (Q2::unit));
-    }
-  auto dot (const Q1& a, const Q2& b) {
-    return a.numerical_value_in (Q1::unit).dot (
-             b.numerical_value_in (Q2::unit)) *
+  auto dot (const Q1& left, const Q2& right) {
+    return scalar_product (left.numerical_value_in (Q1::unit),
+                           right.numerical_value_in (Q2::unit)) *
            (Q1::reference * Q2::reference);
   }
 
   template <Quantity Q1, Quantity Q2>
-    requires requires (const Q1& a, const Q2& b) {
-      a.numerical_value_in (Q1::unit).cross (b.numerical_value_in (Q2::unit));
-    }
-  auto cross (const Q1& a, const Q2& b) {
-    return a.numerical_value_in (Q1::unit).cross (
-             b.numerical_value_in (Q2::unit)) *
+  auto cross (const Q1& left, const Q2& right) {
+    return vector_product (left.numerical_value_in (Q1::unit),
+                           right.numerical_value_in (Q2::unit)) *
            (Q1::reference * Q2::reference);
   }
 
@@ -298,26 +189,24 @@ namespace moppe {
 
     QuaternionG (T x, T y, T z, T w) : x (x), y (y), z (z), w (w) {}
 
-    QuaternionG (const Vector3DG<T>& v, T w)
-        : x (v.x), y (v.y), z (v.z), w (w) {}
+    QuaternionG (const Vec3T<T>& v, T w)
+        : x (v[0]), y (v[1]), z (v[2]), w (w) {}
 
     // Make a rotation quaternion from an axis and an angle.
-    static inline QuaternionG rotation (const Vector3DG<T>& axis,
-                                        radians_t angle) {
+    static inline QuaternionG rotation (const Vec3T<T>& axis, radians_t angle) {
       return QuaternionG (moppe::sin (angle / 2) * axis,
                           moppe::cos (angle / 2));
     }
 
     // Rotate a vector around an axis by an angle.
-    static inline Vector3DG<T>
-    rotate (const Vector3DG<T>& v, const Vector3DG<T>& axis, radians_t angle) {
+    static inline Vec3T<T>
+    rotate (const Vec3T<T>& v, const Vec3T<T>& axis, radians_t angle) {
       QuaternionG r = rotation (axis, angle);
       return rotate (v, r);
     }
 
     // Apply a rotation quaternion to a vector.
-    static inline Vector3DG<T> rotate (const Vector3DG<T>& v,
-                                       const QuaternionG& q) {
+    static inline Vec3T<T> rotate (const Vec3T<T>& v, const QuaternionG& q) {
       QuaternionG r (q);
       const QuaternionG rc (r.conjugate ());
 
@@ -328,8 +217,8 @@ namespace moppe {
     }
 
     // Return my non-w components as a 3D vector.
-    inline Vector3DG<T> vector () const {
-      return Vector3DG<T> (x, y, z);
+    inline Vec3T<T> vector () const {
+      return Vec3T<T> (x, y, z);
     }
 
     QuaternionG& operator*= (const QuaternionG& q) {
@@ -358,8 +247,14 @@ namespace moppe {
     return a;
   }
 
-  typedef Vector3DG<float> Vector3D;
-  typedef QuaternionG<float> Quaternion;
+  using Vec3 = Vec3T<float>;
+  using Quaternion = QuaternionG<float>;
+
+  // Physical spatial vectors keep one unit around one numerical vector.  The
+  // simulation can migrate fields to these types incrementally without ever
+  // constructing a vector whose individual elements are quantities.
+  using position_t = quantity<isq::position_vector[si::metre], Vec3>;
+  using velocity_t = quantity<isq::velocity[si::metre / si::second], Vec3>;
 }
 
 #endif

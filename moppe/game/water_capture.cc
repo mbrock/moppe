@@ -15,26 +15,26 @@ namespace moppe::game {
       return delta;
     }
 
-    Vector3D cell_position (std::uint32_t cell,
-                            const map::HeightMap& map,
-                            const terrain::FloodField& flood,
-                            const terrain::LakeCensus& census,
-                            const terrain::DrainageGraph& drainage) {
+    Vec3 cell_position (std::uint32_t cell,
+                        const map::HeightMap& map,
+                        const terrain::FloodField& flood,
+                        const terrain::LakeCensus& census,
+                        const terrain::DrainageGraph& drainage) {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vector3D scale = map.scale ();
+      const Vec3 scale = map.scale ();
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-      const float y = water ? flood.water_level.values ()[cell] * scale.y
-                            : map.get (x, z) * scale.y;
-      return Vector3D (x * scale.x, y, z * scale.z);
+      const float y = water ? flood.water_level.values ()[cell] * scale[1]
+                            : map.get (x, z) * scale[1];
+      return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
-    Vector3D cell_direction (std::uint32_t from,
-                             std::uint32_t to,
-                             const map::HeightMap& map,
-                             const terrain::DrainageGraph& drainage) {
+    Vec3 cell_direction (std::uint32_t from,
+                         std::uint32_t to,
+                         const map::HeightMap& map,
+                         const terrain::DrainageGraph& drainage) {
       const int width = static_cast<int> (drainage.width ());
       const int height = static_cast<int> (drainage.height ());
       const int from_x = static_cast<int> (from % drainage.width ());
@@ -47,10 +47,10 @@ namespace moppe::game {
         dx = capture_minimum_image_delta (dx, width);
         dz = capture_minimum_image_delta (dz, height);
       }
-      Vector3D result (dx * map.scale ().x, 0.0f, dz * map.scale ().z);
-      if (result.length2 () < 1e-6f)
-        result = Vector3D (0, 0, 1);
-      return result.normalized ();
+      Vec3 result (dx * map.scale ()[0], 0.0f, dz * map.scale ()[2]);
+      if (length2 (result) < 1e-6f)
+        result = Vec3 (0, 0, 1);
+      return normalized (result);
     }
 
     struct Candidate {
@@ -229,15 +229,15 @@ namespace moppe::game {
     if (best.cell == terrain::RiverReach::no_id)
       return std::nullopt;
 
-    Vector3D flow =
+    Vec3 flow =
       best.to != terrain::RiverReach::no_id &&
           best.to != terrain::WaterBody::no_cell && best.to != best.cell
         ? cell_direction (best.cell, best.to, map, drainage)
       : best.from != terrain::RiverReach::no_id && best.from != best.cell
         ? cell_direction (best.from, best.cell, map, drainage)
-        : Vector3D (0, 0, 1);
-    const Vector3D side (-flow.z, 0, flow.x);
-    Vector3D target = cell_position (best.cell, map, flood, census, drainage);
+        : Vec3 (0, 0, 1);
+    const Vec3 side (-flow[2], 0, flow[0]);
+    Vec3 target = cell_position (best.cell, map, flood, census, drainage);
     float back = 30.0f;
     float sideways = 22.0f;
     float height = 16.0f;
@@ -256,10 +256,9 @@ namespace moppe::game {
       sideways = 26.0f;
       height = 20.0f;
     }
-    target.y += shot == WaterShot::Lake ? 2.0f : 0.7f;
-    Vector3D eye =
-      target - flow * back + side * sideways + Vector3D (0, height, 0);
-    eye.y = std::max (eye.y, map.interpolated_height (eye.x, eye.z) + 4.0f);
+    target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
+    Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
+    eye[1] = std::max (eye[1], map.interpolated_height (eye[0], eye[2]) + 4.0f);
     return WaterInspection { .kind = shot,
                              .cell = best.cell,
                              .score = best.score,

@@ -22,15 +22,15 @@ namespace moppe {
     class Vehicle {
     public:
       struct State {
-        Vector3D position {};
-        Vector3D velocity {};
-        Vector3D heading {};
-        Vector3D thrust_orientation {};
+        Vec3 position {};
+        Vec3 velocity {};
+        Vec3 heading {};
+        Vec3 thrust_orientation {};
         radians_t yaw {};
         radians_t yaw_target {};
         float lean {};
-        Vector3D render_heading {};
-        Vector3D render_normal {};
+        Vec3 render_heading {};
+        Vec3 render_normal {};
         float susp {};
         float susp_v {};
         float wheel_spin {};
@@ -53,7 +53,7 @@ namespace moppe {
       // max_thrust caps the wheel force (launch punch); power caps
       // force * speed, so acceleration tapers like a real engine
       // instead of shoving at 3 g all the way to the horizon.
-      Vehicle (const Vector3D& position,
+      Vehicle (const Vec3& position,
                degrees_t orientation,
                const HeightMap& map,
                newtons_t max_thrust,
@@ -103,9 +103,9 @@ namespace moppe {
       }
 
       // Respawn: back to a spot, stationary, jets cooled down
-      void reset (const Vector3D& position) {
+      void reset (const Vec3& position) {
         m_position = position;
-        m_velocity = Vector3D ();
+        m_velocity = Vec3 ();
         m_boost_input = 0;
         m_boost_drive = 0;
         m_boost_level = 0;
@@ -114,13 +114,13 @@ namespace moppe {
         m_boost_flight = false;
         m_impact = 0;
         m_render_heading = m_heading;
-        m_render_normal = Vector3D (0, 1, 0);
+        m_render_normal = Vec3 (0, 1, 0);
       }
 
-      void set_heading (const Vector3D& h) {
-        Vector3D v (h.x, 0, h.z);
-        if (v.length2 () > 0.0001f) {
-          v.normalize ();
+      void set_heading (const Vec3& h) {
+        Vec3 v (h[0], 0, h[2]);
+        if (length2 (v) > 0.0001f) {
+          normalize (v);
           m_heading = v;
           m_thrust_orientation = v;
         }
@@ -140,8 +140,8 @@ namespace moppe {
       // Sideways speed relative to where the bike points; big when
       // drifting, ~zero when rolling straight
       float drift_speed () const {
-        float vf = m_velocity.dot (m_heading);
-        return (m_velocity - m_heading * vf).length ();
+        float vf = dot (m_velocity, m_heading);
+        return length (m_velocity - m_heading * vf);
       }
 
       // Downward speed of the last hard landing; reading it clears it
@@ -191,10 +191,10 @@ namespace moppe {
       radians_t yaw () const {
         return m_yaw;
       }
-      Vector3D render_normal () const {
+      Vec3 render_normal () const {
         return m_render_normal;
       }
-      Vector3D render_orientation () const {
+      Vec3 render_orientation () const {
         return m_render_heading;
       }
       int body_kind () const {
@@ -204,19 +204,19 @@ namespace moppe {
         return m_body_color;
       }
 
-      Vector3D position () const {
+      Vec3 position () const {
         return m_position;
       }
-      Vector3D orientation () const {
+      Vec3 orientation () const {
         return m_heading;
       }
-      Vector3D velocity () const {
+      Vec3 velocity () const {
         return m_velocity;
       }
 
     private:
       void steer (seconds_t dt);
-      void apply_grip (seconds_t dt, const Vector3D& n);
+      void apply_grip (seconds_t dt, const Vec3& n);
       void calculate_orientation ();
       void fall_to_ground ();
       void check_ground_collision ();
@@ -225,37 +225,37 @@ namespace moppe {
       bool is_grounded () const;
       bool driving_contact () const;
 
-      Vector3D drag () const;
+      Vec3 drag () const;
 
       const Box* roof_under () const;
 
-      Vector3D ground_normal () const {
+      Vec3 ground_normal () const {
         if (roof_under ())
-          return Vector3D (0, 1, 0);
-        return m_map.interpolated_normal (m_position.x, m_position.z);
+          return Vec3 (0, 1, 0);
+        return m_map.interpolated_normal (m_position[0], m_position[2]);
       }
 
       float ground_height () const {
         const Box* roof = roof_under ();
         if (roof)
           return roof->top;
-        return m_map.interpolated_height (m_position.x, m_position.z);
+        return m_map.interpolated_height (m_position[0], m_position[2]);
       }
 
     private:
-      Vector3D m_position;
-      Vector3D m_velocity;
-      Vector3D m_heading;
-      Vector3D m_thrust_orientation;
+      Vec3 m_position;
+      Vec3 m_velocity;
+      Vec3 m_heading;
+      Vec3 m_thrust_orientation;
 
-      radians_t m_yaw;           // smoothed actual steering
-      radians_t m_yaw_target;    // raw keyboard input
-      float m_lean;              // roll into corners (radians)
-      Vector3D m_render_heading; // visual forward, follows the flight arc
-      Vector3D m_render_normal;  // smoothed up vector for drawing
-      float m_susp, m_susp_v;    // visual suspension spring
-      float m_wheel_spin;        // visual wheel roll angle (radians)
-      bool m_boost_flight;       // landing softened after using the jets
+      radians_t m_yaw;        // smoothed actual steering
+      radians_t m_yaw_target; // raw keyboard input
+      float m_lean;           // roll into corners (radians)
+      Vec3 m_render_heading;  // visual forward, follows the flight arc
+      Vec3 m_render_normal;   // smoothed up vector for drawing
+      float m_susp, m_susp_v; // visual suspension spring
+      float m_wheel_spin;     // visual wheel roll angle (radians)
+      bool m_boost_flight;    // landing softened after using the jets
 
       const HeightMap& m_map;
 

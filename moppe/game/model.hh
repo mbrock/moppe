@@ -16,8 +16,8 @@ namespace moppe {
                       int slices = 16,
                       int stacks = 16);
       void link (render::DrawList& dl,
-                 const Vector3D& start,
-                 const Vector3D& end,
+                 const Vec3& start,
+                 const Vec3& end,
                  float thickness);
 
       enum class RiderMaterial {

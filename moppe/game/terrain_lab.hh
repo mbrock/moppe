@@ -38,7 +38,7 @@ namespace moppe {
                   const WorldParams& world,
                   const GraphicsSettings& graphics,
                   const terrain::TerrainProgram& program,
-                  const Vector3D& sun_dir);
+                  const Vec3& sun_dir);
       void leave ();
 
       bool active () const {
@@ -68,12 +68,11 @@ namespace moppe {
                            float y);
       void pointer_scroll (float x, float y, float delta);
 
-      Vector3D position () const;
-      Vector3D forward () const;
+      Vec3 position () const;
+      Vec3 forward () const;
       Mat4 view_matrix () const;
-      void render_rivers (render::Renderer& renderer,
-                          const Vector3D& camera) const;
-      void render_droplet (render::Renderer& renderer, const Vector3D& camera);
+      void render_rivers (render::Renderer& renderer, const Vec3& camera) const;
+      void render_droplet (render::Renderer& renderer, const Vec3& camera);
 
       void draw (render::DrawList& dl, int width_pts, int height_pts) const;
 
@@ -126,11 +125,11 @@ namespace moppe {
       const terrain::DrainageGraph& drainage ();
       const terrain::FloodField& standing_water ();
       void inspect_drainage (float x, float y);
-      std::optional<Vector3D> terrain_point_at_screen (float x, float y) const;
+      std::optional<Vec3> terrain_point_at_screen (float x, float y) const;
       void launch_droplet (float x, float y);
-      Vector3D droplet_world_position (std::size_t index) const;
-      Vector3D droplet_world_position (float progress) const;
-      float visible_droplet_pitch (const Vector3D& droplet) const;
+      Vec3 droplet_world_position (std::size_t index) const;
+      Vec3 droplet_world_position (float progress) const;
+      float visible_droplet_pitch (const Vec3& droplet) const;
       void update_droplet_overlay (bool force = false);
 
       InspectorUi m_ui;
@@ -141,14 +140,14 @@ namespace moppe {
       Terrain* m_terrain;
       const WorldParams* m_world;
       const GraphicsSettings* m_graphics;
-      Vector3D m_sun_dir;
+      Vec3 m_sun_dir;
       std::vector<float> m_saved_heights;
 
       bool m_active;
       bool m_map_pristine;
       terrain::TerrainProgram m_program;
       map::HydraulicDropletTrace m_droplet_trace;
-      std::optional<Vector3D> m_droplet_target;
+      std::optional<Vec3> m_droplet_target;
       std::vector<float> m_droplet_overlay;
       std::size_t m_droplet_overlay_points;
       render::DrawList m_droplet_draw;
@@ -194,7 +193,7 @@ namespace moppe {
       int m_parameter_rebuild_stage;
       float m_parameter_rebuild_delay;
 
-      Vector3D m_target;
+      Vec3 m_target;
       float m_yaw;
       float m_pitch;
       float m_distance;

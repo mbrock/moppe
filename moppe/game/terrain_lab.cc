@@ -483,7 +483,7 @@ namespace moppe {
                             const WorldParams& world,
                             const GraphicsSettings& graphics,
                             const terrain::TerrainProgram& program,
-                            const Vector3D& sun_dir) {
+                            const Vec3& sun_dir) {
       if (m_active)
         return;
 
@@ -665,10 +665,10 @@ namespace moppe {
     void TerrainLab::fit_view () {
       if (!m_world)
         return;
-      m_target = Vector3D (
-        m_world->map_size.x * 0.5f,
-        m_view == ViewMode::Torus ? 0.0f : m_world->map_size.y * 0.10f,
-        m_world->map_size.z * 0.5f);
+      m_target =
+        Vec3 (m_world->map_size[0] * 0.5f,
+              m_view == ViewMode::Torus ? 0.0f : m_world->map_size[1] * 0.10f,
+              m_world->map_size[2] * 0.5f);
       m_yaw = 0.72f;
       if (m_view == ViewMode::Torus) {
         m_pitch = 0.48f;
@@ -797,7 +797,7 @@ namespace moppe {
       if (!m_flood) {
         const auto start = std::chrono::steady_clock::now ();
         const float sea_level =
-          meters_value (m_world->water_level) / m_world->map_size.y;
+          meters_value (m_world->water_level) / m_world->map_size[1];
         m_flood =
           terrain::analyze_standing_water (m_map->terrain_view (), sea_level);
         m_lakes = terrain::census_lakes (*m_flood);
@@ -814,7 +814,7 @@ namespace moppe {
         std::ostringstream status;
         status << format_count (static_cast<int> (wet_cells)) << " wet cells | "
                << std::fixed << std::setprecision (1)
-               << maximum_depth * m_world->map_size.y << "m max | "
+               << maximum_depth * m_world->map_size[1] << "m max | "
                << std::setprecision (0) << milliseconds << "ms flood";
         m_flood_status = status.str ();
 
@@ -883,7 +883,7 @@ namespace moppe {
     }
 
     void TerrainLab::render_rivers (render::Renderer& renderer,
-                                    const Vector3D& camera) const {
+                                    const Vec3& camera) const {
       // A pristine map still renders the game's painted water sheets;
       // the analysis ribbons would only double-draw on top of them.
       if (m_map_pristine)
@@ -891,16 +891,16 @@ namespace moppe {
       m_river_surface.draw (renderer, camera);
     }
 
-    Vector3D TerrainLab::droplet_world_position (std::size_t index) const {
+    Vec3 TerrainLab::droplet_world_position (std::size_t index) const {
       if (!m_map || index >= m_droplet_trace.points.size ())
         return {};
       const map::HydraulicDropletPoint& point = m_droplet_trace.points[index];
-      const Vector3D scale = m_map->scale ();
-      return Vector3D (
-        point.x * scale.x, point.height * scale.y + 2.2f, point.y * scale.z);
+      const Vec3 scale = m_map->scale ();
+      return Vec3 (
+        point.x * scale[0], point.height * scale[1] + 2.2f, point.y * scale[2]);
     }
 
-    Vector3D TerrainLab::droplet_world_position (float progress) const {
+    Vec3 TerrainLab::droplet_world_position (float progress) const {
       if (m_droplet_trace.points.empty ())
         return {};
       const float last =
@@ -910,11 +910,11 @@ namespace moppe {
       const std::size_t after =
         std::min (before + 1, m_droplet_trace.points.size () - 1);
       const float fraction = position - static_cast<float> (before);
-      const Vector3D a = droplet_world_position (before);
+      const Vec3 a = droplet_world_position (before);
       return a + (droplet_world_position (after) - a) * fraction;
     }
 
-    float TerrainLab::visible_droplet_pitch (const Vector3D& droplet) const {
+    float TerrainLab::visible_droplet_pitch (const Vec3& droplet) const {
       if (!m_map)
         return m_pitch;
 
@@ -928,17 +928,16 @@ namespace moppe {
       for (float pitch = first_pitch; pitch <= maximum_pitch;
            pitch += pitch_step) {
         const float horizontal = std::cos (pitch) * m_distance;
-        const Vector3D camera =
-          m_target + Vector3D (std::sin (m_yaw) * horizontal,
-                               std::sin (pitch) * m_distance,
-                               std::cos (m_yaw) * horizontal);
+        const Vec3 camera = m_target + Vec3 (std::sin (m_yaw) * horizontal,
+                                             std::sin (pitch) * m_distance,
+                                             std::cos (m_yaw) * horizontal);
         bool visible = true;
         for (int sample = 1; sample < 32; ++sample) {
           const float t = static_cast<float> (sample) / 32.0f;
-          const Vector3D point = camera + (droplet - camera) * t;
+          const Vec3 point = camera + (droplet - camera) * t;
           const float clearance = 5.0f * (1.0f - t);
-          if (point.y <
-              m_map->interpolated_height (point.x, point.z) + clearance) {
+          if (point[1] <
+              m_map->interpolated_height (point[0], point[2]) + clearance) {
             visible = false;
             break;
           }
@@ -1016,7 +1015,7 @@ namespace moppe {
     }
 
     void TerrainLab::render_droplet (render::Renderer& renderer,
-                                     const Vector3D& camera) {
+                                     const Vec3& camera) {
       if (!m_map)
         return;
 
@@ -1037,25 +1036,25 @@ namespace moppe {
         // oval on steep slopes, but a billboard disc stays a dot from
         // every angle.  Sized by distance so it reads the same zoomed
         // out or close in, with a soft breathing pulse while armed.
-        const Vector3D ground (
-          m_droplet_target->x,
-          m_map->interpolated_height (m_droplet_target->x, m_droplet_target->z),
-          m_droplet_target->z);
-        Vector3D to_camera = camera - ground;
-        const float distance = to_camera.length ();
+        const Vec3 ground ((*m_droplet_target)[0],
+                           m_map->interpolated_height ((*m_droplet_target)[0],
+                                                       (*m_droplet_target)[2]),
+                           (*m_droplet_target)[2]);
+        Vec3 to_camera = camera - ground;
+        const float distance = length (to_camera);
         if (distance > 1.0f) {
           to_camera = to_camera * (1.0f / distance);
-          Vector3D side = to_camera.cross (Vector3D (0, 1, 0));
-          if (side.length2 () < 1e-6f)
-            side = Vector3D (1, 0, 0);
-          side.normalize ();
-          const Vector3D lift = side.cross (to_camera).normalized ();
+          Vec3 side = cross (to_camera, Vec3 (0, 1, 0));
+          if (length2 (side) < 1e-6f)
+            side = Vec3 (1, 0, 0);
+          normalize (side);
+          const Vec3 lift = normalized (cross (side, to_camera));
           const float pulse = 0.85f + 0.15f * std::sin (m_time * 4.2f);
           // Proportional to distance, so the dot keeps a constant
           // on-screen size from valley floor to orbital overview.
           const float size =
             std::clamp (distance * 0.02f, 4.0f, 320.0f) * pulse;
-          const Vector3D center = ground + to_camera * (3.0f + size * 0.35f);
+          const Vec3 center = ground + to_camera * (3.0f + size * 0.35f);
           const auto glow = [&] (float radius, float core_alpha) {
             m_droplet_draw.begin (render::Prim::TriangleFan);
             m_droplet_draw.color (0.55f, 0.97f, 1.0f, core_alpha);
@@ -1084,8 +1083,8 @@ namespace moppe {
           ? std::clamp (m_droplet_settle / melt_duration, 0.0f, 1.0f)
           : 0.0f;
       if (m_droplet_trace.points.size () >= 2 && melt < 1.0f) {
-        const Vector3D bead = droplet_world_position (m_droplet_progress) -
-                              Vector3D (0.0f, melt * 1.8f, 0.0f);
+        const Vec3 bead = droplet_world_position (m_droplet_progress) -
+                          Vec3 (0.0f, melt * 1.8f, 0.0f);
         const float fade = 1.0f - melt;
         // The wake and nose cap describe motion; snuff them quickly
         // once the drop has stopped.
@@ -1096,18 +1095,17 @@ namespace moppe {
         const float squash = (1.0f + 0.45f * wobble) * (1.0f - 0.85f * melt);
         const float spread = (1.0f - 0.25f * wobble) * (1.0f + 1.6f * melt);
 
-        Vector3D direction =
-          bead -
-          droplet_world_position (std::max (0.0f, m_droplet_progress - 0.65f));
-        if (direction.length2 () < 1e-6f)
-          direction = Vector3D (0, -1, 0);
-        direction.normalize ();
-        Vector3D wake_side = direction.cross (camera - bead);
-        if (wake_side.length2 () < 1e-6f)
-          wake_side = direction.cross (Vector3D (0, 1, 0));
-        if (wake_side.length2 () < 1e-6f)
-          wake_side = Vector3D (1, 0, 0);
-        wake_side.normalize ();
+        Vec3 direction = bead - droplet_world_position (
+                                  std::max (0.0f, m_droplet_progress - 0.65f));
+        if (length2 (direction) < 1e-6f)
+          direction = Vec3 (0, -1, 0);
+        normalize (direction);
+        Vec3 wake_side = cross (direction, camera - bead);
+        if (length2 (wake_side) < 1e-6f)
+          wake_side = cross (direction, Vec3 (0, 1, 0));
+        if (length2 (wake_side) < 1e-6f)
+          wake_side = Vec3 (1, 0, 0);
+        normalize (wake_side);
         const auto wake = [&] (float length, float width, float alpha) {
           if (alpha <= 0.0f)
             return;
@@ -1123,40 +1121,40 @@ namespace moppe {
 
         // A small pointed cap makes the direction legible even in a still
         // frame; the ellipsoid behind it supplies the rounded water volume.
-        Vector3D nose_up = direction.cross (wake_side).normalized ();
+        Vec3 nose_up = normalized (cross (direction, wake_side));
         if (motion_fade > 0.0f) {
           m_droplet_draw.color (0.34f, 0.92f, 1.0f, 0.82f * motion_fade);
           m_droplet_draw.begin (render::Prim::TriangleFan);
           m_droplet_draw.vertex (bead + direction * 11.0f);
           for (int i = 0; i <= 10; ++i) {
             const float angle = PI2 * static_cast<float> (i) / 10.0f;
-            const Vector3D radial =
+            const Vec3 radial =
               wake_side * std::cos (angle) + nose_up * std::sin (angle);
             m_droplet_draw.vertex (bead - direction * 1.5f + radial * 5.2f);
           }
           m_droplet_draw.end ();
         }
 
-        const Vector3D up (0, 1, 0);
+        const Vec3 up (0, 1, 0);
         // While melting, the blob relaxes upright regardless of its
         // final travel direction.
-        Vector3D lean = direction + (up - direction) * melt;
-        if (lean.length2 () < 1e-6f)
+        Vec3 lean = direction + (up - direction) * melt;
+        if (length2 (lean) < 1e-6f)
           lean = up;
-        lean.normalize ();
-        Vector3D axis = up.cross (lean);
+        normalize (lean);
+        Vec3 axis = cross (up, lean);
         const radians_t angle =
-          std::acos (std::clamp (up.dot (lean), -1.0f, 1.0f)) * u::rad;
+          std::acos (std::clamp (dot (up, lean), -1.0f, 1.0f)) * u::rad;
         m_droplet_draw.push ();
         m_droplet_draw.translate (bead);
-        if (axis.length2 () > 1e-6f)
-          m_droplet_draw.rotate (angle, axis.normalized ());
+        if (length2 (axis) > 1e-6f)
+          m_droplet_draw.rotate (angle, normalized (axis));
         m_droplet_draw.color (0.18f, 0.82f, 1.0f, 0.92f * fade);
         m_droplet_draw.scale (5.5f * spread, 10.0f * squash, 5.5f * spread);
         m_droplet_draw.sphere (1.0f, 14, 9);
         m_droplet_draw.pop ();
         m_droplet_draw.push ();
-        m_droplet_draw.translate (bead + Vector3D (-2.0f, 2.0f, 0));
+        m_droplet_draw.translate (bead + Vec3 (-2.0f, 2.0f, 0));
         m_droplet_draw.color (0.88f, 1.0f, 1.0f, 0.50f * fade);
         m_droplet_draw.sphere (2.2f * (0.4f + 0.6f * fade), 8, 6);
         m_droplet_draw.pop ();
@@ -1165,8 +1163,8 @@ namespace moppe {
         renderer.draw_list (m_droplet_draw);
     }
 
-    std::optional<Vector3D>
-    TerrainLab::terrain_point_at_screen (float x, float y) const {
+    std::optional<Vec3> TerrainLab::terrain_point_at_screen (float x,
+                                                             float y) const {
       if (!m_map || !m_renderer || m_view == ViewMode::Torus)
         return std::nullopt;
       const float width = static_cast<float> (m_renderer->width_pts ());
@@ -1175,30 +1173,29 @@ namespace moppe {
       const float tangent = tan (70.0f * u::deg / 2);
       const float screen_x = 2.0f * x / width - 1.0f;
       const float screen_y = 1.0f - 2.0f * y / height;
-      const Vector3D direction_forward = forward ();
-      const Vector3D direction_right =
-        direction_forward.cross (Vector3D (0, 1, 0)).normalized ();
-      const Vector3D direction_up =
-        direction_right.cross (direction_forward).normalized ();
-      const Vector3D direction =
-        (direction_forward + direction_right * (screen_x * aspect * tangent) +
-         direction_up * (screen_y * tangent))
-          .normalized ();
-      const Vector3D origin = position ();
+      const Vec3 direction_forward = forward ();
+      const Vec3 direction_right =
+        normalized (cross (direction_forward, Vec3 (0, 1, 0)));
+      const Vec3 direction_up =
+        normalized (cross (direction_right, direction_forward));
+      const Vec3 direction = normalized (
+        direction_forward + direction_right * (screen_x * aspect * tangent) +
+        direction_up * (screen_y * tangent));
+      const Vec3 origin = position ();
       float previous_t = 0.0f;
       float previous_clearance =
-        origin.y - m_map->interpolated_height (origin.x, origin.z);
+        origin[1] - m_map->interpolated_height (origin[0], origin[2]);
       for (float t = 20.0f; t <= 14000.0f; t += 20.0f) {
-        const Vector3D point = origin + direction * t;
+        const Vec3 point = origin + direction * t;
         const float clearance =
-          point.y - m_map->interpolated_height (point.x, point.z);
+          point[1] - m_map->interpolated_height (point[0], point[2]);
         if (previous_clearance > 0.0f && clearance <= 0.0f) {
           float low = previous_t, high = t;
           for (int i = 0; i < 10; ++i) {
             const float middle = 0.5f * (low + high);
-            const Vector3D candidate = origin + direction * middle;
-            if (candidate.y >
-                m_map->interpolated_height (candidate.x, candidate.z))
+            const Vec3 candidate = origin + direction * middle;
+            if (candidate[1] >
+                m_map->interpolated_height (candidate[0], candidate[2]))
               low = middle;
             else
               high = middle;
@@ -1212,15 +1209,15 @@ namespace moppe {
     }
 
     void TerrainLab::launch_droplet (float x, float y) {
-      const std::optional<Vector3D> hit = terrain_point_at_screen (x, y);
+      const std::optional<Vec3> hit = terrain_point_at_screen (x, y);
       if (!hit || !m_map) {
         m_overlay_status = "DROP — no terrain under pointer";
         return;
       }
-      const Vector3D scale = m_map->scale ();
+      const Vec3 scale = m_map->scale ();
       m_droplet_trace =
-        m_map->trace_hydraulic_droplet (hit->x / scale.x,
-                                        hit->z / scale.z,
+        m_map->trace_hydraulic_droplet ((*hit)[0] / scale[0],
+                                        (*hit)[2] / scale[2],
                                         512,
                                         0.01f,
                                         terrain::SedimentDisposition::Deposit,
@@ -1240,7 +1237,7 @@ namespace moppe {
       refresh ();
       std::ostringstream status;
       const float eroded_volume =
-        m_droplet_trace.eroded * scale.x * scale.y * scale.z;
+        m_droplet_trace.eroded * scale[0] * scale[1] * scale[2];
       status << "DROP — " << m_droplet_trace.points.size () - 1 << " steps, "
              << std::fixed << std::setprecision (3) << eroded_volume
              << " m3 moved";
@@ -1258,33 +1255,32 @@ namespace moppe {
       const float tangent = tan (70.0f * u::deg / 2);
       const float screen_x = 2.0f * x / width - 1.0f;
       const float screen_y = 1.0f - 2.0f * y / height;
-      const Vector3D direction_forward = forward ();
-      const Vector3D direction_right =
-        direction_forward.cross (Vector3D (0, 1, 0)).normalized ();
-      const Vector3D direction_up =
-        direction_right.cross (direction_forward).normalized ();
-      const Vector3D direction =
-        (direction_forward + direction_right * (screen_x * aspect * tangent) +
-         direction_up * (screen_y * tangent))
-          .normalized ();
-      const Vector3D origin = position ();
+      const Vec3 direction_forward = forward ();
+      const Vec3 direction_right =
+        normalized (cross (direction_forward, Vec3 (0, 1, 0)));
+      const Vec3 direction_up =
+        normalized (cross (direction_right, direction_forward));
+      const Vec3 direction = normalized (
+        direction_forward + direction_right * (screen_x * aspect * tangent) +
+        direction_up * (screen_y * tangent));
+      const Vec3 origin = position ();
 
       float previous_t = 0.0f;
       float previous_clearance =
-        origin.y - m_map->interpolated_height (origin.x, origin.z);
+        origin[1] - m_map->interpolated_height (origin[0], origin[2]);
       bool hit = false;
       float hit_t = 0.0f;
       for (float t = 20.0f; t <= 14000.0f; t += 20.0f) {
-        const Vector3D point = origin + direction * t;
+        const Vec3 point = origin + direction * t;
         const float clearance =
-          point.y - m_map->interpolated_height (point.x, point.z);
+          point[1] - m_map->interpolated_height (point[0], point[2]);
         if (previous_clearance > 0.0f && clearance <= 0.0f) {
           float low = previous_t, high = t;
           for (int i = 0; i < 10; ++i) {
             const float middle = 0.5f * (low + high);
-            const Vector3D candidate = origin + direction * middle;
-            if (candidate.y >
-                m_map->interpolated_height (candidate.x, candidate.z))
+            const Vec3 candidate = origin + direction * middle;
+            if (candidate[1] >
+                m_map->interpolated_height (candidate[0], candidate[2]))
               low = middle;
             else
               high = middle;
@@ -1301,20 +1297,20 @@ namespace moppe {
         return;
       }
 
-      const Vector3D point = origin + direction * hit_t;
-      const Vector3D period = m_map->size ();
-      const Vector3D scale = m_map->scale ();
+      const Vec3 point = origin + direction * hit_t;
+      const Vec3 period = m_map->size ();
+      const Vec3 scale = m_map->scale ();
       const auto wrap = [] (float value, float size) {
         value = std::fmod (value, size);
         return value < 0.0f ? value + size : value;
       };
       const std::size_t grid_x =
         static_cast<std::size_t> (
-          std::floor (wrap (point.x, period.x) / scale.x)) %
+          std::floor (wrap (point[0], period[0]) / scale[0])) %
         static_cast<std::size_t> (m_map->unique_width ());
       const std::size_t grid_y =
         static_cast<std::size_t> (
-          std::floor (wrap (point.z, period.z) / scale.z)) %
+          std::floor (wrap (point[2], period[2]) / scale[2])) %
         static_cast<std::size_t> (m_map->unique_height ());
       m_inspected_cell =
         static_cast<std::uint32_t> (grid_y * m_map->unique_width () + grid_x);
@@ -2347,10 +2343,10 @@ namespace moppe {
           // toward its route.  Chase a blend of the bead and a point a
           // little further along the trace: the lead frames where the
           // drop is heading and averages out the per-cell zigzag.
-          const Vector3D bead = droplet_world_position (m_droplet_progress);
-          const Vector3D lead =
+          const Vec3 bead = droplet_world_position (m_droplet_progress);
+          const Vec3 lead =
             droplet_world_position (std::min (last, m_droplet_progress + 6.0f));
-          const Vector3D desired = bead + (lead - bead) * 0.45f;
+          const Vec3 desired = bead + (lead - bead) * 0.45f;
           const float follow_response =
             smoothing_alpha (2.6f / u::s, dt * u::s);
           m_target += (desired - m_target) * follow_response;
@@ -2503,11 +2499,11 @@ namespace moppe {
         return;
       }
       if (m_pan_drag) {
-        const Vector3D f = forward ();
-        Vector3D right = f.cross (Vector3D (0, 1, 0));
-        Vector3D ground_forward (f.x, 0, f.z);
-        right.normalize ();
-        ground_forward.normalize ();
+        const Vec3 f = forward ();
+        Vec3 right = cross (f, Vec3 (0, 1, 0));
+        Vec3 ground_forward (f[0], 0, f[2]);
+        normalize (right);
+        normalize (ground_forward);
         const float scale = m_distance * 0.0012f;
         m_target -= right * (dx * scale);
         m_target += ground_forward * (dy * scale);
@@ -2650,28 +2646,28 @@ namespace moppe {
         std::clamp (m_scroll_zoom_target, 500.0f, 16000.0f);
     }
 
-    Vector3D TerrainLab::position () const {
+    Vec3 TerrainLab::position () const {
       const float horizontal = std::cos (m_pitch) * m_distance;
-      Vector3D camera = m_target + Vector3D (std::sin (m_yaw) * horizontal,
-                                             std::sin (m_pitch) * m_distance,
-                                             std::cos (m_yaw) * horizontal);
+      Vec3 camera = m_target + Vec3 (std::sin (m_yaw) * horizontal,
+                                     std::sin (m_pitch) * m_distance,
+                                     std::cos (m_yaw) * horizontal);
       if (m_map && m_view != ViewMode::Torus) {
         // Orbiting changes x/z as well as altitude.  Keep the camera body
         // above the height field at every frame so neither a manual orbit nor
         // the automatic chase can tunnel through an intervening ridge.
         const float terrain_height =
-          m_map->interpolated_height (camera.x, camera.z);
-        camera.y = std::max (camera.y, terrain_height + 30.0f);
+          m_map->interpolated_height (camera[0], camera[2]);
+        camera[1] = std::max (camera[1], terrain_height + 30.0f);
       }
       return camera;
     }
 
-    Vector3D TerrainLab::forward () const {
-      return (m_target - position ()).normalized ();
+    Vec3 TerrainLab::forward () const {
+      return normalized (m_target - position ());
     }
 
     Mat4 TerrainLab::view_matrix () const {
-      return Mat4::look_at (position (), m_target, Vector3D (0, 1, 0));
+      return Mat4::look_at (position (), m_target, Vec3 (0, 1, 0));
     }
 
     void TerrainLab::draw_friendly (render::DrawList& dl,

@@ -37,11 +37,11 @@ namespace moppe {
       void push ();
       void pop ();
       void load_identity ();
-      void translate (const Vector3D& v);
+      void translate (const Vec3& v);
       void translate (float x, float y, float z);
-      void rotate (radians_t angle, const Vector3D& axis);
+      void rotate (radians_t angle, const Vec3& axis);
       void rotate (radians_t angle, float ax, float ay, float az);
-      void scale (const Vector3D& v);
+      void scale (const Vec3& v);
       void scale (float x, float y, float z);
       void mult (const Mat4& m);
       const Mat4& matrix () const {
@@ -60,7 +60,7 @@ namespace moppe {
       // blade normals, root occlusion, backlighting, and restrained highlights.
       void grass (bool on);
       void set_texture (const Texture* t);
-      void normal (const Vector3D& n);
+      void normal (const Vec3& n);
       void uv (float u, float v);
       void state (const DrawState& s);
       DrawState& state () {
@@ -69,7 +69,7 @@ namespace moppe {
 
       // -- geometry ----------------------------------------------------
       void begin (Prim p);
-      void vertex (const Vector3D& v);
+      void vertex (const Vec3& v);
       void vertex (float x, float y, float z = 0.0f);
       void end ();
 
@@ -111,7 +111,7 @@ namespace moppe {
       void flush_run_state ();
       Vertex make_vertex (float x, float y, float z);
       const NormalMat& normal_matrix ();
-      const Vector3D& world_normal ();
+      const Vec3& world_normal ();
 
       static const int MAX_DEPTH = 32;
       Mat4 m_stack[MAX_DEPTH];
@@ -120,8 +120,8 @@ namespace moppe {
       bool m_normal_dirty;
 
       PackedRgba8 m_color;
-      Vector3D m_normal;
-      Vector3D m_world_normal; // m_normal through the normal matrix
+      Vec3 m_normal;
+      Vec3 m_world_normal; // m_normal through the normal matrix
       bool m_world_normal_dirty;
       float m_u, m_v;
       bool m_lit;

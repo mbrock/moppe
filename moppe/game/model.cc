@@ -25,20 +25,20 @@ namespace moppe {
       }
 
       void link (render::DrawList& dl,
-                 const Vector3D& start,
-                 const Vector3D& end,
+                 const Vec3& start,
+                 const Vec3& end,
                  float thickness) {
-        const Vector3D midpoint = (start + end) * 0.5f;
-        const Vector3D direction = end - start;
-        const float length = direction.length ();
+        const Vec3 midpoint = (start + end) * 0.5f;
+        const Vec3 direction = end - start;
+        const float beam_length = moppe::length (direction);
         const float flat =
-          std::sqrt (direction.x * direction.x + direction.z * direction.z);
+          std::sqrt (direction[0] * direction[0] + direction[2] * direction[2]);
 
         dl.push ();
         dl.translate (midpoint);
-        dl.rotate (std::atan2 (direction.x, direction.z) * u::rad, 0, 1, 0);
-        dl.rotate (-std::atan2 (direction.y, flat) * u::rad, 1, 0, 0);
-        box (dl, thickness, thickness, length);
+        dl.rotate (std::atan2 (direction[0], direction[2]) * u::rad, 0, 1, 0);
+        dl.rotate (-std::atan2 (direction[1], flat) * u::rad, 1, 0, 0);
+        box (dl, thickness, thickness, beam_length);
         dl.pop ();
       }
 
