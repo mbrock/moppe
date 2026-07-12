@@ -58,7 +58,7 @@ namespace moppe {
       }
       // The haze the current lab view renders with; the orbit cameras
       // sit kilometres out, so full gameplay fog would swallow the map.
-      float scene_fog (float world_fog) const;
+      attenuation_t scene_fog (attenuation_t world_fog) const;
       void tick (float dt);
       void key (platform::Key key, bool down);
       void pointer_move (float x, float y, float dx, float dy);

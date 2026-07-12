@@ -2,6 +2,7 @@
 #define MOPPE_QUANTITIES_HH
 
 #include <mp-units/framework.h>
+#include <mp-units/systems/isq.h>
 #include <mp-units/systems/si.h>
 
 namespace moppe {
@@ -29,6 +30,13 @@ namespace moppe {
   inline constexpr struct probability
       : quantity_spec<dimensionless, non_negative> {
   } probability;
+
+  // The dimensions of a modeled spatial domain.  It has the vector
+  // character and length dimension of ISQ displacement, but is not a
+  // displacement undergone by an object.
+  inline constexpr struct spatial_extent
+      : quantity_spec<mp_units::isq::displacement> {
+  } spatial_extent;
 }
 
 #endif

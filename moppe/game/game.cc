@@ -239,29 +239,29 @@ namespace moppe {
                  terrain::TerrainGenerationProfile generation_profile,
                  std::optional<GraphicsBenchmarkConfig> benchmark)
           : m_world (world), m_graphics (graphics),
-            m_spawn_position (world.spawn_position ()), m_seed (seed),
-            m_generation_profile (generation_profile),
+            m_spawn_position (position_value (world.spawn_position ())),
+            m_seed (seed), m_generation_profile (generation_profile),
             m_map (world.resolution,
                    world.resolution,
-                   world.map_size,
+                   extent_value (world.map_size),
                    m_seed,
                    world.topology ()),
             m_loading_map (world.resolution,
                            world.resolution,
-                           world.map_size,
+                           extent_value (world.map_size),
                            m_seed,
                            world.topology ()),
             m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
             // 5000 N constant force topped out near 300).
-            m_vehicle (position (world.spawn_position ()),
+            m_vehicle (world.spawn_position (),
                        45 * u::deg,
                        m_map,
                        2600 * u::N,
                        30 * u::kW,
                        150 * u::kg),
-            m_car (position (world.spawn_position ()),
+            m_car (world.spawn_position (),
                    45 * u::deg,
                    m_map,
                    14 * u::kN,
@@ -325,23 +325,24 @@ namespace moppe {
         // The generated landscape has no authored start.  Sample the
         // finished terrain for a dry, grassy, locally flat patch rather
         // than trusting the old fixed coordinate near the map corner.
-        const float margin_x = 0.08f * m_world.map_size[0];
-        const float margin_z = 0.08f * m_world.map_size[2];
+        const Vec3& world_extent = extent_value (m_world.map_size);
+        const float margin_x = 0.08f * world_extent[0];
+        const float margin_z = 0.08f * world_extent[2];
         const float patch = 20.0f; // metres
         const float min_ground = meters_value (m_world.water_level) + 25.0f;
-        const float max_ground = 0.32f * m_world.map_size[1];
+        const float max_ground = 0.32f * world_extent[1];
 
         std::uniform_real_distribution<float> random_x (
-          margin_x, m_world.map_size[0] - margin_x);
+          margin_x, world_extent[0] - margin_x);
         std::uniform_real_distribution<float> random_z (
-          margin_z, m_world.map_size[2] - margin_z);
+          margin_z, world_extent[2] - margin_z);
 
         Vec3 chosen;
         Vec3 fallback;
         int good_count = 0;
         float fallback_score = -1000000.0f;
 
-        const auto standing_depth = [this] (float x, float z) {
+        const auto standing_depth = [this, &world_extent] (float x, float z) {
           if (!m_standing_water)
             return 0.0f;
           const terrain::TerrainGrid& grid = m_standing_water->source_grid;
@@ -349,16 +350,13 @@ namespace moppe {
             value = std::fmod (value, period);
             return value < 0.0f ? value + period : value;
           };
-          const std::size_t gx =
-            static_cast<std::size_t> (wrap (x, m_world.map_size[0]) /
-                                      grid.spacing_x) %
-            m_standing_water->width ();
-          const std::size_t gz =
-            static_cast<std::size_t> (wrap (z, m_world.map_size[2]) /
-                                      grid.spacing_y) %
-            m_standing_water->height ();
-          return m_standing_water->water_depth.at (gx, gz) *
-                 m_world.map_size[1];
+          const std::size_t gx = static_cast<std::size_t> (
+                                   wrap (x, world_extent[0]) / grid.spacing_x) %
+                                 m_standing_water->width ();
+          const std::size_t gz = static_cast<std::size_t> (
+                                   wrap (z, world_extent[2]) / grid.spacing_y) %
+                                 m_standing_water->height ();
+          return m_standing_water->water_depth.at (gx, gz) * world_extent[1];
         };
 
         for (int i = 0; i < 6000; ++i) {
@@ -494,8 +492,8 @@ namespace moppe {
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview) {
-          const float sea_level =
-            meters_value (m_world.water_level) / m_world.map_size[1];
+          const float sea_level = meters_value (m_world.water_level) /
+                                  extent_value (m_world.map_size)[1];
           m_standing_water =
             terrain::analyze_standing_water (m_map.terrain_view (), sea_level);
           m_lake_census = terrain::census_lakes (*m_standing_water);
@@ -574,8 +572,8 @@ namespace moppe {
         }
         render::OceanSetup ocean;
         ocean.level = meters_value (m_world.water_level);
-        ocean.center =
-          Vec3 (m_world.map_size[0] / 2, 0, m_world.map_size[2] / 2);
+        const Vec3& world_extent = extent_value (m_world.map_size);
+        ocean.center = Vec3 (world_extent[0] / 2, 0, world_extent[2] / 2);
         ocean.half_extent = 5500.0f;
         ocean.cells = 300;
         std::vector<float> water_levels;
@@ -812,8 +810,8 @@ namespace moppe {
         // Drift kicks up dirt from the rear wheel (or spray).
         if (driving && av.grounded () && av.drift_speed () > 6.0f) {
           int n = std::min (4, (int)(av.drift_speed () * 0.2f));
-          m_dust.emit (rear_wheel,
-                       av.velocity () * 0.15f,
+          m_dust.emit (position (rear_wheel),
+                       velocity (av.velocity () * 0.15f),
                        n,
                        in_water ? spray_color : dust_color);
         }
@@ -827,13 +825,14 @@ namespace moppe {
                              (1.0f - std::min (1.0f, speed / 30.0f));
           if (slip > 0.15f) {
             Dust::Style roost;
-            roost.size = 0.45f;
-            roost.life = 0.9f;
-            roost.gravity = 12.0f;
-            roost.spread = 0.5f;
-            m_dust.emit (rear_wheel,
-                         fwd * (-6.0f - 14.0f * slip) +
-                           Vec3 (0, 3.5f + 3.0f * slip, 0),
+            roost.size = 0.45f * u::m;
+            roost.lifetime = 0.9f * u::s;
+            roost.downward_acceleration =
+              12.0f * isq::acceleration[u::m / pow<2> (u::s)];
+            roost.spread = 0.5f * one;
+            m_dust.emit (position (rear_wheel),
+                         velocity (fwd * (-6.0f - 14.0f * slip) +
+                                   Vec3 (0, 3.5f + 3.0f * slip, 0)),
                          1 + (int)(slip * 3.0f),
                          clod_color,
                          roost);
@@ -850,14 +849,15 @@ namespace moppe {
                                      (dt * u::s));
           if (chance (m_fx_rng) < scalar_value (spark)) {
             Dust::Style ember;
-            ember.size = 0.15f;
-            ember.life = 0.45f;
-            ember.gravity = 6.0f;
-            ember.spread = 0.3f;
+            ember.size = 0.15f * u::m;
+            ember.lifetime = 0.45f * u::s;
+            ember.downward_acceleration =
+              6.0f * isq::acceleration[u::m / pow<2> (u::s)];
+            ember.spread = 0.3f * one;
             ember.additive = true;
-            m_dust.emit (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0),
-                         av.velocity () * 0.5f - fwd * 2.0f +
-                           Vec3 (0, -4.0f, 0),
+            m_dust.emit (position (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0)),
+                         velocity (av.velocity () * 0.5f - fwd * 2.0f +
+                                   Vec3 (0, -4.0f, 0)),
                          1,
                          DisplayColor (1.0f, 0.55f, 0.18f),
                          ember);
@@ -871,12 +871,13 @@ namespace moppe {
           const probability_t puff (14.0f / u::s * (dt * u::s));
           if (chance (m_fx_rng) < scalar_value (puff)) {
             Dust::Style smoke;
-            smoke.size = 0.35f;
-            smoke.life = 0.8f;
-            smoke.gravity = -2.5f; // buoyant
-            smoke.spread = 0.25f;
-            m_dust.emit (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0),
-                         av.velocity () * 0.25f,
+            smoke.size = 0.35f * u::m;
+            smoke.lifetime = 0.8f * u::s;
+            smoke.downward_acceleration =
+              -2.5f * isq::acceleration[u::m / pow<2> (u::s)]; // buoyant
+            smoke.spread = 0.25f * one;
+            m_dust.emit (position (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0)),
+                         velocity (av.velocity () * 0.25f),
                          1,
                          DisplayColor (0.45f, 0.45f, 0.48f),
                          smoke);
@@ -885,8 +886,10 @@ namespace moppe {
 
         // Wading fast throws up a bow wave.
         if (driving && in_water && length (av.velocity ()) > 15.0f)
-          m_dust.emit (
-            vpos + Vec3 (0, -0.5f, 0), av.velocity () * 0.3f, 3, spray_color);
+          m_dust.emit (position (vpos + Vec3 (0, -0.5f, 0)),
+                       velocity (av.velocity () * 0.3f),
+                       3,
+                       spray_color);
 
         // Hard landings shake the camera and burst dirt outward:
         // a low pancake of dust plus a ring of ballistic clods.
@@ -894,19 +897,20 @@ namespace moppe {
         if (impact > 8.0f) {
           m_shake = std::min (0.28f, 0.010f * impact);
           m_shake_time = 0.0f;
-          m_dust.emit (vpos + Vec3 (0, -0.7f, 0),
-                       av.velocity () * 0.2f,
+          m_dust.emit (position (vpos + Vec3 (0, -0.7f, 0)),
+                       velocity (av.velocity () * 0.2f),
                        12,
                        in_water ? spray_color : dust_color);
           if (!in_water) {
             Dust::Style burst;
-            burst.size = 0.5f;
-            burst.life = 1.1f;
-            burst.gravity = 10.0f;
-            burst.spread = 1.4f;
-            m_dust.emit (vpos + Vec3 (0, -0.6f, 0),
-                         av.velocity () * 0.15f +
-                           Vec3 (0, 2.0f + 0.15f * impact, 0),
+            burst.size = 0.5f * u::m;
+            burst.lifetime = 1.1f * u::s;
+            burst.downward_acceleration =
+              10.0f * isq::acceleration[u::m / pow<2> (u::s)];
+            burst.spread = 1.4f * one;
+            m_dust.emit (position (vpos + Vec3 (0, -0.6f, 0)),
+                         velocity (av.velocity () * 0.15f +
+                                   Vec3 (0, 2.0f + 0.15f * impact, 0)),
                          (int)std::min (10.0f, impact * 0.5f),
                          clod_color,
                          burst);
@@ -921,8 +925,10 @@ namespace moppe {
           m_health = 0.0f;
         m_health = std::min (100.0f, m_health + 1.5f * dt);
         if (m_health <= 0.0f) {
-          m_dust.emit (
-            vpos, Vec3 (0, 6, 0), 40, DisplayColor (1.0f, 0.5f, 0.1f));
+          m_dust.emit (position (vpos),
+                       velocity (Vec3 (0, 6, 0)),
+                       40,
+                       DisplayColor (1.0f, 0.5f, 0.1f));
           --m_lives;
           if (m_lives <= 0) {
             m_game_over = true;
@@ -948,23 +954,24 @@ namespace moppe {
           const int picked = m_stars.update (vpos, m_total_time, dt);
           if (picked > 0) {
             Dust::Style sparkle;
-            sparkle.size = 0.38f;
-            sparkle.life = 0.85f;
-            sparkle.gravity = -1.5f;
-            sparkle.spread = 1.7f;
+            sparkle.size = 0.38f * u::m;
+            sparkle.lifetime = 0.85f * u::s;
+            sparkle.downward_acceleration =
+              -1.5f * isq::acceleration[u::m / pow<2> (u::s)];
+            sparkle.spread = 1.7f * one;
             sparkle.additive = true;
-            m_dust.emit (m_stars.last_pos (),
-                         Vec3 (0, 4, 0),
+            m_dust.emit (position (m_stars.last_pos ()),
+                         velocity (Vec3 (0, 4, 0)),
                          32,
                          DisplayColor (1.0f, 0.72f, 0.12f),
                          sparkle);
             Dust::Style flash;
-            flash.size = 0.9f;
-            flash.life = 0.35f;
-            flash.spread = 0.25f;
+            flash.size = 0.9f * u::m;
+            flash.lifetime = 0.35f * u::s;
+            flash.spread = 0.25f * one;
             flash.additive = true;
-            m_dust.emit (m_stars.last_pos (),
-                         Vec3 (),
+            m_dust.emit (position (m_stars.last_pos ()),
+                         velocity (Vec3 ()),
                          5,
                          DisplayColor (1.0f, 0.95f, 0.55f),
                          flash);
@@ -985,7 +992,7 @@ namespace moppe {
           av.set_thrust (want);
         }
 
-        m_dust.update (dt);
+        m_dust.update (seconds (dt));
         m_shake_time += dt;
         m_shake *= decay (7.0f / u::s, dt * u::s);
 
@@ -1010,15 +1017,15 @@ namespace moppe {
                                         m_landscape_scale_y);
           const float flip = (m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
           if (m_mode == M_FOOT)
-            m_camera.update (m_walker.position () +
-                               Vec3 (0, 1.0f / m_landscape_scale_y, 0),
+            m_camera.update (position (m_walker.position () +
+                                       Vec3 (0, 1.0f / m_landscape_scale_y, 0)),
                              m_walker.heading () * flip,
-                             Vec3 (),
+                             velocity (Vec3 ()),
                              seconds (dt));
           else
-            m_camera.update (av.position (),
+            m_camera.update (av.physical_position (),
                              av.orientation () * flip,
-                             av.velocity (),
+                             av.physical_velocity (),
                              seconds (dt));
           m_camera.limit (m_map);
         }
@@ -1118,10 +1125,10 @@ namespace moppe {
         fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
                            ? DisplayColor (0.012f, 0.016f, 0.022f)
                            : m_fog;
-        const float scene_fog = terrain_lab
-                                  ? m_terrain_lab.scene_fog (m_world.fog_scale)
-                                  : m_world.fog_scale;
-        fp.fog_scale = scene_fog;
+        const attenuation_t scene_fog =
+          terrain_lab ? m_terrain_lab.scene_fog (m_world.fog_scale)
+                      : m_world.fog_scale;
+        fp.fog_scale = attenuation_value (scene_fog);
         fp.sun_dir = sun_direction_for (m_graphics.sun_height);
         sun_light_colors (
           m_graphics.sun_height, fp.sun_diffuse, fp.sun_specular);
@@ -1196,11 +1203,11 @@ namespace moppe {
         env.fog_color = m_fog;
         env.fog_scale = scene_fog;
         env.sun_dir = fp.sun_dir;
-        env.camera_pos = cam;
+        env.camera_pos = position (cam);
         env.cam_right = fp.cam_right;
         env.cam_up = fp.cam_up;
         env.cam_forward = fp.cam_forward;
-        env.time = m_total_time;
+        env.time = seconds (m_total_time);
 
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
@@ -1223,11 +1230,12 @@ namespace moppe {
           draw_world_sky ();
 
         // Terrain first, chunk-culled to the haze horizon.
-        m_terrain.render (r,
-                          cam,
-                          terrain_lab ? m_terrain_lab.forward ()
-                                      : m_camera.forward (),
-                          terrain_lab ? 12000.0f : 3.0f / m_world.fog_scale);
+        m_terrain.render (
+          r,
+          cam,
+          terrain_lab ? m_terrain_lab.forward () : m_camera.forward (),
+          terrain_lab ? 12000.0f
+                      : 3.0f / attenuation_value (m_world.fog_scale));
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.
@@ -1305,10 +1313,11 @@ namespace moppe {
           render::OceanParams ocean;
           ocean.time = m_total_time;
           ocean.fog_color = m_fog;
-          ocean.fog_scale = scene_fog;
+          ocean.fog_scale = attenuation_value (scene_fog);
           if (m_world.toroidal ()) {
+            const Vec3& world_extent = extent_value (m_world.map_size);
             const Vec3 center (
-              0.5f * m_world.map_size[0], 0, 0.5f * m_world.map_size[2]);
+              0.5f * world_extent[0], 0, 0.5f * world_extent[2]);
             ocean.world_offset[0] = cam[0] - center[0];
             ocean.world_offset[2] = cam[2] - center[2];
           }
@@ -1472,16 +1481,17 @@ namespace moppe {
         }
 
         const bool show_terrain = m_loading_terrain_state > 0;
+        const Vec3& world_extent = extent_value (m_world.map_size);
         Vec3 eye (0, 34, 0);
         Vec3 target (0, 27, -100);
         if (show_terrain) {
           const float orbit = sky_time * 0.035f;
-          const float radius = m_world.map_size[0] * 0.64f;
-          target = Vec3 (m_world.map_size[0] * 0.5f,
-                         m_world.map_size[1] * 0.12f,
-                         m_world.map_size[2] * 0.5f);
+          const float radius = world_extent[0] * 0.64f;
+          target = Vec3 (world_extent[0] * 0.5f,
+                         world_extent[1] * 0.12f,
+                         world_extent[2] * 0.5f);
           eye = target + Vec3 (std::sin (orbit) * radius,
-                               m_world.map_size[1] * 0.70f,
+                               world_extent[1] * 0.70f,
                                std::cos (orbit) * radius);
         }
         const Vec3 forward = normalized (target - eye);
@@ -1492,7 +1502,7 @@ namespace moppe {
           (show_terrain ? 52.0f : 64.0f) * u::deg,
           aspect,
           0.5f,
-          std::max (9000.0f, m_world.map_size[0] * 2.0f));
+          std::max (9000.0f, world_extent[0] * 2.0f));
         fp.camera_pos = eye;
         const float sunrise = smooth_curve (0.0f, 14.0f, sky_time);
         const float loading_sun_height = 0.48f + 0.18f * sunrise;
@@ -1507,7 +1517,8 @@ namespace moppe {
         fp.sun_dir = loading_sun_dir;
         sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
         fp.ambient = DisplayColor (0.53f, 0.57f, 0.62f);
-        fp.fog_scale = show_terrain ? m_world.fog_scale * 1.35f : 0.0f;
+        fp.fog_scale =
+          show_terrain ? attenuation_value (m_world.fog_scale * 1.35f) : 0.0f;
         fp.time = sky_time;
         fp.exposure_bias = 0.82f + 0.08f * sunrise;
         fp.sun_visibility = 0.20f + 0.72f * sunrise;
@@ -1528,7 +1539,7 @@ namespace moppe {
           // terrain transition itself lasts about a second in the Metal
           // backend.
           if (m_loading_terrain_state == 2 || reveal_age > 0.0f)
-            m_terrain.render (r, eye, forward, m_world.map_size[0] * 1.8f);
+            m_terrain.render (r, eye, forward, world_extent[0] * 1.8f);
         }
 
         // Keep the endlessly tiled world atmospheric and subordinate to the

@@ -665,10 +665,11 @@ namespace moppe {
     void TerrainLab::fit_view () {
       if (!m_world)
         return;
+      const Vec3& world_extent = extent_value (m_world->map_size);
       m_target =
-        Vec3 (m_world->map_size[0] * 0.5f,
-              m_view == ViewMode::Torus ? 0.0f : m_world->map_size[1] * 0.10f,
-              m_world->map_size[2] * 0.5f);
+        Vec3 (world_extent[0] * 0.5f,
+              m_view == ViewMode::Torus ? 0.0f : world_extent[1] * 0.10f,
+              world_extent[2] * 0.5f);
       m_yaw = 0.72f;
       if (m_view == ViewMode::Torus) {
         m_pitch = 0.48f;
@@ -796,8 +797,8 @@ namespace moppe {
         throw std::logic_error ("standing water requested without terrain");
       if (!m_flood) {
         const auto start = std::chrono::steady_clock::now ();
-        const float sea_level =
-          meters_value (m_world->water_level) / m_world->map_size[1];
+        const float sea_level = meters_value (m_world->water_level) /
+                                extent_value (m_world->map_size)[1];
         m_flood =
           terrain::analyze_standing_water (m_map->terrain_view (), sea_level);
         m_lakes = terrain::census_lakes (*m_flood);
@@ -814,8 +815,9 @@ namespace moppe {
         std::ostringstream status;
         status << format_count (static_cast<int> (wet_cells)) << " wet cells | "
                << std::fixed << std::setprecision (1)
-               << maximum_depth * m_world->map_size[1] << "m max | "
-               << std::setprecision (0) << milliseconds << "ms flood";
+               << maximum_depth * extent_value (m_world->map_size)[1]
+               << "m max | " << std::setprecision (0) << milliseconds
+               << "ms flood";
         m_flood_status = status.str ();
 
         int puddles = 0, ponds = 0, lakes = 0;
@@ -2281,10 +2283,10 @@ namespace moppe {
       }
     }
 
-    float TerrainLab::scene_fog (float) const {
+    attenuation_t TerrainLab::scene_fog (attenuation_t) const {
       // Both plane views orbit kilometres above the map; gameplay fog
       // density would swallow it whole, so keep a faint aerial haze.
-      return m_view == ViewMode::Torus ? 0.0f : 0.00004f;
+      return m_view == ViewMode::Torus ? 0.0f / u::m : 0.00004f / u::m;
     }
 
     void TerrainLab::refresh (bool inspection_fog) {

@@ -102,15 +102,17 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 MOPPE_TEST (camera_and_walker_state_round_trip) {
   using namespace moppe;
   game::ChaseCamera camera (18 * u::deg, 6.5f * u::m);
-  camera.update (
-    Vec3 (10, 2, 20), Vec3 (0, 0, 1), Vec3 (4, 0, 2), seconds (1.0f / 60.0f));
+  camera.update (position (Vec3 (10, 2, 20)),
+                 Vec3 (0, 0, 1),
+                 velocity (Vec3 (4, 0, 2)),
+                 seconds (1.0f / 60.0f));
   const game::ChaseCamera::State camera_state = camera.state ();
   camera.place (Vec3 (100, 100, 100), Vec3 ());
   camera.restore (camera_state);
-  check_vector (camera.state ().position, camera_state.position);
-  check_vector (camera.state ().target, camera_state.target);
-  check_vector (camera.state ().position_velocity,
-                camera_state.position_velocity);
+  check_position (camera.state ().position, camera_state.position);
+  check_position (camera.state ().target, camera_state.target);
+  check_velocity (camera.state ().position_velocity,
+                  camera_state.position_velocity);
 
   game::Walker walker;
   walker.spawn (position (Vec3 (3, 4, 5)), Vec3 (1, 0, 0));
@@ -138,7 +140,7 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
              0.5f);
   map.recompute_normals ();
   game::WorldParams world;
-  world.map_size = map.size ();
+  world.map_size = spatial_extent_in_metres (map.size ());
   world.water_level = 0 * u::m;
   game::Stars stars;
   stars.generate (map, world, 8);
@@ -161,25 +163,30 @@ MOPPE_TEST (dust_state_is_a_bounded_deterministic_emission_log) {
   using namespace moppe;
   game::Dust dust;
   game::Dust::Style style;
-  style.life = 2.0f;
-  style.spread = 1.5f;
+  style.lifetime = 2.0f * u::s;
+  style.spread = 1.5f * one;
   style.additive = true;
-  dust.emit (
-    Vec3 (1, 2, 3), Vec3 (4, 5, 6), 90, DisplayColor (0.8f, 0.6f, 0.2f), style);
+  dust.emit (position (Vec3 (1, 2, 3)),
+             velocity (Vec3 (4, 5, 6)),
+             90,
+             DisplayColor (0.8f, 0.6f, 0.2f),
+             style);
   const game::Dust::State saved = dust.state ();
   MOPPE_CHECK (saved.emissions.size () == 2);
   MOPPE_CHECK (saved.emissions[0].particle_count == 64);
   MOPPE_CHECK (saved.emissions[1].particle_count == 26);
   MOPPE_CHECK (saved.emissions[0].id != saved.emissions[1].id);
 
-  dust.update (2.0f);
+  dust.update (2.0f * u::s);
   MOPPE_CHECK (dust.state ().emissions.empty ());
   dust.restore (saved);
   const game::Dust::State restored = dust.state ();
   MOPPE_CHECK (restored.emissions.size () == 2);
   MOPPE_CHECK (restored.next_id == saved.next_id);
-  MOPPE_CHECK_NEAR (restored.logical_time, saved.logical_time, 1e-6f);
-  check_vector (restored.emissions[0].position, saved.emissions[0].position);
+  MOPPE_CHECK_NEAR (seconds_value (restored.logical_time),
+                    seconds_value (saved.logical_time),
+                    1e-6f);
+  check_position (restored.emissions[0].position, saved.emissions[0].position);
 }
 
 MOPPE_TEST (game_state_is_an_independent_value) {

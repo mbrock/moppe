@@ -16,38 +16,48 @@ namespace moppe {
       // acceleration: positive values arc dirt clods to the ground,
       // small negative values let smoke rise.
       struct Style {
-        float size = 1.0f;     // scales the base particle size
-        float life = 1.0f;     // scales the base lifetime
-        float gravity = 0.0f;  // m/s^2 downward
-        float spread = 1.0f;   // scales the velocity jitter
+        meters_t size = 1.0f * u::m;
+        seconds_t lifetime = 1.0f * u::s;
+        acceleration_component_t downward_acceleration =
+          0.0f * isq::acceleration[u::m / pow<2> (u::s)];
+        magnitude_t spread = 1.0f * one;
         bool additive = false; // glow (embers) vs. soft dust
       };
 
       Dust ();
 
-      struct State {
-        std::vector<render::DustEmission> emissions;
-        uint64_t next_id = 1;
-        float logical_time = 0.0f;
+      struct Emission {
+        uint64_t id = 0;
+        seconds_t birth_time {};
+        position_t position {};
+        velocity_t velocity {};
+        DisplayColor color;
+        Style style;
+        uint32_t particle_count = 0;
       };
 
-      void
-      emit (const Vec3& pos, const Vec3& vel, int count, DisplayColor color);
-      void emit (const Vec3& pos,
-                 const Vec3& vel,
+      struct State {
+        std::vector<Emission> emissions;
+        uint64_t next_id = 1;
+        seconds_t logical_time {};
+      };
+
+      void emit (position_t pos, velocity_t vel, int count, DisplayColor color);
+      void emit (position_t pos,
+                 velocity_t vel,
                  int count,
                  DisplayColor color,
                  const Style& style);
-      void update (float dt);
+      void update (seconds_t dt);
       void render (render::Renderer& renderer) const;
 
       State state () const;
       void restore (const State& state);
 
     private:
-      std::vector<render::DustEmission> m_emissions;
+      std::vector<Emission> m_emissions;
       uint64_t m_next_id = 1;
-      float m_logical_time = 0.0f;
+      seconds_t m_logical_time = 0.0f * u::s;
     };
   }
 }

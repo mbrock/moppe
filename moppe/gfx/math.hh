@@ -50,6 +50,7 @@ namespace moppe {
   // 3.1f / u::s at definition sites.
   using damping_t = quantity<one / si::second, float>;
   using frequency_t = quantity<si::hertz, float>;
+  using attenuation_t = quantity<isq::attenuation[one / si::metre], float>;
 
   inline constexpr meters_t one_meter = 1.0f * si::metre;
 
@@ -73,6 +74,10 @@ namespace moppe {
   }
   inline float newtons_value (newtons_t q) {
     return q.numerical_value_in (si::newton);
+  }
+
+  inline float attenuation_value (attenuation_t q) {
+    return q.numerical_value_in (one / si::metre);
   }
 
   // Frame-rate-independent exponential decay: the surviving
@@ -258,6 +263,8 @@ namespace moppe {
   // simulation can migrate fields to these types incrementally without ever
   // constructing a vector whose individual elements are quantities.
   using position_t = quantity<isq::position_vector[si::metre], Vec3>;
+  using displacement_t = quantity<isq::displacement[si::metre], Vec3>;
+  using spatial_extent_t = quantity<spatial_extent[si::metre], Vec3>;
   using velocity_t = quantity<isq::velocity[si::metre / si::second], Vec3>;
   using acceleration_t =
     quantity<isq::acceleration[si::metre / pow<2> (si::second)], Vec3>;
@@ -267,8 +274,24 @@ namespace moppe {
     return value * isq::position_vector[si::metre];
   }
 
+  inline displacement_t displacement (const Vec3& value) {
+    return value * isq::displacement[si::metre];
+  }
+
+  inline const Vec3& displacement_value (const displacement_t& value) {
+    return value.numerical_value_ref_in (si::metre);
+  }
+
   inline velocity_t velocity (const Vec3& value) {
     return value * isq::velocity[si::metre / si::second];
+  }
+
+  inline spatial_extent_t spatial_extent_in_metres (const Vec3& value) {
+    return value * spatial_extent[si::metre];
+  }
+
+  inline const Vec3& extent_value (const spatial_extent_t& value) {
+    return value.numerical_value_ref_in (si::metre);
   }
 
   inline const Vec3& position_value (const position_t& value) {
