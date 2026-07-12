@@ -20,6 +20,10 @@ endif()
 
 project(moppe LANGUAGES CXX)
 
+# Keep editor tooling in sync with the normal Ninja and Makefile builds.
+# Multi-config generators such as Xcode do not support this output.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 include(CTest)
 include(FetchContent)
 find_package(ZLIB REQUIRED)
@@ -43,9 +47,11 @@ set(MP_UNITS_BUILD_INSTALL OFF CACHE BOOL
 set(MP_UNITS_API_CONTRACTS NONE CACHE STRING
   "Avoid an additional contracts dependency" FORCE)
 FetchContent_Declare(mp-units
-  URL https://github.com/mpusz/mp-units/archive/refs/tags/v2.5.0.tar.gz
+  # Pinned to master (post-v2.5.0, pre-v2.6.0) for cartesian_vector/tensor
+  # and the reworked representation-concepts machinery.
+  URL https://github.com/mpusz/mp-units/archive/bb86582ec2561419bc461a5ce7df01328ba08ea1.tar.gz
   URL_HASH
-    SHA256=a6bd48bee699f11f0ed5b04b8c5006d15f76e6d898e058db3880554d2e47a400
+    SHA256=eb78dbc19c65d5954d31b78149936ca46f2eafb5e5f9c2b1e58f583fcf6705ea
   SOURCE_SUBDIR src
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)
