@@ -229,9 +229,8 @@ namespace moppe::terrain {
     LakeCensus census { .body =
                           std::vector<std::uint32_t> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
-    const float cell_area =
-      square_meters_value (flood.source_grid.cell_area ());
-    const float height_scale = flood.source_grid.height_scale_m ();
+    const square_meters_t cell_area = flood.source_grid.cell_area ();
+    const meters_t height_scale = flood.source_grid.height_scale;
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (depth[origin] <= wet_epsilon ||
@@ -241,11 +240,12 @@ namespace moppe::terrain {
         static_cast<std::uint32_t> (census.bodies.size ());
       WaterBody body { .id = id,
                        .cells = 0,
-                       .area_m2 = 0.0f,
-                       .maximum_depth_m = 0.0f,
-                       .mean_depth_m = 0.0f,
-                       .volume_m3 = 0.0f,
-                       .surface_level_m = 0.0f,
+                       .area = 0.0f * mp_units::si::metre * mp_units::si::metre,
+                       .maximum_depth = 0.0f * mp_units::si::metre,
+                       .mean_depth = 0.0f * mp_units::si::metre,
+                       .volume = 0.0f * mp_units::si::metre *
+                                 mp_units::si::metre * mp_units::si::metre,
+                       .surface_level = 0.0f * mp_units::si::metre,
                        .ocean_connected = false,
                        .outlet_cell = WaterBody::no_cell,
                        .spill_cell = WaterBody::no_cell,
@@ -260,11 +260,12 @@ namespace moppe::terrain {
         members.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        const float depth_m = depth[cell] * height_scale;
+        const meters_t depth_m = depth[cell] * height_scale;
         ++body.cells;
-        body.maximum_depth_m = std::max (body.maximum_depth_m, depth_m);
-        body.volume_m3 += depth_m * cell_area;
-        surface_sum_m += static_cast<double> (level[cell]) * height_scale;
+        body.maximum_depth = std::max (body.maximum_depth, depth_m);
+        body.volume += depth_m * cell_area;
+        surface_sum_m +=
+          static_cast<double> (level[cell]) * meters_value (height_scale);
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -286,10 +287,11 @@ namespace moppe::terrain {
           }
         }
       }
-      body.area_m2 = static_cast<float> (body.cells) * cell_area;
-      body.mean_depth_m = body.volume_m3 / body.area_m2;
-      body.surface_level_m =
-        static_cast<float> (surface_sum_m / static_cast<double> (body.cells));
+      body.area = static_cast<float> (body.cells) * cell_area;
+      body.mean_depth = body.volume / body.area;
+      body.surface_level =
+        static_cast<float> (surface_sum_m / static_cast<double> (body.cells)) *
+        mp_units::si::metre;
       body.ocean_connected =
         flood.has_ocean &&
         std::fabs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
@@ -315,10 +317,12 @@ namespace moppe::terrain {
       }
       if (body.ocean_connected)
         body.classification = WaterBodyClass::Sea;
-      else if (body.area_m2 < 600.0f || body.maximum_depth_m < 0.25f ||
-               body.volume_m3 < 100.0f)
+      else if (body.area < 600.0f * mp_units::si::metre * mp_units::si::metre ||
+               body.maximum_depth < 0.25f * mp_units::si::metre ||
+               body.volume < 100.0f * mp_units::si::metre *
+                               mp_units::si::metre * mp_units::si::metre)
         body.classification = WaterBodyClass::Puddle;
-      else if (body.area_m2 < 50000.0f)
+      else if (body.area < 50000.0f * mp_units::si::metre * mp_units::si::metre)
         body.classification = WaterBodyClass::Pond;
       else
         body.classification = WaterBodyClass::Lake;
@@ -333,9 +337,11 @@ namespace moppe::terrain {
     const std::size_t count = flood.width () * flood.height ();
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match flood field");
-    if (permanence.minimum_area_m2 < 0.0f ||
-        permanence.minimum_depth_m < 0.0f ||
-        permanence.minimum_volume_m3 < 0.0f)
+    if (permanence.minimum_area <
+          0.0f * mp_units::si::metre * mp_units::si::metre ||
+        permanence.minimum_depth < 0.0f * mp_units::si::metre ||
+        permanence.minimum_volume < 0.0f * mp_units::si::metre *
+                                      mp_units::si::metre * mp_units::si::metre)
       throw std::invalid_argument ("water permanence must be non-negative");
     const std::span<const float> level = flood.water_level.values ();
     const std::span<const float> depth = flood.water_depth.values ();
@@ -346,9 +352,9 @@ namespace moppe::terrain {
       if (id != LakeCensus::dry) {
         const WaterBody& body = census.bodies[id];
         permanent = body.classification == WaterBodyClass::Sea ||
-                    (body.area_m2 >= permanence.minimum_area_m2 &&
-                     body.maximum_depth_m >= permanence.minimum_depth_m &&
-                     body.volume_m3 >= permanence.minimum_volume_m3);
+                    (body.area >= permanence.minimum_area &&
+                     body.maximum_depth >= permanence.minimum_depth &&
+                     body.volume >= permanence.minimum_volume);
       }
       surface[cell] = permanent ? level[cell] : level[cell] - depth[cell];
     }

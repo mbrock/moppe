@@ -80,7 +80,7 @@ namespace moppe::game {
         const std::uint32_t next = drainage.receiver[cell];
         const std::uint32_t from = middle > 0 ? reach.cells[middle - 1] : cell;
         const float score =
-          reach.downstream_area_m2 *
+          square_meters_value (reach.downstream_area) *
           std::sqrt (static_cast<float> (reach.cells.size ()));
         consider (best, cell, from, next, score);
       }
@@ -124,8 +124,11 @@ namespace moppe::game {
           continue;
         const std::uint32_t from = reach.cells.back ();
         const std::uint32_t cell = drainage.receiver[from];
-        consider (
-          best, cell, from, drainage.receiver[cell], reach.downstream_area_m2);
+        consider (best,
+                  cell,
+                  from,
+                  drainage.receiver[cell],
+                  square_meters_value (reach.downstream_area));
       }
       return best;
     }
@@ -134,7 +137,9 @@ namespace moppe::game {
       Candidate best;
       for (const terrain::Waterfall& fall : rivers.waterfalls) {
         const float score =
-          fall.drop_m * std::sqrt (std::max (1.0f, fall.contributing_area_m2));
+          meters_value (fall.drop) *
+          std::sqrt (
+            std::max (1.0f, square_meters_value (fall.contributing_area)));
         consider (best, fall.lip_cell, fall.lip_cell, fall.foot_cell, score);
       }
       return best;
@@ -146,13 +151,13 @@ namespace moppe::game {
       for (const terrain::WaterBody& body : census.bodies) {
         if (body.classification == terrain::WaterBodyClass::Sea)
           continue;
-        if (!selected || body.area_m2 > selected->area_m2 ||
-            (body.area_m2 == selected->area_m2 && body.id < selected->id))
+        if (!selected || body.area > selected->area ||
+            (body.area == selected->area && body.id < selected->id))
           selected = &body;
       }
       if (!selected)
         for (const terrain::WaterBody& body : census.bodies)
-          if (!selected || body.area_m2 > selected->area_m2)
+          if (!selected || body.area > selected->area)
             selected = &body;
       Candidate best;
       if (!selected)
@@ -163,7 +168,7 @@ namespace moppe::game {
         const float depth = flood.water_depth.values ()[cell];
         consider (best, cell, cell, cell, depth);
       }
-      best.score = selected->area_m2;
+      best.score = square_meters_value (selected->area);
       best.to = selected->outlet_cell != terrain::WaterBody::no_cell
                   ? selected->outlet_cell
                   : selected->spill_cell;

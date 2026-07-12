@@ -13,6 +13,12 @@ namespace moppe {
   using meters_t = mp_units::quantity<mp_units::si::metre, float>;
   using square_meters_t =
     mp_units::quantity<mp_units::si::metre * mp_units::si::metre, float>;
+  using cubic_meters_t =
+    mp_units::quantity<mp_units::si::metre * mp_units::si::metre *
+                         mp_units::si::metre,
+                       float>;
+  using meters_per_second_t =
+    mp_units::quantity<mp_units::si::metre / mp_units::si::second, float>;
 
   inline float meters_value (meters_t value) {
     return value.numerical_value_in (mp_units::si::metre);
@@ -20,6 +26,16 @@ namespace moppe {
 
   inline float square_meters_value (square_meters_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre);
+  }
+
+  inline float cubic_meters_value (cubic_meters_t value) {
+    return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre *
+                                     mp_units::si::metre);
+  }
+
+  inline float meters_per_second_value (meters_per_second_t value) {
+    return value.numerical_value_in (mp_units::si::metre /
+                                     mp_units::si::second);
   }
 
   inline constexpr auto dimensionless = mp_units::dimensionless;

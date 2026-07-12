@@ -158,7 +158,7 @@ int main (int argc, char** argv) {
         if (body.classification == WaterBodyClass::Lake)
           ++lakes;
         if (body.classification != WaterBodyClass::Sea)
-          water += body.volume_m3;
+          water += cubic_meters_value (body.volume);
       }
 
       std::cout << mode.name << ',' << total_ms << ',' << drainage.sinks.size ()

@@ -7,7 +7,8 @@
 #include <moppe/terrain/flood.hh>
 
 namespace moppe::game {
-  float visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept;
+  square_meters_t
+  visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept;
 
   render::DrawList build_river_ribbons (const map::HeightMap& map,
                                         const terrain::FloodField& flood,

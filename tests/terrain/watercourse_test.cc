@@ -59,7 +59,8 @@ namespace {
       flood,
       census,
       drainage,
-      watercourse_valley_parameters.minimum_area_cells * 25.0f);
+      watercourse_valley_parameters.minimum_area_cells * 25.0f *
+        mp_units::si::metre * mp_units::si::metre);
     WaterSheets sheets =
       paint_watercourses (carved_view, flood, census, drainage, rivers);
     return { std::move (carved),   std::move (flood),  std::move (census),

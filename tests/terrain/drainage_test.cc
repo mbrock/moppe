@@ -78,9 +78,10 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   MOPPE_CHECK (flow.outlet_cell == lake.outlet_cell);
   MOPPE_CHECK (flow.spill_cell == lake.spill_cell);
   MOPPE_CHECK (flow.downstream_cell == wet.receiver[lake.spill_cell]);
-  MOPPE_CHECK (flow.outflow_area_m2 > flow.inflow_area_m2);
+  MOPPE_CHECK (flow.outflow_area > flow.inflow_area);
 
-  const RiverNetwork rivers = extract_river_network (flood, census, wet, 1.0f);
+  const RiverNetwork rivers = extract_river_network (
+    flood, census, wet, 1.0f * mp_units::si::metre * mp_units::si::metre);
   bool enters_lake = false;
   bool leaves_lake = false;
   for (const RiverReach& reach : rivers.reaches) {
@@ -139,9 +140,15 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   const WaterNetwork network_b =
     analyze_water_network (flood_b, census_b, graph_b);
   const RiverNetwork rivers_a =
-    extract_river_network (flood_a, census_a, graph_a, 1.0f);
+    extract_river_network (flood_a,
+                           census_a,
+                           graph_a,
+                           1.0f * mp_units::si::metre * mp_units::si::metre);
   const RiverNetwork rivers_b =
-    extract_river_network (flood_b, census_b, graph_b, 1.0f);
+    extract_river_network (flood_b,
+                           census_b,
+                           graph_b,
+                           1.0f * mp_units::si::metre * mp_units::si::metre);
 
   MOPPE_CHECK (flood_a.spill_receiver == flood_b.spill_receiver);
   MOPPE_CHECK (graph_a.receiver == graph_b.receiver);
@@ -163,8 +170,12 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     MOPPE_CHECK (a.outlet_cell == b.outlet_cell);
     MOPPE_CHECK (a.spill_cell == b.spill_cell);
     MOPPE_CHECK (a.downstream_cell == b.downstream_cell);
-    MOPPE_CHECK_NEAR (a.inflow_area_m2, b.inflow_area_m2, 0.0f);
-    MOPPE_CHECK_NEAR (a.outflow_area_m2, b.outflow_area_m2, 0.0f);
+    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.inflow_area),
+                      moppe::square_meters_value (b.inflow_area),
+                      0.0f);
+    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.outflow_area),
+                      moppe::square_meters_value (b.outflow_area),
+                      0.0f);
   }
   for (std::size_t i = 0; i < rivers_a.reaches.size (); ++i) {
     const RiverReach& a = rivers_a.reaches[i];
@@ -174,8 +185,12 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     MOPPE_CHECK (a.downstream_body == b.downstream_body);
     MOPPE_CHECK (a.downstream_ocean == b.downstream_ocean);
     MOPPE_CHECK (a.downstream_reach == b.downstream_reach);
-    MOPPE_CHECK_NEAR (a.downstream_area_m2, b.downstream_area_m2, 0.0f);
-    MOPPE_CHECK_NEAR (a.maximum_slope, b.maximum_slope, 0.0f);
+    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.downstream_area),
+                      moppe::square_meters_value (b.downstream_area),
+                      0.0f);
+    MOPPE_CHECK_NEAR (a.maximum_slope.numerical_value_in (mp_units::one),
+                      b.maximum_slope.numerical_value_in (mp_units::one),
+                      0.0f);
   }
   for (std::size_t i = 0; i < rivers_a.waterfalls.size (); ++i) {
     const Waterfall& a = rivers_a.waterfalls[i];
@@ -183,8 +198,11 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
     MOPPE_CHECK (a.lip_cell == b.lip_cell);
     MOPPE_CHECK (a.foot_cell == b.foot_cell);
     MOPPE_CHECK (a.reach_id == b.reach_id);
-    MOPPE_CHECK_NEAR (a.drop_m, b.drop_m, 0.0f);
-    MOPPE_CHECK_NEAR (a.contributing_area_m2, b.contributing_area_m2, 0.0f);
+    MOPPE_CHECK_NEAR (
+      moppe::meters_value (a.drop), moppe::meters_value (b.drop), 0.0f);
+    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.contributing_area),
+                      moppe::square_meters_value (b.contributing_area),
+                      0.0f);
   }
 }
 
@@ -245,14 +263,17 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
     flood,
     census,
     drainage,
-    1.0f,
-    { .minimum_drop_m = 1.0f, .minimum_slope = 0.5f, .separation_cells = 1 });
+    1.0f * mp_units::si::metre * mp_units::si::metre,
+    { .minimum_drop = 1.0f * mp_units::si::metre,
+      .minimum_slope = 0.5f * terrain_slope[mp_units::one],
+      .separation_cells = 1 });
 
   MOPPE_CHECK (rivers.reaches.size () == 1);
   MOPPE_CHECK (rivers.waterfalls.size () == 2);
   MOPPE_CHECK (rivers.waterfalls[0].lip_cell == 2);
   MOPPE_CHECK (rivers.waterfalls[0].foot_cell == 3);
-  MOPPE_CHECK_NEAR (rivers.waterfalls[0].drop_m, 2.4f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    moppe::meters_value (rivers.waterfalls[0].drop), 2.4f, 1e-6f);
   MOPPE_CHECK (rivers.waterfalls[1].lip_cell == 4);
   MOPPE_CHECK (rivers.waterfall_by_cell[2] == 0);
   MOPPE_CHECK (rivers.waterfall_by_cell[4] == 1);

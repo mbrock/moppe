@@ -121,15 +121,15 @@ int main (int argc, char** argv) {
         switch (body.classification) {
         case WaterBodyClass::Puddle:
           ++puddles;
-          water_volume += body.volume_m3;
+          water_volume += cubic_meters_value (body.volume);
           break;
         case WaterBodyClass::Pond:
           ++ponds;
-          water_volume += body.volume_m3;
+          water_volume += cubic_meters_value (body.volume);
           break;
         case WaterBodyClass::Lake:
           ++lakes;
-          water_volume += body.volume_m3;
+          water_volume += cubic_meters_value (body.volume);
           break;
         case WaterBodyClass::Sea:
           break;

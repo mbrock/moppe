@@ -111,13 +111,14 @@ namespace moppe::game {
     }
   }
 
-  float visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept {
+  square_meters_t
+  visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept {
     // Visible flow begins where the shared width law reaches about one and
     // a half terrain cells (roughly 39 hectares at five-metre spacing), so
     // every rendered stream is wide and deep enough for the heightmap to
     // hold an actual channel under it. Smaller runoff stays with the
     // analysis overlays rather than rendering as sub-cell water threads.
-    return 16384.0f * square_meters_value (grid.cell_area ());
+    return 16384.0f * grid.cell_area ();
   }
 
   render::DrawList build_river_ribbons (const map::HeightMap& map,
