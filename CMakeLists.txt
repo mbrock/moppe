@@ -21,6 +21,7 @@ endif()
 project(moppe LANGUAGES CXX)
 
 include(CTest)
+include(FetchContent)
 find_package(ZLIB REQUIRED)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -34,8 +35,22 @@ option(MOPPE_BUILD_DEVELOPER_TOOLS
   "Build demos, experiments, testbeds, and command-line tools" ON)
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
 
+# Keep the units vocabulary available to every target without forcing a
+# large-scale conversion of existing float-based APIs.  Consumers opt in with
+# target_link_libraries(<target> PRIVATE mp-units::mp-units).
+set(MP_UNITS_BUILD_INSTALL OFF CACHE BOOL
+  "Do not install the vendored mp-units target" FORCE)
+set(MP_UNITS_API_CONTRACTS NONE CACHE STRING
+  "Avoid an additional contracts dependency" FORCE)
+FetchContent_Declare(mp-units
+  URL https://github.com/mpusz/mp-units/archive/refs/tags/v2.5.0.tar.gz
+  URL_HASH
+    SHA256=a6bd48bee699f11f0ed5b04b8c5006d15f76e6d898e058db3880554d2e47a400
+  SOURCE_SUBDIR src
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(mp-units)
+
 if(MOPPE_ENABLE_TRACY)
-  include(FetchContent)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
   set(TRACY_ON_DEMAND ON CACHE BOOL "Record only with a connected viewer"
     FORCE)
@@ -226,6 +241,7 @@ endif()
 if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-unit-tests
     tests/test_main.cc
+    tests/units_test.cc
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc
@@ -239,7 +255,8 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
   )
-  target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain)
+  target_link_libraries(moppe-unit-tests PRIVATE moppe_terrain
+    mp-units::mp-units)
   add_test(NAME moppe-unit-tests COMMAND moppe-unit-tests)
 endif()
 
