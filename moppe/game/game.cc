@@ -496,6 +496,10 @@ namespace moppe {
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             load_terrain_history (cache, count, m_terrain_history);
+            const std::lock_guard<std::mutex> lock (m_loading_mutex);
+            for (const std::vector<float>& snapshot : m_terrain_history)
+              m_loading_snapshots.push_back (
+                std::make_shared<const std::vector<float>> (snapshot));
             m_gen_stage = 7;
           } else {
             m_gen_stage = 3;
@@ -510,20 +514,15 @@ namespace moppe {
                   static_cast<std::size_t> (m_map.width ()) * m_map.height ();
                 m_terrain_history.emplace_back (m_map.raw_heights (),
                                                 m_map.raw_heights () + count);
-                // Normalization and lowland shaping have run when the first
-                // erosion stage is announced.  Publish that coherent newborn
-                // landform for the loading-screen renderer rather than racing
-                // the GPU against the map as erosion mutates it on this worker
-                // thread.
-                if (std::holds_alternative<terrain::AnalyticalErosion> (
-                      transform)) {
-                  const std::size_t count =
-                    static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-                  auto heights = std::make_shared<const std::vector<float>> (
-                    m_map.raw_heights (), m_map.raw_heights () + count);
+                {
                   const std::lock_guard<std::mutex> lock (m_loading_mutex);
-                  m_loading_heights = std::move (heights);
+                  m_loading_snapshots.push_back (
+                    std::make_shared<const std::vector<float>> (
+                      m_terrain_history.back ()));
                 }
+                // Publish immutable stage inputs for the loading-screen
+                // director rather than racing the GPU against the heightmap as
+                // the next transform mutates it on this worker thread.
                 if (std::holds_alternative<terrain::HydraulicErosion> (
                       transform))
                   m_gen_stage = 4;
@@ -550,6 +549,12 @@ namespace moppe {
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             m_terrain_history.emplace_back (m_map.raw_heights (),
                                             m_map.raw_heights () + count);
+            {
+              const std::lock_guard<std::mutex> lock (m_loading_mutex);
+              m_loading_snapshots.push_back (
+                std::make_shared<const std::vector<float>> (
+                  m_terrain_history.back ()));
+            }
             if (cache) {
               m_map.save_cache (cache);
               save_terrain_history (cache, m_terrain_history);
@@ -561,6 +566,13 @@ namespace moppe {
             static_cast<std::size_t> (m_map.width ()) * m_map.height ();
           m_terrain_history.emplace_back (m_map.raw_heights (),
                                           m_map.raw_heights () + count);
+        }
+        {
+          const std::lock_guard<std::mutex> lock (m_loading_mutex);
+          if (m_loading_snapshots.empty ())
+            for (const std::vector<float>& snapshot : m_terrain_history)
+              m_loading_snapshots.push_back (
+                std::make_shared<const std::vector<float>> (snapshot));
         }
         m_gen_stage = 5;
         m_map.recompute_normals ();
@@ -723,19 +735,8 @@ namespace moppe {
         if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
 
-        m_ready = true;
+        m_setup_complete = true;
         remember_seed (m_world, m_generation_profile, m_seed);
-        if (m_start_in_terrain_lab) {
-          m_terrain_lab.enter (r,
-                               m_map,
-                               m_terrain,
-                               m_world,
-                               m_graphics,
-                               lab_program (),
-                               m_terrain_history,
-                               sun_direction_for (m_graphics.sun_height));
-          m_start_in_terrain_lab = false;
-        }
         if (::getenv ("MOPPE_REGENERATE_ONCE") &&
             !m_automated_regeneration_done) {
           m_automated_regeneration_done = true;
@@ -1516,21 +1517,23 @@ namespace moppe {
         // Casting absolute uptime first quantizes motion badly after a Mac has
         // been running for days: many 120 Hz frames receive the same timestamp.
         const float sky_time = static_cast<float> (now - m_loading_clock_start);
-        std::shared_ptr<const std::vector<float>> loading_heights;
+        std::vector<std::shared_ptr<const std::vector<float>>>
+          loading_snapshots;
         {
           const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          loading_heights = m_loading_heights;
+          loading_snapshots = m_loading_snapshots;
         }
 
-        // Give Metal one frame with a quiet low plain, then upload the newborn
-        // geological field.  Interactive-preview terrain retains the previous
-        // height texture and grows smoothly between the two without repeated
-        // CPU uploads.
-        if (loading_heights && m_loading_terrain_state == 0) {
-          const float floor = *std::min_element (loading_heights->begin (),
-                                                 loading_heights->end ());
+        // The worker may finish several transforms between rendered frames.
+        // The director advances only after the current chapter has had time to
+        // breathe, and never before the next immutable snapshot exists.
+        static constexpr float chapter_holds[] = { 1.35f, 0.90f, 0.95f, 1.55f,
+                                                   0.95f, 1.65f, 0.95f, 1.55f };
+        if (!loading_snapshots.empty () && m_loading_terrain_state == 0) {
+          const auto& first = *loading_snapshots.front ();
+          const float floor = *std::min_element (first.begin (), first.end ());
           std::fill (m_loading_map.raw_heights (),
-                     m_loading_map.raw_heights () + loading_heights->size (),
+                     m_loading_map.raw_heights () + first.size (),
                      floor);
           m_terrain.setup (r,
                            m_loading_map,
@@ -1541,9 +1544,11 @@ namespace moppe {
                            true);
           m_loading_terrain_state = 1;
           m_loading_terrain_reveal = sky_time;
-        } else if (loading_heights && m_loading_terrain_state == 1) {
-          std::copy (loading_heights->begin (),
-                     loading_heights->end (),
+          m_loading_snapshot_started = sky_time;
+        } else if (!loading_snapshots.empty () &&
+                   m_loading_terrain_state == 1) {
+          std::copy (loading_snapshots.front ()->begin (),
+                     loading_snapshots.front ()->end (),
                      m_loading_map.raw_heights ());
           m_terrain.setup (r,
                            m_loading_map,
@@ -1553,8 +1558,26 @@ namespace moppe {
                            true,
                            true);
           m_loading_terrain_state = 2;
-          const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          m_loading_heights.reset ();
+          m_loading_snapshot_index = 0;
+          m_loading_snapshot_started = sky_time;
+        } else if (m_loading_terrain_state == 2 &&
+                   m_loading_snapshot_index + 1 < loading_snapshots.size ()) {
+          const std::size_t current = m_loading_snapshot_index;
+          const float hold = chapter_holds[std::min<std::size_t> (current, 7)];
+          if (sky_time - m_loading_snapshot_started >= hold) {
+            ++m_loading_snapshot_index;
+            const auto& snapshot = *loading_snapshots[m_loading_snapshot_index];
+            std::copy (
+              snapshot.begin (), snapshot.end (), m_loading_map.raw_heights ());
+            m_terrain.setup (r,
+                             m_loading_map,
+                             m_world,
+                             m_graphics,
+                             render::TerrainProjection::Plane,
+                             true,
+                             true);
+            m_loading_snapshot_started = sky_time;
+          }
         }
 
         const bool show_terrain = m_loading_terrain_state > 0;
@@ -1619,10 +1642,6 @@ namespace moppe {
             m_terrain.render (r, eye, forward, world_extent[0] * 1.8f);
         }
 
-        // Keep the endlessly tiled world atmospheric and subordinate to the
-        // typography. This pass affects only the 3D scene; the HUD stays crisp.
-        r.apply_scene_blur ();
-
         m_hud_dl.clear ();
         render::DrawState s;
         s.blend = true;
@@ -1633,32 +1652,28 @@ namespace moppe {
         m_hud_dl.lit (false);
         m_hud_dl.fogged (false);
 
-        const int stage = m_gen_stage;
         static const char* headlines[] = {
-          "Opening the horizon",       "Laying out the streets",
-          "Reading the island",        "Raising the land",
-          "Letting the rivers run",    "Bringing the world to life",
-          "The world is nearly ready", "Returning to this place",
+          "A world without time", "Finding sea and summit",
+          "Shaping the lowlands", "Ages pass through stone",
+          "The slopes relent",    "Rain walks downhill",
+          "The earth settles",    "Rivers cut their beds",
         };
         static const char* details[] = {
-          "A new landscape is beginning",   "Making room for a city",
-          "Finding the shape of the shore", "Stone, soil, height, and distance",
-          "Water is finding its way",       "Light, water, and living things",
-          "Gathering everything together",  "A familiar world, remembered",
+          "The continuous field becomes land",
+          "Height is gathered into a common range",
+          "Plains descend and mountains remain",
+          "Drainage carries whole valleys through geological time",
+          "Loose faces settle below their angle of rest",
+          "A hundred thousand small histories seek the sea",
+          "Fresh cuts soften and sediment comes to rest",
+          "The visible water network receives its final channels",
         };
-        const int clamped_stage = std::clamp (stage, 0, 7);
-        if (m_loading_display_stage < 0)
-          m_loading_display_stage = clamped_stage;
-        else if (clamped_stage != m_loading_display_stage) {
-          m_loading_stage_log.push_back (m_loading_display_stage);
-          if (m_loading_stage_log.size () > 3)
-            m_loading_stage_log.erase (m_loading_stage_log.begin ());
-          m_loading_display_stage = clamped_stage;
-          m_loading_stage_transition = sky_time;
-        }
-        const std::string headline = headlines[m_loading_display_stage];
-        const std::string detail = details[m_loading_display_stage];
+        const int display_stage =
+          std::clamp (static_cast<int> (m_loading_snapshot_index), 0, 7);
+        const std::string headline = headlines[display_stage];
+        const std::string detail = details[display_stage];
 
+        const int stage = m_gen_stage;
         float target_progress = 0.04f;
         if (stage == 3) {
           const float source =
@@ -1707,43 +1722,8 @@ namespace moppe {
           m_hud_dl, center_x - 4.0f, dial_y - 4.0f, 8.0f, 8.0f, 4.0f);
 
         const float headline_y = dial_y + 112.0f;
-        const float transition =
-          m_loading_stage_log.empty ()
-            ? 1.0f
-            : smooth_curve (0.0f, 0.50f, sky_time - m_loading_stage_transition);
-
-        // The most recently completed entry falls out of the headline and
-        // settles into the log. Older entries remain below it like field notes.
-        if (!m_loading_stage_log.empty () && m_loading_title_font &&
-            m_loading_title_font->ok ()) {
-          const int previous = m_loading_stage_log.back ();
-          const std::string previous_text = headlines[previous];
-          const float settle = std::sqrt (transition);
-          const float scale = 1.0f - 0.56f * settle;
-          const float y = headline_y + 100.0f * settle;
-          m_hud_dl.push ();
-          m_hud_dl.translate (center_x, y, 0.0f);
-          m_hud_dl.scale (scale, scale, 1.0f);
-          m_hud_dl.color (0.72f, 0.88f, 0.78f, 0.62f);
-          m_loading_title_font->draw (
-            m_hud_dl,
-            -m_loading_title_font->measure (previous_text) * 0.5f,
-            0.0f,
-            previous_text);
-          m_hud_dl.pop ();
-
-          if (m_loading_font && m_loading_font->ok ()) {
-            float log_y = headline_y + 132.0f;
-            for (int i = static_cast<int> (m_loading_stage_log.size ()) - 2;
-                 i >= 0;
-                 --i, log_y += 27.0f) {
-              const std::string line = headlines[m_loading_stage_log[i]];
-              const float x = center_x - m_loading_font->measure (line) * 0.5f;
-              m_hud_dl.color (0.66f, 0.80f, 0.72f, 0.42f);
-              m_loading_font->draw (m_hud_dl, x, log_y, line);
-            }
-          }
-        }
+        const float chapter_age = sky_time - m_loading_snapshot_started;
+        const float transition = smooth_curve (0.0f, 0.55f, chapter_age);
 
         if (m_loading_title_font && m_loading_title_font->ok ()) {
           const float x =
@@ -1761,6 +1741,18 @@ namespace moppe {
           m_loading_font->draw (m_hud_dl, x + 1.5f, headline_y + 46.0f, detail);
           m_hud_dl.color (0.82f, 0.94f, 0.87f, 0.96f * transition);
           m_loading_font->draw (m_hud_dl, x, headline_y + 44.0f, detail);
+          std::ostringstream chapter;
+          chapter << "STAGE " << (display_stage + 1) << " OF 8";
+          const std::string chapter_text = chapter.str ();
+          m_hud_dl.push ();
+          m_hud_dl.translate (center_x, headline_y + 86.0f, 0.0f);
+          m_hud_dl.scale (0.68f, 0.68f, 1.0f);
+          m_hud_dl.color (0.70f, 0.84f, 0.75f, 0.72f * transition);
+          m_loading_font->draw (m_hud_dl,
+                                -m_loading_font->measure (chapter_text) * 0.5f,
+                                0.0f,
+                                chapter_text);
+          m_hud_dl.pop ();
         }
 
         bool captured_loading = false;
@@ -1774,6 +1766,23 @@ namespace moppe {
         }
         r.draw_hud (m_hud_dl);
         r.end_frame ();
+        const bool final_snapshot =
+          !loading_snapshots.empty () &&
+          m_loading_snapshot_index + 1 == loading_snapshots.size ();
+        if (m_setup_complete && final_snapshot && chapter_age >= 1.55f) {
+          m_ready = true;
+          if (m_start_in_terrain_lab) {
+            m_terrain_lab.enter (r,
+                                 m_map,
+                                 m_terrain,
+                                 m_world,
+                                 m_graphics,
+                                 lab_program (),
+                                 m_terrain_history,
+                                 sun_direction_for (m_graphics.sun_height));
+            m_start_in_terrain_lab = false;
+          }
+        }
         if (captured_loading)
           platform::request_quit ();
       }
@@ -2002,8 +2011,14 @@ namespace moppe {
         m_loading_progress_display = 0.0f;
         m_loading_progress_time = 0.0;
         m_loading_clock_start = 0.0;
-        m_loading_display_stage = -1;
-        m_loading_stage_log.clear ();
+        m_loading_snapshot_index = 0;
+        m_loading_snapshot_started = 0.0f;
+        m_loading_terrain_state = 0;
+        m_setup_complete = false;
+        {
+          const std::lock_guard<std::mutex> lock (m_loading_mutex);
+          m_loading_snapshots.clear ();
+        }
         m_standing_water.reset ();
         m_lake_census.reset ();
         m_drainage.reset ();
@@ -2129,7 +2144,8 @@ namespace moppe {
       map::RandomHeightMap m_loading_map;
       std::vector<std::vector<float>> m_terrain_history;
       std::mutex m_loading_mutex;
-      std::shared_ptr<const std::vector<float>> m_loading_heights;
+      std::vector<std::shared_ptr<const std::vector<float>>>
+        m_loading_snapshots;
       std::atomic<int> m_loading_work_done = 0;
       std::atomic<int> m_loading_work_total = 1;
       std::atomic<int> m_loading_source_done = 0;
@@ -2137,12 +2153,11 @@ namespace moppe {
       float m_loading_progress_display = 0.0f;
       double m_loading_progress_time = 0.0;
       double m_loading_clock_start = 0.0;
-      int m_loading_display_stage = -1;
-      float m_loading_stage_transition = 0.0f;
-      std::vector<int> m_loading_stage_log;
       bool m_loading_capture_done = false;
       int m_loading_terrain_state = 0;
       float m_loading_terrain_reveal = 0.0f;
+      std::size_t m_loading_snapshot_index = 0;
+      float m_loading_snapshot_started = 0.0f;
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;
@@ -2181,6 +2196,7 @@ namespace moppe {
       std::optional<WaterInspection> m_water_inspection;
       int m_screenshot_frames;
       std::atomic<bool> m_ready;
+      std::atomic<bool> m_setup_complete = false;
       std::atomic<int> m_gen_stage;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
