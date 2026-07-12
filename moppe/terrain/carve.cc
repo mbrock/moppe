@@ -126,7 +126,7 @@ namespace moppe::terrain {
       if (reach.downstream_ocean)
         floor_m[reach.id] =
           flood.sea_level * height_scale + backwater_freeboard;
-      else if (reach.downstream_body != RiverReach::no_id &&
+      else if (reach.downstream_body != no_water_body &&
                reach.downstream_body < census.bodies.size ())
         floor_m[reach.id] =
           meters_value (census.bodies[reach.downstream_body].surface_level) +

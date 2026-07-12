@@ -109,7 +109,7 @@ namespace moppe::terrain {
 
       // The painted path is the reach plus its receiver, plus one step
       // into standing water so the mouth current carries into the body.
-      std::vector<std::uint32_t> cells = reach.cells;
+      std::vector<CellIndex> cells = reach.cells;
       const std::uint32_t receiver = drainage.receiver[cells.back ()];
       if (receiver != cells.back ())
         cells.push_back (receiver);
@@ -131,9 +131,9 @@ namespace moppe::terrain {
 
       points.clear ();
       for (std::size_t i = 0; i < cells.size (); ++i) {
-        const std::uint32_t cell = cells[i];
+        const CellIndex cell = cells[i];
         const float area = drainage.contributing_area.values ()[cell];
-        const std::uint32_t slope_cell =
+        const CellIndex slope_cell =
           i + 1 == cells.size () && i > 0 ? cells[i - 1] : cell;
         const float rapid = rapid_signal (drainage.slope.values ()[slope_cell]);
         const float fall =

@@ -43,7 +43,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     .spill_receiver = { 1, 5, 2, 3, 4, 9, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 },
     .outlets = { 2, 3, 4, 6, 9 }
   };
-  const terrain::LakeCensus census { .body = std::vector<std::uint32_t> (
+  const terrain::LakeCensus census { .body = std::vector<terrain::WaterBodyId> (
                                        count, terrain::LakeCensus::dry) };
   std::vector<float> area (count, 25000.0f);
   area[1] = 100000.0f;
@@ -56,18 +56,18 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
       terrain::ScalarRaster (domain, std::vector<float> (count, 0.05f))),
     .contributing_area = terrain::ContributingAreaRaster (
       terrain::ScalarRaster (domain, std::move (area))),
-    .basin = std::vector<std::uint32_t> (count, 0),
+    .basin = std::vector<terrain::CellIndex> (count, 0),
     .sinks = { 3 }
   };
   const terrain::RiverNetwork rivers {
     .minimum_area = 25000.0f * mp_units::si::metre * mp_units::si::metre,
-    .reach_by_cell = std::vector<std::uint32_t> (count, 0),
+    .reach_by_cell = std::vector<terrain::RiverReachId> (count, 0),
     .waterfall_by_cell =
-      std::vector<std::uint32_t> (count, terrain::Waterfall::no_id),
+      std::vector<terrain::WaterfallId> (count, terrain::Waterfall::no_id),
     .reaches = { { .id = 0,
                    .cells = { 0, 1, 5 },
-                   .upstream_body = terrain::RiverReach::no_id,
-                   .downstream_body = terrain::RiverReach::no_id,
+                   .upstream_body = terrain::no_water_body,
+                   .downstream_body = terrain::no_water_body,
                    .downstream_ocean = false,
                    .downstream_reach = terrain::RiverReach::no_id,
                    .upstream_area =
@@ -140,7 +140,7 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
 
   const terrain::TerrainGrid grid = map.terrain_view ().grid ();
   const terrain::Domain2D domain { .width = 5, .height = 5 };
-  std::vector<std::uint32_t> receiver (count);
+  std::vector<terrain::CellIndex> receiver (count);
   for (std::uint32_t cell = 0; cell < count; ++cell)
     receiver[cell] = cell;
   receiver[1] = 6;
@@ -153,7 +153,7 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
   receiver[19] = 24;
   std::vector<float> water_level (count, 0.0f);
   std::vector<float> water_depth (count, 0.0f);
-  std::vector<std::uint32_t> body (count, terrain::LakeCensus::dry);
+  std::vector<terrain::WaterBodyId> body (count, terrain::LakeCensus::dry);
   for (const std::uint32_t cell : { 14u, 19u, 24u }) {
     water_level[cell] = 0.3f;
     water_depth[cell] = 0.1f;
@@ -184,30 +184,30 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
       terrain::ScalarRaster (domain, std::vector<float> (count, 0.02f))),
     .contributing_area = terrain::ContributingAreaRaster (
       terrain::ScalarRaster (domain, std::move (area))),
-    .basin = std::vector<std::uint32_t> (count, 24),
+    .basin = std::vector<terrain::CellIndex> (count, 24),
     .sinks = { 24 }
   };
   const terrain::RiverNetwork rivers {
     .minimum_area = 25000.0f * mp_units::si::metre * mp_units::si::metre,
     .reach_by_cell =
-      std::vector<std::uint32_t> (count, terrain::RiverReach::no_id),
+      std::vector<terrain::RiverReachId> (count, terrain::RiverReach::no_id),
     .waterfall_by_cell =
-      std::vector<std::uint32_t> (count, terrain::Waterfall::no_id),
+      std::vector<terrain::WaterfallId> (count, terrain::Waterfall::no_id),
     .reaches = { { .id = 0,
                    .cells = { 1, 6 },
-                   .upstream_body = terrain::RiverReach::no_id,
-                   .downstream_body = terrain::RiverReach::no_id,
+                   .upstream_body = terrain::no_water_body,
+                   .downstream_body = terrain::no_water_body,
                    .downstream_ocean = false,
                    .downstream_reach = 2 },
                  { .id = 1,
                    .cells = { 2 },
-                   .upstream_body = terrain::RiverReach::no_id,
-                   .downstream_body = terrain::RiverReach::no_id,
+                   .upstream_body = terrain::no_water_body,
+                   .downstream_body = terrain::no_water_body,
                    .downstream_ocean = false,
                    .downstream_reach = 2 },
                  { .id = 2,
                    .cells = { 7, 8, 9 },
-                   .upstream_body = terrain::RiverReach::no_id,
+                   .upstream_body = terrain::no_water_body,
                    .downstream_body = 0,
                    .downstream_ocean = false,
                    .downstream_reach = terrain::RiverReach::no_id } }

@@ -1574,7 +1574,7 @@ namespace moppe {
                   << reach.maximum_slope.numerical_value_in (mp_units::one);
             if (reach.downstream_ocean)
               trace << " | to ocean";
-            else if (reach.downstream_body != terrain::RiverReach::no_id)
+            else if (reach.downstream_body != terrain::no_water_body)
               trace << " | to body #" << reach.downstream_body;
             else if (reach.downstream_reach != terrain::RiverReach::no_id)
               trace << " | to reach #" << reach.downstream_reach;

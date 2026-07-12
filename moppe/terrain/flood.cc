@@ -60,9 +60,9 @@ namespace moppe::terrain {
 
     std::vector<float> water (count, std::numeric_limits<float>::infinity ());
     std::vector<float> depth (count, 0.0f);
-    std::vector<std::uint32_t> receiver (count, 0);
+    std::vector<CellIndex> receiver (count, CellIndex { 0 });
     std::vector<std::uint8_t> visited (count, 0);
-    std::vector<std::uint32_t> outlets;
+    std::vector<CellIndex> outlets;
     std::priority_queue<Cell, std::vector<Cell>, HigherCell> frontier;
 
     // A torus has no exterior boundary that identifies the ocean. Treat the
@@ -227,7 +227,7 @@ namespace moppe::terrain {
     const std::span<const float> depth = flood.water_depth.values ();
     const std::span<const float> level = flood.water_level.values ();
     LakeCensus census { .body =
-                          std::vector<std::uint32_t> (count, LakeCensus::dry) };
+                          std::vector<WaterBodyId> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
     const square_meters_t cell_area = flood.source_grid.cell_area ();
     const meters_t height_scale = flood.source_grid.height_scale;
@@ -236,8 +236,8 @@ namespace moppe::terrain {
       if (depth[origin] <= wet_epsilon ||
           census.body[origin] != LakeCensus::dry)
         continue;
-      const std::uint32_t id =
-        static_cast<std::uint32_t> (census.bodies.size ());
+      const WaterBodyId id { static_cast<std::uint32_t> (
+        census.bodies.size ()) };
       WaterBody body { .id = id,
                        .cells = 0,
                        .area = 0.0f * mp_units::si::metre * mp_units::si::metre,
@@ -347,7 +347,7 @@ namespace moppe::terrain {
     const std::span<const float> depth = flood.water_depth.values ();
     std::vector<float> surface (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const std::uint32_t id = census.body[cell];
+      const WaterBodyId id = census.body[cell];
       bool permanent = false;
       if (id != LakeCensus::dry) {
         const WaterBody& body = census.bodies[id];

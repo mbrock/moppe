@@ -76,9 +76,10 @@ namespace moppe::game {
         if (reach.cells.empty ())
           continue;
         const std::size_t middle = reach.cells.size () / 2;
-        const std::uint32_t cell = reach.cells[middle];
-        const std::uint32_t next = drainage.receiver[cell];
-        const std::uint32_t from = middle > 0 ? reach.cells[middle - 1] : cell;
+        const terrain::CellIndex cell = reach.cells[middle];
+        const terrain::CellIndex next = drainage.receiver[cell];
+        const terrain::CellIndex from =
+          middle > 0 ? reach.cells[middle - 1] : cell;
         const float score =
           square_meters_value (reach.downstream_area) *
           std::sqrt (static_cast<float> (reach.cells.size ()));
@@ -119,7 +120,7 @@ namespace moppe::game {
       Candidate best;
       for (const terrain::RiverReach& reach : rivers.reaches) {
         if (reach.cells.empty () ||
-            (reach.downstream_body == terrain::RiverReach::no_id &&
+            (reach.downstream_body == terrain::no_water_body &&
              !reach.downstream_ocean))
           continue;
         const std::uint32_t from = reach.cells.back ();
