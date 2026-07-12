@@ -85,10 +85,11 @@ namespace moppe::terrain {
         initial[y * width + x] = terrain.at (x, y);
     std::vector<float> current = initial;
 
-    AnalyticalErosionReport report { .cells = count,
+    AnalyticalErosionReport report { .cells = cell_count (count),
                                      .fixed_point_iterations =
                                        parameters.fixed_point_iterations };
-    for (int iteration = 0; iteration < parameters.fixed_point_iterations;
+    for (int iteration = 0;
+         iteration < count_value (parameters.fixed_point_iterations);
          ++iteration) {
       const std::vector<float> expanded = expand_samples (grid, current);
       const TerrainView routed_terrain (grid, expanded);
@@ -100,7 +101,7 @@ namespace moppe::terrain {
 
       std::vector<CellIndex> receiver = drainage.receiver;
       std::vector<std::uint8_t> boundary (count, 0);
-      report.fixed_boundaries = 0;
+      report.fixed_boundaries = cell_count (0);
       for (std::uint32_t cell = 0; cell < count; ++cell) {
         if (flood.ocean[cell] || receiver[cell] == cell) {
           receiver[cell] = cell;

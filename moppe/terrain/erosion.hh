@@ -15,23 +15,27 @@ namespace moppe::terrain {
   // measured in normalized terrain-height units; the balance is independent
   // of the physical cell area shared by every term.
   struct HydraulicErosionReport {
-    EventCount droplets = 0;
-    EventCount steps = 0;
-    EventCount stopped_flat = 0;
-    EventCount stopped_at_boundary = 0;
-    EventCount stopped_at_step_limit = 0;
-    EventCount stopped_at_water_cutoff = 0;
+    EventCount droplets = event_count (0);
+    EventCount steps = event_count (0);
+    EventCount stopped_flat = event_count (0);
+    EventCount stopped_at_boundary = event_count (0);
+    EventCount stopped_at_step_limit = event_count (0);
+    EventCount stopped_at_water_cutoff = event_count (0);
     double eroded = 0.0;
     double deposited = 0.0;
     double discarded_sediment = 0.0;
     double final_water = 0.0;
 
     double mean_steps () const noexcept {
-      return droplets ? static_cast<double> (steps) / droplets : 0.0;
+      return count_value (droplets)
+               ? static_cast<double> (count_value (steps)) /
+                   count_value (droplets)
+               : 0.0;
     }
 
     double mean_final_water () const noexcept {
-      return droplets ? final_water / droplets : 0.0;
+      return count_value (droplets) ? final_water / count_value (droplets)
+                                    : 0.0;
     }
 
     double discarded_fraction () const noexcept {
@@ -49,14 +53,14 @@ namespace moppe::terrain {
     float erodibility = 2e-5f;
     float area_exponent = 0.4f;
     float sea_level = 50.0f / 650.0f;
-    IterationCount fixed_point_iterations = 1;
+    IterationCount fixed_point_iterations = iteration_count (1);
     float relaxation = 1.0f;
   };
 
   struct AnalyticalErosionReport {
-    CellCount cells = 0;
-    CellCount fixed_boundaries = 0;
-    IterationCount fixed_point_iterations = 0;
+    CellCount cells = cell_count (0);
+    CellCount fixed_boundaries = cell_count (0);
+    IterationCount fixed_point_iterations = iteration_count (0);
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t raised_volume =
@@ -80,8 +84,8 @@ namespace moppe::terrain {
   };
 
   struct ChannelCarvingReport {
-    ReachCount reaches = 0;
-    CellCount carved_cells = 0;
+    ReachCount reaches = reach_count (0);
+    CellCount carved_cells = cell_count (0);
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     meters_f64_t mean_lowering = 0.0 * mp_units::si::metre;

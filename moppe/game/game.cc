@@ -504,7 +504,7 @@ namespace moppe {
             // erosion regressions show up here before any capture does.
             std::size_t wet = 0;
             for (const terrain::WaterBody& body : m_lake_census->bodies)
-              wet += body.cells;
+              wet += terrain::count_value (body.cells);
             std::cerr << "standing water: " << m_lake_census->bodies.size ()
                       << " bodies, " << wet << " wet cells\n";
           }

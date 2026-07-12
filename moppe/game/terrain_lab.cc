@@ -275,13 +275,17 @@ namespace moppe {
           return format_float (
                    julian_years_value (analytical->duration) / 1000.0f, 0) +
                  " ky / " +
-                 std::to_string (analytical->fixed_point_iterations) +
+                 std::to_string (
+                   terrain::count_value (analytical->fixed_point_iterations)) +
                  " routing passes";
         if (const auto* hydraulic =
               std::get_if<terrain::HydraulicErosion> (&stage))
-          return format_count (hydraulic->droplets) + " drops / " +
-                 format_count (hydraulic->batch_size) + " batch / " +
-                 format_count (hydraulic->max_steps) + " steps";
+          return format_count (terrain::count_value (hydraulic->droplets)) +
+                 " drops / " +
+                 format_count (terrain::count_value (hydraulic->batch_size)) +
+                 " batch / " +
+                 format_count (terrain::count_value (hydraulic->max_steps)) +
+                 " steps";
         if (const auto* carving = std::get_if<terrain::ChannelCarving> (&stage))
           return format_float (meters_value (carving->minimum_depth), 1) +
                  ".." +
@@ -290,8 +294,8 @@ namespace moppe {
                  format_count (static_cast<int> (carving->minimum_area_cells)) +
                  " cells";
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
-        return std::to_string (thermal.iterations) + " passes @ " +
-               format_float (thermal.talus, 4);
+        return std::to_string (terrain::count_value (thermal.iterations)) +
+               " passes @ " + format_float (thermal.talus, 4);
       }
 
       std::string
@@ -405,7 +409,8 @@ namespace moppe {
                      ParameterDomain::Continuous };
           if (row == 4)
             return { "ROUTING PASSES",
-                     std::to_string (analytical->fixed_point_iterations),
+                     std::to_string (terrain::count_value (
+                       analytical->fixed_point_iterations)),
                      ParameterDomain::Natural };
           return { "RELAXATION",
                    format_float (analytical->relaxation, 2),
@@ -415,14 +420,15 @@ namespace moppe {
               std::get_if<terrain::HydraulicErosion> (&stage)) {
           if (row == 0)
             return { "DROPLETS",
-                     format_count (hydraulic->droplets),
+                     format_count (terrain::count_value (hydraulic->droplets)),
                      ParameterDomain::Natural };
           if (row == 1)
             return { "BATCH SIZE",
-                     format_count (hydraulic->batch_size),
+                     format_count (
+                       terrain::count_value (hydraulic->batch_size)),
                      ParameterDomain::Natural };
           return { "MAX STEPS",
-                   format_count (hydraulic->max_steps),
+                   format_count (terrain::count_value (hydraulic->max_steps)),
                    ParameterDomain::Natural };
         }
         if (const auto* carving =
@@ -451,7 +457,7 @@ namespace moppe {
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
         if (row == 0)
           return { "PASSES",
-                   std::to_string (thermal.iterations),
+                   std::to_string (terrain::count_value (thermal.iterations)),
                    ParameterDomain::Natural };
         return { "TALUS",
                  format_float (thermal.talus, 4),
@@ -514,9 +520,9 @@ namespace moppe {
         for (int i = 0; i < 3 && std::getline (input, part, ','); ++i)
           values[i] = std::stoi (part);
         m_program.transforms.emplace_back (terrain::HydraulicErosion {
-          .droplets = values[0],
-          .batch_size = values[1],
-          .max_steps = values[2],
+          .droplets = terrain::droplet_count (values[0]),
+          .batch_size = terrain::batch_size (values[1]),
+          .max_steps = terrain::step_count (values[2]),
           .minimum_water = 0.01f,
           .sediment_at_termination = terrain::SedimentDisposition::Deposit });
         env_stages = true;
@@ -1711,14 +1717,23 @@ namespace moppe {
         if (row == 3)
           return unit (analytical->area_exponent, 0.0f, 1.0f);
         if (row == 4)
-          return unit (analytical->fixed_point_iterations, 1.0f, 12.0f);
+          return unit (
+            terrain::count_value (analytical->fixed_point_iterations),
+            1.0f,
+            12.0f);
         return unit (analytical->relaxation, 0.1f, 1.0f);
       }
       if (const auto* hydraulic =
             std::get_if<terrain::HydraulicErosion> (&stage))
-        return row == 0   ? unit (hydraulic->droplets, 0.0f, 5000000.0f)
-               : row == 1 ? unit (hydraulic->batch_size, 1.0f, 4096.0f)
-                          : unit (hydraulic->max_steps, 1.0f, 2048.0f);
+        return row == 0   ? unit (terrain::count_value (hydraulic->droplets),
+                                0.0f,
+                                5000000.0f)
+               : row == 1 ? unit (terrain::count_value (hydraulic->batch_size),
+                                  1.0f,
+                                  4096.0f)
+                          : unit (terrain::count_value (hydraulic->max_steps),
+                                  1.0f,
+                                  2048.0f);
       if (const auto* carving = std::get_if<terrain::ChannelCarving> (&stage)) {
         if (row == 0)
           return unit (carving->minimum_area_cells, 64.0f, 16384.0f);
@@ -1731,7 +1746,9 @@ namespace moppe {
         return unit (meters_value (carving->bank_blend), 0.0f, 30.0f);
       }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
-        return row == 0 ? unit (thermal->iterations, 0.0f, 20.0f)
+        return row == 0 ? unit (terrain::count_value (thermal->iterations),
+                                0.0f,
+                                20.0f)
                         : unit (thermal->talus, 0.0f, 0.05f);
       return 0.0f;
     }
@@ -1841,17 +1858,20 @@ namespace moppe {
       }
       if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
         if (row == 0) {
-          const int old = hydraulic->droplets;
-          hydraulic->droplets = std::lround (mix (0.0f, 5000000.0f));
+          const auto old = hydraulic->droplets;
+          hydraulic->droplets =
+            terrain::droplet_count (std::lround (mix (0.0f, 5000000.0f)));
           return hydraulic->droplets != old;
         }
         if (row == 1) {
-          const int old = hydraulic->batch_size;
-          hydraulic->batch_size = std::lround (mix (1.0f, 4096.0f));
+          const auto old = hydraulic->batch_size;
+          hydraulic->batch_size =
+            terrain::batch_size (std::lround (mix (1.0f, 4096.0f)));
           return hydraulic->batch_size != old;
         }
-        const int old = hydraulic->max_steps;
-        hydraulic->max_steps = std::lround (mix (1.0f, 2048.0f));
+        const auto old = hydraulic->max_steps;
+        hydraulic->max_steps =
+          terrain::step_count (std::lround (mix (1.0f, 2048.0f)));
         return hydraulic->max_steps != old;
       }
       if (auto* carving = std::get_if<terrain::ChannelCarving> (&stage)) {
@@ -1886,8 +1906,9 @@ namespace moppe {
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {
-          const int old = thermal->iterations;
-          thermal->iterations = std::lround (mix (0.0f, 20.0f));
+          const auto old = thermal->iterations;
+          thermal->iterations =
+            terrain::iteration_count (std::lround (mix (0.0f, 20.0f)));
           return thermal->iterations != old;
         }
         const float old = thermal->talus;
@@ -1916,65 +1937,75 @@ namespace moppe {
 
       terrain::TerrainTransform& stage = m_program.transforms[m_selected_stage];
       if (auto* analytical = std::get_if<terrain::AnalyticalErosion> (&stage)) {
-        const int changed =
-          std::clamp (analytical->fixed_point_iterations + direction, 1, 12);
-        if (changed == analytical->fixed_point_iterations)
+        const int changed = std::clamp (
+          terrain::count_value (analytical->fixed_point_iterations) + direction,
+          1,
+          12);
+        if (changed ==
+            terrain::count_value (analytical->fixed_point_iterations))
           return false;
-        analytical->fixed_point_iterations = changed;
+        analytical->fixed_point_iterations = terrain::iteration_count (changed);
         return true;
       }
       if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
-        int* value = row == 0   ? &hydraulic->droplets.value
-                     : row == 1 ? &hydraulic->batch_size.value
-                                : &hydraulic->max_steps.value;
-        int changed = *value;
+        const int value = row == 0 ? terrain::count_value (hydraulic->droplets)
+                          : row == 1
+                            ? terrain::count_value (hydraulic->batch_size)
+                            : terrain::count_value (hydraulic->max_steps);
+        int changed = value;
         if (row == 0) {
           constexpr int choices[] = { 0,       10000,   30000,   100000,
                                       300000,  500000,  1000000, 1500000,
                                       2000000, 3000000, 5000000 };
           if (direction > 0) {
             for (int choice : choices)
-              if (choice > *value) {
+              if (choice > value) {
                 changed = choice;
                 break;
               }
           } else {
             for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
-              if (*i < *value) {
+              if (*i < value) {
                 changed = *i;
                 break;
               }
           }
         } else if (row == 1) {
-          changed = std::clamp (*value + direction * 64, 1, 4096);
+          changed = std::clamp (value + direction * 64, 1, 4096);
         } else {
           constexpr int choices[] = {
             8, 16, 32, 64, 128, 256, 512, 1024, 2048
           };
           if (direction > 0) {
             for (int choice : choices)
-              if (choice > *value) {
+              if (choice > value) {
                 changed = choice;
                 break;
               }
           } else {
             for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
-              if (*i < *value) {
+              if (*i < value) {
                 changed = *i;
                 break;
               }
           }
         }
-        if (changed == *value)
+        if (changed == value)
           return false;
-        *value = changed;
+        if (row == 0)
+          hydraulic->droplets = terrain::droplet_count (changed);
+        else if (row == 1)
+          hydraulic->batch_size = terrain::batch_size (changed);
+        else
+          hydraulic->max_steps = terrain::step_count (changed);
         return true;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
-        const int changed = std::clamp (thermal->iterations + direction, 0, 20);
-        if (changed == thermal->iterations)
+        const int changed = std::clamp (
+          terrain::count_value (thermal->iterations) + direction, 0, 20);
+        if (changed == terrain::count_value (thermal->iterations))
           return false;
-        thermal->iterations = changed;
+        thermal->iterations = terrain::iteration_count (changed);
         return true;
       }
       return false;
@@ -2019,7 +2050,8 @@ namespace moppe {
         } else if (control == 3) {
           if (const auto* rain =
                 std::get_if<terrain::HydraulicErosion> (&stage))
-            return std::clamp (rain->droplets / 300000.0f, 0.0f, 1.0f);
+            return std::clamp (
+              terrain::count_value (rain->droplets) / 300000.0f, 0.0f, 1.0f);
         }
       }
       return 0.0f;
@@ -2055,8 +2087,8 @@ namespace moppe {
           } else if (auto* rain =
                        std::get_if<terrain::HydraulicErosion> (&stage)) {
             const int next = static_cast<int> (std::lround (value * 300000.0f));
-            changed = next != rain->droplets;
-            rain->droplets = next;
+            changed = next != terrain::count_value (rain->droplets);
+            rain->droplets = terrain::droplet_count (next);
             changed_stage = static_cast<int> (i);
             break;
           }
@@ -2084,17 +2116,17 @@ namespace moppe {
         m_program.transforms.emplace_back (terrain::PowerHeights { 0.78f });
         m_program.transforms.emplace_back (terrain::AnalyticalErosion {
           .duration = 500000.0f * mp_units::astronomy::Julian_year,
-          .fixed_point_iterations = 3 });
+          .fixed_point_iterations = terrain::iteration_count (3) });
         m_program.transforms.emplace_back (
-          terrain::ThermalErosion { 4, 0.004f });
+          terrain::ThermalErosion { terrain::iteration_count (4), 0.004f });
       } else if (preset == 2) {
         recipe.blend.continent_weight = 0.72f;
         recipe.blend.mountain_weight = 1.05f;
         m_program.transforms.emplace_back (terrain::PowerHeights { 1.12f });
         m_program.transforms.emplace_back (terrain::HydraulicErosion {
-          .droplets = 100000,
-          .batch_size = 256,
-          .max_steps = 256,
+          .droplets = terrain::droplet_count (100000),
+          .batch_size = terrain::batch_size (256),
+          .max_steps = terrain::step_count (256),
           .minimum_water = 0.01f,
           .sediment_at_termination = terrain::SedimentDisposition::Deposit });
       } else {
@@ -2110,9 +2142,9 @@ namespace moppe {
         m_program.transforms.emplace_back (terrain::PowerHeights { 1.3f });
         m_program.transforms.emplace_back (terrain::AnalyticalErosion {
           .duration = 200000.0f * mp_units::astronomy::Julian_year,
-          .fixed_point_iterations = 1 });
+          .fixed_point_iterations = terrain::iteration_count (1) });
         m_program.transforms.emplace_back (
-          terrain::ThermalErosion { 4, 0.004f });
+          terrain::ThermalErosion { terrain::iteration_count (4), 0.004f });
       }
       m_selected_stage = -1;
       m_stage_scroll = 0;
@@ -2244,13 +2276,14 @@ namespace moppe {
           append_stage (terrain::AnalyticalErosion {});
         else if (i == 3)
           append_stage (terrain::HydraulicErosion {
-            .droplets = 100000,
-            .batch_size = 256,
-            .max_steps = 512,
+            .droplets = terrain::droplet_count (100000),
+            .batch_size = terrain::batch_size (256),
+            .max_steps = terrain::step_count (512),
             .minimum_water = 0.01f,
             .sediment_at_termination = terrain::SedimentDisposition::Deposit });
         else if (i == 4)
-          append_stage (terrain::ThermalErosion { 2, 0.003f });
+          append_stage (
+            terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
         else
           append_stage (terrain::ChannelCarving {});
         return;
@@ -2297,11 +2330,20 @@ namespace moppe {
           for (int group = 0; group < 3; ++group)
             for (int i = 0; i < 4; ++i)
               if (hydraulic_preset_rect (group, i).contains (x, y)) {
-                int& value = group == 0   ? hydraulic->droplets.value
-                             : group == 1 ? hydraulic->max_steps.value
-                                          : hydraulic->batch_size.value;
+                const int value =
+                  group == 0   ? terrain::count_value (hydraulic->droplets)
+                  : group == 1 ? terrain::count_value (hydraulic->max_steps)
+                               : terrain::count_value (hydraulic->batch_size);
                 if (value != presets[group][i]) {
-                  value = presets[group][i];
+                  if (group == 0)
+                    hydraulic->droplets =
+                      terrain::droplet_count (presets[group][i]);
+                  else if (group == 1)
+                    hydraulic->max_steps =
+                      terrain::step_count (presets[group][i]);
+                  else
+                    hydraulic->batch_size =
+                      terrain::batch_size (presets[group][i]);
                   rerun_program_from (m_selected_stage);
                 }
                 return;
@@ -2486,10 +2528,12 @@ namespace moppe {
         rebuild_program ();
         break;
       case Key::E:
-        append_stage (terrain::HydraulicErosion { 100000 });
+        append_stage (
+          terrain::HydraulicErosion { terrain::droplet_count (100000) });
         break;
       case Key::Y:
-        append_stage (terrain::ThermalErosion { 2, 0.003f });
+        append_stage (
+          terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
         break;
       default:
         break;
@@ -2584,9 +2628,9 @@ namespace moppe {
                   .duration = 0.0f * mp_units::astronomy::Julian_year });
               else if (control == 3 && !has_rain)
                 append_stage (terrain::HydraulicErosion {
-                  .droplets = 0,
-                  .batch_size = 256,
-                  .max_steps = 256,
+                  .droplets = terrain::droplet_count (0),
+                  .batch_size = terrain::batch_size (256),
+                  .max_steps = terrain::step_count (256),
                   .minimum_water = 0.01f,
                   .sediment_at_termination =
                     terrain::SedimentDisposition::Deposit });
@@ -2990,9 +3034,10 @@ namespace moppe {
           for (int group = 0; group < 3; ++group) {
             m_ui.label (
               dl, right_x + 8, 362 + group * 56, headings[group], true);
-            const int value = group == 0   ? hydraulic.droplets.value
-                              : group == 1 ? hydraulic.max_steps.value
-                                           : hydraulic.batch_size.value;
+            const int value =
+              group == 0   ? terrain::count_value (hydraulic.droplets)
+              : group == 1 ? terrain::count_value (hydraulic.max_steps)
+                           : terrain::count_value (hydraulic.batch_size);
             for (int i = 0; i < 4; ++i) {
               const UiRect bounds = hydraulic_preset_rect (group, i);
               m_ui.button (dl,
@@ -3128,13 +3173,15 @@ namespace moppe {
                     readings_y + 232,
                     "FINITE-TIME STREAM POWER",
                     true);
-        m_ui.label (
-          dl,
-          readings_x + 10,
-          readings_y + 254,
-          "FIXED BOUNDARIES " +
-            format_count (static_cast<int> (report.fixed_boundaries)) +
-            "  PASSES " + std::to_string (report.fixed_point_iterations));
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 254,
+                    "FIXED BOUNDARIES " +
+                      format_count (static_cast<int> (
+                        terrain::count_value (report.fixed_boundaries))) +
+                      "  PASSES " +
+                      std::to_string (
+                        terrain::count_value (report.fixed_point_iterations)));
         m_ui.label (
           dl,
           readings_x + 10,

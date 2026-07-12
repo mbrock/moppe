@@ -267,7 +267,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
     1.0f * mp_units::si::metre * mp_units::si::metre,
     { .minimum_drop = 1.0f * mp_units::si::metre,
       .minimum_slope = 0.5f * terrain_slope[mp_units::one],
-      .separation_cells = 1 });
+      .separation_cells = separation_cell_count (1) });
 
   MOPPE_CHECK (rivers.reaches.size () == 1);
   MOPPE_CHECK (rivers.waterfalls.size () == 2);

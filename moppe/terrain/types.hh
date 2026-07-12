@@ -6,6 +6,8 @@
 #include <limits>
 #include <type_traits>
 
+#include <mp-units/framework.h>
+
 namespace moppe::terrain {
   struct Seed {
     std::uint32_t value;
@@ -74,61 +76,50 @@ namespace moppe::terrain {
     std::numeric_limits<std::uint32_t>::max ()
   };
 
-  template <typename Tag, std::integral Rep>
-  struct DiscreteValue {
-    Rep value;
+  // Numbers of entities are quantities of dimension one.  Distinct kinds
+  // preserve their algebra while preventing unrelated counts from mixing.
+  inline constexpr struct cell_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } cell_count;
+  inline constexpr struct reach_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } reach_count;
+  inline constexpr struct iteration_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } iteration_count;
+  inline constexpr struct droplet_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } droplet_count;
+  inline constexpr struct batch_size
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } batch_size;
+  inline constexpr struct step_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } step_count;
+  inline constexpr struct event_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } event_count;
+  inline constexpr struct separation_cell_count
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } separation_cell_count;
 
-    constexpr DiscreteValue () noexcept : value (0) {}
-    constexpr DiscreteValue (Rep value) noexcept : value (value) {}
-    constexpr operator Rep () const noexcept {
-      return value;
-    }
-
-    constexpr DiscreteValue& operator++ () noexcept {
-      ++value;
-      return *this;
-    }
-
-    constexpr DiscreteValue& operator+= (Rep amount) noexcept {
-      value += amount;
-      return *this;
-    }
-
-    friend constexpr bool operator== (DiscreteValue, DiscreteValue) = default;
-
-    template <std::integral I>
-    friend constexpr bool operator== (DiscreteValue count, I value) noexcept {
-      return count.value == static_cast<Rep> (value);
-    }
-    template <std::integral I>
-    friend constexpr bool operator== (I value, DiscreteValue count) noexcept {
-      return static_cast<Rep> (value) == count.value;
-    }
-
-    template <typename OtherTag, std::integral OtherRep>
-      requires (!std::same_as<Tag, OtherTag>)
-    friend bool operator== (DiscreteValue,
-                            DiscreteValue<OtherTag, OtherRep>) = delete;
-  };
-
-  struct CellCountTag;
-  struct ReachCountTag;
-  struct IterationCountTag;
-  struct DropletCountTag;
-  struct BatchSizeTag;
-  struct StepCountTag;
-  struct EventCountTag;
-  struct SeparationCellCountTag;
-
-  using CellCount = DiscreteValue<CellCountTag, std::size_t>;
-  using ReachCount = DiscreteValue<ReachCountTag, std::size_t>;
-  using IterationCount = DiscreteValue<IterationCountTag, int>;
-  using DropletCount = DiscreteValue<DropletCountTag, int>;
-  using BatchSize = DiscreteValue<BatchSizeTag, int>;
-  using StepCount = DiscreteValue<StepCountTag, int>;
-  using EventCount = DiscreteValue<EventCountTag, std::uint64_t>;
+  using CellCount = mp_units::quantity<cell_count[mp_units::one], std::size_t>;
+  using ReachCount =
+    mp_units::quantity<reach_count[mp_units::one], std::size_t>;
+  using IterationCount =
+    mp_units::quantity<iteration_count[mp_units::one], int>;
+  using DropletCount = mp_units::quantity<droplet_count[mp_units::one], int>;
+  using BatchSize = mp_units::quantity<batch_size[mp_units::one], int>;
+  using StepCount = mp_units::quantity<step_count[mp_units::one], int>;
+  using EventCount =
+    mp_units::quantity<event_count[mp_units::one], std::uint64_t>;
   using SeparationCellCount =
-    DiscreteValue<SeparationCellCountTag, std::size_t>;
+    mp_units::quantity<separation_cell_count[mp_units::one], std::size_t>;
+
+  template <mp_units::Quantity Q>
+  constexpr auto count_value (Q value) noexcept {
+    return value.numerical_value_in (mp_units::one);
+  }
 }
 
 #endif

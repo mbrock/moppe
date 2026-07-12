@@ -51,7 +51,7 @@ MOPPE_TEST (analytical_stream_power_lowers_a_fixed_drainage_tree) {
     erode_analytically (plane (), parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
-  MOPPE_CHECK (first.report.fixed_boundaries == 1);
+  MOPPE_CHECK (first.report.fixed_boundaries == cell_count (1));
   MOPPE_CHECK_NEAR (first.heights[0], downhill_plane[0], 0.0f);
   MOPPE_CHECK (first.report.lowered_volume > 0.0);
   MOPPE_CHECK_NEAR (

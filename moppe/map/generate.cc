@@ -572,7 +572,8 @@ namespace moppe {
           "hydraulic erosion batch size and lifetime must be positive");
 
       terrain::HydraulicErosionReport report;
-      report.droplets = static_cast<std::uint64_t> (droplets);
+      report.droplets =
+        terrain::event_count (static_cast<std::uint64_t> (droplets));
 
       realgen_t g (randomness, 0, 1);
 

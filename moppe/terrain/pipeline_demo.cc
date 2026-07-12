@@ -89,7 +89,7 @@ namespace {
       if (parts.size () > 4)
         erosion.sea_level = parse_float (parts[4]);
       if (parts.size () > 5)
-        erosion.fixed_point_iterations = parse_int (parts[5]);
+        erosion.fixed_point_iterations = iteration_count (parse_int (parts[5]));
       if (parts.size () > 6)
         erosion.relaxation = parse_float (parts[6]);
       program.transforms.emplace_back (erosion);
@@ -123,9 +123,9 @@ namespace {
             "hydraulic sediment policy must be discard or deposit");
       }
       program.transforms.emplace_back (
-        HydraulicErosion { .droplets = droplets,
-                           .batch_size = batch_size,
-                           .max_steps = max_steps,
+        HydraulicErosion { .droplets = droplet_count (droplets),
+                           .batch_size = terrain::batch_size (batch_size),
+                           .max_steps = step_count (max_steps),
                            .minimum_water = minimum_water,
                            .sediment_at_termination = disposition });
     } else if (name == "carve") {
@@ -163,7 +163,7 @@ namespace {
       if (comma == std::string_view::npos)
         throw std::invalid_argument ("thermal expects iterations,talus");
       program.transforms.emplace_back (
-        ThermalErosion { parse_int (value.substr (0, comma)),
+        ThermalErosion { iteration_count (parse_int (value.substr (0, comma))),
                          parse_float (value.substr (comma + 1)) });
     } else if (name == "warp-amplitude")
       program.source.recipe.warp.amplitude = parse_float (value);

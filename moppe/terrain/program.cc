@@ -64,20 +64,23 @@ namespace moppe::terrain {
     // four-pass setting follows the recorded stream-power comparison.
     program.transforms.emplace_back (AnalyticalErosion {
       .duration = 200000.0f * mp_units::astronomy::Julian_year,
-      .fixed_point_iterations = profile_stream_power_iterations (profile) });
+      .fixed_point_iterations =
+        iteration_count (profile_stream_power_iterations (profile)) });
     // The analytical stage leaves one-cell discontinuities (its paper calls
     // hillslope treatment essential); a talus pass smooths them before the
     // droplet budget, which is far thinner per cell at rider resolution
     // than in the recorded 257-square experiment.
-    program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+    program.transforms.emplace_back (
+      ThermalErosion { iteration_count (2), 0.003f });
     program.transforms.emplace_back (HydraulicErosion {
-      .droplets = profile_droplet_count (profile),
-      .batch_size = 256,
-      .max_steps = 512,
+      .droplets = droplet_count (profile_droplet_count (profile)),
+      .batch_size = batch_size (256),
+      .max_steps = step_count (512),
       .minimum_water = 0.01f,
       .sediment_at_termination = SedimentDisposition::Deposit });
     // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
-    program.transforms.emplace_back (ThermalErosion { 2, 0.003f });
+    program.transforms.emplace_back (
+      ThermalErosion { iteration_count (2), 0.003f });
     // Channel beds are stamped last so smoothing cannot refill them.
     program.transforms.emplace_back (ChannelCarving {});
     return program;
