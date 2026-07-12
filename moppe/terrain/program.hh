@@ -19,16 +19,16 @@ namespace moppe::terrain {
   };
 
   struct HydraulicErosion {
-    int droplets;
-    int batch_size = 256;
-    int max_steps = 64;
+    DropletCount droplets;
+    BatchSize batch_size = 256;
+    StepCount max_steps = 64;
     float minimum_water = 0.0f;
     SedimentDisposition sediment_at_termination = SedimentDisposition::Discard;
     CarvingRule carving_rule = CarvingRule::PathMonotone;
   };
 
   struct ThermalErosion {
-    int iterations;
+    IterationCount iterations;
     float talus;
   };
 
