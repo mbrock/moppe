@@ -213,19 +213,29 @@ namespace moppe::terrain {
           std::lerp (current[cell], predicted[cell], parameters.relaxation);
     }
 
-    double absolute_change = 0.0;
+    double lowered_volume_m3 = 0.0;
+    double raised_volume_m3 = 0.0;
+    double absolute_change_m = 0.0;
+    double maximum_absolute_change_m = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double change =
         static_cast<double> (current[cell] - initial[cell]) * height_scale;
       if (change < 0.0)
-        report.lowered_volume_m3 -= change * cell_area;
+        lowered_volume_m3 -= change * cell_area;
       else
-        report.raised_volume_m3 += change * cell_area;
-      absolute_change += std::fabs (change);
-      report.maximum_absolute_change_m =
-        std::max (report.maximum_absolute_change_m, std::fabs (change));
+        raised_volume_m3 += change * cell_area;
+      absolute_change_m += std::fabs (change);
+      maximum_absolute_change_m =
+        std::max (maximum_absolute_change_m, std::fabs (change));
     }
-    report.mean_absolute_change_m = absolute_change / count;
+    report.lowered_volume = lowered_volume_m3 * mp_units::si::metre *
+                            mp_units::si::metre * mp_units::si::metre;
+    report.raised_volume = raised_volume_m3 * mp_units::si::metre *
+                           mp_units::si::metre * mp_units::si::metre;
+    report.mean_absolute_change =
+      absolute_change_m / count * mp_units::si::metre;
+    report.maximum_absolute_change =
+      maximum_absolute_change_m * mp_units::si::metre;
     return { .heights = std::move (current), .report = report };
   }
 }

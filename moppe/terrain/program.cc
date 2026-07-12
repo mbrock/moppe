@@ -130,12 +130,12 @@ namespace moppe::terrain {
                 operation.minimum_area_cells <= 0.0f ||
                 !std::isfinite (operation.depth_per_sqrt_m2) ||
                 operation.depth_per_sqrt_m2 < 0.0f ||
-                !std::isfinite (operation.minimum_depth_m) ||
-                operation.minimum_depth_m < 0.0f ||
-                !std::isfinite (operation.maximum_depth_m) ||
-                operation.maximum_depth_m < operation.minimum_depth_m ||
-                !std::isfinite (operation.bank_blend_m) ||
-                operation.bank_blend_m < 0.0f)
+                !std::isfinite (meters_value (operation.minimum_depth)) ||
+                operation.minimum_depth < 0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (operation.maximum_depth)) ||
+                operation.maximum_depth < operation.minimum_depth ||
+                !std::isfinite (meters_value (operation.bank_blend)) ||
+                operation.bank_blend < 0.0f * mp_units::si::metre)
               throw std::invalid_argument (
                 "channel carving parameters are invalid");
           }

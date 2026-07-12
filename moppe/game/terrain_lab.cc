@@ -283,8 +283,10 @@ namespace moppe {
                  format_count (hydraulic->batch_size) + " batch / " +
                  format_count (hydraulic->max_steps) + " steps";
         if (const auto* carving = std::get_if<terrain::ChannelCarving> (&stage))
-          return format_float (carving->minimum_depth_m, 1) + ".." +
-                 format_float (carving->maximum_depth_m, 1) + " m beds @ " +
+          return format_float (meters_value (carving->minimum_depth), 1) +
+                 ".." +
+                 format_float (meters_value (carving->maximum_depth), 1) +
+                 " m beds @ " +
                  format_count (static_cast<int> (carving->minimum_area_cells)) +
                  " cells";
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
@@ -436,14 +438,14 @@ namespace moppe {
                      ParameterDomain::Continuous };
           if (row == 2)
             return { "MIN DEPTH (M)",
-                     format_float (carving->minimum_depth_m, 2),
+                     format_float (meters_value (carving->minimum_depth), 2),
                      ParameterDomain::Continuous };
           if (row == 3)
             return { "MAX DEPTH (M)",
-                     format_float (carving->maximum_depth_m, 2),
+                     format_float (meters_value (carving->maximum_depth), 2),
                      ParameterDomain::Continuous };
           return { "BANK BLEND (M)",
-                   format_float (carving->bank_blend_m, 1),
+                   format_float (meters_value (carving->bank_blend), 1),
                    ParameterDomain::Continuous };
         }
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
@@ -812,16 +814,16 @@ namespace moppe {
                                       std::chrono::steady_clock::now () - start)
                                       .count ();
         std::size_t wet_cells = 0;
-        float maximum_depth_m = 0.0f;
+        float maximum_depth = 0.0f;
         for (const float depth : m_flood->water_depth.values ()) {
           if (depth > 1e-7f)
             ++wet_cells;
-          maximum_depth_m = std::max (maximum_depth_m, depth);
+          maximum_depth = std::max (maximum_depth, depth);
         }
         std::ostringstream status;
         status << format_count (static_cast<int> (wet_cells)) << " wet cells | "
                << std::fixed << std::setprecision (1)
-               << maximum_depth_m * extent_value (m_world->map_size)[1]
+               << maximum_depth * extent_value (m_world->map_size)[1]
                << "m max | " << std::setprecision (0) << milliseconds
                << "ms flood";
         m_flood_status = status.str ();
@@ -1723,10 +1725,10 @@ namespace moppe {
         if (row == 1)
           return unit (carving->depth_per_sqrt_m2, 0.0f, 0.01f);
         if (row == 2)
-          return unit (carving->minimum_depth_m, 0.0f, 4.0f);
+          return unit (meters_value (carving->minimum_depth), 0.0f, 4.0f);
         if (row == 3)
-          return unit (carving->maximum_depth_m, 0.0f, 12.0f);
-        return unit (carving->bank_blend_m, 0.0f, 30.0f);
+          return unit (meters_value (carving->maximum_depth), 0.0f, 12.0f);
+        return unit (meters_value (carving->bank_blend), 0.0f, 30.0f);
       }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
         return row == 0 ? unit (thermal->iterations, 0.0f, 20.0f)
@@ -1864,20 +1866,23 @@ namespace moppe {
           return carving->depth_per_sqrt_m2 != old;
         }
         if (row == 2) {
-          const float old = carving->minimum_depth_m;
-          carving->minimum_depth_m =
-            mix (0.0f, std::min (4.0f, carving->maximum_depth_m));
-          return carving->minimum_depth_m != old;
+          const auto old = carving->minimum_depth;
+          carving->minimum_depth =
+            mix (0.0f, std::min (4.0f, meters_value (carving->maximum_depth))) *
+            mp_units::si::metre;
+          return carving->minimum_depth != old;
         }
         if (row == 3) {
-          const float old = carving->maximum_depth_m;
-          carving->maximum_depth_m =
-            mix (std::max (0.0f, carving->minimum_depth_m), 12.0f);
-          return carving->maximum_depth_m != old;
+          const auto old = carving->maximum_depth;
+          carving->maximum_depth =
+            mix (std::max (0.0f, meters_value (carving->minimum_depth)),
+                 12.0f) *
+            mp_units::si::metre;
+          return carving->maximum_depth != old;
         }
-        const float old = carving->bank_blend_m;
-        carving->bank_blend_m = mix (0.0f, 30.0f);
-        return carving->bank_blend_m != old;
+        const auto old = carving->bank_blend;
+        carving->bank_blend = mix (0.0f, 30.0f) * mp_units::si::metre;
+        return carving->bank_blend != old;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {
@@ -3125,26 +3130,30 @@ namespace moppe {
           "FIXED BOUNDARIES " +
             format_count (static_cast<int> (report.fixed_boundaries)) +
             "  PASSES " + std::to_string (report.fixed_point_iterations));
-        m_ui.label (dl,
-                    readings_x + 10,
-                    readings_y + 276,
-                    "LOWERED " + format_ledger (report.lowered_volume_m3) +
-                      " M3  RAISED " + format_ledger (report.raised_volume_m3));
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 276,
+          "LOWERED " +
+            format_ledger (cubic_meters_value (report.lowered_volume)) +
+            " M3  RAISED " +
+            format_ledger (cubic_meters_value (report.raised_volume)));
         m_ui.label (dl,
                     readings_x + 10,
                     readings_y + 298,
                     "MEAN CHANGE " +
-                      format_float (
-                        static_cast<float> (report.mean_absolute_change_m), 2) +
+                      format_float (static_cast<float> (meters_value (
+                                      report.mean_absolute_change)),
+                                    2) +
                       " M");
-        m_ui.label (
-          dl,
-          readings_x + 10,
-          readings_y + 320,
-          "MAX CHANGE " +
-            format_float (static_cast<float> (report.maximum_absolute_change_m),
-                          2) +
-            " M");
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 320,
+                    "MAX CHANGE " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.maximum_absolute_change)),
+                                    2) +
+                      " M");
       }
       m_ui.end (dl);
     }

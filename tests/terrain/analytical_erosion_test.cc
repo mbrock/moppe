@@ -32,8 +32,10 @@ MOPPE_TEST (zero_age_analytical_erosion_is_identity) {
   MOPPE_CHECK (result.heights.size () == downhill_plane.size ());
   for (std::size_t i = 0; i < downhill_plane.size (); ++i)
     MOPPE_CHECK_NEAR (result.heights[i], downhill_plane[i], 1e-7f);
-  MOPPE_CHECK_NEAR (
-    static_cast<float> (result.report.mean_absolute_change_m), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (static_cast<float> (
+                      moppe::meters_value (result.report.mean_absolute_change)),
+                    0.0f,
+                    0.0f);
 }
 
 MOPPE_TEST (analytical_stream_power_lowers_a_fixed_drainage_tree) {
@@ -51,9 +53,11 @@ MOPPE_TEST (analytical_stream_power_lowers_a_fixed_drainage_tree) {
   MOPPE_CHECK (first.heights == second.heights);
   MOPPE_CHECK (first.report.fixed_boundaries == 1);
   MOPPE_CHECK_NEAR (first.heights[0], downhill_plane[0], 0.0f);
-  MOPPE_CHECK (first.report.lowered_volume_m3 > 0.0);
+  MOPPE_CHECK (first.report.lowered_volume > 0.0);
   MOPPE_CHECK_NEAR (
-    static_cast<float> (first.report.raised_volume_m3), 0.0f, 1e-5f);
+    static_cast<float> (moppe::cubic_meters_value (first.report.raised_volume)),
+    0.0f,
+    1e-5f);
   for (std::size_t i = 0; i < downhill_plane.size (); ++i)
     MOPPE_CHECK (first.heights[i] <= downhill_plane[i] + 1e-7f);
 }

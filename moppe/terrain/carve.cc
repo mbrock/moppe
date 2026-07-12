@@ -17,10 +17,12 @@ namespace moppe::terrain {
           !std::isfinite (p.minimum_area_cells) ||
           p.minimum_area_cells <= 0.0f ||
           !std::isfinite (p.depth_per_sqrt_m2) || p.depth_per_sqrt_m2 < 0.0f ||
-          !std::isfinite (p.minimum_depth_m) || p.minimum_depth_m < 0.0f ||
-          !std::isfinite (p.maximum_depth_m) ||
-          p.maximum_depth_m < p.minimum_depth_m ||
-          !std::isfinite (p.bank_blend_m) || p.bank_blend_m < 0.0f)
+          !std::isfinite (meters_value (p.minimum_depth)) ||
+          p.minimum_depth < 0.0f * mp_units::si::metre ||
+          !std::isfinite (meters_value (p.maximum_depth)) ||
+          p.maximum_depth < p.minimum_depth ||
+          !std::isfinite (meters_value (p.bank_blend)) ||
+          p.bank_blend < 0.0f * mp_units::si::metre)
         throw std::invalid_argument ("invalid channel carving parameters");
     }
 
@@ -51,8 +53,8 @@ namespace moppe::terrain {
     // Every visible reach earns its full depth: a stream you can see is
     // a channel you can ride into, never a painted-on film.
     return std::clamp (parameters.depth_per_sqrt_m2 * std::sqrt (area),
-                       parameters.minimum_depth_m,
-                       parameters.maximum_depth_m);
+                       meters_value (parameters.minimum_depth),
+                       meters_value (parameters.maximum_depth));
   }
 
   ChannelCarvingResult carve_channels (const TerrainView& terrain,
@@ -164,7 +166,7 @@ namespace moppe::terrain {
       const int cx = static_cast<int> (point.cell) % width;
       const int cy = static_cast<int> (point.cell) / width;
       const float half_width = 0.5f * point.width_m;
-      const float radius = half_width + parameters.bank_blend_m;
+      const float radius = half_width + meters_value (parameters.bank_blend);
       // Metric widths on degenerate sub-metre grids must not stamp
       // arbitrarily large neighborhoods.
       constexpr int stamp_limit_cells = 16;
@@ -191,8 +193,8 @@ namespace moppe::terrain {
           const float ground = original[cell] * height_scale;
           if (ground <= point.bed_m)
             continue;
-          const float ramp =
-            bank_ramp (distance, half_width, parameters.bank_blend_m);
+          const float ramp = bank_ramp (
+            distance, half_width, meters_value (parameters.bank_blend));
           const float target =
             (point.bed_m + (ground - point.bed_m) * ramp) / height_scale;
           carved[cell] = std::min (carved[cell], target);
@@ -203,6 +205,8 @@ namespace moppe::terrain {
     const double cell_area =
       static_cast<double> (square_meters_value (grid.cell_area ()));
     double total_lowering = 0.0;
+    double lowered_volume_m3 = 0.0;
+    double maximum_lowering_m = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double lowering =
         static_cast<double> (original[cell] - carved[cell]) * height_scale;
@@ -210,12 +214,15 @@ namespace moppe::terrain {
         continue;
       ++report.carved_cells;
       total_lowering += lowering;
-      report.lowered_volume_m3 += lowering * cell_area;
-      report.maximum_lowering_m =
-        std::max (report.maximum_lowering_m, lowering);
+      lowered_volume_m3 += lowering * cell_area;
+      maximum_lowering_m = std::max (maximum_lowering_m, lowering);
     }
+    report.lowered_volume = lowered_volume_m3 * mp_units::si::metre *
+                            mp_units::si::metre * mp_units::si::metre;
+    report.maximum_lowering = maximum_lowering_m * mp_units::si::metre;
     if (report.carved_cells)
-      report.mean_lowering_m = total_lowering / report.carved_cells;
+      report.mean_lowering =
+        total_lowering / report.carved_cells * mp_units::si::metre;
     return { .heights = std::move (carved), .report = report };
   }
 }
