@@ -63,7 +63,7 @@ namespace moppe::terrain {
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
     const bool periodic = grid.topology == Topology::Torus;
-    const float height_scale = grid.height_scale;
+    const float height_scale = grid.height_scale_m ();
 
     std::vector<float> original (count);
     for (int y = 0; y < height; ++y)
@@ -77,7 +77,7 @@ namespace moppe::terrain {
     const DrainageGraph drainage =
       analyze_wet_drainage (terrain, flood, census);
     const float minimum_area_m2 =
-      parameters.minimum_area_cells * grid.spacing_x * grid.spacing_y;
+      parameters.minimum_area_cells * square_meters_value (grid.cell_area ());
     const RiverNetwork rivers =
       extract_river_network (flood, census, drainage, minimum_area_m2);
 
@@ -170,10 +170,10 @@ namespace moppe::terrain {
       constexpr int stamp_limit_cells = 16;
       const int reach_x =
         std::min (stamp_limit_cells,
-                  static_cast<int> (std::ceil (radius / grid.spacing_x)));
+                  static_cast<int> (std::ceil (radius / grid.spacing_x_m ())));
       const int reach_y =
         std::min (stamp_limit_cells,
-                  static_cast<int> (std::ceil (radius / grid.spacing_y)));
+                  static_cast<int> (std::ceil (radius / grid.spacing_y_m ())));
       for (int dy = -reach_y; dy <= reach_y; ++dy)
         for (int dx = -reach_x; dx <= reach_x; ++dx) {
           int x = cx + dx;
@@ -184,7 +184,7 @@ namespace moppe::terrain {
           } else if (x < 0 || x >= width || y < 0 || y >= height)
             continue;
           const float distance =
-            std::hypot (dx * grid.spacing_x, dy * grid.spacing_y);
+            std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
           if (distance >= radius)
             continue;
           const std::size_t cell = static_cast<std::size_t> (y) * width + x;
@@ -201,7 +201,7 @@ namespace moppe::terrain {
 
     ChannelCarvingReport report { .reaches = rivers.reaches.size () };
     const double cell_area =
-      static_cast<double> (grid.spacing_x) * grid.spacing_y;
+      static_cast<double> (square_meters_value (grid.cell_area ()));
     double total_lowering = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double lowering =

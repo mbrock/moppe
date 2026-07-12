@@ -11,9 +11,9 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   const std::size_t count = 81;
   const TerrainGrid grid { .width = 9,
                            .height = 9,
-                           .spacing_x = 10.0f,
-                           .spacing_y = 10.0f,
-                           .height_scale = 100.0f };
+                           .spacing_x = 10.0f * mp_units::si::metre,
+                           .spacing_y = 10.0f * mp_units::si::metre,
+                           .height_scale = 100.0f * mp_units::si::metre };
   const Domain2D domain { .width = 9, .height = 9 };
   std::vector<std::uint32_t> body (count, LakeCensus::dry);
   body[40] = 0;
@@ -31,9 +31,10 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   const DrainageGraph drainage {
     .source_grid = grid,
     .receiver = std::vector<std::uint32_t> (count, 40),
-    .slope = ScalarRaster (domain, std::vector<float> (count, 0.01f)),
-    .contributing_area =
-      ScalarRaster (domain, std::vector<float> (count, 100.0f)),
+    .slope =
+      SlopeRaster (ScalarRaster (domain, std::vector<float> (count, 0.01f))),
+    .contributing_area = ContributingAreaRaster (
+      ScalarRaster (domain, std::vector<float> (count, 100.0f))),
     .basin = std::vector<std::uint32_t> (count, 0),
     .sinks = { 40 }
   };

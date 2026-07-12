@@ -25,7 +25,6 @@ namespace moppe {
   inline constexpr float PI2 = 2.0f * PI;
 
   using seconds_t = quantity<si::second, float>;
-  using meters_t = quantity<si::metre, float>;
   using degrees_t = quantity<si::degree, float>;
   using radians_t = quantity<si::radian, float>;
   using magnitude_t = quantity<one, float>;
@@ -62,9 +61,6 @@ namespace moppe {
   // grids).  Each names the unit the float is measured in.
   inline float seconds_value (seconds_t q) {
     return q.numerical_value_in (si::second);
-  }
-  inline float meters_value (meters_t q) {
-    return q.numerical_value_in (si::metre);
   }
   inline float radians_value (radians_t q) {
     return q.numerical_value_in (si::radian);

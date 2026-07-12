@@ -116,9 +116,9 @@ namespace moppe {
       return terrain::TerrainView (
         { .width = static_cast<std::size_t> (m_width),
           .height = static_cast<std::size_t> (m_height),
-          .spacing_x = m_scale[0],
-          .spacing_y = m_scale[2],
-          .height_scale = m_scale[1],
+          .spacing_x = m_scale[0] * mp_units::si::metre,
+          .spacing_y = m_scale[2] * mp_units::si::metre,
+          .height_scale = m_scale[1] * mp_units::si::metre,
           .topology = periodic () ? terrain::Topology::Torus
                                   : terrain::Topology::Bounded },
         std::span<const float> (m_data.raw (),

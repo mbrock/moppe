@@ -23,9 +23,9 @@ namespace {
   TerrainGrid valley_grid () {
     return { .width = 9,
              .height = 9,
-             .spacing_x = 5.0f,
-             .spacing_y = 5.0f,
-             .height_scale = 100.0f };
+             .spacing_x = 5.0f * mp_units::si::metre,
+             .spacing_y = 5.0f * mp_units::si::metre,
+             .height_scale = 100.0f * mp_units::si::metre };
   }
 
   constexpr ChannelCarving valley_parameters { .sea_level = 0.0f,
@@ -81,9 +81,9 @@ MOPPE_TEST (carving_never_raises_a_periodic_terrain) {
     }
   const TerrainView terrain ({ .width = 6,
                                .height = 6,
-                               .spacing_x = 5.0f,
-                               .spacing_y = 5.0f,
-                               .height_scale = 100.0f,
+                               .spacing_x = 5.0f * mp_units::si::metre,
+                               .spacing_y = 5.0f * mp_units::si::metre,
+                               .height_scale = 100.0f * mp_units::si::metre,
                                .topology = Topology::Torus },
                              heights);
   const ChannelCarvingResult result = carve_channels (

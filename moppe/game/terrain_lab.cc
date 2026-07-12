@@ -1415,7 +1415,7 @@ namespace moppe {
         } else if (m_overlay == OverlayMode::Flow ||
                    m_overlay == OverlayMode::Streams) {
           const float cell_area =
-            graph.source_grid.spacing_x * graph.source_grid.spacing_y;
+            square_meters_value (graph.source_grid.cell_area ());
           float maximum = 0.0f;
           if (m_overlay == OverlayMode::Flow) {
             for (std::size_t i = 0; i < unique.size (); ++i) {

@@ -27,9 +27,9 @@ namespace {
   TerrainGrid watercourse_valley_grid () {
     return { .width = 9,
              .height = 9,
-             .spacing_x = 5.0f,
-             .spacing_y = 5.0f,
-             .height_scale = 100.0f };
+             .spacing_x = 5.0f * mp_units::si::metre,
+             .spacing_y = 5.0f * mp_units::si::metre,
+             .height_scale = 100.0f * mp_units::si::metre };
   }
 
   constexpr ChannelCarving watercourse_valley_parameters { .sea_level = 0.0f,

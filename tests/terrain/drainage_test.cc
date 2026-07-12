@@ -13,9 +13,9 @@ MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
                              2.0f, 3.0f, 2.0f, 3.0f };
   const TerrainView terrain ({ .width = 3,
                                .height = 3,
-                               .spacing_x = 2.0f,
-                               .spacing_y = 2.0f,
-                               .height_scale = 10.0f },
+                               .spacing_x = 2.0f * mp_units::si::metre,
+                               .spacing_y = 2.0f * mp_units::si::metre,
+                               .height_scale = 10.0f * mp_units::si::metre },
                              heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
@@ -23,8 +23,14 @@ MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
   MOPPE_CHECK (graph.sinks[0] == 4);
   for (std::uint32_t cell = 0; cell < 9; ++cell)
     MOPPE_CHECK (graph.receiver[cell] == 4);
-  MOPPE_CHECK_NEAR (graph.contributing_area.at (1, 1), 36.0f, 0.0f);
-  MOPPE_CHECK_NEAR (graph.slope.at (0, 0), 30.0f / std::sqrt (8.0f), 1e-6f);
+  MOPPE_CHECK_NEAR (graph.contributing_area.sample (1, 1).numerical_value_in (
+                      mp_units::si::metre * mp_units::si::metre),
+                    36.0f,
+                    0.0f);
+  MOPPE_CHECK_NEAR (
+    graph.slope.sample (0, 0).numerical_value_in (mp_units::one),
+    30.0f / std::sqrt (8.0f),
+    1e-6f);
 }
 
 MOPPE_TEST (periodic_drainage_crosses_the_duplicated_seam) {
@@ -184,9 +190,10 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
 
 MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   constexpr std::size_t count = 12;
-  const TerrainGrid grid {
-    .width = 6, .height = 2, .spacing_x = 2.0f, .spacing_y = 2.0f
-  };
+  const TerrainGrid grid { .width = 6,
+                           .height = 2,
+                           .spacing_x = 2.0f * mp_units::si::metre,
+                           .spacing_y = 2.0f * mp_units::si::metre };
   const Domain2D domain { .width = 6, .height = 2 };
   const std::vector<std::uint32_t> receiver { 1, 2, 3, 4, 5,  5,
                                               6, 7, 8, 9, 10, 11 };
@@ -204,32 +211,33 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                               count, LakeCensus::dry) };
   const DrainageGraph drainage { .source_grid = grid,
                                  .receiver = receiver,
-                                 .slope = ScalarRaster (domain,
-                                                        { 0.1f,
-                                                          0.6f,
-                                                          1.2f,
-                                                          0.1f,
-                                                          0.8f,
-                                                          0.0f,
-                                                          0.0f,
-                                                          0.0f,
-                                                          0.0f,
-                                                          0.0f,
-                                                          0.0f,
-                                                          0.0f }),
-                                 .contributing_area = ScalarRaster (domain,
-                                                                    { 1.0f,
-                                                                      2.0f,
-                                                                      3.0f,
-                                                                      4.0f,
-                                                                      5.0f,
-                                                                      6.0f,
-                                                                      1.0f,
-                                                                      1.0f,
-                                                                      1.0f,
-                                                                      1.0f,
-                                                                      1.0f,
-                                                                      1.0f }),
+                                 .slope = SlopeRaster (ScalarRaster (domain,
+                                                                     { 0.1f,
+                                                                       0.6f,
+                                                                       1.2f,
+                                                                       0.1f,
+                                                                       0.8f,
+                                                                       0.0f,
+                                                                       0.0f,
+                                                                       0.0f,
+                                                                       0.0f,
+                                                                       0.0f,
+                                                                       0.0f,
+                                                                       0.0f })),
+                                 .contributing_area = ContributingAreaRaster (
+                                   ScalarRaster (domain,
+                                                 { 1.0f,
+                                                   2.0f,
+                                                   3.0f,
+                                                   4.0f,
+                                                   5.0f,
+                                                   6.0f,
+                                                   1.0f,
+                                                   1.0f,
+                                                   1.0f,
+                                                   1.0f,
+                                                   1.0f,
+                                                   1.0f })),
                                  .basin = std::vector<std::uint32_t> (count, 5),
                                  .sinks = { 5, 6, 7, 8, 9, 10, 11 } };
 

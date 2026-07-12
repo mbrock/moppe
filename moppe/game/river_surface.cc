@@ -117,7 +117,7 @@ namespace moppe::game {
     // every rendered stream is wide and deep enough for the heightmap to
     // hold an actual channel under it. Smaller runoff stays with the
     // analysis overlays rather than rendering as sub-cell water threads.
-    return 16384.0f * grid.spacing_x * grid.spacing_y;
+    return 16384.0f * square_meters_value (grid.cell_area ());
   }
 
   render::DrawList build_river_ribbons (const map::HeightMap& map,

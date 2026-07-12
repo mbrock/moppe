@@ -10,6 +10,18 @@ namespace moppe {
   using mp_units::non_negative;
   using mp_units::quantity_spec;
 
+  using meters_t = mp_units::quantity<mp_units::si::metre, float>;
+  using square_meters_t =
+    mp_units::quantity<mp_units::si::metre * mp_units::si::metre, float>;
+
+  inline float meters_value (meters_t value) {
+    return value.numerical_value_in (mp_units::si::metre);
+  }
+
+  inline float square_meters_value (square_meters_t value) {
+    return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre);
+  }
+
   inline constexpr auto dimensionless = mp_units::dimensionless;
 
   inline constexpr struct control_signal : quantity_spec<dimensionless> {

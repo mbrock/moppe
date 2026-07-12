@@ -66,7 +66,7 @@ namespace moppe::terrain {
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
     const bool periodic = grid.topology == Topology::Torus;
-    const float height_scale = grid.height_scale;
+    const float height_scale = grid.height_scale_m ();
     if (census.body.size () != count || drainage.receiver.size () != count)
       throw std::invalid_argument (
         "watercourse painting inputs do not share a grid");
@@ -163,8 +163,8 @@ namespace moppe::terrain {
           dx = minimum_image_delta (dx, width);
           dz = minimum_image_delta (dz, height);
         }
-        const float run_x = dx * grid.spacing_x;
-        const float run_z = dz * grid.spacing_y;
+        const float run_x = dx * grid.spacing_x_m ();
+        const float run_z = dz * grid.spacing_y_m ();
         const float run = std::hypot (run_x, run_z);
         if (run > 1e-6f) {
           points[i].direction_x = run_x / run;
@@ -189,11 +189,11 @@ namespace moppe::terrain {
           int x =
             static_cast<int> (point.cell) % width +
             static_cast<int> (std::lround (side * point.direction_z * extent *
-                                           probe / grid.spacing_x));
+                                           probe / grid.spacing_x_m ()));
           int y =
             static_cast<int> (point.cell) / width +
             static_cast<int> (std::lround (-side * point.direction_x * extent *
-                                           probe / grid.spacing_y));
+                                           probe / grid.spacing_y_m ()));
           if (periodic) {
             x = (x % width + width) % width;
             y = (y % height + height) % height;
@@ -233,12 +233,12 @@ namespace moppe::terrain {
         // Metric widths on degenerate sub-metre grids must not stamp
         // arbitrarily large neighborhoods.
         constexpr int stamp_limit_cells = 16;
-        const int reach_x =
-          std::min (stamp_limit_cells,
-                    static_cast<int> (std::ceil (radius / grid.spacing_x)));
-        const int reach_y =
-          std::min (stamp_limit_cells,
-                    static_cast<int> (std::ceil (radius / grid.spacing_y)));
+        const int reach_x = std::min (
+          stamp_limit_cells,
+          static_cast<int> (std::ceil (radius / grid.spacing_x_m ())));
+        const int reach_y = std::min (
+          stamp_limit_cells,
+          static_cast<int> (std::ceil (radius / grid.spacing_y_m ())));
         for (int dy = -reach_y; dy <= reach_y; ++dy)
           for (int dx = -reach_x; dx <= reach_x; ++dx) {
             int x = cx + dx;
@@ -249,7 +249,7 @@ namespace moppe::terrain {
             } else if (x < 0 || x >= width || y < 0 || y >= height)
               continue;
             const float distance =
-              std::hypot (dx * grid.spacing_x, dy * grid.spacing_y);
+              std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
             if (distance >= radius)
               continue;
             const std::size_t cell = static_cast<std::size_t> (y) * width + x;
