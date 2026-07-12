@@ -121,7 +121,6 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     mp-units::mp-units
     "-framework Cocoa"
     "-framework Metal"
-    "-framework MetalKit"
     "-framework QuartzCore")
 endif()
 

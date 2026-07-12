@@ -9,6 +9,7 @@
 
 #include "atelier/atelier.hh"
 
+#include <chrono>
 #include <stdexcept>
 #include <string>
 
@@ -26,15 +27,23 @@ namespace atelier {
 
   class Renderer::Impl {
   public:
-    explicit Impl (MTL::Device* device) {
-      m_queue = NS::TransferPtr (device->newCommandQueue ());
+    Impl () {
+      m_device = NS::TransferPtr (MTL::CreateSystemDefaultDevice ());
+      if (!m_device)
+        throw std::runtime_error ("Metal is unavailable");
+
+      m_layer = NS::RetainPtr (CA::MetalLayer::layer ());
+      m_layer->setDevice (m_device.get ());
+      m_layer->setPixelFormat (MTL::PixelFormatBGRA8Unorm_sRGB);
+      m_layer->setFramebufferOnly (true);
+      m_queue = NS::TransferPtr (m_device->newCommandQueue ());
 
       NS::Error* error = nullptr;
       const std::string source (shader_source ());
       const auto source_string =
         NS::String::string (source.c_str (), NS::UTF8StringEncoding);
       auto library =
-        NS::TransferPtr (device->newLibrary (source_string, nullptr, &error));
+        NS::TransferPtr (m_device->newLibrary (source_string, nullptr, &error));
       if (!library)
         throw metal_error ("Could not compile atelier shaders", error);
 
@@ -50,7 +59,7 @@ namespace atelier {
         MTL::PixelFormatBGRA8Unorm_sRGB);
       descriptor->setDepthAttachmentPixelFormat (MTL::PixelFormatDepth32Float);
       m_pipeline = NS::TransferPtr (
-        device->newRenderPipelineState (descriptor.get (), &error));
+        m_device->newRenderPipelineState (descriptor.get (), &error));
       if (!m_pipeline)
         throw metal_error ("Could not create atelier pipeline", error);
 
@@ -59,25 +68,64 @@ namespace atelier {
       depth->setDepthCompareFunction (MTL::CompareFunctionLess);
       depth->setDepthWriteEnabled (true);
       m_depth_state =
-        NS::TransferPtr (device->newDepthStencilState (depth.get ()));
+        NS::TransferPtr (m_device->newDepthStencilState (depth.get ()));
 
       const std::vector<GpuVector> vertices = coin_wire_mesh ();
       m_vertex_count = vertices.size ();
       m_vertices = NS::TransferPtr (
-        device->newBuffer (vertices.data (),
-                           vertices.size () * sizeof (vertices[0]),
-                           MTL::ResourceStorageModeShared));
+        m_device->newBuffer (vertices.data (),
+                             vertices.size () * sizeof (vertices[0]),
+                             MTL::ResourceStorageModeShared));
+      m_started_at = Clock::now ();
     }
 
-    void draw (MTL::RenderPassDescriptor* pass,
-               CA::MetalDrawable* drawable,
-               float elapsed_seconds,
-               float aspect) {
-      const Frame current_frame = frame (elapsed_seconds, aspect);
-      pass->colorAttachments ()->object (0)->setClearColor (
-        MTL::ClearColor (0.025, 0.032, 0.05, 1));
-      pass->depthAttachment ()->setClearDepth (1.0);
+    void* native_layer () const {
+      return m_layer.get ();
+    }
 
+    void resize (double width, double height) {
+      const auto pixel_width = static_cast<NS::UInteger> (width);
+      const auto pixel_height = static_cast<NS::UInteger> (height);
+      if (pixel_width == 0 || pixel_height == 0 ||
+          (pixel_width == m_width && pixel_height == m_height))
+        return;
+
+      m_width = pixel_width;
+      m_height = pixel_height;
+      m_layer->setDrawableSize (CGSizeMake (width, height));
+      MTL::TextureDescriptor* descriptor =
+        MTL::TextureDescriptor::texture2DDescriptor (
+          MTL::PixelFormatDepth32Float, m_width, m_height, false);
+      descriptor->setStorageMode (MTL::StorageModePrivate);
+      descriptor->setUsage (MTL::TextureUsageRenderTarget);
+      m_depth_texture = NS::TransferPtr (m_device->newTexture (descriptor));
+    }
+
+    void draw () {
+      if (!m_depth_texture)
+        return;
+      CA::MetalDrawable* drawable = m_layer->nextDrawable ();
+      if (!drawable)
+        return;
+
+      MTL::RenderPassDescriptor* pass =
+        MTL::RenderPassDescriptor::renderPassDescriptor ();
+      MTL::RenderPassColorAttachmentDescriptor* color =
+        pass->colorAttachments ()->object (0);
+      color->setTexture (drawable->texture ());
+      color->setLoadAction (MTL::LoadActionClear);
+      color->setStoreAction (MTL::StoreActionStore);
+      color->setClearColor (MTL::ClearColor (0.025, 0.032, 0.05, 1));
+      MTL::RenderPassDepthAttachmentDescriptor* depth =
+        pass->depthAttachment ();
+      depth->setTexture (m_depth_texture.get ());
+      depth->setLoadAction (MTL::LoadActionClear);
+      depth->setStoreAction (MTL::StoreActionDontCare);
+      depth->setClearDepth (1.0);
+
+      const std::chrono::duration<float> elapsed = Clock::now () - m_started_at;
+      const Frame current_frame =
+        frame (elapsed.count (), static_cast<float> (m_width) / m_height);
       MTL::CommandBuffer* command = m_queue->commandBuffer ();
       MTL::RenderCommandEncoder* encoder = command->renderCommandEncoder (pass);
       encoder->setRenderPipelineState (m_pipeline.get ());
@@ -94,22 +142,34 @@ namespace atelier {
     }
 
   private:
+    using Clock = std::chrono::steady_clock;
+
+    NS::SharedPtr<MTL::Device> m_device;
+    NS::SharedPtr<CA::MetalLayer> m_layer;
     NS::SharedPtr<MTL::CommandQueue> m_queue;
     NS::SharedPtr<MTL::RenderPipelineState> m_pipeline;
     NS::SharedPtr<MTL::DepthStencilState> m_depth_state;
     NS::SharedPtr<MTL::Buffer> m_vertices;
+    NS::SharedPtr<MTL::Texture> m_depth_texture;
     NS::UInteger m_vertex_count = 0;
+    NS::UInteger m_width = 0;
+    NS::UInteger m_height = 0;
+    Clock::time_point m_started_at;
   };
 
-  Renderer::Renderer (MTL::Device* device)
-      : m_impl (std::make_unique<Impl> (device)) {}
+  Renderer::Renderer () : m_impl (std::make_unique<Impl> ()) {}
 
   Renderer::~Renderer () = default;
 
-  void Renderer::draw (MTL::RenderPassDescriptor* pass,
-                       CA::MetalDrawable* drawable,
-                       float elapsed_seconds,
-                       float aspect) {
-    m_impl->draw (pass, drawable, elapsed_seconds, aspect);
+  void* Renderer::native_layer () const {
+    return m_impl->native_layer ();
+  }
+
+  void Renderer::resize (double width, double height) {
+    m_impl->resize (width, height);
+  }
+
+  void Renderer::draw () {
+    m_impl->draw ();
   }
 }
