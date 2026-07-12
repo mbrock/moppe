@@ -114,6 +114,65 @@ miracle, the heir of the old edge-of-the-world bounce — wants a high
 committing face at the end of a long fast fall-line, because a mirror
 is a viewpoint dispenser and the launch should show you the world.
 
+### The shrine above its river
+
+A shrine may want something more particular than a high viewshed. The
+absolute summit is often too universal: it sees several valleys and belongs
+experientially to none of them. Move a little way down one shoulder of the
+ridge and the site acquires an allegiance. Rain falling at the shrine joins
+one drainage basin. The ridge behind it hides the neighboring country. The
+shrine looks outward over the valley whose water passes below it.
+
+Its hydrological territory and visual territory are not the same object, but
+their fit can become a generative rule. For a candidate site `s`, let `B(s)`
+be its catchment and let `V(s)` be the cells from which the shrine can be
+seen. A valley shrine should command a consequential part of `B(s)` without
+simply seeing the whole world. It may reward:
+
+- visibility from the river, paths, settlements, and usable valley floor;
+- a viewshed concentrated inside its own catchment;
+- local prominence and a clear silhouette against the ridge;
+- an unambiguous step onto one side of the watershed divide;
+- repeated disappearance and recovery along an upstream approach;
+- a shoulder, spur, or near-summit bench on which a person might actually
+  stop and build.
+
+It may penalize the exact summit, visual leakage into every neighboring
+basin, an inaccessible final slope, and a viewshed so complete that discovery
+has no sequence. The shrine should not merely be visible; it should organize
+an approach. A rider following the water upstream glimpses it, loses it behind
+local relief, finds it again, and gradually understands which side of the
+mountain it addresses.
+
+There is a suggestive opposition here. Water follows a local downstream
+relation until it reaches an outlet. Attention can follow a visible uphill
+or prominence relation until it reaches a shrine. Cells attracted to the
+same shrine would form a visual or pilgrimage catchment, coupled to but not
+identical with the fluvial catchment. The resemblance is generative rather
+than exact: line of sight is symmetric and non-transitive, so its raw relation
+is a graph, not automatically a partition. A particular rule for visual
+succession, landmark allegiance, or approach would be what turns it into
+regions.
+
+Different relationships between drainage and visibility suggest different
+center types:
+
+- a **valley shrine** addresses one catchment from just inside its divide;
+- a **ridge shrine** deliberately belongs to the threshold between two;
+- a **confluence shrine** gathers several tributary valleys within one larger
+  basin;
+- a **source shrine** sits above the headwaters and looks downstream;
+- an **outlet shrine** stands low and looks back into the country that drains
+  toward it;
+- a **hidden shrine** has strong local presence but almost no distant
+  viewshed.
+
+This would join three readings without claiming they are isomorphic: the
+drainage partition says where the shrine belongs, the visibility graph says
+whom it may address, and the path or pilgrimage relation says how it is
+encountered. The resulting placement would be derived from the particular
+terrain rather than scattered over it by a themed random-number generator.
+
 The algorithm proposes; the human disposes. Candidate fields render as
 overlays in the Tycoon window; the ride-to-judge loop (one keypress
 between god view and rider view) is the acceptance test, because a
