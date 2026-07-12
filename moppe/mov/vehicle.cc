@@ -23,9 +23,9 @@ namespace moppe {
     Vehicle::Vehicle (const Vector3D& position,
                       degrees_t orientation,
                       const HeightMap& map,
-                      magnitude_t max_thrust,
-                      magnitude_t power,
-                      magnitude_t mass)
+                      newtons_t max_thrust,
+                      watts_t power,
+                      kilograms_t mass)
         : m_position (position), m_velocity (),
           m_heading (sin (orientation), 0, cos (orientation)),
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
@@ -318,12 +318,15 @@ namespace moppe {
       // Force is engine-power-limited above a few m/s: hard launch,
       // tapering pull, a real top speed against drag.
       if (contact) {
-        const float vf = std::abs (m_velocity.dot (m_thrust_orientation));
-        const magnitude_t force =
-          std::min (m_max_thrust, m_power / std::max (vf, 0.5f));
-        f += m_thrust_orientation * scalar_value (m_thrust * force);
+        const speed_t vf =
+          std::abs (m_velocity.dot (m_thrust_orientation)) * (u::m / u::s);
+        const newtons_t force =
+          std::min (m_max_thrust,
+                    newtons_t (m_power / std::max (vf, 0.5f * (u::m / u::s))));
+        f += m_thrust_orientation * newtons_value (m_thrust * force);
       }
-      Vector3D a (f / m_mass + drag () + Vector3D (0, g, 0) +
+      Vector3D a (f / m_mass.numerical_value_in (u::kg) + drag () +
+                  Vector3D (0, g, 0) +
                   boost_direction * (boost_acceleration * m_boost_level));
 
       // The ground supplies only as much normal force as necessary.  A
