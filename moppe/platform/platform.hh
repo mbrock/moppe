@@ -29,6 +29,7 @@ namespace moppe {
       Tab,
       Escape,
       E,
+      M,
       N,
       R,
       T,

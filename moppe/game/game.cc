@@ -16,6 +16,7 @@
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
+#include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/terrain.hh>
@@ -290,6 +291,7 @@ namespace moppe {
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
         m_hud.load (r);
+        m_game_ui.load (r);
         m_terrain_lab.load (r);
         m_loading_title_font.reset (new render::FontAtlas (
           r, "AvenirNext-DemiBold", 52, r.scale_factor ()));
@@ -1264,9 +1266,11 @@ namespace moppe {
           // In helmet cam you ARE the rider: don't draw yourself.
           const bool helmet = (m_cam_mode == CAM_HELMET);
           if (!(helmet && m_mode == M_BIKE))
-            render_vehicle (r, m_world_dl, m_vehicle, m_total_time);
+            render_vehicle (
+              r, m_world_dl, m_vehicle, m_total_time, 1.0f / m_landscape_scale);
           if (m_car_exists && !(helmet && m_mode == M_CAR))
-            render_vehicle (r, m_world_dl, m_car, m_total_time);
+            render_vehicle (
+              r, m_world_dl, m_car, m_total_time, 1.0f / m_landscape_scale);
           if (m_mode == M_FOOT && !helmet)
             m_walker.render (m_world_dl, m_total_time);
 
@@ -1276,10 +1280,12 @@ namespace moppe {
           // everything already drawn: exhaust and jump-jet flames, then
           // the star pickups' halos.
           if (m_graphics.vehicle_effects && !(helmet && m_mode == M_BIKE))
-            render_vehicle_flames (r, m_vehicle, m_total_time);
+            render_vehicle_flames (
+              r, m_vehicle, m_total_time, 1.0f / m_landscape_scale);
           if (m_graphics.vehicle_effects && m_car_exists &&
               !(helmet && m_mode == M_CAR))
-            render_vehicle_flames (r, m_car, m_total_time);
+            render_vehicle_flames (
+              r, m_car, m_total_time, 1.0f / m_landscape_scale);
           if (m_graphics.star_effects)
             m_stars.render (r, env);
         }
@@ -1363,6 +1369,31 @@ namespace moppe {
                                      : active_vehicle ().orientation ();
           hs.heading_radians = std::atan2 (heading.x, heading.z);
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
+          if (m_game_ui_open) {
+            m_game_ui_slider_x = std::max (44.0f, hud_width - 364.0f);
+            const UiRect panel { m_game_ui_slider_x - 20, 24, 360, 150 };
+            const UiRect slider { m_game_ui_slider_x, 82, 320, 64 };
+            std::ostringstream label;
+            label << "LANDSCAPE SCALE  " << std::fixed << std::setprecision (2)
+                  << m_landscape_scale << 'x';
+            m_game_ui.begin (m_hud_dl);
+            m_game_ui.panel (m_hud_dl,
+                             panel.x,
+                             panel.y,
+                             panel.width,
+                             panel.height,
+                             "WORLD FEEL");
+            m_game_ui.friendly_slider (
+              m_hud_dl,
+              slider,
+              label.str (),
+              "SMALLER",
+              "LARGER",
+              landscape_scale_normalized (),
+              slider.contains (m_pointer_x, m_pointer_y),
+              m_game_ui_dragging);
+            m_game_ui.end (m_hud_dl);
+          }
         }
         // Even a clean inspection capture needs this empty HUD pass: it is
         // also the final post-chain composite into the drawable.
@@ -1673,7 +1704,11 @@ namespace moppe {
       }
 
       void pointer_move (float x, float y, float dx, float dy) override {
-        if (m_terrain_lab.active ())
+        m_pointer_x = x;
+        m_pointer_y = y;
+        if (m_game_ui_dragging)
+          set_landscape_scale_from_pointer (x);
+        else if (m_terrain_lab.active ())
           m_terrain_lab.pointer_move (x, y, dx, dy);
       }
 
@@ -1681,6 +1716,16 @@ namespace moppe {
                            bool down,
                            float x,
                            float y) override {
+        if (m_game_ui_open && button == platform::PointerButton::Primary) {
+          const UiRect slider { m_game_ui_slider_x, 82, 320, 64 };
+          if (down && slider.contains (x, y)) {
+            m_game_ui_dragging = true;
+            set_landscape_scale_from_pointer (x);
+          } else if (!down) {
+            m_game_ui_dragging = false;
+          }
+          return;
+        }
         if (m_terrain_lab.active ())
           m_terrain_lab.pointer_button (button, down, x, y);
       }
@@ -1722,6 +1767,12 @@ namespace moppe {
                                m_graphics,
                                lab_program (),
                                sun_direction_for (m_graphics.sun_height));
+          return;
+        }
+
+        if (k == Key::M && down && m_ready) {
+          m_game_ui_open = !m_game_ui_open;
+          m_game_ui_dragging = false;
           return;
         }
 
@@ -1788,6 +1839,16 @@ namespace moppe {
       }
 
     private:
+      float landscape_scale_normalized () const {
+        return std::log (m_landscape_scale / 0.5f) / std::log (4.0f);
+      }
+
+      void set_landscape_scale_from_pointer (float x) {
+        const float normalized =
+          std::clamp ((x - m_game_ui_slider_x) / 320.0f, 0.0f, 1.0f);
+        m_landscape_scale = 0.5f * std::pow (4.0f, normalized);
+      }
+
       void update_benchmark_title () const {
         if (!m_benchmark)
           return;
@@ -1998,6 +2059,13 @@ namespace moppe {
       City m_city;
       Walker m_walker;
       Hud m_hud;
+      InspectorUi m_game_ui;
+      bool m_game_ui_open = false;
+      bool m_game_ui_dragging = false;
+      float m_landscape_scale = 1.0f;
+      float m_game_ui_slider_x = 44.0f;
+      float m_pointer_x = -1.0f;
+      float m_pointer_y = -1.0f;
       std::unique_ptr<render::FontAtlas> m_loading_title_font;
       std::unique_ptr<render::FontAtlas> m_loading_font;
 
