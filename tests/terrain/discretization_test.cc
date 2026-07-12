@@ -3,10 +3,23 @@
 
 #include <tests/test.hh>
 
+#include <concepts>
 #include <stdexcept>
 
 using namespace moppe;
 using namespace moppe::terrain;
+
+namespace {
+  template <typename Left, typename Right>
+  concept lattice_addable = requires (Left left, Right right) { left + right; };
+
+  static_assert (lattice_addable<RowOffset, RowOffset>);
+  static_assert (lattice_addable<RowIndex, RowOffset>);
+  static_assert (!lattice_addable<RowIndex, RowIndex>);
+  static_assert (!lattice_addable<RowOffset, ColumnOffset>);
+  static_assert (!std::same_as<RowIndex, ColumnIndex>);
+  static_assert (!std::same_as<SampleIndex, RowIndex>);
+}
 
 MOPPE_TEST (terrain_discretization_connects_recipe_and_physical_positions) {
   const TerrainDiscretization discretization (
@@ -22,11 +35,13 @@ MOPPE_TEST (terrain_discretization_connects_recipe_and_physical_positions) {
       .spacing_y = 20.0f * mp_units::si::metre,
       .height_scale = 500.0f * mp_units::si::metre });
 
-  const RecipePosition2D recipe = discretization.recipe_position (2, 1);
+  const GridPointIndex point = grid_point (2, 1);
+  const RecipePosition2D recipe = discretization.recipe_position (point);
   MOPPE_CHECK (recipe.u == recipe_coordinate (0.0f));
   MOPPE_CHECK (recipe.v == recipe_coordinate (4.0f));
 
-  const HorizontalPosition2D physical = discretization.physical_position (2, 1);
+  const HorizontalPosition2D physical =
+    discretization.physical_position (point);
   MOPPE_CHECK (physical.x == 20.0f * mp_units::si::metre);
   MOPPE_CHECK (physical.z == 20.0f * mp_units::si::metre);
   MOPPE_CHECK (discretization.grid ().cell_area () ==
@@ -57,10 +72,28 @@ MOPPE_TEST (terrain_raster_retains_the_discretization_that_sampled_it) {
   const TerrainRelativeElevationRaster raster =
     materialize (CpuEvaluator (), field, discretization);
 
-  MOPPE_CHECK (raster.sample (2, 1) == relative_elevation (3.0f));
-  MOPPE_CHECK (raster.recipe_position (2, 1).u == recipe_coordinate (1.0f));
-  MOPPE_CHECK (raster.physical_position (2, 1).x == 8.0f * mp_units::si::metre);
-  MOPPE_CHECK (raster.physical_position (2, 1).z == 7.0f * mp_units::si::metre);
+  const GridPointIndex point = grid_point (2, 1);
+  MOPPE_CHECK (raster.sample (point) == relative_elevation (3.0f));
+  MOPPE_CHECK (raster.recipe_position (point).u == recipe_coordinate (1.0f));
+  MOPPE_CHECK (raster.physical_position (point).x ==
+               8.0f * mp_units::si::metre);
+  MOPPE_CHECK (raster.physical_position (point).z ==
+               7.0f * mp_units::si::metre);
+}
+
+MOPPE_TEST (grid_points_flatten_to_affine_storage_indices) {
+  const TerrainDiscretization discretization ({ .width = 5, .height = 4 },
+                                              { .width = 5, .height = 4 });
+  const GridPointIndex point = grid_point (3, 2);
+
+  const SampleIndex flat = discretization.flatten (point);
+  MOPPE_CHECK (sample_number (flat) == 13);
+  MOPPE_CHECK (discretization.unflatten (flat) == point);
+
+  const ColumnOffset two_columns = column_offset (2 * column_unit);
+  const RowOffset one_row = row_offset (1 * row_unit);
+  MOPPE_CHECK (point.column + two_columns == column_index (5));
+  MOPPE_CHECK (point.row - one_row == row_index (1));
 }
 
 MOPPE_TEST (toroidal_discretization_distinguishes_storage_and_unique_points) {

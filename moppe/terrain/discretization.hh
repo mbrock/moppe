@@ -8,8 +8,100 @@
 #include <cmath>
 #include <cstddef>
 #include <stdexcept>
+#include <utility>
 
 namespace moppe::terrain {
+  inline constexpr struct row_offset
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } row_offset;
+  inline constexpr struct column_offset
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } column_offset;
+  inline constexpr struct sample_offset
+      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } sample_offset;
+
+  inline constexpr struct row_unit
+      : mp_units::
+          named_unit<"row", mp_units::one, mp_units::kind_of<row_offset>> {
+  } row_unit;
+  inline constexpr struct column_unit
+      : mp_units::named_unit<"column",
+                             mp_units::one,
+                             mp_units::kind_of<column_offset>> {
+  } column_unit;
+  inline constexpr struct sample_unit
+      : mp_units::named_unit<"sample",
+                             mp_units::one,
+                             mp_units::kind_of<sample_offset>> {
+  } sample_unit;
+
+  inline constexpr struct row_origin
+      : mp_units::absolute_point_origin<row_offset> {
+  } row_origin;
+  inline constexpr struct column_origin
+      : mp_units::absolute_point_origin<column_offset> {
+  } column_origin;
+  inline constexpr struct sample_origin
+      : mp_units::absolute_point_origin<sample_offset> {
+  } sample_origin;
+
+  using RowOffset = mp_units::quantity<row_offset[row_unit], std::ptrdiff_t>;
+  using ColumnOffset =
+    mp_units::quantity<column_offset[column_unit], std::ptrdiff_t>;
+  using SampleOffset =
+    mp_units::quantity<sample_offset[sample_unit], std::ptrdiff_t>;
+  using RowIndex =
+    mp_units::quantity_point<row_unit, row_origin, std::ptrdiff_t>;
+  using ColumnIndex =
+    mp_units::quantity_point<column_unit, column_origin, std::ptrdiff_t>;
+  using SampleIndex =
+    mp_units::quantity_point<sample_unit, sample_origin, std::ptrdiff_t>;
+
+  constexpr RowIndex row_index (std::ptrdiff_t value) {
+    return mp_units::quantity_point { row_offset (value * row_unit),
+                                      row_origin };
+  }
+
+  constexpr ColumnIndex column_index (std::ptrdiff_t value) {
+    return mp_units::quantity_point { column_offset (value * column_unit),
+                                      column_origin };
+  }
+
+  constexpr SampleIndex sample_index (std::ptrdiff_t value) {
+    return mp_units::quantity_point { sample_offset (value * sample_unit),
+                                      sample_origin };
+  }
+
+  constexpr std::ptrdiff_t row_number (RowIndex index) {
+    return (index - row_origin).numerical_value_in (row_unit);
+  }
+
+  constexpr std::ptrdiff_t column_number (ColumnIndex index) {
+    return (index - column_origin).numerical_value_in (column_unit);
+  }
+
+  constexpr std::ptrdiff_t sample_number (SampleIndex index) {
+    return (index - sample_origin).numerical_value_in (sample_unit);
+  }
+
+  struct GridPointIndex {
+    ColumnIndex column;
+    RowIndex row;
+
+    friend bool operator== (const GridPointIndex&,
+                            const GridPointIndex&) = default;
+  };
+
+  constexpr GridPointIndex grid_point (ColumnIndex column, RowIndex row) {
+    return { .column = column, .row = row };
+  }
+
+  constexpr GridPointIndex grid_point (std::ptrdiff_t column,
+                                       std::ptrdiff_t row) {
+    return grid_point (column_index (column), row_index (row));
+  }
+
   struct RecipeDomain2D {
     std::size_t width;
     std::size_t height;
@@ -56,6 +148,31 @@ namespace moppe::terrain {
     std::size_t unique_size () const noexcept {
       return unique_width () * unique_height ();
     }
+
+    std::pair<std::size_t, std::size_t>
+    coordinates (GridPointIndex index) const {
+      const std::ptrdiff_t x = column_number (index.column);
+      const std::ptrdiff_t y = row_number (index.row);
+      if (x < 0 || y < 0 || static_cast<std::size_t> (x) >= width ||
+          static_cast<std::size_t> (y) >= height)
+        throw std::out_of_range ("terrain grid point outside grid");
+      return { static_cast<std::size_t> (x), static_cast<std::size_t> (y) };
+    }
+
+    SampleIndex flatten (GridPointIndex index) const {
+      const auto [x, y] = coordinates (index);
+      return sample_index (static_cast<std::ptrdiff_t> (y * width + x));
+    }
+
+    GridPointIndex unflatten (SampleIndex index) const {
+      const std::ptrdiff_t flat = sample_number (index);
+      if (flat < 0 || static_cast<std::size_t> (flat) >= width * height)
+        throw std::out_of_range ("sample index outside terrain grid");
+      const std::size_t value = static_cast<std::size_t> (flat);
+      return { .column =
+                 column_index (static_cast<std::ptrdiff_t> (value % width)),
+               .row = row_index (static_cast<std::ptrdiff_t> (value / width)) };
+    }
   };
 
   struct RecipePosition2D {
@@ -101,8 +218,8 @@ namespace moppe::terrain {
       return m_grid;
     }
 
-    RecipePosition2D recipe_position (std::size_t x, std::size_t y) const {
-      check_grid_point (x, y);
+    RecipePosition2D recipe_position (GridPointIndex index) const {
+      const auto [x, y] = coordinates (index);
       const float u = std::lerp (m_recipe_domain.min_x,
                                  m_recipe_domain.max_x,
                                  static_cast<float> (x) /
@@ -114,17 +231,24 @@ namespace moppe::terrain {
       return { .u = recipe_coordinate (u), .v = recipe_coordinate (v) };
     }
 
-    HorizontalPosition2D physical_position (std::size_t x,
-                                            std::size_t y) const {
-      check_grid_point (x, y);
+    HorizontalPosition2D physical_position (GridPointIndex index) const {
+      const auto [x, y] = coordinates (index);
       return { .x = static_cast<float> (x) * m_grid.spacing_x,
                .z = static_cast<float> (y) * m_grid.spacing_y };
     }
 
+    SampleIndex flatten (GridPointIndex index) const {
+      return m_grid.flatten (index);
+    }
+
+    GridPointIndex unflatten (SampleIndex index) const {
+      return m_grid.unflatten (index);
+    }
+
   private:
-    void check_grid_point (std::size_t x, std::size_t y) const {
-      if (x >= m_grid.width || y >= m_grid.height)
-        throw std::out_of_range ("terrain grid point outside discretization");
+    std::pair<std::size_t, std::size_t>
+    coordinates (GridPointIndex index) const {
+      return m_grid.coordinates (index);
     }
 
     RecipeDomain2D m_recipe_domain;
