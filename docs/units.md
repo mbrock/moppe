@@ -13,6 +13,11 @@ is physically calibrated. In particular, the procedural field graph and the
 particle hydraulic erosion model contain normalized and empirical quantities.
 Their unit boundaries should be recorded rather than hidden.
 
+Several examples below come from the project's research corpus. Parenthetical
+identifiers such as `#ZHQFZP` name the supporting excerpt in that corpus. They
+are provenance pointers, not conventional citations, and extracted values
+should be checked in the original paper before becoming simulation defaults.
+
 ## Conventions
 
 Use SI internally unless there is a strong domain reason not to:
@@ -134,6 +139,12 @@ Grid resolution is not a physical quantity by itself. Always report sample
 count together with extent or spacing. Many derived readings, including local
 slope, drainage density, and channel initiation, change with resolution.
 
+Research examples make the range concrete. Terrain papers span a 50 km by
+50 km mountain domain with summits around 2,000 m (`#ZHQFZP`), 3 m DEMs
+containing hundreds of millions of cells (`#8ERHN4`), and 1 m elevation data
+yielding hundreds of thousands to millions of basins (`#NEL8YN`). These differ
+not merely in cost but in which landforms their samples can resolve.
+
 ## Hydrology
 
 ### Water state and storage
@@ -205,6 +216,17 @@ not model rainfall, losses, travel time, hydrographs, or conservation of water
 through time. A future discharge model should introduce those quantities
 explicitly rather than relabel area as flow.
 
+Two papers in the research corpus use the empirical relation
+
+```text
+Q [m³/s] = 0.42 A^0.69
+```
+
+with `A` in m² (`#VG86AP`, `#HS22AT`). This is an interesting bridge from
+Moppe's contributing-area raster to plausible discharge, but the coefficient
+is dimensional and embeds the source studies' climate, basin, and unit
+convention. It is a calibrated law, not a universal conversion.
+
 Flow velocity is a vector in m/s. The current watercourse sheet stores its
 horizontal `(x, z)` velocity in m/s, with zero for standing water. Speed is
 the vector magnitude. Travel time is channel distance divided by an
@@ -213,6 +235,14 @@ appropriately averaged speed, in seconds.
 A hydrograph is discharge as a function of time. Useful event quantities are
 peak discharge (m³/s), time to peak (s or h), baseflow (m³/s), and event
 volume (the time integral of discharge, m³).
+
+Published graphics examples provide useful perceptual scales. One river
+texture model illustrates flow at 1.3 m/s and gives advected particles a
+1.5 s mean lifetime (`#JS4LBU`, `#K7SCA8`). Procedural Riverscapes builds a
+roughly 4 km river through a 3 km by 3 km terrain, beginning with 100 m/pixel
+elevation data but synthesizing detail down to 10 cm (`#ACDG5B`). Source-data
+resolution, geometric detail, river length, velocity, and feature lifetime
+are different dimensions of "scale" and should remain separate.
 
 ### Hydraulic quantities
 
@@ -285,6 +315,16 @@ parameter therefore follows the model-year dimensional convention above; it
 is not dimensionless despite its unsuffixed historical name. Sea level remains
 normalized at the terrain API boundary.
 
+The corpus illustrates plausible orders of magnitude without establishing
+defaults for Moppe. One experiment uses a 50 km by 50 km domain, uplift of
+`5e-4 m/yr`, an erosion coefficient printed as `5.61e-7 /yr`, and a
+`2.5e5 yr` timestep (`#ZHQFZP`). Stream-power applications there span about
+`1e5` to `1e7 yr` and tens to hundreds of kilometres (`#MSXUGH`). Common
+reported exponents are `m = 0.4` to `0.5` and `n = 1` (`#EKXATA`, `#2DEC4W`).
+Analytical examples range from 100–300 kyr for gullies to 4.6 Myr for mature
+mountains (`#Z3MXM7`, `#E6X4P6`). Each coefficient must be interpreted with
+its paper's exact equation.
+
 Stream power itself can mean total power `rho g Q S` in watts, power per unit
 channel length in W/m, or unit stream power per bed area in W/m². Say which
 one is meant. A landscape-evolution term called "stream power" may be an
@@ -324,6 +364,12 @@ erosion `talus` is a normalized sample-height difference, so its physical
 meaning changes with height scale and grid spacing. A future physical form
 should use a critical slope or angle and a transport coefficient with stated
 dimensions.
+
+Published thermal-erosion controls show the distinction. A common talus limit
+is 30 degrees, while one experiment varies it from 6 to 54 degrees to model
+spatial rock-strength differences (`#9VNYCT`, `#6N825C`). Those are physical
+angles. A threshold of `0.003` in normalized neighboring-height units cannot
+be compared with them until vertical scale and cell spacing are applied.
 
 Diffusive hillslope evolution is often written:
 
@@ -404,6 +450,62 @@ precipitation in mm/yr is not a rainfall event intensity in mm/h. A geomorphic
 model driven by climate should distinguish averages, event distributions,
 seasonality, and extremes.
 
+## Waves and multiscale water detail
+
+Wave quantities introduce another useful vocabulary:
+
+- amplitude and wave height, m;
+- wavelength, m;
+- period, s, and frequency, Hz = 1/s;
+- angular frequency, rad/s;
+- wavenumber, rad/m, or cycles/m if explicitly stated;
+- phase and group velocity, m/s;
+- directional spectrum, whose density units depend on whether it is expressed
+  per hertz, per radian frequency, and per direction.
+
+The research corpus contains a striking scale-separation example. Water
+Surface Wavelets represents a 4 km by 4 km sea at 60 frames/s using a
+4096 by 4096 spatial grid, approximately 1 m spacing, 16 directional samples,
+and usually one to four wavenumber samples (`#WKY9MT`, `#UG8PZG`, `#WV3FXP`).
+It nevertheless produces wavelengths down to 2 cm. A direct heightfield with
+the compared storage would be limited to a 0.5 m minimum wavelength by
+sampling (`#BEDUYL`). The grid does not resolve sub-cell geometry; another
+representation carries the sub-grid spectral detail.
+
+Viscosity requires particular care. Dynamic viscosity is Pa s and kinematic
+viscosity is m²/s. One extracted paper value prints water viscosity as
+`1e-6 m/s` (`#NHQBFC`), which is dimensionally suspicious: the familiar order
+of magnitude for water's kinematic viscosity is `1e-6 m²/s`. Check the source
+equation before copying either the number or unit.
+
+## Human movement, trails, and roads
+
+Terrain becomes inhabited through quantities joining biomechanics and civil
+engineering to topography. Useful measures include walking or vehicle speed
+in m/s, acceleration in m/s², turning curvature in 1/m, sight distance in m,
+trail or road width in m, traffic in passages/time, surface wear in m/pass or
+kg/pass, recovery rate in 1/time, and grade as rise/run.
+
+The corpus's active-walker example uses a 10 cm by 10 cm footprint, walking
+speeds from 0.5 to 1.5 m/s, 10 m visibility, and a 25 m by 10 m slope
+(`#J2KKMV`, `#WUZ6YE`). Its 50-footfall wear threshold and 1,000 s weathering
+time are deliberately accelerated compared with several hundred real
+footfalls and recovery over days. This is a good reporting pattern: separate
+the simulated quantity, its accelerated value, and its real-world analogue.
+
+Trail guidance uses continuous grades of 8–10% for accessible or casual use
+even where 12–16% may be structurally sustainable (`#D33DUB`). It also gives
+hillslope-to-trail grade ratios around 2:1 to 3:1 (`#SFWHTE`). These are
+dimensionless ratios, whereas a 10-degree biomechanical incline is an angle;
+they must not share an unlabeled `slope` control.
+
+Road examples add feature sizes such as 50–300 m tunnel and bridge masks on
+grids with 10 m spacing (`#WJSTC2`). A racing example combines a 4.5 km
+circuit, friction coefficient `mu = 0.90`, peak acceleration near `0.9 g`, lap
+time in seconds, and a controller rate of 200 Hz (`#8AQDAB`, `#3LSFWC`).
+Geometry, material response, dynamics, and control frequency are distinct
+even when they all influence whether a route feels traversable.
+
 ## Scaling and similarity
 
 A visually small world cannot preserve every real-world scale at once. When
@@ -432,6 +534,20 @@ The Courant number `C = v dt / dx` is dimensionless and is central to many
 advection schemes. A stable limit depends on the method. Diffusion has a
 related constraint involving `D dt / dx^2`. An iteration count is not a time
 unless the update defines how much physical time one iteration advances.
+
+The erosion papers make this coupling visible. Reducing cell spacing from
+50 m to 25 m to 12 m raised one conventional simulation's iteration counts
+from 230 to 460 to 980 (`#EQTM8J`). An implicit solver example uses a
+20,000 yr timestep where its explicit comparison uses 1,000 yr (`#M53PTE`).
+Statements such as "700 kyr in 0.1 s" compare simulated geological duration
+with wall-clock runtime (`#YVMH2N`); both times should always be named.
+
+Performance quantities belong in reports even though they are not properties
+of the modeled landscape. Record wall time in s, frame rate in frames/s,
+latency in ms, throughput in cells/s or primitives/s, memory in bytes, grid
+size, hardware, and quality settings. A claim of 60 frames/s is incomplete
+without resolution and workload, just as an erosion age is incomplete without
+its model and spatial scale.
 
 ## Current Moppe quantity map
 
