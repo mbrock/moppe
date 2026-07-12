@@ -1,4 +1,4 @@
-.PHONY: all archive callgraph callgraph-analyze callgraph-cache callgraph-diff \
+.PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks phone profile terrain-lab-shot testflight tracy \
 	tracy-benchmark-capture tracy-capture tracy-import xcode
@@ -7,6 +7,12 @@
 all:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
 	cmake --build build
+
+# Build and open the standalone Metal graphics workshop.
+atelier:
+	@[ -f build/build.ninja ] || cmake -B build -G Ninja
+	cmake --build build --target atelier
+	open build/atelier.app
 
 # Format all tracked C, C++, Objective-C, and Metal sources.
 format:

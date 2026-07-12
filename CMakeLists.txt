@@ -98,6 +98,22 @@ if(APPLE)
 endif()
 
 # ---------------------------------------------------------------
+# Atelier: a deliberately tiny, standalone Metal graphics workshop.
+
+if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  add_executable(atelier MACOSX_BUNDLE EXCLUDE_FROM_ALL
+    atelier/atelier.mm
+  )
+  set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
+  target_compile_options(atelier PRIVATE -fobjc-arc)
+  target_link_libraries(atelier PRIVATE
+    "-framework Cocoa"
+    "-framework Metal"
+    "-framework MetalKit"
+    "-framework QuartzCore")
+endif()
+
+# ---------------------------------------------------------------
 # Metal shader library: one metallib per SDK (macosx / iphoneos /
 # iphonesimulator) -- AIR is platform-targeted and a mac library
 # fails to load on iOS and vice versa.
