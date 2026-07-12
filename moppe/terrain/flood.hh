@@ -40,11 +40,11 @@ namespace moppe::terrain {
 
     std::uint32_t id;
     std::size_t cells;
-    float area_m2;
-    float maximum_depth_m;
-    float mean_depth_m;
-    float volume_m3;
-    float surface_level_m;
+    square_meters_t area;
+    meters_t maximum_depth;
+    meters_t mean_depth;
+    cubic_meters_t volume;
+    meters_t surface_level;
     bool ocean_connected;
     std::uint32_t outlet_cell;
     std::uint32_t spill_cell;
@@ -60,9 +60,11 @@ namespace moppe::terrain {
   };
 
   struct WaterPermanence {
-    float minimum_area_m2 = 600.0f;
-    float minimum_depth_m = 0.25f;
-    float minimum_volume_m3 = 100.0f;
+    square_meters_t minimum_area =
+      600.0f * mp_units::si::metre * mp_units::si::metre;
+    meters_t minimum_depth = 0.25f * mp_units::si::metre;
+    cubic_meters_t minimum_volume =
+      100.0f * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
   };
 
   FloodField analyze_standing_water (const TerrainView& terrain,

@@ -318,15 +318,18 @@ namespace moppe::terrain {
     network.bodies.reserve (census.bodies.size ());
     for (const WaterBody& body : census.bodies) {
       WaterBodyFlow flow { .body_id = body.id,
-                           .inflow_area_m2 = 0.0f,
+                           .inflow_area =
+                             0.0f * mp_units::si::metre * mp_units::si::metre,
                            .outlet_cell = body.outlet_cell,
                            .spill_cell = body.spill_cell,
                            .downstream_cell = WaterBodyFlow::no_cell,
-                           .outflow_area_m2 = 0.0f };
+                           .outflow_area =
+                             0.0f * mp_units::si::metre * mp_units::si::metre };
       if (body.spill_cell != WaterBody::no_cell) {
         flow.downstream_cell = drainage.receiver[body.spill_cell];
-        flow.outflow_area_m2 =
-          drainage.contributing_area.values ()[body.spill_cell];
+        flow.outflow_area = drainage.contributing_area.sample (
+          body.spill_cell % drainage.width (),
+          body.spill_cell / drainage.width ());
       }
       network.bodies.push_back (std::move (flow));
     }
@@ -337,11 +340,12 @@ namespace moppe::terrain {
           census.body[next] == LakeCensus::dry)
         continue;
       WaterBodyFlow& flow = network.bodies[census.body[next]];
-      const float area = drainage.contributing_area.values ()[cell];
+      const square_meters_t area = drainage.contributing_area.sample (
+        cell % drainage.width (), cell / drainage.width ());
       flow.inlets.push_back ({ .upstream_cell = cell,
                                .water_cell = next,
-                               .contributing_area_m2 = area });
-      flow.inflow_area_m2 += area;
+                               .contributing_area = area });
+      flow.inflow_area += area;
     }
     return network;
   }
@@ -350,15 +354,18 @@ namespace moppe::terrain {
   extract_river_network (const FloodField& flood,
                          const LakeCensus& census,
                          const DrainageGraph& drainage,
-                         float minimum_area_m2,
+                         square_meters_t minimum_area,
                          const WaterfallParameters& waterfall_parameters) {
     const std::size_t count = flood.width () * flood.height ();
-    if (!std::isfinite (minimum_area_m2) || minimum_area_m2 < 0.0f)
+    if (!std::isfinite (square_meters_value (minimum_area)) ||
+        minimum_area < 0.0f * mp_units::si::metre * mp_units::si::metre)
       throw std::invalid_argument ("river area threshold must be finite");
-    if (!std::isfinite (waterfall_parameters.minimum_drop_m) ||
-        waterfall_parameters.minimum_drop_m < 0.0f ||
-        !std::isfinite (waterfall_parameters.minimum_slope) ||
-        waterfall_parameters.minimum_slope < 0.0f)
+    if (!std::isfinite (meters_value (waterfall_parameters.minimum_drop)) ||
+        waterfall_parameters.minimum_drop < 0.0f * mp_units::si::metre ||
+        !std::isfinite (waterfall_parameters.minimum_slope.numerical_value_in (
+          mp_units::one)) ||
+        waterfall_parameters.minimum_slope <
+          0.0f * terrain_slope[mp_units::one])
       throw std::invalid_argument ("waterfall thresholds must be finite");
     if (census.body.size () != count || flood.ocean.size () != count ||
         drainage.width () != flood.width () ||
@@ -370,7 +377,8 @@ namespace moppe::terrain {
       eligible[cell] =
         census.body[cell] == LakeCensus::dry && !flood.ocean[cell] &&
         drainage.receiver[cell] != cell &&
-        drainage.contributing_area.values ()[cell] >= minimum_area_m2;
+        drainage.contributing_area.sample (
+          cell % drainage.width (), cell / drainage.width ()) >= minimum_area;
 
     std::vector<std::uint32_t> river_donors (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell) {
@@ -390,7 +398,7 @@ namespace moppe::terrain {
     }
 
     RiverNetwork network {
-      .minimum_area_m2 = minimum_area_m2,
+      .minimum_area = minimum_area,
       .waterfall_parameters = waterfall_parameters,
       .reach_by_cell = std::vector<std::uint32_t> (count, RiverReach::no_id),
       .waterfall_by_cell = std::vector<std::uint32_t> (count, Waterfall::no_id)
@@ -407,18 +415,23 @@ namespace moppe::terrain {
         .downstream_body = RiverReach::no_id,
         .downstream_ocean = false,
         .downstream_reach = RiverReach::no_id,
-        .upstream_area_m2 = drainage.contributing_area.values ()[start],
-        .downstream_area_m2 = drainage.contributing_area.values ()[start],
-        .maximum_slope = 0.0f
+        .upstream_area = drainage.contributing_area.sample (
+          start % drainage.width (), start / drainage.width ()),
+        .downstream_area = drainage.contributing_area.sample (
+          start % drainage.width (), start / drainage.width ()),
+        .maximum_slope = 0.0f * terrain_slope[mp_units::one]
       };
       std::uint32_t cell = start;
       while (eligible[cell] &&
              network.reach_by_cell[cell] == RiverReach::no_id) {
         network.reach_by_cell[cell] = reach.id;
         reach.cells.push_back (cell);
-        reach.downstream_area_m2 = drainage.contributing_area.values ()[cell];
+        reach.downstream_area = drainage.contributing_area.sample (
+          cell % drainage.width (), cell / drainage.width ());
         reach.maximum_slope =
-          std::max (reach.maximum_slope, drainage.slope.values ()[cell]);
+          std::max (reach.maximum_slope,
+                    drainage.slope.sample (cell % drainage.width (),
+                                           cell / drainage.width ()));
         const std::uint32_t next = drainage.receiver[cell];
         if (!eligible[next] || river_donors[next] != 1)
           break;
@@ -442,9 +455,8 @@ namespace moppe::terrain {
     }
 
     for (const RiverReach& reach : network.reaches) {
-      const float reference_area =
-        std::max (minimum_area_m2,
-                  square_meters_value (drainage.source_grid.cell_area ()));
+      const square_meters_t reference_area =
+        std::max (minimum_area, drainage.source_grid.cell_area ());
       Waterfall selected {};
       bool has_selected = false;
       std::size_t last_candidate = 0;
@@ -461,30 +473,34 @@ namespace moppe::terrain {
       for (std::size_t i = 0; i < reach.cells.size (); ++i) {
         const std::uint32_t cell = reach.cells[i];
         const std::uint32_t next = drainage.receiver[cell];
-        const float distance =
-          receiver_distance (cell, next, drainage.source_grid)
-            .numerical_value_in (mp_units::si::metre);
-        const float slope = drainage.slope.values ()[cell];
-        const float drop = slope * distance;
-        if (drop < waterfall_parameters.minimum_drop_m ||
+        const meters_t distance =
+          receiver_distance (cell, next, drainage.source_grid);
+        const slope_t slope = drainage.slope.sample (cell % drainage.width (),
+                                                     cell / drainage.width ());
+        const meters_t drop =
+          slope.numerical_value_in (mp_units::one) * distance;
+        if (drop < waterfall_parameters.minimum_drop ||
             slope < waterfall_parameters.minimum_slope)
           continue;
         if (has_selected &&
             i > last_candidate + waterfall_parameters.separation_cells)
           emit_selected ();
         last_candidate = i;
-        const float area = drainage.contributing_area.values ()[cell];
+        const square_meters_t area = drainage.contributing_area.sample (
+          cell % drainage.width (), cell / drainage.width ());
         const float score =
-          drop * std::sqrt (std::max (1.0f, area / reference_area));
+          meters_value (drop) *
+          std::sqrt (std::max (
+            1.0f, (area / reference_area).numerical_value_in (mp_units::one)));
         if (!has_selected || score > selected_score ||
             (score == selected_score && cell < selected.lip_cell)) {
           selected = { .reach_id = reach.id,
                        .lip_cell = cell,
                        .foot_cell = next,
-                       .drop_m = drop,
-                       .horizontal_distance_m = distance,
+                       .drop = drop,
+                       .horizontal_distance = distance,
                        .slope = slope,
-                       .contributing_area_m2 = area };
+                       .contributing_area = area };
           has_selected = true;
           selected_score = score;
         }

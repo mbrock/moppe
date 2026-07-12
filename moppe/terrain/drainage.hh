@@ -14,6 +14,7 @@ namespace moppe::terrain {
                  mp_units::non_negative);
 
   using SlopeRaster = Raster<terrain_slope[mp_units::one]>;
+  using slope_t = mp_units::quantity<terrain_slope[mp_units::one], float>;
   using ContributingAreaRaster =
     Raster<mp_units::isq::area[mp_units::si::metre * mp_units::si::metre]>;
 
@@ -49,7 +50,7 @@ namespace moppe::terrain {
   struct WaterInlet {
     std::uint32_t upstream_cell;
     std::uint32_t water_cell;
-    float contributing_area_m2;
+    square_meters_t contributing_area;
   };
 
   struct WaterBodyFlow {
@@ -58,11 +59,11 @@ namespace moppe::terrain {
 
     std::uint32_t body_id;
     std::vector<WaterInlet> inlets;
-    float inflow_area_m2;
+    square_meters_t inflow_area;
     std::uint32_t outlet_cell;
     std::uint32_t spill_cell;
     std::uint32_t downstream_cell;
-    float outflow_area_m2;
+    square_meters_t outflow_area;
   };
 
   struct WaterNetwork {
@@ -79,14 +80,14 @@ namespace moppe::terrain {
     std::uint32_t downstream_body;
     bool downstream_ocean;
     std::uint32_t downstream_reach;
-    float upstream_area_m2;
-    float downstream_area_m2;
-    float maximum_slope;
+    square_meters_t upstream_area;
+    square_meters_t downstream_area;
+    slope_t maximum_slope;
   };
 
   struct WaterfallParameters {
-    float minimum_drop_m = 3.0f;
-    float minimum_slope = 0.6f;
+    meters_t minimum_drop = 3.0f * mp_units::si::metre;
+    slope_t minimum_slope = 0.6f * terrain_slope[mp_units::one];
     std::size_t separation_cells = 1;
   };
 
@@ -97,14 +98,14 @@ namespace moppe::terrain {
     std::uint32_t reach_id;
     std::uint32_t lip_cell;
     std::uint32_t foot_cell;
-    float drop_m;
-    float horizontal_distance_m;
-    float slope;
-    float contributing_area_m2;
+    meters_t drop;
+    meters_t horizontal_distance;
+    slope_t slope;
+    square_meters_t contributing_area;
   };
 
   struct RiverNetwork {
-    float minimum_area_m2;
+    square_meters_t minimum_area;
     WaterfallParameters waterfall_parameters;
     std::vector<std::uint32_t> reach_by_cell;
     std::vector<std::uint32_t> waterfall_by_cell;
@@ -126,7 +127,7 @@ namespace moppe::terrain {
   extract_river_network (const FloodField& flood,
                          const LakeCensus& census,
                          const DrainageGraph& drainage,
-                         float minimum_area_m2,
+                         square_meters_t minimum_area,
                          const WaterfallParameters& waterfall_parameters = {});
 }
 

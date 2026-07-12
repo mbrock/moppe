@@ -806,16 +806,16 @@ namespace moppe {
                                       std::chrono::steady_clock::now () - start)
                                       .count ();
         std::size_t wet_cells = 0;
-        float maximum_depth = 0.0f;
+        float maximum_depth_m = 0.0f;
         for (const float depth : m_flood->water_depth.values ()) {
           if (depth > 1e-7f)
             ++wet_cells;
-          maximum_depth = std::max (maximum_depth, depth);
+          maximum_depth_m = std::max (maximum_depth_m, depth);
         }
         std::ostringstream status;
         status << format_count (static_cast<int> (wet_cells)) << " wet cells | "
                << std::fixed << std::setprecision (1)
-               << maximum_depth * extent_value (m_world->map_size)[1]
+               << maximum_depth_m * extent_value (m_world->map_size)[1]
                << "m max | " << std::setprecision (0) << milliseconds
                << "ms flood";
         m_flood_status = status.str ();
@@ -1536,10 +1536,11 @@ namespace moppe {
             trace << "TRACE — " << water_body_class_name (body.classification)
                   << " #" << body.id << " | " << flow.inlets.size ()
                   << " inlets | mean " << std::fixed << std::setprecision (1)
-                  << body.mean_depth_m << "m | catchment "
+                  << meters_value (body.mean_depth) << "m | catchment "
                   << std::setprecision (0)
-                  << (body.ocean_connected ? flow.inflow_area_m2
-                                           : flow.outflow_area_m2)
+                  << square_meters_value (body.ocean_connected
+                                            ? flow.inflow_area
+                                            : flow.outflow_area)
                   << " m2";
           } else if (m_rivers->waterfall_by_cell[*m_inspected_cell] !=
                      terrain::Waterfall::no_id) {
@@ -1547,20 +1548,22 @@ namespace moppe {
               m_rivers
                 ->waterfalls[m_rivers->waterfall_by_cell[*m_inspected_cell]];
             trace << "TRACE — FALL #" << waterfall.id << " | drop "
-                  << std::fixed << std::setprecision (1) << waterfall.drop_m
-                  << "m | slope " << std::setprecision (2) << waterfall.slope
-                  << " | area " << std::setprecision (0)
-                  << waterfall.contributing_area_m2 << " m2 | reach #"
-                  << waterfall.reach_id;
+                  << std::fixed << std::setprecision (1)
+                  << meters_value (waterfall.drop) << "m | slope "
+                  << std::setprecision (2) << waterfall.slope << " | area "
+                  << std::setprecision (0)
+                  << square_meters_value (waterfall.contributing_area)
+                  << " m2 | reach #" << waterfall.reach_id;
           } else if (m_rivers->reach_by_cell[*m_inspected_cell] !=
                      terrain::RiverReach::no_id) {
             const terrain::RiverReach& reach =
               m_rivers->reaches[m_rivers->reach_by_cell[*m_inspected_cell]];
             trace << "TRACE — REACH #" << reach.id << " | "
                   << reach.cells.size () << " cells | area " << std::fixed
-                  << std::setprecision (0) << reach.downstream_area_m2
+                  << std::setprecision (0)
+                  << square_meters_value (reach.downstream_area)
                   << " m2 | slope " << std::setprecision (3)
-                  << reach.maximum_slope;
+                  << reach.maximum_slope.numerical_value_in (mp_units::one);
             if (reach.downstream_ocean)
               trace << " | to ocean";
             else if (reach.downstream_body != terrain::RiverReach::no_id)

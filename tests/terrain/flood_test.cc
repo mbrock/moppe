@@ -110,10 +110,14 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
 
   MOPPE_CHECK (census.bodies.size () == 1);
   MOPPE_CHECK (census.bodies[0].cells == 1);
-  MOPPE_CHECK_NEAR (census.bodies[0].area_m2, 2.0f, 0.0f);
-  MOPPE_CHECK_NEAR (census.bodies[0].maximum_depth_m, 10.0f, 0.0f);
-  MOPPE_CHECK_NEAR (census.bodies[0].mean_depth_m, 10.0f, 0.0f);
-  MOPPE_CHECK_NEAR (census.bodies[0].volume_m3, 20.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    moppe::square_meters_value (census.bodies[0].area), 2.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    moppe::meters_value (census.bodies[0].maximum_depth), 10.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    moppe::meters_value (census.bodies[0].mean_depth), 10.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    moppe::cubic_meters_value (census.bodies[0].volume), 20.0f, 0.0f);
   MOPPE_CHECK (!census.bodies[0].ocean_connected);
   MOPPE_CHECK (census.bodies[0].outlet_cell == 12);
   MOPPE_CHECK (census.bodies[0].spill_cell == 7);
@@ -147,8 +151,10 @@ MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
   const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
-  const ScalarRaster permanent =
-    permanent_water_surface (flood, census, { .minimum_area_m2 = 1000000.0f });
+  const ScalarRaster permanent = permanent_water_surface (
+    flood,
+    census,
+    { .minimum_area = 1000000.0f * mp_units::si::metre * mp_units::si::metre });
 
   MOPPE_CHECK (census.bodies.size () == 1);
   MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Sea);

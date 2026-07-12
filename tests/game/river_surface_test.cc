@@ -15,7 +15,10 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
                                     .spacing_x = 2.0f * mp_units::si::metre,
                                     .spacing_y = 3.0f * mp_units::si::metre };
 
-  MOPPE_CHECK_NEAR (game::visible_river_minimum_area (grid), 98304.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    square_meters_value (game::visible_river_minimum_area (grid)),
+    98304.0f,
+    0.0f);
 }
 
 MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
@@ -57,7 +60,7 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
     .sinks = { 3 }
   };
   const terrain::RiverNetwork rivers {
-    .minimum_area_m2 = 25000.0f,
+    .minimum_area = 25000.0f * mp_units::si::metre * mp_units::si::metre,
     .reach_by_cell = std::vector<std::uint32_t> (count, 0),
     .waterfall_by_cell =
       std::vector<std::uint32_t> (count, terrain::Waterfall::no_id),
@@ -67,9 +70,12 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
                    .downstream_body = terrain::RiverReach::no_id,
                    .downstream_ocean = false,
                    .downstream_reach = terrain::RiverReach::no_id,
-                   .upstream_area_m2 = 25000.0f,
-                   .downstream_area_m2 = 400000.0f,
-                   .maximum_slope = 0.05f } }
+                   .upstream_area =
+                     25000.0f * mp_units::si::metre * mp_units::si::metre,
+                   .downstream_area =
+                     400000.0f * mp_units::si::metre * mp_units::si::metre,
+                   .maximum_slope =
+                     0.05f * terrain::terrain_slope[mp_units::one] } }
   };
 
   const render::DrawList draw =
@@ -104,14 +110,16 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
 
   terrain::RiverNetwork falling = rivers;
   falling.waterfall_by_cell[1] = 0;
-  falling.waterfalls.push_back ({ .id = 0,
-                                  .reach_id = 0,
-                                  .lip_cell = 1,
-                                  .foot_cell = 5,
-                                  .drop_m = 1.0f,
-                                  .horizontal_distance_m = 10.0f,
-                                  .slope = 0.1f,
-                                  .contributing_area_m2 = 100000.0f });
+  falling.waterfalls.push_back (
+    { .id = 0,
+      .reach_id = 0,
+      .lip_cell = 1,
+      .foot_cell = 5,
+      .drop = 1.0f * mp_units::si::metre,
+      .horizontal_distance = 10.0f * mp_units::si::metre,
+      .slope = 0.1f * terrain::terrain_slope[mp_units::one],
+      .contributing_area =
+        100000.0f * mp_units::si::metre * mp_units::si::metre });
   const render::DrawList fall_draw =
     game::build_river_ribbons (map, flood, census, drainage, falling);
   std::size_t waterfall_vertices = 0;
@@ -180,7 +188,7 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
     .sinks = { 24 }
   };
   const terrain::RiverNetwork rivers {
-    .minimum_area_m2 = 25000.0f,
+    .minimum_area = 25000.0f * mp_units::si::metre * mp_units::si::metre,
     .reach_by_cell =
       std::vector<std::uint32_t> (count, terrain::RiverReach::no_id),
     .waterfall_by_cell =

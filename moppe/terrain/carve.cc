@@ -40,17 +40,17 @@ namespace moppe::terrain {
     };
   }
 
-  float channel_width_m (float area_m2) noexcept {
+  float channel_width_m (float area) noexcept {
     // Wider than strict hydraulic geometry: rivers must read as rivers
     // from a motorcycle, and their valleys are AGE-scaled.
-    return std::clamp (0.012f * std::sqrt (area_m2), 1.5f, 24.0f);
+    return std::clamp (0.012f * std::sqrt (area), 1.5f, 24.0f);
   }
 
-  float channel_depth_m (float area_m2,
+  float channel_depth_m (float area,
                          const ChannelCarving& parameters) noexcept {
     // Every visible reach earns its full depth: a stream you can see is
     // a channel you can ride into, never a painted-on film.
-    return std::clamp (parameters.depth_per_sqrt_m2 * std::sqrt (area_m2),
+    return std::clamp (parameters.depth_per_sqrt_m2 * std::sqrt (area),
                        parameters.minimum_depth_m,
                        parameters.maximum_depth_m);
   }
@@ -76,10 +76,10 @@ namespace moppe::terrain {
     const LakeCensus census = census_lakes (flood);
     const DrainageGraph drainage =
       analyze_wet_drainage (terrain, flood, census);
-    const float minimum_area_m2 =
-      parameters.minimum_area_cells * square_meters_value (grid.cell_area ());
+    const square_meters_t minimum_area =
+      parameters.minimum_area_cells * grid.cell_area ();
     const RiverNetwork rivers =
-      extract_river_network (flood, census, drainage, minimum_area_m2);
+      extract_river_network (flood, census, drainage, minimum_area);
 
     const auto ground_m = [&] (std::uint32_t cell) {
       return original[cell] * height_scale;
@@ -127,7 +127,7 @@ namespace moppe::terrain {
       else if (reach.downstream_body != RiverReach::no_id &&
                reach.downstream_body < census.bodies.size ())
         floor_m[reach.id] =
-          census.bodies[reach.downstream_body].surface_level_m +
+          meters_value (census.bodies[reach.downstream_body].surface_level) +
           backwater_freeboard;
       else if (reach.downstream_reach != RiverReach::no_id)
         floor_m[reach.id] = floor_m[reach.downstream_reach];
