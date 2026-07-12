@@ -250,12 +250,14 @@ namespace moppe {
                            world.map_size,
                            m_seed,
                            world.topology ()),
-            m_camera (18, 6.5f * one_meter),
+            m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
             // 5000 N constant force topped out near 300).
-            m_vehicle (world.spawn_position (), 45, m_map, 2600, 30000, 150),
-            m_car (world.spawn_position (), 45, m_map, 14000, 100000, 900),
+            m_vehicle (
+              world.spawn_position (), 45 * u::deg, m_map, 2600, 30000, 150),
+            m_car (
+              world.spawn_position (), 45 * u::deg, m_map, 14000, 100000, 900),
             m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
@@ -316,8 +318,8 @@ namespace moppe {
         // than trusting the old fixed coordinate near the map corner.
         const float margin_x = 0.08f * m_world.map_size.x;
         const float margin_z = 0.08f * m_world.map_size.z;
-        const float patch = 20.0f * one_meter;
-        const float min_ground = m_world.water_level + 25.0f * one_meter;
+        const float patch = 20.0f; // metres
+        const float min_ground = meters_value (m_world.water_level) + 25.0f;
         const float max_ground = 0.32f * m_world.map_size.y;
 
         std::uniform_real_distribution<float> random_x (
@@ -382,7 +384,7 @@ namespace moppe {
           }
 
           if (lake_depth > 0.1f || low < min_ground || high > max_ground ||
-              up < 0.94f || relief > 3.5f * one_meter)
+              up < 0.94f || relief > 3.5f)
             continue;
 
           // Reservoir sampling chooses uniformly among all suitable sites,
@@ -490,7 +492,8 @@ namespace moppe {
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview && !m_world.city_mode &&
             !m_world.pico_mode) {
-          const float sea_level = m_world.water_level / m_world.map_size.y;
+          const float sea_level =
+            meters_value (m_world.water_level) / m_world.map_size.y;
           m_standing_water =
             terrain::analyze_standing_water (m_map.terrain_view (), sea_level);
           m_lake_census = terrain::census_lakes (*m_standing_water);
@@ -577,11 +580,11 @@ namespace moppe {
           m_city.load (r);
 
         render::OceanSetup ocean;
-        ocean.level = m_world.water_level;
+        ocean.level = meters_value (m_world.water_level);
         ocean.center =
           Vector3D (m_world.map_size.x / 2, 0, m_world.map_size.z / 2);
         ocean.half_extent =
-          m_world.pico_mode ? 0.55f * m_world.map_size.x : 5500 * one_meter;
+          m_world.pico_mode ? 0.55f * m_world.map_size.x : 5500.0f;
         ocean.cells = 300;
         std::vector<float> water_levels;
         std::vector<float> water_flow;
@@ -789,7 +792,8 @@ namespace moppe {
           m_car.pop_fall_drop ();
         }
 
-        const bool in_water = vpos.y < m_world.water_level + 1.0f;
+        const bool in_water =
+          vpos.y < meters_value (m_world.water_level) + 1.0f;
         const bool driving = (m_mode != M_FOOT);
 
         // Long jumps become score events after three seconds. Keep the last
@@ -828,8 +832,8 @@ namespace moppe {
         // against the ground (launches, corner exits).
         if (driving && av.grounded () && !in_water && av.thrust () > 0.6f) {
           const float speed = av.velocity ().length ();
-          const float slip =
-            av.thrust () * (1.0f - std::min (1.0f, speed / 30.0f));
+          const float slip = scalar_value (av.thrust ()) *
+                             (1.0f - std::min (1.0f, speed / 30.0f));
           if (slip > 0.15f) {
             Dust::Style roost;
             roost.size = 0.45f;
@@ -867,7 +871,7 @@ namespace moppe {
 
         // Exhaust smoke: faint gray puffs that rise off the muffler
         // while the throttle is open.
-        if (driving && std::abs (av.thrust ()) > 0.3f && m_mode == M_BIKE) {
+        if (driving && abs (av.thrust ()) > 0.3f && m_mode == M_BIKE) {
           std::uniform_real_distribution<float> chance (0.0f, 1.0f);
           if (chance (m_fx_rng) < 14.0f * dt) {
             Dust::Style smoke;
@@ -988,8 +992,8 @@ namespace moppe {
         // Fuel: the throttle burns it; an empty tank limps along at
         // a third power (never fully stranded).
         if (driving) {
-          m_fuel =
-            std::max (0.0f, m_fuel - std::abs (av.thrust ()) * 0.9f * dt);
+          m_fuel = std::max (
+            0.0f, m_fuel - scalar_value (abs (av.thrust ())) * 0.9f * dt);
           m_odometer += av.velocity ().length () * dt;
 
           const float want =
@@ -1091,7 +1095,7 @@ namespace moppe {
         const float fov =
           terrain_lab || m_water_inspection ? 70.0f : 100.0f + 9.0f * m_fov_k;
         fp.proj = Mat4::perspective_reversed (
-          degrees_to_radians (fov),
+          fov * u::deg,
           aspect,
           std::clamp (0.5f /
                         std::max (m_landscape_scale_x, m_landscape_scale_y),
@@ -1115,10 +1119,8 @@ namespace moppe {
             pulse * std::sin (2.0f * PI * 15.0f * m_shake_time);
           const float pitch =
             pulse * 0.55f * std::sin (2.0f * PI * 19.0f * m_shake_time + 0.7f);
-          view =
-            view *
-            Mat4::rotation (degrees_to_radians (roll), Vector3D (0, 0, 1)) *
-            Mat4::rotation (degrees_to_radians (pitch), Vector3D (1, 0, 0));
+          view = view * Mat4::rotation (roll * u::deg, Vector3D (0, 0, 1)) *
+                 Mat4::rotation (pitch * u::deg, Vector3D (1, 0, 0));
         }
         fp.view = view;
 
@@ -1172,7 +1174,7 @@ namespace moppe {
         // as hills sweep past the sun.
         {
           float vis = 1.0f;
-          if (cam.y < m_world.water_level)
+          if (cam.y < meters_value (m_world.water_level))
             vis = 0.0f;
           else {
             for (int i = 1; i <= 40; ++i) {
@@ -1340,7 +1342,7 @@ namespace moppe {
         }
 
         // Post effects.
-        if (!terrain_lab && cam.y < m_world.water_level)
+        if (!terrain_lab && cam.y < meters_value (m_world.water_level))
           r.apply_underwater (m_total_time);
         if (!terrain_lab) {
           const float kmh = (m_mode == M_FOOT)
@@ -1506,7 +1508,7 @@ namespace moppe {
         render::FrameParams fp;
         fp.view = Mat4::look_at (eye, target, Vector3D (0, 1, 0));
         fp.proj = Mat4::perspective_reversed (
-          degrees_to_radians (show_terrain ? 52.0f : 64.0f),
+          (show_terrain ? 52.0f : 64.0f) * u::deg,
           aspect,
           0.5f,
           std::max (9000.0f, m_world.map_size.x * 2.0f));
@@ -1955,7 +1957,7 @@ namespace moppe {
         if (m_mode == M_FOOT)
           m_walker.set_turn (v);
         else
-          active_vehicle ().set_yaw (90 * v);
+          active_vehicle ().set_yaw ((90 * v) * u::deg);
       }
 
       void input_go (float v) {
@@ -1990,7 +1992,7 @@ namespace moppe {
           m_walker.spawn (
             av.position () + side * (m_mode == M_CAR ? 2.4f : 1.8f), h);
           av.set_thrust (0);
-          av.set_yaw (0);
+          av.set_yaw (0 * u::deg);
           av.set_boost (0, 0);
           m_mode = M_FOOT;
           input_turn (m_turn_input);
@@ -2002,7 +2004,7 @@ namespace moppe {
         if ((m_walker.position () - m_vehicle.position ()).length2 () <
             5.0f * 5.0f) {
           m_vehicle.set_thrust (0);
-          m_vehicle.set_yaw (0);
+          m_vehicle.set_yaw (0 * u::deg);
           m_mode = M_BIKE;
           input_turn (m_turn_input);
           input_go (m_go_input);
@@ -2014,7 +2016,7 @@ namespace moppe {
             (m_walker.position () - m_car.position ()).length2 () <
               6.0f * 6.0f) {
           m_car.set_thrust (0);
-          m_car.set_yaw (0);
+          m_car.set_yaw (0 * u::deg);
           m_mode = M_CAR;
           input_turn (m_turn_input);
           input_go (m_go_input);
@@ -2058,7 +2060,7 @@ namespace moppe {
         m_go_input = 0;
         m_boost_input = 0;
         m_vehicle.set_thrust (0);
-        m_vehicle.set_yaw (0);
+        m_vehicle.set_yaw (0 * u::deg);
         m_vehicle.set_boost (0, 0);
         m_game_over = false;
       }
@@ -2166,8 +2168,7 @@ int main (int argc, char** argv) {
       // The real Pico Island: 49.4 km square, summit 2333m, sea
       // level slightly raised so the coast reads as ocean.
       world.pico_mode = true;
-      world.map_size =
-        Vector3D (49400 * one_meter, 2400 * one_meter, 49400 * one_meter);
+      world.map_size = Vector3D (49400, 2400, 49400);
       world.water_level = 15 * one_meter;
       world.fog_scale = 0.00013f; // clear island air
     } else if (arg == "--city") {

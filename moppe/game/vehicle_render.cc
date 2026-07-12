@@ -7,10 +7,10 @@
 
 namespace moppe {
   namespace game {
-    static float boost_nozzle_angle (const mov::Vehicle& v) {
+    static degrees_t boost_nozzle_angle (const mov::Vehicle& v) {
       // The exhaust points opposite the force: backward when boosting
       // forward, straight down at neutral drive, and forward in reverse.
-      return 90.0f + 60.0f * v.boost_drive ();
+      return (90.0f + 60.0f * v.boost_drive ()) * u::deg;
     }
 
     // -- baked bike assemblies ------------------------------------------
@@ -36,7 +36,7 @@ namespace moppe {
         dl.torus (0.115f, 0.30f, 8, 18);
         for (int k = 0; k < 10; ++k) {
           dl.push ();
-          dl.rotate_deg (k * 36.0f, 0, 0, 1);
+          dl.rotate ((k * 36.0f) * u::deg, 0, 0, 1);
           dl.translate (0.375f, 0, 0);
           model::box (dl, 0.055f, 0.11f, 0.17f);
           dl.pop ();
@@ -47,7 +47,7 @@ namespace moppe {
         dl.torus (0.028f, 0.20f, 6, 16);
         for (int k = 0; k < 3; ++k) {
           dl.push ();
-          dl.rotate_deg (k * 60.0f + 30.0f, 0, 0, 1);
+          dl.rotate ((k * 60.0f + 30.0f) * u::deg, 0, 0, 1);
           model::box (dl, 0.022f, 0.40f, 0.022f);
           dl.pop ();
         }
@@ -73,7 +73,7 @@ namespace moppe {
         for (int s = -1; s <= 1; s += 2) {
           dl.push ();
           dl.translate (s * 0.15f, -0.14f, -0.42f);
-          dl.rotate_deg (s * 8.0f, 0, 1, 0);
+          dl.rotate ((s * 8.0f) * u::deg, 0, 1, 0);
           model::box (dl, 0.02f, 0.18f, 0.26f);
           dl.pop ();
         }
@@ -89,7 +89,7 @@ namespace moppe {
         dl.color (0.15f, 0.5f, 1.0f);
         dl.push ();
         dl.translate (0, 0.10f, -0.70f);
-        dl.rotate_deg (14, 1, 0, 0);
+        dl.rotate (14 * u::deg, 1, 0, 0);
         model::box (dl, 0.20f, 0.035f, 0.38f);
         dl.pop ();
 
@@ -101,7 +101,7 @@ namespace moppe {
                      0.07f);
         dl.push ();
         dl.translate (0.17f, -0.27f, -0.62f);
-        dl.rotate_deg (-6, 1, 0, 0);
+        dl.rotate (-6 * u::deg, 1, 0, 0);
         model::box (dl, 0.11f, 0.13f, 0.42f);
         dl.pop ();
 
@@ -123,7 +123,7 @@ namespace moppe {
         dl.color (0.15f, 0.5f, 1.0f);
         dl.push ();
         dl.translate (0, -0.24f, 0.24f);
-        dl.rotate_deg (-20, 1, 0, 0);
+        dl.rotate (-20 * u::deg, 1, 0, 0);
         model::box (dl, 0.20f, 0.035f, 0.52f);
         dl.pop ();
 
@@ -131,7 +131,7 @@ namespace moppe {
         dl.color (0.92f, 0.93f, 0.95f);
         dl.push ();
         dl.translate (0, 0.02f, 0.06f);
-        dl.rotate_deg (-16, 1, 0, 0);
+        dl.rotate (-16 * u::deg, 1, 0, 0);
         model::box (dl, 0.20f, 0.26f, 0.03f);
         dl.pop ();
 
@@ -308,7 +308,7 @@ namespace moppe {
         dl.color (0.75f, 0.76f, 0.78f);
         dl.push ();
         dl.translate (0, 1.75f, -0.8f);
-        dl.rotate_deg (-6, 1, 0, 0);
+        dl.rotate (-6 * u::deg, 1, 0, 0);
         model::box (dl, 0.5f, 0.12f, 4.4f);
         dl.pop ();
       }
@@ -363,7 +363,7 @@ namespace moppe {
       const Mat4 frame = dl.matrix ();
 
       const Vector3D x_axis (1, 0, 0), y_axis (0, 1, 0), z_axis (0, 0, 1);
-      const Mat4 axle = Mat4::rotation (degrees_to_radians (90.0f), y_axis) *
+      const Mat4 axle = Mat4::rotation (90 * u::deg, y_axis) *
                         Mat4::rotation (v.wheel_spin (), z_axis);
 
       // Suspension: the frame bobs on susp() at the root while the
@@ -424,8 +424,7 @@ namespace moppe {
         r.draw_mesh (
           *bm.nozzle,
           frame * Mat4::translation (Vector3D (s * 0.14f, -0.45f, -0.35f)) *
-            Mat4::rotation (degrees_to_radians (boost_nozzle_angle (v)),
-                            x_axis));
+            Mat4::rotation (boost_nozzle_angle (v), x_axis));
 
       dl.pop ();
     }
@@ -439,7 +438,7 @@ namespace moppe {
                                 float time,
                                 const Vector3D& visual_scale) {
       const bool bike = (v.body_kind () == 0);
-      const float thrust = std::abs (v.thrust ());
+      const float thrust = scalar_value (abs (v.thrust ()));
       const bool exhaust = bike && thrust > 0.1f;
       const bool boosting = v.boost_level () > 0.001f;
       if (!exhaust && !boosting)
@@ -456,7 +455,7 @@ namespace moppe {
           0.85f + 0.15f * std::sin (time * 47.0f + std::sin (time * 31.0f));
         const Mat4 muffler =
           frame * Mat4::translation (Vector3D (0.17f, -0.30f, -0.80f)) *
-          Mat4::rotation (degrees_to_radians (180.0f), y_axis);
+          Mat4::rotation (180 * u::deg, y_axis);
         r.draw_mesh (*fm.lick_outer,
                      muffler *
                        Mat4::scaling (Vector3D (
@@ -494,8 +493,7 @@ namespace moppe {
           const Mat4 jet =
             frame *
             Mat4::translation (Vector3D (s * nozzle.x, nozzle.y, nozzle.z)) *
-            Mat4::rotation (degrees_to_radians (boost_nozzle_angle (v)),
-                            x_axis);
+            Mat4::rotation (boost_nozzle_angle (v), x_axis);
           r.draw_mesh (*fm.plume_sheath,
                        jet * Mat4::scaling (
                                Vector3D (sheath_r, sheath_r, sheath_l * len)));

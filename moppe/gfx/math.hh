@@ -1,33 +1,64 @@
 #ifndef MOPPE_MATH_HH
 #define MOPPE_MATH_HH
 
+#include <mp-units/framework.h>
+#include <mp-units/math.h>
+#include <mp-units/systems/isq.h>
 #include <mp-units/systems/si.h>
 
 #include <cmath>
 #include <iostream>
+#include <numbers>
 
 namespace moppe {
-  const float PI = 3.14159;
-  const float PI2 = 3.14159 * 2;
+  using namespace mp_units;
 
-  const float one_meter = 1;
+  // Quantity literals: 90 * u::deg, 2.5f * u::m, 60 * u::Hz.
+  namespace u {
+    using namespace mp_units::si::unit_symbols;
+  }
 
-  typedef float degrees_t;
-  typedef float radians_t;
-  typedef float magnitude_t;
-  using seconds_t = mp_units::quantity<mp_units::si::second, float>;
-  typedef float meters_t;
+  inline constexpr float PI = std::numbers::pi_v<float>;
+  inline constexpr float PI2 = 2.0f * PI;
+
+  using seconds_t = quantity<si::second, float>;
+  using meters_t = quantity<si::metre, float>;
+  using degrees_t = quantity<si::degree, float>;
+  using radians_t = quantity<si::radian, float>;
+  using magnitude_t = quantity<one, float>;
+
+  inline constexpr meters_t one_meter = 1.0f * si::metre;
 
   inline seconds_t seconds (float value) {
-    return value * mp_units::si::unit_symbols::s;
+    return value * si::second;
   }
 
-  inline float seconds_value (seconds_t value) {
-    return value.numerical_value_in (mp_units::si::second);
+  // Boundary escapes into unit-blind float code (rendering, raster
+  // grids).  Each names the unit the float is measured in.
+  inline float seconds_value (seconds_t q) {
+    return q.numerical_value_in (si::second);
+  }
+  inline float meters_value (meters_t q) {
+    return q.numerical_value_in (si::metre);
+  }
+  inline float radians_value (radians_t q) {
+    return q.numerical_value_in (si::radian);
+  }
+  inline float scalar_value (magnitude_t q) {
+    return q.numerical_value_in (one);
   }
 
-  inline radians_t degrees_to_radians (degrees_t x) {
-    return x * (PI2 / 360);
+  // Trig on typed angles.  Degrees convert implicitly at the call
+  // (float representation), so sin (45 * u::deg) works; the plain
+  // float result feeds unit-blind geometry code.
+  inline float sin (radians_t a) {
+    return std::sin (radians_value (a));
+  }
+  inline float cos (radians_t a) {
+    return std::cos (radians_value (a));
+  }
+  inline float tan (radians_t a) {
+    return std::tan (radians_value (a));
   }
 
   template <typename T>
@@ -56,12 +87,25 @@ namespace moppe {
   template <typename T>
   struct Vector3DG {
     typedef T scalar_type;
+    using value_type = scalar_type;
 
     T x, y, z;
 
     Vector3DG () : x (0), y (0), z (0) {}
     Vector3DG (T x, T y, T z) : x (x), y (y), z (z) {}
     Vector3DG (const Vector3DG& v) : x (v.x), y (v.y), z (v.z) {}
+
+    Vector3DG& operator= (const Vector3DG& v) = default;
+
+    // Indexed access; also what marks this type as an order-1 (vector)
+    // representation to mp-units, together with norm() below, so
+    // quantity<si::metre, Vector3D> is a valid vector quantity.
+    T& operator[] (std::size_t i) {
+      return (&x)[i];
+    }
+    const T& operator[] (std::size_t i) const {
+      return (&x)[i];
+    }
 
     inline Vector3DG& operator+= (const Vector3DG& v) {
       x += v.x;
@@ -89,8 +133,8 @@ namespace moppe {
       return *this;
     }
 
-    inline Vector3DG operator- () {
-      return *this * (-1);
+    inline Vector3DG operator- () const {
+      return Vector3DG (-x, -y, -z);
     }
 
     inline bool operator== (const Vector3DG& v) const {
@@ -102,6 +146,10 @@ namespace moppe {
     }
     inline T length2 () const {
       return dot (*this);
+    }
+    // mp-units spelling of the Euclidean magnitude.
+    inline T norm () const {
+      return length ();
     }
 
     void normalize () {
@@ -184,6 +232,29 @@ namespace moppe {
                          linear_interpolate (from.z, to.z, alpha));
   }
 
+  // Vector-quantity algebra: mp-units keeps the unit outside and the
+  // numerical Vector3DG inside (quantity<si::metre, Vector3D>), so
+  // products combine the numerical vectors and the references.
+  template <Quantity Q1, Quantity Q2>
+    requires requires (const Q1& a, const Q2& b) {
+      a.numerical_value_in (Q1::unit).dot (b.numerical_value_in (Q2::unit));
+    }
+  auto dot (const Q1& a, const Q2& b) {
+    return a.numerical_value_in (Q1::unit).dot (
+             b.numerical_value_in (Q2::unit)) *
+           (Q1::reference * Q2::reference);
+  }
+
+  template <Quantity Q1, Quantity Q2>
+    requires requires (const Q1& a, const Q2& b) {
+      a.numerical_value_in (Q1::unit).cross (b.numerical_value_in (Q2::unit));
+    }
+  auto cross (const Q1& a, const Q2& b) {
+    return a.numerical_value_in (Q1::unit).cross (
+             b.numerical_value_in (Q2::unit)) *
+           (Q1::reference * Q2::reference);
+  }
+
   template <typename T>
   struct QuaternionG {
     T x, y, z, w;
@@ -194,13 +265,15 @@ namespace moppe {
         : x (v.x), y (v.y), z (v.z), w (w) {}
 
     // Make a rotation quaternion from an axis and an angle.
-    static inline QuaternionG rotation (const Vector3DG<T>& axis, float angle) {
-      return QuaternionG (std::sin (angle / 2) * axis, std::cos (angle / 2));
+    static inline QuaternionG rotation (const Vector3DG<T>& axis,
+                                        radians_t angle) {
+      return QuaternionG (moppe::sin (angle / 2) * axis,
+                          moppe::cos (angle / 2));
     }
 
     // Rotate a vector around an axis by an angle.
     static inline Vector3DG<T>
-    rotate (const Vector3DG<T>& v, const Vector3DG<T>& axis, float angle) {
+    rotate (const Vector3DG<T>& v, const Vector3DG<T>& axis, radians_t angle) {
       QuaternionG r = rotation (axis, angle);
       return rotate (v, r);
     }

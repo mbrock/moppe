@@ -25,8 +25,8 @@ namespace moppe {
       };
 
       ChaseCamera (degrees_t pitch_offset, meters_t distance)
-          : m_pitch_offset (degrees_to_radians (pitch_offset)),
-            m_distance (distance), m_speed (0), m_is_uninitialized (true) {}
+          : m_pitch_offset (pitch_offset), m_distance (distance), m_speed (0),
+            m_is_uninitialized (true) {}
 
       void update (const Vector3D& position,
                    const Vector3D& orientation,

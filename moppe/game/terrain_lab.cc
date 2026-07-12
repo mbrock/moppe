@@ -796,7 +796,8 @@ namespace moppe {
         throw std::logic_error ("standing water requested without terrain");
       if (!m_flood) {
         const auto start = std::chrono::steady_clock::now ();
-        const float sea_level = m_world->water_level / m_world->map_size.y;
+        const float sea_level =
+          meters_value (m_world->water_level) / m_world->map_size.y;
         m_flood =
           terrain::analyze_standing_water (m_map->terrain_view (), sea_level);
         m_lakes = terrain::census_lakes (*m_flood);
@@ -1144,7 +1145,8 @@ namespace moppe {
           lean = up;
         lean.normalize ();
         Vector3D axis = up.cross (lean);
-        const float angle = std::acos (std::clamp (up.dot (lean), -1.0f, 1.0f));
+        const radians_t angle =
+          std::acos (std::clamp (up.dot (lean), -1.0f, 1.0f)) * u::rad;
         m_droplet_draw.push ();
         m_droplet_draw.translate (bead);
         if (axis.length2 () > 1e-6f)
@@ -1170,7 +1172,7 @@ namespace moppe {
       const float width = static_cast<float> (m_renderer->width_pts ());
       const float height = static_cast<float> (m_renderer->height_pts ());
       const float aspect = width / std::max (1.0f, height);
-      const float tangent = std::tan (degrees_to_radians (70.0f) * 0.5f);
+      const float tangent = tan (70.0f * u::deg / 2);
       const float screen_x = 2.0f * x / width - 1.0f;
       const float screen_y = 1.0f - 2.0f * y / height;
       const Vector3D direction_forward = forward ();
@@ -1253,7 +1255,7 @@ namespace moppe {
       const float width = static_cast<float> (m_renderer->width_pts ());
       const float height = static_cast<float> (m_renderer->height_pts ());
       const float aspect = width / std::max (1.0f, height);
-      const float tangent = std::tan (degrees_to_radians (70.0f) * 0.5f);
+      const float tangent = tan (70.0f * u::deg / 2);
       const float screen_x = 2.0f * x / width - 1.0f;
       const float screen_y = 1.0f - 2.0f * y / height;
       const Vector3D direction_forward = forward ();

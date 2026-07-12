@@ -39,7 +39,7 @@ namespace moppe {
       void translate (const Vector3D& v);
       void translate (float x, float y, float z);
       void rotate (radians_t angle, const Vector3D& axis);
-      void rotate_deg (degrees_t angle, float ax, float ay, float az);
+      void rotate (radians_t angle, float ax, float ay, float az);
       void scale (const Vector3D& v);
       void scale (float x, float y, float z);
       void mult (const Mat4& m);

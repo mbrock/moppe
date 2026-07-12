@@ -59,9 +59,10 @@ namespace moppe {
       m_ahead = linear_vector_interpolate (m_ahead, ahead, fast);
 
       Vector3D want_target = position + m_ahead;
-      const Vector3D scaled_offset (d.x * m_distance / m_horizontal_scale,
-                                    d.y * m_distance / m_vertical_scale,
-                                    d.z * m_distance / m_horizontal_scale);
+      const float dist = meters_value (m_distance);
+      const Vector3D scaled_offset (d.x * dist / m_horizontal_scale,
+                                    d.y * dist / m_vertical_scale,
+                                    d.z * dist / m_horizontal_scale);
       const Vector3D want_position = position + scaled_offset;
       if (reset) {
         m_target = want_target;
@@ -85,7 +86,8 @@ namespace moppe {
 
       Vector3D offset = m_position - position;
       const float horiz = std::sqrt (offset.x * offset.x + offset.z * offset.z);
-      const float max_len = m_distance / m_horizontal_scale + 0.06f * m_speed;
+      const float max_len =
+        meters_value (m_distance) / m_horizontal_scale + 0.06f * m_speed;
       if (horiz > max_len) {
         const float s = max_len / horiz;
         m_position.x = position.x + offset.x * s;
@@ -101,7 +103,7 @@ namespace moppe {
       // Keep the look point out of the slope as velocity look-ahead
       // carries it across rolling terrain.
       const float target_floor =
-        0.35f * one_meter / m_vertical_scale +
+        0.35f / m_vertical_scale +
         map.interpolated_height (m_target.x, m_target.z);
       if (m_target.y < target_floor) {
         m_target.y = target_floor;
@@ -109,7 +111,7 @@ namespace moppe {
           m_target_velocity.y = 0;
       }
 
-      float needed = 2.2f * one_meter / m_vertical_scale +
+      float needed = 2.2f / m_vertical_scale +
                      map.interpolated_height (m_position.x, m_position.z);
 
       // The sight line toward the bike must clear the terrain too;
@@ -119,8 +121,7 @@ namespace moppe {
         const float t = i / 12.0f;
         const float sx = m_position.x + (m_target.x - m_position.x) * t;
         const float sz = m_position.z + (m_target.z - m_position.z) * t;
-        const float clearance =
-          (0.3f + 1.9f * (1 - t)) * one_meter / m_vertical_scale;
+        const float clearance = (0.3f + 1.9f * (1 - t)) / m_vertical_scale;
         const float g = clearance + map.interpolated_height (sx, sz);
 
         needed = max (needed, (g - m_target.y * t) / (1 - t));

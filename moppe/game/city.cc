@@ -535,7 +535,7 @@ namespace moppe {
         // one jet parked on the apron
         dl.push ();
         dl.translate (m_air_x0 + 65, H_CITY + 2.2f, z0 - 30);
-        dl.rotate_deg (90, 0, 1, 0);
+        dl.rotate (90 * u::deg, 0, 1, 0);
         dl.scale (1.6f, 1.6f, 1.6f);
         draw_plane (dl);
         dl.pop ();
@@ -917,9 +917,9 @@ namespace moppe {
       dl.push ();
       dl.translate (wx, y, wz);
       if (c.along_x)
-        dl.rotate_deg (c.dir > 0 ? 90 : -90, 0, 1, 0);
+        dl.rotate ((c.dir > 0 ? 90 : -90) * u::deg, 0, 1, 0);
       else if (c.dir < 0)
-        dl.rotate_deg (180, 0, 1, 0);
+        dl.rotate (180 * u::deg, 0, 1, 0);
 
       draw_car_model (dl, c.kind, c.color, time, c.phase);
       dl.pop ();
@@ -955,7 +955,7 @@ namespace moppe {
         dl.color (0.75f, 0.76f, 0.78f);
         dl.push ();
         dl.translate (0, 1.75f, -0.8f);
-        dl.rotate_deg (-6, 1, 0, 0);
+        dl.rotate (-6 * u::deg, 1, 0, 0);
         box (dl, 0.5f, 0.12f, 4.4f);
         dl.pop ();
       }
@@ -1025,16 +1025,16 @@ namespace moppe {
       dl.color (0.12f, 0.12f, 0.14f);
       dl.push ();
       dl.translate (0, 1.05f, 0.3f);
-      dl.rotate_deg (rotor_deg, 0, 1, 0);
+      dl.rotate (rotor_deg * u::deg, 0, 1, 0);
       box (dl, 8.0f, 0.06f, 0.3f);
-      dl.rotate_deg (90, 0, 1, 0);
+      dl.rotate (90 * u::deg, 0, 1, 0);
       box (dl, 8.0f, 0.06f, 0.3f);
       dl.pop ();
 
       // tail rotor
       dl.push ();
       dl.translate (0.2f, 0.3f, -4.1f);
-      dl.rotate_deg (rotor_deg * 3, 1, 0, 0);
+      dl.rotate ((rotor_deg * 3) * u::deg, 1, 0, 0);
       box (dl, 0.06f, 1.3f, 0.16f);
       dl.pop ();
 
@@ -1071,8 +1071,8 @@ namespace moppe {
       dl.translate (cx + std::cos (a) * R[which],
                     H_CITY + ALT[which],
                     cz + std::sin (a) * R[which]);
-      dl.rotate_deg (-a * 57.2958f, 0, 1, 0);
-      dl.rotate_deg (-12, 0, 0, 1);
+      dl.rotate (-a * u::rad, 0, 1, 0);
+      dl.rotate (-12 * u::deg, 0, 0, 1);
       dl.scale (1.3f, 1.3f, 1.3f);
       draw_heli_model (dl, colors[which], time * 1080, which < 2, time);
       dl.pop ();
@@ -1083,7 +1083,7 @@ namespace moppe {
       for (int i = 0; i < 2; ++i) {
         dl.push ();
         dl.translate (m_police.x0 + 9 + i * 12, H_CITY, m_police.z1 + 6);
-        dl.rotate_deg (i ? 100.0f : 80.0f, 0, 1, 0);
+        dl.rotate ((i ? 100.0f : 80.0f) * u::deg, 0, 1, 0);
         draw_car_model (dl, 1, Vector3D (0.92, 0.92, 0.95), time, 0.5f * i);
         dl.pop ();
       }
@@ -1091,7 +1091,7 @@ namespace moppe {
       // the fire truck by its hall
       dl.push ();
       dl.translate ((m_fire.x0 + m_fire.x1) / 2, H_CITY, m_fire.z1 + 7);
-      dl.rotate_deg (90, 0, 1, 0);
+      dl.rotate (90 * u::deg, 0, 1, 0);
       draw_car_model (dl, 2, Vector3D (0.85, 0.1, 0.08), time, 0.3f);
       dl.pop ();
 
@@ -1100,7 +1100,7 @@ namespace moppe {
       dl.translate ((m_police.x0 + m_police.x1) / 2,
                     m_police.top + 1.16f,
                     (m_police.z0 + m_police.z1) / 2);
-      dl.rotate_deg (35, 0, 1, 0);
+      dl.rotate (35 * u::deg, 0, 1, 0);
       draw_heli_model (dl, Vector3D (0.92, 0.93, 0.96), time * 80, false, time);
       dl.pop ();
     }
@@ -1113,7 +1113,7 @@ namespace moppe {
       for (int leg = -1; leg <= 1; leg += 2) {
         dl.push ();
         dl.translate (leg * 0.09f, 0.78f, 0);
-        dl.rotate_deg (swing * leg, 1, 0, 0);
+        dl.rotate ((swing * leg) * u::deg, 1, 0, 0);
         dl.translate (0, -0.38f, 0);
         box (dl, 0.13f, 0.76f, 0.13f);
         dl.pop ();
@@ -1130,7 +1130,7 @@ namespace moppe {
       for (int arm = -1; arm <= 1; arm += 2) {
         dl.push ();
         dl.translate (arm * 0.25f, 1.38f, 0);
-        dl.rotate_deg (-swing * arm * 0.7f, 1, 0, 0);
+        dl.rotate ((-swing * arm * 0.7f) * u::deg, 1, 0, 0);
         dl.translate (0, -0.25f, 0);
         box (dl, 0.09f, 0.5f, 0.09f);
         dl.pop ();
@@ -1172,9 +1172,9 @@ namespace moppe {
         dl.push ();
         dl.translate (x, y, z);
         if (flat)
-          dl.rotate_deg (90, 1, 0, 0);
+          dl.rotate (90 * u::deg, 1, 0, 0);
         else
-          dl.rotate_deg (t * 540.0f, 1, 0.4f, 0.2f);
+          dl.rotate ((t * 540.0f) * u::deg, 1, 0.4f, 0.2f);
         dl.scale (p.size, p.size, p.size);
         dl.translate (0, -0.9f, 0); // tumble about the body center
         draw_person_body (dl, p, 0);
@@ -1189,9 +1189,9 @@ namespace moppe {
       dl.push ();
       dl.translate (wx, y, wz);
       if (p.along_x)
-        dl.rotate_deg (p.dir > 0 ? 90 : -90, 0, 1, 0);
+        dl.rotate ((p.dir > 0 ? 90 : -90) * u::deg, 0, 1, 0);
       else if (p.dir < 0)
-        dl.rotate_deg (180, 0, 1, 0);
+        dl.rotate (180 * u::deg, 0, 1, 0);
       dl.scale (p.size, p.size, p.size);
 
       draw_person_body (dl, p, 30.0f * std::sin (time * 6.5f + p.phase));
@@ -1234,8 +1234,8 @@ namespace moppe {
 
       dl.push ();
       dl.translate (cx + std::cos (a) * r, alt, cz + std::sin (a) * r);
-      dl.rotate_deg (-a * 57.2958f, 0, 1, 0);
-      dl.rotate_deg (-15, 0, 0, 1); // bank into the turn
+      dl.rotate (-a * u::rad, 0, 1, 0);
+      dl.rotate (-15 * u::deg, 0, 0, 1); // bank into the turn
       dl.scale (1.6f, 1.6f, 1.6f);
       draw_plane (dl);
       dl.pop ();

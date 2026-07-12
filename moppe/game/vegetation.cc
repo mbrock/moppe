@@ -180,7 +180,7 @@ namespace moppe {
       // up.
       void trunk (render::DrawList& dl, float base, float height, int slices) {
         dl.push ();
-        dl.rotate_deg (-90, 1, 0, 0);
+        dl.rotate (-90 * u::deg, 1, 0, 0);
         dl.cone (base, height, slices, 1);
         dl.pop ();
       }
@@ -211,8 +211,8 @@ namespace moppe {
 
         dl.color (0.32f + 0.08f * p.tint, 0.22f + 0.05f * p.tint, 0.12f);
         dl.push ();
-        dl.rotate_deg (r.range (-4, 4), 1, 0, 0);
-        dl.rotate_deg (r.range (-4, 4), 0, 0, 1);
+        dl.rotate (r.range (-4, 4) * u::deg, 1, 0, 0);
+        dl.rotate (r.range (-4, 4) * u::deg, 0, 0, 1);
         trunk (dl, 0.26f, 3.8f, 7);
         dl.pop ();
 
@@ -248,7 +248,7 @@ namespace moppe {
           dl.wind (0.03f + 0.035f * i);
           dl.push ();
           dl.translate (0, 0.85f + 1.05f * i, 0);
-          dl.rotate_deg (-90, 1, 0, 0);
+          dl.rotate (-90 * u::deg, 1, 0, 0);
           dl.cone (1.35f - 0.34f * i, 2.1f - 0.25f * i, 8, 1);
           dl.pop ();
         }
@@ -266,8 +266,8 @@ namespace moppe {
         dl.scale (p.s, p.s, p.s);
 
         dl.push ();
-        dl.rotate_deg (r.range (-6, 6), 1, 0, 0);
-        dl.rotate_deg (r.range (-6, 6), 0, 0, 1);
+        dl.rotate (r.range (-6, 6) * u::deg, 1, 0, 0);
+        dl.rotate (r.range (-6, 6) * u::deg, 0, 0, 1);
         dl.color (0.86f, 0.86f, 0.81f);
         trunk (dl, 0.13f, 4.4f, 6);
         if (!lean) {
@@ -605,7 +605,7 @@ namespace moppe {
       m_lean = world.pico_mode;
       m_periodic = map.periodic ();
       m_map = &map;
-      m_water = world.water_level;
+      m_water = meters_value (world.water_level);
       m_height = world.map_size.y;
     }
 
@@ -630,7 +630,7 @@ namespace moppe {
       m_plants.reserve (trees + bushes + max_tufts + max_flowers + reed_count);
 
       const float H = world.map_size.y;
-      const float water = world.water_level;
+      const float water = meters_value (world.water_level);
 
       // Grove centers first: most trees cluster into woods with
       // clearings between them, instead of an even sprinkle.

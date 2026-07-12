@@ -60,8 +60,9 @@ namespace moppe {
       params.height = map.height ();
       params.scale = m_scale;
       params.height_scale = world.map_size.y;
-      params.sea_level_norm = world.water_level / world.map_size.y;
-      params.tex_scale = 0.5f * one_meter / m_scale.x;
+      params.sea_level_norm =
+        meters_value (world.water_level) / world.map_size.y;
+      params.tex_scale = 0.5f / m_scale.x;
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
                                    !graphics.terrain_shadows
                                  ? 0.0f

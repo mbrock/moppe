@@ -66,8 +66,8 @@ namespace moppe {
       m_normal_dirty = m_world_normal_dirty = true;
     }
 
-    void DrawList::rotate_deg (degrees_t angle, float ax, float ay, float az) {
-      rotate (degrees_to_radians (angle), Vector3D (ax, ay, az));
+    void DrawList::rotate (radians_t angle, float ax, float ay, float az) {
+      rotate (angle, Vector3D (ax, ay, az));
     }
 
     void DrawList::scale (const Vector3D& v) {
