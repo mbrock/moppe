@@ -127,7 +127,7 @@ namespace moppe::terrain {
                              recipe.mountains.octaves,
                              recipe.mountains.lacunarity,
                              recipe.mountains.gain);
-    const DimensionlessField mountain_mask =
+    const ProportionField mountain_mask =
       smoothstep (recipe.blend.mask_low, recipe.blend.mask_high, continent);
 
     const DimensionlessField lowland =

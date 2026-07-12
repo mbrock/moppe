@@ -34,7 +34,7 @@ namespace moppe {
         float susp_v {};
         float wheel_spin {};
         bool boost_flight {};
-        magnitude_t thrust {};
+        gain_t thrust {};
         float boost_input {};
         float boost_drive {};
         float boost_level {};
@@ -64,11 +64,13 @@ namespace moppe {
       State state () const;
       void restore (const State& state);
 
-      void set_thrust (magnitude_t thrust) {
+      // The throttle is a gain: a normalized command in [-1, 1] that
+      // amplifies the engine's force capability.
+      void set_thrust (gain_t thrust) {
         m_thrust = thrust;
       }
 
-      magnitude_t thrust () const {
+      gain_t thrust () const {
         return m_thrust;
       }
 
@@ -80,7 +82,7 @@ namespace moppe {
         m_yaw_target += radians_t (degrees);
       }
 
-      void increase_thrust (magnitude_t dv) {
+      void increase_thrust (gain_t dv) {
         m_thrust += dv;
       }
 
@@ -258,7 +260,7 @@ namespace moppe {
 
       const newtons_t m_max_thrust;
       const watts_t m_power;
-      magnitude_t m_thrust; // throttle in [-1, 1]
+      gain_t m_thrust; // throttle command in [-1, 1]
       kilograms_t m_mass;
 
       float m_boost_input;

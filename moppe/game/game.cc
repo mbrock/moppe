@@ -861,7 +861,11 @@ namespace moppe {
         // nozzles while the jets burn, arcing down and dying fast.
         if (driving && av.boost_level () > 0.05f) {
           std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-          if (chance (m_fx_rng) < 34.0f * av.boost_level () * dt) {
+          // Poisson emission: an event rate scaled by the jet level,
+          // integrated over the frame into a probability.
+          const probability_t spark (34.0f / u::s * av.boost_level () *
+                                     (dt * u::s));
+          if (chance (m_fx_rng) < scalar_value (spark)) {
             Dust::Style ember;
             ember.size = 0.15f;
             ember.life = 0.45f;
@@ -881,7 +885,8 @@ namespace moppe {
         // while the throttle is open.
         if (driving && abs (av.thrust ()) > 0.3f && m_mode == M_BIKE) {
           std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-          if (chance (m_fx_rng) < 14.0f * dt) {
+          const probability_t puff (14.0f / u::s * (dt * u::s));
+          if (chance (m_fx_rng) < scalar_value (puff)) {
             Dust::Style smoke;
             smoke.size = 0.35f;
             smoke.life = 0.8f;
@@ -1011,7 +1016,7 @@ namespace moppe {
 
         m_dust.update (dt);
         m_shake_time += dt;
-        m_shake *= std::exp (-7.0f * dt);
+        m_shake *= decay (7.0f / u::s, dt * u::s);
 
         if (m_cam_mode == CAM_HELMET) {
           // Ride inside the rider's head; lightly smoothed so
@@ -1027,8 +1032,8 @@ namespace moppe {
                   av.orientation () * (0.4f / m_landscape_scale_x);
             look = av.orientation ();
           }
-          m_fp_eye =
-            m_fp_eye + (eye - m_fp_eye) * (1.0f - std::exp (-25.0f * dt));
+          m_fp_eye = m_fp_eye + (eye - m_fp_eye) *
+                                  smoothing_alpha (25.0f / u::s, dt * u::s);
           m_camera.place (m_fp_eye, m_fp_eye + look * 10.0f);
         } else {
           m_camera.set_landscape_scale (m_landscape_scale_x,
@@ -1057,7 +1062,7 @@ namespace moppe {
           const float kmh = driving ? av.velocity ().length () * 3.6f : 0.0f;
           const float k =
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
-          m_fov_k += (k - m_fov_k) * (1.0f - std::exp (-5.0f * dt));
+          m_fov_k += (k - m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
         }
 
         if (m_benchmark) {
@@ -1624,7 +1629,7 @@ namespace moppe {
         m_loading_progress_time = sky_time;
         m_loading_progress_display +=
           (target_progress - m_loading_progress_display) *
-          (1.0f - std::exp (-7.0f * frame_dt));
+          smoothing_alpha (7.0f / u::s, frame_dt * u::s);
 
         // A quiet cinematic instrument: the full ring is possibility, the
         // luminous arc is the real eased world-generation progress.

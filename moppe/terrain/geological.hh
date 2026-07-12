@@ -80,7 +80,7 @@ namespace moppe::terrain {
     DimensionlessField continent;
     DimensionlessField plains;
     DimensionlessField mountains;
-    DimensionlessField mountain_mask;
+    ProportionField mountain_mask;
     DimensionlessField combined;
   };
 
