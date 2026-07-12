@@ -102,10 +102,13 @@ endif()
 
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(atelier MACOSX_BUNDLE EXCLUDE_FROM_ALL
-    atelier/atelier.mm
+    atelier/atelier.cc
+    atelier/atelier_mac.mm
   )
   set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
-  target_compile_options(atelier PRIVATE -fobjc-arc)
+  target_include_directories(atelier PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(atelier PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_libraries(atelier PRIVATE
     mp-units::mp-units
     "-framework Cocoa"
