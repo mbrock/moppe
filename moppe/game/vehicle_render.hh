@@ -18,7 +18,8 @@ namespace moppe {
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const mov::Vehicle& v,
-                         float time);
+                         float time,
+                         float visual_scale = 1.0f);
 
     // The exhaust lick and jump-jet plumes: baked unit cones replayed
     // with breathing scale matrices.  Additive glow must blend over the
@@ -27,7 +28,8 @@ namespace moppe {
     // draw time.
     void render_vehicle_flames (render::Renderer& r,
                                 const mov::Vehicle& v,
-                                float time);
+                                float time,
+                                float visual_scale = 1.0f);
   }
 }
 

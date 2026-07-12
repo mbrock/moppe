@@ -251,7 +251,7 @@ namespace moppe {
 
       // The vehicle's model-to-world matrix, shared by render_vehicle's
       // matrix stack and the late flame pass so the two cannot drift.
-      Mat4 vehicle_frame (const mov::Vehicle& v) {
+      Mat4 vehicle_frame (const mov::Vehicle& v, float visual_scale) {
         const Vector3D pos = v.position ();
         const Vector3D fwd = v.render_orientation ().normalized ();
         const Vector3D right = v.render_normal ().cross (fwd).normalized ();
@@ -265,7 +265,9 @@ namespace moppe {
                Mat4::basis (right, up, fwd) *
                Mat4::rotation (v.lean (), Vector3D (0, 0, 1)) *
                Mat4::translation (Vector3D (0, 0.5f, 0)) *
-               Mat4::scaling (Vector3D (1.5f, 1.5f, 1.5f));
+               Mat4::scaling (Vector3D (1.5f * visual_scale,
+                                        1.5f * visual_scale,
+                                        1.5f * visual_scale));
       }
     }
 
@@ -342,9 +344,10 @@ namespace moppe {
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const mov::Vehicle& v,
-                         float time) {
+                         float time,
+                         float visual_scale) {
       dl.push ();
-      dl.mult (vehicle_frame (v));
+      dl.mult (vehicle_frame (v, visual_scale));
 
       if (v.body_kind () != 0) {
         render_car (dl, v, time);
@@ -429,7 +432,8 @@ namespace moppe {
     // same reason the star halos draw last.
     void render_vehicle_flames (render::Renderer& r,
                                 const mov::Vehicle& v,
-                                float time) {
+                                float time,
+                                float visual_scale) {
       const bool bike = (v.body_kind () == 0);
       const float thrust = std::abs (v.thrust ());
       const bool exhaust = bike && thrust > 0.1f;
@@ -438,7 +442,7 @@ namespace moppe {
         return;
 
       const FlameMeshes& fm = flame_meshes (r);
-      const Mat4 frame = vehicle_frame (v);
+      const Mat4 frame = vehicle_frame (v, visual_scale);
       const Vector3D x_axis (1, 0, 0), y_axis (0, 1, 0);
 
       // Exhaust flame licking out of the muffler under load: an
