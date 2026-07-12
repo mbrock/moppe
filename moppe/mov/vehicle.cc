@@ -250,21 +250,21 @@ namespace moppe {
       // Knobby-tire baseline: the bike tracks where it points unless
       // you deliberately break traction with hard steering at speed
       // or a brake-slide (the old 3.0 base read as riding on a dream)
-      float grip = 4.5f - 3.0f * steer_amt * speed_amt;
+      damping_t grip = (4.5f - 3.0f * steer_amt * speed_amt) / u::s;
 
       if (m_thrust < -0.1f && vf > 3.0f)
-        grip = std::min (grip, 0.8f); // brake-slide
+        grip = std::min (grip, 0.8f / u::s); // brake-slide
       if (lat.length2 () > 16.0f)
-        grip = std::min (grip, 2.0f); // mid-drift hysteresis
+        grip = std::min (grip, 2.0f / u::s); // mid-drift hysteresis
 
-      m_velocity = fwd * vf + vn + lat * std::exp (-grip * dt_s);
+      m_velocity = fwd * vf + vn + lat * decay (grip, dt);
     }
 
     void Vehicle::update (seconds_t dt) {
       const float dt_s = seconds_value (dt);
       // Steering input ramps in rather than snapping: smooth onset
       // for the heading, the grip model, and the fork visual at once
-      m_yaw += (m_yaw_target - m_yaw) * (1.0f - std::exp (-9.0f * dt_s));
+      m_yaw += (m_yaw_target - m_yaw) * smoothing_alpha (9.0f / u::s, dt);
 
       steer (dt);
       calculate_orientation ();
@@ -354,7 +354,7 @@ namespace moppe {
 
       // Wading through the ocean is slow going
       if (m_position.y - radius < m_water_level)
-        m_velocity *= std::exp (-1.4f * dt_s);
+        m_velocity *= decay (1.4f / u::s, dt);
 
       m_position += m_velocity * dt_s;
 
@@ -394,7 +394,7 @@ namespace moppe {
           target = std::atan2 (vf * radians_value (-m_yaw) * rate, 9.82f);
           target = std::max (-0.7f, std::min (0.7f, target));
         }
-        m_lean += (target - m_lean) * (1.0f - std::exp (-8.0f * dt_s));
+        m_lean += (target - m_lean) * smoothing_alpha (8.0f / u::s, dt);
       }
 
       // Visual attitude is separate from the steering heading. In flight the
@@ -403,7 +403,7 @@ namespace moppe {
       // previous right axis so the bike cannot arbitrarily roll over.
       Vector3D pose_forward = m_heading;
       Vector3D pose_up = ground_normal ();
-      float pose_rate = 10.0f;
+      damping_t pose_rate = 10.0f / u::s;
       if (airborne () && m_velocity.length2 () > 4.0f) {
         pose_forward = m_velocity.normalized ();
         Vector3D right = Vector3D (0, 1, 0).cross (pose_forward);
@@ -413,10 +413,10 @@ namespace moppe {
           right = Vector3D (1, 0, 0);
         right.normalize ();
         pose_up = pose_forward.cross (right);
-        pose_rate = 4.5f;
+        pose_rate = 4.5f / u::s;
       }
 
-      const float pose_alpha = 1.0f - std::exp (-pose_rate * dt_s);
+      const float pose_alpha = smoothing_alpha (pose_rate, dt);
       m_render_heading =
         linear_vector_interpolate (m_render_heading, pose_forward, pose_alpha);
       m_render_normal =

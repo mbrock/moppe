@@ -6,17 +6,20 @@
 namespace moppe {
   namespace game {
     namespace {
+      // damping_ratio is the dimensionless zeta of the second-order
+      // system, not a rate: 1 is critical, below rings, above crawls.
       void spring (Vector3D& value,
                    Vector3D& velocity,
                    const Vector3D& target,
-                   float frequency,
-                   float damping,
-                   float dt) {
-        const float omega = 2.0f * PI * frequency;
+                   frequency_t frequency,
+                   float damping_ratio,
+                   seconds_t dt) {
+        const float omega = PI2 * frequency.numerical_value_in (u::Hz);
+        const float dt_s = seconds_value (dt);
         const Vector3D acceleration = (target - value) * (omega * omega) -
-                                      velocity * (2.0f * damping * omega);
-        velocity += acceleration * dt;
-        value += velocity * dt;
+                                      velocity * (2.0f * damping_ratio * omega);
+        velocity += acceleration * dt_s;
+        value += velocity * dt_s;
       }
     }
 
@@ -24,10 +27,9 @@ namespace moppe {
                               const Vector3D& orientation,
                               const Vector3D& velocity,
                               seconds_t dt) {
-      const float dt_s = seconds_value (dt);
       // dt-correct smoothing (3.1/s reproduces the old 0.05 @ 60Hz)
-      float alpha = 1.0f - std::exp (-3.1f * dt_s);
-      float fast = 1.0f - std::exp (-12.0f * dt_s);
+      float alpha = smoothing_alpha (3.1f / u::s, dt);
+      float fast = smoothing_alpha (12.0f / u::s, dt);
 
       const bool reset = m_is_uninitialized;
       if (reset) {
@@ -74,15 +76,20 @@ namespace moppe {
         // The target remains responsive while the camera body has a
         // lightly underdamped follow spring: enough inertia to feel
         // physical through turns and jumps without becoming seasick.
-        spring (m_target, m_target_velocity, want_target, 2.4f, 0.92f, dt_s);
         spring (
-          m_position, m_position_velocity, want_position, 0.95f, 0.74f, dt_s);
+          m_target, m_target_velocity, want_target, 2.4f * u::Hz, 0.92f, dt);
+        spring (m_position,
+                m_position_velocity,
+                want_position,
+                0.95f * u::Hz,
+                0.74f,
+                dt);
       }
 
       // Clamp the HORIZONTAL trail only, against a smoothed speed so
       // collisions can't shrink the window in one frame.
       m_speed +=
-        (velocity.length () - m_speed) * (1.0f - std::exp (-6.0f * dt_s));
+        (velocity.length () - m_speed) * smoothing_alpha (6.0f / u::s, dt);
 
       Vector3D offset = m_position - position;
       const float horiz = std::sqrt (offset.x * offset.x + offset.z * offset.z);

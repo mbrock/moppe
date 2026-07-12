@@ -232,9 +232,9 @@ namespace moppe::terrain {
     return DimensionlessField (sin (operand.untyped ()));
   }
 
-  DimensionlessField
+  ProportionField
   smoothstep (float edge0, float edge1, const DimensionlessField& operand) {
-    return DimensionlessField (smoothstep (edge0, edge1, operand.untyped ()));
+    return ProportionField (smoothstep (edge0, edge1, operand.untyped ()));
   }
 
   DimensionlessField perlin_noise (std::uint32_t seed,

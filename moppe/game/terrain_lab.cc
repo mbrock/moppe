@@ -2351,7 +2351,8 @@ namespace moppe {
           const Vector3D lead =
             droplet_world_position (std::min (last, m_droplet_progress + 6.0f));
           const Vector3D desired = bead + (lead - bead) * 0.45f;
-          const float follow_response = 1.0f - std::exp (-dt * 2.6f);
+          const float follow_response =
+            smoothing_alpha (2.6f / u::s, dt * u::s);
           m_target += (desired - m_target) * follow_response;
           m_scroll_zoom_target = std::min (m_scroll_zoom_target, 650.0f);
           const float clear_pitch = visible_droplet_pitch (bead);
@@ -2377,8 +2378,8 @@ namespace moppe {
       m_scroll_zoom_target *= std::exp (zoom * dt * 1.1f);
       m_scroll_zoom_target =
         std::clamp (m_scroll_zoom_target, 500.0f, 16000.0f);
-      const float zoom_speed = m_droplet_follow ? 2.2f : 14.0f;
-      const float zoom_response = 1.0f - std::exp (-dt * zoom_speed);
+      const damping_t zoom_speed = (m_droplet_follow ? 2.2f : 14.0f) / u::s;
+      const float zoom_response = smoothing_alpha (zoom_speed, dt * u::s);
       m_distance += (m_scroll_zoom_target - m_distance) * zoom_response;
     }
 

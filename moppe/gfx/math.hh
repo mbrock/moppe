@@ -1,6 +1,8 @@
 #ifndef MOPPE_MATH_HH
 #define MOPPE_MATH_HH
 
+#include <moppe/quantities.hh>
+
 #include <mp-units/framework.h>
 #include <mp-units/math.h>
 #include <mp-units/systems/isq.h>
@@ -31,6 +33,18 @@ namespace moppe {
   using watts_t = quantity<si::watt, float>;
   using kilograms_t = quantity<si::kilogram, float>;
 
+  // Dimension-one kinds from moppe/quantities.hh.
+  using proportion_t = quantity<proportion[one], float>;
+  using probability_t = quantity<probability[one], float>;
+  using gain_t = quantity<gain[one], float>;
+
+  // The inverse time constant of exponential decay (ISQ calls the
+  // quantity a damping coefficient).  Every 1 - exp (-k * dt)
+  // smoothing constant in the codebase is one of these; spelled
+  // 3.1f / u::s at definition sites.
+  using damping_t = quantity<one / si::second, float>;
+  using frequency_t = quantity<si::hertz, float>;
+
   inline constexpr meters_t one_meter = 1.0f * si::metre;
 
   inline seconds_t seconds (float value) {
@@ -53,6 +67,21 @@ namespace moppe {
   }
   inline float newtons_value (newtons_t q) {
     return q.numerical_value_in (si::newton);
+  }
+
+  // Frame-rate-independent exponential decay: the surviving
+  // proportion of a quantity after dt at decay rate k.  Returns the
+  // plain float weight that the unit-blind vector lerps consume; the
+  // typed rate is the point, making the exponent's dimensionlessness
+  // (frame-rate independence) a compile-time fact.
+  inline float decay (damping_t k, seconds_t dt) {
+    return std::exp (-scalar_value (k * dt));
+  }
+
+  // The complementary smoothing weight: how far toward a target a
+  // low-pass filter moves during dt when it converges at rate k.
+  inline float smoothing_alpha (damping_t k, seconds_t dt) {
+    return 1.0f - decay (k, dt);
   }
 
   // Trig on typed angles.  Degrees convert implicitly at the call

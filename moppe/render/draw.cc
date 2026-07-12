@@ -119,8 +119,8 @@ namespace moppe {
     void DrawList::fogged (bool on) {
       m_fogged = on;
     }
-    void DrawList::wind (float w) {
-      m_wind = Color::quantize (w);
+    void DrawList::wind (proportion_t w) {
+      m_wind = Color::quantize (scalar_value (w));
     }
     void DrawList::grass (bool on) {
       m_grass = on;

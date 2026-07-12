@@ -1,6 +1,8 @@
 #ifndef MOPPE_TERRAIN_FIELD_HH
 #define MOPPE_TERRAIN_FIELD_HH
 
+#include <moppe/quantities.hh>
+
 #include <mp-units/framework.h>
 
 #include <cstddef>
@@ -210,6 +212,23 @@ namespace moppe::terrain {
   concept FieldSpec =
     mp_units::QuantitySpec<std::remove_const_t<decltype (QS)>>;
 
+  namespace detail {
+    // The kind algebra of field products.  A proportion (a mask or
+    // blend weight) acts as an operator: weighting a quantity does
+    // not change what kind of quantity it is.  Everything else
+    // multiplies through the mp-units quantity-spec algebra, where
+    // plain dimensionless is the identity.
+    template <auto QS1, auto QS2>
+    consteval auto field_product () {
+      if constexpr (QS1 == moppe::proportion)
+        return QS2;
+      else if constexpr (QS2 == moppe::proportion)
+        return QS1;
+      else
+        return QS1 * QS2;
+    }
+  }
+
   template <auto QS = mp_units::dimensionless>
     requires FieldSpec<QS>
   class Field {
@@ -235,6 +254,7 @@ namespace moppe::terrain {
 
   using DimensionlessField = Field<mp_units::dimensionless>;
   using CoordinateField = Field<recipe_coordinate>;
+  using ProportionField = Field<moppe::proportion>;
 
   // Reinterpret a field as another kind of quantity.  This is the
   // recipe analogue of an explicit quantity cast: crossing between
@@ -256,10 +276,13 @@ namespace moppe::terrain {
     return Field<QS> (left.untyped () - right.untyped ());
   }
 
-  // Multiplication combines quantity specs, exactly like quantities.
+  // Multiplication combines quantity specs like quantities do, except
+  // that proportions weight without changing the other operand's kind.
   template <auto QS1, auto QS2>
-  Field<QS1 * QS2> operator* (const Field<QS1>& left, const Field<QS2>& right) {
-    return Field<QS1 * QS2> (left.untyped () * right.untyped ());
+  Field<detail::field_product<QS1, QS2> ()>
+  operator* (const Field<QS1>& left, const Field<QS2>& right) {
+    return Field<detail::field_product<QS1, QS2> ()> (left.untyped () *
+                                                      right.untyped ());
   }
 
   // Bare numbers scale or offset a field within its own kind.
@@ -301,15 +324,19 @@ namespace moppe::terrain {
   CoordinateField coordinate_v ();
 
   DimensionlessField sin (const DimensionlessField& operand);
-  DimensionlessField
+
+  // A smoothstep is a soft threshold: whatever it reads, it emits a
+  // blend weight.
+  ProportionField
   smoothstep (float edge0, float edge1, const DimensionlessField& operand);
 
   // Fused multiply-add keeps the spec algebra of a * b + c.
   template <auto QS1, auto QS2>
-  Field<QS1 * QS2> multiply_add (const Field<QS1>& multiplier,
-                                 const Field<QS2>& multiplicand,
-                                 const Field<QS1 * QS2>& addend) {
-    return Field<QS1 * QS2> (multiply_add (
+  Field<detail::field_product<QS1, QS2> ()>
+  multiply_add (const Field<QS1>& multiplier,
+                const Field<QS2>& multiplicand,
+                const Field<detail::field_product<QS1, QS2> ()>& addend) {
+    return Field<detail::field_product<QS1, QS2> ()> (multiply_add (
       multiplier.untyped (), multiplicand.untyped (), addend.untyped ()));
   }
 

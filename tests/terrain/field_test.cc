@@ -38,6 +38,25 @@ namespace {
                                         std::declval<DimensionlessField> ()),
                               CoordinateField>);
 
+  // Proportions are operators, not factors: weighting a field of any
+  // kind leaves its kind alone, the complement of a weight is a
+  // weight, and a weight of a weight is a weight.
+  static_assert (std::same_as<decltype (std::declval<DimensionlessField> () *
+                                        std::declval<ProportionField> ()),
+                              DimensionlessField>);
+  static_assert (std::same_as<decltype (std::declval<CoordinateField> () *
+                                        std::declval<ProportionField> ()),
+                              CoordinateField>);
+  static_assert (
+    std::same_as<decltype (1.0f - std::declval<ProportionField> ()),
+                 ProportionField>);
+  static_assert (std::same_as<decltype (std::declval<ProportionField> () *
+                                        std::declval<ProportionField> ()),
+                              ProportionField>);
+
+  // But a weight still cannot be *added* to what it weights.
+  static_assert (!addable<DimensionlessField, ProportionField>);
+
   // Noise demands coordinates, not arbitrary samples.
   static_assert (!noise_coordinate<DimensionlessField>);
   static_assert (noise_coordinate<CoordinateField>);
