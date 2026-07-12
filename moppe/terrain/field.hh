@@ -194,21 +194,21 @@ namespace moppe::terrain {
   // are counted once.
   std::size_t unique_node_count (const ScalarField& field);
 
-  // --- typed recipe fields -------------------------------------------
+  // --- typed field expressions ---------------------------------------
   //
   // The DAG above is deliberately untyped: evaluators lower it to
   // float programs.  Field<QS> layers an mp-units quantity spec over a
-  // ScalarField as a phantom type, so recipes compose dimensionally
-  // even though every sample is still a plain float.  The recipe
-  // domain is scale-free until materialization, so its quantities are
+  // ScalarField as a phantom type, so expressions compose dimensionally
+  // even though every sample is still a plain float.  The field is
+  // scale-free until materialization, so its quantities are
   // dimensionless -- but they are not interchangeable, and distinct
   // dimensionless *kinds* keep them apart at compile time.
 
   // A position along one axis of the normalized sampling domain
-  // (0..1 across the recipe world, cycles once multiplied into a
+  // (0..1 across the procedural field, cycles once multiplied into a
   // noise lattice).  Not a height, not a weight: adding a mask to a
   // coordinate is a bug the compiler now rejects.
-  QUANTITY_SPEC (recipe_coordinate, mp_units::dimensionless, mp_units::is_kind);
+  QUANTITY_SPEC (field_coordinate, mp_units::dimensionless, mp_units::is_kind);
   QUANTITY_SPEC (relative_elevation,
                  mp_units::dimensionless,
                  mp_units::is_kind);
@@ -270,13 +270,13 @@ namespace moppe::terrain {
   };
 
   using DimensionlessField = Field<mp_units::dimensionless>;
-  using CoordinateField = Field<recipe_coordinate>;
+  using CoordinateField = Field<field_coordinate>;
   using NoiseField = Field<moppe::noise_signal>;
   using ProportionField = Field<moppe::proportion>;
   using RelativeElevationField = Field<relative_elevation>;
 
   // Reinterpret a field as another kind of quantity.  This is the
-  // recipe analogue of an explicit quantity cast: crossing between
+  // field analogue of an explicit quantity cast: crossing between
   // kinds (noise becoming a coordinate displacement, a mask becoming
   // a height) must be visible at the crossing.
   template <auto To, auto From>

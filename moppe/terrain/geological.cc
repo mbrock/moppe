@@ -91,7 +91,7 @@ namespace moppe::terrain {
     // noise; declaring it with the coordinate kind is what lets the
     // pure-number warp noise land back in coordinate space.
     const CoordinateField warp_amplitude =
-      constant<recipe_coordinate> (recipe.warp.amplitude);
+      constant<field_coordinate> (recipe.warp.amplitude);
     const CoordinateField warped_x = multiply_add (warp_amplitude, warp_x, u);
     const CoordinateField warped_y = multiply_add (warp_amplitude, warp_y, v);
 

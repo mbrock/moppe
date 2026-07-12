@@ -251,7 +251,7 @@ namespace moppe {
                                   const terrain::FieldEvaluator& evaluator) {
       const terrain::TerrainDiscretization sampling = discretization ();
       const terrain::ScalarRaster raster =
-        evaluator.evaluate (field, sampling.recipe_domain ());
+        evaluator.evaluate (field, sampling.field_sampling_grid ());
 
       std::copy (
         raster.values ().begin (), raster.values ().end (), m_data.raw ());

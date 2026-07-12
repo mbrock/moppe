@@ -102,7 +102,7 @@ namespace moppe::terrain {
     return grid_point (column_index (column), row_index (row));
   }
 
-  struct RecipeDomain2D {
+  struct FieldSamplingGrid2D {
     std::size_t width;
     std::size_t height;
     float min_x = 0.0f;
@@ -110,8 +110,8 @@ namespace moppe::terrain {
     float min_y = 0.0f;
     float max_y = 1.0f;
 
-    friend bool operator== (const RecipeDomain2D&,
-                            const RecipeDomain2D&) = default;
+    friend bool operator== (const FieldSamplingGrid2D&,
+                            const FieldSamplingGrid2D&) = default;
   };
 
   struct TerrainGrid {
@@ -175,9 +175,9 @@ namespace moppe::terrain {
     }
   };
 
-  struct RecipePosition2D {
-    mp_units::quantity<recipe_coordinate[mp_units::one], float> u;
-    mp_units::quantity<recipe_coordinate[mp_units::one], float> v;
+  struct FieldCoordinate2D {
+    mp_units::quantity<field_coordinate[mp_units::one], float> u;
+    mp_units::quantity<field_coordinate[mp_units::one], float> v;
   };
 
   struct HorizontalPosition2D {
@@ -185,21 +185,22 @@ namespace moppe::terrain {
     meters_t z;
   };
 
-  // Connects the mathematical recipe domain to one concrete physical
-  // sampling lattice.  The present terrain stores values at grid points;
+  // Connects a mathematical field-sampling grid to one concrete physical
+  // terrain lattice.  The present terrain stores values at grid points;
   // cell-centre and cell-average materializations can become additional
   // conventions without changing either coordinate space.
   class TerrainDiscretization {
   public:
-    TerrainDiscretization (RecipeDomain2D recipe_domain, TerrainGrid grid)
-        : m_recipe_domain (recipe_domain), m_grid (grid) {
-      if (recipe_domain.width != grid.width ||
-          recipe_domain.height != grid.height)
+    TerrainDiscretization (FieldSamplingGrid2D field_sampling_grid,
+                           TerrainGrid grid)
+        : m_field_sampling_grid (field_sampling_grid), m_grid (grid) {
+      if (field_sampling_grid.width != grid.width ||
+          field_sampling_grid.height != grid.height)
         throw std::invalid_argument (
-          "recipe domain and terrain grid extents differ");
+          "field-sampling and terrain grid extents differ");
       if (grid.width < 2 || grid.height < 2 ||
-          recipe_domain.max_x <= recipe_domain.min_x ||
-          recipe_domain.max_y <= recipe_domain.min_y ||
+          field_sampling_grid.max_x <= field_sampling_grid.min_x ||
+          field_sampling_grid.max_y <= field_sampling_grid.min_y ||
           grid.spacing_x <= 0.0f * mp_units::si::metre ||
           grid.spacing_y <= 0.0f * mp_units::si::metre ||
           grid.height_scale <= 0.0f * mp_units::si::metre)
@@ -210,25 +211,25 @@ namespace moppe::terrain {
           "periodic terrain needs a duplicated seam");
     }
 
-    const RecipeDomain2D& recipe_domain () const noexcept {
-      return m_recipe_domain;
+    const FieldSamplingGrid2D& field_sampling_grid () const noexcept {
+      return m_field_sampling_grid;
     }
 
     const TerrainGrid& grid () const noexcept {
       return m_grid;
     }
 
-    RecipePosition2D recipe_position (GridPointIndex index) const {
+    FieldCoordinate2D field_position (GridPointIndex index) const {
       const auto [x, y] = coordinates (index);
-      const float u = std::lerp (m_recipe_domain.min_x,
-                                 m_recipe_domain.max_x,
+      const float u = std::lerp (m_field_sampling_grid.min_x,
+                                 m_field_sampling_grid.max_x,
                                  static_cast<float> (x) /
                                    static_cast<float> (m_grid.width - 1));
-      const float v = std::lerp (m_recipe_domain.min_y,
-                                 m_recipe_domain.max_y,
+      const float v = std::lerp (m_field_sampling_grid.min_y,
+                                 m_field_sampling_grid.max_y,
                                  static_cast<float> (y) /
                                    static_cast<float> (m_grid.height - 1));
-      return { .u = recipe_coordinate (u), .v = recipe_coordinate (v) };
+      return { .u = field_coordinate (u), .v = field_coordinate (v) };
     }
 
     HorizontalPosition2D physical_position (GridPointIndex index) const {
@@ -251,7 +252,7 @@ namespace moppe::terrain {
       return m_grid.coordinates (index);
     }
 
-    RecipeDomain2D m_recipe_domain;
+    FieldSamplingGrid2D m_field_sampling_grid;
     TerrainGrid m_grid;
   };
 }

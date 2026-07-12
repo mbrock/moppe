@@ -9,8 +9,8 @@
 #include <stdexcept>
 
 namespace moppe::terrain {
-  // A borrowed, materialized terrain. Unlike RecipeDomain2D, this carries the
-  // physical scale and topology needed by neighborhood and global analyses.
+  // A borrowed, materialized terrain. Unlike FieldSamplingGrid2D, this carries
+  // the physical scale and topology needed by neighborhood and global analyses.
   class TerrainView {
   public:
     TerrainView (TerrainGrid grid, std::span<const float> heights)

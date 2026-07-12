@@ -49,7 +49,7 @@ namespace moppe::terrain {
                             const ScalarRaster& raster,
                             float black,
                             float white) {
-    const RecipeDomain2D& domain = raster.domain ();
+    const FieldSamplingGrid2D& domain = raster.domain ();
     if (domain.width > std::numeric_limits<std::uint32_t>::max () ||
         domain.height > std::numeric_limits<std::uint32_t>::max ())
       throw std::invalid_argument ("PNG dimensions exceed 32-bit limits");

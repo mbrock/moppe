@@ -22,7 +22,7 @@ namespace moppe::terrain::metal {
     MetalEvaluator& operator= (const MetalEvaluator&) = delete;
 
     ScalarRaster evaluate (const ScalarField& field,
-                           const RecipeDomain2D& domain) const override;
+                           const FieldSamplingGrid2D& domain) const override;
 
     std::size_t compiled_pipeline_count () const noexcept;
 

@@ -42,7 +42,7 @@ MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
   };
   const GeologicalFields fields =
     make_geological_fields (derive_geological_seeds (123));
-  const RecipeDomain2D domain { .width = 65, .height = 65 };
+  const FieldSamplingGrid2D domain { .width = 65, .height = 65 };
 
   for (const GoldenLayer& expected : golden) {
     const ScalarRaster raster = normalize (CpuEvaluator ().evaluate (

@@ -14,7 +14,7 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
                            .spacing_x = 10.0f * mp_units::si::metre,
                            .spacing_y = 10.0f * mp_units::si::metre,
                            .height_scale = 100.0f * mp_units::si::metre };
-  const RecipeDomain2D domain { .width = 9, .height = 9 };
+  const FieldSamplingGrid2D domain { .width = 9, .height = 9 };
   std::vector<WaterBodyId> body (count, LakeCensus::dry);
   body[40] = 0;
   const FloodField flood {

@@ -217,7 +217,7 @@ namespace moppe::terrain {
     return visited.size ();
   }
 
-  // --- typed recipe primitives ---------------------------------------
+  // --- typed field primitives ----------------------------------------
 
   CoordinateField coordinate_u () {
     return CoordinateField (coordinate_x ());
