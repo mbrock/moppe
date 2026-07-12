@@ -1,0 +1,81 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+output=${1:-"$root/build-tracy/benchmark"}
+prelude=${MOPPE_BENCHMARK_PRELUDE:-120}
+settle=${MOPPE_BENCHMARK_SETTLE:-5}
+frames=${MOPPE_BENCHMARK_FRAMES:-10}
+seconds=${MOPPE_TRACY_SECONDS:-180}
+seed=${MOPPE_SEED:-123}
+trace="$output/capture.tracy"
+samples="$output/samples.csv"
+
+if ! command -v tracy-capture >/dev/null 2>&1; then
+  echo "tracy-capture is required: brew install tracy" >&2
+  exit 1
+fi
+
+cmake --preset tracy
+cmake --build --preset tracy
+mkdir -p "$output"
+
+cleanup() {
+  if [ -n "${game_pid:-}" ]; then
+    kill "$game_pid" 2>/dev/null || true
+    wait "$game_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
+  "$root/build-tracy/moppe.app/Contents/MacOS/moppe" \
+  --graphics-benchmark "$samples" \
+  --benchmark-prelude "$prelude" \
+  --benchmark-settle "$settle" \
+  --benchmark-frames "$frames" \
+  --windowed --seed "$seed" --terrain-quality fast &
+game_pid=$!
+
+tracy-capture -o "$trace" -f -s "$seconds"
+wait "$game_pid"
+game_pid=
+
+"$root/tools/tracy-import" "$trace" --benchmark-csv "$samples" \
+  --executable "$root/build-tracy/moppe.app/Contents/MacOS/moppe"
+"$root/tools/graphics-benchmark-analyze" "$samples" "$output/analysis"
+
+capture_id=$(shasum -a 256 "$trace" | awk '{print $1}')
+database="$root/build-tracy/traces.duckdb"
+{
+  printf '# Tracy feature-cube correlation\n\n'
+  printf 'Capture: `%s`\n\n' "$capture_id"
+  printf 'Metal encoder spans can overlap on Apple tile GPUs. '
+  printf 'Treat them as correlated intervals, not additive pass costs.\n\n'
+  printf '## Always-present Metal encoder effects\n\n'
+  duckdb -markdown "$database" -c "
+    SELECT name, feature, paired_frames,
+           round(mean_delta_ms, 4) AS mean_delta_ms,
+           round(p95_delta_ms, 4) AS p95_delta_ms
+    FROM benchmark_zone_feature_effects
+    WHERE capture_id='$capture_id' AND domain='gpu'
+      AND name IN ('Scene', 'Present and HUD')
+    ORDER BY abs(mean_delta_ms) DESC;"
+  printf '\n## CPU effects\n\n'
+  duckdb -markdown "$database" -c "
+    SELECT name, feature, paired_frames,
+           round(mean_delta_ms, 5) AS mean_delta_ms,
+           round(p95_delta_ms, 5) AS p95_delta_ms
+    FROM benchmark_zone_feature_effects
+    WHERE capture_id='$capture_id' AND domain='cpu'
+      AND name IN ('MoppeGame::tick', 'MoppeGame::render',
+                   'MetalRenderer::wait_for_inflight_frame',
+                   'MetalRenderer::acquire_drawable',
+                   'MetalRenderer::commit_command_buffer')
+    ORDER BY abs(mean_delta_ms) DESC;"
+} > "$output/tracy-summary.md"
+
+echo "Trace:     $trace"
+echo "Samples:   $samples"
+echo "Analysis:  $output/analysis"
+echo "Tracy SQL: $output/tracy-summary.md"

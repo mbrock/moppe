@@ -67,6 +67,17 @@ Every feature effect pairs the same logical frame across configurations before
 aggregation; every interaction is a difference of differences over one square
 face of the cube.
 
+For a synchronized CPU and Metal trace of the cube, run:
+
+```sh
+make tracy-benchmark-capture
+```
+
+This archives the raw `.tracy` file and benchmark CSV by content hash, imports
+CPU zones, Metal encoder zones, benchmark coordinates, and command-buffer
+samples into `build-tracy/traces.duckdb`, and writes a Tracy correlation
+summary beside the ordinary cube analysis.
+
 Subsystem state structs should remain plain values. When another mutable
 system joins the checkpoint, it should expose `state()` and `restore()` while
 keeping configuration and resource ownership outside the returned value.

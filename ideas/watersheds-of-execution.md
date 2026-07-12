@@ -230,6 +230,13 @@ The original capture remains the ground-truth event stream, while
 capture script performs this import automatically; an existing trace can be
 added with `make tracy-import TRACE=path/to/file.tracy`.
 
+The deterministic graphics cube can be traced with
+`make tracy-benchmark-capture`.  Its mask and logical-frame coordinates travel
+inside the trace, allowing DuckDB to assign every CPU and Metal encoder zone
+to the controlled feature configuration which produced it.  Encoder spans on
+Apple tile GPUs may overlap: they are tributary locations, not volumes which
+can safely be added.
+
 The combined atlas could show:
 
 - static channels colored by observed discharge;
