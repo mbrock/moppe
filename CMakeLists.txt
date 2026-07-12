@@ -116,7 +116,9 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${metal-cpp_SOURCE_DIR})
   target_compile_options(atelier PRIVATE
+    -mmacosx-version-min=26.0
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+  target_link_options(atelier PRIVATE -mmacosx-version-min=26.0)
   target_link_libraries(atelier PRIVATE
     mp-units::mp-units
     "-framework Cocoa"
