@@ -72,9 +72,9 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
   MOPPE_CHECK (text.find ("terrain-shadows=off(not-hot)") != std::string::npos);
 }
 
-MOPPE_TEST (graphics_benchmark_visits_every_hot_mask_in_gray_order) {
-  const int bits = game::hot_graphics_feature_count ();
-  MOPPE_CHECK (bits == 8);
+MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
+  const int bits = game::graphics_benchmark_dimension_count ();
+  MOPPE_CHECK (bits == 5);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
@@ -85,6 +85,29 @@ MOPPE_TEST (graphics_benchmark_visits_every_hot_mask_in_gray_order) {
     previous = mask;
   }
   MOPPE_CHECK (masks.size () == (1u << bits));
+}
+
+MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
+  using Partition = game::RidingGraphicsPartition;
+  constexpr Partition partition;
+  MOPPE_CHECK (equivalent (partition,
+                           game::GraphicsFeatureId::particles,
+                           game::GraphicsFeatureId::lens_flare));
+  MOPPE_CHECK (!equivalent (
+    partition, game::GraphicsFeatureId::grass, game::GraphicsFeatureId::ocean));
+
+  game::GraphicsSettings settings = game::low_graphics_settings ();
+  const uint32_t resolved = game::apply_graphics_benchmark_mask (
+    settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
+  MOPPE_CHECK (resolved == 0b10011100u);
+  MOPPE_CHECK (settings.particles);
+  MOPPE_CHECK (settings.vehicle_effects);
+  MOPPE_CHECK (settings.star_effects);
+  MOPPE_CHECK (settings.lens_flare);
+  MOPPE_CHECK (!settings.grass);
+  MOPPE_CHECK (!settings.ocean);
+  MOPPE_CHECK (!settings.bloom);
+  MOPPE_CHECK (!settings.auto_exposure);
 }
 
 MOPPE_TEST (graphics_benchmark_input_tape_is_repeatable) {

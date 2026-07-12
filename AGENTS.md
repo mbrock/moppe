@@ -22,7 +22,7 @@
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `river`, `confluence`, `mouth`, `waterfall`, and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
-  - Exhaustive hot-feature GPU benchmark:
+  - Partitioned hot-feature GPU benchmark (32 configurations):
     `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
     `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames`.

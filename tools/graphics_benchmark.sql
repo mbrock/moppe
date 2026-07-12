@@ -11,6 +11,13 @@ CREATE OR REPLACE TABLE features(bit, name) AS VALUES
   (6, 'auto-exposure'),
   (7, 'lens-flare');
 
+CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
+  (0, 'grass'),
+  (1, 'ocean'),
+  (2, 'bloom'),
+  (3, 'auto-exposure'),
+  (4, 'small-effects');
+
 CREATE OR REPLACE TABLE configuration_stats AS
 SELECT mask,
        count(*) AS frames,
@@ -26,26 +33,26 @@ SELECT mask,
 FROM samples
 GROUP BY mask;
 
--- Every directed hypercube edge starts at a mask where the selected bit is
--- zero and ends at the otherwise identical mask where it is one. Pair on the
--- logical frame so scene variation cancels before aggregation.
-CREATE OR REPLACE TABLE edge_samples AS
+-- Every directed quotient-cube edge starts at a partition mask where the
+-- selected block is zero and ends at the otherwise identical mask where it is
+-- one. Pair on logical frame so scene variation cancels before aggregation.
+CREATE OR REPLACE TABLE partition_edge_samples AS
 SELECT f.bit,
-       f.name AS feature,
-       off.mask AS context_mask,
+       f.name AS block,
+       off.partition_mask AS context_mask,
        off.logical_frame,
        off.gpu_ms AS off_gpu_ms,
        on_sample.gpu_ms AS on_gpu_ms,
        on_sample.gpu_ms - off.gpu_ms AS delta_gpu_ms
-FROM features f
-JOIN samples off ON (off.mask & (1 << f.bit)) = 0
+FROM partition_blocks f
+JOIN samples off ON (off.partition_mask & (1 << f.bit)) = 0
 JOIN samples on_sample
-  ON on_sample.mask = (off.mask | (1 << f.bit))
+  ON on_sample.partition_mask = (off.partition_mask | (1 << f.bit))
  AND on_sample.logical_frame = off.logical_frame;
 
-CREATE OR REPLACE TABLE feature_effects AS
+CREATE OR REPLACE TABLE block_effects AS
 SELECT bit,
-       feature,
+       block,
        count(*) AS paired_frames,
        avg(delta_gpu_ms) AS mean_delta_gpu_ms,
        median(delta_gpu_ms) AS median_delta_gpu_ms,
@@ -53,21 +60,21 @@ SELECT bit,
        quantile_cont(delta_gpu_ms, 0.95) AS p95_delta_gpu_ms,
        stddev_samp(delta_gpu_ms) AS stddev_delta_gpu_ms,
        avg((delta_gpu_ms > 0)::INT) AS slower_fraction
-FROM edge_samples
-GROUP BY bit, feature
+FROM partition_edge_samples
+GROUP BY bit, block
 ORDER BY mean_delta_gpu_ms DESC;
 
-CREATE OR REPLACE TABLE cube_edges AS
+CREATE OR REPLACE TABLE partition_edges AS
 SELECT context_mask AS source_mask,
        context_mask | (1 << bit) AS target_mask,
        bit,
-       feature,
+       block,
        avg(delta_gpu_ms) AS mean_delta_gpu_ms,
        median(delta_gpu_ms) AS median_delta_gpu_ms,
        quantile_cont(delta_gpu_ms, 0.95) AS p95_delta_gpu_ms,
        stddev_samp(delta_gpu_ms) AS stddev_delta_gpu_ms
-FROM edge_samples
-GROUP BY context_mask, bit, feature
+FROM partition_edge_samples
+GROUP BY context_mask, bit, block
 ORDER BY source_mask, bit;
 
 CREATE OR REPLACE TABLE feature_correlations AS
@@ -83,33 +90,34 @@ ORDER BY abs(gpu_correlation) DESC;
 -- Difference of differences over every square face of the Boolean cube.
 CREATE OR REPLACE TABLE pairwise_interaction_samples AS
 SELECT a.bit AS bit_a,
-       a.name AS feature_a,
+       a.name AS block_a,
        b.bit AS bit_b,
-       b.name AS feature_b,
-       s00.mask AS context_mask,
+       b.name AS block_b,
+       s00.partition_mask AS context_mask,
        s00.logical_frame,
        s11.gpu_ms - s10.gpu_ms - s01.gpu_ms + s00.gpu_ms
          AS interaction_gpu_ms
-FROM features a
-JOIN features b ON a.bit < b.bit
+FROM partition_blocks a
+JOIN partition_blocks b ON a.bit < b.bit
 JOIN samples s00
-  ON (s00.mask & (1 << a.bit)) = 0
- AND (s00.mask & (1 << b.bit)) = 0
+  ON (s00.partition_mask & (1 << a.bit)) = 0
+ AND (s00.partition_mask & (1 << b.bit)) = 0
 JOIN samples s10
-  ON s10.mask = (s00.mask | (1 << a.bit))
+  ON s10.partition_mask = (s00.partition_mask | (1 << a.bit))
  AND s10.logical_frame = s00.logical_frame
 JOIN samples s01
-  ON s01.mask = (s00.mask | (1 << b.bit))
+  ON s01.partition_mask = (s00.partition_mask | (1 << b.bit))
  AND s01.logical_frame = s00.logical_frame
 JOIN samples s11
-  ON s11.mask = (s00.mask | (1 << a.bit) | (1 << b.bit))
+  ON s11.partition_mask =
+       (s00.partition_mask | (1 << a.bit) | (1 << b.bit))
  AND s11.logical_frame = s00.logical_frame;
 
 CREATE OR REPLACE TABLE pairwise_interactions AS
 SELECT bit_a,
-       feature_a,
+       block_a,
        bit_b,
-       feature_b,
+       block_b,
        count(*) AS cube_faces_x_frames,
        avg(interaction_gpu_ms) AS mean_interaction_gpu_ms,
        median(interaction_gpu_ms) AS median_interaction_gpu_ms,
@@ -117,7 +125,7 @@ SELECT bit_a,
        quantile_cont(interaction_gpu_ms, 0.95) AS p95_interaction_gpu_ms,
        stddev_samp(interaction_gpu_ms) AS stddev_interaction_gpu_ms
 FROM pairwise_interaction_samples
-GROUP BY bit_a, feature_a, bit_b, feature_b
+GROUP BY bit_a, block_a, bit_b, block_b
 ORDER BY abs(mean_interaction_gpu_ms) DESC;
 
 CREATE OR REPLACE TABLE logical_frame_stats AS
@@ -157,8 +165,8 @@ SELECT count(*) AS configurations,
 FROM configuration_stats;
 
 COPY configuration_stats TO 'configuration-stats.csv' (HEADER);
-COPY feature_effects TO 'feature-effects.csv' (HEADER);
-COPY cube_edges TO 'cube-edges.csv' (HEADER);
+COPY block_effects TO 'block-effects.csv' (HEADER);
+COPY partition_edges TO 'partition-edges.csv' (HEADER);
 COPY feature_correlations TO 'feature-correlations.csv' (HEADER);
 COPY pairwise_interactions TO 'pairwise-interactions.csv' (HEADER);
 COPY logical_frame_stats TO 'logical-frame-stats.csv' (HEADER);

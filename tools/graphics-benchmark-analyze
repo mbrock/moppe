@@ -26,13 +26,13 @@ rm -f "$database"
 )
 
 duckdb "$database" -c "
-  SELECT feature,
+  SELECT block,
          round(mean_delta_gpu_ms, 4) AS mean_ms,
          round(median_delta_gpu_ms, 4) AS median_ms,
          round(p95_delta_gpu_ms, 4) AS p95_ms
-  FROM feature_effects
+  FROM block_effects
   ORDER BY mean_delta_gpu_ms DESC;
-  SELECT feature_a || ' x ' || feature_b AS interaction,
+  SELECT block_a || ' x ' || block_b AS interaction,
          round(mean_interaction_gpu_ms, 4) AS mean_ms
   FROM pairwise_interactions
   ORDER BY abs(mean_interaction_gpu_ms) DESC
@@ -50,17 +50,17 @@ duckdb "$database" -c "
            round(fastest_median_gpu_ms, 3) AS fastest_median_ms,
            round(slowest_median_gpu_ms, 3) AS slowest_median_ms
     FROM deadline_summary;"
-  printf '\n## Average feature effects\n\n'
+  printf '\n## Average partition-block effects\n\n'
   duckdb -markdown "$database" -c "
-    SELECT feature,
+    SELECT block,
            round(mean_delta_gpu_ms, 4) AS mean_ms,
            round(median_delta_gpu_ms, 4) AS median_ms,
            round(p05_delta_gpu_ms, 4) AS p05_ms,
            round(p95_delta_gpu_ms, 4) AS p95_ms
-    FROM feature_effects ORDER BY mean_delta_gpu_ms DESC;"
+    FROM block_effects ORDER BY mean_delta_gpu_ms DESC;"
   printf '\n## Strongest pairwise interactions\n\n'
   duckdb -markdown "$database" -c "
-    SELECT feature_a || ' x ' || feature_b AS interaction,
+    SELECT block_a || ' x ' || block_b AS interaction,
            round(mean_interaction_gpu_ms, 4) AS mean_ms,
            round(median_interaction_gpu_ms, 4) AS median_ms
     FROM pairwise_interactions

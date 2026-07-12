@@ -693,7 +693,8 @@ namespace moppe {
               m_benchmark->settle_frames + m_benchmark->measured_frames;
             if (m_benchmark_frame == epoch_frames) {
               ++m_benchmark_epoch;
-              const int configurations = 1 << hot_graphics_feature_count ();
+              const int configurations =
+                1 << graphics_benchmark_dimension_count ();
               if (m_benchmark_epoch == configurations) {
                 m_benchmark_submitted = true;
                 m_benchmark_measured = false;
@@ -704,8 +705,9 @@ namespace moppe {
               restore (*m_benchmark_checkpoint);
               m_renderer->reset_temporal_state ();
               m_graphics = m_benchmark_baseline;
-              m_benchmark_mask = gray_code (m_benchmark_epoch);
-              apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+              m_benchmark_partition_mask = gray_code (m_benchmark_epoch);
+              m_benchmark_mask = apply_graphics_benchmark_mask (
+                m_graphics, m_benchmark_partition_mask);
               m_benchmark_frame = 0;
               update_benchmark_title ();
             }
@@ -719,6 +721,8 @@ namespace moppe {
         }
         if (m_benchmark) {
           MOPPE_PROFILE_PLOT ("benchmark.mask", m_benchmark_mask);
+          MOPPE_PROFILE_PLOT ("benchmark.partition_mask",
+                              m_benchmark_partition_mask);
           MOPPE_PROFILE_PLOT ("benchmark.epoch", m_benchmark_epoch);
           MOPPE_PROFILE_PLOT ("benchmark.logical_frame", m_benchmark_frame);
           MOPPE_PROFILE_PLOT ("benchmark.measured", m_benchmark_measured);
@@ -1042,13 +1046,14 @@ namespace moppe {
                      m_benchmark->prelude_frames) {
             m_benchmark_checkpoint = state ();
             m_renderer->reset_temporal_state ();
-            m_benchmark_mask = gray_code (0);
+            m_benchmark_partition_mask = gray_code (0);
             m_graphics = m_benchmark_baseline;
-            apply_hot_graphics_mask (m_graphics, m_benchmark_mask);
+            m_benchmark_mask = apply_graphics_benchmark_mask (
+              m_graphics, m_benchmark_partition_mask);
             m_benchmark_frame = 0;
             update_benchmark_title ();
             std::cerr << "moppe: graphics benchmark: "
-                      << (1 << hot_graphics_feature_count ())
+                      << (1 << graphics_benchmark_dimension_count ())
                       << " configurations, " << m_benchmark->settle_frames
                       << " settle + " << m_benchmark->measured_frames
                       << " measured frames each\n";
@@ -1144,6 +1149,7 @@ namespace moppe {
         fp.lens_flare = m_graphics.lens_flare;
         fp.profile = true;
         fp.benchmark_mask = m_benchmark_mask;
+        fp.benchmark_partition_mask = m_benchmark_partition_mask;
         fp.benchmark_epoch = m_benchmark_epoch;
         fp.benchmark_frame = m_benchmark_frame > 0 ? m_benchmark_frame - 1 : 0;
         fp.benchmark_measured = m_benchmark_measured;
@@ -1785,21 +1791,19 @@ namespace moppe {
       void update_benchmark_title () const {
         if (!m_benchmark)
           return;
-        const int configurations = 1 << hot_graphics_feature_count ();
+        const int configurations = 1 << graphics_benchmark_dimension_count ();
         std::ostringstream title;
         title << "Moppe benchmark " << (m_benchmark_epoch + 1) << '/'
               << configurations << " - ";
         bool any = false;
-        int bit = 0;
-        for (const GraphicsFeature* feature : graphics_features)
-          if (feature->hot) {
-            if (m_benchmark_mask & (1u << bit)) {
-              if (any)
-                title << " + ";
-              title << feature->name;
-              any = true;
-            }
-            ++bit;
+        for (std::size_t bit = 0; bit < RidingGraphicsPartition::blocks.size ();
+             ++bit)
+          if (m_benchmark_partition_mask & (1u << bit)) {
+            if (any)
+              title << " + ";
+            title << RidingGraphicsPartition::name (
+              RidingGraphicsPartition::blocks[bit]);
+            any = true;
           }
         if (!any)
           title << "none";
@@ -2014,6 +2018,7 @@ namespace moppe {
       int m_benchmark_epoch = 0;
       int m_benchmark_frame = 0;
       uint32_t m_benchmark_mask = 0;
+      uint32_t m_benchmark_partition_mask = 0;
       bool m_benchmark_measured = false;
       bool m_benchmark_submitted = false;
       bool m_benchmark_results_written = false;
@@ -2186,7 +2191,7 @@ int main (int argc, char** argv) {
       return -1;
     }
     const int expected = graphics_benchmark->measured_frames *
-                         (1 << game::hot_graphics_feature_count ());
+                         (1 << game::graphics_benchmark_dimension_count ());
     ::setenv (
       "MOPPE_BENCHMARK_OUTPUT", graphics_benchmark->output_path.c_str (), 1);
     const std::string expected_text = std::to_string (expected);
