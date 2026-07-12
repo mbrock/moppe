@@ -77,9 +77,11 @@ namespace {
         throw std::invalid_argument (
           "analytical expects age[,uplift,k,m,sea,iterations,relaxation]");
       AnalyticalErosion erosion;
-      erosion.time_years = parse_float (parts[0]);
+      erosion.duration =
+        parse_float (parts[0]) * mp_units::astronomy::Julian_year;
       if (parts.size () > 1)
-        erosion.uplift_m_per_year = parse_float (parts[1]);
+        erosion.uplift_rate = parse_float (parts[1]) * mp_units::si::metre /
+                              mp_units::astronomy::Julian_year;
       if (parts.size () > 2)
         erosion.erodibility = parse_float (parts[2]);
       if (parts.size () > 3)

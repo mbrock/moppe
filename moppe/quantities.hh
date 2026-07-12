@@ -2,6 +2,7 @@
 #define MOPPE_QUANTITIES_HH
 
 #include <mp-units/framework.h>
+#include <mp-units/systems/astronomy.h>
 #include <mp-units/systems/isq.h>
 #include <mp-units/systems/si.h>
 
@@ -19,6 +20,11 @@ namespace moppe {
                        float>;
   using meters_per_second_t =
     mp_units::quantity<mp_units::si::metre / mp_units::si::second, float>;
+  using julian_years_t =
+    mp_units::quantity<mp_units::astronomy::Julian_year, float>;
+  using meters_per_julian_year_t =
+    mp_units::quantity<mp_units::si::metre / mp_units::astronomy::Julian_year,
+                       float>;
 
   inline float meters_value (meters_t value) {
     return value.numerical_value_in (mp_units::si::metre);
@@ -36,6 +42,15 @@ namespace moppe {
   inline float meters_per_second_value (meters_per_second_t value) {
     return value.numerical_value_in (mp_units::si::metre /
                                      mp_units::si::second);
+  }
+
+  inline float julian_years_value (julian_years_t value) {
+    return value.numerical_value_in (mp_units::astronomy::Julian_year);
+  }
+
+  inline float meters_per_julian_year_value (meters_per_julian_year_t value) {
+    return value.numerical_value_in (mp_units::si::metre /
+                                     mp_units::astronomy::Julian_year);
   }
 
   inline constexpr auto dimensionless = mp_units::dimensionless;

@@ -20,24 +20,27 @@ namespace moppe::terrain {
     // The painted surface never stands more than this many meters over
     // the ground beneath it: down a cascade the sheet hugs the falling
     // bed instead of bridging the drop with a horizontal ledge.
-    float depth_limit_m = 2.0f;
+    meters_t depth_limit = 2.0f * mp_units::si::metre;
     // Painted level reaches this far past the channel half width so
     // the waterline lands on the bank ramp and feathers there.
-    float bank_margin_m = 3.0f;
+    meters_t bank_margin = 3.0f * mp_units::si::metre;
     // The fill is bounded by the channel actually carved under the
     // reach: each side's bank is the highest ground along a short
     // perpendicular ray ending this far beyond the half width. Where
     // backwater floors kept the carve shallow — the flats behind a
     // mouth — the law's full depth would flood the plain.
-    float bank_probe_m = 7.0f;
+    meters_t bank_probe = 7.0f * mp_units::si::metre;
     // But a visible reach never runs dry: the thinnest painted sheet,
     // deep enough to read as water crossing a wide flat basin.
-    float minimum_depth_m = 0.35f;
+    meters_t minimum_depth = 0.35f * mp_units::si::metre;
     // Flow speed law: base drift plus rapid and waterfall terms, the
     // same advection speeds the ribbon shader scrolled its noise at.
-    float base_speed_m_s = 2.0f;
-    float rapid_speed_m_s = 3.5f;
-    float waterfall_speed_m_s = 5.0f;
+    meters_per_second_t base_speed =
+      2.0f * mp_units::si::metre / mp_units::si::second;
+    meters_per_second_t rapid_speed =
+      3.5f * mp_units::si::metre / mp_units::si::second;
+    meters_per_second_t waterfall_speed =
+      5.0f * mp_units::si::metre / mp_units::si::second;
     WaterPermanence permanence = {};
   };
 

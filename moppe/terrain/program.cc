@@ -62,7 +62,7 @@ namespace moppe::terrain {
     // Drainage-scale valley incision before droplet finishing; the 200 ky
     // four-pass setting follows the recorded stream-power comparison.
     program.transforms.emplace_back (AnalyticalErosion {
-      .time_years = 200000.0f,
+      .duration = 200000.0f * mp_units::astronomy::Julian_year,
       .fixed_point_iterations = profile_stream_power_iterations (profile) });
     // The analytical stage leaves one-cell discontinuities (its paper calls
     // hillslope treatment essential); a talus pass smooths them before the
@@ -103,10 +103,12 @@ namespace moppe::terrain {
                 "hydraulic erosion needs a non-negative droplet count "
                 "and positive batch size and lifetime");
           } else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
-            if (!std::isfinite (operation.time_years) ||
-                operation.time_years < 0.0f ||
-                !std::isfinite (operation.uplift_m_per_year) ||
-                operation.uplift_m_per_year < 0.0f ||
+            if (!std::isfinite (julian_years_value (operation.duration)) ||
+                operation.duration < 0.0f * mp_units::astronomy::Julian_year ||
+                !std::isfinite (
+                  meters_per_julian_year_value (operation.uplift_rate)) ||
+                operation.uplift_rate < 0.0f * mp_units::si::metre /
+                                          mp_units::astronomy::Julian_year ||
                 !std::isfinite (operation.erodibility) ||
                 operation.erodibility <= 0.0f ||
                 !std::isfinite (operation.area_exponent) ||

@@ -208,7 +208,9 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   TerrainProgram program = make_geological_program (2468);
   program.transforms.emplace_back (PowerHeights { 1.15f });
   program.transforms.emplace_back (AnalyticalErosion {
-    .time_years = 100000.0f, .fixed_point_iterations = 2, .relaxation = 0.5f });
+    .duration = 100000.0f * mp_units::astronomy::Julian_year,
+    .fixed_point_iterations = 2,
+    .relaxation = 0.5f });
   map::RandomHeightMap first (65, 65, size, 0, Topology::Torus);
   map::RandomHeightMap second (65, 65, size, 1, Topology::Torus);
   map::TerrainEvaluator first_evaluator (first);

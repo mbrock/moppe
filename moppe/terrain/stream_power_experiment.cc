@@ -79,15 +79,16 @@ int main (int argc, char** argv) {
     const std::string image_prefix = argc > 6 ? argv[6] : "";
     const float uplift = argc > 7 ? std::stof (argv[7]) : 0.0f;
 
-    const AnalyticalErosion analytical { .time_years = age,
-                                         .uplift_m_per_year = uplift,
-                                         .erodibility = 2e-5f,
-                                         .area_exponent = 0.4f,
-                                         .sea_level = 50.0f / 650.0f,
-                                         .fixed_point_iterations =
-                                           routing_passes,
-                                         .relaxation =
-                                           routing_passes > 1 ? 0.5f : 1.0f };
+    const AnalyticalErosion analytical {
+      .duration = age * mp_units::astronomy::Julian_year,
+      .uplift_rate =
+        uplift * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .erodibility = 2e-5f,
+      .area_exponent = 0.4f,
+      .sea_level = 50.0f / 650.0f,
+      .fixed_point_iterations = routing_passes,
+      .relaxation = routing_passes > 1 ? 0.5f : 1.0f
+    };
     const HydraulicErosion hydraulic { .droplets = droplets,
                                        .batch_size = 256,
                                        .max_steps = 512,

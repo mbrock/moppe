@@ -25,7 +25,9 @@ namespace {
 
 MOPPE_TEST (zero_age_analytical_erosion_is_identity) {
   const AnalyticalErosionResult result =
-    erode_analytically (plane (), { .time_years = 0.0f, .sea_level = -1.0f });
+    erode_analytically (plane (),
+                        { .duration = 0.0f * mp_units::astronomy::Julian_year,
+                          .sea_level = -1.0f });
 
   MOPPE_CHECK (result.heights.size () == downhill_plane.size ());
   for (std::size_t i = 0; i < downhill_plane.size (); ++i)
@@ -35,9 +37,12 @@ MOPPE_TEST (zero_age_analytical_erosion_is_identity) {
 }
 
 MOPPE_TEST (analytical_stream_power_lowers_a_fixed_drainage_tree) {
-  const AnalyticalErosion parameters { .time_years = 100000.0f,
-                                       .uplift_m_per_year = 0.0f,
-                                       .sea_level = -1.0f };
+  const AnalyticalErosion parameters {
+    .duration = 100000.0f * mp_units::astronomy::Julian_year,
+    .uplift_rate =
+      0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+    .sea_level = -1.0f
+  };
   const AnalyticalErosionResult first =
     erode_analytically (plane (), parameters);
   const AnalyticalErosionResult second =
@@ -56,12 +61,16 @@ MOPPE_TEST (analytical_stream_power_lowers_a_fixed_drainage_tree) {
 MOPPE_TEST (uplift_competes_with_analytical_stream_power) {
   const AnalyticalErosionResult eroded = erode_analytically (
     plane (),
-    { .time_years = 100000.0f, .uplift_m_per_year = 0.0f, .sea_level = -1.0f });
-  const AnalyticalErosionResult uplifted =
-    erode_analytically (plane (),
-                        { .time_years = 100000.0f,
-                          .uplift_m_per_year = 0.001f,
-                          .sea_level = -1.0f });
+    { .duration = 100000.0f * mp_units::astronomy::Julian_year,
+      .uplift_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .sea_level = -1.0f });
+  const AnalyticalErosionResult uplifted = erode_analytically (
+    plane (),
+    { .duration = 100000.0f * mp_units::astronomy::Julian_year,
+      .uplift_rate =
+        0.001f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .sea_level = -1.0f });
 
   MOPPE_CHECK (uplifted.heights[24] > eroded.heights[24]);
   MOPPE_CHECK_NEAR (uplifted.heights[0], downhill_plane[0], 0.0f);

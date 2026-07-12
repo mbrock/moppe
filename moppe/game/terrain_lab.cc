@@ -272,7 +272,9 @@ namespace moppe {
           return "height ^ " + format_float (power->exponent, 2);
         if (const auto* analytical =
               std::get_if<terrain::AnalyticalErosion> (&stage))
-          return format_float (analytical->time_years / 1000.0f, 0) + " ky / " +
+          return format_float (
+                   julian_years_value (analytical->duration) / 1000.0f, 0) +
+                 " ky / " +
                  std::to_string (analytical->fixed_point_iterations) +
                  " routing passes";
         if (const auto* hydraulic =
@@ -381,11 +383,15 @@ namespace moppe {
               std::get_if<terrain::AnalyticalErosion> (&stage)) {
           if (row == 0)
             return { "AGE (KY)",
-                     format_float (analytical->time_years / 1000.0f, 0),
+                     format_float (
+                       julian_years_value (analytical->duration) / 1000.0f, 0),
                      ParameterDomain::Continuous };
           if (row == 1)
             return { "UPLIFT (MM/Y)",
-                     format_float (analytical->uplift_m_per_year * 1000.0f, 2),
+                     format_float (
+                       meters_per_julian_year_value (analytical->uplift_rate) *
+                         1000.0f,
+                       2),
                      ParameterDomain::Continuous };
           if (row == 2)
             return { "ERODIBILITY",
@@ -1692,9 +1698,12 @@ namespace moppe {
       if (const auto* analytical =
             std::get_if<terrain::AnalyticalErosion> (&stage)) {
         if (row == 0)
-          return unit (analytical->time_years, 0.0f, 1600000.0f);
+          return unit (
+            julian_years_value (analytical->duration), 0.0f, 1600000.0f);
         if (row == 1)
-          return unit (analytical->uplift_m_per_year, 0.0f, 0.003f);
+          return unit (meters_per_julian_year_value (analytical->uplift_rate),
+                       0.0f,
+                       0.003f);
         if (row == 2)
           return unit (std::log10 (analytical->erodibility), -6.0f, -3.0f);
         if (row == 3)
@@ -1800,14 +1809,16 @@ namespace moppe {
       }
       if (auto* analytical = std::get_if<terrain::AnalyticalErosion> (&stage)) {
         if (row == 0) {
-          const float old = analytical->time_years;
-          analytical->time_years = mix (0.0f, 1600000.0f);
-          return analytical->time_years != old;
+          const auto old = analytical->duration;
+          analytical->duration =
+            mix (0.0f, 1600000.0f) * mp_units::astronomy::Julian_year;
+          return analytical->duration != old;
         }
         if (row == 1) {
-          const float old = analytical->uplift_m_per_year;
-          analytical->uplift_m_per_year = mix (0.0f, 0.003f);
-          return analytical->uplift_m_per_year != old;
+          const auto old = analytical->uplift_rate;
+          analytical->uplift_rate = mix (0.0f, 0.003f) * mp_units::si::metre /
+                                    mp_units::astronomy::Julian_year;
+          return analytical->uplift_rate != old;
         }
         if (row == 2) {
           const float old = analytical->erodibility;
@@ -1998,7 +2009,8 @@ namespace moppe {
         if (control == 2) {
           if (const auto* age =
                 std::get_if<terrain::AnalyticalErosion> (&stage))
-            return std::clamp (age->time_years / 800000.0f, 0.0f, 1.0f);
+            return std::clamp (
+              julian_years_value (age->duration) / 800000.0f, 0.0f, 1.0f);
         } else if (control == 3) {
           if (const auto* rain =
                 std::get_if<terrain::HydraulicErosion> (&stage))
@@ -2028,9 +2040,10 @@ namespace moppe {
           terrain::TerrainTransform& stage = m_program.transforms[i];
           if (control == 2) {
             if (auto* age = std::get_if<terrain::AnalyticalErosion> (&stage)) {
-              const float next = value * 800000.0f;
-              changed = next != age->time_years;
-              age->time_years = next;
+              const auto next =
+                value * 800000.0f * mp_units::astronomy::Julian_year;
+              changed = next != age->duration;
+              age->duration = next;
               changed_stage = static_cast<int> (i);
               break;
             }
@@ -2065,7 +2078,8 @@ namespace moppe {
         recipe.warp.amplitude = 0.08f;
         m_program.transforms.emplace_back (terrain::PowerHeights { 0.78f });
         m_program.transforms.emplace_back (terrain::AnalyticalErosion {
-          .time_years = 500000.0f, .fixed_point_iterations = 3 });
+          .duration = 500000.0f * mp_units::astronomy::Julian_year,
+          .fixed_point_iterations = 3 });
         m_program.transforms.emplace_back (
           terrain::ThermalErosion { 4, 0.004f });
       } else if (preset == 2) {
@@ -2090,7 +2104,8 @@ namespace moppe {
         recipe.warp.amplitude = 0.28f;
         m_program.transforms.emplace_back (terrain::PowerHeights { 1.3f });
         m_program.transforms.emplace_back (terrain::AnalyticalErosion {
-          .time_years = 200000.0f, .fixed_point_iterations = 1 });
+          .duration = 200000.0f * mp_units::astronomy::Julian_year,
+          .fixed_point_iterations = 1 });
         m_program.transforms.emplace_back (
           terrain::ThermalErosion { 4, 0.004f });
       }
@@ -2555,8 +2570,8 @@ namespace moppe {
                     stage);
                 });
               if (control == 2 && !has_age)
-                append_stage (
-                  terrain::AnalyticalErosion { .time_years = 0.0f });
+                append_stage (terrain::AnalyticalErosion {
+                  .duration = 0.0f * mp_units::astronomy::Julian_year });
               else if (control == 3 && !has_rain)
                 append_stage (terrain::HydraulicErosion {
                   .droplets = 0,
