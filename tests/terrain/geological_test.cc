@@ -5,6 +5,7 @@
 
 #include <array>
 #include <bit>
+#include <concepts>
 #include <cstdint>
 #include <stdexcept>
 #include <variant>
@@ -53,6 +54,9 @@ MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
 MOPPE_TEST (geological_fields_share_warp_subexpressions) {
   const GeologicalFields fields =
     make_geological_fields ({ .base = 1, .ridge = 2, .warp = 3 });
+  static_assert (std::same_as<decltype (fields.warp_x), NoiseField>);
+  static_assert (
+    std::same_as<decltype (fields.combined), RelativeElevationField>);
   const auto& warped_x =
     std::get<expression::MultiplyAdd> (fields.warped_x.node ()->operation);
   const auto& warped_y =
@@ -91,13 +95,15 @@ MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
   MOPPE_CHECK (recipe.mountains.cycles == 6);
 
   recipe.mountains.cycles = 8;
-  const ScalarRaster changed = CpuEvaluator ().evaluate (
-    make_geological_fields (recipe).mountains.untyped (),
+  const RelativeElevationRaster changed =
+    materialize (CpuEvaluator (),
+                 make_geological_fields (recipe).mountains,
+                 { .width = 17, .height = 17 });
+  const RelativeElevationRaster original = materialize (
+    CpuEvaluator (),
+    make_geological_fields (make_geological_recipe (123)).mountains,
     { .width = 17, .height = 17 });
-  const ScalarRaster original = CpuEvaluator ().evaluate (
-    make_geological_fields (make_geological_recipe (123)).mountains.untyped (),
-    { .width = 17, .height = 17 });
-  MOPPE_CHECK (changed.at (8, 8) != original.at (8, 8));
+  MOPPE_CHECK (changed.sample (8, 8) != original.sample (8, 8));
 }
 
 MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {

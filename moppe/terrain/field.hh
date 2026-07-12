@@ -207,6 +207,10 @@ namespace moppe::terrain {
   // noise lattice).  Not a height, not a weight: adding a mask to a
   // coordinate is a bug the compiler now rejects.
   QUANTITY_SPEC (recipe_coordinate, mp_units::dimensionless, mp_units::is_kind);
+  QUANTITY_SPEC (relative_elevation,
+                 mp_units::dimensionless,
+                 mp_units::is_kind);
+  QUANTITY_SPEC (normalized_sample, mp_units::dimensionless, mp_units::is_kind);
 
   template <auto QS>
   concept FieldSpec =
@@ -224,7 +228,18 @@ namespace moppe::terrain {
         return QS2;
       else if constexpr (QS2 == moppe::proportion)
         return QS1;
-      else
+      else if constexpr (QS1 == moppe::noise_signal) {
+        if constexpr (QS2 == mp_units::dimensionless ||
+                      QS2 == moppe::noise_signal)
+          return moppe::noise_signal;
+        else
+          return QS2;
+      } else if constexpr (QS2 == moppe::noise_signal) {
+        if constexpr (QS1 == mp_units::dimensionless)
+          return moppe::noise_signal;
+        else
+          return QS1;
+      } else
         return QS1 * QS2;
     }
   }
@@ -254,7 +269,9 @@ namespace moppe::terrain {
 
   using DimensionlessField = Field<mp_units::dimensionless>;
   using CoordinateField = Field<recipe_coordinate>;
+  using NoiseField = Field<moppe::noise_signal>;
   using ProportionField = Field<moppe::proportion>;
+  using RelativeElevationField = Field<relative_elevation>;
 
   // Reinterpret a field as another kind of quantity.  This is the
   // recipe analogue of an explicit quantity cast: crossing between
@@ -327,8 +344,11 @@ namespace moppe::terrain {
 
   // A smoothstep is a soft threshold: whatever it reads, it emits a
   // blend weight.
+  template <auto QS>
   ProportionField
-  smoothstep (float edge0, float edge1, const DimensionlessField& operand);
+  smoothstep (float edge0, float edge1, const Field<QS>& operand) {
+    return ProportionField (smoothstep (edge0, edge1, operand.untyped ()));
+  }
 
   // Fused multiply-add keeps the spec algebra of a * b + c.
   template <auto QS1, auto QS2>
@@ -340,39 +360,39 @@ namespace moppe::terrain {
       multiplier.untyped (), multiplicand.untyped (), addend.untyped ()));
   }
 
-  // Noise samples a lattice, so its inputs are domain coordinates by
-  // construction; its output is a fresh dimensionless value.
-  DimensionlessField perlin_noise (std::uint32_t seed,
-                                   const CoordinateField& x,
-                                   const CoordinateField& y);
-  DimensionlessField fbm_noise (std::uint32_t seed,
-                                const CoordinateField& x,
-                                const CoordinateField& y,
-                                int octaves,
-                                float lacunarity,
-                                float gain);
-  DimensionlessField ridged_noise (std::uint32_t seed,
-                                   const CoordinateField& x,
-                                   const CoordinateField& y,
-                                   int octaves,
-                                   float lacunarity,
-                                   float gain);
-  DimensionlessField periodic_fbm_noise (std::uint32_t seed,
-                                         const CoordinateField& x,
-                                         const CoordinateField& y,
-                                         int period_x,
-                                         int period_y,
-                                         int octaves,
-                                         int lacunarity,
-                                         float gain);
-  DimensionlessField periodic_ridged_noise (std::uint32_t seed,
-                                            const CoordinateField& x,
-                                            const CoordinateField& y,
-                                            int period_x,
-                                            int period_y,
-                                            int octaves,
-                                            int lacunarity,
-                                            float gain);
+  // Noise samples a lattice, so its inputs are domain coordinates and its
+  // output is explicitly a procedural signal rather than generic scalar data.
+  NoiseField perlin_noise (std::uint32_t seed,
+                           const CoordinateField& x,
+                           const CoordinateField& y);
+  NoiseField fbm_noise (std::uint32_t seed,
+                        const CoordinateField& x,
+                        const CoordinateField& y,
+                        int octaves,
+                        float lacunarity,
+                        float gain);
+  NoiseField ridged_noise (std::uint32_t seed,
+                           const CoordinateField& x,
+                           const CoordinateField& y,
+                           int octaves,
+                           float lacunarity,
+                           float gain);
+  NoiseField periodic_fbm_noise (std::uint32_t seed,
+                                 const CoordinateField& x,
+                                 const CoordinateField& y,
+                                 int period_x,
+                                 int period_y,
+                                 int octaves,
+                                 int lacunarity,
+                                 float gain);
+  NoiseField periodic_ridged_noise (std::uint32_t seed,
+                                    const CoordinateField& x,
+                                    const CoordinateField& y,
+                                    int period_x,
+                                    int period_y,
+                                    int octaves,
+                                    int lacunarity,
+                                    float gain);
 }
 
 #endif

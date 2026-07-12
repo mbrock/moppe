@@ -25,18 +25,25 @@ semantic node because the historical generator relied on fused floating-point
 results.  The Perlin shuffle also has an explicit unbiased sampler, avoiding
 standard-library-dependent sequences.
 
-`Field<QS>` layers an mp-units quantity spec over a `ScalarField` as a
-phantom type.  Samples remain plain floats and evaluators consume the erased
-DAG through `untyped ()`, but recipe combinators compose dimensionally: `+`
-and `-` require matching kinds, `*` multiplies quantity specs, and bare
-numbers scale within a kind.  The recipe domain is scale-free, so its
-quantities are dimensionless, yet distinct *kinds* (`recipe_coordinate`
-versus the plain dimensionless samples and weights) keep a mask from being
-added to a sampling position at compile time.  Noise combinators demand
-`CoordinateField` inputs and return fresh dimensionless values; crossing
-kinds -- warp noise becoming a coordinate displacement -- must be spelled
-`field_cast<...>` or carried by a constant declared with the target kind
-(`constant<recipe_coordinate> (amplitude)`).
+`Field<QS>` layers an mp-units quantity specification over a `ScalarField` as
+a phantom type. Samples remain compact floats and evaluators consume the
+erased DAG through `untyped ()`, but recipe combinators compose
+dimensionally: `+` and `-` require matching kinds, `*` combines quantity
+specifications, and bare numbers scale within a kind.
+
+The scale-free recipe vocabulary now distinguishes `CoordinateField`,
+`NoiseField`, `ProportionField`, and `RelativeElevationField`. Noise is not
+yet relief, a mask is not a generic scalar, and neither may be added to a
+sampling coordinate. Crossing meanings must be explicit: procedural noise is
+cast to relative elevation when a geological layer interprets it as relief,
+while warp noise is multiplied by an explicitly coordinate-valued amplitude.
+
+Materialization preserves this meaning in `Raster<R>`, where `R` is a full
+mp-units reference including its unit. The underlying storage is still a
+float array shared by CPU and Metal paths; requesting a sample reconstructs
+the quantity at the API boundary. Data-dependent min/max normalization is an
+explicit semantic conversion to `NormalizedRaster`: normalized elevation is
+a relative normalized sample, not elevation in the original reference.
 
 Every backend implements the `FieldEvaluator` materialization boundary.
 `CpuEvaluator` lowers unique nodes to a topologically ordered register program

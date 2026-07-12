@@ -67,7 +67,7 @@ namespace moppe::terrain {
     const CoordinateField v = coordinate_v ();
 
     const int warp_cycles = recipe.warp.noise.cycles;
-    const DimensionlessField warp_x = periodic_fbm_noise (
+    const NoiseField warp_x = periodic_fbm_noise (
       recipe.seeds.warp,
       u * static_cast<float> (warp_cycles) + recipe.warp.x_offset.x,
       v * static_cast<float> (warp_cycles) + recipe.warp.x_offset.y,
@@ -76,7 +76,7 @@ namespace moppe::terrain {
       recipe.warp.noise.octaves,
       recipe.warp.noise.lacunarity,
       recipe.warp.noise.gain);
-    const DimensionlessField warp_y = periodic_fbm_noise (
+    const NoiseField warp_y = periodic_fbm_noise (
       recipe.seeds.warp,
       u * static_cast<float> (warp_cycles) + recipe.warp.y_offset.x,
       v * static_cast<float> (warp_cycles) + recipe.warp.y_offset.y,
@@ -94,31 +94,33 @@ namespace moppe::terrain {
     const CoordinateField warped_y = multiply_add (warp_amplitude, warp_y, v);
 
     const int continent_cycles = recipe.continent.noise.cycles;
-    const DimensionlessField continent = multiply_add (
-      periodic_fbm_noise (recipe.seeds.base,
-                          warped_x * static_cast<float> (continent_cycles),
-                          warped_y * static_cast<float> (continent_cycles),
-                          continent_cycles,
-                          continent_cycles,
-                          recipe.continent.noise.octaves,
-                          recipe.continent.noise.lacunarity,
-                          recipe.continent.noise.gain),
-      constant<> (recipe.continent.scale),
-      constant<> (recipe.continent.bias));
+    const RelativeElevationField continent =
+      field_cast<relative_elevation> (multiply_add (
+        periodic_fbm_noise (recipe.seeds.base,
+                            warped_x * static_cast<float> (continent_cycles),
+                            warped_y * static_cast<float> (continent_cycles),
+                            continent_cycles,
+                            continent_cycles,
+                            recipe.continent.noise.octaves,
+                            recipe.continent.noise.lacunarity,
+                            recipe.continent.noise.gain),
+        constant<> (recipe.continent.scale),
+        constant<moppe::noise_signal> (recipe.continent.bias)));
     const int plains_cycles = recipe.plains.noise.cycles;
-    const DimensionlessField plains = multiply_add (
-      periodic_fbm_noise (recipe.seeds.base,
-                          warped_x * static_cast<float> (plains_cycles),
-                          warped_y * static_cast<float> (plains_cycles),
-                          plains_cycles,
-                          plains_cycles,
-                          recipe.plains.noise.octaves,
-                          recipe.plains.noise.lacunarity,
-                          recipe.plains.noise.gain),
-      constant<> (recipe.plains.scale),
-      constant<> (recipe.plains.bias));
+    const RelativeElevationField plains =
+      field_cast<relative_elevation> (multiply_add (
+        periodic_fbm_noise (recipe.seeds.base,
+                            warped_x * static_cast<float> (plains_cycles),
+                            warped_y * static_cast<float> (plains_cycles),
+                            plains_cycles,
+                            plains_cycles,
+                            recipe.plains.noise.octaves,
+                            recipe.plains.noise.lacunarity,
+                            recipe.plains.noise.gain),
+        constant<> (recipe.plains.scale),
+        constant<moppe::noise_signal> (recipe.plains.bias)));
     const int mountain_cycles = recipe.mountains.cycles;
-    const DimensionlessField mountains =
+    const RelativeElevationField mountains = field_cast<relative_elevation> (
       periodic_ridged_noise (recipe.seeds.ridge,
                              warped_x * static_cast<float> (mountain_cycles),
                              warped_y * static_cast<float> (mountain_cycles),
@@ -126,13 +128,13 @@ namespace moppe::terrain {
                              mountain_cycles,
                              recipe.mountains.octaves,
                              recipe.mountains.lacunarity,
-                             recipe.mountains.gain);
+                             recipe.mountains.gain));
     const ProportionField mountain_mask =
       smoothstep (recipe.blend.mask_low, recipe.blend.mask_high, continent);
 
-    const DimensionlessField lowland =
+    const RelativeElevationField lowland =
       plains * recipe.blend.plains_weight * (1.0f - mountain_mask);
-    const DimensionlessField combined = multiply_add (
+    const RelativeElevationField combined = multiply_add (
       mountains * recipe.blend.mountain_weight,
       mountain_mask,
       multiply_add (

@@ -73,15 +73,15 @@ namespace moppe::terrain {
   // numbers, the warped sampling positions are domain coordinates,
   // and every relief/mask layer is a dimensionless sample.
   struct GeologicalFields {
-    DimensionlessField warp_x;
-    DimensionlessField warp_y;
+    NoiseField warp_x;
+    NoiseField warp_y;
     CoordinateField warped_x;
     CoordinateField warped_y;
-    DimensionlessField continent;
-    DimensionlessField plains;
-    DimensionlessField mountains;
+    RelativeElevationField continent;
+    RelativeElevationField plains;
+    RelativeElevationField mountains;
     ProportionField mountain_mask;
-    DimensionlessField combined;
+    RelativeElevationField combined;
   };
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed);
