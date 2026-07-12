@@ -717,6 +717,12 @@ namespace moppe {
             m_benchmark_measured = false;
           }
         }
+        if (m_benchmark) {
+          MOPPE_PROFILE_PLOT ("benchmark.mask", m_benchmark_mask);
+          MOPPE_PROFILE_PLOT ("benchmark.epoch", m_benchmark_epoch);
+          MOPPE_PROFILE_PLOT ("benchmark.logical_frame", m_benchmark_frame);
+          MOPPE_PROFILE_PLOT ("benchmark.measured", m_benchmark_measured);
+        }
         m_frame_time = dt;
         if (!m_ready || m_game_over)
           return;

@@ -24,6 +24,16 @@
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
 
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+#include <tracy/TracyMetal.hmm>
+#define MOPPE_METAL_ZONE(context, descriptor, name)                            \
+  TracyMetalZone (context, descriptor, name)
+#define MOPPE_METAL_ZONE_DISABLED(context, descriptor, name) ((void)0)
+#else
+#define MOPPE_METAL_ZONE(context, descriptor, name) ((void)0)
+#define MOPPE_METAL_ZONE_DISABLED(context, descriptor, name) ((void)0)
+#endif
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -257,6 +267,7 @@ namespace moppe {
     class MetalRenderer : public Renderer {
     public:
       MetalRenderer (MTKView* view, const std::string& lib_path);
+      ~MetalRenderer () override;
 
       // resources
       TexturePtr create_texture (const TextureDesc& desc,
@@ -353,6 +364,9 @@ namespace moppe {
       MTKView* m_view;
       id<MTLDevice> m_device;
       id<MTLCommandQueue> m_queue;
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      TracyMetalCtx* m_tracy_metal = nullptr;
+#endif
       id<MTLLibrary> m_library;
 
       // pipelines
@@ -491,9 +505,26 @@ namespace moppe {
       m_view = view;
       m_device = view.device ? view.device : MTLCreateSystemDefaultDevice ();
       m_queue = [m_device newCommandQueue];
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      m_tracy_metal = TracyMetalContext (m_device);
+      if (m_tracy_metal)
+        TracyMetalContextName (m_tracy_metal, "Moppe Metal", 11);
+#endif
 
-      m_profile_gpu_passes = ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
-      m_profile_gpu = m_profile_gpu_passes ||
+      const bool requested_gpu_passes =
+        ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      // Metal cannot reliably resolve Tracy's descriptor timestamps while a
+      // second profiler samples draw/stage boundaries in the same encoders.
+      // Keep Moppe's whole-command-buffer timing and let Tracy own pass data.
+      m_profile_gpu_passes = false;
+      if (requested_gpu_passes)
+        std::cerr << "moppe: Tracy owns Metal encoder timestamps; "
+                  << "using command-buffer timing for MOPPE_PROFILE_GPU\n";
+#else
+      m_profile_gpu_passes = requested_gpu_passes;
+#endif
+      m_profile_gpu = requested_gpu_passes ||
                       ::getenv ("MOPPE_PROFILE_GPU_SIMPLE") != nullptr;
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
       if (m_profile_gpu)
@@ -654,6 +685,18 @@ namespace moppe {
       wd.filter = TextureFilter::Nearest;
       const uint8_t white[4] = { 255, 255, 255, 255 };
       m_white = create_texture (wd, white);
+    }
+
+    MetalRenderer::~MetalRenderer () {
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      if (m_tracy_metal) {
+        id<MTLCommandBuffer> fence = [m_queue commandBuffer];
+        [fence commit];
+        [fence waitUntilCompleted];
+        TracyMetalCollect (m_tracy_metal);
+        TracyMetalDestroy (m_tracy_metal);
+      }
+#endif
     }
 
     id<MTLRenderPipelineState>
@@ -1270,6 +1313,12 @@ namespace moppe {
       rp.depthAttachment.clearDepth = 1.0;
 
       id<MTLCommandBuffer> cmd = [m_queue commandBuffer];
+      // This setup pass runs on the world-generation thread. Tracy 0.13.1's
+      // Metal server crashes when a context first receives a GPU zone from
+      // that worker and later receives frame zones from the render thread.
+      // Keep its existing command-buffer timing until upstream supports this
+      // cross-thread pattern reliably.
+      MOPPE_METAL_ZONE_DISABLED (m_tracy_metal, rp, "Terrain shadow");
       id<MTLRenderCommandEncoder> enc =
         [cmd renderCommandEncoderWithDescriptor:rp];
       [enc setRenderPipelineState:m_terrain_shadow];
@@ -1315,6 +1364,9 @@ namespace moppe {
       [enc endEncoding];
       [cmd commit];
       [cmd waitUntilCompleted];
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      TracyMetalCollect (m_tracy_metal);
+#endif
       if (::getenv ("MOPPE_PROFILE_SHADOW")) {
         const double gpu_ms = 1000.0 * (cmd.GPUEndTime - cmd.GPUStartTime);
         std::cerr << "terrain shadow: " << shadow_size << "px, step "
@@ -1531,19 +1583,31 @@ namespace moppe {
     bool MetalRenderer::begin_frame (const FrameParams& params) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::begin_frame");
       const double frame_start = cpu_time ();
-      ensure_targets (params.scene_scale, params.render_scale_override);
+      {
+        MOPPE_PROFILE_ZONE ("MetalRenderer::ensure_targets");
+        ensure_targets (params.scene_scale, params.render_scale_override);
+      }
       const double targets_done = cpu_time ();
       if (!m_msaa_color)
         return false;
 
-      dispatch_semaphore_wait (m_inflight, DISPATCH_TIME_FOREVER);
+      {
+        MOPPE_PROFILE_ZONE ("MetalRenderer::wait_for_inflight_frame");
+        dispatch_semaphore_wait (m_inflight, DISPATCH_TIME_FOREVER);
+      }
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+      TracyMetalCollect (m_tracy_metal);
+#endif
       const double inflight_done = cpu_time ();
 
-      if (m_pending_drawable) {
-        m_drawable = m_pending_drawable;
-        m_pending_drawable = nil;
-      } else {
-        m_drawable = m_view.currentDrawable;
+      {
+        MOPPE_PROFILE_ZONE ("MetalRenderer::acquire_drawable");
+        if (m_pending_drawable) {
+          m_drawable = m_pending_drawable;
+          m_pending_drawable = nil;
+        } else {
+          m_drawable = m_view.currentDrawable;
+        }
       }
       const double drawable_done = cpu_time ();
       if (!m_drawable) {
@@ -1653,6 +1717,7 @@ namespace moppe {
       rp.stencilAttachment.clearStencil = 0;
       attach_gpu_pass (rp, GpuPass::Scene);
 
+      MOPPE_METAL_ZONE (m_tracy_metal, rp, "Scene");
       m_enc = [m_cmd renderCommandEncoderWithDescriptor:rp];
       m_enc.label = @"World scene";
       [m_enc setFrontFacingWinding:MTLWindingCounterClockwise];
@@ -1692,7 +1757,13 @@ namespace moppe {
           m_timestamp_count + 2 > MAX_TIMESTAMP_SAMPLES)
         return;
       MTLRenderPassSampleBufferAttachmentDescriptor* attachment =
-        desc.sampleBufferAttachments[0];
+        desc.sampleBufferAttachments[
+#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
+          1
+#else
+          0
+#endif
+      ];
       attachment.sampleBuffer = m_timestamp_samples[m_slot];
       attachment.startOfVertexSampleIndex = m_timestamp_count++;
       attachment.endOfFragmentSampleIndex = m_timestamp_count++;
@@ -2324,6 +2395,7 @@ namespace moppe {
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
       attach_gpu_pass (rp, GpuPass::Post);
 
+      MOPPE_METAL_ZONE (m_tracy_metal, rp, "Underwater");
       id<MTLRenderCommandEncoder> enc =
         [m_cmd renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Underwater post-process";
@@ -2368,6 +2440,7 @@ namespace moppe {
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
       attach_gpu_pass (rp, GpuPass::Post);
 
+      MOPPE_METAL_ZONE (m_tracy_metal, rp, "Motion blur");
       id<MTLRenderCommandEncoder> enc =
         [m_cmd renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Motion blur";
@@ -2410,6 +2483,7 @@ namespace moppe {
         rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
         attach_gpu_pass (rp, GpuPass::Post);
+        MOPPE_METAL_ZONE (m_tracy_metal, rp, "Loading blur");
         id<MTLRenderCommandEncoder> enc =
           [m_cmd renderCommandEncoderWithDescriptor:rp];
         enc.label = label;
@@ -2453,8 +2527,15 @@ namespace moppe {
     void MetalRenderer::draw_hud (const DrawList& list) {
       end_scene_encoder ();
 
+      enum class QuadZone {
+        BloomBright,
+        BloomHorizontal,
+        BloomVertical,
+        Exposure
+      };
       // One fullscreen pass into `dst` reading `src`.
-      auto quad_pass = [&] (GpuPass pass,
+      auto quad_pass = [&] (QuadZone zone,
+                            GpuPass pass,
                             NSString* label,
                             id<MTLRenderPipelineState> pso,
                             id<MTLTexture> src,
@@ -2466,16 +2547,42 @@ namespace moppe {
         p.colorAttachments[0].loadAction = MTLLoadActionDontCare;
         p.colorAttachments[0].storeAction = MTLStoreActionStore;
         attach_gpu_pass (p, pass);
-        id<MTLRenderCommandEncoder> e =
-          [m_cmd renderCommandEncoderWithDescriptor:p];
-        e.label = label;
-        begin_gpu_pass (e, pass);
-        [e setRenderPipelineState:pso];
-        [e setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [e setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [e setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
-        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-        [e endEncoding];
+        const auto encode = [&] {
+          id<MTLRenderCommandEncoder> e =
+            [m_cmd renderCommandEncoderWithDescriptor:p];
+          e.label = label;
+          begin_gpu_pass (e, pass);
+          [e setRenderPipelineState:pso];
+          [e setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
+          [e setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
+          [e setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
+          [e drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:3];
+          [e endEncoding];
+        };
+        switch (zone) {
+        case QuadZone::BloomBright: {
+          MOPPE_METAL_ZONE (m_tracy_metal, p, "Bloom bright pass");
+          encode ();
+          break;
+        }
+        case QuadZone::BloomHorizontal: {
+          MOPPE_METAL_ZONE (m_tracy_metal, p, "Bloom horizontal blur");
+          encode ();
+          break;
+        }
+        case QuadZone::BloomVertical: {
+          MOPPE_METAL_ZONE (m_tracy_metal, p, "Bloom vertical blur");
+          encode ();
+          break;
+        }
+        case QuadZone::Exposure: {
+          MOPPE_METAL_ZONE (m_tracy_metal, p, "Exposure probe");
+          encode ();
+          break;
+        }
+        }
       };
 
       // Bloom: bright-pass into quarter res, then a separable blur
@@ -2489,7 +2596,8 @@ namespace moppe {
         q.tint.x = q.tint.y = q.tint.z = 1;
         q.tint.w = m_exposure * m_fp.exposure_bias;
         q.params.x = 1;
-        quad_pass (GpuPass::Bloom,
+        quad_pass (QuadZone::BloomBright,
+                   GpuPass::Bloom,
                    @"Bloom bright pass",
                    m_bloom_bright,
                    m_current,
@@ -2498,7 +2606,8 @@ namespace moppe {
 
         q.params.z = 1.0f / (float)m_bloom_a.width;
         q.params.w = 0;
-        quad_pass (GpuPass::Bloom,
+        quad_pass (QuadZone::BloomHorizontal,
+                   GpuPass::Bloom,
                    @"Bloom horizontal blur",
                    m_bloom_blur,
                    m_bloom_a,
@@ -2506,7 +2615,8 @@ namespace moppe {
                    q);
         q.params.z = 0;
         q.params.w = 1.0f / (float)m_bloom_a.height;
-        quad_pass (GpuPass::Bloom,
+        quad_pass (QuadZone::BloomVertical,
+                   GpuPass::Bloom,
                    @"Bloom vertical blur",
                    m_bloom_blur,
                    m_bloom_b,
@@ -2522,7 +2632,8 @@ namespace moppe {
         std::memset (&q, 0, sizeof (q));
         q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
         q.params.x = 1;
-        quad_pass (GpuPass::Exposure,
+        quad_pass (QuadZone::Exposure,
+                   GpuPass::Exposure,
                    @"Exposure probe",
                    m_probe,
                    m_current,
@@ -2549,6 +2660,7 @@ namespace moppe {
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
       attach_gpu_pass (rp, GpuPass::Present);
 
+      MOPPE_METAL_ZONE (m_tracy_metal, rp, "Present and HUD");
       id<MTLRenderCommandEncoder> enc =
         [m_cmd renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Present and HUD";
@@ -2629,7 +2741,10 @@ namespace moppe {
 
     void MetalRenderer::end_frame () {
       MOPPE_PROFILE_ZONE ("MetalRenderer::end_frame");
-      end_scene_encoder (); // in case nothing was drawn
+      {
+        MOPPE_PROFILE_ZONE ("MetalRenderer::finish_scene_encoding");
+        end_scene_encoder (); // in case nothing was drawn
+      }
 
 #if !TARGET_OS_IPHONE
       id<MTLBuffer> capture = nil;
@@ -2765,7 +2880,10 @@ namespace moppe {
         }
         dispatch_semaphore_signal (sem);
       }];
-      [m_cmd commit];
+      {
+        MOPPE_PROFILE_ZONE ("MetalRenderer::commit_command_buffer");
+        [m_cmd commit];
+      }
       if (m_profile_cpu && m_cpu_frame_start > 0) {
         const double now = cpu_time ();
         if (m_cpu_interval_start == 0)

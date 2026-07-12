@@ -1,7 +1,7 @@
 .PHONY: all archive callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks phone profile terrain-lab-shot testflight tracy \
-	tracy-capture tracy-import xcode
+	tracy-benchmark-capture tracy-capture tracy-import xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -58,6 +58,10 @@ tracy:
 # Record a finite gameplay trace to build-tracy/moppe.tracy.
 tracy-capture:
 	./tools/tracy-capture
+
+# Capture a deterministic graphics-feature cube with CPU and Metal zones.
+tracy-benchmark-capture:
+	./tools/tracy-benchmark-capture
 
 # Import an existing capture: make tracy-import TRACE=path/to/file.tracy
 tracy-import:

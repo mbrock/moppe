@@ -18,6 +18,15 @@ Analysis used `tools/graphics-benchmark-analyze`, which pairs identical logical
 frames along the 1,024 one-feature cube edges and evaluates pairwise
 interactions as differences of differences over the cube's square faces.
 
+`make tracy-benchmark-capture` runs the same cube inside a content-addressed
+Tracy capture.  Each frame records its mask, epoch, logical frame, and
+measurement state as Tracy plots.  The importer joins CPU zones and Metal
+encoder zones to those coordinates and materializes paired feature effects in
+`benchmark_zone_feature_effects`.  On Apple tile GPUs, encoder timestamp spans
+may overlap; they locate affected intervals but must not be summed as additive
+pass costs.  Command-buffer `gpu_ms` remains the authoritative whole-frame
+measurement.
+
 ## Low non-hot baseline
 
 The low baseline retains half-resolution scene rendering with terrain shadows,
