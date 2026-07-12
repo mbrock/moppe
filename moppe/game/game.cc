@@ -766,7 +766,7 @@ namespace moppe {
         if (m_car_exists)
           m_car.update (seconds (dt));
         if (m_mode == M_FOOT)
-          m_walker.update (dt, m_map, m_obstacles, m_world);
+          m_walker.update (seconds (dt), m_map, m_obstacles, m_world);
 
         const Vec3 vpos = (m_mode == M_FOOT)  ? m_walker.position ()
                           : (m_mode == M_CAR) ? m_car.position ()
@@ -1969,7 +1969,8 @@ namespace moppe {
           const Vec3 h = av.orientation ();
           const Vec3 side (h[2], 0, -h[0]);
           m_walker.spawn (
-            av.position () + side * (m_mode == M_CAR ? 2.4f : 1.8f), h);
+            position (av.position () + side * (m_mode == M_CAR ? 2.4f : 1.8f)),
+            h);
           av.set_thrust (0);
           av.set_yaw (0 * u::deg);
           av.set_boost (0, 0);

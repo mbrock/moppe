@@ -17,12 +17,12 @@ namespace moppe {
     class Walker {
     public:
       struct State {
-        Vec3 position {};
+        position_t position {};
         Vec3 heading {};
-        float vertical_velocity {};
-        float turn {};
-        float walk {};
-        float animation_distance {};
+        velocity_component_t vertical_velocity {};
+        control_signal_t turn {};
+        control_signal_t walk {};
+        meters_t animation_distance {};
         bool grounded {};
       };
 
@@ -42,22 +42,25 @@ namespace moppe {
         m_grounded = state.grounded;
       }
 
-      void spawn (const Vec3& pos, const Vec3& heading);
+      void spawn (position_t pos, const Vec3& heading);
 
-      void set_turn (float t) {
+      void set_turn (control_signal_t t) {
         m_turn = t;
       }
-      void set_walk (float w) {
+      void set_walk (control_signal_t w) {
         m_walk = w;
       }
       void jump ();
 
-      void update (float dt,
+      void update (seconds_t dt,
                    const map::HeightMap& map,
                    const std::vector<mov::Box>& boxes,
                    const WorldParams& world);
 
       Vec3 position () const {
+        return position_value (m_pos);
+      }
+      position_t physical_position () const {
         return m_pos;
       }
       Vec3 heading () const {
@@ -72,8 +75,11 @@ namespace moppe {
     private:
       void collide (const std::vector<mov::Box>& boxes);
 
-      Vec3 m_pos, m_heading;
-      float m_vy, m_turn, m_walk, m_anim;
+      position_t m_pos;
+      Vec3 m_heading;
+      velocity_component_t m_vy;
+      control_signal_t m_turn, m_walk;
+      meters_t m_anim;
       bool m_grounded;
     };
   }

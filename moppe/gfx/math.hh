@@ -30,6 +30,10 @@ namespace moppe {
   using radians_t = quantity<si::radian, float>;
   using magnitude_t = quantity<one, float>;
   using speed_t = quantity<si::metre / si::second, float>;
+  using velocity_component_t =
+    quantity<isq::velocity[si::metre / si::second], float>;
+  using acceleration_component_t =
+    quantity<isq::acceleration[si::metre / pow<2> (si::second)], float>;
   using newtons_t = quantity<si::newton, float>;
   using watts_t = quantity<si::watt, float>;
   using kilograms_t = quantity<si::kilogram, float>;

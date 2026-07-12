@@ -12,7 +12,8 @@ namespace moppe {
     static const float steering_rate = 1.6;
     static const float air_steering_rate = 0.9;
 
-    static const float boost_acceleration = 26.0f; // m/s^2
+    static const acceleration_component_t boost_acceleration =
+      26.0f * isq::acceleration[u::m / pow<2> (u::s)];
     static const radians_t boost_max_tilt = 60.0f * u::deg;
     static const seconds_t boost_full_burn_time = seconds (3.0f);
     static const seconds_t boost_recharge_time = seconds (5.0f);
@@ -34,10 +35,10 @@ namespace moppe {
           m_map (map), m_max_thrust (max_thrust), m_power (power), m_thrust (0),
           m_mass (mass), m_boost_input (0), m_boost_drive (0),
           m_boost_level (0), m_boost_charge (1),
-          m_boost_recharge_delay (seconds (0)), m_water_level (-1000),
-          m_airborne_time (seconds (0)), m_impact (0), m_fall_top (0),
-          m_fall_drop (0), m_obstacles (0), m_body_kind (0),
-          m_body_color (0.8, 0.15, 0.1) {
+          m_boost_recharge_delay (seconds (0)), m_water_level (-1000 * u::m),
+          m_airborne_time (seconds (0)), m_impact (0 * u::m / u::s),
+          m_fall_top (0 * u::m), m_fall_drop (0 * u::m), m_obstacles (0),
+          m_body_kind (0), m_body_color (0.8, 0.15, 0.1) {
       calculate_orientation ();
       fall_to_ground ();
     }
@@ -133,12 +134,13 @@ namespace moppe {
              (radius + 0.1f);
     }
 
-    Vec3 Vehicle::drag () const {
+    acceleration_t Vehicle::drag () const {
       // Linear rolling drag plus quadratic air drag: terminal speed
       // lands near the speedometer's 300 km/h, and fall speeds stay
       // survivable
-      const Vec3& v = velocity_value (m_velocity);
-      return v * -(0.05f + 0.0035f * length (v));
+      const speed_t speed = magnitude (m_velocity);
+      const damping_t drag_rate = 0.05f / u::s + 0.0035f / u::m * speed;
+      return quantity_cast<isq::acceleration> (-m_velocity * drag_rate);
     }
 
     // Grounded, or close enough that a micro-hop over a bump should
@@ -201,11 +203,11 @@ namespace moppe {
 
         if (px < pz) {
           p[0] = (dx0 < dx1) ? b.x0 - radius : b.x1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (v[0]));
+          m_impact = std::max (m_impact, 0.4f * std::abs (v[0]) * u::m / u::s);
           v[0] *= -0.35f;
         } else {
           p[2] = (dz0 < dz1) ? b.z0 - radius : b.z1 + radius;
-          m_impact = std::max (m_impact, 0.4f * std::abs (v[2]));
+          m_impact = std::max (m_impact, 0.4f * std::abs (v[2]) * u::m / u::s);
           v[2] *= -0.35f;
         }
       }
@@ -316,8 +318,7 @@ namespace moppe {
       const Vec3 boost_direction =
         Vec3 (0, cos (tilt), 0) + m_heading * (drive_sign * sin (tilt));
 
-      Vec3 f;
-      const float g = -9.82f; // m/s^2 (was mislabeled as metres before)
+      force_t f = Vec3 () * isq::force[u::N];
       const Vec3 n = ground_normal ();
 
       // Thrust stays on through micro-hops (coyote contact); the
@@ -331,26 +332,29 @@ namespace moppe {
         const newtons_t force =
           std::min (m_max_thrust,
                     newtons_t (m_power / std::max (vf, 0.5f * (u::m / u::s))));
-        f += m_thrust_orientation * newtons_value (m_thrust * force);
+        f += m_thrust_orientation * (scalar_value (m_thrust) * force);
       }
-      Vec3 a (f / m_mass.numerical_value_in (u::kg) + drag () + Vec3 (0, g, 0) +
-              boost_direction * (boost_acceleration * m_boost_level));
+      acceleration_t a =
+        quantity_cast<isq::acceleration> (f / m_mass) + drag () +
+        Vec3 (0, -1, 0) * (9.82f * isq::acceleration[u::m / pow<2> (u::s)]) +
+        boost_direction * (boost_acceleration * m_boost_level);
+      Vec3& acceleration = a.numerical_value_ref_in (u::m / pow<2> (u::s));
 
       // The ground supplies only as much normal force as necessary.  A
       // partial vertical burn therefore lightens the vehicle; it leaves
       // the surface only once the jets overcome gravity.
       if (is_grounded ()) {
-        const float into_ground = dot (a, n);
+        const float into_ground = dot (acceleration, n);
         if (into_ground < 0)
-          a -= n * into_ground;
+          acceleration -= n * into_ground;
       }
 
       Vec3& velocity = velocity_value (m_velocity);
-      velocity += a * dt_s;
+      m_velocity += quantity_cast<isq::velocity> (a * dt);
 
       if (is_grounded ()) {
         const float normal_speed = dot (velocity, n);
-        if (dot (a, n) <= 0.001f || normal_speed < 0)
+        if (dot (acceleration, n) <= 0.001f || normal_speed < 0)
           velocity -= n * normal_speed;
       }
       if (contact) {
@@ -361,7 +365,7 @@ namespace moppe {
       }
 
       // Wading through the ocean is slow going
-      if (position_value (m_position)[1] - radius < m_water_level)
+      if (position_value (m_position)[1] * u::m - radius * u::m < m_water_level)
         m_velocity *= decay (1.4f / u::s, dt);
 
       m_position += quantity_cast<isq::position_vector> (m_velocity * dt);
@@ -376,21 +380,23 @@ namespace moppe {
       // descent was.
       if (is_grounded ()) {
         if (m_airborne_time > seconds (0.25f)) {
-          m_impact = std::max (0.0f, -dot (velocity, ground_normal ()));
+          m_impact = std::max (0.0f * u::m / u::s,
+                               -dot (velocity, ground_normal ()) * u::m / u::s);
           // Boost-assisted landings are partly forgiven: the jets
           // flare on touchdown, or so the story goes.
           if (m_boost_flight)
             m_impact *= 0.75f;
-          m_susp_v -= 0.10f * m_impact;
-          m_fall_drop = m_fall_top - position_value (m_position)[1];
+          m_susp_v -= 0.10f * m_impact.numerical_value_in (u::m / u::s);
+          m_fall_drop = m_fall_top - position_value (m_position)[1] * u::m;
         }
         if (m_boost_level <= 0)
           m_boost_flight = false;
         m_airborne_time = seconds (0);
-        m_fall_top = position_value (m_position)[1];
+        m_fall_top = position_value (m_position)[1] * u::m;
       } else {
         m_airborne_time += dt;
-        m_fall_top = std::max (m_fall_top, position_value (m_position)[1]);
+        m_fall_top =
+          std::max (m_fall_top, position_value (m_position)[1] * u::m);
       }
 
       // Lean into corners: balance the turn against gravity
@@ -499,7 +505,7 @@ namespace moppe {
       }
 
       if (bounced > 0)
-        m_impact = max (m_impact, 0.4f * bounced);
+        m_impact = std::max (m_impact, 0.4f * bounced * u::m / u::s);
     }
 
   }

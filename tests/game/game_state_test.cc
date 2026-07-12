@@ -89,9 +89,13 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK_NEAR (seconds_value (restored.airborne_time),
                     seconds_value (saved.airborne_time),
                     1e-6f);
-  MOPPE_CHECK_NEAR (restored.impact, saved.impact, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.fall_top, saved.fall_top, 1e-6f);
-  MOPPE_CHECK_NEAR (restored.fall_drop, saved.fall_drop, 1e-6f);
+  MOPPE_CHECK_NEAR (restored.impact.numerical_value_in (u::m / u::s),
+                    saved.impact.numerical_value_in (u::m / u::s),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (
+    meters_value (restored.fall_top), meters_value (saved.fall_top), 1e-6f);
+  MOPPE_CHECK_NEAR (
+    meters_value (restored.fall_drop), meters_value (saved.fall_drop), 1e-6f);
   MOPPE_CHECK (restored.body_kind == saved.body_kind);
 }
 
@@ -109,16 +113,20 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
                 camera_state.position_velocity);
 
   game::Walker walker;
-  walker.spawn (Vec3 (3, 4, 5), Vec3 (1, 0, 0));
+  walker.spawn (position (Vec3 (3, 4, 5)), Vec3 (1, 0, 0));
   walker.set_turn (0.4f);
   walker.set_walk (0.8f);
   const game::Walker::State walker_state = walker.state ();
-  walker.spawn (Vec3 (30, 40, 50), Vec3 (0, 0, -1));
+  walker.spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
   walker.restore (walker_state);
-  check_vector (walker.state ().position, walker_state.position);
+  check_position (walker.state ().position, walker_state.position);
   check_vector (walker.state ().heading, walker_state.heading);
-  MOPPE_CHECK_NEAR (walker.state ().turn, walker_state.turn, 1e-6f);
-  MOPPE_CHECK_NEAR (walker.state ().walk, walker_state.walk, 1e-6f);
+  MOPPE_CHECK_NEAR (scalar_value (walker.state ().turn),
+                    scalar_value (walker_state.turn),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (scalar_value (walker.state ().walk),
+                    scalar_value (walker_state.walk),
+                    1e-6f);
 }
 
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
