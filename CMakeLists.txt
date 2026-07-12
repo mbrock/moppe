@@ -180,6 +180,7 @@ add_library(moppe_render STATIC
   moppe/render/text.cc
 )
 target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(moppe_render PUBLIC mp-units::mp-units)
 
 # Runtime scalar-field expressions plus evaluator backends.  This stays
 # independent of game and platform code so tools and tests use the same DAG.
@@ -348,6 +349,7 @@ if(APPLE)
   target_include_directories(moppe_apple PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(moppe_apple PRIVATE -fobjc-arc)
   target_link_libraries(moppe_apple PUBLIC
+    mp-units::mp-units
     "-framework Foundation" "-framework CoreText"
     "-framework CoreGraphics" "-framework AVFoundation")
 endif()

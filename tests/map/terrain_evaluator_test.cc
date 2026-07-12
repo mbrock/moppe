@@ -147,7 +147,7 @@ MOPPE_TEST (vehicle_coordinates_remain_unwrapped_on_the_torus) {
   map.recompute_normals ();
   mov::Vehicle vehicle (Vector3D (112.5f, 0, -7.5f), 0, map, 1000, 10000, 100);
 
-  vehicle.update (0.0f);
+  vehicle.update (seconds (0.0f));
 
   MOPPE_CHECK_NEAR (vehicle.position ().x, 112.5f, 1e-6f);
   MOPPE_CHECK_NEAR (vehicle.position ().z, -7.5f, 1e-6f);
