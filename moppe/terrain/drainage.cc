@@ -71,7 +71,7 @@ namespace moppe::terrain {
       return y * width + x;
     };
 
-    std::vector<std::uint32_t> receiver (count);
+    std::vector<CellIndex> receiver (count, no_cell);
     std::vector<float> slope (count, 0.0f);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x) {
@@ -119,8 +119,8 @@ namespace moppe::terrain {
       if (receiver[cell] != cell)
         area[receiver[cell]] += area[cell];
 
-    std::vector<std::uint32_t> basin (count);
-    std::vector<std::uint32_t> sinks;
+    std::vector<CellIndex> basin (count, no_cell);
+    std::vector<CellIndex> sinks;
     for (auto i = order.rbegin (); i != order.rend (); ++i) {
       const std::uint32_t cell = *i;
       if (receiver[cell] == cell) {
@@ -173,7 +173,7 @@ namespace moppe::terrain {
       return y * width + x;
     };
 
-    std::vector<std::uint32_t> receiver (count);
+    std::vector<CellIndex> receiver (count, no_cell);
     std::vector<float> slope (count, 0.0f);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x) {
@@ -278,8 +278,8 @@ namespace moppe::terrain {
     if (order.size () != count)
       throw std::logic_error ("wet drainage routing contains a cycle");
 
-    std::vector<std::uint32_t> basin (count);
-    std::vector<std::uint32_t> sinks;
+    std::vector<CellIndex> basin (count, no_cell);
+    std::vector<CellIndex> sinks;
     for (auto i = order.rbegin (); i != order.rend (); ++i) {
       const std::uint32_t cell = *i;
       if (receiver[cell] == cell) {
@@ -387,32 +387,31 @@ namespace moppe::terrain {
         ++river_donors[next];
     }
 
-    std::vector<std::uint32_t> body_at_spill (count, RiverReach::no_id);
-    std::uint32_t ocean_body = RiverReach::no_id;
+    std::vector<WaterBodyId> body_at_spill (count, no_water_body);
+    WaterBodyId ocean_body = no_water_body;
     for (const WaterBody& body : census.bodies) {
       if (body.spill_cell != WaterBody::no_cell)
         body_at_spill[body.spill_cell] = body.id;
       if (body.classification == WaterBodyClass::Sea &&
-          ocean_body == RiverReach::no_id)
+          ocean_body == no_water_body)
         ocean_body = body.id;
     }
 
     RiverNetwork network {
       .minimum_area = minimum_area,
       .waterfall_parameters = waterfall_parameters,
-      .reach_by_cell = std::vector<std::uint32_t> (count, RiverReach::no_id),
-      .waterfall_by_cell = std::vector<std::uint32_t> (count, Waterfall::no_id)
+      .reach_by_cell = std::vector<RiverReachId> (count, RiverReach::no_id),
+      .waterfall_by_cell = std::vector<WaterfallId> (count, Waterfall::no_id)
     };
     for (std::uint32_t start = 0; start < count; ++start) {
       if (!eligible[start] ||
           network.reach_by_cell[start] != RiverReach::no_id ||
-          (river_donors[start] == 1 &&
-           body_at_spill[start] == RiverReach::no_id))
+          (river_donors[start] == 1 && body_at_spill[start] == no_water_body))
         continue;
       RiverReach reach {
         .id = static_cast<std::uint32_t> (network.reaches.size ()),
         .upstream_body = body_at_spill[start],
-        .downstream_body = RiverReach::no_id,
+        .downstream_body = no_water_body,
         .downstream_ocean = false,
         .downstream_reach = RiverReach::no_id,
         .upstream_area = drainage.contributing_area.sample (
@@ -442,7 +441,7 @@ namespace moppe::terrain {
         reach.downstream_body = census.body[next];
       else if (flood.ocean[next]) {
         reach.downstream_ocean = true;
-        if (ocean_body != RiverReach::no_id)
+        if (ocean_body != no_water_body)
           reach.downstream_body = ocean_body;
       }
       network.reaches.push_back (std::move (reach));

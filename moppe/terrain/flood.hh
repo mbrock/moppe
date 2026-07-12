@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/terrain_view.hh>
+#include <moppe/terrain/types.hh>
 
 #include <cstdint>
 #include <limits>
@@ -20,8 +21,8 @@ namespace moppe::terrain {
     ScalarRaster water_level;
     ScalarRaster water_depth;
     std::vector<std::uint8_t> ocean;
-    std::vector<std::uint32_t> spill_receiver;
-    std::vector<std::uint32_t> outlets;
+    std::vector<CellIndex> spill_receiver;
+    std::vector<CellIndex> outlets;
 
     std::size_t width () const noexcept {
       return source_grid.unique_width ();
@@ -35,10 +36,9 @@ namespace moppe::terrain {
   enum class WaterBodyClass { Puddle, Pond, Lake, Sea };
 
   struct WaterBody {
-    static constexpr std::uint32_t no_cell =
-      std::numeric_limits<std::uint32_t>::max ();
+    static constexpr CellIndex no_cell = terrain::no_cell;
 
-    std::uint32_t id;
+    WaterBodyId id;
     std::size_t cells;
     square_meters_t area;
     meters_t maximum_depth;
@@ -46,16 +46,15 @@ namespace moppe::terrain {
     cubic_meters_t volume;
     meters_t surface_level;
     bool ocean_connected;
-    std::uint32_t outlet_cell;
-    std::uint32_t spill_cell;
+    CellIndex outlet_cell;
+    CellIndex spill_cell;
     WaterBodyClass classification;
   };
 
   struct LakeCensus {
-    static constexpr std::uint32_t dry =
-      std::numeric_limits<std::uint32_t>::max ();
+    static constexpr WaterBodyId dry = no_water_body;
 
-    std::vector<std::uint32_t> body;
+    std::vector<WaterBodyId> body;
     std::vector<WaterBody> bodies;
   };
 

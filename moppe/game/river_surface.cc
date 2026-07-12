@@ -148,7 +148,7 @@ namespace moppe::game {
       if (reach.cells.empty ())
         continue;
       raw_points.clear ();
-      std::vector<std::uint32_t> cells = reach.cells;
+      std::vector<terrain::CellIndex> cells = reach.cells;
       const std::uint32_t receiver = drainage.receiver[reach.cells.back ()];
       if (receiver != reach.cells.back ())
         cells.push_back (receiver);
@@ -218,8 +218,9 @@ namespace moppe::game {
         const bool joins_downstream_reach =
           i + 1 == cells.size () &&
           reach.downstream_reach != terrain::RiverReach::no_id;
-        const std::uint32_t slope_cell =
-          i + 1 == cells.size () && i > 0 ? cells[i - 1] : cell;
+        const terrain::CellIndex slope_cell = i + 1 == cells.size () && i > 0
+                                                ? cells[i - 1]
+                                                : terrain::CellIndex { cell };
         const float slope = drainage.slope.values ()[slope_cell];
         raw_points.push_back (
           { .position = Vec3 (world_x, y, world_z),

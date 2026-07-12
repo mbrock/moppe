@@ -15,7 +15,7 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
                            .spacing_y = 10.0f * mp_units::si::metre,
                            .height_scale = 100.0f * mp_units::si::metre };
   const Domain2D domain { .width = 9, .height = 9 };
-  std::vector<std::uint32_t> body (count, LakeCensus::dry);
+  std::vector<WaterBodyId> body (count, LakeCensus::dry);
   body[40] = 0;
   const FloodField flood {
     .source_grid = grid,
@@ -24,18 +24,18 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
     .water_level = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
     .water_depth = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
     .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = std::vector<std::uint32_t> (count, 40),
+    .spill_receiver = std::vector<CellIndex> (count, 40),
     .outlets = { 40 }
   };
   const LakeCensus census { .body = std::move (body) };
   const DrainageGraph drainage {
     .source_grid = grid,
-    .receiver = std::vector<std::uint32_t> (count, 40),
+    .receiver = std::vector<CellIndex> (count, 40),
     .slope =
       SlopeRaster (ScalarRaster (domain, std::vector<float> (count, 0.01f))),
     .contributing_area = ContributingAreaRaster (
       ScalarRaster (domain, std::vector<float> (count, 100.0f))),
-    .basin = std::vector<std::uint32_t> (count, 0),
+    .basin = std::vector<CellIndex> (count, 0),
     .sinks = { 40 }
   };
 

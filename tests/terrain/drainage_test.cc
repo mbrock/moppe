@@ -213,8 +213,9 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                            .spacing_x = 2.0f * mp_units::si::metre,
                            .spacing_y = 2.0f * mp_units::si::metre };
   const Domain2D domain { .width = 6, .height = 2 };
-  const std::vector<std::uint32_t> receiver { 1, 2, 3, 4, 5,  5,
-                                              6, 7, 8, 9, 10, 11 };
+  const std::vector<CellIndex> receiver {
+    1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11
+  };
   const FloodField flood {
     .source_grid = grid,
     .sea_level = 0.0f,
@@ -225,7 +226,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
     .spill_receiver = receiver,
     .outlets = { 5, 6, 7, 8, 9, 10, 11 }
   };
-  const LakeCensus census { .body = std::vector<std::uint32_t> (
+  const LakeCensus census { .body = std::vector<WaterBodyId> (
                               count, LakeCensus::dry) };
   const DrainageGraph drainage { .source_grid = grid,
                                  .receiver = receiver,
@@ -256,7 +257,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                                                    1.0f,
                                                    1.0f,
                                                    1.0f })),
-                                 .basin = std::vector<std::uint32_t> (count, 5),
+                                 .basin = std::vector<CellIndex> (count, 5),
                                  .sinks = { 5, 6, 7, 8, 9, 10, 11 } };
 
   const RiverNetwork rivers = extract_river_network (

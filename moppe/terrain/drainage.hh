@@ -32,11 +32,11 @@ namespace moppe::terrain {
   // Rasters contain unique torus samples without the duplicated render seam.
   struct DrainageGraph {
     TerrainGrid source_grid;
-    std::vector<std::uint32_t> receiver;
+    std::vector<CellIndex> receiver;
     SlopeRaster slope;
     ContributingAreaRaster contributing_area;
-    std::vector<std::uint32_t> basin;
-    std::vector<std::uint32_t> sinks;
+    std::vector<CellIndex> basin;
+    std::vector<CellIndex> sinks;
 
     std::size_t width () const noexcept {
       return source_grid.unique_width ();
@@ -48,21 +48,20 @@ namespace moppe::terrain {
   };
 
   struct WaterInlet {
-    std::uint32_t upstream_cell;
-    std::uint32_t water_cell;
+    CellIndex upstream_cell;
+    CellIndex water_cell;
     square_meters_t contributing_area;
   };
 
   struct WaterBodyFlow {
-    static constexpr std::uint32_t no_cell =
-      std::numeric_limits<std::uint32_t>::max ();
+    static constexpr CellIndex no_cell = terrain::no_cell;
 
-    std::uint32_t body_id;
+    WaterBodyId body_id;
     std::vector<WaterInlet> inlets;
     square_meters_t inflow_area;
-    std::uint32_t outlet_cell;
-    std::uint32_t spill_cell;
-    std::uint32_t downstream_cell;
+    CellIndex outlet_cell;
+    CellIndex spill_cell;
+    CellIndex downstream_cell;
     square_meters_t outflow_area;
   };
 
@@ -71,15 +70,14 @@ namespace moppe::terrain {
   };
 
   struct RiverReach {
-    static constexpr std::uint32_t no_id =
-      std::numeric_limits<std::uint32_t>::max ();
+    static constexpr RiverReachId no_id = no_river_reach;
 
-    std::uint32_t id;
-    std::vector<std::uint32_t> cells;
-    std::uint32_t upstream_body;
-    std::uint32_t downstream_body;
+    RiverReachId id;
+    std::vector<CellIndex> cells;
+    WaterBodyId upstream_body;
+    WaterBodyId downstream_body;
     bool downstream_ocean;
-    std::uint32_t downstream_reach;
+    RiverReachId downstream_reach;
     square_meters_t upstream_area;
     square_meters_t downstream_area;
     slope_t maximum_slope;
@@ -92,12 +90,12 @@ namespace moppe::terrain {
   };
 
   struct Waterfall {
-    static constexpr std::uint32_t no_id = RiverReach::no_id;
+    static constexpr WaterfallId no_id = no_waterfall;
 
-    std::uint32_t id;
-    std::uint32_t reach_id;
-    std::uint32_t lip_cell;
-    std::uint32_t foot_cell;
+    WaterfallId id;
+    RiverReachId reach_id;
+    CellIndex lip_cell;
+    CellIndex foot_cell;
     meters_t drop;
     meters_t horizontal_distance;
     slope_t slope;
@@ -107,8 +105,8 @@ namespace moppe::terrain {
   struct RiverNetwork {
     square_meters_t minimum_area;
     WaterfallParameters waterfall_parameters;
-    std::vector<std::uint32_t> reach_by_cell;
-    std::vector<std::uint32_t> waterfall_by_cell;
+    std::vector<RiverReachId> reach_by_cell;
+    std::vector<WaterfallId> waterfall_by_cell;
     std::vector<RiverReach> reaches;
     std::vector<Waterfall> waterfalls;
   };

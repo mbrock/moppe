@@ -12,7 +12,7 @@
 
 namespace moppe::terrain {
   namespace {
-    constexpr std::uint32_t no_cell =
+    constexpr std::uint32_t no_donor =
       std::numeric_limits<std::uint32_t>::max ();
 
     std::vector<float> expand_samples (const TerrainGrid& grid,
@@ -98,7 +98,7 @@ namespace moppe::terrain {
       const DrainageGraph drainage =
         analyze_wet_drainage (routed_terrain, flood, census);
 
-      std::vector<std::uint32_t> receiver = drainage.receiver;
+      std::vector<CellIndex> receiver = drainage.receiver;
       std::vector<std::uint8_t> boundary (count, 0);
       report.fixed_boundaries = 0;
       for (std::uint32_t cell = 0; cell < count; ++cell) {
@@ -109,8 +109,8 @@ namespace moppe::terrain {
         }
       }
 
-      std::vector<std::uint32_t> first_donor (count, no_cell);
-      std::vector<std::uint32_t> next_donor (count, no_cell);
+      std::vector<std::uint32_t> first_donor (count, no_donor);
+      std::vector<std::uint32_t> next_donor (count, no_donor);
       for (std::uint32_t cell = static_cast<std::uint32_t> (count);
            cell-- > 0;) {
         const std::uint32_t next = receiver[cell];
@@ -199,7 +199,7 @@ namespace moppe::terrain {
             predicted[cell] = initial[cell];
 
           stack.push_back ({ cell, true });
-          for (std::uint32_t donor = first_donor[cell]; donor != no_cell;
+          for (std::uint32_t donor = first_donor[cell]; donor != no_donor;
                donor = next_donor[donor])
             stack.push_back ({ donor, false });
         }
