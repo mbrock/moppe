@@ -201,12 +201,12 @@ namespace moppe::terrain {
         depth[cell] = std::max (0.0f, water[cell] - terrain.at (x, y));
       }
 
-    const Domain2D domain { .width = width,
-                            .height = height,
-                            .max_x =
-                              grid.spacing_x * static_cast<float> (width),
-                            .max_y =
-                              grid.spacing_y * static_cast<float> (height) };
+    const Domain2D domain {
+      .width = width,
+      .height = height,
+      .max_x = grid.spacing_x_m () * static_cast<float> (width),
+      .max_y = grid.spacing_y_m () * static_cast<float> (height)
+    };
     return { .source_grid = grid,
              .sea_level = sea_level,
              .has_ocean = has_ocean,
@@ -230,8 +230,8 @@ namespace moppe::terrain {
                           std::vector<std::uint32_t> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
     const float cell_area =
-      flood.source_grid.spacing_x * flood.source_grid.spacing_y;
-    const float height_scale = flood.source_grid.height_scale;
+      square_meters_value (flood.source_grid.cell_area ());
+    const float height_scale = flood.source_grid.height_scale_m ();
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (depth[origin] <= wet_epsilon ||

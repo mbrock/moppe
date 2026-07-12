@@ -133,7 +133,7 @@ int main (int argc, char** argv) {
 
       const DrainageGraph drainage = analyze_drainage (map.terrain_view ());
       const float cell_area =
-        drainage.source_grid.spacing_x * drainage.source_grid.spacing_y;
+        square_meters_value (drainage.source_grid.cell_area ());
       float maximum_area = 0.0f;
       std::size_t stream_cells = 0;
       for (const float area : drainage.contributing_area.values ()) {

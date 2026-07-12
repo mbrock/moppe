@@ -9,6 +9,14 @@
 #include <vector>
 
 namespace moppe::terrain {
+  QUANTITY_SPEC (terrain_slope,
+                 mp_units::dimensionless,
+                 mp_units::non_negative);
+
+  using SlopeRaster = Raster<terrain_slope[mp_units::one]>;
+  using ContributingAreaRaster =
+    Raster<mp_units::isq::area[mp_units::si::metre * mp_units::si::metre]>;
+
   struct FloodField;
   struct LakeCensus;
 
@@ -24,8 +32,8 @@ namespace moppe::terrain {
   struct DrainageGraph {
     TerrainGrid source_grid;
     std::vector<std::uint32_t> receiver;
-    ScalarRaster slope;
-    ScalarRaster contributing_area;
+    SlopeRaster slope;
+    ContributingAreaRaster contributing_area;
     std::vector<std::uint32_t> basin;
     std::vector<std::uint32_t> sinks;
 

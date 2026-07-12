@@ -46,8 +46,8 @@ namespace moppe::terrain {
         if (dy < -height / 2)
           dy += height;
       }
-      return std::hypot (static_cast<float> (dx) * grid.spacing_x,
-                         static_cast<float> (dy) * grid.spacing_y);
+      return std::hypot (static_cast<float> (dx) * grid.spacing_x_m (),
+                         static_cast<float> (dy) * grid.spacing_y_m ());
     }
 
     void validate (const AnalyticalErosion& p) {
@@ -70,8 +70,8 @@ namespace moppe::terrain {
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
-    const float cell_area = grid.spacing_x * grid.spacing_y;
-    const float height_scale = grid.height_scale;
+    const float cell_area = square_meters_value (grid.cell_area ());
+    const float height_scale = grid.height_scale_m ();
 
     std::vector<float> initial (count);
     for (std::size_t y = 0; y < height; ++y)

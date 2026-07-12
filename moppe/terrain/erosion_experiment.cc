@@ -104,7 +104,7 @@ int main (int argc, char** argv) {
       const DrainageGraph graph = analyze_drainage (map.terrain_view ());
       const double drainage_ms = milliseconds_since (drainage_start);
       const float cell_area =
-        graph.source_grid.spacing_x * graph.source_grid.spacing_y;
+        square_meters_value (graph.source_grid.cell_area ());
       float maximum_area = 0.0f;
       std::size_t stream_cells = 0;
       for (const float area : graph.contributing_area.values ()) {

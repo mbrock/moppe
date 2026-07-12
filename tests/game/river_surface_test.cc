@@ -10,9 +10,10 @@
 using namespace moppe;
 
 MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
-  const terrain::TerrainGrid grid {
-    .width = 9, .height = 9, .spacing_x = 2.0f, .spacing_y = 3.0f
-  };
+  const terrain::TerrainGrid grid { .width = 9,
+                                    .height = 9,
+                                    .spacing_x = 2.0f * mp_units::si::metre,
+                                    .spacing_y = 3.0f * mp_units::si::metre };
 
   MOPPE_CHECK_NEAR (game::visible_river_minimum_area (grid), 98304.0f, 0.0f);
 }
@@ -48,8 +49,10 @@ MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {
   const terrain::DrainageGraph drainage {
     .source_grid = grid,
     .receiver = flood.spill_receiver,
-    .slope = terrain::ScalarRaster (domain, std::vector<float> (count, 0.05f)),
-    .contributing_area = terrain::ScalarRaster (domain, std::move (area)),
+    .slope = terrain::SlopeRaster (
+      terrain::ScalarRaster (domain, std::vector<float> (count, 0.05f))),
+    .contributing_area = terrain::ContributingAreaRaster (
+      terrain::ScalarRaster (domain, std::move (area))),
     .basin = std::vector<std::uint32_t> (count, 0),
     .sinks = { 3 }
   };
@@ -169,8 +172,10 @@ MOPPE_TEST (river_ribbons_join_and_dissipate_along_standing_water_flow) {
   const terrain::DrainageGraph drainage {
     .source_grid = grid,
     .receiver = receiver,
-    .slope = terrain::ScalarRaster (domain, std::vector<float> (count, 0.02f)),
-    .contributing_area = terrain::ScalarRaster (domain, std::move (area)),
+    .slope = terrain::SlopeRaster (
+      terrain::ScalarRaster (domain, std::vector<float> (count, 0.02f))),
+    .contributing_area = terrain::ContributingAreaRaster (
+      terrain::ScalarRaster (domain, std::move (area))),
     .basin = std::vector<std::uint32_t> (count, 24),
     .sinks = { 24 }
   };

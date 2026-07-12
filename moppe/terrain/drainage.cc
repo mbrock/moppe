@@ -32,9 +32,9 @@ namespace moppe::terrain {
       return static_cast<std::size_t> (result < 0 ? result + n : result);
     }
 
-    float receiver_distance (std::uint32_t cell,
-                             std::uint32_t receiver,
-                             const TerrainGrid& grid) {
+    meters_t receiver_distance (std::uint32_t cell,
+                                std::uint32_t receiver,
+                                const TerrainGrid& grid) {
       const int width = static_cast<int> (grid.unique_width ());
       const int height = static_cast<int> (grid.unique_height ());
       int dx =
@@ -51,8 +51,9 @@ namespace moppe::terrain {
         if (dy < -height / 2)
           dy += height;
       }
-      return std::hypot (static_cast<float> (dx) * grid.spacing_x,
-                         static_cast<float> (dy) * grid.spacing_y);
+      return std::hypot (static_cast<float> (dx) * grid.spacing_x_m (),
+                         static_cast<float> (dy) * grid.spacing_y_m ()) *
+             mp_units::si::metre;
     }
   }
 
@@ -76,8 +77,8 @@ namespace moppe::terrain {
       for (std::size_t x = 0; x < width; ++x) {
         const std::size_t cell = index (x, y);
         receiver[cell] = static_cast<std::uint32_t> (cell);
-        const float elevation = terrain.at (x, y) * source_grid.height_scale;
-        float steepest = 0.0f;
+        const meters_t elevation = terrain.elevation_at (x, y);
+        auto steepest = 0.0f * mp_units::one;
         for (const Offset offset : neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -89,17 +90,18 @@ namespace moppe::terrain {
                                           : static_cast<std::size_t> (raw_x);
           const std::size_t ny = periodic ? wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
-          const float neighbor_elevation =
-            terrain.at (nx, ny) * source_grid.height_scale;
-          const float distance = std::hypot (offset.x * source_grid.spacing_x,
-                                             offset.y * source_grid.spacing_y);
-          const float candidate = (elevation - neighbor_elevation) / distance;
-          if (candidate > steepest) {
+          const meters_t neighbor_elevation = terrain.elevation_at (nx, ny);
+          const meters_t distance =
+            std::hypot (offset.x * source_grid.spacing_x_m (),
+                        offset.y * source_grid.spacing_y_m ()) *
+            mp_units::si::metre;
+          const auto candidate = (elevation - neighbor_elevation) / distance;
+          if (candidate > steepest * mp_units::one) {
             steepest = candidate;
             receiver[cell] = static_cast<std::uint32_t> (index (nx, ny));
           }
         }
-        slope[cell] = steepest;
+        slope[cell] = steepest.numerical_value_in (mp_units::one);
       }
 
     std::vector<std::uint32_t> order (count);
@@ -111,7 +113,7 @@ namespace moppe::terrain {
         return terrain.at (ax, ay) > terrain.at (bx, by);
       });
 
-    const float cell_area = source_grid.spacing_x * source_grid.spacing_y;
+    const float cell_area = square_meters_value (source_grid.cell_area ());
     std::vector<float> area (count, cell_area);
     for (const std::uint32_t cell : order)
       if (receiver[cell] != cell)
@@ -133,13 +135,14 @@ namespace moppe::terrain {
     const Domain2D domain {
       .width = width,
       .height = height,
-      .max_x = source_grid.spacing_x * static_cast<float> (width),
-      .max_y = source_grid.spacing_y * static_cast<float> (height)
+      .max_x = source_grid.spacing_x_m () * static_cast<float> (width),
+      .max_y = source_grid.spacing_y_m () * static_cast<float> (height)
     };
     return { .source_grid = source_grid,
              .receiver = std::move (receiver),
-             .slope = ScalarRaster (domain, std::move (slope)),
-             .contributing_area = ScalarRaster (domain, std::move (area)),
+             .slope = SlopeRaster (ScalarRaster (domain, std::move (slope))),
+             .contributing_area =
+               ContributingAreaRaster (ScalarRaster (domain, std::move (area))),
              .basin = std::move (basin),
              .sinks = std::move (sinks) };
   }
@@ -189,12 +192,14 @@ namespace moppe::terrain {
           const std::size_t ny = periodic ? wrapped (raw_y, height)
                                           : static_cast<std::size_t> (raw_y);
           const std::size_t next = index (nx, ny);
-          const float distance =
-            std::hypot (offset.x * grid.spacing_x, offset.y * grid.spacing_y);
-          const float candidate =
+          const meters_t distance =
+            std::hypot (offset.x * grid.spacing_x_m (),
+                        offset.y * grid.spacing_y_m ()) *
+            mp_units::si::metre;
+          const auto candidate =
             (surface[cell] - surface[next]) * grid.height_scale / distance;
           if (candidate > steepest) {
-            steepest = candidate;
+            steepest = candidate.numerical_value_in (mp_units::one);
             receiver[cell] = static_cast<std::uint32_t> (next);
           }
         }
@@ -255,7 +260,7 @@ namespace moppe::terrain {
       if (donors[cell] == 0)
         ready.push (cell);
 
-    const float cell_area = grid.spacing_x * grid.spacing_y;
+    const float cell_area = square_meters_value (grid.cell_area ());
     std::vector<float> area (count, cell_area);
     std::vector<std::uint32_t> order;
     order.reserve (count);
@@ -286,16 +291,17 @@ namespace moppe::terrain {
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const Domain2D domain { .width = width,
-                            .height = height,
-                            .max_x =
-                              grid.spacing_x * static_cast<float> (width),
-                            .max_y =
-                              grid.spacing_y * static_cast<float> (height) };
+    const Domain2D domain {
+      .width = width,
+      .height = height,
+      .max_x = grid.spacing_x_m () * static_cast<float> (width),
+      .max_y = grid.spacing_y_m () * static_cast<float> (height)
+    };
     return { .source_grid = grid,
              .receiver = std::move (receiver),
-             .slope = ScalarRaster (domain, std::move (slope)),
-             .contributing_area = ScalarRaster (domain, std::move (area)),
+             .slope = SlopeRaster (ScalarRaster (domain, std::move (slope))),
+             .contributing_area =
+               ContributingAreaRaster (ScalarRaster (domain, std::move (area))),
              .basin = std::move (basin),
              .sinks = std::move (sinks) };
   }
@@ -436,9 +442,9 @@ namespace moppe::terrain {
     }
 
     for (const RiverReach& reach : network.reaches) {
-      const float reference_area = std::max (minimum_area_m2,
-                                             drainage.source_grid.spacing_x *
-                                               drainage.source_grid.spacing_y);
+      const float reference_area =
+        std::max (minimum_area_m2,
+                  square_meters_value (drainage.source_grid.cell_area ()));
       Waterfall selected {};
       bool has_selected = false;
       std::size_t last_candidate = 0;
@@ -456,7 +462,8 @@ namespace moppe::terrain {
         const std::uint32_t cell = reach.cells[i];
         const std::uint32_t next = drainage.receiver[cell];
         const float distance =
-          receiver_distance (cell, next, drainage.source_grid);
+          receiver_distance (cell, next, drainage.source_grid)
+            .numerical_value_in (mp_units::si::metre);
         const float slope = drainage.slope.values ()[cell];
         const float drop = slope * distance;
         if (drop < waterfall_parameters.minimum_drop_m ||

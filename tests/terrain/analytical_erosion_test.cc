@@ -16,9 +16,9 @@ namespace {
   TerrainView plane () {
     return TerrainView ({ .width = 5,
                           .height = 5,
-                          .spacing_x = 10.0f,
-                          .spacing_y = 10.0f,
-                          .height_scale = 100.0f },
+                          .spacing_x = 10.0f * mp_units::si::metre,
+                          .spacing_y = 10.0f * mp_units::si::metre,
+                          .height_scale = 100.0f * mp_units::si::metre },
                         downhill_plane);
   }
 }

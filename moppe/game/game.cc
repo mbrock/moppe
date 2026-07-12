@@ -350,12 +350,14 @@ namespace moppe {
             value = std::fmod (value, period);
             return value < 0.0f ? value + period : value;
           };
-          const std::size_t gx = static_cast<std::size_t> (
-                                   wrap (x, world_extent[0]) / grid.spacing_x) %
-                                 m_standing_water->width ();
-          const std::size_t gz = static_cast<std::size_t> (
-                                   wrap (z, world_extent[2]) / grid.spacing_y) %
-                                 m_standing_water->height ();
+          const std::size_t gx =
+            static_cast<std::size_t> (wrap (x, world_extent[0]) /
+                                      grid.spacing_x_m ()) %
+            m_standing_water->width ();
+          const std::size_t gz =
+            static_cast<std::size_t> (wrap (z, world_extent[2]) /
+                                      grid.spacing_y_m ()) %
+            m_standing_water->height ();
           return m_standing_water->water_depth.at (gx, gz) * world_extent[1];
         };
 

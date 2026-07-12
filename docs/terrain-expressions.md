@@ -129,11 +129,14 @@ pretending that it is a pointwise `ScalarField`, and without requiring a new
 
 ## Materialized readings and drainage
 
-`TerrainView` is a borrowed description of concrete terrain samples. It
-carries physical horizontal spacing, vertical scale, and bounded-versus-torus
-topology, which are deliberately absent from the normalized sampling
-`Domain2D` used by pointwise field evaluation. `RandomHeightMap::terrain_view`
-is the shared bridge used by transforms, tools, and the Lab.
+`TerrainView` is a borrowed description of concrete relative-elevation
+samples. Its `TerrainGrid` carries horizontal spacing and vertical scale as
+length quantities, plus bounded-versus-torus topology; these are deliberately
+absent from the normalized sampling `Domain2D` used by pointwise field
+evaluation. `relative_elevation_at` reads the scale-free sample, while
+`elevation_at` performs the explicit calibration into metres.
+`RandomHeightMap::terrain_view` is the shared bridge used by transforms,
+tools, and the Lab.
 
 A reading consumes that materialized view without changing it. The first
 small reading, `measure_height_range`, returns the minimum and maximum that
@@ -142,8 +145,8 @@ normalization already needed. Drainage is a larger structured analysis:
 ```text
 TerrainView -> DrainageGraph
                  |-> receiver per cell
-                 |-> physical slope
-                 |-> contributing area
+                 |-> SlopeRaster (dimensionless physical gradient)
+                 |-> ContributingAreaRaster (square metres)
                  |-> basin / sink identity
 ```
 

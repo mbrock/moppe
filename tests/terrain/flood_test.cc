@@ -100,9 +100,11 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
                              0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
                              3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
-  const TerrainView terrain (
-    { .width = 5, .height = 5, .spacing_x = 2.0f, .height_scale = 10.0f },
-    heights);
+  const TerrainView terrain ({ .width = 5,
+                               .height = 5,
+                               .spacing_x = 2.0f * mp_units::si::metre,
+                               .height_scale = 10.0f * mp_units::si::metre },
+                             heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
