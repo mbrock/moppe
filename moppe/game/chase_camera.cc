@@ -24,9 +24,10 @@ namespace moppe {
                               const Vector3D& orientation,
                               const Vector3D& velocity,
                               seconds_t dt) {
+      const float dt_s = seconds_value (dt);
       // dt-correct smoothing (3.1/s reproduces the old 0.05 @ 60Hz)
-      float alpha = 1.0f - std::exp (-3.1f * dt);
-      float fast = 1.0f - std::exp (-12.0f * dt);
+      float alpha = 1.0f - std::exp (-3.1f * dt_s);
+      float fast = 1.0f - std::exp (-12.0f * dt_s);
 
       const bool reset = m_is_uninitialized;
       if (reset) {
@@ -69,15 +70,15 @@ namespace moppe {
         // The target remains responsive while the camera body has a
         // lightly underdamped follow spring: enough inertia to feel
         // physical through turns and jumps without becoming seasick.
-        spring (m_target, m_target_velocity, want_target, 2.4f, 0.92f, dt);
+        spring (m_target, m_target_velocity, want_target, 2.4f, 0.92f, dt_s);
         spring (
-          m_position, m_position_velocity, want_position, 0.95f, 0.74f, dt);
+          m_position, m_position_velocity, want_position, 0.95f, 0.74f, dt_s);
       }
 
       // Clamp the HORIZONTAL trail only, against a smoothed speed so
       // collisions can't shrink the window in one frame.
       m_speed +=
-        (velocity.length () - m_speed) * (1.0f - std::exp (-6.0f * dt));
+        (velocity.length () - m_speed) * (1.0f - std::exp (-6.0f * dt_s));
 
       Vector3D offset = m_position - position;
       const float horiz = std::sqrt (offset.x * offset.x + offset.z * offset.z);

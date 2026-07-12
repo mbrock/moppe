@@ -1,6 +1,8 @@
 #ifndef MOPPE_MATH_HH
 #define MOPPE_MATH_HH
 
+#include <mp-units/systems/si.h>
+
 #include <cmath>
 #include <iostream>
 
@@ -13,8 +15,16 @@ namespace moppe {
   typedef float degrees_t;
   typedef float radians_t;
   typedef float magnitude_t;
-  typedef float seconds_t;
+  using seconds_t = mp_units::quantity<mp_units::si::second, float>;
   typedef float meters_t;
+
+  inline seconds_t seconds (float value) {
+    return value * mp_units::si::unit_symbols::s;
+  }
+
+  inline float seconds_value (seconds_t value) {
+    return value.numerical_value_in (mp_units::si::second);
+  }
 
   inline radians_t degrees_to_radians (degrees_t x) {
     return x * (PI2 / 360);
