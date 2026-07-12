@@ -257,17 +257,22 @@ namespace moppe {
         const Vector3D right = v.render_normal ().cross (fwd).normalized ();
         const Vector3D up = fwd.cross (right);
 
-        // Follow the smoothed surface frame on the ground and the
-        // velocity arc in flight; lean into the corner; chunkier bike,
-        // easier to see from the chase camera, lifted so the scaled
-        // wheels still touch the ground.
+        // Follow the smoothed surface frame on the ground and the velocity
+        // arc in flight; lean into the corner.  Scale around the tire contact
+        // plane (bike wheel bottoms and car floors are both near y=-1 before
+        // the established 1.5x model enlargement), rather than the model
+        // origin, so world-feel experiments do not make a shrunken vehicle
+        // hover or an enlarged one sink into the ground.
+        const Vector3D contact_pivot (0, -1.5f, 0);
         return Mat4::translation (Vector3D (pos.x, pos.y + v.susp (), pos.z)) *
                Mat4::basis (right, up, fwd) *
                Mat4::rotation (v.lean (), Vector3D (0, 0, 1)) *
                Mat4::translation (Vector3D (0, 0.5f, 0)) *
-               Mat4::scaling (Vector3D (1.5f * visual_scale,
-                                        1.5f * visual_scale,
-                                        1.5f * visual_scale));
+               Mat4::translation (contact_pivot) *
+               Mat4::scaling (
+                 Vector3D (visual_scale, visual_scale, visual_scale)) *
+               Mat4::translation (contact_pivot * -1.0f) *
+               Mat4::scaling (Vector3D (1.5f, 1.5f, 1.5f));
       }
     }
 

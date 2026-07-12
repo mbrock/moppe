@@ -1840,13 +1840,13 @@ namespace moppe {
 
     private:
       float landscape_scale_normalized () const {
-        return std::log (m_landscape_scale / 0.5f) / std::log (4.0f);
+        return std::log (m_landscape_scale / 0.05f) / std::log (400.0f);
       }
 
       void set_landscape_scale_from_pointer (float x) {
         const float normalized =
           std::clamp ((x - m_game_ui_slider_x) / 320.0f, 0.0f, 1.0f);
-        m_landscape_scale = 0.5f * std::pow (4.0f, normalized);
+        m_landscape_scale = 0.05f * std::pow (400.0f, normalized);
       }
 
       void update_benchmark_title () const {
