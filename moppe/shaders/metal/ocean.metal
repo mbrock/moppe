@@ -102,6 +102,14 @@ static OceanVaryings ocean_surface_point (float3 p,
                                           constant MoppeOceanUniforms& u) {
   const float time = u.params.x;
 
+  // Swells are near-field geometry.  A 300 m sine carrying meters of
+  // amplitude reads fine underfoot, but from a ridge the whole body
+  // visibly sloshes like a skipped rope, so the displacement fades
+  // with distance and far water keeps its motion in the fragment
+  // stage's ripple normals instead.
+  const float cam_dist = length (p - u.camera_pos.xyz);
+  wave_scale *= 1.0 - smoothstep (250.0, 900.0, cam_dist);
+
   // Three overlapping swells with different directions and speeds.
   const float a1 = p.x * 0.020 + time * 1.1;
   const float a2 = p.z * 0.023 - time * 0.9;
@@ -354,6 +362,8 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
                                 [[texture (MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
                                 texture2d<float, access::read> water_flow
                                 [[texture (MOPPE_TEX_WATER_FLOW_FRAGMENT)]],
+                                texture2d<float, access::read> geology
+                                [[texture (MOPPE_TEX_WATER_GEOLOGY_FRAGMENT)]],
                                 depth2d<float> shadow_map
                                 [[texture (MOPPE_TEX_SHADOW)]]) {
   const float time = u.params.x;
@@ -434,21 +444,31 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
 
   float3 n = normalize (in.normal);
 
-  // Small-scale ripples sparkling on top of the big swells, faded
-  // with distance so the horizon doesn't shimmer with aliasing.
-  // Drifting value noise: crossed plane-wave sines interfere into a
-  // checkerboard across the whole surface at grazing angles.  Where
-  // the water flows, the directionless drift yields to the advected
-  // detail riding the current.
-  const float ripple_fade = exp (-dist * 0.002) * (1.0 - 0.75 * flowing);
+  // Small-scale ripples on top of the swells.  Three drifting
+  // value-noise octaves hand over with distance -- fine wavelets
+  // underfoot, broad wind streaks far out -- so each keeps roughly
+  // its screen-space frequency and the surface is never a perfect
+  // mirror: a flat normal under a bright horizon sky reads as a
+  // sheet of milk.  Where the water flows, the directionless drift
+  // yields to the advected detail riding the current.
+  const float flow_atten = 1.0 - 0.75 * flowing;
+  const float wavelet_fade = exp (-dist * 0.008);
+  const float chop_fade = exp (-dist * 0.002);
+  const float streak_fade = 1.0 - 0.6 * smoothstep (2000.0, 6000.0, dist);
   const float2 ripple1 =
     in.world_pos.xz * 0.35 + float2 (time * 0.9, -time * 0.7);
   const float2 ripple2 =
     in.world_pos.xz * 0.11 - float2 (time * 0.4, time * 0.5);
-  n.x += ripple_fade * (0.16 * (moppe_value_noise (ripple1) - 0.5) +
-                        0.12 * (moppe_value_noise (ripple2) - 0.5));
-  n.z += ripple_fade * (0.16 * (moppe_value_noise (ripple1 + 7.3) - 0.5) +
-                        0.12 * (moppe_value_noise (ripple2 + 3.1) - 0.5));
+  const float2 ripple3 =
+    in.world_pos.xz * 0.017 + float2 (time * 0.16, time * 0.11);
+  n.x +=
+    flow_atten * (0.16 * wavelet_fade * (moppe_value_noise (ripple1) - 0.5) +
+                  0.12 * chop_fade * (moppe_value_noise (ripple2) - 0.5) +
+                  0.11 * streak_fade * (moppe_value_noise (ripple3) - 0.5));
+  n.z += flow_atten *
+         (0.16 * wavelet_fade * (moppe_value_noise (ripple1 + 7.3) - 0.5) +
+          0.12 * chop_fade * (moppe_value_noise (ripple2 + 3.1) - 0.5) +
+          0.11 * streak_fade * (moppe_value_noise (ripple3 + 11.7) - 0.5));
   const float flow_bump = flowing * (0.14 + 0.20 * rapid);
   n.x += flow_bump * flow_grad.x;
   n.z += flow_bump * flow_grad.y;
@@ -484,10 +504,23 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
                                   moppe_srgb (float3 (1.0, 0.67, 0.34)),
                                   golden);
 
+  // Silt from the sediment ledger clouds the water: a lake fed by
+  // depositing gullies reads murky green-brown while a rock-bound
+  // basin stays clear.  (The ledger's deposited column rides in the
+  // geology raster's green channel, on the same lattice as the
+  // heights.)
+  const float turbidity =
+    (u.current.y > 0.5 && u.shore.w > 0.5)
+      ? saturate (1.4 * ocean_grid_sample_raw (in.world_pos.xz, u, geology).y)
+      : 0.0;
+
   const float3 deep = moppe_srgb (float3 (0.035, 0.17, 0.28));
   const float3 shallow = moppe_srgb (float3 (0.10, 0.42, 0.55));
+  const float3 murk = moppe_srgb (float3 (0.22, 0.30, 0.17));
   float3 water = mix (deep, shallow, 0.25 + 0.5 * fresnel);
+  water = mix (water, murk, 0.6 * turbidity);
   float alpha = mix (0.78, 0.95, fresnel);
+  alpha = mix (alpha, 0.96, 0.7 * turbidity);
 
   // Shoreline: the seabed shows through glassy turquoise shallows,
   // and a band of animated foam hugs the waterline.
@@ -496,7 +529,10 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     // Rivers run murkier than the sea — silt rides the current — so
     // flow shortens the extinction length and a metre of moving
     // water reads as a body instead of glass over gravel.
-    const float clarity = exp (-depth_m * mix (0.14, 0.55, flowing));
+    // Silt shortens the extinction length the same way current-borne
+    // sediment does, so a polluted lake gives up its glassy shallows.
+    const float clarity =
+      exp (-depth_m * mix (mix (0.14, 0.55, flowing), 1.8, turbidity));
     water = mix (water, moppe_srgb (float3 (0.13, 0.52, 0.50)), 0.6 * clarity);
     alpha = mix (alpha, 0.35, clarity * (1.0 - 0.5 * fresnel));
 
@@ -543,8 +579,12 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   const float3 sky_reflection =
     moppe_sky_radiance (u.fog_color.rgb, reflection_dir, sun);
 
-  const float3 color = mix (water, sky_reflection, 0.55 * fresnel) +
-                       glint_color * spec * daylight * sun_visibility;
+  // The mirror term stays below half so grazing water keeps its own
+  // color against a bright horizon; suspended silt scatters light
+  // before it reaches the surface film, dulling the reflection more.
+  const float3 color =
+    mix (water, sky_reflection, (0.45 - 0.18 * turbidity) * fresnel) +
+    glint_color * spec * daylight * sun_visibility;
 
   // Feathered waterline: alpha fades out over the last few centimeters
   // of water column instead of ending at a discard cliff.

@@ -48,6 +48,7 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_WATER_LEVELS 3     /* ocean vertex stage */
 #define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1
 #define MOPPE_TEX_WATER_FLOW_FRAGMENT 2
+#define MOPPE_TEX_WATER_GEOLOGY_FRAGMENT 4
 
 struct MoppeFrameUniforms {
   MoppeMat4 view_proj;
@@ -133,7 +134,7 @@ struct MoppeOceanUniforms {
   MoppeFloat4 tiles;   // xy=origin tile indices, z=tiles per side,
                        // w=fine radius (+: coarse pass discards
                        // inside; -: lattice pass discards outside)
-  MoppeFloat4 current; // x=flow raster enabled
+  MoppeFloat4 current; // x=flow raster enabled, y=geology raster enabled
 };
 
 struct MoppeDustEmission {
