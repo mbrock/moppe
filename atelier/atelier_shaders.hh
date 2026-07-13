@@ -13,11 +13,12 @@ using namespace metal;
 struct Uniforms {
   float4x4 world_to_clip;
   float4 eye;
+  float4 atmosphere;
 };
 
 struct Tile {
   float4x4 place_in_world;
-  float4 glaze;
+  float4 material;
 };
 
 struct PuckPoint {
@@ -26,11 +27,14 @@ struct PuckPoint {
   float3 world_position;
   float3 world_normal;
   float3 view_direction;
-  half4 glaze;
+  float elapsed;
+  half4 material;
 };
 
-constant float3 backdrop = float3(0.030, 0.034, 0.038);
-constant float3 key_light = float3(-0.39364, 0.88569, 0.24603);
+constant float3 backdrop = float3(0.032, 0.035, 0.038);
+constant float3 sun_direction = float3(-0.250, 0.961, 0.120);
+constant float3 sun_colour = float3(1.0, 0.95, 0.86);
+constant float3 inner_radiance = float3(1.0, 0.70, 0.48);
 constant uint vertex_count = 26;
 constant uint triangle_count = 48;
 
@@ -78,7 +82,8 @@ inline PuckPoint puck_vertex(uint index,
     world.xyz,
     world_normal,
     normalize(uniforms.eye.xyz - world.xyz),
-    half4(tile.glaze)
+    uniforms.atmosphere.x,
+    half4(tile.material)
   };
 }
 
@@ -103,6 +108,15 @@ inline float stone_noise(float3 point) {
     mix(stone_hash(cell + float3(0, 1, 1)),
         stone_hash(cell + float3(1, 1, 1)), blend.x), blend.y);
   return mix(lower, upper, blend.z);
+}
+
+inline float cloud_illumination(float3 world_position, float elapsed) {
+  const float2 wind = elapsed * float2(0.58, 0.21);
+  const float2 place = world_position.xz + wind;
+  const float broad = stone_noise(float3(place * 0.105, 11.7));
+  const float detail = stone_noise(float3(place * 0.225, 29.3));
+  const float cover = smoothstep(0.43, 0.66, 0.78 * broad + 0.22 * detail);
+  return 1.0 - 0.45 * cover;
 }
 
 inline uint3 puck_triangle(uint triangle) {
@@ -157,28 +171,45 @@ inline uint3 puck_triangle(uint triangle) {
 
 fragment half4 puck_fragment(PuckPoint puck [[stage_in]]) {
   const float3 normal = normalize(puck.world_normal);
-  const float seed = float(puck.glaze.a);
+  const float seed = float(puck.material.a);
   const float3 texture_offset = seed * float3(41.0, 73.0, 101.0);
   const float broad = stone_noise(puck.local_position * 5.0 + texture_offset);
   const float fine = stone_noise(puck.local_position * 23.0 + texture_offset);
-  float3 albedo = float3(puck.glaze.rgb);
-  albedo *= 1.0 + 0.075 * (0.72 * broad + 0.28 * fine - 0.5);
+  float3 albedo = float3(puck.material.rgb);
+  const float chalk = 0.72 * broad + 0.28 * fine;
+  const float pore = pow(saturate((fine - 0.58) / 0.42), 3.0);
+  albedo *= 1.0 + 0.10 * (chalk - 0.5) - 0.035 * pore;
 
-  const float light = max(0.0, dot(normal, key_light));
-  const float banded = floor(light * 3.0 + 0.5) / 3.0;
-  const float diffuse = 0.48 + 0.42 * mix(light, banded, 0.45);
-  const float3 mirrored = reflect(-key_light, normal);
+  const float raw_light = dot(normal, sun_direction);
+  const float wrapped_light = saturate((raw_light + 0.20) / 1.20);
+  const float banded = floor(wrapped_light * 4.0 + 0.5) / 4.0;
+  const float soft_light = mix(wrapped_light, banded, 0.30);
+  const float cloud = cloud_illumination(puck.world_position, puck.elapsed);
+  float3 lit = albedo * 0.23;
+  lit += albedo * sun_colour * cloud * (0.15 + 0.52 * soft_light);
+
+  const float3 view = normalize(puck.view_direction);
+  const float3 mirrored = reflect(-sun_direction, normal);
   const float gleam =
-    pow(max(0.0, dot(mirrored, normalize(puck.view_direction))), 18.0);
-  float3 lit = albedo * diffuse + 0.018 * gleam;
+    pow(max(0.0, dot(mirrored, view)), 12.0);
+  lit += 0.008 * sun_colour * gleam;
 
-  const float facing = abs(dot(normal, normalize(puck.view_direction)));
+  const float facing = abs(dot(normal, view));
   const float silhouette = 1.0 - smoothstep(0.08, 0.30, facing);
   const float radius = length(puck.local_position.xz);
   const float top_rim = smoothstep(0.78, 0.855, radius) *
                         smoothstep(0.78, 0.96, normal.y);
-  const float outline = max(0.55 * silhouette, 0.34 * top_rim);
+  const float outline = max(0.42 * silhouette, 0.27 * top_rim);
   lit = mix(lit, albedo * 0.28, outline);
+
+  const float grazing = pow(1.0 - facing, 2.0);
+  const float backlit = pow(max(0.0, dot(-normal, sun_direction)), 1.5);
+  const float chamfer = 1.0 - abs(normal.y);
+  const float cloud_scatter = (1.0 - cloud) * (0.35 + 0.65 * grazing);
+  const float aura = 0.040 * grazing + 0.080 * grazing * backlit +
+                     0.028 * chamfer * (0.5 + 0.5 * cloud) +
+                     0.040 * cloud_scatter;
+  lit += inner_radiance * aura * (1.0 - 0.40 * outline);
   return half4(half3(lit), 1.0h);
 }
 )";

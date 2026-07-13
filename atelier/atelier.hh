@@ -28,11 +28,15 @@ namespace atelier {
   struct Uniforms {
     Matrix world_to_clip;
     simd_float4 eye; // the camera's place, in metres from the origin
+    // x is elapsed time in seconds; the remaining lanes are reserved for
+    // atmosphere controls that should stay global rather than per tile.
+    simd_float4 atmosphere;
   };
 
   struct TileInstance {
     Matrix place_in_world;
-    simd_float4 glaze;
+    // RGB is the body colour and W is a stable intrinsic material seed.
+    simd_float4 material;
   };
 
   struct Frame {

@@ -6,10 +6,10 @@ namespace atelier {
   using namespace si::unit_symbols;
 
   namespace {
-    simd_float4 glaze (const EmbeddedTile& tile) {
-      constexpr simd_float3 ivory { 0.76f, 0.74f, 0.69f };
-      constexpr simd_float3 compressed { 0.68f, 0.65f, 0.64f };
-      constexpr simd_float3 new_growth { 0.70f, 0.76f, 0.72f };
+    simd_float4 material_parameters (const EmbeddedTile& tile) {
+      constexpr simd_float3 ivory { 0.74f, 0.66f, 0.56f };
+      constexpr simd_float3 compressed { 0.64f, 0.54f, 0.50f };
+      constexpr simd_float3 new_growth { 0.64f, 0.70f, 0.62f };
       const Real deformation =
         tile.deformation.numerical_value_in (mp_units::one);
       const simd_float3 mature =
@@ -41,12 +41,15 @@ namespace atelier {
         Uniforms {
           .world_to_clip = world.world_to_clip,
           .eye = simd_make_float4 (in_metres (world.eye), 1),
+          .atmosphere =
+            simd_make_float4 (elapsed.numerical_value_in (s), 0.0f, 0.0f, 0.0f),
         },
       .tiles = {},
     };
     frame.tiles.reserve (world.tiles.size ());
     for (const EmbeddedTile& tile : world.tiles)
-      frame.tiles.push_back ({ tile.place_in_world, glaze (tile) });
+      frame.tiles.push_back (
+        { tile.place_in_world, material_parameters (tile) });
     return frame;
   }
 }
