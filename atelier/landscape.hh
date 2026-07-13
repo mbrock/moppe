@@ -40,6 +40,10 @@ namespace atelier {
       return id;
     }
 
+    [[nodiscard]] constexpr TileId index (std::size_t offset) const {
+      return offset;
+    }
+
     [[nodiscard]] GridCell cell (TileId id) const;
     [[nodiscard]] TileId tile_id (GridCell cell) const;
     [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;

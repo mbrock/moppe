@@ -161,18 +161,18 @@ namespace atelier {
     constexpr auto stiffness = 2.3f / (s * s);
     constexpr auto coupling = 5.2f / (s * s);
     constexpr auto damping = 1.25f / s;
+    extend_into (m_next_tiles, m_tiles, [=] (const auto& tile) {
+      const auto displacement = get<normal_displacement> (tile);
+      const auto velocity = get<normal_velocity> (tile);
+      const auto acceleration =
+        coupling * laplacian<normal_displacement> (tile) -
+        stiffness * displacement - damping * velocity;
+      const auto next_velocity = velocity + acceleration * dt;
+      return bundle_values (displacement + next_velocity * dt, next_velocity);
+    });
+
     auto& [displacement, velocity] = m_tiles;
     auto& [next_displacement, next_velocity] = m_next_tiles;
-    for (TileId id = 0; id < m_tiles.size (); ++id) {
-      NormalDisplacement laplacian {};
-      for (TileId neighbour : topology ().neighbours (id))
-        laplacian += displacement[neighbour] - displacement[id];
-      const auto acceleration = coupling * laplacian -
-                                stiffness * displacement[id] -
-                                damping * velocity[id];
-      next_velocity[id] = velocity[id] + acceleration * dt;
-      next_displacement[id] = displacement[id] + next_velocity[id] * dt;
-    }
     velocity.swap (next_velocity);
     displacement.swap (next_displacement);
   }
