@@ -28,16 +28,16 @@ MOPPE_TEST (landscape_refines_and_melds_one_partition_cell) {
   Landscape landscape;
   landscape.advance (1.0f * s);
   MOPPE_CHECK (!landscape.is_refined ());
-  MOPPE_CHECK (landscape.visuals ().size () == landscape_tile_count);
+  MOPPE_CHECK (landscape.leaves ().size () == landscape_tile_count);
 
   landscape.advance (4.0f * s);
   MOPPE_CHECK (landscape.is_refined ());
   MOPPE_CHECK_NEAR (landscape.refinement (), 1.0f, 0.001f);
-  MOPPE_CHECK (landscape.visuals ().size () == landscape_tile_count + 6);
+  MOPPE_CHECK (landscape.leaves ().size () == landscape_tile_count + 6);
 
   landscape.advance (10.5f * s);
   MOPPE_CHECK (!landscape.is_refined ());
-  MOPPE_CHECK (landscape.visuals ().size () == landscape_tile_count);
+  MOPPE_CHECK (landscape.leaves ().size () == landscape_tile_count);
 }
 
 MOPPE_TEST (refinement_impulse_propagates_through_the_tile_graph) {

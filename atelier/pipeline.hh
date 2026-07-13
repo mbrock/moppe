@@ -14,7 +14,7 @@
 // melding only change the compact per-tile instance buffer.
 
 namespace atelier {
-  inline constexpr std::size_t max_tile_instances = 1024;
+  inline constexpr std::size_t max_tile_instances = 8192;
 
   struct GpuFrame {
     Uniforms uniforms;

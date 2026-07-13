@@ -1,6 +1,6 @@
 #pragma once
 
-#include "atelier/matrix.hh"
+#include "atelier/space.hh"
 
 #include <array>
 #include <cstddef>
@@ -19,6 +19,8 @@ namespace atelier {
 
   using TileId = std::size_t;
 
+  inline constexpr Length puck_radius = 0.39f * si::metre;
+
   struct GridCell {
     std::size_t column;
     std::size_t row;
@@ -31,12 +33,16 @@ namespace atelier {
     quantity<si::metre / si::second, Real> velocity;
   };
 
-  // A renderer-facing reading of one current leaf of the partition.  Stable
-  // tile identity and topology remain in Landscape; this is deliberately a
-  // disposable view of its present embedding.
-  struct TileVisual {
-    Matrix place_in_world;
-    Real stress;
+  // One present leaf of the partition, still expressed entirely in the
+  // landscape's intrinsic coordinates.  It has no opinion about whether the
+  // closed graph will be shown as a toroidal shell or a repeating flat sheet.
+  struct TileLeaf {
+    GridCell cell;
+    Length offset_across;
+    Length offset_away;
+    Length radius;
+    Length normal_displacement;
+    DeformationReading deformation;
     Real generation;
   };
 
@@ -54,7 +60,7 @@ namespace atelier {
     [[nodiscard]] bool topology_is_valid () const;
     [[nodiscard]] bool is_refined () const;
     [[nodiscard]] Real refinement () const;
-    [[nodiscard]] std::vector<TileVisual> visuals () const;
+    [[nodiscard]] std::vector<TileLeaf> leaves () const;
 
   private:
     void step (Duration dt);

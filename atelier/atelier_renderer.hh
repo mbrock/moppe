@@ -16,7 +16,7 @@ namespace atelier {
 
   class Renderer {
   public:
-    Renderer ();
+    explicit Renderer (EmbeddingKind embedding = EmbeddingKind::toroidal_shell);
     ~Renderer ();
 
     Renderer (const Renderer&) = delete;

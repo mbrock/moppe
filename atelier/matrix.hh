@@ -37,6 +37,23 @@ namespace atelier {
              simd_make_float4 (0, 0, in_metres (near_plane) * z, 0) };
   }
 
+  [[nodiscard]] inline Matrix orthographic (Length width,
+                                            Real aspect_ratio,
+                                            Length near_plane,
+                                            Length far_plane) {
+    const Real width_metres = in_metres (width);
+    const Real near_metres = in_metres (near_plane);
+    const Real far_metres = in_metres (far_plane);
+    const Real x = 2 / width_metres;
+    const Real y = x * aspect_ratio;
+    const Real z = 1 / (near_metres - far_metres);
+    const Real offset = near_metres / (near_metres - far_metres);
+    return { simd_make_float4 (x, 0, 0, 0),
+             simd_make_float4 (0, y, 0, 0),
+             simd_make_float4 (0, 0, z, 0),
+             simd_make_float4 (0, 0, offset, 1) };
+  }
+
   [[nodiscard]] inline Matrix look_at (const Point& eye, const Point& focus) {
     const simd_float3 from = in_metres (eye);
     const simd_float3 back = simd_normalize (from - in_metres (focus));

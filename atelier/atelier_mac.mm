@@ -11,6 +11,8 @@
 #include <string>
 
 @interface AtelierView : NSView
+- (instancetype)initWithFrame:(NSRect)frame
+                    embedding:(atelier::EmbeddingKind)embedding;
 @end
 
 @implementation AtelierView {
@@ -18,10 +20,11 @@
   NSTimer* _timer;
 }
 
-- (instancetype)initWithFrame:(NSRect)frame {
+- (instancetype)initWithFrame:(NSRect)frame
+                    embedding:(atelier::EmbeddingKind)embedding {
   self = [super initWithFrame:frame];
   if (self) {
-    _renderer = std::make_unique<atelier::Renderer> ();
+    _renderer = std::make_unique<atelier::Renderer> (embedding);
     self.wantsLayer = YES;
     self.layer = (__bridge CALayer*)_renderer->native_layer ();
     _timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
@@ -47,10 +50,19 @@
 @end
 
 @interface AtelierApplication : NSObject <NSApplicationDelegate>
+- (instancetype)initWithEmbedding:(atelier::EmbeddingKind)embedding;
 @end
 
 @implementation AtelierApplication {
   NSWindow* _window;
+  atelier::EmbeddingKind _embedding;
+}
+
+- (instancetype)initWithEmbedding:(atelier::EmbeddingKind)embedding {
+  self = [super init];
+  if (self)
+    _embedding = embedding;
+  return self;
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
@@ -63,8 +75,11 @@
                         NSWindowStyleMaskResizable
                 backing:NSBackingStoreBuffered
                   defer:NO];
-  _window.title = @"Atelier";
-  _window.contentView = [[AtelierView alloc] initWithFrame:frame];
+  _window.title = _embedding == atelier::EmbeddingKind::repeating_plane
+                    ? @"Atelier — Repeating Plane"
+                    : @"Atelier — Toroidal Shell";
+  _window.contentView = [[AtelierView alloc] initWithFrame:frame
+                                                 embedding:_embedding];
   [_window center];
   [_window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
@@ -79,8 +94,10 @@
 
 // Photograph the scene without opening a window: render one frame a
 // few seconds in and write it as a PNG.
-static int capture_scene (const char* path, atelier::Duration elapsed) {
-  atelier::Renderer renderer;
+static int capture_scene (const char* path,
+                          atelier::Duration elapsed,
+                          atelier::EmbeddingKind embedding) {
+  atelier::Renderer renderer (embedding);
   renderer.resize ({ .width = 1800, .height = 1300 });
   const atelier::Image image = renderer.capture (elapsed);
 
@@ -129,15 +146,36 @@ static int capture_scene (const char* path, atelier::Duration elapsed) {
 
 int main (int argc, char** argv) {
   @autoreleasepool {
-    if ((argc == 3 || argc == 4) && std::strcmp (argv[1], "--capture") == 0) {
-      const float seconds = argc == 4 ? std::strtof (argv[3], nullptr) : 4.0f;
-      return capture_scene (argv[2],
-                            atelier::Duration (seconds * mp_units::si::second));
+    atelier::EmbeddingKind embedding = atelier::EmbeddingKind::toroidal_shell;
+    const char* capture_path = nullptr;
+    float capture_seconds = 4.0f;
+    for (int index = 1; index < argc; ++index) {
+      if (std::strcmp (argv[index], "--flat") == 0) {
+        embedding = atelier::EmbeddingKind::repeating_plane;
+      } else if (std::strcmp (argv[index], "--torus") == 0) {
+        embedding = atelier::EmbeddingKind::toroidal_shell;
+      } else if (std::strcmp (argv[index], "--capture") == 0 &&
+                 index + 1 < argc) {
+        capture_path = argv[++index];
+        if (index + 1 < argc && argv[index + 1][0] != '-')
+          capture_seconds = std::strtof (argv[++index], nullptr);
+      } else {
+        std::fprintf (stderr,
+                      "usage: atelier [--flat|--torus] "
+                      "[--capture PATH [SECONDS]]\n");
+        return -1;
+      }
     }
+    if (capture_path)
+      return capture_scene (
+        capture_path,
+        atelier::Duration (capture_seconds * mp_units::si::second),
+        embedding);
 
     NSApplication* app = [NSApplication sharedApplication];
     app.activationPolicy = NSApplicationActivationPolicyRegular;
-    AtelierApplication* delegate = [[AtelierApplication alloc] init];
+    AtelierApplication* delegate =
+      [[AtelierApplication alloc] initWithEmbedding:embedding];
     app.delegate = delegate;
     [app run];
   }
