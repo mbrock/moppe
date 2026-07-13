@@ -60,6 +60,7 @@ namespace moppe::terrain {
 
   using NormalizedRaster = Raster<normalized_sample[mp_units::one]>;
   using RelativeElevationRaster = Raster<relative_elevation[mp_units::one]>;
+  using RelativeUpliftRaster = Raster<relative_uplift[mp_units::one]>;
 
   // A raster whose field coordinates and physical terrain geometry remain
   // coupled to the samples that materialized them.

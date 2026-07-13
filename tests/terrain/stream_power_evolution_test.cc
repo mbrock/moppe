@@ -120,6 +120,7 @@ MOPPE_TEST (implicit_stream_power_converges_toward_the_analytical_profile) {
   MOPPE_CHECK (error (fine) < error (coarse));
   MOPPE_CHECK (fine.report.lowered_volume > 0.0);
   MOPPE_CHECK (fine.report.raised_volume == 0.0);
+  MOPPE_CHECK (fine.report.incised_volume > 0.0);
 }
 
 MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
@@ -152,4 +153,30 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
     evolve_stream_power (terrain, uplift, parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
+}
+
+MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
+  std::array<float, 25> heights;
+  heights.fill (0.2f);
+  heights[12] = 1.0f;
+  const TerrainView terrain ({ .width = 5,
+                               .height = 5,
+                               .spacing_x = 1.0f * mp_units::si::metre,
+                               .spacing_y = 1.0f * mp_units::si::metre,
+                               .height_scale = 1.0f * mp_units::si::metre },
+                             heights);
+  const auto uplift = uniform_uplift (heights.size (), 0.0f);
+  const StreamPowerEvolutionResult result = evolve_stream_power (
+    terrain,
+    uplift,
+    { .duration = 1.0f * mp_units::astronomy::Julian_year,
+      .time_step = 1.0f * mp_units::astronomy::Julian_year,
+      .erodibility = 0.0f,
+      .diffusivity = 0.1f * mp_units::si::metre * mp_units::si::metre /
+                     mp_units::astronomy::Julian_year,
+      .sea_level = -1.0f });
+
+  MOPPE_CHECK (result.heights[12] < heights[12]);
+  MOPPE_CHECK (result.heights[11] > heights[11]);
+  MOPPE_CHECK (result.report.diffusion_sweeps == iteration_count (1));
 }

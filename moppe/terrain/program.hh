@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/geological.hh>
+#include <moppe/terrain/stream_power_evolution.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -32,9 +33,21 @@ namespace moppe::terrain {
     float talus;
   };
 
+  // A geological uplift pattern scaled into physical tectonic velocity and
+  // evolved against stream-power incision plus interleaved soil diffusion.
+  struct OrogenyEvolution {
+    meters_per_julian_year_t maximum_uplift_rate =
+      0.001f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+    StreamPowerEvolution evolution { .diffusivity =
+                                       0.0001f * mp_units::si::metre *
+                                       mp_units::si::metre /
+                                       mp_units::astronomy::Julian_year };
+  };
+
   using TerrainTransform = std::variant<NormalizeHeights,
                                         PowerHeights,
                                         AnalyticalErosion,
+                                        OrogenyEvolution,
                                         HydraulicErosion,
                                         ThermalErosion,
                                         ChannelCarving,
@@ -42,6 +55,7 @@ namespace moppe::terrain {
 
   using TerrainTransformReport = std::variant<std::monostate,
                                               AnalyticalErosionReport,
+                                              StreamPowerEvolutionReport,
                                               HydraulicErosionReport,
                                               ChannelCarvingReport,
                                               HillslopeDiffusionReport>;
@@ -73,6 +87,13 @@ namespace moppe::terrain {
   struct GeologicalSource {
     GeologicalRecipe recipe;
     GeologicalLayer layer;
+    enum class Mode { Relief, Orogeny } mode = Mode::Relief;
+    // Orogeny begins from a continent-shaped seed only deep enough to
+    // establish land, ocean, and initial drainage. Mountain relief must then
+    // be earned by uplift against erosion.
+    float sea_level = 50.0f / 650.0f;
+    float coastline = 0.5f;
+    meters_t initial_relief = 20.0f * mp_units::si::metre;
   };
 
   struct TerrainProgram {
@@ -87,6 +108,9 @@ namespace moppe::terrain {
   make_geological_program (std::uint32_t root_seed,
                            GeologicalLayer layer = GeologicalLayer::Combined);
   TerrainProgram make_default_world_program (std::uint32_t root_seed);
+  TerrainProgram make_orogeny_program (
+    std::uint32_t root_seed,
+    TerrainGenerationProfile profile = TerrainGenerationProfile::Research);
   TerrainProgram make_world_program (std::uint32_t root_seed,
                                      TerrainGenerationProfile profile);
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept;

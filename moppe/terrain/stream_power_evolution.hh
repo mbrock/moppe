@@ -4,6 +4,7 @@
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -16,6 +17,9 @@ namespace moppe::terrain {
     julian_years_t time_step = 50000.0f * mp_units::astronomy::Julian_year;
     float erodibility = 2e-5f;
     float area_exponent = 0.4f;
+    square_meters_per_julian_year_t diffusivity =
+      0.0f * mp_units::si::metre * mp_units::si::metre /
+      mp_units::astronomy::Julian_year;
     float sea_level = 50.0f / 650.0f;
   };
 
@@ -23,12 +27,18 @@ namespace moppe::terrain {
     CellCount cells = cell_count (0);
     CellCount fixed_boundaries = cell_count (0);
     IterationCount steps = iteration_count (0);
+    IterationCount diffusion_sweeps = iteration_count (0);
+    cubic_meters_f64_t tectonic_uplift_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t incised_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t raised_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     meters_f64_t mean_absolute_change = 0.0 * mp_units::si::metre;
     meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;
+    meters_f64_t final_step_mean_change = 0.0 * mp_units::si::metre;
     meters_f64_t final_step_maximum_change = 0.0 * mp_units::si::metre;
   };
 
@@ -38,10 +48,13 @@ namespace moppe::terrain {
     StreamPowerEvolutionReport report;
   };
 
+  using StreamPowerProgress = std::function<void (int, int)>;
+
   StreamPowerEvolutionResult
   evolve_stream_power (const TerrainView& terrain,
                        std::span<const meters_per_julian_year_t> uplift_rate,
-                       const StreamPowerEvolution& parameters);
+                       const StreamPowerEvolution& parameters,
+                       const StreamPowerProgress& progress = {});
 }
 
 #endif
