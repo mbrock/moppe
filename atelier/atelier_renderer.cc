@@ -19,7 +19,8 @@ namespace atelier {
   public:
     explicit Impl (EmbeddingKind embedding)
         : m_surface (m_metal.device ()), m_tiles (m_metal),
-          m_embedding (embedding), m_started_at (Clock::now ()) {
+          m_sheet (boundary_for (embedding)), m_embedding (embedding),
+          m_started_at (Clock::now ()) {
       m_metal.use_residency_set (m_surface.residency_set ());
     }
 
@@ -39,10 +40,10 @@ namespace atelier {
         return;
 
       const Duration elapsed = Clock::now () - m_started_at;
-      m_landscape.advance (elapsed);
+      m_sheet.advance (elapsed);
       const FrameSlot slot = m_metal.begin_frame ();
-      const Frame frame = compose_frame (
-        m_landscape, m_embedding, elapsed, m_surface.viewport ());
+      const Frame frame =
+        compose_frame (m_sheet, m_embedding, elapsed, m_surface.viewport ());
       m_tiles.prepare (slot, frame);
 
       const auto pass = m_surface.make_render_pass (drawable->texture ());
@@ -56,11 +57,11 @@ namespace atelier {
         throw std::runtime_error ("Cannot capture an unsized surface");
 
       const auto target = m_surface.make_capture_target (m_metal);
-      Landscape landscape;
-      landscape.advance (elapsed);
+      HexSheet sheet (boundary_for (m_embedding));
+      sheet.advance (elapsed);
       const FrameSlot slot = m_metal.begin_frame ();
-      m_tiles.prepare (
-        slot, compose_frame (landscape, m_embedding, elapsed, viewport));
+      m_tiles.prepare (slot,
+                       compose_frame (sheet, m_embedding, elapsed, viewport));
       const auto pass = m_surface.make_render_pass (target.get ());
       m_tiles.encode (m_metal.command_buffer (), pass.get ());
       m_metal.submit_offscreen (slot);
@@ -87,7 +88,7 @@ namespace atelier {
     MetalExecution m_metal;
     RenderSurface m_surface;
     TilePipeline m_tiles;
-    Landscape m_landscape;
+    HexSheet m_sheet;
     EmbeddingKind m_embedding;
     Clock::time_point m_started_at;
   };

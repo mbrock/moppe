@@ -30,12 +30,12 @@ namespace atelier {
     return Real (width) / Real (height);
   }
 
-  Frame compose_frame (const Landscape& landscape,
+  Frame compose_frame (const HexSheet& sheet,
                        EmbeddingKind embedding,
                        Duration elapsed,
                        Viewport viewport) {
-    const EmbeddedLandscape world =
-      embed_landscape (landscape, embedding, elapsed, viewport.aspect_ratio ());
+    const EmbeddedHexSheet world =
+      embed_hex_sheet (sheet, embedding, elapsed, viewport.aspect_ratio ());
     Frame frame {
       .uniforms =
         Uniforms {

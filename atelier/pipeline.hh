@@ -50,10 +50,10 @@ namespace atelier {
 
     void prepare (FrameSlot slot, const Frame& frame) {
       if (frame.tiles.size () > max_tile_instances)
-        throw std::runtime_error ("The cellular landscape exceeded its GPU "
+        throw std::runtime_error ("The cellular sheet exceeded its GPU "
                                   "instance capacity");
       if (frame.ligaments.size () > max_ligament_instances)
-        throw std::runtime_error ("The cellular landscape exceeded its GPU "
+        throw std::runtime_error ("The cellular sheet exceeded its GPU "
                                   "ligament capacity");
       MTL::Buffer* buffer = m_frames[slot.buffer_index].get ();
       auto* gpu = static_cast<GpuFrame*> (buffer->contents ());
