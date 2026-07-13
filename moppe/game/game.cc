@@ -33,6 +33,7 @@
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/watercourse.hh>
+#include <moppe/terrain/waterline.hh>
 
 #include <algorithm>
 #include <atomic>
@@ -643,14 +644,23 @@ namespace moppe {
           if (m_graphics.vegetation)
             m_vegetation.load (r);
         }
-        render::OceanSetup ocean;
+        // Renderer uploads that depend on the terrain texture dimensions
+        // are staged here and flushed by activate_world_terrain after
+        // set_terrain has run; the loading flow finishes setup before
+        // the world terrain is activated.
+        render::OceanSetup& ocean = m_pending_surface.ocean;
         ocean.level = meters_value (m_world.water_level);
         const Vec3& world_extent = extent_value (m_world.map_size);
         ocean.center = Vec3 (world_extent[0] / 2, 0, world_extent[2] / 2);
         ocean.half_extent = 5500.0f;
         ocean.cells = 300;
-        std::vector<float> water_levels;
-        std::vector<float> water_flow;
+        std::vector<float>& water_levels = m_pending_surface.water_levels;
+        std::vector<float>& water_flow = m_pending_surface.water_flow;
+        water_levels.clear ();
+        water_flow.clear ();
+        m_pending_surface.moisture.clear ();
+        m_pending_surface.geology.clear ();
+        m_pending_surface.shore.clear ();
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
           // lakes, sea, and rivers in one surface sheet, per-body wave
@@ -681,9 +691,25 @@ namespace moppe {
               water_flow[out] = sheets.flow[2 * cell];
               water_flow[out + 1] = sheets.flow[2 * cell + 1];
             }
+
+          // The extracted waterline: the one true wet/dry curve.  Its
+          // distance field drives the terrain's damp shore band and
+          // swash-zone relief so they hug the actual curve.
+          const terrain::Waterline waterline = terrain::extract_waterline (
+            m_map.terrain_view (), sheets.surface, *m_lake_census);
+          const terrain::ScalarRaster proximity =
+            terrain::waterline_proximity (waterline);
+          std::vector<float> shore (static_cast<std::size_t> (m_map.width ()) *
+                                    m_map.height ());
+          const std::span<const float> unique_shore = proximity.values ();
+          for (int y = 0; y < m_map.height (); ++y)
+            for (int x = 0; x < m_map.width (); ++x)
+              shore[static_cast<std::size_t> (y) * m_map.width () + x] =
+                unique_shore[(static_cast<std::size_t> (y) % unique_height) *
+                               unique_width +
+                             static_cast<std::size_t> (x) % unique_width];
+          m_pending_surface.shore = std::move (shore);
         }
-        r.set_ocean (ocean, water_levels);
-        r.set_water_flow (water_flow);
 
         if (m_standing_water && m_drainage) {
           // Ground moisture from the hydrology: vegetation reads it for
@@ -701,7 +727,7 @@ namespace moppe {
                 unique[(static_cast<std::size_t> (y) % unique_height) *
                          unique_width +
                        static_cast<std::size_t> (x) % unique_width];
-          r.set_terrain_moisture (expanded);
+          m_pending_surface.moisture = std::move (expanded);
         }
 
         {
@@ -733,7 +759,7 @@ namespace moppe {
             geology[2 * i + 1] =
               std::min (1.0f, m_map.raw_deposited ()[i] / deposited_scale);
           }
-          r.set_terrain_geology (geology);
+          m_pending_surface.geology = std::move (geology);
         }
 
         m_vehicle.set_water_level (m_world.water_level);
@@ -787,6 +813,16 @@ namespace moppe {
         if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
           m_terrain.render_shadow (
             r, m_map, sun_direction_for (m_graphics.sun_height));
+        // Flush the surface data staged by finish_setup, now that
+        // set_terrain has established the texture dimensions.
+        r.set_ocean (m_pending_surface.ocean, m_pending_surface.water_levels);
+        r.set_water_flow (m_pending_surface.water_flow);
+        if (!m_pending_surface.moisture.empty ())
+          r.set_terrain_moisture (m_pending_surface.moisture);
+        if (!m_pending_surface.geology.empty ())
+          r.set_terrain_geology (m_pending_surface.geology);
+        if (!m_pending_surface.shore.empty ())
+          r.set_terrain_shore (m_pending_surface.shore);
       }
 
       // -- simulation --------------------------------------------------
@@ -2136,6 +2172,16 @@ namespace moppe {
       std::optional<terrain::RiverNetwork> m_rivers;
       RiverSurface m_river_surface;
       Terrain m_terrain;
+      // Surface data computed at finish_setup, uploaded once the terrain
+      // textures exist (activate_world_terrain).
+      struct PendingSurfaceData {
+        render::OceanSetup ocean;
+        std::vector<float> water_levels;
+        std::vector<float> water_flow;
+        std::vector<float> moisture;
+        std::vector<float> geology;
+        std::vector<float> shore;
+      } m_pending_surface;
       TerrainLab m_terrain_lab;
       ChaseCamera m_camera;
       mov::Vehicle m_vehicle;

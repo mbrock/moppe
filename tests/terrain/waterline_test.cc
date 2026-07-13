@@ -25,15 +25,16 @@ namespace {
 }
 
 MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
-  // Flat ground at zero; the water sheet ramps down along x, so the
-  // signed field at nodes x = 0, 1, 2 is +1, -3, -7: one straight
-  // shoreline crossing the bottom edges at s = 1 / (1 + 3) = 0.25.
-  const std::array ground { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
+  // Ground climbs along x (0, 4, 8) out of a lake at level 1; the
+  // sheet holds the level on the wet column and ground elsewhere, as
+  // the painter does.  The level meets the ground slope a quarter of
+  // the way along the first edge.
+  const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
   const TerrainView terrain (
     { .width = 3, .height = 3, .spacing_x = 2.0f * mp_units::si::metre },
     ground);
   const ScalarRaster surface =
-    raster (3, 3, { 1.f, -3.f, -7.f, 1.f, -3.f, -7.f, 1.f, -3.f, -7.f });
+    raster (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   const Waterline waterline = extract_waterline (
     terrain, surface, uniform_census (9, WaterBodyId { 4 }), 0.0f);
 
@@ -52,11 +53,14 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
 }
 
 MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
-  // One wet node in the middle of a dry 5x5 plain: the contour is a
-  // closed diamond through the four midpoints around it.
+  // A pond in a pit: ground dips to -2 at the center of a flat plain,
+  // holding water at level -1.  The level crosses the pit's walls
+  // halfway along each edge, so the contour is a closed diamond
+  // through the four midpoints.
   std::vector<float> ground (25, 0.0f);
-  std::vector<float> level (25, -1.0f);
-  level[2 * 5 + 2] = 1.0f;
+  ground[2 * 5 + 2] = -2.0f;
+  std::vector<float> level = ground;
+  level[2 * 5 + 2] = -1.0f;
   const TerrainView terrain ({ .width = 5, .height = 5 }, ground);
   LakeCensus census { .body = std::vector<WaterBodyId> (25, LakeCensus::dry) };
   census.body[2 * 5 + 2] = WaterBodyId { 7 };
@@ -82,9 +86,11 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
   // width 5 means 4 unique columns.
   const std::size_t unique = 4;
   std::vector<float> ground (25, 0.0f);
-  std::vector<float> level (unique * unique, -1.0f);
+  for (int y = 0; y < 5; ++y)
+    ground[y * 5] = -2.0f;
+  std::vector<float> level (unique * unique, 0.0f);
   for (std::size_t y = 0; y < unique; ++y)
-    level[y * unique] = 1.0f;
+    level[y * unique] = -1.0f;
   const TerrainView terrain (
     { .width = 5, .height = 5, .topology = Topology::Torus }, ground);
   const Waterline waterline =
@@ -101,6 +107,26 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
     for (std::size_t i = 1; i < contour.size (); ++i)
       MOPPE_CHECK_NEAR (contour.points[2 * i], contour.points[0], 1e-6f);
   }
+}
+
+MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
+  // The straight shoreline at x = 0.5 m (see the crossing test): node
+  // distances are |x_world - 0.5|, clamped to the band.
+  const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
+  const TerrainView terrain (
+    { .width = 3, .height = 3, .spacing_x = 2.0f * mp_units::si::metre },
+    ground);
+  const ScalarRaster surface =
+    ScalarRaster ({ .width = 3, .height = 3 },
+                  { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
+  LakeCensus census { .body = std::vector<WaterBodyId> (9, WaterBodyId { 0 }) };
+  const Waterline waterline =
+    extract_waterline (terrain, surface, census, 0.0f);
+  const ScalarRaster proximity = waterline_proximity (waterline, 2.5f);
+
+  MOPPE_CHECK_NEAR (proximity.at (0, 1), 0.5f, 1e-5f);
+  MOPPE_CHECK_NEAR (proximity.at (1, 1), 1.5f, 1e-5f);
+  MOPPE_CHECK_NEAR (proximity.at (2, 1), 2.5f, 1e-5f); // clamped
 }
 
 MOPPE_TEST (waterline_extraction_is_deterministic) {

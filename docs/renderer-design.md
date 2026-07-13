@@ -206,7 +206,8 @@ occludes the expensive cloud shader.
 Rivers are not separate meshes: `terrain::paint_watercourses` paints them
 into the same per-cell sheets the sea and lakes render from.  The surface
 sheet starts as the permanent standing-water raster (ground height in dry
-cells) and stamps each reach's level along its centerline — bed plus a
+cells; dry cells bordering water hold the neighbor's level just below
+ground, so the wet/dry zero crossing sits at the true sub-cell waterline) and stamps each reach's level along its centerline — bed plus a
 fixed fraction of the carved channel depth, bounded by the banks actually
 probed beside the channel so a backwater-floored mouth reach cannot flood
 the flats around it, monotone non-increasing downstream, and capped a

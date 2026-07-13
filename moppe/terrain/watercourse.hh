@@ -46,8 +46,10 @@ namespace moppe::terrain {
 
   struct WaterSheets {
     // Normalized surface level per unique cell.  Dry cells hold the
-    // ground height, so the sheet is continuous and bilinear samples
-    // feather across the waterline.
+    // ground height -- except beside water, where they hold the
+    // neighboring body's level (kept a hair below ground): the
+    // bilinear water-minus-ground difference then crosses zero at the
+    // true sub-cell waterline instead of quantizing onto the lattice.
     ScalarRaster surface;
     // Wave amplitude factor per unique cell: the sea keeps its full
     // swell, lakes barely stir, rivers carry no swell at all — their
