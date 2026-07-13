@@ -1834,7 +1834,9 @@ namespace moppe {
       if (m_height_transition_active && m_previous_heights) {
         const float elapsed =
           std::max (0.0f, m_fp.time - m_height_transition_start);
-        const float t = std::min (1.0f, elapsed / 0.12f);
+        const float duration =
+          std::max (0.001f, m_terrain_params.height_transition_duration);
+        const float t = std::min (1.0f, elapsed / duration);
         height_blend = t * t * (3.0f - 2.0f * t);
         if (t >= 1.0f)
           m_height_transition_active = false;

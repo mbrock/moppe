@@ -47,7 +47,8 @@ namespace moppe {
                          const GraphicsSettings& graphics,
                          render::TerrainProjection projection,
                          bool repeat_periodically,
-                         bool interactive_preview) {
+                         bool interactive_preview,
+                         bool loading_preview) {
       m_scale = map.scale ();
       m_period = map.size ();
       m_periodic = map.periodic ();
@@ -61,15 +62,23 @@ namespace moppe {
       params.scale = m_scale;
       const Vec3& world_extent = extent_value (world.map_size);
       params.height_scale = world_extent[1];
+      // The loading-screen plain deliberately begins below the finished
+      // world's sea level. It has no water surface, so submerged styling
+      // makes the land look briefly flooded as it rises.
       params.sea_level_norm =
-        meters_value (world.water_level) / world_extent[1];
+        loading_preview ? -1.0f
+                        : meters_value (world.water_level) / world_extent[1];
       params.tex_scale = 0.5f / m_scale[0];
+      // Loading snapshots can be uploaded after the finished world's
+      // one-time shadow map exists. It cannot agree with intermediate
+      // geology, so use stable direct lighting for the loading sequence.
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
-                                   !graphics.terrain_shadows
+                                   !graphics.terrain_shadows || loading_preview
                                  ? 0.0f
                                  : 0.85f;
       params.shadow_resolution = interactive_preview ? 1024 : 4096;
       params.shadow_sample_step = interactive_preview ? 2 : 1;
+      params.height_transition_duration = loading_preview ? 1.65f : 0.12f;
       params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.periodic = map.periodic ();

@@ -642,7 +642,6 @@ namespace moppe {
       void finish_setup () {
         render::Renderer& r = *m_renderer;
 
-        m_terrain.setup (r, m_map, m_world, m_graphics);
         // Rivers are painted into the water sheets below; the optional ribbon
         // meshes remain independently selectable for comparison captures.
         if (m_rivers && m_graphics.river_ribbons)
@@ -653,9 +652,6 @@ namespace moppe {
                                    *m_drainage,
                                    *m_rivers);
         if (!m_terrain_lab_preview) {
-          if (m_graphics.terrain_shadows)
-            m_terrain.render_shadow (
-              r, m_map, sun_direction_for (m_graphics.sun_height));
           if (m_graphics.vegetation)
             m_vegetation.load (r);
         }
@@ -743,6 +739,16 @@ namespace moppe {
           m_automated_regeneration_done = true;
           regenerate_world ();
         }
+      }
+
+      void activate_world_terrain (render::Renderer& r) {
+        // Loading and gameplay share renderer terrain resources. Do not upload
+        // this state from finish_setup(): that callback can run in the middle
+        // of a loading chapter and would interrupt its height-map morph.
+        m_terrain.setup (r, m_map, m_world, m_graphics);
+        if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
+          m_terrain.render_shadow (
+            r, m_map, sun_direction_for (m_graphics.sun_height));
       }
 
       // -- simulation --------------------------------------------------
@@ -1541,6 +1547,7 @@ namespace moppe {
                            m_graphics,
                            render::TerrainProjection::Plane,
                            true,
+                           true,
                            true);
           m_loading_terrain_state = 1;
           m_loading_terrain_reveal = sky_time;
@@ -1555,6 +1562,7 @@ namespace moppe {
                            m_world,
                            m_graphics,
                            render::TerrainProjection::Plane,
+                           true,
                            true,
                            true);
           m_loading_terrain_state = 2;
@@ -1575,31 +1583,43 @@ namespace moppe {
                              m_graphics,
                              render::TerrainProjection::Plane,
                              true,
+                             true,
                              true);
+            r.clear_terrain_overlay ();
+            m_loading_diff_overlay_active = false;
             std::vector<float> difference (snapshot.size ());
-            float magnitude = 0.0f;
+            std::vector<float> absolute_difference (snapshot.size ());
             for (std::size_t i = 0; i < difference.size (); ++i) {
               difference[i] = snapshot[i] - previous[i];
-              magnitude = std::max (magnitude, std::fabs (difference[i]));
+              absolute_difference[i] = std::fabs (difference[i]);
             }
+            // A single sharp cell should not wash out the explanatory layer.
+            // Scale to the 98th percentile so broad geological work stays
+            // legible while the underlying mountain remains itself.
+            const std::size_t percentile =
+              absolute_difference.empty ()
+                ? 0
+                : (absolute_difference.size () - 1) * 98 / 100;
+            if (!absolute_difference.empty ())
+              std::nth_element (absolute_difference.begin (),
+                                absolute_difference.begin () + percentile,
+                                absolute_difference.end ());
+            const float magnitude = absolute_difference.empty ()
+                                      ? 0.0f
+                                      : absolute_difference[percentile];
             if (magnitude > 1e-8f) {
               r.set_terrain_overlay (
                 { .width = m_loading_map.width (),
                   .height = m_loading_map.height (),
                   .minimum = -magnitude,
                   .maximum = magnitude,
-                  .opacity = 0.82f,
+                  .opacity = 0.34f,
                   .ramp = render::TerrainOverlayRamp::Diverging },
                 difference);
               m_loading_diff_overlay_active = true;
             }
             m_loading_snapshot_started = sky_time;
           }
-        }
-        if (m_loading_diff_overlay_active &&
-            sky_time - m_loading_snapshot_started >= 1.75f) {
-          r.clear_terrain_overlay ();
-          m_loading_diff_overlay_active = false;
         }
 
         const bool show_terrain = m_loading_terrain_state > 0;
@@ -1717,6 +1737,19 @@ namespace moppe {
           eye = m_loading_camera_eye[stage];
           target = m_loading_camera_target[stage];
           field_of_view = m_loading_camera_fov[stage];
+
+          // One chapter is one deliberate cut, followed by a continuous
+          // camera arc. The changing parallax gives the geology a second
+          // readable view without introducing another unexplained jump.
+          const float chapter_age = sky_time - m_loading_snapshot_started;
+          const float arc_t = smooth_curve (0.0f, chapter_hold, chapter_age);
+          const float arc = (-5.0f + 12.0f * arc_t) * 0.0174532925f;
+          const Vec3 offset = eye - target;
+          const float c = std::cos (arc);
+          const float s = std::sin (arc);
+          eye = target + Vec3 (offset[0] * c + offset[2] * s,
+                               offset[1],
+                               -offset[0] * s + offset[2] * c);
         }
         const Vec3 forward = normalized (target - eye);
 
@@ -1795,6 +1828,8 @@ namespace moppe {
           std::clamp (static_cast<int> (m_loading_snapshot_index), 0, 7);
         const std::string headline = headlines[display_stage];
         const std::string detail = details[display_stage];
+        const bool explaining_change =
+          m_loading_diff_overlay_active && display_stage > 0;
 
         const int stage = m_gen_stage;
         float target_progress = 0.04f;
@@ -1881,6 +1916,16 @@ namespace moppe {
                                 0.0f,
                                 chapter_text);
           m_hud_dl.pop ();
+          if (explaining_change) {
+            const std::string key = "BLUE  ERODED     AMBER  DEPOSITED";
+            m_hud_dl.push ();
+            m_hud_dl.translate (center_x, headline_y + 112.0f, 0.0f);
+            m_hud_dl.scale (0.58f, 0.58f, 1.0f);
+            m_hud_dl.color (0.78f, 0.89f, 0.83f, 0.68f * transition);
+            m_loading_font->draw (
+              m_hud_dl, -m_loading_font->measure (key) * 0.5f, 0.0f, key);
+            m_hud_dl.pop ();
+          }
         }
         if (waiting_to_start && m_loading_font && m_loading_font->ok ()) {
           const std::string prompt = "PRESS SPACE TO ENTER THE WORLD";
@@ -1897,7 +1942,10 @@ namespace moppe {
         int capture_stage = 1;
         if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_STAGE"))
           capture_stage = std::clamp (::atoi (value), 1, 8);
-        const float capture_age = capture_stage == 8 ? chapter_hold : 0.72f;
+        float capture_age = capture_stage == 8 ? chapter_hold : 0.72f;
+        if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_AGE"))
+          capture_age =
+            std::clamp ((float)std::atof (value), 0.0f, chapter_hold);
         if (!m_loading_capture_done && show_terrain &&
             m_loading_progress_display > 0.40f &&
             static_cast<int> (m_loading_snapshot_index) + 1 >= capture_stage &&
@@ -1915,6 +1963,7 @@ namespace moppe {
           m_water_shot.has_value () || ::getenv ("MOPPE_DEMO");
         if (waiting_to_start &&
             (m_loading_continue_requested || automatic_start)) {
+          activate_world_terrain (r);
           m_ready = true;
           if (m_start_in_terrain_lab) {
             m_terrain_lab.enter (r,
