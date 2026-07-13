@@ -4,6 +4,7 @@
 #include "atelier/space.hh"
 
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // A small cellular sheet whose hexagonal adjacency is independent of its
@@ -24,13 +25,26 @@ namespace atelier {
     std::size_t row;
   };
 
+  // One live leaf in a binary cell lineage. The root of each base cell has
+  // lineage 1; dividing lineage n replaces it with 2n and 2n+1.
+  struct HexCell {
+    GridCell base;
+    Length origin_across;
+    Length origin_away;
+    Real growth;
+    std::size_t generation;
+    std::uint64_t lineage;
+    std::size_t axis;
+    bool positive;
+  };
+
   struct HexSite {
     GridCell base;
     Length offset_across;
     Length offset_away;
     Length radius;
     Real generation;
-    std::size_t variant;
+    std::uint64_t lineage;
   };
 
   enum class SheetBoundary { periodic, open };
@@ -42,7 +56,7 @@ namespace atelier {
     using index_type = TileId;
 
     explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic,
-                               std::vector<Real> growth = {});
+                               std::vector<HexCell> cells = {});
 
     [[nodiscard]] std::size_t size () const {
       return m_sites.size ();
@@ -60,15 +74,13 @@ namespace atelier {
       return m_sites[id];
     }
 
-    [[nodiscard]] TileId tile_id (GridCell base, std::size_t variant = 0) const;
+    [[nodiscard]] TileId tile_id (GridCell base) const;
     [[nodiscard]] const std::vector<TileId>& neighbours (TileId id) const {
       return m_neighbours[id];
     }
     [[nodiscard]] SheetBoundary boundary () const {
       return m_boundary;
     }
-    [[nodiscard]] bool base_is_split (GridCell base) const;
-    [[nodiscard]] Real base_growth (GridCell base) const;
     [[nodiscard]] bool is_anchor (TileId id) const;
 
     template <typename Visitor>
@@ -87,8 +99,7 @@ namespace atelier {
     void build_neighbourhoods ();
 
     SheetBoundary m_boundary;
-    std::vector<Real> m_growth;
-    std::vector<TileId> m_first_tile;
+    std::vector<HexCell> m_cells;
     std::vector<HexSite> m_sites;
     std::vector<std::vector<TileId>> m_neighbours;
   };
@@ -130,7 +141,6 @@ namespace atelier {
 
     [[nodiscard]] bool topology_is_valid () const;
     [[nodiscard]] std::size_t split_cell_count () const;
-    [[nodiscard]] Real growth (GridCell base) const;
     [[nodiscard]] std::vector<TileLeaf> leaves () const;
 
   private:
@@ -138,9 +148,9 @@ namespace atelier {
     void initialize_noise_drive ();
     void update_partition (Duration elapsed);
     void update_growth (Duration elapsed);
-    void repartition (std::vector<Real> growth);
+    void rebuild (std::vector<HexCell> cells);
 
-    std::vector<Real> m_growth;
+    std::vector<HexCell> m_cells;
     TileState m_tiles;
     TileState m_next_tiles;
     Duration m_elapsed {};
