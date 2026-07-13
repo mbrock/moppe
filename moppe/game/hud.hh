@@ -40,6 +40,11 @@ namespace moppe {
       // m_mode == M_FOOT: zeroes the speed, parks the boost dial and
       // shows the "ON FOOT" tag.
       bool on_foot;
+      // Soaring reuses the speed cluster as an airspeed instrument; the boost
+      // dial becomes a variometer and an airborne bike gets a deploy prompt.
+      bool gliding;
+      bool can_deploy_glider;
+      float vertical_speed_mps;
       // Real draw-callback interval, used by the ECU telemetry trace.
       float frame_time_s;
       // Heading in radians: zero is world +Z (north), positive turns east.
@@ -49,7 +54,8 @@ namespace moppe {
           : speed_kmh (0), fuel (100.0f), boost_ready01 (1.0f), health01 (1.0f),
             odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
             landed_airtime_s (0), landed_points (0), landed_age_s (10),
-            on_foot (false), frame_time_s (1.0f / 60.0f),
+            on_foot (false), gliding (false), can_deploy_glider (false),
+            vertical_speed_mps (0), frame_time_s (1.0f / 60.0f),
             heading_radians (0.0f) {}
     };
 

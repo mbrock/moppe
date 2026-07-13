@@ -540,9 +540,19 @@ namespace moppe {
                         buf);
       }
 
-      if (st.on_foot) {
-        const std::string label = "ON FOOT";
-        dl.color (0.6f, 0.9f, 1.0f);
+      if (st.on_foot || st.gliding) {
+        char text[16];
+        const std::string label =
+          st.gliding
+            ? (snprintf (text, sizeof text, "%+.1f", st.vertical_speed_mps),
+               text)
+            : "ON FOOT";
+        if (st.gliding && st.vertical_speed_mps >= 0)
+          dl.color (0.25f, 1.0f, 0.55f);
+        else if (st.gliding)
+          dl.color (1.0f, 0.55f, 0.2f);
+        else
+          dl.color (0.6f, 0.9f, 1.0f);
         m_helv10->draw (dl,
                         layout.boost.center.x -
                           m_helv10->measure (label) * 0.5f,
@@ -551,6 +561,15 @@ namespace moppe {
       }
 
       dl.pop ();
+
+      if (st.can_deploy_glider) {
+        const std::string prompt = "E  DEPLOY GLIDER";
+        dl.color (0.65f, 0.9f, 1.0f, 0.94f);
+        m_helv12->draw (dl,
+                        width_pts * 0.5f - m_helv12->measure (prompt) * 0.5f,
+                        height_pts - 42.0f,
+                        prompt);
+      }
 
       // The status contents use panel-local coordinates, so moving or
       // resizing the panel cannot separate its icon, bar, and hearts.

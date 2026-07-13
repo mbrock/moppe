@@ -6,12 +6,13 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/gfx/math.hh>
+#include <moppe/mov/glider.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <random>
 
 namespace moppe::game {
-  enum Mode { M_BIKE, M_FOOT, M_CAR };
+  enum Mode { M_BIKE, M_FOOT, M_CAR, M_GLIDER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
   // The directly copyable logical state owned by MoppeGame.  Generated world
@@ -55,6 +56,7 @@ namespace moppe::game {
     GameLogicState logic;
     mov::Vehicle::State vehicle;
     mov::Vehicle::State car;
+    mov::Glider::State glider;
     Walker::State walker;
     ChaseCamera::State camera;
     Stars::State stars;

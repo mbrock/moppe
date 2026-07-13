@@ -12,6 +12,10 @@
   demo grid is unit-scale, so metric carve defaults suit the game world)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
+  - Hang glider: boost the bike into the air and press `E` once the deploy
+    prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
+    touching down folds the wing and continues on foot. On iOS, the
+    mount/dismount corner deploys the wing while airborne.
   - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|high`
     - Override Boolean graphics features with comma-separated

@@ -98,6 +98,25 @@ namespace moppe {
       : quantity_spec<dimensionless, non_negative> {
   } probability;
 
+  // Soaring quantities are kept distinct even where their dimensions match
+  // more general motion quantities.  A vertical air-mass velocity and an
+  // aircraft's horizontal speed are both length/time, but adding or comparing
+  // them accidentally is a domain error rather than useful arithmetic.
+  inline constexpr struct rate_of_climb_speed
+      : quantity_spec<mp_units::isq::speed,
+                      mp_units::isq::height / mp_units::isq::duration> {
+  } rate_of_climb_speed;
+
+  inline constexpr struct airspeed
+      : quantity_spec<mp_units::isq::speed, mp_units::is_kind> {
+  } airspeed;
+
+  inline constexpr struct glide_ratio
+      : quantity_spec<dimensionless,
+                      airspeed / rate_of_climb_speed,
+                      non_negative> {
+  } glide_ratio;
+
   // The dimensions of a modeled spatial domain.  It has the vector
   // character and length dimension of ISQ displacement, but is not a
   // displacement undergone by an object.
