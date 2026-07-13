@@ -12,7 +12,8 @@ bridge between them: concrete enough to start, honest about cost.
 
 - [RFC-001](rfc-001-uplift-stream-power.md) — Uplift fields + implicit
   stream power run to quasi-equilibrium: mountains as the residue of
-  uplift under erosion.  Implemented as an opt-in source mode on 2026-07-13.
+  uplift under erosion. Implemented and selected for ordinary world
+  generation on 2026-07-13.
 - [RFC-002](rfc-002-hillslope-diffusion.md) — Hillslope diffusion (soil
   creep): smooth convex crests against sharp valley cuts.  Small,
   standalone, also RFC-001's D term.

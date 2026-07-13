@@ -264,28 +264,33 @@ local context, whole-terrain knowledge, and historical evolution.  The code
 keeps the plain operational names because the axes overlap: normalization is
 global but not historical, while drainage is both global and evolving.
 
-The reproducible research profile remains exactly:
+The earlier relief-source Research profile remains available for comparison:
 
 ```text
 geological source
   -> normalize
   -> power(1.15)
-  -> hydraulic(300,000 droplets, batches of 256,
+  -> analytical(200,000 years, 4 routing passes)
+  -> thermal(2 iterations, talus 0.003)
+  -> hydraulic(500,000 droplets, batches of 256,
                1% water cutoff, 512-step safety cap, settle at death)
   -> thermal(2 iterations, talus 0.003)
+  -> channel carving
 ```
 
 Terrain Lab retains a program value too.  Game generation, command-line
 experiments, and interactive inspection therefore use the same evaluator.
 The saved random-stream offset preserves the former erosion sequence.
 
-Gameplay selects an explicit `TerrainGenerationProfile`: **Fast** uses a
-1025-square map and 30,000 droplets, **Play** uses a 2049-square map and
-100,000 droplets, and **Research** uses the reference 2049-square map and
-300,000 droplets. `--fast` is shorthand for the fast profile;
+Gameplay selects an explicit `TerrainGenerationProfile`: **Fast** evolves a
+1025-square Orogeny world for 200,000 years, **Play** evolves a 2049-square
+world for 500,000 years, and **Research** evolves the reference 2049-square
+world for 1,000,000 years. `--fast` is shorthand for the fast profile;
 `--terrain-quality fast|play|research` selects all three directly. Pressing
 `N` during play increments the seed and builds a new world behind the loading
-screen.
+screen. Game generation derives the normalized erosion base level from the
+current world's physical water level and vertical extent, so tectonic
+evolution and the subsequently materialized sea and lakes share one datum.
 
 Finished random worlds are cached automatically. The cache key includes the
 profile, resolution, topology, seed, and a runtime hash of the linked
@@ -439,12 +444,13 @@ an uphill depression route cannot raise a cell above uplift alone.
 
 The calibrated maximum uplift is 1 mm/year, with `K = 2e-5`, `m = 0.4`,
 `D = 1e-4 m2/year`, and a 50,000-year step. Fast, Play, and Research orogeny
-programs run for 200,000, 500,000, and 1,000,000 years respectively. These
-programs are explicit alternatives made by `make_orogeny_program`; ordinary
-world generation retains the established relief-source pipeline while the
-look is compared in the Lab. The report separates prescribed tectonic uplift
-and implicit incision volumes from net raised/lowered volume, and exposes the
-last step's mean and maximum change as a convergence reading.
+programs run for 200,000, 500,000, and 1,000,000 years respectively. Ordinary
+world generation now uses these programs, selected by the existing terrain
+quality profile. The earlier relief-source pipeline remains available through
+`make_relief_program` for experiments and comparison. The report separates
+prescribed tectonic uplift and implicit incision volumes from net
+raised/lowered volume, and exposes the last step's mean and maximum change as
+a convergence reading.
 
 The pass is deterministic and much cheaper than the droplet stage, but it is
 not the paper's complete solver yet. Fixed routing produces cell-scale
@@ -529,6 +535,8 @@ game:
 ./build/terrain-pipeline-demo /tmp/base.png 257 123 combined
 ./build/terrain-pipeline-demo /tmp/tuned.png 257 123 combined \
   warp-amplitude=0.28 mountain-frequency=9 mountain-weight=0.9
+./build/terrain-pipeline-demo /tmp/world.png 257 123 combined world
+./build/terrain-pipeline-demo /tmp/relief.png 257 123 combined relief
 ./build/terrain-pipeline-demo /tmp/eroded.png 257 123 combined \
   power=1.15 hydraulic=10000,256,512,0.01,deposit thermal=2,0.003
 ./build/terrain-pipeline-demo /tmp/orogeny.png 257 123 combined \
@@ -566,12 +574,12 @@ It reports source, analytical, analytical-plus-talus, droplets, combined, and
 combined-plus-talus metrics. The first recorded result and its negative
 findings live in `research/terrain/stream-power-experiment.md`.
 
-Every default program starts with normalization.  `raw` clears its transforms;
-`normalize` appends normalization explicitly; `world` selects the complete,
-slow reference research profile. Recipe overrides include `warp-amplitude`, the
-three layer frequencies, mask edges, and blend weights.  Geological layer IDs
-are `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and
-`warp-y`.
+The initial preview program starts with normalization. `raw` clears its
+transforms; `normalize` appends normalization explicitly; `world` selects the
+Research Orogeny program; and `relief` selects the earlier complete Research
+pipeline. Recipe overrides include `warp-amplitude`, the three layer
+frequencies, mask edges, and blend weights. Geological layer IDs are
+`combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and `warp-y`.
 
 ## Next boundaries
 

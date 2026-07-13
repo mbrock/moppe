@@ -125,11 +125,12 @@ diffusion term by operator splitting (RFC-002).
 
 ## Implemented boundary
 
-`make_orogeny_program` is an explicit alternative source program. The normal
-world profiles still use the established relief-source pipeline, so the visual
-change remains opt-in while it is evaluated in the Terrain Lab. The Lab's
-Orogeny preset and `+OROG` stage expose duration, dt, uplift, K, m, D, and sea
-level; dragging Age reruns the same uplift recipe for before/after comparison.
+`make_orogeny_program` is the source program used by ordinary world
+generation. The Fast, Play, and Research profiles select its geological
+duration. The earlier relief-source pipeline remains available through
+`make_relief_program` for experiments and comparison. The Lab's Orogeny preset
+and `+OROG` stage expose duration, dt, uplift, K, m, D, and sea level; dragging
+Age reruns the same uplift recipe for before/after comparison.
 
 The implementation recomputes priority flood and routing every geological
 step. RFC-014 now provides a merge-tree flood view, but not yet the dynamic

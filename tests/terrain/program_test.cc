@@ -52,8 +52,20 @@ MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
   MOPPE_CHECK_NEAR (duration (research), 1000000.0f, 0.0f);
 }
 
-MOPPE_TEST (default_world_program_records_every_transform) {
+MOPPE_TEST (default_world_program_uses_research_orogeny) {
   const TerrainProgram program = make_default_world_program (123);
+
+  MOPPE_CHECK (program.source.mode == GeologicalSource::Mode::Orogeny);
+  MOPPE_CHECK (program.transforms.size () == 1);
+  const auto& orogeny =
+    std::get<OrogenyEvolution> (program.transforms.front ());
+  MOPPE_CHECK_NEAR (
+    julian_years_value (orogeny.evolution.duration), 1000000.0f, 0.0f);
+}
+
+MOPPE_TEST (relief_program_records_every_transform) {
+  const TerrainProgram program =
+    make_relief_program (123, TerrainGenerationProfile::Research);
 
   MOPPE_CHECK (program.transforms.size () == 7);
   MOPPE_CHECK (terrain_transform_id (program.transforms[0]) == "normalize");
@@ -82,13 +94,13 @@ MOPPE_TEST (default_world_program_records_every_transform) {
                  .sediment_at_termination == SedimentDisposition::Deposit);
 }
 
-MOPPE_TEST (generation_profiles_only_change_the_erosion_budget) {
+MOPPE_TEST (relief_profiles_only_change_the_erosion_budget) {
   const TerrainProgram fast =
-    make_world_program (123, TerrainGenerationProfile::Fast);
+    make_relief_program (123, TerrainGenerationProfile::Fast);
   const TerrainProgram play =
-    make_world_program (123, TerrainGenerationProfile::Play);
+    make_relief_program (123, TerrainGenerationProfile::Play);
   const TerrainProgram research =
-    make_world_program (123, TerrainGenerationProfile::Research);
+    make_relief_program (123, TerrainGenerationProfile::Research);
 
   MOPPE_CHECK (std::get<HydraulicErosion> (fast.transforms[4]).droplets ==
                droplet_count (100000));

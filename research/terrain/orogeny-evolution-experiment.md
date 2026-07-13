@@ -65,9 +65,10 @@ dynamic merge-tree routing view exists, so that optimization was not adopted.
 The visual result at 1 Myr and 2 Myr was nearly identical despite the lower
 residual at 2 Myr. The chosen profiles therefore prioritize useful iteration:
 four steps for Fast interaction, ten for Play comparison, and twenty for the
-Research image. The ordinary game world remains on the established
-relief-source program; this experiment establishes an alternative for Lab and
-pipeline comparison rather than silently changing every seed.
+Research image. At the time of this experiment the ordinary game world
+remained on the established relief-source program. Orogeny was subsequently
+selected for ordinary world generation; the earlier program remains available
+for explicit pipeline comparisons.
 
 ## Acceptance checks
 
@@ -78,4 +79,3 @@ pipeline comparison rather than silently changing every seed.
 - full `ctest` pass;
 - deterministic Terrain Lab runtime capture with
   `MOPPE_LAB_OROGENY=1 MOPPE_LAB_STAGE=0`.
-
