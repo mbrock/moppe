@@ -38,6 +38,13 @@ namespace {
       program.source.layer = layer;
       return;
     }
+    if (option == "relief") {
+      const GeologicalLayer layer = program.source.layer;
+      program = make_relief_program (program.randomness.seed.value,
+                                     TerrainGenerationProfile::Research);
+      program.source.layer = layer;
+      return;
+    }
     if (option == "raw") {
       program.transforms.clear ();
       return;
@@ -347,7 +354,7 @@ int main (int argc, char** argv) {
   } catch (const std::exception& error) {
     std::cerr << "terrain pipeline demo: " << error.what () << "\n";
     std::cerr << "usage: terrain-pipeline-demo OUTPUT SIZE SEED LAYER "
-              << "[world|raw|normalize|NAME=VALUE ...]\n";
+              << "[world|relief|raw|normalize|NAME=VALUE ...]\n";
     return -1;
   }
 

@@ -145,6 +145,21 @@ namespace moppe {
       return platform::cache_path (name.str ());
     }
 
+    static terrain::TerrainProgram
+    make_game_world_program (const WorldParams& world,
+                             std::uint32_t seed,
+                             terrain::TerrainGenerationProfile profile) {
+      terrain::TerrainProgram program =
+        terrain::make_world_program (seed, profile);
+      const float sea_level =
+        meters_value (world.water_level) / extent_value (world.map_size)[1];
+      program.source.sea_level = sea_level;
+      for (terrain::TerrainTransform& transform : program.transforms)
+        if (auto* orogeny = std::get_if<terrain::OrogenyEvolution> (&transform))
+          orogeny->evolution.sea_level = sea_level;
+      return program;
+    }
+
     static bool
     load_terrain_history (const std::string& path,
                           std::size_t samples,
@@ -530,7 +545,7 @@ namespace moppe {
           } else {
             m_gen_stage = 3;
             const terrain::TerrainProgram program =
-              terrain::make_world_program (m_seed, m_generation_profile);
+              make_game_world_program (m_world, m_seed, m_generation_profile);
             map::TerrainEvaluator evaluator (m_map, m_field_evaluator.get ());
             m_terrain_history.clear ();
             evaluator.evaluate (
@@ -541,6 +556,8 @@ namespace moppe {
                 m_terrain_history.emplace_back (m_map.raw_heights (),
                                                 m_map.raw_heights () + count);
                 if (std::holds_alternative<terrain::HydraulicErosion> (
+                      transform) ||
+                    std::holds_alternative<terrain::OrogenyEvolution> (
                       transform))
                   m_gen_stage = 4;
               },
@@ -549,6 +566,8 @@ namespace moppe {
                       int completed,
                       int total) {
                 if (std::holds_alternative<terrain::HydraulicErosion> (
+                      transform) ||
+                    std::holds_alternative<terrain::OrogenyEvolution> (
                       transform)) {
                   m_loading_work_done = completed;
                   m_loading_work_total = total;
@@ -640,7 +659,7 @@ namespace moppe {
       terrain::TerrainProgram lab_program () const {
         if (m_terrain_lab_preview)
           return terrain::make_geological_program (m_seed);
-        return terrain::make_world_program (m_seed, m_generation_profile);
+        return make_game_world_program (m_world, m_seed, m_generation_profile);
       }
 
       void finish_setup () {

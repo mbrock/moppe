@@ -34,6 +34,11 @@ namespace moppe::terrain {
     return program;
   }
 
+  TerrainProgram make_world_program (std::uint32_t root_seed,
+                                     TerrainGenerationProfile profile) {
+    return make_orogeny_program (root_seed, profile);
+  }
+
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
     case TerrainGenerationProfile::Fast:
@@ -71,8 +76,8 @@ namespace moppe::terrain {
     return "play";
   }
 
-  TerrainProgram make_world_program (std::uint32_t root_seed,
-                                     TerrainGenerationProfile profile) {
+  TerrainProgram make_relief_program (std::uint32_t root_seed,
+                                      TerrainGenerationProfile profile) {
     TerrainProgram program = make_geological_program (root_seed);
     // Slight lowland squash; roughly 10-15% becomes ocean.
     program.transforms.emplace_back (PowerHeights { 1.15f });

@@ -113,6 +113,8 @@ namespace moppe::terrain {
     TerrainGenerationProfile profile = TerrainGenerationProfile::Research);
   TerrainProgram make_world_program (std::uint32_t root_seed,
                                      TerrainGenerationProfile profile);
+  TerrainProgram make_relief_program (std::uint32_t root_seed,
+                                      TerrainGenerationProfile profile);
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept;
   int profile_stream_power_iterations (
     TerrainGenerationProfile profile) noexcept;
