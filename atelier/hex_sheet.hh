@@ -8,7 +8,7 @@
 
 // A small cellular sheet whose hexagonal adjacency is independent of its
 // presentation. Its partition may close periodically or end at a finite
-// boundary, and any base hexagon may be replaced by seven smaller cells.
+// boundary, and any base hexagon may divide into two smaller growing cells.
 
 namespace atelier {
   inline constexpr std::size_t hex_sheet_columns = 30;
@@ -42,7 +42,7 @@ namespace atelier {
     using index_type = TileId;
 
     explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic,
-                               std::vector<bool> refined = {});
+                               std::vector<Real> growth = {});
 
     [[nodiscard]] std::size_t size () const {
       return m_sites.size ();
@@ -67,7 +67,8 @@ namespace atelier {
     [[nodiscard]] SheetBoundary boundary () const {
       return m_boundary;
     }
-    [[nodiscard]] bool base_is_refined (GridCell base) const;
+    [[nodiscard]] bool base_is_split (GridCell base) const;
+    [[nodiscard]] Real base_growth (GridCell base) const;
     [[nodiscard]] bool is_anchor (TileId id) const;
 
     template <typename Visitor>
@@ -86,7 +87,7 @@ namespace atelier {
     void build_neighbourhoods ();
 
     SheetBoundary m_boundary;
-    std::vector<bool> m_refined;
+    std::vector<Real> m_growth;
     std::vector<TileId> m_first_tile;
     std::vector<HexSite> m_sites;
     std::vector<std::vector<TileId>> m_neighbours;
@@ -128,21 +129,24 @@ namespace atelier {
     }
 
     [[nodiscard]] bool topology_is_valid () const;
-    [[nodiscard]] std::size_t refined_cell_count () const;
+    [[nodiscard]] std::size_t split_cell_count () const;
+    [[nodiscard]] Real growth (GridCell base) const;
     [[nodiscard]] std::vector<TileLeaf> leaves () const;
 
   private:
     void step (Duration dt);
     void initialize_noise_drive ();
     void update_partition (Duration elapsed);
-    void repartition (std::vector<bool> refined);
+    void update_growth (Duration elapsed);
+    void repartition (std::vector<Real> growth);
 
-    std::vector<bool> m_refined;
+    std::vector<Real> m_growth;
     TileState m_tiles;
     TileState m_next_tiles;
     Duration m_elapsed {};
     Duration m_simulated {};
     Duration m_accumulator {};
+    std::size_t m_growth_event = 0;
     std::size_t m_partition_event = 0;
   };
 }
