@@ -99,11 +99,12 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   game::GraphicsSettings settings = game::low_graphics_settings ();
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
-  MOPPE_CHECK (resolved == 0b10011100u);
+  MOPPE_CHECK (resolved == 0b110011100u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
   MOPPE_CHECK (settings.lens_flare);
+  MOPPE_CHECK (settings.terrain_fragment_normals);
   MOPPE_CHECK (!settings.grass);
   MOPPE_CHECK (!settings.ocean);
   MOPPE_CHECK (!settings.bloom);

@@ -521,6 +521,10 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
   texture2d<float, access::read> terrain_water
   [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float, access::read> terrain_geology
+  [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
+  texture2d<float, access::read> normals
+  [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -534,7 +538,13 @@ fragment float4 terrain_fragment (
   if (fog_factor >= 0.995)
     return float4 (fog_c, 1.0);
 
-  float3 n = normalize (in.normal);
+  // Native and coarser LODs light from the full-resolution normal
+  // texture at fragment rate: a stride-8 silhouette carries full
+  // shading detail, exactly as a normal-mapped mesh does.  The
+  // subdivided near field keeps its analytic surface normals.
+  float3 n = (u.params6.x > 0.5 && in.lod_step >= 1.0)
+               ? normalize (terrain_normal_bilinear (in.grid_coord, normals))
+               : normalize (in.normal);
   const float height = in.height;
   const float sea_level = u.params1.y;
 
@@ -653,6 +663,21 @@ fragment float4 terrain_fragment (
   const float3 sand_c =
     mix (scree_c, sand_value * float3 (1.12, 1.03, 0.82), 0.82);
   texel = mix (texel, sand_c, beach_coef);
+  // The sediment ledger is material information the simulation already
+  // proved: fresh cuts expose raw regolith, deposition builds smooth
+  // pale alluvium on gentle ground.  Both defer to snow.
+  if (u.params5.w > 0.5) {
+    const float2 geo = terrain_field_sample (in.field_uv, terrain_geology).rg;
+    const float cut = smoothstep (0.12, 0.72, geo.r);
+    const float fill = smoothstep (0.12, 0.72, geo.g);
+    const float3 cut_c =
+      mix (scree_c, scree_value * float3 (0.94, 0.84, 0.72), 0.55);
+    texel = mix (texel, cut_c, cut * (1.0 - snow_coef) * 0.42);
+    const float3 alluvium_c =
+      mix (scree_c, sand_value * float3 (1.05, 1.00, 0.88), 0.70);
+    const float fill_flat = smoothstep (0.78, 0.93, n.y);
+    texel = mix (texel, alluvium_c, fill * fill_flat * (1.0 - snow_coef) * 0.5);
+  }
   // Wet soil loses diffuse energy and saturation. Underwater ground is
   // darkest; moisture alone is a quieter bank/lowland treatment.
   const float wetness = max (0.62 * damp, submerged);

@@ -21,6 +21,7 @@ namespace moppe::game {
     auto_exposure,
     lens_flare,
     terrain_topology,
+    terrain_fragment_normals,
   };
 
   struct GraphicsSettings {
@@ -44,6 +45,7 @@ namespace moppe::game {
     bool auto_exposure = true;
     bool lens_flare = true;
     bool terrain_topology = false;
+    bool terrain_fragment_normals = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -136,7 +138,14 @@ namespace moppe::game {
     false
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 13> graphics_features {
+  inline constexpr GraphicsFeature terrain_fragment_normals_feature {
+    GraphicsFeatureId::terrain_fragment_normals,
+    "terrain-fragment-normals",
+    &GraphicsSettings::terrain_fragment_normals,
+    true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 14> graphics_features {
     &terrain_shadows_feature,
     &vegetation_feature,
     &grass_feature,
@@ -150,6 +159,7 @@ namespace moppe::game {
     &auto_exposure_feature,
     &lens_flare_feature,
     &terrain_topology_feature,
+    &terrain_fragment_normals_feature,
   };
 
   GraphicsSettings high_graphics_settings ();

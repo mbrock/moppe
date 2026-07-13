@@ -122,12 +122,12 @@ namespace {
           throw std::invalid_argument (
             "hydraulic sediment policy must be discard or deposit");
       }
-      program.transforms.emplace_back (
-        HydraulicErosion { .droplets = droplet_count (droplets),
-                           .batch_size = terrain::batch_size (batch_size),
-                           .max_steps = step_count (max_steps),
-                           .minimum_water = minimum_water,
-                           .sediment_at_termination = disposition });
+      program.transforms.emplace_back (HydraulicErosion {
+        .droplets = droplet_count (droplets),
+        .batch_size = moppe::terrain::batch_size (batch_size),
+        .max_steps = step_count (max_steps),
+        .minimum_water = minimum_water,
+        .sediment_at_termination = disposition });
     } else if (name == "carve") {
       std::vector<std::string_view> parts;
       std::size_t start = 0;
@@ -158,6 +158,16 @@ namespace {
       if (parts.size () > 5)
         carving.bank_blend = parse_float (parts[5]) * mp_units::si::metre;
       program.transforms.emplace_back (carving);
+    } else if (name == "diffuse") {
+      const std::size_t comma = value.find (',');
+      if (comma == std::string_view::npos)
+        throw std::invalid_argument ("diffuse expects duration,diffusivity");
+      program.transforms.emplace_back (HillslopeDiffusion {
+        .duration = parse_float (value.substr (0, comma)) *
+                    mp_units::astronomy::Julian_year,
+        .diffusivity = parse_float (value.substr (comma + 1)) *
+                       mp_units::si::metre * mp_units::si::metre /
+                       mp_units::astronomy::Julian_year });
     } else if (name == "thermal") {
       const std::size_t comma = value.find (',');
       if (comma == std::string_view::npos)
@@ -251,6 +261,15 @@ int main (int argc, char** argv) {
                   << " mean_m=" << meters_value (report->mean_lowering)
                   << " max_m=" << meters_value (report->maximum_lowering)
                   << "\n";
+      else if (const auto* report =
+                 std::get_if<HillslopeDiffusionReport> (&result))
+        std::cout << "diffuse: sweeps=" << report->sweeps << " lowered_m3="
+                  << cubic_meters_value (report->lowered_volume)
+                  << " raised_m3=" << cubic_meters_value (report->raised_volume)
+                  << " mean_change_m="
+                  << meters_value (report->mean_absolute_change)
+                  << " max_change_m="
+                  << meters_value (report->maximum_absolute_change) << "\n";
       else if (const auto* report =
                  std::get_if<HydraulicErosionReport> (&result))
         std::cout << "hydraulic: eroded=" << report->eroded

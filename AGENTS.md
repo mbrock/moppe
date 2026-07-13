@@ -18,6 +18,10 @@
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
   - Fast deterministic UI capture: `make terrain-lab-shot` (writes
     `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
+  - Deterministic opening-cinematic video:
+    `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
+    `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
+    defaults.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `river`, `confluence`, `mouth`, `waterfall`, and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.

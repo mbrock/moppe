@@ -90,7 +90,9 @@ namespace moppe {
         Trace,
         StandingWater,
         PermanentWater,
-        Waterfalls
+        Waterfalls,
+        Eroded,
+        Deposited
       };
 
       void select (terrain::GeologicalLayer layer);

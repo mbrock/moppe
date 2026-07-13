@@ -52,8 +52,29 @@ namespace moppe {
                                       int seed,
                                       terrain::Topology topology)
         : NormalComputingHeightMap (width, height, size, topology),
-          m_data (width, height) {
+          m_data (width, height), m_eroded ((std::size_t)width * height, 0.0f),
+          m_deposited ((std::size_t)width * height, 0.0f) {
       m_rng.seed (std::mt19937::result_type (seed));
+    }
+
+    void RandomHeightMap::reset_sediment_ledger () {
+      std::fill (m_eroded.begin (), m_eroded.end (), 0.0f);
+      std::fill (m_deposited.begin (), m_deposited.end (), 0.0f);
+    }
+
+    void RandomHeightMap::synchronize_periodic_ledger_edges () {
+      if (!periodic ())
+        return;
+      const auto seam = [this] (std::vector<float>& ledger) {
+        for (int y = 0; y < unique_height (); ++y)
+          ledger[(std::size_t)y * m_width + m_width - 1] =
+            ledger[(std::size_t)y * m_width];
+        for (int x = 0; x < m_width; ++x)
+          ledger[(std::size_t)(m_height - 1) * m_width + x] =
+            ledger[(std::size_t)x];
+      };
+      seam (m_eroded);
+      seam (m_deposited);
     }
 
 #define FORALL(x, y)                                                           \
@@ -154,6 +175,7 @@ namespace moppe {
         set (m_width - 1, y, get (0, y));
       for (int x = 0; x < m_width; ++x)
         set (x, m_height - 1, get (x, 0));
+      synchronize_periodic_ledger_edges ();
     }
 
     namespace {
@@ -256,6 +278,8 @@ namespace moppe {
       std::copy (
         raster.values ().begin (), raster.values ().end (), m_data.raw ());
       synchronize_periodic_edges ();
+      // A fresh source field starts a fresh sediment history.
+      reset_sediment_ledger ();
       // NB: no recompute_normals() here -- the caller shapes further
     }
 
@@ -294,6 +318,7 @@ namespace moppe {
     // height, then width*height little-endian float32, row 0 first.
     static const char bounded_heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
     static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', '2' };
+    static const char sediment_ledger_magic[4] = { 'L', 'G', 'R', '1' };
 
     bool RandomHeightMap::try_load_cache (const std::string& path) {
       std::ifstream f (path.c_str (), std::ios::binary);
@@ -319,6 +344,23 @@ namespace moppe {
       FORALL (x, y)
       set (x, y, heights[(size_t)y * m_width + x]);
       synchronize_periodic_edges ();
+
+      // Sediment ledger: a tagged section after the heights (and before
+      // the loading-history section game code appends).  A cache without
+      // the tag leaves the ledger zeroed.
+      reset_sediment_ledger ();
+      char ledger_magic[4] = { 0, 0, 0, 0 };
+      f.read (ledger_magic, 4);
+      if (f.gcount () == 4 &&
+          std::memcmp (ledger_magic, sediment_ledger_magic, 4) == 0) {
+        const std::streamsize ledger_bytes =
+          (std::streamsize)(heights.size () * sizeof (float));
+        f.read ((char*)m_eroded.data (), ledger_bytes);
+        const bool have_eroded = f.gcount () == ledger_bytes;
+        f.read ((char*)m_deposited.data (), ledger_bytes);
+        if (!have_eroded || f.gcount () != ledger_bytes)
+          reset_sediment_ledger ();
+      }
       return true;
     }
 
@@ -334,6 +376,11 @@ namespace moppe {
       f.write ((const char*)&h, 4);
       f.write ((const char*)raw_heights (),
                (size_t)m_width * m_height * sizeof (float));
+      f.write (sediment_ledger_magic, 4);
+      f.write ((const char*)m_eroded.data (),
+               m_eroded.size () * sizeof (float));
+      f.write ((const char*)m_deposited.data (),
+               m_deposited.size () * sizeof (float));
     }
 
     terrain::HydraulicErosionReport RandomHeightMap::erode_hydraulically (
@@ -427,6 +474,7 @@ namespace moppe {
               change = std::max (
                 change, -std::max (0.0f, get (xs[i], ys[i]) - minimum_height));
             set (xs[i], ys[i], get (xs[i], ys[i]) + change);
+            record_material_change (xs[i], ys[i], change);
             applied += change;
           }
           return applied;
@@ -666,6 +714,7 @@ namespace moppe {
             const int x = static_cast<int> (index % m_width);
             const int y = static_cast<int> (index / m_width);
             set (x, y, get (x, y) + changes[index]);
+            record_material_change (x, y, changes[index]);
             changes[index] = 0.0f;
             marked[index] = 0;
           }
@@ -791,6 +840,10 @@ namespace moppe {
             set (x + 1, y, get (x + 1, y) + sediment * fx * (1 - fy));
             set (x, y + 1, get (x, y + 1) + sediment * (1 - fx) * fy);
             set (x + 1, y + 1, get (x + 1, y + 1) + sediment * fx * fy);
+            record_material_change (x, y, sediment * (1 - fx) * (1 - fy));
+            record_material_change (x + 1, y, sediment * fx * (1 - fy));
+            record_material_change (x, y + 1, sediment * (1 - fx) * fy);
+            record_material_change (x + 1, y + 1, sediment * fx * fy);
             report.deposited += sediment;
           } else {
             report.discarded_sediment += sediment;
@@ -862,6 +915,10 @@ namespace moppe {
             set (xi + 1, yi, h10 + amount * fx * (1 - fy));
             set (xi, yi + 1, h01 + amount * (1 - fx) * fy);
             set (xi + 1, yi + 1, h11 + amount * fx * fy);
+            record_material_change (xi, yi, amount * (1 - fx) * (1 - fy));
+            record_material_change (xi + 1, yi, amount * fx * (1 - fy));
+            record_material_change (xi, yi + 1, amount * (1 - fx) * fy);
+            record_material_change (xi + 1, yi + 1, amount * fx * fy);
           } else {
             // Accelerating: scoop material without leaving any node in the
             // bilinear footprint below the downstream handoff elevation.
@@ -887,6 +944,10 @@ namespace moppe {
             set (xi + 1, yi, h10 - a10);
             set (xi, yi + 1, h01 - a01);
             set (xi + 1, yi + 1, h11 - a11);
+            record_material_change (xi, yi, -a00);
+            record_material_change (xi + 1, yi, -a10);
+            record_material_change (xi, yi + 1, -a01);
+            record_material_change (xi + 1, yi + 1, -a11);
           }
 
           speed = std::sqrt (std::max (0.0f, speed * speed - dh * gravity));
@@ -964,6 +1025,109 @@ namespace moppe {
                    get (x + dx[best], y + dy[best]) + move);
             }
           }
+    }
+
+    terrain::HillslopeDiffusionReport RandomHeightMap::diffuse_hillslopes (
+      julian_years_t duration, square_meters_per_julian_year_t diffusivity) {
+      const float years = julian_years_value (duration);
+      const float d = square_meters_per_julian_year_value (diffusivity);
+      if (!std::isfinite (years) || years < 0.0f || !std::isfinite (d) ||
+          d < 0.0f)
+        throw std::invalid_argument (
+          "hillslope diffusion needs non-negative duration and diffusivity");
+
+      const int cells_x = unique_width ();
+      const int cells_y = unique_height ();
+      terrain::HillslopeDiffusionReport report;
+      report.cells =
+        terrain::cell_count (static_cast<std::uint64_t> (cells_x) * cells_y);
+      if (years == 0.0f || d == 0.0f)
+        return report;
+
+      // Stored heights are normalized; physical z is stored * m_scale[1].
+      // The equation is linear, so the height scale cancels and the sweep
+      // runs on stored values against physical cell spacing.
+      const float hx = m_scale[0];
+      const float hz = m_scale[2];
+      const float dt_stable =
+        1.0f / (2.0f * d * (1.0f / (hx * hx) + 1.0f / (hz * hz)));
+      // A bounded sweep count keeps a careless duration/diffusivity pair
+      // from freezing the pipeline; the report shows what actually ran.
+      constexpr int max_sweeps = 20000;
+      const int sweeps = static_cast<int> (
+        std::min (static_cast<double> (max_sweeps),
+                  std::ceil (static_cast<double> (years) / dt_stable)));
+      const float dt = years / static_cast<float> (sweeps);
+      const float cx = d * dt / (hx * hx);
+      const float cz = d * dt / (hz * hz);
+      report.sweeps = terrain::iteration_count (sweeps);
+
+      const std::size_t count = static_cast<std::size_t> (cells_x) * cells_y;
+      std::vector<float> initial (count);
+      std::vector<float> current (count);
+      std::vector<float> next (count);
+      for (int y = 0; y < cells_y; ++y)
+        for (int x = 0; x < cells_x; ++x)
+          initial[static_cast<std::size_t> (y) * cells_x + x] = get (x, y);
+      current = initial;
+
+      const bool wrap = periodic ();
+      for (int sweep = 0; sweep < sweeps; ++sweep) {
+        for (int y = 0; y < cells_y; ++y) {
+          const int up =
+            wrap ? terrain::wrap_index (y - 1, cells_y) : std::max (y - 1, 0);
+          const int down = wrap ? terrain::wrap_index (y + 1, cells_y)
+                                : std::min (y + 1, cells_y - 1);
+          for (int x = 0; x < cells_x; ++x) {
+            const int left =
+              wrap ? terrain::wrap_index (x - 1, cells_x) : std::max (x - 1, 0);
+            const int right = wrap ? terrain::wrap_index (x + 1, cells_x)
+                                   : std::min (x + 1, cells_x - 1);
+            const std::size_t i = static_cast<std::size_t> (y) * cells_x + x;
+            const float center = current[i];
+            next[i] =
+              center +
+              cx * (current[static_cast<std::size_t> (y) * cells_x + left] +
+                    current[static_cast<std::size_t> (y) * cells_x + right] -
+                    2.0f * center) +
+              cz * (current[static_cast<std::size_t> (up) * cells_x + x] +
+                    current[static_cast<std::size_t> (down) * cells_x + x] -
+                    2.0f * center);
+          }
+        }
+        current.swap (next);
+      }
+
+      const double cell_volume =
+        static_cast<double> (hx) * hz * m_scale[1]; // m^3 per unit delta
+      double lowered = 0.0, raised = 0.0, sum_abs = 0.0, max_abs = 0.0;
+      for (int y = 0; y < cells_y; ++y)
+        for (int x = 0; x < cells_x; ++x) {
+          const std::size_t i = static_cast<std::size_t> (y) * cells_x + x;
+          const float delta = current[i] - initial[i];
+          set (x, y, current[i]);
+          record_material_change (x, y, delta);
+          const double physical =
+            static_cast<double> (delta) * m_scale[1]; // meters
+          if (physical < 0.0)
+            lowered -= physical * hx * hz;
+          else
+            raised += physical * hx * hz;
+          sum_abs += std::fabs (physical);
+          max_abs = std::max (max_abs, std::fabs (physical));
+        }
+      (void)cell_volume;
+      synchronize_periodic_edges ();
+
+      const auto m3 =
+        mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+      report.lowered_volume = lowered * m3;
+      report.raised_volume = raised * m3;
+      report.mean_absolute_change =
+        (count > 0 ? sum_abs / static_cast<double> (count) : 0.0) *
+        mp_units::si::metre;
+      report.maximum_absolute_change = max_abs * mp_units::si::metre;
+      return report;
     }
 
     void write_tga (std::ostream& stream, const HeightMap& map) {
