@@ -1027,6 +1027,109 @@ namespace moppe {
           }
     }
 
+    terrain::HillslopeDiffusionReport RandomHeightMap::diffuse_hillslopes (
+      julian_years_t duration, square_meters_per_julian_year_t diffusivity) {
+      const float years = julian_years_value (duration);
+      const float d = square_meters_per_julian_year_value (diffusivity);
+      if (!std::isfinite (years) || years < 0.0f || !std::isfinite (d) ||
+          d < 0.0f)
+        throw std::invalid_argument (
+          "hillslope diffusion needs non-negative duration and diffusivity");
+
+      const int cells_x = unique_width ();
+      const int cells_y = unique_height ();
+      terrain::HillslopeDiffusionReport report;
+      report.cells =
+        terrain::cell_count (static_cast<std::uint64_t> (cells_x) * cells_y);
+      if (years == 0.0f || d == 0.0f)
+        return report;
+
+      // Stored heights are normalized; physical z is stored * m_scale[1].
+      // The equation is linear, so the height scale cancels and the sweep
+      // runs on stored values against physical cell spacing.
+      const float hx = m_scale[0];
+      const float hz = m_scale[2];
+      const float dt_stable =
+        1.0f / (2.0f * d * (1.0f / (hx * hx) + 1.0f / (hz * hz)));
+      // A bounded sweep count keeps a careless duration/diffusivity pair
+      // from freezing the pipeline; the report shows what actually ran.
+      constexpr int max_sweeps = 20000;
+      const int sweeps = static_cast<int> (
+        std::min (static_cast<double> (max_sweeps),
+                  std::ceil (static_cast<double> (years) / dt_stable)));
+      const float dt = years / static_cast<float> (sweeps);
+      const float cx = d * dt / (hx * hx);
+      const float cz = d * dt / (hz * hz);
+      report.sweeps = terrain::iteration_count (sweeps);
+
+      const std::size_t count = static_cast<std::size_t> (cells_x) * cells_y;
+      std::vector<float> initial (count);
+      std::vector<float> current (count);
+      std::vector<float> next (count);
+      for (int y = 0; y < cells_y; ++y)
+        for (int x = 0; x < cells_x; ++x)
+          initial[static_cast<std::size_t> (y) * cells_x + x] = get (x, y);
+      current = initial;
+
+      const bool wrap = periodic ();
+      for (int sweep = 0; sweep < sweeps; ++sweep) {
+        for (int y = 0; y < cells_y; ++y) {
+          const int up =
+            wrap ? terrain::wrap_index (y - 1, cells_y) : std::max (y - 1, 0);
+          const int down = wrap ? terrain::wrap_index (y + 1, cells_y)
+                                : std::min (y + 1, cells_y - 1);
+          for (int x = 0; x < cells_x; ++x) {
+            const int left =
+              wrap ? terrain::wrap_index (x - 1, cells_x) : std::max (x - 1, 0);
+            const int right = wrap ? terrain::wrap_index (x + 1, cells_x)
+                                   : std::min (x + 1, cells_x - 1);
+            const std::size_t i = static_cast<std::size_t> (y) * cells_x + x;
+            const float center = current[i];
+            next[i] =
+              center +
+              cx * (current[static_cast<std::size_t> (y) * cells_x + left] +
+                    current[static_cast<std::size_t> (y) * cells_x + right] -
+                    2.0f * center) +
+              cz * (current[static_cast<std::size_t> (up) * cells_x + x] +
+                    current[static_cast<std::size_t> (down) * cells_x + x] -
+                    2.0f * center);
+          }
+        }
+        current.swap (next);
+      }
+
+      const double cell_volume =
+        static_cast<double> (hx) * hz * m_scale[1]; // m^3 per unit delta
+      double lowered = 0.0, raised = 0.0, sum_abs = 0.0, max_abs = 0.0;
+      for (int y = 0; y < cells_y; ++y)
+        for (int x = 0; x < cells_x; ++x) {
+          const std::size_t i = static_cast<std::size_t> (y) * cells_x + x;
+          const float delta = current[i] - initial[i];
+          set (x, y, current[i]);
+          record_material_change (x, y, delta);
+          const double physical =
+            static_cast<double> (delta) * m_scale[1]; // meters
+          if (physical < 0.0)
+            lowered -= physical * hx * hz;
+          else
+            raised += physical * hx * hz;
+          sum_abs += std::fabs (physical);
+          max_abs = std::max (max_abs, std::fabs (physical));
+        }
+      (void)cell_volume;
+      synchronize_periodic_edges ();
+
+      const auto m3 =
+        mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+      report.lowered_volume = lowered * m3;
+      report.raised_volume = raised * m3;
+      report.mean_absolute_change =
+        (count > 0 ? sum_abs / static_cast<double> (count) : 0.0) *
+        mp_units::si::metre;
+      report.maximum_absolute_change = max_abs * mp_units::si::metre;
+      return report;
+    }
+
     void write_tga (std::ostream& stream, const HeightMap& map) {
       int w = map.width ();
       int h = map.height ();

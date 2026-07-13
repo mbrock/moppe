@@ -218,7 +218,7 @@ namespace moppe {
 
       UiRect add_stage_rect (int index) {
         const float gap = 3.0f;
-        const float width = (left_width - 5 * gap) / 6.0f;
+        const float width = (left_width - 6 * gap) / 7.0f;
         return { left_x + index * (width + gap), 497, width, 29 };
       }
 
@@ -262,6 +262,8 @@ namespace moppe {
           return "WATER EROSION";
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return "CHANNEL CARVE";
+        if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
+          return "SOIL CREEP";
         return "TALUS RELAX";
       }
 
@@ -293,6 +295,14 @@ namespace moppe {
                  " m beds @ " +
                  format_count (static_cast<int> (carving->minimum_area_cells)) +
                  " cells";
+        if (const auto* diffusion =
+              std::get_if<terrain::HillslopeDiffusion> (&stage))
+          return format_float (
+                   julian_years_value (diffusion->duration) / 1000.0f, 1) +
+                 " ky @ D " +
+                 format_float (
+                   square_meters_per_julian_year_value (diffusion->diffusivity),
+                   3);
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
         return std::to_string (terrain::count_value (thermal.iterations)) +
                " passes @ " + format_float (thermal.talus, 4);
@@ -376,6 +386,8 @@ namespace moppe {
           return 2;
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return 5;
+        if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
+          return 2;
         return 0;
       }
 
@@ -452,6 +464,19 @@ namespace moppe {
                      ParameterDomain::Continuous };
           return { "BANK BLEND (M)",
                    format_float (meters_value (carving->bank_blend), 1),
+                   ParameterDomain::Continuous };
+        }
+        if (const auto* diffusion =
+              std::get_if<terrain::HillslopeDiffusion> (&stage)) {
+          if (row == 0)
+            return { "DURATION (KY)",
+                     format_float (
+                       julian_years_value (diffusion->duration) / 1000.0f, 1),
+                     ParameterDomain::Continuous };
+          return { "DIFFUSIVITY",
+                   format_float (square_meters_per_julian_year_value (
+                                   diffusion->diffusivity),
+                                 3),
                    ParameterDomain::Continuous };
         }
         const auto& thermal = std::get<terrain::ThermalErosion> (stage);
@@ -1777,6 +1802,15 @@ namespace moppe {
                                 0.0f,
                                 20.0f)
                         : unit (thermal->talus, 0.0f, 0.05f);
+      if (const auto* diffusion =
+            std::get_if<terrain::HillslopeDiffusion> (&stage))
+        return row == 0 ? unit (julian_years_value (diffusion->duration),
+                                0.0f,
+                                20000.0f)
+                        : unit (square_meters_per_julian_year_value (
+                                  diffusion->diffusivity),
+                                0.0f,
+                                0.1f);
       return 0.0f;
     }
 
@@ -1941,6 +1975,19 @@ namespace moppe {
         const float old = thermal->talus;
         thermal->talus = mix (0.0f, 0.05f);
         return thermal->talus != old;
+      }
+      if (auto* diffusion = std::get_if<terrain::HillslopeDiffusion> (&stage)) {
+        if (row == 0) {
+          const auto old = diffusion->duration;
+          diffusion->duration =
+            mix (0.0f, 20000.0f) * mp_units::astronomy::Julian_year;
+          return diffusion->duration != old;
+        }
+        const auto old = diffusion->diffusivity;
+        diffusion->diffusivity = mix (0.0f, 0.1f) * mp_units::si::metre *
+                                 mp_units::si::metre /
+                                 mp_units::astronomy::Julian_year;
+        return diffusion->diffusivity != old;
       }
       return false;
     }
@@ -2293,7 +2340,7 @@ namespace moppe {
           return;
         }
       }
-      for (int i = 0; i < 6; ++i) {
+      for (int i = 0; i < 7; ++i) {
         if (!add_stage_rect (i).contains (x, y))
           continue;
         if (i == 0)
@@ -2312,6 +2359,8 @@ namespace moppe {
         else if (i == 4)
           append_stage (
             terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
+        else if (i == 5)
+          append_stage (terrain::HillslopeDiffusion {});
         else
           append_stage (terrain::ChannelCarving {});
         return;
@@ -3045,10 +3094,10 @@ namespace moppe {
                            m_selected_stage == stage_index);
       }
 
-      static const char* add_labels[] = { "+NORM", "+POWER", "+AGE",
-                                          "+DROP", "+TALUS", "+CARVE" };
+      static const char* add_labels[] = { "+NORM",  "+POWER", "+AGE",  "+DROP",
+                                          "+TALUS", "+CREEP", "+CARVE" };
       static const char* edit_labels[] = { "UP", "DOWN", "COPY", "DEL" };
-      for (int i = 0; i < 6; ++i) {
+      for (int i = 0; i < 7; ++i) {
         const UiRect add = add_stage_rect (i);
         m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
       }

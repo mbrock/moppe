@@ -310,6 +310,55 @@ MOPPE_TEST (hydraulic_report_balances_the_sediment_ledger) {
     static_cast<float> (report.eroded * 2e-5 + 1e-7));
 }
 
+MOPPE_TEST (hillslope_diffusion_spreads_a_gaussian_and_conserves_volume) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  // 1 m cell spacing: size 64 over 65 periodic samples.
+  map::RandomHeightMap map (65, 65, Vec3 (64, 1, 64), 0, Topology::Torus);
+  const float sigma2 = 9.0f;
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x) {
+      const float dx = static_cast<float> (x) - 32.0f;
+      const float dy = static_cast<float> (y) - 32.0f;
+      map.set (x, y, std::exp (-(dx * dx + dy * dy) / (2.0f * sigma2)));
+    }
+  map.synchronize_periodic_edges ();
+
+  const auto moments = [&map] {
+    double mass = 0.0, var_x = 0.0;
+    for (int y = 0; y < map.unique_height (); ++y)
+      for (int x = 0; x < map.unique_width (); ++x) {
+        const double h = map.get (x, y);
+        const double dx = static_cast<double> (x) - 32.0;
+        mass += h;
+        var_x += h * dx * dx;
+      }
+    return std::pair { mass, var_x / mass };
+  };
+  const auto [mass_before, var_before] = moments ();
+
+  const float d = 0.5f, years = 4.0f;
+  const HillslopeDiffusionReport report =
+    map.diffuse_hillslopes (years * mp_units::astronomy::Julian_year,
+                            d * mp_units::si::metre * mp_units::si::metre /
+                              mp_units::astronomy::Julian_year);
+
+  const auto [mass_after, var_after] = moments ();
+  // Volume conserved to float accumulation error.
+  MOPPE_CHECK_NEAR (static_cast<float> (mass_after),
+                    static_cast<float> (mass_before),
+                    static_cast<float> (mass_before) * 1e-4f);
+  // Analytic variance growth of a diffusing Gaussian: 2 D t per axis.
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (var_after - var_before), 2.0f * d * years, 0.35f);
+  MOPPE_CHECK (count_value (report.sweeps) > 0);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (cubic_meters_value (report.lowered_volume)),
+    static_cast<float> (cubic_meters_value (report.raised_volume)),
+    static_cast<float> (cubic_meters_value (report.raised_volume)) * 1e-3f +
+      1e-5f);
+}
+
 MOPPE_TEST (hydraulic_erosion_accumulates_the_ledger_rasters) {
   using namespace moppe;
   using namespace moppe::terrain;
