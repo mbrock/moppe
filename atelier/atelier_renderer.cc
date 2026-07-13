@@ -38,9 +38,11 @@ namespace atelier {
       if (!drawable)
         return;
 
+      const Duration elapsed = Clock::now () - m_started_at;
+      m_landscape.advance (elapsed);
       const FrameSlot slot = m_metal.begin_frame ();
       const Frame frame =
-        compose_frame (Clock::now () - m_started_at, m_surface.viewport ());
+        compose_frame (m_landscape, elapsed, m_surface.viewport ());
       m_tiles.prepare (slot, frame);
 
       const auto pass = m_surface.make_render_pass (drawable->texture ());
@@ -54,8 +56,10 @@ namespace atelier {
         throw std::runtime_error ("Cannot capture an unsized surface");
 
       const auto target = m_surface.make_capture_target (m_metal);
+      Landscape landscape;
+      landscape.advance (elapsed);
       const FrameSlot slot = m_metal.begin_frame ();
-      m_tiles.prepare (slot, compose_frame (elapsed, viewport));
+      m_tiles.prepare (slot, compose_frame (landscape, elapsed, viewport));
       const auto pass = m_surface.make_render_pass (target.get ());
       m_tiles.encode (m_metal.command_buffer (), pass.get ());
       m_metal.submit_offscreen (slot);
@@ -82,6 +86,7 @@ namespace atelier {
     MetalExecution m_metal;
     RenderSurface m_surface;
     TilePipeline m_tiles;
+    Landscape m_landscape;
     Clock::time_point m_started_at;
   };
 
