@@ -48,6 +48,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -86,54 +87,6 @@ namespace moppe {
       return t * t * (3.0f - 2.0f * t);
     }
 
-    static void fill_rounded_rect (render::DrawList& dl,
-                                   float x,
-                                   float y,
-                                   float width,
-                                   float height,
-                                   float radius) {
-      radius = std::clamp (radius, 0.0f, std::min (width, height) * 0.5f);
-      constexpr int corner_steps = 6;
-      dl.begin (render::Prim::TriangleFan);
-      dl.vertex (x + width * 0.5f, y + height * 0.5f);
-      for (int corner = 0; corner < 4; ++corner) {
-        const float cx =
-          corner == 0 || corner == 3 ? x + radius : x + width - radius;
-        const float cy = corner < 2 ? y + radius : y + height - radius;
-        const float start = 3.14159265f + corner * 1.57079633f;
-        for (int i = 0; i <= corner_steps; ++i) {
-          const float angle = start + i * 1.57079633f / corner_steps;
-          dl.vertex (cx + std::cos (angle) * radius,
-                     cy + std::sin (angle) * radius);
-        }
-      }
-      dl.vertex (x, y + radius);
-      dl.end ();
-    }
-
-    static void loading_arc (render::DrawList& dl,
-                             float cx,
-                             float cy,
-                             float radius,
-                             float thickness,
-                             float progress,
-                             float alpha) {
-      constexpr float pi = 3.14159265f;
-      constexpr int segments = 96;
-      progress = std::clamp (progress, 0.0f, 1.0f);
-      dl.color (0.78f, 0.96f, 0.82f, alpha);
-      dl.begin (render::Prim::TriangleStrip);
-      for (int i = 0; i <= segments; ++i) {
-        const float a = -0.5f * pi + 2.0f * pi * progress * i / segments;
-        const float x = std::cos (a);
-        const float y = std::sin (a);
-        dl.vertex (cx + x * (radius - thickness),
-                   cy + y * (radius - thickness));
-        dl.vertex (cx + x * radius, cy + y * radius);
-      }
-      dl.end ();
-    }
-
     enum class LoadingStage {
       Starting,
       LookingForCache,
@@ -158,6 +111,11 @@ namespace moppe {
       const char* title;
       const char* detail;
       float progress;
+    };
+
+    struct LoadingEvent {
+      LoadingStage stage;
+      double elapsed;
     };
 
     static LoadingStageText loading_stage_text (LoadingStage stage) {
@@ -433,6 +391,11 @@ namespace moppe {
                    extent_value (world.map_size),
                    m_seed,
                    world.topology ()),
+            m_loading_map (world.resolution,
+                           world.resolution,
+                           extent_value (world.map_size),
+                           m_seed,
+                           world.topology ()),
             m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
@@ -485,6 +448,7 @@ namespace moppe {
       void setup (render::Renderer& r, int, int) override {
         MOPPE_PROFILE_ZONE ("MoppeGame::setup");
         m_renderer = &r;
+        set_loading_stage (LoadingStage::Starting);
 
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
@@ -522,6 +486,23 @@ namespace moppe {
       }
       static void finish_thunk (void* self) {
         ((MoppeGame*)self)->m_generation_complete = true;
+      }
+
+      void set_loading_stage (LoadingStage stage) {
+        m_loading_stage = stage;
+        const double elapsed = platform::now () - m_loading_clock_start;
+        const std::lock_guard<std::mutex> lock (m_loading_mutex);
+        if (m_loading_events.empty () ||
+            m_loading_events.back ().stage != stage)
+          m_loading_events.push_back ({ stage, elapsed });
+      }
+
+      void publish_loading_terrain () {
+        const std::size_t count =
+          static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+        const std::lock_guard<std::mutex> lock (m_loading_mutex);
+        m_loading_heights = std::make_shared<const std::vector<float>> (
+          m_map.raw_heights (), m_map.raw_heights () + count);
       }
 
       Vec3 choose_landscape_spawn () {
@@ -645,7 +626,7 @@ namespace moppe {
           m_field_evaluator = platform::create_field_evaluator ();
         }
         if (m_terrain_lab_preview) {
-          m_loading_stage = LoadingStage::BuildingContinents;
+          set_loading_stage (LoadingStage::BuildingContinents);
           {
             MOPPE_PROFILE_ZONE ("startup.make_preview_program");
             const terrain::TerrainProgram program =
@@ -661,22 +642,23 @@ namespace moppe {
             terrain_cache_path (m_world, m_generation_profile, m_seed);
           const char* cache =
             cache_override ? cache_override : automatic_cache.c_str ();
-          m_loading_stage = LoadingStage::LookingForCache;
+          set_loading_stage (LoadingStage::LookingForCache);
           bool cache_loaded = false;
           {
             MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
             cache_loaded = cache && m_map.try_load_cache (cache);
           }
           if (cache_loaded) {
-            m_loading_stage = LoadingStage::ReadingCache;
+            set_loading_stage (LoadingStage::ReadingCache);
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             {
               MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
               load_terrain_history (cache, count, m_terrain_history);
             }
+            publish_loading_terrain ();
           } else {
-            m_loading_stage = LoadingStage::BuildingContinents;
+            set_loading_stage (LoadingStage::BuildingContinents);
             terrain::TerrainProgram program;
             {
               MOPPE_PROFILE_ZONE ("startup.make_world_program");
@@ -695,6 +677,7 @@ namespace moppe {
                     static_cast<std::size_t> (m_map.width ()) * m_map.height ();
                   m_terrain_history.emplace_back (m_map.raw_heights (),
                                                   m_map.raw_heights () + count);
+                  publish_loading_terrain ();
                   (void)transform;
                 },
                 [this] (std::size_t,
@@ -705,7 +688,7 @@ namespace moppe {
                         transform) ||
                       std::holds_alternative<terrain::OrogenyEvolution> (
                         transform)) {
-                    m_loading_stage = LoadingStage::EvolvingTerrain;
+                    set_loading_stage (LoadingStage::EvolvingTerrain);
                     m_loading_work_done = completed;
                     m_loading_work_total = total;
                   }
@@ -728,7 +711,7 @@ namespace moppe {
                                               m_map.raw_heights () + count);
             }
             if (cache) {
-              m_loading_stage = LoadingStage::SavingTerrain;
+              set_loading_stage (LoadingStage::SavingTerrain);
               {
                 MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
                 m_map.save_cache (cache);
@@ -746,7 +729,8 @@ namespace moppe {
           m_terrain_history.emplace_back (m_map.raw_heights (),
                                           m_map.raw_heights () + count);
         }
-        m_loading_stage = LoadingStage::RebuildingSurface;
+        publish_loading_terrain ();
+        set_loading_stage (LoadingStage::RebuildingSurface);
         {
           MOPPE_PROFILE_ZONE ("startup.recompute_terrain_normals");
           m_map.recompute_normals ();
@@ -759,7 +743,7 @@ namespace moppe {
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview) {
-          m_loading_stage = LoadingStage::FindingStandingWater;
+          set_loading_stage (LoadingStage::FindingStandingWater);
           const float sea_level = meters_value (m_world.water_level) /
                                   extent_value (m_world.map_size)[1];
           {
@@ -767,7 +751,7 @@ namespace moppe {
             m_standing_water = terrain::analyze_standing_water (
               m_map.terrain_view (), sea_level);
           }
-          m_loading_stage = LoadingStage::CataloguingLakes;
+          set_loading_stage (LoadingStage::CataloguingLakes);
           {
             MOPPE_PROFILE_ZONE ("startup.census_lakes");
             m_lake_census = terrain::census_lakes (*m_standing_water);
@@ -781,19 +765,19 @@ namespace moppe {
             std::cerr << "standing water: " << m_lake_census->bodies.size ()
                       << " bodies, " << wet << " wet cells\n";
           }
-          m_loading_stage = LoadingStage::TracingDrainage;
+          set_loading_stage (LoadingStage::TracingDrainage);
           {
             MOPPE_PROFILE_ZONE ("startup.analyze_wet_drainage");
             m_drainage = terrain::analyze_wet_drainage (
               m_map.terrain_view (), *m_standing_water, *m_lake_census);
           }
-          m_loading_stage = LoadingStage::ConnectingWaterways;
+          set_loading_stage (LoadingStage::ConnectingWaterways);
           {
             MOPPE_PROFILE_ZONE ("startup.analyze_water_network");
             m_water_network = terrain::analyze_water_network (
               *m_standing_water, *m_lake_census, *m_drainage);
           }
-          m_loading_stage = LoadingStage::ExtractingRivers;
+          set_loading_stage (LoadingStage::ExtractingRivers);
           {
             MOPPE_PROFILE_ZONE ("startup.extract_river_network");
             m_rivers = terrain::extract_river_network (
@@ -820,13 +804,13 @@ namespace moppe {
         }
 
         if (!m_terrain_lab_preview) {
-          m_loading_stage = LoadingStage::PlacingStars;
+          set_loading_stage (LoadingStage::PlacingStars);
           {
             MOPPE_PROFILE_ZONE ("startup.generate_stars");
             m_stars.generate (m_map, m_world, 80);
           }
         }
-        m_loading_stage = LoadingStage::AssemblingWorld;
+        set_loading_stage (LoadingStage::AssemblingWorld);
       }
 
       // The recipe behind the current map: entering the lab shows the
@@ -1896,7 +1880,7 @@ namespace moppe {
       void render_loading (render::Renderer& r) {
         if (m_generation_complete && !m_setup_complete) {
           if (!m_loading_finalize_announced) {
-            m_loading_stage = LoadingStage::AssemblingWorld;
+            set_loading_stage (LoadingStage::AssemblingWorld);
             m_loading_finalize_announced = true;
           } else {
             finish_setup ();
@@ -1905,20 +1889,20 @@ namespace moppe {
 
         if (m_setup_complete) {
           if (m_loading_activation_stage == 0) {
-            m_loading_stage = LoadingStage::UploadingTerrain;
+            set_loading_stage (LoadingStage::UploadingTerrain);
             m_loading_activation_stage = 1;
           } else if (m_loading_activation_stage == 1) {
             r.clear_terrain_overlay ();
             upload_world_terrain (r);
             if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
-              m_loading_stage = LoadingStage::CastingShadows;
+              set_loading_stage (LoadingStage::CastingShadows);
             else
-              m_loading_stage = LoadingStage::Ready;
+              set_loading_stage (LoadingStage::Ready);
             m_loading_activation_stage = 2;
           } else if (m_loading_activation_stage == 2) {
             if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
               cast_world_shadows (r);
-            m_loading_stage = LoadingStage::Ready;
+            set_loading_stage (LoadingStage::Ready);
             m_loading_activation_stage = 3;
           } else {
             m_ready = true;
@@ -1947,7 +1931,8 @@ namespace moppe {
 
         const float width = static_cast<float> (r.width_pts ());
         const float height = static_cast<float> (r.height_pts ());
-        const float now = static_cast<float> (platform::now ());
+        const double now = platform::now ();
+        const float sky_time = static_cast<float> (now - m_loading_clock_start);
 
         const LoadingStage stage = m_loading_stage.load ();
         const LoadingStageText copy = loading_stage_text (stage);
@@ -1970,13 +1955,82 @@ namespace moppe {
         m_loading_progress_display =
           std::max (m_loading_progress_display, progress);
 
+        std::shared_ptr<const std::vector<float>> loading_heights;
+        std::vector<LoadingEvent> loading_events;
+        {
+          const std::lock_guard<std::mutex> lock (m_loading_mutex);
+          loading_heights = m_loading_heights;
+          loading_events = m_loading_events;
+        }
+        if (loading_heights && loading_heights != m_displayed_loading_heights) {
+          std::copy (loading_heights->begin (),
+                     loading_heights->end (),
+                     m_loading_map.raw_heights ());
+          r.clear_terrain_overlay ();
+          m_terrain.setup (r,
+                           m_loading_map,
+                           m_world,
+                           m_graphics,
+                           render::TerrainProjection::Plane,
+                           true,
+                           true,
+                           true);
+          m_loading_terrain_visible = true;
+          m_displayed_loading_heights = std::move (loading_heights);
+        }
+
+        const bool show_terrain = m_loading_terrain_visible;
+        const Vec3& world_extent = extent_value (m_world.map_size);
+        Vec3 eye (0.0f, 34.0f, 0.0f);
+        Vec3 target (0.0f, 27.0f, -100.0f);
+        if (show_terrain) {
+          const float orbit = -0.65f + sky_time * 0.025f;
+          const float center_x = world_extent[0] * 0.5f;
+          const float center_z = world_extent[2] * 0.5f;
+          target =
+            Vec3 (center_x,
+                  m_loading_map.interpolated_height (center_x, center_z) +
+                    world_extent[1] * 0.07f,
+                  center_z);
+          eye = target + Vec3 (std::sin (orbit) * world_extent[0] * 0.48f,
+                               world_extent[1] * 0.34f,
+                               std::cos (orbit) * world_extent[2] * 0.48f);
+        }
+        const Vec3 forward = normalized (target - eye);
+
         render::FrameParams fp;
-        fp.clear_color = DisplayColor (0.012f, 0.019f, 0.025f);
-        fp.view = Mat4 ();
-        fp.proj = Mat4 ();
-        fp.time = now;
+        fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
+        fp.proj = Mat4::perspective_reversed (
+          (show_terrain ? 50.0f : 64.0f) * u::deg,
+          width / std::max (1.0f, height),
+          0.5f,
+          std::max (9000.0f, world_extent[0] * 2.0f));
+        fp.camera_pos = eye;
+        constexpr float loading_sun_height = 0.70f;
+        const Vec3 horizon_forward =
+          normalized (Vec3 (forward[0], 0.0f, forward[2]));
+        const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
+        fp.clear_color = horizon_color_for (loading_sun_height);
+        fp.sun_dir = normalized (horizon_side * 0.82f + Vec3 (0, 1, 0) * 0.58f);
+        sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
+        fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
+        fp.fog_scale =
+          show_terrain ? attenuation_value (m_world.fog_scale * 0.035f) : 0.0f;
+        fp.time = sky_time;
+        fp.exposure_bias = 1.0f;
+        fp.sun_visibility = 0.32f;
         if (!r.begin_frame (fp))
           return;
+
+        render::SkyParams sky;
+        sky.time = sky_time;
+        sky.sun_height = loading_sun_height;
+        sky.cloudiness = 0.14f;
+        sky.sun_dir = fp.sun_dir;
+        sky.fog_color = fp.clear_color;
+        r.draw_sky (sky);
+        if (show_terrain)
+          m_terrain.render (r, eye, forward, world_extent[0] * 1.8f);
 
         m_hud_dl.clear ();
         render::DrawState state;
@@ -1988,29 +2042,20 @@ namespace moppe {
         m_hud_dl.lit (false);
         m_hud_dl.fogged (false);
 
-        const float dial_x = width * 0.5f;
-        const float dial_y = height * 0.5f - 18.0f;
-        loading_arc (m_hud_dl, dial_x, dial_y, 31.0f, 1.5f, 1.0f, 0.16f);
-        loading_arc (m_hud_dl,
-                     dial_x,
-                     dial_y,
-                     31.0f,
-                     3.0f,
-                     m_loading_progress_display,
-                     0.90f);
-        const float pulse = 0.5f + 0.5f * std::sin (now * 2.1f);
-        m_hud_dl.color (0.91f, 1.0f, 0.90f, 0.12f + 0.08f * pulse);
-        fill_rounded_rect (
-          m_hud_dl, dial_x - 7.0f, dial_y - 7.0f, 14.0f, 14.0f, 7.0f);
-
         if (m_loading_font && m_loading_font->ok ()) {
-          const std::string title = copy.title;
+          const float text_x = 42.0f;
           m_hud_dl.push ();
-          m_hud_dl.translate (width * 0.5f, dial_y + 68.0f, 0.0f);
+          m_hud_dl.translate (text_x, 38.0f, 0.0f);
+          m_hud_dl.scale (0.55f, 0.55f, 1.0f);
+          m_hud_dl.color (0.80f, 0.90f, 0.82f, 0.78f);
+          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, "BUILDING THE WORLD");
+          m_hud_dl.pop ();
+
+          m_hud_dl.push ();
+          m_hud_dl.translate (text_x, 71.0f, 0.0f);
           m_hud_dl.scale (1.18f, 1.18f, 1.0f);
-          m_hud_dl.color (0.87f, 0.96f, 0.89f, 0.94f);
-          m_loading_font->draw (
-            m_hud_dl, -m_loading_font->measure (title) * 0.5f, 0.0f, title);
+          m_hud_dl.color (0.93f, 1.0f, 0.91f, 0.96f);
+          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, copy.title);
           m_hud_dl.pop ();
 
           std::string detail = copy.detail;
@@ -2025,23 +2070,36 @@ namespace moppe {
             status << detail << "  " << done << " / " << total;
             detail = status.str ();
           }
-          const float detail_x =
-            width * 0.5f - m_loading_font->measure (detail) * 0.5f;
-          m_hud_dl.color (0.70f, 0.82f, 0.75f, 0.82f);
-          m_loading_font->draw (m_hud_dl, detail_x, dial_y + 112.0f, detail);
-
-          std::ostringstream elapsed;
-          elapsed << static_cast<int> (now - m_loading_clock_start) << " s";
-          const std::string elapsed_text = elapsed.str ();
           m_hud_dl.push ();
-          m_hud_dl.translate (width * 0.5f, dial_y + 150.0f, 0.0f);
+          m_hud_dl.translate (text_x, 106.0f, 0.0f);
           m_hud_dl.scale (0.72f, 0.72f, 1.0f);
-          m_hud_dl.color (0.58f, 0.70f, 0.62f, 0.68f);
-          m_loading_font->draw (m_hud_dl,
-                                -m_loading_font->measure (elapsed_text) * 0.5f,
-                                0.0f,
-                                elapsed_text);
+          m_hud_dl.color (0.80f, 0.90f, 0.82f, 0.90f);
+          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, detail);
           m_hud_dl.pop ();
+
+          const int available_lines =
+            std::max (1, static_cast<int> ((height - 160.0f) / 22.0f));
+          const std::size_t first =
+            loading_events.size () > static_cast<std::size_t> (available_lines)
+              ? loading_events.size () - available_lines
+              : 0;
+          float line_y = 157.0f;
+          for (std::size_t i = first; i < loading_events.size (); ++i) {
+            const LoadingEvent& event = loading_events[i];
+            const LoadingStageText event_text =
+              loading_stage_text (event.stage);
+            std::ostringstream line;
+            line << std::fixed << std::setprecision (1) << event.elapsed
+                 << "s  " << event_text.title << "  -  " << event_text.detail;
+            m_hud_dl.push ();
+            m_hud_dl.translate (text_x, line_y, 0.0f);
+            m_hud_dl.scale (0.53f, 0.53f, 1.0f);
+            const bool current = i + 1 == loading_events.size ();
+            m_hud_dl.color (0.83f, 0.93f, 0.84f, current ? 0.96f : 0.68f);
+            m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, line.str ());
+            m_hud_dl.pop ();
+            line_y += 22.0f;
+          }
         }
 
         bool captured = false;
@@ -2390,7 +2448,6 @@ namespace moppe {
         input_go (0.0f);
         input_boost (0.0f);
         m_ready = false;
-        m_loading_stage = LoadingStage::Starting;
         m_loading_work_done = 0;
         m_loading_work_total = 1;
         m_loading_source_done = 0;
@@ -2398,6 +2455,14 @@ namespace moppe {
         m_loading_progress_display = 0.0f;
         m_loading_capture_done = false;
         m_loading_clock_start = platform::now ();
+        m_loading_terrain_visible = false;
+        m_displayed_loading_heights.reset ();
+        {
+          const std::lock_guard<std::mutex> lock (m_loading_mutex);
+          m_loading_events.clear ();
+          m_loading_heights.reset ();
+        }
+        set_loading_stage (LoadingStage::Starting);
         m_generation_complete = false;
         m_loading_finalize_announced = false;
         m_loading_activation_stage = 0;
@@ -2541,9 +2606,14 @@ namespace moppe {
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
+      map::RandomHeightMap m_loading_map;
       map::Surface m_surface;
       std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
       std::vector<std::vector<float>> m_terrain_history;
+      std::mutex m_loading_mutex;
+      std::vector<LoadingEvent> m_loading_events;
+      std::shared_ptr<const std::vector<float>> m_loading_heights;
+      std::shared_ptr<const std::vector<float>> m_displayed_loading_heights;
       std::atomic<int> m_loading_work_done = 0;
       std::atomic<int> m_loading_work_total = 1;
       std::atomic<int> m_loading_source_done = 0;
@@ -2551,6 +2621,7 @@ namespace moppe {
       float m_loading_progress_display = 0.0f;
       double m_loading_clock_start = platform::now ();
       bool m_loading_capture_done = false;
+      bool m_loading_terrain_visible = false;
       bool m_loading_finalize_announced = false;
       int m_loading_activation_stage = 0;
       bool m_skip_cinematic_requested = false;
