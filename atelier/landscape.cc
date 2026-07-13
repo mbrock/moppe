@@ -49,17 +49,18 @@ namespace atelier {
       return Real (bits & 0x00ffffffU) / Real (0x01000000U);
     }
 
-    DeformationReading deformation_of (
-      const PeriodicHexTopology& topology,
-      const std::array<Length, landscape_tile_count>& displacement,
-      TileId id) {
-      Length total_difference {};
+    DeformationReading
+    deformation_of (const PeriodicHexTopology& topology,
+                    const std::vector<NormalDisplacement>& displacement,
+                    TileId id) {
+      NormalDisplacement total_difference {};
       for (TileId neighbour : topology.neighbours (id)) {
-        const Length difference = displacement[neighbour] - displacement[id];
+        const NormalDisplacement difference =
+          displacement[neighbour] - displacement[id];
         total_difference += difference < 0.0f * m ? -difference : difference;
       }
       const Real reading =
-        std::min (1.0f, Real (total_difference / (0.45f * m)));
+        std::min (1.0f, total_difference.numerical_value_in (m) / 0.45f);
       return DeformationReading (reading * mp_units::one);
     }
   }
@@ -106,15 +107,16 @@ namespace atelier {
   }
 
   bool Landscape::topology_is_valid () const {
-    return m_topology.is_valid ();
+    return topology ().is_valid ();
   }
 
   void Landscape::begin_refinement () {
+    auto& velocity = get<normal_velocity> (m_tiles);
     const TileId focus =
-      m_topology.tile_id ({ landscape_columns / 5, landscape_rows / 2 });
-    m_velocity[focus] += 1.4f * m / s;
-    for (TileId neighbour : m_topology.neighbours (focus))
-      m_velocity[neighbour] += 0.35f * m / s;
+      topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
+    velocity[focus] += 1.4f * m / s;
+    for (TileId neighbour : topology ().neighbours (focus))
+      velocity[neighbour] += 0.35f * m / s;
   }
 
   void Landscape::advance (Duration elapsed) {
@@ -159,18 +161,20 @@ namespace atelier {
     constexpr auto stiffness = 2.3f / (s * s);
     constexpr auto coupling = 5.2f / (s * s);
     constexpr auto damping = 1.25f / s;
-    for (TileId id = 0; id < landscape_tile_count; ++id) {
-      Length laplacian {};
-      for (TileId neighbour : m_topology.neighbours (id))
-        laplacian += m_displacement[neighbour] - m_displacement[id];
+    auto& [displacement, velocity] = m_tiles;
+    auto& [next_displacement, next_velocity] = m_next_tiles;
+    for (TileId id = 0; id < m_tiles.size (); ++id) {
+      NormalDisplacement laplacian {};
+      for (TileId neighbour : topology ().neighbours (id))
+        laplacian += displacement[neighbour] - displacement[id];
       const auto acceleration = coupling * laplacian -
-                                stiffness * m_displacement[id] -
-                                damping * m_velocity[id];
-      m_next_velocity[id] = m_velocity[id] + acceleration * dt;
-      m_next_displacement[id] = m_displacement[id] + m_next_velocity[id] * dt;
+                                stiffness * displacement[id] -
+                                damping * velocity[id];
+      next_velocity[id] = velocity[id] + acceleration * dt;
+      next_displacement[id] = displacement[id] + next_velocity[id] * dt;
     }
-    m_velocity = m_next_velocity;
-    m_displacement = m_next_displacement;
+    velocity.swap (next_velocity);
+    displacement.swap (next_displacement);
   }
 
   bool Landscape::is_refined () const {
@@ -185,18 +189,19 @@ namespace atelier {
     std::vector<TileLeaf> result;
     result.reserve (landscape_tile_count + 7);
     const TileId focus =
-      m_topology.tile_id ({ landscape_columns / 5, landscape_rows / 2 });
+      topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
+    const auto& displacement = get<normal_displacement> (m_tiles);
 
     for (TileId id = 0; id < landscape_tile_count; ++id) {
-      const GridCell cell = m_topology.cell (id);
+      const GridCell cell = topology ().cell (id);
       const DeformationReading deformation =
-        deformation_of (m_topology, m_displacement, id);
+        deformation_of (topology (), displacement, id);
       if (id != focus || !m_refined) {
         result.push_back ({ cell,
                             0.0f * m,
                             0.0f * m,
                             puck_radius,
-                            m_displacement[id],
+                            displacement[id],
                             deformation,
                             0,
                             material_seed (id, 0) });
@@ -209,7 +214,7 @@ namespace atelier {
                             0.0f * m,
                             0.0f * m,
                             parent_radius,
-                            m_displacement[id],
+                            displacement[id],
                             deformation,
                             0,
                             material_seed (id, 0) });
@@ -220,7 +225,7 @@ namespace atelier {
                           0.0f * m,
                           0.0f * m,
                           child_radius,
-                          m_displacement[id],
+                          displacement[id],
                           deformation,
                           1,
                           material_seed (id, 1) });
@@ -231,7 +236,7 @@ namespace atelier {
                             orbit * std::sin (angle),
                             orbit * std::cos (angle),
                             child_radius,
-                            m_displacement[id],
+                            displacement[id],
                             deformation,
                             1,
                             material_seed (id, side + 2) });

@@ -46,8 +46,8 @@ MOPPE_TEST (refinement_impulse_propagates_through_the_tile_graph) {
   Landscape landscape;
   landscape.advance (2.5f * s);
 
-  const bool any_displacement =
-    std::ranges::any_of (landscape.displacements (), [] (Length displacement) {
+  const bool any_displacement = std::ranges::any_of (
+    landscape.displacements (), [] (NormalDisplacement displacement) {
       return std::abs (displacement.numerical_value_in (m)) > 0.001f;
     });
   MOPPE_CHECK (any_displacement);
