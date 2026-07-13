@@ -34,5 +34,6 @@ MOPPE_TEST (flat_embedding_repeats_identical_tile_readings) {
                       first.deformation.numerical_value_in (mp_units::one),
                       0.0001f);
     MOPPE_CHECK_NEAR (copy.generation, first.generation, 0.0001f);
+    MOPPE_CHECK_NEAR (copy.material_seed, first.material_seed, 0.0001f);
   }
 }

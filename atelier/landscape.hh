@@ -18,6 +18,7 @@ namespace atelier {
     landscape_columns * landscape_rows;
 
   using TileId = std::size_t;
+  using NormalVelocity = quantity<si::metre / si::second, Real>;
 
   inline constexpr Length puck_radius = 0.39f * si::metre;
 
@@ -26,11 +27,15 @@ namespace atelier {
     std::size_t row;
   };
 
-  struct LandscapeTile {
-    GridCell cell;
-    std::array<TileId, 6> neighbours;
-    Length displacement;
-    quantity<si::metre / si::second, Real> velocity;
+  // The immutable combinatorial law of the closed sheet.  Regular topology
+  // is calculated rather than copied into every tile's state.
+  class PeriodicHexTopology {
+  public:
+    [[nodiscard]] GridCell cell (TileId id) const;
+    [[nodiscard]] TileId tile_id (GridCell cell) const;
+    [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;
+    [[nodiscard]] std::array<TileId, 6> neighbours (TileId id) const;
+    [[nodiscard]] bool is_valid () const;
   };
 
   // One present leaf of the partition, still expressed entirely in the
@@ -44,6 +49,7 @@ namespace atelier {
     Length normal_displacement;
     DeformationReading deformation;
     Real generation;
+    Real material_seed;
   };
 
   class Landscape {
@@ -52,9 +58,18 @@ namespace atelier {
 
     void advance (Duration elapsed);
 
-    [[nodiscard]] const std::array<LandscapeTile, landscape_tile_count>&
-    tiles () const {
-      return m_tiles;
+    [[nodiscard]] const PeriodicHexTopology& topology () const {
+      return m_topology;
+    }
+
+    [[nodiscard]] const std::array<Length, landscape_tile_count>&
+    displacements () const {
+      return m_displacement;
+    }
+
+    [[nodiscard]] const std::array<NormalVelocity, landscape_tile_count>&
+    velocities () const {
+      return m_velocity;
     }
 
     [[nodiscard]] bool topology_is_valid () const;
@@ -67,10 +82,11 @@ namespace atelier {
     void begin_refinement ();
     void update_development (Duration elapsed);
 
-    std::array<LandscapeTile, landscape_tile_count> m_tiles;
+    PeriodicHexTopology m_topology;
+    std::array<Length, landscape_tile_count> m_displacement {};
+    std::array<NormalVelocity, landscape_tile_count> m_velocity {};
     std::array<Length, landscape_tile_count> m_next_displacement;
-    std::array<quantity<si::metre / si::second, Real>, landscape_tile_count>
-      m_next_velocity;
+    std::array<NormalVelocity, landscape_tile_count> m_next_velocity;
     Duration m_elapsed {};
     Duration m_simulated {};
     Duration m_accumulator {};
