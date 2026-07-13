@@ -1,5 +1,6 @@
 #include <moppe/game/game_state.hh>
 #include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
 
@@ -129,6 +130,82 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
   MOPPE_CHECK_NEAR (scalar_value (walker.state ().walk),
                     scalar_value (walker_state.walk),
                     1e-6f);
+}
+
+MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  const auto ratio =
+    mov::Glider::glide_ratio_at (16.0f * airspeed[u::m / u::s]);
+  static_assert (std::is_same_v<decltype (ratio), const mov::glide_ratio_t>);
+  MOPPE_CHECK (ratio.numerical_value_in (one) > 18.0f);
+
+  mov::Glider glider (surface);
+  glider.launch (
+    position (Vec3 (80, 50, 80)), velocity (Vec3 (0, 2, 18)), Vec3 (0, 0, 1));
+  glider.set_turn (0.6f);
+  const float start_y = glider.position ()[1];
+  const float start_z = glider.position ()[2];
+  for (int i = 0; i < 60; ++i)
+    glider.update (seconds (1.0f / 60.0f));
+
+  MOPPE_CHECK (glider.position ()[2] > start_z + 10.0f);
+  MOPPE_CHECK (glider.position ()[1] < start_y + 2.0f);
+  MOPPE_CHECK (glider.heading ()[0] > 0.05f);
+  MOPPE_CHECK (glider.air_mass_lift ().numerical_value_in (u::m / u::s) ==
+               0.0f);
+
+  mov::Glider landing (surface);
+  landing.launch (
+    position (Vec3 (100, 14, 100)), velocity (Vec3 (0, 0, 14)), Vec3 (0, 0, 1));
+  for (int i = 0; i < 1800 && !landing.landed (); ++i)
+    landing.update (seconds (1.0f / 60.0f));
+  MOPPE_CHECK (landing.landed ());
+  MOPPE_CHECK_NEAR (landing.position ()[1], 10.75f, 1e-4f);
+}
+
+MOPPE_TEST (glider_state_restores_the_flight_computer) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.35f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  mov::Glider glider (surface);
+  glider.launch (
+    position (Vec3 (40, 70, 40)), velocity (Vec3 (12, -1, 15)), Vec3 (0, 0, 1));
+  glider.set_turn (-0.7f);
+  glider.set_speed_control (0.8f);
+  glider.set_flare (true);
+  glider.update (seconds (0.25f));
+  const mov::Glider::State saved = glider.state ();
+
+  glider.set_turn (1.0f);
+  glider.set_flare (false);
+  glider.update (seconds (1.0f));
+  glider.restore (saved);
+  const mov::Glider::State restored = glider.state ();
+
+  check_position (restored.position, saved.position);
+  check_velocity (restored.velocity, saved.velocity);
+  check_vector (restored.heading, saved.heading);
+  MOPPE_CHECK_NEAR (
+    radians_value (restored.bank), radians_value (saved.bank), 1e-6f);
+  MOPPE_CHECK_NEAR (restored.airspeed.numerical_value_in (u::m / u::s),
+                    saved.airspeed.numerical_value_in (u::m / u::s),
+                    1e-6f);
+  MOPPE_CHECK (restored.flare == saved.flare);
+  MOPPE_CHECK (restored.landed == saved.landed);
 }
 
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {

@@ -12,6 +12,10 @@
   demo grid is unit-scale, so metric carve defaults suit the game world)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
+  - Hang glider: boost the bike into the air and press `E` once the deploy
+    prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
+    touching down folds the wing and continues on foot. On iOS, the
+    mount/dismount corner deploys the wing while airborne.
   - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|high`
     - Override Boolean graphics features with comma-separated
@@ -61,6 +65,9 @@
 - `moppe/terrain/` is the portable runtime field-expression DAG, recipe and
   pipeline values, evaluator backends, and artifact writers; see
   `docs/terrain-expressions.md`.
+- `moppe/spatial/` contains finite typed quantity bundles and generic local or
+  interpolated sampling operations. `moppe/map/surface.*` materializes the
+  heightmap's elevation and normal columns over one shared surface domain.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
 - Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,

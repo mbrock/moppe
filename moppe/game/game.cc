@@ -13,6 +13,7 @@
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/game_state.hh>
+#include <moppe/game/glider_render.hh>
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
@@ -26,9 +27,11 @@
 #include <moppe/game/walker.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/world.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 
 #include <moppe/map/generate.hh>
+#include <moppe/mov/glider.hh>
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/moisture.hh>
@@ -333,7 +336,8 @@ namespace moppe {
                    14 * u::kN,
                    100 * u::kW,
                    900 * u::kg),
-            m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
+            m_glider (m_surface), m_renderer (0),
+            m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
@@ -344,6 +348,7 @@ namespace moppe {
         return { static_cast<const GameLogicState&> (*this),
                  m_vehicle.state (),
                  m_car.state (),
+                 m_glider.state (),
                  m_walker.state (),
                  m_camera.state (),
                  m_stars.state (),
@@ -354,6 +359,7 @@ namespace moppe {
         static_cast<GameLogicState&> (*this) = state.logic;
         m_vehicle.restore (state.vehicle);
         m_car.restore (state.car);
+        m_glider.restore (state.glider);
         m_walker.restore (state.walker);
         m_camera.restore (state.camera);
         m_stars.restore (state.stars);
@@ -395,6 +401,15 @@ namespace moppe {
         const float patch = 20.0f; // metres
         const float min_ground = meters_value (m_world.water_level) + 25.0f;
         const float max_ground = 0.32f * world_extent[1];
+        const auto elevation_at = [this] (float x, float z) {
+          return m_surface.elevation_at (position (Vec3 (x, 0, z)))
+            .quantity_from_zero ()
+            .numerical_value_in (u::m);
+        };
+        const auto normal_at = [this] (float x, float z) {
+          return m_surface.normal_at (position (Vec3 (x, 0, z)))
+            .numerical_value_in (one);
+        };
 
         std::uniform_real_distribution<float> random_x (
           margin_x, world_extent[0] - margin_x);
@@ -428,17 +443,17 @@ namespace moppe {
         for (int i = 0; i < 6000; ++i) {
           const float x = random_x (m_fx_rng);
           const float z = random_z (m_fx_rng);
-          const float h = m_map.interpolated_height (x, z);
-          const float hx0 = m_map.interpolated_height (x - patch, z);
-          const float hx1 = m_map.interpolated_height (x + patch, z);
-          const float hz0 = m_map.interpolated_height (x, z - patch);
-          const float hz1 = m_map.interpolated_height (x, z + patch);
+          const float h = elevation_at (x, z);
+          const float hx0 = elevation_at (x - patch, z);
+          const float hx1 = elevation_at (x + patch, z);
+          const float hz0 = elevation_at (x, z - patch);
+          const float hz1 = elevation_at (x, z + patch);
           const float low =
             std::min (h, std::min (std::min (hx0, hx1), std::min (hz0, hz1)));
           const float high =
             std::max (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
           const float relief = high - low;
-          const float up = m_map.interpolated_normal (x, z)[1];
+          const float up = normal_at (x, z)[1];
           const float lake_depth = std::max ({ standing_depth (x, z),
                                                standing_depth (x - patch, z),
                                                standing_depth (x + patch, z),
@@ -565,6 +580,7 @@ namespace moppe {
         }
         m_gen_stage = 5;
         m_map.recompute_normals ();
+        m_surface.refresh (m_map);
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
@@ -901,12 +917,12 @@ namespace moppe {
         m_vehicle.update (seconds (dt));
         if (m_car_exists)
           m_car.update (seconds (dt));
+        if (m_mode == M_GLIDER && m_glider.update (seconds (dt)))
+          finish_glide ();
         if (m_mode == M_FOOT)
           m_walker.update (seconds (dt), m_map, m_obstacles, m_world);
 
-        const Vec3 vpos = (m_mode == M_FOOT)  ? m_walker.position ()
-                          : (m_mode == M_CAR) ? m_car.position ()
-                                              : m_vehicle.position ();
+        const Vec3 vpos = subject_position ();
         mov::Vehicle& av = active_vehicle ();
 
         // Parked vehicles' impacts shouldn't linger until remount.
@@ -921,7 +937,7 @@ namespace moppe {
 
         const bool in_water =
           vpos[1] < meters_value (m_world.water_level) + 1.0f;
-        const bool driving = (m_mode != M_FOOT);
+        const bool driving = m_mode == M_BIKE || m_mode == M_CAR;
 
         // Long jumps become score events after three seconds. Keep the last
         // airborne time locally because Vehicle clears its timer on touchdown.
@@ -942,7 +958,7 @@ namespace moppe {
         const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
         const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
         const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
-        const Vec3 fwd = av.orientation ();
+        const Vec3 fwd = subject_heading ();
         const Vec3 rear_wheel = vpos - fwd * 1.4f + Vec3 (0, -0.7f, 0);
 
         // Drift kicks up dirt from the rear wheel (or spray).
@@ -1114,7 +1130,8 @@ namespace moppe {
                          DisplayColor (1.0f, 0.95f, 0.55f),
                          flash);
             m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
-            av.replenish_boost (0.25f * picked);
+            if (m_mode != M_GLIDER)
+              av.replenish_boost (0.25f * picked);
           }
         }
 
@@ -1142,6 +1159,10 @@ namespace moppe {
             eye =
               m_walker.position () + Vec3 (0, 1.55f / m_landscape_scale_y, 0);
             look = m_walker.heading ();
+          } else if (m_mode == M_GLIDER) {
+            eye =
+              m_glider.position () - Vec3 (0, 0.75f / m_landscape_scale_y, 0);
+            look = m_glider.heading ();
           } else {
             eye = av.position () + Vec3 (0, 0.95f / m_landscape_scale_y, 0) +
                   av.orientation () * (0.4f / m_landscape_scale_x);
@@ -1160,6 +1181,11 @@ namespace moppe {
                              m_walker.heading () * flip,
                              velocity (Vec3 ()),
                              seconds (dt));
+          else if (m_mode == M_GLIDER)
+            m_camera.update (m_glider.physical_position (),
+                             m_glider.heading () * flip,
+                             m_glider.physical_velocity (),
+                             seconds (dt));
           else
             m_camera.update (av.physical_position (),
                              av.orientation () * flip,
@@ -1174,7 +1200,8 @@ namespace moppe {
 
         // Speed widens the field of view a touch.
         {
-          const float kmh = driving ? length (av.velocity ()) * 3.6f : 0.0f;
+          const float kmh =
+            (driving || m_mode == M_GLIDER) ? subject_speed_kmh () : 0.0f;
           const float k =
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
           m_fov_k += (k - m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
@@ -1425,6 +1452,8 @@ namespace moppe {
                          m_map,
                          m_walker.position () + Vec3 (0, 0.5f, 0),
                          0.8f);
+          if (m_mode == M_GLIDER)
+            m_blob.draw (m_world_dl, m_map, m_glider.position (), 3.4f);
 
           // In helmet cam you ARE the rider: don't draw yourself.
           const bool helmet = (m_cam_mode == CAM_HELMET);
@@ -1440,6 +1469,9 @@ namespace moppe {
           if (m_mode == M_FOOT && !helmet)
             m_walker.render (
               m_world_dl, m_total_time, landscape_visual_scale ());
+          if (m_mode == M_GLIDER && !helmet)
+            render_glider (
+              m_world_dl, m_glider, m_total_time, landscape_visual_scale ());
 
           r.draw_list (m_world_dl);
 
@@ -1500,9 +1532,7 @@ namespace moppe {
           if (cinematic)
             blur = m_cinematic.motion_blur ();
           else {
-            const float kmh = (m_mode == M_FOOT)
-                                ? 0.0f
-                                : length (active_vehicle ().velocity ()) * 3.6f;
+            const float kmh = subject_speed_kmh ();
             blur = std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
           }
           if (m_graphics.motion_blur && blur > 0.01f)
@@ -1533,12 +1563,16 @@ namespace moppe {
           }
         } else if (!m_water_inspection) {
           HudState hs;
-          hs.speed_kmh = (m_mode == M_FOOT)
-                           ? 0.0f
-                           : length (active_vehicle ().velocity ()) * 3.6f;
+          hs.speed_kmh = subject_speed_kmh ();
           hs.fuel = m_fuel;
-          hs.boost_ready01 =
-            (m_mode == M_FOOT) ? 1.0f : active_vehicle ().boost_charge ();
+          if (m_mode == M_GLIDER) {
+            const float lift =
+              m_glider.air_mass_lift ().numerical_value_in (u::m / u::s);
+            hs.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
+          } else {
+            hs.boost_ready01 =
+              (m_mode == M_FOOT) ? 1.0f : active_vehicle ().boost_charge ();
+          }
           hs.health01 = m_health / 100.0f;
           hs.odometer_m = (float)m_odometer;
           hs.lives = m_lives;
@@ -1549,10 +1583,14 @@ namespace moppe {
           hs.landed_points = m_landed_points;
           hs.landed_age_s = m_landed_age;
           hs.on_foot = (m_mode == M_FOOT);
+          hs.gliding = (m_mode == M_GLIDER);
+          hs.can_deploy_glider = can_deploy_glider ();
+          hs.vertical_speed_mps =
+            m_mode == M_GLIDER
+              ? m_glider.vertical_speed ().numerical_value_in (u::m / u::s)
+              : 0.0f;
           hs.frame_time_s = m_frame_time;
-          const Vec3 heading = m_mode == M_FOOT
-                                 ? m_walker.heading ()
-                                 : active_vehicle ().orientation ();
+          const Vec3 heading = subject_heading ();
           hs.heading_radians = std::atan2 (heading[0], heading[2]);
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
           if (m_game_ui_open) {
@@ -1856,6 +1894,11 @@ namespace moppe {
           return;
         }
 
+        if (k == Key::E && down) {
+          deploy_glider ();
+          return;
+        }
+
         // The secret dismount combo: 7, then 5, then R.  Arrow keys
         // bypass it (they were "special" codes dispatched before the
         // combo machine in the GLUT build).
@@ -1866,7 +1909,10 @@ namespace moppe {
           if (k == want[m_combo]) {
             if (++m_combo == 3) {
               m_combo = 0;
-              toggle_mount ();
+              if (can_deploy_glider ())
+                deploy_glider ();
+              else
+                toggle_mount ();
             }
           } else
             m_combo = (k == Key::Seven) ? 1 : 0;
@@ -1960,14 +2006,72 @@ namespace moppe {
         return m_mode == M_CAR ? m_car : m_vehicle;
       }
 
+      Vec3 subject_position () const {
+        if (m_mode == M_FOOT)
+          return m_walker.position ();
+        if (m_mode == M_GLIDER)
+          return m_glider.position ();
+        return m_mode == M_CAR ? m_car.position () : m_vehicle.position ();
+      }
+
+      Vec3 subject_heading () const {
+        if (m_mode == M_FOOT)
+          return m_walker.heading ();
+        if (m_mode == M_GLIDER)
+          return m_glider.heading ();
+        return m_mode == M_CAR ? m_car.orientation ()
+                               : m_vehicle.orientation ();
+      }
+
+      float subject_speed_kmh () const {
+        if (m_mode == M_FOOT)
+          return 0.0f;
+        if (m_mode == M_GLIDER)
+          return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
+        const Vec3 v =
+          m_mode == M_CAR ? m_car.velocity () : m_vehicle.velocity ();
+        return length (v) * 3.6f;
+      }
+
+      bool can_deploy_glider () const {
+        if (m_mode != M_BIKE || !m_vehicle.airborne ())
+          return false;
+        const Vec3 p = m_vehicle.position ();
+        const float ground = m_map.interpolated_height (p[0], p[2]);
+        return p[1] - ground > 3.0f;
+      }
+
+      void deploy_glider () {
+        if (!can_deploy_glider ())
+          return;
+        const Vec3 p = m_vehicle.position ();
+        const Vec3 heading = m_vehicle.orientation ();
+        const velocity_t inherited = m_vehicle.physical_velocity ();
+        m_vehicle.set_thrust (0);
+        m_vehicle.set_yaw (0 * u::deg);
+        m_vehicle.set_boost (0, 0);
+        m_glider.launch (position (p + Vec3 (0, 1.0f, 0)), inherited, heading);
+        m_mode = M_GLIDER;
+        m_glider.set_turn (m_turn_input);
+        m_glider.set_speed_control (m_go_input);
+        m_glider.set_flare (m_boost_input > 0.1f);
+      }
+
+      void finish_glide () {
+        const Vec3 p = m_glider.position ();
+        m_walker.spawn (position (p + Vec3 (0, 0.15f, 0)), m_glider.heading ());
+        m_mode = M_FOOT;
+        input_turn (m_turn_input);
+        input_go (m_go_input);
+        input_boost (0);
+      }
+
       void leave_cinematic () {
         m_cinematic.stop ();
         m_cinematic_controls = {};
-        const Vec3 subject = m_mode == M_FOOT
-                               ? m_walker.position () + Vec3 (0, 1.0f, 0)
-                               : active_vehicle ().position ();
-        Vec3 heading = m_mode == M_FOOT ? m_walker.heading ()
-                                        : active_vehicle ().orientation ();
+        const Vec3 subject = subject_position () +
+                             (m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
+        Vec3 heading = subject_heading ();
         heading[1] = 0.0f;
         if (length2 (heading) < 1e-5f)
           heading = Vec3 (0, 0, 1);
@@ -2016,6 +2120,8 @@ namespace moppe {
         m_turn_input = v;
         if (m_mode == M_FOOT)
           m_walker.set_turn (v);
+        else if (m_mode == M_GLIDER)
+          m_glider.set_turn (v);
         else
           active_vehicle ().set_yaw ((90 * v) * u::deg);
       }
@@ -2024,6 +2130,8 @@ namespace moppe {
         m_go_input = v;
         if (m_mode == M_FOOT)
           m_walker.set_walk (v > 0 ? v : v * 0.6f);
+        else if (m_mode == M_GLIDER)
+          m_glider.set_speed_control (v);
         else {
           active_vehicle ().set_thrust (v);
           active_vehicle ().set_boost (m_boost_input, m_go_input);
@@ -2036,12 +2144,17 @@ namespace moppe {
         if (m_mode == M_FOOT) {
           if (m_boost_input > 0.1f && previous <= 0.1f)
             m_walker.jump ();
-        } else
+        } else if (m_mode == M_GLIDER)
+          m_glider.set_flare (m_boost_input > 0.1f);
+        else
           active_vehicle ().set_boost (m_boost_input, m_go_input);
       }
 
       void toggle_mount () {
         if (!m_ready)
+          return;
+
+        if (m_mode == M_GLIDER)
           return;
 
         if (m_mode != M_FOOT) {
@@ -2097,7 +2210,11 @@ namespace moppe {
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
-          m_map.interpolated_height (m_spawn_position[0], m_spawn_position[2]);
+          m_surface
+            .elevation_at (
+              position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
+            .quantity_from_zero ()
+            .numerical_value_in (u::m);
         m_vehicle.reset (
           Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
         // Key releases were swallowed during the game-over screen;
@@ -2117,6 +2234,7 @@ namespace moppe {
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
+      map::Surface m_surface;
       std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
       std::vector<std::vector<float>> m_terrain_history;
       std::atomic<int> m_loading_work_done = 0;
@@ -2140,6 +2258,7 @@ namespace moppe {
       ChaseCamera m_camera;
       mov::Vehicle m_vehicle;
       mov::Vehicle m_car;
+      mov::Glider m_glider;
       Vegetation m_vegetation;
       Stars m_stars;
       Dust m_dust;

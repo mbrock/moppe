@@ -19,6 +19,39 @@ MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
     std::holds_alternative<NormalizeHeights> (program.transforms[0]));
 }
 
+MOPPE_TEST (orogeny_program_uses_a_shallow_seed_and_evolution_stage) {
+  const TerrainProgram program = make_orogeny_program (123);
+
+  MOPPE_CHECK (program.source.mode == GeologicalSource::Mode::Orogeny);
+  MOPPE_CHECK (program.transforms.size () == 1);
+  MOPPE_CHECK (
+    std::holds_alternative<OrogenyEvolution> (program.transforms.front ()));
+  const auto& orogeny =
+    std::get<OrogenyEvolution> (program.transforms.front ());
+  MOPPE_CHECK_NEAR (
+    meters_per_julian_year_value (orogeny.maximum_uplift_rate), 0.001f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    orogeny.evolution.sea_level, program.source.sea_level, 0.0f);
+}
+
+MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
+  const TerrainProgram fast =
+    make_orogeny_program (123, TerrainGenerationProfile::Fast);
+  const TerrainProgram play =
+    make_orogeny_program (123, TerrainGenerationProfile::Play);
+  const TerrainProgram research =
+    make_orogeny_program (123, TerrainGenerationProfile::Research);
+  const auto duration = [] (const TerrainProgram& program) {
+    return julian_years_value (
+      std::get<OrogenyEvolution> (program.transforms.front ())
+        .evolution.duration);
+  };
+
+  MOPPE_CHECK_NEAR (duration (fast), 200000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (duration (play), 500000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (duration (research), 1000000.0f, 0.0f);
+}
+
 MOPPE_TEST (default_world_program_records_every_transform) {
   const TerrainProgram program = make_default_world_program (123);
 
@@ -107,6 +140,12 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
     SpatialScope::Global);
   MOPPE_CHECK (
     terrain_transform_semantics (AnalyticalErosion {}).evaluation_order ==
+    EvaluationOrder::Iterative);
+  MOPPE_CHECK (
+    terrain_transform_semantics (OrogenyEvolution {}).spatial_scope ==
+    SpatialScope::Global);
+  MOPPE_CHECK (
+    terrain_transform_semantics (OrogenyEvolution {}).evaluation_order ==
     EvaluationOrder::Iterative);
 }
 

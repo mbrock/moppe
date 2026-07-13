@@ -1428,7 +1428,7 @@ namespace moppe {
       const std::size_t expected =
         2 * static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
-      m_have_water_levels = water_levels.size () == expected;
+      m_have_water_levels = expected != 0 && water_levels.size () == expected;
       if (m_have_water_levels) {
         const int width = m_terrain_params.width;
         const int height = m_terrain_params.height;
@@ -1455,7 +1455,7 @@ namespace moppe {
       const std::size_t expected =
         2 * static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
-      m_have_water_flow = flow.size () == expected;
+      m_have_water_flow = expected != 0 && flow.size () == expected;
       if (!m_have_water_flow)
         return;
       const int width = m_terrain_params.width;
@@ -1482,7 +1482,7 @@ namespace moppe {
       const std::size_t expected =
         2 * static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
-      m_have_geology = geology.size () == expected;
+      m_have_geology = expected != 0 && geology.size () == expected;
       if (!m_have_geology)
         return;
       const int width = m_terrain_params.width;
@@ -1508,7 +1508,7 @@ namespace moppe {
       const std::size_t expected =
         static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
-      m_have_moisture = moisture.size () == expected;
+      m_have_moisture = expected != 0 && moisture.size () == expected;
       if (!m_have_moisture)
         return;
       const int width = m_terrain_params.width;

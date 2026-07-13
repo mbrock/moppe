@@ -57,6 +57,7 @@ MOPPE_TEST (geological_fields_share_warp_subexpressions) {
   static_assert (std::same_as<decltype (fields.warp_x), NoiseField>);
   static_assert (
     std::same_as<decltype (fields.combined), RelativeElevationField>);
+  static_assert (std::same_as<decltype (fields.uplift), RelativeUpliftField>);
   const auto& warped_x =
     std::get<expression::MultiplyAdd> (fields.warped_x.node ()->operation);
   const auto& warped_y =

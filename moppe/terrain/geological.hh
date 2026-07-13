@@ -83,6 +83,7 @@ namespace moppe::terrain {
     RelativeElevationField mountains;
     ProportionField mountain_mask;
     RelativeElevationField combined;
+    RelativeUpliftField uplift;
   };
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed);

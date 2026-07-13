@@ -193,6 +193,7 @@ if(MOPPE_METAL_RESULT EQUAL 0)
     add_custom_command(
       OUTPUT ${air}
       COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
+              -std=metal3.0
               -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
               -o ${air}
       DEPENDS ${src} ${MOPPE_METAL_DEPS}
@@ -266,7 +267,9 @@ add_library(moppe_terrain STATIC
   moppe/terrain/drainage.cc
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
+  moppe/terrain/waterline.cc
   moppe/terrain/analytical_erosion.cc
+  moppe/terrain/stream_power_evolution.cc
   moppe/terrain/carve.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
@@ -311,7 +314,9 @@ endif()
 add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
   moppe/map/generate.cc
+  moppe/map/surface.cc
   moppe/map/terrain_evaluator.cc
+  moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
@@ -326,6 +331,7 @@ add_library(moppe_game STATIC
   moppe/game/sprites.cc
   moppe/game/model.cc
   moppe/game/walker.cc
+  moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
@@ -407,6 +413,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-tests
     tests/test_main.cc
     tests/units_test.cc
+    tests/spatial/bundle_test.cc
     tests/terrain/discretization_test.cc
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
@@ -417,7 +424,9 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/drainage_test.cc
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
+    tests/terrain/waterline_test.cc
     tests/terrain/analytical_erosion_test.cc
+    tests/terrain/stream_power_evolution_test.cc
     tests/terrain/carve_test.cc
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
@@ -425,6 +434,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
     tests/game/cinematic_flight_test.cc
+    tests/map/surface_test.cc
     tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-tests PRIVATE moppe_game)

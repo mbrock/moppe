@@ -1,6 +1,7 @@
 #include <moppe/map/generate.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/mov/vehicle.hh>
+#include <moppe/terrain/cpu_evaluator.hh>
 #include <moppe/terrain/program.hh>
 #include <moppe/terrain/topology.hh>
 
@@ -11,6 +12,21 @@
 #include <cstdint>
 
 namespace {
+  class CountingFieldEvaluator : public moppe::terrain::FieldEvaluator {
+  public:
+    moppe::terrain::ScalarRaster evaluate (
+      const moppe::terrain::ScalarField& field,
+      const moppe::terrain::FieldSamplingGrid2D& domain) const override {
+      ++evaluations;
+      return m_cpu.evaluate (field, domain);
+    }
+
+    mutable int evaluations = 0;
+
+  private:
+    moppe::terrain::CpuEvaluator m_cpu;
+  };
+
   bool maps_match (const moppe::map::RandomHeightMap& left,
                    const moppe::map::RandomHeightMap& right) {
     if (left.width () != right.width () || left.height () != right.height ())
@@ -74,6 +90,20 @@ MOPPE_TEST (evaluating_a_program_twice_is_deterministic) {
   evaluate (first, program);
   evaluate (second, program);
   MOPPE_CHECK (maps_match (first, second));
+}
+
+MOPPE_TEST (uplift_field_is_materialized_only_for_orogeny_programs) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  CountingFieldEvaluator field_evaluator;
+  map::RandomHeightMap map (33, 33, Vec3 (100, 20, 100), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map, &field_evaluator);
+
+  evaluator.begin (make_geological_program (77));
+  MOPPE_CHECK (field_evaluator.evaluations == 1);
+
+  evaluator.begin (make_orogeny_program (77));
+  MOPPE_CHECK (field_evaluator.evaluations == 3);
 }
 
 MOPPE_TEST (evaluator_checkpoint_resume_matches_complete_replay) {
@@ -233,6 +263,12 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   const auto& report = std::get<AnalyticalErosionReport> (first_report);
   MOPPE_CHECK (report.lowered_volume > 0.0);
   MOPPE_CHECK (report.fixed_point_iterations == iteration_count (2));
+  double ledger_erosion = 0.0;
+  for (int y = 0; y < first.unique_height (); ++y)
+    for (int x = 0; x < first.unique_width (); ++x)
+      ledger_erosion +=
+        first.raw_eroded ()[static_cast<std::size_t> (y) * first.width () + x];
+  MOPPE_CHECK (ledger_erosion > 0.0);
   for (int i = 0; i < first.width (); ++i) {
     MOPPE_CHECK (first.get (i, 0) == first.get (i, first.height () - 1));
     MOPPE_CHECK (first.get (0, i) == first.get (first.width () - 1, i));
@@ -240,6 +276,65 @@ MOPPE_TEST (periodic_analytical_erosion_is_deterministic_and_seam_safe) {
   MOPPE_CHECK (
     std::get<AnalyticalErosionReport> (second_report).lowered_volume ==
     report.lowered_volume);
+}
+
+MOPPE_TEST (orogeny_source_evolves_a_typed_uplift_field_deterministically) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  const Vec3 size (640, 650, 640);
+  TerrainProgram program = make_orogeny_program (2468);
+  auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
+  orogeny.evolution.duration = 200000.0f * mp_units::astronomy::Julian_year;
+  orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
+  map::RandomHeightMap first (65, 65, size, 0, Topology::Torus);
+  map::RandomHeightMap second (65, 65, size, 1, Topology::Torus);
+  std::vector<int> completed;
+  map::TerrainEvaluator first_evaluator (first);
+  first_evaluator.evaluate (
+    program,
+    {},
+    [&completed] (std::size_t, const TerrainTransform&, int done, int total) {
+      MOPPE_CHECK (total == 4);
+      completed.push_back (done);
+    });
+  map::TerrainEvaluator second_evaluator (second);
+  second_evaluator.evaluate (program);
+
+  MOPPE_CHECK (maps_match (first, second));
+  MOPPE_CHECK (completed == std::vector<int> ({ 1, 2, 3, 4 }));
+  for (int y = 0; y < first.height (); ++y)
+    for (int x = 0; x < first.width (); ++x) {
+      const std::size_t cell =
+        static_cast<std::size_t> (y) * first.width () + x;
+      MOPPE_CHECK (first.raw_eroded ()[cell] == 0.0f);
+      MOPPE_CHECK (first.raw_deposited ()[cell] == 0.0f);
+    }
+  for (int i = 0; i < first.width (); ++i) {
+    MOPPE_CHECK (first.get (i, 0) == first.get (i, first.height () - 1));
+    MOPPE_CHECK (first.get (0, i) == first.get (first.width () - 1, i));
+  }
+  const TerrainTransformReport zero_duration =
+    first_evaluator.apply (OrogenyEvolution {
+      .maximum_uplift_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .evolution = { .duration = 0.0f * mp_units::astronomy::Julian_year } });
+  const auto& report = std::get<StreamPowerEvolutionReport> (zero_duration);
+  MOPPE_CHECK (report.cells == cell_count (64 * 64));
+}
+
+MOPPE_TEST (orogeny_source_starts_from_shallow_continent_relief) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  TerrainProgram program = make_orogeny_program (731);
+  map::RandomHeightMap map (65, 65, Vec3 (640, 650, 640), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map);
+
+  evaluator.begin (program);
+
+  const float relief = meters_value (program.source.initial_relief) / 650.0f;
+  MOPPE_CHECK (map.min_value () < program.source.sea_level);
+  MOPPE_CHECK (map.max_value () > program.source.sea_level);
+  MOPPE_CHECK (map.max_value () - map.min_value () <= relief + 1e-6f);
 }
 
 MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {

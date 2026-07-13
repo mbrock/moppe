@@ -9,9 +9,9 @@ graphics settings.
 `game::GameLogicState` currently gathers the game clock, derived weather and
 camera effects, player mode and inputs, health/fuel/scoring values, gameplay
 timers, and the effects random-number generator. `game::GameState` combines
-that value with snapshots of both vehicles, the walker, the chase camera, and
-the mutable portion of the generated star set, and a bounded dust-emission
-event log.
+that value with snapshots of both vehicles, the glider, the walker, the chase
+camera, the mutable portion of the generated star set, and a bounded
+dust-emission event log.
 Restoring those subsystem values changes only their mutable state; immutable
 terrain references, obstacle references, and vehicle physical parameters stay
 attached to the live objects.

@@ -212,6 +212,7 @@ namespace moppe::terrain {
   QUANTITY_SPEC (relative_elevation,
                  mp_units::dimensionless,
                  mp_units::is_kind);
+  QUANTITY_SPEC (relative_uplift, mp_units::dimensionless, mp_units::is_kind);
   QUANTITY_SPEC (normalized_sample, mp_units::dimensionless, mp_units::is_kind);
 
   template <auto QS>
@@ -274,6 +275,7 @@ namespace moppe::terrain {
   using NoiseField = Field<moppe::noise_signal>;
   using ProportionField = Field<moppe::proportion>;
   using RelativeElevationField = Field<relative_elevation>;
+  using RelativeUpliftField = Field<relative_uplift>;
 
   // Reinterpret a field as another kind of quantity.  This is the
   // field analogue of an explicit quantity cast: crossing between
