@@ -115,6 +115,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     atelier/atelier_shaders.hh
     atelier/camera.hh
     atelier/carpet.hh
+    atelier/embedding.cc
+    atelier/embedding.hh
     atelier/landscape.cc
     atelier/landscape.hh
     atelier/matrix.hh
@@ -433,9 +435,14 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   endif()
   if(APPLE)
     target_sources(moppe-tests PRIVATE
+      atelier/embedding.cc
       atelier/landscape.cc
+      tests/atelier/embedding_test.cc
       tests/atelier/landscape_test.cc)
-    set_source_files_properties(atelier/landscape.cc PROPERTIES
+    set_source_files_properties(
+      atelier/embedding.cc
+      atelier/landscape.cc
+      PROPERTIES
       SKIP_UNITY_BUILD_INCLUSION ON)
     # A unity-built moppe_game archive is one object, so tests pull its
     # platform-facing helpers along with the systems under test.

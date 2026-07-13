@@ -9,10 +9,6 @@ namespace atelier {
   using namespace si::unit_symbols;
 
   namespace {
-    constexpr Length major_radius = 4.5f * m;
-    constexpr Length minor_radius = 1.7f * m;
-    constexpr Length puck_radius = 0.39f * m;
-    constexpr Length shell_hover = 0.06f * m;
     constexpr Duration fixed_step = (1.0f / 120.0f) * s;
     constexpr Duration cycle_duration = 12.0f * s;
     constexpr Duration split_at = 2.0f * s;
@@ -54,61 +50,18 @@ namespace atelier {
       return t * t * (3.0f - 2.0f * t);
     }
 
-    struct TorusFrame {
-      simd_float3 centre;
-      simd_float3 across;
-      simd_float3 outward;
-      simd_float3 around;
-    };
-
-    TorusFrame torus_frame (GridCell cell, Length displacement) {
-      const Real row_offset = cell.row % 2 == 0 ? 0.0f : 0.5f;
-      const Real u = 2.0f * std::numbers::pi_v<Real> *
-                     (Real (cell.column) + row_offset) /
-                     Real (landscape_columns);
-      const Real v = 2.0f * std::numbers::pi_v<Real> * Real (cell.row) /
-                     Real (landscape_rows);
-      const Real cu = std::cos (u), su = std::sin (u);
-      const Real cv = std::cos (v), sv = std::sin (v);
-      const simd_float3 outward { cv * cu, sv, cv * su };
-      const simd_float3 across { -su, 0, cu };
-      const simd_float3 around { -sv * cu, cv, -sv * su };
-      const Real major = in_metres (major_radius);
-      const Real minor = in_metres (minor_radius);
-      const Real lift = in_metres (shell_hover + displacement);
-      return {
-        .centre = simd_float3 { (major + minor * cv) * cu,
-                                minor * sv,
-                                (major + minor * cv) * su } +
-                  outward * lift,
-        .across = across,
-        .outward = outward,
-        .around = around,
-      };
-    }
-
-    Matrix
-    placement (const TorusFrame& frame, simd_float2 offset, Length radius) {
-      const simd_float3 centre =
-        frame.centre + frame.across * offset.x + frame.around * offset.y;
-      const Real scale = in_metres (radius);
-      return {
-        simd_make_float4 (frame.across * scale, 0),
-        simd_make_float4 (frame.outward * scale, 0),
-        simd_make_float4 (frame.around * scale, 0),
-        simd_make_float4 (centre, 1),
-      };
-    }
-
-    Real
-    stress_of (const std::array<LandscapeTile, landscape_tile_count>& tiles,
-               TileId id) {
+    DeformationReading deformation_of (
+      const std::array<LandscapeTile, landscape_tile_count>& tiles, TileId id) {
       const LandscapeTile& tile = tiles[id];
-      Real stress = 0;
-      for (TileId neighbour : tile.neighbours)
-        stress += std::abs (
-          in_metres (tiles[neighbour].displacement - tile.displacement));
-      return std::min (1.0f, stress / 0.45f);
+      Length total_difference {};
+      for (TileId neighbour : tile.neighbours) {
+        const Length difference =
+          tiles[neighbour].displacement - tile.displacement;
+        total_difference += difference < 0.0f * m ? -difference : difference;
+      }
+      const Real reading =
+        std::min (1.0f, Real (total_difference / (0.45f * m)));
+      return DeformationReading (reading * mp_units::one);
     }
   }
 
@@ -221,34 +174,54 @@ namespace atelier {
     return m_refinement;
   }
 
-  std::vector<TileVisual> Landscape::visuals () const {
-    std::vector<TileVisual> result;
+  std::vector<TileLeaf> Landscape::leaves () const {
+    std::vector<TileLeaf> result;
     result.reserve (landscape_tile_count + 7);
     const TileId focus = tile_id (landscape_columns / 5, landscape_rows / 2);
 
     for (TileId id = 0; id < m_tiles.size (); ++id) {
       const LandscapeTile& tile = m_tiles[id];
-      const TorusFrame frame = torus_frame (tile.cell, tile.displacement);
-      const Real stress = stress_of (m_tiles, id);
+      const DeformationReading deformation = deformation_of (m_tiles, id);
       if (id != focus || !m_refined) {
-        result.push_back ({ placement (frame, {}, puck_radius), stress, 0 });
+        result.push_back ({ tile.cell,
+                            0.0f * m,
+                            0.0f * m,
+                            puck_radius,
+                            tile.displacement,
+                            deformation,
+                            0 });
         continue;
       }
 
       const Length parent_radius = (1.0f - m_refinement) * puck_radius;
       if (parent_radius > 0.01f * m)
-        result.push_back ({ placement (frame, {}, parent_radius), stress, 0 });
+        result.push_back ({ tile.cell,
+                            0.0f * m,
+                            0.0f * m,
+                            parent_radius,
+                            tile.displacement,
+                            deformation,
+                            0 });
 
       const Length child_radius =
         std::max (0.01f, m_refinement / 3.0f) * puck_radius;
-      result.push_back ({ placement (frame, {}, child_radius), stress, 1 });
-      const Real orbit = in_metres (puck_radius / std::numbers::sqrt3_v<Real>);
+      result.push_back ({ tile.cell,
+                          0.0f * m,
+                          0.0f * m,
+                          child_radius,
+                          tile.displacement,
+                          deformation,
+                          1 });
+      const Length orbit = puck_radius / std::numbers::sqrt3_v<Real>;
       for (std::size_t side = 0; side < 6; ++side) {
         const Real angle = Real (side) * 2.0f * std::numbers::pi_v<Real> / 6;
-        const simd_float2 offset { orbit * std::sin (angle),
-                                   orbit * std::cos (angle) };
-        result.push_back (
-          { placement (frame, offset, child_radius), stress, 1 });
+        result.push_back ({ tile.cell,
+                            orbit * std::sin (angle),
+                            orbit * std::cos (angle),
+                            child_radius,
+                            tile.displacement,
+                            deformation,
+                            1 });
       }
     }
     return result;

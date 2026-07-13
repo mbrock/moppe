@@ -27,6 +27,7 @@ namespace atelier {
   using mp_units::absolute_point_origin;
   using mp_units::quantity;
   using mp_units::quantity_point;
+  using mp_units::quantity_spec;
 
   using Real = float;
   using Vec3 = mp_units::utility::cartesian_vector<Real, 3>;
@@ -36,6 +37,14 @@ namespace atelier {
   using Angle = quantity<angular::radian, Real>;
   using AngularRate = quantity<angular::radian / si::second, Real>;
   using Wavenumber = quantity<angular::radian / si::metre, Real>;
+
+  // A dimensionless diagnostic derived from relative deformation of nearby
+  // tiles.  It is intentionally not called strain or stress: those names are
+  // reserved for physical constitutive quantities in the ligament model.
+  inline constexpr struct deformation_reading
+      : quantity_spec<mp_units::dimensionless> {
+  } deformation_reading;
+  using DeformationReading = quantity<deformation_reading[mp_units::one], Real>;
 
   // The one origin every point of the scene is measured from.
   inline constexpr struct scene_t final

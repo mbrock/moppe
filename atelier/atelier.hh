@@ -1,5 +1,6 @@
 #pragma once
 
+#include "atelier/embedding.hh"
 #include "atelier/landscape.hh"
 #include "atelier/matrix.hh"
 #include "atelier/prism.hh"
@@ -40,6 +41,7 @@ namespace atelier {
   };
 
   [[nodiscard]] Frame compose_frame (const Landscape& landscape,
+                                     EmbeddingKind embedding,
                                      Duration elapsed,
                                      Viewport viewport);
 }
