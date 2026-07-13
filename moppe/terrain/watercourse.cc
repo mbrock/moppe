@@ -290,6 +290,50 @@ namespace moppe::terrain {
         flow[2 * cell + 1] = flow_z[cell] / flow_weight[cell];
       }
 
+    // Sign the shoreline: a dry cell beside water stores its wettest
+    // neighbor's level (held a hair below its own ground so it stays
+    // dry) instead of bare ground.  The bilinear water-minus-ground
+    // difference then crosses zero at the true sub-cell waterline
+    // inside every mixed cell, so the fragment discard, the swash and
+    // foam bands, the conforming mesh, and the CPU extraction all see
+    // the same smooth curve -- a sheet clamped to ground has no
+    // gradient on the dry side and quantizes every consumer onto the
+    // lattice staircase.
+    {
+      const float dry_margin = 1e-6f;
+      const auto ground_norm = [&] (std::size_t cell) {
+        return terrain.at (cell % width, cell / width);
+      };
+      std::vector<float> signed_surface = surface;
+      for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+          const std::size_t cell = static_cast<std::size_t> (y) * width + x;
+          const float ground = ground_norm (cell);
+          if (surface[cell] - ground > dry_margin)
+            continue; // wet: keep the painted level
+          float wettest = -std::numeric_limits<float>::infinity ();
+          for (int dy = -1; dy <= 1; ++dy)
+            for (int dx = -1; dx <= 1; ++dx) {
+              if (dx == 0 && dy == 0)
+                continue;
+              int nx = x + dx;
+              int ny = y + dy;
+              if (periodic) {
+                nx = (nx % width + width) % width;
+                ny = (ny % height + height) % height;
+              } else if (nx < 0 || ny < 0 || nx >= width || ny >= height)
+                continue;
+              const std::size_t neighbor =
+                static_cast<std::size_t> (ny) * width + nx;
+              if (surface[neighbor] - ground_norm (neighbor) > dry_margin)
+                wettest = std::max (wettest, surface[neighbor]);
+            }
+          if (wettest > -std::numeric_limits<float>::infinity ())
+            signed_surface[cell] = std::min (wettest, ground - dry_margin);
+        }
+      surface = std::move (signed_surface);
+    }
+
     return { .surface = ScalarRaster (permanent.domain (), std::move (surface)),
              .amplitude = std::move (amplitude),
              .flow = std::move (flow) };

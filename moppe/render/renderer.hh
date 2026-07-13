@@ -226,6 +226,13 @@ namespace moppe {
         (void)geology;
       }
 
+      // Horizontal distance to the nearest waterline per cell, in
+      // meters, clamped to the extraction band.  The wet-soil band and
+      // swash-zone detail hug the true shoreline curve through it.
+      virtual void set_terrain_shore (std::span<const float> distance) {
+        (void)distance;
+      }
+
       virtual void set_terrain_moisture (std::span<const float> moisture) {
         (void)moisture;
       }

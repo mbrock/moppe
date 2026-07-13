@@ -49,6 +49,14 @@ namespace moppe::terrain {
                                const ScalarRaster& surface,
                                const LakeCensus& census,
                                float wet_epsilon = 1e-7f);
+
+  // Horizontal distance in meters from every lattice node to the
+  // nearest waterline segment, exact within the band and clamped to
+  // band_m beyond it.  The terrain's wet-soil band keys off this
+  // instead of the vertical water-column proxy, so damp ground hugs
+  // the actual shoreline curve.
+  ScalarRaster waterline_proximity (const Waterline& waterline,
+                                    float band_m = 8.0f);
 }
 
 #endif

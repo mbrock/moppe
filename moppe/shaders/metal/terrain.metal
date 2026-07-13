@@ -525,6 +525,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
   texture2d<float, access::read> normals
   [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
+  texture2d<float, access::read> terrain_shore
+  [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -560,7 +562,21 @@ fragment float4 terrain_fragment (
                       : -1.0;
   const float water_depth = max ((water_level - height) * u.params1.x, 0.0);
   const float submerged = smoothstep (0.015, 0.22, water_depth);
-  const float damp = max (submerged, smoothstep (0.22, 0.82, moisture));
+  // The sediment ledger (fresh cuts, settled fans) feeds both the
+  // material blend and the micro-relief below.
+  const float2 geology =
+    u.params5.w > 0.5 ? terrain_field_sample (in.field_uv, terrain_geology).rg
+                      : float2 (0.0);
+  // Horizontal distance to the extracted waterline: the damp band hugs
+  // the actual shoreline curve instead of a vertical depth proxy, and
+  // fades on steep banks where ground climbs out of reach of swash.
+  const float shore_m = u.params6.y > 0.5
+                          ? terrain_field_sample (in.field_uv, terrain_shore).r
+                          : 64.0;
+  const float swash_zone =
+    (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, n.y);
+  const float damp =
+    max (max (submerged, 0.92 * swash_zone), smoothstep (0.22, 0.82, moisture));
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -667,7 +683,7 @@ fragment float4 terrain_fragment (
   // proved: fresh cuts expose raw regolith, deposition builds smooth
   // pale alluvium on gentle ground.  Both defer to snow.
   if (u.params5.w > 0.5) {
-    const float2 geo = terrain_field_sample (in.field_uv, terrain_geology).rg;
+    const float2 geo = geology;
     const float cut = smoothstep (0.12, 0.72, geo.r);
     const float fill = smoothstep (0.12, 0.72, geo.g);
     const float3 cut_c =
@@ -700,9 +716,12 @@ fragment float4 terrain_fragment (
   // Grass and soil are softly irregular; exposed stone has stronger relief;
   // snow remains comparatively smooth. Fade the perturbation before the
   // texture itself loses detail to keep distant terrain stable.
-  const float detail_strength = (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef) *
-                                (1.0 - 0.8 * far_blend) *
-                                (1.0 - 0.85 * snow_coef);
+  const float cut_relief = smoothstep (0.10, 0.65, geology.r);
+  const float fill_relief = smoothstep (0.10, 0.65, geology.g);
+  const float detail_strength =
+    (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief) *
+    (1.0 - 0.55 * fill_relief) * (1.0 - 0.8 * far_blend) *
+    (1.0 - 0.85 * snow_coef);
   const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
   n = terrain_detail_normal (in.world_pos, n, material_signal, detail_strength);
   // Close wet flats pick up rounded pebble-scale relief. This is deliberately
@@ -711,7 +730,8 @@ fragment float4 terrain_fragment (
   const float pebble =
     0.68 * moppe_value_noise (in.world_pos.xz * 1.55 + float2 (7.1, 19.3)) +
     0.32 * moppe_value_noise (in.world_pos.xz * 4.2 + float2 (31.7, 3.9));
-  const float pebble_strength = submerged * smoothstep (0.45, 0.92, n.y) *
+  const float pebble_strength = max (submerged, 0.8 * swash_zone) *
+                                smoothstep (0.45, 0.92, n.y) *
                                 (1.0 - smoothstep (18.0, 120.0, dist)) * 0.28;
   n = terrain_detail_normal (in.world_pos, n, pebble, pebble_strength);
 

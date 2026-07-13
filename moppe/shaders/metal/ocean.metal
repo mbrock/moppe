@@ -285,27 +285,42 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
   // lands on the true waterline instead of ending at a discard
   // staircase.  Neighboring tiles compute the same texels, so the seam
   // stays crack-free.
-  const float wet_self = ocean_grid_texel (texel, u, water_levels).x -
-                         ocean_grid_texel (texel, u, heights).x;
+  const float ground_self = ocean_grid_texel (texel, u, heights).x;
+  const float wet_self =
+    ocean_grid_texel (texel, u, water_levels).x - ground_self;
   if (wet_self <= 0.0) {
     constexpr int2 lattice_edges[4] = {
       int2 (1, 0), int2 (-1, 0), int2 (0, 1), int2 (0, -1)
     };
     float2 shift = float2 (0.0);
-    float crossings = 0.0;
+    float weight = 0.0;
     for (int k = 0; k < 4; ++k) {
       const int2 neighbor = texel + lattice_edges[k];
-      const float wet_neighbor =
-        ocean_grid_texel (neighbor, u, water_levels).x -
-        ocean_grid_texel (neighbor, u, heights).x;
-      if (wet_neighbor > 0.0) {
-        const float s = wet_self / (wet_self - wet_neighbor);
-        shift += float2 (lattice_edges[k]) * s;
-        crossings += 1.0;
+      const float level_neighbor =
+        ocean_grid_texel (neighbor, u, water_levels).x;
+      const float ground_neighbor = ocean_grid_texel (neighbor, u, heights).x;
+      if (level_neighbor - ground_neighbor > 0.0) {
+        // Water is locally flat: the neighbor's level extends across
+        // the edge and meets the ground slope where the shoreline
+        // sits.  (The sheet itself is clamped to ground on dry cells,
+        // so its own difference carries no crossing information.)
+        const float drop = ground_self - ground_neighbor;
+        const float t =
+          drop > 1e-6 ? clamp ((ground_self - level_neighbor) / drop, 0.0, 1.0)
+                      : 0.0;
+        // Conform only where the bank is gentle.  On a steep bank the
+        // vertex would slide far in plan while its dry triangle mates
+        // stay high on the wall, hanging a water-shaded flap over the
+        // wet cells; there the discard edge tucks against the cliff
+        // anyway.
+        const float bank_m = (ground_self - level_neighbor) * u.shore.z;
+        const float gentle = 1.0 - smoothstep (0.5, 1.3, bank_m);
+        shift += float2 (lattice_edges[k]) * (t * gentle);
+        weight += gentle;
       }
     }
-    if (crossings > 0.0)
-      world_xz += spacing * (shift / crossings);
+    if (weight > 0.0)
+      world_xz += spacing * (shift / weight);
   }
 
   const float2 water = ocean_grid_sample (world_xz, u, water_levels);
