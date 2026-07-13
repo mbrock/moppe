@@ -278,6 +278,31 @@ namespace moppe {
       terrain::TerrainView terrain_view () const;
       terrain::TerrainDiscretization discretization () const;
 
+      // Lifetime sediment ledger: how much material every cell has lost
+      // and gained across all erosive transforms, in storage height
+      // units.  Materials, detail displacement, and Lab overlays read
+      // it; the true per-cell history beats any curvature proxy.
+      const float* raw_eroded () const {
+        return m_eroded.data ();
+      }
+      const float* raw_deposited () const {
+        return m_deposited.data ();
+      }
+      float* raw_eroded () {
+        return m_eroded.data ();
+      }
+      float* raw_deposited () {
+        return m_deposited.data ();
+      }
+      void reset_sediment_ledger ();
+      inline void record_material_change (int x, int y, float delta) {
+        const std::size_t index = static_cast<std::size_t> (y) * m_width + x;
+        if (delta < 0.0f)
+          m_eroded[index] -= delta;
+        else
+          m_deposited[index] += delta;
+      }
+
       void normalize ();
       void translate (float d);
       void rescale (float k);
@@ -358,7 +383,11 @@ namespace moppe {
       void erode_thermally (int iterations, float talus);
 
     private:
+      void synchronize_periodic_ledger_edges ();
+
       Array2D<float> m_data;
+      std::vector<float> m_eroded;
+      std::vector<float> m_deposited;
 
       std::mt19937 m_rng;
     };

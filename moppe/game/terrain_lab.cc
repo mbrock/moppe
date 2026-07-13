@@ -46,7 +46,7 @@ namespace moppe {
       constexpr float readings_x = 548.0f;
       constexpr float readings_y = 14.0f;
       constexpr float readings_width = 360.0f;
-      constexpr float readings_height = 360.0f;
+      constexpr float readings_height = 394.0f;
 
       constexpr terrain::GeologicalLayer layers[] = {
         terrain::GeologicalLayer::Combined,
@@ -575,6 +575,10 @@ namespace moppe {
           m_overlay = OverlayMode::PermanentWater;
         else if (name == "falls")
           m_overlay = OverlayMode::Waterfalls;
+        else if (name == "eroded")
+          m_overlay = OverlayMode::Eroded;
+        else if (name == "deposited")
+          m_overlay = OverlayMode::Deposited;
       }
       m_drainage.reset ();
       m_water_network.reset ();
@@ -1420,6 +1424,22 @@ namespace moppe {
               unique[(static_cast<std::size_t> (y) % unique_height) *
                        unique_width +
                      static_cast<std::size_t> (x) % unique_width];
+      } else if (m_overlay == OverlayMode::Eroded ||
+                 m_overlay == OverlayMode::Deposited) {
+        // Lifetime sediment ledger; square-root scaling keeps the sparse
+        // heavy-tailed cut/fill pattern legible under the heat ramp.
+        const float* ledger = m_overlay == OverlayMode::Eroded
+                                ? m_map->raw_eroded ()
+                                : m_map->raw_deposited ();
+        for (std::size_t i = 0; i < count; ++i)
+          values[i] = std::sqrt (std::max (0.0f, ledger[i]));
+        const float maximum =
+          *std::max_element (values.begin (), values.end ());
+        params.maximum = maximum > 0.0f ? maximum : 1.0f;
+        params.ramp = render::TerrainOverlayRamp::Heat;
+        m_overlay_status = m_overlay == OverlayMode::Eroded
+                             ? "ERODED — lifetime material removed"
+                             : "DEPOSITED — lifetime material settled";
       } else {
         const terrain::DrainageGraph& graph = drainage ();
         const std::size_t unique_width = graph.width ();
@@ -2216,9 +2236,10 @@ namespace moppe {
         OverlayMode::Streams,        OverlayMode::Basins,
         OverlayMode::Sinks,          OverlayMode::HeightDelta,
         OverlayMode::Trace,          OverlayMode::StandingWater,
-        OverlayMode::PermanentWater, OverlayMode::Waterfalls
+        OverlayMode::PermanentWater, OverlayMode::Waterfalls,
+        OverlayMode::Eroded,         OverlayMode::Deposited
       };
-      for (int i = 0; i < 12; ++i)
+      for (int i = 0; i < 14; ++i)
         if (overlay_rect (i).contains (x, y)) {
           set_overlay (overlay_modes[i]);
           return;
@@ -3154,8 +3175,8 @@ namespace moppe {
                   readings_height,
                   "MAP READINGS");
       constexpr const char* overlay_labels[] = {
-        "MATERIAL", "HEIGHT", "SLOPE", "FLOW",  "STREAMS", "BASINS",
-        "OUTLETS",  "DELTA",  "TRACE", "WATER", "LAKES",   "FALLS"
+        "MATERIAL", "HEIGHT", "SLOPE", "FLOW",  "STREAMS", "BASINS", "OUTLETS",
+        "DELTA",    "TRACE",  "WATER", "LAKES", "FALLS",   "ERODED", "DEPOSIT"
       };
       constexpr OverlayMode overlay_modes[] = {
         OverlayMode::None,           OverlayMode::Height,
@@ -3163,9 +3184,10 @@ namespace moppe {
         OverlayMode::Streams,        OverlayMode::Basins,
         OverlayMode::Sinks,          OverlayMode::HeightDelta,
         OverlayMode::Trace,          OverlayMode::StandingWater,
-        OverlayMode::PermanentWater, OverlayMode::Waterfalls
+        OverlayMode::PermanentWater, OverlayMode::Waterfalls,
+        OverlayMode::Eroded,         OverlayMode::Deposited
       };
-      for (int i = 0; i < 12; ++i) {
+      for (int i = 0; i < 14; ++i) {
         const UiRect bounds = overlay_rect (i);
         m_ui.button (dl,
                      bounds,
@@ -3177,7 +3199,7 @@ namespace moppe {
       const std::size_t separator = m_overlay_status.find (" | ");
       m_ui.label (dl,
                   readings_x + 10,
-                  readings_y + 152,
+                  readings_y + 186,
                   separator == std::string::npos
                     ? m_overlay_status
                     : m_overlay_status.substr (0, separator),
@@ -3185,11 +3207,11 @@ namespace moppe {
       if (separator != std::string::npos)
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 174,
+                    readings_y + 208,
                     m_overlay_status.substr (separator + 3));
       m_ui.label (dl,
                   readings_x + 10,
-                  readings_y + 199,
+                  readings_y + 233,
                   "Readings color the surface; geometry stays terrain.");
       const terrain::HydraulicErosionReport* erosion_report = nullptr;
       const terrain::HydraulicErosion* erosion_stage = nullptr;
@@ -3207,7 +3229,7 @@ namespace moppe {
         const auto& report = *erosion_report;
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 232,
+                    readings_y + 266,
                     erosion_stage && erosion_stage->sediment_at_termination ==
                                        terrain::SedimentDisposition::Deposit
                       ? "SEDIMENT LEDGER — SETTLE AT DEATH"
@@ -3215,13 +3237,13 @@ namespace moppe {
                     true);
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 254,
+                    readings_y + 288,
                     "ERODED " + format_ledger (report.eroded) + "  DEPOSITED " +
                       format_ledger (report.deposited));
         m_ui.label (
           dl,
           readings_x + 10,
-          readings_y + 276,
+          readings_y + 310,
           "LOST " + format_ledger (report.discarded_sediment) + "  (" +
             format_float (
               static_cast<float> (100.0 * report.discarded_fraction ()), 1) +
@@ -3229,7 +3251,7 @@ namespace moppe {
         m_ui.label (
           dl,
           readings_x + 10,
-          readings_y + 298,
+          readings_y + 332,
           "MEAN LIFE " +
             format_float (static_cast<float> (report.mean_steps ()), 1) +
             "  FINAL WATER " +
@@ -3237,7 +3259,7 @@ namespace moppe {
         m_ui.label (
           dl,
           readings_x + 10,
-          readings_y + 320,
+          readings_y + 354,
           "CAP " +
             format_count (static_cast<int> (report.stopped_at_step_limit)) +
             "  WATER " +
@@ -3247,12 +3269,12 @@ namespace moppe {
         const auto& report = *analytical_report;
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 232,
+                    readings_y + 266,
                     "FINITE-TIME STREAM POWER",
                     true);
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 254,
+                    readings_y + 288,
                     "FIXED BOUNDARIES " +
                       format_count (static_cast<int> (
                         terrain::count_value (report.fixed_boundaries))) +
@@ -3262,14 +3284,14 @@ namespace moppe {
         m_ui.label (
           dl,
           readings_x + 10,
-          readings_y + 276,
+          readings_y + 310,
           "LOWERED " +
             format_ledger (cubic_meters_value (report.lowered_volume)) +
             " M3  RAISED " +
             format_ledger (cubic_meters_value (report.raised_volume)));
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 298,
+                    readings_y + 332,
                     "MEAN CHANGE " +
                       format_float (static_cast<float> (meters_value (
                                       report.mean_absolute_change)),
@@ -3277,7 +3299,7 @@ namespace moppe {
                       " M");
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 320,
+                    readings_y + 354,
                     "MAX CHANGE " +
                       format_float (static_cast<float> (meters_value (
                                       report.maximum_absolute_change)),

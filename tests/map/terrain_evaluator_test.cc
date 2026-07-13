@@ -310,6 +310,67 @@ MOPPE_TEST (hydraulic_report_balances_the_sediment_ledger) {
     static_cast<float> (report.eroded * 2e-5 + 1e-7));
 }
 
+MOPPE_TEST (hydraulic_erosion_accumulates_the_ledger_rasters) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map);
+  evaluator.begin (make_geological_program (912));
+  const TerrainTransformReport result =
+    evaluator.apply (HydraulicErosion { .droplets = droplet_count (1000),
+                                        .batch_size = batch_size (1),
+                                        .max_steps = step_count (64) });
+  const auto& report = std::get<HydraulicErosionReport> (result);
+
+  // The per-cell rasters carry exactly what the report sums globally,
+  // and both stay nonnegative.  Droplets only touch unique cells, so
+  // the unique-cell sums balance against the report totals.
+  double eroded = 0.0, deposited = 0.0;
+  for (int y = 0; y < map.unique_height (); ++y)
+    for (int x = 0; x < map.unique_width (); ++x) {
+      const std::size_t i = static_cast<std::size_t> (y) * map.width () + x;
+      MOPPE_CHECK (map.raw_eroded ()[i] >= 0.0f);
+      MOPPE_CHECK (map.raw_deposited ()[i] >= 0.0f);
+      eroded += map.raw_eroded ()[i];
+      deposited += map.raw_deposited ()[i];
+    }
+  MOPPE_CHECK_NEAR (static_cast<float> (eroded),
+                    static_cast<float> (report.eroded),
+                    static_cast<float> (report.eroded * 1e-4 + 1e-6));
+  MOPPE_CHECK_NEAR (static_cast<float> (deposited),
+                    static_cast<float> (report.deposited),
+                    static_cast<float> (report.deposited * 1e-4 + 1e-6));
+
+  // Seam duplication mirrors the height convention.
+  for (int y = 0; y < map.unique_height (); ++y) {
+    const std::size_t left = static_cast<std::size_t> (y) * map.width ();
+    const std::size_t right = left + map.width () - 1;
+    MOPPE_CHECK (map.raw_eroded ()[left] == map.raw_eroded ()[right]);
+    MOPPE_CHECK (map.raw_deposited ()[left] == map.raw_deposited ()[right]);
+  }
+
+  // Checkpoints carry the ledger through restore.
+  const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
+  map.reset_sediment_ledger ();
+  evaluator.restore (checkpoint);
+  double restored = 0.0;
+  for (int y = 0; y < map.unique_height (); ++y)
+    for (int x = 0; x < map.unique_width (); ++x)
+      restored +=
+        map.raw_eroded ()[static_cast<std::size_t> (y) * map.width () + x];
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (restored), static_cast<float> (eroded), 1e-6f);
+
+  // A fresh source materialization starts a fresh history.
+  evaluator.begin (make_geological_program (913));
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x) {
+      const std::size_t i = static_cast<std::size_t> (y) * map.width () + x;
+      MOPPE_CHECK (map.raw_eroded ()[i] == 0.0f);
+      MOPPE_CHECK (map.raw_deposited ()[i] == 0.0f);
+    }
+}
+
 MOPPE_TEST (hydraulic_maximum_lifetime_is_part_of_the_recipe) {
   using namespace moppe;
   using namespace moppe::terrain;
