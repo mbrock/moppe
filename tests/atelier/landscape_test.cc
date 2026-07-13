@@ -27,7 +27,7 @@ MOPPE_TEST (toroidal_landscape_has_reciprocal_six_neighbour_topology) {
   }
 }
 
-MOPPE_TEST (moppe_noise_field_materializes_as_a_tile_acceleration_section) {
+MOPPE_TEST (local_noise_materializes_as_a_tile_acceleration_section) {
   const Landscape landscape;
   const auto [minimum, maximum] =
     std::ranges::minmax_element (landscape.drives ());
