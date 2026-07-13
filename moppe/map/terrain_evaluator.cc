@@ -60,10 +60,15 @@ namespace moppe::map {
       const std::size_t width = m_target.unique_width ();
       const std::size_t height = m_target.unique_height ();
       for (std::size_t y = 0; y < height; ++y)
-        for (std::size_t x = 0; x < width; ++x)
-          m_target.set (static_cast<int> (x),
-                        static_cast<int> (y),
-                        result.heights[y * width + x]);
+        for (std::size_t x = 0; x < width; ++x) {
+          const float updated = result.heights[y * width + x];
+          m_target.record_material_change (
+            static_cast<int> (x),
+            static_cast<int> (y),
+            updated -
+              m_target.get (static_cast<int> (x), static_cast<int> (y)));
+          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+        }
       report = result.report;
     } else if (const auto* thermal =
                  std::get_if<terrain::ThermalErosion> (&transform))
@@ -76,10 +81,15 @@ namespace moppe::map {
       const std::size_t width = m_target.unique_width ();
       const std::size_t height = m_target.unique_height ();
       for (std::size_t y = 0; y < height; ++y)
-        for (std::size_t x = 0; x < width; ++x)
-          m_target.set (static_cast<int> (x),
-                        static_cast<int> (y),
-                        result.heights[y * width + x]);
+        for (std::size_t x = 0; x < width; ++x) {
+          const float updated = result.heights[y * width + x];
+          m_target.record_material_change (
+            static_cast<int> (x),
+            static_cast<int> (y),
+            updated -
+              m_target.get (static_cast<int> (x), static_cast<int> (y)));
+          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+        }
       report = result.report;
     }
     m_target.synchronize_periodic_edges ();
@@ -106,6 +116,10 @@ namespace moppe::map {
       static_cast<std::size_t> (m_target.width ()) * m_target.height ();
     return { .heights = std::vector<float> (m_target.raw_heights (),
                                             m_target.raw_heights () + count),
+             .eroded = std::vector<float> (m_target.raw_eroded (),
+                                           m_target.raw_eroded () + count),
+             .deposited = std::vector<float> (
+               m_target.raw_deposited (), m_target.raw_deposited () + count),
              .randomness = m_randomness };
   }
 
@@ -118,6 +132,16 @@ namespace moppe::map {
     std::copy (checkpoint.heights.begin (),
                checkpoint.heights.end (),
                m_target.raw_heights ());
+    // Checkpoints predating the sediment ledger restore it as empty.
+    m_target.reset_sediment_ledger ();
+    if (checkpoint.eroded.size () == expected)
+      std::copy (checkpoint.eroded.begin (),
+                 checkpoint.eroded.end (),
+                 m_target.raw_eroded ());
+    if (checkpoint.deposited.size () == expected)
+      std::copy (checkpoint.deposited.begin (),
+                 checkpoint.deposited.end (),
+                 m_target.raw_deposited ());
     m_randomness = checkpoint.randomness;
   }
 }

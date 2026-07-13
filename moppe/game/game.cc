@@ -144,6 +144,16 @@ namespace moppe {
       if (!input)
         return false;
       input.seekg (12 + static_cast<std::streamoff> (samples * sizeof (float)));
+      // Skip the sediment-ledger section the map cache stores between
+      // the heights and this history section.
+      char section[4] {};
+      input.read (section, sizeof (section));
+      if (input && std::memcmp (section, "LGR1", 4) == 0)
+        input.seekg (static_cast<std::streamoff> (2 * samples * sizeof (float)),
+                     std::ios::cur);
+      else
+        input.seekg (-static_cast<std::streamoff> (sizeof (section)),
+                     std::ios::cur);
       char magic[4] {};
       std::uint32_t snapshot_count = 0;
       std::uint64_t sample_count = 0;

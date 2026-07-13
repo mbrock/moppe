@@ -52,8 +52,29 @@ namespace moppe {
                                       int seed,
                                       terrain::Topology topology)
         : NormalComputingHeightMap (width, height, size, topology),
-          m_data (width, height) {
+          m_data (width, height), m_eroded ((std::size_t)width * height, 0.0f),
+          m_deposited ((std::size_t)width * height, 0.0f) {
       m_rng.seed (std::mt19937::result_type (seed));
+    }
+
+    void RandomHeightMap::reset_sediment_ledger () {
+      std::fill (m_eroded.begin (), m_eroded.end (), 0.0f);
+      std::fill (m_deposited.begin (), m_deposited.end (), 0.0f);
+    }
+
+    void RandomHeightMap::synchronize_periodic_ledger_edges () {
+      if (!periodic ())
+        return;
+      const auto seam = [this] (std::vector<float>& ledger) {
+        for (int y = 0; y < unique_height (); ++y)
+          ledger[(std::size_t)y * m_width + m_width - 1] =
+            ledger[(std::size_t)y * m_width];
+        for (int x = 0; x < m_width; ++x)
+          ledger[(std::size_t)(m_height - 1) * m_width + x] =
+            ledger[(std::size_t)x];
+      };
+      seam (m_eroded);
+      seam (m_deposited);
     }
 
 #define FORALL(x, y)                                                           \
@@ -154,6 +175,7 @@ namespace moppe {
         set (m_width - 1, y, get (0, y));
       for (int x = 0; x < m_width; ++x)
         set (x, m_height - 1, get (x, 0));
+      synchronize_periodic_ledger_edges ();
     }
 
     namespace {
@@ -256,6 +278,8 @@ namespace moppe {
       std::copy (
         raster.values ().begin (), raster.values ().end (), m_data.raw ());
       synchronize_periodic_edges ();
+      // A fresh source field starts a fresh sediment history.
+      reset_sediment_ledger ();
       // NB: no recompute_normals() here -- the caller shapes further
     }
 
@@ -294,6 +318,7 @@ namespace moppe {
     // height, then width*height little-endian float32, row 0 first.
     static const char bounded_heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
     static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', '2' };
+    static const char sediment_ledger_magic[4] = { 'L', 'G', 'R', '1' };
 
     bool RandomHeightMap::try_load_cache (const std::string& path) {
       std::ifstream f (path.c_str (), std::ios::binary);
@@ -319,6 +344,23 @@ namespace moppe {
       FORALL (x, y)
       set (x, y, heights[(size_t)y * m_width + x]);
       synchronize_periodic_edges ();
+
+      // Sediment ledger: a tagged section after the heights (and before
+      // the loading-history section game code appends).  A cache without
+      // the tag leaves the ledger zeroed.
+      reset_sediment_ledger ();
+      char ledger_magic[4] = { 0, 0, 0, 0 };
+      f.read (ledger_magic, 4);
+      if (f.gcount () == 4 &&
+          std::memcmp (ledger_magic, sediment_ledger_magic, 4) == 0) {
+        const std::streamsize ledger_bytes =
+          (std::streamsize)(heights.size () * sizeof (float));
+        f.read ((char*)m_eroded.data (), ledger_bytes);
+        const bool have_eroded = f.gcount () == ledger_bytes;
+        f.read ((char*)m_deposited.data (), ledger_bytes);
+        if (!have_eroded || f.gcount () != ledger_bytes)
+          reset_sediment_ledger ();
+      }
       return true;
     }
 
@@ -334,6 +376,11 @@ namespace moppe {
       f.write ((const char*)&h, 4);
       f.write ((const char*)raw_heights (),
                (size_t)m_width * m_height * sizeof (float));
+      f.write (sediment_ledger_magic, 4);
+      f.write ((const char*)m_eroded.data (),
+               m_eroded.size () * sizeof (float));
+      f.write ((const char*)m_deposited.data (),
+               m_deposited.size () * sizeof (float));
     }
 
     terrain::HydraulicErosionReport RandomHeightMap::erode_hydraulically (
@@ -427,6 +474,7 @@ namespace moppe {
               change = std::max (
                 change, -std::max (0.0f, get (xs[i], ys[i]) - minimum_height));
             set (xs[i], ys[i], get (xs[i], ys[i]) + change);
+            record_material_change (xs[i], ys[i], change);
             applied += change;
           }
           return applied;
@@ -666,6 +714,7 @@ namespace moppe {
             const int x = static_cast<int> (index % m_width);
             const int y = static_cast<int> (index / m_width);
             set (x, y, get (x, y) + changes[index]);
+            record_material_change (x, y, changes[index]);
             changes[index] = 0.0f;
             marked[index] = 0;
           }
@@ -791,6 +840,10 @@ namespace moppe {
             set (x + 1, y, get (x + 1, y) + sediment * fx * (1 - fy));
             set (x, y + 1, get (x, y + 1) + sediment * (1 - fx) * fy);
             set (x + 1, y + 1, get (x + 1, y + 1) + sediment * fx * fy);
+            record_material_change (x, y, sediment * (1 - fx) * (1 - fy));
+            record_material_change (x + 1, y, sediment * fx * (1 - fy));
+            record_material_change (x, y + 1, sediment * (1 - fx) * fy);
+            record_material_change (x + 1, y + 1, sediment * fx * fy);
             report.deposited += sediment;
           } else {
             report.discarded_sediment += sediment;
@@ -862,6 +915,10 @@ namespace moppe {
             set (xi + 1, yi, h10 + amount * fx * (1 - fy));
             set (xi, yi + 1, h01 + amount * (1 - fx) * fy);
             set (xi + 1, yi + 1, h11 + amount * fx * fy);
+            record_material_change (xi, yi, amount * (1 - fx) * (1 - fy));
+            record_material_change (xi + 1, yi, amount * fx * (1 - fy));
+            record_material_change (xi, yi + 1, amount * (1 - fx) * fy);
+            record_material_change (xi + 1, yi + 1, amount * fx * fy);
           } else {
             // Accelerating: scoop material without leaving any node in the
             // bilinear footprint below the downstream handoff elevation.
@@ -887,6 +944,10 @@ namespace moppe {
             set (xi + 1, yi, h10 - a10);
             set (xi, yi + 1, h01 - a01);
             set (xi + 1, yi + 1, h11 - a11);
+            record_material_change (xi, yi, -a00);
+            record_material_change (xi + 1, yi, -a10);
+            record_material_change (xi, yi + 1, -a01);
+            record_material_change (xi + 1, yi + 1, -a11);
           }
 
           speed = std::sqrt (std::max (0.0f, speed * speed - dh * gravity));
