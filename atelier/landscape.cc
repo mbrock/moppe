@@ -1,8 +1,5 @@
 #include "atelier/landscape.hh"
 
-#include <moppe/terrain/cpu_evaluator.hh>
-#include <moppe/terrain/field.hh>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -50,6 +47,19 @@ namespace atelier {
       bits *= 0x846ca68bU;
       bits ^= bits >> 16;
       return Real (bits & 0x00ffffffU) / Real (0x01000000U);
+    }
+
+    Real signed_noise (GridCell cell) {
+      std::uint32_t bits =
+        static_cast<std::uint32_t> (cell.column + landscape_columns * cell.row);
+      bits += 0x9e3779b9U;
+      bits ^= bits >> 16;
+      bits *= 0x7feb352dU;
+      bits ^= bits >> 15;
+      bits *= 0x846ca68bU;
+      bits ^= bits >> 16;
+      const Real unit = Real (bits & 0x00ffffffU) / Real (0x00ffffffU);
+      return 2.0f * unit - 1.0f;
     }
 
     DeformationReading deformation_of (const auto& tile) {
@@ -119,35 +129,11 @@ namespace atelier {
   }
 
   void Landscape::initialize_noise_drive () {
-    namespace terrain = moppe::terrain;
-    constexpr int period_x = 5;
-    constexpr int period_y = 3;
-    const terrain::CoordinateField u = terrain::coordinate_u () + 0.37f;
-    const terrain::CoordinateField v = terrain::coordinate_v () - 0.21f;
-    const terrain::NoiseField billows = terrain::periodic_fbm_noise (
-      terrain::Seed { 0xc311U }, u, v, period_x, period_y, 4, 2, 0.52f);
-    const terrain::NoiseField cells = terrain::periodic_ridged_noise (
-      terrain::Seed { 0xa71eU }, u, v, period_x, period_y, 3, 2, 0.55f);
-    const terrain::NoiseField drive_field =
-      0.76f * billows + 0.24f * (cells - 0.4f);
-    const terrain::FieldSamplingGrid2D sampling {
-      .width = landscape_columns,
-      .height = landscape_rows,
-      .min_x = 0,
-      .max_x = Real (period_x) * Real (landscape_columns - 1) /
-               Real (landscape_columns),
-      .min_y = 0,
-      .max_y =
-        Real (period_y) * Real (landscape_rows - 1) / Real (landscape_rows),
-    };
-    const terrain::ScalarRaster noise =
-      terrain::CpuEvaluator ().evaluate (drive_field.untyped (), sampling);
     auto& drive = get<normal_acceleration> (m_tiles);
     auto& next_drive = get<normal_acceleration> (m_next_tiles);
     constexpr auto amplitude = 3.2f * m / (s * s);
     for (TileId id = 0; id < m_tiles.size (); ++id) {
-      const GridCell cell = topology ().cell (id);
-      drive[id] = noise.at (cell.column, cell.row) * amplitude;
+      drive[id] = signed_noise (topology ().cell (id)) * amplitude;
       next_drive[id] = drive[id];
     }
   }
