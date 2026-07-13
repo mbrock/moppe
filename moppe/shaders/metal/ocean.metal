@@ -272,10 +272,41 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
   const float spacing = 1.0 / u.shore.x;
   const uint vx = thread_id % side;
   const uint vz = thread_id / side;
-  const float2 world_xz =
+  const int2 texel =
+    (int2 (u.tiles.xy) + int2 (tile)) * WATER_TILE_CELLS + int2 (vx, vz);
+  float2 world_xz =
     ((float2 (int2 (u.tiles.xy)) + float2 (tile)) * float (WATER_TILE_CELLS) +
      float2 (vx, vz)) *
     spacing;
+
+  // Waterline conformance: a dry lattice vertex bordering wet cells
+  // slides onto the wet/dry crossing of its lattice edges (the zero of
+  // the bilinear water-minus-ground, exact per edge), so the mesh edge
+  // lands on the true waterline instead of ending at a discard
+  // staircase.  Neighboring tiles compute the same texels, so the seam
+  // stays crack-free.
+  const float wet_self = ocean_grid_texel (texel, u, water_levels).x -
+                         ocean_grid_texel (texel, u, heights).x;
+  if (wet_self <= 0.0) {
+    constexpr int2 lattice_edges[4] = {
+      int2 (1, 0), int2 (-1, 0), int2 (0, 1), int2 (0, -1)
+    };
+    float2 shift = float2 (0.0);
+    float crossings = 0.0;
+    for (int k = 0; k < 4; ++k) {
+      const int2 neighbor = texel + lattice_edges[k];
+      const float wet_neighbor =
+        ocean_grid_texel (neighbor, u, water_levels).x -
+        ocean_grid_texel (neighbor, u, heights).x;
+      if (wet_neighbor > 0.0) {
+        const float s = wet_self / (wet_self - wet_neighbor);
+        shift += float2 (lattice_edges[k]) * s;
+        crossings += 1.0;
+      }
+    }
+    if (crossings > 0.0)
+      world_xz += spacing * (shift / crossings);
+  }
 
   const float2 water = ocean_grid_sample (world_xz, u, water_levels);
   const float wave_scale =
