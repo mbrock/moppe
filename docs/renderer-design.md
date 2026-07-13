@@ -296,7 +296,9 @@ iterative problem rather than part of the pointwise graph.
   ocean, lake, and river elevation, and the fragment stage reads a second
   RG16F sheet of flow arrows for the river advection. Waves fade at shore,
   scale with the body's classification so tarns do not heave like the sea,
-  and dry fragments are discarded. On Metal3 hardware, standing water
+  and drive the shoreline lap from the same classification: at maximum retreat
+  the sea moves about 6 cm, lakes about 6 mm, and ponds about 2 mm. Dry
+  fragments are discarded. On Metal3 hardware, standing water
   within 700 m additionally renders through a mesh pipeline on the terrain
   sample lattice (object stage walks 15×15-cell tiles, probes every tile
   corner for wetness — exact, since water-minus-ground is bilinear per

@@ -364,6 +364,11 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
   )
   target_link_libraries(terrain-stream-power-experiment PRIVATE moppe_game)
 
+  add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
+    moppe/terrain/water_depth_experiment.cc
+  )
+  target_link_libraries(terrain-water-depth-experiment PRIVATE moppe_game)
+
   if(APPLE)
     # Unity makes moppe_game one archive object, including the platform-facing
     # terrain lab and texture helpers even in command-line tools.
@@ -371,7 +376,8 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
         map-test
         terrain-pipeline-demo
         terrain-erosion-experiment
-        terrain-stream-power-experiment)
+        terrain-stream-power-experiment
+        terrain-water-depth-experiment)
       target_link_libraries(${tool} PRIVATE moppe_platform_mac)
     endforeach()
   endif()

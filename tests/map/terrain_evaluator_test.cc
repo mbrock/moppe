@@ -322,7 +322,7 @@ MOPPE_TEST (orogeny_source_evolves_a_typed_uplift_field_deterministically) {
   MOPPE_CHECK (report.cells == cell_count (64 * 64));
 }
 
-MOPPE_TEST (orogeny_source_starts_from_shallow_continent_relief) {
+MOPPE_TEST (orogeny_source_separates_land_and_bathymetric_relief) {
   using namespace moppe;
   using namespace moppe::terrain;
   TerrainProgram program = make_orogeny_program (731);
@@ -331,10 +331,17 @@ MOPPE_TEST (orogeny_source_starts_from_shallow_continent_relief) {
 
   evaluator.begin (program);
 
-  const float relief = meters_value (program.source.initial_relief) / 650.0f;
+  const float land_relief =
+    meters_value (program.source.initial_land_relief) / 650.0f;
+  const float bathymetric_relief =
+    meters_value (program.source.initial_bathymetric_relief) / 650.0f;
   MOPPE_CHECK (map.min_value () < program.source.sea_level);
   MOPPE_CHECK (map.max_value () > program.source.sea_level);
-  MOPPE_CHECK (map.max_value () - map.min_value () <= relief + 1e-6f);
+  MOPPE_CHECK (map.max_value () - program.source.sea_level <=
+               land_relief + 1e-6f);
+  MOPPE_CHECK (program.source.sea_level - map.min_value () <=
+               bathymetric_relief + 1e-6f);
+  MOPPE_CHECK (program.source.sea_level - map.min_value () > land_relief);
 }
 
 MOPPE_TEST (hydraulic_batch_size_is_part_of_the_recipe) {

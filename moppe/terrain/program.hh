@@ -88,12 +88,13 @@ namespace moppe::terrain {
     GeologicalRecipe recipe;
     GeologicalLayer layer;
     enum class Mode { Relief, Orogeny } mode = Mode::Relief;
-    // Orogeny begins from a continent-shaped seed only deep enough to
-    // establish land, ocean, and initial drainage. Mountain relief must then
-    // be earned by uplift against erosion.
+    // Orogeny begins from a continent-shaped seed with separate emergent and
+    // submerged scales. Mountain relief must then be earned by uplift against
+    // erosion, while the fixed ocean boundary retains real bathymetry.
     float sea_level = 50.0f / 650.0f;
-    float coastline = 0.5f;
-    meters_t initial_relief = 20.0f * mp_units::si::metre;
+    float coastline = 0.4f;
+    meters_t initial_land_relief = 20.0f * mp_units::si::metre;
+    meters_t initial_bathymetric_relief = 240.0f * mp_units::si::metre;
   };
 
   struct TerrainProgram {

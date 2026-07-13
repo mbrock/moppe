@@ -19,7 +19,7 @@ MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
     std::holds_alternative<NormalizeHeights> (program.transforms[0]));
 }
 
-MOPPE_TEST (orogeny_program_uses_a_shallow_seed_and_evolution_stage) {
+MOPPE_TEST (orogeny_program_uses_a_bathymetric_seed_and_evolution_stage) {
   const TerrainProgram program = make_orogeny_program (123);
 
   MOPPE_CHECK (program.source.mode == GeologicalSource::Mode::Orogeny);
@@ -32,6 +32,9 @@ MOPPE_TEST (orogeny_program_uses_a_shallow_seed_and_evolution_stage) {
     meters_per_julian_year_value (orogeny.maximum_uplift_rate), 0.001f, 0.0f);
   MOPPE_CHECK_NEAR (
     orogeny.evolution.sea_level, program.source.sea_level, 0.0f);
+  MOPPE_CHECK_NEAR (program.source.coastline, 0.4f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    meters_value (program.source.initial_bathymetric_relief), 240.0f, 0.0f);
 }
 
 MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {

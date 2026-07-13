@@ -113,9 +113,9 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.size () < 6 || parts.size () > 9)
+      if (parts.size () < 6 || parts.size () > 10)
         throw std::invalid_argument ("orogeny expects duration,dt,uplift,k,m,D"
-                                     "[,sea,seed_relief,coast]");
+                                     "[,sea,land_relief,coast,bathymetry]");
       if (program.transforms.size () == 1 &&
           std::holds_alternative<NormalizeHeights> (
             program.transforms.front ()))
@@ -139,10 +139,13 @@ namespace {
         orogeny.evolution.sea_level = program.source.sea_level;
       }
       if (parts.size () > 7)
-        program.source.initial_relief =
+        program.source.initial_land_relief =
           parse_float (parts[7]) * mp_units::si::metre;
       if (parts.size () > 8)
         program.source.coastline = parse_float (parts[8]);
+      if (parts.size () > 9)
+        program.source.initial_bathymetric_relief =
+          parse_float (parts[9]) * mp_units::si::metre;
       program.transforms.emplace_back (orogeny);
     } else if (name == "hydraulic") {
       std::vector<std::string_view> parts;

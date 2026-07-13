@@ -61,6 +61,29 @@ MOPPE_TEST (zero_erodibility_applies_spatial_uplift_and_fixes_the_ocean) {
   MOPPE_CHECK (result.report.fixed_boundaries == cell_count (2));
 }
 
+MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
+  constexpr std::array heights { -0.2f, -0.1f, 0.2f, 0.3f };
+  const TerrainView terrain ({ .width = 2,
+                               .height = 2,
+                               .spacing_x = 10.0f * mp_units::si::metre,
+                               .spacing_y = 10.0f * mp_units::si::metre,
+                               .height_scale = 100.0f * mp_units::si::metre },
+                             heights);
+  const auto uplift = uniform_uplift (heights.size (), 0.001f);
+  const StreamPowerEvolutionResult result = evolve_stream_power (
+    terrain,
+    uplift,
+    { .duration = 1000.0f * mp_units::astronomy::Julian_year,
+      .time_step = 1000.0f * mp_units::astronomy::Julian_year,
+      .erodibility = 0.0f,
+      .sea_level = 0.0f });
+
+  MOPPE_CHECK_NEAR (result.heights[0], heights[0], 0.0f);
+  MOPPE_CHECK_NEAR (result.heights[1], heights[1], 0.0f);
+  MOPPE_CHECK (result.heights[2] > heights[2]);
+  MOPPE_CHECK (result.heights[3] > heights[3]);
+}
+
 MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
   constexpr std::array heights { 0.0f, 1.0f, 0.0f, 1.0f };
   const TerrainView terrain ({ .width = 2,

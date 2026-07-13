@@ -291,6 +291,9 @@ world for 1,000,000 years. `--fast` is shorthand for the fast profile;
 screen. Game generation derives the normalized erosion base level from the
 current world's physical water level and vertical extent, so tectonic
 evolution and the subsequently materialized sea and lakes share one datum.
+The Orogeny source uses separate land and submarine relief scales: low initial
+land relief leaves mountain building to uplift, while deeper bathymetric
+relief gives fixed ocean outlets a real bed instead of a water-level plateau.
 
 Finished random worlds are cached automatically. The cache key includes the
 profile, resolution, topology, seed, and a runtime hash of the linked
@@ -423,12 +426,13 @@ where travel time from `D` to `x` is `t`. Age, uplift, `k`, `m`, sea level,
 fixed-point routing passes, and relaxation are explicit transform parameters
 in physical units. The detachment-limited erosion term cannot raise terrain,
 so the implementation caps change at the prescribed tectonic uplift even
-when a depression route crosses a dry saddle. Ocean cells remain fixed.
+when a depression route crosses a dry saddle. Ocean cells remain fixed at
+their bed elevation.
 
 `OrogenyEvolution` reverses the older source semantics. It starts from a
-shallow continent around the configured sea level, interprets the recipe's
-bounded mountain pattern as `RelativeUpliftField`, scales it by a physical
-maximum uplift velocity, and evolves relief through
+continent and bathymetry around the configured sea level, interprets the
+recipe's bounded mountain pattern as `RelativeUpliftField`, scales it by a
+physical maximum uplift velocity, and evolves relief through
 
 ```text
 dz/dt = U(x) - K A(x)^m S(x) + D laplacian(z).
@@ -439,8 +443,9 @@ graph. A downstream-to-upstream sweep then solves the backward-Euler incision
 step exactly for that discrete step; it is unconditionally stable for the
 linear `n = 1` term, but is not an exact continuous-time solution for an
 arbitrarily long step. Explicit stable hillslope-diffusion sweeps are
-interleaved after incision. Ocean cells and receiver roots remain fixed, and
-an uphill depression route cannot raise a cell above uplift alone.
+interleaved after incision. Ocean cells and receiver roots retain their bed
+elevation rather than snapping terrain to the water surface, and an uphill
+depression route cannot raise a cell above uplift alone.
 
 The calibrated maximum uplift is 1 mm/year, with `K = 2e-5`, `m = 0.4`,
 `D = 1e-4 m2/year`, and a 50,000-year step. Fast, Play, and Research orogeny
@@ -544,9 +549,9 @@ game:
 ```
 
 The orogeny option is
-`duration,dt,uplift,k,m,D[,sea,seed_relief,coastline]`. Unlike the unit-scale
-legacy preview, this mode uses the game's 11 km by 11 km horizontal and 650 m
-vertical calibration so all physical rates retain their meaning.
+`duration,dt,uplift,k,m,D[,sea,land_relief,coastline,bathymetry]`. Unlike the
+unit-scale legacy preview, this mode uses the game's 11 km by 11 km horizontal
+and 650 m vertical calibration so all physical rates retain their meaning.
 
 The controlled lifetime sweep used to choose those defaults is reproducible:
 
