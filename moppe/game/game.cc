@@ -1527,8 +1527,7 @@ namespace moppe {
         // The worker may finish several transforms between rendered frames.
         // The director advances only after the current chapter has had time to
         // breathe, and never before the next immutable snapshot exists.
-        static constexpr float chapter_holds[] = { 1.35f, 0.90f, 0.95f, 1.55f,
-                                                   0.95f, 1.65f, 0.95f, 1.55f };
+        constexpr float chapter_hold = 3.5f;
         if (!loading_snapshots.empty () && m_loading_terrain_state == 0) {
           const auto& first = *loading_snapshots.front ();
           const float floor = *std::min_element (first.begin (), first.end ());
@@ -1562,9 +1561,7 @@ namespace moppe {
           m_loading_snapshot_started = sky_time;
         } else if (m_loading_terrain_state == 2 &&
                    m_loading_snapshot_index + 1 < loading_snapshots.size ()) {
-          const std::size_t current = m_loading_snapshot_index;
-          const float hold = chapter_holds[std::min<std::size_t> (current, 7)];
-          if (sky_time - m_loading_snapshot_started >= hold) {
+          if (sky_time - m_loading_snapshot_started >= chapter_hold) {
             ++m_loading_snapshot_index;
             const auto& snapshot = *loading_snapshots[m_loading_snapshot_index];
             std::copy (
@@ -1599,20 +1596,20 @@ namespace moppe {
           // Each transform gets a composition suited to what it changes:
           // geography, lowlands, long valleys, slopes, paths, and channels.
           static constexpr CameraShot shots[] = {
-            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f, 0.018f },
-            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f, 0.012f },
-            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f, 0.010f },
-            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f, 0.009f },
-            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f, 0.008f },
-            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f, 0.014f },
-            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f, 0.008f },
-            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f, 0.010f },
+            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f, 0.002f },
+            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f, 0.002f },
+            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f, 0.002f },
+            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f, 0.002f },
+            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f, 0.002f },
+            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f, 0.002f },
+            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f, 0.002f },
+            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f, 0.002f },
           };
           const std::size_t stage = std::min<std::size_t> (
             m_loading_snapshot_index, std::size (shots) - 1);
           const std::size_t previous = stage > 0 ? stage - 1 : stage;
           const float age = sky_time - m_loading_snapshot_started;
-          const float cut = smooth_curve (0.0f, 0.78f, age);
+          const float cut = smooth_curve (0.0f, 2.35f, age);
           const auto camera_for = [&] (const CameraShot& shot) {
             const float angle = shot.angle + shot.drift * age;
             const Vec3 focus (world_extent[0] * (0.5f + shot.target_x),
@@ -1762,6 +1759,11 @@ namespace moppe {
         const float headline_y = dial_y + 112.0f;
         const float chapter_age = sky_time - m_loading_snapshot_started;
         const float transition = smooth_curve (0.0f, 0.55f, chapter_age);
+        const bool final_scene =
+          !loading_snapshots.empty () &&
+          m_loading_snapshot_index + 1 == loading_snapshots.size ();
+        const bool waiting_to_start =
+          m_setup_complete && final_scene && chapter_age >= chapter_hold;
 
         if (m_loading_title_font && m_loading_title_font->ok ()) {
           const float x =
@@ -1792,15 +1794,26 @@ namespace moppe {
                                 chapter_text);
           m_hud_dl.pop ();
         }
+        if (waiting_to_start && m_loading_font && m_loading_font->ok ()) {
+          const std::string prompt = "PRESS SPACE TO ENTER THE WORLD";
+          const float prompt_x =
+            center_x - m_loading_font->measure (prompt) * 0.5f;
+          const float prompt_alpha = 0.72f + 0.20f * std::sin (sky_time * 1.8f);
+          m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.52f);
+          m_loading_font->draw (m_hud_dl, prompt_x + 1.5f, h - 58.0f, prompt);
+          m_hud_dl.color (0.91f, 1.0f, 0.88f, prompt_alpha);
+          m_loading_font->draw (m_hud_dl, prompt_x, h - 60.0f, prompt);
+        }
 
         bool captured_loading = false;
         int capture_stage = 1;
         if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_STAGE"))
           capture_stage = std::clamp (::atoi (value), 1, 8);
+        const float capture_age = capture_stage == 8 ? chapter_hold : 0.72f;
         if (!m_loading_capture_done && show_terrain &&
             m_loading_progress_display > 0.40f &&
             static_cast<int> (m_loading_snapshot_index) + 1 >= capture_stage &&
-            chapter_age >= 0.72f) {
+            chapter_age >= capture_age) {
           if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
             r.request_screenshot (path);
             m_loading_capture_done = true;
@@ -1809,10 +1822,11 @@ namespace moppe {
         }
         r.draw_hud (m_hud_dl);
         r.end_frame ();
-        const bool final_snapshot =
-          !loading_snapshots.empty () &&
-          m_loading_snapshot_index + 1 == loading_snapshots.size ();
-        if (m_setup_complete && final_snapshot && chapter_age >= 1.55f) {
+        const bool automatic_start =
+          !m_screenshot_path.empty () || m_benchmark.has_value () ||
+          m_water_shot.has_value () || ::getenv ("MOPPE_DEMO");
+        if (waiting_to_start &&
+            (m_loading_continue_requested || automatic_start)) {
           m_ready = true;
           if (m_start_in_terrain_lab) {
             m_terrain_lab.enter (r,
@@ -1893,6 +1907,14 @@ namespace moppe {
       void key (platform::Key k, bool down) override {
         using platform::Key;
         const float factor = down ? 1.0f : 0.0f;
+
+        if (!m_ready) {
+          if (k == Key::Space && down)
+            m_loading_continue_requested = true;
+          else if (k == Key::Escape && down)
+            platform::request_quit ();
+          return;
+        }
 
         // In great pain, only R (ride again) and ESC work.
         if (m_game_over) {
@@ -2057,6 +2079,7 @@ namespace moppe {
         m_loading_snapshot_index = 0;
         m_loading_snapshot_started = 0.0f;
         m_loading_terrain_state = 0;
+        m_loading_continue_requested = false;
         m_setup_complete = false;
         {
           const std::lock_guard<std::mutex> lock (m_loading_mutex);
@@ -2201,6 +2224,7 @@ namespace moppe {
       float m_loading_terrain_reveal = 0.0f;
       std::size_t m_loading_snapshot_index = 0;
       float m_loading_snapshot_started = 0.0f;
+      bool m_loading_continue_requested = false;
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;
