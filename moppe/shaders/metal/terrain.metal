@@ -478,9 +478,10 @@ static inline float4 terrain_overlay_color (float value,
     const float3 negative (0.12, 0.48, 1.0);
     const float3 neutral (0.16, 0.18, 0.17);
     const float3 positive (1.0, 0.28, 0.08);
+    const float change = abs (signed_t);
     return float4 (signed_t < 0.0 ? mix (neutral, negative, -signed_t)
                                   : mix (neutral, positive, signed_t),
-                   opacity);
+                   opacity * smoothstep (0.015, 0.16, change));
   }
   if (ramp == 5)
     return float4 (float3 (1.0, 0.12, 0.75), opacity * t);
