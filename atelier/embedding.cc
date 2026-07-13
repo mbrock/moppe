@@ -209,6 +209,7 @@ namespace atelier {
         .end_normal = second.outward,
         .strain = strain,
         .bend = bend,
+        .radius = 0.060f * m,
         .material_seed = seed,
       };
     }

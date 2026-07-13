@@ -26,6 +26,7 @@ struct Ligament {
   float4 end;
   float4 start_normal;
   float4 end_normal;
+  float4 physiology;
 };
 
 struct PuckPoint {
@@ -47,6 +48,8 @@ struct LigamentPoint {
   float strain;
   float bend;
   float seed;
+  float xylem;
+  float phloem;
   float elapsed;
 };
 
@@ -207,7 +210,9 @@ inline LigamentPoint ligament_vertex(uint index,
   const float arch = sin(M_PI_F * t);
   const float join = abs(2.0 * t - 1.0);
   const float tension = saturate(ligament.start.w * 90.0);
-  const float radius = mix(0.060, 0.036, tension) * (0.76 + 0.24 * join);
+  const float rest_radius = max(0.006, ligament.end_normal.w);
+  const float radius = mix(rest_radius, rest_radius * 0.60, tension) *
+                       (0.76 + 0.24 * join);
   const float3 centre = mix(start, end, t) -
                         surface_normal * arch * (0.018 + 0.020 * tension);
   const float3 radial = cos(angle) * across + sin(angle) * around;
@@ -221,6 +226,8 @@ inline LigamentPoint ligament_vertex(uint index,
     ligament.start.w,
     ligament.end.w,
     ligament.start_normal.w,
+    ligament.physiology.x,
+    ligament.physiology.y,
     uniforms.atmosphere.x
   };
 }
@@ -290,6 +297,29 @@ fragment half4 ligament_fragment(LigamentPoint ligament [[stage_in]]) {
                      bend * rim * 0.045;
   lit += mix(float3(1.0, 0.20, 0.07), inner_radiance, 0.35) * glow;
   lit += float3(0.72, 0.28, 0.16) * rim * 0.025;
+
+  // Opposing transports inhabit the same oriented edge.  Their signs reverse
+  // across the collar: xylem rises through the shoot while phloem returns,
+  // then each travels the other way through the root tree.
+  const float xylem_strength = saturate(abs(ligament.xylem) * 0.42);
+  const float phloem_strength = saturate(abs(ligament.phloem) * 0.52);
+  const float xylem_direction = sign(ligament.xylem);
+  const float phloem_direction = sign(ligament.phloem);
+  const float xylem_wave = pow(
+    0.5 + 0.5 * cos(2.0 * M_PI_F *
+                    (2.4 * ligament.fibre.x -
+                     xylem_direction * 0.34 * ligament.elapsed)),
+    9.0);
+  const float phloem_wave = pow(
+    0.5 + 0.5 * cos(2.0 * M_PI_F *
+                    (2.0 * ligament.fibre.x -
+                     phloem_direction * 0.27 * ligament.elapsed)),
+    11.0);
+  const float strand = 0.5 + 0.5 * cos(ligament.fibre.y * 2.0);
+  lit += float3(0.20, 0.48, 0.72) * xylem_strength * xylem_wave *
+         (0.025 + 0.035 * strand);
+  lit += float3(0.92, 0.48, 0.16) * phloem_strength * phloem_wave *
+         (0.020 + 0.030 * (1.0 - strand));
   return half4(half3(lit), 1.0h);
 }
 

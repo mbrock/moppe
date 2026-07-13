@@ -27,6 +27,7 @@ namespace atelier {
     simd_float3 end_normal;
     Real strain;
     Real bend;
+    Length radius;
     Real material_seed;
   };
 

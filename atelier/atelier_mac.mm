@@ -11,8 +11,7 @@
 #include <string>
 
 @interface AtelierView : NSView
-- (instancetype)initWithFrame:(NSRect)frame
-                    embedding:(atelier::EmbeddingKind)embedding;
+- (instancetype)initWithFrame:(NSRect)frame scene:(atelier::SceneKind)scene;
 @end
 
 @implementation AtelierView {
@@ -20,11 +19,10 @@
   NSTimer* _timer;
 }
 
-- (instancetype)initWithFrame:(NSRect)frame
-                    embedding:(atelier::EmbeddingKind)embedding {
+- (instancetype)initWithFrame:(NSRect)frame scene:(atelier::SceneKind)scene {
   self = [super initWithFrame:frame];
   if (self) {
-    _renderer = std::make_unique<atelier::Renderer> (embedding);
+    _renderer = std::make_unique<atelier::Renderer> (scene);
     self.wantsLayer = YES;
     self.layer = (__bridge CALayer*)_renderer->native_layer ();
     _timer = [NSTimer scheduledTimerWithTimeInterval:1.0 / 60.0
@@ -50,18 +48,18 @@
 @end
 
 @interface AtelierApplication : NSObject <NSApplicationDelegate>
-- (instancetype)initWithEmbedding:(atelier::EmbeddingKind)embedding;
+- (instancetype)initWithScene:(atelier::SceneKind)scene;
 @end
 
 @implementation AtelierApplication {
   NSWindow* _window;
-  atelier::EmbeddingKind _embedding;
+  atelier::SceneKind _scene;
 }
 
-- (instancetype)initWithEmbedding:(atelier::EmbeddingKind)embedding {
+- (instancetype)initWithScene:(atelier::SceneKind)scene {
   self = [super init];
   if (self)
-    _embedding = embedding;
+    _scene = scene;
   return self;
 }
 
@@ -75,19 +73,24 @@
                         NSWindowStyleMaskResizable
                 backing:NSBackingStoreBuffered
                   defer:NO];
-  switch (_embedding) {
-  case atelier::EmbeddingKind::rope_bridge:
+  switch (_scene) {
+  case atelier::SceneKind::tree_wind:
+    _window.title = @"Atelier — Wind-Bent Tree";
+    break;
+  case atelier::SceneKind::tree_diagram:
+    _window.title = @"Atelier — Tree Diagram";
+    break;
+  case atelier::SceneKind::rope_bridge:
     _window.title = @"Atelier — Rope Bridge";
     break;
-  case atelier::EmbeddingKind::repeating_plane:
+  case atelier::SceneKind::repeating_sheet:
     _window.title = @"Atelier — Repeating Plane";
     break;
-  case atelier::EmbeddingKind::toroidal_shell:
+  case atelier::SceneKind::toroidal_sheet:
     _window.title = @"Atelier — Toroidal Shell";
     break;
   }
-  _window.contentView = [[AtelierView alloc] initWithFrame:frame
-                                                 embedding:_embedding];
+  _window.contentView = [[AtelierView alloc] initWithFrame:frame scene:_scene];
   [_window center];
   [_window makeKeyAndOrderFront:nil];
   [NSApp activateIgnoringOtherApps:YES];
@@ -104,8 +107,8 @@
 // few seconds in and write it as a PNG.
 static int capture_scene (const char* path,
                           atelier::Duration elapsed,
-                          atelier::EmbeddingKind embedding) {
-  atelier::Renderer renderer (embedding);
+                          atelier::SceneKind scene) {
+  atelier::Renderer renderer (scene);
   renderer.resize ({ .width = 1800, .height = 1300 });
   const atelier::Image image = renderer.capture (elapsed);
 
@@ -154,16 +157,20 @@ static int capture_scene (const char* path,
 
 int main (int argc, char** argv) {
   @autoreleasepool {
-    atelier::EmbeddingKind embedding = atelier::EmbeddingKind::rope_bridge;
+    atelier::SceneKind scene = atelier::SceneKind::tree_wind;
     const char* capture_path = nullptr;
     float capture_seconds = 4.0f;
     for (int index = 1; index < argc; ++index) {
       if (std::strcmp (argv[index], "--flat") == 0) {
-        embedding = atelier::EmbeddingKind::repeating_plane;
+        scene = atelier::SceneKind::repeating_sheet;
       } else if (std::strcmp (argv[index], "--bridge") == 0) {
-        embedding = atelier::EmbeddingKind::rope_bridge;
+        scene = atelier::SceneKind::rope_bridge;
       } else if (std::strcmp (argv[index], "--torus") == 0) {
-        embedding = atelier::EmbeddingKind::toroidal_shell;
+        scene = atelier::SceneKind::toroidal_sheet;
+      } else if (std::strcmp (argv[index], "--tree") == 0) {
+        scene = atelier::SceneKind::tree_wind;
+      } else if (std::strcmp (argv[index], "--tree-diagram") == 0) {
+        scene = atelier::SceneKind::tree_diagram;
       } else if (std::strcmp (argv[index], "--capture") == 0 &&
                  index + 1 < argc) {
         capture_path = argv[++index];
@@ -171,7 +178,8 @@ int main (int argc, char** argv) {
           capture_seconds = std::strtof (argv[++index], nullptr);
       } else {
         std::fprintf (stderr,
-                      "usage: atelier [--bridge|--flat|--torus] "
+                      "usage: atelier [--tree|--tree-diagram|--bridge|--flat|"
+                      "--torus] "
                       "[--capture PATH [SECONDS]]\n");
         return -1;
       }
@@ -180,12 +188,12 @@ int main (int argc, char** argv) {
       return capture_scene (
         capture_path,
         atelier::Duration (capture_seconds * mp_units::si::second),
-        embedding);
+        scene);
 
     NSApplication* app = [NSApplication sharedApplication];
     app.activationPolicy = NSApplicationActivationPolicyRegular;
     AtelierApplication* delegate =
-      [[AtelierApplication alloc] initWithEmbedding:embedding];
+      [[AtelierApplication alloc] initWithScene:scene];
     app.delegate = delegate;
     [app run];
   }
