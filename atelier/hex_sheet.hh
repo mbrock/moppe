@@ -3,20 +3,20 @@
 #include "atelier/bundle.hh"
 #include "atelier/space.hh"
 
-#include <array>
 #include <cstddef>
+#include <optional>
 #include <vector>
 
-// A small, closed cellular landscape.  Its authoritative structure is a
-// periodic six-neighbour graph; the toroidal shell is only one embedding of
-// that structure.  The first developmental operation refines one cell into a
-// seven-cell patch and later melds it back into its parent.
+// A small cellular sheet whose hexagonal adjacency is independent of its
+// presentation. It may close periodically or end at a finite boundary. The
+// first developmental operation refines one cell into a seven-cell patch and
+// later melds it back into its parent.
 
 namespace atelier {
-  inline constexpr std::size_t landscape_columns = 30;
-  inline constexpr std::size_t landscape_rows = 14;
-  inline constexpr std::size_t landscape_tile_count =
-    landscape_columns * landscape_rows;
+  inline constexpr std::size_t hex_sheet_columns = 30;
+  inline constexpr std::size_t hex_sheet_rows = 14;
+  inline constexpr std::size_t hex_sheet_tile_count =
+    hex_sheet_columns * hex_sheet_rows;
 
   using TileId = std::size_t;
   inline constexpr Length puck_radius = 0.39f * si::metre;
@@ -31,14 +31,19 @@ namespace atelier {
     int rows;
   };
 
-  // The immutable combinatorial law of the closed sheet.  Regular topology
-  // is calculated rather than copied into every tile's state.
-  class PeriodicHexTopology {
+  enum class SheetBoundary { periodic, open };
+
+  // The immutable combinatorial law of the sheet. Regular topology is
+  // calculated rather than copied into every tile's state.
+  class HexSheetTopology {
   public:
     using index_type = TileId;
 
+    explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic)
+        : m_boundary (boundary) {}
+
     [[nodiscard]] constexpr std::size_t size () const {
-      return landscape_tile_count;
+      return hex_sheet_tile_count;
     }
 
     [[nodiscard]] constexpr std::size_t offset (TileId id) const {
@@ -52,21 +57,31 @@ namespace atelier {
     [[nodiscard]] GridCell cell (TileId id) const;
     [[nodiscard]] TileId tile_id (GridCell cell) const;
     [[nodiscard]] GridStep neighbour_step (TileId id, std::size_t side) const;
-    [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;
-    [[nodiscard]] std::array<TileId, 6> neighbours (TileId id) const;
+    [[nodiscard]] std::optional<TileId> neighbour (TileId id,
+                                                   std::size_t side) const;
+    [[nodiscard]] std::vector<TileId> neighbours (TileId id) const;
+    [[nodiscard]] SheetBoundary boundary () const {
+      return m_boundary;
+    }
+    [[nodiscard]] bool is_anchor (TileId id) const;
 
     template <typename Visitor>
     void visit_neighbourhood (TileId id, Visitor&& visitor) const {
-      for (std::size_t side = 0; side < 6; ++side)
-        visitor (neighbour (id, side), Real { 1 });
+      for (std::size_t side = 0; side < 6; ++side) {
+        if (const auto adjacent = neighbour (id, side))
+          visitor (*adjacent, Real { 1 });
+      }
     }
 
     [[nodiscard]] bool is_valid () const;
+
+  private:
+    SheetBoundary m_boundary;
   };
 
   // One present leaf of the partition, still expressed entirely in the
-  // landscape's intrinsic coordinates.  It has no opinion about whether the
-  // closed graph will be shown as a toroidal shell or a repeating flat sheet.
+  // sheet's intrinsic coordinates. It has no opinion about how that graph
+  // will be embedded in the world.
   struct TileLeaf {
     GridCell cell;
     Length offset_across;
@@ -78,18 +93,18 @@ namespace atelier {
     Real material_seed;
   };
 
-  class Landscape {
+  class HexSheet {
   public:
-    using TileState = Bundle<PeriodicHexTopology,
+    using TileState = Bundle<HexSheetTopology,
                              NormalDisplacement,
                              NormalVelocity,
                              NormalAcceleration>;
 
-    Landscape ();
+    explicit HexSheet (SheetBoundary boundary = SheetBoundary::periodic);
 
     void advance (Duration elapsed);
 
-    [[nodiscard]] const PeriodicHexTopology& topology () const {
+    [[nodiscard]] const HexSheetTopology& topology () const {
       return m_tiles.domain ();
     }
 

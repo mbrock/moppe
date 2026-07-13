@@ -75,9 +75,17 @@
                         NSWindowStyleMaskResizable
                 backing:NSBackingStoreBuffered
                   defer:NO];
-  _window.title = _embedding == atelier::EmbeddingKind::repeating_plane
-                    ? @"Atelier — Repeating Plane"
-                    : @"Atelier — Toroidal Shell";
+  switch (_embedding) {
+  case atelier::EmbeddingKind::rope_bridge:
+    _window.title = @"Atelier — Rope Bridge";
+    break;
+  case atelier::EmbeddingKind::repeating_plane:
+    _window.title = @"Atelier — Repeating Plane";
+    break;
+  case atelier::EmbeddingKind::toroidal_shell:
+    _window.title = @"Atelier — Toroidal Shell";
+    break;
+  }
   _window.contentView = [[AtelierView alloc] initWithFrame:frame
                                                  embedding:_embedding];
   [_window center];
@@ -146,12 +154,14 @@ static int capture_scene (const char* path,
 
 int main (int argc, char** argv) {
   @autoreleasepool {
-    atelier::EmbeddingKind embedding = atelier::EmbeddingKind::toroidal_shell;
+    atelier::EmbeddingKind embedding = atelier::EmbeddingKind::rope_bridge;
     const char* capture_path = nullptr;
     float capture_seconds = 4.0f;
     for (int index = 1; index < argc; ++index) {
       if (std::strcmp (argv[index], "--flat") == 0) {
         embedding = atelier::EmbeddingKind::repeating_plane;
+      } else if (std::strcmp (argv[index], "--bridge") == 0) {
+        embedding = atelier::EmbeddingKind::rope_bridge;
       } else if (std::strcmp (argv[index], "--torus") == 0) {
         embedding = atelier::EmbeddingKind::toroidal_shell;
       } else if (std::strcmp (argv[index], "--capture") == 0 &&
@@ -161,7 +171,7 @@ int main (int argc, char** argv) {
           capture_seconds = std::strtof (argv[++index], nullptr);
       } else {
         std::fprintf (stderr,
-                      "usage: atelier [--flat|--torus] "
+                      "usage: atelier [--bridge|--flat|--torus] "
                       "[--capture PATH [SECONDS]]\n");
         return -1;
       }

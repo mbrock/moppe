@@ -1,16 +1,17 @@
 #pragma once
 
-#include "atelier/landscape.hh"
+#include "atelier/hex_sheet.hh"
 #include "atelier/matrix.hh"
 
 #include <vector>
 
-// World embeddings are views of the same intrinsic, closed landscape.  Tile
-// simulation and refinement never see this choice: a renderer may wrap the
-// quotient into a doughnut or show several copies of its flat universal cover.
+// World embeddings are views of the same intrinsic sheet. The embedding
+// chooses both its boundary law and its placement in space.
 
 namespace atelier {
-  enum class EmbeddingKind { toroidal_shell, repeating_plane };
+  enum class EmbeddingKind { rope_bridge, toroidal_shell, repeating_plane };
+
+  [[nodiscard]] SheetBoundary boundary_for (EmbeddingKind kind);
 
   struct EmbeddedTile {
     Matrix place_in_world;
@@ -29,15 +30,15 @@ namespace atelier {
     Real material_seed;
   };
 
-  struct EmbeddedLandscape {
+  struct EmbeddedHexSheet {
     Matrix world_to_clip;
     Point eye;
     std::vector<EmbeddedTile> tiles;
     std::vector<EmbeddedLigament> ligaments;
   };
 
-  [[nodiscard]] EmbeddedLandscape embed_landscape (const Landscape& landscape,
-                                                   EmbeddingKind kind,
-                                                   Duration elapsed,
-                                                   Real aspect_ratio);
+  [[nodiscard]] EmbeddedHexSheet embed_hex_sheet (const HexSheet& sheet,
+                                                  EmbeddingKind kind,
+                                                  Duration elapsed,
+                                                  Real aspect_ratio);
 }

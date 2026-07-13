@@ -1,7 +1,7 @@
 #pragma once
 
 #include "atelier/embedding.hh"
-#include "atelier/landscape.hh"
+#include "atelier/hex_sheet.hh"
 #include "atelier/matrix.hh"
 #include "atelier/prism.hh"
 #include "atelier/space.hh"
@@ -10,8 +10,8 @@
 #include <cstddef>
 #include <vector>
 
-// The scene: a closed cellular landscape under a carousel camera, composed
-// each frame into the flat instance data the renderer uploads.
+// The scene: a cellular sheet composed each frame into the flat instance data
+// the renderer uploads.
 
 namespace atelier {
   // A viewport measured in physical pixels.
@@ -54,7 +54,7 @@ namespace atelier {
     std::vector<LigamentInstance> ligaments;
   };
 
-  [[nodiscard]] Frame compose_frame (const Landscape& landscape,
+  [[nodiscard]] Frame compose_frame (const HexSheet& sheet,
                                      EmbeddingKind embedding,
                                      Duration elapsed,
                                      Viewport viewport);

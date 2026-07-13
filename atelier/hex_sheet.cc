@@ -1,6 +1,7 @@
-#include "atelier/landscape.hh"
+#include "atelier/hex_sheet.hh"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
@@ -51,7 +52,7 @@ namespace atelier {
 
     Real signed_noise (GridCell cell) {
       std::uint32_t bits =
-        static_cast<std::uint32_t> (cell.column + landscape_columns * cell.row);
+        static_cast<std::uint32_t> (cell.column + hex_sheet_columns * cell.row);
       bits += 0x9e3779b9U;
       bits ^= bits >> 16;
       bits *= 0x7feb352dU;
@@ -80,39 +81,62 @@ namespace atelier {
     }
   }
 
-  GridCell PeriodicHexTopology::cell (TileId id) const {
-    return { id % landscape_columns, id / landscape_columns };
+  GridCell HexSheetTopology::cell (TileId id) const {
+    return { id % hex_sheet_columns, id / hex_sheet_columns };
   }
 
-  TileId PeriodicHexTopology::tile_id (GridCell cell) const {
-    return cell.row * landscape_columns + cell.column;
+  TileId HexSheetTopology::tile_id (GridCell cell) const {
+    return cell.row * hex_sheet_columns + cell.column;
   }
 
-  GridStep PeriodicHexTopology::neighbour_step (TileId id,
-                                                std::size_t side) const {
+  GridStep HexSheetTopology::neighbour_step (TileId id,
+                                             std::size_t side) const {
     const GridCell from = cell (id);
     const auto& offsets = from.row % 2 == 0 ? even_neighbours : odd_neighbours;
     return { offsets[side][0], offsets[side][1] };
   }
 
-  TileId PeriodicHexTopology::neighbour (TileId id, std::size_t side) const {
+  std::optional<TileId> HexSheetTopology::neighbour (TileId id,
+                                                     std::size_t side) const {
     const GridCell from = cell (id);
     const GridStep step = neighbour_step (id, side);
-    return tile_id ({
-      wrap (static_cast<int> (from.column) + step.columns, landscape_columns),
-      wrap (static_cast<int> (from.row) + step.rows, landscape_rows),
-    });
+    const int column = static_cast<int> (from.column) + step.columns;
+    const int row = static_cast<int> (from.row) + step.rows;
+    if (m_boundary == SheetBoundary::open) {
+      if (column < 0 || column >= static_cast<int> (hex_sheet_columns) ||
+          row < 0 || row >= static_cast<int> (hex_sheet_rows))
+        return std::nullopt;
+      return tile_id (
+        { static_cast<std::size_t> (column), static_cast<std::size_t> (row) });
+    }
+    return tile_id (
+      { wrap (column, hex_sheet_columns), wrap (row, hex_sheet_rows) });
   }
 
-  std::array<TileId, 6> PeriodicHexTopology::neighbours (TileId id) const {
-    return { neighbour (id, 0), neighbour (id, 1), neighbour (id, 2),
-             neighbour (id, 3), neighbour (id, 4), neighbour (id, 5) };
+  std::vector<TileId> HexSheetTopology::neighbours (TileId id) const {
+    std::vector<TileId> result;
+    result.reserve (6);
+    for (std::size_t side = 0; side < 6; ++side) {
+      if (const auto adjacent = neighbour (id, side))
+        result.push_back (*adjacent);
+    }
+    return result;
   }
 
-  bool PeriodicHexTopology::is_valid () const {
-    for (TileId id = 0; id < landscape_tile_count; ++id) {
+  bool HexSheetTopology::is_anchor (TileId id) const {
+    if (m_boundary != SheetBoundary::open)
+      return false;
+    const GridCell site = cell (id);
+    const bool edge_column =
+      site.column == 0 || site.column + 1 == hex_sheet_columns;
+    const bool edge_row = site.row == 0 || site.row + 1 == hex_sheet_rows;
+    return edge_column && edge_row;
+  }
+
+  bool HexSheetTopology::is_valid () const {
+    for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
       for (TileId adjacent : neighbours (id)) {
-        if (adjacent >= landscape_tile_count || adjacent == id)
+        if (adjacent >= hex_sheet_tile_count || adjacent == id)
           return false;
         const auto reverse = neighbours (adjacent);
         if (std::ranges::find (reverse, id) == reverse.end ())
@@ -122,29 +146,33 @@ namespace atelier {
     return true;
   }
 
-  Landscape::Landscape () {
+  HexSheet::HexSheet (SheetBoundary boundary)
+      : m_tiles (HexSheetTopology (boundary)),
+        m_next_tiles (HexSheetTopology (boundary)) {
     if (!topology_is_valid ())
-      throw std::runtime_error ("The toroidal tile topology is inconsistent");
+      throw std::runtime_error ("The hex sheet topology is inconsistent");
     initialize_noise_drive ();
   }
 
-  void Landscape::initialize_noise_drive () {
+  void HexSheet::initialize_noise_drive () {
     auto& drive = get<normal_acceleration> (m_tiles);
     auto& next_drive = get<normal_acceleration> (m_next_tiles);
     constexpr auto amplitude = 3.2f * m / (s * s);
     for (TileId id = 0; id < m_tiles.size (); ++id) {
-      drive[id] = signed_noise (topology ().cell (id)) * amplitude;
+      drive[id] = topology ().is_anchor (id)
+                    ? 0.0f * m / (s * s)
+                    : signed_noise (topology ().cell (id)) * amplitude;
       next_drive[id] = drive[id];
     }
   }
 
-  bool Landscape::topology_is_valid () const {
+  bool HexSheet::topology_is_valid () const {
     return topology ().is_valid ();
   }
 
-  void Landscape::begin_refinement () {
+  void HexSheet::begin_refinement () {
     const TileId focus_index =
-      topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
+      topology ().tile_id ({ hex_sheet_columns / 5, hex_sheet_rows / 2 });
     const BundleFocus focus (m_tiles, focus_index);
     get<normal_velocity> (focus) += 1.4f * m / s;
     visit_neighbourhood (focus, [] (const auto& neighbour, auto influence) {
@@ -152,9 +180,9 @@ namespace atelier {
     });
   }
 
-  void Landscape::advance (Duration elapsed) {
+  void HexSheet::advance (Duration elapsed) {
     if (elapsed < m_elapsed) {
-      *this = Landscape ();
+      *this = HexSheet (topology ().boundary ());
     }
     m_accumulator += elapsed - m_elapsed;
     m_elapsed = elapsed;
@@ -166,7 +194,7 @@ namespace atelier {
     }
   }
 
-  void Landscape::update_development (Duration elapsed) {
+  void HexSheet::update_development (Duration elapsed) {
     const Real seconds = elapsed.numerical_value_in (s);
     const Real cycle_seconds = cycle_duration.numerical_value_in (s);
     const std::size_t cycle =
@@ -190,7 +218,7 @@ namespace atelier {
         1.0f - smooth (Real ((phase - merge_at) / (merge_ends - merge_at)));
   }
 
-  void Landscape::step (Duration dt) {
+  void HexSheet::step (Duration dt) {
     constexpr auto stiffness = 2.3f / (s * s);
     constexpr auto coupling = 5.2f / (s * s);
     constexpr auto damping = 1.25f / s;
@@ -202,6 +230,9 @@ namespace atelier {
       const auto displacement = get<normal_displacement> (tile);
       const auto velocity = get<normal_velocity> (tile);
       const auto drive = get<normal_acceleration> (tile);
+      if (tile.domain ().is_anchor (tile.index ()))
+        return bundle_values (
+          displacement - displacement, velocity - velocity, drive - drive);
       const auto acceleration =
         coupling * laplacian<normal_displacement> (tile) -
         stiffness * displacement - damping * velocity + breath * drive;
@@ -218,20 +249,20 @@ namespace atelier {
     displacement.swap (next_displacement);
   }
 
-  bool Landscape::is_refined () const {
+  bool HexSheet::is_refined () const {
     return m_refined;
   }
 
-  Real Landscape::refinement () const {
+  Real HexSheet::refinement () const {
     return m_refinement;
   }
 
-  std::vector<TileLeaf> Landscape::leaves () const {
+  std::vector<TileLeaf> HexSheet::leaves () const {
     std::vector<TileLeaf> result;
-    result.reserve (landscape_tile_count + 7);
+    result.reserve (hex_sheet_tile_count + 7);
     const TileId focus =
-      topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
-    for (TileId id = 0; id < landscape_tile_count; ++id) {
+      topology ().tile_id ({ hex_sheet_columns / 5, hex_sheet_rows / 2 });
+    for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
       const BundleFocus tile (m_tiles, id);
       const GridCell cell = topology ().cell (id);
       const auto displacement = get<normal_displacement> (tile);
