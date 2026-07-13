@@ -20,26 +20,30 @@
 // bridge at the bottom of this file.
 
 namespace atelier {
+  namespace si = mp_units::si;
+  namespace isq = mp_units::isq;
+  namespace angular = mp_units::angular;
+
+  using mp_units::absolute_point_origin;
+  using mp_units::quantity;
+  using mp_units::quantity_point;
+
   using Real = float;
   using Vec3 = mp_units::utility::cartesian_vector<Real, 3>;
 
-  using Length = mp_units::quantity<mp_units::si::metre, Real>;
-  using Duration = mp_units::quantity<mp_units::si::second, Real>;
-  using Angle = mp_units::quantity<mp_units::angular::radian, Real>;
-  using AngularRate =
-    mp_units::quantity<mp_units::angular::radian / mp_units::si::second, Real>;
+  using Length = quantity<si::metre, Real>;
+  using Duration = quantity<si::second, Real>;
+  using Angle = quantity<angular::radian, Real>;
+  using AngularRate = quantity<angular::radian / si::second, Real>;
+  using Wavenumber = quantity<angular::radian / si::metre, Real>;
 
   // The one origin every point of the scene is measured from.
   inline constexpr struct scene_t final
-      : mp_units::absolute_point_origin<mp_units::isq::displacement> {
+      : absolute_point_origin<isq::displacement> {
   } scene;
 
-  using Displacement =
-    mp_units::quantity<mp_units::isq::displacement[mp_units::si::metre], Vec3>;
-  using Point =
-    mp_units::quantity_point<mp_units::isq::displacement[mp_units::si::metre],
-                             scene,
-                             Vec3>;
+  using Displacement = quantity<isq::displacement[si::metre], Vec3>;
+  using Point = quantity_point<isq::displacement[si::metre], scene, Vec3>;
 
   // Directions are dimensionless unit vectors; a direction scaled by a
   // length is a displacement.  These three are the scene's compass.
@@ -49,13 +53,21 @@ namespace atelier {
 
   // The horizontal direction at a given bearing away from north.
   [[nodiscard]] inline Vec3 radial (Angle bearing) {
-    using mp_units::angular::cos, mp_units::angular::sin;
-    return Vec3 { sin (bearing), 0.0f, cos (bearing) };
+    return Vec3 { angular::sin (bearing), 0.0f, angular::cos (bearing) };
   }
 
   // The unit direction of a displacement.
   [[nodiscard]] inline Vec3 direction (const Displacement& d) {
     return Vec3 (d / d.magnitude ());
+  }
+
+  // The length of a displacement's shadow along a unit direction.
+  // Implemented on the representation, since mp-units defines
+  // scalar_product between two vectors, not between a vector quantity
+  // and a bare direction; no number escapes, the projection is a
+  // Length again.
+  [[nodiscard]] inline Length along (const Displacement& d, const Vec3& dir) {
+    return scalar_product (d.numerical_value_in (si::metre), dir) * si::metre;
   }
 
   // --- The GPU bridge ---------------------------------------------
@@ -65,11 +77,11 @@ namespace atelier {
   // a quantity gives up its units.
 
   [[nodiscard]] inline Real in_metres (Length length) {
-    return length.numerical_value_in (mp_units::si::metre);
+    return length.numerical_value_in (si::metre);
   }
 
   [[nodiscard]] inline Real in_radians (Angle angle) {
-    return angle.numerical_value_in (mp_units::angular::radian);
+    return angle.numerical_value_in (angular::radian);
   }
 
   [[nodiscard]] inline simd_float3 as_simd (const Vec3& v) {
@@ -77,7 +89,7 @@ namespace atelier {
   }
 
   [[nodiscard]] inline simd_float3 in_metres (const Displacement& d) {
-    const auto [x, y, z] = d.numerical_value_in (mp_units::si::metre);
+    const auto [x, y, z] = d.numerical_value_in (si::metre);
     return { x, y, z };
   }
 
