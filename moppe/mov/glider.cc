@@ -17,7 +17,7 @@ namespace moppe::mov {
     const Vec3 wind_direction = normalized (wind_velocity);
   }
 
-  Glider::Glider (const map::HeightMap& map) : m_map (map) {}
+  Glider::Glider (const map::Surface& surface) : m_surface (surface) {}
 
   void Glider::launch (position_t position,
                        velocity_t inherited_velocity,
@@ -65,9 +65,12 @@ namespace moppe::mov {
 
   rate_of_climb_t Glider::ridge_lift () const {
     const Vec3& p = position_value (m_position);
-    const float ground = m_map.interpolated_height (p[0], p[2]);
+    const float ground = m_surface.elevation_at (m_position)
+                           .quantity_from_zero ()
+                           .numerical_value_in (u::m);
     const float agl = std::max (0.0f, p[1] - ground);
-    const Vec3 n = normalized (m_map.interpolated_normal (p[0], p[2]));
+    const Vec3 n =
+      normalized (m_surface.normal_at (m_position).numerical_value_in (one));
 
     // -n.xz is the uphill gradient direction.  Wind into that gradient
     // rises; the useful band fades above the terrain instead of becoming an
@@ -128,7 +131,9 @@ namespace moppe::mov {
     bound ();
 
     Vec3& p = position_value (m_position);
-    const float ground = m_map.interpolated_height (p[0], p[2]);
+    const float ground = m_surface.elevation_at (m_position)
+                           .quantity_from_zero ()
+                           .numerical_value_in (u::m);
     if (p[1] <= ground + 0.75f) {
       p[1] = ground + 0.75f;
       m_velocity = moppe::velocity (Vec3 ());
@@ -141,12 +146,15 @@ namespace moppe::mov {
   }
 
   void Glider::bound () {
-    if (m_map.periodic ())
+    const map::SurfaceDomain& domain = m_surface.samples ().domain ();
+    if (domain.topology () == terrain::Topology::Torus)
       return;
     Vec3& p = position_value (m_position);
     const float margin = 2.0f;
-    const float max_x = (m_map.width () - 2) * m_map.scale ()[0] - margin;
-    const float max_z = (m_map.height () - 2) * m_map.scale ()[2] - margin;
+    const float max_x =
+      meters_value (domain.maximum_interpolated_x ()) - margin;
+    const float max_z =
+      meters_value (domain.maximum_interpolated_z ()) - margin;
     if (p[0] < margin) {
       p[0] = margin;
       m_heading[0] = std::abs (m_heading[0]);

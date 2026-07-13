@@ -46,6 +46,30 @@ the quantity at the API boundary. Data-dependent min/max normalization is an
 explicit semantic conversion to `NormalizedRaster`: normalized elevation is
 a relative normalized sample, not elevation in the original reference.
 
+## Materialized surface sections
+
+`spatial::Bundle<Domain, Quantities...>` is the eager counterpart to the lazy
+field algebra. It stores one column per quantity specification over a shared
+finite domain, exposes exact rows by domain index, and gives local rules a
+`BundleFocus` whose neighbourhood comes from the domain rather than storage
+traversal. `extend_into` applies one such rule at every focus and materializes
+the next bundle.
+
+`map::Surface` is the first deliberately small gameplay proof. Its
+`SurfaceBundle` contains an affine elevation point and a vector-valued surface
+normal at every heightmap node. `SurfaceDomain` supplies a four-node bilinear
+stencil for a world position. Generic `spatial::sample<QS>` then chooses its
+algebra from the mp-units value category: quantities form weighted sums, while
+quantity points use one anchor plus weighted point differences. Bounded and
+toroidal surfaces use the same operation.
+
+The current heightmap remains authoritative. World generation explicitly
+refreshes the surface materialization after recomputing normals, and spawn
+selection plus glider terrain queries consume the continuous typed view. This
+temporarily duplicates those two columns so the abstraction can be verified
+without rewriting generation kernels; a later consolidation can make bundle
+storage authoritative or introduce borrowed/chunked columns.
+
 Every backend implements the `FieldEvaluator` materialization boundary.
 `CpuEvaluator` lowers unique nodes to a topologically ordered register program
 and runs it for every point in a `Domain2D`.  The macOS backend lowers the same

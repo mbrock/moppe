@@ -27,6 +27,7 @@
 #include <moppe/game/walker.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/world.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 
 #include <moppe/map/generate.hh>
@@ -335,7 +336,7 @@ namespace moppe {
                    14 * u::kN,
                    100 * u::kW,
                    900 * u::kg),
-            m_glider (m_map), m_renderer (0),
+            m_glider (m_surface), m_renderer (0),
             m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
             m_screenshot_path (std::move (screenshot_path)),
@@ -400,6 +401,15 @@ namespace moppe {
         const float patch = 20.0f; // metres
         const float min_ground = meters_value (m_world.water_level) + 25.0f;
         const float max_ground = 0.32f * world_extent[1];
+        const auto elevation_at = [this] (float x, float z) {
+          return m_surface.elevation_at (position (Vec3 (x, 0, z)))
+            .quantity_from_zero ()
+            .numerical_value_in (u::m);
+        };
+        const auto normal_at = [this] (float x, float z) {
+          return m_surface.normal_at (position (Vec3 (x, 0, z)))
+            .numerical_value_in (one);
+        };
 
         std::uniform_real_distribution<float> random_x (
           margin_x, world_extent[0] - margin_x);
@@ -433,17 +443,17 @@ namespace moppe {
         for (int i = 0; i < 6000; ++i) {
           const float x = random_x (m_fx_rng);
           const float z = random_z (m_fx_rng);
-          const float h = m_map.interpolated_height (x, z);
-          const float hx0 = m_map.interpolated_height (x - patch, z);
-          const float hx1 = m_map.interpolated_height (x + patch, z);
-          const float hz0 = m_map.interpolated_height (x, z - patch);
-          const float hz1 = m_map.interpolated_height (x, z + patch);
+          const float h = elevation_at (x, z);
+          const float hx0 = elevation_at (x - patch, z);
+          const float hx1 = elevation_at (x + patch, z);
+          const float hz0 = elevation_at (x, z - patch);
+          const float hz1 = elevation_at (x, z + patch);
           const float low =
             std::min (h, std::min (std::min (hx0, hx1), std::min (hz0, hz1)));
           const float high =
             std::max (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
           const float relief = high - low;
-          const float up = m_map.interpolated_normal (x, z)[1];
+          const float up = normal_at (x, z)[1];
           const float lake_depth = std::max ({ standing_depth (x, z),
                                                standing_depth (x - patch, z),
                                                standing_depth (x + patch, z),
@@ -570,6 +580,7 @@ namespace moppe {
         }
         m_gen_stage = 5;
         m_map.recompute_normals ();
+        m_surface.refresh (m_map);
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
@@ -2199,7 +2210,11 @@ namespace moppe {
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
-          m_map.interpolated_height (m_spawn_position[0], m_spawn_position[2]);
+          m_surface
+            .elevation_at (
+              position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
+            .quantity_from_zero ()
+            .numerical_value_in (u::m);
         m_vehicle.reset (
           Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
         // Key releases were swallowed during the game-over screen;
@@ -2219,6 +2234,7 @@ namespace moppe {
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
+      map::Surface m_surface;
       std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
       std::vector<std::vector<float>> m_terrain_history;
       std::atomic<int> m_loading_work_done = 0;

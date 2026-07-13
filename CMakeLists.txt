@@ -293,6 +293,7 @@ endif()
 add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
   moppe/map/generate.cc
+  moppe/map/surface.cc
   moppe/map/terrain_evaluator.cc
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
@@ -391,6 +392,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(moppe-tests
     tests/test_main.cc
     tests/units_test.cc
+    tests/spatial/bundle_test.cc
     tests/terrain/discretization_test.cc
     tests/terrain/field_test.cc
     tests/terrain/cpu_evaluator_test.cc
@@ -411,6 +413,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
     tests/game/cinematic_flight_test.cc
+    tests/map/surface_test.cc
     tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-tests PRIVATE moppe_game)
