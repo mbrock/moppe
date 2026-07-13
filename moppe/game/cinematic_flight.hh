@@ -68,9 +68,9 @@ namespace moppe::game {
     float pace = 0.0f;
   };
 
-  // A small rotorcraft flight model wrapped around the authored gates. The
+  // A fast bird/drone flight model wrapped around the authored gates. The
   // gates become one arc-length-parameterized flight ribbon; bounded thrust,
-  // coordinated bank, a stabilized look-ahead gimbal, and terrain anticipation
+  // broad-arc banking, a stabilized look-ahead gimbal, and terrain anticipation
   // supply continuous motion without stopping at any individual landmark.
   class CinematicFlight {
   public:
@@ -95,6 +95,9 @@ namespace moppe::game {
     }
     float speed () const noexcept {
       return m_speed;
+    }
+    float bank () const noexcept {
+      return m_bank;
     }
     float motion_blur () const noexcept {
       return std::clamp ((m_speed - 35.0f) / 185.0f, 0.08f, 0.72f);
@@ -125,9 +128,7 @@ namespace moppe::game {
     std::vector<ArcSample> m_arc_samples;
     Vec3 m_position {};
     Vec3 m_velocity {};
-    Vec3 m_previous_velocity {};
-    Vec3 m_acceleration {};
-    Vec3 m_subject {};
+    Vec3 m_look_direction { 0, 0, 1 };
     Vec3 m_manual_offset {};
     Vec3 m_manual_velocity {};
     float m_route_distance = 0.0f;
