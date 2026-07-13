@@ -2,11 +2,20 @@
 
 #include <simd/simd.h>
 
-#include <string_view>
+#include <chrono>
+#include <cstddef>
 #include <vector>
 
 namespace atelier {
-  using GpuVector = simd_float3;
+  using VertexPosition = simd_float3;
+
+  struct Viewport {
+    std::size_t width = 0;
+    std::size_t height = 0;
+
+    [[nodiscard]] bool is_empty () const;
+    [[nodiscard]] float aspect_ratio () const;
+  };
 
   struct Uniforms {
     simd_float4x4 world_to_clip;
@@ -16,7 +25,7 @@ namespace atelier {
     Uniforms uniforms;
   };
 
-  std::vector<GpuVector> coin_wire_mesh ();
-  std::string_view shader_source ();
-  Frame frame (float elapsed_seconds, float aspect);
+  std::vector<VertexPosition> make_coin_wireframe ();
+  Frame make_frame (std::chrono::steady_clock::duration elapsed,
+                    Viewport viewport);
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "atelier/atelier.hh"
+
 #include <memory>
 
 namespace atelier {
@@ -12,7 +14,7 @@ namespace atelier {
     Renderer& operator= (const Renderer&) = delete;
 
     void* native_layer () const;
-    void resize (double width, double height);
+    void resize (Viewport viewport);
     void draw ();
 
   private:
