@@ -13,6 +13,7 @@ MOPPE_TEST (toroidal_landscape_has_reciprocal_six_neighbour_topology) {
   MOPPE_CHECK (landscape.topology_is_valid ());
   MOPPE_CHECK (landscape.displacements ().size () == landscape_tile_count);
   MOPPE_CHECK (landscape.velocities ().size () == landscape_tile_count);
+  MOPPE_CHECK (landscape.drives ().size () == landscape_tile_count);
 
   const PeriodicHexTopology& topology = landscape.topology ();
   for (TileId id = 0; id < landscape_tile_count; ++id) {
@@ -24,6 +25,21 @@ MOPPE_TEST (toroidal_landscape_has_reciprocal_six_neighbour_topology) {
       MOPPE_CHECK (std::ranges::find (reverse, id) != reverse.end ());
     }
   }
+}
+
+MOPPE_TEST (moppe_noise_field_materializes_as_a_tile_acceleration_section) {
+  const Landscape landscape;
+  const auto [minimum, maximum] =
+    std::ranges::minmax_element (landscape.drives ());
+  MOPPE_CHECK (*maximum - *minimum > 0.1f * m / (s * s));
+}
+
+MOPPE_TEST (noise_drive_deforms_the_sheet_before_refinement) {
+  Landscape landscape;
+  landscape.advance (1.0f * s);
+  const auto [minimum, maximum] =
+    std::ranges::minmax_element (landscape.displacements ());
+  MOPPE_CHECK (*maximum - *minimum > 0.01f * m);
 }
 
 MOPPE_TEST (landscape_refines_and_melds_one_partition_cell) {

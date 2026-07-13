@@ -138,6 +138,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_options(atelier PRIVATE -mmacosx-version-min=26.0)
   target_link_libraries(atelier PRIVATE
+    moppe_terrain
     mp-units::mp-units
     "-framework Cocoa"
     "-framework ImageIO"
