@@ -196,8 +196,11 @@ MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
                                  fixture.rivers,
                                  Vec3 (200, 80, 200));
   game::CinematicFlight flight;
-  flight.start (plan);
+  flight.start (plan, fixture.map);
   MOPPE_CHECK (flight.active ());
+  Vec3 previous_position = flight.position ();
+  Vec3 previous_motion {};
+  bool has_previous_motion = false;
 
   for (int frame = 0; frame < 12000 && flight.active (); ++frame) {
     const game::CinematicFlightControls controls {
@@ -207,8 +210,21 @@ MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
     };
     flight.tick (1.0f / 60.0f, fixture.map, controls);
     const Vec3 p = flight.position ();
+    const Vec3 motion = p - previous_position;
+    MOPPE_CHECK (length (motion) < 8.0f);
+    if (length (motion) > 0.2f) {
+      if (has_previous_motion) {
+        MOPPE_CHECK (dot (normalized (motion), normalized (previous_motion)) >
+                     0.90f);
+      }
+      previous_motion = motion;
+      has_previous_motion = true;
+    }
+    previous_position = p;
     MOPPE_CHECK (p[1] >= fixture.map.interpolated_height (p[0], p[2]) + 17.9f);
     MOPPE_CHECK (std::isfinite (flight.forward ()[0]));
+    MOPPE_CHECK (flight.motion_blur () >= 0.08f);
+    MOPPE_CHECK (flight.motion_blur () <= 0.72f);
   }
   MOPPE_CHECK (flight.elapsed () > 1.0f);
   MOPPE_CHECK (!flight.active ());

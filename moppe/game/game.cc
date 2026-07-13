@@ -42,6 +42,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -69,6 +70,12 @@ namespace moppe {
       int settle_frames = 30;
       int measured_frames = 120;
     };
+
+    static int cinematic_capture_frame_limit () {
+      if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
+        return std::max (1, ::atoi (value));
+      return 450;
+    }
 
     static float smooth_curve (float edge0, float edge1, float x) {
       float t = (x - edge0) / (edge1 - edge0);
@@ -739,6 +746,14 @@ namespace moppe {
 
       void tick (float dt) override {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick");
+        if (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
+          const int fps = [] {
+            if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FPS"))
+              return std::clamp (::atoi (value), 1, 120);
+            return 30;
+          }();
+          dt = 1.0f / fps;
+        }
         if (m_benchmark) {
           dt = GRAPHICS_BENCHMARK_DT;
           if (m_benchmark_submitted) {
@@ -1272,6 +1287,21 @@ namespace moppe {
         }();
         const bool captured = !m_screenshot_path.empty () &&
                               ++m_screenshot_frames >= screenshot_delay;
+        bool captured_cinematic = false;
+        if (cinematic) {
+          if (const char* directory =
+                ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
+            if (m_cinematic_capture_frame < cinematic_capture_frame_limit ()) {
+              if (m_cinematic_capture_frame == 0)
+                std::filesystem::create_directories (directory);
+              std::ostringstream path;
+              path << directory << "/frame-" << std::setfill ('0')
+                   << std::setw (5) << m_cinematic_capture_frame++ << ".png";
+              r.request_screenshot (path.str ());
+              captured_cinematic = true;
+            }
+          }
+        }
         if (captured) {
           if (m_water_inspection)
             std::cerr << "water screenshot camera: eye=" << m_camera.position ()
@@ -1418,14 +1448,18 @@ namespace moppe {
         // Post effects.
         if (!terrain_lab && cam[1] < meters_value (m_world.water_level))
           r.apply_underwater (m_total_time);
-        if (!terrain_lab && !cinematic) {
-          const float kmh = (m_mode == M_FOOT)
-                              ? 0.0f
-                              : length (active_vehicle ().velocity ()) * 3.6f;
-          float k = (kmh - 90.0f) / 160.0f;
-          clamp (k, 0.0f, 1.0f);
-          if (m_graphics.motion_blur && k > 0.01f)
-            r.apply_motion_blur (k);
+        if (!terrain_lab) {
+          float blur = 0.0f;
+          if (cinematic)
+            blur = m_cinematic.motion_blur ();
+          else {
+            const float kmh = (m_mode == M_FOOT)
+                                ? 0.0f
+                                : length (active_vehicle ().velocity ()) * 3.6f;
+            blur = std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
+          }
+          if (m_graphics.motion_blur && blur > 0.01f)
+            r.apply_motion_blur (blur);
         }
 
         // HUD, kept inside the safe area (notch / home indicator).
@@ -1524,6 +1558,10 @@ namespace moppe {
           m_screenshot_path.clear ();
           platform::request_quit ();
         }
+        if (captured_cinematic) {
+          if (m_cinematic_capture_frame >= cinematic_capture_frame_limit ())
+            platform::request_quit ();
+        }
       }
 
       void render_loading (render::Renderer& r) {
@@ -1547,7 +1585,7 @@ namespace moppe {
             m_start_in_terrain_lab = false;
           } else if (!automated && !m_skip_cinematic_requested &&
                      !m_cinematic_plan.empty ()) {
-            m_cinematic.start (m_cinematic_plan);
+            m_cinematic.start (m_cinematic_plan, m_map);
           }
           return;
         }
@@ -2079,6 +2117,7 @@ namespace moppe {
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
       int m_screenshot_frames;
+      int m_cinematic_capture_frame = 0;
       std::atomic<bool> m_ready;
       std::atomic<bool> m_setup_complete = false;
       std::atomic<int> m_gen_stage;
@@ -2267,7 +2306,8 @@ int main (int argc, char** argv) {
   if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
       !terrain_lab_preview)
     world.resolution = 1025;
-  config.capture_frames = !screenshot_path.empty ();
+  config.capture_frames =
+    !screenshot_path.empty () || ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
   if (!screenshot_path.empty () && seed < 0)
     seed = 123;
   game::prune_obsolete_terrain_caches ();
