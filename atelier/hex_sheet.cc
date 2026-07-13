@@ -13,6 +13,9 @@ namespace atelier {
   namespace {
     constexpr Duration fixed_step = (1.0f / 120.0f) * s;
     constexpr Duration partition_interval = 0.75f * s;
+    constexpr Duration growth_interval = 0.15f * s;
+    constexpr Duration growth_duration = 6.0f * s;
+    constexpr Real unsplit = -1.0f;
 
     std::size_t base_offset (GridCell cell) {
       return cell.row * hex_sheet_columns + cell.column;
@@ -112,11 +115,11 @@ namespace atelier {
   }
 
   HexSheetTopology::HexSheetTopology (SheetBoundary boundary,
-                                      std::vector<bool> refined)
-      : m_boundary (boundary), m_refined (std::move (refined)) {
-    if (m_refined.empty ())
-      m_refined.resize (hex_sheet_base_cell_count, false);
-    if (m_refined.size () != hex_sheet_base_cell_count)
+                                      std::vector<Real> growth)
+      : m_boundary (boundary), m_growth (std::move (growth)) {
+    if (m_growth.empty ())
+      m_growth.resize (hex_sheet_base_cell_count, unsplit);
+    if (m_growth.size () != hex_sheet_base_cell_count)
       throw std::invalid_argument ("A hex sheet partition has the wrong size");
     build_sites ();
     build_neighbourhoods ();
@@ -124,28 +127,32 @@ namespace atelier {
 
   void HexSheetTopology::build_sites () {
     m_first_tile.resize (hex_sheet_base_cell_count);
-    m_sites.reserve (hex_sheet_base_cell_count +
-                     6 * std::ranges::count (m_refined, true));
-    constexpr Length child_radius =
-      puck_radius / (1.0f + std::numbers::sqrt3_v<Real>);
-    constexpr Length child_orbit = std::numbers::sqrt3_v<Real> * child_radius;
+    m_sites.reserve (
+      hex_sheet_base_cell_count +
+      std::ranges::count_if (m_growth, [] (Real value) { return value >= 0; }));
+    constexpr Length child_radius = 0.45f * puck_radius;
     for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
       const GridCell cell = base_cell (base);
       m_first_tile[base] = m_sites.size ();
-      if (!m_refined[base]) {
+      if (m_growth[base] < 0) {
         m_sites.push_back ({ cell, 0.0f * m, 0.0f * m, puck_radius, 0, 0 });
         continue;
       }
-      m_sites.push_back ({ cell, 0.0f * m, 0.0f * m, child_radius, 1, 0 });
-      for (std::size_t side = 0; side < 6; ++side) {
-        const Real angle =
-          (Real (side) + 0.5f) * 2.0f * std::numbers::pi_v<Real> / 6.0f;
+      const Real progress = std::clamp (m_growth[base], 0.0f, 1.0f);
+      const Real eased = progress * progress * (3.0f - 2.0f * progress);
+      const Length radius = child_radius + eased * (puck_radius - child_radius);
+      const Length half_spacing = 0.5f * std::numbers::sqrt3_v<Real> * radius;
+      const Real angle =
+        Real (mix_bits (static_cast<std::uint32_t> (base)) % 3) *
+        std::numbers::pi_v<Real> / 3.0f;
+      for (std::size_t child = 0; child < 2; ++child) {
+        const Real direction = child == 0 ? -1.0f : 1.0f;
         m_sites.push_back ({ cell,
-                             child_orbit * std::sin (angle),
-                             child_orbit * std::cos (angle),
-                             child_radius,
+                             direction * half_spacing * std::sin (angle),
+                             direction * half_spacing * std::cos (angle),
+                             radius,
                              1,
-                             side + 1 });
+                             child });
       }
     }
   }
@@ -164,13 +171,18 @@ namespace atelier {
 
   TileId HexSheetTopology::tile_id (GridCell base, std::size_t variant) const {
     const std::size_t offset = base_offset (base);
-    if (offset >= m_first_tile.size () || variant > (m_refined[offset] ? 6 : 0))
+    if (offset >= m_first_tile.size () ||
+        variant > (m_growth[offset] >= 0 ? 1 : 0))
       throw std::out_of_range ("Hex site does not exist in this partition");
     return m_first_tile[offset] + variant;
   }
 
-  bool HexSheetTopology::base_is_refined (GridCell base) const {
-    return m_refined[base_offset (base)];
+  bool HexSheetTopology::base_is_split (GridCell base) const {
+    return m_growth[base_offset (base)] >= 0;
+  }
+
+  Real HexSheetTopology::base_growth (GridCell base) const {
+    return m_growth[base_offset (base)];
   }
 
   bool HexSheetTopology::is_anchor (TileId id) const {
@@ -199,9 +211,9 @@ namespace atelier {
   }
 
   HexSheet::HexSheet (SheetBoundary boundary)
-      : m_refined (hex_sheet_base_cell_count, false),
-        m_tiles (HexSheetTopology (boundary, m_refined)),
-        m_next_tiles (HexSheetTopology (boundary, m_refined)) {
+      : m_growth (hex_sheet_base_cell_count, unsplit),
+        m_tiles (HexSheetTopology (boundary, m_growth)),
+        m_next_tiles (HexSheetTopology (boundary, m_growth)) {
     if (!topology_is_valid ())
       throw std::runtime_error ("The hex sheet topology is inconsistent");
     initialize_noise_drive ();
@@ -223,8 +235,13 @@ namespace atelier {
     return topology ().is_valid ();
   }
 
-  std::size_t HexSheet::refined_cell_count () const {
-    return std::ranges::count (m_refined, true);
+  std::size_t HexSheet::split_cell_count () const {
+    return std::ranges::count_if (m_growth,
+                                  [] (Real value) { return value >= 0; });
+  }
+
+  Real HexSheet::growth (GridCell base) const {
+    return m_growth[base_offset (base)];
   }
 
   void HexSheet::advance (Duration elapsed) {
@@ -235,6 +252,7 @@ namespace atelier {
     while (m_accumulator >= fixed_step) {
       m_simulated += fixed_step;
       update_partition (m_simulated);
+      update_growth (m_simulated);
       step (fixed_step);
       m_accumulator -= fixed_step;
     }
@@ -246,27 +264,7 @@ namespace atelier {
                                 partition_interval.numerical_value_in (s));
     while (m_partition_event < target_event) {
       ++m_partition_event;
-      std::vector<bool> next = m_refined;
-      std::size_t merged = hex_sheet_base_cell_count;
-
-      if (m_partition_event >= 4) {
-        std::vector<std::size_t> refined;
-        for (std::size_t base = 0; base < next.size (); ++base) {
-          const GridCell cell = base_cell (base);
-          const bool corner =
-            (cell.column == 0 || cell.column + 1 == hex_sheet_columns) &&
-            (cell.row == 0 || cell.row + 1 == hex_sheet_rows);
-          if (next[base] && !corner)
-            refined.push_back (base);
-        }
-        if (!refined.empty ()) {
-          const std::size_t choice =
-            mix_bits (static_cast<std::uint32_t> (m_partition_event * 17)) %
-            refined.size ();
-          merged = refined[choice];
-          next[merged] = false;
-        }
-      }
+      std::vector<Real> next = m_growth;
 
       for (std::size_t split = 0; split < 2; ++split) {
         std::size_t candidate = mix_bits (static_cast<std::uint32_t> (
@@ -278,8 +276,8 @@ namespace atelier {
           const bool corner =
             (cell.column == 0 || cell.column + 1 == hex_sheet_columns) &&
             (cell.row == 0 || cell.row + 1 == hex_sheet_rows);
-          if (!next[base] && base != merged && !corner) {
-            next[base] = true;
+          if (next[base] < 0 && !corner) {
+            next[base] = 0.0f;
             break;
           }
         }
@@ -288,15 +286,30 @@ namespace atelier {
     }
   }
 
-  void HexSheet::repartition (std::vector<bool> refined) {
-    if (refined == m_refined)
+  void HexSheet::update_growth (Duration elapsed) {
+    const auto target_event = static_cast<std::size_t> (
+      elapsed.numerical_value_in (s) / growth_interval.numerical_value_in (s));
+    while (m_growth_event < target_event) {
+      ++m_growth_event;
+      std::vector<Real> next = m_growth;
+      const Real increment = Real (growth_interval / growth_duration);
+      for (Real& value : next) {
+        if (value >= 0.0f && value < 1.0f)
+          value = std::min (1.0f, value + increment);
+      }
+      repartition (std::move (next));
+    }
+  }
+
+  void HexSheet::repartition (std::vector<Real> growth) {
+    if (growth == m_growth)
       return;
 
     const HexSheetTopology old_topology = topology ();
     const auto old_displacement = displacements ();
     const auto old_velocity = velocities ();
     const auto old_drive = drives ();
-    HexSheetTopology new_topology (old_topology.boundary (), refined);
+    HexSheetTopology new_topology (old_topology.boundary (), growth);
     TileState new_tiles (new_topology);
     TileState new_next_tiles (new_topology);
     auto& new_displacement = get<normal_displacement> (new_tiles);
@@ -305,35 +318,23 @@ namespace atelier {
 
     for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
       const GridCell cell = base_cell (base);
-      const bool was_refined = m_refined[base];
-      const bool is_refined = refined[base];
-      const std::size_t new_count = is_refined ? 7 : 1;
+      const bool was_split = m_growth[base] >= 0;
+      const bool is_split = growth[base] >= 0;
+      if (was_split && !is_split)
+        throw std::logic_error ("A growing hex cluster cannot merge again");
+      const std::size_t new_count = is_split ? 2 : 1;
       for (std::size_t variant = 0; variant < new_count; ++variant) {
         const TileId target = new_topology.tile_id (cell, variant);
-        if (was_refined == is_refined) {
+        if (was_split == is_split) {
           const TileId source = old_topology.tile_id (cell, variant);
           new_displacement[target] = old_displacement[source];
           new_velocity[target] = old_velocity[source];
           new_drive[target] = old_drive[source];
-        } else if (is_refined) {
+        } else {
           const TileId source = old_topology.tile_id (cell);
           new_displacement[target] = old_displacement[source];
           new_velocity[target] = old_velocity[source];
           new_drive[target] = old_drive[source];
-        } else {
-          const TileId first = old_topology.tile_id (cell);
-          auto displacement = old_displacement[first] - old_displacement[first];
-          auto velocity = old_velocity[first] - old_velocity[first];
-          auto drive = old_drive[first] - old_drive[first];
-          for (std::size_t child = 0; child < 7; ++child) {
-            const TileId source = old_topology.tile_id (cell, child);
-            displacement += old_displacement[source] / 7.0f;
-            velocity += old_velocity[source] / 7.0f;
-            drive += old_drive[source] / 7.0f;
-          }
-          new_displacement[target] = displacement;
-          new_velocity[target] = velocity;
-          new_drive[target] = drive;
         }
         if (new_topology.is_anchor (target)) {
           new_displacement[target] =
@@ -347,7 +348,7 @@ namespace atelier {
     get<normal_displacement> (new_next_tiles) = new_displacement;
     get<normal_velocity> (new_next_tiles) = new_velocity;
     get<normal_acceleration> (new_next_tiles) = new_drive;
-    m_refined = std::move (refined);
+    m_growth = std::move (growth);
     m_tiles = std::move (new_tiles);
     m_next_tiles = std::move (new_next_tiles);
     if (!topology_is_valid ())
@@ -362,6 +363,7 @@ namespace atelier {
       0.07f * angular::revolution / si::second;
     const Real breath = angular::sin (breathing_rate * m_simulated)
                           .numerical_value_in (mp_units::one);
+    const Real seconds = m_simulated.numerical_value_in (s);
     extend_into (m_next_tiles, m_tiles, [=] (const auto& tile) {
       const auto displacement = get<normal_displacement> (tile);
       const auto velocity = get<normal_velocity> (tile);
@@ -369,9 +371,17 @@ namespace atelier {
       if (tile.domain ().is_anchor (tile.index ()))
         return bundle_values (
           displacement - displacement, velocity - velocity, drive - drive);
+      const IntrinsicPoint point =
+        intrinsic_point (tile.domain ().site (tile.index ()));
+      const Real wave =
+        std::sin (1.20f * point.across + 0.45f * point.away - 2.2f * seconds) +
+        0.45f * std::sin (-0.55f * point.across + 1.35f * point.away -
+                          1.5f * seconds);
+      const auto wave_drive = wave * 1.8f * m / (s * s);
       const auto acceleration =
         coupling * laplacian<normal_displacement> (tile) -
-        stiffness * displacement - damping * velocity + breath * drive;
+        stiffness * displacement - damping * velocity + breath * drive +
+        wave_drive;
       const auto next_velocity = velocity + acceleration * dt;
       return bundle_values (
         displacement + next_velocity * dt, next_velocity, drive);
