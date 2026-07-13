@@ -382,6 +382,14 @@ namespace moppe {
       // foot, smoothing single-cell erosion spikes into scree.
       void erode_thermally (int iterations, float talus);
 
+      // Linear hillslope diffusion (soil creep): explicit 5-point
+      // Jacobi sweeps of dz/dt = D * laplacian(z) with an internally
+      // derived stable timestep.  Rounds crests and softens droplet
+      // spikes where talus never triggers.
+      terrain::HillslopeDiffusionReport
+      diffuse_hillslopes (julian_years_t duration,
+                          square_meters_per_julian_year_t diffusivity);
+
     private:
       void synchronize_periodic_ledger_edges ();
 

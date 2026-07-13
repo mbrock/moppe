@@ -37,12 +37,14 @@ namespace moppe::terrain {
                                         AnalyticalErosion,
                                         HydraulicErosion,
                                         ThermalErosion,
-                                        ChannelCarving>;
+                                        ChannelCarving,
+                                        HillslopeDiffusion>;
 
   using TerrainTransformReport = std::variant<std::monostate,
                                               AnalyticalErosionReport,
                                               HydraulicErosionReport,
-                                              ChannelCarvingReport>;
+                                              ChannelCarvingReport,
+                                              HillslopeDiffusionReport>;
 
   // These two axes describe what an evaluator must observe, without
   // prescribing whether it uses a CPU loop, a GPU kernel, or something

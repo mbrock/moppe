@@ -74,6 +74,10 @@ namespace moppe::map {
                  std::get_if<terrain::ThermalErosion> (&transform))
       m_target.erode_thermally (terrain::count_value (thermal->iterations),
                                 thermal->talus);
+    else if (const auto* diffusion =
+               std::get_if<terrain::HillslopeDiffusion> (&transform))
+      report = m_target.diffuse_hillslopes (diffusion->duration,
+                                            diffusion->diffusivity);
     else if (const auto* carving =
                std::get_if<terrain::ChannelCarving> (&transform)) {
       terrain::ChannelCarvingResult result =
