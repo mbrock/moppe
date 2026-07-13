@@ -2,11 +2,13 @@
 
 Date: 2026-07-13
 
-This experiment calibrates the opt-in `OrogenyEvolution` source introduced by
-RFC-001. Unlike the earlier analytical erosion comparison, relief begins as a
-20 m shallow continent around sea level. The geological recipe supplies a
-bounded spatial uplift pattern; mountain relief must emerge from uplift,
-stream-power incision, and hillslope diffusion.
+This experiment records the initial calibration of the opt-in
+`OrogenyEvolution` source introduced by RFC-001. Unlike the earlier analytical
+erosion comparison, relief began as a symmetric 20 m shallow continent around
+sea level. The geological recipe supplied a bounded spatial uplift pattern;
+mountain relief emerged from uplift, stream-power incision, and hillslope
+diffusion. The later water-depth calibration split emergent and bathymetric
+relief; see `orogeny-water-depth-experiment.md`.
 
 ## Configuration
 
@@ -26,7 +28,7 @@ The fixed-seed Research command is:
 ```sh
 ./build/terrain-pipeline-demo /tmp/moppe-orogeny.png \
   257 123 combined \
-  orogeny=1000000,50000,0.001,2e-5,0.4,0.0001
+  orogeny=1000000,50000,0.001,2e-5,0.4,0.0001,0.076923,20,0.5,20
 ```
 
 ## Duration calibration

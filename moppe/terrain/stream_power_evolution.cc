@@ -250,7 +250,10 @@ namespace moppe::terrain {
         const bool ocean = flood.ocean[cell] != 0;
         if (ocean || receiver == cell) {
           boundary[cell] = 1;
-          next[cell] = ocean ? parameters.sea_level : current[cell];
+          // Ocean cells are fixed base-level outlets, but their bed is not
+          // the water surface. Preserve submerged relief rather than lifting
+          // the entire ocean floor to sea level at every geological step.
+          next[cell] = current[cell];
           ++fixed_boundaries;
         } else {
           const double distance_m = edge_distance_m (cell, receiver, grid);

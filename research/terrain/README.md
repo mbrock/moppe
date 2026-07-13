@@ -74,6 +74,10 @@ feeding every result into the same heightmap renderer.
   exposed in the Terrain Lab.
 - `stream-power-experiment.md` records the first finite-time analytical,
   droplet, hillslope, and combined comparison on one fixed source.
+- `orogeny-water-depth-experiment.md` measures area-weighted sea, lake, pond,
+  and puddle depths across generated Orogeny worlds. It records the reasonable
+  inland-water distribution and the current absence of positive-depth ocean
+  cells.
 
 ## Moppe implementation direction
 

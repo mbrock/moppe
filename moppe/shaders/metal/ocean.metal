@@ -400,15 +400,19 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     }
   }
 
-  // Swash: the waterline breathes across the shallow shelf instead of
-  // standing still. The phase drifts along the shore through value
-  // noise so the edge crawls rather than pulsing in lockstep, and the
-  // retreat is deepest where the water is already thin. Running water
-  // doesn't breathe: rivers keep their waterline and churn instead.
+  // A small lap at the waterline. Reuse the water sheet's body-scale motion
+  // factor so lakes and ponds remain nearly still instead of receiving the
+  // ocean's shoreline motion. Running water keeps its fixed edge and churns
+  // through the flow treatment below.
   const float shore_band = 1.0 - smoothstep (0.0, 1.5, still_depth);
   const float swash_phase =
     sin (time * 1.15 + 6.28318 * moppe_value_noise (in.world_pos.xz * 0.045));
-  const float swash = shore_band * 0.22 * (1.0 + swash_phase) * (1.0 - flowing);
+  const float body_motion =
+    u.params.w > 0.5
+      ? saturate (ocean_grid_sample_raw (in.world_pos.xz, u, water_levels).y)
+      : 1.0;
+  const float swash =
+    shore_band * 0.03 * body_motion * (1.0 + swash_phase) * (1.0 - flowing);
   const float depth_m = max (still_depth - swash, 0.0);
   if (u.params.w > 0.5 && still_depth <= 0.005)
     discard_fragment ();
@@ -530,8 +534,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // Feathered waterline: alpha fades out over the last few centimeters
   // of water column instead of ending at a discard cliff.
   if (u.params.w > 0.5)
-    alpha *=
-      smoothstep (0.0, 0.12, depth_m + 0.18 * swash * (1.0 + swash_phase));
+    alpha *= smoothstep (0.0, 0.12, depth_m);
 
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);

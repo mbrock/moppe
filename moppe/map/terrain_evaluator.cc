@@ -36,15 +36,19 @@ namespace moppe::map {
 
     if (orogeny_source) {
       const float height_scale_m = m_target.scale ()[1];
-      const float relief =
-        meters_value (program.source.initial_relief) / height_scale_m;
+      const float land_relief =
+        meters_value (program.source.initial_land_relief) / height_scale_m;
+      const float bathymetric_relief =
+        meters_value (program.source.initial_bathymetric_relief) /
+        height_scale_m;
       for (int y = 0; y < m_target.unique_height (); ++y)
-        for (int x = 0; x < m_target.unique_width (); ++x)
-          m_target.set (x,
-                        y,
-                        program.source.sea_level +
-                          relief *
-                            (m_target.get (x, y) - program.source.coastline));
+        for (int x = 0; x < m_target.unique_width (); ++x) {
+          const float continent =
+            m_target.get (x, y) - program.source.coastline;
+          const float relief =
+            continent < 0.0f ? bathymetric_relief : land_relief;
+          m_target.set (x, y, program.source.sea_level + relief * continent);
+        }
       m_target.synchronize_periodic_edges ();
     }
 

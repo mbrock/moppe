@@ -111,8 +111,11 @@ namespace moppe::terrain {
     validate_geological_recipe (program.source.recipe);
     if (!std::isfinite (program.source.sea_level) ||
         !std::isfinite (program.source.coastline) ||
-        !std::isfinite (meters_value (program.source.initial_relief)) ||
-        program.source.initial_relief < 0.0f * mp_units::si::metre)
+        !std::isfinite (meters_value (program.source.initial_land_relief)) ||
+        program.source.initial_land_relief < 0.0f * mp_units::si::metre ||
+        !std::isfinite (
+          meters_value (program.source.initial_bathymetric_relief)) ||
+        program.source.initial_bathymetric_relief < 0.0f * mp_units::si::metre)
       throw std::invalid_argument ("orogeny source parameters are invalid");
     for (const TerrainTransform& transform : program.transforms) {
       std::visit (
