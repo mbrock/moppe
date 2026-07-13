@@ -3,7 +3,10 @@
 #include <mp-units/framework.h>
 
 #include <array>
+#include <concepts>
 #include <cstddef>
+#include <functional>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -24,6 +27,9 @@ namespace atelier {
 
   template <typename BundleType>
   class BundleRow;
+
+  template <typename BundleType>
+  class BundleFocus;
 
   namespace detail {
     template <auto QS, typename... Quantities>
@@ -84,6 +90,10 @@ namespace atelier {
       return m_domain.size ();
     }
 
+    [[nodiscard]] index_type index (std::size_t offset) const {
+      return m_domain.index (offset);
+    }
+
     template <std::size_t Index>
     [[nodiscard]] column_type<Index>& column () noexcept {
       return std::get<Index> (m_columns);
@@ -123,6 +133,40 @@ namespace atelier {
   private:
     BundleType* m_bundle;
     std::size_t m_offset;
+  };
+
+  // A focus is a row together with its place in the topological domain.  It
+  // is the local context passed to stencil rules: ordinary get<QS> observes
+  // the value at the focus, while topology-aware operations can reach out to
+  // adjacent rows without exposing traversal in the rule itself.
+  template <typename BundleType>
+  class BundleFocus {
+  public:
+    using bundle_type = std::remove_const_t<BundleType>;
+    using index_type = typename bundle_type::index_type;
+
+    BundleFocus (BundleType& bundle, index_type index)
+        : m_bundle (&bundle), m_index (index) {}
+
+    [[nodiscard]] index_type index () const noexcept {
+      return m_index;
+    }
+
+    [[nodiscard]] decltype (auto) domain () const noexcept {
+      return m_bundle->domain ();
+    }
+
+    [[nodiscard]] auto row () const {
+      return (*m_bundle)[m_index];
+    }
+
+    [[nodiscard]] auto row (index_type index) const {
+      return (*m_bundle)[index];
+    }
+
+  private:
+    BundleType* m_bundle;
+    index_type m_index;
   };
 
   template <auto QS, typename BundleType>
@@ -169,6 +213,82 @@ namespace atelier {
     using Bundle = BundleRow<BundleType>::bundle_type;
     return get<Bundle::template spec_index<QS>> (row);
   }
+
+  template <std::size_t Index, typename BundleType>
+  [[nodiscard]] decltype (auto) get (const BundleFocus<BundleType>& focus) {
+    return get<Index> (focus.row ());
+  }
+
+  template <mp_units::QuantitySpec auto QS, typename BundleType>
+    requires BundleContains<QS, typename BundleFocus<BundleType>::bundle_type>
+  [[nodiscard]] decltype (auto) get (const BundleFocus<BundleType>& focus) {
+    using Bundle = BundleFocus<BundleType>::bundle_type;
+    return get<Bundle::template spec_index<QS>> (focus);
+  }
+
+  template <typename BundleType, typename Value, typename Operation>
+  [[nodiscard]] auto fold_neighbours (const BundleFocus<BundleType>& focus,
+                                      Value initial,
+                                      Operation operation) {
+    for (auto index : focus.domain ().neighbours (focus.index ()))
+      initial = std::invoke (operation, std::move (initial), focus.row (index));
+    return initial;
+  }
+
+  // The unnormalized graph Laplacian.  Deriving zero from center - center is
+  // deliberate: the result is correct for scalar and vector quantities, and
+  // for a quantity_point it becomes the corresponding relative quantity.
+  template <mp_units::QuantitySpec auto QS, typename BundleType>
+    requires BundleContains<QS, typename BundleFocus<BundleType>::bundle_type>
+  [[nodiscard]] auto laplacian (const BundleFocus<BundleType>& focus) {
+    const auto center = get<QS> (focus);
+    return fold_neighbours (
+      focus, center - center, [center] (auto sum, const auto& neighbour) {
+        return sum + (get<QS> (neighbour) - center);
+      });
+  }
+
+  template <typename... Values>
+  [[nodiscard]] auto bundle_values (Values&&... values) {
+    return std::tuple<std::remove_cvref_t<Values>...> (
+      std::forward<Values> (values)...);
+  }
+
+  namespace detail {
+    template <typename Row, typename Values, std::size_t... Indices>
+    void assign_bundle_row (const Row& row,
+                            Values&& values,
+                            std::index_sequence<Indices...>) {
+      ((get<Indices> (row) = get<Indices> (std::forward<Values> (values))),
+       ...);
+    }
+  }
+
+  // This is the eager form of comonadic extend: evaluate one local rule at
+  // every possible focus and materialize the resulting row into another
+  // bundle over the same kind of domain.
+  template <typename OutputDomain,
+            typename... Outputs,
+            typename InputDomain,
+            typename... Inputs,
+            typename Rule>
+    requires std::same_as<OutputDomain, InputDomain>
+  void extend_into (Bundle<OutputDomain, Outputs...>& output,
+                    const Bundle<InputDomain, Inputs...>& input,
+                    Rule rule) {
+    if (output.size () != input.size ())
+      throw std::invalid_argument ("Cannot extend across unequal domains");
+
+    for (std::size_t offset = 0; offset < input.size (); ++offset) {
+      const auto index = input.index (offset);
+      auto values = std::invoke (rule, BundleFocus (input, index));
+      static_assert (std::tuple_size_v<decltype (values)> ==
+                     sizeof...(Outputs));
+      detail::assign_bundle_row (output[index],
+                                 std::move (values),
+                                 std::index_sequence_for<Outputs...> {});
+    }
+  }
 }
 
 namespace std {
@@ -193,4 +313,12 @@ namespace std {
       Index,
       typename atelier::BundleRow<BundleType>::bundle_type>::type::value_type;
   };
+
+  template <typename BundleType>
+  struct tuple_size<atelier::BundleFocus<BundleType>>
+      : tuple_size<typename atelier::BundleFocus<BundleType>::bundle_type> {};
+
+  template <size_t Index, typename BundleType>
+  struct tuple_element<Index, atelier::BundleFocus<BundleType>>
+      : tuple_element<Index, atelier::BundleRow<BundleType>> {};
 }
