@@ -15,10 +15,12 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
                                     .spacing_x = 2.0f * mp_units::si::metre,
                                     .spacing_y = 3.0f * mp_units::si::metre };
 
+  // The shared existence rule: (2 / 0.012)^2 cells of catchment, at
+  // this grid's 6 m^2 cells.
   MOPPE_CHECK_NEAR (
     square_meters_value (game::visible_river_minimum_area (grid)),
-    98304.0f,
-    0.0f);
+    166666.67f,
+    1.0f);
 }
 
 MOPPE_TEST (river_ribbons_follow_reaches_and_widen_with_catchment) {

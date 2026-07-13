@@ -19,6 +19,14 @@ namespace moppe::terrain {
   float channel_depth_m (float area_m2,
                          const ChannelCarving& parameters = {}) noexcept;
 
+  // A river exists once the width law reaches two lattice cells: below
+  // that the raster cannot hold a channel, and pretending otherwise
+  // yields one-cell trenches and wobbling sub-cell water threads.
+  // Width grows with the square root of catchment area, so the rule is
+  // a resolution-independent cell count; smaller runoff stays with the
+  // material and moisture readings instead of rendering as water.
+  float river_existence_minimum_area_cells () noexcept;
+
   ChannelCarvingResult carve_channels (const TerrainView& terrain,
                                        const ChannelCarving& parameters);
 }

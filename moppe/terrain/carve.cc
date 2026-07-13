@@ -42,10 +42,22 @@ namespace moppe::terrain {
     };
   }
 
+  namespace {
+    // Shared by the width law and the existence rule below.
+    constexpr float width_per_sqrt_m2 = 0.012f;
+  }
+
   float channel_width_m (float area) noexcept {
     // Wider than strict hydraulic geometry: rivers must read as rivers
     // from a motorcycle, and their valleys are AGE-scaled.
-    return std::clamp (0.012f * std::sqrt (area), 1.5f, 24.0f);
+    return std::clamp (width_per_sqrt_m2 * std::sqrt (area), 1.5f, 24.0f);
+  }
+
+  float river_existence_minimum_area_cells () noexcept {
+    // Solve width(N * h^2) = 2h for N: the spacing cancels, so "wide
+    // enough for the lattice" is one cell count at every resolution.
+    constexpr float cells = 2.0f / width_per_sqrt_m2;
+    return cells * cells; // ~27,800 cells
   }
 
   float channel_depth_m (float area,
