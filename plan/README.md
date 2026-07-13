@@ -3,8 +3,8 @@
 Design RFCs distilled from a full-codebase review and design
 conversation (July 2026).  Each file states a problem, the current
 situation with code references, a proposal, consequences, risks, and an
-implementation sketch.  Status "Draft" throughout: these are worked-out
-intentions, not commitments.  Current architecture stays documented in
+implementation sketch.  Most remain drafts; an RFC records an implementation
+date when its acceptance path lands.  Current architecture stays documented in
 `docs/`; speculative essays stay in `ideas/` -- this directory is the
 bridge between them: concrete enough to start, honest about cost.
 
@@ -12,7 +12,7 @@ bridge between them: concrete enough to start, honest about cost.
 
 - [RFC-001](rfc-001-uplift-stream-power.md) — Uplift fields + implicit
   stream power run to quasi-equilibrium: mountains as the residue of
-  uplift under erosion.  The deep look upgrade.
+  uplift under erosion.  Implemented as an opt-in source mode on 2026-07-13.
 - [RFC-002](rfc-002-hillslope-diffusion.md) — Hillslope diffusion (soil
   creep): smooth convex crests against sharp valley cuts.  Small,
   standalone, also RFC-001's D term.

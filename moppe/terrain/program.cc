@@ -18,6 +18,22 @@ namespace moppe::terrain {
     return make_world_program (root_seed, TerrainGenerationProfile::Research);
   }
 
+  TerrainProgram make_orogeny_program (std::uint32_t root_seed,
+                                       TerrainGenerationProfile profile) {
+    TerrainProgram program = make_geological_program (root_seed);
+    program.source.mode = GeologicalSource::Mode::Orogeny;
+    program.transforms.clear ();
+    OrogenyEvolution orogeny;
+    const float duration =
+      profile == TerrainGenerationProfile::Fast       ? 200000.0f
+      : profile == TerrainGenerationProfile::Play     ? 500000.0f
+      : profile == TerrainGenerationProfile::Research ? 1000000.0f
+                                                      : 200000.0f;
+    orogeny.evolution.duration = duration * mp_units::astronomy::Julian_year;
+    program.transforms.emplace_back (orogeny);
+    return program;
+  }
+
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
     case TerrainGenerationProfile::Fast:
@@ -88,6 +104,11 @@ namespace moppe::terrain {
 
   void validate_program (const TerrainProgram& program) {
     validate_geological_recipe (program.source.recipe);
+    if (!std::isfinite (program.source.sea_level) ||
+        !std::isfinite (program.source.coastline) ||
+        !std::isfinite (meters_value (program.source.initial_relief)) ||
+        program.source.initial_relief < 0.0f * mp_units::si::metre)
+      throw std::invalid_argument ("orogeny source parameters are invalid");
     for (const TerrainTransform& transform : program.transforms) {
       std::visit (
         [] (const auto& operation) {
@@ -123,6 +144,30 @@ namespace moppe::terrain {
                 operation.relaxation <= 0.0f || operation.relaxation > 1.0f)
               throw std::invalid_argument (
                 "analytical erosion parameters are invalid");
+          } else if constexpr (std::is_same_v<T, OrogenyEvolution>) {
+            const StreamPowerEvolution& evolution = operation.evolution;
+            if (!std::isfinite (meters_per_julian_year_value (
+                  operation.maximum_uplift_rate)) ||
+                operation.maximum_uplift_rate <
+                  0.0f * mp_units::si::metre /
+                    mp_units::astronomy::Julian_year ||
+                !std::isfinite (julian_years_value (evolution.duration)) ||
+                evolution.duration < 0.0f * mp_units::astronomy::Julian_year ||
+                !std::isfinite (julian_years_value (evolution.time_step)) ||
+                evolution.time_step <=
+                  0.0f * mp_units::astronomy::Julian_year ||
+                !std::isfinite (evolution.erodibility) ||
+                evolution.erodibility < 0.0f ||
+                !std::isfinite (evolution.area_exponent) ||
+                evolution.area_exponent < 0.0f ||
+                !std::isfinite (square_meters_per_julian_year_value (
+                  evolution.diffusivity)) ||
+                evolution.diffusivity < 0.0f * mp_units::si::metre *
+                                          mp_units::si::metre /
+                                          mp_units::astronomy::Julian_year ||
+                !std::isfinite (evolution.sea_level))
+              throw std::invalid_argument (
+                "orogeny evolution parameters are invalid");
           } else if constexpr (std::is_same_v<T, ThermalErosion>) {
             if (operation.iterations < 0 || !std::isfinite (operation.talus) ||
                 operation.talus < 0.0f)
@@ -169,6 +214,8 @@ namespace moppe::terrain {
           return "hydraulic";
         else if constexpr (std::is_same_v<T, AnalyticalErosion>)
           return "analytical";
+        else if constexpr (std::is_same_v<T, OrogenyEvolution>)
+          return "orogeny";
         else if constexpr (std::is_same_v<T, ChannelCarving>)
           return "carve";
         else if constexpr (std::is_same_v<T, HillslopeDiffusion>)

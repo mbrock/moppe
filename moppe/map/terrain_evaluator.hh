@@ -51,6 +51,7 @@ namespace moppe::map {
     RandomHeightMap& m_target;
     const terrain::FieldEvaluator* m_source_evaluator;
     std::mt19937 m_randomness;
+    std::vector<float> m_relative_uplift;
     IterationProgress m_iteration_progress;
     std::size_t m_transform_index = 0;
   };

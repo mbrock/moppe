@@ -32,11 +32,12 @@ dimensionally: `+` and `-` require matching kinds, `*` combines quantity
 specifications, and bare numbers scale within a kind.
 
 The scale-free field vocabulary now distinguishes `CoordinateField`,
-`NoiseField`, `ProportionField`, and `RelativeElevationField`. Noise is not
-yet relief, a mask is not a generic scalar, and neither may be added to a
-sampling coordinate. Crossing meanings must be explicit: procedural noise is
-cast to relative elevation when a geological layer interprets it as relief,
-while warp noise is multiplied by an explicitly coordinate-valued amplitude.
+`NoiseField`, `ProportionField`, `RelativeElevationField`, and
+`RelativeUpliftField`. Noise is not yet relief, a mask is not a generic
+scalar, and relative tectonic velocity is not elevation. Crossing meanings
+must be explicit: procedural noise is cast to relative elevation when a
+geological layer interprets it as relief, while warp noise is multiplied by
+an explicitly coordinate-valued amplitude.
 
 Materialization preserves this meaning in `Raster<R>`, where `R` is a full
 mp-units reference including its unit. The underlying storage is still a
@@ -98,6 +99,7 @@ coordinates -> two warp fields -> warped coordinates
                                   `-> ridged mountains
 
 continent + plains + mountains + mask -> combined terrain
+                                      `-> bounded relative uplift
 ```
 
 Changing a recipe creates a different graph the next time it is built; it
@@ -113,8 +115,11 @@ of these runtime variants:
 - `NormalizeHeights`
 - `PowerHeights`
 - `AnalyticalErosion`
+- `OrogenyEvolution`
 - `HydraulicErosion`
 - `ThermalErosion`
+- `ChannelCarving`
+- `HillslopeDiffusion`
 
 `map::TerrainEvaluator` materializes the source and applies those transforms
 to concrete height storage.  It owns program order, random-stream position,
@@ -225,7 +230,10 @@ descriptions for tools and evaluators, not a class hierarchy:
 | Normalize | `Global` | `Reduction` |
 | Thermal erosion | `Neighborhood` | `Iterative` |
 | Analytical erosion | `Global` | `Iterative` |
+| Orogeny evolution | `Global` | `Iterative` |
 | Hydraulic erosion | `Global` | `Iterative` |
+| Channel carving | `Global` | `Iterative` |
+| Hillslope diffusion | `Neighborhood` | `Iterative` |
 
 In more abstract language these roughly separate timeless field algebra,
 local context, whole-terrain knowledge, and historical evolution.  The code
@@ -267,13 +275,15 @@ identities, so ordinary source iteration does not accumulate abandoned maps.
 
 The Terrain Lab window presents the system as a small construction game:
 
-- the friendly Stream Power preset contains one-pass analytical erosion and
-  talus correction but no droplets, and its Age slider reaches zero for a
-  same-recipe before/after comparison; slow iterative controls rebuild when
-  the drag is released rather than stalling through intermediate values;
+- the friendly Orogeny preset begins from a shallow continent and grows its
+  relief under uplift, incision, and diffusion; its Age slider reaches zero
+  for a same-recipe before/after comparison, and slow iterative controls
+  rebuild when the drag is released rather than stalling through intermediate
+  values;
 - the geological source and every materialized stage are selectable rows;
-- normalization, power, analytical age, droplet, and thermal stages can be
-  appended independently and combined in any order;
+- normalization, power, analytical age, orogeny, droplet, thermal, channel
+  carving, and diffusion stages can be appended independently and combined in
+  any order;
 - selected stages can be moved, copied, deleted, and edited in place;
 - continuous values use synth-style rotary controls with vertical dragging;
 - natural-number values such as periodic wave counts, erosion droplets,
@@ -308,7 +318,8 @@ a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 `MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
 stage for automated Lab captures. `MOPPE_LAB_ANALYTICAL=1` appends the
-finite-time stream-power stage.
+finite-time stream-power stage. `MOPPE_LAB_OROGENY=1` selects the shallow
+continent source and calibrated fast orogeny program.
 
 The three `WAVES` counters are integer spatial frequencies: how many periods
 fit around one fundamental side of the torus.  They are not literal counts of
@@ -384,6 +395,32 @@ fixed-point routing passes, and relaxation are explicit transform parameters
 in physical units. The detachment-limited erosion term cannot raise terrain,
 so the implementation caps change at the prescribed tectonic uplift even
 when a depression route crosses a dry saddle. Ocean cells remain fixed.
+
+`OrogenyEvolution` reverses the older source semantics. It starts from a
+shallow continent around the configured sea level, interprets the recipe's
+bounded mountain pattern as `RelativeUpliftField`, scales it by a physical
+maximum uplift velocity, and evolves relief through
+
+```text
+dz/dt = U(x) - K A(x)^m S(x) + D laplacian(z).
+```
+
+Every geological step recomputes the standing-water surface and wet drainage
+graph. A downstream-to-upstream sweep then solves the backward-Euler incision
+step exactly for that discrete step; it is unconditionally stable for the
+linear `n = 1` term, but is not an exact continuous-time solution for an
+arbitrarily long step. Explicit stable hillslope-diffusion sweeps are
+interleaved after incision. Ocean cells and receiver roots remain fixed, and
+an uphill depression route cannot raise a cell above uplift alone.
+
+The calibrated maximum uplift is 1 mm/year, with `K = 2e-5`, `m = 0.4`,
+`D = 1e-4 m2/year`, and a 50,000-year step. Fast, Play, and Research orogeny
+programs run for 200,000, 500,000, and 1,000,000 years respectively. These
+programs are explicit alternatives made by `make_orogeny_program`; ordinary
+world generation retains the established relief-source pipeline while the
+look is compared in the Lab. The report separates prescribed tectonic uplift
+and implicit incision volumes from net raised/lowered volume, and exposes the
+last step's mean and maximum change as a convergence reading.
 
 The pass is deterministic and much cheaper than the droplet stage, but it is
 not the paper's complete solver yet. Fixed routing produces cell-scale
@@ -470,7 +507,14 @@ game:
   warp-amplitude=0.28 mountain-frequency=9 mountain-weight=0.9
 ./build/terrain-pipeline-demo /tmp/eroded.png 257 123 combined \
   power=1.15 hydraulic=10000,256,512,0.01,deposit thermal=2,0.003
+./build/terrain-pipeline-demo /tmp/orogeny.png 257 123 combined \
+  orogeny=1000000,50000,0.001,2e-5,0.4,0.0001
 ```
+
+The orogeny option is
+`duration,dt,uplift,k,m,D[,sea,seed_relief,coastline]`. Unlike the unit-scale
+legacy preview, this mode uses the game's 11 km by 11 km horizontal and 650 m
+vertical calibration so all physical rates retain their meaning.
 
 The controlled lifetime sweep used to choose those defaults is reproducible:
 

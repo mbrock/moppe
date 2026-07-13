@@ -66,6 +66,11 @@ namespace moppe::terrain {
           parameters.erodibility < 0.0f ||
           !std::isfinite (parameters.area_exponent) ||
           parameters.area_exponent < 0.0f ||
+          !std::isfinite (
+            square_meters_per_julian_year_value (parameters.diffusivity)) ||
+          parameters.diffusivity < 0.0f * mp_units::si::metre *
+                                     mp_units::si::metre /
+                                     mp_units::astronomy::Julian_year ||
           !std::isfinite (parameters.sea_level))
         throw std::invalid_argument (
           "invalid stream-power evolution parameters");
@@ -117,12 +122,79 @@ namespace moppe::terrain {
       std::reverse (order.begin (), order.end ());
       return order;
     }
+
+    int diffuse_evolution_step (std::vector<float>& heights,
+                                const std::vector<std::uint8_t>& boundary,
+                                const TerrainGrid& grid,
+                                double duration_years,
+                                double diffusivity_m2_per_year) {
+      if (duration_years == 0.0 || diffusivity_m2_per_year == 0.0)
+        return 0;
+      const std::size_t width = grid.unique_width ();
+      const std::size_t height = grid.unique_height ();
+      const double hx = grid.spacing_x_m ();
+      const double hy = grid.spacing_y_m ();
+      const double stable_dt = 1.0 / (2.0 * diffusivity_m2_per_year *
+                                      (1.0 / (hx * hx) + 1.0 / (hy * hy)));
+      const double requested = std::ceil (duration_years / stable_dt);
+      if (!std::isfinite (requested) ||
+          requested > std::numeric_limits<int>::max ())
+        throw std::invalid_argument (
+          "stream-power diffusion requests too many sweeps");
+      const int sweeps = std::max (1, static_cast<int> (requested));
+      const double dt = duration_years / sweeps;
+      const float cx =
+        static_cast<float> (diffusivity_m2_per_year * dt / (hx * hx));
+      const float cy =
+        static_cast<float> (diffusivity_m2_per_year * dt / (hy * hy));
+      const bool periodic = grid.topology == Topology::Torus;
+      const auto neighbor =
+        [] (std::ptrdiff_t value, std::size_t extent, bool wrap) {
+          if (wrap) {
+            const std::ptrdiff_t n = static_cast<std::ptrdiff_t> (extent);
+            const std::ptrdiff_t result = value % n;
+            return static_cast<std::size_t> (result < 0 ? result + n : result);
+          }
+          return static_cast<std::size_t> (
+            std::clamp<std::ptrdiff_t> (value, 0, extent - 1));
+        };
+
+      std::vector<float> next (heights.size ());
+      for (int sweep = 0; sweep < sweeps; ++sweep) {
+        for (std::size_t y = 0; y < height; ++y) {
+          const std::size_t up =
+            neighbor (static_cast<std::ptrdiff_t> (y) - 1, height, periodic);
+          const std::size_t down =
+            neighbor (static_cast<std::ptrdiff_t> (y) + 1, height, periodic);
+          for (std::size_t x = 0; x < width; ++x) {
+            const std::size_t cell = y * width + x;
+            if (boundary[cell]) {
+              next[cell] = heights[cell];
+              continue;
+            }
+            const std::size_t left =
+              neighbor (static_cast<std::ptrdiff_t> (x) - 1, width, periodic);
+            const std::size_t right =
+              neighbor (static_cast<std::ptrdiff_t> (x) + 1, width, periodic);
+            const float center = heights[cell];
+            next[cell] = center +
+                         cx * (heights[y * width + left] +
+                               heights[y * width + right] - 2.0f * center) +
+                         cy * (heights[up * width + x] +
+                               heights[down * width + x] - 2.0f * center);
+          }
+        }
+        heights.swap (next);
+      }
+      return sweeps;
+    }
   }
 
   StreamPowerEvolutionResult
   evolve_stream_power (const TerrainView& terrain,
                        std::span<const meters_per_julian_year_t> uplift_rate,
-                       const StreamPowerEvolution& parameters) {
+                       const StreamPowerEvolution& parameters,
+                       const StreamPowerProgress& progress) {
     validate_stream_power_evolution (terrain, uplift_rate, parameters);
     const TerrainGrid& grid = terrain.grid ();
     const std::size_t width = grid.unique_width ();
@@ -132,6 +204,8 @@ namespace moppe::terrain {
     const double cell_area_m2 = square_meters_value (grid.cell_area ());
     const double duration_years = julian_years_value (parameters.duration);
     const double time_step_years = julian_years_value (parameters.time_step);
+    const double diffusivity_m2_per_year =
+      square_meters_per_julian_year_value (parameters.diffusivity);
 
     std::vector<float> initial (count);
     for (std::size_t y = 0; y < height; ++y)
@@ -150,6 +224,9 @@ namespace moppe::terrain {
         "stream-power evolution requests too many steps");
     const int steps = static_cast<int> (requested_steps);
     report.steps = iteration_count (steps);
+    int diffusion_sweeps = 0;
+    double tectonic_uplift_volume_m3 = 0.0;
+    double incised_volume_m3 = 0.0;
 
     for (int step = 0; step < steps; ++step) {
       const double elapsed = static_cast<double> (step) * time_step_years;
@@ -166,12 +243,13 @@ namespace moppe::terrain {
         downstream_first_order (drainage.receiver);
 
       std::vector<float> next = current;
+      std::vector<std::uint8_t> boundary (count, 0);
       std::size_t fixed_boundaries = 0;
-      double maximum_step_change_m = 0.0;
       for (const std::uint32_t cell : order) {
         const std::uint32_t receiver = drainage.receiver[cell];
         const bool ocean = flood.ocean[cell] != 0;
         if (ocean || receiver == cell) {
+          boundary[cell] = 1;
           next[cell] = ocean ? parameters.sea_level : current[cell];
           ++fixed_boundaries;
         } else {
@@ -187,27 +265,50 @@ namespace moppe::terrain {
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
           const double old_height_m = current[cell] * height_scale_m;
-          const double uplift_only_m =
-            old_height_m +
+          const double uplift_m =
             dt * meters_per_julian_year_value (uplift_rate[cell]);
+          const double uplift_only_m = old_height_m + uplift_m;
           const double receiver_height_m = next[receiver] * height_scale_m;
           const double solved_m =
             (uplift_only_m + weight * receiver_height_m) / (1.0 + weight);
           // Depression routing may cross a raw uphill bed edge. Incision is
           // not deposition: it may never raise a cell above uplift alone.
-          next[cell] = static_cast<float> (std::min (solved_m, uplift_only_m) /
-                                           height_scale_m);
+          const double evolved_m = std::min (solved_m, uplift_only_m);
+          next[cell] = static_cast<float> (evolved_m / height_scale_m);
+          tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
+          incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
         }
-        maximum_step_change_m = std::max (
-          maximum_step_change_m,
+      }
+      const int step_sweeps = diffuse_evolution_step (
+        next, boundary, grid, dt, diffusivity_m2_per_year);
+      if (step_sweeps > std::numeric_limits<int>::max () - diffusion_sweeps)
+        throw std::overflow_error (
+          "stream-power diffusion sweep count overflow");
+      diffusion_sweeps += step_sweeps;
+      double total_step_change_m = 0.0;
+      double maximum_step_change_m = 0.0;
+      for (std::size_t cell = 0; cell < count; ++cell) {
+        const double change_m =
           std::fabs (static_cast<double> (next[cell] - current[cell])) *
-            height_scale_m);
+          height_scale_m;
+        total_step_change_m += change_m;
+        maximum_step_change_m = std::max (maximum_step_change_m, change_m);
       }
       report.fixed_boundaries = cell_count (fixed_boundaries);
+      report.final_step_mean_change =
+        total_step_change_m / count * mp_units::si::metre;
       report.final_step_maximum_change =
         maximum_step_change_m * mp_units::si::metre;
       current.swap (next);
+      if (progress)
+        progress (step + 1, steps);
     }
+    report.diffusion_sweeps = iteration_count (diffusion_sweeps);
+    report.tectonic_uplift_volume = tectonic_uplift_volume_m3 *
+                                    mp_units::si::metre * mp_units::si::metre *
+                                    mp_units::si::metre;
+    report.incised_volume = incised_volume_m3 * mp_units::si::metre *
+                            mp_units::si::metre * mp_units::si::metre;
 
     double lowered_volume_m3 = 0.0;
     double raised_volume_m3 = 0.0;

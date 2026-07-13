@@ -141,6 +141,11 @@ namespace moppe::terrain {
       mountain_mask,
       multiply_add (
         continent, constant<> (recipe.blend.continent_weight), lowland));
+    // Orogeny reuses the recipe's spatial language but changes its meaning:
+    // this bounded pattern scales a physical uplift-rate amplitude. Ridges
+    // locate harder-rising crust; they are no longer initial mountain relief.
+    const RelativeUpliftField uplift =
+      field_cast<relative_uplift> (smoothstep (0.0f, 1.0f, combined));
 
     return { .warp_x = warp_x,
              .warp_y = warp_y,
@@ -150,7 +155,8 @@ namespace moppe::terrain {
              .plains = plains,
              .mountains = mountains,
              .mountain_mask = mountain_mask,
-             .combined = combined };
+             .combined = combined,
+             .uplift = uplift };
   }
 
   GeologicalFields make_geological_fields (const GeologicalSeeds& seeds) {

@@ -1,6 +1,6 @@
 # RFC-001: Uplift fields and stream power run to quasi-equilibrium
 
-- Status: Draft
+- Status: Implemented (2026-07-13)
 - Area: terrain simulation
 - Interacts with: RFC-002 (diffusion), RFC-004 (performance), RFC-014
   (merge-tree hydrology)
@@ -51,9 +51,10 @@ cell implicitly,
 
     z_i' = (z_i + dt * (U_i + K A_i^m z_rcv' / d_i)) / (1 + dt K A_i^m / d_i)
 
-which is unconditionally stable, O(n) per step, deterministic, and exact
-for arbitrary dt in the linear (n = 1) case.  Interleave the diffusion
-term by operator splitting (RFC-002).
+which is unconditionally stable, O(n) per step, deterministic, and an exact
+solve of each backward-Euler step in the linear (n = 1) case.  It is not the
+exact continuous-time solution for an arbitrarily long dt.  Interleave the
+diffusion term by operator splitting (RFC-002).
 
 ## Design
 
@@ -104,14 +105,39 @@ term by operator splitting (RFC-002).
 
 ## Implementation sketch
 
-1. `StreamPowerEvolution` transform: implicit sweep given a receiver
-   array; unit tests against the analytical pass on simple profiles.
-2. Drainage-refresh loop with the existing flood/drainage readings;
-   determinism test (bit-identical across runs and thread counts).
-3. Uplift-field plumbing from the recipe; Lab source mode + knobs.
-4. Calibration pass: pick K, dt, duration for each generation profile;
-   compare against the current look with `terrain-pipeline-demo` images.
-5. Only then: performance work per RFC-004/RFC-014.
+1. [x] `StreamPowerEvolution`: implicit downstream-to-upstream sweep with
+   closed-form profile tests and agreement with the analytical solution as dt
+   decreases.
+2. [x] Refresh standing water and wet drainage every step; preserve periodic
+   seams, fixed ocean/base-level cells, deterministic repeatability, and the
+   no-spurious-rise incision bound.
+3. [x] Add typed `RelativeUpliftField` plumbing, a shallow-continent source
+   mode, physical orogeny controls, progress, and convergence readings to the
+   Lab.
+4. [x] Interleave stable hillslope diffusion after every incision step and
+   report uplift, incision, net volume, and last-step change separately.
+5. [x] Calibrate `K = 2e-5`, `m = 0.4`, `D = 1e-4 m2/yr`, 1 mm/yr maximum
+   uplift, and 50 kyr steps. Fast, Play, and Research durations are 200 kyr,
+   500 kyr, and 1 Myr.
+6. [x] Compare fixed seeds with `terrain-pipeline-demo` and measure the
+   1025-square Research path. Details are recorded in
+   `research/terrain/orogeny-evolution-experiment.md`.
+
+## Implemented boundary
+
+`make_orogeny_program` is an explicit alternative source program. The normal
+world profiles still use the established relief-source pipeline, so the visual
+change remains opt-in while it is evaluated in the Terrain Lab. The Lab's
+Orogeny preset and `+OROG` stage expose duration, dt, uplift, K, m, D, and sea
+level; dragging Age reruns the same uplift recipe for before/after comparison.
+
+The implementation recomputes priority flood and routing every geological
+step. RFC-014 now provides a merge-tree flood view, but not yet the dynamic
+spill forest and wet-drainage replacement this solver needs. At 1025 square,
+20 Research steps took about 6.2 seconds on the measured M2 Pro, so preserving
+the correctness baseline is preferable to relaxing routing refresh. The
+future performance work remains RFC-004/RFC-014 rather than a hidden k-step
+approximation here.
 
 ## References
 

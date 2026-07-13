@@ -20,13 +20,53 @@ namespace moppe::map {
     m_randomness.discard (program.randomness.offset.value);
     const terrain::GeologicalFields fields =
       terrain::make_geological_fields (program.source.recipe);
+    const terrain::CpuEvaluator cpu_evaluator (source_progress);
+    const terrain::FieldEvaluator& evaluator =
+      m_source_evaluator ? *m_source_evaluator : cpu_evaluator;
+    const bool has_orogeny = std::ranges::any_of (
+      program.transforms, [] (const terrain::TerrainTransform& transform) {
+        return std::holds_alternative<terrain::OrogenyEvolution> (transform);
+      });
+    const bool orogeny_source =
+      program.source.mode == terrain::GeologicalSource::Mode::Orogeny;
     const terrain::ScalarField field =
-      terrain::geological_layer (fields, program.source.layer);
-    if (m_source_evaluator)
-      m_target.materialize (field, *m_source_evaluator);
-    else {
-      const terrain::CpuEvaluator evaluator (source_progress);
-      m_target.materialize (field, evaluator);
+      orogeny_source ? fields.continent.untyped ()
+                     : terrain::geological_layer (fields, program.source.layer);
+    m_target.materialize (field, evaluator);
+
+    if (orogeny_source) {
+      const float height_scale_m = m_target.scale ()[1];
+      const float relief =
+        meters_value (program.source.initial_relief) / height_scale_m;
+      for (int y = 0; y < m_target.unique_height (); ++y)
+        for (int x = 0; x < m_target.unique_width (); ++x)
+          m_target.set (x,
+                        y,
+                        program.source.sea_level +
+                          relief *
+                            (m_target.get (x, y) - program.source.coastline));
+      m_target.synchronize_periodic_edges ();
+    }
+
+    m_relative_uplift.clear ();
+    if (has_orogeny) {
+      const terrain::CpuEvaluator uplift_cpu_evaluator;
+      const terrain::FieldEvaluator& uplift_evaluator =
+        m_source_evaluator ? *m_source_evaluator : uplift_cpu_evaluator;
+      const terrain::RelativeUpliftRaster uplift = terrain::materialize (
+        uplift_evaluator,
+        fields.uplift,
+        m_target.discretization ().field_sampling_grid ());
+      m_relative_uplift.resize (
+        static_cast<std::size_t> (m_target.unique_width ()) *
+        m_target.unique_height ());
+      for (int y = 0; y < m_target.unique_height (); ++y)
+        for (int x = 0; x < m_target.unique_width (); ++x)
+          m_relative_uplift[static_cast<std::size_t> (y) *
+                              m_target.unique_width () +
+                            x] =
+            uplift
+              .values ()[static_cast<std::size_t> (y) * m_target.width () + x];
     }
   }
 
@@ -67,6 +107,39 @@ namespace moppe::map {
             static_cast<int> (y),
             updated -
               m_target.get (static_cast<int> (x), static_cast<int> (y)));
+          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+        }
+      report = result.report;
+    } else if (const auto* orogeny =
+                 std::get_if<terrain::OrogenyEvolution> (&transform)) {
+      const std::size_t sample_count =
+        static_cast<std::size_t> (m_target.unique_width ()) *
+        m_target.unique_height ();
+      if (m_relative_uplift.size () != sample_count)
+        throw std::logic_error (
+          "orogeny evolution requires an uplift field materialized by begin");
+      const float maximum_uplift =
+        meters_per_julian_year_value (orogeny->maximum_uplift_rate);
+      std::vector<meters_per_julian_year_t> uplift;
+      uplift.reserve (m_relative_uplift.size ());
+      for (const float relative : m_relative_uplift)
+        uplift.push_back (relative * maximum_uplift * mp_units::si::metre /
+                          mp_units::astronomy::Julian_year);
+      terrain::StreamPowerEvolutionResult result =
+        terrain::evolve_stream_power (
+          m_target.terrain_view (),
+          uplift,
+          orogeny->evolution,
+          [this, &transform] (int completed, int total) {
+            if (m_iteration_progress)
+              m_iteration_progress (
+                m_transform_index, transform, completed, total);
+          });
+      const std::size_t width = m_target.unique_width ();
+      const std::size_t height = m_target.unique_height ();
+      for (std::size_t y = 0; y < height; ++y)
+        for (std::size_t x = 0; x < width; ++x) {
+          const float updated = result.heights[y * width + x];
           m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
         }
       report = result.report;
