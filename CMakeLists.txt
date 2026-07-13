@@ -246,6 +246,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
   moppe/terrain/analytical_erosion.cc
+  moppe/terrain/stream_power_evolution.cc
   moppe/terrain/carve.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
@@ -397,6 +398,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
     tests/terrain/analytical_erosion_test.cc
+    tests/terrain/stream_power_evolution_test.cc
     tests/terrain/carve_test.cc
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
