@@ -480,11 +480,16 @@ namespace moppe {
 
       void generate_world_inner () {
         MOPPE_PROFILE_ZONE ("MoppeGame::generate_world_inner");
+        // The accelerated pointwise-field backend; null deliberately
+        // selects the portable CPU interpreter.
+        if (!m_field_evaluator)
+          m_field_evaluator = platform::create_field_evaluator ();
         if (m_terrain_lab_preview) {
           m_gen_stage = 3;
           const terrain::TerrainProgram program =
             terrain::make_geological_program (m_seed);
-          map::TerrainEvaluator (m_map).evaluate (program);
+          map::TerrainEvaluator (m_map, m_field_evaluator.get ())
+            .evaluate (program);
         } else {
           // Reuse the automatic build/profile/seed cache when possible.
           // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
@@ -506,7 +511,7 @@ namespace moppe {
             m_gen_stage = 3;
             const terrain::TerrainProgram program =
               terrain::make_world_program (m_seed, m_generation_profile);
-            map::TerrainEvaluator evaluator (m_map);
+            map::TerrainEvaluator evaluator (m_map, m_field_evaluator.get ());
             m_terrain_history.clear ();
             evaluator.evaluate (
               program,
@@ -2347,6 +2352,7 @@ namespace moppe {
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
       map::RandomHeightMap m_loading_map;
+      std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
       std::vector<std::vector<float>> m_terrain_history;
       std::mutex m_loading_mutex;
       std::vector<std::shared_ptr<const std::vector<float>>>
