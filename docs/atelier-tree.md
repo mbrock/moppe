@@ -70,3 +70,45 @@ tree is a finite complex with lineage and inspectable form. Grass still wants
 to be a density or population field responding to moisture, disturbance, and
 light. Rendering both as collections of individually generated meshes would
 erase the useful distinction before simulation even begins.
+
+## The production embedding
+
+The intrinsic organism is built as the `atelier_botany` library. Both the
+Atelier and Moppe link that library, so changing topology, transport, growth,
+or thickening changes the organism in both clients. The Atelier remains the
+place for inspecting the complex in isolation; Moppe supplies a second
+extrinsic embedding in `moppe/game/tree_stand.*`.
+
+The game first derives `tree_habitat` as another quantity in the surface
+bundle. Moisture, height above standing water, tree line, and surface normal
+all contribute. A deterministic site planner samples that field, preserves a
+minimum spacing between organisms, and roots every chosen collar at the exact
+surface elevation and normal. The seed of each site produces a related but
+distinct topology and rest configuration.
+
+For this first population proof, all branches and leaf clusters in a stand are
+baked into one retained world-space mesh. Branch generation and intrinsic
+flexibility become per-vertex wind weights, which the existing Moppe scene
+shader animates. This keeps the stand to one draw without adding a new
+renderer abstraction. Instancing or a mesh-shader expansion path becomes
+worthwhile when trees graduate from a deliberately framed grove to thousands
+of organisms across the world.
+
+Run a quiet camera in the game renderer with:
+
+```sh
+./build/moppe.app/Contents/MacOS/moppe --tree-demo --tree-count 9
+```
+
+Deterministic terrain-rooted screenshots use the same mode:
+
+```sh
+make tree-shot
+tools/capture-trees /tmp/tree.png 1
+tools/capture-trees /tmp/grove.png 9
+MOPPE_SEED=777 tools/capture-trees /tmp/other-grove.png 9
+```
+
+The portrait and grove are deliberately the same rendering path. The count
+only changes site planning and camera composition; there is no special hero
+tree asset.

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <optional>
+#include <span>
 
 namespace moppe::map {
   class HeightMap;
@@ -23,11 +24,20 @@ namespace moppe::map {
                       mp_units::is_kind> {
   } surface_normal;
 
+  // A dimensionless ecological reading materialized over the same surface
+  // domain as elevation and normal. It combines drainage moisture, slope,
+  // shore clearance, and the local tree line; consumers select sites from the
+  // bundle instead of rediscovering those policies from the heightmap.
+  inline constexpr struct tree_habitat
+      : quantity_spec<mp_units::dimensionless> {
+  } tree_habitat;
+
   using SurfaceElevation =
     quantity_point<surface_elevation[u::m],
                    default_point_origin (surface_elevation[u::m]),
                    float>;
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
+  using TreeHabitat = quantity<tree_habitat[one], float>;
 
   struct SurfaceIndex {
     std::size_t column;
@@ -69,6 +79,12 @@ namespace moppe::map {
     }
     meters_t maximum_interpolated_z () const noexcept {
       return static_cast<float> (m_height - 2) * m_spacing_z;
+    }
+    meters_t spacing_x () const noexcept {
+      return m_spacing_x;
+    }
+    meters_t spacing_z () const noexcept {
+      return m_spacing_z;
     }
 
     std::size_t offset (SurfaceIndex index) const;
@@ -113,8 +129,8 @@ namespace moppe::map {
     terrain::Topology m_topology;
   };
 
-  using SurfaceBundle =
-    spatial::Bundle<SurfaceDomain, SurfaceElevation, SurfaceNormal>;
+  using SurfaceBundle = spatial::
+    Bundle<SurfaceDomain, SurfaceElevation, SurfaceNormal, TreeHabitat>;
 
   class Surface {
   public:
@@ -132,6 +148,17 @@ namespace moppe::map {
     SurfaceNormal normal_at (const position_t& position) const {
       return spatial::sample<surface_normal> (samples (), position);
     }
+
+    TreeHabitat tree_habitat_at (const position_t& position) const {
+      return spatial::sample<tree_habitat> (samples (), position);
+    }
+
+    // Hydrology is known after the geometric surface is refreshed. This is
+    // the explicit second materialization barrier that turns moisture and
+    // topography into a vegetation-support reading.
+    void derive_tree_habitat (std::span<const float> moisture,
+                              meters_t water_level,
+                              meters_t tree_line);
 
     const SurfaceBundle& samples () const;
 

@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+output=${1:-"$root/tree-grove.png"}
+count=${2:-9}
+seed=${MOPPE_SEED:-123}
+profile=${MOPPE_TERRAIN_PROFILE:-fast}
+
+if [ ! -f "$build_dir/build.ninja" ]; then
+  cmake -S "$root" -B "$build_dir" -G Ninja
+fi
+
+cmake --build "$build_dir" --target moppe
+mkdir -p "$(dirname -- "$output")"
+
+MOPPE_SCREENSHOT_FRAMES=${MOPPE_SCREENSHOT_FRAMES:-45} \
+MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.75} \
+MOPPE_SUNHEIGHT=${MOPPE_SUNHEIGHT:-0.59} \
+  "$build_dir/moppe.app/Contents/MacOS/moppe" \
+  --tree-screenshot "$output" --tree-count "$count" \
+  --seed "$seed" --terrain-quality "$profile"
+
+echo "$output"

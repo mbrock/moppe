@@ -29,6 +29,14 @@ MOPPE_TEST (tree_is_one_valid_oriented_complex) {
   MOPPE_CHECK (root_edges > 0);
 }
 
+MOPPE_TEST (seed_changes_the_organism_not_only_its_embedding) {
+  const Tree first (0x1001U);
+  const Tree second (0x2002U);
+  MOPPE_CHECK (first.topology ().edge_count () !=
+               second.topology ().edge_count ());
+  MOPPE_CHECK (first.form (0).material_seed != second.form (0).material_seed);
+}
+
 MOPPE_TEST (one_accumulation_law_runs_with_or_against_the_arrows) {
   const DirectedTreeTopology topology (
     { { 0, 1 }, { 1, 2 }, { 1, 3 }, { 2, 4 } },
