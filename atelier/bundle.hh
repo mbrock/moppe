@@ -12,17 +12,67 @@
 #include <utility>
 #include <vector>
 
-// A Bundle is a heterogeneous row of quantities and quantity points repeated
-// over one topological domain.  Its storage is columnar, but its labels come
-// from the values' own mp-units specifications: get<QS>(bundle) is therefore
-// the materialized counterpart of a typed Field<QS>.
+// A Bundle is currently an eager, finite materialization of a heterogeneous
+// section over a domain.  Its storage is columnar, but its labels come from
+// the values' own mp-units specifications: get<QS>(bundle) is therefore the
+// materialized counterpart of a typed Field<QS>.
+//
+// FiniteDomain is an intentional boundary of this storage type, not a claim
+// about the more general algebra.  A future lazy Section<Base, Row> may live
+// over a continuous base such as R^3, have no size() or global iterator, and
+// expose values only through evaluation and neighbourhood integration.  A
+// finite Bundle would then be one sampled/materialized realization of it.
 
 namespace atelier {
+  namespace detail {
+    template <typename Index>
+    struct NeighbourhoodProbe {
+      template <typename OtherIndex, typename Influence>
+        requires std::convertible_to<OtherIndex, Index>
+      void operator() (OtherIndex&&, Influence&&) const;
+    };
+  }
+
+  template <typename Domain>
+  concept FiniteDomain = std::move_constructible<Domain> &&
+                         requires (const Domain& domain,
+                                   typename Domain::index_type index,
+                                   std::size_t offset) {
+                           {
+                             domain.size ()
+                           } -> std::convertible_to<std::size_t>;
+                           {
+                             domain.offset (index)
+                           } -> std::convertible_to<std::size_t>;
+                           {
+                             domain.index (offset)
+                           } -> std::same_as<typename Domain::index_type>;
+                         };
+
+  template <typename Domain>
+  concept NeighbourhoodDomain =
+    FiniteDomain<Domain> &&
+    requires (const Domain& domain, typename Domain::index_type index) {
+      domain.visit_neighbourhood (
+        index, detail::NeighbourhoodProbe<typename Domain::index_type> {});
+    };
+
+  template <typename Policy, typename Domain>
+  concept NeighbourhoodPolicy =
+    FiniteDomain<Domain> && requires (Policy policy,
+                                      const Domain& domain,
+                                      typename Domain::index_type index) {
+      std::invoke (policy,
+                   domain,
+                   index,
+                   detail::NeighbourhoodProbe<typename Domain::index_type> {});
+    };
+
   template <typename T>
   concept BundleValue = mp_units::Quantity<T> || mp_units::QuantityPoint<T>;
 
   template <typename Domain, typename... Quantities>
-    requires (BundleValue<Quantities> && ...)
+    requires FiniteDomain<Domain> && (BundleValue<Quantities> && ...)
   class Bundle;
 
   template <typename BundleType>
@@ -49,7 +99,7 @@ namespace atelier {
   }
 
   template <typename Domain, typename... Quantities>
-    requires (BundleValue<Quantities> && ...)
+    requires FiniteDomain<Domain> && (BundleValue<Quantities> && ...)
   class Bundle {
   public:
     using domain_type = Domain;
@@ -232,6 +282,7 @@ namespace atelier {
   // as a container at all.
   inline constexpr struct adjacent_neighbourhood_t {
     template <typename Domain, typename Index, typename Visitor>
+      requires NeighbourhoodDomain<Domain>
     void
     operator() (const Domain& domain, Index index, Visitor&& visitor) const {
       domain.visit_neighbourhood (index, std::forward<Visitor> (visitor));
@@ -239,6 +290,9 @@ namespace atelier {
   } adjacent_neighbourhood;
 
   template <typename BundleType, typename Neighbourhood, typename Operation>
+    requires NeighbourhoodPolicy<
+      Neighbourhood,
+      typename BundleFocus<BundleType>::bundle_type::domain_type>
   void visit_neighbourhood (const BundleFocus<BundleType>& focus,
                             Neighbourhood neighbourhood,
                             Operation operation) {
@@ -290,7 +344,11 @@ namespace atelier {
   template <mp_units::QuantitySpec auto QS,
             typename BundleType,
             typename Neighbourhood = adjacent_neighbourhood_t>
-    requires BundleContains<QS, typename BundleFocus<BundleType>::bundle_type>
+    requires BundleContains<QS,
+                            typename BundleFocus<BundleType>::bundle_type> &&
+             NeighbourhoodPolicy<
+               Neighbourhood,
+               typename BundleFocus<BundleType>::bundle_type::domain_type>
   [[nodiscard]] auto
   laplacian (const BundleFocus<BundleType>& focus,
              Neighbourhood neighbourhood = adjacent_neighbourhood) {

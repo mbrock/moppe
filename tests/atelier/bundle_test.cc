@@ -59,6 +59,8 @@ namespace {
     }
   };
 
+  struct EuclideanSpace {};
+
   using TestBundle = Bundle<FourSites, NormalDisplacement, NormalVelocity>;
   using HeightPoint =
     mp_units::quantity_point<isq::height[m],
@@ -69,6 +71,11 @@ namespace {
   concept HasColumn = requires (B& bundle) { get<QS> (bundle); };
 
   static_assert (std::tuple_size_v<TestBundle> == 2);
+  static_assert (FiniteDomain<FourSites>);
+  static_assert (!NeighbourhoodDomain<FourSites>);
+  static_assert (NeighbourhoodDomain<ThreeSiteRing>);
+  static_assert (NeighbourhoodPolicy<SquaredInfluence, ThreeSiteRing>);
+  static_assert (!FiniteDomain<EuclideanSpace>);
   static_assert (HasColumn<normal_displacement, TestBundle>);
   static_assert (HasColumn<normal_velocity, TestBundle>);
   static_assert (!HasColumn<isq::mass, TestBundle>);
