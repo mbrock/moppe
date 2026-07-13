@@ -114,7 +114,7 @@ namespace atelier {
       EmbeddedLandscape result {
         .world_to_clip = simd_mul (
           orthographic (
-            0.58f * period_across, aspect_ratio, 0.05f * m, 80.0f * m),
+            0.45f * period_across, aspect_ratio, 0.05f * m, 80.0f * m),
           look_at (eye, target)),
         .eye = eye,
         .tiles = {},
