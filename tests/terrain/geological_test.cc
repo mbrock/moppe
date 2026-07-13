@@ -32,11 +32,11 @@ MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
     std::uint64_t hash;
   };
   constexpr std::array golden {
-    GoldenLayer { GeologicalLayer::Combined, 0xcf9894c9d9ac1800ull },
+    GoldenLayer { GeologicalLayer::Combined, 0x863524e29ef4a927ull },
     GoldenLayer { GeologicalLayer::Continent, 0x5e8c75981b887e30ull },
     GoldenLayer { GeologicalLayer::Plains, 0xf45bb04923b0c0b4ull },
-    GoldenLayer { GeologicalLayer::Mountains, 0xc21fbf32c46b8ed0ull },
-    GoldenLayer { GeologicalLayer::MountainMask, 0x77e2dec35a4c7eebull },
+    GoldenLayer { GeologicalLayer::Mountains, 0x05dc0a7fb3a5cd60ull },
+    GoldenLayer { GeologicalLayer::MountainMask, 0x6dad6253ffe20c62ull },
     GoldenLayer { GeologicalLayer::WarpX, 0x6c928009ffd5c17aull },
     GoldenLayer { GeologicalLayer::WarpY, 0x3f8851268f877c20ull }
   };
@@ -92,7 +92,7 @@ MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
   MOPPE_CHECK (recipe.seeds.ridge == seeds.ridge);
   MOPPE_CHECK (recipe.seeds.warp == seeds.warp);
   MOPPE_CHECK_NEAR (recipe.warp.amplitude, 0.15f, 1e-6f);
-  MOPPE_CHECK (recipe.mountains.cycles == 6);
+  MOPPE_CHECK (recipe.mountains.cycles == 4);
 
   recipe.mountains.cycles = 8;
   const RelativeElevationRaster changed =

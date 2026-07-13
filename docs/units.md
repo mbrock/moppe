@@ -71,12 +71,12 @@ heightfield:
 - one cell represents `spacing_x * spacing_y` square metres.
 
 For the default random world, `WorldParams::map_size` is 5,000 m by 5,000 m
-and 650 m high. Its sea level is 50 m. A 2049-sample toroidal heightmap has
+and 320 m high. Its sea level is 50 m. A 2049-sample toroidal heightmap has
 2048 unique intervals per side, so its sample spacing is approximately
 2.441 m. The duplicated seam is storage for rendering, not extra land area.
 
 This distinction matters. A drop of `0.01` in a normalized heightfield is
-6.5 m when the height scale is 650 m. A one-cell move is not one metre unless
+3.2 m when the height scale is 320 m. A one-cell move is not one metre unless
 the grid spacing says so. Algorithms that use differences between samples
 without applying both scales are grid-space algorithms, not physical-space
 algorithms.

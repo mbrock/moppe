@@ -2118,7 +2118,7 @@ namespace moppe {
         recipe.warp.amplitude = 0.22f;
         m_program.transforms.emplace_back (terrain::PowerHeights { 1.35f });
       } else if (preset == 1) {
-        recipe.blend.mountain_weight = 0.65f;
+        recipe.blend.mountain_weight = 0.45f;
         recipe.warp.amplitude = 0.08f;
         m_program.transforms.emplace_back (terrain::PowerHeights { 0.78f });
         m_program.transforms.emplace_back (terrain::AnalyticalErosion {

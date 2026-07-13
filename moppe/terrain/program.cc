@@ -78,7 +78,7 @@ namespace moppe::terrain {
       .max_steps = step_count (512),
       .minimum_water = 0.01f,
       .sediment_at_termination = SedimentDisposition::Deposit });
-    // Talus angle is about 40 degrees at 2.4 m cells and 650 m height.
+    // Talus angle is about 22 degrees at 2.4 m cells and 320 m height.
     program.transforms.emplace_back (
       ThermalErosion { iteration_count (2), 0.003f });
     // Channel beds are stamped last so smoothing cannot refill them.

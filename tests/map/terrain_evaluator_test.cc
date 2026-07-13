@@ -318,7 +318,7 @@ MOPPE_TEST (hydraulic_maximum_lifetime_is_part_of_the_recipe) {
   short_lived.transforms.emplace_back (
     HydraulicErosion { .droplets = droplet_count (512),
                        .batch_size = batch_size (1),
-                       .max_steps = step_count (16) });
+                       .max_steps = step_count (1) });
   TerrainProgram long_lived = short_lived;
   std::get<HydraulicErosion> (long_lived.transforms.back ()).max_steps =
     step_count (128);

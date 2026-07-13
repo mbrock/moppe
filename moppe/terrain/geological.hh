@@ -51,11 +51,11 @@ namespace moppe::terrain {
   };
 
   struct GeologicalBlendParameters {
-    float mask_low = 0.45f;
-    float mask_high = 0.75f;
+    float mask_low = 0.55f;
+    float mask_high = 0.82f;
     float continent_weight = 0.55f;
     float plains_weight = 0.12f;
-    float mountain_weight = 0.65f;
+    float mountain_weight = 0.45f;
   };
 
   // A complete, copyable description of the geological field recipe.
@@ -66,7 +66,7 @@ namespace moppe::terrain {
     DomainWarpParameters warp {};
     RemappedNoiseParameters continent { { 3, 4, 2, 0.5f }, 0.5f, 0.5f };
     RemappedNoiseParameters plains { { 12, 4, 2, 0.5f }, 0.5f, 0.5f };
-    FractalNoiseParameters mountains { 6, 6, 2, 0.55f };
+    FractalNoiseParameters mountains { 4, 6, 2, 0.55f };
     GeologicalBlendParameters blend {};
   };
 
