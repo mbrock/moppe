@@ -1,6 +1,7 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/map/generate.hh>
+#include <moppe/profile.hh>
 
 #include <stdexcept>
 
@@ -17,6 +18,7 @@ namespace moppe::map {
     }
 
     void populate (SurfaceBundle& bundle, const HeightMap& map) {
+      MOPPE_PROFILE_ZONE ("surface.populate_bundle");
       const float vertical_scale = map.scale ()[1];
       for (int row = 0; row < map.height (); ++row)
         for (int column = 0; column < map.width (); ++column) {
@@ -62,6 +64,7 @@ namespace moppe::map {
   }
 
   void Surface::refresh (const HeightMap& map) {
+    MOPPE_PROFILE_ZONE ("Surface::refresh");
     const SurfaceDomain domain = domain_for (map);
     if (!m_samples || m_samples->domain () != domain)
       m_samples.emplace (domain);

@@ -56,9 +56,6 @@ namespace moppe {
       // Wind sway weight for subsequent vertices (0 = anchored, 1 =
       // full amplitude); the scene vertex shader animates it.
       void wind (proportion_t w);
-      // Marks full-geometry grass so the shared scene shader can apply thin-
-      // blade normals, root occlusion, backlighting, and restrained highlights.
-      void grass (bool on);
       void set_texture (const Texture* t);
       void normal (const Vec3& n);
       void uv (float u, float v);
@@ -127,7 +124,6 @@ namespace moppe {
       bool m_lit;
       bool m_fogged;
       uint8_t m_wind;
-      bool m_grass;
       const Texture* m_texture;
       DrawState m_state;
 

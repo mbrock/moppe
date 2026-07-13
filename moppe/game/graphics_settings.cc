@@ -39,8 +39,6 @@ namespace moppe::game {
     GraphicsSettings settings;
     settings.scene_scale = 0.5f;
     settings.terrain_shadows = false;
-    settings.vegetation = false;
-    settings.grass = false;
     settings.ocean = false;
     settings.particles = false;
     settings.vehicle_effects = false;
@@ -97,12 +95,6 @@ namespace moppe::game {
         return false;
       }
     }
-    if (const char* grass = std::getenv ("MOPPE_GRASS")) {
-      if (!parse_float (grass, 0.0f, 16.0f, settings.grass_density)) {
-        error = "MOPPE_GRASS must be between 0 and 16";
-        return false;
-      }
-    }
     if (const char* sun = std::getenv ("MOPPE_SUNHEIGHT")) {
       if (!parse_float (sun, 0.0f, 1.0f, settings.sun_height)) {
         error = "MOPPE_SUNHEIGHT must be between 0 and 1";
@@ -122,7 +114,6 @@ namespace moppe::game {
                                 const GraphicsSettings& settings) {
     output << "moppe: graphics: scene-scale=" << settings.scene_scale
            << " render-scale-override=" << settings.render_scale_override
-           << " grass-density=" << settings.grass_density
            << " sun-height=" << settings.sun_height;
     for (const GraphicsFeature* feature : graphics_features)
       output << ' ' << feature->name << '='

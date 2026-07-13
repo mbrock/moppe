@@ -1,5 +1,7 @@
 #include <moppe/terrain/flood.hh>
 
+#include <moppe/profile.hh>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -46,6 +48,7 @@ namespace moppe::terrain {
 
   FloodField analyze_standing_water (const TerrainView& terrain,
                                      float sea_level) {
+    MOPPE_PROFILE_ZONE ("analyze_standing_water");
     if (!std::isfinite (sea_level))
       throw std::invalid_argument ("standing-water sea level must be finite");
 
@@ -73,44 +76,48 @@ namespace moppe::terrain {
     std::vector<std::uint8_t> submerged_seen (count, 0);
     std::vector<std::uint32_t> component;
     std::vector<std::uint32_t> global_ocean;
-    for (std::uint32_t origin = 0; origin < count; ++origin) {
-      if (submerged_seen[origin] ||
-          terrain.at (origin % width, origin / width) > sea_level)
-        continue;
-      component.clear ();
-      submerged_seen[origin] = 1;
-      sea_frontier.push (origin);
-      while (!sea_frontier.empty ()) {
-        const std::uint32_t cell = sea_frontier.front ();
-        sea_frontier.pop ();
-        component.push_back (cell);
-        const std::size_t x = cell % width;
-        const std::size_t y = cell / width;
-        for (const FloodOffset offset : flood_neighbors) {
-          const int raw_x = static_cast<int> (x) + offset.x;
-          const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic &&
-              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-               raw_y >= static_cast<int> (height)))
-            continue;
-          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                          : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                          : static_cast<std::size_t> (raw_y);
-          const std::uint32_t next =
-            static_cast<std::uint32_t> (index (nx, ny));
-          if (submerged_seen[next] || terrain.at (nx, ny) > sea_level)
-            continue;
-          submerged_seen[next] = 1;
-          sea_frontier.push (next);
+    {
+      MOPPE_PROFILE_ZONE ("flood.find_ocean_components");
+      for (std::uint32_t origin = 0; origin < count; ++origin) {
+        if (submerged_seen[origin] ||
+            terrain.at (origin % width, origin / width) > sea_level)
+          continue;
+        component.clear ();
+        submerged_seen[origin] = 1;
+        sea_frontier.push (origin);
+        while (!sea_frontier.empty ()) {
+          const std::uint32_t cell = sea_frontier.front ();
+          sea_frontier.pop ();
+          component.push_back (cell);
+          const std::size_t x = cell % width;
+          const std::size_t y = cell / width;
+          for (const FloodOffset offset : flood_neighbors) {
+            const int raw_x = static_cast<int> (x) + offset.x;
+            const int raw_y = static_cast<int> (y) + offset.y;
+            if (!periodic &&
+                (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+                 raw_y >= static_cast<int> (height)))
+              continue;
+            const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
+                                            : static_cast<std::size_t> (raw_x);
+            const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
+                                            : static_cast<std::size_t> (raw_y);
+            const std::uint32_t next =
+              static_cast<std::uint32_t> (index (nx, ny));
+            if (submerged_seen[next] || terrain.at (nx, ny) > sea_level)
+              continue;
+            submerged_seen[next] = 1;
+            sea_frontier.push (next);
+          }
         }
+        if (component.size () > global_ocean.size ())
+          global_ocean = component;
       }
-      if (component.size () > global_ocean.size ())
-        global_ocean = component;
     }
 
     std::vector<std::uint8_t> ocean_cell (count, 0);
     if (!global_ocean.empty ()) {
+      MOPPE_PROFILE_ZONE ("flood.seed_global_ocean");
       for (const std::uint32_t cell : global_ocean)
         ocean_cell[cell] = 1;
       const std::uint32_t root = global_ocean.front ();
@@ -153,6 +160,7 @@ namespace moppe::terrain {
     // surface at the deterministic global minimum so the analysis remains
     // defined while making that endorheic choice explicit in `outlets`.
     if (outlets.empty ()) {
+      MOPPE_PROFILE_ZONE ("flood.seed_endorheic_minimum");
       std::uint32_t minimum_cell = 0;
       float minimum = terrain.at (0, 0);
       for (std::uint32_t cell = 1; cell < count; ++cell) {
@@ -169,37 +177,44 @@ namespace moppe::terrain {
       frontier.push ({ minimum, minimum_cell });
     }
 
-    while (!frontier.empty ()) {
-      const Cell current = frontier.top ();
-      frontier.pop ();
-      const std::size_t x = current.index % width;
-      const std::size_t y = current.index / width;
-      for (const FloodOffset offset : flood_neighbors) {
-        const int raw_x = static_cast<int> (x) + offset.x;
-        const int raw_y = static_cast<int> (y) + offset.y;
-        if (!periodic &&
-            (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-             raw_y >= static_cast<int> (height)))
-          continue;
-        const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                        : static_cast<std::size_t> (raw_x);
-        const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                        : static_cast<std::size_t> (raw_y);
-        const std::uint32_t next = static_cast<std::uint32_t> (index (nx, ny));
-        if (visited[next])
-          continue;
-        visited[next] = 1;
-        water[next] = std::max (terrain.at (nx, ny), current.level);
-        receiver[next] = current.index;
-        frontier.push ({ water[next], next });
+    {
+      MOPPE_PROFILE_ZONE ("flood.priority_flood");
+      while (!frontier.empty ()) {
+        const Cell current = frontier.top ();
+        frontier.pop ();
+        const std::size_t x = current.index % width;
+        const std::size_t y = current.index / width;
+        for (const FloodOffset offset : flood_neighbors) {
+          const int raw_x = static_cast<int> (x) + offset.x;
+          const int raw_y = static_cast<int> (y) + offset.y;
+          if (!periodic &&
+              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+               raw_y >= static_cast<int> (height)))
+            continue;
+          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
+                                          : static_cast<std::size_t> (raw_x);
+          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
+                                          : static_cast<std::size_t> (raw_y);
+          const std::uint32_t next =
+            static_cast<std::uint32_t> (index (nx, ny));
+          if (visited[next])
+            continue;
+          visited[next] = 1;
+          water[next] = std::max (terrain.at (nx, ny), current.level);
+          receiver[next] = current.index;
+          frontier.push ({ water[next], next });
+        }
       }
     }
 
-    for (std::size_t y = 0; y < height; ++y)
-      for (std::size_t x = 0; x < width; ++x) {
-        const std::size_t cell = index (x, y);
-        depth[cell] = std::max (0.0f, water[cell] - terrain.at (x, y));
-      }
+    {
+      MOPPE_PROFILE_ZONE ("flood.compute_water_depth");
+      for (std::size_t y = 0; y < height; ++y)
+        for (std::size_t x = 0; x < width; ++x) {
+          const std::size_t cell = index (x, y);
+          depth[cell] = std::max (0.0f, water[cell] - terrain.at (x, y));
+        }
+    }
 
     const FieldSamplingGrid2D domain {
       .width = width,
@@ -218,6 +233,7 @@ namespace moppe::terrain {
   }
 
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon) {
+    MOPPE_PROFILE_ZONE ("census_lakes");
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
       throw std::invalid_argument ("lake census epsilon must be non-negative");
     const std::size_t width = flood.width ();

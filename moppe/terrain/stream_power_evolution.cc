@@ -1,5 +1,6 @@
 #include <moppe/terrain/stream_power_evolution.hh>
 
+#include <moppe/profile.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 
@@ -16,6 +17,7 @@ namespace moppe::terrain {
     std::vector<float>
     expand_evolution_samples (const TerrainGrid& grid,
                               const std::vector<float>& unique) {
+      MOPPE_PROFILE_ZONE ("orogeny.expand_periodic_samples");
       const std::size_t width = grid.unique_width ();
       const std::size_t height = grid.unique_height ();
       std::vector<float> expanded (grid.width * grid.height);
@@ -53,6 +55,7 @@ namespace moppe::terrain {
       const TerrainView& terrain,
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters) {
+      MOPPE_PROFILE_ZONE ("orogeny.validate");
       const TerrainGrid& grid = terrain.grid ();
       const std::size_t count = grid.unique_width () * grid.unique_height ();
       if (uplift_rate.size () != count)
@@ -87,6 +90,7 @@ namespace moppe::terrain {
 
     std::vector<std::uint32_t>
     downstream_first_order (const std::vector<CellIndex>& receiver) {
+      MOPPE_PROFILE_ZONE ("orogeny.downstream_first_order");
       const std::size_t count = receiver.size ();
       std::vector<std::uint32_t> donors (count, 0);
       for (std::uint32_t cell = 0; cell < count; ++cell) {
@@ -128,6 +132,7 @@ namespace moppe::terrain {
                                 const TerrainGrid& grid,
                                 double duration_years,
                                 double diffusivity_m2_per_year) {
+      MOPPE_PROFILE_ZONE ("orogeny.diffuse_step");
       if (duration_years == 0.0 || diffusivity_m2_per_year == 0.0)
         return 0;
       const std::size_t width = grid.unique_width ();
@@ -195,6 +200,7 @@ namespace moppe::terrain {
                        std::span<const meters_per_julian_year_t> uplift_rate,
                        const StreamPowerEvolution& parameters,
                        const StreamPowerProgress& progress) {
+    MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (terrain, uplift_rate, parameters);
     const TerrainGrid& grid = terrain.grid ();
     const std::size_t width = grid.unique_width ();
@@ -229,6 +235,7 @@ namespace moppe::terrain {
     double incised_volume_m3 = 0.0;
 
     for (int step = 0; step < steps; ++step) {
+      MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
       const double elapsed = static_cast<double> (step) * time_step_years;
       const double dt = std::min (time_step_years, duration_years - elapsed);
       const std::vector<float> expanded =
@@ -245,57 +252,67 @@ namespace moppe::terrain {
       std::vector<float> next = current;
       std::vector<std::uint8_t> boundary (count, 0);
       std::size_t fixed_boundaries = 0;
-      for (const std::uint32_t cell : order) {
-        const std::uint32_t receiver = drainage.receiver[cell];
-        const bool ocean = flood.ocean[cell] != 0;
-        if (ocean || receiver == cell) {
-          boundary[cell] = 1;
-          // Ocean cells are fixed base-level outlets, but their bed is not
-          // the water surface. Preserve submerged relief rather than lifting
-          // the entire ocean floor to sea level at every geological step.
-          next[cell] = current[cell];
-          ++fixed_boundaries;
-        } else {
-          const double distance_m = edge_distance_m (cell, receiver, grid);
-          const double area_m2 = std::max (
-            cell_area_m2,
-            static_cast<double> (drainage.contributing_area.values ()[cell]));
-          const double incision_rate =
-            parameters.erodibility *
-            std::pow (area_m2, parameters.area_exponent) / distance_m;
-          const double weight = dt * incision_rate;
-          if (!std::isfinite (weight))
-            throw std::overflow_error (
-              "stream-power implicit weight is not finite");
-          const double old_height_m = current[cell] * height_scale_m;
-          const double uplift_m =
-            dt * meters_per_julian_year_value (uplift_rate[cell]);
-          const double uplift_only_m = old_height_m + uplift_m;
-          const double receiver_height_m = next[receiver] * height_scale_m;
-          const double solved_m =
-            (uplift_only_m + weight * receiver_height_m) / (1.0 + weight);
-          // Depression routing may cross a raw uphill bed edge. Incision is
-          // not deposition: it may never raise a cell above uplift alone.
-          const double evolved_m = std::min (solved_m, uplift_only_m);
-          next[cell] = static_cast<float> (evolved_m / height_scale_m);
-          tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
-          incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
+      {
+        MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
+        for (const std::uint32_t cell : order) {
+          const std::uint32_t receiver = drainage.receiver[cell];
+          const bool ocean = flood.ocean[cell] != 0;
+          if (ocean || receiver == cell) {
+            boundary[cell] = 1;
+            // Ocean cells are fixed base-level outlets, but their bed is not
+            // the water surface. Preserve submerged relief rather than lifting
+            // the entire ocean floor to sea level at every geological step.
+            next[cell] = current[cell];
+            ++fixed_boundaries;
+          } else {
+            const double distance_m = edge_distance_m (cell, receiver, grid);
+            const double area_m2 = std::max (
+              cell_area_m2,
+              static_cast<double> (drainage.contributing_area.values ()[cell]));
+            const double incision_rate =
+              parameters.erodibility *
+              std::pow (area_m2, parameters.area_exponent) / distance_m;
+            const double weight = dt * incision_rate;
+            if (!std::isfinite (weight))
+              throw std::overflow_error (
+                "stream-power implicit weight is not finite");
+            const double old_height_m = current[cell] * height_scale_m;
+            const double uplift_m =
+              dt * meters_per_julian_year_value (uplift_rate[cell]);
+            const double uplift_only_m = old_height_m + uplift_m;
+            const double receiver_height_m = next[receiver] * height_scale_m;
+            const double solved_m =
+              (uplift_only_m + weight * receiver_height_m) / (1.0 + weight);
+            // Depression routing may cross a raw uphill bed edge. Incision is
+            // not deposition: it may never raise a cell above uplift alone.
+            const double evolved_m = std::min (solved_m, uplift_only_m);
+            next[cell] = static_cast<float> (evolved_m / height_scale_m);
+            tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
+            incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
+          }
         }
       }
-      const int step_sweeps = diffuse_evolution_step (
-        next, boundary, grid, dt, diffusivity_m2_per_year);
+      int step_sweeps = 0;
+      {
+        MOPPE_PROFILE_ZONE ("orogeny.apply_hillslope_diffusion");
+        step_sweeps = diffuse_evolution_step (
+          next, boundary, grid, dt, diffusivity_m2_per_year);
+      }
       if (step_sweeps > std::numeric_limits<int>::max () - diffusion_sweeps)
         throw std::overflow_error (
           "stream-power diffusion sweep count overflow");
       diffusion_sweeps += step_sweeps;
       double total_step_change_m = 0.0;
       double maximum_step_change_m = 0.0;
-      for (std::size_t cell = 0; cell < count; ++cell) {
-        const double change_m =
-          std::fabs (static_cast<double> (next[cell] - current[cell])) *
-          height_scale_m;
-        total_step_change_m += change_m;
-        maximum_step_change_m = std::max (maximum_step_change_m, change_m);
+      {
+        MOPPE_PROFILE_ZONE ("orogeny.measure_step_change");
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          const double change_m =
+            std::fabs (static_cast<double> (next[cell] - current[cell])) *
+            height_scale_m;
+          total_step_change_m += change_m;
+          maximum_step_change_m = std::max (maximum_step_change_m, change_m);
+        }
       }
       report.fixed_boundaries = cell_count (fixed_boundaries);
       report.final_step_mean_change =

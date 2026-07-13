@@ -1,5 +1,5 @@
 // The forward "uber" shader for everything the DrawList records:
-// props, vehicles, wildlife, baked city/vegetation sectors, dust
+// props, vehicles, wildlife, baked city sectors, dust
 // billboards, blob shadows.  Replaces fixed-function GL lighting
 // (one directional sun, AMBIENT_AND_DIFFUSE color material,
 // separate specular) plus the unified distance haze.
@@ -14,7 +14,6 @@ struct UberVaryings {
   float4 color;
   float lit;
   float fogged;
-  float grass;
 };
 
 vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
@@ -43,7 +42,6 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   out.color = float4 (moppe_srgb (c.rgb), c.a);
   out.lit = v.flags.x ? 1.0 : 0.0;
   out.fogged = v.flags.y ? 1.0 : 0.0;
-  out.grass = v.flags.w ? 1.0 : 0.0;
   return out;
 }
 
@@ -54,20 +52,12 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
                                [[texture (MOPPE_TEX_COLOR)]],
                                depth2d<float> shadow_map
                                [[texture (MOPPE_TEX_SHADOW)]],
-                               sampler smp [[sampler (0)]],
-                               bool front_facing [[front_facing]]) {
+                               sampler smp [[sampler (0)]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
 
   float3 color = base.rgb;
   if (in.lit > 0.5) {
     float3 n = normalize (in.normal);
-    if (in.grass > 0.5) {
-      if (!front_facing)
-        n = -n;
-      // Approximate a narrow rounded blade, then turn its upper normals
-      // toward the sky to create the characteristic bright grass tips.
-      n = normalize (mix (n, float3 (0, 1, 0), 0.25 + 0.60 * in.uv.y));
-    }
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
     const float dist = length (in.world_pos - frame.camera_pos.xyz);
@@ -83,28 +73,15 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
 
     // AMBIENT_AND_DIFFUSE color material: both terms scale the
     // vertex color.
-    const float root_occlusion =
-      in.grass > 0.5 ? mix (0.52, 1.0, smoothstep (0.0, 0.85, in.uv.y)) : 1.0;
-    float3 lit = base.rgb * (moppe_hemisphere_light (frame.ambient.rgb, n) *
-                               root_occlusion +
+    float3 lit = base.rgb * (moppe_hemisphere_light (frame.ambient.rgb, n) +
                              frame.sun_diffuse.rgb * lambert * sun_visibility);
 
     // Separate specular (global material, shininess 64).
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
     const float3 h = normalize (l + v);
     const float3 specular_tint = mix (base.rgb, float3 (1.0), 0.20);
-    const float specular_power = in.grass > 0.5 ? 28.0 : 64.0;
-    const float specular_amount = in.grass > 0.5 ? 0.08 : 0.22;
-    lit += specular_tint * frame.sun_specular.rgb * sun_visibility *
-           specular_amount * pow (max (dot (n, h), 0.0), specular_power);
-
-    if (in.grass > 0.5) {
-      // Thin leaves transmit sunlight when viewed from the shaded side.
-      const float backlight =
-        pow (max (dot (-n, l), 0.0), 1.5) * (0.25 + 0.75 * in.uv.y);
-      lit +=
-        base.rgb * frame.sun_diffuse.rgb * sun_visibility * backlight * 0.34;
-    }
+    lit += specular_tint * frame.sun_specular.rgb * sun_visibility * 0.22 *
+           pow (max (dot (n, h), 0.0), 64.0);
 
     // A restrained sky rim separates moving silhouettes from the
     // landscape, especially on their shadowed side.
