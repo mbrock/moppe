@@ -56,8 +56,8 @@
 - `moppe/shaders/metal/` — MSL shaders, built into moppe.metallib per SDK.
 - `moppe/platform/` — Game interface, input, assets, speech; `mac/`,
   `ios/`, and shared `apple/` layers (MTKView; CoreText glyph rasterizer).
-- `moppe/game/` — the game systems, one file each (terrain, city,
-  vegetation, wildlife, dust, HUD, vehicle rendering; glue in game.cc).
+- `moppe/game/` — the game systems, one file each (terrain, city, wildlife,
+  dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.

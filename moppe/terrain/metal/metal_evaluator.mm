@@ -1,5 +1,6 @@
 #import <Metal/Metal.h>
 
+#include <moppe/profile.hh>
 #include <moppe/terrain/metal/field_shader_types.h>
 #include <moppe/terrain/metal/metal_evaluator.hh>
 #include <moppe/terrain/noise.hh>
@@ -58,6 +59,7 @@ namespace moppe::terrain::metal {
     };
 
     void check_domain (const FieldSamplingGrid2D& domain) {
+      MOPPE_PROFILE_ZONE ("metal_field.validate_domain");
       if (domain.width < 2 || domain.height < 2)
         throw std::invalid_argument (
           "a field domain needs at least two samples per axis");
@@ -72,6 +74,7 @@ namespace moppe::terrain::metal {
     }
 
     PreparedField prepare (const ScalarField& field) {
+      MOPPE_PROFILE_ZONE ("metal_field.prepare_expression");
       PreparedField result;
       result.nodes.reserve (unique_node_count (field));
       std::unordered_map<const expression::Node*, std::size_t> emitted;
@@ -245,6 +248,7 @@ namespace moppe::terrain::metal {
   class MetalEvaluator::Impl {
   public:
     explicit Impl (const std::string& library_path) {
+      MOPPE_PROFILE_ZONE ("MetalEvaluator::initialize");
       if (@available (macOS 26.0, *)) {
         m_device = MTLCreateSystemDefaultDevice ();
         if (!m_device)
@@ -285,12 +289,18 @@ namespace moppe::terrain::metal {
 
     ScalarRaster evaluate (const ScalarField& field,
                            const FieldSamplingGrid2D& domain) {
+      MOPPE_PROFILE_ZONE ("MetalEvaluator::evaluate");
       check_domain (domain);
       PreparedField prepared = prepare (field);
-      std::scoped_lock lock (m_mutex);
+      std::unique_lock<std::mutex> lock;
+      {
+        MOPPE_PROFILE_ZONE ("metal_field.acquire_evaluator");
+        lock = std::unique_lock<std::mutex> (m_mutex);
+      }
       NSString* key = ns_string (prepared.structure_key);
       id<MTLComputePipelineState> pipeline = m_pipelines[key];
       if (!pipeline) {
+        MOPPE_PROFILE_ZONE ("metal_field.compile_pipeline");
         pipeline = compile (prepared);
         m_pipelines[key] = pipeline;
         m_pipeline_count.fetch_add (1, std::memory_order_relaxed);
@@ -305,61 +315,73 @@ namespace moppe::terrain::metal {
         .max_y = domain.max_y
       };
       const std::size_t sample_count = domain.width * domain.height;
-      ensure_buffer (
-        m_output, m_output_capacity, sample_count * sizeof (float));
-      ensure_buffer (m_domain, m_domain_capacity, sizeof (gpu_domain));
-      std::memcpy (m_domain.contents, &gpu_domain, sizeof (gpu_domain));
-      const float zero_parameter = 0.0f;
-      const std::size_t parameter_bytes =
-        std::max<std::size_t> (1, prepared.parameters.size ()) * sizeof (float);
-      ensure_buffer (m_parameters, m_parameter_capacity, parameter_bytes);
-      std::memcpy (m_parameters.contents,
-                   prepared.parameters.empty () ? &zero_parameter
-                                                : prepared.parameters.data (),
-                   parameter_bytes);
-      const MoppeFieldNoise zero_noise {};
-      const std::size_t noise_bytes =
-        std::max<std::size_t> (1, prepared.noises.size ()) *
-        sizeof (MoppeFieldNoise);
-      ensure_buffer (m_noises, m_noise_capacity, noise_bytes);
-      std::memcpy (m_noises.contents,
-                   prepared.noises.empty () ? &zero_noise
-                                            : prepared.noises.data (),
-                   noise_bytes);
-      const std::int32_t zero_permutation = 0;
-      const std::size_t permutation_bytes =
-        std::max<std::size_t> (1, prepared.permutations.size ()) *
-        sizeof (std::int32_t);
-      ensure_buffer (m_permutations, m_permutation_capacity, permutation_bytes);
-      std::memcpy (m_permutations.contents,
-                   prepared.permutations.empty ()
-                     ? &zero_permutation
-                     : prepared.permutations.data (),
-                   permutation_bytes);
+      {
+        MOPPE_PROFILE_ZONE ("metal_field.prepare_buffers");
+        ensure_buffer (
+          m_output, m_output_capacity, sample_count * sizeof (float));
+        ensure_buffer (m_domain, m_domain_capacity, sizeof (gpu_domain));
+        std::memcpy (m_domain.contents, &gpu_domain, sizeof (gpu_domain));
+        const float zero_parameter = 0.0f;
+        const std::size_t parameter_bytes =
+          std::max<std::size_t> (1, prepared.parameters.size ()) *
+          sizeof (float);
+        ensure_buffer (m_parameters, m_parameter_capacity, parameter_bytes);
+        std::memcpy (m_parameters.contents,
+                     prepared.parameters.empty () ? &zero_parameter
+                                                  : prepared.parameters.data (),
+                     parameter_bytes);
+        const MoppeFieldNoise zero_noise {};
+        const std::size_t noise_bytes =
+          std::max<std::size_t> (1, prepared.noises.size ()) *
+          sizeof (MoppeFieldNoise);
+        ensure_buffer (m_noises, m_noise_capacity, noise_bytes);
+        std::memcpy (m_noises.contents,
+                     prepared.noises.empty () ? &zero_noise
+                                              : prepared.noises.data (),
+                     noise_bytes);
+        const std::int32_t zero_permutation = 0;
+        const std::size_t permutation_bytes =
+          std::max<std::size_t> (1, prepared.permutations.size ()) *
+          sizeof (std::int32_t);
+        ensure_buffer (
+          m_permutations, m_permutation_capacity, permutation_bytes);
+        std::memcpy (m_permutations.contents,
+                     prepared.permutations.empty ()
+                       ? &zero_permutation
+                       : prepared.permutations.data (),
+                     permutation_bytes);
+      }
 
-      id<MTLCommandBuffer> command = [m_queue commandBuffer];
-      id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
-      [encoder setComputePipelineState:pipeline];
-      [encoder setBuffer:m_output offset:0 atIndex:MOPPE_FIELD_OUTPUT_BUFFER];
-      [encoder setBuffer:m_domain offset:0 atIndex:MOPPE_FIELD_DOMAIN_BUFFER];
-      [encoder setBuffer:m_parameters
-                  offset:0
-                 atIndex:MOPPE_FIELD_PARAMETER_BUFFER];
-      [encoder setBuffer:m_noises offset:0 atIndex:MOPPE_FIELD_NOISE_BUFFER];
-      [encoder setBuffer:m_permutations
-                  offset:0
-                 atIndex:MOPPE_FIELD_PERMUTATION_BUFFER];
-      [encoder dispatchThreads:MTLSizeMake (domain.width, domain.height, 1)
-         threadsPerThreadgroup:MTLSizeMake (16, 16, 1)];
-      [encoder endEncoding];
-      [command commit];
-      [command waitUntilCompleted];
-      if (command.status == MTLCommandBufferStatusError)
-        throw metal_error ("Metal field dispatch failed", command.error);
+      {
+        MOPPE_PROFILE_ZONE ("metal_field.dispatch_and_wait");
+        id<MTLCommandBuffer> command = [m_queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:m_output offset:0 atIndex:MOPPE_FIELD_OUTPUT_BUFFER];
+        [encoder setBuffer:m_domain offset:0 atIndex:MOPPE_FIELD_DOMAIN_BUFFER];
+        [encoder setBuffer:m_parameters
+                    offset:0
+                   atIndex:MOPPE_FIELD_PARAMETER_BUFFER];
+        [encoder setBuffer:m_noises offset:0 atIndex:MOPPE_FIELD_NOISE_BUFFER];
+        [encoder setBuffer:m_permutations
+                    offset:0
+                   atIndex:MOPPE_FIELD_PERMUTATION_BUFFER];
+        [encoder dispatchThreads:MTLSizeMake (domain.width, domain.height, 1)
+           threadsPerThreadgroup:MTLSizeMake (16, 16, 1)];
+        [encoder endEncoding];
+        [command commit];
+        [command waitUntilCompleted];
+        if (command.status == MTLCommandBufferStatusError)
+          throw metal_error ("Metal field dispatch failed", command.error);
+      }
 
-      std::vector<float> values (sample_count);
-      std::memcpy (
-        values.data (), m_output.contents, values.size () * sizeof (float));
+      std::vector<float> values;
+      {
+        MOPPE_PROFILE_ZONE ("metal_field.readback");
+        values.resize (sample_count);
+        std::memcpy (
+          values.data (), m_output.contents, values.size () * sizeof (float));
+      }
       return ScalarRaster (domain, std::move (values));
     }
 
@@ -381,6 +403,7 @@ namespace moppe::terrain::metal {
     }
 
     id<MTLComputePipelineState> compile (const PreparedField& prepared) {
+      MOPPE_PROFILE_ZONE ("metal_field.compile_stitched_pipeline");
       NSMutableArray<MTL4FunctionDescriptor*>* function_descriptors =
         [NSMutableArray array];
       NSMutableArray<MTLFunctionStitchingFunctionNode*>* graph_nodes =

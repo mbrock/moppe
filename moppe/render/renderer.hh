@@ -148,17 +148,6 @@ namespace moppe {
       Vec3 world_offset;
     };
 
-    // Camera-centered procedural full-geometry grass. The backend samples the
-    // authoritative terrain textures and expands compact grid instances into
-    // blades on the GPU; no per-blade CPU geometry crosses the API.
-    struct GrassParams {
-      float radius = 90.0f;
-      float spacing = 0.70f;
-      int blades_per_cell = 3;
-      float horizontal_scale = 1.0f;
-      float vertical_scale = 1.0f;
-    };
-
     struct DustEmission {
       uint64_t id = 0;
       float birth_time = 0.0f;
@@ -217,8 +206,7 @@ namespace moppe {
       virtual void set_water_flow (std::span<const float> flow) {
         (void)flow;
       }
-      // Ground moisture in [0,1] following the terrain grid; vegetation
-      // reads it for blade height, color, and density. Optional.
+      // Ground moisture in [0,1] following the terrain grid. Optional.
       // Lifetime sediment ledger as interleaved (eroded, deposited)
       // pairs, width*height cells, both channels normalized to [0, 1].
       // Materials read it to place raw cuts and pale alluvium.
@@ -242,9 +230,6 @@ namespace moppe {
       virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
       virtual void draw_sky (const SkyParams& params) = 0;
       virtual void draw_ocean (const OceanParams& params) = 0;
-      virtual void draw_grass (const GrassParams& params) {
-        (void)params;
-      }
       virtual void draw_dust (std::span<const DustEmission> emissions,
                               float logical_time) {
         (void)emissions;

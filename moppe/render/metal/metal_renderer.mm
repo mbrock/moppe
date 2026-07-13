@@ -95,7 +95,6 @@ namespace moppe {
         Terrain,
         Sky,
         Water,
-        Grass,
         Scene,
         Post,
         Bloom,
@@ -104,10 +103,10 @@ namespace moppe {
         Count
       };
       constexpr int GPU_PASS_COUNT = static_cast<int> (GpuPass::Count);
-      const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = {
-        "terrain", "sky",   "water",    "grass",  "scene",
-        "post",    "bloom", "exposure", "present"
-      };
+      const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = { "terrain",  "sky",
+                                                     "water",    "scene",
+                                                     "post",     "bloom",
+                                                     "exposure", "present" };
 
       struct FrameTiming {
         std::mutex mutex;
@@ -311,7 +310,6 @@ namespace moppe {
       void draw_terrain (const ChunkDraw* chunks, int count) override;
       void draw_sky (const SkyParams& params) override;
       void draw_ocean (const OceanParams& params) override;
-      void draw_grass (const GrassParams& params) override;
       void draw_dust (std::span<const DustEmission> emissions,
                       float logical_time) override;
       void draw_rivers (const Mesh& mesh, const Mat4& model) override;
@@ -393,8 +391,6 @@ namespace moppe {
       id<MTLRenderPipelineState> m_probe = nil;
       id<MTLRenderPipelineState> m_terrain = nil, m_terrain_shadow = nil;
       id<MTLRenderPipelineState> m_sky = nil, m_ocean = nil;
-      id<MTLRenderPipelineState> m_grass_pipeline = nil;
-      id<MTLRenderPipelineState> m_grass_mesh_pipeline = nil;
       id<MTLRenderPipelineState> m_dust_soft = nil, m_dust_add = nil;
       id<MTLRenderPipelineState> m_dust_mesh_soft = nil;
       id<MTLRenderPipelineState> m_dust_mesh_add = nil;
@@ -868,35 +864,6 @@ namespace moppe {
                                   true);
       if (m_mesh_shaders_ok) {
         if (@available (macOS 13.0, iOS 16.0, *)) {
-          // The mesh grass path: an object stage culls patches and a mesh
-          // stage emits the surviving blades. Falls back to the instanced
-          // vertex pipeline when compilation or hardware support fails.
-          MTLMeshRenderPipelineDescriptor* d =
-            [[MTLMeshRenderPipelineDescriptor alloc] init];
-          d.objectFunction = [m_library newFunctionWithName:@"grass_object"];
-          d.meshFunction = [m_library newFunctionWithName:@"grass_mesh"];
-          d.fragmentFunction =
-            [m_library newFunctionWithName:@"grass_fragment"];
-          d.rasterSampleCount = MSAA_SAMPLES;
-          d.colorAttachments[0].pixelFormat = scene;
-          d.depthAttachmentPixelFormat = depth;
-          d.stencilAttachmentPixelFormat = depth;
-          d.payloadMemoryLength = 1024;
-          d.maxTotalThreadsPerObjectThreadgroup = 64;
-          d.maxTotalThreadsPerMeshThreadgroup = 32;
-          if (d.objectFunction && d.meshFunction && d.fragmentFunction) {
-            NSError* error = nil;
-            m_grass_mesh_pipeline = [m_device
-              newRenderPipelineStateWithMeshDescriptor:d
-                                               options:MTLPipelineOptionNone
-                                            reflection:nil
-                                                 error:&error];
-            if (!m_grass_mesh_pipeline)
-              std::cerr << "moppe: grass mesh pipeline failed: "
-                        << (error ? error.localizedDescription.UTF8String : "?")
-                        << std::endl;
-          }
-
           const auto make_dust_mesh = [&] (bool additive) {
             MTLMeshRenderPipelineDescriptor* p =
               [[MTLMeshRenderPipelineDescriptor alloc] init];
@@ -973,8 +940,6 @@ namespace moppe {
           }
         }
       }
-      m_grass_pipeline = make_pipeline (
-        @"grass_vertex", @"grass_fragment", scene, depth, MSAA_SAMPLES, false);
       m_river = make_pipeline (
         @"river_vertex", @"river_fragment", scene, depth, MSAA_SAMPLES, true);
 
@@ -1037,6 +1002,7 @@ namespace moppe {
                                         int h,
                                         int bpp,
                                         bool gen_mips) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::upload_texture");
       const size_t bytes = (size_t)w * h * bpp;
       id<MTLBuffer> staging =
         [m_device newBufferWithBytes:pixels
@@ -1116,6 +1082,7 @@ namespace moppe {
     }
 
     MeshPtr MetalRenderer::create_mesh (const DrawList& recorded) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::create_mesh");
       MetalMesh* m = new MetalMesh ();
       m->runs.assign (recorded.runs ().begin (), recorded.runs ().end ());
       if (!recorded.vertices ().empty ())
@@ -1131,6 +1098,7 @@ namespace moppe {
     void MetalRenderer::set_terrain (const TerrainParams& params,
                                      const float* heights,
                                      const Vec3* normals) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain");
       const int w = params.width, h = params.height;
       const bool transition = params.derive_normals && m_have_terrain &&
                               m_heights && m_heights.width == (NSUInteger)w &&
@@ -1284,6 +1252,7 @@ namespace moppe {
     }
 
     void MetalRenderer::render_terrain_shadow (const Mat4& light_view_proj) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::render_terrain_shadow");
       if (!m_terrain_shadow || !m_have_terrain)
         return;
 
@@ -1394,6 +1363,7 @@ namespace moppe {
 
     void MetalRenderer::set_ocean (const OceanSetup& setup,
                                    std::span<const float> water_levels) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_ocean");
       // Regular triangle water grid. The vertex shader samples the
       // optional standing-water surface and does the waving. Built as plain
       // triangles to keep sea and lakes in one draw.
@@ -1453,6 +1423,7 @@ namespace moppe {
     }
 
     void MetalRenderer::set_water_flow (std::span<const float> flow) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_water_flow");
       // Interleaved (x, z) meters per second per terrain sample; half
       // precision carries river currents with headroom to spare.
       const std::size_t expected =
@@ -1482,6 +1453,7 @@ namespace moppe {
     }
 
     void MetalRenderer::set_terrain_geology (std::span<const float> geology) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_geology");
       const std::size_t expected =
         2 * static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
@@ -1534,6 +1506,7 @@ namespace moppe {
     }
 
     void MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_moisture");
       const std::size_t expected =
         static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
@@ -2149,90 +2122,6 @@ namespace moppe {
               threadsPerMeshThreadgroup:MTLSizeMake (256, 1, 1)];
         }
       }
-    }
-
-    void MetalRenderer::draw_grass (const GrassParams& params) {
-      if (!m_grass_pipeline || !m_have_terrain || !m_heights || !m_normals ||
-          params.radius <= 0 || params.spacing <= 0 ||
-          params.blades_per_cell <= 0)
-        return;
-
-      const int side = (int)std::ceil ((2.0f * params.radius) / params.spacing);
-      // Patch dimensions mirror GRASS_PATCH_X/Z in grass.metal.
-      const int patches_x = (side + 3) / 4;
-      const int patches_z = (side + 1) / 2;
-      MoppeGrassUniforms u;
-      std::memset (&u, 0, sizeof (u));
-      // The window origin travels as exact integer cell indices; the shader
-      // derives both seeds and world positions from them, so blades stay
-      // bit-stable while the window follows the camera.
-      u.grid.x =
-        std::floor ((m_fp.camera_pos[0] - params.radius) / params.spacing);
-      u.grid.y =
-        std::floor ((m_fp.camera_pos[2] - params.radius) / params.spacing);
-      u.grid.z = params.spacing;
-      u.grid.w = (float)side;
-      u.terrain.x = m_terrain_params.scale[0];
-      u.terrain.y = m_terrain_params.scale[1];
-      u.terrain.z = m_terrain_params.scale[2];
-      u.terrain.w = params.radius;
-      u.limits.x = m_terrain_params.sea_level_norm;
-      u.limits.y = 0.42f;
-      u.limits.z = m_terrain_params.periodic ? 1.0f : 0.0f;
-      u.limits.w = (float)params.blades_per_cell;
-      u.mesh.x = (float)patches_x;
-      u.mesh.y = (float)patches_z;
-      u.mesh.z = params.horizontal_scale;
-      u.mesh.w = params.vertical_scale;
-
-      id<MTLRenderCommandEncoder> enc = scene_encoder ();
-      begin_gpu_pass (enc, GpuPass::Grass);
-      [enc setDepthStencilState:m_ds[1][1]];
-      [enc setCullMode:MTLCullModeNone];
-      [enc setFragmentBytes:&m_fu length:sizeof (m_fu) atIndex:MOPPE_BUF_FRAME];
-      if (m_shadow_map)
-        [enc setFragmentTexture:m_shadow_map atIndex:MOPPE_TEX_SHADOW];
-
-      if (m_grass_mesh_pipeline) {
-        if (@available (macOS 13.0, iOS 16.0, *)) {
-          [enc setRenderPipelineState:m_grass_mesh_pipeline];
-          [enc setObjectBytes:&m_fu
-                       length:sizeof (m_fu)
-                      atIndex:MOPPE_BUF_FRAME];
-          [enc setObjectBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_DRAW];
-          [enc setObjectTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
-          [enc setMeshBytes:&m_fu length:sizeof (m_fu) atIndex:MOPPE_BUF_FRAME];
-          [enc setMeshBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_DRAW];
-          [enc setMeshTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
-          [enc setMeshTexture:m_normals atIndex:MOPPE_TEX_NORMALS];
-          [enc setMeshTexture:m_have_moisture
-                                ? m_moisture
-                                : ((MetalTexture*)m_white.get ())->texture
-                      atIndex:MOPPE_TEX_MOISTURE];
-          const NSUInteger total =
-            (NSUInteger)patches_x * (NSUInteger)patches_z;
-          [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
-            threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
-              threadsPerMeshThreadgroup:MTLSizeMake (32, 1, 1)];
-          return;
-        }
-      }
-
-      [enc setRenderPipelineState:m_grass_pipeline];
-      [enc setVertexBytes:&m_fu length:sizeof (m_fu) atIndex:MOPPE_BUF_FRAME];
-      [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_DRAW];
-      [enc setVertexTexture:m_heights atIndex:MOPPE_TEX_HEIGHTS];
-      [enc setVertexTexture:m_normals atIndex:MOPPE_TEX_NORMALS];
-      [enc setVertexTexture:m_have_moisture
-                              ? m_moisture
-                              : ((MetalTexture*)m_white.get ())->texture
-                    atIndex:MOPPE_TEX_MOISTURE];
-      const NSUInteger vertices = 18u * (NSUInteger)params.blades_per_cell;
-      const NSUInteger instances = (NSUInteger)side * (NSUInteger)side;
-      [enc drawPrimitives:MTLPrimitiveTypeTriangle
-              vertexStart:0
-              vertexCount:vertices
-            instanceCount:instances];
     }
 
     void MetalRenderer::draw_dust (std::span<const DustEmission> emissions,

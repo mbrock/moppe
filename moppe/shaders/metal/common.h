@@ -17,7 +17,7 @@ struct MoppeVertexIn {
   uchar4 flags; // x: lit, y: fogged, z: wind, w: grass
 };
 
-// Vegetation sway: a slow prevailing gust plus a faster flutter,
+// Wind sway: a slow prevailing gust plus a faster flutter,
 // phased by world position so the field moves as travelling waves
 // rather than in lockstep.  `w` is the vertex's wind weight (0..1);
 // anchored roots record 0 and skip this entirely.

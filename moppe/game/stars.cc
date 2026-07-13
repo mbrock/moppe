@@ -1,5 +1,7 @@
 #include <moppe/game/stars.hh>
 
+#include <moppe/profile.hh>
+
 #include <cmath>
 #include <random>
 #include <stdexcept>
@@ -38,6 +40,7 @@ namespace moppe {
     void Stars::generate (const map::HeightMap& map,
                           const WorldParams& params,
                           int count) {
+      MOPPE_PROFILE_ZONE ("Stars::generate");
       if (count < 0 || count > static_cast<int> (MAX_STARS))
         throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);

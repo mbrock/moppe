@@ -17,7 +17,6 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
 }
 
 MOPPE_TEST (graphics_features_describe_hot_switchability) {
-  MOPPE_CHECK (game::grass_feature.hot);
   MOPPE_CHECK (game::ocean_feature.hot);
   MOPPE_CHECK (game::particles_feature.hot);
   MOPPE_CHECK (game::vehicle_effects_feature.hot);
@@ -27,7 +26,6 @@ MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::lens_flare_feature.hot);
 
   MOPPE_CHECK (!game::terrain_shadows_feature.hot);
-  MOPPE_CHECK (!game::vegetation_feature.hot);
   MOPPE_CHECK (!game::river_ribbons_feature.hot);
   MOPPE_CHECK (!game::motion_blur_feature.hot);
   MOPPE_CHECK (!game::terrain_topology_feature.hot);
@@ -41,7 +39,6 @@ MOPPE_TEST (graphics_feature_lists_apply_to_settings) {
   MOPPE_CHECK (settings.bloom);
   MOPPE_CHECK (settings.ocean);
   MOPPE_CHECK (settings.motion_blur);
-  MOPPE_CHECK (!settings.vegetation);
 
   MOPPE_CHECK (
     game::set_graphics_features (settings, "bloom,ocean", false, error));
@@ -66,7 +63,6 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
   game::print_graphics_settings (output, settings);
   const std::string text = output.str ();
   MOPPE_CHECK (text.find ("scene-scale=0.5") != std::string::npos);
-  MOPPE_CHECK (text.find ("grass-density=1") != std::string::npos);
   MOPPE_CHECK (text.find ("ocean=on(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("bloom=off(hot)") != std::string::npos);
   MOPPE_CHECK (text.find ("terrain-shadows=off(not-hot)") != std::string::npos);
@@ -74,7 +70,7 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
   const int bits = game::graphics_benchmark_dimension_count ();
-  MOPPE_CHECK (bits == 5);
+  MOPPE_CHECK (bits == 4);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
@@ -94,18 +90,17 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
                            game::GraphicsFeatureId::particles,
                            game::GraphicsFeatureId::lens_flare));
   MOPPE_CHECK (!equivalent (
-    partition, game::GraphicsFeatureId::grass, game::GraphicsFeatureId::ocean));
+    partition, game::GraphicsFeatureId::ocean, game::GraphicsFeatureId::bloom));
 
   game::GraphicsSettings settings = game::low_graphics_settings ();
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
-  MOPPE_CHECK (resolved == 0b110011100u);
+  MOPPE_CHECK (resolved == 0b11001110u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
   MOPPE_CHECK (settings.lens_flare);
   MOPPE_CHECK (settings.terrain_fragment_normals);
-  MOPPE_CHECK (!settings.grass);
   MOPPE_CHECK (!settings.ocean);
   MOPPE_CHECK (!settings.bloom);
   MOPPE_CHECK (!settings.auto_exposure);
