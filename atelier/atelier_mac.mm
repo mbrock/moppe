@@ -30,7 +30,11 @@
 - (void)drawFrame:(NSTimer*)timer {
   (void)timer;
   const NSRect pixels = [self convertRectToBacking:self.bounds];
-  _renderer->resize (pixels.size.width, pixels.size.height);
+  const atelier::Viewport viewport {
+    .width = static_cast<std::size_t> (pixels.size.width),
+    .height = static_cast<std::size_t> (pixels.size.height),
+  };
+  _renderer->resize (viewport);
   _renderer->draw ();
 }
 
