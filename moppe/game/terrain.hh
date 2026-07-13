@@ -26,7 +26,8 @@ namespace moppe {
         const GraphicsSettings& graphics,
         render::TerrainProjection projection = render::TerrainProjection::Plane,
         bool repeat_periodically = true,
-        bool interactive_preview = false);
+        bool interactive_preview = false,
+        bool loading_preview = false);
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.

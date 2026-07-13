@@ -68,6 +68,7 @@ namespace moppe {
       float shadow_strength;
       int shadow_resolution = 4096;
       int shadow_sample_step = 1;
+      float height_transition_duration = 0.12f;
       float fog_scale;
       // Development overlay showing the actual terrain triangles. Useful for
       // inspecting the dense reconstructed near field and ordinary LODs.
