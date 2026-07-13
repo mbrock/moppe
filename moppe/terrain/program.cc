@@ -128,6 +128,15 @@ namespace moppe::terrain {
                 operation.talus < 0.0f)
               throw std::invalid_argument (
                 "thermal erosion parameters are invalid");
+          } else if constexpr (std::is_same_v<T, HillslopeDiffusion>) {
+            if (!std::isfinite (julian_years_value (operation.duration)) ||
+                operation.duration < 0.0f * mp_units::astronomy::Julian_year ||
+                !std::isfinite (square_meters_per_julian_year_value (
+                  operation.diffusivity)) ||
+                square_meters_per_julian_year_value (operation.diffusivity) <
+                  0.0f)
+              throw std::invalid_argument (
+                "hillslope diffusion parameters are invalid");
           } else if constexpr (std::is_same_v<T, ChannelCarving>) {
             if (!std::isfinite (operation.sea_level) ||
                 !std::isfinite (operation.minimum_area_cells) ||
@@ -162,6 +171,8 @@ namespace moppe::terrain {
           return "analytical";
         else if constexpr (std::is_same_v<T, ChannelCarving>)
           return "carve";
+        else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
+          return "diffuse";
         else
           return "thermal";
       },
@@ -178,6 +189,8 @@ namespace moppe::terrain {
         else if constexpr (std::is_same_v<T, NormalizeHeights>)
           return { SpatialScope::Global, EvaluationOrder::Reduction };
         else if constexpr (std::is_same_v<T, ThermalErosion>)
+          return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
+        else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
           return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
         else if constexpr (std::is_same_v<T, ChannelCarving>)
           return { SpatialScope::Global, EvaluationOrder::Direct };

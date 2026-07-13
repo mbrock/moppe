@@ -15,6 +15,8 @@ namespace moppe::map {
   // equivalent to evaluating the same prefix again.
   struct TerrainCheckpoint {
     std::vector<float> heights;
+    std::vector<float> eroded;
+    std::vector<float> deposited;
     std::mt19937 randomness;
   };
 

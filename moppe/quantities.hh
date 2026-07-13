@@ -30,6 +30,10 @@ namespace moppe {
   using meters_per_julian_year_t =
     mp_units::quantity<mp_units::si::metre / mp_units::astronomy::Julian_year,
                        float>;
+  using square_meters_per_julian_year_t =
+    mp_units::quantity<mp_units::si::metre * mp_units::si::metre /
+                         mp_units::astronomy::Julian_year,
+                       float>;
 
   inline float meters_value (meters_t value) {
     return value.numerical_value_in (mp_units::si::metre);
@@ -64,6 +68,12 @@ namespace moppe {
 
   inline float meters_per_julian_year_value (meters_per_julian_year_t value) {
     return value.numerical_value_in (mp_units::si::metre /
+                                     mp_units::astronomy::Julian_year);
+  }
+
+  inline float
+  square_meters_per_julian_year_value (square_meters_per_julian_year_t value) {
+    return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre /
                                      mp_units::astronomy::Julian_year);
   }
 

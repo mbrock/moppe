@@ -79,6 +79,10 @@ namespace moppe {
       float torus_minor_radius = 0.0f;
       float torus_height_scale = 0.0f;
       bool derive_normals = false;
+      // Light Native and coarser LODs from the full-resolution normal
+      // texture at fragment rate, decoupling shading detail from
+      // geometric LOD.
+      bool fragment_normals = true;
     };
 
     enum class TerrainOverlayRamp : uint8_t {
@@ -215,6 +219,13 @@ namespace moppe {
       }
       // Ground moisture in [0,1] following the terrain grid; vegetation
       // reads it for blade height, color, and density. Optional.
+      // Lifetime sediment ledger as interleaved (eroded, deposited)
+      // pairs, width*height cells, both channels normalized to [0, 1].
+      // Materials read it to place raw cuts and pale alluvium.
+      virtual void set_terrain_geology (std::span<const float> geology) {
+        (void)geology;
+      }
+
       virtual void set_terrain_moisture (std::span<const float> moisture) {
         (void)moisture;
       }

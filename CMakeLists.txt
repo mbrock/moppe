@@ -259,6 +259,7 @@ add_library(moppe_terrain STATIC
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
   moppe/terrain/flood.cc
+  moppe/terrain/merge_tree.cc
   moppe/terrain/analytical_erosion.cc
   moppe/terrain/carve.cc
   moppe/terrain/moisture.cc
@@ -310,6 +311,7 @@ add_library(moppe_game STATIC
   moppe/game/terrain.cc
   moppe/game/river_surface.cc
   moppe/game/water_capture.cc
+  moppe/game/cinematic_flight.cc
   moppe/game/chase_camera.cc
   moppe/game/vegetation.cc
   moppe/game/stars.cc
@@ -408,6 +410,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
     tests/terrain/flood_test.cc
+    tests/terrain/merge_tree_test.cc
     tests/terrain/analytical_erosion_test.cc
     tests/terrain/carve_test.cc
     tests/terrain/moisture_test.cc
@@ -415,6 +418,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/game_state_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
+    tests/game/cinematic_flight_test.cc
     tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-tests PRIVATE moppe_game)
