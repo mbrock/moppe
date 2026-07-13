@@ -48,6 +48,13 @@ namespace atelier {
     [[nodiscard]] TileId tile_id (GridCell cell) const;
     [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;
     [[nodiscard]] std::array<TileId, 6> neighbours (TileId id) const;
+
+    template <typename Visitor>
+    void visit_neighbourhood (TileId id, Visitor&& visitor) const {
+      for (std::size_t side = 0; side < 6; ++side)
+        visitor (neighbour (id, side), Real { 1 });
+    }
+
     [[nodiscard]] bool is_valid () const;
   };
 

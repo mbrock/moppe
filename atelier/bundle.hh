@@ -226,25 +226,81 @@ namespace atelier {
     return get<Bundle::template spec_index<QS>> (focus);
   }
 
-  template <typename BundleType, typename Value, typename Operation>
-  [[nodiscard]] auto fold_neighbours (const BundleFocus<BundleType>& focus,
-                                      Value initial,
-                                      Operation operation) {
-    for (auto index : focus.domain ().neighbours (focus.index ()))
-      initial = std::invoke (operation, std::move (initial), focus.row (index));
+  // A neighbourhood emits an open sequence of (index, influence) pairs.  It
+  // may visit adjacent cells, a weighted radius, a ligament graph, or a
+  // procedural spatial kernel; Bundle does not require that sequence to exist
+  // as a container at all.
+  inline constexpr struct adjacent_neighbourhood_t {
+    template <typename Domain, typename Index, typename Visitor>
+    void
+    operator() (const Domain& domain, Index index, Visitor&& visitor) const {
+      domain.visit_neighbourhood (index, std::forward<Visitor> (visitor));
+    }
+  } adjacent_neighbourhood;
+
+  template <typename BundleType, typename Neighbourhood, typename Operation>
+  void visit_neighbourhood (const BundleFocus<BundleType>& focus,
+                            Neighbourhood neighbourhood,
+                            Operation operation) {
+    std::invoke (neighbourhood,
+                 focus.domain (),
+                 focus.index (),
+                 [&] (auto index, auto influence) {
+                   std::invoke (operation, focus.row (index), influence);
+                 });
+  }
+
+  template <typename BundleType, typename Operation>
+  void visit_neighbourhood (const BundleFocus<BundleType>& focus,
+                            Operation operation) {
+    visit_neighbourhood (focus, adjacent_neighbourhood, std::move (operation));
+  }
+
+  template <typename BundleType,
+            typename Neighbourhood,
+            typename Value,
+            typename Operation>
+  [[nodiscard]] auto fold_neighbourhood (const BundleFocus<BundleType>& focus,
+                                         Neighbourhood neighbourhood,
+                                         Value initial,
+                                         Operation operation) {
+    visit_neighbourhood (
+      focus,
+      std::move (neighbourhood),
+      [&] (const auto& neighbour, auto influence) {
+        initial =
+          std::invoke (operation, std::move (initial), neighbour, influence);
+      });
     return initial;
+  }
+
+  template <typename BundleType, typename Value, typename Operation>
+  [[nodiscard]] auto fold_neighbourhood (const BundleFocus<BundleType>& focus,
+                                         Value initial,
+                                         Operation operation) {
+    return fold_neighbourhood (focus,
+                               adjacent_neighbourhood,
+                               std::move (initial),
+                               std::move (operation));
   }
 
   // The unnormalized graph Laplacian.  Deriving zero from center - center is
   // deliberate: the result is correct for scalar and vector quantities, and
   // for a quantity_point it becomes the corresponding relative quantity.
-  template <mp_units::QuantitySpec auto QS, typename BundleType>
+  template <mp_units::QuantitySpec auto QS,
+            typename BundleType,
+            typename Neighbourhood = adjacent_neighbourhood_t>
     requires BundleContains<QS, typename BundleFocus<BundleType>::bundle_type>
-  [[nodiscard]] auto laplacian (const BundleFocus<BundleType>& focus) {
+  [[nodiscard]] auto
+  laplacian (const BundleFocus<BundleType>& focus,
+             Neighbourhood neighbourhood = adjacent_neighbourhood) {
     const auto center = get<QS> (focus);
-    return fold_neighbours (
-      focus, center - center, [center] (auto sum, const auto& neighbour) {
-        return sum + (get<QS> (neighbour) - center);
+    return fold_neighbourhood (
+      focus,
+      std::move (neighbourhood),
+      center - center,
+      [center] (auto sum, const auto& neighbour, auto influence) {
+        return sum + influence * (get<QS> (neighbour) - center);
       });
   }
 
