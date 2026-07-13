@@ -1591,44 +1591,55 @@ namespace moppe {
             float target_y;
             float target_z;
             float field_of_view;
-            float drift;
           };
           // Each transform gets a composition suited to what it changes:
           // geography, lowlands, long valleys, slopes, paths, and channels.
           static constexpr CameraShot shots[] = {
-            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f, 0.002f },
-            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f, 0.002f },
-            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f, 0.002f },
-            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f, 0.002f },
-            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f, 0.002f },
-            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f, 0.002f },
-            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f, 0.002f },
-            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f, 0.002f },
+            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f },
+            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f },
+            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f },
+            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f },
+            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f },
+            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f },
+            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f },
+            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f },
           };
           const std::size_t stage = std::min<std::size_t> (
             m_loading_snapshot_index, std::size (shots) - 1);
-          const std::size_t previous = stage > 0 ? stage - 1 : stage;
-          const float age = sky_time - m_loading_snapshot_started;
-          const float cut = smooth_curve (0.0f, 2.35f, age);
-          const auto camera_for = [&] (const CameraShot& shot) {
-            const float angle = shot.angle + shot.drift * age;
-            const Vec3 focus (world_extent[0] * (0.5f + shot.target_x),
-                              world_extent[1] * shot.target_y,
-                              world_extent[2] * (0.5f + shot.target_z));
-            const Vec3 camera =
-              focus + Vec3 (std::sin (angle) * world_extent[0] * shot.radius,
-                            world_extent[1] * shot.height,
-                            std::cos (angle) * world_extent[2] * shot.radius);
-            return std::pair { camera, focus };
+          const CameraShot& shot = shots[stage];
+          const auto ground_at = [&] (float x, float z) {
+            if (!m_loading_map.periodic ()) {
+              x = std::clamp (x, 0.0f, world_extent[0]);
+              z = std::clamp (z, 0.0f, world_extent[2]);
+            }
+            return m_loading_map.interpolated_height (x, z);
           };
-          const auto [previous_eye, previous_target] =
-            camera_for (shots[previous]);
-          const auto [current_eye, current_target] = camera_for (shots[stage]);
-          eye = previous_eye + (current_eye - previous_eye) * cut;
-          target = previous_target + (current_target - previous_target) * cut;
-          field_of_view =
-            shots[previous].field_of_view +
-            (shots[stage].field_of_view - shots[previous].field_of_view) * cut;
+          target = Vec3 (world_extent[0] * (0.5f + shot.target_x),
+                         0.0f,
+                         world_extent[2] * (0.5f + shot.target_z));
+          target[1] =
+            ground_at (target[0], target[2]) + world_extent[1] * shot.target_y;
+          eye = target +
+                Vec3 (std::sin (shot.angle) * world_extent[0] * shot.radius,
+                      world_extent[1] * shot.height,
+                      std::cos (shot.angle) * world_extent[2] * shot.radius);
+
+          // A film cut can teleport, but its chosen tripod and sightline must
+          // remain above the terrain. Raise the eye until samples along the
+          // view ray have comfortable clearance; never animate through them.
+          constexpr int sightline_samples = 24;
+          const float clearance = world_extent[1] * 0.055f;
+          eye[1] =
+            std::max (eye[1], ground_at (eye[0], eye[2]) + clearance * 1.5f);
+          for (int i = 0; i < sightline_samples; ++i) {
+            const float t = 0.82f * i / (sightline_samples - 1);
+            const float x = eye[0] + (target[0] - eye[0]) * t;
+            const float z = eye[2] + (target[2] - eye[2]) * t;
+            const float required =
+              (ground_at (x, z) + clearance - target[1] * t) / (1.0f - t);
+            eye[1] = std::max (eye[1], required);
+          }
+          field_of_view = shot.field_of_view;
         }
         const Vec3 forward = normalized (target - eye);
 
