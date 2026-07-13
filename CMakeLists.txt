@@ -172,6 +172,7 @@ if(MOPPE_METAL_RESULT EQUAL 0)
     add_custom_command(
       OUTPUT ${air}
       COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
+              -std=metal3.0
               -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
               -o ${air}
       DEPENDS ${src} ${MOPPE_METAL_DEPS}
@@ -293,6 +294,7 @@ add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
   moppe/map/generate.cc
   moppe/map/terrain_evaluator.cc
+  moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
@@ -307,6 +309,7 @@ add_library(moppe_game STATIC
   moppe/game/sprites.cc
   moppe/game/model.cc
   moppe/game/walker.cc
+  moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
