@@ -41,9 +41,21 @@ namespace {
       return offset;
     }
 
-    [[nodiscard]] constexpr std::array<index_type, 2>
-    neighbours (index_type index) const {
-      return { (index + 2) % 3, (index + 1) % 3 };
+    template <typename Visitor>
+    constexpr void visit_neighbourhood (index_type index,
+                                        Visitor&& visitor) const {
+      visitor ((index + 2) % 3, 0.25f);
+      visitor ((index + 1) % 3, 0.75f);
+    }
+  };
+
+  struct SquaredInfluence {
+    template <typename Domain, typename Index, typename Visitor>
+    void
+    operator() (const Domain& domain, Index index, Visitor&& visitor) const {
+      domain.visit_neighbourhood (index, [&] (auto neighbour, auto influence) {
+        visitor (neighbour, influence * influence);
+      });
     }
   };
 
@@ -109,9 +121,21 @@ MOPPE_TEST (bundle_extend_applies_a_topological_rule_at_every_focus) {
   });
 
   const auto& result = get<normal_displacement> (output);
-  MOPPE_CHECK_NEAR (result[0].numerical_value_in (m), 13.0f, 0.001f);
-  MOPPE_CHECK_NEAR (result[1].numerical_value_in (m), 7.0f, 0.001f);
-  MOPPE_CHECK_NEAR (result[2].numerical_value_in (m), -5.0f, 0.001f);
+  MOPPE_CHECK_NEAR (result[0].numerical_value_in (m), 5.5f, 0.001f);
+  MOPPE_CHECK_NEAR (result[1].numerical_value_in (m), 7.75f, 0.001f);
+  MOPPE_CHECK_NEAR (result[2].numerical_value_in (m), 1.75f, 0.001f);
+}
+
+MOPPE_TEST (bundle_operation_can_supply_its_own_neighbourhood_policy) {
+  Bundle<ThreeSiteRing, NormalDisplacement> field;
+  auto& displacement = get<normal_displacement> (field);
+  displacement[0] = 1.0f * m;
+  displacement[1] = 4.0f * m;
+  displacement[2] = 10.0f * m;
+
+  const auto result = laplacian<normal_displacement> (
+    BundleFocus (field, std::size_t { 0 }), SquaredInfluence {});
+  MOPPE_CHECK_NEAR (result.numerical_value_in (m), 2.25f, 0.001f);
 }
 
 MOPPE_TEST (bundle_laplacian_preserves_vector_quantity_representation) {
@@ -124,9 +148,9 @@ MOPPE_TEST (bundle_laplacian_preserves_vector_quantity_representation) {
   const auto result =
     laplacian<isq::displacement> (BundleFocus (field, std::size_t { 0 }));
   const auto vector = result.numerical_value_in (m);
-  MOPPE_CHECK_NEAR (vector[0], 12.0f, 0.001f);
-  MOPPE_CHECK_NEAR (vector[1], 14.0f, 0.001f);
-  MOPPE_CHECK_NEAR (vector[2], 16.0f, 0.001f);
+  MOPPE_CHECK_NEAR (vector[0], 4.5f, 0.001f);
+  MOPPE_CHECK_NEAR (vector[1], 5.5f, 0.001f);
+  MOPPE_CHECK_NEAR (vector[2], 6.5f, 0.001f);
 }
 
 MOPPE_TEST (bundle_laplacian_turns_affine_points_into_differences) {
@@ -139,5 +163,5 @@ MOPPE_TEST (bundle_laplacian_turns_affine_points_into_differences) {
   const auto result =
     laplacian<isq::height> (BundleFocus (field, std::size_t { 0 }));
   static_assert (mp_units::Quantity<decltype (result)>);
-  MOPPE_CHECK_NEAR (result.numerical_value_in (m), 12.0f, 0.001f);
+  MOPPE_CHECK_NEAR (result.numerical_value_in (m), 4.5f, 0.001f);
 }

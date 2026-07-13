@@ -49,16 +49,18 @@ namespace atelier {
       return Real (bits & 0x00ffffffU) / Real (0x01000000U);
     }
 
-    DeformationReading
-    deformation_of (const PeriodicHexTopology& topology,
-                    const std::vector<NormalDisplacement>& displacement,
-                    TileId id) {
-      NormalDisplacement total_difference {};
-      for (TileId neighbour : topology.neighbours (id)) {
-        const NormalDisplacement difference =
-          displacement[neighbour] - displacement[id];
-        total_difference += difference < 0.0f * m ? -difference : difference;
-      }
+    DeformationReading deformation_of (const auto& tile) {
+      const auto displacement = get<normal_displacement> (tile);
+      const auto total_difference = fold_neighbourhood (
+        tile,
+        displacement - displacement,
+        [displacement] (auto total, const auto& neighbour, auto influence) {
+          const NormalDisplacement difference =
+            get<normal_displacement> (neighbour) - displacement;
+          const auto magnitude =
+            difference < 0.0f * m ? -difference : difference;
+          return total + influence * magnitude;
+        });
       const Real reading =
         std::min (1.0f, total_difference.numerical_value_in (m) / 0.45f);
       return DeformationReading (reading * mp_units::one);
@@ -111,12 +113,13 @@ namespace atelier {
   }
 
   void Landscape::begin_refinement () {
-    auto& velocity = get<normal_velocity> (m_tiles);
-    const TileId focus =
+    const TileId focus_index =
       topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
-    velocity[focus] += 1.4f * m / s;
-    for (TileId neighbour : topology ().neighbours (focus))
-      velocity[neighbour] += 0.35f * m / s;
+    const BundleFocus focus (m_tiles, focus_index);
+    get<normal_velocity> (focus) += 1.4f * m / s;
+    visit_neighbourhood (focus, [] (const auto& neighbour, auto influence) {
+      get<normal_velocity> (neighbour) += influence * 0.35f * m / s;
+    });
   }
 
   void Landscape::advance (Duration elapsed) {
@@ -190,18 +193,17 @@ namespace atelier {
     result.reserve (landscape_tile_count + 7);
     const TileId focus =
       topology ().tile_id ({ landscape_columns / 5, landscape_rows / 2 });
-    const auto& displacement = get<normal_displacement> (m_tiles);
-
     for (TileId id = 0; id < landscape_tile_count; ++id) {
+      const BundleFocus tile (m_tiles, id);
       const GridCell cell = topology ().cell (id);
-      const DeformationReading deformation =
-        deformation_of (topology (), displacement, id);
+      const auto displacement = get<normal_displacement> (tile);
+      const DeformationReading deformation = deformation_of (tile);
       if (id != focus || !m_refined) {
         result.push_back ({ cell,
                             0.0f * m,
                             0.0f * m,
                             puck_radius,
-                            displacement[id],
+                            displacement,
                             deformation,
                             0,
                             material_seed (id, 0) });
@@ -214,7 +216,7 @@ namespace atelier {
                             0.0f * m,
                             0.0f * m,
                             parent_radius,
-                            displacement[id],
+                            displacement,
                             deformation,
                             0,
                             material_seed (id, 0) });
@@ -225,7 +227,7 @@ namespace atelier {
                           0.0f * m,
                           0.0f * m,
                           child_radius,
-                          displacement[id],
+                          displacement,
                           deformation,
                           1,
                           material_seed (id, 1) });
@@ -236,7 +238,7 @@ namespace atelier {
                             orbit * std::sin (angle),
                             orbit * std::cos (angle),
                             child_radius,
-                            displacement[id],
+                            displacement,
                             deformation,
                             1,
                             material_seed (id, side + 2) });
