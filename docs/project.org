@@ -82,6 +82,8 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Path-monotone carving option, now the default in =HydraulicErosion=.
 - [X] Finite-time =n=1= analytical stream-power transform with physical age,
   uplift, erodibility, drainage exponent, and routing controls.
+- [X] Opt-in shallow-continent orogeny source with a typed uplift field,
+  implicit per-step incision, routing refresh, and interleaved diffusion.
 - [X] Fixed-seed source/analytical/droplet/talus comparison harness.
 - [X] Priority-flood standing-water surface and deterministic lake census.
 - [X] Puddle, pond, lake, and sea classifications.
@@ -281,6 +283,19 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+** 2026-07-13 Uplift and erosion can grow the mountain range together
+
+- Added an opt-in shallow-continent source whose typed uplift field reuses the
+  geological recipe without treating tectonic velocity as initial elevation.
+- Implemented deterministic backward-Euler =n=1= stream-power evolution with
+  priority-flood routing refreshed each step, fixed ocean base level, and
+  interleaved hillslope diffusion.
+- Added Orogeny Lab controls, age comparison, convergence and process-volume
+  reports, a pipeline option, and Fast/Play/Research duration profiles.
+- At 1025 square, seed 123's 20-step Research run took about 6.2 seconds on an
+  M2 Pro and produced coherent coast-scale dendritic relief; the ordinary
+  world source remains unchanged while the new look is compared explicitly.
 
 ** 2026-07-11 Swash at the waterline, grass in hillside shade
 

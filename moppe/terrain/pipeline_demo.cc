@@ -93,6 +93,50 @@ namespace {
       if (parts.size () > 6)
         erosion.relaxation = parse_float (parts[6]);
       program.transforms.emplace_back (erosion);
+    } else if (name == "orogeny") {
+      std::vector<std::string_view> parts;
+      std::size_t start = 0;
+      while (start <= value.size ()) {
+        const std::size_t comma = value.find (',', start);
+        parts.push_back (value.substr (start,
+                                       comma == std::string_view::npos
+                                         ? value.size () - start
+                                         : comma - start));
+        if (comma == std::string_view::npos)
+          break;
+        start = comma + 1;
+      }
+      if (parts.size () < 6 || parts.size () > 9)
+        throw std::invalid_argument ("orogeny expects duration,dt,uplift,k,m,D"
+                                     "[,sea,seed_relief,coast]");
+      if (program.transforms.size () == 1 &&
+          std::holds_alternative<NormalizeHeights> (
+            program.transforms.front ()))
+        program.transforms.clear ();
+      program.source.mode = GeologicalSource::Mode::Orogeny;
+      OrogenyEvolution orogeny;
+      orogeny.evolution.duration =
+        parse_float (parts[0]) * mp_units::astronomy::Julian_year;
+      orogeny.evolution.time_step =
+        parse_float (parts[1]) * mp_units::astronomy::Julian_year;
+      orogeny.maximum_uplift_rate = parse_float (parts[2]) *
+                                    mp_units::si::metre /
+                                    mp_units::astronomy::Julian_year;
+      orogeny.evolution.erodibility = parse_float (parts[3]);
+      orogeny.evolution.area_exponent = parse_float (parts[4]);
+      orogeny.evolution.diffusivity =
+        parse_float (parts[5]) * mp_units::si::metre * mp_units::si::metre /
+        mp_units::astronomy::Julian_year;
+      if (parts.size () > 6) {
+        program.source.sea_level = parse_float (parts[6]);
+        orogeny.evolution.sea_level = program.source.sea_level;
+      }
+      if (parts.size () > 7)
+        program.source.initial_relief =
+          parse_float (parts[7]) * mp_units::si::metre;
+      if (parts.size () > 8)
+        program.source.coastline = parse_float (parts[8]);
+      program.transforms.emplace_back (orogeny);
     } else if (name == "hydraulic") {
       std::vector<std::string_view> parts;
       std::size_t start = 0;
@@ -219,8 +263,12 @@ int main (int argc, char** argv) {
     for (int i = 5; i < argc; ++i)
       apply_option (program, argv[i]);
 
+    const Vec3 physical_size =
+      program.source.mode == GeologicalSource::Mode::Orogeny
+        ? Vec3 (11000, 650, 11000)
+        : Vec3 (1, 1, 1);
     map::RandomHeightMap map (
-      resolution, resolution, Vec3 (1, 1, 1), seed, Topology::Torus);
+      resolution, resolution, physical_size, seed, Topology::Torus);
     map::TerrainEvaluator evaluator (map);
     evaluator.begin (program);
     std::vector<TerrainTransformReport> reports;
@@ -245,7 +293,23 @@ int main (int argc, char** argv) {
       std::cout << " " << terrain_transform_id (transform);
     std::cout << ")\n";
     for (const TerrainTransformReport& result : reports)
-      if (const auto* report = std::get_if<AnalyticalErosionReport> (&result))
+      if (const auto* report =
+            std::get_if<StreamPowerEvolutionReport> (&result))
+        std::cout << "orogeny: steps=" << report->steps
+                  << " diffusion_sweeps=" << report->diffusion_sweeps
+                  << " fixed=" << report->fixed_boundaries << " uplift_m3="
+                  << cubic_meters_value (report->tectonic_uplift_volume)
+                  << " incised_m3="
+                  << cubic_meters_value (report->incised_volume)
+                  << " lowered_m3="
+                  << cubic_meters_value (report->lowered_volume)
+                  << " raised_m3=" << cubic_meters_value (report->raised_volume)
+                  << " final_step_mean_m="
+                  << meters_value (report->final_step_mean_change)
+                  << " final_step_max_m="
+                  << meters_value (report->final_step_maximum_change) << "\n";
+      else if (const auto* report =
+                 std::get_if<AnalyticalErosionReport> (&result))
         std::cout << "analytical: fixed=" << report->fixed_boundaries
                   << " lowered_m3="
                   << cubic_meters_value (report->lowered_volume)

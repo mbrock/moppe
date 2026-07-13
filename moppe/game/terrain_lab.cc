@@ -218,7 +218,7 @@ namespace moppe {
 
       UiRect add_stage_rect (int index) {
         const float gap = 3.0f;
-        const float width = (left_width - 6 * gap) / 7.0f;
+        const float width = (left_width - 7 * gap) / 8.0f;
         return { left_x + index * (width + gap), 497, width, 29 };
       }
 
@@ -258,6 +258,8 @@ namespace moppe {
           return "POWER CURVE";
         if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
           return "STREAM POWER AGE";
+        if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
+          return "OROGENY EVOLUTION";
         if (std::holds_alternative<terrain::HydraulicErosion> (stage))
           return "WATER EROSION";
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
@@ -280,6 +282,15 @@ namespace moppe {
                  std::to_string (
                    terrain::count_value (analytical->fixed_point_iterations)) +
                  " routing passes";
+        if (const auto* orogeny =
+              std::get_if<terrain::OrogenyEvolution> (&stage)) {
+          const float duration =
+            julian_years_value (orogeny->evolution.duration);
+          const float dt = julian_years_value (orogeny->evolution.time_step);
+          return format_float (duration / 1000.0f, 0) + " ky / " +
+                 format_count (static_cast<int> (std::ceil (duration / dt))) +
+                 " geological steps";
+        }
         if (const auto* hydraulic =
               std::get_if<terrain::HydraulicErosion> (&stage))
           return format_count (terrain::count_value (hydraulic->droplets)) +
@@ -380,6 +391,8 @@ namespace moppe {
           return 1;
         if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
           return 6;
+        if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
+          return 7;
         if (std::holds_alternative<terrain::HydraulicErosion> (stage))
           return 3;
         if (std::holds_alternative<terrain::ThermalErosion> (stage))
@@ -426,6 +439,47 @@ namespace moppe {
                      ParameterDomain::Natural };
           return { "RELAXATION",
                    format_float (analytical->relaxation, 2),
+                   ParameterDomain::Continuous };
+        }
+        if (const auto* orogeny =
+              std::get_if<terrain::OrogenyEvolution> (&stage)) {
+          if (row == 0)
+            return {
+              "DURATION (KY)",
+              format_float (
+                julian_years_value (orogeny->evolution.duration) / 1000.0f, 0),
+              ParameterDomain::Continuous
+            };
+          if (row == 1)
+            return {
+              "STEP (KY)",
+              format_float (
+                julian_years_value (orogeny->evolution.time_step) / 1000.0f, 0),
+              ParameterDomain::Continuous
+            };
+          if (row == 2)
+            return { "UPLIFT (MM/Y)",
+                     format_float (meters_per_julian_year_value (
+                                     orogeny->maximum_uplift_rate) *
+                                     1000.0f,
+                                   2),
+                     ParameterDomain::Continuous };
+          if (row == 3)
+            return { "ERODIBILITY",
+                     format_ledger (orogeny->evolution.erodibility),
+                     ParameterDomain::Continuous };
+          if (row == 4)
+            return { "AREA EXPONENT",
+                     format_float (orogeny->evolution.area_exponent, 2),
+                     ParameterDomain::Continuous };
+          if (row == 5)
+            return { "DIFFUSIVITY",
+                     format_float (square_meters_per_julian_year_value (
+                                     orogeny->evolution.diffusivity),
+                                   5),
+                     ParameterDomain::Continuous };
+          return { "SEA LEVEL",
+                   format_float (orogeny->evolution.sea_level, 3),
                    ParameterDomain::Continuous };
         }
         if (const auto* hydraulic =
@@ -544,6 +598,12 @@ namespace moppe {
       m_history_age = 0.0f;
       m_history_playing = false;
       bool env_stages = false;
+      if (std::getenv ("MOPPE_LAB_OROGENY")) {
+        m_program = terrain::make_orogeny_program (
+          m_program.randomness.seed.value,
+          terrain::TerrainGenerationProfile::Fast);
+        env_stages = true;
+      }
       if (const char* erosion = std::getenv ("MOPPE_LAB_EROSION")) {
         std::istringstream input (erosion);
         std::string part;
@@ -648,7 +708,8 @@ namespace moppe {
         if (selected >= 0 &&
             selected < static_cast<int> (m_program.transforms.size ())) {
           m_selected_stage = selected;
-          update_overlay ();
+          if (m_overlay == OverlayMode::HeightDelta)
+            update_overlay ();
         }
       }
       if (m_overlay == OverlayMode::Trace) {
@@ -1775,6 +1836,32 @@ namespace moppe {
             12.0f);
         return unit (analytical->relaxation, 0.1f, 1.0f);
       }
+      if (const auto* orogeny =
+            std::get_if<terrain::OrogenyEvolution> (&stage)) {
+        if (row == 0)
+          return unit (
+            julian_years_value (orogeny->evolution.duration), 0.0f, 5000000.0f);
+        if (row == 1)
+          return unit (julian_years_value (orogeny->evolution.time_step),
+                       1000.0f,
+                       250000.0f);
+        if (row == 2)
+          return unit (
+            meters_per_julian_year_value (orogeny->maximum_uplift_rate),
+            0.0f,
+            0.003f);
+        if (row == 3)
+          return unit (
+            std::log10 (orogeny->evolution.erodibility), -7.0f, -3.0f);
+        if (row == 4)
+          return unit (orogeny->evolution.area_exponent, 0.0f, 1.0f);
+        if (row == 5)
+          return unit (square_meters_per_julian_year_value (
+                         orogeny->evolution.diffusivity),
+                       0.0f,
+                       0.005f);
+        return unit (orogeny->evolution.sea_level, 0.0f, 0.3f);
+      }
       if (const auto* hydraulic =
             std::get_if<terrain::HydraulicErosion> (&stage))
         return row == 0   ? unit (terrain::count_value (hydraulic->droplets),
@@ -1916,6 +2003,48 @@ namespace moppe {
           return analytical->relaxation != old;
         }
         return false;
+      }
+      if (auto* orogeny = std::get_if<terrain::OrogenyEvolution> (&stage)) {
+        if (row == 0) {
+          const auto old = orogeny->evolution.duration;
+          orogeny->evolution.duration =
+            mix (0.0f, 5000000.0f) * mp_units::astronomy::Julian_year;
+          return orogeny->evolution.duration != old;
+        }
+        if (row == 1) {
+          const auto old = orogeny->evolution.time_step;
+          orogeny->evolution.time_step =
+            mix (1000.0f, 250000.0f) * mp_units::astronomy::Julian_year;
+          return orogeny->evolution.time_step != old;
+        }
+        if (row == 2) {
+          const auto old = orogeny->maximum_uplift_rate;
+          orogeny->maximum_uplift_rate = mix (0.0f, 0.003f) *
+                                         mp_units::si::metre /
+                                         mp_units::astronomy::Julian_year;
+          return orogeny->maximum_uplift_rate != old;
+        }
+        if (row == 3) {
+          const float old = orogeny->evolution.erodibility;
+          orogeny->evolution.erodibility = std::pow (10.0f, mix (-7.0f, -3.0f));
+          return orogeny->evolution.erodibility != old;
+        }
+        if (row == 4) {
+          const float old = orogeny->evolution.area_exponent;
+          orogeny->evolution.area_exponent = mix (0.0f, 1.0f);
+          return orogeny->evolution.area_exponent != old;
+        }
+        if (row == 5) {
+          const auto old = orogeny->evolution.diffusivity;
+          orogeny->evolution.diffusivity =
+            mix (0.0f, 0.005f) * mp_units::si::metre * mp_units::si::metre /
+            mp_units::astronomy::Julian_year;
+          return orogeny->evolution.diffusivity != old;
+        }
+        const float old = orogeny->evolution.sea_level;
+        orogeny->evolution.sea_level = mix (0.0f, 0.3f);
+        m_program.source.sea_level = orogeny->evolution.sea_level;
+        return orogeny->evolution.sea_level != old;
       }
       if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
         if (row == 0) {
@@ -2117,6 +2246,12 @@ namespace moppe {
           m_program.source.recipe.warp.amplitude / 0.6f, 0.0f, 1.0f);
       for (const terrain::TerrainTransform& stage : m_program.transforms) {
         if (control == 2) {
+          if (const auto* orogeny =
+                std::get_if<terrain::OrogenyEvolution> (&stage))
+            return std::clamp (
+              julian_years_value (orogeny->evolution.duration) / 800000.0f,
+              0.0f,
+              1.0f);
           if (const auto* age =
                 std::get_if<terrain::AnalyticalErosion> (&stage))
             return std::clamp (
@@ -2150,6 +2285,15 @@ namespace moppe {
         for (std::size_t i = 0; i < m_program.transforms.size (); ++i) {
           terrain::TerrainTransform& stage = m_program.transforms[i];
           if (control == 2) {
+            if (auto* orogeny =
+                  std::get_if<terrain::OrogenyEvolution> (&stage)) {
+              const auto next =
+                value * 800000.0f * mp_units::astronomy::Julian_year;
+              changed = next != orogeny->evolution.duration;
+              orogeny->evolution.duration = next;
+              changed_stage = static_cast<int> (i);
+              break;
+            }
             if (auto* age = std::get_if<terrain::AnalyticalErosion> (&stage)) {
               const auto next =
                 value * 800000.0f * mp_units::astronomy::Julian_year;
@@ -2178,7 +2322,8 @@ namespace moppe {
 
     void TerrainLab::apply_friendly_preset (int preset) {
       const std::uint32_t seed = m_program.randomness.seed.value;
-      m_program = terrain::make_geological_program (seed);
+      m_program = preset == 3 ? terrain::make_orogeny_program (seed)
+                              : terrain::make_geological_program (seed);
       auto& recipe = m_program.source.recipe;
       if (preset == 0) {
         recipe.blend.mountain_weight = 1.35f;
@@ -2204,21 +2349,18 @@ namespace moppe {
           .minimum_water = 0.01f,
           .sediment_at_termination = terrain::SedimentDisposition::Deposit });
       } else {
-        // A deliberately droplet-free stream-power experiment.  The friendly
-        // AGE slider reaches zero, so the same recipe provides an exact
-        // base-versus-analytical comparison without switching to Expert mode.
-        // One routing pass keeps the full-resolution interaction tolerable;
-        // talus relaxation supplies the hillslope correction that the raw
-        // analytical slice does not yet implement itself.
+        // Mountain texture becomes a tectonic-rate pattern over a shallow
+        // continent seed. Four drainage refreshes keep the first interactive
+        // preset responsive; Expert mode exposes the full geological span.
         recipe.blend.plains_weight = 0.25f;
-        recipe.blend.mountain_weight = 1.25f;
+        recipe.blend.mountain_weight = 0.9f;
         recipe.warp.amplitude = 0.28f;
-        m_program.transforms.emplace_back (terrain::PowerHeights { 1.3f });
-        m_program.transforms.emplace_back (terrain::AnalyticalErosion {
-          .duration = 200000.0f * mp_units::astronomy::Julian_year,
-          .fixed_point_iterations = terrain::iteration_count (1) });
-        m_program.transforms.emplace_back (
-          terrain::ThermalErosion { terrain::iteration_count (4), 0.004f });
+        auto& orogeny =
+          std::get<terrain::OrogenyEvolution> (m_program.transforms.front ());
+        orogeny.evolution.duration =
+          200000.0f * mp_units::astronomy::Julian_year;
+        orogeny.evolution.time_step =
+          50000.0f * mp_units::astronomy::Julian_year;
       }
       m_selected_stage = -1;
       m_stage_scroll = 0;
@@ -2340,7 +2482,7 @@ namespace moppe {
           return;
         }
       }
-      for (int i = 0; i < 7; ++i) {
+      for (int i = 0; i < 8; ++i) {
         if (!add_stage_rect (i).contains (x, y))
           continue;
         if (i == 0)
@@ -2349,17 +2491,28 @@ namespace moppe {
           append_stage (terrain::PowerHeights { 1.15f });
         else if (i == 2)
           append_stage (terrain::AnalyticalErosion {});
-        else if (i == 3)
+        else if (i == 3) {
+          m_program.source.mode = terrain::GeologicalSource::Mode::Orogeny;
+          if (m_program.transforms.size () == 1 &&
+              std::holds_alternative<terrain::NormalizeHeights> (
+                m_program.transforms.front ()))
+            m_program.transforms.clear ();
+          m_program.transforms.emplace_back (terrain::OrogenyEvolution {});
+          m_selected_stage =
+            static_cast<int> (m_program.transforms.size ()) - 1;
+          ensure_selected_stage_visible ();
+          rebuild_program ();
+        } else if (i == 4)
           append_stage (terrain::HydraulicErosion {
             .droplets = terrain::droplet_count (100000),
             .batch_size = terrain::batch_size (256),
             .max_steps = terrain::step_count (512),
             .minimum_water = 0.01f,
             .sediment_at_termination = terrain::SedimentDisposition::Deposit });
-        else if (i == 4)
+        else if (i == 5)
           append_stage (
             terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
-        else if (i == 5)
+        else if (i == 6)
           append_stage (terrain::HillslopeDiffusion {});
         else
           append_stage (terrain::ChannelCarving {});
@@ -2750,7 +2903,9 @@ namespace moppe {
                 m_program.transforms.end (),
                 [] (const terrain::TerrainTransform& stage) {
                   return std::holds_alternative<terrain::AnalyticalErosion> (
-                    stage);
+                           stage) ||
+                         std::holds_alternative<terrain::OrogenyEvolution> (
+                           stage);
                 });
               const bool has_rain = std::any_of (
                 m_program.transforms.begin (),
@@ -2912,7 +3067,7 @@ namespace moppe {
           dl, bounds, action_labels[i], hot (bounds), m_pointer_down, i);
       }
       constexpr const char* preset_titles[] = {
-        "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "STREAM POWER"
+        "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "OROGENY"
       };
       for (int i = 0; i < 4; ++i) {
         const UiRect bounds = friendly_preset_rect (i, height);
@@ -3067,8 +3222,12 @@ namespace moppe {
         dl,
         source,
         "F",
-        "GEOLOGICAL FIELD",
-        terrain::geological_layer_name (m_program.source.layer),
+        m_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
+          ? "OROGENY SEED"
+          : "GEOLOGICAL FIELD",
+        m_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
+          ? "shallow continent / recipe becomes uplift"
+          : terrain::geological_layer_name (m_program.source.layer),
         hot (source),
         m_pointer_down,
         m_selected_stage < 0);
@@ -3094,10 +3253,12 @@ namespace moppe {
                            m_selected_stage == stage_index);
       }
 
-      static const char* add_labels[] = { "+NORM",  "+POWER", "+AGE",  "+DROP",
-                                          "+TALUS", "+CREEP", "+CARVE" };
+      static const char* add_labels[] = {
+        "+NORM", "+POWER", "+AGE",   "+OROG",
+        "+DROP", "+TALUS", "+CREEP", "+CARVE"
+      };
       static const char* edit_labels[] = { "UP", "DOWN", "COPY", "DEL" };
-      for (int i = 0; i < 7; ++i) {
+      for (int i = 0; i < 8; ++i) {
         const UiRect add = add_stage_rect (i);
         m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
       }
@@ -3265,11 +3426,14 @@ namespace moppe {
       const terrain::HydraulicErosionReport* erosion_report = nullptr;
       const terrain::HydraulicErosion* erosion_stage = nullptr;
       const terrain::AnalyticalErosionReport* analytical_report = nullptr;
+      const terrain::StreamPowerEvolutionReport* orogeny_report = nullptr;
       if (m_selected_stage >= 0 &&
           m_selected_stage < static_cast<int> (m_reports.size ())) {
         erosion_report = std::get_if<terrain::HydraulicErosionReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         analytical_report = std::get_if<terrain::AnalyticalErosionReport> (
+          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
+        orogeny_report = std::get_if<terrain::StreamPowerEvolutionReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         erosion_stage = std::get_if<terrain::HydraulicErosion> (
           &m_program.transforms[static_cast<std::size_t> (m_selected_stage)]);
@@ -3314,6 +3478,51 @@ namespace moppe {
             "  WATER " +
             format_count (static_cast<int> (report.stopped_at_water_cutoff)) +
             "  FLAT " + format_count (static_cast<int> (report.stopped_flat)));
+      } else if (orogeny_report) {
+        const auto& report = *orogeny_report;
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 266,
+                    "UPLIFT / INCISION QUASI-EQUILIBRIUM",
+                    true);
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 288,
+          "STEPS " + std::to_string (terrain::count_value (report.steps)) +
+            "  DIFFUSION " +
+            std::to_string (terrain::count_value (report.diffusion_sweeps)) +
+            "  FIXED " +
+            format_count (static_cast<int> (
+              terrain::count_value (report.fixed_boundaries))));
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 310,
+          "UPLIFT " +
+            format_ledger (cubic_meters_value (report.tectonic_uplift_volume)) +
+            " M3  INCISED " +
+            format_ledger (cubic_meters_value (report.incised_volume)) + " M3");
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 332,
+                    "MEAN CHANGE " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.mean_absolute_change)),
+                                    2) +
+                      " M");
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 354,
+                    "FINAL STEP MEAN / MAX " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.final_step_mean_change)),
+                                    2) +
+                      " / " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.final_step_maximum_change)),
+                                    2) +
+                      " M");
       } else if (analytical_report) {
         const auto& report = *analytical_report;
         m_ui.label (dl,
