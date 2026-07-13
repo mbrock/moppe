@@ -215,6 +215,13 @@ namespace moppe {
       }
       // Ground moisture in [0,1] following the terrain grid; vegetation
       // reads it for blade height, color, and density. Optional.
+      // Lifetime sediment ledger as interleaved (eroded, deposited)
+      // pairs, width*height cells, both channels normalized to [0, 1].
+      // Materials read it to place raw cuts and pale alluvium.
+      virtual void set_terrain_geology (std::span<const float> geology) {
+        (void)geology;
+      }
+
       virtual void set_terrain_moisture (std::span<const float> moisture) {
         (void)moisture;
       }
