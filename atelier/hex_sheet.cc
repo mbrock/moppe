@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <ranges>
 #include <stdexcept>
 #include <utility>
 
@@ -15,7 +16,7 @@ namespace atelier {
     constexpr Duration partition_interval = 0.75f * s;
     constexpr Duration growth_interval = 0.15f * s;
     constexpr Duration growth_duration = 6.0f * s;
-    constexpr Real unsplit = -1.0f;
+    constexpr std::size_t maximum_generation = 3;
 
     std::size_t base_offset (GridCell cell) {
       return cell.row * hex_sheet_columns + cell.column;
@@ -23,6 +24,16 @@ namespace atelier {
 
     GridCell base_cell (std::size_t offset) {
       return { offset % hex_sheet_columns, offset / hex_sheet_columns };
+    }
+
+    std::vector<HexCell> initial_cells () {
+      std::vector<HexCell> cells;
+      cells.reserve (hex_sheet_base_cell_count);
+      for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
+        cells.push_back (
+          { base_cell (base), 0.0f * m, 0.0f * m, 1.0f, 0, 1, 0, false });
+      }
+      return cells;
     }
 
     std::uint32_t mix_bits (std::uint32_t bits) {
@@ -35,21 +46,57 @@ namespace atelier {
       return bits;
     }
 
+    bool same_base (GridCell first, GridCell second) {
+      return first.column == second.column && first.row == second.row;
+    }
+
+    bool is_corner (GridCell cell) {
+      const bool edge_column =
+        cell.column == 0 || cell.column + 1 == hex_sheet_columns;
+      const bool edge_row = cell.row == 0 || cell.row + 1 == hex_sheet_rows;
+      return edge_column && edge_row;
+    }
+
+    HexSite materialize (const HexCell& cell) {
+      constexpr Length child_radius = 0.45f * puck_radius;
+      const Real progress = std::clamp (cell.growth, 0.0f, 1.0f);
+      const Real eased = progress * progress * (3.0f - 2.0f * progress);
+      const Length radius =
+        cell.generation == 0
+          ? puck_radius
+          : child_radius + eased * (puck_radius - child_radius);
+      const Length half_spacing = 0.5f * std::numbers::sqrt3_v<Real> * radius;
+      const Real angle = Real (cell.axis) * std::numbers::pi_v<Real> / 3.0f;
+      const Real direction = cell.positive ? 1.0f : -1.0f;
+      const Length branch_across =
+        cell.generation == 0 ? 0.0f * m
+                             : direction * half_spacing * std::sin (angle);
+      const Length branch_away =
+        cell.generation == 0 ? 0.0f * m
+                             : direction * half_spacing * std::cos (angle);
+      return { cell.base,
+               cell.origin_across + branch_across,
+               cell.origin_away + branch_away,
+               radius,
+               Real (cell.generation),
+               cell.lineage };
+    }
+
     Real unit_hash (std::uint32_t bits) {
       return Real (mix_bits (bits) & 0x00ffffffU) / Real (0x01000000U);
     }
 
     Real signed_noise (const HexSite& site) {
       const std::size_t base = base_offset (site.base);
-      return 2.0f * unit_hash (
-                      static_cast<std::uint32_t> (8 * base + site.variant)) -
+      return 2.0f * unit_hash (static_cast<std::uint32_t> (131 * base +
+                                                           17 * site.lineage)) -
              1.0f;
     }
 
     Real material_seed (const HexSite& site) {
       const std::size_t base = base_offset (site.base);
       return unit_hash (
-        static_cast<std::uint32_t> (8 * base + site.variant + 0x51edU));
+        static_cast<std::uint32_t> (131 * base + 17 * site.lineage + 0x51edU));
     }
 
     struct IntrinsicPoint {
@@ -115,46 +162,18 @@ namespace atelier {
   }
 
   HexSheetTopology::HexSheetTopology (SheetBoundary boundary,
-                                      std::vector<Real> growth)
-      : m_boundary (boundary), m_growth (std::move (growth)) {
-    if (m_growth.empty ())
-      m_growth.resize (hex_sheet_base_cell_count, unsplit);
-    if (m_growth.size () != hex_sheet_base_cell_count)
-      throw std::invalid_argument ("A hex sheet partition has the wrong size");
+                                      std::vector<HexCell> cells)
+      : m_boundary (boundary), m_cells (std::move (cells)) {
+    if (m_cells.empty ())
+      m_cells = initial_cells ();
     build_sites ();
     build_neighbourhoods ();
   }
 
   void HexSheetTopology::build_sites () {
-    m_first_tile.resize (hex_sheet_base_cell_count);
-    m_sites.reserve (
-      hex_sheet_base_cell_count +
-      std::ranges::count_if (m_growth, [] (Real value) { return value >= 0; }));
-    constexpr Length child_radius = 0.45f * puck_radius;
-    for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
-      const GridCell cell = base_cell (base);
-      m_first_tile[base] = m_sites.size ();
-      if (m_growth[base] < 0) {
-        m_sites.push_back ({ cell, 0.0f * m, 0.0f * m, puck_radius, 0, 0 });
-        continue;
-      }
-      const Real progress = std::clamp (m_growth[base], 0.0f, 1.0f);
-      const Real eased = progress * progress * (3.0f - 2.0f * progress);
-      const Length radius = child_radius + eased * (puck_radius - child_radius);
-      const Length half_spacing = 0.5f * std::numbers::sqrt3_v<Real> * radius;
-      const Real angle =
-        Real (mix_bits (static_cast<std::uint32_t> (base)) % 3) *
-        std::numbers::pi_v<Real> / 3.0f;
-      for (std::size_t child = 0; child < 2; ++child) {
-        const Real direction = child == 0 ? -1.0f : 1.0f;
-        m_sites.push_back ({ cell,
-                             direction * half_spacing * std::sin (angle),
-                             direction * half_spacing * std::cos (angle),
-                             radius,
-                             1,
-                             child });
-      }
-    }
+    m_sites.reserve (m_cells.size ());
+    for (const HexCell& cell : m_cells)
+      m_sites.push_back (materialize (cell));
   }
 
   void HexSheetTopology::build_neighbourhoods () {
@@ -169,30 +188,18 @@ namespace atelier {
     }
   }
 
-  TileId HexSheetTopology::tile_id (GridCell base, std::size_t variant) const {
-    const std::size_t offset = base_offset (base);
-    if (offset >= m_first_tile.size () ||
-        variant > (m_growth[offset] >= 0 ? 1 : 0))
-      throw std::out_of_range ("Hex site does not exist in this partition");
-    return m_first_tile[offset] + variant;
-  }
-
-  bool HexSheetTopology::base_is_split (GridCell base) const {
-    return m_growth[base_offset (base)] >= 0;
-  }
-
-  Real HexSheetTopology::base_growth (GridCell base) const {
-    return m_growth[base_offset (base)];
+  TileId HexSheetTopology::tile_id (GridCell base) const {
+    for (TileId id = 0; id < m_sites.size (); ++id) {
+      if (same_base (m_sites[id].base, base))
+        return id;
+    }
+    throw std::out_of_range ("Hex base has no live cells");
   }
 
   bool HexSheetTopology::is_anchor (TileId id) const {
     if (m_boundary != SheetBoundary::open)
       return false;
-    const GridCell base = site (id).base;
-    const bool edge_column =
-      base.column == 0 || base.column + 1 == hex_sheet_columns;
-    const bool edge_row = base.row == 0 || base.row + 1 == hex_sheet_rows;
-    return edge_column && edge_row;
+    return is_corner (site (id).base);
   }
 
   bool HexSheetTopology::is_valid () const {
@@ -211,9 +218,9 @@ namespace atelier {
   }
 
   HexSheet::HexSheet (SheetBoundary boundary)
-      : m_growth (hex_sheet_base_cell_count, unsplit),
-        m_tiles (HexSheetTopology (boundary, m_growth)),
-        m_next_tiles (HexSheetTopology (boundary, m_growth)) {
+      : m_cells (initial_cells ()),
+        m_tiles (HexSheetTopology (boundary, m_cells)),
+        m_next_tiles (HexSheetTopology (boundary, m_cells)) {
     if (!topology_is_valid ())
       throw std::runtime_error ("The hex sheet topology is inconsistent");
     initialize_noise_drive ();
@@ -236,12 +243,7 @@ namespace atelier {
   }
 
   std::size_t HexSheet::split_cell_count () const {
-    return std::ranges::count_if (m_growth,
-                                  [] (Real value) { return value >= 0; });
-  }
-
-  Real HexSheet::growth (GridCell base) const {
-    return m_growth[base_offset (base)];
+    return m_cells.size () - hex_sheet_base_cell_count;
   }
 
   void HexSheet::advance (Duration elapsed) {
@@ -264,25 +266,57 @@ namespace atelier {
                                 partition_interval.numerical_value_in (s));
     while (m_partition_event < target_event) {
       ++m_partition_event;
-      std::vector<Real> next = m_growth;
+      std::vector<HexCell> next = m_cells;
+      bool changed = false;
 
       for (std::size_t split = 0; split < 2; ++split) {
-        std::size_t candidate = mix_bits (static_cast<std::uint32_t> (
-                                  m_partition_event * 31 + split * 101)) %
-                                hex_sheet_base_cell_count;
-        for (std::size_t probe = 0; probe < next.size (); ++probe) {
-          const std::size_t base = (candidate + probe) % next.size ();
-          const GridCell cell = base_cell (base);
-          const bool corner =
-            (cell.column == 0 || cell.column + 1 == hex_sheet_columns) &&
-            (cell.row == 0 || cell.row + 1 == hex_sheet_rows);
-          if (next[base] < 0 && !corner) {
-            next[base] = 0.0f;
-            break;
-          }
+        std::vector<std::size_t> eligible;
+        for (std::size_t index = 0; index < next.size (); ++index) {
+          const HexCell& cell = next[index];
+          if (cell.growth >= 1.0f && cell.generation < maximum_generation &&
+              !is_corner (cell.base))
+            eligible.push_back (index);
         }
+        if (eligible.empty ())
+          break;
+
+        // Every third event prefers the deepest mature lineage. This makes
+        // recursive division visible without letting it consume the sheet.
+        if (m_partition_event % 3 == 0) {
+          const auto deepest = std::ranges::max (
+            eligible | std::views::transform ([&] (std::size_t index) {
+              return next[index].generation;
+            }));
+          std::erase_if (eligible, [&] (std::size_t index) {
+            return next[index].generation != deepest;
+          });
+        }
+
+        const auto bits =
+          static_cast<std::uint32_t> (m_partition_event * 31 + split * 101);
+        const std::size_t index = eligible[mix_bits (bits) % eligible.size ()];
+        const HexCell parent = next[index];
+        const HexSite parent_site = materialize (parent);
+        const std::size_t axis =
+          (parent.axis + 1 + mix_bits (bits + 53) % 2) % 3;
+        HexCell first { parent.base,
+                        parent_site.offset_across,
+                        parent_site.offset_away,
+                        0.0f,
+                        parent.generation + 1,
+                        2 * parent.lineage,
+                        axis,
+                        false };
+        HexCell second = first;
+        second.lineage += 1;
+        second.positive = true;
+        next[index] = first;
+        next.insert (next.begin () + static_cast<std::ptrdiff_t> (index + 1),
+                     second);
+        changed = true;
       }
-      repartition (std::move (next));
+      if (changed)
+        rebuild (std::move (next));
     }
   }
 
@@ -291,64 +325,66 @@ namespace atelier {
       elapsed.numerical_value_in (s) / growth_interval.numerical_value_in (s));
     while (m_growth_event < target_event) {
       ++m_growth_event;
-      std::vector<Real> next = m_growth;
+      std::vector<HexCell> next = m_cells;
+      bool changed = false;
       const Real increment = Real (growth_interval / growth_duration);
-      for (Real& value : next) {
-        if (value >= 0.0f && value < 1.0f)
-          value = std::min (1.0f, value + increment);
+      for (HexCell& cell : next) {
+        if (cell.generation > 0 && cell.growth < 1.0f) {
+          cell.growth = std::min (1.0f, cell.growth + increment);
+          changed = true;
+        }
       }
-      repartition (std::move (next));
+      if (changed)
+        rebuild (std::move (next));
     }
   }
 
-  void HexSheet::repartition (std::vector<Real> growth) {
-    if (growth == m_growth)
-      return;
-
+  void HexSheet::rebuild (std::vector<HexCell> cells) {
     const HexSheetTopology old_topology = topology ();
     const auto old_displacement = displacements ();
     const auto old_velocity = velocities ();
     const auto old_drive = drives ();
-    HexSheetTopology new_topology (old_topology.boundary (), growth);
+    HexSheetTopology new_topology (old_topology.boundary (), cells);
     TileState new_tiles (new_topology);
     TileState new_next_tiles (new_topology);
     auto& new_displacement = get<normal_displacement> (new_tiles);
     auto& new_velocity = get<normal_velocity> (new_tiles);
     auto& new_drive = get<normal_acceleration> (new_tiles);
 
-    for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
-      const GridCell cell = base_cell (base);
-      const bool was_split = m_growth[base] >= 0;
-      const bool is_split = growth[base] >= 0;
-      if (was_split && !is_split)
-        throw std::logic_error ("A growing hex cluster cannot merge again");
-      const std::size_t new_count = is_split ? 2 : 1;
-      for (std::size_t variant = 0; variant < new_count; ++variant) {
-        const TileId target = new_topology.tile_id (cell, variant);
-        if (was_split == is_split) {
-          const TileId source = old_topology.tile_id (cell, variant);
-          new_displacement[target] = old_displacement[source];
-          new_velocity[target] = old_velocity[source];
-          new_drive[target] = old_drive[source];
-        } else {
-          const TileId source = old_topology.tile_id (cell);
-          new_displacement[target] = old_displacement[source];
-          new_velocity[target] = old_velocity[source];
-          new_drive[target] = old_drive[source];
+    for (TileId target = 0; target < new_topology.size (); ++target) {
+      const HexSite& site = new_topology.site (target);
+      TileId source = old_topology.size ();
+      for (TileId candidate = 0; candidate < old_topology.size ();
+           ++candidate) {
+        const HexSite& old_site = old_topology.site (candidate);
+        if (same_base (old_site.base, site.base) &&
+            (old_site.lineage == site.lineage ||
+             old_site.lineage == site.lineage / 2)) {
+          source = candidate;
+          if (old_site.lineage == site.lineage)
+            break;
         }
-        if (new_topology.is_anchor (target)) {
-          new_displacement[target] =
-            new_displacement[target] - new_displacement[target];
-          new_velocity[target] = new_velocity[target] - new_velocity[target];
-          new_drive[target] = new_drive[target] - new_drive[target];
-        }
+      }
+      if (source == old_topology.size ())
+        throw std::logic_error ("A new hex cell has no parent lineage");
+      new_displacement[target] = old_displacement[source];
+      new_velocity[target] = old_velocity[source];
+      new_drive[target] = old_drive[source];
+      if (new_topology.site (target).lineage !=
+          old_topology.site (source).lineage)
+        new_drive[target] = signed_noise (site) * 3.2f * m / (s * s);
+      if (new_topology.is_anchor (target)) {
+        new_displacement[target] =
+          new_displacement[target] - new_displacement[target];
+        new_velocity[target] = new_velocity[target] - new_velocity[target];
+        new_drive[target] = new_drive[target] - new_drive[target];
       }
     }
 
     get<normal_displacement> (new_next_tiles) = new_displacement;
     get<normal_velocity> (new_next_tiles) = new_velocity;
     get<normal_acceleration> (new_next_tiles) = new_drive;
-    m_growth = std::move (growth);
+    m_cells = std::move (cells);
     m_tiles = std::move (new_tiles);
     m_next_tiles = std::move (new_next_tiles);
     if (!topology_is_valid ())

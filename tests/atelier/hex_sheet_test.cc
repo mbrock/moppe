@@ -94,32 +94,27 @@ MOPPE_TEST (hex_sheet_irreversibly_splits_and_grows_new_cells) {
   }
   MOPPE_CHECK (mixed_size_edge);
 
-  GridCell growing_cell {};
-  bool found_growing_cell = false;
-  for (std::size_t row = 0; row < hex_sheet_rows; ++row) {
-    for (std::size_t column = 0; column < hex_sheet_columns; ++column) {
-      const GridCell cell { column, row };
-      if (sheet.growth (cell) >= 0.0f && sheet.growth (cell) < 1.0f) {
-        growing_cell = cell;
-        found_growing_cell = true;
-        break;
-      }
-    }
-    if (found_growing_cell)
-      break;
-  }
-  MOPPE_CHECK (found_growing_cell);
-  const Real early_growth = sheet.growth (growing_cell);
+  const auto early_generation = std::ranges::max (
+    sheet.leaves () | std::views::transform ([] (const TileLeaf& tile) {
+      return tile.site.generation;
+    }));
+  MOPPE_CHECK_NEAR (early_generation, 1.0f, 0.0001f);
   const std::size_t early_count = sheet.split_cell_count ();
   sheet.advance (9.2f * s);
   MOPPE_CHECK (sheet.split_cell_count () > early_count);
-  MOPPE_CHECK (sheet.growth (growing_cell) > early_growth);
-  MOPPE_CHECK_NEAR (sheet.growth (growing_cell), 1.0f, 0.0001f);
-  const TileId grown = sheet.topology ().tile_id (growing_cell);
-  MOPPE_CHECK_NEAR (
-    sheet.topology ().site (grown).radius.numerical_value_in (m),
-    puck_radius.numerical_value_in (m),
-    0.0001f);
+  const auto late_generation = std::ranges::max (
+    sheet.leaves () | std::views::transform ([] (const TileLeaf& tile) {
+      return tile.site.generation;
+    }));
+  MOPPE_CHECK (late_generation >= 2.0f);
+  const bool full_size_descendant =
+    std::ranges::any_of (sheet.leaves (), [] (const TileLeaf& tile) {
+      return tile.site.generation > 0.0f &&
+             std::abs (
+               (tile.site.radius - puck_radius).numerical_value_in (m)) <
+               0.0001f;
+    });
+  MOPPE_CHECK (full_size_descendant);
 }
 
 MOPPE_TEST (adaptive_partition_propagates_motion_through_the_tile_graph) {
