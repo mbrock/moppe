@@ -1884,6 +1884,14 @@ namespace moppe {
       u.params5.y = m_have_water_levels ? 1.0f : 0.0f;
       u.params5.z = m_have_moisture ? 1.0f : 0.0f;
       u.params5.w = m_have_geology ? 1.0f : 0.0f;
+      // Fragment-rate normals need the gameplay normal texture to be
+      // authoritative: the Lab preview derives normals from heights, and
+      // Cover View rotates normals into the torus frame per vertex.
+      u.params6.x = (m_terrain_params.fragment_normals &&
+                     !m_terrain_params.derive_normals &&
+                     m_terrain_params.projection == TerrainProjection::Plane)
+                      ? 1.0f
+                      : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -1922,6 +1930,7 @@ namespace moppe {
                       atIndex:MOPPE_TEX_TERRAIN_WATER];
       [enc setFragmentTexture:(m_have_geology ? m_geology : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_GEOLOGY];
+      [enc setFragmentTexture:m_normals atIndex:MOPPE_TEX_TERRAIN_NORMALS];
 
       for (int i = 0; i < count; ++i) {
         const int lod =

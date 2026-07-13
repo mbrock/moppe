@@ -79,6 +79,10 @@ namespace moppe {
       float torus_minor_radius = 0.0f;
       float torus_height_scale = 0.0f;
       bool derive_normals = false;
+      // Light Native and coarser LODs from the full-resolution normal
+      // texture at fragment rate, decoupling shading detail from
+      // geometric LOD.
+      bool fragment_normals = true;
     };
 
     enum class TerrainOverlayRamp : uint8_t {

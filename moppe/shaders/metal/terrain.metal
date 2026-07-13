@@ -523,6 +523,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_WATER)]],
   texture2d<float, access::read> terrain_geology
   [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
+  texture2d<float, access::read> normals
+  [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -536,7 +538,13 @@ fragment float4 terrain_fragment (
   if (fog_factor >= 0.995)
     return float4 (fog_c, 1.0);
 
-  float3 n = normalize (in.normal);
+  // Native and coarser LODs light from the full-resolution normal
+  // texture at fragment rate: a stride-8 silhouette carries full
+  // shading detail, exactly as a normal-mapped mesh does.  The
+  // subdivided near field keeps its analytic surface normals.
+  float3 n = (u.params6.x > 0.5 && in.lod_step >= 1.0)
+               ? normalize (terrain_normal_bilinear (in.grid_coord, normals))
+               : normalize (in.normal);
   const float height = in.height;
   const float sea_level = u.params1.y;
 

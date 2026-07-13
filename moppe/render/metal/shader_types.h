@@ -38,6 +38,7 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_TERRAIN_MOISTURE 7
 #define MOPPE_TEX_TERRAIN_WATER 8
 #define MOPPE_TEX_TERRAIN_GEOLOGY 9
+#define MOPPE_TEX_TERRAIN_NORMALS 10 /* fragment stage */
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1            /* post passes */
 #define MOPPE_TEX_HEIGHTS 0          /* vertex stage */
@@ -87,6 +88,7 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 params4; // x=overlay ramp + 1, y=min, z=max, w=opacity
   MoppeFloat4 params5; // x=topology opacity, y=water, z=moisture,
                        // w=geology
+  MoppeFloat4 params6; // x=fragment-rate normals
 };
 
 // Per-chunk terrain instance data.
