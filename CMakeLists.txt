@@ -127,6 +127,10 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     atelier/space.hh
     atelier/surface.hh
     atelier/tabulate.hh
+    atelier/tree.cc
+    atelier/tree.hh
+    atelier/tree_embedding.cc
+    atelier/tree_embedding.hh
     atelier/wire.hh
   )
   set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
@@ -455,12 +459,17 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_sources(moppe-tests PRIVATE
       atelier/embedding.cc
       atelier/hex_sheet.cc
+      atelier/tree.cc
+      atelier/tree_embedding.cc
       tests/atelier/bundle_test.cc
       tests/atelier/embedding_test.cc
-      tests/atelier/hex_sheet_test.cc)
+      tests/atelier/hex_sheet_test.cc
+      tests/atelier/tree_test.cc)
     set_source_files_properties(
       atelier/embedding.cc
       atelier/hex_sheet.cc
+      atelier/tree.cc
+      atelier/tree_embedding.cc
       PROPERTIES
       SKIP_UNITY_BUILD_INCLUSION ON)
     # A unity-built moppe_game archive is one object, so tests pull its

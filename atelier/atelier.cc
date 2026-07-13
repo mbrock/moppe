@@ -1,5 +1,6 @@
 #include "atelier/atelier.hh"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace atelier {
@@ -58,7 +59,57 @@ namespace atelier {
         .end = simd_make_float4 (ligament.end, ligament.bend),
         .start_normal =
           simd_make_float4 (ligament.start_normal, ligament.material_seed),
-        .end_normal = simd_make_float4 (ligament.end_normal, 0),
+        .end_normal =
+          simd_make_float4 (ligament.end_normal, in_metres (ligament.radius)),
+        .physiology = simd_make_float4 (0.0f),
+      });
+    }
+    return frame;
+  }
+
+  Frame compose_frame (const Tree& tree,
+                       TreeEmbeddingKind embedding,
+                       Duration elapsed,
+                       Viewport viewport) {
+    const EmbeddedTree world =
+      embed_tree (tree, embedding, elapsed, viewport.aspect_ratio ());
+    Frame frame {
+      .uniforms =
+        Uniforms {
+          .world_to_clip = world.world_to_clip,
+          .eye = simd_make_float4 (in_metres (world.eye), 1),
+          .atmosphere =
+            simd_make_float4 (elapsed.numerical_value_in (s), 0.0f, 0.0f, 0.0f),
+        },
+      .tiles = {},
+      .ligaments = {},
+    };
+    frame.tiles.reserve (world.buds.size ());
+    for (const EmbeddedTreeBud& bud : world.buds) {
+      const Real vigor = std::clamp (bud.vigor, 0.0f, 1.25f);
+      const simd_float3 quiet = bud.organ == TreeOrgan::shoot
+                                  ? simd_float3 { 0.24f, 0.34f, 0.18f }
+                                  : simd_float3 { 0.34f, 0.20f, 0.11f };
+      const simd_float3 alive = bud.organ == TreeOrgan::shoot
+                                  ? simd_float3 { 0.62f, 0.82f, 0.32f }
+                                  : simd_float3 { 0.67f, 0.38f, 0.18f };
+      frame.tiles.push_back (
+        { bud.place_in_world,
+          simd_make_float4 (
+            simd_mix (quiet, alive, simd_float3 (0.45f + 0.42f * vigor)),
+            bud.material_seed) });
+    }
+    frame.ligaments.reserve (world.branches.size ());
+    for (const EmbeddedTreeBranch& branch : world.branches) {
+      frame.ligaments.push_back ({
+        .start = simd_make_float4 (branch.start, branch.strain),
+        .end = simd_make_float4 (branch.end, branch.bend),
+        .start_normal =
+          simd_make_float4 (branch.start_normal, branch.material_seed),
+        .end_normal =
+          simd_make_float4 (branch.end_normal, in_metres (branch.radius)),
+        .physiology =
+          simd_make_float4 (branch.xylem, branch.phloem, 0.0f, 0.0f),
       });
     }
     return frame;

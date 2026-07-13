@@ -5,6 +5,7 @@
 #include "atelier/matrix.hh"
 #include "atelier/prism.hh"
 #include "atelier/space.hh"
+#include "atelier/tree_embedding.hh"
 #include "atelier/wire.hh"
 
 #include <cstddef>
@@ -14,6 +15,14 @@
 // the renderer uploads.
 
 namespace atelier {
+  enum class SceneKind {
+    tree_wind,
+    tree_diagram,
+    rope_bridge,
+    toroidal_sheet,
+    repeating_sheet,
+  };
+
   // A viewport measured in physical pixels.
   struct Viewport {
     std::size_t width = 0;
@@ -41,11 +50,13 @@ namespace atelier {
 
   struct LigamentInstance {
     // Endpoint W lanes carry strain and signed bend respectively.  Normal W
-    // carries the stable material seed; the last lane is reserved.
+    // carries the stable material seed and branch radius.
     simd_float4 start;
     simd_float4 end;
     simd_float4 start_normal;
     simd_float4 end_normal;
+    // Xylem, phloem, and two subject-specific diagnostic lanes.
+    simd_float4 physiology;
   };
 
   struct Frame {
@@ -56,6 +67,10 @@ namespace atelier {
 
   [[nodiscard]] Frame compose_frame (const HexSheet& sheet,
                                      EmbeddingKind embedding,
+                                     Duration elapsed,
+                                     Viewport viewport);
+  [[nodiscard]] Frame compose_frame (const Tree& tree,
+                                     TreeEmbeddingKind embedding,
                                      Duration elapsed,
                                      Viewport viewport);
 }

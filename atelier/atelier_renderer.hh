@@ -16,7 +16,7 @@ namespace atelier {
 
   class Renderer {
   public:
-    explicit Renderer (EmbeddingKind embedding = EmbeddingKind::rope_bridge);
+    explicit Renderer (SceneKind scene = SceneKind::tree_wind);
     ~Renderer ();
 
     Renderer (const Renderer&) = delete;
