@@ -10,14 +10,14 @@ bridge between them: concrete enough to start, honest about cost.
 
 ## Landscape process (simulation)
 
-- [RFC-001](rfc-001-uplift-stream-power.md) — Uplift fields + implicit
+- [RFC-001](done/rfc-001-uplift-stream-power.md) — Uplift fields + implicit
   stream power run to quasi-equilibrium: mountains as the residue of
   uplift under erosion. Implemented and selected for ordinary world
   generation on 2026-07-13.
-- [RFC-002](rfc-002-hillslope-diffusion.md) — Hillslope diffusion (soil
+- [RFC-002](done/rfc-002-hillslope-diffusion.md) — Hillslope diffusion (soil
   creep): smooth convex crests against sharp valley cuts.  Small,
   standalone, also RFC-001's D term.
-- [RFC-003](rfc-003-sediment-ledger-rasters.md) — Keep the per-cell
+- [RFC-003](done/rfc-003-sediment-ledger-rasters.md) — Keep the per-cell
   sediment ledger as eroded/deposited rasters; feed materials, detail,
   and Lab overlays.  Cheapest coherence win available.
 - [RFC-004](rfc-004-erosion-performance.md) — The erosion performance
@@ -27,13 +27,13 @@ bridge between them: concrete enough to start, honest about cost.
 
 ## Geometry and shading (rendering)
 
-- [RFC-005](rfc-005-fragment-rate-normals.md) — Fragment-rate normals
+- [RFC-005](done/rfc-005-fragment-rate-normals.md) — Fragment-rate normals
   for distant terrain: decouple lighting detail from geometric LOD.
   Highest look-per-effort in the renderer.
 - [RFC-006](rfc-006-analytic-channels.md) — River channels as analytic
   vector features composited at sample time, not raster carves.
   Sub-cell widths, clean banks, resolution independence.
-- [RFC-007](rfc-007-waterline-conforming-geometry.md) — Extract the
+- [RFC-007](done/rfc-007-waterline-conforming-geometry.md) — Extract the
   waterline curve and make water and terrain conform to it.  Kills the
   shoreline sawtooth class permanently.
 - [RFC-008](rfc-008-geology-conditioned-tessellation.md) — Near-field
