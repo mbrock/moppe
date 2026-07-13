@@ -99,7 +99,8 @@ namespace atelier {
         result.tiles.push_back (
           { placement (toroidal_frame (tile), tile.radius),
             tile.deformation,
-            tile.generation });
+            tile.generation,
+            tile.material_seed });
       return result;
     }
 
@@ -107,12 +108,14 @@ namespace atelier {
                                            Real aspect_ratio) {
       constexpr Length pitch_across = std::numbers::sqrt3_v<Real> * puck_radius;
       constexpr Length period_across = Real (landscape_columns) * pitch_across;
-      const Point eye = scene + up * (30.0f * m) + north * (0.5f * m);
+      const Point target = scene - east * (5.75f * m);
+      const Point eye =
+        target + east * (11.0f * m) + up * (11.0f * m) + north * (11.0f * m);
       EmbeddedLandscape result {
-        .world_to_clip =
-          simd_mul (orthographic (
-                      2.2f * period_across, aspect_ratio, 0.05f * m, 80.0f * m),
-                    look_at (eye, scene + up * (0.0f * m))),
+        .world_to_clip = simd_mul (
+          orthographic (
+            0.58f * period_across, aspect_ratio, 0.05f * m, 80.0f * m),
+          look_at (eye, target)),
         .eye = eye,
         .tiles = {},
       };
@@ -124,7 +127,8 @@ namespace atelier {
               { placement (flat_frame (tile, image_across, image_away),
                            tile.radius),
                 tile.deformation,
-                tile.generation });
+                tile.generation,
+                tile.material_seed });
         }
       }
       return result;

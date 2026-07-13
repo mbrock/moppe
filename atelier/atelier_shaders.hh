@@ -22,13 +22,14 @@ struct Tile {
 
 struct PuckPoint {
   float4 position [[position]];
+  float3 local_position;
   float3 world_position;
   float3 world_normal;
   float3 view_direction;
   half4 glaze;
 };
 
-constant float3 backdrop = float3(0.025, 0.032, 0.05);
+constant float3 backdrop = float3(0.030, 0.034, 0.038);
 constant float3 key_light = float3(-0.39364, 0.88569, 0.24603);
 constant uint vertex_count = 26;
 constant uint triangle_count = 48;
@@ -73,11 +74,35 @@ inline PuckPoint puck_vertex(uint index,
     (tile.place_in_world * float4(normal, 0.0)).xyz);
   return {
     uniforms.world_to_clip * world,
+    position,
     world.xyz,
     world_normal,
     normalize(uniforms.eye.xyz - world.xyz),
     half4(tile.glaze)
   };
+}
+
+inline float stone_hash(float3 point) {
+  point = fract(point * float3(0.1031, 0.1030, 0.0973));
+  point += dot(point, point.yxz + 33.33);
+  return fract((point.x + point.y) * point.z);
+}
+
+inline float stone_noise(float3 point) {
+  const float3 cell = floor(point);
+  float3 blend = fract(point);
+  blend = blend * blend * (3.0 - 2.0 * blend);
+  const float lower = mix(
+    mix(stone_hash(cell + float3(0, 0, 0)),
+        stone_hash(cell + float3(1, 0, 0)), blend.x),
+    mix(stone_hash(cell + float3(0, 1, 0)),
+        stone_hash(cell + float3(1, 1, 0)), blend.x), blend.y);
+  const float upper = mix(
+    mix(stone_hash(cell + float3(0, 0, 1)),
+        stone_hash(cell + float3(1, 0, 1)), blend.x),
+    mix(stone_hash(cell + float3(0, 1, 1)),
+        stone_hash(cell + float3(1, 1, 1)), blend.x), blend.y);
+  return mix(lower, upper, blend.z);
 }
 
 inline uint3 puck_triangle(uint triangle) {
@@ -132,11 +157,28 @@ inline uint3 puck_triangle(uint triangle) {
 
 fragment half4 puck_fragment(PuckPoint puck [[stage_in]]) {
   const float3 normal = normalize(puck.world_normal);
-  const float diffuse = 0.34 + 0.66 * max(0.0, dot(normal, key_light));
+  const float seed = float(puck.glaze.a);
+  const float3 texture_offset = seed * float3(41.0, 73.0, 101.0);
+  const float broad = stone_noise(puck.local_position * 5.0 + texture_offset);
+  const float fine = stone_noise(puck.local_position * 23.0 + texture_offset);
+  float3 albedo = float3(puck.glaze.rgb);
+  albedo *= 1.0 + 0.075 * (0.72 * broad + 0.28 * fine - 0.5);
+
+  const float light = max(0.0, dot(normal, key_light));
+  const float banded = floor(light * 3.0 + 0.5) / 3.0;
+  const float diffuse = 0.48 + 0.42 * mix(light, banded, 0.45);
   const float3 mirrored = reflect(-key_light, normal);
   const float gleam =
-    pow(max(0.0, dot(mirrored, normalize(puck.view_direction))), 32.0);
-  const float3 lit = float3(puck.glaze.rgb) * diffuse + 0.34 * gleam;
+    pow(max(0.0, dot(mirrored, normalize(puck.view_direction))), 18.0);
+  float3 lit = albedo * diffuse + 0.018 * gleam;
+
+  const float facing = abs(dot(normal, normalize(puck.view_direction)));
+  const float silhouette = 1.0 - smoothstep(0.08, 0.30, facing);
+  const float radius = length(puck.local_position.xz);
+  const float top_rim = smoothstep(0.78, 0.855, radius) *
+                        smoothstep(0.78, 0.96, normal.y);
+  const float outline = max(0.55 * silhouette, 0.34 * top_rim);
+  lit = mix(lit, albedo * 0.28, outline);
   return half4(half3(lit), 1.0h);
 }
 )";

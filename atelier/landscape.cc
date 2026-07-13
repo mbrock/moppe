@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <stdexcept>
 
@@ -32,31 +33,29 @@ namespace atelier {
                                                      : remainder);
     }
 
-    constexpr TileId tile_id (std::size_t column, std::size_t row) {
-      return row * landscape_columns + column;
-    }
-
-    constexpr TileId neighbour_of (GridCell cell, std::size_t side) {
-      const auto& offsets =
-        cell.row % 2 == 0 ? even_neighbours : odd_neighbours;
-      return tile_id (
-        wrap (static_cast<int> (cell.column) + offsets[side][0],
-              landscape_columns),
-        wrap (static_cast<int> (cell.row) + offsets[side][1], landscape_rows));
-    }
-
     Real smooth (Real value) {
       const Real t = std::clamp (value, 0.0f, 1.0f);
       return t * t * (3.0f - 2.0f * t);
     }
 
+    Real material_seed (TileId id, std::size_t variant) {
+      std::uint32_t bits =
+        static_cast<std::uint32_t> (id * 8 + variant + 0x9e3779b9U);
+      bits ^= bits >> 16;
+      bits *= 0x7feb352dU;
+      bits ^= bits >> 15;
+      bits *= 0x846ca68bU;
+      bits ^= bits >> 16;
+      return Real (bits & 0x00ffffffU) / Real (0x01000000U);
+    }
+
     DeformationReading deformation_of (
-      const std::array<LandscapeTile, landscape_tile_count>& tiles, TileId id) {
-      const LandscapeTile& tile = tiles[id];
+      const PeriodicHexTopology& topology,
+      const std::array<Length, landscape_tile_count>& displacement,
+      TileId id) {
       Length total_difference {};
-      for (TileId neighbour : tile.neighbours) {
-        const Length difference =
-          tiles[neighbour].displacement - tile.displacement;
+      for (TileId neighbour : topology.neighbours (id)) {
+        const Length difference = displacement[neighbour] - displacement[id];
         total_difference += difference < 0.0f * m ? -difference : difference;
       }
       const Real reading =
@@ -65,46 +64,57 @@ namespace atelier {
     }
   }
 
-  Landscape::Landscape () {
-    for (std::size_t row = 0; row < landscape_rows; ++row) {
-      for (std::size_t column = 0; column < landscape_columns; ++column) {
-        const GridCell cell { column, row };
-        const TileId id = tile_id (column, row);
-        m_tiles[id] = {
-          .cell = cell,
-          .neighbours = {
-            neighbour_of (cell, 0), neighbour_of (cell, 1),
-            neighbour_of (cell, 2), neighbour_of (cell, 3),
-            neighbour_of (cell, 4), neighbour_of (cell, 5),
-          },
-          .displacement = 0.0f * m,
-          .velocity = 0.0f * m / s,
-        };
-      }
-    }
-    if (!topology_is_valid ())
-      throw std::runtime_error ("The toroidal tile topology is inconsistent");
+  GridCell PeriodicHexTopology::cell (TileId id) const {
+    return { id % landscape_columns, id / landscape_columns };
   }
 
-  bool Landscape::topology_is_valid () const {
-    for (TileId id = 0; id < m_tiles.size (); ++id) {
-      const LandscapeTile& tile = m_tiles[id];
-      for (TileId neighbour : tile.neighbours) {
-        if (neighbour >= m_tiles.size () || neighbour == id)
+  TileId PeriodicHexTopology::tile_id (GridCell cell) const {
+    return cell.row * landscape_columns + cell.column;
+  }
+
+  TileId PeriodicHexTopology::neighbour (TileId id, std::size_t side) const {
+    const GridCell from = cell (id);
+    const auto& offsets = from.row % 2 == 0 ? even_neighbours : odd_neighbours;
+    return tile_id ({
+      wrap (static_cast<int> (from.column) + offsets[side][0],
+            landscape_columns),
+      wrap (static_cast<int> (from.row) + offsets[side][1], landscape_rows),
+    });
+  }
+
+  std::array<TileId, 6> PeriodicHexTopology::neighbours (TileId id) const {
+    return { neighbour (id, 0), neighbour (id, 1), neighbour (id, 2),
+             neighbour (id, 3), neighbour (id, 4), neighbour (id, 5) };
+  }
+
+  bool PeriodicHexTopology::is_valid () const {
+    for (TileId id = 0; id < landscape_tile_count; ++id) {
+      for (TileId adjacent : neighbours (id)) {
+        if (adjacent >= landscape_tile_count || adjacent == id)
           return false;
-        const auto& back = m_tiles[neighbour].neighbours;
-        if (std::ranges::find (back, id) == back.end ())
+        const auto reverse = neighbours (adjacent);
+        if (std::ranges::find (reverse, id) == reverse.end ())
           return false;
       }
     }
     return true;
   }
 
+  Landscape::Landscape () {
+    if (!topology_is_valid ())
+      throw std::runtime_error ("The toroidal tile topology is inconsistent");
+  }
+
+  bool Landscape::topology_is_valid () const {
+    return m_topology.is_valid ();
+  }
+
   void Landscape::begin_refinement () {
-    const TileId focus = tile_id (landscape_columns / 5, landscape_rows / 2);
-    m_tiles[focus].velocity += 1.4f * m / s;
-    for (TileId neighbour : m_tiles[focus].neighbours)
-      m_tiles[neighbour].velocity += 0.35f * m / s;
+    const TileId focus =
+      m_topology.tile_id ({ landscape_columns / 5, landscape_rows / 2 });
+    m_velocity[focus] += 1.4f * m / s;
+    for (TileId neighbour : m_topology.neighbours (focus))
+      m_velocity[neighbour] += 0.35f * m / s;
   }
 
   void Landscape::advance (Duration elapsed) {
@@ -149,21 +159,18 @@ namespace atelier {
     constexpr auto stiffness = 2.3f / (s * s);
     constexpr auto coupling = 5.2f / (s * s);
     constexpr auto damping = 1.25f / s;
-    for (TileId id = 0; id < m_tiles.size (); ++id) {
-      const LandscapeTile& tile = m_tiles[id];
+    for (TileId id = 0; id < landscape_tile_count; ++id) {
       Length laplacian {};
-      for (TileId neighbour : tile.neighbours)
-        laplacian += m_tiles[neighbour].displacement - tile.displacement;
+      for (TileId neighbour : m_topology.neighbours (id))
+        laplacian += m_displacement[neighbour] - m_displacement[id];
       const auto acceleration = coupling * laplacian -
-                                stiffness * tile.displacement -
-                                damping * tile.velocity;
-      m_next_velocity[id] = tile.velocity + acceleration * dt;
-      m_next_displacement[id] = tile.displacement + m_next_velocity[id] * dt;
+                                stiffness * m_displacement[id] -
+                                damping * m_velocity[id];
+      m_next_velocity[id] = m_velocity[id] + acceleration * dt;
+      m_next_displacement[id] = m_displacement[id] + m_next_velocity[id] * dt;
     }
-    for (TileId id = 0; id < m_tiles.size (); ++id) {
-      m_tiles[id].velocity = m_next_velocity[id];
-      m_tiles[id].displacement = m_next_displacement[id];
-    }
+    m_velocity = m_next_velocity;
+    m_displacement = m_next_displacement;
   }
 
   bool Landscape::is_refined () const {
@@ -177,51 +184,57 @@ namespace atelier {
   std::vector<TileLeaf> Landscape::leaves () const {
     std::vector<TileLeaf> result;
     result.reserve (landscape_tile_count + 7);
-    const TileId focus = tile_id (landscape_columns / 5, landscape_rows / 2);
+    const TileId focus =
+      m_topology.tile_id ({ landscape_columns / 5, landscape_rows / 2 });
 
-    for (TileId id = 0; id < m_tiles.size (); ++id) {
-      const LandscapeTile& tile = m_tiles[id];
-      const DeformationReading deformation = deformation_of (m_tiles, id);
+    for (TileId id = 0; id < landscape_tile_count; ++id) {
+      const GridCell cell = m_topology.cell (id);
+      const DeformationReading deformation =
+        deformation_of (m_topology, m_displacement, id);
       if (id != focus || !m_refined) {
-        result.push_back ({ tile.cell,
+        result.push_back ({ cell,
                             0.0f * m,
                             0.0f * m,
                             puck_radius,
-                            tile.displacement,
+                            m_displacement[id],
                             deformation,
-                            0 });
+                            0,
+                            material_seed (id, 0) });
         continue;
       }
 
       const Length parent_radius = (1.0f - m_refinement) * puck_radius;
       if (parent_radius > 0.01f * m)
-        result.push_back ({ tile.cell,
+        result.push_back ({ cell,
                             0.0f * m,
                             0.0f * m,
                             parent_radius,
-                            tile.displacement,
+                            m_displacement[id],
                             deformation,
-                            0 });
+                            0,
+                            material_seed (id, 0) });
 
       const Length child_radius =
         std::max (0.01f, m_refinement / 3.0f) * puck_radius;
-      result.push_back ({ tile.cell,
+      result.push_back ({ cell,
                           0.0f * m,
                           0.0f * m,
                           child_radius,
-                          tile.displacement,
+                          m_displacement[id],
                           deformation,
-                          1 });
+                          1,
+                          material_seed (id, 1) });
       const Length orbit = puck_radius / std::numbers::sqrt3_v<Real>;
       for (std::size_t side = 0; side < 6; ++side) {
         const Real angle = Real (side) * 2.0f * std::numbers::pi_v<Real> / 6;
-        result.push_back ({ tile.cell,
+        result.push_back ({ cell,
                             orbit * std::sin (angle),
                             orbit * std::cos (angle),
                             child_radius,
-                            tile.displacement,
+                            m_displacement[id],
                             deformation,
-                            1 });
+                            1,
+                            material_seed (id, side + 2) });
       }
     }
     return result;

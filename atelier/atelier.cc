@@ -7,16 +7,16 @@ namespace atelier {
 
   namespace {
     simd_float4 glaze (const EmbeddedTile& tile) {
-      constexpr simd_float3 clay { 0.73f, 0.42f, 0.22f };
-      constexpr simd_float3 fired { 1.0f, 0.76f, 0.28f };
-      constexpr simd_float3 new_growth { 0.52f, 0.85f, 0.76f };
+      constexpr simd_float3 ivory { 0.76f, 0.74f, 0.69f };
+      constexpr simd_float3 compressed { 0.68f, 0.65f, 0.64f };
+      constexpr simd_float3 new_growth { 0.70f, 0.76f, 0.72f };
       const Real deformation =
         tile.deformation.numerical_value_in (mp_units::one);
       const simd_float3 mature =
-        simd_mix (clay, fired, simd_float3 (deformation));
+        simd_mix (ivory, compressed, simd_float3 (deformation));
       const simd_float3 colour =
         simd_mix (mature, new_growth, simd_float3 (tile.generation));
-      return simd_make_float4 (colour, 1.0f);
+      return simd_make_float4 (colour, tile.material_seed);
     }
   }
 

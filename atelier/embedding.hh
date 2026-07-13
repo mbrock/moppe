@@ -16,6 +16,7 @@ namespace atelier {
     Matrix place_in_world;
     DeformationReading deformation;
     Real generation;
+    Real material_seed;
   };
 
   struct EmbeddedLandscape {
