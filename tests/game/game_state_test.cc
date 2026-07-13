@@ -1,5 +1,6 @@
 #include <moppe/game/game_state.hh>
 #include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
 
@@ -139,13 +140,14 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
              map.raw_heights () + map.width () * map.height (),
              0.5f);
   map.recompute_normals ();
+  map::Surface surface (map);
 
   const auto ratio =
     mov::Glider::glide_ratio_at (16.0f * airspeed[u::m / u::s]);
   static_assert (std::is_same_v<decltype (ratio), const mov::glide_ratio_t>);
   MOPPE_CHECK (ratio.numerical_value_in (one) > 18.0f);
 
-  mov::Glider glider (map);
+  mov::Glider glider (surface);
   glider.launch (
     position (Vec3 (80, 50, 80)), velocity (Vec3 (0, 2, 18)), Vec3 (0, 0, 1));
   glider.set_turn (0.6f);
@@ -160,7 +162,7 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   MOPPE_CHECK (glider.air_mass_lift ().numerical_value_in (u::m / u::s) ==
                0.0f);
 
-  mov::Glider landing (map);
+  mov::Glider landing (surface);
   landing.launch (
     position (Vec3 (100, 14, 100)), velocity (Vec3 (0, 0, 14)), Vec3 (0, 0, 1));
   for (int i = 0; i < 1800 && !landing.landed (); ++i)
@@ -177,8 +179,9 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
              map.raw_heights () + map.width () * map.height (),
              0.35f);
   map.recompute_normals ();
+  map::Surface surface (map);
 
-  mov::Glider glider (map);
+  mov::Glider glider (surface);
   glider.launch (
     position (Vec3 (40, 70, 40)), velocity (Vec3 (12, -1, 15)), Vec3 (0, 0, 1));
   glider.set_turn (-0.7f);

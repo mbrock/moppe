@@ -2,7 +2,7 @@
 #define MOPPE_GLIDER_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 namespace moppe::mov {
   using rate_of_climb_t = quantity<rate_of_climb_speed[u::m / u::s], float>;
@@ -29,7 +29,7 @@ namespace moppe::mov {
       bool landed {};
     };
 
-    explicit Glider (const map::HeightMap& map);
+    explicit Glider (const map::Surface& surface);
 
     void launch (position_t position,
                  velocity_t inherited_velocity,
@@ -87,7 +87,7 @@ namespace moppe::mov {
     rate_of_climb_t ridge_lift () const;
     void bound ();
 
-    const map::HeightMap& m_map;
+    const map::Surface& m_surface;
     position_t m_position {};
     velocity_t m_velocity {};
     Vec3 m_heading { 0, 0, 1 };
