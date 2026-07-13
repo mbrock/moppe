@@ -34,6 +34,7 @@
 #include <moppe/terrain/watercourse.hh>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -1564,6 +1565,8 @@ namespace moppe {
           if (sky_time - m_loading_snapshot_started >= chapter_hold) {
             ++m_loading_snapshot_index;
             const auto& snapshot = *loading_snapshots[m_loading_snapshot_index];
+            const auto& previous =
+              *loading_snapshots[m_loading_snapshot_index - 1];
             std::copy (
               snapshot.begin (), snapshot.end (), m_loading_map.raw_heights ());
             m_terrain.setup (r,
@@ -1573,8 +1576,30 @@ namespace moppe {
                              render::TerrainProjection::Plane,
                              true,
                              true);
+            std::vector<float> difference (snapshot.size ());
+            float magnitude = 0.0f;
+            for (std::size_t i = 0; i < difference.size (); ++i) {
+              difference[i] = snapshot[i] - previous[i];
+              magnitude = std::max (magnitude, std::fabs (difference[i]));
+            }
+            if (magnitude > 1e-8f) {
+              r.set_terrain_overlay (
+                { .width = m_loading_map.width (),
+                  .height = m_loading_map.height (),
+                  .minimum = -magnitude,
+                  .maximum = magnitude,
+                  .opacity = 0.82f,
+                  .ramp = render::TerrainOverlayRamp::Diverging },
+                difference);
+              m_loading_diff_overlay_active = true;
+            }
             m_loading_snapshot_started = sky_time;
           }
+        }
+        if (m_loading_diff_overlay_active &&
+            sky_time - m_loading_snapshot_started >= 1.75f) {
+          r.clear_terrain_overlay ();
+          m_loading_diff_overlay_active = false;
         }
 
         const bool show_terrain = m_loading_terrain_state > 0;
@@ -1587,22 +1612,20 @@ namespace moppe {
             float angle;
             float radius;
             float height;
-            float target_x;
             float target_y;
-            float target_z;
             float field_of_view;
           };
           // Each transform gets a composition suited to what it changes:
           // geography, lowlands, long valleys, slopes, paths, and channels.
           static constexpr CameraShot shots[] = {
-            { 0.20f, 0.70f, 0.68f, 0.00f, 0.11f, 0.00f, 52.0f },
-            { 0.72f, 0.56f, 0.44f, -0.08f, 0.08f, 0.08f, 48.0f },
-            { 1.14f, 0.48f, 0.34f, 0.10f, 0.06f, -0.08f, 45.0f },
-            { 1.70f, 0.58f, 0.47f, 0.04f, 0.13f, 0.06f, 49.0f },
-            { 2.22f, 0.40f, 0.29f, -0.12f, 0.08f, 0.10f, 43.0f },
-            { 2.73f, 0.46f, 0.38f, 0.09f, 0.05f, 0.11f, 44.0f },
-            { 3.18f, 0.41f, 0.30f, 0.08f, 0.07f, -0.12f, 43.0f },
-            { 4.12f, 0.78f, 0.64f, 0.00f, 0.08f, 0.00f, 54.0f },
+            { 0.20f, 0.56f, 0.52f, 0.09f, 52.0f },
+            { 0.72f, 0.40f, 0.34f, 0.07f, 48.0f },
+            { 1.14f, 0.30f, 0.26f, 0.05f, 45.0f },
+            { 1.70f, 0.32f, 0.29f, 0.08f, 48.0f },
+            { 2.22f, 0.22f, 0.18f, 0.05f, 42.0f },
+            { 2.73f, 0.24f, 0.20f, 0.04f, 43.0f },
+            { 3.18f, 0.22f, 0.18f, 0.05f, 42.0f },
+            { 4.12f, 0.38f, 0.34f, 0.06f, 50.0f },
           };
           const std::size_t stage = std::min<std::size_t> (
             m_loading_snapshot_index, std::size (shots) - 1);
@@ -1614,32 +1637,86 @@ namespace moppe {
             }
             return m_loading_map.interpolated_height (x, z);
           };
-          target = Vec3 (world_extent[0] * (0.5f + shot.target_x),
-                         0.0f,
-                         world_extent[2] * (0.5f + shot.target_z));
-          target[1] =
-            ground_at (target[0], target[2]) + world_extent[1] * shot.target_y;
-          eye = target +
-                Vec3 (std::sin (shot.angle) * world_extent[0] * shot.radius,
-                      world_extent[1] * shot.height,
-                      std::cos (shot.angle) * world_extent[2] * shot.radius);
+          if (!m_loading_camera_valid[stage]) {
+            Vec3 subject (world_extent[0] * 0.5f, 0.0f, world_extent[2] * 0.5f);
+            if (stage > 0 && stage < loading_snapshots.size ()) {
+              const std::size_t width = m_loading_map.unique_width ();
+              const std::size_t height = m_loading_map.unique_height ();
+              const std::size_t block = std::max<std::size_t> (8, width / 32);
+              const auto& before = *loading_snapshots[stage - 1];
+              const auto& after = *loading_snapshots[stage];
+              double best_energy = -1.0;
+              std::size_t best_x = width / 2, best_y = height / 2;
+              for (std::size_t by = 0; by < height; by += block)
+                for (std::size_t bx = 0; bx < width; bx += block) {
+                  double energy = 0.0;
+                  const std::size_t y1 = std::min (height, by + block);
+                  const std::size_t x1 = std::min (width, bx + block);
+                  for (std::size_t y = by; y < y1; ++y)
+                    for (std::size_t x = bx; x < x1; ++x) {
+                      const std::size_t cell = y * m_loading_map.width () + x;
+                      energy += std::fabs (after[cell] - before[cell]);
+                    }
+                  if (energy > best_energy) {
+                    best_energy = energy;
+                    best_x = (bx + x1) / 2;
+                    best_y = (by + y1) / 2;
+                  }
+                }
+              const Vec3& scale = m_loading_map.scale ();
+              subject[0] = best_x * scale[0];
+              subject[2] = best_y * scale[2];
+            }
+            subject[1] = ground_at (subject[0], subject[2]) +
+                         world_extent[1] * shot.target_y;
 
-          // A film cut can teleport, but its chosen tripod and sightline must
-          // remain above the terrain. Raise the eye until samples along the
-          // view ray have comfortable clearance; never animate through them.
-          constexpr int sightline_samples = 24;
-          const float clearance = world_extent[1] * 0.055f;
-          eye[1] =
-            std::max (eye[1], ground_at (eye[0], eye[2]) + clearance * 1.5f);
-          for (int i = 0; i < sightline_samples; ++i) {
-            const float t = 0.82f * i / (sightline_samples - 1);
-            const float x = eye[0] + (target[0] - eye[0]) * t;
-            const float z = eye[2] + (target[2] - eye[2]) * t;
-            const float required =
-              (ground_at (x, z) + clearance - target[1] * t) / (1.0f - t);
-            eye[1] = std::max (eye[1], required);
+            constexpr int candidate_count = 16;
+            constexpr int sightline_samples = 24;
+            const float clearance = world_extent[1] * 0.045f;
+            float best_penalty = std::numeric_limits<float>::infinity ();
+            for (int candidate = 0; candidate < candidate_count; ++candidate) {
+              const float angle =
+                shot.angle + candidate * 6.2831853f / candidate_count;
+              Vec3 candidate_eye =
+                subject +
+                Vec3 (std::sin (angle) * world_extent[0] * shot.radius,
+                      world_extent[1] * shot.height,
+                      std::cos (angle) * world_extent[2] * shot.radius);
+              const Vec3 side (-std::cos (angle), 0.0f, std::sin (angle));
+              const float third = stage % 2 == 0 ? 1.0f : -1.0f;
+              const Vec3 candidate_target =
+                subject +
+                side * (third * world_extent[0] * shot.radius * 0.18f) -
+                Vec3 (0.0f, world_extent[1] * 0.035f, 0.0f);
+              const float intended_y = candidate_eye[1];
+              candidate_eye[1] =
+                std::max (candidate_eye[1],
+                          ground_at (candidate_eye[0], candidate_eye[2]) +
+                            clearance * 1.5f);
+              for (int i = 0; i < sightline_samples; ++i) {
+                const float t = 0.82f * i / (sightline_samples - 1);
+                const float x = candidate_eye[0] +
+                                (candidate_target[0] - candidate_eye[0]) * t;
+                const float z = candidate_eye[2] +
+                                (candidate_target[2] - candidate_eye[2]) * t;
+                const float required =
+                  (ground_at (x, z) + clearance - candidate_target[1] * t) /
+                  (1.0f - t);
+                candidate_eye[1] = std::max (candidate_eye[1], required);
+              }
+              const float penalty = candidate_eye[1] - intended_y;
+              if (penalty < best_penalty) {
+                best_penalty = penalty;
+                m_loading_camera_eye[stage] = candidate_eye;
+                m_loading_camera_target[stage] = candidate_target;
+                m_loading_camera_fov[stage] = shot.field_of_view;
+              }
+            }
+            m_loading_camera_valid[stage] = true;
           }
-          field_of_view = shot.field_of_view;
+          eye = m_loading_camera_eye[stage];
+          target = m_loading_camera_target[stage];
+          field_of_view = m_loading_camera_fov[stage];
         }
         const Vec3 forward = normalized (target - eye);
 
@@ -1664,7 +1741,7 @@ namespace moppe {
         sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
         fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
         fp.fog_scale =
-          show_terrain ? attenuation_value (m_world.fog_scale * 0.20f) : 0.0f;
+          show_terrain ? attenuation_value (m_world.fog_scale * 0.035f) : 0.0f;
         fp.time = sky_time;
         fp.exposure_bias = 1.0f;
         fp.sun_visibility = 0.32f;
@@ -1749,25 +1826,25 @@ namespace moppe {
         // A quiet cinematic instrument: the full ring is possibility, the
         // luminous arc is the real eased world-generation progress.
         const float center_x = w * 0.5f;
-        const float dial_y =
-          std::clamp (h * 0.42f, 105.0f, std::max (105.0f, h - 190.0f));
+        const float dial_x = 54.0f;
+        const float dial_y = 54.0f;
         const float pulse = 0.5f + 0.5f * std::sin (sky_time * 2.2f);
-        loading_arc (m_hud_dl, center_x, dial_y, 49.0f, 2.0f, 1.0f, 0.20f);
+        loading_arc (m_hud_dl, dial_x, dial_y, 28.0f, 1.5f, 1.0f, 0.20f);
         loading_arc (m_hud_dl,
-                     center_x,
+                     dial_x,
                      dial_y,
-                     49.0f,
-                     4.5f,
+                     28.0f,
+                     3.0f,
                      m_loading_progress_display,
                      0.92f);
         m_hud_dl.color (0.88f, 1.0f, 0.83f, 0.10f + 0.08f * pulse);
         fill_rounded_rect (
-          m_hud_dl, center_x - 12.0f, dial_y - 12.0f, 24.0f, 24.0f, 12.0f);
+          m_hud_dl, dial_x - 8.0f, dial_y - 8.0f, 16.0f, 16.0f, 8.0f);
         m_hud_dl.color (0.94f, 1.0f, 0.89f, 0.92f);
         fill_rounded_rect (
-          m_hud_dl, center_x - 4.0f, dial_y - 4.0f, 8.0f, 8.0f, 4.0f);
+          m_hud_dl, dial_x - 3.0f, dial_y - 3.0f, 6.0f, 6.0f, 3.0f);
 
-        const float headline_y = dial_y + 112.0f;
+        const float headline_y = std::clamp (h * 0.66f, 360.0f, h - 180.0f);
         const float chapter_age = sky_time - m_loading_snapshot_started;
         const float transition = smooth_curve (0.0f, 0.55f, chapter_age);
         const bool final_scene =
@@ -2091,6 +2168,8 @@ namespace moppe {
         m_loading_snapshot_started = 0.0f;
         m_loading_terrain_state = 0;
         m_loading_continue_requested = false;
+        m_loading_diff_overlay_active = false;
+        m_loading_camera_valid.fill (false);
         m_setup_complete = false;
         {
           const std::lock_guard<std::mutex> lock (m_loading_mutex);
@@ -2236,6 +2315,11 @@ namespace moppe {
       std::size_t m_loading_snapshot_index = 0;
       float m_loading_snapshot_started = 0.0f;
       bool m_loading_continue_requested = false;
+      bool m_loading_diff_overlay_active = false;
+      std::array<Vec3, 8> m_loading_camera_eye {};
+      std::array<Vec3, 8> m_loading_camera_target {};
+      std::array<float, 8> m_loading_camera_fov {};
+      std::array<bool, 8> m_loading_camera_valid {};
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;
