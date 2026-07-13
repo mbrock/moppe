@@ -26,6 +26,11 @@ namespace atelier {
     std::size_t row;
   };
 
+  struct GridStep {
+    int columns;
+    int rows;
+  };
+
   // The immutable combinatorial law of the closed sheet.  Regular topology
   // is calculated rather than copied into every tile's state.
   class PeriodicHexTopology {
@@ -46,6 +51,7 @@ namespace atelier {
 
     [[nodiscard]] GridCell cell (TileId id) const;
     [[nodiscard]] TileId tile_id (GridCell cell) const;
+    [[nodiscard]] GridStep neighbour_step (TileId id, std::size_t side) const;
     [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;
     [[nodiscard]] std::array<TileId, 6> neighbours (TileId id) const;
 

@@ -19,15 +19,25 @@ namespace atelier {
     Real material_seed;
   };
 
+  struct EmbeddedLigament {
+    simd_float3 start;
+    simd_float3 end;
+    simd_float3 start_normal;
+    simd_float3 end_normal;
+    Real strain;
+    Real bend;
+    Real material_seed;
+  };
+
   struct EmbeddedLandscape {
     Matrix world_to_clip;
     Point eye;
     std::vector<EmbeddedTile> tiles;
+    std::vector<EmbeddedLigament> ligaments;
   };
 
-  [[nodiscard]] EmbeddedLandscape
-  embed_landscape (const std::vector<TileLeaf>& leaves,
-                   EmbeddingKind kind,
-                   Duration elapsed,
-                   Real aspect_ratio);
+  [[nodiscard]] EmbeddedLandscape embed_landscape (const Landscape& landscape,
+                                                   EmbeddingKind kind,
+                                                   Duration elapsed,
+                                                   Real aspect_ratio);
 }

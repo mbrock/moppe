@@ -9,16 +9,18 @@
 #include <cstddef>
 #include <cstring>
 
-// TilePipeline: one mesh threadgroup per leaf of the current partition.  The
-// GPU produces each beveled hexagonal prism procedurally, so refinement and
-// melding only change the compact per-tile instance buffer.
+// TilePipeline: one mesh threadgroup per partition leaf or topology edge. The
+// GPU procedurally produces both beveled pucks and ligaments, so deformation
+// and refinement only change compact instance buffers.
 
 namespace atelier {
   inline constexpr std::size_t max_tile_instances = 8192;
+  inline constexpr std::size_t max_ligament_instances = 32768;
 
   struct GpuFrame {
     Uniforms uniforms;
     std::array<TileInstance, max_tile_instances> tiles;
+    std::array<LigamentInstance, max_ligament_instances> ligaments;
   };
 
   class TilePipeline {
@@ -26,7 +28,13 @@ namespace atelier {
     explicit TilePipeline (MetalExecution& metal) {
       MTL::Device* device = metal.device ();
       const auto library = compile_shaders (device);
-      m_pipeline = make_pipeline (device, library.get ());
+      m_tile_pipeline = make_pipeline (
+        device, library.get (), "puck_mesh", "puck_fragment", "pucks");
+      m_ligament_pipeline = make_pipeline (device,
+                                           library.get (),
+                                           "ligament_mesh",
+                                           "ligament_fragment",
+                                           "ligaments");
       m_depth_state = make_depth_state (device);
       m_arguments = make_argument_table (device);
 
@@ -44,26 +52,39 @@ namespace atelier {
       if (frame.tiles.size () > max_tile_instances)
         throw std::runtime_error ("The cellular landscape exceeded its GPU "
                                   "instance capacity");
+      if (frame.ligaments.size () > max_ligament_instances)
+        throw std::runtime_error ("The cellular landscape exceeded its GPU "
+                                  "ligament capacity");
       MTL::Buffer* buffer = m_frames[slot.buffer_index].get ();
       auto* gpu = static_cast<GpuFrame*> (buffer->contents ());
       gpu->uniforms = frame.uniforms;
       std::memcpy (gpu->tiles.data (),
                    frame.tiles.data (),
                    frame.tiles.size () * sizeof (TileInstance));
+      std::memcpy (gpu->ligaments.data (),
+                   frame.ligaments.data (),
+                   frame.ligaments.size () * sizeof (LigamentInstance));
       m_arguments->setAddress (
         buffer->gpuAddress () + offsetof (GpuFrame, uniforms), 1);
       m_arguments->setAddress (
         buffer->gpuAddress () + offsetof (GpuFrame, tiles), 2);
+      m_arguments->setAddress (
+        buffer->gpuAddress () + offsetof (GpuFrame, ligaments), 3);
       m_instance_count = frame.tiles.size ();
+      m_ligament_count = frame.ligaments.size ();
     }
 
     void encode (MTL4::CommandBuffer* command_buffer,
                  MTL4::RenderPassDescriptor* pass) const {
       MTL4::RenderCommandEncoder* encoder =
         command_buffer->renderCommandEncoder (pass);
-      encoder->setRenderPipelineState (m_pipeline.get ());
       encoder->setDepthStencilState (m_depth_state.get ());
       encoder->setArgumentTable (m_arguments.get (), MTL::RenderStageMesh);
+      encoder->setRenderPipelineState (m_ligament_pipeline.get ());
+      encoder->drawMeshThreadgroups (MTL::Size (m_ligament_count, 1, 1),
+                                     MTL::Size (1, 1, 1),
+                                     MTL::Size (32, 1, 1));
+      encoder->setRenderPipelineState (m_tile_pipeline.get ());
       encoder->drawMeshThreadgroups (MTL::Size (m_instance_count, 1, 1),
                                      MTL::Size (1, 1, 1),
                                      MTL::Size (32, 1, 1));
@@ -84,12 +105,18 @@ namespace atelier {
     }
 
     static NS::SharedPtr<MTL::RenderPipelineState>
-    make_pipeline (MTL::Device* device, MTL::Library* library) {
+    make_pipeline (MTL::Device* device,
+                   MTL::Library* library,
+                   const char* mesh_name,
+                   const char* fragment_name,
+                   const char* label) {
       auto descriptor =
         NS::TransferPtr (MTL::MeshRenderPipelineDescriptor::alloc ()->init ());
-      auto mesh = NS::TransferPtr (library->newFunction (MTLSTR ("puck_mesh")));
-      auto fragment =
-        NS::TransferPtr (library->newFunction (MTLSTR ("puck_fragment")));
+      auto mesh = NS::TransferPtr (library->newFunction (
+        NS::String::string (mesh_name, NS::UTF8StringEncoding)));
+      auto fragment = NS::TransferPtr (library->newFunction (
+        NS::String::string (fragment_name, NS::UTF8StringEncoding)));
+      descriptor->setLabel (NS::String::string (label, NS::UTF8StringEncoding));
       descriptor->setMeshFunction (mesh.get ());
       descriptor->setFragmentFunction (fragment.get ());
       descriptor->setMaxTotalThreadsPerMeshThreadgroup (32);
@@ -123,7 +150,7 @@ namespace atelier {
     make_argument_table (MTL::Device* device) {
       auto descriptor =
         NS::TransferPtr (MTL4::ArgumentTableDescriptor::alloc ()->init ());
-      descriptor->setMaxBufferBindCount (3);
+      descriptor->setMaxBufferBindCount (4);
       NS::Error* error = nullptr;
       auto table =
         NS::TransferPtr (device->newArgumentTable (descriptor.get (), &error));
@@ -132,10 +159,12 @@ namespace atelier {
       return table;
     }
 
-    NS::SharedPtr<MTL::RenderPipelineState> m_pipeline;
+    NS::SharedPtr<MTL::RenderPipelineState> m_tile_pipeline;
+    NS::SharedPtr<MTL::RenderPipelineState> m_ligament_pipeline;
     NS::SharedPtr<MTL::DepthStencilState> m_depth_state;
     NS::SharedPtr<MTL4::ArgumentTable> m_arguments;
     std::array<NS::SharedPtr<MTL::Buffer>, frames_in_flight> m_frames;
     std::size_t m_instance_count = 0;
+    std::size_t m_ligament_count = 0;
   };
 }

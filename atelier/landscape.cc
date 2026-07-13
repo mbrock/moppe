@@ -78,13 +78,19 @@ namespace atelier {
     return cell.row * landscape_columns + cell.column;
   }
 
-  TileId PeriodicHexTopology::neighbour (TileId id, std::size_t side) const {
+  GridStep PeriodicHexTopology::neighbour_step (TileId id,
+                                                std::size_t side) const {
     const GridCell from = cell (id);
     const auto& offsets = from.row % 2 == 0 ? even_neighbours : odd_neighbours;
+    return { offsets[side][0], offsets[side][1] };
+  }
+
+  TileId PeriodicHexTopology::neighbour (TileId id, std::size_t side) const {
+    const GridCell from = cell (id);
+    const GridStep step = neighbour_step (id, side);
     return tile_id ({
-      wrap (static_cast<int> (from.column) + offsets[side][0],
-            landscape_columns),
-      wrap (static_cast<int> (from.row) + offsets[side][1], landscape_rows),
+      wrap (static_cast<int> (from.column) + step.columns, landscape_columns),
+      wrap (static_cast<int> (from.row) + step.rows, landscape_rows),
     });
   }
 
@@ -138,7 +144,7 @@ namespace atelier {
       terrain::CpuEvaluator ().evaluate (drive_field.untyped (), sampling);
     auto& drive = get<normal_acceleration> (m_tiles);
     auto& next_drive = get<normal_acceleration> (m_next_tiles);
-    constexpr auto amplitude = 2.2f * m / (s * s);
+    constexpr auto amplitude = 3.2f * m / (s * s);
     for (TileId id = 0; id < m_tiles.size (); ++id) {
       const GridCell cell = topology ().cell (id);
       drive[id] = noise.at (cell.column, cell.row) * amplitude;
