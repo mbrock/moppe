@@ -186,7 +186,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
                game::CinematicLandmarkKind::Arrival);
 }
 
-MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
+MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
   FlightFixture fixture;
   const game::CinematicFlightPlan plan =
     game::plan_cinematic_flight (fixture.map,
@@ -199,8 +199,10 @@ MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
   flight.start (plan, fixture.map);
   MOPPE_CHECK (flight.active ());
   Vec3 previous_position = flight.position ();
+  Vec3 previous_forward = flight.forward ();
   Vec3 previous_motion {};
   bool has_previous_motion = false;
+  float peak_speed = flight.speed ();
 
   for (int frame = 0; frame < 12000 && flight.active (); ++frame) {
     const game::CinematicFlightControls controls {
@@ -210,6 +212,7 @@ MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
     };
     flight.tick (1.0f / 60.0f, fixture.map, controls);
     const Vec3 p = flight.position ();
+    const Vec3 view_forward = flight.forward ();
     const Vec3 motion = p - previous_position;
     MOPPE_CHECK (length (motion) < 8.0f);
     if (length (motion) > 0.2f) {
@@ -221,11 +224,16 @@ MOPPE_TEST (cinematic_rotorcraft_stays_clear_and_accepts_live_trim) {
       has_previous_motion = true;
     }
     previous_position = p;
+    MOPPE_CHECK (dot (view_forward, previous_forward) > 0.995f);
+    previous_forward = view_forward;
+    peak_speed = std::max (peak_speed, flight.speed ());
+    MOPPE_CHECK (std::abs (flight.bank ()) <= 0.301f);
     MOPPE_CHECK (p[1] >= fixture.map.interpolated_height (p[0], p[2]) + 17.9f);
     MOPPE_CHECK (std::isfinite (flight.forward ()[0]));
     MOPPE_CHECK (flight.motion_blur () >= 0.08f);
     MOPPE_CHECK (flight.motion_blur () <= 0.72f);
   }
   MOPPE_CHECK (flight.elapsed () > 1.0f);
+  MOPPE_CHECK (peak_speed > 150.0f);
   MOPPE_CHECK (!flight.active ());
 }
