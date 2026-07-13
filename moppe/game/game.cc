@@ -731,6 +731,38 @@ namespace moppe {
           r.set_terrain_moisture (expanded);
         }
 
+        {
+          // Sediment ledger to materials: normalize each channel against
+          // a robust high quantile so one deep gully cannot flatten the
+          // signal everywhere else, then hand off interleaved RG pairs.
+          const std::size_t count =
+            static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+          const auto robust_scale = [count] (const float* values) {
+            std::vector<float> positive;
+            positive.reserve (count / 8);
+            for (std::size_t i = 0; i < count; ++i)
+              if (values[i] > 0.0f)
+                positive.push_back (values[i]);
+            if (positive.empty ())
+              return 1.0f;
+            const std::size_t rank =
+              positive.size () * 49 / 50; // 98th percentile
+            std::nth_element (
+              positive.begin (), positive.begin () + rank, positive.end ());
+            return std::max (positive[rank], 1e-6f);
+          };
+          const float eroded_scale = robust_scale (m_map.raw_eroded ());
+          const float deposited_scale = robust_scale (m_map.raw_deposited ());
+          std::vector<float> geology (2 * count);
+          for (std::size_t i = 0; i < count; ++i) {
+            geology[2 * i] =
+              std::min (1.0f, m_map.raw_eroded ()[i] / eroded_scale);
+            geology[2 * i + 1] =
+              std::min (1.0f, m_map.raw_deposited ()[i] / deposited_scale);
+          }
+          r.set_terrain_geology (geology);
+        }
+
         m_vehicle.set_water_level (m_world.water_level);
         m_car.set_water_level (m_world.water_level);
         m_vehicle.set_obstacles (&m_obstacles);

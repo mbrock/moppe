@@ -300,6 +300,7 @@ namespace moppe {
                       std::span<const float> water_levels) override;
       void set_water_flow (std::span<const float> flow) override;
       void set_terrain_moisture (std::span<const float> moisture) override;
+      void set_terrain_geology (std::span<const float> geology) override;
 
       // frame
       bool begin_frame (const FrameParams& params) override;
@@ -460,6 +461,8 @@ namespace moppe {
       bool m_have_water_flow = false;
       id<MTLTexture> m_moisture = nil;
       bool m_have_moisture = false;
+      id<MTLTexture> m_geology = nil;
+      bool m_have_geology = false;
 
       // streaming
       dispatch_semaphore_t m_inflight;
@@ -1475,6 +1478,32 @@ namespace moppe {
       upload_texture (m_water_flow, halves.data (), width, height, 4, false);
     }
 
+    void MetalRenderer::set_terrain_geology (std::span<const float> geology) {
+      const std::size_t expected =
+        2 * static_cast<std::size_t> (m_terrain_params.width) *
+        m_terrain_params.height;
+      m_have_geology = geology.size () == expected;
+      if (!m_have_geology)
+        return;
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_geology || m_geology.width != static_cast<NSUInteger> (width) ||
+          m_geology.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
+                                       width:width
+                                      height:height
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageShaderRead;
+        m_geology = [m_device newTextureWithDescriptor:td];
+      }
+      std::vector<__fp16> halves (geology.size ());
+      for (std::size_t i = 0; i < geology.size (); ++i)
+        halves[i] = static_cast<__fp16> (geology[i]);
+      upload_texture (m_geology, halves.data (), width, height, 4, false);
+    }
+
     void MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
       const std::size_t expected =
         static_cast<std::size_t> (m_terrain_params.width) *
@@ -1854,6 +1883,7 @@ namespace moppe {
       u.params5.x = m_terrain_params.topology_overlay ? 0.24f : 0.0f;
       u.params5.y = m_have_water_levels ? 1.0f : 0.0f;
       u.params5.z = m_have_moisture ? 1.0f : 0.0f;
+      u.params5.w = m_have_geology ? 1.0f : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -1890,6 +1920,8 @@ namespace moppe {
                       atIndex:MOPPE_TEX_TERRAIN_MOISTURE];
       [enc setFragmentTexture:(m_have_water_levels ? m_water_levels : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_WATER];
+      [enc setFragmentTexture:(m_have_geology ? m_geology : m_heights)
+                      atIndex:MOPPE_TEX_TERRAIN_GEOLOGY];
 
       for (int i = 0; i < count; ++i) {
         const int lod =
