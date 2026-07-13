@@ -99,7 +99,9 @@ namespace moppe::terrain {
   // carved channels match the renderer's visible-river extraction.
   struct ChannelCarving {
     float sea_level = 50.0f / 650.0f;
-    float minimum_area_cells = 1024.0f;
+    // river_existence_minimum_area_cells(): carve only channels the
+    // lattice can actually hold (width law >= two cells).
+    float minimum_area_cells = 27778.0f;
     float depth_per_sqrt_m2 = 0.0015f;
     meters_t minimum_depth = 0.4f * mp_units::si::metre;
     meters_t maximum_depth = 2.5f * mp_units::si::metre;
