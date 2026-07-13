@@ -113,12 +113,12 @@ namespace moppe::game {
 
   square_meters_t
   visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept {
-    // Visible flow begins where the shared width law reaches about one and
-    // a half terrain cells (roughly 39 hectares at five-metre spacing), so
-    // every rendered stream is wide and deep enough for the heightmap to
-    // hold an actual channel under it. Smaller runoff stays with the
-    // analysis overlays rather than rendering as sub-cell water threads.
-    return 16384.0f * grid.cell_area ();
+    // Visible flow begins exactly where channels are carved: the shared
+    // existence rule (width law >= two lattice cells), so every rendered
+    // stream sits in a channel the heightmap actually holds. Smaller
+    // runoff stays with the analysis overlays and the material readings
+    // rather than rendering as sub-cell water threads.
+    return terrain::river_existence_minimum_area_cells () * grid.cell_area ();
   }
 
   render::DrawList build_river_ribbons (const map::HeightMap& map,
