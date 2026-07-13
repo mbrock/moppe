@@ -2,6 +2,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/map/tga.hh>
+#include <moppe/profile.hh>
 #include <moppe/terrain/cpu_evaluator.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/readings.hh>
@@ -1148,6 +1149,7 @@ namespace moppe {
 
     void compute_normal_map (const HeightMap& height_map,
                              NormalMap& normal_map) {
+      MOPPE_PROFILE_ZONE ("compute_normal_map");
       normal_map.reset ();
 
       if (height_map.periodic ()) {

@@ -1,5 +1,6 @@
 #include <moppe/map/terrain_evaluator.hh>
 
+#include <moppe/profile.hh>
 #include <moppe/terrain/analytical_erosion.hh>
 #include <moppe/terrain/carve.hh>
 #include <moppe/terrain/cpu_evaluator.hh>
@@ -15,11 +16,14 @@ namespace moppe::map {
 
   void TerrainEvaluator::begin (const terrain::TerrainProgram& program,
                                 const SourceProgress& source_progress) {
+    MOPPE_PROFILE_ZONE ("TerrainEvaluator::begin");
     terrain::validate_program (program);
     m_randomness.seed (program.randomness.seed.value);
     m_randomness.discard (program.randomness.offset.value);
-    const terrain::GeologicalFields fields =
-      terrain::make_geological_fields (program.source.recipe);
+    const terrain::GeologicalFields fields = [&] {
+      MOPPE_PROFILE_ZONE ("terrain.expand_geological_recipe");
+      return terrain::make_geological_fields (program.source.recipe);
+    }();
     const terrain::CpuEvaluator cpu_evaluator (source_progress);
     const terrain::FieldEvaluator& evaluator =
       m_source_evaluator ? *m_source_evaluator : cpu_evaluator;
@@ -32,9 +36,13 @@ namespace moppe::map {
     const terrain::ScalarField field =
       orogeny_source ? fields.continent.untyped ()
                      : terrain::geological_layer (fields, program.source.layer);
-    m_target.materialize (field, evaluator);
+    {
+      MOPPE_PROFILE_ZONE ("terrain.materialize_height_source");
+      m_target.materialize (field, evaluator);
+    }
 
     if (orogeny_source) {
+      MOPPE_PROFILE_ZONE ("terrain.shape_initial_orogeny_relief");
       const float height_scale_m = m_target.scale ()[1];
       const float land_relief =
         meters_value (program.source.initial_land_relief) / height_scale_m;
@@ -54,6 +62,7 @@ namespace moppe::map {
 
     m_relative_uplift.clear ();
     if (has_orogeny) {
+      MOPPE_PROFILE_ZONE ("terrain.materialize_uplift_field");
       const terrain::CpuEvaluator uplift_cpu_evaluator;
       const terrain::FieldEvaluator& uplift_evaluator =
         m_source_evaluator ? *m_source_evaluator : uplift_cpu_evaluator;
@@ -76,14 +85,18 @@ namespace moppe::map {
 
   terrain::TerrainTransformReport
   TerrainEvaluator::apply (const terrain::TerrainTransform& transform) {
+    MOPPE_PROFILE_ZONE ("TerrainEvaluator::apply");
     terrain::TerrainTransformReport report;
-    if (std::holds_alternative<terrain::NormalizeHeights> (transform))
+    if (std::holds_alternative<terrain::NormalizeHeights> (transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.normalize_heights");
       m_target.normalize ();
-    else if (const auto* power =
-               std::get_if<terrain::PowerHeights> (&transform))
+    } else if (const auto* power =
+                 std::get_if<terrain::PowerHeights> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.power_heights");
       m_target.exponentiate (power->exponent);
-    else if (const auto* hydraulic =
-               std::get_if<terrain::HydraulicErosion> (&transform))
+    } else if (const auto* hydraulic =
+                 std::get_if<terrain::HydraulicErosion> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.hydraulic_erosion");
       report = m_target.erode_hydraulically (
         m_randomness,
         terrain::count_value (hydraulic->droplets),
@@ -97,8 +110,9 @@ namespace moppe::map {
             m_iteration_progress (
               m_transform_index, transform, completed, total);
         });
-    else if (const auto* analytical =
-               std::get_if<terrain::AnalyticalErosion> (&transform)) {
+    } else if (const auto* analytical =
+                 std::get_if<terrain::AnalyticalErosion> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.analytical_erosion");
       terrain::AnalyticalErosionResult result =
         terrain::erode_analytically (m_target.terrain_view (), *analytical);
       const std::size_t width = m_target.unique_width ();
@@ -116,6 +130,7 @@ namespace moppe::map {
       report = result.report;
     } else if (const auto* orogeny =
                  std::get_if<terrain::OrogenyEvolution> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.orogeny_evolution");
       const std::size_t sample_count =
         static_cast<std::size_t> (m_target.unique_width ()) *
         m_target.unique_height ();
@@ -148,15 +163,18 @@ namespace moppe::map {
         }
       report = result.report;
     } else if (const auto* thermal =
-                 std::get_if<terrain::ThermalErosion> (&transform))
+                 std::get_if<terrain::ThermalErosion> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.thermal_erosion");
       m_target.erode_thermally (terrain::count_value (thermal->iterations),
                                 thermal->talus);
-    else if (const auto* diffusion =
-               std::get_if<terrain::HillslopeDiffusion> (&transform))
+    } else if (const auto* diffusion =
+                 std::get_if<terrain::HillslopeDiffusion> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.hillslope_diffusion");
       report = m_target.diffuse_hillslopes (diffusion->duration,
                                             diffusion->diffusivity);
-    else if (const auto* carving =
-               std::get_if<terrain::ChannelCarving> (&transform)) {
+    } else if (const auto* carving =
+                 std::get_if<terrain::ChannelCarving> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.channel_carving");
       terrain::ChannelCarvingResult result =
         terrain::carve_channels (m_target.terrain_view (), *carving);
       const std::size_t width = m_target.unique_width ();
@@ -181,6 +199,7 @@ namespace moppe::map {
                                    const Progress& progress,
                                    const IterationProgress& iteration_progress,
                                    const SourceProgress& source_progress) {
+    MOPPE_PROFILE_ZONE ("TerrainEvaluator::evaluate");
     begin (program, source_progress);
     m_iteration_progress = iteration_progress;
     for (std::size_t i = 0; i < program.transforms.size (); ++i) {

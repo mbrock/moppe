@@ -1,5 +1,6 @@
 #include <moppe/game/terrain.hh>
 #include <moppe/gfx/tga.hh>
+#include <moppe/profile.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,7 @@ namespace moppe {
 
       render::TexturePtr load_tga (render::Renderer& r,
                                    const std::string& rel) {
+        MOPPE_PROFILE_ZONE ("terrain.load_material_texture");
         tga_image::TGAImg img;
         const std::string path = platform::asset_path (rel);
         if (img.Load (const_cast<char*> (path.c_str ())) != IMG_OK)
@@ -49,6 +51,7 @@ namespace moppe {
                          bool repeat_periodically,
                          bool interactive_preview,
                          bool loading_preview) {
+      MOPPE_PROFILE_ZONE ("Terrain::setup");
       m_scale = map.scale ();
       m_period = map.size ();
       m_periodic = map.periodic ();
@@ -89,9 +92,13 @@ namespace moppe {
       params.torus_minor_radius = 0.10f * shortest_period;
       params.torus_height_scale = 0.45f;
       params.derive_normals = interactive_preview;
-      r.set_terrain (params, map.raw_heights (), map.raw_normals ());
+      {
+        MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
+        r.set_terrain (params, map.raw_heights (), map.raw_normals ());
+      }
 
       if (!m_textures_loaded) {
+        MOPPE_PROFILE_ZONE ("terrain.load_material_textures");
         m_grass = load_tga (r, "textures/grass3.tga");
         m_dirt = load_tga (r, "textures/dirt.tga");
         m_rock = load_tga (r, "textures/stones.tga");
@@ -101,6 +108,7 @@ namespace moppe {
       }
 
       // Chunk bounding spheres from the actual height range.
+      MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
       const int chunks_per_side = (map.width () - 1) / CHUNK;
       m_chunks.clear ();
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
@@ -138,6 +146,7 @@ namespace moppe {
     void Terrain::render_shadow (render::Renderer& r,
                                  const map::HeightMap& map,
                                  const Vec3& sun_dir) {
+      MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
       if (m_projection == render::TerrainProjection::Torus)
         return;
       const Vec3 bounds = map.size ();

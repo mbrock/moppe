@@ -378,7 +378,7 @@ The UI itself is Moppe's small immediate-mode `InspectorUi` drawn through
 `DrawList`, not an external widget library.
 
 For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
-1025-square field and skips canonical erosion, vegetation, stars, fish, and
+1025-square field and skips canonical erosion, stars, fish, and
 wildlife setup.  The full build-and-capture loop is scriptable:
 
 ```sh

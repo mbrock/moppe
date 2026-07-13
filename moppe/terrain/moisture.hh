@@ -6,7 +6,7 @@
 #include <moppe/terrain/terrain_view.hh>
 
 namespace moppe::terrain {
-  // How wet the ground is for vegetation and material rendering, in
+  // How wet the ground is for material rendering, in
   // [0, 1]: proximity to standing water dominates, with a smaller term
   // from accumulated drainage so runnels read damp between the lakes.
   struct MoistureParameters {

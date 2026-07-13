@@ -550,7 +550,7 @@ fragment float4 terrain_fragment (
   const float height = in.height;
   const float sea_level = u.params1.y;
 
-  // Hydrology is material information as well as vegetation information.
+  // Hydrology is material information.
   // Standing water makes its bed fully wet; the moisture field feathers that
   // treatment into banks, drainage lines, and damp low ground.
   const float moisture =
@@ -603,7 +603,7 @@ fragment float4 terrain_fragment (
   const float scree_coef = smoothstep (0.38, 0.58, hj);
   const float snow_coef =
     smoothstep (0.55, 0.68, hj) * smoothstep (0.58, 0.78, n.y);
-  // Match vegetation's world-space shoreline rule. The old normalized 0.03
+  // Use a world-space shoreline rule. The old normalized 0.03
   // band could mean tens of metres, leaving full grass fields growing from
   // visually sandy ground on tall worlds.
   const float beach_low = sea_level + 0.5 / u.params1.x;

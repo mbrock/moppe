@@ -9,8 +9,6 @@
 namespace moppe::game {
   enum class GraphicsFeatureId {
     terrain_shadows,
-    vegetation,
-    grass,
     ocean,
     river_ribbons,
     particles,
@@ -29,12 +27,9 @@ namespace moppe::game {
     // Zero uses scene_scale relative to the point-resolution baseline.
     // A positive value is an absolute fraction of drawable resolution.
     float render_scale_override = 0.0f;
-    float grass_density = 1.0f;
     float sun_height = 0.62f;
 
     bool terrain_shadows = true;
-    bool vegetation = true;
-    bool grass = true;
     bool ocean = true;
     bool river_ribbons = false;
     bool particles = true;
@@ -73,15 +68,6 @@ namespace moppe::game {
     "terrain-shadows",
     &GraphicsSettings::terrain_shadows,
     false
-  };
-  inline constexpr GraphicsFeature vegetation_feature {
-    GraphicsFeatureId::vegetation,
-    "vegetation",
-    &GraphicsSettings::vegetation,
-    false
-  };
-  inline constexpr GraphicsFeature grass_feature {
-    GraphicsFeatureId::grass, "grass", &GraphicsSettings::grass, true
   };
   inline constexpr GraphicsFeature ocean_feature {
     GraphicsFeatureId::ocean, "ocean", &GraphicsSettings::ocean, true
@@ -145,21 +131,13 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 14> graphics_features {
-    &terrain_shadows_feature,
-    &vegetation_feature,
-    &grass_feature,
-    &ocean_feature,
-    &river_ribbons_feature,
-    &particles_feature,
-    &vehicle_effects_feature,
-    &star_effects_feature,
-    &motion_blur_feature,
-    &bloom_feature,
-    &auto_exposure_feature,
-    &lens_flare_feature,
-    &terrain_topology_feature,
-    &terrain_fragment_normals_feature,
+  inline constexpr std::array<const GraphicsFeature*, 12> graphics_features {
+    &terrain_shadows_feature,  &ocean_feature,
+    &river_ribbons_feature,    &particles_feature,
+    &vehicle_effects_feature,  &star_effects_feature,
+    &motion_blur_feature,      &bloom_feature,
+    &auto_exposure_feature,    &lens_flare_feature,
+    &terrain_topology_feature, &terrain_fragment_normals_feature,
   };
 
   GraphicsSettings high_graphics_settings ();

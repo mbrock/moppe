@@ -130,7 +130,7 @@ amended the first draft. The deltas, now integrated below, were:
     moppe/game/              the game, split out of main.cc
       world.hh               WorldParams (ex-globals: map_size, water_level, …)
       game.cc                Game impl: setup, tick, render pass order, input
-      hud.cc, vegetation.cc, stars.cc, dust.cc, blob_shadow.cc, fish.cc,
+      hud.cc, stars.cc, dust.cc, blob_shadow.cc, fish.cc,
       wildlife.cc, city.cc, walker.cc, vehicle_render.cc, sky.cc, ocean.cc,
       terrain.cc, loading.cc
     moppe/map/               unchanged (already GL-free); boost → std
@@ -148,7 +148,7 @@ this, not Vulkan-esque generality. Three tiers:
   (repeat/clamp, filter, anisotropy, optional depth-compare).
 - `Mesh` — immutable vertex (+ optional index) buffer with a list of
   `(DrawState, range)` runs. Built by `MeshBuilder`. Replaces display lists;
-  used for vegetation/city sectors, sky dome, ocean grid, solid primitives.
+  used for city sectors, sky dome, ocean grid, and solid primitives.
 - Terrain is special-cased (see below), not a Mesh.
 - Terrain inspection can bind one generic R32F surface overlay with a value
   range, opacity, and palette. The renderer does not know whether its values
@@ -176,10 +176,9 @@ handful of draw calls on one dynamic buffer (double/triple-buffered).
 Vertex format (interleaved, 40 B): float3 pos, float3 normal, float2 uv,
 u8x4 color, u8x4 flags (x: lit, y: fogged; rest reserved).
 
-`MeshBuilder` records through the same API but bakes to an immutable Mesh —
-this is the display-list replacement, so vegetation generation
-port almost mechanically. State changes inside a bake (e.g. unlit lamp glow
-spheres) become run boundaries.
+`MeshBuilder` records through the same API but bakes to an immutable Mesh.
+State changes inside a bake (e.g. unlit lamp glow spheres) become run
+boundaries.
 
 ### 3. Passes & frame graph
 
@@ -187,7 +186,7 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
 
     shadow pass (once per world)  → 4096² Depth16, terrain only
     scene pass  (MSAA 4x → resolve into sceneA, Depth32F reversed-Z)
-       terrain → sky → city sectors → vegetation sectors → immediate world
+       terrain → sky → city sectors → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
        blob shadows) → water (sea, lakes, and painted rivers) → dust
     post passes (ping-pong sceneA/sceneB as needed)
@@ -306,14 +305,12 @@ iterative problem rather than part of the pointwise graph.
   cell, so a river a cell and a half wide cannot slip between probes —
   and culls; mesh stage emits 16×16 lattices sharing ocean_fragment); the
   coarse grid keeps the horizon, both passes discarding on the same radius
-  so they partition exactly. Grass uses the same object/mesh pattern over 4×2-cell
-  blade patches, with an instanced vertex fallback.
+  so they partition exactly.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was
-  previously fixed-function GL_EXP2 for vegetation only and absent for other
-  props — unifying on the terrain curve makes the world consistent, a
-  deliberate small visual improvement).
+  previously fixed-function GL_EXP2 and absent for some props — unifying on
+  the terrain curve makes the world consistent).
 - HUD uses a separate 2D pipeline (no lighting/fog, y-down ortho, scissor
   none, blend on).
 - Dust, spray, smoke, and sparkles are bounded emission events. Metal derives
@@ -341,7 +338,7 @@ post effects, bloom, exposure probe, and present/HUD encoders. Encoder stages
 can overlap on tile-based GPUs, so those spans diagnose expensive work but do
 not necessarily add up to the command-buffer duration. Devices supporting
 draw-boundary timestamps additionally split the scene into terrain, sky,
-water, grass, and other scene geometry. `MOPPE_PROFILE_CPU=1` reports the
+water and other scene geometry. `MOPPE_PROFILE_CPU=1` reports the
 effective callback rate and CPU time in the game tick and render call. It also
 splits renderer time into render-target maintenance, in-flight command-buffer
 waiting, drawable acquisition, and Metal encoding/submission, making a missed
@@ -350,8 +347,8 @@ frame deadline distinguishable from compositor or drawable back-pressure.
 injecting the more intrusive per-encoder counter samples.
 
 The supported `--graphics-quality low` preset is a deliberately severe
-performance baseline: half-resolution 3D scene, no terrain shadows,
-vegetation/grass, ocean surface, decorative particles, motion blur, bloom,
+performance baseline: half-resolution 3D scene, no terrain shadows, ocean
+surface, decorative particles, motion blur, bloom,
 exposure probe, or lens flare. `--graphics-quality high` is the default full
 presentation. The low preset retains terrain, vehicles, physics, sky, rivers,
 and HUD so it remains playable while isolating optional rendering cost.
@@ -361,14 +358,14 @@ quality-mode branch. Boolean features can then be changed independently with
 list such as `--graphics-quality low --graphics-enable ocean,bloom`. Startup
 prints every resolved feature and numeric graphics setting so scripted
 performance runs record the actual configuration. The legacy
-`MOPPE_RENDERSCALE`, `MOPPE_GRASS`, `MOPPE_NOSHADOW`,
+`MOPPE_RENDERSCALE`, `MOPPE_NOSHADOW`,
 `MOPPE_RIVER_RIBBONS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
 controls remain supported but are resolved centrally into the same settings.
 Each Boolean feature descriptor also records whether it is hot-switchable:
 changing a hot feature's stored value is sufficient for the next frame, with
-no resource rebuild or renderer-state reset. Grass, ocean, particles, vehicle
+no resource rebuild or renderer-state reset. Ocean, particles, vehicle
 and star effects, bloom, automatic exposure, and lens flare are currently hot.
-Terrain shadows, vegetation, river ribbons, motion blur, and the terrain
+Terrain shadows, river ribbons, motion blur, and the terrain
 topology overlay are conservatively marked not hot.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
@@ -425,8 +422,6 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
 - Vehicle loses its render()/set_camera()/draw_debug_text() — simulation
   stays put; a game/vehicle_render.cc draws bikes/cars from the public pose
   API via DrawList. Same for Walker.
-- Vegetation keeps its generate() logic but records into MeshBuilder
-  (and retain their plant/prop data instead of discarding it after baking).
 - Dead code goes: render_vertex_arrays, TerrainRenderer::render_directly,
   gl::FrameBufferObject, InterpolatingHeightMap, Camera (the unused one),
   sky texture fallback, MouseCameraController (wired but its output is never
@@ -454,7 +449,7 @@ CMake (replaces SCons):
    proven with a spinning test scene + HUD text.
 2. Terrain (height-texture pipeline + shadow pass), sky, ocean.
 3. Game systems, one agent-portable module at a time: vehicle split, walker,
-   dust, blob shadow, stars, fish, wildlife, vegetation, city, HUD, post
+   dust, blob shadow, stars, fish, wildlife, city, HUD, post
    effects, game glue/input.
 4. Parity check against the GL build (still building from scons until
    cutover), then delete GL path + scons + vendor, update CLAUDE.md.
