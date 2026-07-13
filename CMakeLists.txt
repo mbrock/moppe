@@ -109,11 +109,20 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(atelier MACOSX_BUNDLE EXCLUDE_FROM_ALL
     atelier/atelier.cc
     atelier/atelier.hh
-    atelier/space.hh
+    atelier/atelier_mac.mm
     atelier/atelier_renderer.cc
     atelier/atelier_renderer.hh
-    atelier/atelier_mac.mm
     atelier/atelier_shaders.hh
+    atelier/camera.hh
+    atelier/carpet.hh
+    atelier/matrix.hh
+    atelier/metal.hh
+    atelier/pipeline.hh
+    atelier/prism.hh
+    atelier/space.hh
+    atelier/surface.hh
+    atelier/tabulate.hh
+    atelier/wire.hh
   )
   set_target_properties(atelier PROPERTIES UNITY_BUILD OFF)
   target_include_directories(atelier PRIVATE
