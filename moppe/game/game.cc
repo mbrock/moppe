@@ -22,6 +22,7 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
+#include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/game/water_capture.hh>
@@ -378,6 +379,8 @@ namespace moppe {
                  const GraphicsSettings& graphics,
                  bool start_in_terrain_lab,
                  bool terrain_lab_preview,
+                 bool tree_demo,
+                 std::size_t tree_count,
                  int seed,
                  std::string screenshot_path,
                  std::optional<WaterShot> water_shot,
@@ -415,6 +418,7 @@ namespace moppe {
             m_glider (m_surface), m_renderer (0),
             m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
+            m_tree_demo (tree_demo), m_tree_count (tree_count),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
             m_loading_stage (LoadingStage::Starting),
@@ -927,6 +931,12 @@ namespace moppe {
                        static_cast<std::size_t> (x) % unique_width];
           m_pending_surface.moisture = std::move (expanded);
         }
+        if (!m_pending_surface.moisture.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.derive_tree_habitat");
+          m_surface.derive_tree_habitat (m_pending_surface.moisture,
+                                         m_world.water_level,
+                                         m_world.water_level + 145.0f * u::m);
+        }
 
         {
           // Sediment ledger to materials: normalize each channel against
@@ -975,7 +985,19 @@ namespace moppe {
           const float a = heading (m_fx_rng);
           m_vehicle.set_heading (Vec3 (std::sin (a), 0, std::cos (a)));
         }
-        if (m_water_inspection)
+        if (m_tree_demo) {
+          MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
+          m_tree_stand.rebuild (
+            r, m_surface, m_seed ^ 0x4f1bbcdcU, m_tree_count);
+          if (m_tree_stand.empty ())
+            throw std::runtime_error (
+              "the generated surface has no viable tree habitat");
+          const TreeGrove& grove = m_tree_stand.grove ();
+          m_camera.place (grove.camera_eye, grove.camera_target);
+          std::cerr << "tree grove: " << grove.sites.size ()
+                    << " organisms, eye=" << grove.camera_eye
+                    << " target=" << grove.camera_target << '\n';
+        } else if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
 
         if (m_standing_water && m_lake_census && m_drainage && m_rivers) {
@@ -1137,6 +1159,15 @@ namespace moppe {
         // useful frame of reference around the heightmap.
         if (m_terrain_lab.active ()) {
           m_terrain_lab.tick (dt);
+          return;
+        }
+
+        // The botanical demo is a stationary observatory. Weather and the
+        // global animation clock continue above, so the retained trees keep
+        // moving in the renderer's wind field while actors remain paused.
+        if (m_tree_demo) {
+          const TreeGrove& grove = m_tree_stand.grove ();
+          m_camera.place (grove.camera_eye, grove.camera_target);
           return;
         }
 
@@ -1484,7 +1515,7 @@ namespace moppe {
         const bool terrain_lab = m_terrain_lab.active ();
         const bool cinematic = m_cinematic.active ();
         const float fov = cinematic ? m_cinematic.field_of_view ()
-                          : terrain_lab || m_water_inspection
+                          : terrain_lab || m_water_inspection || m_tree_demo
                             ? 70.0f
                             : 100.0f + 9.0f * m_fov_k;
         fp.proj = Mat4::perspective_reversed (
@@ -1501,7 +1532,7 @@ namespace moppe {
         Mat4 view = cinematic     ? m_cinematic.view_matrix ()
                     : terrain_lab ? m_terrain_lab.view_matrix ()
                                   : m_camera.view_matrix ();
-        if (!cinematic && !terrain_lab && !m_water_inspection &&
+        if (!cinematic && !terrain_lab && !m_water_inspection && !m_tree_demo &&
             m_shake > 0.005f) {
           const Vec3 cam = m_camera.position ();
           const float ground = m_map.interpolated_height (cam[0], cam[2]);
@@ -1615,6 +1646,10 @@ namespace moppe {
           if (m_water_inspection)
             std::cerr << "water screenshot camera: eye=" << m_camera.position ()
                       << " target=" << m_water_inspection->target << '\n';
+          if (m_tree_demo)
+            std::cerr << "tree screenshot camera: eye=" << m_camera.position ()
+                      << " target=" << m_tree_stand.grove ().camera_target
+                      << '\n';
           r.request_screenshot (m_screenshot_path);
         }
         if (!r.begin_frame (fp))
@@ -1665,7 +1700,10 @@ namespace moppe {
         if (!terrain_lab)
           draw_world_sky ();
 
-        if (!terrain_lab && !m_water_inspection) {
+        if (!terrain_lab && !m_water_inspection)
+          m_tree_stand.draw (r);
+
+        if (!terrain_lab && !m_water_inspection && !m_tree_demo) {
           // The world draw list, in the GL build's draw order.  Terrain lab
           // deliberately hides every placed object so generator differences are
           // not confused with stale actor positions.
@@ -1789,7 +1827,7 @@ namespace moppe {
                                   hud_height - 42.0f,
                                   prompt);
           }
-        } else if (!m_water_inspection) {
+        } else if (!m_water_inspection && !m_tree_demo) {
           HudState hs;
           hs.speed_kmh = subject_speed_kmh ();
           hs.fuel = m_fuel;
@@ -1908,9 +1946,10 @@ namespace moppe {
             m_ready = true;
             MOPPE_PROFILE_PLOT ("startup.ready", 1);
 
-            const bool automated =
-              !m_screenshot_path.empty () || m_benchmark.has_value () ||
-              m_water_shot.has_value () || ::getenv ("MOPPE_DEMO");
+            const bool automated = !m_screenshot_path.empty () ||
+                                   m_benchmark.has_value () ||
+                                   m_water_shot.has_value () || m_tree_demo ||
+                                   ::getenv ("MOPPE_DEMO");
             if (m_start_in_terrain_lab) {
               m_terrain_lab.enter (r,
                                    m_map,
@@ -2646,6 +2685,7 @@ namespace moppe {
         std::vector<float> shore;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
+      TreeStand m_tree_stand;
       ChaseCamera m_camera;
       mov::Vehicle m_vehicle;
       mov::Vehicle m_car;
@@ -2669,6 +2709,8 @@ namespace moppe {
       render::Renderer* m_renderer;
       bool m_start_in_terrain_lab;
       bool m_terrain_lab_preview;
+      bool m_tree_demo;
+      std::size_t m_tree_count;
       bool m_automated_regeneration_done = false;
       std::string m_screenshot_path;
       std::optional<WaterShot> m_water_shot;
@@ -2709,6 +2751,8 @@ int main (int argc, char** argv) {
   platform::Config config;
   bool start_in_terrain_lab = false;
   bool terrain_lab_preview = false;
+  bool tree_demo = false;
+  std::size_t tree_count = 9;
   std::string screenshot_path;
   std::optional<game::WaterShot> water_shot;
   int seed = -1;
@@ -2796,6 +2840,27 @@ int main (int argc, char** argv) {
       terrain_lab_preview = true;
       config.fullscreen = false;
       world.resolution = 1025;
+    } else if (arg == "--tree-demo") {
+      tree_demo = true;
+    } else if (arg == "--tree-count") {
+      if (i + 1 >= argc) {
+        std::cerr << "--tree-count requires an integer from 1 to 32\n";
+        return -1;
+      }
+      const int count = std::atoi (argv[++i]);
+      if (count < 1 || count > 32) {
+        std::cerr << "--tree-count must be between 1 and 32\n";
+        return -1;
+      }
+      tree_count = static_cast<std::size_t> (count);
+    } else if (arg == "--tree-screenshot") {
+      if (i + 1 >= argc) {
+        std::cerr << "--tree-screenshot requires a PNG path\n";
+        return -1;
+      }
+      tree_demo = true;
+      screenshot_path = argv[++i];
+      config.fullscreen = false;
     } else if (arg == "--terrain-lab-screenshot") {
       if (i + 1 >= argc) {
         std::cerr << "--terrain-lab-screenshot requires a PNG path\n";
@@ -2878,6 +2943,8 @@ int main (int argc, char** argv) {
                         graphics,
                         start_in_terrain_lab,
                         terrain_lab_preview,
+                        tree_demo,
+                        tree_count,
                         seed,
                         std::move (screenshot_path),
                         water_shot,

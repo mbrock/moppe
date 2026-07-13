@@ -49,9 +49,31 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
   const map::SurfaceIndex index { 2, 1 };
   const auto elevation = spatial::get<map::surface_elevation> (samples[index]);
   const auto normal = spatial::get<map::surface_normal> (samples[index]);
+  const auto habitat = spatial::get<map::tree_habitat> (samples[index]);
   MOPPE_CHECK_NEAR (
     elevation_value (elevation), map.get (2, 1) * map.scale ()[1], 1e-6f);
   check_surface_vector (normal_value (normal), map.normal (2, 1));
+  MOPPE_CHECK (habitat == 0.0f * map::tree_habitat[one]);
+}
+
+MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    5, 5, Vec3 (50, 200, 50), 8, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (), map.raw_heights () + 25, 0.40f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  std::vector<float> moisture (25, 0.48f);
+  surface.derive_tree_habitat (moisture, 50.0f * u::m, 160.0f * u::m);
+  const position_t center = position (Vec3 (20, 0, 20));
+  MOPPE_CHECK (surface.tree_habitat_at (center) >
+               0.8f * map::tree_habitat[one]);
+
+  std::fill (moisture.begin (), moisture.end (), 1.0f);
+  surface.derive_tree_habitat (moisture, 50.0f * u::m, 160.0f * u::m);
+  MOPPE_CHECK (surface.tree_habitat_at (center) <
+               0.4f * map::tree_habitat[one]);
 }
 
 MOPPE_TEST (surface_reconstruction_matches_bounded_heightmap_interpolation) {

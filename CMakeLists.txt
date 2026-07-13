@@ -74,6 +74,18 @@ FetchContent_Declare(mp-units
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)
 
+# The Atelier's combinatorial and intrinsic botany is a small portable
+# library. Both the workshop renderer and the game provide their own
+# extrinsic embeddings of the same organism.
+add_library(atelier_botany STATIC
+  atelier/tree.cc
+  atelier/tree.hh
+  atelier/bundle.hh
+  atelier/space.hh
+)
+target_include_directories(atelier_botany PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(atelier_botany PUBLIC mp-units::mp-units)
+
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
   set(TRACY_ON_DEMAND ON CACHE BOOL "Record only with a connected viewer"
@@ -127,7 +139,6 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     atelier/space.hh
     atelier/surface.hh
     atelier/tabulate.hh
-    atelier/tree.cc
     atelier/tree.hh
     atelier/tree_embedding.cc
     atelier/tree_embedding.hh
@@ -142,6 +153,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_options(atelier PRIVATE -mmacosx-version-min=26.0)
   target_link_libraries(atelier PRIVATE
+    atelier_botany
     mp-units::mp-units
     "-framework Cocoa"
     "-framework ImageIO"
@@ -340,10 +352,12 @@ add_library(moppe_game STATIC
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
   moppe/game/terrain_lab.cc
+  moppe/game/tree_stand.cc
 )
 target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_game PUBLIC moppe_render)
 target_link_libraries(moppe_game PUBLIC moppe_terrain)
+target_link_libraries(moppe_game PUBLIC atelier_botany)
 if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_game PUBLIC Tracy::TracyClient)
 endif()
@@ -443,6 +457,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/game_state_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
+    tests/game/tree_stand_test.cc
     tests/game/cinematic_flight_test.cc
     tests/map/surface_test.cc
     tests/map/terrain_evaluator_test.cc
@@ -459,7 +474,6 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_sources(moppe-tests PRIVATE
       atelier/embedding.cc
       atelier/hex_sheet.cc
-      atelier/tree.cc
       atelier/tree_embedding.cc
       tests/atelier/bundle_test.cc
       tests/atelier/embedding_test.cc
@@ -468,13 +482,13 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_source_files_properties(
       atelier/embedding.cc
       atelier/hex_sheet.cc
-      atelier/tree.cc
       atelier/tree_embedding.cc
       PROPERTIES
       SKIP_UNITY_BUILD_INCLUSION ON)
     # A unity-built moppe_game archive is one object, so tests pull its
     # platform-facing helpers along with the systems under test.
     target_link_libraries(moppe-tests PRIVATE moppe_platform_mac)
+    target_link_libraries(moppe-tests PRIVATE atelier_botany)
   endif()
   add_test(NAME moppe-tests COMMAND moppe-tests)
 endif()

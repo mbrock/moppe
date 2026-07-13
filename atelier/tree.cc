@@ -169,17 +169,19 @@ namespace atelier {
       return current;
     }
 
-    Construction make_tree () {
+    Construction make_tree (std::uint32_t seed) {
       Construction tree;
+      const std::size_t trunk_segments = 10 + seed % 3;
       append_axis (tree,
                    0,
                    0,
-                   11,
+                   trunk_segments,
                    0.0f * angular::radian,
                    1.48f * angular::radian,
-                   0x5eedU,
+                   seed,
                    TreeOrgan::shoot);
-      for (std::size_t root = 0; root < 6; ++root) {
+      const std::size_t root_count = 5 + (seed >> 4) % 3;
+      for (std::size_t root = 0; root < root_count; ++root) {
         const Real turn = 2.399963f * Real (root);
         append_axis (tree,
                      0,
@@ -187,16 +189,16 @@ namespace atelier {
                      4 + root % 2,
                      turn * angular::radian,
                      (-0.32f - 0.045f * Real (root % 3)) * angular::radian,
-                     0x7001U + 977 * static_cast<std::uint32_t> (root),
+                     seed ^ (0x7001U + 977 * static_cast<std::uint32_t> (root)),
                      TreeOrgan::root);
       }
       return tree;
     }
   }
 
-  Tree::Tree ()
-      : Tree ([&] {
-          Construction construction = make_tree ();
+  Tree::Tree (std::uint32_t seed)
+      : Tree ([seed] {
+          Construction construction = make_tree (seed);
           auto topology = std::make_shared<const DirectedTreeTopology> (
             std::move (construction.vertices), std::move (construction.edges));
           return std::tuple (std::move (topology),

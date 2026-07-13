@@ -186,7 +186,7 @@ namespace atelier {
                              XylemFlux,
                              PhloemFlux>;
 
-    Tree ();
+    explicit Tree (std::uint32_t seed = 0x5eedU);
 
     [[nodiscard]] const DirectedTreeTopology& topology () const noexcept;
     [[nodiscard]] const VertexState& vertices () const noexcept;
