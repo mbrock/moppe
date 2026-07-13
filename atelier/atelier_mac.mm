@@ -5,6 +5,7 @@
 #include "atelier/atelier_renderer.hh"
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -78,11 +79,10 @@
 
 // Photograph the scene without opening a window: render one frame a
 // few seconds in and write it as a PNG.
-static int capture_scene (const char* path) {
+static int capture_scene (const char* path, atelier::Duration elapsed) {
   atelier::Renderer renderer;
   renderer.resize ({ .width = 1800, .height = 1300 });
-  const atelier::Image image =
-    renderer.capture (atelier::Duration (4.0f * mp_units::si::second));
+  const atelier::Image image = renderer.capture (elapsed);
 
   NSURL* url = [NSURL fileURLWithPath:@(path)];
   NSData* pixels = [NSData dataWithBytesNoCopy:image.bgra.get ()
@@ -129,8 +129,11 @@ static int capture_scene (const char* path) {
 
 int main (int argc, char** argv) {
   @autoreleasepool {
-    if (argc == 3 && std::strcmp (argv[1], "--capture") == 0)
-      return capture_scene (argv[2]);
+    if ((argc == 3 || argc == 4) && std::strcmp (argv[1], "--capture") == 0) {
+      const float seconds = argc == 4 ? std::strtof (argv[3], nullptr) : 4.0f;
+      return capture_scene (argv[2],
+                            atelier::Duration (seconds * mp_units::si::second));
+    }
 
     NSApplication* app = [NSApplication sharedApplication];
     app.activationPolicy = NSApplicationActivationPolicyRegular;

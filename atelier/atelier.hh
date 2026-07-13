@@ -1,16 +1,16 @@
 #pragma once
 
-#include "atelier/carpet.hh"
+#include "atelier/landscape.hh"
 #include "atelier/matrix.hh"
 #include "atelier/prism.hh"
 #include "atelier/space.hh"
 #include "atelier/wire.hh"
 
-#include <array>
 #include <cstddef>
+#include <vector>
 
-// The scene: a carpet of wireframe tiles under a carousel camera,
-// composed each frame into the flat data the renderer uploads.
+// The scene: a closed cellular landscape under a carousel camera, composed
+// each frame into the flat instance data the renderer uploads.
 
 namespace atelier {
   // A viewport measured in physical pixels.
@@ -36,12 +36,10 @@ namespace atelier {
 
   struct Frame {
     Uniforms uniforms;
-    std::array<TileInstance, tile_count> tiles;
+    std::vector<TileInstance> tiles;
   };
 
-  // Every tile on the carpet is an instance of one wireframe prism.
-  using TileMesh = Wireframe<Prism::edge_count>;
-
-  [[nodiscard]] TileMesh tile_wireframe ();
-  [[nodiscard]] Frame compose_frame (Duration elapsed, Viewport viewport);
+  [[nodiscard]] Frame compose_frame (const Landscape& landscape,
+                                     Duration elapsed,
+                                     Viewport viewport);
 }

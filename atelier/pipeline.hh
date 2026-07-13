@@ -5,22 +5,22 @@
 #include "atelier/metal.hh"
 #include "atelier/surface.hh"
 
+#include <array>
 #include <cstddef>
 #include <cstring>
-#include <tuple>
 
-// TilePipeline: everything the GPU needs to draw the carpet.  At
-// construction it compiles the shaders and bakes the one tile
-// wireframe into a vertex buffer; each frame it copies the composed
-// Frame into that slot's buffer and draws the wireframe once per
-// tile, instanced.
-//
-// The argument table mirrors the shader's bindings:
-//   buffer 0: the tile wireframe (WireVertex[])
-//   buffer 1: the frame's Uniforms
-//   buffer 2: the frame's TileInstance[] (same buffer, offset)
+// TilePipeline: one mesh threadgroup per leaf of the current partition.  The
+// GPU produces each beveled hexagonal prism procedurally, so refinement and
+// melding only change the compact per-tile instance buffer.
 
 namespace atelier {
+  inline constexpr std::size_t max_tile_instances = 1024;
+
+  struct GpuFrame {
+    Uniforms uniforms;
+    std::array<TileInstance, max_tile_instances> tiles;
+  };
+
   class TilePipeline {
   public:
     explicit TilePipeline (MetalExecution& metal) {
@@ -30,16 +30,9 @@ namespace atelier {
       m_depth_state = make_depth_state (device);
       m_arguments = make_argument_table (device);
 
-      const TileMesh mesh = tile_wireframe ();
-      m_wireframe = NS::TransferPtr (device->newBuffer (
-        mesh.data (), sizeof (mesh), MTL::ResourceStorageModeShared));
-      if (!m_wireframe)
-        throw std::runtime_error ("Could not create the wireframe buffer");
-      metal.make_resident (m_wireframe.get ());
-
       for (auto& frame : m_frames) {
-        frame = NS::TransferPtr (
-          device->newBuffer (sizeof (Frame), MTL::ResourceStorageModeShared));
+        frame = NS::TransferPtr (device->newBuffer (
+          sizeof (GpuFrame), MTL::ResourceStorageModeShared));
         if (!frame)
           throw std::runtime_error ("Could not create a frame buffer");
         metal.make_resident (frame.get ());
@@ -48,12 +41,20 @@ namespace atelier {
     }
 
     void prepare (FrameSlot slot, const Frame& frame) {
+      if (frame.tiles.size () > max_tile_instances)
+        throw std::runtime_error ("The cellular landscape exceeded its GPU "
+                                  "instance capacity");
       MTL::Buffer* buffer = m_frames[slot.buffer_index].get ();
-      std::memcpy (buffer->contents (), &frame, sizeof (frame));
-      m_arguments->setAddress (m_wireframe->gpuAddress (), 0);
-      m_arguments->setAddress (buffer->gpuAddress (), 1);
-      m_arguments->setAddress (buffer->gpuAddress () + offsetof (Frame, tiles),
-                               2);
+      auto* gpu = static_cast<GpuFrame*> (buffer->contents ());
+      gpu->uniforms = frame.uniforms;
+      std::memcpy (gpu->tiles.data (),
+                   frame.tiles.data (),
+                   frame.tiles.size () * sizeof (TileInstance));
+      m_arguments->setAddress (
+        buffer->gpuAddress () + offsetof (GpuFrame, uniforms), 1);
+      m_arguments->setAddress (
+        buffer->gpuAddress () + offsetof (GpuFrame, tiles), 2);
+      m_instance_count = frame.tiles.size ();
     }
 
     void encode (MTL4::CommandBuffer* command_buffer,
@@ -62,9 +63,10 @@ namespace atelier {
         command_buffer->renderCommandEncoder (pass);
       encoder->setRenderPipelineState (m_pipeline.get ());
       encoder->setDepthStencilState (m_depth_state.get ());
-      encoder->setArgumentTable (m_arguments.get (), MTL::RenderStageVertex);
-      encoder->drawPrimitives (
-        MTL::PrimitiveTypeTriangle, 0, std::tuple_size_v<TileMesh>, tile_count);
+      encoder->setArgumentTable (m_arguments.get (), MTL::RenderStageMesh);
+      encoder->drawMeshThreadgroups (MTL::Size (m_instance_count, 1, 1),
+                                     MTL::Size (1, 1, 1),
+                                     MTL::Size (32, 1, 1));
       encoder->endEncoding ();
     }
 
@@ -84,23 +86,23 @@ namespace atelier {
     static NS::SharedPtr<MTL::RenderPipelineState>
     make_pipeline (MTL::Device* device, MTL::Library* library) {
       auto descriptor =
-        NS::TransferPtr (MTL::RenderPipelineDescriptor::alloc ()->init ());
-      auto vertex =
-        NS::TransferPtr (library->newFunction (MTLSTR ("atelier_vertex")));
+        NS::TransferPtr (MTL::MeshRenderPipelineDescriptor::alloc ()->init ());
+      auto mesh = NS::TransferPtr (library->newFunction (MTLSTR ("puck_mesh")));
       auto fragment =
-        NS::TransferPtr (library->newFunction (MTLSTR ("atelier_fragment")));
-      descriptor->setVertexFunction (vertex.get ());
+        NS::TransferPtr (library->newFunction (MTLSTR ("puck_fragment")));
+      descriptor->setMeshFunction (mesh.get ());
       descriptor->setFragmentFunction (fragment.get ());
+      descriptor->setMaxTotalThreadsPerMeshThreadgroup (32);
       descriptor->setRasterSampleCount (sample_count);
       descriptor->colorAttachments ()->object (0)->setPixelFormat (
         MTL::PixelFormatBGRA8Unorm_sRGB);
       descriptor->setDepthAttachmentPixelFormat (MTL::PixelFormatDepth32Float);
 
       NS::Error* error = nullptr;
-      auto pipeline = NS::TransferPtr (
-        device->newRenderPipelineState (descriptor.get (), &error));
+      auto pipeline = NS::TransferPtr (device->newRenderPipelineState (
+        descriptor.get (), MTL::PipelineOptionNone, nullptr, &error));
       if (!pipeline)
-        throw metal_error ("Could not create atelier pipeline", error);
+        throw metal_error ("Could not create atelier mesh pipeline", error);
       return pipeline;
     }
 
@@ -133,7 +135,7 @@ namespace atelier {
     NS::SharedPtr<MTL::RenderPipelineState> m_pipeline;
     NS::SharedPtr<MTL::DepthStencilState> m_depth_state;
     NS::SharedPtr<MTL4::ArgumentTable> m_arguments;
-    NS::SharedPtr<MTL::Buffer> m_wireframe;
     std::array<NS::SharedPtr<MTL::Buffer>, frames_in_flight> m_frames;
+    std::size_t m_instance_count = 0;
   };
 }
