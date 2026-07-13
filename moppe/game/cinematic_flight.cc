@@ -256,7 +256,7 @@ namespace moppe::game {
         const float t = static_cast<float> (i) / steps;
         Vec3 point = start + delta * t;
         point[1] = map.interpolated_height (point[0], point[2]) + 150.0f;
-        add_waypoint (plan, map, point, subject, 130.0f, 185.0f, 56.0f);
+        add_waypoint (plan, map, point, subject, 130.0f, 230.0f, 58.0f);
       }
     }
 
@@ -331,7 +331,7 @@ namespace moppe::game {
           eye[1] = ground[1] + (i == 0 ? 52.0f : 22.0f);
           Vec3 subject = ground + flow * 85.0f;
           subject[1] = map.interpolated_height (subject[0], subject[2]) + 3.0f;
-          add_waypoint (plan, map, eye, subject, 18.0f, 78.0f, 67.0f);
+          add_waypoint (plan, map, eye, subject, 18.0f, 118.0f, 69.0f);
           previous = ground;
         }
         const Vec3 position =
@@ -352,13 +352,13 @@ namespace moppe::game {
       Vec3 approach = subject - flow * 190.0f + side * 75.0f;
       approach[1] = subject[1] + (waterfall.cell != no_cell ? 100.0f : 125.0f);
       add_transit (plan, map, approach, subject);
-      add_waypoint (plan, map, approach, subject, 65.0f, 105.0f, 59.0f);
+      add_waypoint (plan, map, approach, subject, 65.0f, 165.0f, 61.0f);
       Vec3 close = subject - flow * 35.0f + side * 28.0f;
       close[1] = subject[1] + (waterfall.cell != no_cell ? 32.0f : 58.0f);
-      add_waypoint (plan, map, close, subject, 24.0f, 62.0f, 52.0f);
+      add_waypoint (plan, map, close, subject, 24.0f, 110.0f, 55.0f);
       Vec3 exit = subject + flow * 170.0f - side * 55.0f;
       exit[1] = subject[1] + 85.0f;
-      add_waypoint (plan, map, exit, subject, 55.0f, 115.0f, 58.0f);
+      add_waypoint (plan, map, exit, subject, 55.0f, 175.0f, 61.0f);
       record_landmark (plan,
                        waterfall.cell != no_cell
                          ? CinematicLandmarkKind::Waterfall
@@ -375,15 +375,15 @@ namespace moppe::game {
       Vec3 entry = subject - saddle.direction * 260.0f;
       entry[1] = subject[1] + 90.0f;
       add_transit (plan, map, entry, subject);
-      add_waypoint (plan, map, entry, subject, 60.0f, 125.0f, 60.0f);
+      add_waypoint (plan, map, entry, subject, 60.0f, 180.0f, 63.0f);
       Vec3 pass = subject - saddle.direction * 20.0f;
       pass[1] = subject[1] + 28.0f;
       Vec3 beyond = subject + saddle.direction * 150.0f;
       beyond[1] = map.interpolated_height (beyond[0], beyond[2]) + 12.0f;
-      add_waypoint (plan, map, pass, beyond, 20.0f, 88.0f, 68.0f);
+      add_waypoint (plan, map, pass, beyond, 20.0f, 145.0f, 72.0f);
       Vec3 exit = subject + saddle.direction * 240.0f;
       exit[1] = subject[1] + 70.0f;
-      add_waypoint (plan, map, exit, beyond, 45.0f, 125.0f, 62.0f);
+      add_waypoint (plan, map, exit, beyond, 45.0f, 190.0f, 65.0f);
       record_landmark (plan, CinematicLandmarkKind::Saddle, saddle, subject);
     }
 
@@ -401,7 +401,7 @@ namespace moppe::game {
                                    radius * (0.36f + 0.04f * i),
                                    std::sin (angle) * radius);
         Vec3 look = subject + Vec3 (0, radius * 0.08f, 0);
-        add_waypoint (plan, map, eye, look, 70.0f, 72.0f, 50.0f);
+        add_waypoint (plan, map, eye, look, 70.0f, 125.0f, 53.0f);
       }
       record_landmark (plan, CinematicLandmarkKind::Peak, peak, subject);
     }
@@ -412,9 +412,9 @@ namespace moppe::game {
         unwrap_near (final_subject, plan.waypoints.back ().position, map);
     Vec3 reveal = final_subject + Vec3 (-150.0f, 95.0f, -150.0f);
     add_transit (plan, map, reveal, final_subject);
-    add_waypoint (plan, map, reveal, final_subject, 70.0f, 115.0f, 57.0f);
+    add_waypoint (plan, map, reveal, final_subject, 70.0f, 170.0f, 60.0f);
     Vec3 final_eye = final_subject + Vec3 (-28.0f, 15.0f, -28.0f);
-    add_waypoint (plan, map, final_eye, final_subject, 9.0f, 42.0f, 66.0f);
+    add_waypoint (plan, map, final_eye, final_subject, 9.0f, 75.0f, 68.0f);
     plan.landmarks.push_back ({ .kind = CinematicLandmarkKind::Arrival,
                                 .cell = no_cell,
                                 .score = 0.0f,
@@ -422,24 +422,286 @@ namespace moppe::game {
     return plan;
   }
 
-  void CinematicFlight::start (const CinematicFlightPlan& plan) {
+  Vec3 CinematicFlight::curve_position (std::size_t segment, float t) const {
+    const auto tangent = [this] (std::size_t index) {
+      const Vec3& current = m_waypoints[index].position;
+      if (index == 0)
+        return (m_waypoints[1].position - current) * 0.68f;
+      if (index + 1 == m_waypoints.size ())
+        return (current - m_waypoints[index - 1].position) * 0.68f;
+
+      const Vec3& previous = m_waypoints[index - 1].position;
+      const Vec3& next = m_waypoints[index + 1].position;
+      Vec3 direction = next - previous;
+      if (length2 (direction) < 1e-5f)
+        return Vec3 ();
+      normalize (direction);
+      const float incoming = length (current - previous);
+      const float outgoing = length (next - current);
+      return direction * (0.72f * std::min (incoming, outgoing));
+    };
+
+    const Vec3& from = m_waypoints[segment].position;
+    const Vec3& to = m_waypoints[segment + 1].position;
+    const Vec3 from_tangent = tangent (segment);
+    const Vec3 to_tangent = tangent (segment + 1);
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+    const float h10 = t3 - 2.0f * t2 + t;
+    const float h01 = -2.0f * t3 + 3.0f * t2;
+    const float h11 = t3 - t2;
+    return from * h00 + from_tangent * h10 + to * h01 + to_tangent * h11;
+  }
+
+  CinematicFlight::RouteState
+  CinematicFlight::route_state (float distance) const {
+    if (m_arc_samples.empty ())
+      return {};
+    distance = std::clamp (distance, 0.0f, m_arc_samples.back ().distance);
+    const auto right =
+      std::lower_bound (m_arc_samples.begin (),
+                        m_arc_samples.end (),
+                        distance,
+                        [] (const ArcSample& sample, float value) {
+                          return sample.distance < value;
+                        });
+    const ArcSample* after =
+      right == m_arc_samples.end () ? &m_arc_samples.back () : &*right;
+    const ArcSample* before =
+      right == m_arc_samples.begin () ? after : &*(right - 1);
+    const float span = after->distance - before->distance;
+    const float alpha =
+      span > 1e-5f ? (distance - before->distance) / span : 0.0f;
+
+    std::size_t segment = before->segment;
+    float t = before->t;
+    if (before->segment == after->segment)
+      t += (after->t - before->t) * alpha;
+    else {
+      segment = after->segment;
+      t = after->t * alpha;
+    }
+    const float lift_alpha = alpha * alpha * (3.0f - 2.0f * alpha);
+    const float lift =
+      before->terrain_lift +
+      (after->terrain_lift - before->terrain_lift) * lift_alpha;
+    const float curve_speed_limit =
+      before->speed_limit + (after->speed_limit - before->speed_limit) * alpha;
+    Vec3 position = curve_position (segment, t);
+    position[1] += lift;
+
+    const float eased = t * t * (3.0f - 2.0f * t);
+    const CinematicFlightWaypoint& from = m_waypoints[segment];
+    const CinematicFlightWaypoint& to = m_waypoints[segment + 1];
+    return {
+      .position = position,
+      .subject = linear_vector_interpolate (from.subject, to.subject, eased),
+      .cruise_speed = std::min (
+        curve_speed_limit,
+        from.cruise_speed + (to.cruise_speed - from.cruise_speed) * eased),
+      .field_of_view =
+        from.field_of_view + (to.field_of_view - from.field_of_view) * eased
+    };
+  }
+
+  void CinematicFlight::build_flight_ribbon (const map::HeightMap& map) {
+    m_arc_samples.clear ();
+    if (m_waypoints.size () < 2)
+      return;
+
+    Vec3 previous = curve_position (0, 0.0f);
+    float distance = 0.0f;
+    for (std::size_t segment = 0; segment + 1 < m_waypoints.size ();
+         ++segment) {
+      const float chord = length (m_waypoints[segment + 1].position -
+                                  m_waypoints[segment].position);
+      const int steps = std::max (12, static_cast<int> (chord / 7.0f));
+      const int first = segment == 0 ? 0 : 1;
+      for (int step = first; step <= steps; ++step) {
+        const float t = static_cast<float> (step) / steps;
+        const Vec3 point = curve_position (segment, t);
+        if (!m_arc_samples.empty ())
+          distance += length (point - previous);
+        const float ground = map.interpolated_height (point[0], point[2]);
+        m_arc_samples.push_back (
+          { .distance = distance,
+            .segment = segment,
+            .t = t,
+            .terrain_lift = std::max (0.0f, ground + 22.0f - point[1]),
+            .speed_limit = 230.0f });
+        previous = point;
+      }
+    }
+
+    // Raise the ribbon before a ridge and let it settle after the crest.
+    // A Gaussian clearance envelope avoids the slope discontinuities produced
+    // by a simple max-clearance cone: the aircraft begins climbing before the
+    // obstruction, rounds the vertical crest, then dives away continuously.
+    std::vector<float> minimum_lift;
+    minimum_lift.reserve (m_arc_samples.size ());
+    for (const ArcSample& sample : m_arc_samples)
+      minimum_lift.push_back (sample.terrain_lift);
+    constexpr float anticipation = 95.0f;
+    constexpr float horizon = 300.0f;
+    for (std::size_t i = 0; i < m_arc_samples.size (); ++i) {
+      float lift = minimum_lift[i];
+      for (std::size_t j = i; j > 0; --j) {
+        const float separation =
+          m_arc_samples[i].distance - m_arc_samples[j - 1].distance;
+        if (separation > horizon)
+          break;
+        const float weight = std::exp (-0.5f * separation * separation /
+                                       (anticipation * anticipation));
+        lift = std::max (lift, minimum_lift[j - 1] * weight);
+      }
+      for (std::size_t j = i + 1; j < m_arc_samples.size (); ++j) {
+        const float separation =
+          m_arc_samples[j].distance - m_arc_samples[i].distance;
+        if (separation > horizon)
+          break;
+        const float weight = std::exp (-0.5f * separation * separation /
+                                       (anticipation * anticipation));
+        lift = std::max (lift, minimum_lift[j] * weight);
+      }
+      m_arc_samples[i].terrain_lift = lift;
+    }
+    std::vector<float> smoothed (m_arc_samples.size ());
+    for (int pass = 0; pass < 8; ++pass) {
+      smoothed.front () = m_arc_samples.front ().terrain_lift;
+      smoothed.back () = m_arc_samples.back ().terrain_lift;
+      for (std::size_t i = 1; i + 1 < m_arc_samples.size (); ++i)
+        smoothed[i] = std::max (minimum_lift[i],
+                                0.25f * m_arc_samples[i - 1].terrain_lift +
+                                  0.50f * m_arc_samples[i].terrain_lift +
+                                  0.25f * m_arc_samples[i + 1].terrain_lift);
+      for (std::size_t i = 0; i < m_arc_samples.size (); ++i)
+        m_arc_samples[i].terrain_lift = smoothed[i];
+    }
+
+    // The vertical anticipation changes the true path length slightly.
+    distance = 0.0f;
+    previous =
+      curve_position (m_arc_samples.front ().segment, m_arc_samples.front ().t);
+    previous[1] += m_arc_samples.front ().terrain_lift;
+    m_arc_samples.front ().distance = 0.0f;
+    for (std::size_t i = 1; i < m_arc_samples.size (); ++i) {
+      Vec3 point =
+        curve_position (m_arc_samples[i].segment, m_arc_samples[i].t);
+      point[1] += m_arc_samples[i].terrain_lift;
+      distance += length (point - previous);
+      m_arc_samples[i].distance = distance;
+      previous = point;
+    }
+
+    // Tight curvature lowers the admissible airspeed. Propagate the limit
+    // backward through braking distance and forward through available thrust,
+    // so the aircraft enters every turn already settled at a flyable speed.
+    std::vector<Vec3> points;
+    points.reserve (m_arc_samples.size ());
+    for (const ArcSample& sample : m_arc_samples) {
+      Vec3 point = curve_position (sample.segment, sample.t);
+      point[1] += sample.terrain_lift;
+      points.push_back (point);
+    }
+    for (std::size_t i = 1; i + 1 < m_arc_samples.size (); ++i) {
+      std::size_t left = i - 1;
+      while (left > 0 &&
+             m_arc_samples[i].distance - m_arc_samples[left].distance < 35.0f)
+        --left;
+      std::size_t right = i + 1;
+      while (right + 1 < m_arc_samples.size () &&
+             m_arc_samples[right].distance - m_arc_samples[i].distance < 35.0f)
+        ++right;
+      Vec3 incoming = points[i] - points[left];
+      Vec3 outgoing = points[right] - points[i];
+      if (length2 (incoming) < 1e-5f || length2 (outgoing) < 1e-5f)
+        continue;
+      normalize (incoming);
+      normalize (outgoing);
+      const float angle =
+        std::acos (std::clamp (dot (incoming, outgoing), -1.0f, 1.0f));
+      const float tangent_separation =
+        0.5f * (m_arc_samples[right].distance - m_arc_samples[left].distance);
+      const float curvature = angle / std::max (1.0f, tangent_separation);
+      if (curvature > 1e-5f)
+        m_arc_samples[i].speed_limit =
+          std::clamp (std::sqrt (16.0f / curvature), 28.0f, 230.0f);
+    }
+    for (std::size_t i = m_arc_samples.size () - 1; i > 0; --i) {
+      const float span =
+        m_arc_samples[i].distance - m_arc_samples[i - 1].distance;
+      const float braking_limit =
+        std::sqrt (m_arc_samples[i].speed_limit * m_arc_samples[i].speed_limit +
+                   2.0f * 9.0f * span);
+      m_arc_samples[i - 1].speed_limit =
+        std::min (m_arc_samples[i - 1].speed_limit, braking_limit);
+    }
+    for (std::size_t i = 1; i < m_arc_samples.size (); ++i) {
+      const float span =
+        m_arc_samples[i].distance - m_arc_samples[i - 1].distance;
+      const float acceleration_limit = std::sqrt (
+        m_arc_samples[i - 1].speed_limit * m_arc_samples[i - 1].speed_limit +
+        2.0f * 6.0f * span);
+      m_arc_samples[i].speed_limit =
+        std::min (m_arc_samples[i].speed_limit, acceleration_limit);
+    }
+  }
+
+  void CinematicFlight::start (const CinematicFlightPlan& plan,
+                               const map::HeightMap& map) {
     m_waypoints = plan.waypoints;
-    m_waypoint = 1;
+    for (int pass = 0; pass < 2 && m_waypoints.size () >= 2; ++pass) {
+      std::vector<CinematicFlightWaypoint> rounded;
+      rounded.reserve (m_waypoints.size () * 2);
+      rounded.push_back (m_waypoints.front ());
+      for (std::size_t i = 0; i + 1 < m_waypoints.size (); ++i) {
+        const CinematicFlightWaypoint& from = m_waypoints[i];
+        const CinematicFlightWaypoint& to = m_waypoints[i + 1];
+        const auto blend = [&] (float t) {
+          return CinematicFlightWaypoint {
+            .position =
+              linear_vector_interpolate (from.position, to.position, t),
+            .subject = linear_vector_interpolate (from.subject, to.subject, t),
+            .cruise_speed =
+              from.cruise_speed + (to.cruise_speed - from.cruise_speed) * t,
+            .field_of_view =
+              from.field_of_view + (to.field_of_view - from.field_of_view) * t
+          };
+        };
+        rounded.push_back (blend (0.25f));
+        rounded.push_back (blend (0.75f));
+      }
+      rounded.push_back (m_waypoints.back ());
+      m_waypoints = std::move (rounded);
+    }
+    build_flight_ribbon (map);
     m_elapsed = 0.0f;
     m_final_hold = 0.0f;
+    m_route_distance = 0.0f;
     m_manual_offset = Vec3 ();
+    m_manual_velocity = Vec3 ();
     m_acceleration = Vec3 ();
     m_bank = 0.0f;
-    m_active = m_waypoints.size () >= 2;
+    m_longitudinal_acceleration = 0.0f;
+    m_active = m_arc_samples.size () >= 2;
     if (!m_active)
       return;
-    m_position = m_waypoints.front ().position;
-    m_subject = m_waypoints.front ().subject;
-    const Vec3 initial = m_waypoints[1].position - m_position;
-    m_velocity = length2 (initial) > 1e-5f
-                   ? normalized (initial) * m_waypoints.front ().cruise_speed
-                   : Vec3 (0, 0, m_waypoints.front ().cruise_speed);
-    m_field_of_view = m_waypoints.front ().field_of_view;
+
+    const RouteState initial = route_state (0.0f);
+    const RouteState ahead =
+      route_state (std::min (100.0f, m_arc_samples.back ().distance));
+    m_position = initial.position;
+    m_subject = ahead.position * 0.82f + initial.subject * 0.18f;
+    m_speed = initial.cruise_speed;
+    Vec3 direction = ahead.position - initial.position;
+    if (length2 (direction) < 1e-5f)
+      direction = Vec3 (0, 0, 1);
+    else
+      normalize (direction);
+    m_velocity = direction * m_speed;
+    m_previous_velocity = m_velocity;
+    m_field_of_view = initial.field_of_view;
   }
 
   void CinematicFlight::stop () noexcept {
@@ -454,98 +716,92 @@ namespace moppe::game {
     dt = std::clamp (dt, 1.0f / 240.0f, 1.0f / 20.0f);
     m_elapsed += dt;
 
-    CinematicFlightWaypoint& gate = m_waypoints[m_waypoint];
-    Vec3 travel = gate.position + m_manual_offset - m_position;
-    float distance = length (travel);
-    const float capture_radius = std::max (22.0f, gate.cruise_speed * 0.42f);
-    const bool passed_gate =
-      dot (travel, m_velocity) < 0.0f && distance < gate.cruise_speed * 1.35f;
-    if ((distance < capture_radius || passed_gate) &&
-        m_waypoint + 1 < m_waypoints.size ()) {
-      ++m_waypoint;
-      travel = m_waypoints[m_waypoint].position + m_manual_offset - m_position;
-      distance = length (travel);
-    }
+    const float route_end = m_arc_samples.back ().distance;
+    const float remaining = route_end - m_route_distance;
+    const RouteState before = route_state (m_route_distance);
+    const float pace = std::clamp (controls.pace, -1.0f, 1.0f);
+    float wanted_speed = before.cruise_speed * (1.0f + 0.30f * pace);
+    const float stopping_speed =
+      std::sqrt (std::max (0.0f, 2.0f * 5.0f * remaining));
+    wanted_speed = std::min (wanted_speed, stopping_speed);
 
-    const Vec3 forward_body =
-      length2 (m_velocity) > 1e-5f ? normalized (m_velocity) : Vec3 (0, 0, 1);
-    Vec3 right = cross (forward_body, Vec3 (0, 1, 0));
+    const float wanted_acceleration =
+      std::clamp ((wanted_speed - m_speed) * 1.6f, -10.0f, 7.5f);
+    const float acceleration_step =
+      std::clamp (wanted_acceleration - m_longitudinal_acceleration,
+                  -18.0f * dt,
+                  18.0f * dt);
+    m_longitudinal_acceleration += acceleration_step;
+    m_speed = std::max (0.0f, m_speed + m_longitudinal_acceleration * dt);
+    m_route_distance = std::min (route_end, m_route_distance + m_speed * dt);
+
+    const RouteState current = route_state (m_route_distance);
+    const float tangent_span = std::clamp (m_speed * 0.16f, 12.0f, 32.0f);
+    const RouteState behind = route_state (m_route_distance - tangent_span);
+    const RouteState ahead = route_state (m_route_distance + tangent_span);
+    Vec3 path_forward = ahead.position - behind.position;
+    if (length2 (path_forward) < 1e-5f)
+      path_forward = m_velocity;
+    if (length2 (path_forward) < 1e-5f)
+      path_forward = Vec3 (0, 0, 1);
+    normalize (path_forward);
+
+    Vec3 right = cross (path_forward, Vec3 (0, 1, 0));
     if (length2 (right) < 1e-5f)
       right = Vec3 (1, 0, 0);
     else
       normalize (right);
-    const float input_alpha = 1.0f - std::exp (-2.2f * dt);
     const Vec3 wanted_offset =
       right * (controls.lateral * 70.0f) + Vec3 (0, controls.lift * 55.0f, 0);
-    m_manual_offset += (wanted_offset - m_manual_offset) * input_alpha;
+    Vec3 wanted_manual_velocity = (wanted_offset - m_manual_offset) * 0.75f;
+    clamp_length (wanted_manual_velocity, 22.0f);
+    Vec3 manual_velocity_step = wanted_manual_velocity - m_manual_velocity;
+    clamp_length (manual_velocity_step, 28.0f * dt);
+    m_manual_velocity += manual_velocity_step;
+    m_manual_offset += m_manual_velocity * dt;
 
-    const float pace = std::clamp (controls.pace, -1.0f, 1.0f);
-    float desired_speed =
-      m_waypoints[m_waypoint].cruise_speed * (1.0f + 0.35f * pace);
-    // Reserve enough distance to turn velocity into the next gate instead of
-    // orbiting it. This is the same stopping-distance law a flight controller
-    // uses for waypoint capture, with a low nonzero through-speed for the
-    // documentary move.
-    const float braking_distance =
-      std::max (0.0f, distance - capture_radius * 0.55f);
-    const float capture_speed = 24.0f;
-    const float braking_speed = std::sqrt (capture_speed * capture_speed +
-                                           2.0f * 6.0f * braking_distance);
-    desired_speed = std::min (desired_speed, braking_speed);
-    const bool final_gate = m_waypoint + 1 == m_waypoints.size ();
-    if (final_gate && distance < 55.0f)
-      desired_speed = 0.0f;
-    else if (final_gate)
-      desired_speed *= std::clamp (distance / 90.0f, 0.12f, 1.0f);
-    Vec3 desired_velocity =
-      length2 (travel) > 1e-5f ? normalized (travel) * desired_speed : Vec3 ();
-
-    Vec3 wanted_acceleration = (desired_velocity - m_velocity) * 0.95f;
-    clamp_length (wanted_acceleration, 8.0f);
-    Vec3 acceleration_step = wanted_acceleration - m_acceleration;
-    clamp_length (acceleration_step, 13.0f * dt);
-    m_acceleration += acceleration_step;
-    m_velocity += m_acceleration * dt;
-    clamp_length (m_velocity, 230.0f);
-    m_position += m_velocity * dt;
-
-    // A rotorcraft can trade speed for lift, but it cannot negotiate with a
-    // ridge hidden just beyond the current sample. Probe a short braking
-    // horizon and lift the body early enough to retain a clean sight corridor.
-    float floor =
+    const Vec3 previous_position = m_position;
+    m_position = current.position + m_manual_offset;
+    const float floor =
       map.interpolated_height (m_position[0], m_position[2]) + 18.0f;
-    for (int i = 1; i <= 10; ++i) {
-      const float lookahead = 0.18f * i;
-      const Vec3 sample = m_position + m_velocity * lookahead;
-      const float clearance = 18.0f + 3.0f * i;
-      floor =
-        std::max (floor,
-                  map.interpolated_height (sample[0], sample[2]) + clearance -
-                    std::max (0.0f, m_velocity[1]) * lookahead);
-    }
-    if (m_position[1] < floor) {
-      m_position[1] = floor;
-      m_velocity[1] = std::max (m_velocity[1], 0.0f);
-      m_acceleration[1] = std::max (m_acceleration[1], 0.0f);
-    }
+    m_position[1] = std::max (m_position[1], floor);
+    m_velocity = (m_position - previous_position) / dt;
 
-    const CinematicFlightWaypoint& current = m_waypoints[m_waypoint];
-    const float gimbal_alpha = 1.0f - std::exp (-2.8f * dt);
-    m_subject += (current.subject - m_subject) * gimbal_alpha;
-    m_field_of_view += (current.field_of_view - m_field_of_view) * gimbal_alpha;
+    Vec3 raw_acceleration = (m_velocity - m_previous_velocity) / dt;
+    clamp_length (raw_acceleration, 45.0f);
+    const float acceleration_alpha = 1.0f - std::exp (-5.0f * dt);
+    m_acceleration += (raw_acceleration - m_acceleration) * acceleration_alpha;
+    m_previous_velocity = m_velocity;
+
+    const float lookahead_distance =
+      std::clamp (m_speed * 1.30f, 95.0f, 280.0f);
+    const RouteState lookahead =
+      route_state (m_route_distance + lookahead_distance);
+    const Vec3 wanted_subject =
+      lookahead.position * 0.82f + current.subject * 0.18f;
+    const float gimbal_alpha = 1.0f - std::exp (-3.8f * dt);
+    m_subject += (wanted_subject - m_subject) * gimbal_alpha;
+
+    const float speed_fov =
+      std::clamp ((m_speed - 70.0f) * 0.055f, 0.0f, 10.0f);
+    const float dive_fov = std::clamp (-path_forward[1] * 9.0f, 0.0f, 5.0f);
+    const float wanted_fov = current.field_of_view + speed_fov + dive_fov;
+    m_field_of_view +=
+      (wanted_fov - m_field_of_view) * (1.0f - std::exp (-3.0f * dt));
+
     const float lateral_acceleration = dot (m_acceleration, right);
-    const float wanted_bank =
-      std::clamp (-lateral_acceleration / 9.81f, -0.38f, 0.38f);
-    m_bank += (wanted_bank - m_bank) * (1.0f - std::exp (-3.5f * dt));
+    const float wanted_bank = std::clamp (
+      -std::atan2 (lateral_acceleration, 9.81f) * 1.28f, -0.82f, 0.82f);
+    m_bank += (wanted_bank - m_bank) * (1.0f - std::exp (-4.2f * dt));
 
-    if (final_gate && distance < 55.0f) {
+    if (m_route_distance >= route_end - 0.01f) {
+      m_speed = 0.0f;
       m_final_hold += dt;
-      if (m_final_hold >= 1.4f)
+      if (m_final_hold >= 1.1f)
         m_active = false;
     } else
       m_final_hold = 0.0f;
   }
-
   Vec3 CinematicFlight::forward () const {
     Vec3 result = m_subject - m_position;
     if (length2 (result) < 1e-5f)

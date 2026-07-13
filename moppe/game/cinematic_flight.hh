@@ -7,6 +7,7 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -68,11 +69,12 @@ namespace moppe::game {
   };
 
   // A small rotorcraft flight model wrapped around the authored gates. The
-  // route supplies intent; bounded acceleration and jerk, coordinated bank,
-  // a stabilized camera gimbal, and terrain look-ahead supply motion.
+  // gates become one arc-length-parameterized flight ribbon; bounded thrust,
+  // coordinated bank, a stabilized look-ahead gimbal, and terrain anticipation
+  // supply continuous motion without stopping at any individual landmark.
   class CinematicFlight {
   public:
-    void start (const CinematicFlightPlan& plan);
+    void start (const CinematicFlightPlan& plan, const map::HeightMap& map);
     void stop () noexcept;
     void tick (float dt,
                const map::HeightMap& map,
@@ -91,28 +93,46 @@ namespace moppe::game {
     float field_of_view () const noexcept {
       return m_field_of_view;
     }
-    std::size_t waypoint_index () const noexcept {
-      return m_waypoint;
+    float speed () const noexcept {
+      return m_speed;
     }
-    std::size_t waypoint_count () const noexcept {
-      return m_waypoints.size ();
-    }
-    float gate_distance () const noexcept {
-      return m_waypoint < m_waypoints.size ()
-               ? length (m_waypoints[m_waypoint].position + m_manual_offset -
-                         m_position)
-               : 0.0f;
+    float motion_blur () const noexcept {
+      return std::clamp ((m_speed - 35.0f) / 185.0f, 0.08f, 0.72f);
     }
     Mat4 view_matrix () const;
 
   private:
+    struct ArcSample {
+      float distance;
+      std::size_t segment;
+      float t;
+      float terrain_lift;
+      float speed_limit;
+    };
+
+    struct RouteState {
+      Vec3 position;
+      Vec3 subject;
+      float cruise_speed;
+      float field_of_view;
+    };
+
+    Vec3 curve_position (std::size_t segment, float t) const;
+    RouteState route_state (float distance) const;
+    void build_flight_ribbon (const map::HeightMap& map);
+
     std::vector<CinematicFlightWaypoint> m_waypoints;
-    std::size_t m_waypoint = 0;
+    std::vector<ArcSample> m_arc_samples;
     Vec3 m_position {};
     Vec3 m_velocity {};
+    Vec3 m_previous_velocity {};
     Vec3 m_acceleration {};
     Vec3 m_subject {};
     Vec3 m_manual_offset {};
+    Vec3 m_manual_velocity {};
+    float m_route_distance = 0.0f;
+    float m_speed = 0.0f;
+    float m_longitudinal_acceleration = 0.0f;
     float m_bank = 0.0f;
     float m_field_of_view = 58.0f;
     float m_elapsed = 0.0f;

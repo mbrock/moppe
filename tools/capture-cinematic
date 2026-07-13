@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: tools/capture-cinematic OUTPUT.mp4 [SECONDS]" >&2
+  exit 2
+fi
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+output=$1
+seconds=${2:-12}
+fps=${MOPPE_CINEMATIC_CAPTURE_FPS:-30}
+seed=${MOPPE_SEED:-123}
+terrain=${MOPPE_TERRAIN_PROFILE:-fast}
+frames=$((seconds * fps))
+capture_dir=$(mktemp -d "${TMPDIR:-/tmp}/moppe-cinematic.XXXXXX")
+trap 'rm -rf "$capture_dir"' EXIT
+
+if [[ ! -x "$root/build/moppe.app/Contents/MacOS/moppe" ]]; then
+  echo "moppe is not built; run cmake --build build first" >&2
+  exit 1
+fi
+if ! command -v ffmpeg >/dev/null; then
+  echo "ffmpeg is required to assemble the cinematic" >&2
+  exit 1
+fi
+
+MOPPE_METAL_HUD=0 \
+MOPPE_CINEMATIC_CAPTURE_DIR="$capture_dir" \
+MOPPE_CINEMATIC_CAPTURE_FRAMES="$frames" \
+MOPPE_CINEMATIC_CAPTURE_FPS="$fps" \
+  "$root/build/moppe.app/Contents/MacOS/moppe" \
+    --windowed \
+    --seed "$seed" \
+    --terrain-quality "$terrain" \
+    --graphics-quality high
+
+ffmpeg -y -loglevel error \
+  -framerate "$fps" \
+  -start_number 0 \
+  -i "$capture_dir/frame-%05d.png" \
+  -frames:v "$frames" \
+  -c:v libx264 \
+  -pix_fmt yuv420p \
+  -crf 18 \
+  "$output"
+
+echo "wrote $output"
