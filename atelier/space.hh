@@ -38,6 +38,17 @@ namespace atelier {
   using AngularRate = quantity<angular::radian / si::second, Real>;
   using Wavenumber = quantity<angular::radian / si::metre, Real>;
 
+  // The normal motion of the cellular sheet is its own quantity algebra.
+  // Velocity is deliberately expressed from displacement and duration, so
+  // integration and differentiation preserve these specifications naturally.
+  inline constexpr struct normal_displacement
+      : quantity_spec<isq::length, mp_units::is_kind> {
+  } normal_displacement;
+  inline constexpr auto normal_velocity = normal_displacement / isq::duration;
+  using NormalDisplacement = quantity<normal_displacement[si::metre], Real>;
+  using NormalVelocity =
+    quantity<normal_velocity[si::metre / si::second], Real>;
+
   // A dimensionless diagnostic derived from relative deformation of nearby
   // tiles.  It is intentionally not called strain or stress: those names are
   // reserved for physical constitutive quantities in the ligament model.
@@ -85,7 +96,9 @@ namespace atelier {
   // radians.  These functions are the only place in the atelier where
   // a quantity gives up its units.
 
-  [[nodiscard]] inline Real in_metres (Length length) {
+  template <mp_units::Quantity Q>
+    requires requires (Q value) { value.numerical_value_in (si::metre); }
+  [[nodiscard]] inline Real in_metres (Q length) {
     return length.numerical_value_in (si::metre);
   }
 

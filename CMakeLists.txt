@@ -113,6 +113,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     atelier/atelier_renderer.cc
     atelier/atelier_renderer.hh
     atelier/atelier_shaders.hh
+    atelier/bundle.hh
     atelier/camera.hh
     atelier/carpet.hh
     atelier/embedding.cc
@@ -437,6 +438,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_sources(moppe-tests PRIVATE
       atelier/embedding.cc
       atelier/landscape.cc
+      tests/atelier/bundle_test.cc
       tests/atelier/embedding_test.cc
       tests/atelier/landscape_test.cc)
     set_source_files_properties(

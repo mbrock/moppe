@@ -1,5 +1,6 @@
 #pragma once
 
+#include "atelier/bundle.hh"
 #include "atelier/space.hh"
 
 #include <array>
@@ -18,8 +19,6 @@ namespace atelier {
     landscape_columns * landscape_rows;
 
   using TileId = std::size_t;
-  using NormalVelocity = quantity<si::metre / si::second, Real>;
-
   inline constexpr Length puck_radius = 0.39f * si::metre;
 
   struct GridCell {
@@ -31,6 +30,16 @@ namespace atelier {
   // is calculated rather than copied into every tile's state.
   class PeriodicHexTopology {
   public:
+    using index_type = TileId;
+
+    [[nodiscard]] constexpr std::size_t size () const {
+      return landscape_tile_count;
+    }
+
+    [[nodiscard]] constexpr std::size_t offset (TileId id) const {
+      return id;
+    }
+
     [[nodiscard]] GridCell cell (TileId id) const;
     [[nodiscard]] TileId tile_id (GridCell cell) const;
     [[nodiscard]] TileId neighbour (TileId id, std::size_t side) const;
@@ -46,7 +55,7 @@ namespace atelier {
     Length offset_across;
     Length offset_away;
     Length radius;
-    Length normal_displacement;
+    NormalDisplacement normal_displacement;
     DeformationReading deformation;
     Real generation;
     Real material_seed;
@@ -54,22 +63,24 @@ namespace atelier {
 
   class Landscape {
   public:
+    using TileState =
+      Bundle<PeriodicHexTopology, NormalDisplacement, NormalVelocity>;
+
     Landscape ();
 
     void advance (Duration elapsed);
 
     [[nodiscard]] const PeriodicHexTopology& topology () const {
-      return m_topology;
+      return m_tiles.domain ();
     }
 
-    [[nodiscard]] const std::array<Length, landscape_tile_count>&
+    [[nodiscard]] const std::vector<NormalDisplacement>&
     displacements () const {
-      return m_displacement;
+      return get<normal_displacement> (m_tiles);
     }
 
-    [[nodiscard]] const std::array<NormalVelocity, landscape_tile_count>&
-    velocities () const {
-      return m_velocity;
+    [[nodiscard]] const std::vector<NormalVelocity>& velocities () const {
+      return get<normal_velocity> (m_tiles);
     }
 
     [[nodiscard]] bool topology_is_valid () const;
@@ -82,11 +93,8 @@ namespace atelier {
     void begin_refinement ();
     void update_development (Duration elapsed);
 
-    PeriodicHexTopology m_topology;
-    std::array<Length, landscape_tile_count> m_displacement {};
-    std::array<NormalVelocity, landscape_tile_count> m_velocity {};
-    std::array<Length, landscape_tile_count> m_next_displacement;
-    std::array<NormalVelocity, landscape_tile_count> m_next_velocity;
+    TileState m_tiles;
+    TileState m_next_tiles;
     Duration m_elapsed {};
     Duration m_simulated {};
     Duration m_accumulator {};
