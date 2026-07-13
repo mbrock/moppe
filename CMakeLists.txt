@@ -109,6 +109,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_executable(atelier MACOSX_BUNDLE EXCLUDE_FROM_ALL
     atelier/atelier.cc
     atelier/atelier.hh
+    atelier/space.hh
     atelier/atelier_renderer.cc
     atelier/atelier_renderer.hh
     atelier/atelier_mac.mm
@@ -125,8 +126,10 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(atelier PRIVATE
     mp-units::mp-units
     "-framework Cocoa"
+    "-framework ImageIO"
     "-framework Metal"
-    "-framework QuartzCore")
+    "-framework QuartzCore"
+    "-framework UniformTypeIdentifiers")
 endif()
 
 # ---------------------------------------------------------------

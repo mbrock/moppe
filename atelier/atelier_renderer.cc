@@ -11,6 +11,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,7 @@
 namespace atelier {
   namespace {
     constexpr std::size_t frames_in_flight = 3;
+    constexpr NS::UInteger sample_count = 4;
 
     std::runtime_error metal_error (const char* operation, NS::Error* error) {
       std::string message = operation;
@@ -53,7 +55,7 @@ namespace atelier {
         NS::Error* error = nullptr;
         auto descriptor =
           NS::TransferPtr (MTL::ResidencySetDescriptor::alloc ()->init ());
-        descriptor->setInitialCapacity (1 + frames_in_flight + 1);
+        descriptor->setInitialCapacity (1 + frames_in_flight + 2);
         m_residency_set = NS::TransferPtr (
           m_device->newResidencySet (descriptor.get (), &error));
         if (!m_residency_set)
@@ -108,6 +110,13 @@ namespace atelier {
         drawable->present ();
       }
 
+      void submit_offscreen (FrameSlot frame) {
+        m_command_buffer->endCommandBuffer ();
+        const MTL4::CommandBuffer* submitted = m_command_buffer.get ();
+        m_queue->commit (&submitted, 1);
+        m_queue->signalEvent (m_completion_event.get (), frame.sequence);
+      }
+
       void wait_until_idle () {
         wait_until_complete (m_frame_sequence);
       }
@@ -160,24 +169,16 @@ namespace atelier {
             viewport.height == m_viewport.height)
           return;
 
-        discard_depth_texture (metal);
+        discard_render_targets (metal);
         m_viewport = viewport;
         m_layer->setDrawableSize (CGSizeMake (viewport.width, viewport.height));
         if (viewport.is_empty ())
           return;
 
-        MTL::TextureDescriptor* descriptor =
-          MTL::TextureDescriptor::texture2DDescriptor (
-            MTL::PixelFormatDepth32Float,
-            viewport.width,
-            viewport.height,
-            false);
-        descriptor->setStorageMode (MTL::StorageModePrivate);
-        descriptor->setUsage (MTL::TextureUsageRenderTarget);
-        m_depth_texture = NS::TransferPtr (m_device->newTexture (descriptor));
-        if (!m_depth_texture)
-          throw std::runtime_error ("Could not create depth texture");
-        metal.make_resident (m_depth_texture.get ());
+        m_colour_texture =
+          make_render_target (metal, MTL::PixelFormatBGRA8Unorm_sRGB);
+        m_depth_texture =
+          make_render_target (metal, MTL::PixelFormatDepth32Float);
         metal.commit_residency ();
       }
 
@@ -185,19 +186,38 @@ namespace atelier {
         return m_layer->nextDrawable ();
       }
 
+      // A CPU-readable stand-in for a drawable, used by capture.
+      NS::SharedPtr<MTL::Texture> make_capture_target (MetalExecution& metal) {
+        MTL::TextureDescriptor* descriptor =
+          MTL::TextureDescriptor::texture2DDescriptor (
+            MTL::PixelFormatBGRA8Unorm_sRGB,
+            m_viewport.width,
+            m_viewport.height,
+            false);
+        descriptor->setStorageMode (MTL::StorageModeShared);
+        descriptor->setUsage (MTL::TextureUsageRenderTarget);
+        auto texture = NS::TransferPtr (m_device->newTexture (descriptor));
+        if (!texture)
+          throw std::runtime_error ("Could not create a capture target");
+        metal.make_resident (texture.get ());
+        metal.commit_residency ();
+        return texture;
+      }
+
       NS::SharedPtr<MTL4::RenderPassDescriptor>
-      make_render_pass (CA::MetalDrawable* drawable) const {
+      make_render_pass (MTL::Texture* resolve_target) const {
         auto pass =
           NS::TransferPtr (MTL4::RenderPassDescriptor::alloc ()->init ());
         pass->setRenderTargetWidth (m_viewport.width);
         pass->setRenderTargetHeight (m_viewport.height);
 
-        MTL::RenderPassColorAttachmentDescriptor* color =
+        MTL::RenderPassColorAttachmentDescriptor* colour =
           pass->colorAttachments ()->object (0);
-        color->setTexture (drawable->texture ());
-        color->setLoadAction (MTL::LoadActionClear);
-        color->setStoreAction (MTL::StoreActionStore);
-        color->setClearColor (MTL::ClearColor (0.025, 0.032, 0.05, 1));
+        colour->setTexture (m_colour_texture.get ());
+        colour->setResolveTexture (resolve_target);
+        colour->setLoadAction (MTL::LoadActionClear);
+        colour->setStoreAction (MTL::StoreActionMultisampleResolve);
+        colour->setClearColor (MTL::ClearColor (0.025, 0.032, 0.05, 1));
 
         MTL::RenderPassDepthAttachmentDescriptor* depth =
           pass->depthAttachment ();
@@ -209,17 +229,38 @@ namespace atelier {
       }
 
     private:
-      void discard_depth_texture (MetalExecution& metal) {
-        if (!m_depth_texture)
+      NS::SharedPtr<MTL::Texture> make_render_target (MetalExecution& metal,
+                                                      MTL::PixelFormat format) {
+        MTL::TextureDescriptor* descriptor =
+          MTL::TextureDescriptor::texture2DDescriptor (
+            format, m_viewport.width, m_viewport.height, false);
+        descriptor->setTextureType (MTL::TextureType2DMultisample);
+        descriptor->setSampleCount (sample_count);
+        descriptor->setStorageMode (MTL::StorageModePrivate);
+        descriptor->setUsage (MTL::TextureUsageRenderTarget);
+        auto texture = NS::TransferPtr (m_device->newTexture (descriptor));
+        if (!texture)
+          throw std::runtime_error ("Could not create a render target");
+        metal.make_resident (texture.get ());
+        return texture;
+      }
+
+      void discard_render_targets (MetalExecution& metal) {
+        if (!m_colour_texture && !m_depth_texture)
           return;
         metal.wait_until_idle ();
-        metal.remove_resident (m_depth_texture.get ());
+        for (auto* texture : { &m_colour_texture, &m_depth_texture }) {
+          if (*texture) {
+            metal.remove_resident (texture->get ());
+            texture->reset ();
+          }
+        }
         metal.commit_residency ();
-        m_depth_texture.reset ();
       }
 
       MTL::Device* m_device;
       NS::SharedPtr<CA::MetalLayer> m_layer;
+      NS::SharedPtr<MTL::Texture> m_colour_texture;
       NS::SharedPtr<MTL::Texture> m_depth_texture;
       Viewport m_viewport;
     };
@@ -233,31 +274,30 @@ namespace atelier {
         m_depth_state = make_depth_state (device);
         m_argument_table = make_argument_table (device);
 
-        const std::vector<VertexPosition> vertices = make_coin_wireframe ();
-        m_vertex_count = vertices.size ();
-        m_vertices = NS::TransferPtr (
-          device->newBuffer (vertices.data (),
-                             vertices.size () * sizeof (vertices[0]),
-                             MTL::ResourceStorageModeShared));
+        const CoinMesh mesh = coin_wireframe ();
+        m_vertices = NS::TransferPtr (device->newBuffer (
+          mesh.data (), sizeof (mesh), MTL::ResourceStorageModeShared));
         if (!m_vertices)
           throw std::runtime_error ("Could not create vertex buffer");
         metal.make_resident (m_vertices.get ());
 
-        for (auto& uniforms : m_uniform_buffers) {
-          uniforms = NS::TransferPtr (device->newBuffer (
-            sizeof (Uniforms), MTL::ResourceStorageModeShared));
-          if (!uniforms)
-            throw std::runtime_error ("Could not create uniform buffer");
-          metal.make_resident (uniforms.get ());
+        for (auto& frame : m_frame_buffers) {
+          frame = NS::TransferPtr (
+            device->newBuffer (sizeof (Frame), MTL::ResourceStorageModeShared));
+          if (!frame)
+            throw std::runtime_error ("Could not create frame buffer");
+          metal.make_resident (frame.get ());
         }
         metal.commit_residency ();
       }
 
-      void prepare (FrameSlot slot, const Uniforms& values) {
-        MTL::Buffer* uniforms = m_uniform_buffers[slot.buffer_index].get ();
-        std::memcpy (uniforms->contents (), &values, sizeof (values));
+      void prepare (FrameSlot slot, const Frame& frame) {
+        MTL::Buffer* buffer = m_frame_buffers[slot.buffer_index].get ();
+        std::memcpy (buffer->contents (), &frame, sizeof (frame));
         m_argument_table->setAddress (m_vertices->gpuAddress (), 0);
-        m_argument_table->setAddress (uniforms->gpuAddress (), 1);
+        m_argument_table->setAddress (buffer->gpuAddress (), 1);
+        m_argument_table->setAddress (
+          buffer->gpuAddress () + offsetof (Frame, coins), 2);
       }
 
       void encode (MTL4::CommandBuffer* command_buffer,
@@ -268,7 +308,10 @@ namespace atelier {
         encoder->setDepthStencilState (m_depth_state.get ());
         encoder->setArgumentTable (m_argument_table.get (),
                                    MTL::RenderStageVertex);
-        encoder->drawPrimitives (MTL::PrimitiveTypeTriangle, 0, m_vertex_count);
+        encoder->drawPrimitives (MTL::PrimitiveTypeTriangle,
+                                 0,
+                                 std::tuple_size_v<CoinMesh>,
+                                 coin_count);
         encoder->endEncoding ();
       }
 
@@ -295,6 +338,7 @@ namespace atelier {
           NS::TransferPtr (library->newFunction (MTLSTR ("atelier_fragment")));
         descriptor->setVertexFunction (vertex.get ());
         descriptor->setFragmentFunction (fragment.get ());
+        descriptor->setRasterSampleCount (sample_count);
         descriptor->colorAttachments ()->object (0)->setPixelFormat (
           MTL::PixelFormatBGRA8Unorm_sRGB);
         descriptor->setDepthAttachmentPixelFormat (
@@ -325,7 +369,7 @@ namespace atelier {
       make_argument_table (MTL::Device* device) {
         auto descriptor =
           NS::TransferPtr (MTL4::ArgumentTableDescriptor::alloc ()->init ());
-        descriptor->setMaxBufferBindCount (2);
+        descriptor->setMaxBufferBindCount (3);
         NS::Error* error = nullptr;
         auto table = NS::TransferPtr (
           device->newArgumentTable (descriptor.get (), &error));
@@ -338,9 +382,7 @@ namespace atelier {
       NS::SharedPtr<MTL::DepthStencilState> m_depth_state;
       NS::SharedPtr<MTL4::ArgumentTable> m_argument_table;
       NS::SharedPtr<MTL::Buffer> m_vertices;
-      std::array<NS::SharedPtr<MTL::Buffer>, frames_in_flight>
-        m_uniform_buffers;
-      NS::UInteger m_vertex_count = 0;
+      std::array<NS::SharedPtr<MTL::Buffer>, frames_in_flight> m_frame_buffers;
     };
   }
 
@@ -369,12 +411,40 @@ namespace atelier {
 
       const FrameSlot slot = m_metal.begin_frame ();
       const Frame frame =
-        make_frame (Clock::now () - m_started_at, m_surface.viewport ());
-      m_scene.prepare (slot, frame.uniforms);
+        compose_frame (Clock::now () - m_started_at, m_surface.viewport ());
+      m_scene.prepare (slot, frame);
 
-      const auto pass = m_surface.make_render_pass (drawable);
+      const auto pass = m_surface.make_render_pass (drawable->texture ());
       m_scene.encode (m_metal.command_buffer (), pass.get ());
       m_metal.submit (drawable, slot);
+    }
+
+    Image capture (Duration elapsed) {
+      const Viewport viewport = m_surface.viewport ();
+      if (!m_surface.has_render_target ())
+        throw std::runtime_error ("Cannot capture an unsized surface");
+
+      const auto target = m_surface.make_capture_target (m_metal);
+      const FrameSlot slot = m_metal.begin_frame ();
+      m_scene.prepare (slot, compose_frame (elapsed, viewport));
+      const auto pass = m_surface.make_render_pass (target.get ());
+      m_scene.encode (m_metal.command_buffer (), pass.get ());
+      m_metal.submit_offscreen (slot);
+      m_metal.wait_until_idle ();
+
+      Image image {
+        .width = viewport.width,
+        .height = viewport.height,
+        .bgra = std::make_unique<std::uint8_t[]> (4 * viewport.width *
+                                                  viewport.height),
+      };
+      target->getBytes (image.bgra.get (),
+                        4 * viewport.width,
+                        MTL::Region (0, 0, viewport.width, viewport.height),
+                        0);
+      m_metal.remove_resident (target.get ());
+      m_metal.commit_residency ();
+      return image;
     }
 
   private:
@@ -400,5 +470,9 @@ namespace atelier {
 
   void Renderer::draw () {
     m_impl->draw ();
+  }
+
+  Image Renderer::capture (Duration elapsed) {
+    return m_impl->capture (elapsed);
   }
 }

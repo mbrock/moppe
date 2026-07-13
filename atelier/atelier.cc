@@ -1,197 +1,250 @@
 #include "atelier/atelier.hh"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
+#include <ranges>
 #include <stdexcept>
 #include <utility>
-
-#include <mp-units/framework.h>
-#include <mp-units/systems/isq.h>
-#include <mp-units/systems/si.h>
-#include <mp-units/utility/cartesian_vector.h>
 
 namespace atelier {
   using namespace mp_units;
   using namespace mp_units::si::unit_symbols;
-
-  using Matrix = simd_float4x4;
-  using Cartesian = mp_units::utility::cartesian_vector<float, 3>;
-  using Displacement = quantity<isq::displacement[si::metre], Cartesian>;
-  using PositionVector = quantity<isq::position_vector[si::metre], Cartesian>;
-  using Length = quantity<isq::length[si::metre], float>;
-  using Duration = quantity<isq::duration[si::second], float>;
-  using Angle = quantity<isq::angular_measure[si::radian], float>;
-
-  inline constexpr struct coin_radius : quantity_spec<isq::radius> {
-  } coin_radius;
-  inline constexpr struct wire_radius : quantity_spec<isq::radius> {
-  } wire_radius;
-  inline constexpr struct coin_half_thickness : quantity_spec<isq::height> {
-  } coin_half_thickness;
-  inline constexpr struct camera_orbit_radius : quantity_spec<isq::radius> {
-  } camera_orbit_radius;
-  inline constexpr struct camera_height : quantity_spec<isq::height> {
-  } camera_height;
-  inline constexpr struct camera_field_of_view
-      : quantity_spec<isq::angular_measure> {
-  } camera_field_of_view;
-  inline constexpr struct camera_orbit_velocity
-      : quantity_spec<isq::angular_velocity> {
-  } camera_orbit_velocity;
-  inline constexpr struct near_clip_distance : quantity_spec<isq::distance> {
-  } near_clip_distance;
-  inline constexpr struct far_clip_distance : quantity_spec<isq::distance> {
-  } far_clip_distance;
+  using mp_units::angular::sin;
+  using mp_units::angular::unit_symbols::deg;
+  using mp_units::angular::unit_symbols::rev;
 
   namespace {
-    constexpr int coin_sides = 6;
-    constexpr float pi = 3.14159265358979323846f;
+    // The array whose i-th element is f(i): tabulation as one
+    // expression, in the same spirit the mp-units cartesian_vector
+    // builds itself from a component function.
+    template <std::size_t N>
+    [[nodiscard]] constexpr auto tabulate (auto f) {
+      return [&]<std::size_t... I> (std::index_sequence<I...>) {
+        return std::array { f (I)... };
+      }(std::make_index_sequence<N> {});
+    }
 
+    // --- One coin ---------------------------------------------------
+
+    constexpr Length coin_radius = 1.0f * m;
+    constexpr Length coin_half_depth = 0.16f * m;
+    constexpr Length wire_radius = 0.025f * m;
+
+    // A straight run of wire between two places.
     struct Segment {
-      Displacement start;
-      Displacement end;
+      Point from;
+      Point to;
     };
 
-    Displacement displacement (float x, float y, float z) {
-      return isq::displacement (Cartesian { x, y, z } * m);
+    // A rim vertex: `side` counts around the hexagon, `face` is +1 on
+    // the upper face and -1 on the lower.
+    Point rim (std::size_t side, Real face) {
+      const Angle around = (Real (side) / coin_sides) * rev;
+      return scene + radial (around) * coin_radius +
+             up * (face * coin_half_depth);
     }
 
-    PositionVector position (float x, float y, float z) {
-      return isq::position_vector (Cartesian { x, y, z } * m);
+    // Each side contributes three edges: a stretch of upper rim, a
+    // stretch of lower rim, and the pillar between them.
+    std::array<Segment, coin_edge_count> coin_edges () {
+      return tabulate<coin_edge_count> ([] (std::size_t index) {
+        const std::size_t side = index / 3;
+        const std::size_t next = (side + 1) % coin_sides;
+        switch (index % 3) {
+        case 0:
+          return Segment { rim (side, +1), rim (next, +1) };
+        case 1:
+          return Segment { rim (side, -1), rim (next, -1) };
+        default:
+          return Segment { rim (side, +1), rim (side, -1) };
+        }
+      });
     }
 
-    VertexPosition vertex_position (Displacement displacement) {
-      const Cartesian& value = displacement.numerical_value_in (m);
-      return { value[0], value[1], value[2] };
-    }
+    // A corner of a wire: a place on the wire's surface, and the
+    // outward direction the surface faces there.
+    struct Corner {
+      Point at;
+      Vec3 out;
+    };
 
-    std::array<Segment, coin_sides * 3> coin_edges () {
-      const auto radius = coin_radius (1.0f * m);
-      const auto half_thickness = coin_half_thickness (0.16f * m);
-      std::array<Displacement, coin_sides> upper;
-      std::array<Displacement, coin_sides> lower;
-
-      for (int side = 0; side < coin_sides; ++side) {
-        const float angle = 2.0f * pi * side / coin_sides;
-        const float x = radius.numerical_value_in (m) * std::cos (angle);
-        const float z = radius.numerical_value_in (m) * std::sin (angle);
-        const float y = half_thickness.numerical_value_in (m);
-        upper[side] = displacement (x, y, z);
-        lower[side] = displacement (x, -y, z);
-      }
-
-      std::array<Segment, coin_sides * 3> edges;
-      for (int side = 0; side < coin_sides; ++side) {
-        const int next = (side + 1) % coin_sides;
-        edges[side * 3] = { upper[side], upper[next] };
-        edges[side * 3 + 1] = { lower[side], lower[next] };
-        edges[side * 3 + 2] = { upper[side], lower[side] };
-      }
-      return edges;
-    }
-
-    class WireMeshBuilder {
-    public:
-      explicit WireMeshBuilder (QuantityOf<wire_radius> auto radius)
-          : m_radius_metres (radius.numerical_value_in (m)) {
-        m_vertices.reserve (coin_sides * 3 * indices.size ());
-      }
-
-      void append (Segment segment) {
-        const Cartesian direction =
-          (segment.end - segment.start).numerical_value_in (m).unit ();
-        const Cartesian reference =
-          std::abs (scalar_product (direction, Cartesian { 0, 1, 0 })) > 0.9f
-            ? Cartesian { 1, 0, 0 }
-            : Cartesian { 0, 1, 0 };
-        const Displacement u = isq::displacement (
-          m_radius_metres * vector_product (direction, reference).unit () * m);
-        const Cartesian u_value = u.numerical_value_in (m);
-        const Displacement v = isq::displacement (
-          m_radius_metres * vector_product (direction, u_value).unit () * m);
-
-        const std::array<Displacement, 8> corners {
-          segment.start - u - v, segment.start + u - v, segment.start + u + v,
-          segment.start - u + v, segment.end - u - v,   segment.end + u - v,
-          segment.end + u + v,   segment.end - u + v,
-        };
-        for (const unsigned index : indices)
-          m_vertices.push_back (vertex_position (corners[index]));
-      }
-
-      std::vector<VertexPosition> finish () && {
-        return std::move (m_vertices);
-      }
-
-    private:
-      static constexpr std::array<unsigned, 36> indices {
-        0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6,
-        3, 0, 4, 3, 4, 7, 0, 3, 2, 0, 2, 1, 4, 5, 6, 4, 6, 7,
+    // The eight corners of a wire: a box with a square cross-section
+    // of half-width `radius`, swept from one end of the segment to
+    // the other.
+    std::array<Corner, 8> wire_corners (const Segment& wire, Length radius) {
+      const Vec3 axis = direction (wire.to - wire.from);
+      const Vec3 anchor =
+        std::abs (scalar_product (axis, up)) > 0.9f ? east : up;
+      const Vec3 u = vector_product (axis, anchor).unit ();
+      const Vec3 v = vector_product (axis, u);
+      const auto corner = [&] (const Point& end, Real su, Real sv) {
+        const Vec3 across = u * su + v * sv;
+        return Corner { end + across * radius,
+                        across / std::numbers::sqrt2_v<Real> };
       };
+      return {
+        corner (wire.from, -1, -1), corner (wire.from, +1, -1),
+        corner (wire.from, +1, +1), corner (wire.from, -1, +1),
+        corner (wire.to, -1, -1),   corner (wire.to, +1, -1),
+        corner (wire.to, +1, +1),   corner (wire.to, -1, +1),
+      };
+    }
 
-      float m_radius_metres;
-      std::vector<VertexPosition> m_vertices;
+    // The twelve triangles of a wire, as indices into its corners.
+    constexpr std::array<unsigned, wire_vertex_count> wire_triangles {
+      0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6,
+      3, 0, 4, 3, 4, 7, 0, 3, 2, 0, 2, 1, 4, 5, 6, 4, 6, 7,
     };
+
+    // --- The carpet of coins ------------------------------------------
+
+    constexpr Length carpet_pitch = 2.6f * m;
+    constexpr Length hover_height = 1.1f * m;
+    constexpr Length hover_swell = 0.22f * m;
+    constexpr AngularRate spin_rate = 0.04f * rev / s;
+    constexpr AngularRate bob_rate = 0.09f * rev / s;
+
+    // The golden angle: successive coins get phases that never repeat
+    // and never cluster.
+    constexpr Angle golden = 0.381966f * rev;
+
+    // A lattice cell in axial hex coordinates.
+    struct Cell {
+      int q, r;
+
+      [[nodiscard]] constexpr int ring () const {
+        const int s = -q - r;
+        return std::max ({ q < 0 ? -q : q, r < 0 ? -r : r, s < 0 ? -s : s });
+      }
+    };
+
+    consteval std::array<Cell, coin_count> carpet_cells () {
+      std::array<Cell, coin_count> cells {};
+      std::size_t count = 0;
+      for (int q = -carpet_rings; q <= carpet_rings; ++q)
+        for (int r = -carpet_rings; r <= carpet_rings; ++r)
+          if (Cell { q, r }.ring () <= carpet_rings)
+            cells[count++] = { q, r };
+      return cells;
+    }
+
+    Point cell_centre (Cell cell) {
+      const Real across = Real (cell.q) + Real (cell.r) / 2;
+      const Real away = Real (cell.r) * (std::numbers::sqrt3_v<Real> / 2);
+      return scene + (east * across + north * away) * carpet_pitch;
+    }
+
+    // Where a coin sits and how it carries itself at this instant.
+    struct Placement {
+      Point centre;
+      Angle spin;     // about the coin's own axis
+      Angle lean;     // away from the vertical
+      Vec3 lean_axis; // the horizontal axis it leans about
+      Real patina;    // 0 at the golden centre, 1 at the coppery edge
+    };
+
+    Placement place_coin (std::size_t index, Cell cell, Duration t) {
+      const Angle phase = Real (index) * golden;
+      // The carpet gently domes: inner rings ride higher, and every
+      // coin breathes up and down on its own golden-angle phase.
+      const Length hover = hover_height +
+                           0.3f * m * Real (carpet_rings - cell.ring ()) +
+                           hover_swell * sin (bob_rate * t + phase);
+      return {
+        .centre = cell_centre (cell) + up * hover,
+        .spin = spin_rate * t + phase,
+        .lean = 6.0f * deg + 3.0f * deg * sin (3.0f * phase),
+        .lean_axis = radial (phase),
+        .patina = Real (cell.ring ()) / carpet_rings,
+      };
+    }
+
+    // The glaze a coin is dipped in: gold at the heart of the carpet,
+    // weathering toward copper at its edge.
+    simd_float4 glaze (Real patina) {
+      constexpr simd_float3 gold { 1.0f, 0.78f, 0.26f };
+      constexpr simd_float3 copper { 0.84f, 0.42f, 0.28f };
+      return simd_make_float4 (simd_mix (gold, copper, simd_float3 (patina)),
+                               1.0f);
+    }
+
+    // --- Matrices: the scene as the GPU sees it ---------------------
+
+    using Matrix = simd_float4x4;
+
+    Matrix translation (const Point& to) {
+      Matrix matrix = matrix_identity_float4x4;
+      matrix.columns[3] = simd_make_float4 (in_metres (to), 1.0f);
+      return matrix;
+    }
+
+    Matrix rotation (Angle by, const Vec3& about) {
+      return simd_matrix4x4 (
+        simd_quaternion (in_radians (by), as_simd (about)));
+    }
+
+    Matrix place_in_world (const Placement& coin) {
+      return simd_mul (translation (coin.centre),
+                       simd_mul (rotation (coin.lean, coin.lean_axis),
+                                 rotation (coin.spin, up)));
+    }
 
     Matrix perspective (Angle vertical_fov,
-                        float aspect_ratio,
+                        Real aspect_ratio,
                         Length near_plane,
                         Length far_plane) {
-      const float fov = vertical_fov.numerical_value_in (si::radian);
-      const float near_m = near_plane.numerical_value_in (m);
-      const float far_m = far_plane.numerical_value_in (m);
-      const float y = 1.0f / std::tan (fov * 0.5f);
-      const float x = y / aspect_ratio;
-      const float z = far_m / (near_m - far_m);
+      const Real y = Real (1.0f / angular::tan (vertical_fov / 2));
+      const Real x = y / aspect_ratio;
+      const Real z = Real (far_plane / (near_plane - far_plane));
       return { simd_make_float4 (x, 0, 0, 0),
                simd_make_float4 (0, y, 0, 0),
                simd_make_float4 (0, 0, z, -1),
-               simd_make_float4 (0, 0, near_m * z, 0) };
+               simd_make_float4 (0, 0, in_metres (near_plane) * z, 0) };
     }
 
-    Matrix look_at (PositionVector eye, PositionVector target, Cartesian up) {
-      const Cartesian& eye_value = eye.numerical_value_in (m);
-      const Cartesian& target_value = target.numerical_value_in (m);
-      const VertexPosition gpu_eye { eye_value[0], eye_value[1], eye_value[2] };
-      const VertexPosition gpu_target { target_value[0],
-                                        target_value[1],
-                                        target_value[2] };
-      const VertexPosition gpu_up { up[0], up[1], up[2] };
-      const VertexPosition z = simd_normalize (gpu_eye - gpu_target);
-      const VertexPosition x = simd_normalize (simd_cross (gpu_up, z));
-      const VertexPosition y = simd_cross (z, x);
-      return { simd_make_float4 (x.x, y.x, z.x, 0),
-               simd_make_float4 (x.y, y.y, z.y, 0),
-               simd_make_float4 (x.z, y.z, z.z, 0),
-               simd_make_float4 (-simd_dot (x, gpu_eye),
-                                 -simd_dot (y, gpu_eye),
-                                 -simd_dot (z, gpu_eye),
+    Matrix look_at (const Point& eye, const Point& focus) {
+      const simd_float3 from = in_metres (eye);
+      const simd_float3 back = simd_normalize (from - in_metres (focus));
+      const simd_float3 right =
+        simd_normalize (simd_cross (as_simd (up), back));
+      const simd_float3 above = simd_cross (back, right);
+      return { simd_make_float4 (right.x, above.x, back.x, 0),
+               simd_make_float4 (right.y, above.y, back.y, 0),
+               simd_make_float4 (right.z, above.z, back.z, 0),
+               simd_make_float4 (-simd_dot (right, from),
+                                 -simd_dot (above, from),
+                                 -simd_dot (back, from),
                                  1) };
     }
 
-    class OrbitingCamera {
-    public:
-      Matrix world_to_clip (Duration elapsed, Viewport viewport) const {
-        const auto orbit_velocity =
-          camera_orbit_velocity (0.32f * si::radian / si::second);
-        const Angle orbit_angle =
-          isq::angular_measure (orbit_velocity * elapsed);
-        const float angle = orbit_angle.numerical_value_in (si::radian);
+    // --- The camera --------------------------------------------------
+    //
+    // A camera riding a slow carousel around the carpet, always facing
+    // a point just above its centre.
 
-        const auto orbit_radius = camera_orbit_radius (3.0f * m);
-        const auto eye_height = camera_height (1.55f * m);
-        const float radius = orbit_radius.numerical_value_in (m);
-        const PositionVector eye = position (radius * std::sin (angle),
-                                             eye_height.numerical_value_in (m),
-                                             radius * std::cos (angle));
+    struct Carousel {
+      Length orbit_radius = 11.0f * m;
+      Length ride_height = 6.5f * m;
+      AngularRate rate = 0.01f * rev / s;
+      Angle field_of_view = 42.0f * deg;
+      Length near_plane = 0.05f * m;
+      Length far_plane = 80.0f * m;
 
-        const Matrix projection =
-          perspective (camera_field_of_view (0.78f * si::radian),
-                       viewport.aspect_ratio (),
-                       near_clip_distance (0.05f * m),
-                       far_clip_distance (50.0f * m));
-        return simd_mul (projection,
-                         look_at (eye, position (0, 0, 0), { 0, 1, 0 }));
+      [[nodiscard]] Point eye (Duration t) const {
+        return scene + radial (rate * t) * orbit_radius + up * ride_height;
+      }
+
+      [[nodiscard]] Uniforms uniforms (Duration t, Real aspect_ratio) const {
+        const Point from = eye (t);
+        const Point focus = scene + up * (hover_height / 2);
+        return {
+          .world_to_clip = simd_mul (
+            perspective (field_of_view, aspect_ratio, near_plane, far_plane),
+            look_at (from, focus)),
+          .eye = simd_make_float4 (in_metres (from), 1),
+        };
       }
     };
   }
@@ -200,27 +253,38 @@ namespace atelier {
     return width == 0 || height == 0;
   }
 
-  float Viewport::aspect_ratio () const {
+  Real Viewport::aspect_ratio () const {
     if (is_empty ())
       throw std::invalid_argument ("An empty viewport has no aspect ratio");
-    return static_cast<float> (width) / static_cast<float> (height);
+    return Real (width) / Real (height);
   }
 
-  std::vector<VertexPosition> make_coin_wireframe () {
-    WireMeshBuilder mesh (wire_radius (0.025f * m));
-    for (const Segment edge : coin_edges ())
-      mesh.append (edge);
-    return std::move (mesh).finish ();
+  CoinMesh coin_wireframe () {
+    const auto thicken = [] (const Segment& edge) {
+      return tabulate<wire_vertex_count> (
+        [corners = wire_corners (edge, wire_radius)] (std::size_t index) {
+          const Corner& corner = corners[wire_triangles[index]];
+          return WireVertex { in_metres (corner.at), as_simd (corner.out) };
+        });
+    };
+
+    CoinMesh mesh;
+    std::ranges::copy (coin_edges () | std::views::transform (thicken) |
+                         std::views::join,
+                       mesh.begin ());
+    return mesh;
   }
 
-  Frame make_frame (std::chrono::steady_clock::duration elapsed,
-                    Viewport viewport) {
-    const float seconds = std::chrono::duration<float> (elapsed).count ();
-    const OrbitingCamera camera;
+  Frame compose_frame (Duration elapsed, Viewport viewport) {
+    static constexpr std::array<Cell, coin_count> cells = carpet_cells ();
+    const Carousel camera;
+    const auto mint = [&] (std::size_t index) {
+      const Placement coin = place_coin (index, cells[index], elapsed);
+      return CoinInstance { place_in_world (coin), glaze (coin.patina) };
+    };
     return {
-      .uniforms = {
-        .world_to_clip = camera.world_to_clip (seconds * si::second, viewport),
-      },
+      .uniforms = camera.uniforms (elapsed, viewport.aspect_ratio ()),
+      .coins = tabulate<coin_count> (mint),
     };
   }
 }
