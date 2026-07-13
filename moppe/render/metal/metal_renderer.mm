@@ -2076,6 +2076,9 @@ namespace moppe {
       u.current.x = m_have_water_flow ? 1.0f : 0.0f;
       [enc setFragmentTexture:m_have_water_flow ? m_water_flow : water
                       atIndex:MOPPE_TEX_WATER_FLOW_FRAGMENT];
+      u.current.y = m_have_geology ? 1.0f : 0.0f;
+      [enc setFragmentTexture:m_have_geology ? m_geology : water
+                      atIndex:MOPPE_TEX_WATER_GEOLOGY_FRAGMENT];
       if (m_shadow_map)
         [enc setFragmentTexture:m_shadow_map atIndex:MOPPE_TEX_SHADOW];
 
