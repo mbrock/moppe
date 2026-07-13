@@ -4,18 +4,16 @@
 #include "atelier/space.hh"
 
 #include <cstddef>
-#include <optional>
 #include <vector>
 
 // A small cellular sheet whose hexagonal adjacency is independent of its
-// presentation. It may close periodically or end at a finite boundary. The
-// first developmental operation refines one cell into a seven-cell patch and
-// later melds it back into its parent.
+// presentation. Its partition may close periodically or end at a finite
+// boundary, and any base hexagon may be replaced by seven smaller cells.
 
 namespace atelier {
   inline constexpr std::size_t hex_sheet_columns = 30;
   inline constexpr std::size_t hex_sheet_rows = 14;
-  inline constexpr std::size_t hex_sheet_tile_count =
+  inline constexpr std::size_t hex_sheet_base_cell_count =
     hex_sheet_columns * hex_sheet_rows;
 
   using TileId = std::size_t;
@@ -26,24 +24,28 @@ namespace atelier {
     std::size_t row;
   };
 
-  struct GridStep {
-    int columns;
-    int rows;
+  struct HexSite {
+    GridCell base;
+    Length offset_across;
+    Length offset_away;
+    Length radius;
+    Real generation;
+    std::size_t variant;
   };
 
   enum class SheetBoundary { periodic, open };
 
-  // The immutable combinatorial law of the sheet. Regular topology is
-  // calculated rather than copied into every tile's state.
+  // The combinatorial law of one current partition. Adjacency is rebuilt from
+  // the intrinsic geometry, so small cells naturally meet large neighbours.
   class HexSheetTopology {
   public:
     using index_type = TileId;
 
-    explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic)
-        : m_boundary (boundary) {}
+    explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic,
+                               std::vector<bool> refined = {});
 
-    [[nodiscard]] constexpr std::size_t size () const {
-      return hex_sheet_tile_count;
+    [[nodiscard]] std::size_t size () const {
+      return m_sites.size ();
     }
 
     [[nodiscard]] constexpr std::size_t offset (TileId id) const {
@@ -54,42 +56,46 @@ namespace atelier {
       return offset;
     }
 
-    [[nodiscard]] GridCell cell (TileId id) const;
-    [[nodiscard]] TileId tile_id (GridCell cell) const;
-    [[nodiscard]] GridStep neighbour_step (TileId id, std::size_t side) const;
-    [[nodiscard]] std::optional<TileId> neighbour (TileId id,
-                                                   std::size_t side) const;
-    [[nodiscard]] std::vector<TileId> neighbours (TileId id) const;
+    [[nodiscard]] const HexSite& site (TileId id) const {
+      return m_sites[id];
+    }
+
+    [[nodiscard]] TileId tile_id (GridCell base, std::size_t variant = 0) const;
+    [[nodiscard]] const std::vector<TileId>& neighbours (TileId id) const {
+      return m_neighbours[id];
+    }
     [[nodiscard]] SheetBoundary boundary () const {
       return m_boundary;
     }
+    [[nodiscard]] bool base_is_refined (GridCell base) const;
     [[nodiscard]] bool is_anchor (TileId id) const;
 
     template <typename Visitor>
     void visit_neighbourhood (TileId id, Visitor&& visitor) const {
-      for (std::size_t side = 0; side < 6; ++side) {
-        if (const auto adjacent = neighbour (id, side))
-          visitor (*adjacent, Real { 1 });
-      }
+      // A coarse/fine interface changes degree but not the total coupling
+      // assigned to a cell.
+      const Real influence = 1.0f / Real (neighbours (id).size ());
+      for (TileId adjacent : neighbours (id))
+        visitor (adjacent, influence);
     }
 
     [[nodiscard]] bool is_valid () const;
 
   private:
+    void build_sites ();
+    void build_neighbourhoods ();
+
     SheetBoundary m_boundary;
+    std::vector<bool> m_refined;
+    std::vector<TileId> m_first_tile;
+    std::vector<HexSite> m_sites;
+    std::vector<std::vector<TileId>> m_neighbours;
   };
 
-  // One present leaf of the partition, still expressed entirely in the
-  // sheet's intrinsic coordinates. It has no opinion about how that graph
-  // will be embedded in the world.
   struct TileLeaf {
-    GridCell cell;
-    Length offset_across;
-    Length offset_away;
-    Length radius;
+    HexSite site;
     NormalDisplacement normal_displacement;
     DeformationReading deformation;
-    Real generation;
     Real material_seed;
   };
 
@@ -122,23 +128,21 @@ namespace atelier {
     }
 
     [[nodiscard]] bool topology_is_valid () const;
-    [[nodiscard]] bool is_refined () const;
-    [[nodiscard]] Real refinement () const;
+    [[nodiscard]] std::size_t refined_cell_count () const;
     [[nodiscard]] std::vector<TileLeaf> leaves () const;
 
   private:
     void step (Duration dt);
     void initialize_noise_drive ();
-    void begin_refinement ();
-    void update_development (Duration elapsed);
+    void update_partition (Duration elapsed);
+    void repartition (std::vector<bool> refined);
 
+    std::vector<bool> m_refined;
     TileState m_tiles;
     TileState m_next_tiles;
     Duration m_elapsed {};
     Duration m_simulated {};
     Duration m_accumulator {};
-    std::size_t m_cycle = 0;
-    bool m_refined = false;
-    Real m_refinement = 0;
+    std::size_t m_partition_event = 0;
   };
 }

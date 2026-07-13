@@ -1,66 +1,96 @@
 #include "atelier/hex_sheet.hh"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
 #include <stdexcept>
+#include <utility>
 
 namespace atelier {
   using namespace si::unit_symbols;
 
   namespace {
     constexpr Duration fixed_step = (1.0f / 120.0f) * s;
-    constexpr Duration cycle_duration = 12.0f * s;
-    constexpr Duration split_at = 2.0f * s;
-    constexpr Duration split_ends = 4.0f * s;
-    constexpr Duration merge_at = 8.0f * s;
-    constexpr Duration merge_ends = 10.0f * s;
+    constexpr Duration partition_interval = 0.75f * s;
 
-    constexpr std::array<std::array<int, 2>, 6> even_neighbours {
-      std::array { -1, 0 }, std::array { 0, -1 }, std::array { -1, -1 },
-      std::array { 1, 0 },  std::array { -1, 1 }, std::array { 0, 1 },
-    };
-    constexpr std::array<std::array<int, 2>, 6> odd_neighbours {
-      std::array { -1, 0 }, std::array { 1, -1 }, std::array { 0, -1 },
-      std::array { 1, 0 },  std::array { 0, 1 },  std::array { 1, 1 },
-    };
-
-    constexpr std::size_t wrap (int value, std::size_t extent) {
-      const int signed_extent = static_cast<int> (extent);
-      const int remainder = value % signed_extent;
-      return static_cast<std::size_t> (remainder < 0 ? remainder + signed_extent
-                                                     : remainder);
+    std::size_t base_offset (GridCell cell) {
+      return cell.row * hex_sheet_columns + cell.column;
     }
 
-    Real smooth (Real value) {
-      const Real t = std::clamp (value, 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
+    GridCell base_cell (std::size_t offset) {
+      return { offset % hex_sheet_columns, offset / hex_sheet_columns };
     }
 
-    Real material_seed (TileId id, std::size_t variant) {
-      std::uint32_t bits =
-        static_cast<std::uint32_t> (id * 8 + variant + 0x9e3779b9U);
-      bits ^= bits >> 16;
-      bits *= 0x7feb352dU;
-      bits ^= bits >> 15;
-      bits *= 0x846ca68bU;
-      bits ^= bits >> 16;
-      return Real (bits & 0x00ffffffU) / Real (0x01000000U);
-    }
-
-    Real signed_noise (GridCell cell) {
-      std::uint32_t bits =
-        static_cast<std::uint32_t> (cell.column + hex_sheet_columns * cell.row);
+    std::uint32_t mix_bits (std::uint32_t bits) {
       bits += 0x9e3779b9U;
       bits ^= bits >> 16;
       bits *= 0x7feb352dU;
       bits ^= bits >> 15;
       bits *= 0x846ca68bU;
       bits ^= bits >> 16;
-      const Real unit = Real (bits & 0x00ffffffU) / Real (0x00ffffffU);
-      return 2.0f * unit - 1.0f;
+      return bits;
+    }
+
+    Real unit_hash (std::uint32_t bits) {
+      return Real (mix_bits (bits) & 0x00ffffffU) / Real (0x01000000U);
+    }
+
+    Real signed_noise (const HexSite& site) {
+      const std::size_t base = base_offset (site.base);
+      return 2.0f * unit_hash (
+                      static_cast<std::uint32_t> (8 * base + site.variant)) -
+             1.0f;
+    }
+
+    Real material_seed (const HexSite& site) {
+      const std::size_t base = base_offset (site.base);
+      return unit_hash (
+        static_cast<std::uint32_t> (8 * base + site.variant + 0x51edU));
+    }
+
+    struct IntrinsicPoint {
+      Real across;
+      Real away;
+    };
+
+    IntrinsicPoint intrinsic_point (const HexSite& site) {
+      const Real row_offset = site.base.row % 2 == 0 ? 0.0f : 0.5f;
+      const Real across_pitch =
+        std::numbers::sqrt3_v<Real> * in_metres (puck_radius);
+      const Real away_pitch = 1.5f * in_metres (puck_radius);
+      return {
+        .across = (Real (site.base.column) + row_offset) * across_pitch +
+                  in_metres (site.offset_across),
+        .away =
+          Real (site.base.row) * away_pitch + in_metres (site.offset_away),
+      };
+    }
+
+    Real periodic_delta (Real delta, Real period) {
+      return delta - std::round (delta / period) * period;
+    }
+
+    bool sites_touch (const HexSite& first,
+                      const HexSite& second,
+                      SheetBoundary boundary) {
+      const IntrinsicPoint a = intrinsic_point (first);
+      const IntrinsicPoint b = intrinsic_point (second);
+      Real across = b.across - a.across;
+      Real away = b.away - a.away;
+      if (boundary == SheetBoundary::periodic) {
+        const Real across_period = Real (hex_sheet_columns) *
+                                   std::numbers::sqrt3_v<Real> *
+                                   in_metres (puck_radius);
+        const Real away_period =
+          Real (hex_sheet_rows) * 1.5f * in_metres (puck_radius);
+        across = periodic_delta (across, across_period);
+        away = periodic_delta (away, away_period);
+      }
+      const Real distance_squared = across * across + away * away;
+      const Real contact = 0.89f * in_metres (first.radius + second.radius);
+      return distance_squared > 0.000001f &&
+             distance_squared <= contact * contact;
     }
 
     DeformationReading deformation_of (const auto& tile) {
@@ -81,64 +111,86 @@ namespace atelier {
     }
   }
 
-  GridCell HexSheetTopology::cell (TileId id) const {
-    return { id % hex_sheet_columns, id / hex_sheet_columns };
+  HexSheetTopology::HexSheetTopology (SheetBoundary boundary,
+                                      std::vector<bool> refined)
+      : m_boundary (boundary), m_refined (std::move (refined)) {
+    if (m_refined.empty ())
+      m_refined.resize (hex_sheet_base_cell_count, false);
+    if (m_refined.size () != hex_sheet_base_cell_count)
+      throw std::invalid_argument ("A hex sheet partition has the wrong size");
+    build_sites ();
+    build_neighbourhoods ();
   }
 
-  TileId HexSheetTopology::tile_id (GridCell cell) const {
-    return cell.row * hex_sheet_columns + cell.column;
-  }
-
-  GridStep HexSheetTopology::neighbour_step (TileId id,
-                                             std::size_t side) const {
-    const GridCell from = cell (id);
-    const auto& offsets = from.row % 2 == 0 ? even_neighbours : odd_neighbours;
-    return { offsets[side][0], offsets[side][1] };
-  }
-
-  std::optional<TileId> HexSheetTopology::neighbour (TileId id,
-                                                     std::size_t side) const {
-    const GridCell from = cell (id);
-    const GridStep step = neighbour_step (id, side);
-    const int column = static_cast<int> (from.column) + step.columns;
-    const int row = static_cast<int> (from.row) + step.rows;
-    if (m_boundary == SheetBoundary::open) {
-      if (column < 0 || column >= static_cast<int> (hex_sheet_columns) ||
-          row < 0 || row >= static_cast<int> (hex_sheet_rows))
-        return std::nullopt;
-      return tile_id (
-        { static_cast<std::size_t> (column), static_cast<std::size_t> (row) });
+  void HexSheetTopology::build_sites () {
+    m_first_tile.resize (hex_sheet_base_cell_count);
+    m_sites.reserve (hex_sheet_base_cell_count +
+                     6 * std::ranges::count (m_refined, true));
+    constexpr Length child_radius =
+      puck_radius / (1.0f + std::numbers::sqrt3_v<Real>);
+    constexpr Length child_orbit = std::numbers::sqrt3_v<Real> * child_radius;
+    for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
+      const GridCell cell = base_cell (base);
+      m_first_tile[base] = m_sites.size ();
+      if (!m_refined[base]) {
+        m_sites.push_back ({ cell, 0.0f * m, 0.0f * m, puck_radius, 0, 0 });
+        continue;
+      }
+      m_sites.push_back ({ cell, 0.0f * m, 0.0f * m, child_radius, 1, 0 });
+      for (std::size_t side = 0; side < 6; ++side) {
+        const Real angle =
+          (Real (side) + 0.5f) * 2.0f * std::numbers::pi_v<Real> / 6.0f;
+        m_sites.push_back ({ cell,
+                             child_orbit * std::sin (angle),
+                             child_orbit * std::cos (angle),
+                             child_radius,
+                             1,
+                             side + 1 });
+      }
     }
-    return tile_id (
-      { wrap (column, hex_sheet_columns), wrap (row, hex_sheet_rows) });
   }
 
-  std::vector<TileId> HexSheetTopology::neighbours (TileId id) const {
-    std::vector<TileId> result;
-    result.reserve (6);
-    for (std::size_t side = 0; side < 6; ++side) {
-      if (const auto adjacent = neighbour (id, side))
-        result.push_back (*adjacent);
+  void HexSheetTopology::build_neighbourhoods () {
+    m_neighbours.resize (m_sites.size ());
+    for (TileId first = 0; first < m_sites.size (); ++first) {
+      for (TileId second = first + 1; second < m_sites.size (); ++second) {
+        if (!sites_touch (m_sites[first], m_sites[second], m_boundary))
+          continue;
+        m_neighbours[first].push_back (second);
+        m_neighbours[second].push_back (first);
+      }
     }
-    return result;
+  }
+
+  TileId HexSheetTopology::tile_id (GridCell base, std::size_t variant) const {
+    const std::size_t offset = base_offset (base);
+    if (offset >= m_first_tile.size () || variant > (m_refined[offset] ? 6 : 0))
+      throw std::out_of_range ("Hex site does not exist in this partition");
+    return m_first_tile[offset] + variant;
+  }
+
+  bool HexSheetTopology::base_is_refined (GridCell base) const {
+    return m_refined[base_offset (base)];
   }
 
   bool HexSheetTopology::is_anchor (TileId id) const {
     if (m_boundary != SheetBoundary::open)
       return false;
-    const GridCell site = cell (id);
+    const GridCell base = site (id).base;
     const bool edge_column =
-      site.column == 0 || site.column + 1 == hex_sheet_columns;
-    const bool edge_row = site.row == 0 || site.row + 1 == hex_sheet_rows;
+      base.column == 0 || base.column + 1 == hex_sheet_columns;
+    const bool edge_row = base.row == 0 || base.row + 1 == hex_sheet_rows;
     return edge_column && edge_row;
   }
 
   bool HexSheetTopology::is_valid () const {
-    for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
+    for (TileId id = 0; id < size (); ++id) {
+      if (neighbours (id).empty ())
+        return false;
       for (TileId adjacent : neighbours (id)) {
-        if (adjacent >= hex_sheet_tile_count || adjacent == id)
+        if (adjacent >= size () || adjacent == id)
           return false;
-        const auto reverse = neighbours (adjacent);
+        const auto& reverse = neighbours (adjacent);
         if (std::ranges::find (reverse, id) == reverse.end ())
           return false;
       }
@@ -147,8 +199,9 @@ namespace atelier {
   }
 
   HexSheet::HexSheet (SheetBoundary boundary)
-      : m_tiles (HexSheetTopology (boundary)),
-        m_next_tiles (HexSheetTopology (boundary)) {
+      : m_refined (hex_sheet_base_cell_count, false),
+        m_tiles (HexSheetTopology (boundary, m_refined)),
+        m_next_tiles (HexSheetTopology (boundary, m_refined)) {
     if (!topology_is_valid ())
       throw std::runtime_error ("The hex sheet topology is inconsistent");
     initialize_noise_drive ();
@@ -161,7 +214,7 @@ namespace atelier {
     for (TileId id = 0; id < m_tiles.size (); ++id) {
       drive[id] = topology ().is_anchor (id)
                     ? 0.0f * m / (s * s)
-                    : signed_noise (topology ().cell (id)) * amplitude;
+                    : signed_noise (topology ().site (id)) * amplitude;
       next_drive[id] = drive[id];
     }
   }
@@ -170,57 +223,140 @@ namespace atelier {
     return topology ().is_valid ();
   }
 
-  void HexSheet::begin_refinement () {
-    const TileId focus_index =
-      topology ().tile_id ({ hex_sheet_columns / 5, hex_sheet_rows / 2 });
-    const BundleFocus focus (m_tiles, focus_index);
-    get<normal_velocity> (focus) += 1.4f * m / s;
-    visit_neighbourhood (focus, [] (const auto& neighbour, auto influence) {
-      get<normal_velocity> (neighbour) += influence * 0.35f * m / s;
-    });
+  std::size_t HexSheet::refined_cell_count () const {
+    return std::ranges::count (m_refined, true);
   }
 
   void HexSheet::advance (Duration elapsed) {
-    if (elapsed < m_elapsed) {
+    if (elapsed < m_elapsed)
       *this = HexSheet (topology ().boundary ());
-    }
     m_accumulator += elapsed - m_elapsed;
     m_elapsed = elapsed;
     while (m_accumulator >= fixed_step) {
       m_simulated += fixed_step;
-      update_development (m_simulated);
+      update_partition (m_simulated);
       step (fixed_step);
       m_accumulator -= fixed_step;
     }
   }
 
-  void HexSheet::update_development (Duration elapsed) {
-    const Real seconds = elapsed.numerical_value_in (s);
-    const Real cycle_seconds = cycle_duration.numerical_value_in (s);
-    const std::size_t cycle =
-      static_cast<std::size_t> (seconds / cycle_seconds);
-    const Duration phase = (seconds - Real (cycle) * cycle_seconds) * s;
-    const bool refined = phase >= split_at && phase < merge_ends;
-    if (refined && (!m_refined || cycle != m_cycle))
-      begin_refinement ();
-    m_cycle = cycle;
-    m_refined = refined;
+  void HexSheet::update_partition (Duration elapsed) {
+    const auto target_event =
+      static_cast<std::size_t> (elapsed.numerical_value_in (s) /
+                                partition_interval.numerical_value_in (s));
+    while (m_partition_event < target_event) {
+      ++m_partition_event;
+      std::vector<bool> next = m_refined;
+      std::size_t merged = hex_sheet_base_cell_count;
 
-    if (phase < split_at || phase >= merge_ends)
-      m_refinement = 0;
-    else if (phase < split_ends)
-      m_refinement =
-        smooth (Real ((phase - split_at) / (split_ends - split_at)));
-    else if (phase < merge_at)
-      m_refinement = 1;
-    else
-      m_refinement =
-        1.0f - smooth (Real ((phase - merge_at) / (merge_ends - merge_at)));
+      if (m_partition_event >= 4) {
+        std::vector<std::size_t> refined;
+        for (std::size_t base = 0; base < next.size (); ++base) {
+          const GridCell cell = base_cell (base);
+          const bool corner =
+            (cell.column == 0 || cell.column + 1 == hex_sheet_columns) &&
+            (cell.row == 0 || cell.row + 1 == hex_sheet_rows);
+          if (next[base] && !corner)
+            refined.push_back (base);
+        }
+        if (!refined.empty ()) {
+          const std::size_t choice =
+            mix_bits (static_cast<std::uint32_t> (m_partition_event * 17)) %
+            refined.size ();
+          merged = refined[choice];
+          next[merged] = false;
+        }
+      }
+
+      for (std::size_t split = 0; split < 2; ++split) {
+        std::size_t candidate = mix_bits (static_cast<std::uint32_t> (
+                                  m_partition_event * 31 + split * 101)) %
+                                hex_sheet_base_cell_count;
+        for (std::size_t probe = 0; probe < next.size (); ++probe) {
+          const std::size_t base = (candidate + probe) % next.size ();
+          const GridCell cell = base_cell (base);
+          const bool corner =
+            (cell.column == 0 || cell.column + 1 == hex_sheet_columns) &&
+            (cell.row == 0 || cell.row + 1 == hex_sheet_rows);
+          if (!next[base] && base != merged && !corner) {
+            next[base] = true;
+            break;
+          }
+        }
+      }
+      repartition (std::move (next));
+    }
+  }
+
+  void HexSheet::repartition (std::vector<bool> refined) {
+    if (refined == m_refined)
+      return;
+
+    const HexSheetTopology old_topology = topology ();
+    const auto old_displacement = displacements ();
+    const auto old_velocity = velocities ();
+    const auto old_drive = drives ();
+    HexSheetTopology new_topology (old_topology.boundary (), refined);
+    TileState new_tiles (new_topology);
+    TileState new_next_tiles (new_topology);
+    auto& new_displacement = get<normal_displacement> (new_tiles);
+    auto& new_velocity = get<normal_velocity> (new_tiles);
+    auto& new_drive = get<normal_acceleration> (new_tiles);
+
+    for (std::size_t base = 0; base < hex_sheet_base_cell_count; ++base) {
+      const GridCell cell = base_cell (base);
+      const bool was_refined = m_refined[base];
+      const bool is_refined = refined[base];
+      const std::size_t new_count = is_refined ? 7 : 1;
+      for (std::size_t variant = 0; variant < new_count; ++variant) {
+        const TileId target = new_topology.tile_id (cell, variant);
+        if (was_refined == is_refined) {
+          const TileId source = old_topology.tile_id (cell, variant);
+          new_displacement[target] = old_displacement[source];
+          new_velocity[target] = old_velocity[source];
+          new_drive[target] = old_drive[source];
+        } else if (is_refined) {
+          const TileId source = old_topology.tile_id (cell);
+          new_displacement[target] = old_displacement[source];
+          new_velocity[target] = old_velocity[source];
+          new_drive[target] = old_drive[source];
+        } else {
+          const TileId first = old_topology.tile_id (cell);
+          auto displacement = old_displacement[first] - old_displacement[first];
+          auto velocity = old_velocity[first] - old_velocity[first];
+          auto drive = old_drive[first] - old_drive[first];
+          for (std::size_t child = 0; child < 7; ++child) {
+            const TileId source = old_topology.tile_id (cell, child);
+            displacement += old_displacement[source] / 7.0f;
+            velocity += old_velocity[source] / 7.0f;
+            drive += old_drive[source] / 7.0f;
+          }
+          new_displacement[target] = displacement;
+          new_velocity[target] = velocity;
+          new_drive[target] = drive;
+        }
+        if (new_topology.is_anchor (target)) {
+          new_displacement[target] =
+            new_displacement[target] - new_displacement[target];
+          new_velocity[target] = new_velocity[target] - new_velocity[target];
+          new_drive[target] = new_drive[target] - new_drive[target];
+        }
+      }
+    }
+
+    get<normal_displacement> (new_next_tiles) = new_displacement;
+    get<normal_velocity> (new_next_tiles) = new_velocity;
+    get<normal_acceleration> (new_next_tiles) = new_drive;
+    m_refined = std::move (refined);
+    m_tiles = std::move (new_tiles);
+    m_next_tiles = std::move (new_next_tiles);
+    if (!topology_is_valid ())
+      throw std::runtime_error ("Adaptive hex partition is inconsistent");
   }
 
   void HexSheet::step (Duration dt) {
     constexpr auto stiffness = 2.3f / (s * s);
-    constexpr auto coupling = 5.2f / (s * s);
+    constexpr auto coupling = 31.2f / (s * s);
     constexpr auto damping = 1.25f / s;
     constexpr AngularRate breathing_rate =
       0.07f * angular::revolution / si::second;
@@ -249,69 +385,16 @@ namespace atelier {
     displacement.swap (next_displacement);
   }
 
-  bool HexSheet::is_refined () const {
-    return m_refined;
-  }
-
-  Real HexSheet::refinement () const {
-    return m_refinement;
-  }
-
   std::vector<TileLeaf> HexSheet::leaves () const {
     std::vector<TileLeaf> result;
-    result.reserve (hex_sheet_tile_count + 7);
-    const TileId focus =
-      topology ().tile_id ({ hex_sheet_columns / 5, hex_sheet_rows / 2 });
-    for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
+    result.reserve (topology ().size ());
+    for (TileId id = 0; id < topology ().size (); ++id) {
       const BundleFocus tile (m_tiles, id);
-      const GridCell cell = topology ().cell (id);
-      const auto displacement = get<normal_displacement> (tile);
-      const DeformationReading deformation = deformation_of (tile);
-      if (id != focus || !m_refined) {
-        result.push_back ({ cell,
-                            0.0f * m,
-                            0.0f * m,
-                            puck_radius,
-                            displacement,
-                            deformation,
-                            0,
-                            material_seed (id, 0) });
-        continue;
-      }
-
-      const Length parent_radius = (1.0f - m_refinement) * puck_radius;
-      if (parent_radius > 0.01f * m)
-        result.push_back ({ cell,
-                            0.0f * m,
-                            0.0f * m,
-                            parent_radius,
-                            displacement,
-                            deformation,
-                            0,
-                            material_seed (id, 0) });
-
-      const Length child_radius =
-        std::max (0.01f, m_refinement / 3.0f) * puck_radius;
-      result.push_back ({ cell,
-                          0.0f * m,
-                          0.0f * m,
-                          child_radius,
-                          displacement,
-                          deformation,
-                          1,
-                          material_seed (id, 1) });
-      const Length orbit = puck_radius / std::numbers::sqrt3_v<Real>;
-      for (std::size_t side = 0; side < 6; ++side) {
-        const Real angle = Real (side) * 2.0f * std::numbers::pi_v<Real> / 6;
-        result.push_back ({ cell,
-                            orbit * std::sin (angle),
-                            orbit * std::cos (angle),
-                            child_radius,
-                            displacement,
-                            deformation,
-                            1,
-                            material_seed (id, side + 2) });
-      }
+      const HexSite& site = topology ().site (id);
+      result.push_back ({ site,
+                          get<normal_displacement> (tile),
+                          deformation_of (tile),
+                          material_seed (site) });
     }
     return result;
   }

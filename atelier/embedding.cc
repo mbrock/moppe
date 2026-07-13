@@ -12,7 +12,6 @@ namespace atelier {
     constexpr Length major_radius = 4.5f * m;
     constexpr Length minor_radius = 1.7f * m;
     constexpr Length shell_hover = 0.06f * m;
-    constexpr Length ligament_attachment = 0.58f * puck_radius;
     constexpr Length ligament_hover = 0.080f * m;
     constexpr Length ligament_rest_length =
       std::numbers::sqrt3_v<Real> * puck_radius;
@@ -71,11 +70,14 @@ namespace atelier {
       };
     }
 
+    SurfaceFrame toroidal_frame (const HexSite& site,
+                                 NormalDisplacement displacement) {
+      return toroidal_frame (
+        site.base, displacement, site.offset_across, site.offset_away);
+    }
+
     SurfaceFrame toroidal_frame (const TileLeaf& tile) {
-      return toroidal_frame (tile.cell,
-                             tile.normal_displacement,
-                             tile.offset_across,
-                             tile.offset_away);
+      return toroidal_frame (tile.site, tile.normal_displacement);
     }
 
     SurfaceFrame flat_frame (int column,
@@ -99,15 +101,23 @@ namespace atelier {
       };
     }
 
+    SurfaceFrame flat_frame (const HexSite& site,
+                             NormalDisplacement displacement,
+                             int image_across,
+                             int image_away) {
+      return flat_frame (static_cast<int> (site.base.column) +
+                           image_across * static_cast<int> (hex_sheet_columns),
+                         static_cast<int> (site.base.row) +
+                           image_away * static_cast<int> (hex_sheet_rows),
+                         displacement,
+                         site.offset_across,
+                         site.offset_away);
+    }
+
     SurfaceFrame
     flat_frame (const TileLeaf& tile, int image_across, int image_away) {
-      return flat_frame (static_cast<int> (tile.cell.column) +
-                           image_across * static_cast<int> (hex_sheet_columns),
-                         static_cast<int> (tile.cell.row) +
-                           image_away * static_cast<int> (hex_sheet_rows),
-                         tile.normal_displacement,
-                         tile.offset_across,
-                         tile.offset_away);
+      return flat_frame (
+        tile.site, tile.normal_displacement, image_across, image_away);
     }
 
     SurfaceFrame bridge_frame (GridCell cell,
@@ -149,11 +159,14 @@ namespace atelier {
       };
     }
 
+    SurfaceFrame bridge_frame (const HexSite& site,
+                               NormalDisplacement displacement) {
+      return bridge_frame (
+        site.base, displacement, site.offset_across, site.offset_away);
+    }
+
     SurfaceFrame bridge_frame (const TileLeaf& tile) {
-      return bridge_frame (tile.cell,
-                           tile.normal_displacement,
-                           tile.offset_across,
-                           tile.offset_away);
+      return bridge_frame (tile.site, tile.normal_displacement);
     }
 
     Real ligament_seed (TileId first, TileId second) {
@@ -167,6 +180,8 @@ namespace atelier {
 
     EmbeddedLigament make_ligament (const SurfaceFrame& first,
                                     const SurfaceFrame& second,
+                                    Length first_radius,
+                                    Length second_radius,
                                     NormalDisplacement first_displacement,
                                     NormalDisplacement second_displacement,
                                     Real seed) {
@@ -177,15 +192,18 @@ namespace atelier {
         -between + second.outward * simd_dot (between, second.outward);
       first_direction = simd_normalize (first_direction);
       second_direction = simd_normalize (second_direction);
-      const Real attachment = in_metres (ligament_attachment);
+      const Real first_attachment = in_metres (0.58f * first_radius);
+      const Real second_attachment = in_metres (0.58f * second_radius);
       const Real hover = in_metres (ligament_hover);
-      const Real bend = Real ((second_displacement - first_displacement) /
-                              ligament_rest_length);
+      const Length rest_length =
+        std::numbers::sqrt3_v<Real> * (first_radius + second_radius) / 2.0f;
+      const Real bend =
+        Real ((second_displacement - first_displacement) / rest_length);
       const Real strain = std::sqrt (1.0f + bend * bend) - 1.0f;
       return {
-        .start =
-          first.centre + attachment * first_direction + hover * first.outward,
-        .end = second.centre + attachment * second_direction +
+        .start = first.centre + first_attachment * first_direction +
+                 hover * first.outward,
+        .end = second.centre + second_attachment * second_direction +
                hover * second.outward,
         .start_normal = first.outward,
         .end_normal = second.outward,
@@ -199,18 +217,16 @@ namespace atelier {
                                     const HexSheet& sheet) {
       const auto& topology = sheet.topology ();
       const auto& displacement = sheet.displacements ();
-      result.ligaments.reserve (3 * hex_sheet_tile_count);
-      for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
-        for (std::size_t side = 0; side < 6; ++side) {
-          const auto neighbour_site = topology.neighbour (id, side);
-          if (!neighbour_site)
-            continue;
-          const TileId neighbour = *neighbour_site;
+      result.ligaments.reserve (3 * topology.size ());
+      for (TileId id = 0; id < topology.size (); ++id) {
+        for (TileId neighbour : topology.neighbours (id)) {
           if (id >= neighbour)
             continue;
           result.ligaments.push_back (make_ligament (
-            toroidal_frame (topology.cell (id), displacement[id]),
-            toroidal_frame (topology.cell (neighbour), displacement[neighbour]),
+            toroidal_frame (topology.site (id), displacement[id]),
+            toroidal_frame (topology.site (neighbour), displacement[neighbour]),
+            topology.site (id).radius,
+            topology.site (neighbour).radius,
             displacement[id],
             displacement[neighbour],
             ligament_seed (id, neighbour)));
@@ -224,24 +240,34 @@ namespace atelier {
                                 int image_away) {
       const auto& topology = sheet.topology ();
       const auto& displacement = sheet.displacements ();
-      for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
-        const GridCell cell = topology.cell (id);
-        const int column = static_cast<int> (cell.column) +
-                           image_across * static_cast<int> (hex_sheet_columns);
-        const int row = static_cast<int> (cell.row) +
-                        image_away * static_cast<int> (hex_sheet_rows);
-        for (std::size_t side = 0; side < 6; ++side) {
-          const auto neighbour_site = topology.neighbour (id, side);
-          if (!neighbour_site)
-            continue;
-          const TileId neighbour = *neighbour_site;
+      for (TileId id = 0; id < topology.size (); ++id) {
+        const HexSite& site = topology.site (id);
+        for (TileId neighbour : topology.neighbours (id)) {
           if (id >= neighbour)
             continue;
-          const GridStep step = topology.neighbour_step (id, side);
+          const HexSite& adjacent = topology.site (neighbour);
+          int adjacent_image_across = image_across;
+          int adjacent_image_away = image_away;
+          const int column_delta = static_cast<int> (adjacent.base.column) -
+                                   static_cast<int> (site.base.column);
+          const int row_delta = static_cast<int> (adjacent.base.row) -
+                                static_cast<int> (site.base.row);
+          if (column_delta > static_cast<int> (hex_sheet_columns / 2))
+            --adjacent_image_across;
+          else if (column_delta < -static_cast<int> (hex_sheet_columns / 2))
+            ++adjacent_image_across;
+          if (row_delta > static_cast<int> (hex_sheet_rows / 2))
+            --adjacent_image_away;
+          else if (row_delta < -static_cast<int> (hex_sheet_rows / 2))
+            ++adjacent_image_away;
           result.ligaments.push_back (make_ligament (
-            flat_frame (column, row, displacement[id]),
-            flat_frame (
-              column + step.columns, row + step.rows, displacement[neighbour]),
+            flat_frame (site, displacement[id], image_across, image_away),
+            flat_frame (adjacent,
+                        displacement[neighbour],
+                        adjacent_image_across,
+                        adjacent_image_away),
+            site.radius,
+            adjacent.radius,
             displacement[id],
             displacement[neighbour],
             ligament_seed (id, neighbour)));
@@ -253,15 +279,15 @@ namespace atelier {
                                   const HexSheet& sheet) {
       const auto& topology = sheet.topology ();
       const auto& displacement = sheet.displacements ();
-      for (TileId id = 0; id < hex_sheet_tile_count; ++id) {
-        for (std::size_t side = 0; side < 6; ++side) {
-          const auto neighbour_site = topology.neighbour (id, side);
-          if (!neighbour_site || id >= *neighbour_site)
+      for (TileId id = 0; id < topology.size (); ++id) {
+        for (TileId neighbour : topology.neighbours (id)) {
+          if (id >= neighbour)
             continue;
-          const TileId neighbour = *neighbour_site;
           result.ligaments.push_back (make_ligament (
-            bridge_frame (topology.cell (id), displacement[id]),
-            bridge_frame (topology.cell (neighbour), displacement[neighbour]),
+            bridge_frame (topology.site (id), displacement[id]),
+            bridge_frame (topology.site (neighbour), displacement[neighbour]),
+            topology.site (id).radius,
+            topology.site (neighbour).radius,
             displacement[id],
             displacement[neighbour],
             ligament_seed (id, neighbour)));
@@ -286,10 +312,11 @@ namespace atelier {
       };
       result.tiles.reserve (leaves.size ());
       for (const TileLeaf& tile : leaves)
-        result.tiles.push_back ({ placement (bridge_frame (tile), tile.radius),
-                                  tile.deformation,
-                                  tile.generation,
-                                  tile.material_seed });
+        result.tiles.push_back (
+          { placement (bridge_frame (tile), tile.site.radius),
+            tile.deformation,
+            tile.site.generation,
+            tile.material_seed });
       append_bridge_ligaments (result, sheet);
       return result;
     }
@@ -315,9 +342,9 @@ namespace atelier {
       result.tiles.reserve (leaves.size ());
       for (const TileLeaf& tile : leaves)
         result.tiles.push_back (
-          { placement (toroidal_frame (tile), tile.radius),
+          { placement (toroidal_frame (tile), tile.site.radius),
             tile.deformation,
-            tile.generation,
+            tile.site.generation,
             tile.material_seed });
       append_toroidal_ligaments (result, sheet);
       return result;
@@ -341,16 +368,16 @@ namespace atelier {
         .ligaments = {},
       };
       result.tiles.reserve (15 * leaves.size ());
-      result.ligaments.reserve (15 * 3 * hex_sheet_tile_count);
+      result.ligaments.reserve (15 * 3 * sheet.topology ().size ());
       for (int image_away = -2; image_away <= 2; ++image_away) {
         for (int image_across = -1; image_across <= 1; ++image_across) {
           append_flat_ligaments (result, sheet, image_across, image_away);
           for (const TileLeaf& tile : leaves)
             result.tiles.push_back (
               { placement (flat_frame (tile, image_across, image_away),
-                           tile.radius),
+                           tile.site.radius),
                 tile.deformation,
-                tile.generation,
+                tile.site.generation,
                 tile.material_seed });
         }
       }
