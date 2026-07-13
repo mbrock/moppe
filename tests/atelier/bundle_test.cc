@@ -10,7 +10,7 @@ using namespace atelier;
 using namespace mp_units::si::unit_symbols;
 
 namespace {
-  struct FourSites {
+  struct AtelierFourSites {
     using index_type = std::size_t;
 
     [[nodiscard]] constexpr std::size_t size () const {
@@ -26,7 +26,7 @@ namespace {
     }
   };
 
-  struct ThreeSiteRing {
+  struct AtelierThreeSiteRing {
     using index_type = std::size_t;
 
     [[nodiscard]] constexpr std::size_t size () const {
@@ -49,7 +49,7 @@ namespace {
     }
   };
 
-  struct SquaredInfluence {
+  struct AtelierSquaredInfluence {
     template <typename Domain, typename Index, typename Visitor>
     void
     operator() (const Domain& domain, Index index, Visitor&& visitor) const {
@@ -59,9 +59,10 @@ namespace {
     }
   };
 
-  struct EuclideanSpace {};
+  struct AtelierEuclideanSpace {};
 
-  using TestBundle = Bundle<FourSites, NormalDisplacement, NormalVelocity>;
+  using AtelierTestBundle =
+    Bundle<AtelierFourSites, NormalDisplacement, NormalVelocity>;
   using HeightPoint =
     mp_units::quantity_point<isq::height[m],
                              mp_units::default_point_origin (isq::height[m]),
@@ -70,19 +71,20 @@ namespace {
   template <auto QS, typename B>
   concept HasColumn = requires (B& bundle) { get<QS> (bundle); };
 
-  static_assert (std::tuple_size_v<TestBundle> == 2);
-  static_assert (FiniteDomain<FourSites>);
-  static_assert (!NeighbourhoodDomain<FourSites>);
-  static_assert (NeighbourhoodDomain<ThreeSiteRing>);
-  static_assert (NeighbourhoodPolicy<SquaredInfluence, ThreeSiteRing>);
-  static_assert (!FiniteDomain<EuclideanSpace>);
-  static_assert (HasColumn<normal_displacement, TestBundle>);
-  static_assert (HasColumn<normal_velocity, TestBundle>);
-  static_assert (!HasColumn<isq::mass, TestBundle>);
+  static_assert (std::tuple_size_v<AtelierTestBundle> == 2);
+  static_assert (FiniteDomain<AtelierFourSites>);
+  static_assert (!NeighbourhoodDomain<AtelierFourSites>);
+  static_assert (NeighbourhoodDomain<AtelierThreeSiteRing>);
+  static_assert (
+    NeighbourhoodPolicy<AtelierSquaredInfluence, AtelierThreeSiteRing>);
+  static_assert (!FiniteDomain<AtelierEuclideanSpace>);
+  static_assert (HasColumn<normal_displacement, AtelierTestBundle>);
+  static_assert (HasColumn<normal_velocity, AtelierTestBundle>);
+  static_assert (!HasColumn<isq::mass, AtelierTestBundle>);
 }
 
 MOPPE_TEST (bundle_exposes_quantity_columns_by_position_and_specification) {
-  TestBundle bundle;
+  AtelierTestBundle bundle;
   auto& [displacement, velocity] = bundle;
 
   displacement[2] = 3.0f * m;
@@ -95,7 +97,7 @@ MOPPE_TEST (bundle_exposes_quantity_columns_by_position_and_specification) {
 }
 
 MOPPE_TEST (bundle_row_is_a_non_materialized_quantity_tuple) {
-  TestBundle bundle;
+  AtelierTestBundle bundle;
   auto site = bundle[1];
   get<normal_displacement> (site) = 1.5f * m;
   get<normal_velocity> (site) = 2.5f * m / s;
@@ -106,7 +108,7 @@ MOPPE_TEST (bundle_row_is_a_non_materialized_quantity_tuple) {
 }
 
 MOPPE_TEST (bundle_preserves_affine_quantity_point_columns) {
-  Bundle<FourSites, HeightPoint, NormalVelocity> bundle;
+  Bundle<AtelierFourSites, HeightPoint, NormalVelocity> bundle;
   auto& height = get<isq::height> (bundle);
   height[3] = HeightPoint (12.0f * m);
 
@@ -115,8 +117,8 @@ MOPPE_TEST (bundle_preserves_affine_quantity_point_columns) {
 }
 
 MOPPE_TEST (bundle_extend_applies_a_topological_rule_at_every_focus) {
-  Bundle<ThreeSiteRing, NormalDisplacement> input;
-  Bundle<ThreeSiteRing, NormalDisplacement> output;
+  Bundle<AtelierThreeSiteRing, NormalDisplacement> input;
+  Bundle<AtelierThreeSiteRing, NormalDisplacement> output;
   auto& displacement = get<normal_displacement> (input);
   displacement[0] = 1.0f * m;
   displacement[1] = 4.0f * m;
@@ -134,19 +136,19 @@ MOPPE_TEST (bundle_extend_applies_a_topological_rule_at_every_focus) {
 }
 
 MOPPE_TEST (bundle_operation_can_supply_its_own_neighbourhood_policy) {
-  Bundle<ThreeSiteRing, NormalDisplacement> field;
+  Bundle<AtelierThreeSiteRing, NormalDisplacement> field;
   auto& displacement = get<normal_displacement> (field);
   displacement[0] = 1.0f * m;
   displacement[1] = 4.0f * m;
   displacement[2] = 10.0f * m;
 
   const auto result = laplacian<normal_displacement> (
-    BundleFocus (field, std::size_t { 0 }), SquaredInfluence {});
+    BundleFocus (field, std::size_t { 0 }), AtelierSquaredInfluence {});
   MOPPE_CHECK_NEAR (result.numerical_value_in (m), 2.25f, 0.001f);
 }
 
 MOPPE_TEST (bundle_laplacian_preserves_vector_quantity_representation) {
-  Bundle<ThreeSiteRing, Displacement> field;
+  Bundle<AtelierThreeSiteRing, Displacement> field;
   auto& displacement = get<isq::displacement> (field);
   displacement[0] = Displacement (Vec3 { 1, 2, 3 } * m);
   displacement[1] = Displacement (Vec3 { 4, 6, 8 } * m);
@@ -161,7 +163,7 @@ MOPPE_TEST (bundle_laplacian_preserves_vector_quantity_representation) {
 }
 
 MOPPE_TEST (bundle_laplacian_turns_affine_points_into_differences) {
-  Bundle<ThreeSiteRing, HeightPoint> field;
+  Bundle<AtelierThreeSiteRing, HeightPoint> field;
   auto& height = get<isq::height> (field);
   height[0] = HeightPoint (1.0f * m);
   height[1] = HeightPoint (4.0f * m);
