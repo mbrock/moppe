@@ -10,6 +10,7 @@
 
 #include <moppe/game/blob_shadow.hh>
 #include <moppe/game/chase_camera.hh>
+#include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/graphics_benchmark.hh>
@@ -34,7 +35,6 @@
 #include <moppe/terrain/watercourse.hh>
 
 #include <algorithm>
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdlib>
@@ -44,7 +44,6 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -301,11 +300,6 @@ namespace moppe {
                    extent_value (world.map_size),
                    m_seed,
                    world.topology ()),
-            m_loading_map (world.resolution,
-                           world.resolution,
-                           extent_value (world.map_size),
-                           m_seed,
-                           world.topology ()),
             m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
@@ -359,8 +353,6 @@ namespace moppe {
         m_hud.load (r);
         m_game_ui.load (r);
         m_terrain_lab.load (r);
-        m_loading_title_font.reset (new render::FontAtlas (
-          r, "AvenirNext-DemiBold", 52, r.scale_factor ()));
         m_loading_font.reset (new render::FontAtlas (
           r, "AvenirNext-Medium", 24, r.scale_factor ()));
         m_blob.load (r);
@@ -497,10 +489,6 @@ namespace moppe {
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             load_terrain_history (cache, count, m_terrain_history);
-            const std::lock_guard<std::mutex> lock (m_loading_mutex);
-            for (const std::vector<float>& snapshot : m_terrain_history)
-              m_loading_snapshots.push_back (
-                std::make_shared<const std::vector<float>> (snapshot));
             m_gen_stage = 7;
           } else {
             m_gen_stage = 3;
@@ -515,15 +503,6 @@ namespace moppe {
                   static_cast<std::size_t> (m_map.width ()) * m_map.height ();
                 m_terrain_history.emplace_back (m_map.raw_heights (),
                                                 m_map.raw_heights () + count);
-                {
-                  const std::lock_guard<std::mutex> lock (m_loading_mutex);
-                  m_loading_snapshots.push_back (
-                    std::make_shared<const std::vector<float>> (
-                      m_terrain_history.back ()));
-                }
-                // Publish immutable stage inputs for the loading-screen
-                // director rather than racing the GPU against the heightmap as
-                // the next transform mutates it on this worker thread.
                 if (std::holds_alternative<terrain::HydraulicErosion> (
                       transform))
                   m_gen_stage = 4;
@@ -550,12 +529,6 @@ namespace moppe {
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             m_terrain_history.emplace_back (m_map.raw_heights (),
                                             m_map.raw_heights () + count);
-            {
-              const std::lock_guard<std::mutex> lock (m_loading_mutex);
-              m_loading_snapshots.push_back (
-                std::make_shared<const std::vector<float>> (
-                  m_terrain_history.back ()));
-            }
             if (cache) {
               m_map.save_cache (cache);
               save_terrain_history (cache, m_terrain_history);
@@ -567,13 +540,6 @@ namespace moppe {
             static_cast<std::size_t> (m_map.width ()) * m_map.height ();
           m_terrain_history.emplace_back (m_map.raw_heights (),
                                           m_map.raw_heights () + count);
-        }
-        {
-          const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          if (m_loading_snapshots.empty ())
-            for (const std::vector<float>& snapshot : m_terrain_history)
-              m_loading_snapshots.push_back (
-                std::make_shared<const std::vector<float>> (snapshot));
         }
         m_gen_stage = 5;
         m_map.recompute_normals ();
@@ -732,6 +698,24 @@ namespace moppe {
         if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
 
+        if (m_standing_water && m_lake_census && m_drainage && m_rivers)
+          m_cinematic_plan = plan_cinematic_flight (m_map,
+                                                    *m_standing_water,
+                                                    *m_lake_census,
+                                                    *m_drainage,
+                                                    *m_rivers,
+                                                    m_spawn_position);
+        if (!m_cinematic_plan.empty ()) {
+          std::cerr << "cinematic flight: "
+                    << m_cinematic_plan.waypoints.size () << " gates through ";
+          for (std::size_t i = 0; i < m_cinematic_plan.landmarks.size (); ++i) {
+            if (i)
+              std::cerr << ", ";
+            std::cerr << cinematic_landmark_name (
+              m_cinematic_plan.landmarks[i].kind);
+          }
+          std::cerr << '\n';
+        }
         m_setup_complete = true;
         remember_seed (m_world, m_generation_profile, m_seed);
         if (::getenv ("MOPPE_REGENERATE_ONCE") &&
@@ -742,9 +726,9 @@ namespace moppe {
       }
 
       void activate_world_terrain (render::Renderer& r) {
-        // Loading and gameplay share renderer terrain resources. Do not upload
-        // this state from finish_setup(): that callback can run in the middle
-        // of a loading chapter and would interrupt its height-map morph.
+        // Upload the complete terrain and precompute the static shadow while
+        // the loading screen still owns the drawable. The cinematic's first
+        // frame therefore has no setup hitch and never observes partial data.
         m_terrain.setup (r, m_map, m_world, m_graphics);
         if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
           m_terrain.render_shadow (
@@ -827,6 +811,13 @@ namespace moppe {
         // the shaders only when looking toward the sun.
         const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
         m_fog = mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
+
+        if (m_cinematic.active ()) {
+          m_cinematic.tick (dt, m_map, m_cinematic_controls);
+          if (!m_cinematic.active ())
+            leave_cinematic ();
+          return;
+        }
 
         // Terrain inspection pauses actors and vehicle physics, but keeps the
         // visual clock, weather, and fog alive so sky and water remain a
@@ -1167,8 +1158,11 @@ namespace moppe {
         const float aspect =
           (float)r.width_pts () / std::max (1, r.height_pts ());
         const bool terrain_lab = m_terrain_lab.active ();
-        const float fov =
-          terrain_lab || m_water_inspection ? 70.0f : 100.0f + 9.0f * m_fov_k;
+        const bool cinematic = m_cinematic.active ();
+        const float fov = cinematic ? m_cinematic.field_of_view ()
+                          : terrain_lab || m_water_inspection
+                            ? 70.0f
+                            : 100.0f + 9.0f * m_fov_k;
         fp.proj = Mat4::perspective_reversed (
           fov * u::deg,
           aspect,
@@ -1180,9 +1174,11 @@ namespace moppe {
 
         // Hard landings produce a brief continuous vibration. Randomizing the
         // rotations each frame looked like violent camera teleportation.
-        Mat4 view =
-          terrain_lab ? m_terrain_lab.view_matrix () : m_camera.view_matrix ();
-        if (!terrain_lab && !m_water_inspection && m_shake > 0.005f) {
+        Mat4 view = cinematic     ? m_cinematic.view_matrix ()
+                    : terrain_lab ? m_terrain_lab.view_matrix ()
+                                  : m_camera.view_matrix ();
+        if (!cinematic && !terrain_lab && !m_water_inspection &&
+            m_shake > 0.005f) {
           const Vec3 cam = m_camera.position ();
           const float ground = m_map.interpolated_height (cam[0], cam[2]);
           const float clearance = cam[1] - ground;
@@ -1199,8 +1195,9 @@ namespace moppe {
         }
         fp.view = view;
 
-        const Vec3 cam =
-          terrain_lab ? m_terrain_lab.position () : m_camera.position ();
+        const Vec3 cam = cinematic     ? m_cinematic.position ()
+                         : terrain_lab ? m_terrain_lab.position ()
+                                       : m_camera.position ();
         fp.camera_pos = cam;
         fp.cam_right = Vec3 (view.m[0], view.m[4], view.m[8]);
         fp.cam_up = Vec3 (view.m[1], view.m[5], view.m[9]);
@@ -1315,12 +1312,14 @@ namespace moppe {
           draw_world_sky ();
 
         // Terrain first, chunk-culled to the haze horizon.
-        m_terrain.render (
-          r,
-          cam,
-          terrain_lab ? m_terrain_lab.forward () : m_camera.forward (),
-          terrain_lab ? 12000.0f
-                      : 3.0f / attenuation_value (m_world.fog_scale));
+        m_terrain.render (r,
+                          cam,
+                          cinematic     ? m_cinematic.forward ()
+                          : terrain_lab ? m_terrain_lab.forward ()
+                                        : m_camera.forward (),
+                          terrain_lab
+                            ? 12000.0f
+                            : 3.0f / attenuation_value (m_world.fog_scale));
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.
@@ -1419,7 +1418,7 @@ namespace moppe {
         // Post effects.
         if (!terrain_lab && cam[1] < meters_value (m_world.water_level))
           r.apply_underwater (m_total_time);
-        if (!terrain_lab) {
+        if (!terrain_lab && !cinematic) {
           const float kmh = (m_mode == M_FOOT)
                               ? 0.0f
                               : length (active_vehicle ().velocity ()) * 3.6f;
@@ -1437,6 +1436,20 @@ namespace moppe {
         const int hud_height = r.height_pts () - (int)(si.top + si.bottom);
         if (terrain_lab) {
           m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
+        } else if (cinematic) {
+          if (m_loading_font && m_loading_font->ok ()) {
+            const std::string prompt = "SPACE TO RIDE";
+            const float alpha = std::clamp (
+              1.0f - std::max (0.0f, m_cinematic.elapsed () - 4.0f) / 2.0f,
+              0.0f,
+              0.72f);
+            m_hud_dl.color (0.91f, 1.0f, 0.92f, alpha);
+            m_loading_font->draw (m_hud_dl,
+                                  hud_width - m_loading_font->measure (prompt) -
+                                    28.0f,
+                                  hud_height - 42.0f,
+                                  prompt);
+          }
         } else if (!m_water_inspection) {
           HudState hs;
           hs.speed_kmh = (m_mode == M_FOOT)
@@ -1514,457 +1527,14 @@ namespace moppe {
       }
 
       void render_loading (render::Renderer& r) {
-        const float w = (float)r.width_pts ();
-        const float h = (float)r.height_pts ();
-        const float aspect = w / std::max (1.0f, h);
-        const double now = platform::now ();
-        if (m_loading_clock_start == 0.0)
-          m_loading_clock_start = now;
-        // Animation shaders use floats, so give them elapsed loading time.
-        // Casting absolute uptime first quantizes motion badly after a Mac has
-        // been running for days: many 120 Hz frames receive the same timestamp.
-        const float sky_time = static_cast<float> (now - m_loading_clock_start);
-        std::vector<std::shared_ptr<const std::vector<float>>>
-          loading_snapshots;
-        {
-          const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          loading_snapshots = m_loading_snapshots;
-        }
-
-        // The worker may finish several transforms between rendered frames.
-        // The director advances only after the current chapter has had time to
-        // breathe, and never before the next immutable snapshot exists.
-        constexpr float chapter_hold = 3.5f;
-        if (!loading_snapshots.empty () && m_loading_terrain_state == 0) {
-          const auto& first = *loading_snapshots.front ();
-          const float floor = *std::min_element (first.begin (), first.end ());
-          std::fill (m_loading_map.raw_heights (),
-                     m_loading_map.raw_heights () + first.size (),
-                     floor);
-          m_terrain.setup (r,
-                           m_loading_map,
-                           m_world,
-                           m_graphics,
-                           render::TerrainProjection::Plane,
-                           true,
-                           true,
-                           true);
-          m_loading_terrain_state = 1;
-          m_loading_terrain_reveal = sky_time;
-          m_loading_snapshot_started = sky_time;
-        } else if (!loading_snapshots.empty () &&
-                   m_loading_terrain_state == 1) {
-          std::copy (loading_snapshots.front ()->begin (),
-                     loading_snapshots.front ()->end (),
-                     m_loading_map.raw_heights ());
-          m_terrain.setup (r,
-                           m_loading_map,
-                           m_world,
-                           m_graphics,
-                           render::TerrainProjection::Plane,
-                           true,
-                           true,
-                           true);
-          m_loading_terrain_state = 2;
-          m_loading_snapshot_index = 0;
-          m_loading_snapshot_started = sky_time;
-        } else if (m_loading_terrain_state == 2 &&
-                   m_loading_snapshot_index + 1 < loading_snapshots.size ()) {
-          if (sky_time - m_loading_snapshot_started >= chapter_hold) {
-            ++m_loading_snapshot_index;
-            const auto& snapshot = *loading_snapshots[m_loading_snapshot_index];
-            const auto& previous =
-              *loading_snapshots[m_loading_snapshot_index - 1];
-            std::copy (
-              snapshot.begin (), snapshot.end (), m_loading_map.raw_heights ());
-            m_terrain.setup (r,
-                             m_loading_map,
-                             m_world,
-                             m_graphics,
-                             render::TerrainProjection::Plane,
-                             true,
-                             true,
-                             true);
-            r.clear_terrain_overlay ();
-            m_loading_diff_overlay_active = false;
-            std::vector<float> difference (snapshot.size ());
-            std::vector<float> absolute_difference (snapshot.size ());
-            for (std::size_t i = 0; i < difference.size (); ++i) {
-              difference[i] = snapshot[i] - previous[i];
-              absolute_difference[i] = std::fabs (difference[i]);
-            }
-            // A single sharp cell should not wash out the explanatory layer.
-            // Scale to the 98th percentile so broad geological work stays
-            // legible while the underlying mountain remains itself.
-            const std::size_t percentile =
-              absolute_difference.empty ()
-                ? 0
-                : (absolute_difference.size () - 1) * 98 / 100;
-            if (!absolute_difference.empty ())
-              std::nth_element (absolute_difference.begin (),
-                                absolute_difference.begin () + percentile,
-                                absolute_difference.end ());
-            const float magnitude = absolute_difference.empty ()
-                                      ? 0.0f
-                                      : absolute_difference[percentile];
-            if (magnitude > 1e-8f) {
-              r.set_terrain_overlay (
-                { .width = m_loading_map.width (),
-                  .height = m_loading_map.height (),
-                  .minimum = -magnitude,
-                  .maximum = magnitude,
-                  .opacity = 0.34f,
-                  .ramp = render::TerrainOverlayRamp::Diverging },
-                difference);
-              m_loading_diff_overlay_active = true;
-            }
-            m_loading_snapshot_started = sky_time;
-          }
-        }
-
-        const bool show_terrain = m_loading_terrain_state > 0;
-        const Vec3& world_extent = extent_value (m_world.map_size);
-        Vec3 eye (0, 34, 0);
-        Vec3 target (0, 27, -100);
-        float field_of_view = 64.0f;
-        if (show_terrain) {
-          struct CameraShot {
-            float angle;
-            float radius;
-            float height;
-            float target_y;
-            float field_of_view;
-          };
-          // Each transform gets a composition suited to what it changes:
-          // geography, lowlands, long valleys, slopes, paths, and channels.
-          static constexpr CameraShot shots[] = {
-            { 0.20f, 0.56f, 0.52f, 0.09f, 52.0f },
-            { 0.72f, 0.40f, 0.34f, 0.07f, 48.0f },
-            { 1.14f, 0.30f, 0.26f, 0.05f, 45.0f },
-            { 1.70f, 0.32f, 0.29f, 0.08f, 48.0f },
-            { 2.22f, 0.22f, 0.18f, 0.05f, 42.0f },
-            { 2.73f, 0.24f, 0.20f, 0.04f, 43.0f },
-            { 3.18f, 0.22f, 0.18f, 0.05f, 42.0f },
-            { 4.12f, 0.38f, 0.34f, 0.06f, 50.0f },
-          };
-          const std::size_t stage = std::min<std::size_t> (
-            m_loading_snapshot_index, std::size (shots) - 1);
-          const CameraShot& shot = shots[stage];
-          const auto ground_at = [&] (float x, float z) {
-            if (!m_loading_map.periodic ()) {
-              x = std::clamp (x, 0.0f, world_extent[0]);
-              z = std::clamp (z, 0.0f, world_extent[2]);
-            }
-            return m_loading_map.interpolated_height (x, z);
-          };
-          if (!m_loading_camera_valid[stage]) {
-            Vec3 subject (world_extent[0] * 0.5f, 0.0f, world_extent[2] * 0.5f);
-            if (stage > 0 && stage < loading_snapshots.size ()) {
-              const std::size_t width = m_loading_map.unique_width ();
-              const std::size_t height = m_loading_map.unique_height ();
-              const std::size_t block = std::max<std::size_t> (8, width / 32);
-              const auto& before = *loading_snapshots[stage - 1];
-              const auto& after = *loading_snapshots[stage];
-              double best_energy = -1.0;
-              std::size_t best_x = width / 2, best_y = height / 2;
-              for (std::size_t by = 0; by < height; by += block)
-                for (std::size_t bx = 0; bx < width; bx += block) {
-                  double energy = 0.0;
-                  const std::size_t y1 = std::min (height, by + block);
-                  const std::size_t x1 = std::min (width, bx + block);
-                  for (std::size_t y = by; y < y1; ++y)
-                    for (std::size_t x = bx; x < x1; ++x) {
-                      const std::size_t cell = y * m_loading_map.width () + x;
-                      energy += std::fabs (after[cell] - before[cell]);
-                    }
-                  if (energy > best_energy) {
-                    best_energy = energy;
-                    best_x = (bx + x1) / 2;
-                    best_y = (by + y1) / 2;
-                  }
-                }
-              const Vec3& scale = m_loading_map.scale ();
-              subject[0] = best_x * scale[0];
-              subject[2] = best_y * scale[2];
-            }
-            subject[1] = ground_at (subject[0], subject[2]) +
-                         world_extent[1] * shot.target_y;
-
-            constexpr int candidate_count = 16;
-            constexpr int sightline_samples = 24;
-            const float clearance = world_extent[1] * 0.045f;
-            float best_penalty = std::numeric_limits<float>::infinity ();
-            for (int candidate = 0; candidate < candidate_count; ++candidate) {
-              const float angle =
-                shot.angle + candidate * 6.2831853f / candidate_count;
-              Vec3 candidate_eye =
-                subject +
-                Vec3 (std::sin (angle) * world_extent[0] * shot.radius,
-                      world_extent[1] * shot.height,
-                      std::cos (angle) * world_extent[2] * shot.radius);
-              const Vec3 side (-std::cos (angle), 0.0f, std::sin (angle));
-              const float third = stage % 2 == 0 ? 1.0f : -1.0f;
-              const Vec3 candidate_target =
-                subject +
-                side * (third * world_extent[0] * shot.radius * 0.18f) -
-                Vec3 (0.0f, world_extent[1] * 0.035f, 0.0f);
-              const float intended_y = candidate_eye[1];
-              candidate_eye[1] =
-                std::max (candidate_eye[1],
-                          ground_at (candidate_eye[0], candidate_eye[2]) +
-                            clearance * 1.5f);
-              for (int i = 0; i < sightline_samples; ++i) {
-                const float t = 0.82f * i / (sightline_samples - 1);
-                const float x = candidate_eye[0] +
-                                (candidate_target[0] - candidate_eye[0]) * t;
-                const float z = candidate_eye[2] +
-                                (candidate_target[2] - candidate_eye[2]) * t;
-                const float required =
-                  (ground_at (x, z) + clearance - candidate_target[1] * t) /
-                  (1.0f - t);
-                candidate_eye[1] = std::max (candidate_eye[1], required);
-              }
-              const float penalty = candidate_eye[1] - intended_y;
-              if (penalty < best_penalty) {
-                best_penalty = penalty;
-                m_loading_camera_eye[stage] = candidate_eye;
-                m_loading_camera_target[stage] = candidate_target;
-                m_loading_camera_fov[stage] = shot.field_of_view;
-              }
-            }
-            m_loading_camera_valid[stage] = true;
-          }
-          eye = m_loading_camera_eye[stage];
-          target = m_loading_camera_target[stage];
-          field_of_view = m_loading_camera_fov[stage];
-
-          // One chapter is one deliberate cut, followed by a continuous
-          // camera arc. The changing parallax gives the geology a second
-          // readable view without introducing another unexplained jump.
-          const float chapter_age = sky_time - m_loading_snapshot_started;
-          const float arc_t = smooth_curve (0.0f, chapter_hold, chapter_age);
-          const float arc = (-5.0f + 12.0f * arc_t) * 0.0174532925f;
-          const Vec3 offset = eye - target;
-          const float c = std::cos (arc);
-          const float s = std::sin (arc);
-          eye = target + Vec3 (offset[0] * c + offset[2] * s,
-                               offset[1],
-                               -offset[0] * s + offset[2] * c);
-        }
-        const Vec3 forward = normalized (target - eye);
-
-        render::FrameParams fp;
-        fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
-        fp.proj = Mat4::perspective_reversed (
-          field_of_view * u::deg,
-          aspect,
-          0.5f,
-          std::max (9000.0f, world_extent[0] * 2.0f));
-        fp.camera_pos = eye;
-        // Golden afternoon rather than sunrise: the light comes from the
-        // camera's side, leaving the sun itself outside the composition.
-        constexpr float loading_sun_height = 0.70f;
-        const Vec3 horizon_forward =
-          normalized (Vec3 (forward[0], 0.0f, forward[2]));
-        const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
-        const Vec3 loading_sun_dir =
-          normalized (horizon_side * 0.82f + Vec3 (0, 1, 0) * 0.58f);
-        fp.clear_color = horizon_color_for (loading_sun_height);
-        fp.sun_dir = loading_sun_dir;
-        sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
-        fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
-        fp.fog_scale =
-          show_terrain ? attenuation_value (m_world.fog_scale * 0.035f) : 0.0f;
-        fp.time = sky_time;
-        fp.exposure_bias = 1.0f;
-        fp.sun_visibility = 0.32f;
-        if (!r.begin_frame (fp))
-          return;
-
-        render::SkyParams sky;
-        sky.time = sky_time;
-        sky.sun_height = loading_sun_height;
-        sky.cloudiness = 0.14f;
-        sky.sun_dir = fp.sun_dir;
-        sky.fog_color = fp.clear_color;
-        r.draw_sky (sky);
-
-        if (show_terrain) {
-          const float reveal_age = sky_time - m_loading_terrain_reveal;
-          // Let the first low plain breathe for a moment before it rises.  The
-          // terrain transition itself lasts about a second in the Metal
-          // backend.
-          if (m_loading_terrain_state == 2 || reveal_age > 0.0f)
-            m_terrain.render (r, eye, forward, world_extent[0] * 1.8f);
-        }
-
-        m_hud_dl.clear ();
-        render::DrawState s;
-        s.blend = true;
-        s.depth_test = false;
-        s.depth_write = false;
-        s.cull = false;
-        m_hud_dl.state (s);
-        m_hud_dl.lit (false);
-        m_hud_dl.fogged (false);
-
-        static const char* headlines[] = {
-          "A world without time", "Finding sea and summit",
-          "Shaping the lowlands", "Ages pass through stone",
-          "The slopes relent",    "Rain walks downhill",
-          "The earth settles",    "Rivers cut their beds",
-        };
-        static const char* details[] = {
-          "The continuous field becomes land",
-          "Height is gathered into a common range",
-          "Plains descend and mountains remain",
-          "Drainage carries whole valleys through geological time",
-          "Loose faces settle below their angle of rest",
-          "A hundred thousand small histories seek the sea",
-          "Fresh cuts soften and sediment comes to rest",
-          "The visible water network receives its final channels",
-        };
-        const int display_stage =
-          std::clamp (static_cast<int> (m_loading_snapshot_index), 0, 7);
-        const std::string headline = headlines[display_stage];
-        const std::string detail = details[display_stage];
-        const bool explaining_change =
-          m_loading_diff_overlay_active && display_stage > 0;
-
-        const int stage = m_gen_stage;
-        float target_progress = 0.04f;
-        if (stage == 3) {
-          const float source =
-            (float)m_loading_source_done.load () /
-            std::max (1.0f, (float)m_loading_source_total.load ());
-          target_progress = 0.04f + 0.16f * source;
-        } else if (stage == 4) {
-          const float erosion =
-            (float)m_loading_work_done.load () /
-            std::max (1.0f, (float)m_loading_work_total.load ());
-          target_progress = 0.25f + 0.57f * erosion;
-        } else if (stage == 5)
-          target_progress = 0.88f;
-        else if (stage == 6)
-          target_progress = 0.97f;
-        else if (stage == 7)
-          target_progress = 0.92f;
-        const float frame_dt =
-          m_loading_progress_time > 0.0
-            ? std::min (0.1f, (float)(sky_time - m_loading_progress_time))
-            : 1.0f / 60.0f;
-        m_loading_progress_time = sky_time;
-        m_loading_progress_display +=
-          (target_progress - m_loading_progress_display) *
-          smoothing_alpha (7.0f / u::s, frame_dt * u::s);
-
-        // A quiet cinematic instrument: the full ring is possibility, the
-        // luminous arc is the real eased world-generation progress.
-        const float center_x = w * 0.5f;
-        const float dial_x = 54.0f;
-        const float dial_y = 54.0f;
-        const float pulse = 0.5f + 0.5f * std::sin (sky_time * 2.2f);
-        loading_arc (m_hud_dl, dial_x, dial_y, 28.0f, 1.5f, 1.0f, 0.20f);
-        loading_arc (m_hud_dl,
-                     dial_x,
-                     dial_y,
-                     28.0f,
-                     3.0f,
-                     m_loading_progress_display,
-                     0.92f);
-        m_hud_dl.color (0.88f, 1.0f, 0.83f, 0.10f + 0.08f * pulse);
-        fill_rounded_rect (
-          m_hud_dl, dial_x - 8.0f, dial_y - 8.0f, 16.0f, 16.0f, 8.0f);
-        m_hud_dl.color (0.94f, 1.0f, 0.89f, 0.92f);
-        fill_rounded_rect (
-          m_hud_dl, dial_x - 3.0f, dial_y - 3.0f, 6.0f, 6.0f, 3.0f);
-
-        const float headline_y = std::clamp (h * 0.66f, 360.0f, h - 180.0f);
-        const float chapter_age = sky_time - m_loading_snapshot_started;
-        const float transition = smooth_curve (0.0f, 0.55f, chapter_age);
-        const bool final_scene =
-          !loading_snapshots.empty () &&
-          m_loading_snapshot_index + 1 == loading_snapshots.size ();
-        const bool waiting_to_start =
-          m_setup_complete && final_scene && chapter_age >= chapter_hold;
-
-        if (m_loading_title_font && m_loading_title_font->ok ()) {
-          const float x =
-            center_x - m_loading_title_font->measure (headline) * 0.5f;
-          const float y = headline_y - 22.0f * (1.0f - transition);
-          // A soft shadow is enough separation from the landscape; no card.
-          m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.48f * transition);
-          m_loading_title_font->draw (m_hud_dl, x + 2.0f, y + 3.0f, headline);
-          m_hud_dl.color (0.95f, 1.0f, 0.91f, transition);
-          m_loading_title_font->draw (m_hud_dl, x, y, headline);
-        }
-        if (m_loading_font && m_loading_font->ok ()) {
-          const float x = center_x - m_loading_font->measure (detail) * 0.5f;
-          m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.42f * transition);
-          m_loading_font->draw (m_hud_dl, x + 1.5f, headline_y + 46.0f, detail);
-          m_hud_dl.color (0.82f, 0.94f, 0.87f, 0.96f * transition);
-          m_loading_font->draw (m_hud_dl, x, headline_y + 44.0f, detail);
-          std::ostringstream chapter;
-          chapter << "STAGE " << (display_stage + 1) << " OF 8";
-          const std::string chapter_text = chapter.str ();
-          m_hud_dl.push ();
-          m_hud_dl.translate (center_x, headline_y + 86.0f, 0.0f);
-          m_hud_dl.scale (0.68f, 0.68f, 1.0f);
-          m_hud_dl.color (0.70f, 0.84f, 0.75f, 0.72f * transition);
-          m_loading_font->draw (m_hud_dl,
-                                -m_loading_font->measure (chapter_text) * 0.5f,
-                                0.0f,
-                                chapter_text);
-          m_hud_dl.pop ();
-          if (explaining_change) {
-            const std::string key = "BLUE  ERODED     AMBER  DEPOSITED";
-            m_hud_dl.push ();
-            m_hud_dl.translate (center_x, headline_y + 112.0f, 0.0f);
-            m_hud_dl.scale (0.58f, 0.58f, 1.0f);
-            m_hud_dl.color (0.78f, 0.89f, 0.83f, 0.68f * transition);
-            m_loading_font->draw (
-              m_hud_dl, -m_loading_font->measure (key) * 0.5f, 0.0f, key);
-            m_hud_dl.pop ();
-          }
-        }
-        if (waiting_to_start && m_loading_font && m_loading_font->ok ()) {
-          const std::string prompt = "PRESS SPACE TO ENTER THE WORLD";
-          const float prompt_x =
-            center_x - m_loading_font->measure (prompt) * 0.5f;
-          const float prompt_alpha = 0.72f + 0.20f * std::sin (sky_time * 1.8f);
-          m_hud_dl.color (0.01f, 0.025f, 0.022f, 0.52f);
-          m_loading_font->draw (m_hud_dl, prompt_x + 1.5f, h - 58.0f, prompt);
-          m_hud_dl.color (0.91f, 1.0f, 0.88f, prompt_alpha);
-          m_loading_font->draw (m_hud_dl, prompt_x, h - 60.0f, prompt);
-        }
-
-        bool captured_loading = false;
-        int capture_stage = 1;
-        if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_STAGE"))
-          capture_stage = std::clamp (::atoi (value), 1, 8);
-        float capture_age = capture_stage == 8 ? chapter_hold : 0.72f;
-        if (const char* value = ::getenv ("MOPPE_LOADING_SCREENSHOT_AGE"))
-          capture_age =
-            std::clamp ((float)std::atof (value), 0.0f, chapter_hold);
-        if (!m_loading_capture_done && show_terrain &&
-            m_loading_progress_display > 0.40f &&
-            static_cast<int> (m_loading_snapshot_index) + 1 >= capture_stage &&
-            chapter_age >= capture_age) {
-          if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
-            r.request_screenshot (path);
-            m_loading_capture_done = true;
-            captured_loading = true;
-          }
-        }
-        r.draw_hud (m_hud_dl);
-        r.end_frame ();
-        const bool automatic_start =
-          !m_screenshot_path.empty () || m_benchmark.has_value () ||
-          m_water_shot.has_value () || ::getenv ("MOPPE_DEMO");
-        if (waiting_to_start &&
-            (m_loading_continue_requested || automatic_start)) {
+        if (m_setup_complete) {
+          r.clear_terrain_overlay ();
           activate_world_terrain (r);
           m_ready = true;
+
+          const bool automated =
+            !m_screenshot_path.empty () || m_benchmark.has_value () ||
+            m_water_shot.has_value () || ::getenv ("MOPPE_DEMO");
           if (m_start_in_terrain_lab) {
             m_terrain_lab.enter (r,
                                  m_map,
@@ -1975,12 +1545,92 @@ namespace moppe {
                                  m_terrain_history,
                                  sun_direction_for (m_graphics.sun_height));
             m_start_in_terrain_lab = false;
+          } else if (!automated && !m_skip_cinematic_requested &&
+                     !m_cinematic_plan.empty ()) {
+            m_cinematic.start (m_cinematic_plan);
+          }
+          return;
+        }
+
+        const float width = static_cast<float> (r.width_pts ());
+        const float height = static_cast<float> (r.height_pts ());
+        const float now = static_cast<float> (platform::now ());
+
+        const int stage = m_gen_stage;
+        float progress = 0.03f;
+        if (stage == 3) {
+          const float source =
+            static_cast<float> (m_loading_source_done.load ()) /
+            std::max (1.0f,
+                      static_cast<float> (m_loading_source_total.load ()));
+          progress = 0.03f + 0.17f * source;
+        } else if (stage == 4) {
+          const float erosion =
+            static_cast<float> (m_loading_work_done.load ()) /
+            std::max (1.0f, static_cast<float> (m_loading_work_total.load ()));
+          progress = 0.20f + 0.60f * erosion;
+        } else if (stage == 5)
+          progress = 0.86f;
+        else if (stage == 6)
+          progress = 0.96f;
+        else if (stage == 7)
+          progress = 0.12f;
+        m_loading_progress_display =
+          std::max (m_loading_progress_display, progress);
+
+        render::FrameParams fp;
+        fp.clear_color = DisplayColor (0.012f, 0.019f, 0.025f);
+        fp.view = Mat4 ();
+        fp.proj = Mat4 ();
+        fp.time = now;
+        if (!r.begin_frame (fp))
+          return;
+
+        m_hud_dl.clear ();
+        render::DrawState state;
+        state.blend = true;
+        state.depth_test = false;
+        state.depth_write = false;
+        state.cull = false;
+        m_hud_dl.state (state);
+        m_hud_dl.lit (false);
+        m_hud_dl.fogged (false);
+
+        const float dial_x = width * 0.5f;
+        const float dial_y = height * 0.5f - 18.0f;
+        loading_arc (m_hud_dl, dial_x, dial_y, 31.0f, 1.5f, 1.0f, 0.16f);
+        loading_arc (m_hud_dl,
+                     dial_x,
+                     dial_y,
+                     31.0f,
+                     3.0f,
+                     m_loading_progress_display,
+                     0.90f);
+        const float pulse = 0.5f + 0.5f * std::sin (now * 2.1f);
+        m_hud_dl.color (0.91f, 1.0f, 0.90f, 0.12f + 0.08f * pulse);
+        fill_rounded_rect (
+          m_hud_dl, dial_x - 7.0f, dial_y - 7.0f, 14.0f, 14.0f, 7.0f);
+
+        if (m_loading_font && m_loading_font->ok ()) {
+          const std::string text = "BUILDING THE WORLD";
+          const float x = width * 0.5f - m_loading_font->measure (text) * 0.5f;
+          m_hud_dl.color (0.73f, 0.84f, 0.78f, 0.82f);
+          m_loading_font->draw (m_hud_dl, x, dial_y + 66.0f, text);
+        }
+
+        bool captured = false;
+        if (!m_loading_capture_done && m_loading_progress_display >= 0.20f) {
+          if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
+            r.request_screenshot (path);
+            m_loading_capture_done = true;
+            captured = true;
           }
         }
-        if (captured_loading)
+        r.draw_hud (m_hud_dl);
+        r.end_frame ();
+        if (captured)
           platform::request_quit ();
       }
-
       void render_game_over (render::Renderer& r) {
         render::FrameParams fp;
         fp.clear_color = DisplayColor (0, 0, 0);
@@ -2000,6 +1650,12 @@ namespace moppe {
       void controls (const platform::ControlState& state) override {
         if (m_game_over || m_terrain_lab.active ())
           return;
+        if (m_cinematic.active ()) {
+          m_cinematic_controls.lateral = state.steer;
+          m_cinematic_controls.pace = state.drive;
+          m_cinematic_controls.lift = state.boost;
+          return;
+        }
         input_turn (state.steer);
         input_go (state.drive);
         input_boost (state.boost);
@@ -2047,7 +1703,7 @@ namespace moppe {
 
         if (!m_ready) {
           if (k == Key::Space && down)
-            m_loading_continue_requested = true;
+            m_skip_cinematic_requested = true;
           else if (k == Key::Escape && down)
             platform::request_quit ();
           return;
@@ -2059,6 +1715,25 @@ namespace moppe {
             revive ();
           else if (k == Key::Escape && down)
             platform::request_quit ();
+          return;
+        }
+
+        if (m_cinematic.active ()) {
+          if (k == Key::Space && down) {
+            leave_cinematic ();
+          } else if (k == Key::Escape && down) {
+            platform::request_quit ();
+          } else if (k == Key::Left || k == Key::A) {
+            m_cinematic_controls.lateral = down ? -1.0f : 0.0f;
+          } else if (k == Key::Right || k == Key::D) {
+            m_cinematic_controls.lateral = down ? 1.0f : 0.0f;
+          } else if (k == Key::Up || k == Key::W) {
+            m_cinematic_controls.pace = down ? 1.0f : 0.0f;
+          } else if (k == Key::Down || k == Key::S) {
+            m_cinematic_controls.pace = down ? -1.0f : 0.0f;
+          } else if (k == Key::E) {
+            m_cinematic_controls.lift = down ? 1.0f : 0.0f;
+          }
           return;
         }
 
@@ -2200,6 +1875,24 @@ namespace moppe {
         return m_mode == M_CAR ? m_car : m_vehicle;
       }
 
+      void leave_cinematic () {
+        m_cinematic.stop ();
+        m_cinematic_controls = {};
+        const Vec3 subject = m_mode == M_FOOT
+                               ? m_walker.position () + Vec3 (0, 1.0f, 0)
+                               : active_vehicle ().position ();
+        Vec3 heading = m_mode == M_FOOT ? m_walker.heading ()
+                                        : active_vehicle ().orientation ();
+        heading[1] = 0.0f;
+        if (length2 (heading) < 1e-5f)
+          heading = Vec3 (0, 0, 1);
+        else
+          normalize (heading);
+        const Vec3 eye = subject - heading * 6.2f + Vec3 (0, 2.5f, 0);
+        m_camera.place (eye, subject + heading * 2.0f);
+        m_camera.limit (m_map);
+      }
+
       void regenerate_world () {
         input_turn (0.0f);
         input_go (0.0f);
@@ -2211,19 +1904,12 @@ namespace moppe {
         m_loading_source_done = 0;
         m_loading_source_total = 1;
         m_loading_progress_display = 0.0f;
-        m_loading_progress_time = 0.0;
-        m_loading_clock_start = 0.0;
-        m_loading_snapshot_index = 0;
-        m_loading_snapshot_started = 0.0f;
-        m_loading_terrain_state = 0;
-        m_loading_continue_requested = false;
-        m_loading_diff_overlay_active = false;
-        m_loading_camera_valid.fill (false);
+        m_loading_capture_done = false;
+        m_skip_cinematic_requested = false;
+        m_cinematic.stop ();
+        m_cinematic_controls = {};
+        m_cinematic_plan = {};
         m_setup_complete = false;
-        {
-          const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          m_loading_snapshots.clear ();
-        }
         m_standing_water.reset ();
         m_lake_census.reset ();
         m_drainage.reset ();
@@ -2346,29 +2032,17 @@ namespace moppe {
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
-      map::RandomHeightMap m_loading_map;
       std::vector<std::vector<float>> m_terrain_history;
-      std::mutex m_loading_mutex;
-      std::vector<std::shared_ptr<const std::vector<float>>>
-        m_loading_snapshots;
       std::atomic<int> m_loading_work_done = 0;
       std::atomic<int> m_loading_work_total = 1;
       std::atomic<int> m_loading_source_done = 0;
       std::atomic<int> m_loading_source_total = 1;
       float m_loading_progress_display = 0.0f;
-      double m_loading_progress_time = 0.0;
-      double m_loading_clock_start = 0.0;
       bool m_loading_capture_done = false;
-      int m_loading_terrain_state = 0;
-      float m_loading_terrain_reveal = 0.0f;
-      std::size_t m_loading_snapshot_index = 0;
-      float m_loading_snapshot_started = 0.0f;
-      bool m_loading_continue_requested = false;
-      bool m_loading_diff_overlay_active = false;
-      std::array<Vec3, 8> m_loading_camera_eye {};
-      std::array<Vec3, 8> m_loading_camera_target {};
-      std::array<float, 8> m_loading_camera_fov {};
-      std::array<bool, 8> m_loading_camera_valid {};
+      bool m_skip_cinematic_requested = false;
+      CinematicFlightPlan m_cinematic_plan;
+      CinematicFlight m_cinematic;
+      CinematicFlightControls m_cinematic_controls;
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;
@@ -2395,7 +2069,6 @@ namespace moppe {
       float m_game_ui_slider_x = 44.0f;
       float m_pointer_x = -1.0f;
       float m_pointer_y = -1.0f;
-      std::unique_ptr<render::FontAtlas> m_loading_title_font;
       std::unique_ptr<render::FontAtlas> m_loading_font;
 
       render::Renderer* m_renderer;
