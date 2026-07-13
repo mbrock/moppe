@@ -1,5 +1,8 @@
 #include "atelier/landscape.hh"
 
+#include <moppe/terrain/cpu_evaluator.hh>
+#include <moppe/terrain/field.hh>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -106,6 +109,41 @@ namespace atelier {
   Landscape::Landscape () {
     if (!topology_is_valid ())
       throw std::runtime_error ("The toroidal tile topology is inconsistent");
+    initialize_noise_drive ();
+  }
+
+  void Landscape::initialize_noise_drive () {
+    namespace terrain = moppe::terrain;
+    constexpr int period_x = 5;
+    constexpr int period_y = 3;
+    const terrain::CoordinateField u = terrain::coordinate_u () + 0.37f;
+    const terrain::CoordinateField v = terrain::coordinate_v () - 0.21f;
+    const terrain::NoiseField billows = terrain::periodic_fbm_noise (
+      terrain::Seed { 0xc311U }, u, v, period_x, period_y, 4, 2, 0.52f);
+    const terrain::NoiseField cells = terrain::periodic_ridged_noise (
+      terrain::Seed { 0xa71eU }, u, v, period_x, period_y, 3, 2, 0.55f);
+    const terrain::NoiseField drive_field =
+      0.76f * billows + 0.24f * (cells - 0.4f);
+    const terrain::FieldSamplingGrid2D sampling {
+      .width = landscape_columns,
+      .height = landscape_rows,
+      .min_x = 0,
+      .max_x = Real (period_x) * Real (landscape_columns - 1) /
+               Real (landscape_columns),
+      .min_y = 0,
+      .max_y =
+        Real (period_y) * Real (landscape_rows - 1) / Real (landscape_rows),
+    };
+    const terrain::ScalarRaster noise =
+      terrain::CpuEvaluator ().evaluate (drive_field.untyped (), sampling);
+    auto& drive = get<normal_acceleration> (m_tiles);
+    auto& next_drive = get<normal_acceleration> (m_next_tiles);
+    constexpr auto amplitude = 2.2f * m / (s * s);
+    for (TileId id = 0; id < m_tiles.size (); ++id) {
+      const GridCell cell = topology ().cell (id);
+      drive[id] = noise.at (cell.column, cell.row) * amplitude;
+      next_drive[id] = drive[id];
+    }
   }
 
   bool Landscape::topology_is_valid () const {
@@ -164,18 +202,26 @@ namespace atelier {
     constexpr auto stiffness = 2.3f / (s * s);
     constexpr auto coupling = 5.2f / (s * s);
     constexpr auto damping = 1.25f / s;
+    constexpr AngularRate breathing_rate =
+      0.07f * angular::revolution / si::second;
+    const Real breath = angular::sin (breathing_rate * m_simulated)
+                          .numerical_value_in (mp_units::one);
     extend_into (m_next_tiles, m_tiles, [=] (const auto& tile) {
       const auto displacement = get<normal_displacement> (tile);
       const auto velocity = get<normal_velocity> (tile);
+      const auto drive = get<normal_acceleration> (tile);
       const auto acceleration =
         coupling * laplacian<normal_displacement> (tile) -
-        stiffness * displacement - damping * velocity;
+        stiffness * displacement - damping * velocity + breath * drive;
       const auto next_velocity = velocity + acceleration * dt;
-      return bundle_values (displacement + next_velocity * dt, next_velocity);
+      return bundle_values (
+        displacement + next_velocity * dt, next_velocity, drive);
     });
 
-    auto& [displacement, velocity] = m_tiles;
-    auto& [next_displacement, next_velocity] = m_next_tiles;
+    auto& displacement = get<normal_displacement> (m_tiles);
+    auto& velocity = get<normal_velocity> (m_tiles);
+    auto& next_displacement = get<normal_displacement> (m_next_tiles);
+    auto& next_velocity = get<normal_velocity> (m_next_tiles);
     velocity.swap (next_velocity);
     displacement.swap (next_displacement);
   }

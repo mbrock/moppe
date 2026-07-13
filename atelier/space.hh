@@ -45,9 +45,12 @@ namespace atelier {
       : quantity_spec<isq::length, mp_units::is_kind> {
   } normal_displacement;
   inline constexpr auto normal_velocity = normal_displacement / isq::duration;
+  inline constexpr auto normal_acceleration = normal_velocity / isq::duration;
   using NormalDisplacement = quantity<normal_displacement[si::metre], Real>;
   using NormalVelocity =
     quantity<normal_velocity[si::metre / si::second], Real>;
+  using NormalAcceleration =
+    quantity<normal_acceleration[si::metre / pow<2> (si::second)], Real>;
 
   // A dimensionless diagnostic derived from relative deformation of nearby
   // tiles.  It is intentionally not called strain or stress: those names are

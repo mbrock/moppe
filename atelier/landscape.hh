@@ -74,8 +74,10 @@ namespace atelier {
 
   class Landscape {
   public:
-    using TileState =
-      Bundle<PeriodicHexTopology, NormalDisplacement, NormalVelocity>;
+    using TileState = Bundle<PeriodicHexTopology,
+                             NormalDisplacement,
+                             NormalVelocity,
+                             NormalAcceleration>;
 
     Landscape ();
 
@@ -94,6 +96,10 @@ namespace atelier {
       return get<normal_velocity> (m_tiles);
     }
 
+    [[nodiscard]] const std::vector<NormalAcceleration>& drives () const {
+      return get<normal_acceleration> (m_tiles);
+    }
+
     [[nodiscard]] bool topology_is_valid () const;
     [[nodiscard]] bool is_refined () const;
     [[nodiscard]] Real refinement () const;
@@ -101,6 +107,7 @@ namespace atelier {
 
   private:
     void step (Duration dt);
+    void initialize_noise_drive ();
     void begin_refinement ();
     void update_development (Duration elapsed);
 
