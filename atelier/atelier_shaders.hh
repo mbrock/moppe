@@ -3,9 +3,9 @@
 #include <string_view>
 
 namespace atelier {
-  // Each mesh threadgroup receives one current leaf of the cellular
-  // partition and emits its beveled hexagonal puck directly.  There is no
-  // baked vertex buffer: changing the partition only changes Tile instances.
+  // Mesh threadgroups procedurally emit either one beveled puck or one
+  // ligament. There are no baked vertex buffers: changing the partition or
+  // its deformation only changes compact instance data.
   inline constexpr std::string_view metal_shader_source = R"(
 #include <metal_stdlib>
 using namespace metal;
@@ -21,6 +21,13 @@ struct Tile {
   float4 material;
 };
 
+struct Ligament {
+  float4 start;
+  float4 end;
+  float4 start_normal;
+  float4 end_normal;
+};
+
 struct PuckPoint {
   float4 position [[position]];
   float3 local_position;
@@ -29,6 +36,18 @@ struct PuckPoint {
   float3 view_direction;
   float elapsed;
   half4 material;
+};
+
+struct LigamentPoint {
+  float4 position [[position]];
+  float3 world_position;
+  float3 world_normal;
+  float3 view_direction;
+  float2 fibre;
+  float strain;
+  float bend;
+  float seed;
+  float elapsed;
 };
 
 constant float3 backdrop = float3(0.032, 0.035, 0.038);
@@ -40,6 +59,8 @@ constant uint triangle_count = 48;
 
 using PuckMesh =
   metal::mesh<PuckPoint, void, 32, 48, metal::topology::triangle>;
+using LigamentMesh =
+  metal::mesh<LigamentPoint, void, 32, 48, metal::topology::triangle>;
 
 inline float2 rim(uint side, float radius) {
   const float angle = float(side) * (2.0 * M_PI_F / 6.0);
@@ -167,6 +188,109 @@ inline uint3 puck_triangle(uint triangle) {
     out.set_index(triangle * 3u + 1u, indices.y);
     out.set_index(triangle * 3u + 2u, indices.z);
   }
+}
+
+inline LigamentPoint ligament_vertex(uint index,
+                                     constant Uniforms& uniforms,
+                                     const device Ligament& ligament) {
+  const uint ring = index / 6u;
+  const uint side_index = index % 6u;
+  const float t = float(ring) / 4.0;
+  const float angle = float(side_index) * (2.0 * M_PI_F / 6.0);
+  const float3 start = ligament.start.xyz;
+  const float3 end = ligament.end.xyz;
+  const float3 along = normalize(end - start);
+  const float3 surface_normal = normalize(
+    mix(ligament.start_normal.xyz, ligament.end_normal.xyz, t));
+  const float3 across = normalize(cross(along, surface_normal));
+  const float3 around = normalize(cross(across, along));
+  const float arch = sin(M_PI_F * t);
+  const float join = abs(2.0 * t - 1.0);
+  const float tension = saturate(ligament.start.w * 90.0);
+  const float radius = mix(0.060, 0.036, tension) * (0.76 + 0.24 * join);
+  const float3 centre = mix(start, end, t) -
+                        surface_normal * arch * (0.018 + 0.020 * tension);
+  const float3 radial = cos(angle) * across + sin(angle) * around;
+  const float3 world_position = centre + radius * radial;
+  return {
+    uniforms.world_to_clip * float4(world_position, 1.0),
+    world_position,
+    radial,
+    normalize(uniforms.eye.xyz - world_position),
+    float2(t, angle),
+    ligament.start.w,
+    ligament.end.w,
+    ligament.start_normal.w,
+    uniforms.atmosphere.x
+  };
+}
+
+inline uint3 ligament_triangle(uint triangle) {
+  const uint quad = triangle / 2u;
+  const uint segment = quad / 6u;
+  const uint side = quad % 6u;
+  const uint next = (side + 1u) % 6u;
+  const uint first = segment * 6u;
+  const uint second = first + 6u;
+  if ((triangle & 1u) == 0u)
+    return uint3(first + side, second + side, second + next);
+  return uint3(first + side, second + next, first + next);
+}
+
+[[mesh]] void ligament_mesh(
+  LigamentMesh out,
+  uint ligament_id [[threadgroup_position_in_grid]],
+  uint thread_id [[thread_index_in_threadgroup]],
+  constant Uniforms& uniforms [[buffer(1)]],
+  const device Ligament* ligaments [[buffer(3)]]) {
+  if (thread_id == 0u)
+    out.set_primitive_count(48u);
+  if (thread_id < 30u)
+    out.set_vertex(thread_id,
+                   ligament_vertex(thread_id, uniforms,
+                                   ligaments[ligament_id]));
+  for (uint triangle = thread_id; triangle < 48u; triangle += 32u) {
+    const uint3 indices = ligament_triangle(triangle);
+    out.set_index(triangle * 3u + 0u, indices.x);
+    out.set_index(triangle * 3u + 1u, indices.y);
+    out.set_index(triangle * 3u + 2u, indices.z);
+  }
+}
+
+fragment half4 ligament_fragment(LigamentPoint ligament [[stage_in]]) {
+  const float3 normal = normalize(ligament.world_normal);
+  const float3 view = normalize(ligament.view_direction);
+  const float tension = smoothstep(0.0002, 0.018, ligament.strain);
+  const float bend = saturate(abs(ligament.bend) * 2.4);
+  const float3 resting = float3(0.48, 0.245, 0.15);
+  const float3 stretched = float3(1.0, 0.34, 0.095);
+  const float3 positive_bend = float3(0.78, 0.25, 0.16);
+  const float3 negative_bend = float3(0.24, 0.43, 0.37);
+  float3 albedo = mix(resting, stretched, tension);
+  albedo = mix(albedo,
+               ligament.bend >= 0.0 ? positive_bend : negative_bend,
+               0.28 * bend * (1.0 - tension));
+
+  const float fibres = 0.5 + 0.5 * cos(ligament.fibre.y * 3.0 +
+                                       ligament.fibre.x * 24.0 +
+                                       ligament.seed * 9.0);
+  albedo *= 0.88 + 0.16 * fibres;
+  albedo *= 0.96 + 0.07 * ligament.seed;
+  const float light = saturate((dot(normal, sun_direction) + 0.32) / 1.32);
+  const float cloud = cloud_illumination(
+    ligament.world_position, ligament.elapsed);
+  float3 lit = albedo * (0.28 + 0.58 * light * cloud);
+
+  const float rim = pow(1.0 - abs(dot(normal, view)), 2.0);
+  const float waist = 1.0 - smoothstep(0.0, 0.20,
+                                       abs(ligament.fibre.x - 0.5));
+  const float pulse = 0.86 + 0.14 * sin(ligament.elapsed * 2.2 +
+                                        ligament.fibre.x * M_PI_F);
+  const float glow = tension * pulse * (0.075 + 0.20 * waist) +
+                     bend * rim * 0.045;
+  lit += mix(float3(1.0, 0.20, 0.07), inner_radiance, 0.35) * glow;
+  lit += float3(0.72, 0.28, 0.16) * rim * 0.025;
+  return half4(half3(lit), 1.0h);
 }
 
 fragment half4 puck_fragment(PuckPoint puck [[stage_in]]) {

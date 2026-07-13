@@ -34,8 +34,8 @@ namespace atelier {
                        EmbeddingKind embedding,
                        Duration elapsed,
                        Viewport viewport) {
-    const EmbeddedLandscape world = embed_landscape (
-      landscape.leaves (), embedding, elapsed, viewport.aspect_ratio ());
+    const EmbeddedLandscape world =
+      embed_landscape (landscape, embedding, elapsed, viewport.aspect_ratio ());
     Frame frame {
       .uniforms =
         Uniforms {
@@ -45,11 +45,22 @@ namespace atelier {
             simd_make_float4 (elapsed.numerical_value_in (s), 0.0f, 0.0f, 0.0f),
         },
       .tiles = {},
+      .ligaments = {},
     };
     frame.tiles.reserve (world.tiles.size ());
     for (const EmbeddedTile& tile : world.tiles)
       frame.tiles.push_back (
         { tile.place_in_world, material_parameters (tile) });
+    frame.ligaments.reserve (world.ligaments.size ());
+    for (const EmbeddedLigament& ligament : world.ligaments) {
+      frame.ligaments.push_back ({
+        .start = simd_make_float4 (ligament.start, ligament.strain),
+        .end = simd_make_float4 (ligament.end, ligament.bend),
+        .start_normal =
+          simd_make_float4 (ligament.start_normal, ligament.material_seed),
+        .end_normal = simd_make_float4 (ligament.end_normal, 0),
+      });
+    }
     return frame;
   }
 }

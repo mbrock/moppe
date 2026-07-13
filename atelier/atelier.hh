@@ -39,9 +39,19 @@ namespace atelier {
     simd_float4 material;
   };
 
+  struct LigamentInstance {
+    // Endpoint W lanes carry strain and signed bend respectively.  Normal W
+    // carries the stable material seed; the last lane is reserved.
+    simd_float4 start;
+    simd_float4 end;
+    simd_float4 start_normal;
+    simd_float4 end_normal;
+  };
+
   struct Frame {
     Uniforms uniforms;
     std::vector<TileInstance> tiles;
+    std::vector<LigamentInstance> ligaments;
   };
 
   [[nodiscard]] Frame compose_frame (const Landscape& landscape,
