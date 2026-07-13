@@ -49,7 +49,7 @@ namespace moppe {
       uint8_t lit;    // Lambert + specular vs. emissive passthrough
       uint8_t fogged; // distance haze applied
       uint8_t wind;   // 0..255 sway amplitude for the vertex shader
-      uint8_t grass;  // full-geometry grass material treatment
+      uint8_t reserved;
     };
     static_assert (sizeof (Vertex) == 40, "streamed vertex is 40 bytes");
 

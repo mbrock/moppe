@@ -169,7 +169,6 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
   moppe/shaders/metal/river.metal
-  moppe/shaders/metal/grass.metal
   moppe/shaders/metal/dust.metal
 )
 
@@ -280,6 +279,9 @@ target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # The field DAG stays float-typed, but the recipe layer's phantom
 # quantity kinds (Field<QS>) come from mp-units.
 target_link_libraries(moppe_terrain PUBLIC ZLIB::ZLIB mp-units::mp-units)
+if(MOPPE_ENABLE_TRACY)
+  target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
+endif()
 
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_library(moppe_terrain_metal STATIC
@@ -323,7 +325,6 @@ add_library(moppe_game STATIC
   moppe/game/water_capture.cc
   moppe/game/cinematic_flight.cc
   moppe/game/chase_camera.cc
-  moppe/game/vegetation.cc
   moppe/game/stars.cc
   moppe/game/dust.cc
   moppe/game/blob_shadow.cc

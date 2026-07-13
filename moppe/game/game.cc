@@ -22,7 +22,6 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
-#include <moppe/game/vegetation.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/game/water_capture.hh>
@@ -148,8 +147,6 @@ namespace moppe {
       TracingDrainage,
       ConnectingWaterways,
       ExtractingRivers,
-      PreparingVegetation,
-      GrowingVegetation,
       PlacingStars,
       AssemblingWorld,
       UploadingTerrain,
@@ -213,14 +210,6 @@ namespace moppe {
         return { "EXTRACTING THE RIVERS",
                  "Selecting the channels visible in the world",
                  0.87f };
-      case LoadingStage::PreparingVegetation:
-        return { "MEASURING HABITATS",
-                 "Reading elevation, slope, and water",
-                 0.89f };
-      case LoadingStage::GrowingVegetation:
-        return { "GROWING THE VEGETATION",
-                 "Placing the world's trees and ground cover",
-                 0.91f };
       case LoadingStage::PlacingStars:
         return { "PLACING THE STARS",
                  "Finding bright landmarks across the terrain",
@@ -494,19 +483,38 @@ namespace moppe {
       // -- lifecycle ---------------------------------------------------
 
       void setup (render::Renderer& r, int, int) override {
+        MOPPE_PROFILE_ZONE ("MoppeGame::setup");
         m_renderer = &r;
 
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
-        m_hud.load (r);
-        m_game_ui.load (r);
-        m_terrain_lab.load (r);
-        m_loading_font.reset (new render::FontAtlas (
-          r, "AvenirNext-Medium", 24, r.scale_factor ()));
-        m_blob.load (r);
+        {
+          MOPPE_PROFILE_ZONE ("startup.load_hud");
+          m_hud.load (r);
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.load_game_ui");
+          m_game_ui.load (r);
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.load_terrain_lab");
+          m_terrain_lab.load (r);
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.load_loading_font");
+          m_loading_font.reset (new render::FontAtlas (
+            r, "AvenirNext-Medium", 24, r.scale_factor ()));
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.load_blob_shadow");
+          m_blob.load (r);
+        }
 
-        platform::async (
-          &MoppeGame::generate_thunk, &MoppeGame::finish_thunk, this);
+        {
+          MOPPE_PROFILE_ZONE ("startup.dispatch_world_generation");
+          platform::async (
+            &MoppeGame::generate_thunk, &MoppeGame::finish_thunk, this);
+        }
       }
 
       static void generate_thunk (void* self) {
@@ -517,6 +525,7 @@ namespace moppe {
       }
 
       Vec3 choose_landscape_spawn () {
+        MOPPE_PROFILE_ZONE ("startup.choose_landscape_spawn");
         // The generated landscape has no authored start.  Sample the
         // finished terrain for a dry, grassy, locally flat patch rather
         // than trusting the old fixed coordinate near the map corner.
@@ -631,14 +640,19 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("MoppeGame::generate_world_inner");
         // The accelerated pointwise-field backend; null deliberately
         // selects the portable CPU interpreter.
-        if (!m_field_evaluator)
+        if (!m_field_evaluator) {
+          MOPPE_PROFILE_ZONE ("startup.create_field_evaluator");
           m_field_evaluator = platform::create_field_evaluator ();
+        }
         if (m_terrain_lab_preview) {
           m_loading_stage = LoadingStage::BuildingContinents;
-          const terrain::TerrainProgram program =
-            terrain::make_geological_program (m_seed);
-          map::TerrainEvaluator (m_map, m_field_evaluator.get ())
-            .evaluate (program);
+          {
+            MOPPE_PROFILE_ZONE ("startup.make_preview_program");
+            const terrain::TerrainProgram program =
+              terrain::make_geological_program (m_seed);
+            map::TerrainEvaluator (m_map, m_field_evaluator.get ())
+              .evaluate (program);
+          }
         } else {
           // Reuse the automatic build/profile/seed cache when possible.
           // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
@@ -648,55 +662,81 @@ namespace moppe {
           const char* cache =
             cache_override ? cache_override : automatic_cache.c_str ();
           m_loading_stage = LoadingStage::LookingForCache;
-          if (cache && m_map.try_load_cache (cache)) {
+          bool cache_loaded = false;
+          {
+            MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
+            cache_loaded = cache && m_map.try_load_cache (cache);
+          }
+          if (cache_loaded) {
             m_loading_stage = LoadingStage::ReadingCache;
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-            load_terrain_history (cache, count, m_terrain_history);
+            {
+              MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
+              load_terrain_history (cache, count, m_terrain_history);
+            }
           } else {
             m_loading_stage = LoadingStage::BuildingContinents;
-            const terrain::TerrainProgram program =
-              make_game_world_program (m_world, m_seed, m_generation_profile);
+            terrain::TerrainProgram program;
+            {
+              MOPPE_PROFILE_ZONE ("startup.make_world_program");
+              program =
+                make_game_world_program (m_world, m_seed, m_generation_profile);
+            }
             map::TerrainEvaluator evaluator (m_map, m_field_evaluator.get ());
             m_terrain_history.clear ();
-            evaluator.evaluate (
-              program,
-              [this] (std::size_t, const terrain::TerrainTransform& transform) {
-                const std::size_t count =
-                  static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-                m_terrain_history.emplace_back (m_map.raw_heights (),
-                                                m_map.raw_heights () + count);
-                (void)transform;
-              },
-              [this] (std::size_t,
-                      const terrain::TerrainTransform& transform,
-                      int completed,
-                      int total) {
-                if (std::holds_alternative<terrain::HydraulicErosion> (
-                      transform) ||
-                    std::holds_alternative<terrain::OrogenyEvolution> (
-                      transform)) {
-                  m_loading_stage = LoadingStage::EvolvingTerrain;
-                  m_loading_work_done = completed;
-                  m_loading_work_total = total;
-                }
-              },
-              [this] (std::size_t completed, std::size_t total) {
-                int observed = m_loading_source_done.load ();
-                const int value = static_cast<int> (completed);
-                while (observed < value &&
-                       !m_loading_source_done.compare_exchange_weak (observed,
-                                                                     value)) {}
-                m_loading_source_total = static_cast<int> (total);
-              });
+            {
+              MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
+              evaluator.evaluate (
+                program,
+                [this] (std::size_t,
+                        const terrain::TerrainTransform& transform) {
+                  const std::size_t count =
+                    static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+                  m_terrain_history.emplace_back (m_map.raw_heights (),
+                                                  m_map.raw_heights () + count);
+                  (void)transform;
+                },
+                [this] (std::size_t,
+                        const terrain::TerrainTransform& transform,
+                        int completed,
+                        int total) {
+                  if (std::holds_alternative<terrain::HydraulicErosion> (
+                        transform) ||
+                      std::holds_alternative<terrain::OrogenyEvolution> (
+                        transform)) {
+                    m_loading_stage = LoadingStage::EvolvingTerrain;
+                    m_loading_work_done = completed;
+                    m_loading_work_total = total;
+                  }
+                },
+                [this] (std::size_t completed, std::size_t total) {
+                  int observed = m_loading_source_done.load ();
+                  const int value = static_cast<int> (completed);
+                  while (observed < value &&
+                         !m_loading_source_done.compare_exchange_weak (observed,
+                                                                       value)) {
+                  }
+                  m_loading_source_total = static_cast<int> (total);
+                });
+            }
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-            m_terrain_history.emplace_back (m_map.raw_heights (),
-                                            m_map.raw_heights () + count);
+            {
+              MOPPE_PROFILE_ZONE ("startup.snapshot_finished_terrain");
+              m_terrain_history.emplace_back (m_map.raw_heights (),
+                                              m_map.raw_heights () + count);
+            }
             if (cache) {
               m_loading_stage = LoadingStage::SavingTerrain;
-              m_map.save_cache (cache);
-              save_terrain_history (cache, m_terrain_history);
+              {
+                MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
+                m_map.save_cache (cache);
+              }
+              {
+                MOPPE_PROFILE_ZONE ("startup.save_terrain_history");
+                save_terrain_history (cache, m_terrain_history);
+              }
             }
           }
         }
@@ -707,8 +747,14 @@ namespace moppe {
                                           m_map.raw_heights () + count);
         }
         m_loading_stage = LoadingStage::RebuildingSurface;
-        m_map.recompute_normals ();
-        m_surface.refresh (m_map);
+        {
+          MOPPE_PROFILE_ZONE ("startup.recompute_terrain_normals");
+          m_map.recompute_normals ();
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.refresh_surface_bundle");
+          m_surface.refresh (m_map);
+        }
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
@@ -716,10 +762,16 @@ namespace moppe {
           m_loading_stage = LoadingStage::FindingStandingWater;
           const float sea_level = meters_value (m_world.water_level) /
                                   extent_value (m_world.map_size)[1];
-          m_standing_water =
-            terrain::analyze_standing_water (m_map.terrain_view (), sea_level);
+          {
+            MOPPE_PROFILE_ZONE ("startup.analyze_standing_water");
+            m_standing_water = terrain::analyze_standing_water (
+              m_map.terrain_view (), sea_level);
+          }
           m_loading_stage = LoadingStage::CataloguingLakes;
-          m_lake_census = terrain::census_lakes (*m_standing_water);
+          {
+            MOPPE_PROFILE_ZONE ("startup.census_lakes");
+            m_lake_census = terrain::census_lakes (*m_standing_water);
+          }
           {
             // A one-line hydrology reading at load: pond explosions from
             // erosion regressions show up here before any capture does.
@@ -730,17 +782,26 @@ namespace moppe {
                       << " bodies, " << wet << " wet cells\n";
           }
           m_loading_stage = LoadingStage::TracingDrainage;
-          m_drainage = terrain::analyze_wet_drainage (
-            m_map.terrain_view (), *m_standing_water, *m_lake_census);
+          {
+            MOPPE_PROFILE_ZONE ("startup.analyze_wet_drainage");
+            m_drainage = terrain::analyze_wet_drainage (
+              m_map.terrain_view (), *m_standing_water, *m_lake_census);
+          }
           m_loading_stage = LoadingStage::ConnectingWaterways;
-          m_water_network = terrain::analyze_water_network (
-            *m_standing_water, *m_lake_census, *m_drainage);
+          {
+            MOPPE_PROFILE_ZONE ("startup.analyze_water_network");
+            m_water_network = terrain::analyze_water_network (
+              *m_standing_water, *m_lake_census, *m_drainage);
+          }
           m_loading_stage = LoadingStage::ExtractingRivers;
-          m_rivers = terrain::extract_river_network (
-            *m_standing_water,
-            *m_lake_census,
-            *m_drainage,
-            visible_river_minimum_area (m_drainage->source_grid));
+          {
+            MOPPE_PROFILE_ZONE ("startup.extract_river_network");
+            m_rivers = terrain::extract_river_network (
+              *m_standing_water,
+              *m_lake_census,
+              *m_drainage,
+              visible_river_minimum_area (m_drainage->source_grid));
+          }
           if (m_water_shot) {
             m_water_inspection = choose_water_inspection (*m_water_shot,
                                                           m_map,
@@ -759,15 +820,11 @@ namespace moppe {
         }
 
         if (!m_terrain_lab_preview) {
-          m_loading_stage = LoadingStage::PreparingVegetation;
-          m_vegetation.prepare (m_map, m_world);
-          if (m_graphics.vegetation) {
-            m_loading_stage = LoadingStage::GrowingVegetation;
-            m_vegetation.generate (
-              m_map, m_world, Vegetation::population_for (m_world));
-          }
           m_loading_stage = LoadingStage::PlacingStars;
-          m_stars.generate (m_map, m_world, 80);
+          {
+            MOPPE_PROFILE_ZONE ("startup.generate_stars");
+            m_stars.generate (m_map, m_world, 80);
+          }
         }
         m_loading_stage = LoadingStage::AssemblingWorld;
       }
@@ -781,20 +838,19 @@ namespace moppe {
       }
 
       void finish_setup () {
+        MOPPE_PROFILE_ZONE ("MoppeGame::finish_setup");
         render::Renderer& r = *m_renderer;
 
         // Rivers are painted into the water sheets below; the optional ribbon
         // meshes remain independently selectable for comparison captures.
-        if (m_rivers && m_graphics.river_ribbons)
+        if (m_rivers && m_graphics.river_ribbons) {
+          MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
           m_river_surface.rebuild (r,
                                    m_map,
                                    *m_standing_water,
                                    *m_lake_census,
                                    *m_drainage,
                                    *m_rivers);
-        if (!m_terrain_lab_preview) {
-          if (m_graphics.vegetation)
-            m_vegetation.load (r);
         }
         // Renderer uploads that depend on the terrain texture dimensions
         // are staged here and flushed by upload_world_terrain after
@@ -819,12 +875,16 @@ namespace moppe {
           // amplitude, and a flow arrow in every wet cell. Rivers render
           // through the same lattice water pass as the lakes; the flow
           // sheet is what carries their motion.
-          const terrain::WaterSheets sheets =
-            terrain::paint_watercourses (m_map.terrain_view (),
-                                         *m_standing_water,
-                                         *m_lake_census,
-                                         *m_drainage,
-                                         *m_rivers);
+          const terrain::WaterSheets sheets = [&] {
+            MOPPE_PROFILE_ZONE ("startup.paint_watercourses");
+            return terrain::paint_watercourses (m_map.terrain_view (),
+                                                *m_standing_water,
+                                                *m_lake_census,
+                                                *m_drainage,
+                                                *m_rivers);
+          }();
+          MOPPE_PROFILE_NAMED_ZONE (expand_water_sheets,
+                                    "startup.expand_water_sheets");
           water_levels.resize (2 * static_cast<std::size_t> (m_map.width ()) *
                                m_map.height ());
           water_flow.resize (water_levels.size ());
@@ -862,12 +922,14 @@ namespace moppe {
                              static_cast<std::size_t> (x) % unique_width];
           m_pending_surface.shore = std::move (shore);
         }
-
         if (m_standing_water && m_drainage) {
-          // Ground moisture from the hydrology: vegetation reads it for
-          // blade height, color, and density.
-          const terrain::ScalarRaster moisture = terrain::analyze_moisture (
-            *m_standing_water, *m_lake_census, *m_drainage);
+          // Ground moisture from the hydrology feeds terrain materials.
+          const terrain::ScalarRaster moisture = [&] {
+            MOPPE_PROFILE_ZONE ("startup.analyze_moisture");
+            return terrain::analyze_moisture (
+              *m_standing_water, *m_lake_census, *m_drainage);
+          }();
+          MOPPE_PROFILE_NAMED_ZONE (expand_moisture, "startup.expand_moisture");
           std::vector<float> expanded (
             static_cast<std::size_t> (m_map.width ()) * m_map.height ());
           const std::span<const float> unique = moisture.values ();
@@ -902,6 +964,8 @@ namespace moppe {
               positive.begin (), positive.begin () + rank, positive.end ());
             return std::max (positive[rank], 1e-6f);
           };
+          MOPPE_PROFILE_NAMED_ZONE (prepare_geology,
+                                    "startup.prepare_terrain_geology");
           const float eroded_scale = robust_scale (m_map.raw_eroded ());
           const float deposited_scale = robust_scale (m_map.raw_deposited ());
           std::vector<float> geology (2 * count);
@@ -930,13 +994,15 @@ namespace moppe {
         if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
 
-        if (m_standing_water && m_lake_census && m_drainage && m_rivers)
+        if (m_standing_water && m_lake_census && m_drainage && m_rivers) {
+          MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
           m_cinematic_plan = plan_cinematic_flight (m_map,
                                                     *m_standing_water,
                                                     *m_lake_census,
                                                     *m_drainage,
                                                     *m_rivers,
                                                     m_spawn_position);
+        }
         if (!m_cinematic_plan.empty ()) {
           std::cerr << "cinematic flight: "
                     << m_cinematic_plan.waypoints.size () << " gates through ";
@@ -958,20 +1024,34 @@ namespace moppe {
       }
 
       void upload_world_terrain (render::Renderer& r) {
+        MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
         m_terrain.setup (r, m_map, m_world, m_graphics);
         // Flush the surface data staged by finish_setup, now that
         // set_terrain has established the texture dimensions.
-        r.set_ocean (m_pending_surface.ocean, m_pending_surface.water_levels);
-        r.set_water_flow (m_pending_surface.water_flow);
-        if (!m_pending_surface.moisture.empty ())
+        {
+          MOPPE_PROFILE_ZONE ("startup.upload_ocean_surface");
+          r.set_ocean (m_pending_surface.ocean, m_pending_surface.water_levels);
+        }
+        {
+          MOPPE_PROFILE_ZONE ("startup.upload_water_flow");
+          r.set_water_flow (m_pending_surface.water_flow);
+        }
+        if (!m_pending_surface.moisture.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.upload_terrain_moisture");
           r.set_terrain_moisture (m_pending_surface.moisture);
-        if (!m_pending_surface.geology.empty ())
+        }
+        if (!m_pending_surface.geology.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.upload_terrain_geology");
           r.set_terrain_geology (m_pending_surface.geology);
-        if (!m_pending_surface.shore.empty ())
+        }
+        if (!m_pending_surface.shore.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
           r.set_terrain_shore (m_pending_surface.shore);
+        }
       }
 
       void cast_world_shadows (render::Renderer& r) {
+        MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
         m_terrain.render_shadow (
           r, m_map, sun_direction_for (m_graphics.sun_height));
       }
@@ -1604,15 +1684,8 @@ namespace moppe {
         if (!terrain_lab && !m_water_inspection) {
           // The world draw list, in the GL build's draw order.  Terrain lab
           // deliberately hides every placed object so generator differences are
-          // not confused with stale vegetation or actor positions.
+          // not confused with stale actor positions.
           m_world_dl.clear ();
-          if (m_graphics.vegetation || m_graphics.grass)
-            m_vegetation.render (r,
-                                 env,
-                                 m_graphics.vegetation,
-                                 m_graphics.grass ? m_graphics.grass_density
-                                                  : 0.0f,
-                                 landscape_visual_scale ());
 
           // Soft blob shadows under the movers.
           m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
@@ -1849,6 +1922,7 @@ namespace moppe {
             m_loading_activation_stage = 3;
           } else {
             m_ready = true;
+            MOPPE_PROFILE_PLOT ("startup.ready", 1);
 
             const bool automated =
               !m_screenshot_path.empty () || m_benchmark.has_value () ||
@@ -2505,7 +2579,6 @@ namespace moppe {
       mov::Vehicle m_vehicle;
       mov::Vehicle m_car;
       mov::Glider m_glider;
-      Vegetation m_vegetation;
       Stars m_stars;
       Dust m_dust;
       BlobShadow m_blob;
@@ -2555,6 +2628,8 @@ namespace moppe {
 
 int main (int argc, char** argv) {
   using namespace moppe;
+  if (::getenv ("MOPPE_TRACY_WAIT"))
+    MOPPE_PROFILE_WAIT ();
   MOPPE_PROFILE_THREAD ("Main");
   MOPPE_PROFILE_ZONE ("main");
 

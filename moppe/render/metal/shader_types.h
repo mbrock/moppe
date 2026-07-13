@@ -44,7 +44,6 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_BLOOM 1            /* post passes */
 #define MOPPE_TEX_HEIGHTS 0          /* vertex stage */
 #define MOPPE_TEX_NORMALS 1          /* vertex stage */
-#define MOPPE_TEX_MOISTURE 2         /* grass stages */
 #define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
 #define MOPPE_TEX_WATER_LEVELS 3     /* ocean vertex stage */
 #define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1
@@ -135,14 +134,6 @@ struct MoppeOceanUniforms {
                        // w=fine radius (+: coarse pass discards
                        // inside; -: lattice pass discards outside)
   MoppeFloat4 current; // x=flow raster enabled
-};
-
-struct MoppeGrassUniforms {
-  MoppeFloat4 grid;    // xy=origin cell indices, z=spacing, w=side
-  MoppeFloat4 terrain; // xyz=terrain scale, w=radius
-  MoppeFloat4 limits;  // x=sea norm, y=max height norm, z=periodic
-                       // w=blades per cell
-  MoppeFloat4 mesh;    // xy=patch grid dimensions, zw=blade horizontal/vertical
 };
 
 struct MoppeDustEmission {

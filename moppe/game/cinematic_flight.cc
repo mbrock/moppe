@@ -1,5 +1,7 @@
 #include <moppe/game/cinematic_flight.hh>
 
+#include <moppe/profile.hh>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -303,6 +305,7 @@ namespace moppe::game {
                          const terrain::DrainageGraph& drainage,
                          const terrain::RiverNetwork& rivers,
                          const Vec3& arrival) {
+    MOPPE_PROFILE_ZONE ("plan_cinematic_flight");
     CinematicFlightPlan plan;
     if (drainage.receiver.empty ())
       return plan;
