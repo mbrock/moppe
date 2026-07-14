@@ -15,6 +15,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@ namespace moppe {
                   const WorldParams& world,
                   const GraphicsSettings& graphics,
                   const terrain::TerrainProgram& program,
+                  std::span<const float> trail_influence,
                   const std::vector<std::vector<float>>& history,
                   const Vec3& sun_dir);
       void leave ();
@@ -116,6 +118,7 @@ namespace moppe {
       void apply_friendly_preset (int preset);
       void
       draw_friendly (render::DrawList& dl, int width_pts, int height_pts) const;
+      void draw_compass (render::DrawList& dl, int width_pts) const;
       void draw_expert (render::DrawList& dl) const;
       void ensure_selected_stage_visible ();
       void refresh (bool inspection_fog = true);
@@ -147,6 +150,7 @@ namespace moppe {
       const GraphicsSettings* m_graphics;
       Vec3 m_sun_dir;
       std::vector<float> m_saved_heights;
+      std::vector<float> m_saved_trail_influence;
       const std::vector<std::vector<float>>* m_history;
       std::size_t m_history_index;
       float m_history_age;
@@ -206,6 +210,7 @@ namespace moppe {
       float m_yaw;
       float m_pitch;
       float m_distance;
+      float m_fit_distance;
       bool m_orbit_left;
       bool m_orbit_right;
       bool m_zoom_in;

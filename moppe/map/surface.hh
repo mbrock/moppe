@@ -32,12 +32,20 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } tree_habitat;
 
+  // Shoulder-blended membership in the generated trail network. This is a
+  // material mask rather than a generic scalar: zero is untouched terrain,
+  // one is the graded centerline.
+  inline constexpr struct trail_influence
+      : quantity_spec<mp_units::dimensionless> {
+  } trail_influence;
+
   using SurfaceElevation =
     quantity_point<surface_elevation[u::m],
                    default_point_origin (surface_elevation[u::m]),
                    float>;
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
+  using TrailInfluence = quantity<trail_influence[one], float>;
 
   struct SurfaceIndex {
     std::size_t column;
@@ -129,8 +137,11 @@ namespace moppe::map {
     terrain::Topology m_topology;
   };
 
-  using SurfaceBundle = spatial::
-    Bundle<SurfaceDomain, SurfaceElevation, SurfaceNormal, TreeHabitat>;
+  using SurfaceBundle = spatial::Bundle<SurfaceDomain,
+                                        SurfaceElevation,
+                                        SurfaceNormal,
+                                        TreeHabitat,
+                                        TrailInfluence>;
 
   class Surface {
   public:
@@ -153,12 +164,18 @@ namespace moppe::map {
       return spatial::sample<tree_habitat> (samples (), position);
     }
 
+    TrailInfluence trail_influence_at (const position_t& position) const {
+      return spatial::sample<trail_influence> (samples (), position);
+    }
+
     // Hydrology is known after the geometric surface is refreshed. This is
     // the explicit second materialization barrier that turns moisture and
     // topography into a vegetation-support reading.
     void derive_tree_habitat (std::span<const float> moisture,
                               meters_t water_level,
                               meters_t tree_line);
+
+    void materialize_trail_influence (std::span<const float> influence);
 
     const SurfaceBundle& samples () const;
 

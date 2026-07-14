@@ -301,6 +301,7 @@ namespace moppe {
       void set_terrain_moisture (std::span<const float> moisture) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
+      void set_terrain_paths (std::span<const float> influence) override;
 
       // frame
       bool begin_frame (const FrameParams& params) override;
@@ -462,6 +463,8 @@ namespace moppe {
       bool m_have_geology = false;
       id<MTLTexture> m_shore = nil;
       bool m_have_shore = false;
+      id<MTLTexture> m_paths = nil;
+      bool m_have_paths = false;
 
       // streaming
       dispatch_semaphore_t m_inflight;
@@ -1505,6 +1508,32 @@ namespace moppe {
       upload_texture (m_shore, halves.data (), width, height, 2, false);
     }
 
+    void MetalRenderer::set_terrain_paths (std::span<const float> influence) {
+      const std::size_t expected =
+        static_cast<std::size_t> (m_terrain_params.width) *
+        m_terrain_params.height;
+      m_have_paths = expected != 0 && influence.size () == expected;
+      if (!m_have_paths)
+        return;
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_paths || m_paths.width != static_cast<NSUInteger> (width) ||
+          m_paths.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+                                       width:width
+                                      height:height
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageShaderRead;
+        m_paths = [m_device newTextureWithDescriptor:td];
+      }
+      std::vector<__fp16> halves (influence.size ());
+      for (std::size_t i = 0; i < influence.size (); ++i)
+        halves[i] = static_cast<__fp16> (influence[i]);
+      upload_texture (m_paths, halves.data (), width, height, 2, false);
+    }
+
     void MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_moisture");
       const std::size_t expected =
@@ -1895,6 +1924,7 @@ namespace moppe {
                       ? 1.0f
                       : 0.0f;
       u.params6.y = m_have_shore ? 1.0f : 0.0f;
+      u.params6.z = m_have_paths ? 1.0f : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -1936,6 +1966,8 @@ namespace moppe {
       [enc setFragmentTexture:m_normals atIndex:MOPPE_TEX_TERRAIN_NORMALS];
       [enc setFragmentTexture:(m_have_shore ? m_shore : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_SHORE];
+      [enc setFragmentTexture:(m_have_paths ? m_paths : m_heights)
+                      atIndex:MOPPE_TEX_TERRAIN_PATHS];
 
       for (int i = 0; i < count; ++i) {
         const int lod =

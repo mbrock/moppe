@@ -19,6 +19,7 @@ namespace moppe::map {
                                 const SourceProgress& source_progress) {
     MOPPE_PROFILE_ZONE ("TerrainEvaluator::begin");
     terrain::validate_program (program);
+    m_trail_network.reset ();
     m_randomness.seed (program.randomness.seed.value);
     m_randomness.discard (program.randomness.offset.value);
     const terrain::GeologicalFields fields = [&] {
@@ -87,6 +88,8 @@ namespace moppe::map {
   terrain::TerrainTransformReport
   TerrainEvaluator::apply (const terrain::TerrainTransform& transform) {
     MOPPE_PROFILE_ZONE ("TerrainEvaluator::apply");
+    if (!std::holds_alternative<terrain::TrailFormation> (transform))
+      m_trail_network.reset ();
     terrain::TerrainTransformReport report;
     if (std::holds_alternative<terrain::NormalizeHeights> (transform)) {
       MOPPE_PROFILE_ZONE ("terrain.normalize_heights");
@@ -209,6 +212,7 @@ namespace moppe::map {
           m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
         }
       report = result.report;
+      m_trail_network = std::move (result.network);
     }
     m_target.synchronize_periodic_edges ();
     return report;
@@ -262,5 +266,6 @@ namespace moppe::map {
                  checkpoint.deposited.end (),
                  m_target.raw_deposited ());
     m_randomness = checkpoint.randomness;
+    m_trail_network.reset ();
   }
 }

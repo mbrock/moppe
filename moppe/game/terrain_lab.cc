@@ -607,10 +607,11 @@ namespace moppe {
           m_drag_property (-1), m_drag_start_y (0.0f),
           m_drag_start_normalized (0.0f), m_parameter_rebuild_pending (false),
           m_parameter_rebuild_stage (-1), m_parameter_rebuild_delay (0.0f),
-          m_target (), m_yaw (0.72f), m_pitch (0.62f), m_distance (5600.0f),
-          m_orbit_left (false), m_orbit_right (false), m_zoom_in (false),
-          m_zoom_out (false), m_tilt_up (false), m_tilt_down (false),
-          m_scroll_zoom_target (5600.0f), m_view (ViewMode::Cover) {}
+          m_target (), m_yaw (PI), m_pitch (1.48f), m_distance (4200.0f),
+          m_fit_distance (4200.0f), m_orbit_left (false), m_orbit_right (false),
+          m_zoom_in (false), m_zoom_out (false), m_tilt_up (false),
+          m_tilt_down (false), m_scroll_zoom_target (4200.0f),
+          m_view (ViewMode::Tile) {}
 
     void TerrainLab::load (render::Renderer& renderer) {
       m_ui.load (renderer);
@@ -622,6 +623,7 @@ namespace moppe {
                             const WorldParams& world,
                             const GraphicsSettings& graphics,
                             const terrain::TerrainProgram& program,
+                            std::span<const float> trail_influence,
                             const std::vector<std::vector<float>>& history,
                             const Vec3& sun_dir) {
       if (m_active)
@@ -638,6 +640,8 @@ namespace moppe {
       m_graphics = &graphics;
       m_sun_dir = sun_dir;
       m_program = program;
+      m_saved_trail_influence.assign (trail_influence.begin (),
+                                      trail_influence.end ());
       m_history = &history;
       m_history_index = history.empty () ? 0 : history.size () - 1;
       m_history_age = 0.0f;
@@ -726,7 +730,7 @@ namespace moppe {
       m_droplet_armed = false;
       m_droplet_follow = false;
       m_overlay_status = "NO READING — terrain materials";
-      m_view = ViewMode::Cover;
+      m_view = ViewMode::Tile;
       m_orbit_left = m_orbit_right = false;
       m_zoom_in = m_zoom_out = false;
       m_tilt_up = m_tilt_down = false;
@@ -789,6 +793,8 @@ namespace moppe {
       restore_game_map ();
       m_saved_heights.clear ();
       m_saved_heights.shrink_to_fit ();
+      m_saved_trail_influence.clear ();
+      m_saved_trail_influence.shrink_to_fit ();
       m_checkpoints.clear ();
       m_checkpoints.shrink_to_fit ();
       m_reports.clear ();
@@ -826,7 +832,7 @@ namespace moppe {
         Vec3 (world_extent[0] * 0.5f,
               m_view == ViewMode::Torus ? 0.0f : world_extent[1] * 0.10f,
               world_extent[2] * 0.5f);
-      m_yaw = 0.72f;
+      m_yaw = m_view == ViewMode::Tile ? PI : 0.72f;
       if (m_view == ViewMode::Torus) {
         m_pitch = 0.48f;
         m_distance = 4700.0f;
@@ -839,9 +845,24 @@ namespace moppe {
         m_pitch = 0.20f;
         m_distance = 8000.0f;
       } else {
-        m_pitch = 1.22f;
-        m_distance = 6500.0f;
+        // A map should open as a map. Fit the complete finite tile with north
+        // at the top; the small residual tilt keeps look_at's up vector
+        // well-conditioned without turning the overview into a horizon shot.
+        // The controls occupy the left third of the screen, so offset the
+        // orbit target to frame the tile in the unobstructed map viewport.
+        m_target[0] += world_extent[0] * 0.25f;
+        const float aspect = m_renderer
+                               ? static_cast<float> (m_renderer->width_pts ()) /
+                                   std::max (1, m_renderer->height_pts ())
+                               : 1.6f;
+        const float half_span =
+          1.08f *
+          std::max (world_extent[2] * 0.5f, world_extent[0] * 0.5f / aspect);
+        m_pitch = 1.48f;
+        m_distance =
+          half_span / std::tan (35.0f * PI / 180.0f) + world_extent[1] * 0.35f;
       }
+      m_fit_distance = m_distance;
       m_scroll_zoom_target = m_distance;
     }
 
@@ -2693,9 +2714,10 @@ namespace moppe {
     }
 
     attenuation_t TerrainLab::scene_fog (attenuation_t) const {
-      // Both plane views orbit kilometres above the map; gameplay fog
-      // density would swallow it whole, so keep a faint aerial haze.
-      return m_view == ViewMode::Torus ? 0.0f / u::m : 0.00004f / u::m;
+      // The Lab is an inspection instrument. Atmospheric depth cues are
+      // useful while riding, but here they make finite terrain look clipped
+      // or imply a boundary where the toroidal world has none.
+      return 0.0f / u::m;
     }
 
     void TerrainLab::refresh (bool inspection_fog) {
@@ -2724,6 +2746,14 @@ namespace moppe {
                         projection,
                         repeat,
                         interactive_preview);
+      if (m_map_pristine) {
+        m_renderer->set_terrain_paths (m_saved_trail_influence);
+      } else if (m_evaluator && m_evaluator->trail_network ()) {
+        m_renderer->set_terrain_paths (
+          terrain::expand_trail_influence (*m_evaluator->trail_network ()));
+      } else {
+        m_renderer->set_terrain_paths ({});
+      }
       if (m_graphics->terrain_shadows)
         m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
       update_overlay ();
@@ -2794,8 +2824,9 @@ namespace moppe {
       m_pitch += tilt * dt * 0.55f;
       m_pitch = std::clamp (m_pitch, 0.18f, 1.48f);
       m_scroll_zoom_target *= std::exp (zoom * dt * 1.1f);
+      const float maximum_zoom = std::max (1500.0f, m_fit_distance * 1.6f);
       m_scroll_zoom_target =
-        std::clamp (m_scroll_zoom_target, 500.0f, 16000.0f);
+        std::clamp (m_scroll_zoom_target, 500.0f, maximum_zoom);
       const damping_t zoom_speed = (m_droplet_follow ? 2.2f : 14.0f) / u::s;
       const float zoom_response = smoothing_alpha (zoom_speed, dt * u::s);
       m_distance += (m_scroll_zoom_target - m_distance) * zoom_response;
@@ -3117,8 +3148,9 @@ namespace moppe {
       }
       const float amount = std::clamp (delta, -2.0f, 2.0f);
       m_scroll_zoom_target *= std::exp (-amount * 0.028f);
+      const float maximum_zoom = std::max (1500.0f, m_fit_distance * 1.6f);
       m_scroll_zoom_target =
-        std::clamp (m_scroll_zoom_target, 500.0f, 16000.0f);
+        std::clamp (m_scroll_zoom_target, 500.0f, maximum_zoom);
     }
 
     Vec3 TerrainLab::position () const {
@@ -3269,11 +3301,54 @@ namespace moppe {
     void TerrainLab::draw (render::DrawList& dl, int width, int height) const {
       m_ui_width = width;
       m_ui_height = height;
-      if (!m_expert_ui) {
+      if (!m_expert_ui)
         draw_friendly (dl, width, height);
-        return;
-      }
-      draw_expert (dl);
+      else
+        draw_expert (dl);
+      m_ui.begin (dl);
+      draw_compass (dl, width);
+      m_ui.end (dl);
+    }
+
+    void TerrainLab::draw_compass (render::DrawList& dl, int width) const {
+      const UiRect bounds {
+        static_cast<float> (width) - 106.0f, 18.0f, 88.0f, 88.0f
+      };
+      m_ui.surface (dl, bounds);
+      const float cx = bounds.x + bounds.width * 0.5f;
+      const float cy = bounds.y + bounds.height * 0.5f;
+      const float radius = 24.0f;
+      const Vec3 north (-std::sin (m_yaw), std::cos (m_yaw), 0.0f);
+      const Vec3 east (-std::cos (m_yaw), -std::sin (m_yaw), 0.0f);
+
+      dl.color (0.42f, 0.48f, 0.52f, 0.75f);
+      dl.line (cx - east[0] * radius,
+               cy - east[1] * radius,
+               cx + east[0] * radius,
+               cy + east[1] * radius,
+               1.0f);
+      dl.line (cx - north[0] * radius,
+               cy - north[1] * radius,
+               cx + north[0] * radius,
+               cy + north[1] * radius,
+               1.0f);
+      dl.color (1.0f, 0.72f, 0.18f, 0.98f);
+      dl.line (cx, cy, cx + north[0] * radius, cy + north[1] * radius, 2.5f);
+      dl.begin (render::Prim::Triangles);
+      dl.vertex (cx + north[0] * (radius + 5.0f),
+                 cy + north[1] * (radius + 5.0f));
+      dl.vertex (cx + north[0] * (radius - 4.0f) + east[0] * 4.0f,
+                 cy + north[1] * (radius - 4.0f) + east[1] * 4.0f);
+      dl.vertex (cx + north[0] * (radius - 4.0f) - east[0] * 4.0f,
+                 cy + north[1] * (radius - 4.0f) - east[1] * 4.0f);
+      dl.end ();
+      m_ui.label (dl,
+                  cx + north[0] * 35.0f - 4.0f,
+                  cy + north[1] * 35.0f + 4.0f,
+                  "N",
+                  true);
+      m_ui.label (
+        dl, cx + east[0] * 33.0f - 4.0f, cy + east[1] * 33.0f + 4.0f, "E");
     }
 
     void TerrainLab::draw_expert (render::DrawList& dl) const {
@@ -3642,15 +3717,18 @@ namespace moppe {
                     readings_y + 266,
                     "RIDER-SCALE VALLEY NETWORK",
                     true);
-        m_ui.label (dl,
-                    readings_x + 10,
-                    readings_y + 288,
-                    "CENTERLINE " +
-                      format_count (static_cast<int> (
-                        terrain::count_value (report.centerline_cells))) +
-                      "  SHAPED " +
-                      format_count (static_cast<int> (
-                        terrain::count_value (report.shaped_cells))));
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 288,
+          "CENTERLINE " +
+            format_count (static_cast<int> (
+              terrain::count_value (report.centerline_cells))) +
+            "  COMPONENTS " +
+            format_count (static_cast<int> (report.connected_components)) +
+            "  SHAPED " +
+            format_count (
+              static_cast<int> (terrain::count_value (report.shaped_cells))));
         m_ui.label (
           dl,
           readings_x + 10,

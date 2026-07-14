@@ -53,6 +53,7 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.heights.size () == original.size ());
   MOPPE_CHECK (result.report.centerline_cells > cell_count (0));
   MOPPE_CHECK (result.report.shaped_cells > cell_count (0));
+  MOPPE_CHECK (result.report.connected_components > 0);
   MOPPE_CHECK (result.report.cut_volume > 0.0);
   MOPPE_CHECK (result.report.fill_volume > 0.0);
   bool valley_changed = false;
@@ -70,6 +71,38 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
     MOPPE_CHECK_NEAR (result.heights[8 * 9 + x], original[8 * 9 + x], 1e-7f);
 }
 
+MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
+  const std::vector<float> original = bumpy_valley ();
+  const TrailFormationResult result = form_trails (
+    TerrainView (trail_valley_grid (), original), test_parameters ());
+  const TrailNetwork& network = result.network;
+
+  MOPPE_CHECK (!network.cells.empty ());
+  MOPPE_CHECK (!network.components.empty ());
+  MOPPE_CHECK (network.influence.values ().size () == original.size ());
+  for (const CellIndex cell : network.cells) {
+    MOPPE_CHECK (network.contains (cell));
+    const CellIndex next = network.receiver[cell.value];
+    if (next != no_cell) {
+      MOPPE_CHECK (network.contains (next));
+      MOPPE_CHECK (network.component_by_cell[cell.value] ==
+                   network.component_by_cell[next.value]);
+    }
+    CellIndex cursor = cell;
+    std::size_t steps = 0;
+    while (network.receiver[cursor.value] != no_cell &&
+           steps <= network.cells.size ()) {
+      cursor = network.receiver[cursor.value];
+      ++steps;
+    }
+    MOPPE_CHECK (steps <= network.cells.size ());
+  }
+  for (const float influence : network.influence.values ()) {
+    MOPPE_CHECK (influence >= 0.0f);
+    MOPPE_CHECK (influence <= 1.0f);
+  }
+}
+
 MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   const std::vector<float> original = bumpy_valley ();
   const TerrainView terrain (trail_valley_grid (), original);
@@ -78,6 +111,11 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   const TrailFormationResult second = form_trails (terrain, parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
+  MOPPE_CHECK (first.network.receiver == second.network.receiver);
+  MOPPE_CHECK (first.network.component_by_cell ==
+               second.network.component_by_cell);
+  MOPPE_CHECK (std::ranges::equal (first.network.influence.values (),
+                                   second.network.influence.values ()));
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
     const float change_m = (first.heights[cell] - original[cell]) *
                            trail_valley_grid ().height_scale_m ();
