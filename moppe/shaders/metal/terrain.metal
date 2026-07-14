@@ -18,7 +18,7 @@ struct TerrainVaryings {
   float2 uv;
   float2 field_uv;
   float2 grid_coord;       // authoritative source-height lattice
-  float2 mesh_coord;       // actual rendered lattice, for topology overlay
+  float2 mesh_coord;       // actual rendered lattice
   float lod_step [[flat]]; // source texels per rendered grid edge
 };
 
@@ -822,28 +822,50 @@ fragment float4 terrain_fragment (
 
   float3 color = texel * lit;
   if (u.params5.x > 0.0) {
-    // The quarter-cell reconstruction is usually too dense to read as a
-    // wireframe, so show its authoritative source-height cells. Native and
-    // coarser levels show their actual rendered triangles.
-    const float2 topology_coord =
-      in.lod_step < 1.0 ? in.grid_coord : in.mesh_coord;
-    const float2 cell = fract (topology_coord);
-    const float2 axis_width = max (fwidth (topology_coord), float2 (1e-4));
+    // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
+    // field is allowed to disappear once it becomes sub-pixel instead of
+    // turning into moire. Amber sites are the authoritative source samples:
+    // one row of the materialized surface bundle per site.
+    const float2 cell = fract (in.mesh_coord);
+    const float2 axis_width = max (fwidth (in.mesh_coord), float2 (1e-4));
     const float axis_edge = min (min (cell.x, 1.0 - cell.x) / axis_width.x,
                                  min (cell.y, 1.0 - cell.y) / axis_width.y);
     const float diagonal_width =
-      max (fwidth (topology_coord.x + topology_coord.y), 1e-4);
-    const float diagonal_edge =
-      in.lod_step < 1.0 ? 1e4 : abs (cell.x + cell.y - 1.0) / diagonal_width;
+      max (fwidth (in.mesh_coord.x + in.mesh_coord.y), 1e-4);
+    const float diagonal_edge = abs (cell.x + cell.y - 1.0) / diagonal_width;
     const float edge = min (axis_edge, diagonal_edge);
     const float line = 1.0 - smoothstep (0.45, 1.25, edge);
+    const float mesh_spacing =
+      1.0 / max (max (axis_width.x, axis_width.y), 1e-4);
+    const float mesh_visible = smoothstep (2.5, 5.0, mesh_spacing);
+    const float2 vertex_distance =
+      min (cell, 1.0 - cell) / max (axis_width, float2 (1e-4));
+    const float mesh_vertex =
+      1.0 - smoothstep (0.75, 1.7, length (vertex_distance));
+
+    const float2 source_cell = fract (in.grid_coord);
+    const float2 source_width = max (fwidth (in.grid_coord), float2 (1e-4));
+    const float2 source_distance =
+      min (source_cell, 1.0 - source_cell) / source_width;
+    const float source_spacing =
+      1.0 / max (max (source_width.x, source_width.y), 1e-4);
+    const float source_visible = smoothstep (2.5, 5.0, source_spacing);
+    const float source_vertex =
+      (1.0 - smoothstep (1.1, 2.5, length (source_distance))) * source_visible;
+
     const float distance_fade = 1.0 - smoothstep (1400.0, 2200.0, dist);
     const float lod_band =
       clamp (log2 (max (in.lod_step, 0.25)) + 2.0, 0.0, 5.0) / 5.0;
     const float3 lod_tint =
       mix (float3 (0.82, 0.94, 1.0), float3 (1.0, 0.84, 0.68), lod_band);
-    color = mix (color, color * lod_tint, 0.055 * distance_fade);
-    color *= 1.0 - line * u.params5.x * distance_fade;
+    color = mix (color, color * lod_tint, 0.12 * distance_fade);
+    const float wire = line * mesh_visible * distance_fade;
+    color = mix (color, float3 (0.015, 0.16, 0.19), 0.82 * wire);
+    color = mix (color,
+                 float3 (0.16, 0.95, 1.0),
+                 0.88 * mesh_vertex * mesh_visible * distance_fade);
+    color = mix (
+      color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
   }
   return float4 (mix (color, fog_c, fog_factor), 1.0);
 }

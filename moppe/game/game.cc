@@ -2157,6 +2157,15 @@ namespace moppe {
             m_game_ui.end (m_hud_dl);
           }
         }
+        if (m_graphics.terrain_topology) {
+          m_game_ui.begin (m_hud_dl);
+          m_game_ui.key_hint (m_hud_dl,
+                              24.0f,
+                              hud_height - 28.0f,
+                              "G",
+                              "VERTEX GRID  CYAN MESH  AMBER SURFACE SAMPLES");
+          m_game_ui.end (m_hud_dl);
+        }
         // Even a clean inspection capture needs this empty HUD pass: it is
         // also the final post-chain composite into the drawable.
         r.draw_hud (m_hud_dl);
@@ -2497,6 +2506,15 @@ namespace moppe {
             revive ();
           else if (k == Key::Escape && down)
             platform::request_quit ();
+          return;
+        }
+
+        if (k == Key::G && down) {
+          m_graphics.terrain_topology = !m_graphics.terrain_topology;
+          m_renderer->set_terrain_topology_overlay (
+            m_graphics.terrain_topology);
+          std::cerr << "moppe: terrain vertex grid "
+                    << (m_graphics.terrain_topology ? "on" : "off") << '\n';
           return;
         }
 

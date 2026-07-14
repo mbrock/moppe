@@ -24,11 +24,11 @@ MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::bloom_feature.hot);
   MOPPE_CHECK (game::auto_exposure_feature.hot);
   MOPPE_CHECK (game::lens_flare_feature.hot);
+  MOPPE_CHECK (game::terrain_topology_feature.hot);
 
   MOPPE_CHECK (!game::terrain_shadows_feature.hot);
   MOPPE_CHECK (!game::river_ribbons_feature.hot);
   MOPPE_CHECK (!game::motion_blur_feature.hot);
-  MOPPE_CHECK (!game::terrain_topology_feature.hot);
 }
 
 MOPPE_TEST (graphics_feature_lists_apply_to_settings) {
@@ -93,6 +93,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
     partition, game::GraphicsFeatureId::ocean, game::GraphicsFeatureId::bloom));
 
   game::GraphicsSettings settings = game::low_graphics_settings ();
+  settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
   MOPPE_CHECK (resolved == 0b11001110u);
@@ -101,6 +102,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   MOPPE_CHECK (settings.star_effects);
   MOPPE_CHECK (settings.lens_flare);
   MOPPE_CHECK (settings.terrain_fragment_normals);
+  MOPPE_CHECK (settings.terrain_topology);
   MOPPE_CHECK (!settings.ocean);
   MOPPE_CHECK (!settings.bloom);
   MOPPE_CHECK (!settings.auto_exposure);

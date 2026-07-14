@@ -287,6 +287,7 @@ namespace moppe {
       void set_terrain (const TerrainParams& params,
                         const float* heights,
                         const Vec3* normals) override;
+      void set_terrain_topology_overlay (bool enabled) override;
       void set_terrain_textures (TexturePtr grass,
                                  TexturePtr dirt,
                                  TexturePtr rock,
@@ -1214,6 +1215,10 @@ namespace moppe {
       m_have_terrain = true;
     }
 
+    void MetalRenderer::set_terrain_topology_overlay (bool enabled) {
+      m_terrain_params.topology_overlay = enabled;
+    }
+
     void MetalRenderer::set_terrain_textures (TexturePtr grass,
                                               TexturePtr dirt,
                                               TexturePtr rock,
@@ -1922,7 +1927,7 @@ namespace moppe {
         u.params4.z = m_terrain_overlay_params.maximum;
         u.params4.w = m_terrain_overlay_params.opacity;
       }
-      u.params5.x = m_terrain_params.topology_overlay ? 0.24f : 0.0f;
+      u.params5.x = m_terrain_params.topology_overlay ? 1.0f : 0.0f;
       u.params5.y = m_have_water_levels ? 1.0f : 0.0f;
       u.params5.z = m_have_moisture ? 1.0f : 0.0f;
       u.params5.w = m_have_geology ? 1.0f : 0.0f;

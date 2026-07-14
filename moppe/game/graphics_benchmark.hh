@@ -83,9 +83,16 @@ namespace moppe::game {
 
   inline constexpr RidingGraphicsPartition graphics_benchmark_partition;
 
-  inline constexpr bool graphics_benchmark_partition_covers_hot_features () {
+  inline constexpr bool
+  graphics_benchmark_includes (const GraphicsFeature& feature) {
+    // Debug views may be hot without being part of the ordinary riding
+    // presentation whose costs this benchmark partitions.
+    return feature.hot && feature.id != GraphicsFeatureId::terrain_topology;
+  }
+
+  inline constexpr bool graphics_benchmark_partition_covers_features () {
     for (const GraphicsFeature* feature : graphics_features) {
-      if (!feature->hot)
+      if (!graphics_benchmark_includes (*feature))
         continue;
       const auto block = graphics_benchmark_partition (feature->id);
       bool found = false;
@@ -97,7 +104,7 @@ namespace moppe::game {
     return true;
   }
 
-  static_assert (graphics_benchmark_partition_covers_hot_features ());
+  static_assert (graphics_benchmark_partition_covers_features ());
 
   inline constexpr int graphics_benchmark_dimension_count () {
     return static_cast<int> (RidingGraphicsPartition::blocks.size ());
@@ -125,7 +132,7 @@ namespace moppe::game {
     uint32_t feature_mask = 0;
     int feature_bit = 0;
     for (const GraphicsFeature* feature : graphics_features) {
-      if (!feature->hot)
+      if (!graphics_benchmark_includes (*feature))
         continue;
       const auto block = graphics_benchmark_partition (feature->id);
       int block_bit = 0;
