@@ -702,14 +702,37 @@ fragment float4 terrain_fragment (
     const float fill_flat = smoothstep (0.78, 0.93, n.y);
     texel = mix (texel, alluvium_c, fill * fill_flat * (1.0 - snow_coef) * 0.5);
   }
-  // Formed trails remain a subtle earthwork at riding distance, but their
-  // continuous material footprint also reads clearly in the Lab overview.
-  // Snow and standing water are allowed to cover them naturally.
+  // Read the trail mask as a formed cross-section. Its falloff gives us two
+  // edge-parallel wear bands without imposing a world-aligned texture on a
+  // winding route. Coarse aggregate remains visible from the bike; the broad
+  // shoulder/core contrast survives in the overview. Snow and standing water
+  // are allowed to cover the earthwork naturally.
+  const float trail_cover = (1.0 - snow_coef) * (1.0 - submerged);
+  const float trail_footprint = smoothstep (0.03, 0.38, trail);
+  const float trail_core = smoothstep (0.42, 0.88, trail);
+  const float trail_shoulder =
+    smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
+  const float close_trail = 1.0 - smoothstep (55.0, 240.0, dist);
+  const float trail_gravel =
+    0.58 * moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)) +
+    0.42 * moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9));
+  const float worn_bands =
+    (1.0 - smoothstep (0.055, 0.15, abs (trail - 0.64))) * close_trail *
+    trail_footprint;
+
+  float3 trail_c = mix (scree_c, sand_value * float3 (0.78, 0.59, 0.39), 0.90);
+  trail_c *= 0.87 + 0.24 * trail_gravel;
+  const float pale_grit = smoothstep (0.64, 0.84, trail_gravel);
+  trail_c = mix (trail_c,
+                 sand_value * float3 (0.98, 0.82, 0.58),
+                 0.16 * pale_grit * close_trail * trail_core);
+  trail_c *= 1.0 - 0.18 * trail_shoulder;
+  trail_c *= 1.0 - 0.13 * worn_bands;
+  trail_c *= 1.0 + 0.055 * trail_core * close_trail;
+
   const float trail_material =
-    smoothstep (0.08, 0.62, trail) * (1.0 - snow_coef) * (1.0 - submerged);
-  const float3 trail_c =
-    mix (scree_c, sand_value * float3 (0.78, 0.58, 0.36), 0.88);
-  texel = mix (texel, trail_c, 0.82 * trail_material);
+    trail_cover * trail_footprint * (0.46 + 0.40 * trail_core);
+  texel = mix (texel, trail_c, trail_material);
   // The home-base clearing is the circuit's visible origin: compacted warm
   // aggregate with a pale center, legible both from the bike and on the map.
   const float base_material =
@@ -743,7 +766,8 @@ fragment float4 terrain_fragment (
   const float cut_relief = smoothstep (0.10, 0.65, geology.r);
   const float fill_relief = smoothstep (0.10, 0.65, geology.g);
   const float detail_strength =
-    (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief) *
+    (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief +
+     0.10 * trail_material * close_trail) *
     (1.0 - 0.55 * fill_relief) * (1.0 - 0.8 * far_blend) *
     (1.0 - 0.85 * snow_coef);
   const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
