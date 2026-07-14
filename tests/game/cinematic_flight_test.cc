@@ -92,6 +92,86 @@ namespace {
             400000.0f * mp_units::si::metre * mp_units::si::metre });
     }
   };
+
+  terrain::TrailNetwork trail_fixture (const FlightFixture& fixture) {
+    std::vector<terrain::CellIndex> cells;
+    for (int x = 5; x <= 11; ++x)
+      cells.emplace_back (5 * FlightFixture::side + x);
+    for (int z = 6; z <= 11; ++z)
+      cells.emplace_back (z * FlightFixture::side + 11);
+    for (int x = 10; x >= 5; --x)
+      cells.emplace_back (11 * FlightFixture::side + x);
+    for (int z = 10; z >= 6; --z)
+      cells.emplace_back (z * FlightFixture::side + 5);
+
+    std::vector<terrain::CellIndex> receiver (FlightFixture::count,
+                                              terrain::no_cell);
+    std::vector<terrain::TrailComponentId> component_by_cell (
+      FlightFixture::count, terrain::no_trail_component);
+    const terrain::TrailComponentId component { 0 };
+    for (std::size_t i = 0; i < cells.size (); ++i) {
+      receiver[cells[i].value] = cells[(i + 1) % cells.size ()];
+      component_by_cell[cells[i].value] = component;
+    }
+    const terrain::CellIndex home = cells.front ();
+    const terrain::CellIndex focus = cells[cells.size () / 2];
+    return { .source_grid = fixture.grid,
+             .plan = { .home_base = home,
+                       .scenic_focus = focus,
+                       .control_sites = { home, focus },
+                       .circuit = cells },
+             .receiver = std::move (receiver),
+             .component_by_cell = std::move (component_by_cell),
+             .cells = std::move (cells),
+             .components = { { .id = component,
+                               .anchor_cell = home,
+                               .cells = terrain::cell_count (24) } },
+             .influence = terrain::ScalarRaster (
+               fixture.domain, std::vector<float> (FlightFixture::count, 0.0f)),
+             .home_base_influence = terrain::ScalarRaster (
+               fixture.domain,
+               std::vector<float> (FlightFixture::count, 0.0f)) };
+  }
+}
+
+MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
+  FlightFixture fixture;
+  const terrain::TrailNetwork trail = trail_fixture (fixture);
+  const Vec3 arrival (200, 80, 200);
+  const game::CinematicFlightPlan landscape =
+    game::plan_cinematic_flight (fixture.map,
+                                 fixture.flood,
+                                 fixture.census,
+                                 fixture.drainage,
+                                 fixture.rivers,
+                                 arrival);
+  const game::CinematicFlightPlan plan =
+    game::plan_cinematic_flight (fixture.map,
+                                 fixture.flood,
+                                 fixture.census,
+                                 fixture.drainage,
+                                 fixture.rivers,
+                                 arrival,
+                                 &trail);
+
+  MOPPE_CHECK (plan.waypoints.size () >= landscape.waypoints.size () + 3);
+  MOPPE_CHECK (plan.landmarks.front ().kind ==
+               game::CinematicLandmarkKind::Trail);
+  MOPPE_CHECK (game::cinematic_landmark_name (
+                 game::CinematicLandmarkKind::Trail) == "trail");
+  const Vec3 opening_eye = plan.waypoints.front ().position;
+  MOPPE_CHECK (
+    opening_eye[1] >=
+    fixture.map.interpolated_height (opening_eye[0], opening_eye[2]) + 104.9f);
+
+  game::CinematicFlight flight;
+  flight.start (plan, fixture.map);
+  bool looked_down_at_route = false;
+  for (int frame = 0; frame < 180 && flight.active (); ++frame) {
+    flight.tick (1.0f / 60.0f, fixture.map);
+    looked_down_at_route |= flight.forward ()[1] < -0.08f;
+  }
+  MOPPE_CHECK (looked_down_at_route);
 }
 
 MOPPE_TEST (cinematic_flight_reads_landscape_into_distinct_places) {

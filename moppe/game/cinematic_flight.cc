@@ -266,6 +266,71 @@ namespace moppe::game {
       }
     }
 
+    Vec3 trail_cell_position (terrain::CellIndex cell,
+                              const terrain::TrailNetwork& trail,
+                              const map::HeightMap& map) {
+      const int width = static_cast<int> (trail.source_grid.unique_width ());
+      const int x = static_cast<int> (cell.value % width);
+      const int z = static_cast<int> (cell.value / width);
+      const float world_x = x * trail.source_grid.spacing_x_m ();
+      const float world_z = z * trail.source_grid.spacing_y_m ();
+      return Vec3 (
+        world_x, map.interpolated_height (world_x, world_z), world_z);
+    }
+
+    void add_trail_reveal (CinematicFlightPlan& plan,
+                           const map::HeightMap& map,
+                           const terrain::TrailNetwork& trail) {
+      if (trail.cells.size () < 8 || trail.plan.home_base == no_cell)
+        return;
+
+      // One quick oblique sweep establishes the circuit as a place before the
+      // broader landscape tour begins. Coarse gates reveal its large shape
+      // without making the drone consume the entire loop.
+      constexpr std::size_t samples = 3;
+      const std::size_t look_ahead =
+        std::max<std::size_t> (1, trail.cells.size () / 8);
+      Vec3 previous_ground =
+        trail_cell_position (trail.plan.home_base, trail, map);
+      for (std::size_t sample = 0; sample < samples; ++sample) {
+        const std::size_t index = sample * trail.cells.size () / 4;
+        const std::size_t ahead_index =
+          (index + look_ahead) % trail.cells.size ();
+        Vec3 ground = trail_cell_position (trail.cells[index], trail, map);
+        ground = unwrap_near (ground, previous_ground, map);
+        Vec3 subject =
+          trail_cell_position (trail.cells[ahead_index], trail, map);
+        subject = unwrap_near (subject, ground, map);
+        Vec3 forward = subject - ground;
+        forward[1] = 0.0f;
+        if (length2 (forward) < 1e-5f)
+          forward = Vec3 (0, 0, 1);
+        else
+          normalize (forward);
+        const Vec3 side (-forward[2], 0, forward[0]);
+        const bool establishing = sample == 0;
+        Vec3 eye = ground - forward * (establishing ? 120.0f : 48.0f) +
+                   side * (establishing ? 105.0f : 42.0f);
+        eye[1] = ground[1] + (establishing ? 150.0f : 76.0f);
+        subject[1] = map.interpolated_height (subject[0], subject[2]) + 3.0f;
+        add_waypoint (plan,
+                      map,
+                      eye,
+                      subject,
+                      establishing ? 105.0f : 55.0f,
+                      establishing ? 215.0f : 245.0f,
+                      establishing ? 64.0f : 68.0f);
+        previous_ground = ground;
+      }
+
+      const Vec3 home = trail_cell_position (trail.plan.home_base, trail, map);
+      plan.landmarks.push_back (
+        { .kind = CinematicLandmarkKind::Trail,
+          .cell = trail.plan.home_base,
+          .score = static_cast<float> (trail.cells.size ()),
+          .position = home });
+    }
+
     void record_landmark (CinematicFlightPlan& plan,
                           CinematicLandmarkKind kind,
                           const FeatureCandidate& feature,
@@ -282,6 +347,8 @@ namespace moppe::game {
   std::string_view
   cinematic_landmark_name (CinematicLandmarkKind kind) noexcept {
     switch (kind) {
+    case CinematicLandmarkKind::Trail:
+      return "trail";
     case CinematicLandmarkKind::Valley:
       return "valley";
     case CinematicLandmarkKind::Waterfall:
@@ -304,7 +371,8 @@ namespace moppe::game {
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
                          const terrain::RiverNetwork& rivers,
-                         const Vec3& arrival) {
+                         const Vec3& arrival,
+                         const terrain::TrailNetwork* trail) {
     MOPPE_PROFILE_ZONE ("plan_cinematic_flight");
     CinematicFlightPlan plan;
     if (drainage.receiver.empty ())
@@ -316,6 +384,9 @@ namespace moppe::game {
     const FeatureCandidate saddle = choose_saddle (map);
     const FeatureCandidate peak = choose_peak (map);
     const FeatureCandidate water = waterfall.cell != no_cell ? waterfall : lake;
+
+    if (trail)
+      add_trail_reveal (plan, map, *trail);
 
     if (valley.cell != no_cell) {
       const terrain::RiverReach* reach = valley_reach (valley.cell, rivers);
@@ -819,6 +890,13 @@ namespace moppe::game {
       wanted_look = path_forward;
     else
       normalize (wanted_look);
+    Vec3 framed_subject = current.subject - current.position;
+    if (length2 (framed_subject) > 1e-5f) {
+      normalize (framed_subject);
+      wanted_look = wanted_look * 0.48f + framed_subject * 0.52f;
+      if (length2 (wanted_look) > 1e-5f)
+        normalize (wanted_look);
+    }
     const float gimbal_alpha = 1.0f - std::exp (-1.9f * dt);
     m_look_direction += (wanted_look - m_look_direction) * gimbal_alpha;
     if (length2 (m_look_direction) > 1e-5f)
