@@ -31,6 +31,7 @@ namespace moppe::map {
           spatial::get<surface_normal> (sample) =
             map.normal (column, row) * surface_normal[one];
           spatial::get<tree_habitat> (sample) = 0.0f * tree_habitat[one];
+          spatial::get<trail_influence> (sample) = 0.0f * trail_influence[one];
         }
     }
 
@@ -112,6 +113,19 @@ namespace moppe::map {
       habitat[offset] = dry_ground * below_tree_line * stable_soil *
                         water_response * tree_habitat[one];
     }
+  }
+
+  void Surface::materialize_trail_influence (std::span<const float> influence) {
+    if (!m_samples)
+      throw std::logic_error ("Surface has not been materialized");
+    SurfaceBundle& bundle = *m_samples;
+    if (influence.size () != bundle.size ())
+      throw std::invalid_argument (
+        "Trail influence needs one value per surface sample");
+    auto& trail = spatial::get<trail_influence> (bundle);
+    for (std::size_t offset = 0; offset < bundle.size (); ++offset)
+      trail[offset] =
+        std::clamp (influence[offset], 0.0f, 1.0f) * trail_influence[one];
   }
 
   const SurfaceBundle& Surface::samples () const {

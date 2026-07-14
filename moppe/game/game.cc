@@ -35,6 +35,7 @@
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/waterline.hh>
 
@@ -860,6 +861,7 @@ namespace moppe {
         m_pending_surface.moisture.clear ();
         m_pending_surface.geology.clear ();
         m_pending_surface.shore.clear ();
+        m_pending_surface.trails.clear ();
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
           // lakes, sea, and rivers in one surface sheet, per-body wave
@@ -939,6 +941,29 @@ namespace moppe {
           m_surface.derive_tree_habitat (m_pending_surface.moisture,
                                          m_world.water_level,
                                          m_world.water_level + 145.0f * u::m);
+        }
+
+        if (m_standing_water && m_drainage) {
+          const terrain::TerrainProgram program = lab_program ();
+          const auto stage = std::ranges::find_if (
+            program.transforms, [] (const terrain::TerrainTransform& value) {
+              return std::holds_alternative<terrain::TrailFormation> (value);
+            });
+          if (stage != program.transforms.end ()) {
+            MOPPE_PROFILE_ZONE ("startup.analyze_trail_network");
+            m_trail_network = terrain::analyze_trail_network (
+              m_map.terrain_view (),
+              std::get<terrain::TrailFormation> (*stage),
+              *m_drainage,
+              *m_standing_water);
+            m_pending_surface.trails =
+              terrain::expand_trail_influence (*m_trail_network);
+            m_surface.materialize_trail_influence (m_pending_surface.trails);
+            std::cerr << "trail network: " << m_trail_network->cells.size ()
+                      << " centerline cells, "
+                      << m_trail_network->components.size ()
+                      << " connected components\n";
+          }
         }
 
         {
@@ -1057,6 +1082,7 @@ namespace moppe {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
           r.set_terrain_shore (m_pending_surface.shore);
         }
+        r.set_terrain_paths (m_pending_surface.trails);
       }
 
       void cast_world_shadows (render::Renderer& r) {
@@ -1528,7 +1554,7 @@ namespace moppe {
                         std::max (m_landscape_scale_x, m_landscape_scale_y),
                       0.02f,
                       0.5f),
-          9000.0f);
+          terrain_lab ? 30000.0f : 9000.0f);
 
         // Hard landings produce a brief continuous vibration. Randomizing the
         // rotations each frame looked like violent camera teleportation.
@@ -1695,7 +1721,7 @@ namespace moppe {
                           : terrain_lab ? m_terrain_lab.forward ()
                                         : m_camera.forward (),
                           terrain_lab
-                            ? 12000.0f
+                            ? 30000.0f
                             : 3.0f / attenuation_value (m_world.fog_scale));
 
         // Sky AFTER the terrain: depth testing kills the expensive
@@ -1960,6 +1986,7 @@ namespace moppe {
                                    m_world,
                                    m_graphics,
                                    lab_program (),
+                                   m_pending_surface.trails,
                                    m_terrain_history,
                                    sun_direction_for (m_graphics.sun_height));
               m_start_in_terrain_lab = false;
@@ -2281,6 +2308,7 @@ namespace moppe {
                                m_world,
                                m_graphics,
                                lab_program (),
+                               m_pending_surface.trails,
                                m_terrain_history,
                                sun_direction_for (m_graphics.sun_height));
           return;
@@ -2675,6 +2703,7 @@ namespace moppe {
       std::optional<terrain::DrainageGraph> m_drainage;
       std::optional<terrain::WaterNetwork> m_water_network;
       std::optional<terrain::RiverNetwork> m_rivers;
+      std::optional<terrain::TrailNetwork> m_trail_network;
       RiverSurface m_river_surface;
       Terrain m_terrain;
       // Surface data computed at finish_setup, uploaded once the terrain
@@ -2686,6 +2715,7 @@ namespace moppe {
         std::vector<float> moisture;
         std::vector<float> geology;
         std::vector<float> shore;
+        std::vector<float> trails;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
       TreeStand m_tree_stand;

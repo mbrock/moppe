@@ -50,10 +50,31 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
   const auto elevation = spatial::get<map::surface_elevation> (samples[index]);
   const auto normal = spatial::get<map::surface_normal> (samples[index]);
   const auto habitat = spatial::get<map::tree_habitat> (samples[index]);
+  const auto trail = spatial::get<map::trail_influence> (samples[index]);
   MOPPE_CHECK_NEAR (
     elevation_value (elevation), map.get (2, 1) * map.scale ()[1], 1e-6f);
   check_surface_vector (normal_value (normal), map.normal (2, 1));
   MOPPE_CHECK (habitat == 0.0f * map::tree_habitat[one]);
+  MOPPE_CHECK (trail == 0.0f * map::trail_influence[one]);
+}
+
+MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    3, 3, Vec3 (30, 10, 30), 19, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+                               0.0f, 0.0f, 0.0f, 0.0f };
+  surface.materialize_trail_influence (influence);
+  MOPPE_CHECK (surface.trail_influence_at (position (Vec3 (10, 0, 10))) ==
+               1.0f * map::trail_influence[one]);
+  MOPPE_CHECK_NEAR (surface.trail_influence_at (position (Vec3 (5, 0, 10)))
+                      .numerical_value_in (one),
+                    0.5f,
+                    1e-6f);
 }
 
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {

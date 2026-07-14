@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -47,11 +48,16 @@ namespace moppe::map {
     TerrainCheckpoint checkpoint () const;
     void restore (const TerrainCheckpoint& checkpoint);
 
+    const std::optional<terrain::TrailNetwork>& trail_network () const {
+      return m_trail_network;
+    }
+
   private:
     RandomHeightMap& m_target;
     const terrain::FieldEvaluator* m_source_evaluator;
     std::mt19937 m_randomness;
     std::vector<float> m_relative_uplift;
+    std::optional<terrain::TrailNetwork> m_trail_network;
     IterationProgress m_iteration_progress;
     std::size_t m_transform_index = 0;
   };

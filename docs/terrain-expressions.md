@@ -56,18 +56,20 @@ traversal. `extend_into` applies one such rule at every focus and materializes
 the next bundle.
 
 `map::Surface` is the first deliberately small gameplay proof. Its
-`SurfaceBundle` contains an affine elevation point and a vector-valued surface
-normal at every heightmap node. `SurfaceDomain` supplies a four-node bilinear
-stencil for a world position. Generic `spatial::sample<QS>` then chooses its
-algebra from the mp-units value category: quantities form weighted sums, while
-quantity points use one anchor plus weighted point differences. Bounded and
-toroidal surfaces use the same operation.
+`SurfaceBundle` contains an affine elevation point, a vector-valued surface
+normal, tree-habitat suitability, and trail influence at every heightmap node.
+`SurfaceDomain` supplies a four-node bilinear stencil for a world position.
+Generic `spatial::sample<QS>` then chooses its algebra from the mp-units value
+category: quantities form weighted sums, while quantity points use one anchor
+plus weighted point differences. Bounded and toroidal surfaces use the same
+operation.
 
 The current heightmap remains authoritative. World generation explicitly
 refreshes the surface materialization after recomputing normals, and spawn
-selection plus glider terrain queries consume the continuous typed view. This
-temporarily duplicates those two columns so the abstraction can be verified
-without rewriting generation kernels; a later consolidation can make bundle
+selection plus glider terrain queries consume the continuous typed view.
+Elevation and normal temporarily duplicate the heightmap columns so the
+abstraction can be verified without rewriting generation kernels; a later
+consolidation can make bundle
 storage authoritative or introduce borrowed/chunked columns.
 
 Every backend implements the `FieldEvaluator` materialization boundary.
@@ -159,13 +161,17 @@ pretending that it is a pointwise `ScalarField`, and without requiring a new
 
 `TrailFormation` is the post-geology gameplay pass in the world program. It
 uses contributing area as an analytical valley-floor detector: small and
-medium catchments become a connected trail centerline, while large catchments
-are left to the river system. Standing water and the low coast are excluded.
-The selected D8 edges are projected toward a motorcycle-friendly maximum
-grade under bounded cut and fill, then stamped as a narrow core with soft
-shoulders. This keeps the terrain's drainage logic visible in the route while
-avoiding an expensive population of simulated riders and making the result
-deterministic enough for map caching and Terrain Lab comparisons.
+medium catchments become a directed forest of trail cells, while large
+catchments are left to the river system. Each cell retains its downstream
+receiver and connected-component identity. Standing water and the low coast
+are excluded. The selected D8 edges are projected toward a motorcycle-friendly
+maximum grade under bounded cut and fill, then stamped as a narrow core with
+soft shoulders. That continuous influence is materialized as the
+`trail_influence` quantity in `SurfaceBundle` and uploaded to the terrain
+shader, so the same network has geometric, gameplay, and visible material
+forms. The analytical construction keeps the drainage logic legible without
+an expensive population of simulated riders, and remains deterministic for
+map caching and Terrain Lab comparisons.
 
 ## Materialized readings and drainage
 

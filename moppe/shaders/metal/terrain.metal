@@ -527,6 +527,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   texture2d<float, access::read> terrain_shore
   [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
+  texture2d<float, access::read> terrain_paths
+  [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -577,6 +579,10 @@ fragment float4 terrain_fragment (
     (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, n.y);
   const float damp =
     max (max (submerged, 0.92 * swash_zone), smoothstep (0.22, 0.82, moisture));
+  const float trail =
+    u.params6.z > 0.5
+      ? saturate (terrain_field_sample (in.field_uv, terrain_paths).r)
+      : 0.0;
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -694,6 +700,14 @@ fragment float4 terrain_fragment (
     const float fill_flat = smoothstep (0.78, 0.93, n.y);
     texel = mix (texel, alluvium_c, fill * fill_flat * (1.0 - snow_coef) * 0.5);
   }
+  // Formed trails remain a subtle earthwork at riding distance, but their
+  // continuous material footprint also reads clearly in the Lab overview.
+  // Snow and standing water are allowed to cover them naturally.
+  const float trail_material =
+    smoothstep (0.08, 0.62, trail) * (1.0 - snow_coef) * (1.0 - submerged);
+  const float3 trail_c =
+    mix (scree_c, sand_value * float3 (0.78, 0.58, 0.36), 0.88);
+  texel = mix (texel, trail_c, 0.82 * trail_material);
   // Wet soil loses diffuse energy and saturation. Underwater ground is
   // darkest; moisture alone is a quieter bank/lowland treatment.
   const float wetness = max (0.62 * damp, submerged);
