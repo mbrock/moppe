@@ -40,6 +40,7 @@ namespace moppe {
                   const GraphicsSettings& graphics,
                   const terrain::TerrainProgram& program,
                   std::span<const float> trail_influence,
+                  std::span<const float> home_base_influence,
                   const std::vector<std::vector<float>>& history,
                   const Vec3& sun_dir);
       void leave ();
@@ -151,6 +152,7 @@ namespace moppe {
       Vec3 m_sun_dir;
       std::vector<float> m_saved_heights;
       std::vector<float> m_saved_trail_influence;
+      std::vector<float> m_saved_home_base_influence;
       const std::vector<std::vector<float>>* m_history;
       std::size_t m_history_index;
       float m_history_age;

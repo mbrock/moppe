@@ -388,6 +388,7 @@ int main (int argc, char** argv) {
       else if (const auto* report = std::get_if<TrailFormationReport> (&result))
         std::cout << "trails: centerline=" << report->centerline_cells
                   << " components=" << report->connected_components
+                  << " circuit_m=" << meters_value (report->circuit_length)
                   << " shaped=" << report->shaped_cells
                   << " cut_m3=" << cubic_meters_value (report->cut_volume)
                   << " fill_m3=" << cubic_meters_value (report->fill_volume)

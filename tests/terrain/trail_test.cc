@@ -78,24 +78,31 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
   const TrailNetwork& network = result.network;
 
   MOPPE_CHECK (!network.cells.empty ());
-  MOPPE_CHECK (!network.components.empty ());
+  MOPPE_CHECK (network.components.size () == 1);
+  MOPPE_CHECK (network.plan.home_base != no_cell);
+  MOPPE_CHECK (network.plan.scenic_focus != no_cell);
+  MOPPE_CHECK (network.plan.circuit == network.cells);
+  MOPPE_CHECK (network.cells.front () == network.plan.home_base);
   MOPPE_CHECK (network.influence.values ().size () == original.size ());
+  MOPPE_CHECK (network.home_base_influence.values ().size () ==
+               original.size ());
+  MOPPE_CHECK (network.components.front ().anchor_cell ==
+               network.plan.home_base);
+  MOPPE_CHECK_NEAR (
+    network.home_base_influence.values ()[network.plan.home_base.value],
+    1.0f,
+    1e-6f);
   for (const CellIndex cell : network.cells) {
     MOPPE_CHECK (network.contains (cell));
     const CellIndex next = network.receiver[cell.value];
-    if (next != no_cell) {
-      MOPPE_CHECK (network.contains (next));
-      MOPPE_CHECK (network.component_by_cell[cell.value] ==
-                   network.component_by_cell[next.value]);
-    }
+    MOPPE_CHECK (next != no_cell);
+    MOPPE_CHECK (network.contains (next));
+    MOPPE_CHECK (network.component_by_cell[cell.value] ==
+                 network.component_by_cell[next.value]);
     CellIndex cursor = cell;
-    std::size_t steps = 0;
-    while (network.receiver[cursor.value] != no_cell &&
-           steps <= network.cells.size ()) {
+    for (std::size_t steps = 0; steps < network.cells.size (); ++steps)
       cursor = network.receiver[cursor.value];
-      ++steps;
-    }
-    MOPPE_CHECK (steps <= network.cells.size ());
+    MOPPE_CHECK (cursor == cell);
   }
   for (const float influence : network.influence.values ()) {
     MOPPE_CHECK (influence >= 0.0f);
@@ -114,6 +121,9 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   MOPPE_CHECK (first.network.receiver == second.network.receiver);
   MOPPE_CHECK (first.network.component_by_cell ==
                second.network.component_by_cell);
+  MOPPE_CHECK (first.network.plan.home_base == second.network.plan.home_base);
+  MOPPE_CHECK (first.network.plan.control_sites ==
+               second.network.plan.control_sites);
   MOPPE_CHECK (std::ranges::equal (first.network.influence.values (),
                                    second.network.influence.values ()));
   for (std::size_t cell = 0; cell < original.size (); ++cell) {

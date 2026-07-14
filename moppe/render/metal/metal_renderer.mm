@@ -301,7 +301,9 @@ namespace moppe {
       void set_terrain_moisture (std::span<const float> moisture) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
-      void set_terrain_paths (std::span<const float> influence) override;
+      void
+      set_terrain_paths (std::span<const float> influence,
+                         std::span<const float> home_base_influence) override;
 
       // frame
       bool begin_frame (const FrameParams& params) override;
@@ -1508,7 +1510,9 @@ namespace moppe {
       upload_texture (m_shore, halves.data (), width, height, 2, false);
     }
 
-    void MetalRenderer::set_terrain_paths (std::span<const float> influence) {
+    void MetalRenderer::set_terrain_paths (
+      std::span<const float> influence,
+      std::span<const float> home_base_influence) {
       const std::size_t expected =
         static_cast<std::size_t> (m_terrain_params.width) *
         m_terrain_params.height;
@@ -1517,10 +1521,14 @@ namespace moppe {
         return;
       const int width = m_terrain_params.width;
       const int height = m_terrain_params.height;
+      if (!home_base_influence.empty () &&
+          home_base_influence.size () != expected)
+        throw std::invalid_argument (
+          "home base influence does not match terrain");
       if (!m_paths || m_paths.width != static_cast<NSUInteger> (width) ||
           m_paths.height != static_cast<NSUInteger> (height)) {
         MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
                                        width:width
                                       height:height
                                    mipmapped:NO];
@@ -1528,10 +1536,13 @@ namespace moppe {
         td.usage = MTLTextureUsageShaderRead;
         m_paths = [m_device newTextureWithDescriptor:td];
       }
-      std::vector<__fp16> halves (influence.size ());
-      for (std::size_t i = 0; i < influence.size (); ++i)
-        halves[i] = static_cast<__fp16> (influence[i]);
-      upload_texture (m_paths, halves.data (), width, height, 2, false);
+      std::vector<__fp16> halves (2 * influence.size ());
+      for (std::size_t i = 0; i < influence.size (); ++i) {
+        halves[2 * i] = static_cast<__fp16> (influence[i]);
+        halves[2 * i + 1] = static_cast<__fp16> (
+          home_base_influence.empty () ? 0.0f : home_base_influence[i]);
+      }
+      upload_texture (m_paths, halves.data (), width, height, 4, false);
     }
 
     void MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {

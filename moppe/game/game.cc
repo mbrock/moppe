@@ -611,6 +611,72 @@ namespace moppe {
         return good_count > 0 ? chosen : fallback;
       }
 
+      Vec3 trail_cell_position (terrain::CellIndex cell) const {
+        if (!m_trail_network || cell == terrain::no_cell)
+          return {};
+        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
+        const std::size_t width = grid.unique_width ();
+        const float x = (cell.value % width) * grid.spacing_x_m ();
+        const float z = (cell.value / width) * grid.spacing_y_m ();
+        return Vec3 (x, m_map.interpolated_height (x, z), z);
+      }
+
+      Vec3 trail_direction_from_home () const {
+        if (!m_trail_network)
+          return Vec3 (0, 0, 1);
+        const terrain::CellIndex home = m_trail_network->plan.home_base;
+        const terrain::CellIndex next = m_trail_network->receiver[home.value];
+        Vec3 direction =
+          trail_cell_position (next) - trail_cell_position (home);
+        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
+        const float period_x = grid.unique_width () * grid.spacing_x_m ();
+        const float period_z = grid.unique_height () * grid.spacing_y_m ();
+        if (direction[0] > period_x * 0.5f)
+          direction[0] -= period_x;
+        if (direction[0] < -period_x * 0.5f)
+          direction[0] += period_x;
+        if (direction[2] > period_z * 0.5f)
+          direction[2] -= period_z;
+        if (direction[2] < -period_z * 0.5f)
+          direction[2] += period_z;
+        direction[1] = 0.0f;
+        return length2 (direction) > 1e-5f ? normalized (direction)
+                                           : Vec3 (0, 0, 1);
+      }
+
+      void draw_home_base_marker (render::DrawList& dl) const {
+        if (!m_trail_network)
+          return;
+        const Vec3 base = m_home_base_position;
+        render::DrawState marker_state;
+        marker_state.cull = false;
+        dl.state (marker_state);
+        dl.lit (true);
+        dl.fogged (true);
+        dl.push ();
+        dl.translate (base + Vec3 (0, 2.8f, 0));
+        dl.color (0.18f, 0.14f, 0.08f);
+        dl.scale (0.22f, 5.6f, 0.22f);
+        dl.cube (1.0f);
+        dl.pop ();
+
+        const Vec3 along = trail_direction_from_home ();
+        Vec3 side = cross (Vec3 (0, 1, 0), along);
+        if (length2 (side) < 1e-5f)
+          side = Vec3 (1, 0, 0);
+        side = normalized (side);
+        const Vec3 flag_top = base + Vec3 (0, 5.5f, 0);
+        dl.lit (false);
+        dl.color (1.0f, 0.55f, 0.08f);
+        dl.begin (render::Prim::Triangles);
+        dl.vertex (flag_top);
+        dl.vertex (flag_top + Vec3 (0, -2.0f, 0));
+        dl.vertex (flag_top + side * 2.8f + Vec3 (0, -0.8f, 0));
+        dl.end ();
+        dl.lit (true);
+        dl.state (render::DrawState ());
+      }
+
       void generate_world () {
         MOPPE_PROFILE_THREAD ("World generation");
         MOPPE_PROFILE_ZONE ("MoppeGame::generate_world");
@@ -711,6 +777,7 @@ namespace moppe {
                   m_loading_source_total = static_cast<int> (total);
                 });
             }
+            m_generated_trail_network = evaluator.release_trail_network ();
             const std::size_t count =
               static_cast<std::size_t> (m_map.width ()) * m_map.height ();
             {
@@ -862,6 +929,7 @@ namespace moppe {
         m_pending_surface.geology.clear ();
         m_pending_surface.shore.clear ();
         m_pending_surface.trails.clear ();
+        m_pending_surface.home_base.clear ();
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
           // lakes, sea, and rivers in one surface sheet, per-body wave
@@ -951,18 +1019,35 @@ namespace moppe {
             });
           if (stage != program.transforms.end ()) {
             MOPPE_PROFILE_ZONE ("startup.analyze_trail_network");
-            m_trail_network = terrain::analyze_trail_network (
-              m_map.terrain_view (),
-              std::get<terrain::TrailFormation> (*stage),
-              *m_drainage,
-              *m_standing_water);
+            if (m_generated_trail_network)
+              m_trail_network = std::move (m_generated_trail_network);
+            else
+              m_trail_network = terrain::analyze_trail_network (
+                m_map.terrain_view (),
+                std::get<terrain::TrailFormation> (*stage),
+                *m_drainage,
+                *m_standing_water);
             m_pending_surface.trails =
               terrain::expand_trail_influence (*m_trail_network);
+            m_pending_surface.home_base =
+              terrain::expand_home_base_influence (*m_trail_network);
             m_surface.materialize_trail_influence (m_pending_surface.trails);
+            m_surface.materialize_home_base_influence (
+              m_pending_surface.home_base);
             std::cerr << "trail network: " << m_trail_network->cells.size ()
-                      << " centerline cells, "
-                      << m_trail_network->components.size ()
+                      << " centerline cells, " << std::fixed
+                      << std::setprecision (1)
+                      << meters_value (
+                           terrain::trail_circuit_length (*m_trail_network)) /
+                           1000.0
+                      << " km, " << m_trail_network->components.size ()
                       << " connected components\n";
+            const Vec3 base =
+              trail_cell_position (m_trail_network->plan.home_base);
+            const Vec3 focus =
+              trail_cell_position (m_trail_network->plan.scenic_focus);
+            std::cerr << "home base: " << base << " scenic focus: " << focus
+                      << '\n';
           }
         }
 
@@ -1006,12 +1091,21 @@ namespace moppe {
         m_car.set_obstacles (&m_obstacles);
 
         if (!m_terrain_lab_preview) {
-          m_spawn_position = choose_landscape_spawn ();
+          if (m_trail_network) {
+            m_home_base_position =
+              trail_cell_position (m_trail_network->plan.home_base);
+            m_spawn_position =
+              m_home_base_position - trail_direction_from_home () * 8.0f;
+            m_spawn_position[1] = m_map.interpolated_height (
+                                    m_spawn_position[0], m_spawn_position[2]) +
+                                  1.2f;
+          } else {
+            m_spawn_position = choose_landscape_spawn ();
+            m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
+          }
           m_vehicle.reset (m_spawn_position);
-
-          std::uniform_real_distribution<float> heading (0.0f, 2.0f * 3.14159f);
-          const float a = heading (m_fx_rng);
-          m_vehicle.set_heading (Vec3 (std::sin (a), 0, std::cos (a)));
+          m_vehicle.set_heading (m_trail_network ? trail_direction_from_home ()
+                                                 : Vec3 (0, 0, 1));
         }
         if (m_tree_demo) {
           MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
@@ -1082,7 +1176,8 @@ namespace moppe {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
           r.set_terrain_shore (m_pending_surface.shore);
         }
-        r.set_terrain_paths (m_pending_surface.trails);
+        r.set_terrain_paths (m_pending_surface.trails,
+                             m_pending_surface.home_base);
       }
 
       void cast_world_shadows (render::Renderer& r) {
@@ -1739,6 +1834,7 @@ namespace moppe {
           m_world_dl.clear ();
 
           // Soft blob shadows under the movers.
+          draw_home_base_marker (m_world_dl);
           m_blob.draw (m_world_dl, m_map, m_vehicle.position (), 2.2f);
           if (m_car_exists)
             m_blob.draw (m_world_dl, m_map, m_car.position (), 2.9f);
@@ -1987,6 +2083,7 @@ namespace moppe {
                                    m_graphics,
                                    lab_program (),
                                    m_pending_surface.trails,
+                                   m_pending_surface.home_base,
                                    m_terrain_history,
                                    sun_direction_for (m_graphics.sun_height));
               m_start_in_terrain_lab = false;
@@ -2309,6 +2406,7 @@ namespace moppe {
                                m_graphics,
                                lab_program (),
                                m_pending_surface.trails,
+                               m_pending_surface.home_base,
                                m_terrain_history,
                                sun_direction_for (m_graphics.sun_height));
           return;
@@ -2673,6 +2771,7 @@ namespace moppe {
       WorldParams m_world;
       GraphicsSettings m_graphics;
       Vec3 m_spawn_position;
+      Vec3 m_home_base_position;
       int m_seed;
       terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
@@ -2704,6 +2803,7 @@ namespace moppe {
       std::optional<terrain::WaterNetwork> m_water_network;
       std::optional<terrain::RiverNetwork> m_rivers;
       std::optional<terrain::TrailNetwork> m_trail_network;
+      std::optional<terrain::TrailNetwork> m_generated_trail_network;
       RiverSurface m_river_surface;
       Terrain m_terrain;
       // Surface data computed at finish_setup, uploaded once the terrain
@@ -2716,6 +2816,7 @@ namespace moppe {
         std::vector<float> geology;
         std::vector<float> shore;
         std::vector<float> trails;
+        std::vector<float> home_base;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
       TreeStand m_tree_stand;

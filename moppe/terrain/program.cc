@@ -231,7 +231,17 @@ namespace moppe::terrain {
                 !std::isfinite (
                   operation.maximum_grade.numerical_value_in (mp_units::one)) ||
                 operation.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
-                operation.grading_iterations < 0)
+                operation.grading_iterations < 0 ||
+                !std::isfinite (
+                  meters_value (operation.home_base_water_distance)) ||
+                operation.home_base_water_distance <=
+                  0.0f * mp_units::si::metre ||
+                !std::isfinite (
+                  meters_value (operation.home_base_pad_radius)) ||
+                operation.home_base_pad_radius <= 0.0f * mp_units::si::metre ||
+                !std::isfinite (
+                  meters_value (operation.desired_circuit_radius)) ||
+                operation.desired_circuit_radius <= 0.0f * mp_units::si::metre)
               throw std::invalid_argument (
                 "trail formation parameters are invalid");
           }
