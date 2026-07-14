@@ -57,6 +57,10 @@ namespace {
       program.transforms.emplace_back (ChannelCarving {});
       return;
     }
+    if (option == "trails") {
+      program.transforms.emplace_back (TrailFormation {});
+      return;
+    }
 
     const std::size_t equals = option.find ('=');
     if (equals == std::string_view::npos)
@@ -212,6 +216,43 @@ namespace {
       if (parts.size () > 5)
         carving.bank_blend = parse_float (parts[5]) * mp_units::si::metre;
       program.transforms.emplace_back (carving);
+    } else if (name == "trails") {
+      std::vector<std::string_view> parts;
+      std::size_t start = 0;
+      while (start <= value.size ()) {
+        const std::size_t comma = value.find (',', start);
+        parts.push_back (value.substr (start,
+                                       comma == std::string_view::npos
+                                         ? value.size () - start
+                                         : comma - start));
+        if (comma == std::string_view::npos)
+          break;
+        start = comma + 1;
+      }
+      if (parts.empty () || parts.size () > 8)
+        throw std::invalid_argument (
+          "trails expects min_m2[,max_m2,width,shoulder,cut,fill,"
+          "grade,sea]");
+      TrailFormation trails;
+      trails.minimum_catchment_area =
+        parse_float (parts[0]) * mp_units::si::metre * mp_units::si::metre;
+      if (parts.size () > 1)
+        trails.maximum_catchment_area =
+          parse_float (parts[1]) * mp_units::si::metre * mp_units::si::metre;
+      if (parts.size () > 2)
+        trails.width = parse_float (parts[2]) * mp_units::si::metre;
+      if (parts.size () > 3)
+        trails.shoulder_blend = parse_float (parts[3]) * mp_units::si::metre;
+      if (parts.size () > 4)
+        trails.maximum_cut = parse_float (parts[4]) * mp_units::si::metre;
+      if (parts.size () > 5)
+        trails.maximum_fill = parse_float (parts[5]) * mp_units::si::metre;
+      if (parts.size () > 6)
+        trails.maximum_grade =
+          parse_float (parts[6]) * terrain_slope[mp_units::one];
+      if (parts.size () > 7)
+        trails.sea_level = parse_float (parts[7]);
+      program.transforms.emplace_back (trails);
     } else if (name == "diffuse") {
       const std::size_t comma = value.find (',');
       if (comma == std::string_view::npos)
@@ -344,6 +385,14 @@ int main (int argc, char** argv) {
                   << meters_value (report->mean_absolute_change)
                   << " max_change_m="
                   << meters_value (report->maximum_absolute_change) << "\n";
+      else if (const auto* report = std::get_if<TrailFormationReport> (&result))
+        std::cout << "trails: centerline=" << report->centerline_cells
+                  << " shaped=" << report->shaped_cells
+                  << " cut_m3=" << cubic_meters_value (report->cut_volume)
+                  << " fill_m3=" << cubic_meters_value (report->fill_volume)
+                  << " mean_m=" << meters_value (report->mean_absolute_change)
+                  << " max_m=" << meters_value (report->maximum_absolute_change)
+                  << "\n";
       else if (const auto* report =
                  std::get_if<HydraulicErosionReport> (&result))
         std::cout << "hydraulic: eroded=" << report->eroded
