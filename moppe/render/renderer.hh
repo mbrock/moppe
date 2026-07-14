@@ -183,6 +183,9 @@ namespace moppe {
       virtual void set_terrain (const TerrainParams& params,
                                 const float* heights,
                                 const Vec3* normals) = 0;
+      // Hot development control: changes only terrain shading state, leaving
+      // height/normal textures and chunk geometry intact.
+      virtual void set_terrain_topology_overlay (bool enabled) = 0;
       virtual void set_terrain_textures (TexturePtr grass,
                                          TexturePtr dirt,
                                          TexturePtr rock,

@@ -253,9 +253,13 @@ frame the CPU culls the same 128×128-cell chunks (distance + conservative
 behind-camera tests) and issues at most one tiny indexed draw per visible
 chunk. World regeneration = re-upload two textures.
 
-Set `MOPPE_TERRAIN_TOPOLOGY=1` to overlay the source-height cells in the
-reconstructed near field and the actual triangles in native and coarser LODs.
-The subtle LOD tint and wire overlay are intended for visual inspection only.
+Press `G` to toggle the terrain vertex overlay at runtime, or set
+`MOPPE_TERRAIN_TOPOLOGY=1` to start with it enabled. Cyan lines and points are
+the actual vertex-pulled triangles and vertices. Amber points are authoritative
+height/normal field samples: the rows materialized in the surface bundle. The
+subtle background tint identifies changes in geometric LOD. The dense
+quarter-cell mesh fades before becoming sub-pixel, while its source samples
+remain visible for comparison.
 
 Physics keeps its authoritative CPU copy (HeightMap::interpolated_height/
 normal, ~10 samples/frame). Rendering and physics share the exact grid
@@ -365,8 +369,8 @@ Each Boolean feature descriptor also records whether it is hot-switchable:
 changing a hot feature's stored value is sufficient for the next frame, with
 no resource rebuild or renderer-state reset. Ocean, particles, vehicle
 and star effects, bloom, automatic exposure, and lens flare are currently hot.
-Terrain shadows, river ribbons, motion blur, and the terrain
-topology overlay are conservatively marked not hot.
+Terrain shadows, river ribbons, and motion blur are conservatively marked not
+hot. The terrain topology overlay is hot and can be toggled with `G`.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

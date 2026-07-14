@@ -122,7 +122,7 @@ namespace moppe::game {
     GraphicsFeatureId::terrain_topology,
     "terrain-topology",
     &GraphicsSettings::terrain_topology,
-    false
+    true
   };
 
   inline constexpr GraphicsFeature terrain_fragment_normals_feature {
