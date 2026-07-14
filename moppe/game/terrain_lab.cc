@@ -314,10 +314,15 @@ namespace moppe {
                  " km radius / " +
                  format_float (meters_value (trails->width), 1) + " m path / " +
                  format_float (
+                   trails->designed_grade.numerical_value_in (mp_units::one) *
+                     100.0f,
+                   0) +
+                 "% design / " +
+                 format_float (
                    trails->maximum_grade.numerical_value_in (mp_units::one) *
                      100.0f,
                    0) +
-                 "% grade";
+                 "% max";
         if (const auto* diffusion =
               std::get_if<terrain::HillslopeDiffusion> (&stage))
           return format_float (
@@ -412,7 +417,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return 5;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return 10;
+          return 11;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return 2;
         return 0;
@@ -569,11 +574,17 @@ namespace moppe {
                        2),
                      ParameterDomain::Continuous };
           if (row == 7)
+            return { "DESIGNED GRADE",
+                     format_float (trails->designed_grade.numerical_value_in (
+                                     mp_units::one),
+                                   2),
+                     ParameterDomain::Continuous };
+          if (row == 8)
             return { "BASE TO WATER (M)",
                      format_float (
                        meters_value (trails->home_base_water_distance), 0),
                      ParameterDomain::Continuous };
-          if (row == 8)
+          if (row == 9)
             return { "BASE PAD (M)",
                      format_float (meters_value (trails->home_base_pad_radius),
                                    0),
@@ -1993,11 +2004,16 @@ namespace moppe {
         if (row == 6)
           return unit (trails->maximum_grade.numerical_value_in (mp_units::one),
                        0.05f,
-                       0.6f);
+                       0.3f);
         if (row == 7)
           return unit (
-            meters_value (trails->home_base_water_distance), 20.0f, 250.0f);
+            trails->designed_grade.numerical_value_in (mp_units::one),
+            0.01f,
+            0.15f);
         if (row == 8)
+          return unit (
+            meters_value (trails->home_base_water_distance), 20.0f, 250.0f);
+        if (row == 9)
           return unit (
             meters_value (trails->home_base_pad_radius), 8.0f, 45.0f);
         return unit (
@@ -2253,16 +2269,28 @@ namespace moppe {
         if (row == 6) {
           const auto old = trails->maximum_grade;
           trails->maximum_grade =
-            mix (0.05f, 0.6f) * terrain::terrain_slope[mp_units::one];
+            std::max (
+              mix (0.05f, 0.3f),
+              trails->designed_grade.numerical_value_in (mp_units::one)) *
+            terrain::terrain_slope[mp_units::one];
           return trails->maximum_grade != old;
         }
         if (row == 7) {
+          const auto old = trails->designed_grade;
+          trails->designed_grade =
+            std::min (
+              mix (0.01f, 0.15f),
+              trails->maximum_grade.numerical_value_in (mp_units::one)) *
+            terrain::terrain_slope[mp_units::one];
+          return trails->designed_grade != old;
+        }
+        if (row == 8) {
           const auto old = trails->home_base_water_distance;
           trails->home_base_water_distance =
             mix (20.0f, 250.0f) * mp_units::si::metre;
           return trails->home_base_water_distance != old;
         }
-        if (row == 8) {
+        if (row == 9) {
           const auto old = trails->home_base_pad_radius;
           trails->home_base_pad_radius =
             mix (8.0f, 45.0f) * mp_units::si::metre;
@@ -3790,9 +3818,17 @@ namespace moppe {
           "CUT " + format_ledger (cubic_meters_value (report.cut_volume)) +
             " M3  FILL " +
             format_ledger (cubic_meters_value (report.fill_volume)) + " M3");
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 332,
+          "GRADE MEAN / MAX " + format_float (report.mean_centerline_grade, 3) +
+            " / " + format_float (report.maximum_centerline_grade, 3) +
+            "  EXCEPTIONS " +
+            format_count (static_cast<int> (report.grade_exceptions)));
         m_ui.label (dl,
                     readings_x + 10,
-                    readings_y + 332,
+                    readings_y + 354,
                     "MEAN / MAX CHANGE " +
                       format_float (static_cast<float> (meters_value (
                                       report.mean_absolute_change)),
