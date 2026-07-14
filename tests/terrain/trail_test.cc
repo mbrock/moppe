@@ -41,6 +41,7 @@ namespace {
              .maximum_cut = 2.0f * mp_units::si::metre,
              .maximum_fill = 2.0f * mp_units::si::metre,
              .maximum_grade = 0.2f * terrain_slope[mp_units::one],
+             .designed_grade = 0.06f * terrain_slope[mp_units::one],
              .grading_iterations = iteration_count (20) };
   }
 

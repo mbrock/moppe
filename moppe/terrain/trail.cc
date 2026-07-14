@@ -581,6 +581,10 @@ namespace moppe::terrain {
         parameters.designed_grade.numerical_value_in (mp_units::one);
       const float earthwork_budget = meters_value (parameters.maximum_cut) +
                                      meters_value (parameters.maximum_fill);
+      // Construction capacity is a feasibility limit, not a discount. A
+      // larger cut/fill allowance must not make a steep edge more attractive
+      // than a contour-following edge that needs less work.
+      constexpr float preferred_earthwork_m = 4.0f;
       const float target_catchment =
         std::sqrt (square_meters_value (parameters.minimum_catchment_area) *
                    square_meters_value (parameters.maximum_catchment_area));
@@ -626,9 +630,7 @@ namespace moppe::terrain {
           const float grade_scale = std::max (designed_grade, 0.01f);
           const float grade_ratio = grade / grade_scale;
           const float earthwork = std::max (0.0f, rise - designed_grade * run);
-          const float earthwork_ratio = earthwork_budget > 0.0f
-                                          ? earthwork / earthwork_budget
-                                          : (earthwork > 0.0f ? 4.0f : 0.0f);
+          const float earthwork_ratio = earthwork / preferred_earthwork_m;
           const float detour_ratio =
             (grid.distance (start, next) + grid.distance (next, goal)) /
             direct_distance;
@@ -661,7 +663,7 @@ namespace moppe::terrain {
           const float edge =
             run *
             (1.0f + 0.70f * grade_ratio * grade_ratio +
-             2.8f * earthwork_ratio * earthwork_ratio +
+             12.0f * earthwork_ratio * earthwork_ratio +
              30.0f * maximum_excess * maximum_excess + 2.5f * turn * turn +
              20.0f * corridor * corridor + 0.10f * valley + chart_edge);
           const float next_cost = cost[current.state] + edge;
@@ -860,6 +862,29 @@ namespace moppe::terrain {
       }
       return circuit;
     }
+
+    bool circuit_is_contiguous (const TerrainGrid& grid,
+                                const std::vector<CellIndex>& circuit) {
+      if (circuit.size () < 2)
+        return false;
+      const int width = static_cast<int> (grid.unique_width ());
+      const int height = static_cast<int> (grid.unique_height ());
+      for (std::size_t i = 0; i < circuit.size (); ++i) {
+        const CellIndex from = circuit[i];
+        const CellIndex to = circuit[(i + 1) % circuit.size ()];
+        int dx = std::abs (static_cast<int> (from.value % width) -
+                           static_cast<int> (to.value % width));
+        int dy = std::abs (static_cast<int> (from.value / width) -
+                           static_cast<int> (to.value / width));
+        if (grid.topology == Topology::Torus) {
+          dx = std::min (dx, width - dx);
+          dy = std::min (dy, height - dy);
+        }
+        if ((dx == 0 && dy == 0) || dx > 1 || dy > 1)
+          return false;
+      }
+      return true;
+    }
   }
 
   TrailNetwork analyze_trail_network (const TerrainView& terrain,
@@ -891,7 +916,7 @@ namespace moppe::terrain {
           continue;
         std::vector<CellIndex> cells =
           expand_circuit (planner, expedition->circuit);
-        if (cells.size () >= 4) {
+        if (cells.size () >= 4 && circuit_is_contiguous (grid, cells)) {
           chosen = std::move (expedition);
           chosen_cells = std::move (cells);
         }
