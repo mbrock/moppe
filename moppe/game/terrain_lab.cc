@@ -265,7 +265,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return "CHANNEL CARVE";
         if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return "VALLEY TRAILS";
+          return "MOTORCYCLE CIRCUIT";
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return "SOIL CREEP";
         return "TALUS RELAX";
@@ -309,7 +309,10 @@ namespace moppe {
                  format_count (static_cast<int> (carving->minimum_area_cells)) +
                  " cells";
         if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage))
-          return format_float (meters_value (trails->width), 1) + " m path / " +
+          return format_float (
+                   meters_value (trails->desired_circuit_radius) / 1000.0f, 1) +
+                 " km radius / " +
+                 format_float (meters_value (trails->width), 1) + " m path / " +
                  format_float (
                    trails->maximum_grade.numerical_value_in (mp_units::one) *
                      100.0f,
@@ -409,7 +412,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return 5;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return 7;
+          return 10;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return 2;
         return 0;
@@ -559,10 +562,25 @@ namespace moppe {
             return { "MAX FILL (M)",
                      format_float (meters_value (trails->maximum_fill), 2),
                      ParameterDomain::Continuous };
-          return { "MAX GRADE",
-                   format_float (
-                     trails->maximum_grade.numerical_value_in (mp_units::one),
-                     2),
+          if (row == 6)
+            return { "MAX GRADE",
+                     format_float (
+                       trails->maximum_grade.numerical_value_in (mp_units::one),
+                       2),
+                     ParameterDomain::Continuous };
+          if (row == 7)
+            return { "BASE TO WATER (M)",
+                     format_float (
+                       meters_value (trails->home_base_water_distance), 0),
+                     ParameterDomain::Continuous };
+          if (row == 8)
+            return { "BASE PAD (M)",
+                     format_float (meters_value (trails->home_base_pad_radius),
+                                   0),
+                     ParameterDomain::Continuous };
+          return { "CIRCUIT RADIUS (M)",
+                   format_float (meters_value (trails->desired_circuit_radius),
+                                 0),
                    ParameterDomain::Continuous };
         }
         if (const auto* diffusion =
@@ -624,6 +642,7 @@ namespace moppe {
                             const GraphicsSettings& graphics,
                             const terrain::TerrainProgram& program,
                             std::span<const float> trail_influence,
+                            std::span<const float> home_base_influence,
                             const std::vector<std::vector<float>>& history,
                             const Vec3& sun_dir) {
       if (m_active)
@@ -642,6 +661,8 @@ namespace moppe {
       m_program = program;
       m_saved_trail_influence.assign (trail_influence.begin (),
                                       trail_influence.end ());
+      m_saved_home_base_influence.assign (home_base_influence.begin (),
+                                          home_base_influence.end ());
       m_history = &history;
       m_history_index = history.empty () ? 0 : history.size () - 1;
       m_history_age = 0.0f;
@@ -795,6 +816,8 @@ namespace moppe {
       m_saved_heights.shrink_to_fit ();
       m_saved_trail_influence.clear ();
       m_saved_trail_influence.shrink_to_fit ();
+      m_saved_home_base_influence.clear ();
+      m_saved_home_base_influence.shrink_to_fit ();
       m_checkpoints.clear ();
       m_checkpoints.shrink_to_fit ();
       m_reports.clear ();
@@ -1967,9 +1990,18 @@ namespace moppe {
           return unit (meters_value (trails->maximum_cut), 0.0f, 5.0f);
         if (row == 5)
           return unit (meters_value (trails->maximum_fill), 0.0f, 5.0f);
-        return unit (trails->maximum_grade.numerical_value_in (mp_units::one),
-                     0.05f,
-                     0.6f);
+        if (row == 6)
+          return unit (trails->maximum_grade.numerical_value_in (mp_units::one),
+                       0.05f,
+                       0.6f);
+        if (row == 7)
+          return unit (
+            meters_value (trails->home_base_water_distance), 20.0f, 250.0f);
+        if (row == 8)
+          return unit (
+            meters_value (trails->home_base_pad_radius), 8.0f, 45.0f);
+        return unit (
+          meters_value (trails->desired_circuit_radius), 250.0f, 1800.0f);
       }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
         return row == 0 ? unit (terrain::count_value (thermal->iterations),
@@ -2218,10 +2250,28 @@ namespace moppe {
           trails->maximum_fill = mix (0.0f, 5.0f) * mp_units::si::metre;
           return trails->maximum_fill != old;
         }
-        const auto old = trails->maximum_grade;
-        trails->maximum_grade =
-          mix (0.05f, 0.6f) * terrain::terrain_slope[mp_units::one];
-        return trails->maximum_grade != old;
+        if (row == 6) {
+          const auto old = trails->maximum_grade;
+          trails->maximum_grade =
+            mix (0.05f, 0.6f) * terrain::terrain_slope[mp_units::one];
+          return trails->maximum_grade != old;
+        }
+        if (row == 7) {
+          const auto old = trails->home_base_water_distance;
+          trails->home_base_water_distance =
+            mix (20.0f, 250.0f) * mp_units::si::metre;
+          return trails->home_base_water_distance != old;
+        }
+        if (row == 8) {
+          const auto old = trails->home_base_pad_radius;
+          trails->home_base_pad_radius =
+            mix (8.0f, 45.0f) * mp_units::si::metre;
+          return trails->home_base_pad_radius != old;
+        }
+        const auto old = trails->desired_circuit_radius;
+        trails->desired_circuit_radius =
+          mix (250.0f, 1800.0f) * mp_units::si::metre;
+        return trails->desired_circuit_radius != old;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {
@@ -2747,10 +2797,12 @@ namespace moppe {
                         repeat,
                         interactive_preview);
       if (m_map_pristine) {
-        m_renderer->set_terrain_paths (m_saved_trail_influence);
+        m_renderer->set_terrain_paths (m_saved_trail_influence,
+                                       m_saved_home_base_influence);
       } else if (m_evaluator && m_evaluator->trail_network ()) {
         m_renderer->set_terrain_paths (
-          terrain::expand_trail_influence (*m_evaluator->trail_network ()));
+          terrain::expand_trail_influence (*m_evaluator->trail_network ()),
+          terrain::expand_home_base_influence (*m_evaluator->trail_network ()));
       } else {
         m_renderer->set_terrain_paths ({});
       }
@@ -3724,9 +3776,11 @@ namespace moppe {
           "CENTERLINE " +
             format_count (static_cast<int> (
               terrain::count_value (report.centerline_cells))) +
-            "  COMPONENTS " +
-            format_count (static_cast<int> (report.connected_components)) +
-            "  SHAPED " +
+            "  LOOP " +
+            format_float (static_cast<float> (
+                            meters_value (report.circuit_length) / 1000.0),
+                          1) +
+            " KM" + "  SHAPED " +
             format_count (
               static_cast<int> (terrain::count_value (report.shaped_cells))));
         m_ui.label (

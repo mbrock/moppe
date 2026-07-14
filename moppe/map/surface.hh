@@ -39,6 +39,13 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } trail_influence;
 
+  // The Association's cleared arrival and gathering place. Kept separate
+  // from the trail so consumers can treat an inhabited site differently from
+  // the route that serves it.
+  inline constexpr struct home_base_influence
+      : quantity_spec<mp_units::dimensionless> {
+  } home_base_influence;
+
   using SurfaceElevation =
     quantity_point<surface_elevation[u::m],
                    default_point_origin (surface_elevation[u::m]),
@@ -46,6 +53,7 @@ namespace moppe::map {
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
   using TrailInfluence = quantity<trail_influence[one], float>;
+  using HomeBaseInfluence = quantity<home_base_influence[one], float>;
 
   struct SurfaceIndex {
     std::size_t column;
@@ -141,7 +149,8 @@ namespace moppe::map {
                                         SurfaceElevation,
                                         SurfaceNormal,
                                         TreeHabitat,
-                                        TrailInfluence>;
+                                        TrailInfluence,
+                                        HomeBaseInfluence>;
 
   class Surface {
   public:
@@ -168,6 +177,11 @@ namespace moppe::map {
       return spatial::sample<trail_influence> (samples (), position);
     }
 
+    HomeBaseInfluence
+    home_base_influence_at (const position_t& position) const {
+      return spatial::sample<home_base_influence> (samples (), position);
+    }
+
     // Hydrology is known after the geometric surface is refreshed. This is
     // the explicit second materialization barrier that turns moisture and
     // topography into a vegetation-support reading.
@@ -176,6 +190,7 @@ namespace moppe::map {
                               meters_t tree_line);
 
     void materialize_trail_influence (std::span<const float> influence);
+    void materialize_home_base_influence (std::span<const float> influence);
 
     const SurfaceBundle& samples () const;
 

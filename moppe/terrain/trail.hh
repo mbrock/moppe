@@ -9,9 +9,9 @@
 #include <vector>
 
 namespace moppe::terrain {
-  // A rider-scale network selected from the small catchments that converge
-  // into valley floors. The centerline is graded with bounded cut and fill,
-  // then blended back into the surrounding terrain across soft shoulders.
+  // The Motorcycle Association's brief for one deliberately made circuit.
+  // Site selection and routing express intent; cut and fill then reconcile
+  // that intent with the terrain rather than letting drainage draw the route.
   struct TrailFormation {
     float sea_level = 50.0f / 650.0f;
     square_meters_t minimum_catchment_area =
@@ -25,12 +25,16 @@ namespace moppe::terrain {
     meters_t maximum_fill = 0.75f * mp_units::si::metre;
     slope_t maximum_grade = 0.24f * terrain_slope[mp_units::one];
     IterationCount grading_iterations = iteration_count (16);
+    meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
+    meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
+    meters_t desired_circuit_radius = 900.0f * mp_units::si::metre;
   };
 
   struct TrailFormationReport {
     CellCount centerline_cells = cell_count (0);
     CellCount shaped_cells = cell_count (0);
     std::size_t connected_components = 0;
+    meters_f64_t circuit_length = 0.0 * mp_units::si::metre;
     cubic_meters_f64_t cut_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t fill_volume =
@@ -41,21 +45,29 @@ namespace moppe::terrain {
 
   struct TrailComponent {
     TrailComponentId id;
-    CellIndex terminal_cell;
+    CellIndex anchor_cell;
     CellCount cells = cell_count (0);
   };
 
-  // A directed forest over terrain cells. Every centerline cell has at most
-  // one downstream receiver; cells sharing a terminal belong to the same
-  // undirected connected component. The influence raster is the shoulder-
-  // blended material footprint over the same unique terrain domain.
+  struct TrailPlan {
+    CellIndex home_base = no_cell;
+    CellIndex scenic_focus = no_cell;
+    std::vector<CellIndex> control_sites;
+    std::vector<CellIndex> circuit;
+  };
+
+  // The plan's one directed cycle, plus its two physical surface readings.
+  // The graph is connected by construction: following receiver once per
+  // circuit cell returns to home base.
   struct TrailNetwork {
     TerrainGrid source_grid;
+    TrailPlan plan;
     std::vector<CellIndex> receiver;
     std::vector<TrailComponentId> component_by_cell;
     std::vector<CellIndex> cells;
     std::vector<TrailComponent> components;
     ScalarRaster influence;
+    ScalarRaster home_base_influence;
 
     bool contains (CellIndex cell) const noexcept {
       return cell.value < component_by_cell.size () &&
@@ -79,6 +91,8 @@ namespace moppe::terrain {
   // Expand unique torus samples to the duplicated render seam carried by the
   // source grid. Bounded grids are returned unchanged.
   std::vector<float> expand_trail_influence (const TrailNetwork& network);
+  std::vector<float> expand_home_base_influence (const TrailNetwork& network);
+  meters_f64_t trail_circuit_length (const TrailNetwork& network);
 
   TrailFormationResult form_trails (const TerrainView& terrain,
                                     const TrailFormation& parameters = {});

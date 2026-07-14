@@ -57,7 +57,10 @@ the next bundle.
 
 `map::Surface` is the first deliberately small gameplay proof. Its
 `SurfaceBundle` contains an affine elevation point, a vector-valued surface
-normal, tree-habitat suitability, and trail influence at every heightmap node.
+normal, tree-habitat suitability, trail influence, and home-base influence at
+every heightmap node.
+The Association's home-base clearing is a distinct quantity from trail
+influence: it is a place with a role, not merely a wide part of the path.
 `SurfaceDomain` supplies a four-node bilinear stencil for a world position.
 Generic `spatial::sample<QS>` then chooses its algebra from the mp-units value
 category: quantities form weighted sums, while quantity points use one anchor
@@ -159,19 +162,24 @@ buffer.  This lets erosion participate in the terrain language without
 pretending that it is a pointwise `ScalarField`, and without requiring a new
 2049-square allocation after every operation.
 
-`TrailFormation` is the post-geology gameplay pass in the world program. It
-uses contributing area as an analytical valley-floor detector: small and
-medium catchments become a directed forest of trail cells, while large
-catchments are left to the river system. Each cell retains its downstream
-receiver and connected-component identity. Standing water and the low coast
-are excluded. The selected D8 edges are projected toward a motorcycle-friendly
-maximum grade under bounded cut and fill, then stamped as a narrow core with
-soft shoulders. That continuous influence is materialized as the
-`trail_influence` quantity in `SurfaceBundle` and uploaded to the terrain
-shader, so the same network has geometric, gameplay, and visible material
-forms. The analytical construction keeps the drainage logic legible without
-an expensive population of simulated riders, and remains deterministic for
-map caching and Terrain Lab comparisons.
+`TrailFormation` is the first intentional post-geology pass in the world
+program. Its `TrailPlan` chooses a dry, locally buildable home base near water,
+with nearby shelter and distant relief, then chooses a scenic lake or mountain
+focus. Four control sites express the decision to go around that feature. Two
+terrain-costed rides join home base to the far side by different flanks,
+forming one directed cycle by construction. Routing prices steep grades,
+standing water, departure from useful valley floors, and reuse of the first
+half of the circuit; it does not begin with a dense natural network that must
+later be pruned.
+
+The plan retains home base, scenic focus, control sites, and ordered circuit as
+decisions. `TrailNetwork` is their graph materialization: one connected cycle
+whose receiver relation returns to home base. Its edges are projected toward a
+motorcycle-friendly maximum grade under bounded cut and fill, then stamped as
+a narrow core with soft shoulders. Separate continuous `trail_influence` and
+`home_base_influence` readings are materialized in `SurfaceBundle` and uploaded
+to the terrain shader. Thus intention stays discrete, while the resulting
+earthworks and compacted base become physical, sampleable parts of the world.
 
 ## Materialized readings and drainage
 

@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 #include <random>
+#include <utility>
 #include <vector>
 
 namespace moppe::map {
@@ -50,6 +51,9 @@ namespace moppe::map {
 
     const std::optional<terrain::TrailNetwork>& trail_network () const {
       return m_trail_network;
+    }
+    std::optional<terrain::TrailNetwork> release_trail_network () {
+      return std::move (m_trail_network);
     }
 
   private:

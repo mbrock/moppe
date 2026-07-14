@@ -224,8 +224,11 @@ namespace moppe {
       // Shoulder-blended trail membership in [0,1], following the terrain
       // grid. This is a material reading: the heightmap remains the geometric
       // authority, while the shader can make formed paths unambiguous.
-      virtual void set_terrain_paths (std::span<const float> influence) {
+      virtual void
+      set_terrain_paths (std::span<const float> influence,
+                         std::span<const float> home_base_influence = {}) {
         (void)influence;
+        (void)home_base_influence;
       }
 
       virtual void set_terrain_moisture (std::span<const float> moisture) {

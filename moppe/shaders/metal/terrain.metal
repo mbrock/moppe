@@ -579,10 +579,12 @@ fragment float4 terrain_fragment (
     (1.0 - smoothstep (0.3, 2.8, shore_m)) * smoothstep (0.42, 0.62, n.y);
   const float damp =
     max (max (submerged, 0.92 * swash_zone), smoothstep (0.22, 0.82, moisture));
-  const float trail =
+  const float2 intentional_ground =
     u.params6.z > 0.5
-      ? saturate (terrain_field_sample (in.field_uv, terrain_paths).r)
-      : 0.0;
+      ? saturate (terrain_field_sample (in.field_uv, terrain_paths).rg)
+      : float2 (0.0);
+  const float trail = intentional_ground.r;
+  const float home_base = intentional_ground.g;
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -708,6 +710,14 @@ fragment float4 terrain_fragment (
   const float3 trail_c =
     mix (scree_c, sand_value * float3 (0.78, 0.58, 0.36), 0.88);
   texel = mix (texel, trail_c, 0.82 * trail_material);
+  // The home-base clearing is the circuit's visible origin: compacted warm
+  // aggregate with a pale center, legible both from the bike and on the map.
+  const float base_material =
+    smoothstep (0.03, 0.72, home_base) * (1.0 - submerged) * (1.0 - snow_coef);
+  const float3 base_c = sand_value * mix (float3 (0.70, 0.48, 0.22),
+                                          float3 (1.05, 0.88, 0.52),
+                                          smoothstep (0.70, 1.0, home_base));
+  texel = mix (texel, base_c, 0.92 * base_material);
   // Wet soil loses diffuse energy and saturation. Underwater ground is
   // darkest; moisture alone is a quieter bank/lowland treatment.
   const float wetness = max (0.62 * damp, submerged);
