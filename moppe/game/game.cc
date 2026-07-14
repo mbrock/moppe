@@ -1253,12 +1253,14 @@ namespace moppe {
 
         if (m_standing_water && m_lake_census && m_drainage && m_rivers) {
           MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
-          m_cinematic_plan = plan_cinematic_flight (m_map,
-                                                    *m_standing_water,
-                                                    *m_lake_census,
-                                                    *m_drainage,
-                                                    *m_rivers,
-                                                    m_spawn_position);
+          m_cinematic_plan = plan_cinematic_flight (
+            m_map,
+            *m_standing_water,
+            *m_lake_census,
+            *m_drainage,
+            *m_rivers,
+            m_spawn_position,
+            m_trail_network ? &*m_trail_network : nullptr);
         }
         if (!m_cinematic_plan.empty ()) {
           std::cerr << "cinematic flight: "

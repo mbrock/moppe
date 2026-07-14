@@ -6,6 +6,7 @@
 #include <moppe/map/generate.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/trail.hh>
 
 #include <algorithm>
 #include <cstdint>
@@ -14,6 +15,7 @@
 
 namespace moppe::game {
   enum class CinematicLandmarkKind {
+    Trail,
     Valley,
     Waterfall,
     Lake,
@@ -58,7 +60,8 @@ namespace moppe::game {
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
                          const terrain::RiverNetwork& rivers,
-                         const Vec3& arrival);
+                         const Vec3& arrival,
+                         const terrain::TrailNetwork* trail = nullptr);
 
   struct CinematicFlightControls {
     // Body-relative pilot trim. The automatic opening leaves these at zero;
