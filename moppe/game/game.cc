@@ -214,6 +214,9 @@ namespace moppe {
       for (terrain::TerrainTransform& transform : program.transforms)
         if (auto* orogeny = std::get_if<terrain::OrogenyEvolution> (&transform))
           orogeny->evolution.sea_level = sea_level;
+        else if (auto* trails =
+                   std::get_if<terrain::TrailFormation> (&transform))
+          trails->sea_level = sea_level;
       return program;
     }
 

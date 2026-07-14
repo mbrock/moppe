@@ -4,6 +4,7 @@
 #include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
+#include <moppe/terrain/trail.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -51,6 +52,7 @@ namespace moppe::terrain {
                                         HydraulicErosion,
                                         ThermalErosion,
                                         ChannelCarving,
+                                        TrailFormation,
                                         HillslopeDiffusion>;
 
   using TerrainTransformReport = std::variant<std::monostate,
@@ -58,6 +60,7 @@ namespace moppe::terrain {
                                               StreamPowerEvolutionReport,
                                               HydraulicErosionReport,
                                               ChannelCarvingReport,
+                                              TrailFormationReport,
                                               HillslopeDiffusionReport>;
 
   // These two axes describe what an evaluator must observe, without

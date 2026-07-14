@@ -36,7 +36,9 @@ namespace moppe::terrain {
 
   TerrainProgram make_world_program (std::uint32_t root_seed,
                                      TerrainGenerationProfile profile) {
-    return make_orogeny_program (root_seed, profile);
+    TerrainProgram program = make_orogeny_program (root_seed, profile);
+    program.transforms.emplace_back (TrailFormation {});
+    return program;
   }
 
   int profile_droplet_count (TerrainGenerationProfile profile) noexcept {
@@ -204,6 +206,34 @@ namespace moppe::terrain {
                 operation.bank_blend < 0.0f * mp_units::si::metre)
               throw std::invalid_argument (
                 "channel carving parameters are invalid");
+          } else if constexpr (std::is_same_v<T, TrailFormation>) {
+            if (!std::isfinite (operation.sea_level) ||
+                !std::isfinite (
+                  square_meters_value (operation.minimum_catchment_area)) ||
+                !std::isfinite (
+                  square_meters_value (operation.maximum_catchment_area)) ||
+                operation.minimum_catchment_area <=
+                  0.0f * mp_units::si::metre * mp_units::si::metre ||
+                operation.maximum_catchment_area <
+                  operation.minimum_catchment_area ||
+                !std::isfinite (
+                  meters_value (operation.minimum_height_above_sea)) ||
+                operation.minimum_height_above_sea <
+                  0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (operation.width)) ||
+                operation.width <= 0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (operation.shoulder_blend)) ||
+                operation.shoulder_blend < 0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (operation.maximum_cut)) ||
+                operation.maximum_cut < 0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (operation.maximum_fill)) ||
+                operation.maximum_fill < 0.0f * mp_units::si::metre ||
+                !std::isfinite (
+                  operation.maximum_grade.numerical_value_in (mp_units::one)) ||
+                operation.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
+                operation.grading_iterations < 0)
+              throw std::invalid_argument (
+                "trail formation parameters are invalid");
           }
         },
         transform);
@@ -226,6 +256,8 @@ namespace moppe::terrain {
           return "orogeny";
         else if constexpr (std::is_same_v<T, ChannelCarving>)
           return "carve";
+        else if constexpr (std::is_same_v<T, TrailFormation>)
+          return "trails";
         else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
           return "diffuse";
         else
@@ -249,6 +281,8 @@ namespace moppe::terrain {
           return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
         else if constexpr (std::is_same_v<T, ChannelCarving>)
           return { SpatialScope::Global, EvaluationOrder::Direct };
+        else if constexpr (std::is_same_v<T, TrailFormation>)
+          return { SpatialScope::Global, EvaluationOrder::Iterative };
         else
           return { SpatialScope::Global, EvaluationOrder::Iterative };
       },

@@ -143,6 +143,7 @@ of these runtime variants:
 - `HydraulicErosion`
 - `ThermalErosion`
 - `ChannelCarving`
+- `TrailFormation`
 - `HillslopeDiffusion`
 
 `map::TerrainEvaluator` materializes the source and applies those transforms
@@ -155,6 +156,16 @@ Transforms are immutable values even when evaluating them reuses a mutable
 buffer.  This lets erosion participate in the terrain language without
 pretending that it is a pointwise `ScalarField`, and without requiring a new
 2049-square allocation after every operation.
+
+`TrailFormation` is the post-geology gameplay pass in the world program. It
+uses contributing area as an analytical valley-floor detector: small and
+medium catchments become a connected trail centerline, while large catchments
+are left to the river system. Standing water and the low coast are excluded.
+The selected D8 edges are projected toward a motorcycle-friendly maximum
+grade under bounded cut and fill, then stamped as a narrow core with soft
+shoulders. This keeps the terrain's drainage logic visible in the route while
+avoiding an expensive population of simulated riders and making the result
+deterministic enough for map caching and Terrain Lab comparisons.
 
 ## Materialized readings and drainage
 

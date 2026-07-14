@@ -218,7 +218,7 @@ namespace moppe {
 
       UiRect add_stage_rect (int index) {
         const float gap = 3.0f;
-        const float width = (left_width - 7 * gap) / 8.0f;
+        const float width = (left_width - 8 * gap) / 9.0f;
         return { left_x + index * (width + gap), 497, width, 29 };
       }
 
@@ -264,6 +264,8 @@ namespace moppe {
           return "WATER EROSION";
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return "CHANNEL CARVE";
+        if (std::holds_alternative<terrain::TrailFormation> (stage))
+          return "VALLEY TRAILS";
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return "SOIL CREEP";
         return "TALUS RELAX";
@@ -306,6 +308,13 @@ namespace moppe {
                  " m beds @ " +
                  format_count (static_cast<int> (carving->minimum_area_cells)) +
                  " cells";
+        if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage))
+          return format_float (meters_value (trails->width), 1) + " m path / " +
+                 format_float (
+                   trails->maximum_grade.numerical_value_in (mp_units::one) *
+                     100.0f,
+                   0) +
+                 "% grade";
         if (const auto* diffusion =
               std::get_if<terrain::HillslopeDiffusion> (&stage))
           return format_float (
@@ -399,6 +408,8 @@ namespace moppe {
           return 2;
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return 5;
+        if (std::holds_alternative<terrain::TrailFormation> (stage))
+          return 7;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return 2;
         return 0;
@@ -518,6 +529,40 @@ namespace moppe {
                      ParameterDomain::Continuous };
           return { "BANK BLEND (M)",
                    format_float (meters_value (carving->bank_blend), 1),
+                   ParameterDomain::Continuous };
+        }
+        if (const auto* trails =
+              std::get_if<terrain::TrailFormation> (&stage)) {
+          if (row == 0)
+            return { "MIN CATCHMENT (M2)",
+                     format_count (static_cast<int> (
+                       square_meters_value (trails->minimum_catchment_area))),
+                     ParameterDomain::Continuous };
+          if (row == 1)
+            return { "MAX CATCHMENT (M2)",
+                     format_count (static_cast<int> (
+                       square_meters_value (trails->maximum_catchment_area))),
+                     ParameterDomain::Continuous };
+          if (row == 2)
+            return { "PATH WIDTH (M)",
+                     format_float (meters_value (trails->width), 1),
+                     ParameterDomain::Continuous };
+          if (row == 3)
+            return { "SHOULDER (M)",
+                     format_float (meters_value (trails->shoulder_blend), 1),
+                     ParameterDomain::Continuous };
+          if (row == 4)
+            return { "MAX CUT (M)",
+                     format_float (meters_value (trails->maximum_cut), 2),
+                     ParameterDomain::Continuous };
+          if (row == 5)
+            return { "MAX FILL (M)",
+                     format_float (meters_value (trails->maximum_fill), 2),
+                     ParameterDomain::Continuous };
+          return { "MAX GRADE",
+                   format_float (
+                     trails->maximum_grade.numerical_value_in (mp_units::one),
+                     2),
                    ParameterDomain::Continuous };
         }
         if (const auto* diffusion =
@@ -1884,6 +1929,27 @@ namespace moppe {
           return unit (meters_value (carving->maximum_depth), 0.0f, 12.0f);
         return unit (meters_value (carving->bank_blend), 0.0f, 30.0f);
       }
+      if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
+        if (row == 0)
+          return unit (square_meters_value (trails->minimum_catchment_area),
+                       100.0f,
+                       20000.0f);
+        if (row == 1)
+          return unit (square_meters_value (trails->maximum_catchment_area),
+                       20000.0f,
+                       250000.0f);
+        if (row == 2)
+          return unit (meters_value (trails->width), 1.0f, 12.0f);
+        if (row == 3)
+          return unit (meters_value (trails->shoulder_blend), 0.0f, 20.0f);
+        if (row == 4)
+          return unit (meters_value (trails->maximum_cut), 0.0f, 5.0f);
+        if (row == 5)
+          return unit (meters_value (trails->maximum_fill), 0.0f, 5.0f);
+        return unit (trails->maximum_grade.numerical_value_in (mp_units::one),
+                     0.05f,
+                     0.6f);
+      }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
         return row == 0 ? unit (terrain::count_value (thermal->iterations),
                                 0.0f,
@@ -2093,6 +2159,48 @@ namespace moppe {
         const auto old = carving->bank_blend;
         carving->bank_blend = mix (0.0f, 30.0f) * mp_units::si::metre;
         return carving->bank_blend != old;
+      }
+      if (auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
+        if (row == 0) {
+          const auto old = trails->minimum_catchment_area;
+          trails->minimum_catchment_area =
+            std::min (mix (100.0f, 20000.0f),
+                      square_meters_value (trails->maximum_catchment_area)) *
+            mp_units::si::metre * mp_units::si::metre;
+          return trails->minimum_catchment_area != old;
+        }
+        if (row == 1) {
+          const auto old = trails->maximum_catchment_area;
+          trails->maximum_catchment_area =
+            std::max (mix (20000.0f, 250000.0f),
+                      square_meters_value (trails->minimum_catchment_area)) *
+            mp_units::si::metre * mp_units::si::metre;
+          return trails->maximum_catchment_area != old;
+        }
+        if (row == 2) {
+          const auto old = trails->width;
+          trails->width = mix (1.0f, 12.0f) * mp_units::si::metre;
+          return trails->width != old;
+        }
+        if (row == 3) {
+          const auto old = trails->shoulder_blend;
+          trails->shoulder_blend = mix (0.0f, 20.0f) * mp_units::si::metre;
+          return trails->shoulder_blend != old;
+        }
+        if (row == 4) {
+          const auto old = trails->maximum_cut;
+          trails->maximum_cut = mix (0.0f, 5.0f) * mp_units::si::metre;
+          return trails->maximum_cut != old;
+        }
+        if (row == 5) {
+          const auto old = trails->maximum_fill;
+          trails->maximum_fill = mix (0.0f, 5.0f) * mp_units::si::metre;
+          return trails->maximum_fill != old;
+        }
+        const auto old = trails->maximum_grade;
+        trails->maximum_grade =
+          mix (0.05f, 0.6f) * terrain::terrain_slope[mp_units::one];
+        return trails->maximum_grade != old;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {
@@ -2482,7 +2590,7 @@ namespace moppe {
           return;
         }
       }
-      for (int i = 0; i < 8; ++i) {
+      for (int i = 0; i < 9; ++i) {
         if (!add_stage_rect (i).contains (x, y))
           continue;
         if (i == 0)
@@ -2514,6 +2622,8 @@ namespace moppe {
             terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
         else if (i == 6)
           append_stage (terrain::HillslopeDiffusion {});
+        else if (i == 7)
+          append_stage (terrain::TrailFormation {});
         else
           append_stage (terrain::ChannelCarving {});
         return;
@@ -3253,12 +3363,11 @@ namespace moppe {
                            m_selected_stage == stage_index);
       }
 
-      static const char* add_labels[] = {
-        "+NORM", "+POWER", "+AGE",   "+OROG",
-        "+DROP", "+TALUS", "+CREEP", "+CARVE"
-      };
+      static const char* add_labels[] = { "+NORM",  "+POWER", "+AGE",
+                                          "+OROG",  "+DROP",  "+TALUS",
+                                          "+CREEP", "+TRAIL", "+CARVE" };
       static const char* edit_labels[] = { "UP", "DOWN", "COPY", "DEL" };
-      for (int i = 0; i < 8; ++i) {
+      for (int i = 0; i < 9; ++i) {
         const UiRect add = add_stage_rect (i);
         m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
       }
@@ -3427,6 +3536,7 @@ namespace moppe {
       const terrain::HydraulicErosion* erosion_stage = nullptr;
       const terrain::AnalyticalErosionReport* analytical_report = nullptr;
       const terrain::StreamPowerEvolutionReport* orogeny_report = nullptr;
+      const terrain::TrailFormationReport* trail_report = nullptr;
       if (m_selected_stage >= 0 &&
           m_selected_stage < static_cast<int> (m_reports.size ())) {
         erosion_report = std::get_if<terrain::HydraulicErosionReport> (
@@ -3434,6 +3544,8 @@ namespace moppe {
         analytical_report = std::get_if<terrain::AnalyticalErosionReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         orogeny_report = std::get_if<terrain::StreamPowerEvolutionReport> (
+          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
+        trail_report = std::get_if<terrain::TrailFormationReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         erosion_stage = std::get_if<terrain::HydraulicErosion> (
           &m_program.transforms[static_cast<std::size_t> (m_selected_stage)]);
@@ -3521,6 +3633,41 @@ namespace moppe {
                       " / " +
                       format_float (static_cast<float> (meters_value (
                                       report.final_step_maximum_change)),
+                                    2) +
+                      " M");
+      } else if (trail_report) {
+        const auto& report = *trail_report;
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 266,
+                    "RIDER-SCALE VALLEY NETWORK",
+                    true);
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 288,
+                    "CENTERLINE " +
+                      format_count (static_cast<int> (
+                        terrain::count_value (report.centerline_cells))) +
+                      "  SHAPED " +
+                      format_count (static_cast<int> (
+                        terrain::count_value (report.shaped_cells))));
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 310,
+          "CUT " + format_ledger (cubic_meters_value (report.cut_volume)) +
+            " M3  FILL " +
+            format_ledger (cubic_meters_value (report.fill_volume)) + " M3");
+        m_ui.label (dl,
+                    readings_x + 10,
+                    readings_y + 332,
+                    "MEAN / MAX CHANGE " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.mean_absolute_change)),
+                                    2) +
+                      " / " +
+                      format_float (static_cast<float> (meters_value (
+                                      report.maximum_absolute_change)),
                                     2) +
                       " M");
       } else if (analytical_report) {

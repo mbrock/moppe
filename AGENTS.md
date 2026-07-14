@@ -8,7 +8,8 @@
 - Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
   257 123 combined power=1.15 hydraulic=10000,256 thermal=2,0.003`
   (further stages: `analytical=age[,uplift,k,m,sea,iters,relax]` and
-  `carve[=area_cells,depth_scale,min_depth,max_depth,sea,blend]`; note the
+  `carve[=area_cells,depth_scale,min_depth,max_depth,sea,blend]`, plus
+  `trails[=min_m2,max_m2,width,shoulder,cut,fill,grade,sea]`; note the
   demo grid is unit-scale, so metric carve defaults suit the game world)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)

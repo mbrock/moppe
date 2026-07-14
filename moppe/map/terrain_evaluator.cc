@@ -4,6 +4,7 @@
 #include <moppe/terrain/analytical_erosion.hh>
 #include <moppe/terrain/carve.hh>
 #include <moppe/terrain/cpu_evaluator.hh>
+#include <moppe/terrain/trail.hh>
 
 #include <algorithm>
 #include <stdexcept>
@@ -177,6 +178,24 @@ namespace moppe::map {
       MOPPE_PROFILE_ZONE ("terrain.channel_carving");
       terrain::ChannelCarvingResult result =
         terrain::carve_channels (m_target.terrain_view (), *carving);
+      const std::size_t width = m_target.unique_width ();
+      const std::size_t height = m_target.unique_height ();
+      for (std::size_t y = 0; y < height; ++y)
+        for (std::size_t x = 0; x < width; ++x) {
+          const float updated = result.heights[y * width + x];
+          m_target.record_material_change (
+            static_cast<int> (x),
+            static_cast<int> (y),
+            updated -
+              m_target.get (static_cast<int> (x), static_cast<int> (y)));
+          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+        }
+      report = result.report;
+    } else if (const auto* trails =
+                 std::get_if<terrain::TrailFormation> (&transform)) {
+      MOPPE_PROFILE_ZONE ("terrain.trail_formation");
+      terrain::TrailFormationResult result =
+        terrain::form_trails (m_target.terrain_view (), *trails);
       const std::size_t width = m_target.unique_width ();
       const std::size_t height = m_target.unique_height ();
       for (std::size_t y = 0; y < height; ++y)
