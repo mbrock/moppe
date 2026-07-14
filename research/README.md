@@ -22,6 +22,8 @@ For the strongest short route through the shelf:
 5. `alexander/alexander-2009-harmony-seeking-computations.pdf`
 6. `alexander/jiang-2015-wholeness-hierarchical-graph.pdf`
 7. `space/jakob-2015-instant-field-aligned-meshes.pdf`
+8. `vegetation/wohllaib-2021-ghost-grass.pdf`
+9. `vegetation/kuth-2025-gpu-tree-generation.pdf`
 
 ## Routes and self-forming trails
 
@@ -132,3 +134,10 @@ current implementation, and the experiments they have already informed.
 
 See `water/README.md` for production flow maps, procedural riverscapes,
 texture advection, shallow-water detail, wavelets, foam, and optical layering.
+
+## Vegetation rendering
+
+See `vegetation/README.md` for procedural grass, tree and forest LOD,
+leaf lighting and translucency, stable alpha coverage, coherent wind, and
+ecological placement. The shelf is matched to Moppe's current mesh-shader
+grass, Atelier tree organisms, and typed surface habitat fields.
