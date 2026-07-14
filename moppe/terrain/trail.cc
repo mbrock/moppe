@@ -16,6 +16,8 @@
 
 namespace moppe::terrain {
   namespace {
+    constexpr float maximum_traversable_grade = 0.85f;
+
     void validate (const TrailFormation& p) {
       if (!std::isfinite (p.sea_level) ||
           !std::isfinite (square_meters_value (p.minimum_catchment_area)) ||
@@ -359,19 +361,58 @@ namespace moppe::terrain {
       return best;
     }
 
+    std::vector<std::uint8_t>
+    routable_land (const PlanningGrid& grid, std::size_t start) {
+      const std::size_t count =
+        static_cast<std::size_t> (grid.width) * grid.height;
+      std::vector<std::uint8_t> reachable (count, 0);
+      if (grid.wet (start))
+        return reachable;
+      std::queue<std::size_t> frontier;
+      reachable[start] = 1;
+      frontier.push (start);
+      while (!frontier.empty ()) {
+        const std::size_t current = frontier.front ();
+        frontier.pop ();
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0)
+              continue;
+            const std::size_t next =
+              grid.node (grid.x (current) + dx, grid.y (current) + dy);
+            if (reachable[next] || grid.wet (next))
+              continue;
+            const float run = grid.distance (current, next);
+            if (run <= 0.0f)
+              continue;
+            const float grade = std::fabs (grid.elevation (next) -
+                                           grid.elevation (current)) /
+                                run;
+            if (grade > maximum_traversable_grade)
+              continue;
+            reachable[next] = 1;
+            frontier.push (next);
+          }
+      }
+      return reachable;
+    }
+
     std::size_t nearest_buildable_site (const PlanningGrid& grid,
                                         float ideal_x,
                                         float ideal_y,
-                                        int search_radius) {
+                                        int search_radius,
+                                        const std::vector<std::uint8_t>&
+                                          reachable) {
       float best_score = std::numeric_limits<float>::infinity ();
-      std::size_t best = grid.node (static_cast<int> (std::round (ideal_x)),
-                                    static_cast<int> (std::round (ideal_y)));
+      const std::size_t count =
+        static_cast<std::size_t> (grid.width) * grid.height;
+      std::size_t best = count;
       for (int dy = -search_radius; dy <= search_radius; ++dy)
         for (int dx = -search_radius; dx <= search_radius; ++dx) {
           const std::size_t node =
             grid.node (static_cast<int> (std::round (ideal_x)) + dx,
                        static_cast<int> (std::round (ideal_y)) + dy);
-          if (grid.wet (node))
+          if (!reachable[node])
             continue;
           const float score =
             std::hypot (static_cast<float> (dx), static_cast<float> (dy)) +
@@ -381,6 +422,27 @@ namespace moppe::terrain {
             best = node;
           }
         }
+      if (best != count)
+        return best;
+
+      const std::size_t ideal =
+        grid.node (static_cast<int> (std::round (ideal_x)),
+                   static_cast<int> (std::round (ideal_y)));
+      for (std::size_t node = 0; node < count; ++node) {
+        if (!reachable[node])
+          continue;
+        const float score =
+          grid.distance (ideal, node) /
+            std::min (grid.spacing_x, grid.spacing_y) +
+          12.0f * grid.grade (node);
+        if (score < best_score) {
+          best_score = score;
+          best = node;
+        }
+      }
+      if (best == count)
+        throw std::runtime_error (
+          "no buildable trail control site on home-base land");
       return best;
     }
 
@@ -435,7 +497,7 @@ namespace moppe::terrain {
             const float grade = std::fabs (grid.elevation (next) -
                                            grid.elevation (current.node)) /
                                 run;
-            if (grade > 0.85f)
+            if (grade > maximum_traversable_grade)
               continue;
             const float excess = std::max (0.0f, grade - maximum_grade);
             const float valley = std::fabs (std::log (
@@ -552,6 +614,8 @@ namespace moppe::terrain {
 
     const PlanningGrid planner = planning_grid (terrain, drainage, flood);
     const std::size_t home_base = choose_home_base (planner, parameters);
+    const std::vector<std::uint8_t> reachable =
+      routable_land (planner, home_base);
     const std::size_t focus =
       choose_scenic_focus (planner, home_base, parameters);
     float forward_x =
@@ -570,16 +634,19 @@ namespace moppe::terrain {
       nearest_buildable_site (planner,
                               focus_x - forward_y * flank,
                               focus_y + forward_x * flank,
-                              anchor_search);
+                              anchor_search,
+                              reachable);
     const std::size_t far = nearest_buildable_site (planner,
                                                     focus_x + forward_x * flank,
                                                     focus_y + forward_y * flank,
-                                                    anchor_search);
+                                                    anchor_search,
+                                                    reachable);
     const std::size_t right =
       nearest_buildable_site (planner,
                               focus_x + forward_y * flank,
                               focus_y - forward_x * flank,
-                              anchor_search);
+                              anchor_search,
+                              reachable);
 
     std::vector<std::size_t> outbound;
     append_path (outbound,

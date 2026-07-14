@@ -43,6 +43,28 @@ namespace {
              .maximum_grade = 0.2f * terrain_slope[mp_units::one],
              .grading_iterations = iteration_count (20) };
   }
+
+  std::vector<float> moated_peak () {
+    std::vector<float> heights (17 * 17, 0.48f);
+    for (int y = 5; y <= 11; ++y)
+      for (int x = 5; x <= 11; ++x) {
+        const bool moat = x == 5 || x == 11 || y == 5 || y == 11;
+        heights[static_cast<std::size_t> (y) * 17 + x] =
+          moat ? 0.10f : 0.78f - 0.02f * std::max (std::abs (x - 8),
+                                                   std::abs (y - 8));
+      }
+    for (int y = 0; y < 5; ++y)
+      heights[static_cast<std::size_t> (y) * 17 + 5] = 0.10f;
+    return heights;
+  }
+
+  TerrainGrid moated_peak_grid () {
+    return { .width = 17,
+             .height = 17,
+             .spacing_x = 24.0f * mp_units::si::metre,
+             .spacing_y = 24.0f * mp_units::si::metre,
+             .height_scale = 20.0f * mp_units::si::metre };
+  }
 }
 
 MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
@@ -131,5 +153,22 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
                            trail_valley_grid ().height_scale_m ();
     MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
+  }
+}
+
+MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
+  TrailFormation parameters = test_parameters ();
+  parameters.sea_level = 0.2f;
+  parameters.home_base_water_distance = 60.0f * mp_units::si::metre;
+  parameters.desired_circuit_radius = 110.0f * mp_units::si::metre;
+  const TrailFormationResult result = form_trails (
+    TerrainView (moated_peak_grid (), moated_peak ()), parameters);
+
+  MOPPE_CHECK (result.network.components.size () == 1);
+  MOPPE_CHECK (result.network.cells.size () >= 4);
+  for (const CellIndex site : result.network.plan.control_sites) {
+    const int x = static_cast<int> (site.value % 17);
+    const int y = static_cast<int> (site.value / 17);
+    MOPPE_CHECK (!(x >= 6 && x <= 10 && y >= 6 && y <= 10));
   }
 }
