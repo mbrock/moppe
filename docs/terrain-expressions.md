@@ -180,6 +180,8 @@ a narrow core with soft shoulders. Separate continuous `trail_influence` and
 `home_base_influence` readings are materialized in `SurfaceBundle` and uploaded
 to the terrain shader. Thus intention stays discrete, while the resulting
 earthworks and compacted base become physical, sampleable parts of the world.
+See [Trail system](trails.md) for the complete routing, grading, material, and
+runtime data flow.
 
 ## Materialized readings and drainage
 
