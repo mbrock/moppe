@@ -21,9 +21,13 @@ namespace moppe::terrain {
     meters_t minimum_height_above_sea = 1.5f * mp_units::si::metre;
     meters_t width = 3.0f * mp_units::si::metre;
     meters_t shoulder_blend = 4.0f * mp_units::si::metre;
-    meters_t maximum_cut = 1.25f * mp_units::si::metre;
-    meters_t maximum_fill = 0.75f * mp_units::si::metre;
-    slope_t maximum_grade = 0.24f * terrain_slope[mp_units::one];
+    meters_t maximum_cut = 2.5f * mp_units::si::metre;
+    meters_t maximum_fill = 1.5f * mp_units::si::metre;
+    // Designed grade is the ordinary leisure-path target. Maximum grade is a
+    // local exception after the available cut and fill have been accounted
+    // for, not the grade that the route search should routinely accept.
+    slope_t maximum_grade = 0.12f * terrain_slope[mp_units::one];
+    slope_t designed_grade = 0.06f * terrain_slope[mp_units::one];
     IterationCount grading_iterations = iteration_count (16);
     meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
     meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
@@ -39,6 +43,10 @@ namespace moppe::terrain {
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t fill_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    double mean_centerline_grade = 0.0;
+    double maximum_centerline_grade = 0.0;
+    std::size_t grade_exceptions = 0;
+    meters_f64_t maximum_centerline_step = 0.0 * mp_units::si::metre;
     meters_f64_t mean_absolute_change = 0.0 * mp_units::si::metre;
     meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;
   };

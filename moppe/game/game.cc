@@ -677,6 +677,135 @@ namespace moppe {
         dl.state (render::DrawState ());
       }
 
+      void draw_trail_map (render::DrawList& dl,
+                           int width_pts,
+                           int height_pts) const {
+        if (!m_trail_network || width_pts < 480 || height_pts < 360)
+          return;
+        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
+        const std::size_t width = grid.unique_width ();
+        const float period_x = width * grid.spacing_x_m ();
+        const float period_z = grid.unique_height () * grid.spacing_y_m ();
+        const terrain::CellIndex home = m_trail_network->plan.home_base;
+        const float home_x = (home.value % width) * grid.spacing_x_m ();
+        const float home_z = (home.value / width) * grid.spacing_y_m ();
+        const auto wrap_delta = [] (float delta, float period) {
+          if (delta > period * 0.5f)
+            delta -= period;
+          if (delta < -period * 0.5f)
+            delta += period;
+          return delta;
+        };
+        const auto relative_cell = [&] (terrain::CellIndex cell) {
+          const float x = (cell.value % width) * grid.spacing_x_m ();
+          const float z = (cell.value / width) * grid.spacing_y_m ();
+          return Vec3 (wrap_delta (x - home_x, period_x),
+                       0,
+                       wrap_delta (z - home_z, period_z));
+        };
+
+        Vec3 low (0, 0, 0);
+        Vec3 high (0, 0, 0);
+        for (const terrain::CellIndex cell : m_trail_network->cells) {
+          const Vec3 point = relative_cell (cell);
+          low[0] = std::min (low[0], point[0]);
+          low[2] = std::min (low[2], point[2]);
+          high[0] = std::max (high[0], point[0]);
+          high[2] = std::max (high[2], point[2]);
+        }
+        const float world_span =
+          std::max ({ high[0] - low[0], high[2] - low[2], 100.0f }) * 1.16f;
+        const float center_x = 0.5f * (low[0] + high[0]);
+        const float center_z = 0.5f * (low[2] + high[2]);
+        const float map_size = std::min (154.0f, height_pts * 0.24f);
+        const float map_x = 12.0f;
+        const float map_y = height_pts - map_size - 12.0f;
+        const float inset = 9.0f;
+        const float scale = (map_size - 2.0f * inset) / world_span;
+        const auto map_point = [&] (const Vec3& point) {
+          return Vec3 (map_x + map_size * 0.5f + (point[0] - center_x) * scale,
+                       map_y + map_size * 0.5f - (point[2] - center_z) * scale,
+                       0);
+        };
+
+        render::DrawState state;
+        state.blend = true;
+        state.depth_test = false;
+        state.depth_write = false;
+        state.cull = false;
+        dl.state (state);
+        dl.lit (false);
+        dl.fogged (false);
+        dl.color (0.01f, 0.025f, 0.035f, 0.78f);
+        dl.begin (render::Prim::Quads);
+        dl.vertex (map_x, map_y);
+        dl.vertex (map_x + map_size, map_y);
+        dl.vertex (map_x + map_size, map_y + map_size);
+        dl.vertex (map_x, map_y + map_size);
+        dl.end ();
+        dl.color (0.22f, 0.42f, 0.46f, 0.9f);
+        dl.line (map_x, map_y, map_x + map_size, map_y, 1.0f);
+        dl.line (
+          map_x + map_size, map_y, map_x + map_size, map_y + map_size, 1.0f);
+        dl.line (
+          map_x + map_size, map_y + map_size, map_x, map_y + map_size, 1.0f);
+        dl.line (map_x, map_y + map_size, map_x, map_y, 1.0f);
+
+        dl.color (1.0f, 0.58f, 0.12f, 0.96f);
+        for (const terrain::CellIndex cell : m_trail_network->cells) {
+          const terrain::CellIndex next = m_trail_network->receiver[cell.value];
+          if (next == terrain::no_cell)
+            continue;
+          const Vec3 a = relative_cell (cell);
+          const Vec3 b = relative_cell (next);
+          if (std::fabs (a[0] - b[0]) > period_x * 0.25f ||
+              std::fabs (a[2] - b[2]) > period_z * 0.25f)
+            continue;
+          const Vec3 ma = map_point (a);
+          const Vec3 mb = map_point (b);
+          dl.line (ma[0], ma[1], mb[0], mb[1], 2.4f);
+        }
+
+        const Vec3 home_map = map_point (Vec3 (0, 0, 0));
+        dl.color (1.0f, 0.9f, 0.45f, 1.0f);
+        dl.begin (render::Prim::Quads);
+        dl.vertex (home_map[0] - 3.0f, home_map[1] - 3.0f);
+        dl.vertex (home_map[0] + 3.0f, home_map[1] - 3.0f);
+        dl.vertex (home_map[0] + 3.0f, home_map[1] + 3.0f);
+        dl.vertex (home_map[0] - 3.0f, home_map[1] + 3.0f);
+        dl.end ();
+
+        const Vec3 subject = subject_position ();
+        const Vec3 relative_subject (
+          wrap_delta (subject[0] - home_x, period_x),
+          0,
+          wrap_delta (subject[2] - home_z, period_z));
+        Vec3 player = map_point (relative_subject);
+        player[0] =
+          std::clamp (player[0], map_x + 5.0f, map_x + map_size - 5.0f);
+        player[1] =
+          std::clamp (player[1], map_y + 5.0f, map_y + map_size - 5.0f);
+        Vec3 heading = subject_heading ();
+        heading[1] = 0.0f;
+        if (length2 (heading) < 1e-5f)
+          heading = Vec3 (0, 0, 1);
+        heading = normalized (heading);
+        const Vec3 side (-heading[2], 0, heading[0]);
+        dl.color (0.35f, 0.95f, 1.0f, 1.0f);
+        dl.begin (render::Prim::Triangles);
+        dl.vertex (player[0] + heading[0] * 7.0f,
+                   player[1] - heading[2] * 7.0f);
+        dl.vertex (player[0] - heading[0] * 4.0f + side[0] * 4.0f,
+                   player[1] + heading[2] * 4.0f - side[2] * 4.0f);
+        dl.vertex (player[0] - heading[0] * 4.0f - side[0] * 4.0f,
+                   player[1] + heading[2] * 4.0f + side[2] * 4.0f);
+        dl.end ();
+        dl.state (render::DrawState ());
+        dl.lit (true);
+        dl.fogged (true);
+        dl.color (1, 1, 1, 1);
+      }
+
       void generate_world () {
         MOPPE_PROFILE_THREAD ("World generation");
         MOPPE_PROFILE_ZONE ("MoppeGame::generate_world");
@@ -1984,6 +2113,7 @@ namespace moppe {
           const Vec3 heading = subject_heading ();
           hs.heading_radians = std::atan2 (heading[0], heading[2]);
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
+          draw_trail_map (m_hud_dl, hud_width, hud_height);
           if (m_game_ui_open) {
             m_game_ui_slider_x = std::max (44.0f, hud_width - 364.0f);
             const UiRect panel { m_game_ui_slider_x - 20, 24, 360, 224 };

@@ -231,6 +231,11 @@ namespace moppe::terrain {
                 !std::isfinite (
                   operation.maximum_grade.numerical_value_in (mp_units::one)) ||
                 operation.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
+                !std::isfinite (operation.designed_grade.numerical_value_in (
+                  mp_units::one)) ||
+                operation.designed_grade <
+                  0.0f * terrain_slope[mp_units::one] ||
+                operation.designed_grade > operation.maximum_grade ||
                 operation.grading_iterations < 0 ||
                 !std::isfinite (
                   meters_value (operation.home_base_water_distance)) ||

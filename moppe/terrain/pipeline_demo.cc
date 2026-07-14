@@ -229,10 +229,10 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.empty () || parts.size () > 8)
+      if (parts.empty () || parts.size () > 9)
         throw std::invalid_argument (
           "trails expects min_m2[,max_m2,width,shoulder,cut,fill,"
-          "grade,sea]");
+          "max_grade,sea,designed_grade]");
       TrailFormation trails;
       trails.minimum_catchment_area =
         parse_float (parts[0]) * mp_units::si::metre * mp_units::si::metre;
@@ -252,6 +252,9 @@ namespace {
           parse_float (parts[6]) * terrain_slope[mp_units::one];
       if (parts.size () > 7)
         trails.sea_level = parse_float (parts[7]);
+      if (parts.size () > 8)
+        trails.designed_grade =
+          parse_float (parts[8]) * terrain_slope[mp_units::one];
       program.transforms.emplace_back (trails);
     } else if (name == "diffuse") {
       const std::size_t comma = value.find (',');
@@ -392,6 +395,11 @@ int main (int argc, char** argv) {
                   << " shaped=" << report->shaped_cells
                   << " cut_m3=" << cubic_meters_value (report->cut_volume)
                   << " fill_m3=" << cubic_meters_value (report->fill_volume)
+                  << " mean_grade=" << report->mean_centerline_grade
+                  << " max_grade=" << report->maximum_centerline_grade
+                  << " grade_exceptions=" << report->grade_exceptions
+                  << " max_step_m="
+                  << meters_value (report->maximum_centerline_step)
                   << " mean_m=" << meters_value (report->mean_absolute_change)
                   << " max_m=" << meters_value (report->maximum_absolute_change)
                   << "\n";

@@ -50,8 +50,8 @@ namespace {
       for (int x = 5; x <= 11; ++x) {
         const bool moat = x == 5 || x == 11 || y == 5 || y == 11;
         heights[static_cast<std::size_t> (y) * 17 + x] =
-          moat ? 0.10f : 0.78f - 0.02f * std::max (std::abs (x - 8),
-                                                   std::abs (y - 8));
+          moat ? 0.10f
+               : 0.78f - 0.02f * std::max (std::abs (x - 8), std::abs (y - 8));
       }
     for (int y = 0; y < 5; ++y)
       heights[static_cast<std::size_t> (y) * 17 + 5] = 0.10f;
@@ -78,6 +78,13 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.report.connected_components > 0);
   MOPPE_CHECK (result.report.cut_volume > 0.0);
   MOPPE_CHECK (result.report.fill_volume > 0.0);
+  MOPPE_CHECK (result.report.mean_centerline_grade >= 0.0);
+  MOPPE_CHECK (result.report.maximum_centerline_grade >=
+               result.report.mean_centerline_grade);
+  MOPPE_CHECK (meters_value (result.report.maximum_centerline_step) <=
+               std::hypot (trail_valley_grid ().spacing_x_m (),
+                           trail_valley_grid ().spacing_y_m ()) +
+                 1e-5f);
   bool valley_changed = false;
   for (int y = 1; y < 8; ++y)
     for (int x = 3; x <= 5; ++x)
@@ -161,8 +168,8 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   parameters.sea_level = 0.2f;
   parameters.home_base_water_distance = 60.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 110.0f * mp_units::si::metre;
-  const TrailFormationResult result = form_trails (
-    TerrainView (moated_peak_grid (), moated_peak ()), parameters);
+  const TrailFormationResult result =
+    form_trails (TerrainView (moated_peak_grid (), moated_peak ()), parameters);
 
   MOPPE_CHECK (result.network.components.size () == 1);
   MOPPE_CHECK (result.network.cells.size () >= 4);

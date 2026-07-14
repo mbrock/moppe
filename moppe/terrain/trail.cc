@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -37,7 +38,10 @@ namespace moppe::terrain {
           p.maximum_fill < 0.0f * mp_units::si::metre ||
           !std::isfinite (p.maximum_grade.numerical_value_in (mp_units::one)) ||
           p.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
-          p.grading_iterations < 0 ||
+          !std::isfinite (
+            p.designed_grade.numerical_value_in (mp_units::one)) ||
+          p.designed_grade < 0.0f * terrain_slope[mp_units::one] ||
+          p.designed_grade > p.maximum_grade || p.grading_iterations < 0 ||
           !std::isfinite (meters_value (p.home_base_water_distance)) ||
           p.home_base_water_distance <= 0.0f * mp_units::si::metre ||
           !std::isfinite (meters_value (p.home_base_pad_radius)) ||
@@ -80,6 +84,12 @@ namespace moppe::terrain {
     }
 
     struct PlanningGrid {
+      struct EdgeProfile {
+        float mean_grade;
+        float maximum_grade;
+        float maximum_achievable_grade;
+      };
+
       const TerrainView& terrain;
       const DrainageGraph& drainage;
       const FloodField& flood;
@@ -181,6 +191,69 @@ namespace moppe::terrain {
           }
         return maximum;
       }
+
+      EdgeProfile edge_profile (std::size_t from,
+                                std::size_t to,
+                                float earthwork_budget) const {
+        const int x0 = source_x (x (from));
+        const int y0 = source_y (y (from));
+        int dx = source_x (x (to)) - x0;
+        int dy = source_y (y (to)) - y0;
+        if (periodic && dx > source_width / 2)
+          dx -= source_width;
+        if (periodic && dx < -source_width / 2)
+          dx += source_width;
+        if (periodic && dy > source_height / 2)
+          dy -= source_height;
+        if (periodic && dy < -source_height / 2)
+          dy += source_height;
+        const int steps = std::max (std::abs (dx), std::abs (dy));
+        float accumulated_rise = 0.0f;
+        float accumulated_run = 0.0f;
+        float maximum_grade = 0.0f;
+        float maximum_achievable = 0.0f;
+        int previous_x = x0;
+        int previous_y = y0;
+        const auto source_x_at = [this] (int value) {
+          return periodic ? wrap_index (value, source_width)
+                          : std::clamp (value, 0, source_width - 1);
+        };
+        const auto source_y_at = [this] (int value) {
+          return periodic ? wrap_index (value, source_height)
+                          : std::clamp (value, 0, source_height - 1);
+        };
+        float previous_elevation =
+          terrain.at (source_x_at (x0), source_y_at (y0)) * height_scale;
+        for (int step = 1; step <= steps; ++step) {
+          const float t = static_cast<float> (step) / steps;
+          int current_x = x0 + static_cast<int> (std::round (dx * t));
+          int current_y = y0 + static_cast<int> (std::round (dy * t));
+          const float current_elevation =
+            terrain.at (source_x_at (current_x), source_y_at (current_y)) *
+            height_scale;
+          const float run = std::hypot (
+            (current_x - previous_x) * terrain.grid ().spacing_x_m (),
+            (current_y - previous_y) * terrain.grid ().spacing_y_m ());
+          if (run > 0.0f) {
+            const float rise =
+              std::fabs (current_elevation - previous_elevation);
+            accumulated_rise += rise;
+            accumulated_run += run;
+            maximum_grade = std::max (maximum_grade, rise / run);
+            maximum_achievable =
+              std::max (maximum_achievable,
+                        std::max (0.0f, rise - earthwork_budget) / run);
+          }
+          previous_x = current_x;
+          previous_y = current_y;
+          previous_elevation = current_elevation;
+        }
+        return { .mean_grade = accumulated_run > 0.0f
+                                 ? accumulated_rise / accumulated_run
+                                 : 0.0f,
+                 .maximum_grade = maximum_grade,
+                 .maximum_achievable_grade = maximum_achievable };
+      }
     };
 
     PlanningGrid planning_grid (const TerrainView& terrain,
@@ -189,7 +262,7 @@ namespace moppe::terrain {
       const TerrainGrid& source = terrain.grid ();
       const int source_width = static_cast<int> (source.unique_width ());
       const int source_height = static_cast<int> (source.unique_height ());
-      constexpr float planning_spacing = 24.0f;
+      constexpr float planning_spacing = 16.0f;
       const int width =
         std::clamp (static_cast<int> (std::round (
                       source_width * source.spacing_x_m () / planning_spacing)),
@@ -231,8 +304,14 @@ namespace moppe::terrain {
       return nearest;
     }
 
-    std::size_t choose_home_base (const PlanningGrid& grid,
-                                  const TrailFormation& parameters) {
+    struct HomeBaseSite {
+      std::size_t node;
+      float score;
+    };
+
+    std::vector<HomeBaseSite>
+    choose_home_bases (const PlanningGrid& grid,
+                       const TrailFormation& parameters) {
       const float sea = parameters.sea_level * grid.height_scale;
       const float target_water =
         meters_value (parameters.home_base_water_distance);
@@ -241,8 +320,7 @@ namespace moppe::terrain {
                       120.0f / std::min (grid.spacing_x, grid.spacing_y))),
                     2,
                     8);
-      float best_score = -std::numeric_limits<float>::infinity ();
-      std::size_t best = 0;
+      std::vector<HomeBaseSite> candidates;
       for (std::size_t node = 0;
            node < static_cast<std::size_t> (grid.width) * grid.height;
            ++node) {
@@ -299,14 +377,26 @@ namespace moppe::terrain {
           std::max (0.0f, above_sea - 180.0f) * 0.08f;
         const float score = water_score + flat_score + shelter_score +
                             view_score - alpine_penalty;
-        if (score > best_score) {
-          best_score = score;
-          best = node;
-        }
+        candidates.push_back ({ node, score });
       }
-      if (!std::isfinite (best_score))
+      if (candidates.empty ())
         throw std::runtime_error ("no dry home-base site near water");
-      return best;
+      std::ranges::sort (candidates, {}, &HomeBaseSite::score);
+      std::ranges::reverse (candidates);
+      std::vector<HomeBaseSite> sites;
+      const float separation = std::max (
+        120.0f, 0.22f * meters_value (parameters.desired_circuit_radius));
+      for (const HomeBaseSite candidate : candidates) {
+        const bool distinct =
+          std::ranges::all_of (sites, [&] (const HomeBaseSite site) {
+            return grid.distance (candidate.node, site.node) >= separation;
+          });
+        if (distinct)
+          sites.push_back (candidate);
+        if (sites.size () == 8)
+          break;
+      }
+      return sites;
     }
 
     std::size_t choose_scenic_focus (const PlanningGrid& grid,
@@ -361,8 +451,8 @@ namespace moppe::terrain {
       return best;
     }
 
-    std::vector<std::uint8_t>
-    routable_land (const PlanningGrid& grid, std::size_t start) {
+    std::vector<std::uint8_t> routable_land (const PlanningGrid& grid,
+                                             std::size_t start) {
       const std::size_t count =
         static_cast<std::size_t> (grid.width) * grid.height;
       std::vector<std::uint8_t> reachable (count, 0);
@@ -385,9 +475,9 @@ namespace moppe::terrain {
             const float run = grid.distance (current, next);
             if (run <= 0.0f)
               continue;
-            const float grade = std::fabs (grid.elevation (next) -
-                                           grid.elevation (current)) /
-                                run;
+            const float grade =
+              std::fabs (grid.elevation (next) - grid.elevation (current)) /
+              run;
             if (grade > maximum_traversable_grade)
               continue;
             reachable[next] = 1;
@@ -397,12 +487,12 @@ namespace moppe::terrain {
       return reachable;
     }
 
-    std::size_t nearest_buildable_site (const PlanningGrid& grid,
-                                        float ideal_x,
-                                        float ideal_y,
-                                        int search_radius,
-                                        const std::vector<std::uint8_t>&
-                                          reachable) {
+    std::size_t
+    nearest_buildable_site (const PlanningGrid& grid,
+                            float ideal_x,
+                            float ideal_y,
+                            int search_radius,
+                            const std::vector<std::uint8_t>& reachable) {
       float best_score = std::numeric_limits<float>::infinity ();
       const std::size_t count =
         static_cast<std::size_t> (grid.width) * grid.height;
@@ -431,10 +521,9 @@ namespace moppe::terrain {
       for (std::size_t node = 0; node < count; ++node) {
         if (!reachable[node])
           continue;
-        const float score =
-          grid.distance (ideal, node) /
-            std::min (grid.spacing_x, grid.spacing_y) +
-          12.0f * grid.grade (node);
+        const float score = grid.distance (ideal, node) /
+                              std::min (grid.spacing_x, grid.spacing_y) +
+                            12.0f * grid.grade (node);
         if (score < best_score) {
           best_score = score;
           best = node;
@@ -452,84 +541,145 @@ namespace moppe::terrain {
                    std::size_t goal,
                    const TrailFormation& parameters,
                    const std::vector<std::uint8_t>& avoid = {}) {
+      constexpr int headings = 8;
+      constexpr int no_heading = headings;
+      constexpr int states_per_node = headings + 1;
+      constexpr int heading_x[headings] = { -1, 0, 1, 1, 1, 0, -1, -1 };
+      constexpr int heading_y[headings] = { -1, -1, -1, 0, 1, 1, 1, 0 };
       struct Candidate {
         float estimate;
-        std::size_t node;
+        std::size_t state;
         bool operator> (const Candidate& other) const {
           return estimate > other.estimate;
         }
       };
-      const std::size_t count =
+      const std::size_t node_count =
         static_cast<std::size_t> (grid.width) * grid.height;
+      const std::size_t state_count = node_count * states_per_node;
       const float infinity = std::numeric_limits<float>::infinity ();
-      std::vector<float> cost (count, infinity);
-      std::vector<std::size_t> previous (count, count);
+      std::vector<float> cost (state_count, infinity);
+      std::vector<std::size_t> previous (state_count, state_count);
       std::priority_queue<Candidate,
                           std::vector<Candidate>,
                           std::greater<Candidate>>
         frontier;
-      cost[start] = 0.0f;
-      frontier.push ({ grid.distance (start, goal), start });
+      const auto state = [] (std::size_t node, int heading) {
+        return node * states_per_node + static_cast<std::size_t> (heading);
+      };
+      const auto state_node = [] (std::size_t state) {
+        return state / states_per_node;
+      };
+      const auto state_heading = [] (std::size_t state) {
+        return static_cast<int> (state % states_per_node);
+      };
+      const std::size_t start_state = state (start, no_heading);
+      cost[start_state] = 0.0f;
+      frontier.push ({ grid.distance (start, goal), start_state });
       const float maximum_grade =
         parameters.maximum_grade.numerical_value_in (mp_units::one);
+      const float designed_grade =
+        parameters.designed_grade.numerical_value_in (mp_units::one);
+      const float earthwork_budget = meters_value (parameters.maximum_cut) +
+                                     meters_value (parameters.maximum_fill);
       const float target_catchment =
         std::sqrt (square_meters_value (parameters.minimum_catchment_area) *
                    square_meters_value (parameters.maximum_catchment_area));
+      const float direct_distance =
+        std::max (grid.distance (start, goal), grid.spacing_x);
+      std::size_t goal_state = state_count;
       while (!frontier.empty ()) {
         const Candidate current = frontier.top ();
         frontier.pop ();
-        if (current.node == goal)
+        const std::size_t current_node = state_node (current.state);
+        const int previous_heading = state_heading (current.state);
+        if (current_node == goal) {
+          goal_state = current.state;
           break;
+        }
         if (current.estimate >
-            cost[current.node] + grid.distance (current.node, goal) + 1e-4f)
+            cost[current.state] + grid.distance (current_node, goal) + 1e-4f)
           continue;
-        for (int dy = -1; dy <= 1; ++dy)
-          for (int dx = -1; dx <= 1; ++dx) {
-            if (dx == 0 && dy == 0)
-              continue;
-            const std::size_t next = grid.node (grid.x (current.node) + dx,
-                                                grid.y (current.node) + dy);
-            if (grid.wet (next) && next != goal)
-              continue;
-            const float run = grid.distance (current.node, next);
-            if (run <= 0.0f)
-              continue;
-            const float grade = std::fabs (grid.elevation (next) -
-                                           grid.elevation (current.node)) /
-                                run;
-            if (grade > maximum_traversable_grade)
-              continue;
-            const float excess = std::max (0.0f, grade - maximum_grade);
-            const float valley = std::fabs (std::log (
-              std::max (grid.catchment (next), 1.0f) / target_catchment));
-            const float avoidance =
-              !avoid.empty () && avoid[next] ? 45.0f : 0.0f;
-            const int seam_distance =
-              std::min ({ grid.x (next),
-                          grid.width - 1 - grid.x (next),
-                          grid.y (next),
-                          grid.height - 1 - grid.y (next) });
-            const float chart_edge =
-              grid.periodic && seam_distance < 4
-                ? static_cast<float> (4 - seam_distance) * 8.0f
-                : 0.0f;
-            const float edge =
-              run * (1.0f + 4.0f * grade + 42.0f * excess * excess +
-                     0.10f * valley + avoidance + chart_edge);
-            const float next_cost = cost[current.node] + edge;
-            if (next_cost < cost[next]) {
-              cost[next] = next_cost;
-              previous[next] = current.node;
-              frontier.push ({ next_cost + grid.distance (next, goal), next });
-            }
+        for (int next_heading = 0; next_heading < headings; ++next_heading) {
+          const int dx = heading_x[next_heading];
+          const int dy = heading_y[next_heading];
+          const std::size_t next =
+            grid.node (grid.x (current_node) + dx, grid.y (current_node) + dy);
+          if (grid.wet (next) && next != goal)
+            continue;
+          if (!avoid.empty () && avoid[next] && next != goal)
+            continue;
+          const float run = grid.distance (current_node, next);
+          if (run <= 0.0f)
+            continue;
+          const PlanningGrid::EdgeProfile profile =
+            grid.edge_profile (current_node, next, earthwork_budget);
+          const float rise =
+            std::fabs (grid.elevation (next) - grid.elevation (current_node));
+          const float grade =
+            std::max (profile.mean_grade, 0.55f * profile.maximum_grade);
+          const float achievable_grade = profile.maximum_achievable_grade;
+          if (achievable_grade > maximum_grade + 0.04f)
+            continue;
+          const float maximum_excess =
+            std::max (0.0f, achievable_grade - maximum_grade) /
+            std::max (maximum_grade, 0.01f);
+          const float grade_scale = std::max (designed_grade, 0.01f);
+          const float grade_ratio = grade / grade_scale;
+          const float earthwork = std::max (0.0f, rise - designed_grade * run);
+          const float earthwork_ratio = earthwork_budget > 0.0f
+                                          ? earthwork / earthwork_budget
+                                          : (earthwork > 0.0f ? 4.0f : 0.0f);
+          const float detour_ratio =
+            (grid.distance (start, next) + grid.distance (next, goal)) /
+            direct_distance;
+          if (detour_ratio > 4.0f)
+            continue;
+          const float corridor = std::max (0.0f, detour_ratio - 1.12f);
+          float turn = 0.0f;
+          if (previous_heading != no_heading) {
+            const float dot =
+              (heading_x[previous_heading] * heading_x[next_heading] +
+               heading_y[previous_heading] * heading_y[next_heading]) /
+              std::sqrt (static_cast<float> (
+                (heading_x[previous_heading] * heading_x[previous_heading] +
+                 heading_y[previous_heading] * heading_y[previous_heading]) *
+                (heading_x[next_heading] * heading_x[next_heading] +
+                 heading_y[next_heading] * heading_y[next_heading])));
+            turn = 1.0f - dot;
           }
+          const float valley = std::fabs (std::log (
+            std::max (grid.catchment (next), 1.0f) / target_catchment));
+          const int seam_distance =
+            std::min ({ grid.x (next),
+                        grid.width - 1 - grid.x (next),
+                        grid.y (next),
+                        grid.height - 1 - grid.y (next) });
+          const float chart_edge =
+            grid.periodic && seam_distance < 4
+              ? static_cast<float> (4 - seam_distance) * 8.0f
+              : 0.0f;
+          const float edge =
+            run *
+            (1.0f + 0.70f * grade_ratio * grade_ratio +
+             2.8f * earthwork_ratio * earthwork_ratio +
+             30.0f * maximum_excess * maximum_excess + 2.5f * turn * turn +
+             20.0f * corridor * corridor + 0.10f * valley + chart_edge);
+          const float next_cost = cost[current.state] + edge;
+          const std::size_t next_state = state (next, next_heading);
+          if (next_cost < cost[next_state]) {
+            cost[next_state] = next_cost;
+            previous[next_state] = current.state;
+            frontier.push (
+              { next_cost + grid.distance (next, goal), next_state });
+          }
+        }
       }
-      if (previous[goal] == count && start != goal)
+      if (goal_state == state_count)
         return {};
       std::vector<std::size_t> path;
-      for (std::size_t node = goal;; node = previous[node]) {
-        path.push_back (node);
-        if (node == start)
+      for (std::size_t cursor = goal_state;; cursor = previous[cursor]) {
+        path.push_back (state_node (cursor));
+        if (cursor == start_state)
           break;
       }
       std::reverse (path.begin (), path.end ());
@@ -543,6 +693,124 @@ namespace moppe::terrain {
       const std::size_t first =
         !target.empty () && target.back () == path[0] ? 1 : 0;
       target.insert (target.end (), path.begin () + first, path.end ());
+    }
+
+    void avoid_path (const PlanningGrid& grid,
+                     const std::vector<std::size_t>& path,
+                     std::size_t open_start,
+                     std::size_t open_end,
+                     std::vector<std::uint8_t>& avoid) {
+      const float open_radius =
+        1.75f * std::max (grid.spacing_x, grid.spacing_y);
+      for (const std::size_t node : path) {
+        if (grid.distance (node, open_start) < open_radius ||
+            grid.distance (node, open_end) < open_radius)
+          continue;
+        for (int dy = -1; dy <= 1; ++dy)
+          for (int dx = -1; dx <= 1; ++dx)
+            avoid[grid.node (grid.x (node) + dx, grid.y (node) + dy)] = 1;
+      }
+    }
+
+    struct CoarseCircuitPlan {
+      std::size_t home_base;
+      std::size_t scenic_focus;
+      std::size_t left;
+      std::size_t far;
+      std::size_t right;
+      std::vector<std::size_t> circuit;
+      float score;
+    };
+
+    std::optional<CoarseCircuitPlan>
+    explore_circuit (const PlanningGrid& planner,
+                     HomeBaseSite site,
+                     const TrailFormation& parameters) {
+      const std::size_t home_base = site.node;
+      const std::vector<std::uint8_t> reachable =
+        routable_land (planner, home_base);
+      const std::size_t focus =
+        choose_scenic_focus (planner, home_base, parameters);
+      float forward_x =
+        planner.delta_x (planner.x (home_base), planner.x (focus));
+      float forward_y =
+        planner.delta_y (planner.y (home_base), planner.y (focus));
+      const float forward_length = std::hypot (forward_x, forward_y);
+      forward_x /= std::max (forward_length, 1.0f);
+      forward_y /= std::max (forward_length, 1.0f);
+      const float flank = std::clamp (
+        0.12f * std::min (planner.width, planner.height), 2.0f, 18.0f);
+      const int anchor_search = std::max (2, static_cast<int> (flank * 0.55f));
+      const float focus_x = static_cast<float> (planner.x (focus));
+      const float focus_y = static_cast<float> (planner.y (focus));
+      const std::size_t left =
+        nearest_buildable_site (planner,
+                                focus_x - forward_y * flank,
+                                focus_y + forward_x * flank,
+                                anchor_search,
+                                reachable);
+      const std::size_t far =
+        nearest_buildable_site (planner,
+                                focus_x + forward_x * flank,
+                                focus_y + forward_y * flank,
+                                anchor_search,
+                                reachable);
+      const std::size_t right =
+        nearest_buildable_site (planner,
+                                focus_x + forward_y * flank,
+                                focus_y - forward_x * flank,
+                                anchor_search,
+                                reachable);
+
+      const std::size_t planner_cells =
+        static_cast<std::size_t> (planner.width) * planner.height;
+      std::vector<std::size_t> outbound =
+        shortest_ride (planner, home_base, left, parameters);
+      std::vector<std::uint8_t> outbound_avoid (planner_cells, 0);
+      avoid_path (planner, outbound, left, far, outbound_avoid);
+      append_path (
+        outbound,
+        shortest_ride (planner, left, far, parameters, outbound_avoid));
+      if (outbound.empty () || outbound.front () != home_base ||
+          outbound.back () != far)
+        return std::nullopt;
+
+      std::vector<std::uint8_t> inbound_avoid (planner_cells, 0);
+      avoid_path (planner, outbound, home_base, far, inbound_avoid);
+      std::vector<std::size_t> inbound =
+        shortest_ride (planner, home_base, right, parameters, inbound_avoid);
+      avoid_path (planner, inbound, right, far, inbound_avoid);
+      append_path (
+        inbound,
+        shortest_ride (planner, right, far, parameters, inbound_avoid));
+      if (inbound.empty () || inbound.front () != home_base ||
+          inbound.back () != far)
+        return std::nullopt;
+
+      std::vector<std::size_t> circuit = outbound;
+      if (inbound.size () > 2)
+        for (std::size_t i = inbound.size () - 1; i-- > 1;)
+          circuit.push_back (inbound[i]);
+
+      float route_cost = 0.0f;
+      for (std::size_t i = 0; i < circuit.size (); ++i) {
+        const std::size_t from = circuit[i];
+        const std::size_t to = circuit[(i + 1) % circuit.size ()];
+        const float run = planner.distance (from, to);
+        const float grade =
+          run > 0.0f
+            ? std::fabs (planner.elevation (to) - planner.elevation (from)) /
+                run
+            : 0.0f;
+        route_cost += run * (1.0f + 8.0f * grade * grade);
+      }
+      return CoarseCircuitPlan { .home_base = home_base,
+                                 .scenic_focus = focus,
+                                 .left = left,
+                                 .far = far,
+                                 .right = right,
+                                 .circuit = std::move (circuit),
+                                 .score = route_cost - 24.0f * site.score };
     }
 
     std::vector<CellIndex>
@@ -613,72 +881,33 @@ namespace moppe::terrain {
         "trail network readings do not match terrain");
 
     const PlanningGrid planner = planning_grid (terrain, drainage, flood);
-    const std::size_t home_base = choose_home_base (planner, parameters);
-    const std::vector<std::uint8_t> reachable =
-      routable_land (planner, home_base);
-    const std::size_t focus =
-      choose_scenic_focus (planner, home_base, parameters);
-    float forward_x =
-      planner.delta_x (planner.x (home_base), planner.x (focus));
-    float forward_y =
-      planner.delta_y (planner.y (home_base), planner.y (focus));
-    const float forward_length = std::hypot (forward_x, forward_y);
-    forward_x /= std::max (forward_length, 1.0f);
-    forward_y /= std::max (forward_length, 1.0f);
-    const float flank = std::clamp (
-      0.12f * std::min (planner.width, planner.height), 2.0f, 18.0f);
-    const int anchor_search = std::max (2, static_cast<int> (flank * 0.55f));
-    const float focus_x = static_cast<float> (planner.x (focus));
-    const float focus_y = static_cast<float> (planner.y (focus));
-    const std::size_t left =
-      nearest_buildable_site (planner,
-                              focus_x - forward_y * flank,
-                              focus_y + forward_x * flank,
-                              anchor_search,
-                              reachable);
-    const std::size_t far = nearest_buildable_site (planner,
-                                                    focus_x + forward_x * flank,
-                                                    focus_y + forward_y * flank,
-                                                    anchor_search,
-                                                    reachable);
-    const std::size_t right =
-      nearest_buildable_site (planner,
-                              focus_x + forward_y * flank,
-                              focus_y - forward_x * flank,
-                              anchor_search,
-                              reachable);
-
-    std::vector<std::size_t> outbound;
-    append_path (outbound,
-                 shortest_ride (planner, home_base, left, parameters));
-    append_path (outbound, shortest_ride (planner, left, far, parameters));
-    if (outbound.empty () || outbound.front () != home_base ||
-        outbound.back () != far)
-      throw std::runtime_error ("could not route first half of trail circuit");
-
-    std::vector<std::uint8_t> avoid (
-      static_cast<std::size_t> (planner.width) * planner.height, 0);
-    for (const std::size_t node : outbound)
-      if (planner.distance (node, home_base) > 3.0f * planner.spacing_x &&
-          planner.distance (node, far) > 3.0f * planner.spacing_x)
-        avoid[node] = 1;
-    std::vector<std::size_t> inbound;
-    append_path (inbound,
-                 shortest_ride (planner, home_base, right, parameters, avoid));
-    append_path (inbound,
-                 shortest_ride (planner, right, far, parameters, avoid));
-    if (inbound.empty () || inbound.front () != home_base ||
-        inbound.back () != far)
-      throw std::runtime_error ("could not route second half of trail circuit");
-
-    std::vector<std::size_t> coarse_circuit = outbound;
-    if (inbound.size () > 2)
-      for (std::size_t i = inbound.size () - 1; i-- > 1;)
-        coarse_circuit.push_back (inbound[i]);
-    std::vector<CellIndex> cells = expand_circuit (planner, coarse_circuit);
-    if (cells.size () < 4)
+    std::optional<CoarseCircuitPlan> chosen;
+    std::vector<CellIndex> chosen_cells;
+    for (const HomeBaseSite site : choose_home_bases (planner, parameters)) {
+      try {
+        std::optional<CoarseCircuitPlan> expedition =
+          explore_circuit (planner, site, parameters);
+        if (!expedition || (chosen && expedition->score >= chosen->score))
+          continue;
+        std::vector<CellIndex> cells =
+          expand_circuit (planner, expedition->circuit);
+        if (cells.size () >= 4) {
+          chosen = std::move (expedition);
+          chosen_cells = std::move (cells);
+        }
+      } catch (const std::runtime_error&) {
+        // An expedition can fail to find a focus while another base succeeds.
+      }
+    }
+    if (!chosen)
       throw std::runtime_error (
-        "trail circuit collapsed during materialization");
+        "no home-base expedition found a complete trail circuit");
+    const std::size_t home_base = chosen->home_base;
+    const std::size_t focus = chosen->scenic_focus;
+    const std::size_t left = chosen->left;
+    const std::size_t far = chosen->far;
+    const std::size_t right = chosen->right;
+    std::vector<CellIndex> cells = std::move (chosen_cells);
 
     std::vector<CellIndex> receiver (count, no_cell);
     std::vector<TrailComponentId> component_by_cell (count, no_trail_component);
@@ -990,6 +1219,30 @@ namespace moppe::terrain {
       report.mean_absolute_change = absolute_change /
                                     count_value (report.shaped_cells) *
                                     mp_units::si::metre;
+    double grade_distance = 0.0;
+    double accumulated_rise = 0.0;
+    for (const CellIndex cell : network.cells) {
+      const CellIndex next = network.receiver[cell.value];
+      if (next == no_cell)
+        continue;
+      const double run = receiver_distance_m (cell.value, next.value, grid);
+      if (run <= 0.0)
+        continue;
+      const double rise =
+        std::fabs (shaped[cell.value] - shaped[next.value]) * height_scale;
+      const double grade = rise / run;
+      grade_distance += run;
+      accumulated_rise += rise;
+      report.maximum_centerline_step =
+        std::max (meters_value (report.maximum_centerline_step), run) *
+        mp_units::si::metre;
+      report.maximum_centerline_grade =
+        std::max (report.maximum_centerline_grade, grade);
+      if (grade > maximum_grade + 1e-5f)
+        ++report.grade_exceptions;
+    }
+    if (grade_distance > 0.0)
+      report.mean_centerline_grade = accumulated_rise / grade_distance;
     return { .heights = std::move (shaped),
              .network = std::move (network),
              .report = report };
