@@ -1250,6 +1250,26 @@ namespace moppe {
                     << " target=" << grove.camera_target << '\n';
         } else if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
+        else if (!m_terrain_lab_preview) {
+          MOPPE_PROFILE_ZONE ("startup.build_forest");
+          constexpr std::size_t forest_size = 32;
+          m_tree_stand.rebuild (r,
+                                m_surface,
+                                m_seed ^ 0x4f1bbcdcU,
+                                forest_size,
+                                m_home_base_position);
+          const TreeGrove& forest = m_tree_stand.grove ();
+          const auto cohort_count = [&] (TreeCohort cohort) {
+            return std::ranges::count_if (forest.sites,
+                                          [cohort] (const TreeSite& site) {
+                                            return site.cohort == cohort;
+                                          });
+          };
+          std::cerr << "forest: " << forest.sites.size () << " organisms ("
+                    << cohort_count (TreeCohort::canopy) << " canopy, "
+                    << cohort_count (TreeCohort::young) << " young, "
+                    << cohort_count (TreeCohort::sapling) << " saplings)\n";
+        }
 
         if (m_standing_water && m_lake_census && m_drainage && m_rivers) {
           MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
@@ -3128,12 +3148,12 @@ int main (int argc, char** argv) {
       tree_demo = true;
     } else if (arg == "--tree-count") {
       if (i + 1 >= argc) {
-        std::cerr << "--tree-count requires an integer from 1 to 32\n";
+        std::cerr << "--tree-count requires an integer from 1 to 64\n";
         return -1;
       }
       const int count = std::atoi (argv[++i]);
-      if (count < 1 || count > 32) {
-        std::cerr << "--tree-count must be between 1 and 32\n";
+      if (count < 1 || count > 64) {
+        std::cerr << "--tree-count must be between 1 and 64\n";
         return -1;
       }
       tree_count = static_cast<std::size_t> (count);

@@ -6,8 +6,8 @@ matched to Moppe's current split:
 
 - grass is a field-driven, per-blade mesh-shader system and the largest measured
   GPU feature cost;
-- trees are distinct Atelier organisms, currently baked into one retained mesh
-  for a small grove;
+- trees are distinct Atelier organisms, recruited into a habitat-driven,
+  mixed-age forest and baked into one retained mesh;
 - moisture, elevation, slope, shore clearance, and tree line already provide
   ecological placement fields;
 - grass and tree vertices already share a continuous wind vocabulary.
@@ -172,10 +172,12 @@ produce a larger visual gain than adding more polygonal leaf spheres.
   [Algorithmic Botany](https://algorithmicbotany.org/papers/selforg.sig2009.small.pdf)
 
 Moppe already has a stronger placement basis than generic noise: habitat is a
-typed field derived from water, moisture, slope, and tree line. The next step is
-to add population structure - clustered recruitment, age/scale mixtures,
-self-thinning, and light or space competition - while continuing to keep
-individual tree state separate from the grass density field.
+typed field derived from water, moisture, slope, and tree line. The first
+population prototype now adds clustered recruitment, age/scale mixtures, and
+size-dependent self-thinning while keeping individual tree state separate from
+the grass density field. The next ecological step is persistence: succession,
+disturbance, and renewed recruitment over world time rather than only during
+startup.
 
 ## Open articles worth keeping beside the PDFs
 

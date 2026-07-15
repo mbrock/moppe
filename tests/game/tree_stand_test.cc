@@ -53,6 +53,34 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
   }
 }
 
+MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    129, 129, Vec3 (640, 180, 640), 29, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+  surface.derive_tree_habitat (
+    std::vector<float> (129 * 129, 0.48f), 50.0f * u::m, 160.0f * u::m);
+
+  const game::TreeGrove forest =
+    game::plan_tree_grove (surface, 6789, 24, Vec3 (320, 0, 320));
+  MOPPE_CHECK (forest.sites.size () == 24);
+  for (const game::TreeCohort cohort : { game::TreeCohort::sapling,
+                                         game::TreeCohort::young,
+                                         game::TreeCohort::canopy })
+    MOPPE_CHECK (
+      std::ranges::any_of (forest.sites, [cohort] (const game::TreeSite& site) {
+        return site.cohort == cohort;
+      }));
+  MOPPE_CHECK (
+    std::ranges::any_of (forest.sites, [] (const game::TreeSite& site) {
+      const float dx = site.position[0] - 320.0f;
+      const float dz = site.position[2] - 320.0f;
+      return dx * dx + dz * dz < 150.0f * 150.0f;
+    }));
+}
+
 MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
   using namespace moppe;
   map::RandomHeightMap map (

@@ -6,15 +6,19 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace moppe::game {
+  enum class TreeCohort { sapling, young, canopy };
+
   struct TreeSite {
     Vec3 position;
     Vec3 normal;
     float habitat = 0.0f;
     float scale = 1.0f;
     std::uint32_t seed = 0;
+    TreeCohort cohort = TreeCohort::young;
   };
 
   struct TreeGrove {
@@ -23,12 +27,16 @@ namespace moppe::game {
     Vec3 camera_target;
   };
 
-  // Select a small, deterministic population from the materialized surface
-  // habitat. This is renderer-independent so site ecology can be tested
-  // without a GPU.
-  [[nodiscard]] TreeGrove plan_tree_grove (const map::Surface& surface,
-                                           std::uint32_t seed,
-                                           std::size_t desired_count = 9);
+  // Recruit a deterministic, mixed-age forest from the materialized habitat,
+  // then let larger crowns self-thin the population. An optional focus keeps
+  // the forest near a place in the playable world without weakening the
+  // habitat test. This remains renderer-independent so the population process
+  // can be tested without a GPU.
+  [[nodiscard]] TreeGrove
+  plan_tree_grove (const map::Surface& surface,
+                   std::uint32_t seed,
+                   std::size_t desired_count = 9,
+                   std::optional<Vec3> focus = std::nullopt);
 
   // Moppe's extrinsic presentation of the Atelier organism. The stand bakes
   // several unique trees into one retained world-space mesh; the scene shader
@@ -38,7 +46,8 @@ namespace moppe::game {
     void rebuild (render::Renderer& renderer,
                   const map::Surface& surface,
                   std::uint32_t seed,
-                  std::size_t desired_count = 9);
+                  std::size_t desired_count = 9,
+                  std::optional<Vec3> focus = std::nullopt);
     void draw (render::Renderer& renderer) const;
 
     const TreeGrove& grove () const noexcept {

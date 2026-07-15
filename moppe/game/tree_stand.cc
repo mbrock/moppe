@@ -7,7 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
+#include <functional>
 #include <numbers>
 #include <random>
 #include <ranges>
@@ -46,11 +46,15 @@ namespace moppe::game {
                       float z,
                       float scale,
                       std::uint32_t seed) {
+      const TreeCohort cohort = scale < 0.66f   ? TreeCohort::sapling
+                                : scale < 1.08f ? TreeCohort::young
+                                                : TreeCohort::canopy;
       return { .position = Vec3 (x, elevation_value (surface, x, z), z),
                .normal = normal_value (surface, x, z),
                .habitat = habitat_value (surface, x, z),
                .scale = scale,
-               .seed = seed };
+               .seed = seed,
+               .cohort = cohort };
     }
 
     float horizontal_distance_squared (const Vec3& first, const Vec3& second) {
@@ -128,7 +132,7 @@ namespace moppe::game {
         std::abs (axis[1]) > 0.90f ? Vec3 (1, 0, 0) : Vec3 (0, 1, 0);
       const Vec3 across = normalized (cross (axis, anchor));
       const Vec3 around = normalized (cross (across, axis));
-      constexpr int sides = 7;
+      constexpr int sides = 6;
       draw.color (0.27f + 0.055f * color_variation,
                   0.14f + 0.030f * color_variation,
                   0.070f + 0.018f * color_variation);
@@ -205,7 +209,8 @@ namespace moppe::game {
         const float seed = tree.form (parent).material_seed;
         const float wind =
           vertex_wind (tree, vertex, maximum_generation) + 0.12f;
-        for (int lobe = 0; lobe < 4; ++lobe) {
+        const int lobe_count = site.cohort == TreeCohort::sapling ? 2 : 3;
+        for (int lobe = 0; lobe < lobe_count; ++lobe) {
           const float turn = seed * 5.7f + 2.399963f * lobe;
           const Vec3 offset =
             frame.across * std::sin (turn) + frame.forward * std::cos (turn) +
@@ -216,15 +221,19 @@ namespace moppe::game {
           const float size =
             site.scale * (0.25f + 0.085f * strength + 0.020f * lobe);
           const float hue = unit_hash (site.seed + 71 * vertex + 19 * lobe);
-          draw.color (0.15f + 0.075f * hue,
-                      0.31f + 0.13f * site.habitat + 0.07f * hue,
-                      0.075f + 0.050f * hue);
+          const float youth = site.cohort == TreeCohort::sapling ? 1.0f
+                              : site.cohort == TreeCohort::young ? 0.45f
+                                                                 : 0.0f;
+          draw.color (0.14f + 0.075f * hue + 0.035f * youth,
+                      0.29f + 0.13f * site.habitat + 0.07f * hue +
+                        0.075f * youth,
+                      0.070f + 0.050f * hue + 0.020f * youth);
           draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
           draw.push ();
           draw.translate (center);
           draw.rotate (turn * u::rad, frame.up);
           draw.scale (1.08f * size, 0.90f * size, size);
-          draw.sphere (1.0f, 7, 4);
+          draw.sphere (1.0f, 6, 3);
           draw.pop ();
         }
       }
@@ -268,92 +277,187 @@ namespace moppe::game {
                      world_positions,
                      maximum_generation);
     }
+
+    struct PatchCandidate {
+      float x;
+      float z;
+      float score;
+    };
+
+    std::vector<PatchCandidate>
+    choose_forest_patches (const map::Surface& surface,
+                           std::uint32_t seed,
+                           std::size_t desired_count,
+                           std::optional<Vec3> focus) {
+      const map::SurfaceBundle& samples = surface.samples ();
+      const map::SurfaceDomain& domain = samples.domain ();
+      const auto& habitat = spatial::get<map::tree_habitat> (samples);
+      const std::size_t margin = std::max<std::size_t> (
+        3, std::min (domain.width (), domain.height ()) / 20);
+      const std::size_t step = std::max<std::size_t> (
+        1, std::min (domain.width (), domain.height ()) / 180);
+      std::vector<PatchCandidate> candidates;
+      for (std::size_t row = margin; row + margin < domain.height ();
+           row += step)
+        for (std::size_t column = margin; column + margin < domain.width ();
+             column += step) {
+          const map::SurfaceIndex index { column, row };
+          const std::size_t offset = domain.offset (index);
+          const float support = habitat[offset].numerical_value_in (one);
+          if (support < 0.34f)
+            continue;
+          const float x =
+            static_cast<float> (column) * meters_value (domain.spacing_x ());
+          const float z =
+            static_cast<float> (row) * meters_value (domain.spacing_z ());
+          const float variation = unit_hash (
+            seed ^ static_cast<std::uint32_t> (offset * 2654435761ULL));
+          float score = support + 0.06f * variation;
+          if (focus) {
+            const float dx = x - (*focus)[0];
+            const float dz = z - (*focus)[2];
+            const float distance = std::sqrt (dx * dx + dz * dz);
+            if (distance < 55.0f)
+              continue;
+            score -= 0.0012f * distance;
+          }
+          candidates.push_back ({ x, z, score });
+        }
+      std::ranges::sort (candidates, std::greater {}, &PatchCandidate::score);
+
+      const std::size_t patch_count =
+        std::clamp<std::size_t> ((desired_count + 47) / 48, 1, 2);
+      std::vector<PatchCandidate> patches;
+      constexpr float patch_separation = 82.0f;
+      constexpr float forest_diameter = 260.0f;
+      for (const PatchCandidate& candidate : candidates) {
+        if (!patches.empty ()) {
+          const float dx = candidate.x - patches.front ().x;
+          const float dz = candidate.z - patches.front ().z;
+          if (dx * dx + dz * dz > forest_diameter * forest_diameter)
+            continue;
+        }
+        if (std::ranges::any_of (patches, [&] (const PatchCandidate& patch) {
+              const float dx = candidate.x - patch.x;
+              const float dz = candidate.z - patch.z;
+              return dx * dx + dz * dz < patch_separation * patch_separation;
+            }))
+          continue;
+        patches.push_back (candidate);
+        if (patches.size () == patch_count)
+          break;
+      }
+      return patches;
+    }
+
+    struct RecruitedTree {
+      TreeSite site;
+      float claim;
+    };
+
+    float crown_radius (const TreeSite& site) {
+      return 1.2f + 2.4f * site.scale;
+    }
+
+    bool crown_has_room (const TreeSite& candidate,
+                         const std::vector<TreeSite>& forest) {
+      return std::ranges::none_of (forest, [&] (const TreeSite& established) {
+        const float separation =
+          0.72f * (crown_radius (candidate) + crown_radius (established));
+        return horizontal_distance_squared (candidate.position,
+                                            established.position) <
+               separation * separation;
+      });
+    }
   }
 
   TreeGrove plan_tree_grove (const map::Surface& surface,
                              std::uint32_t seed,
-                             std::size_t desired_count) {
+                             std::size_t desired_count,
+                             std::optional<Vec3> focus) {
     TreeGrove grove;
     if (desired_count == 0)
       return grove;
 
-    const map::SurfaceBundle& samples = surface.samples ();
-    const map::SurfaceDomain& domain = samples.domain ();
-    const auto& habitat = spatial::get<map::tree_habitat> (samples);
-    const auto& elevation = spatial::get<map::surface_elevation> (samples);
-    const auto& normal = spatial::get<map::surface_normal> (samples);
-    const std::size_t margin = std::max<std::size_t> (
-      3, std::min (domain.width (), domain.height ()) / 20);
-    const std::size_t step = std::max<std::size_t> (
-      1, std::min (domain.width (), domain.height ()) / 220);
-    float best_score = -std::numeric_limits<float>::infinity ();
-    map::SurfaceIndex hero_index { margin, margin };
-    for (std::size_t row = margin; row + margin < domain.height (); row += step)
-      for (std::size_t column = margin; column + margin < domain.width ();
-           column += step) {
-        const map::SurfaceIndex index { column, row };
-        const std::size_t offset = domain.offset (index);
-        const float support = habitat[offset].numerical_value_in (one);
-        if (support < 0.34f)
-          continue;
-        const float variation = unit_hash (
-          seed ^ static_cast<std::uint32_t> (offset * 2654435761ULL));
-        const float score = support + 0.05f * variation;
-        if (score > best_score) {
-          best_score = score;
-          hero_index = index;
-        }
-      }
-    if (!std::isfinite (best_score))
+    const std::vector<PatchCandidate> patches =
+      choose_forest_patches (surface, seed, desired_count, focus);
+    if (patches.empty ())
       return grove;
-
-    const std::size_t hero_offset = domain.offset (hero_index);
-    const float hero_x = static_cast<float> (hero_index.column) *
-                         meters_value (domain.spacing_x ());
-    const float hero_z =
-      static_cast<float> (hero_index.row) * meters_value (domain.spacing_z ());
-    const float hero_height =
-      elevation[hero_offset].quantity_from_zero ().numerical_value_in (u::m);
-    const Vec3 hero_normal =
-      normalized (normal[hero_offset].numerical_value_in (one));
-    grove.sites.push_back (
-      { .position = Vec3 (hero_x, hero_height, hero_z),
-        .normal = hero_normal,
-        .habitat = habitat[hero_offset].numerical_value_in (one),
-        .scale = 1.42f,
-        .seed = seed ^ 0xa511e9b3U });
 
     std::mt19937 random (seed ^ 0x6a09e667U);
     std::uniform_real_distribution<float> unit (0.0f, 1.0f);
+    std::vector<RecruitedTree> recruits;
+    recruits.reserve (std::max<std::size_t> (512, desired_count * 80));
+    for (std::size_t patch = 0; patch < patches.size (); ++patch) {
+      TreeSite elder = site_at (surface,
+                                patches[patch].x,
+                                patches[patch].z,
+                                1.30f + 0.18f * unit (random),
+                                seed ^ (0xa511e9b3U + 977U * patch));
+      elder.cohort = TreeCohort::canopy;
+      recruits.push_back ({ elder, 2.0f + elder.habitat });
+    }
+
+    const std::size_t recruitment_count =
+      std::max<std::size_t> (512, desired_count * 80);
+    const map::SurfaceDomain& domain = surface.samples ().domain ();
     const float maximum_x = meters_value (domain.maximum_interpolated_x ());
     const float maximum_z = meters_value (domain.maximum_interpolated_z ());
-    for (int attempt = 0; grove.sites.size () < desired_count && attempt < 8000;
-         ++attempt) {
+    for (std::size_t attempt = 0; attempt < recruitment_count; ++attempt) {
+      const std::size_t patch = attempt % patches.size ();
       const float angle = 2.0f * std::numbers::pi_v<float> * unit (random);
-      const float distance = 12.0f + 44.0f * std::sqrt (unit (random));
-      const float x = hero_x + std::sin (angle) * distance;
-      const float z = hero_z + std::cos (angle) * distance;
+      const float distance = 6.0f + 44.0f * std::pow (unit (random), 1.65f);
+      const float x = patches[patch].x + std::sin (angle) * distance;
+      const float z = patches[patch].z + std::cos (angle) * distance;
       if (x < 2.0f || z < 2.0f || x > maximum_x - 2.0f || z > maximum_z - 2.0f)
         continue;
       const float support = habitat_value (surface, x, z);
-      const float scale = 0.78f + 0.48f * unit (random);
       if (support < 0.34f)
         continue;
-      const Vec3 candidate (x, elevation_value (surface, x, z), z);
-      const float separation = 7.0f + 3.5f * scale;
-      if (std::ranges::any_of (grove.sites, [&] (const TreeSite& site) {
-            return horizontal_distance_squared (site.position, candidate) <
-                   separation * separation;
-          }))
+      const float recruitment = unit (random);
+      const float scale = recruitment < 0.34f   ? 0.38f + 0.26f * unit (random)
+                          : recruitment < 0.76f ? 0.70f + 0.34f * unit (random)
+                                                : 1.08f + 0.30f * unit (random);
+      const float patch_falloff = 1.0f - distance / 62.0f;
+      if (unit (random) > support * std::clamp (patch_falloff, 0.18f, 1.0f))
         continue;
-      grove.sites.push_back (site_at (
+      TreeSite site = site_at (
         surface,
         x,
         z,
         scale,
-        seed ^ (0x9e3779b9U *
-                static_cast<std::uint32_t> (grove.sites.size () + 1))));
+        seed ^ (0x9e3779b9U * static_cast<std::uint32_t> (attempt + 1)));
+      const float claim =
+        scale * (0.72f + 0.28f * support) + 0.08f * unit (random);
+      recruits.push_back ({ site, claim });
     }
+
+    std::ranges::sort (recruits, std::greater {}, &RecruitedTree::claim);
+    grove.sites.reserve (desired_count);
+    const std::size_t canopy_limit =
+      desired_count == 1 ? 1
+                         : std::max (patches.size (), (desired_count + 3) / 4);
+    const std::size_t young_limit =
+      desired_count == 1 ? 0 : (desired_count + 1) / 2;
+    std::size_t canopy_count = 0;
+    std::size_t young_count = 0;
+    for (const RecruitedTree& recruit : recruits) {
+      if (recruit.site.cohort == TreeCohort::canopy &&
+          canopy_count == canopy_limit)
+        continue;
+      if (recruit.site.cohort == TreeCohort::young &&
+          young_count == young_limit)
+        continue;
+      if (!crown_has_room (recruit.site, grove.sites))
+        continue;
+      grove.sites.push_back (recruit.site);
+      canopy_count += recruit.site.cohort == TreeCohort::canopy ? 1 : 0;
+      young_count += recruit.site.cohort == TreeCohort::young ? 1 : 0;
+      if (grove.sites.size () == desired_count)
+        break;
+    }
+    if (grove.sites.empty ())
+      return grove;
 
     Vec3 center;
     for (const TreeSite& site : grove.sites)
@@ -364,7 +468,14 @@ namespace moppe::game {
     const Vec3 toward_camera (
       std::sin (camera_angle), 0.0f, std::cos (camera_angle));
     const bool portrait = desired_count == 1;
-    Vec3 eye = center + toward_camera * (portrait ? 24.0f : 72.0f);
+    float radius = 0.0f;
+    for (const TreeSite& site : grove.sites)
+      radius = std::max (
+        radius,
+        std::sqrt (horizontal_distance_squared (site.position, center)));
+    const float camera_distance =
+      portrait ? 24.0f : std::max (72.0f, 1.15f * radius + 48.0f);
+    Vec3 eye = center + toward_camera * camera_distance;
     eye[0] = std::clamp (eye[0], 1.0f, maximum_x - 1.0f);
     eye[2] = std::clamp (eye[2], 1.0f, maximum_z - 1.0f);
     eye[1] = std::max (elevation_value (surface, eye[0], eye[2]) +
@@ -378,9 +489,10 @@ namespace moppe::game {
   void TreeStand::rebuild (render::Renderer& renderer,
                            const map::Surface& surface,
                            std::uint32_t seed,
-                           std::size_t desired_count) {
+                           std::size_t desired_count,
+                           std::optional<Vec3> focus) {
     MOPPE_PROFILE_ZONE ("TreeStand::rebuild");
-    m_grove = plan_tree_grove (surface, seed, desired_count);
+    m_grove = plan_tree_grove (surface, seed, desired_count, focus);
     m_mesh.reset ();
     if (m_grove.sites.empty ())
       return;
