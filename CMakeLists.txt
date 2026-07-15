@@ -353,6 +353,7 @@ add_library(moppe_game STATIC
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
   moppe/game/terrain_lab.cc
+  moppe/game/forest.cc
   moppe/game/tree_stand.cc
 )
 target_include_directories(moppe_game PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -459,6 +460,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/game_state_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/river_surface_test.cc
+    tests/game/forest_test.cc
     tests/game/tree_stand_test.cc
     tests/game/cinematic_flight_test.cc
     tests/map/surface_test.cc

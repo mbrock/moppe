@@ -50,6 +50,7 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
   const auto elevation = spatial::get<map::surface_elevation> (samples[index]);
   const auto normal = spatial::get<map::surface_normal> (samples[index]);
   const auto habitat = spatial::get<map::tree_habitat> (samples[index]);
+  const auto forest = spatial::get<map::forest_cover> (samples[index]);
   const auto trail = spatial::get<map::trail_influence> (samples[index]);
   const auto home_base =
     spatial::get<map::home_base_influence> (samples[index]);
@@ -57,6 +58,7 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
     elevation_value (elevation), map.get (2, 1) * map.scale ()[1], 1e-6f);
   check_surface_vector (normal_value (normal), map.normal (2, 1));
   MOPPE_CHECK (habitat == 0.0f * map::tree_habitat[one]);
+  MOPPE_CHECK (forest == 0.0f * map::forest_cover[one]);
   MOPPE_CHECK (trail == 0.0f * map::trail_influence[one]);
   MOPPE_CHECK (home_base == 0.0f * map::home_base_influence[one]);
 }
@@ -115,6 +117,41 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   surface.derive_tree_habitat (moisture, 50.0f * u::m, 160.0f * u::m);
   MOPPE_CHECK (surface.tree_habitat_at (center) <
                0.4f * map::tree_habitat[one]);
+}
+
+MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    65, 65, Vec3 (320, 180, 320), 31, terrain::Topology::Torus);
+  std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+  surface.derive_tree_habitat (
+    std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.derive_forest_cover (0x12345678U);
+
+  const auto& first = spatial::get<map::forest_cover> (surface.samples ());
+  std::vector<float> values;
+  values.reserve (first.size ());
+  for (const map::ForestCover value : first)
+    values.push_back (value.numerical_value_in (one));
+  MOPPE_CHECK (*std::ranges::max_element (values) > 0.65f);
+  MOPPE_CHECK (*std::ranges::min_element (values) < 0.05f);
+  for (std::size_t row = 0; row < 65; ++row)
+    MOPPE_CHECK_NEAR (values[row * 65], values[row * 65 + 64], 1e-6f);
+
+  surface.derive_forest_cover (0x12345678U);
+  const auto& repeated = spatial::get<map::forest_cover> (surface.samples ());
+  for (std::size_t offset = 0; offset < values.size (); ++offset)
+    MOPPE_CHECK_NEAR (
+      values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
+
+  surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));
+  surface.derive_forest_cover (0x12345678U);
+  const auto& cleared = spatial::get<map::forest_cover> (surface.samples ());
+  MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
+    return value == 0.0f * map::forest_cover[one];
+  }));
 }
 
 MOPPE_TEST (surface_reconstruction_matches_bounded_heightmap_interpolation) {

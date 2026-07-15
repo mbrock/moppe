@@ -86,21 +86,29 @@ minimum spacing between organisms, and roots every chosen collar at the exact
 surface elevation and normal. The seed of each site produces a related but
 distinct topology and rest configuration.
 
-The first forest prototype adds a population process between habitat and
-geometry. One or two suitable sites become recruitment centers; seeds fall in
-clusters around them; a mixture of canopy trees, young trees, and saplings is
-proposed; and larger crowns self-thin overlapping competitors. This follows the
-important shape of Deussen et al.'s ecosystem model without pretending that a
-single startup pass is a complete succession simulation. In ordinary play the
-same process grows a forest near the arrival area. The observatory mode frames
-that population for deterministic inspection.
+The forest system adds two population scales between habitat and geometry.
+First, broad and local periodic noise turns potential habitat into a global
+`forest_cover` mosaic. Trails and the home-base footprint clear that cover.
+A jittered lattice then converts cover into tens of thousands of stable,
+seed-addressed sites across the whole periodic world. Dense cover produces a
+stand rather than a uniform scatter; low cover becomes an ecotone or opening.
 
-All branches and leaf clusters in a stand are baked into one retained
-world-space mesh. Branch generation and intrinsic flexibility become
-per-vertex wind weights, which the existing Moppe scene shader animates. This
-keeps the prototype to one draw without adding a new renderer abstraction.
-Instancing or a mesh-shader expansion path becomes worthwhile when trees
-graduate from dozens of organisms near play into thousands across the world.
+Second, one or two suitable sites near the arrival area become detailed
+recruitment centers. Seeds fall in clusters around them; a mixture of canopy
+trees, young trees, and saplings is proposed; and larger crowns self-thin
+overlapping competitors. This follows the important shape of Deussen et al.'s
+ecosystem model without pretending that a single startup pass is a complete
+succession simulation. The observatory mode frames that detailed population
+for deterministic inspection.
+
+All branches and leaf clusters in the detailed stand are baked into one
+retained world-space mesh. Branch generation and intrinsic flexibility become
+per-vertex wind weights, which the existing Moppe scene shader animates. The
+global population uses much cheaper trunks and faceted crown volumes baked into
+a 16 by 16 grid of cullable meshes. Beyond the explicit crown range, the same
+cover field becomes a filtered terrain material, preserving wooded masses into
+the haze. Instancing, streamed full organisms, and mesh-shader expansion remain
+later refinements rather than prerequisites for a forested world.
 
 Run a quiet camera in the game renderer with:
 

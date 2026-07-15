@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 
@@ -32,6 +33,14 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } tree_habitat;
 
+  // Potential canopy cover after broad-scale recruitment, clearings, trails,
+  // and the home-base footprint have acted on tree habitat. Unlike habitat,
+  // this field is deliberately patchy: it says where a forest actually
+  // occupies suitable ground rather than only where a tree could survive.
+  inline constexpr struct forest_cover
+      : quantity_spec<mp_units::dimensionless> {
+  } forest_cover;
+
   // Shoulder-blended membership in the generated trail network. This is a
   // material mask rather than a generic scalar: zero is untouched terrain,
   // one is the graded centerline.
@@ -52,6 +61,7 @@ namespace moppe::map {
                    float>;
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
+  using ForestCover = quantity<forest_cover[one], float>;
   using TrailInfluence = quantity<trail_influence[one], float>;
   using HomeBaseInfluence = quantity<home_base_influence[one], float>;
 
@@ -149,6 +159,7 @@ namespace moppe::map {
                                         SurfaceElevation,
                                         SurfaceNormal,
                                         TreeHabitat,
+                                        ForestCover,
                                         TrailInfluence,
                                         HomeBaseInfluence>;
 
@@ -173,6 +184,10 @@ namespace moppe::map {
       return spatial::sample<tree_habitat> (samples (), position);
     }
 
+    ForestCover forest_cover_at (const position_t& position) const {
+      return spatial::sample<forest_cover> (samples (), position);
+    }
+
     TrailInfluence trail_influence_at (const position_t& position) const {
       return spatial::sample<trail_influence> (samples (), position);
     }
@@ -188,6 +203,10 @@ namespace moppe::map {
     void derive_tree_habitat (std::span<const float> moisture,
                               meters_t water_level,
                               meters_t tree_line);
+
+    // Turn potential habitat into a deterministic, broad-scale forest
+    // mosaic. Call after materializing trails and the home-base clearing.
+    void derive_forest_cover (std::uint32_t seed);
 
     void materialize_trail_influence (std::span<const float> influence);
     void materialize_home_base_influence (std::span<const float> influence);

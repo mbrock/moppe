@@ -238,6 +238,12 @@ namespace moppe {
         (void)moisture;
       }
 
+      // Potential canopy cover in [0,1]. The terrain uses it as the filtered
+      // forest representation after individual crown geometry becomes small.
+      virtual void set_terrain_forest (std::span<const float> cover) {
+        (void)cover;
+      }
+
       // -- frame -------------------------------------------------------
       virtual bool begin_frame (const FrameParams& params) = 0;
       virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;

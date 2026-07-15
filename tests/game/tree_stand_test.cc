@@ -15,6 +15,7 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   map::Surface surface (map);
   surface.derive_tree_habitat (
     std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.derive_forest_cover (1234);
 
   const game::TreeGrove grove = game::plan_tree_grove (surface, 1234, 9);
   MOPPE_CHECK (grove.sites.size () == 9);
@@ -38,6 +39,7 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
   map::Surface surface (map);
   surface.derive_tree_habitat (
     std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.derive_forest_cover (4567);
 
   const game::TreeGrove first = game::plan_tree_grove (surface, 4567, 7);
   const game::TreeGrove second = game::plan_tree_grove (surface, 4567, 7);
@@ -62,6 +64,7 @@ MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
   map::Surface surface (map);
   surface.derive_tree_habitat (
     std::vector<float> (129 * 129, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.derive_forest_cover (6789);
 
   const game::TreeGrove forest =
     game::plan_tree_grove (surface, 6789, 24, Vec3 (320, 0, 320));
@@ -90,6 +93,7 @@ MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
   map::Surface surface (map);
   surface.derive_tree_habitat (
     std::vector<float> (33 * 33, 1.0f), 50.0f * u::m, 160.0f * u::m);
+  surface.derive_forest_cover (8910);
 
   MOPPE_CHECK (game::plan_tree_grove (surface, 8910, 4).sites.empty ());
 }

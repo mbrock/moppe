@@ -529,6 +529,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
   texture2d<float, access::read> terrain_paths
   [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+  texture2d<float, access::read> terrain_forest
+  [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -585,6 +587,10 @@ fragment float4 terrain_fragment (
       : float2 (0.0);
   const float trail = intentional_ground.r;
   const float home_base = intentional_ground.g;
+  const float forest_cover =
+    u.params6.w > 0.5
+      ? saturate (terrain_field_sample (in.field_uv, terrain_forest).r)
+      : 0.0;
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -742,6 +748,22 @@ fragment float4 terrain_fragment (
                                           float3 (1.05, 0.88, 0.52),
                                           smoothstep (0.70, 1.0, home_base));
   texel = mix (texel, base_c, 0.92 * base_material);
+  // The canopy field is the filtered forest representation. Nearby it only
+  // darkens and cools the forest floor under explicit crown geometry. Farther
+  // away it becomes the integrated tree/ground response, preserving broad
+  // wooded masses after individual crowns become subpixel.
+  const float forest_presence = smoothstep (0.035, 0.72, forest_cover);
+  const float canopy_grain =
+    0.68 * moppe_value_noise (in.world_pos.xz * 0.018 + float2 (17.3, 5.7)) +
+    0.32 * moppe_value_noise (in.world_pos.xz * 0.061 + float2 (2.1, 41.9));
+  const float ground_value = dot (texel, float3 (0.299, 0.587, 0.114));
+  const float3 forest_c =
+    ground_value * float3 (0.55, 0.82, 0.40) * (0.82 + 0.30 * canopy_grain);
+  const float forest_distance = smoothstep (280.0, 1450.0, dist);
+  const float forest_material =
+    forest_presence * mix (0.20, 0.62, forest_distance) *
+    (1.0 - base_material) * (1.0 - trail_material);
+  texel = mix (texel, forest_c, forest_material);
   // Wet soil loses diffuse energy and saturation. Underwater ground is
   // darkest; moisture alone is a quieter bank/lowland treatment.
   const float wetness = max (0.62 * damp, submerged);

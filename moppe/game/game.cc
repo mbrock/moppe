@@ -12,6 +12,7 @@
 #include <moppe/game/chase_camera.hh>
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
+#include <moppe/game/forest.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/glider_render.hh>
 #include <moppe/game/graphics_benchmark.hh>
@@ -1059,6 +1060,7 @@ namespace moppe {
         m_pending_surface.shore.clear ();
         m_pending_surface.trails.clear ();
         m_pending_surface.home_base.clear ();
+        m_pending_surface.forest.clear ();
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
           // lakes, sea, and rivers in one surface sheet, per-body wave
@@ -1180,6 +1182,20 @@ namespace moppe {
           }
         }
 
+        if (!m_pending_surface.moisture.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.derive_forest_cover");
+          m_surface.derive_forest_cover (static_cast<std::uint32_t> (m_seed) ^
+                                         0x6f12ad37U);
+          const auto& cover =
+            spatial::get<map::forest_cover> (m_surface.samples ());
+          m_pending_surface.forest.resize (cover.size ());
+          std::ranges::transform (cover,
+                                  m_pending_surface.forest.begin (),
+                                  [] (map::ForestCover value) {
+                                    return value.numerical_value_in (one);
+                                  });
+        }
+
         {
           // Sediment ledger to materials: normalize each channel against
           // a robust high quantile so one deep gully cannot flatten the
@@ -1251,6 +1267,13 @@ namespace moppe {
         } else if (m_water_inspection)
           m_camera.place (m_water_inspection->eye, m_water_inspection->target);
         else if (!m_terrain_lab_preview) {
+          {
+            MOPPE_PROFILE_ZONE ("startup.build_global_forest");
+            m_forest.rebuild (
+              r, m_surface, static_cast<std::uint32_t> (m_seed) ^ 0xa34c91e5U);
+            std::cerr << "global forest: " << m_forest.tree_count ()
+                      << " canopy representatives\n";
+          }
           MOPPE_PROFILE_ZONE ("startup.build_forest");
           constexpr std::size_t forest_size = 32;
           m_tree_stand.rebuild (r,
@@ -1326,6 +1349,10 @@ namespace moppe {
         if (!m_pending_surface.shore.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
           r.set_terrain_shore (m_pending_surface.shore);
+        }
+        if (!m_water_shot && !m_pending_surface.forest.empty ()) {
+          MOPPE_PROFILE_ZONE ("startup.upload_terrain_forest");
+          r.set_terrain_forest (m_pending_surface.forest);
         }
         r.set_terrain_paths (m_pending_surface.trails,
                              m_pending_surface.home_base);
@@ -1974,6 +2001,10 @@ namespace moppe {
         // cloud shader wherever terrain covers it.
         if (!terrain_lab)
           draw_world_sky ();
+
+        if (!terrain_lab && !m_water_inspection && !m_tree_demo)
+          m_forest.draw (
+            r, cam, cinematic ? m_cinematic.forward () : m_camera.forward ());
 
         if (!terrain_lab && !m_water_inspection)
           m_tree_stand.draw (r);
@@ -2987,8 +3018,10 @@ namespace moppe {
         std::vector<float> shore;
         std::vector<float> trails;
         std::vector<float> home_base;
+        std::vector<float> forest;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
+      ForestLandscape m_forest;
       TreeStand m_tree_stand;
       ChaseCamera m_camera;
       mov::Vehicle m_vehicle;

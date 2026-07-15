@@ -300,6 +300,7 @@ namespace moppe {
                       std::span<const float> water_levels) override;
       void set_water_flow (std::span<const float> flow) override;
       void set_terrain_moisture (std::span<const float> moisture) override;
+      void set_terrain_forest (std::span<const float> cover) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
       void
@@ -462,6 +463,8 @@ namespace moppe {
       bool m_have_water_flow = false;
       id<MTLTexture> m_moisture = nil;
       bool m_have_moisture = false;
+      id<MTLTexture> m_forest = nil;
+      bool m_have_forest = false;
       id<MTLTexture> m_geology = nil;
       bool m_have_geology = false;
       id<MTLTexture> m_shore = nil;
@@ -1574,6 +1577,30 @@ namespace moppe {
       upload_texture (m_moisture, moisture.data (), width, height, 4, false);
     }
 
+    void MetalRenderer::set_terrain_forest (std::span<const float> cover) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_forest");
+      const std::size_t expected =
+        static_cast<std::size_t> (m_terrain_params.width) *
+        m_terrain_params.height;
+      m_have_forest = expected != 0 && cover.size () == expected;
+      if (!m_have_forest)
+        return;
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_forest || m_forest.width != static_cast<NSUInteger> (width) ||
+          m_forest.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Float
+                                       width:width
+                                      height:height
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageShaderRead;
+        m_forest = [m_device newTextureWithDescriptor:td];
+      }
+      upload_texture (m_forest, cover.data (), width, height, 4, false);
+    }
+
     // -- targets -------------------------------------------------------
 
     id<MTLTexture> MetalRenderer::make_target (
@@ -1941,6 +1968,7 @@ namespace moppe {
                       : 0.0f;
       u.params6.y = m_have_shore ? 1.0f : 0.0f;
       u.params6.z = m_have_paths ? 1.0f : 0.0f;
+      u.params6.w = m_have_forest ? 1.0f : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -1984,6 +2012,8 @@ namespace moppe {
                       atIndex:MOPPE_TEX_TERRAIN_SHORE];
       [enc setFragmentTexture:(m_have_paths ? m_paths : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_PATHS];
+      [enc setFragmentTexture:(m_have_forest ? m_forest : m_heights)
+                      atIndex:MOPPE_TEX_TERRAIN_FOREST];
 
       for (int i = 0; i < count; ++i) {
         const int lod =
