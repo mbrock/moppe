@@ -86,13 +86,21 @@ minimum spacing between organisms, and roots every chosen collar at the exact
 surface elevation and normal. The seed of each site produces a related but
 distinct topology and rest configuration.
 
-For this first population proof, all branches and leaf clusters in a stand are
-baked into one retained world-space mesh. Branch generation and intrinsic
-flexibility become per-vertex wind weights, which the existing Moppe scene
-shader animates. This keeps the stand to one draw without adding a new
-renderer abstraction. Instancing or a mesh-shader expansion path becomes
-worthwhile when trees graduate from a deliberately framed grove to thousands
-of organisms across the world.
+The first forest prototype adds a population process between habitat and
+geometry. One or two suitable sites become recruitment centers; seeds fall in
+clusters around them; a mixture of canopy trees, young trees, and saplings is
+proposed; and larger crowns self-thin overlapping competitors. This follows the
+important shape of Deussen et al.'s ecosystem model without pretending that a
+single startup pass is a complete succession simulation. In ordinary play the
+same process grows a forest near the arrival area. The observatory mode frames
+that population for deterministic inspection.
+
+All branches and leaf clusters in a stand are baked into one retained
+world-space mesh. Branch generation and intrinsic flexibility become
+per-vertex wind weights, which the existing Moppe scene shader animates. This
+keeps the prototype to one draw without adding a new renderer abstraction.
+Instancing or a mesh-shader expansion path becomes worthwhile when trees
+graduate from dozens of organisms near play into thousands across the world.
 
 Run a quiet camera in the game renderer with:
 
