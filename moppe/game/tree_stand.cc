@@ -41,6 +41,11 @@ namespace moppe::game {
         .numerical_value_in (one);
     }
 
+    float forest_cover_value (const map::Surface& surface, float x, float z) {
+      return surface.forest_cover_at (position (Vec3 (x, 0, z)))
+        .numerical_value_in (one);
+    }
+
     TreeSite site_at (const map::Surface& surface,
                       float x,
                       float z,
@@ -133,9 +138,9 @@ namespace moppe::game {
       const Vec3 across = normalized (cross (axis, anchor));
       const Vec3 around = normalized (cross (across, axis));
       constexpr int sides = 6;
-      draw.color (0.27f + 0.055f * color_variation,
-                  0.14f + 0.030f * color_variation,
-                  0.070f + 0.018f * color_variation);
+      draw.color (0.20f + 0.040f * color_variation,
+                  0.10f + 0.025f * color_variation,
+                  0.040f + 0.015f * color_variation);
       draw.begin (render::Prim::Triangles);
       for (int side = 0; side < sides; ++side) {
         const float a0 = 2.0f * std::numbers::pi_v<float> * side / sides;
@@ -224,10 +229,10 @@ namespace moppe::game {
           const float youth = site.cohort == TreeCohort::sapling ? 1.0f
                               : site.cohort == TreeCohort::young ? 0.45f
                                                                  : 0.0f;
-          draw.color (0.14f + 0.075f * hue + 0.035f * youth,
-                      0.29f + 0.13f * site.habitat + 0.07f * hue +
-                        0.075f * youth,
-                      0.070f + 0.050f * hue + 0.020f * youth);
+          draw.color (0.09f + 0.055f * hue + 0.025f * youth,
+                      0.21f + 0.09f * site.habitat + 0.045f * hue +
+                        0.050f * youth,
+                      0.045f + 0.035f * hue + 0.015f * youth);
           draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
           draw.push ();
           draw.translate (center);
@@ -291,6 +296,7 @@ namespace moppe::game {
                            std::optional<Vec3> focus) {
       const map::SurfaceBundle& samples = surface.samples ();
       const map::SurfaceDomain& domain = samples.domain ();
+      const auto& cover = spatial::get<map::forest_cover> (samples);
       const auto& habitat = spatial::get<map::tree_habitat> (samples);
       const std::size_t margin = std::max<std::size_t> (
         3, std::min (domain.width (), domain.height ()) / 20);
@@ -303,8 +309,9 @@ namespace moppe::game {
              column += step) {
           const map::SurfaceIndex index { column, row };
           const std::size_t offset = domain.offset (index);
-          const float support = habitat[offset].numerical_value_in (one);
-          if (support < 0.34f)
+          const float support = cover[offset].numerical_value_in (one);
+          const float habitability = habitat[offset].numerical_value_in (one);
+          if (support < 0.18f || habitability < 0.34f)
             continue;
           const float x =
             static_cast<float> (column) * meters_value (domain.spacing_x ());
@@ -411,8 +418,8 @@ namespace moppe::game {
       const float z = patches[patch].z + std::cos (angle) * distance;
       if (x < 2.0f || z < 2.0f || x > maximum_x - 2.0f || z > maximum_z - 2.0f)
         continue;
-      const float support = habitat_value (surface, x, z);
-      if (support < 0.34f)
+      const float support = forest_cover_value (surface, x, z);
+      if (support < 0.08f || habitat_value (surface, x, z) < 0.34f)
         continue;
       const float recruitment = unit (random);
       const float scale = recruitment < 0.34f   ? 0.38f + 0.26f * unit (random)

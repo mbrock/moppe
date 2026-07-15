@@ -4,10 +4,10 @@ This shelf collects papers and production material for dense vegetation that
 looks alive without making the renderer revolve around it. It is deliberately
 matched to Moppe's current split:
 
-- grass is a field-driven, per-blade mesh-shader system and the largest measured
-  GPU feature cost;
-- trees are distinct Atelier organisms, recruited into a habitat-driven,
-  mixed-age forest and baked into one retained mesh;
+- the terrain has a filtered grass material; the former per-blade mesh-shader
+  experiment remains useful history but is not in the current game;
+- trees have a global habitat-driven canopy field and cheap chunked population,
+  while distinct Atelier organisms form the detailed mixed-age stand;
 - moisture, elevation, slope, shore clearance, and tree line already provide
   ecological placement fields;
 - grass and tree vertices already share a continuous wind vocabulary.
@@ -109,11 +109,13 @@ workload interactions.
   materials and distributions, which closely matches Moppe's surface bundle.
   [GDC PDF](https://media.gdcvault.com/gdc2019/presentations/Ladavac_Alen_Four_Million_Acres.pdf)
 
-For Moppe, the natural ladder is: full intrinsic organism near the player;
-organ-aware mesh expansion or instanced representative organs in the middle;
-billboard-cloud or depth-bearing canopy representation farther away; then a
-filtered forest term in terrain-scale shading. The transition should preserve
-coverage and lighting rather than merely swapping triangle counts.
+Moppe now has the outer and inner anchors of this ladder: full intrinsic
+organisms in the detailed stand, cheap cullable trunk-and-crown volumes across
+the world, and a filtered forest term in terrain-scale shading. The next step
+is a moving near field of full organisms plus a smoother middle representation,
+such as instanced representative organs or depth-bearing canopy impostors. The
+transition should preserve coverage and lighting rather than merely swapping
+triangle counts.
 
 ## Leaves, lighting, and stable coverage
 
