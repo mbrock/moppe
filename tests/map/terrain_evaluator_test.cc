@@ -5,6 +5,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <bit>
 #include <cstdint>
 #include <vector>
@@ -59,6 +60,36 @@ MOPPE_TEST (orogeny_evaluation_is_deterministic) {
   evaluate (second, program);
 
   MOPPE_CHECK (maps_match (first, second));
+}
+
+MOPPE_TEST (orogeny_channel_memory_survives_a_checkpoint) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+  TerrainProgram program =
+    make_orogeny_program (91, TerrainGenerationProfile::Fast);
+  auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
+  orogeny.evolution.duration =
+    100000.0f * mp_units::astronomy::Julian_year;
+  orogeny.evolution.time_step =
+    50000.0f * mp_units::astronomy::Julian_year;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (320, 650, 320), 0, Topology::Torus);
+  map::TerrainEvaluator evaluator (map);
+
+  evaluator.begin (program);
+  evaluator.apply (program.transforms.front ());
+  const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
+  MOPPE_CHECK (checkpoint.channel_tangents.size () == 16 * 16);
+  MOPPE_CHECK (std::ranges::any_of (
+    checkpoint.channel_tangents, [] (ChannelTangent tangent) {
+      return length2 (tangent.numerical_value_in (mp_units::one)) > 0.0f;
+    }));
+
+  evaluator.begin (program);
+  MOPPE_CHECK (evaluator.channel_tangents ().empty ());
+  evaluator.restore (checkpoint);
+  MOPPE_CHECK (std::ranges::equal (evaluator.channel_tangents (),
+                                  checkpoint.channel_tangents));
 }
 
 MOPPE_TEST (checkpoint_resume_matches_complete_replay) {

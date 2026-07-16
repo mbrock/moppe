@@ -19,6 +19,7 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("TerrainEvaluator::begin");
     terrain::validate_program (program);
     m_trail_network.reset ();
+    m_channel_tangents.clear ();
     const terrain::GeologicalFields fields = [&] {
       MOPPE_PROFILE_ZONE ("terrain.expand_geological_recipe");
       return terrain::make_geological_fields (program.source.recipe);
@@ -138,7 +139,8 @@ namespace moppe::map {
             if (m_iteration_progress)
               m_iteration_progress (
                 m_transform_index, transform, completed, total);
-          });
+          },
+          m_channel_tangents);
       const std::size_t width = m_target.unique_width ();
       const std::size_t height = m_target.unique_height ();
       for (std::size_t y = 0; y < height; ++y)
@@ -147,6 +149,7 @@ namespace moppe::map {
           m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
         }
       report = result.report;
+      m_channel_tangents = std::move (result.channel_tangents);
     } else if (const auto* thermal =
                  std::get_if<terrain::ThermalErosion> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.thermal_erosion");
@@ -205,7 +208,8 @@ namespace moppe::map {
              .eroded = std::vector<float> (m_target.raw_eroded (),
                                            m_target.raw_eroded () + count),
              .deposited = std::vector<float> (
-               m_target.raw_deposited (), m_target.raw_deposited () + count) };
+               m_target.raw_deposited (), m_target.raw_deposited () + count),
+             .channel_tangents = m_channel_tangents };
   }
 
   void TerrainEvaluator::restore (const TerrainCheckpoint& checkpoint) {
@@ -227,6 +231,13 @@ namespace moppe::map {
       std::copy (checkpoint.deposited.begin (),
                  checkpoint.deposited.end (),
                  m_target.raw_deposited ());
+    const std::size_t unique =
+      static_cast<std::size_t> (m_target.unique_width ()) *
+      m_target.unique_height ();
+    if (checkpoint.channel_tangents.size () == unique)
+      m_channel_tangents = checkpoint.channel_tangents;
+    else
+      m_channel_tangents.clear ();
     m_trail_network.reset ();
   }
 }

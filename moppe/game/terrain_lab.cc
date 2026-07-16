@@ -337,7 +337,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
           return 6;
         if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
-          return 7;
+          return 8;
         if (std::holds_alternative<terrain::ThermalErosion> (stage))
           return 2;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
@@ -421,6 +421,12 @@ namespace moppe {
                      format_float (square_meters_per_julian_year_value (
                                      orogeny->evolution.diffusivity),
                                    5),
+                     ParameterDomain::Continuous };
+          if (row == 6)
+            return { "CHANNEL MEMORY",
+                     format_float (orogeny->evolution.channel_persistence
+                                     .numerical_value_in (mp_units::one),
+                                   2),
                      ParameterDomain::Continuous };
           return { "SEA LEVEL",
                    format_float (orogeny->evolution.sea_level, 3),
@@ -1509,6 +1515,12 @@ namespace moppe {
                          orogeny->evolution.diffusivity),
                        0.0f,
                        0.005f);
+        if (row == 6)
+          return unit (
+            orogeny->evolution.channel_persistence.numerical_value_in (
+              mp_units::one),
+            0.0f,
+            0.95f);
         return unit (orogeny->evolution.sea_level, 0.0f, 0.3f);
       }
       if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
@@ -1733,6 +1745,12 @@ namespace moppe {
             mix (0.0f, 0.005f) * mp_units::si::metre * mp_units::si::metre /
             mp_units::astronomy::Julian_year;
           return orogeny->evolution.diffusivity != old;
+        }
+        if (row == 6) {
+          const auto old = orogeny->evolution.channel_persistence;
+          orogeny->evolution.channel_persistence =
+            mix (0.0f, 0.95f) * terrain::channel_persistence[mp_units::one];
+          return orogeny->evolution.channel_persistence != old;
         }
         const float old = orogeny->evolution.sea_level;
         orogeny->evolution.sea_level = mix (0.0f, 0.3f);

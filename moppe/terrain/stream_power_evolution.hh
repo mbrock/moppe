@@ -1,6 +1,7 @@
 #ifndef MOPPE_TERRAIN_STREAM_POWER_EVOLUTION_HH
 #define MOPPE_TERRAIN_STREAM_POWER_EVOLUTION_HH
 
+#include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
@@ -28,6 +29,11 @@ namespace moppe::terrain {
       mp_units::astronomy::Julian_year;
     float sea_level = 50.0f / 650.0f;
     StreamPowerRouting routing = StreamPowerRouting::DInfinity;
+    // How strongly the prior geological step's channel tangent favours an
+    // aligned, still-downhill D-infinity route. Zero recovers memoryless
+    // routing; values must remain below one.
+    ChannelPersistence channel_persistence =
+      0.35f * moppe::terrain::channel_persistence[mp_units::one];
   };
 
   struct StreamPowerEvolutionReport {
@@ -52,16 +58,18 @@ namespace moppe::terrain {
   struct StreamPowerEvolutionResult {
     // Unique samples: periodic duplicated render seams are omitted.
     std::vector<float> heights;
+    std::vector<ChannelTangent> channel_tangents;
     StreamPowerEvolutionReport report;
   };
 
   using StreamPowerProgress = std::function<void (int, int)>;
 
-  StreamPowerEvolutionResult
-  evolve_stream_power (const TerrainView& terrain,
-                       std::span<const meters_per_julian_year_t> uplift_rate,
-                       const StreamPowerEvolution& parameters,
-                       const StreamPowerProgress& progress = {});
+  StreamPowerEvolutionResult evolve_stream_power (
+    const TerrainView& terrain,
+    std::span<const meters_per_julian_year_t> uplift_rate,
+    const StreamPowerEvolution& parameters,
+    const StreamPowerProgress& progress = {},
+    std::span<const ChannelTangent> initial_channel_tangents = {});
 }
 
 #endif

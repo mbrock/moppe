@@ -1,6 +1,7 @@
 #ifndef MOPPE_TERRAIN_FRACTIONAL_DRAINAGE_HH
 #define MOPPE_TERRAIN_FRACTIONAL_DRAINAGE_HH
 
+#include <moppe/gfx/math.hh>
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/terrain_view.hh>
@@ -104,6 +105,27 @@ namespace moppe::terrain {
   inline constexpr struct fractional_contributing_area
       : quantity_spec<mp_units::isq::area, non_negative> {
   } fractional_contributing_area;
+  // A horizontal, unit-length representative of the directed flow carried by
+  // a lattice sample. Unlike drainage_direction, this can be averaged across
+  // incoming arcs without an angular wrap discontinuity.
+  inline constexpr struct channel_tangent
+      : quantity_spec<mp_units::dimensionless,
+                      mp_units::quantity_tensor_order::vector,
+                      mp_units::is_kind> {
+  } channel_tangent;
+  // Contributing area carried in the channel-tangent direction. The arcs in
+  // FractionalFlowDomain are the edge-like transport object; this cell-aligned
+  // vector is their continuous summary for accumulation and later sampling.
+  inline constexpr struct channel_area_flux
+      : quantity_spec<mp_units::isq::area,
+                      mp_units::quantity_tensor_order::vector,
+                      mp_units::is_kind> {
+  } channel_area_flux;
+  inline constexpr struct channel_persistence
+      : quantity_spec<mp_units::dimensionless,
+                      non_negative,
+                      mp_units::is_kind> {
+  } channel_persistence;
 
   using FlowFraction = mp_units::quantity<flow_fraction[mp_units::one], float>;
   using FacetCoordinate =
@@ -113,6 +135,13 @@ namespace moppe::terrain {
   using FractionalContributingArea = mp_units::quantity<
     fractional_contributing_area[mp_units::si::metre * mp_units::si::metre],
     float>;
+  using ChannelTangent =
+    mp_units::quantity<channel_tangent[mp_units::one], Vec3>;
+  using ChannelAreaFlux = mp_units::quantity<
+    channel_area_flux[mp_units::si::metre * mp_units::si::metre],
+    Vec3>;
+  using ChannelPersistence =
+    mp_units::quantity<channel_persistence[mp_units::one], float>;
 
   struct FractionalFlowArc {
     CellIndex receiver = no_cell;
@@ -182,11 +211,16 @@ namespace moppe::terrain {
   using FractionalDrainage = spatial::Bundle<FractionalFlowDomain,
                                              DrainageDirection,
                                              slope_t,
-                                             FractionalContributingArea>;
+                                             FractionalContributingArea,
+                                             ChannelTangent,
+                                             ChannelAreaFlux>;
 
-  FractionalDrainage analyze_fractional_drainage (const TerrainView& terrain,
-                                                  const FloodField& flood,
-                                                  const LakeCensus& census);
+  FractionalDrainage analyze_fractional_drainage (
+    const TerrainView& terrain,
+    const FloodField& flood,
+    const LakeCensus& census,
+    std::span<const ChannelTangent> previous_tangent = {},
+    ChannelPersistence persistence = 0.0f * channel_persistence[mp_units::one]);
 }
 
 #endif

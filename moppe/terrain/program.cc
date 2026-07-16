@@ -116,7 +116,14 @@ namespace moppe::terrain {
                 evolution.diffusivity < 0.0f * mp_units::si::metre *
                                           mp_units::si::metre /
                                           mp_units::astronomy::Julian_year ||
-                !std::isfinite (evolution.sea_level))
+                !std::isfinite (evolution.sea_level) ||
+                !std::isfinite (
+                  evolution.channel_persistence.numerical_value_in (
+                    mp_units::one)) ||
+                evolution.channel_persistence <
+                  0.0f * channel_persistence[mp_units::one] ||
+                evolution.channel_persistence >=
+                  1.0f * channel_persistence[mp_units::one])
               throw std::invalid_argument (
                 "orogeny evolution parameters are invalid");
           } else if constexpr (std::is_same_v<T, ThermalErosion>) {

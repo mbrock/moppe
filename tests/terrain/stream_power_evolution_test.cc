@@ -3,6 +3,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
@@ -38,6 +39,9 @@ MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
 
   MOPPE_CHECK (result.heights == std::vector<float> (profile_heights.begin (),
                                                      profile_heights.end ()));
+  MOPPE_CHECK (result.channel_tangents.size () == profile_heights.size ());
+  for (const ChannelTangent tangent : result.channel_tangents)
+    MOPPE_CHECK (length (tangent.numerical_value_in (mp_units::one)) == 0.0f);
   MOPPE_CHECK (result.report.steps == iteration_count (0));
 }
 
@@ -244,6 +248,13 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
     evolve_stream_power (terrain, uplift, parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
+  MOPPE_CHECK (first.channel_tangents == second.channel_tangents);
+  MOPPE_CHECK (std::any_of (first.channel_tangents.begin (),
+                            first.channel_tangents.end (),
+                            [] (ChannelTangent tangent) {
+                              return length2 (tangent.numerical_value_in (
+                                       mp_units::one)) > 0.0f;
+                            }));
 }
 
 MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {

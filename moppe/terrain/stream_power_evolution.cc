@@ -80,7 +80,13 @@ namespace moppe::terrain {
           parameters.diffusivity < 0.0f * mp_units::si::metre *
                                      mp_units::si::metre /
                                      mp_units::astronomy::Julian_year ||
-          !std::isfinite (parameters.sea_level))
+          !std::isfinite (parameters.sea_level) ||
+          !std::isfinite (parameters.channel_persistence.numerical_value_in (
+            mp_units::one)) ||
+          parameters.channel_persistence <
+            0.0f * channel_persistence[mp_units::one] ||
+          parameters.channel_persistence >=
+            1.0f * channel_persistence[mp_units::one])
         throw std::invalid_argument (
           "invalid stream-power evolution parameters");
       for (std::size_t cell = 0; cell < count; ++cell) {
@@ -201,17 +207,22 @@ namespace moppe::terrain {
     }
   }
 
-  StreamPowerEvolutionResult
-  evolve_stream_power (const TerrainView& terrain,
-                       std::span<const meters_per_julian_year_t> uplift_rate,
-                       const StreamPowerEvolution& parameters,
-                       const StreamPowerProgress& progress) {
+  StreamPowerEvolutionResult evolve_stream_power (
+    const TerrainView& terrain,
+    std::span<const meters_per_julian_year_t> uplift_rate,
+    const StreamPowerEvolution& parameters,
+    const StreamPowerProgress& progress,
+    std::span<const ChannelTangent> initial_channel_tangents) {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (terrain, uplift_rate, parameters);
     const TerrainGrid& grid = terrain.grid ();
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
+    if (!initial_channel_tangents.empty () &&
+        initial_channel_tangents.size () != count)
+      throw std::invalid_argument (
+        "initial channel tangents do not match terrain");
     const double height_scale_m = grid.height_scale_m ();
     const double cell_area_m2 = square_meters_value (grid.cell_area ());
     const double duration_years = julian_years_value (parameters.duration);
@@ -224,10 +235,28 @@ namespace moppe::terrain {
       for (std::size_t x = 0; x < width; ++x)
         initial[y * width + x] = terrain.at (x, y);
     std::vector<float> current = initial;
+    std::vector<ChannelTangent> channel_memory;
+    if (parameters.routing == StreamPowerRouting::DInfinity &&
+        !initial_channel_tangents.empty ()) {
+      channel_memory.assign (initial_channel_tangents.begin (),
+                             initial_channel_tangents.end ());
+      for (const ChannelTangent value : channel_memory) {
+        const Vec3 tangent = value.numerical_value_in (mp_units::one);
+        if (!std::isfinite (tangent[0]) || !std::isfinite (tangent[1]) ||
+            !std::isfinite (tangent[2]) || std::fabs (tangent[1]) > 1e-6f ||
+            length2 (tangent) > 1.0001f)
+          throw std::invalid_argument (
+            "initial channel tangents must be finite horizontal unit vectors");
+      }
+    } else {
+      channel_memory.assign (count, Vec3 () * channel_tangent[mp_units::one]);
+    }
 
     StreamPowerEvolutionReport report { .cells = cell_count (count) };
     if (duration_years == 0.0)
-      return { .heights = std::move (current), .report = report };
+      return { .heights = std::move (current),
+               .channel_tangents = std::move (channel_memory),
+               .report = report };
 
     const double requested_steps = std::ceil (duration_years / time_step_years);
     if (!std::isfinite (requested_steps) ||
@@ -323,7 +352,12 @@ namespace moppe::terrain {
           }
         } else {
           const FractionalDrainage drainage =
-            analyze_fractional_drainage (routed_terrain, flood, census);
+            analyze_fractional_drainage (routed_terrain,
+                                         flood,
+                                         census,
+                                         channel_memory,
+                                         parameters.channel_persistence);
+          channel_memory = spatial::get<channel_tangent> (drainage);
           const auto& area =
             spatial::get<fractional_contributing_area> (drainage);
           const auto order = drainage.domain ().topological_order ();
@@ -420,6 +454,8 @@ namespace moppe::terrain {
       absolute_change_m / count * mp_units::si::metre;
     report.maximum_absolute_change =
       maximum_absolute_change_m * mp_units::si::metre;
-    return { .heights = std::move (current), .report = report };
+    return { .heights = std::move (current),
+             .channel_tangents = std::move (channel_memory),
+             .report = report };
   }
 }
