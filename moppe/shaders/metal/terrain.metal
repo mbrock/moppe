@@ -594,6 +594,16 @@ fragment float4 terrain_fragment (
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
+  // World-space size of one screen pixel on this surface. Distance alone is
+  // insufficient at a grazing angle: a nearby horizontal pixel can span
+  // several metres. Fade procedural frequencies when they become unresolved
+  // instead of letting them turn into crawling highlights and moire.
+  const float ground_pixel_m =
+    max (length (dfdx (in.world_pos.xz)), length (dfdy (in.world_pos.xz)));
+  const float fine_detail_visibility =
+    1.0 - smoothstep (0.18, 1.15, ground_pixel_m);
+  const float coarse_detail_visibility =
+    1.0 - smoothstep (0.75, 3.0, ground_pixel_m);
 
   // Independent landscape-scale variation survives after the source texture
   // has mipmapped away. Two octaves avoid tinting every hill uniformly.
@@ -719,9 +729,16 @@ fragment float4 terrain_fragment (
   const float trail_shoulder =
     smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
   const float close_trail = 1.0 - smoothstep (55.0, 240.0, dist);
+  const float trail_gravel_coarse = mix (
+    0.5,
+    moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
+    coarse_detail_visibility);
+  const float trail_gravel_fine = mix (
+    0.5,
+    moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
+    fine_detail_visibility);
   const float trail_gravel =
-    0.58 * moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)) +
-    0.42 * moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9));
+    0.58 * trail_gravel_coarse + 0.42 * trail_gravel_fine;
   const float worn_bands =
     (1.0 - smoothstep (0.055, 0.15, abs (trail - 0.64))) * close_trail *
     trail_footprint;
@@ -792,7 +809,8 @@ fragment float4 terrain_fragment (
     (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief +
      0.10 * trail_material * close_trail) *
     (1.0 - 0.55 * fill_relief) * (1.0 - 0.8 * far_blend) *
-    (1.0 - 0.85 * snow_coef);
+    (1.0 - 0.85 * snow_coef) *
+    (1.0 - smoothstep (0.45, 2.2, ground_pixel_m));
   const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
   n = terrain_detail_normal (in.world_pos, n, material_signal, detail_strength);
   // Close wet flats pick up rounded pebble-scale relief. This is deliberately
@@ -804,7 +822,11 @@ fragment float4 terrain_fragment (
   const float pebble_strength = max (submerged, 0.8 * swash_zone) *
                                 smoothstep (0.45, 0.92, n.y) *
                                 (1.0 - smoothstep (18.0, 120.0, dist)) * 0.28;
-  n = terrain_detail_normal (in.world_pos, n, pebble, pebble_strength);
+  n = terrain_detail_normal (
+    in.world_pos,
+    n,
+    pebble,
+    pebble_strength * (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor (
@@ -835,7 +857,8 @@ fragment float4 terrain_fragment (
   lit += u.sun_specular.rgb * shadow * material_spec;
   // Snowfields retain a broader crystalline sparkle into HDR headroom.
   lit += snow_coef * u.sun_specular.rgb * shadow *
-         pow (max (dot (n, h), 0.0), 32.0) * 0.5;
+         pow (max (dot (n, h), 0.0), 32.0) *
+         mix (0.10, 0.5, coarse_detail_visibility);
   // Damp ground has a broad, low-energy sheen; shallow submerged stones can
   // catch a tighter glint through the translucent water surface.
   const float wet_spec =

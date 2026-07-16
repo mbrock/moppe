@@ -100,6 +100,7 @@ namespace moppe::game {
     state.blend = true;
     state.depth_write = false;
     state.cull = false;
+    state.depth_bias = true;
     draw.state (state);
     draw.lit (true);
     draw.fogged (true);
