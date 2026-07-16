@@ -29,11 +29,11 @@ subsystems or a settled roadmap.
 
 ** Random world
 
-This is the most active and interesting game mode.  A =TerrainProgram=
-combines a geological source, explicit random-stream state, and an ordered
-sequence of transforms.  The normal play profile generates periodic terrain,
-applies hydraulic and thermal erosion, computes standing water, chooses a
-safe spawn, and puts the motorcycle into the result.
+This is the most active and interesting game mode. A =TerrainProgram= combines
+a geological source, an explicit seed, and an ordered sequence of transforms.
+The normal play profile evolves periodic terrain with the orogeny model,
+forms a designed trail circuit, computes standing water and continuous river
+alignments, chooses a safe spawn, and puts the motorcycle into the result.
 
 The world is topologically periodic.  Terrain lookup and the newer analysis
 passes respect that topology; it is not merely a rendering trick at the map
@@ -61,7 +61,7 @@ not be forced to justify all of them or prematurely unify them.
 ** Terrain language and evaluation
 
 - [X] Runtime scalar-field expression DAG and geological recipes.
-- [X] First-class =TerrainProgram= with source, randomness, and transforms.
+- [X] First-class =TerrainProgram= with source, seed, and transforms.
 - [X] CPU evaluation shared by tools and game generation.
 - [X] Metal compilation for pointwise terrain fields.
 - [X] Fast, play, and research generation profiles.
@@ -76,15 +76,10 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 
 - [X] Periodic D8 dry-surface drainage with slope, contributing area,
   basins, and sinks.
-- [X] Hydraulic erosion reports with sediment and termination ledgers.
-- [X] Explicit residual-sediment deposition; recorded experiments close the
-  sediment ledger.
-- [X] Path-monotone carving option, now the default in =HydraulicErosion=.
 - [X] Finite-time =n=1= analytical stream-power transform with physical age,
   uplift, erodibility, drainage exponent, and routing controls.
-- [X] Opt-in shallow-continent orogeny source with a typed uplift field,
+- [X] Default shallow-continent orogeny source with a typed uplift field,
   implicit per-step incision, routing refresh, and interleaved diffusion.
-- [X] Fixed-seed source/analytical/droplet/talus comparison harness.
 - [X] Priority-flood standing-water surface and deterministic lake census.
 - [X] Puddle, pond, lake, and sea classifications.
 - [X] Area/depth/volume permanence policy for rendered inland water.
@@ -93,10 +88,11 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 - [X] Explicit global-ocean identity and route-proven inland body spills.
 - [X] Body inlet and outflow catchment ledgers for rendering and erosion.
 - [X] Directed dry river reaches split at confluences and water bodies.
-- [X] World-space river ribbons animated from reach direction and discharge.
+- [X] Dense cubic river alignments with confluence-continuous flow distance.
+- [X] Multi-row river ribbons animated along the continuous alignment.
+- [X] Standing-water sheets that accept river current through each mouth.
 - [X] Clustered high-flow knickpoint candidates with physical drop and slope.
-- [X] Finite-time stream-power aging in the world generation program.
-- [X] Discharge-scaled channel beds carved along the extracted river network.
+- [X] Finite-time stream-power orogeny in the world generation program.
 - [ ] Erosion coupled to lake infill and spillway incision.
 
 The dry drainage reference still describes strict descent on bare terrain.
@@ -104,8 +100,8 @@ Terrain Lab now interprets the =FloodField= as a wet drainage surface: strict
 downhill D8 routes on slopes and one deterministic route through each level
 water body.  The largest connected below-sea component is the explicit ocean;
 enclosed low basins fill to their own spills.  Inland bodies expose exact
-spills, inlets, and accumulated outflow.  Hydraulic erosion does not yet
-consume the wet graph.
+spills, inlets, and accumulated outflow. River rendering consumes the wet
+graph without mutating the terrain.
 
 ** Riding and presentation
 
@@ -120,35 +116,37 @@ consume the wet graph.
 
 * Active work
 
-** DONE Render the first river ribbons from reaches
+** DONE Make continuous rivers the rendering authority
 
-The game and Terrain Lab now build retained world-space ribbons from coherent
-dry reaches.  They follow the ordered receiver cells, widen with catchment,
-sit just above the sampled bed, and carry downstream distance, discharge, and
-rapid strength into an animated Metal material.  A presentation threshold of
-1,024 source cells keeps the rendered network to persistent-looking channels;
-the denser analytical network remains available in Terrain Lab.
+The game and Terrain Lab build retained multi-row ribbons from dense
+=RiverAlignment= values. They follow damped cubic trajectories, widen with
+physical catchment laws, carry a flow coordinate continuously through
+confluences, derive depth against the orogeny terrain, and dissolve beneath
+standing water at mouths. The shader orients two-phase advected detail along
+the curved surface. The standing-water painter now carries only real water
+bodies and mouth currents; raster channel carving and droplet erosion are
+retired.
 
 Acceptance evidence:
 
 - [X] Seed 123 completes wet routing and renders in both Lab and gameplay.
-- [X] Width increases with catchment and animation follows downstream distance.
-- [X] Near-field ribbons remain above the sampled bed without visible z-fight.
+- [X] Width increases with catchment and animation follows a globally
+  continuous downstream distance.
+- [X] Seven-row cross-sections feather at banks and remain above sampled
+  terrain without visible z-fight.
+- [X] Mouths blend into their water body and continue current into its sheet.
 - [X] Rendering consumes derived readings and does not edit terrain.
 
-This is a first visible slice, not finished river morphology.  Confluences have
-no non-overlapping junction surface, standing-water shores expose their grid,
-and a steep reach is only shaded as a rapid rather than turned into a vertical
-fall or spray system.  Those limitations are now visible enough to guide the
-next iterations.
+This is not finished river morphology. Confluences still use overlapping soft
+coverage, standing-water shores expose their grid, and a steep reach is shaded
+as a rapid rather than turned into a vertical fall or spray system.
 
 ** TODO Make channels read as watercourses rather than routed ribbons
 
 - [X] Resample reach centerlines with bounded cubic tangents while preserving
   exact source/downstream endpoints, periodic continuity, and terrain contact.
-- [X] Carve channel beds under every visible reach and float level water
-  cross-sections in them, so the surface meets real banks instead of
-  draping over grass.
+- [X] Replace raster channel beds with bank-limited cross-sections derived
+  directly from the continuous alignment and orogeny terrain.
 - [X] Replace plane-wave streaks with flow-advected value noise, restrained
   churn/cascade foam, a bank contact line, and Fresnel sky reflection.
 - [X] Fade lake/ocean mouths into standing water, extending the current only
@@ -166,7 +164,7 @@ next iterations.
 - [ ] Render a curved falling sheet and soft foot spray only after a candidate
   has an actual lip/face; a vertical quad over the continuous heightfield was
   tested and rejected because it intersected terrain and broke the river.
-- Give the rider water contact, crossing, and depth feedback after the visual
+- [ ] Give the rider water contact, crossing, and depth feedback after the visual
   surface is stable.
 
 ** TODO Improve lake identity and inspection
@@ -177,13 +175,6 @@ next iterations.
 - [ ] Add lake-size distribution export.
 - [ ] Make =WaterPermanence= editable program data rather than a default C++
   policy at the rendering boundary.
-
-** TODO Measure the carving rule
-
-Path-monotone carving reduced sinks and small water bodies in the recorded
-257x257 comparison while preserving its large lakes.  It is intentionally
-strong.  Add clamp-frequency and pit-attribution instrumentation before
-deciding that it is the final physical rule.
 
 ** DONE Establish the first global stream-power comparison
 
@@ -283,6 +274,21 @@ Detailed engineering guidance remains in
 [[file:working-practices.md][working-practices.md]].
 
 * Log
+
+Entries below are a chronological experiment record. They intentionally
+describe implementations that may since have been replaced; the Current
+product and What is implemented sections above are authoritative.
+
+** 2026-07-16 Rivers become continuous geometry
+
+- Retired particle droplets, raster channel carving, their Terrain Lab
+  controls, dedicated experiments, program variants, and active tests.
+- Made dense cubic =RiverAlignment= values the shared geometric reading for
+  every reach, with physical width/depth and globally continuous flow distance.
+- Rebuilt running water as a seven-row soft-edged ribbon, with bank-limited
+  levels, curve-oriented two-phase advection, and standing-water mouth fades.
+- Restricted lattice water sheets to standing bodies and the river currents
+  that enter them. Orogeny remains the sole terrain-forming world model.
 
 ** 2026-07-13 Uplift and erosion can grow the mountain range together
 

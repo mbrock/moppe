@@ -1,5 +1,6 @@
 #include <moppe/game/terrain_lab.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/river.hh>
 
 #include <algorithm>
 #include <chrono>
@@ -177,14 +178,6 @@ namespace moppe {
         return { 330, 52, 112, 28 };
       }
 
-      UiRect hydraulic_preset_rect (int group, int index) {
-        const float gap = 4.0f;
-        const float width = (right_width - 3 * gap) / 4.0f;
-        return {
-          right_x + index * (width + gap), 378.0f + group * 56.0f, width, 28
-        };
-      }
-
       UiRect layer_rect (int index) {
         const float gap = 3.0f;
         const float width = (492.0f - 6 * gap) / 7.0f;
@@ -218,7 +211,7 @@ namespace moppe {
 
       UiRect add_stage_rect (int index) {
         const float gap = 3.0f;
-        const float width = (left_width - 8 * gap) / 9.0f;
+        const float width = (left_width - 6 * gap) / 7.0f;
         return { left_x + index * (width + gap), 497, width, 29 };
       }
 
@@ -260,10 +253,6 @@ namespace moppe {
           return "STREAM POWER AGE";
         if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
           return "OROGENY EVOLUTION";
-        if (std::holds_alternative<terrain::HydraulicErosion> (stage))
-          return "WATER EROSION";
-        if (std::holds_alternative<terrain::ChannelCarving> (stage))
-          return "CHANNEL CARVE";
         if (std::holds_alternative<terrain::TrailFormation> (stage))
           return "MOTORCYCLE CIRCUIT";
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
@@ -293,21 +282,6 @@ namespace moppe {
                  format_count (static_cast<int> (std::ceil (duration / dt))) +
                  " geological steps";
         }
-        if (const auto* hydraulic =
-              std::get_if<terrain::HydraulicErosion> (&stage))
-          return format_count (terrain::count_value (hydraulic->droplets)) +
-                 " drops / " +
-                 format_count (terrain::count_value (hydraulic->batch_size)) +
-                 " batch / " +
-                 format_count (terrain::count_value (hydraulic->max_steps)) +
-                 " steps";
-        if (const auto* carving = std::get_if<terrain::ChannelCarving> (&stage))
-          return format_float (meters_value (carving->minimum_depth), 1) +
-                 ".." +
-                 format_float (meters_value (carving->maximum_depth), 1) +
-                 " m beds @ " +
-                 format_count (static_cast<int> (carving->minimum_area_cells)) +
-                 " cells";
         if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage))
           return format_float (
                    meters_value (trails->desired_circuit_radius) / 1000.0f, 1) +
@@ -414,12 +388,8 @@ namespace moppe {
           return 6;
         if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
           return 7;
-        if (std::holds_alternative<terrain::HydraulicErosion> (stage))
-          return 3;
         if (std::holds_alternative<terrain::ThermalErosion> (stage))
           return 2;
-        if (std::holds_alternative<terrain::ChannelCarving> (stage))
-          return 5;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
           return 13;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
@@ -503,44 +473,6 @@ namespace moppe {
                      ParameterDomain::Continuous };
           return { "SEA LEVEL",
                    format_float (orogeny->evolution.sea_level, 3),
-                   ParameterDomain::Continuous };
-        }
-        if (const auto* hydraulic =
-              std::get_if<terrain::HydraulicErosion> (&stage)) {
-          if (row == 0)
-            return { "DROPLETS",
-                     format_count (terrain::count_value (hydraulic->droplets)),
-                     ParameterDomain::Natural };
-          if (row == 1)
-            return { "BATCH SIZE",
-                     format_count (
-                       terrain::count_value (hydraulic->batch_size)),
-                     ParameterDomain::Natural };
-          return { "MAX STEPS",
-                   format_count (terrain::count_value (hydraulic->max_steps)),
-                   ParameterDomain::Natural };
-        }
-        if (const auto* carving =
-              std::get_if<terrain::ChannelCarving> (&stage)) {
-          if (row == 0)
-            return { "MIN AREA",
-                     format_count (
-                       static_cast<int> (carving->minimum_area_cells)),
-                     ParameterDomain::Continuous };
-          if (row == 1)
-            return { "DEPTH SCALE",
-                     format_float (carving->depth_per_sqrt_m2 * 1000.0f, 2),
-                     ParameterDomain::Continuous };
-          if (row == 2)
-            return { "MIN DEPTH (M)",
-                     format_float (meters_value (carving->minimum_depth), 2),
-                     ParameterDomain::Continuous };
-          if (row == 3)
-            return { "MAX DEPTH (M)",
-                     format_float (meters_value (carving->maximum_depth), 2),
-                     ParameterDomain::Continuous };
-          return { "BANK BLEND (M)",
-                   format_float (meters_value (carving->bank_blend), 1),
                    ParameterDomain::Continuous };
         }
         if (const auto* trails =
@@ -642,9 +574,6 @@ namespace moppe {
           m_history (nullptr), m_history_index (0), m_history_age (0.0f),
           m_history_playing (false), m_active (false), m_map_pristine (false),
           m_program (terrain::make_geological_program (0)),
-          m_droplet_overlay_points (0), m_droplet_progress (0.0f),
-          m_droplet_settle (0.0f), m_droplet_armed (false),
-          m_droplet_follow (false), m_time (0.0f),
           m_overlay (OverlayMode::None), m_selected_stage (-1),
           m_stage_scroll (0), m_pointer_x (0), m_pointer_y (0),
           m_pointer_down (false), m_camera_drag (false),
@@ -700,22 +629,8 @@ namespace moppe {
       bool env_stages = false;
       if (std::getenv ("MOPPE_LAB_OROGENY")) {
         m_program = terrain::make_orogeny_program (
-          m_program.randomness.seed.value,
+          m_program.seed.value,
           terrain::TerrainGenerationProfile::Fast);
-        env_stages = true;
-      }
-      if (const char* erosion = std::getenv ("MOPPE_LAB_EROSION")) {
-        std::istringstream input (erosion);
-        std::string part;
-        int values[] = { 100000, 256, 512 };
-        for (int i = 0; i < 3 && std::getline (input, part, ','); ++i)
-          values[i] = std::stoi (part);
-        m_program.transforms.emplace_back (terrain::HydraulicErosion {
-          .droplets = terrain::droplet_count (values[0]),
-          .batch_size = terrain::batch_size (values[1]),
-          .max_steps = terrain::step_count (values[2]),
-          .minimum_water = 0.01f,
-          .sediment_at_termination = terrain::SedimentDisposition::Deposit });
         env_stages = true;
       }
       if (std::getenv ("MOPPE_LAB_ANALYTICAL")) {
@@ -772,14 +687,6 @@ namespace moppe {
       m_flood.reset ();
       m_lakes.reset ();
       m_inspected_cell.reset ();
-      m_droplet_trace = {};
-      m_droplet_target.reset ();
-      m_droplet_overlay.clear ();
-      m_droplet_overlay_points = 0;
-      m_droplet_progress = 0.0f;
-      m_droplet_settle = 0.0f;
-      m_droplet_armed = false;
-      m_droplet_follow = false;
       m_overlay_status = "NO READING — terrain materials";
       m_view = ViewMode::Tile;
       m_orbit_left = m_orbit_right = false;
@@ -818,21 +725,6 @@ namespace moppe {
         if (trace_x && trace_y)
           inspect_drainage (std::atof (trace_x), std::atof (trace_y));
       }
-      if (const char* drop = std::getenv ("MOPPE_LAB_DROP_SCREEN")) {
-        std::istringstream input (drop);
-        std::string sx, sy;
-        if (std::getline (input, sx, ',') && std::getline (input, sy))
-          launch_droplet (std::stof (sx), std::stof (sy));
-      }
-      if (const char* arm = std::getenv ("MOPPE_LAB_ARM_SCREEN")) {
-        std::istringstream input (arm);
-        std::string sx, sy;
-        if (std::getline (input, sx, ',') && std::getline (input, sy)) {
-          m_droplet_armed = true;
-          m_droplet_target =
-            terrain_point_at_screen (std::stof (sx), std::stof (sy));
-        }
-      }
     }
 
     void TerrainLab::leave () {
@@ -853,14 +745,6 @@ namespace moppe {
       m_reports.clear ();
       m_reports.shrink_to_fit ();
       m_river_surface.clear ();
-      m_droplet_trace = {};
-      m_droplet_target.reset ();
-      m_droplet_overlay.clear ();
-      m_droplet_overlay_points = 0;
-      m_droplet_draw.clear ();
-      m_droplet_settle = 0.0f;
-      m_droplet_armed = false;
-      m_droplet_follow = false;
       m_orbit_left = m_orbit_right = false;
       m_zoom_in = m_zoom_out = false;
       m_tilt_up = m_tilt_down = false;
@@ -950,8 +834,10 @@ namespace moppe {
     }
 
     void TerrainLab::reset_program () {
-      m_program = terrain::make_geological_program (
-        m_program.randomness.seed.value, m_program.source.layer);
+      const terrain::GeologicalLayer layer = m_program.source.layer;
+      m_program = terrain::make_world_program (
+        m_program.seed.value, terrain::TerrainGenerationProfile::Play);
+      m_program.source.layer = layer;
       m_selected_stage = -1;
       m_stage_scroll = 0;
       rebuild_program ();
@@ -1087,9 +973,8 @@ namespace moppe {
           *m_flood,
           *m_lakes,
           *m_drainage,
-          visible_river_minimum_area (m_drainage->source_grid));
-        m_river_surface.rebuild (
-          *m_renderer, *m_map, *m_flood, *m_lakes, *m_drainage, *m_rivers);
+          terrain::visible_river_minimum_area (m_drainage->source_grid));
+        m_river_surface.rebuild (*m_renderer, *m_map, *m_rivers);
         const double milliseconds = std::chrono::duration<double, std::milli> (
                                       std::chrono::steady_clock::now () - start)
                                       .count ();
@@ -1116,283 +1001,7 @@ namespace moppe {
 
     void TerrainLab::render_rivers (render::Renderer& renderer,
                                     const Vec3& camera) const {
-      // A pristine map still renders the game's painted water sheets;
-      // the analysis ribbons would only double-draw on top of them.
-      if (m_map_pristine)
-        return;
       m_river_surface.draw (renderer, camera);
-    }
-
-    Vec3 TerrainLab::droplet_world_position (std::size_t index) const {
-      if (!m_map || index >= m_droplet_trace.points.size ())
-        return {};
-      const map::HydraulicDropletPoint& point = m_droplet_trace.points[index];
-      const Vec3 scale = m_map->scale ();
-      return Vec3 (
-        point.x * scale[0], point.height * scale[1] + 2.2f, point.y * scale[2]);
-    }
-
-    Vec3 TerrainLab::droplet_world_position (float progress) const {
-      if (m_droplet_trace.points.empty ())
-        return {};
-      const float last =
-        static_cast<float> (m_droplet_trace.points.size () - 1);
-      const float position = std::clamp (progress, 0.0f, last);
-      const std::size_t before = static_cast<std::size_t> (position);
-      const std::size_t after =
-        std::min (before + 1, m_droplet_trace.points.size () - 1);
-      const float fraction = position - static_cast<float> (before);
-      const Vec3 a = droplet_world_position (before);
-      return a + (droplet_world_position (after) - a) * fraction;
-    }
-
-    float TerrainLab::visible_droplet_pitch (const Vec3& droplet) const {
-      if (!m_map)
-        return m_pitch;
-
-      // Preserve the player's orbit when it already has a clear view.  In a
-      // valley, progressively lift the camera until every sample between it
-      // and the bead clears the terrain.  The clearance tapers toward the
-      // droplet, which is deliberately drawn just above the surface.
-      constexpr float maximum_pitch = 1.48f;
-      constexpr float pitch_step = 0.035f;
-      const float first_pitch = std::clamp (m_pitch, 0.18f, maximum_pitch);
-      for (float pitch = first_pitch; pitch <= maximum_pitch;
-           pitch += pitch_step) {
-        const float horizontal = std::cos (pitch) * m_distance;
-        const Vec3 camera = m_target + Vec3 (std::sin (m_yaw) * horizontal,
-                                             std::sin (pitch) * m_distance,
-                                             std::cos (m_yaw) * horizontal);
-        bool visible = true;
-        for (int sample = 1; sample < 32; ++sample) {
-          const float t = static_cast<float> (sample) / 32.0f;
-          const Vec3 point = camera + (droplet - camera) * t;
-          const float clearance = 5.0f * (1.0f - t);
-          if (point[1] <
-              m_map->interpolated_height (point[0], point[2]) + clearance) {
-            visible = false;
-            break;
-          }
-        }
-        if (visible)
-          return pitch;
-      }
-      return maximum_pitch;
-    }
-
-    void TerrainLab::update_droplet_overlay (bool force) {
-      if (!m_renderer || !m_map || m_droplet_trace.points.empty () ||
-          m_overlay != OverlayMode::None)
-        return;
-      const int width = m_map->width ();
-      const int height = m_map->height ();
-      const std::size_t count = static_cast<std::size_t> (width) * height;
-      if (m_droplet_overlay.size () != count) {
-        m_droplet_overlay.assign (count, 0.0f);
-        m_droplet_overlay_points = 0;
-        force = true;
-      }
-      const std::size_t visible = std::min (
-        m_droplet_trace.points.size (),
-        static_cast<std::size_t> (std::max (m_droplet_progress, 0.0f)) + 1);
-      const int unique_width = m_map->unique_width ();
-      const int unique_height = m_map->unique_height ();
-      constexpr int radius = 4;
-      constexpr float radius_f = 3.5f;
-      const auto stamp = [&] (int x, int y, float value) {
-        if (m_map->periodic ()) {
-          x = terrain::wrap_index (x, unique_width);
-          y = terrain::wrap_index (y, unique_height);
-        } else if (x < 0 || x >= width || y < 0 || y >= height) {
-          return;
-        }
-        const auto set = [&] (int sx, int sy) {
-          float& cell =
-            m_droplet_overlay[static_cast<std::size_t> (sy) * width + sx];
-          cell = std::max (cell, value);
-        };
-        set (x, y);
-        if (m_map->periodic () && x == 0)
-          set (width - 1, y);
-        if (m_map->periodic () && y == 0)
-          set (x, height - 1);
-        if (m_map->periodic () && x == 0 && y == 0)
-          set (width - 1, height - 1);
-      };
-      for (; m_droplet_overlay_points < visible; ++m_droplet_overlay_points) {
-        const map::HydraulicDropletPoint& point =
-          m_droplet_trace.points[m_droplet_overlay_points];
-        const int center_x = static_cast<int> (std::floor (point.x));
-        const int center_y = static_cast<int> (std::floor (point.y));
-        for (int dy = -radius; dy <= radius; ++dy)
-          for (int dx = -radius; dx <= radius; ++dx) {
-            const float distance =
-              std::hypot (static_cast<float> (center_x + dx) - point.x,
-                          static_cast<float> (center_y + dy) - point.y);
-            const float falloff = std::max (0.0f, 1.0f - distance / radius_f);
-            stamp (center_x + dx, center_y + dy, falloff * falloff);
-          }
-        force = true;
-      }
-      if (!force)
-        return;
-      m_renderer->set_terrain_overlay (
-        { .width = width,
-          .height = height,
-          .minimum = 0.0f,
-          .maximum = 1.0f,
-          .opacity = 0.96f,
-          .ramp = render::TerrainOverlayRamp::Droplet },
-        m_droplet_overlay);
-    }
-
-    void TerrainLab::render_droplet (render::Renderer& renderer,
-                                     const Vec3& camera) {
-      if (!m_map)
-        return;
-
-      m_droplet_draw.clear ();
-      render::DrawState state;
-      state.blend = true;
-      state.additive = true;
-      state.depth_write = false;
-      state.cull = false;
-      m_droplet_draw.state (state);
-      m_droplet_draw.lit (false);
-      // Unfogged: the target dot and bead are interface cues that must
-      // stay legible even from the kilometres-out overview orbit.
-      m_droplet_draw.fogged (false);
-
-      if (m_droplet_armed && m_droplet_target) {
-        // A camera-facing glow point: a draped ring smears into a huge
-        // oval on steep slopes, but a billboard disc stays a dot from
-        // every angle.  Sized by distance so it reads the same zoomed
-        // out or close in, with a soft breathing pulse while armed.
-        const Vec3 ground ((*m_droplet_target)[0],
-                           m_map->interpolated_height ((*m_droplet_target)[0],
-                                                       (*m_droplet_target)[2]),
-                           (*m_droplet_target)[2]);
-        Vec3 to_camera = camera - ground;
-        const float distance = length (to_camera);
-        if (distance > 1.0f) {
-          to_camera = to_camera * (1.0f / distance);
-          Vec3 side = cross (to_camera, Vec3 (0, 1, 0));
-          if (length2 (side) < 1e-6f)
-            side = Vec3 (1, 0, 0);
-          normalize (side);
-          const Vec3 lift = normalized (cross (side, to_camera));
-          const float pulse = 0.85f + 0.15f * std::sin (m_time * 4.2f);
-          // Proportional to distance, so the dot keeps a constant
-          // on-screen size from valley floor to orbital overview.
-          const float size =
-            std::clamp (distance * 0.02f, 4.0f, 320.0f) * pulse;
-          const Vec3 center = ground + to_camera * (3.0f + size * 0.35f);
-          const auto glow = [&] (float radius, float core_alpha) {
-            m_droplet_draw.begin (render::Prim::TriangleFan);
-            m_droplet_draw.color (0.55f, 0.97f, 1.0f, core_alpha);
-            m_droplet_draw.vertex (center);
-            m_droplet_draw.color (0.25f, 0.94f, 1.0f, 0.0f);
-            for (int i = 0; i <= 24; ++i) {
-              const float angle = PI2 * static_cast<float> (i) / 24.0f;
-              m_droplet_draw.vertex (
-                center +
-                (side * std::cos (angle) + lift * std::sin (angle)) * radius);
-            }
-            m_droplet_draw.end ();
-          };
-          glow (size, 0.55f);
-          glow (size * 0.4f, 0.95f);
-        }
-      }
-
-      // When the drop arrives it wobbles like landing jelly, then melts
-      // into a spreading puddle and fades, so the end of the run reads
-      // as an ending rather than the bead just freezing in place.
-      constexpr float melt_duration = 1.8f;
-      const float melt =
-        m_droplet_progress >=
-            static_cast<float> (m_droplet_trace.points.size ()) - 1.0f
-          ? std::clamp (m_droplet_settle / melt_duration, 0.0f, 1.0f)
-          : 0.0f;
-      if (m_droplet_trace.points.size () >= 2 && melt < 1.0f) {
-        const Vec3 bead = droplet_world_position (m_droplet_progress) -
-                          Vec3 (0.0f, melt * 1.8f, 0.0f);
-        const float fade = 1.0f - melt;
-        // The wake and nose cap describe motion; snuff them quickly
-        // once the drop has stopped.
-        const float motion_fade = std::max (0.0f, 1.0f - melt * 4.0f);
-        const float wobble = melt > 0.0f ? std::exp (-m_droplet_settle * 2.4f) *
-                                             std::sin (m_droplet_settle * 16.0f)
-                                         : 0.0f;
-        const float squash = (1.0f + 0.45f * wobble) * (1.0f - 0.85f * melt);
-        const float spread = (1.0f - 0.25f * wobble) * (1.0f + 1.6f * melt);
-
-        Vec3 direction = bead - droplet_world_position (
-                                  std::max (0.0f, m_droplet_progress - 0.65f));
-        if (length2 (direction) < 1e-6f)
-          direction = Vec3 (0, -1, 0);
-        normalize (direction);
-        Vec3 wake_side = cross (direction, camera - bead);
-        if (length2 (wake_side) < 1e-6f)
-          wake_side = cross (direction, Vec3 (0, 1, 0));
-        if (length2 (wake_side) < 1e-6f)
-          wake_side = Vec3 (1, 0, 0);
-        normalize (wake_side);
-        const auto wake = [&] (float length, float width, float alpha) {
-          if (alpha <= 0.0f)
-            return;
-          m_droplet_draw.color (0.12f, 0.72f, 1.0f, alpha);
-          m_droplet_draw.begin (render::Prim::Triangles);
-          m_droplet_draw.vertex (bead - direction * length);
-          m_droplet_draw.vertex (bead - direction * 2.0f - wake_side * width);
-          m_droplet_draw.vertex (bead - direction * 2.0f + wake_side * width);
-          m_droplet_draw.end ();
-        };
-        wake (30.0f, 8.0f, 0.10f * motion_fade);
-        wake (19.0f, 3.8f, 0.42f * motion_fade);
-
-        // A small pointed cap makes the direction legible even in a still
-        // frame; the ellipsoid behind it supplies the rounded water volume.
-        Vec3 nose_up = normalized (cross (direction, wake_side));
-        if (motion_fade > 0.0f) {
-          m_droplet_draw.color (0.34f, 0.92f, 1.0f, 0.82f * motion_fade);
-          m_droplet_draw.begin (render::Prim::TriangleFan);
-          m_droplet_draw.vertex (bead + direction * 11.0f);
-          for (int i = 0; i <= 10; ++i) {
-            const float angle = PI2 * static_cast<float> (i) / 10.0f;
-            const Vec3 radial =
-              wake_side * std::cos (angle) + nose_up * std::sin (angle);
-            m_droplet_draw.vertex (bead - direction * 1.5f + radial * 5.2f);
-          }
-          m_droplet_draw.end ();
-        }
-
-        const Vec3 up (0, 1, 0);
-        // While melting, the blob relaxes upright regardless of its
-        // final travel direction.
-        Vec3 lean = direction + (up - direction) * melt;
-        if (length2 (lean) < 1e-6f)
-          lean = up;
-        normalize (lean);
-        Vec3 axis = cross (up, lean);
-        const radians_t angle =
-          std::acos (std::clamp (dot (up, lean), -1.0f, 1.0f)) * u::rad;
-        m_droplet_draw.push ();
-        m_droplet_draw.translate (bead);
-        if (length2 (axis) > 1e-6f)
-          m_droplet_draw.rotate (angle, normalized (axis));
-        m_droplet_draw.color (0.18f, 0.82f, 1.0f, 0.92f * fade);
-        m_droplet_draw.scale (5.5f * spread, 10.0f * squash, 5.5f * spread);
-        m_droplet_draw.sphere (1.0f, 14, 9);
-        m_droplet_draw.pop ();
-        m_droplet_draw.push ();
-        m_droplet_draw.translate (bead + Vec3 (-2.0f, 2.0f, 0));
-        m_droplet_draw.color (0.88f, 1.0f, 1.0f, 0.50f * fade);
-        m_droplet_draw.sphere (2.2f * (0.4f + 0.6f * fade), 8, 6);
-        m_droplet_draw.pop ();
-      }
-      if (!m_droplet_draw.empty ())
-        renderer.draw_list (m_droplet_draw);
     }
 
     std::optional<Vec3> TerrainLab::terrain_point_at_screen (float x,
@@ -1438,42 +1047,6 @@ namespace moppe {
         previous_clearance = clearance;
       }
       return std::nullopt;
-    }
-
-    void TerrainLab::launch_droplet (float x, float y) {
-      const std::optional<Vec3> hit = terrain_point_at_screen (x, y);
-      if (!hit || !m_map) {
-        m_overlay_status = "DROP — no terrain under pointer";
-        return;
-      }
-      const Vec3 scale = m_map->scale ();
-      m_droplet_trace =
-        m_map->trace_hydraulic_droplet ((*hit)[0] / scale[0],
-                                        (*hit)[2] / scale[2],
-                                        512,
-                                        0.01f,
-                                        terrain::SedimentDisposition::Deposit,
-                                        terrain::CarvingRule::PathMonotone);
-      m_droplet_overlay.assign (
-        static_cast<std::size_t> (m_map->width ()) * m_map->height (), 0.0f);
-      m_droplet_overlay_points = 0;
-      // Hold briefly on the release point so a click on a summit visibly
-      // begins there before the erosion step starts running downhill.
-      m_droplet_progress = -8.0f;
-      m_droplet_settle = 0.0f;
-      m_droplet_armed = false;
-      m_droplet_target.reset ();
-      m_droplet_follow = m_droplet_trace.points.size () > 1;
-      m_map_pristine = false;
-      invalidate_analysis ();
-      refresh ();
-      std::ostringstream status;
-      const float eroded_volume =
-        m_droplet_trace.eroded * scale[0] * scale[1] * scale[2];
-      status << "DROP — " << m_droplet_trace.points.size () - 1 << " steps, "
-             << std::fixed << std::setprecision (3) << eroded_volume
-             << " m3 moved";
-      m_overlay_status = status.str ();
     }
 
     void TerrainLab::inspect_drainage (float x, float y) {
@@ -1553,10 +1126,7 @@ namespace moppe {
       if (!m_renderer || !m_map)
         return;
       if (m_overlay == OverlayMode::None) {
-        if (!m_droplet_trace.points.empty ())
-          update_droplet_overlay (true);
-        else
-          m_renderer->clear_terrain_overlay ();
+        m_renderer->clear_terrain_overlay ();
         m_overlay_status = "NO READING — terrain materials";
         return;
       }
@@ -1981,28 +1551,6 @@ namespace moppe {
                        0.005f);
         return unit (orogeny->evolution.sea_level, 0.0f, 0.3f);
       }
-      if (const auto* hydraulic =
-            std::get_if<terrain::HydraulicErosion> (&stage))
-        return row == 0   ? unit (terrain::count_value (hydraulic->droplets),
-                                0.0f,
-                                5000000.0f)
-               : row == 1 ? unit (terrain::count_value (hydraulic->batch_size),
-                                  1.0f,
-                                  4096.0f)
-                          : unit (terrain::count_value (hydraulic->max_steps),
-                                  1.0f,
-                                  2048.0f);
-      if (const auto* carving = std::get_if<terrain::ChannelCarving> (&stage)) {
-        if (row == 0)
-          return unit (carving->minimum_area_cells, 64.0f, 16384.0f);
-        if (row == 1)
-          return unit (carving->depth_per_sqrt_m2, 0.0f, 0.01f);
-        if (row == 2)
-          return unit (meters_value (carving->minimum_depth), 0.0f, 4.0f);
-        if (row == 3)
-          return unit (meters_value (carving->maximum_depth), 0.0f, 12.0f);
-        return unit (meters_value (carving->bank_blend), 0.0f, 30.0f);
-      }
       if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
         if (row == 0)
           return unit (square_meters_value (trails->minimum_catchment_area),
@@ -2210,54 +1758,6 @@ namespace moppe {
         m_program.source.sea_level = orogeny->evolution.sea_level;
         return orogeny->evolution.sea_level != old;
       }
-      if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
-        if (row == 0) {
-          const auto old = hydraulic->droplets;
-          hydraulic->droplets =
-            terrain::droplet_count (std::lround (mix (0.0f, 5000000.0f)));
-          return hydraulic->droplets != old;
-        }
-        if (row == 1) {
-          const auto old = hydraulic->batch_size;
-          hydraulic->batch_size =
-            terrain::batch_size (std::lround (mix (1.0f, 4096.0f)));
-          return hydraulic->batch_size != old;
-        }
-        const auto old = hydraulic->max_steps;
-        hydraulic->max_steps =
-          terrain::step_count (std::lround (mix (1.0f, 2048.0f)));
-        return hydraulic->max_steps != old;
-      }
-      if (auto* carving = std::get_if<terrain::ChannelCarving> (&stage)) {
-        if (row == 0) {
-          const float old = carving->minimum_area_cells;
-          carving->minimum_area_cells = mix (64.0f, 16384.0f);
-          return carving->minimum_area_cells != old;
-        }
-        if (row == 1) {
-          const float old = carving->depth_per_sqrt_m2;
-          carving->depth_per_sqrt_m2 = mix (0.0f, 0.01f);
-          return carving->depth_per_sqrt_m2 != old;
-        }
-        if (row == 2) {
-          const auto old = carving->minimum_depth;
-          carving->minimum_depth =
-            mix (0.0f, std::min (4.0f, meters_value (carving->maximum_depth))) *
-            mp_units::si::metre;
-          return carving->minimum_depth != old;
-        }
-        if (row == 3) {
-          const auto old = carving->maximum_depth;
-          carving->maximum_depth =
-            mix (std::max (0.0f, meters_value (carving->minimum_depth)),
-                 12.0f) *
-            mp_units::si::metre;
-          return carving->maximum_depth != old;
-        }
-        const auto old = carving->bank_blend;
-        carving->bank_blend = mix (0.0f, 30.0f) * mp_units::si::metre;
-        return carving->bank_blend != old;
-      }
       if (auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
         if (row == 0) {
           const auto old = trails->minimum_catchment_area;
@@ -2404,59 +1904,6 @@ namespace moppe {
         analytical->fixed_point_iterations = terrain::iteration_count (changed);
         return true;
       }
-      if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
-        const int value = row == 0 ? terrain::count_value (hydraulic->droplets)
-                          : row == 1
-                            ? terrain::count_value (hydraulic->batch_size)
-                            : terrain::count_value (hydraulic->max_steps);
-        int changed = value;
-        if (row == 0) {
-          constexpr int choices[] = { 0,       10000,   30000,   100000,
-                                      300000,  500000,  1000000, 1500000,
-                                      2000000, 3000000, 5000000 };
-          if (direction > 0) {
-            for (int choice : choices)
-              if (choice > value) {
-                changed = choice;
-                break;
-              }
-          } else {
-            for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
-              if (*i < value) {
-                changed = *i;
-                break;
-              }
-          }
-        } else if (row == 1) {
-          changed = std::clamp (value + direction * 64, 1, 4096);
-        } else {
-          constexpr int choices[] = {
-            8, 16, 32, 64, 128, 256, 512, 1024, 2048
-          };
-          if (direction > 0) {
-            for (int choice : choices)
-              if (choice > value) {
-                changed = choice;
-                break;
-              }
-          } else {
-            for (auto i = std::rbegin (choices); i != std::rend (choices); ++i)
-              if (*i < value) {
-                changed = *i;
-                break;
-              }
-          }
-        }
-        if (changed == value)
-          return false;
-        if (row == 0)
-          hydraulic->droplets = terrain::droplet_count (changed);
-        else if (row == 1)
-          hydraulic->batch_size = terrain::batch_size (changed);
-        else
-          hydraulic->max_steps = terrain::step_count (changed);
-        return true;
-      }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         const int changed = std::clamp (
           terrain::count_value (thermal->iterations) + direction, 0, 20);
@@ -2506,15 +1953,14 @@ namespace moppe {
               julian_years_value (orogeny->evolution.duration) / 800000.0f,
               0.0f,
               1.0f);
-          if (const auto* age =
-                std::get_if<terrain::AnalyticalErosion> (&stage))
-            return std::clamp (
-              julian_years_value (age->duration) / 800000.0f, 0.0f, 1.0f);
         } else if (control == 3) {
-          if (const auto* rain =
-                std::get_if<terrain::HydraulicErosion> (&stage))
+          if (const auto* orogeny =
+                std::get_if<terrain::OrogenyEvolution> (&stage))
             return std::clamp (
-              terrain::count_value (rain->droplets) / 300000.0f, 0.0f, 1.0f);
+              meters_per_julian_year_value (orogeny->maximum_uplift_rate) /
+                0.003f,
+              0.0f,
+              1.0f);
         }
       }
       return 0.0f;
@@ -2548,19 +1994,12 @@ namespace moppe {
               changed_stage = static_cast<int> (i);
               break;
             }
-            if (auto* age = std::get_if<terrain::AnalyticalErosion> (&stage)) {
-              const auto next =
-                value * 800000.0f * mp_units::astronomy::Julian_year;
-              changed = next != age->duration;
-              age->duration = next;
-              changed_stage = static_cast<int> (i);
-              break;
-            }
-          } else if (auto* rain =
-                       std::get_if<terrain::HydraulicErosion> (&stage)) {
-            const int next = static_cast<int> (std::lround (value * 300000.0f));
-            changed = next != terrain::count_value (rain->droplets);
-            rain->droplets = terrain::droplet_count (next);
+          } else if (auto* orogeny =
+                       std::get_if<terrain::OrogenyEvolution> (&stage)) {
+            const auto next = value * 0.003f * mp_units::si::metre /
+                              mp_units::astronomy::Julian_year;
+            changed = next != orogeny->maximum_uplift_rate;
+            orogeny->maximum_uplift_rate = next;
             changed_stage = static_cast<int> (i);
             break;
           }
@@ -2575,33 +2014,32 @@ namespace moppe {
     }
 
     void TerrainLab::apply_friendly_preset (int preset) {
-      const std::uint32_t seed = m_program.randomness.seed.value;
-      m_program = preset == 3 ? terrain::make_orogeny_program (seed)
-                              : terrain::make_geological_program (seed);
+      const std::uint32_t seed = m_program.seed.value;
+      m_program = terrain::make_world_program (
+        seed, terrain::TerrainGenerationProfile::Play);
       auto& recipe = m_program.source.recipe;
+      auto& orogeny =
+        std::get<terrain::OrogenyEvolution> (m_program.transforms.front ());
       if (preset == 0) {
         recipe.blend.mountain_weight = 1.35f;
         recipe.warp.amplitude = 0.22f;
-        m_program.transforms.emplace_back (terrain::PowerHeights { 1.35f });
+        orogeny.evolution.duration =
+          180000.0f * mp_units::astronomy::Julian_year;
+        orogeny.maximum_uplift_rate = 0.0027f * mp_units::si::metre /
+                                      mp_units::astronomy::Julian_year;
       } else if (preset == 1) {
         recipe.blend.mountain_weight = 0.45f;
         recipe.warp.amplitude = 0.08f;
-        m_program.transforms.emplace_back (terrain::PowerHeights { 0.78f });
-        m_program.transforms.emplace_back (terrain::AnalyticalErosion {
-          .duration = 500000.0f * mp_units::astronomy::Julian_year,
-          .fixed_point_iterations = terrain::iteration_count (3) });
-        m_program.transforms.emplace_back (
-          terrain::ThermalErosion { terrain::iteration_count (4), 0.004f });
+        orogeny.evolution.duration =
+          800000.0f * mp_units::astronomy::Julian_year;
+        orogeny.maximum_uplift_rate = 0.0007f * mp_units::si::metre /
+                                      mp_units::astronomy::Julian_year;
       } else if (preset == 2) {
         recipe.blend.continent_weight = 0.72f;
         recipe.blend.mountain_weight = 1.05f;
-        m_program.transforms.emplace_back (terrain::PowerHeights { 1.12f });
-        m_program.transforms.emplace_back (terrain::HydraulicErosion {
-          .droplets = terrain::droplet_count (100000),
-          .batch_size = terrain::batch_size (256),
-          .max_steps = terrain::step_count (256),
-          .minimum_water = 0.01f,
-          .sediment_at_termination = terrain::SedimentDisposition::Deposit });
+        orogeny.evolution.duration =
+          650000.0f * mp_units::astronomy::Julian_year;
+        orogeny.evolution.erodibility = 0.00018f;
       } else {
         // Mountain texture becomes a tectonic-rate pattern over a shallow
         // continent seed. Four drainage refreshes keep the first interactive
@@ -2609,8 +2047,6 @@ namespace moppe {
         recipe.blend.plains_weight = 0.25f;
         recipe.blend.mountain_weight = 0.9f;
         recipe.warp.amplitude = 0.28f;
-        auto& orogeny =
-          std::get<terrain::OrogenyEvolution> (m_program.transforms.front ());
         orogeny.evolution.duration =
           200000.0f * mp_units::astronomy::Julian_year;
         orogeny.evolution.time_step =
@@ -2628,8 +2064,9 @@ namespace moppe {
           continue;
         if (i == 0) {
           const std::uint32_t seed =
-            terrain::next_seed (m_program.randomness.seed).value;
-          m_program = terrain::make_geological_program (seed);
+            terrain::next_seed (m_program.seed).value;
+          m_program = terrain::make_world_program (
+            seed, terrain::TerrainGenerationProfile::Play);
           m_selected_stage = -1;
           m_friendly_preset = -1;
           rebuild_program ();
@@ -2649,20 +2086,10 @@ namespace moppe {
       constexpr OverlayMode modes[] = { OverlayMode::None,
                                         OverlayMode::Slope,
                                         OverlayMode::StandingWater,
-                                        OverlayMode::Trace };
+                                        OverlayMode::Streams };
       for (int i = 0; i < 4; ++i) {
         if (friendly_lens_rect (i, m_ui_width).contains (x, y)) {
-          if (i == 3) {
-            m_droplet_armed = true;
-            m_droplet_follow = false;
-            m_droplet_target.reset ();
-            set_overlay (OverlayMode::None);
-            m_overlay_status = "DROP — click land to release";
-          } else {
-            m_droplet_armed = false;
-            m_droplet_target.reset ();
-            set_overlay (modes[i]);
-          }
+          set_overlay (modes[i]);
           return;
         }
       }
@@ -2696,12 +2123,10 @@ namespace moppe {
         return;
       }
       if (seed_rect ().contains (x, y)) {
-        const terrain::Seed seed =
-          terrain::next_seed (m_program.randomness.seed);
+        const terrain::Seed seed = terrain::next_seed (m_program.seed);
         m_program.source.recipe.seeds =
           terrain::derive_geological_seeds (seed.value);
-        m_program.randomness = { .seed = seed,
-                                 .offset = terrain::SequenceOffset { 3 } };
+        m_program.seed = seed;
         m_selected_stage = -1;
         rebuild_program ();
         return;
@@ -2736,7 +2161,7 @@ namespace moppe {
           return;
         }
       }
-      for (int i = 0; i < 9; ++i) {
+      for (int i = 0; i < 7; ++i) {
         if (!add_stage_rect (i).contains (x, y))
           continue;
         if (i == 0)
@@ -2757,21 +2182,12 @@ namespace moppe {
           ensure_selected_stage_visible ();
           rebuild_program ();
         } else if (i == 4)
-          append_stage (terrain::HydraulicErosion {
-            .droplets = terrain::droplet_count (100000),
-            .batch_size = terrain::batch_size (256),
-            .max_steps = terrain::step_count (512),
-            .minimum_water = 0.01f,
-            .sediment_at_termination = terrain::SedimentDisposition::Deposit });
-        else if (i == 5)
           append_stage (
             terrain::ThermalErosion { terrain::iteration_count (2), 0.003f });
-        else if (i == 6)
+        else if (i == 5)
           append_stage (terrain::HillslopeDiffusion {});
-        else if (i == 7)
-          append_stage (terrain::TrailFormation {});
         else
-          append_stage (terrain::ChannelCarving {});
+          append_stage (terrain::TrailFormation {});
         return;
       }
       for (int i = 0; i < 4; ++i) {
@@ -2803,37 +2219,6 @@ namespace moppe {
           queue_parameter_rebuild ();
           run_pending_parameter_rebuild ();
           return;
-        }
-      }
-
-      if (m_selected_stage >= 0) {
-        terrain::TerrainTransform& stage =
-          m_program.transforms[m_selected_stage];
-        if (auto* hydraulic = std::get_if<terrain::HydraulicErosion> (&stage)) {
-          constexpr int presets[3][4] = { { 100000, 300000, 1000000, 1500000 },
-                                          { 64, 128, 256, 512 },
-                                          { 1, 64, 256, 1024 } };
-          for (int group = 0; group < 3; ++group)
-            for (int i = 0; i < 4; ++i)
-              if (hydraulic_preset_rect (group, i).contains (x, y)) {
-                const int value =
-                  group == 0   ? terrain::count_value (hydraulic->droplets)
-                  : group == 1 ? terrain::count_value (hydraulic->max_steps)
-                               : terrain::count_value (hydraulic->batch_size);
-                if (value != presets[group][i]) {
-                  if (group == 0)
-                    hydraulic->droplets =
-                      terrain::droplet_count (presets[group][i]);
-                  else if (group == 1)
-                    hydraulic->max_steps =
-                      terrain::step_count (presets[group][i]);
-                  else
-                    hydraulic->batch_size =
-                      terrain::batch_size (presets[group][i]);
-                  rerun_program_from (m_selected_stage);
-                }
-                return;
-              }
         }
       }
     }
@@ -2898,7 +2283,6 @@ namespace moppe {
           !m_friendly_drag && !m_parameter_drag)
         run_pending_parameter_rebuild ();
 
-      m_time += dt;
       if (m_history_playing && m_history && m_history->size () > 1) {
         m_history_age += dt;
         if (m_history_age >= 0.85f) {
@@ -2910,37 +2294,6 @@ namespace moppe {
             m_history_playing = false;
         }
       }
-      if (m_droplet_trace.points.size () > 1) {
-        const float last =
-          static_cast<float> (m_droplet_trace.points.size () - 1);
-        m_droplet_progress = std::min (last, m_droplet_progress + dt * 16.0f);
-        const bool arrived = m_droplet_progress >= last;
-        if (arrived)
-          m_droplet_settle += dt;
-        if (m_droplet_follow) {
-          // Begin from the view in which the drop was placed, then ease
-          // toward its route.  Chase a blend of the bead and a point a
-          // little further along the trace: the lead frames where the
-          // drop is heading and averages out the per-cell zigzag.
-          const Vec3 bead = droplet_world_position (m_droplet_progress);
-          const Vec3 lead =
-            droplet_world_position (std::min (last, m_droplet_progress + 6.0f));
-          const Vec3 desired = bead + (lead - bead) * 0.45f;
-          const float follow_response =
-            smoothing_alpha (2.6f / u::s, dt * u::s);
-          m_target += (desired - m_target) * follow_response;
-          m_scroll_zoom_target = std::min (m_scroll_zoom_target, 650.0f);
-          const float clear_pitch = visible_droplet_pitch (bead);
-          if (clear_pitch > m_pitch)
-            m_pitch += (clear_pitch - m_pitch) * follow_response;
-          // Linger through the settle animation before releasing the
-          // camera, so the melt is watched rather than abandoned.
-          if (arrived && m_droplet_settle > 2.0f)
-            m_droplet_follow = false;
-        }
-        update_droplet_overlay ();
-      }
-
       const float orbit =
         (m_orbit_right ? 1.0f : 0.0f) - (m_orbit_left ? 1.0f : 0.0f);
       const float tilt =
@@ -2954,7 +2307,7 @@ namespace moppe {
       const float maximum_zoom = std::max (1500.0f, m_fit_distance * 1.6f);
       m_scroll_zoom_target =
         std::clamp (m_scroll_zoom_target, 500.0f, maximum_zoom);
-      const damping_t zoom_speed = (m_droplet_follow ? 2.2f : 14.0f) / u::s;
+      const damping_t zoom_speed = 14.0f / u::s;
       const float zoom_response = smoothing_alpha (zoom_speed, dt * u::s);
       m_distance += (m_scroll_zoom_target - m_distance) * zoom_response;
     }
@@ -2998,36 +2351,26 @@ namespace moppe {
       case Key::One:
         if (m_expert_ui)
           select (terrain::GeologicalLayer::Combined);
-        else {
-          m_droplet_armed = false;
+        else
           set_overlay (OverlayMode::None);
-        }
         break;
       case Key::Two:
         if (m_expert_ui)
           select (terrain::GeologicalLayer::Continent);
-        else {
-          m_droplet_armed = false;
+        else
           set_overlay (OverlayMode::Slope);
-        }
         break;
       case Key::Three:
         if (m_expert_ui)
           select (terrain::GeologicalLayer::Plains);
-        else {
-          m_droplet_armed = false;
+        else
           set_overlay (OverlayMode::StandingWater);
-        }
         break;
       case Key::Four:
         if (m_expert_ui)
           select (terrain::GeologicalLayer::Mountains);
-        else {
-          m_droplet_armed = true;
-          m_droplet_follow = false;
-          set_overlay (OverlayMode::None);
-          m_overlay_status = "DROP — click land to release";
-        }
+        else
+          set_overlay (OverlayMode::Streams);
         break;
       case Key::Five:
         select (terrain::GeologicalLayer::MountainMask);
@@ -3042,17 +2385,11 @@ namespace moppe {
         reset_program ();
         break;
       case Key::N:
-        m_program.randomness.seed =
-          terrain::next_seed (m_program.randomness.seed);
+        m_program.seed = terrain::next_seed (m_program.seed);
         m_program.source.recipe.seeds =
-          terrain::derive_geological_seeds (m_program.randomness.seed.value);
-        m_program.randomness.offset = terrain::SequenceOffset { 3 };
+          terrain::derive_geological_seeds (m_program.seed.value);
         m_selected_stage = -1;
         rebuild_program ();
-        break;
-      case Key::E:
-        append_stage (
-          terrain::HydraulicErosion { terrain::droplet_count (100000) });
         break;
       case Key::Y:
         append_stage (
@@ -3102,13 +2439,6 @@ namespace moppe {
         return;
       m_pointer_x = x;
       m_pointer_y = y;
-      if (m_droplet_armed) {
-        const bool over_ui =
-          m_expert_ui ? ui_contains (x, y)
-                      : friendly_ui_contains (x, y, m_ui_width, m_ui_height);
-        m_droplet_target =
-          over_ui ? std::nullopt : terrain_point_at_screen (x, y);
-      }
       if (m_friendly_drag) {
         const UiRect bounds =
           friendly_slider_rect (m_friendly_drag_control, m_ui_height);
@@ -3142,8 +2472,6 @@ namespace moppe {
       }
       if (!m_camera_drag)
         return;
-      if (std::hypot (dx, dy) > 0.0f)
-        m_droplet_follow = false;
       m_camera_drag_distance += std::hypot (dx, dy);
       m_yaw -= dx * 0.006f;
       m_pitch += dy * 0.006f;
@@ -3170,29 +2498,15 @@ namespace moppe {
                 m_program.transforms.begin (),
                 m_program.transforms.end (),
                 [] (const terrain::TerrainTransform& stage) {
-                  return std::holds_alternative<terrain::AnalyticalErosion> (
-                           stage) ||
-                         std::holds_alternative<terrain::OrogenyEvolution> (
-                           stage);
-                });
-              const bool has_rain = std::any_of (
-                m_program.transforms.begin (),
-                m_program.transforms.end (),
-                [] (const terrain::TerrainTransform& stage) {
-                  return std::holds_alternative<terrain::HydraulicErosion> (
+                  return std::holds_alternative<terrain::OrogenyEvolution> (
                     stage);
                 });
-              if (control == 2 && !has_age)
-                append_stage (terrain::AnalyticalErosion {
-                  .duration = 0.0f * mp_units::astronomy::Julian_year });
-              else if (control == 3 && !has_rain)
-                append_stage (terrain::HydraulicErosion {
-                  .droplets = terrain::droplet_count (0),
-                  .batch_size = terrain::batch_size (256),
-                  .max_steps = terrain::step_count (256),
-                  .minimum_water = 0.01f,
-                  .sediment_at_termination =
-                    terrain::SedimentDisposition::Deposit });
+              if (control >= 2 && !has_age) {
+                m_program.source.mode = terrain::GeologicalSource::Mode::Orogeny;
+                append_stage (terrain::OrogenyEvolution {
+                  .evolution = {
+                    .duration = 0.0f * mp_units::astronomy::Julian_year } });
+              }
               m_friendly_drag = true;
               m_friendly_drag_control = control;
               const UiRect rail = friendly_slider_rail_rect (bounds);
@@ -3243,9 +2557,7 @@ namespace moppe {
             run_pending_parameter_rebuild ();
           }
           if (m_camera_drag && m_camera_drag_distance < 4.0f) {
-            if (m_droplet_armed)
-              launch_droplet (x, y);
-            else if (m_overlay == OverlayMode::Trace)
+            if (m_overlay == OverlayMode::Trace)
               inspect_drainage (x, y);
           }
           m_camera_drag = false;
@@ -3336,7 +2648,7 @@ namespace moppe {
           dl, bounds, action_labels[i], hot (bounds), m_pointer_down, i);
       }
       constexpr const char* preset_titles[] = {
-        "YOUNG PEAKS", "OLD HILLS", "RAINY ISLAND", "OROGENY"
+        "YOUNG PEAKS", "OLD HILLS", "RIVER COUNTRY", "OROGENY"
       };
       for (int i = 0; i < 4; ++i) {
         const UiRect bounds = friendly_preset_rect (i, height);
@@ -3355,13 +2667,13 @@ namespace moppe {
       m_ui.surface (dl, parameter_surface);
 
       constexpr const char* slider_titles[] = {
-        "MOUNTAINS", "WILD RIDGES", "AGE", "RAINFALL"
+        "MOUNTAINS", "WILD RIDGES", "AGE", "UPLIFT"
       };
       constexpr const char* slider_low[] = {
-        "GENTLE", "SMOOTH", "YOUNG", "DRY"
+        "GENTLE", "SMOOTH", "YOUNG", "QUIET"
       };
       constexpr const char* slider_high[] = {
-        "TALL", "TWISTED", "ANCIENT", "SOAKED"
+        "TALL", "TWISTED", "ANCIENT", "ACTIVE"
       };
       for (int i = 0; i < 4; ++i) {
         const UiRect bounds = friendly_slider_rect (i, height);
@@ -3381,12 +2693,12 @@ namespace moppe {
                     "DRAG: ORBIT   SCROLL: ZOOM   T: BACK");
 
       constexpr const char* lens_titles[] = {
-        "LAND", "STEEP", "WATER", "DROP RAIN"
+        "LAND", "STEEP", "WATER", "RIVERS"
       };
       constexpr OverlayMode lens_modes[] = { OverlayMode::None,
                                              OverlayMode::Slope,
                                              OverlayMode::StandingWater,
-                                             OverlayMode::Trace };
+                                             OverlayMode::Streams };
       const UiRect lens_surface = friendly_lens_surface_rect (width);
       m_ui.surface (dl, lens_surface);
       m_ui.friendly_section (dl,
@@ -3404,7 +2716,7 @@ namespace moppe {
                           lens_keys[i],
                           hot (bounds),
                           m_pointer_down,
-                          i == 3 ? m_droplet_armed : m_overlay == lens_modes[i],
+                          m_overlay == lens_modes[i],
                           i + 11);
       }
       if (m_history && !m_history->empty ()) {
@@ -3418,10 +2730,6 @@ namespace moppe {
                       lens_surface.y + lens_surface.height - 12.0f,
                       playback.str ());
       }
-      if (m_droplet_armed &&
-          !friendly_ui_contains (
-            m_pointer_x, m_pointer_y, m_ui_width, m_ui_height))
-        m_ui.friendly_tool_cursor (dl, m_pointer_x, m_pointer_y, 14);
       m_ui.end (dl);
     }
 
@@ -3495,7 +2803,7 @@ namespace moppe {
         dl, reset_rect (), "RESET", hot (reset_rect ()), m_pointer_down);
 
       std::ostringstream seed;
-      seed << "SEED " << m_program.randomness.seed.value << " >";
+      seed << "SEED " << m_program.seed.value << " >";
       m_ui.button (
         dl, seed_rect (), seed.str (), hot (seed_rect ()), m_pointer_down);
       m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()), m_pointer_down);
@@ -3565,11 +2873,11 @@ namespace moppe {
                            m_selected_stage == stage_index);
       }
 
-      static const char* add_labels[] = { "+NORM",  "+POWER", "+AGE",
-                                          "+OROG",  "+DROP",  "+TALUS",
-                                          "+CREEP", "+TRAIL", "+CARVE" };
+      static const char* add_labels[] = { "+NORM", "+POWER", "+AGE",
+                                          "+OROG", "+TALUS", "+CREEP",
+                                          "+TRAIL" };
       static const char* edit_labels[] = { "UP", "DOWN", "COPY", "DEL" };
-      for (int i = 0; i < 9; ++i) {
+      for (int i = 0; i < 7; ++i) {
         const UiRect add = add_stage_rect (i);
         m_ui.button (dl, add, add_labels[i], hot (add), m_pointer_down);
       }
@@ -3637,36 +2945,6 @@ namespace moppe {
             dl, right_x + 8, 366, "A whole-raster materialization barrier.");
           m_ui.label (
             dl, right_x + 8, 386, "It can be moved, copied, or deleted.");
-        } else if (std::holds_alternative<terrain::HydraulicErosion> (stage)) {
-          const auto& hydraulic = std::get<terrain::HydraulicErosion> (stage);
-          constexpr const char* headings[] = { "DROP COUNT",
-                                               "MAXIMUM LIFETIME",
-                                               "BATCH SIZE" };
-          constexpr const char* labels[3][4] = {
-            { "100K", "300K", "1M", "1.5M" },
-            { "64", "128", "256", "512" },
-            { "1", "64", "256", "1024" }
-          };
-          constexpr int presets[3][4] = { { 100000, 300000, 1000000, 1500000 },
-                                          { 64, 128, 256, 512 },
-                                          { 1, 64, 256, 1024 } };
-          for (int group = 0; group < 3; ++group) {
-            m_ui.label (
-              dl, right_x + 8, 362 + group * 56, headings[group], true);
-            const int value =
-              group == 0   ? terrain::count_value (hydraulic.droplets)
-              : group == 1 ? terrain::count_value (hydraulic.max_steps)
-                           : terrain::count_value (hydraulic.batch_size);
-            for (int i = 0; i < 4; ++i) {
-              const UiRect bounds = hydraulic_preset_rect (group, i);
-              m_ui.button (dl,
-                           bounds,
-                           labels[group][i],
-                           hot (bounds),
-                           m_pointer_down,
-                           value == presets[group][i]);
-            }
-          }
         }
       }
 
@@ -3734,65 +3012,19 @@ namespace moppe {
                   readings_x + 10,
                   readings_y + 233,
                   "Readings color the surface; geometry stays terrain.");
-      const terrain::HydraulicErosionReport* erosion_report = nullptr;
-      const terrain::HydraulicErosion* erosion_stage = nullptr;
       const terrain::AnalyticalErosionReport* analytical_report = nullptr;
       const terrain::StreamPowerEvolutionReport* orogeny_report = nullptr;
       const terrain::TrailFormationReport* trail_report = nullptr;
       if (m_selected_stage >= 0 &&
           m_selected_stage < static_cast<int> (m_reports.size ())) {
-        erosion_report = std::get_if<terrain::HydraulicErosionReport> (
-          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         analytical_report = std::get_if<terrain::AnalyticalErosionReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         orogeny_report = std::get_if<terrain::StreamPowerEvolutionReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
         trail_report = std::get_if<terrain::TrailFormationReport> (
           &m_reports[static_cast<std::size_t> (m_selected_stage)]);
-        erosion_stage = std::get_if<terrain::HydraulicErosion> (
-          &m_program.transforms[static_cast<std::size_t> (m_selected_stage)]);
       }
-      if (erosion_report) {
-        const auto& report = *erosion_report;
-        m_ui.label (dl,
-                    readings_x + 10,
-                    readings_y + 266,
-                    erosion_stage && erosion_stage->sediment_at_termination ==
-                                       terrain::SedimentDisposition::Deposit
-                      ? "SEDIMENT LEDGER — SETTLE AT DEATH"
-                      : "SEDIMENT LEDGER — DISCARD AT DEATH",
-                    true);
-        m_ui.label (dl,
-                    readings_x + 10,
-                    readings_y + 288,
-                    "ERODED " + format_ledger (report.eroded) + "  DEPOSITED " +
-                      format_ledger (report.deposited));
-        m_ui.label (
-          dl,
-          readings_x + 10,
-          readings_y + 310,
-          "LOST " + format_ledger (report.discarded_sediment) + "  (" +
-            format_float (
-              static_cast<float> (100.0 * report.discarded_fraction ()), 1) +
-            "%)");
-        m_ui.label (
-          dl,
-          readings_x + 10,
-          readings_y + 332,
-          "MEAN LIFE " +
-            format_float (static_cast<float> (report.mean_steps ()), 1) +
-            "  FINAL WATER " +
-            format_float (static_cast<float> (report.mean_final_water ()), 3));
-        m_ui.label (
-          dl,
-          readings_x + 10,
-          readings_y + 354,
-          "CAP " +
-            format_count (static_cast<int> (report.stopped_at_step_limit)) +
-            "  WATER " +
-            format_count (static_cast<int> (report.stopped_at_water_cutoff)) +
-            "  FLAT " + format_count (static_cast<int> (report.stopped_flat)));
-      } else if (orogeny_report) {
+      if (orogeny_report) {
         const auto& report = *orogeny_report;
         m_ui.label (dl,
                     readings_x + 10,

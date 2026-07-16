@@ -57,6 +57,188 @@ namespace moppe::terrain {
                          static_cast<float> (dy) * grid.spacing_y_m ()) *
              mp_units::si::metre;
     }
+
+    float river_wrapped_delta (float delta, float period) {
+      return std::remainder (delta, period);
+    }
+
+    RiverAlignmentPoint interpolate (const RiverAlignmentPoint& from,
+                                     const RiverAlignmentPoint& to,
+                                     float t) {
+      const auto mix = [t] (float a, float b) { return a + (b - a) * t; };
+      return { .x_m = mix (from.x_m, to.x_m),
+               .z_m = mix (from.z_m, to.z_m),
+               .contributing_area_m2 = mix (from.contributing_area_m2,
+                                            to.contributing_area_m2),
+               .slope = mix (from.slope, to.slope),
+               .waterfall = mix (from.waterfall, to.waterfall),
+               .standing_water = mix (from.standing_water, to.standing_water),
+               .water_level_m = mix (from.water_level_m, to.water_level_m) };
+    }
+
+    RiverAlignment smooth_river_alignment (
+      const std::vector<RiverAlignmentPoint>& raw,
+      const TerrainGrid& grid) {
+      RiverAlignment alignment;
+      if (raw.size () < 2)
+        return alignment;
+
+      // Match the trail system's geometric authority: a damped cubic Hermite
+      // curve stays close to the routed corridor while removing eight-way
+      // corners. Sampling below source-cell spacing makes the visible banks
+      // independent of the terrain lattice.
+      constexpr float tangent_scale = 0.34f;
+      const float sample_spacing = std::clamp (
+        0.4f * std::min (grid.spacing_x_m (), grid.spacing_y_m ()), 0.75f, 2.0f);
+      for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
+        const RiverAlignmentPoint& a = raw[segment];
+        const RiverAlignmentPoint& b = raw[segment + 1];
+        const RiverAlignmentPoint& before = segment ? raw[segment - 1] : a;
+        const RiverAlignmentPoint& after =
+          segment + 2 < raw.size () ? raw[segment + 2] : b;
+        const float tangent_ax = (b.x_m - before.x_m) * tangent_scale;
+        const float tangent_az = (b.z_m - before.z_m) * tangent_scale;
+        const float tangent_bx = (after.x_m - a.x_m) * tangent_scale;
+        const float tangent_bz = (after.z_m - a.z_m) * tangent_scale;
+        const float run = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
+        const int subdivisions = std::max (
+          1, static_cast<int> (std::ceil (run / sample_spacing)));
+        for (int step = 0; step < subdivisions; ++step) {
+          const float t = static_cast<float> (step) / subdivisions;
+          const float t2 = t * t;
+          const float t3 = t2 * t;
+          const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+          const float h10 = t3 - 2.0f * t2 + t;
+          const float h01 = -2.0f * t3 + 3.0f * t2;
+          const float h11 = t3 - t2;
+          RiverAlignmentPoint point = interpolate (a, b, t);
+          point.x_m = a.x_m * h00 + tangent_ax * h10 + b.x_m * h01 +
+                      tangent_bx * h11;
+          point.z_m = a.z_m * h00 + tangent_az * h10 + b.z_m * h01 +
+                      tangent_bz * h11;
+          alignment.points.push_back (point);
+        }
+      }
+      alignment.points.push_back (raw.back ());
+
+      double length_m = 0.0;
+      for (std::size_t point = 1; point < alignment.points.size (); ++point) {
+        const auto& before = alignment.points[point - 1];
+        auto& current = alignment.points[point];
+        length_m += std::hypot (current.x_m - before.x_m,
+                                current.z_m - before.z_m);
+        current.distance_m = static_cast<float> (length_m);
+      }
+      alignment.length = length_m * mp_units::si::metre;
+      return alignment;
+    }
+
+    void build_river_alignments (RiverNetwork& network,
+                                 const FloodField& flood,
+                                 const LakeCensus& census,
+                                 const DrainageGraph& drainage) {
+      const TerrainGrid& grid = drainage.source_grid;
+      const int width = static_cast<int> (grid.unique_width ());
+      const int height = static_cast<int> (grid.unique_height ());
+      const bool periodic = grid.topology == Topology::Torus;
+      const float period_x = width * grid.spacing_x_m ();
+      const float period_z = height * grid.spacing_y_m ();
+      const auto water_cell = [&] (CellIndex cell) {
+        return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
+      };
+      const WaterPermanence permanence;
+      const auto permanent_water_cell = [&] (CellIndex cell) {
+        if (flood.ocean[cell])
+          return true;
+        const WaterBodyId id = census.body[cell];
+        if (id == LakeCensus::dry)
+          return false;
+        const WaterBody& body = census.bodies[id];
+        return body.classification == WaterBodyClass::Sea ||
+               (body.area >= permanence.minimum_area &&
+                body.maximum_depth >= permanence.minimum_depth &&
+                body.volume >= permanence.minimum_volume);
+      };
+
+      for (RiverReach& reach : network.reaches) {
+        std::vector<CellIndex> cells = reach.cells;
+        if (cells.empty ())
+          continue;
+        CellIndex next = drainage.receiver[cells.back ()];
+        if (next != cells.back ())
+          cells.push_back (next);
+        // Carry permanent mouths far enough into their standing surface for
+        // the ribbon to dissolve below it. Tiny non-rendered depressions are
+        // instead crossed along their proven receiver route, so they cannot
+        // punch dry gaps into an otherwise continuous visible river.
+        if (permanent_water_cell (cells.back ())) {
+          next = drainage.receiver[cells.back ()];
+          if (next != cells.back () && permanent_water_cell (next))
+            cells.push_back (next);
+        } else {
+          while (water_cell (cells.back ()) &&
+                 !permanent_water_cell (cells.back ())) {
+            next = drainage.receiver[cells.back ()];
+            if (next == cells.back ())
+              break;
+            cells.push_back (next);
+          }
+        }
+
+        std::vector<RiverAlignmentPoint> raw;
+        raw.reserve (cells.size ());
+        for (const CellIndex cell : cells) {
+          float x = static_cast<float> (cell % width) * grid.spacing_x_m ();
+          float z = static_cast<float> (cell / width) * grid.spacing_y_m ();
+          if (periodic && !raw.empty ()) {
+            x = raw.back ().x_m +
+                river_wrapped_delta (x - raw.back ().x_m, period_x);
+            z = raw.back ().z_m +
+                river_wrapped_delta (z - raw.back ().z_m, period_z);
+          }
+          const bool water = permanent_water_cell (cell);
+          raw.push_back (
+            { .x_m = x,
+              .z_m = z,
+              .contributing_area_m2 =
+                drainage.contributing_area.values ()[cell],
+              .slope = drainage.slope.values ()[cell],
+              .waterfall = network.waterfall_by_cell[cell] != Waterfall::no_id
+                             ? 1.0f
+                             : 0.0f,
+              .standing_water = water ? 1.0f : 0.0f,
+              .water_level_m =
+                flood.water_level.values ()[cell] * grid.height_scale_m () });
+        }
+        reach.alignment = smooth_river_alignment (raw, grid);
+      }
+
+      // Give every point a confluence-continuous flow coordinate. A point's
+      // coordinate is its negative remaining distance to the final mouth, so
+      // all tributaries and the trunk agree exactly at their shared node.
+      std::vector<double> remaining (network.reaches.size (), -1.0);
+      std::vector<std::uint8_t> active (network.reaches.size (), 0);
+      std::function<double (RiverReachId)> solve = [&] (RiverReachId id) {
+        if (remaining[id] >= 0.0)
+          return remaining[id];
+        if (active[id])
+          throw std::logic_error ("river reaches do not form a downstream DAG");
+        active[id] = 1;
+        const RiverReach& reach = network.reaches[id];
+        const double downstream = reach.downstream_reach != RiverReach::no_id
+                                    ? solve (reach.downstream_reach)
+                                    : 0.0;
+        active[id] = 0;
+        remaining[id] = meters_value (reach.alignment.length) + downstream;
+        return remaining[id];
+      };
+      for (RiverReach& reach : network.reaches) {
+        const double from_start = solve (reach.id);
+        for (RiverAlignmentPoint& point : reach.alignment.points)
+          point.flow_distance_m =
+            static_cast<float> (point.distance_m - from_start);
+      }
+    }
   }
 
   DrainageGraph analyze_drainage (const TerrainView& terrain,
@@ -476,6 +658,25 @@ namespace moppe::terrain {
       if (eligible[next])
         reach.downstream_reach = network.reach_by_cell[next];
     }
+    // A body below the permanence threshold is drainage structure, not a
+    // rendered lake. Link its inlet reach directly to the spill reach so the
+    // continuous alignment, flow coordinate, and junction surface bridge it.
+    const WaterPermanence permanence;
+    for (RiverReach& reach : network.reaches) {
+      if (reach.downstream_reach != RiverReach::no_id ||
+          reach.downstream_body == no_water_body)
+        continue;
+      const WaterBody& body = census.bodies[reach.downstream_body];
+      const bool permanent =
+        body.classification == WaterBodyClass::Sea ||
+        (body.area >= permanence.minimum_area &&
+         body.maximum_depth >= permanence.minimum_depth &&
+         body.volume >= permanence.minimum_volume);
+      if (permanent || body.spill_cell == WaterBody::no_cell ||
+          !eligible[body.spill_cell])
+        continue;
+      reach.downstream_reach = network.reach_by_cell[body.spill_cell];
+    }
 
     for (const RiverReach& reach : network.reaches) {
       const square_meters_t reference_area =
@@ -531,6 +732,7 @@ namespace moppe::terrain {
       }
       emit_selected ();
     }
+    build_river_alignments (network, flood, census, drainage);
     return network;
   }
 }

@@ -20,19 +20,17 @@ bridge between them: concrete enough to start, honest about cost.
 - [RFC-003](done/rfc-003-sediment-ledger-rasters.md) — Keep the per-cell
   sediment ledger as eroded/deposited rasters; feed materials, detail,
   and Lab overlays.  Cheapest coherence win available.
-- [RFC-004](rfc-004-erosion-performance.md) — The erosion performance
-  path: wire the Metal field evaluator into world generation (found
-  gap), counter-based droplet RNG, lockstep batches as a deterministic
-  GPU kernel.
+- [RFC-004](done/rfc-004-erosion-performance.md) — Superseded when ordinary
+  world generation moved to orogeny and the droplet model was retired.
 
 ## Geometry and shading (rendering)
 
 - [RFC-005](done/rfc-005-fragment-rate-normals.md) — Fragment-rate normals
   for distant terrain: decouple lighting detail from geometric LOD.
   Highest look-per-effort in the renderer.
-- [RFC-006](rfc-006-analytic-channels.md) — River channels as analytic
-  vector features composited at sample time, not raster carves.
-  Sub-cell widths, clean banks, resolution independence.
+- [RFC-006](rfc-006-analytic-channels.md) — Continuous river alignments and
+  cross-section ribbons, not raster carves. Implemented for rendering on
+  2026-07-16; analytic collision beds remain future work.
 - [RFC-007](done/rfc-007-waterline-conforming-geometry.md) — Extract the
   waterline curve and make water and terrain conform to it.  Kills the
   shoreline sawtooth class permanently.
@@ -55,8 +53,7 @@ bridge between them: concrete enough to start, honest about cost.
   split into a measurement and an affine reparameterization.
 - [RFC-013](rfc-013-discretization-reconstruction.md) — A
   discretization is a lattice *plus a reconstruction*: name the four
-  existing continuizations, state the gather/scatter adjunction once,
-  declare the droplet model's lattice-unit regime.
+  existing continuizations and make their invariants explicit.
 - [RFC-014](rfc-014-merge-tree-hydrology.md) — The merge tree of the
   heightfield as the one hydrological structure: floods, lakes, spills,
   and sea-level queries as views of a single precomputation.
@@ -67,8 +64,7 @@ Compounding order, small-and-visible first:
 
 1. **RFC-003 → RFC-005 → RFC-007**: three contained changes attacking
    three different visibility classes (material coherence, distant
-   lighting, shorelines).  RFC-004 Tier A (evaluator wiring) rides
-   along any time.
+   lighting, shorelines).
 2. **RFC-001 + RFC-002**: the simulation rebuild that changes what the
    world *is*; RFC-014 supports it and independently unlocks the Lab's
    sea-level interactions.
