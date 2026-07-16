@@ -322,7 +322,11 @@ namespace moppe {
                    trails->maximum_grade.numerical_value_in (mp_units::one) *
                      100.0f,
                    0) +
-                 "% max";
+                 "% max / " +
+                 format_float (meters_value (
+                                 trails->alpine_avoidance_height_above_sea),
+                               0) +
+                 " m alpine avoid";
         if (const auto* diffusion =
               std::get_if<terrain::HillslopeDiffusion> (&stage))
           return format_float (
@@ -417,7 +421,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::ChannelCarving> (stage))
           return 5;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return 11;
+          return 13;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return 2;
         return 0;
@@ -589,9 +593,24 @@ namespace moppe {
                      format_float (meters_value (trails->home_base_pad_radius),
                                    0),
                      ParameterDomain::Continuous };
-          return { "CIRCUIT RADIUS (M)",
-                   format_float (meters_value (trails->desired_circuit_radius),
-                                 0),
+          if (row == 10)
+            return {
+              "CIRCUIT RADIUS (M)",
+              format_float (meters_value (trails->desired_circuit_radius), 0),
+              ParameterDomain::Continuous
+            };
+          if (row == 11)
+            return { "HIGHLAND START (M)",
+                     format_float (meters_value (
+                                     trails
+                                       ->highland_preference_height_above_sea),
+                                   0),
+                     ParameterDomain::Continuous };
+          return { "ALPINE AVOID (M)",
+                   format_float (
+                     meters_value (
+                       trails->alpine_avoidance_height_above_sea),
+                     0),
                    ParameterDomain::Continuous };
         }
         if (const auto* diffusion =
@@ -2016,8 +2035,18 @@ namespace moppe {
         if (row == 9)
           return unit (
             meters_value (trails->home_base_pad_radius), 8.0f, 45.0f);
+        if (row == 10)
+          return unit (
+            meters_value (trails->desired_circuit_radius), 250.0f, 1800.0f);
+        if (row == 11)
+          return unit (meters_value (
+                         trails->highland_preference_height_above_sea),
+                       80.0f,
+                       320.0f);
         return unit (
-          meters_value (trails->desired_circuit_radius), 250.0f, 1800.0f);
+          meters_value (trails->alpine_avoidance_height_above_sea),
+          160.0f,
+          380.0f);
       }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
         return row == 0 ? unit (terrain::count_value (thermal->iterations),
@@ -2296,10 +2325,28 @@ namespace moppe {
             mix (8.0f, 45.0f) * mp_units::si::metre;
           return trails->home_base_pad_radius != old;
         }
-        const auto old = trails->desired_circuit_radius;
-        trails->desired_circuit_radius =
-          mix (250.0f, 1800.0f) * mp_units::si::metre;
-        return trails->desired_circuit_radius != old;
+        if (row == 10) {
+          const auto old = trails->desired_circuit_radius;
+          trails->desired_circuit_radius =
+            mix (250.0f, 1800.0f) * mp_units::si::metre;
+          return trails->desired_circuit_radius != old;
+        }
+        if (row == 11) {
+          const auto old = trails->highland_preference_height_above_sea;
+          trails->highland_preference_height_above_sea =
+            std::min (mix (80.0f, 320.0f),
+                      meters_value (
+                        trails->alpine_avoidance_height_above_sea)) *
+            mp_units::si::metre;
+          return trails->highland_preference_height_above_sea != old;
+        }
+        const auto old = trails->alpine_avoidance_height_above_sea;
+        trails->alpine_avoidance_height_above_sea =
+          std::max (
+            mix (160.0f, 380.0f),
+            meters_value (trails->highland_preference_height_above_sea)) *
+          mp_units::si::metre;
+        return trails->alpine_avoidance_height_above_sea != old;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {
@@ -3829,7 +3876,12 @@ namespace moppe {
         m_ui.label (dl,
                     readings_x + 10,
                     readings_y + 354,
-                    "MEAN / MAX CHANGE " +
+                    "HIGH " +
+                      format_float (static_cast<float> (meters_value (
+                                      report
+                                        .maximum_centerline_height_above_sea)),
+                                    0) +
+                      " M  CHANGE MEAN / MAX " +
                       format_float (static_cast<float> (meters_value (
                                       report.mean_absolute_change)),
                                     2) +

@@ -250,4 +250,18 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
     threw = true;
   }
   MOPPE_CHECK (threw);
+
+  program = make_geological_program (123);
+  program.transforms.emplace_back (TrailFormation {
+    .highland_preference_height_above_sea =
+      300.0f * mp_units::si::metre,
+    .alpine_avoidance_height_above_sea =
+      200.0f * mp_units::si::metre });
+  threw = false;
+  try {
+    validate_program (program);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
 }

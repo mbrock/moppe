@@ -59,6 +59,8 @@ The defaults describe the first leisure path:
 | home base to water | 90 m | Preferred water distance during site selection |
 | home-base pad radius | 18 m | Compacted clearing around the circuit origin |
 | desired circuit radius | 900 m | Scale for the scenic focus and loop |
+| highland preference | 180 m above sea | Height where pioneer routes begin avoiding ascent |
+| alpine avoidance | 285 m above sea | Height where the quadratic avoidance cost is strong |
 
 Horizontal distances, cut, fill, and circuit size are physical lengths. Grade
 is dimensionless rise divided by horizontal run.
@@ -125,8 +127,11 @@ On a toroidal world, the base also stays away from the arbitrary map seam so
 the circuit reads as one loop on the minimap.
 
 Each expedition chooses a scenic focus at roughly the desired circuit radius.
-Water and strong local relief make good focuses. Four control sites then state
-the intended topology: home base, left flank, far side, and right flank.
+Water and strong local relief make good focuses, but elevation is priced
+separately: a mountain may provide the view without requiring the trail to
+visit its summit. Four control sites then state the intended topology: home
+base, left flank, far side, and right flank. Their placement also prefers the
+lower available ground around the feature.
 
 ## 3. Route search
 
@@ -152,7 +157,17 @@ feasible are priced by:
 - abrupt heading changes;
 - unnecessarily large detours;
 - departure from the preferred catchment range;
+- highland and alpine exposure;
 - proximity to the arbitrary torus chart edge.
+
+The elevation policy is deliberately progressive rather than a hard wall.
+Below 180 metres above sea it contributes no cost. Above that point it rises
+quadratically, reaching a strong avoidance weight at 285 metres and continuing
+to increase beyond it. The default world's gently sloped snow begins at about
+308 metres above sea, so an ordinary pioneer circuit should turn toward a low
+pass before entering persistent snow. A high saddle remains possible when the
+geography offers no credible lower connection; generation does not fail merely
+because the terrain is mountainous.
 
 Construction capacity and route desirability are deliberately separate.
 Maximum cut plus fill determines whether an edge might be buildable, but a
@@ -218,6 +233,7 @@ means preview images may show a path wider than the nominal 3 metres.
 - cut and fill volumes;
 - mean and maximum centerline grade;
 - number of segments above the maximum-grade target;
+- maximum centerline height above sea;
 - mean and maximum absolute terrain change.
 
 ## 6. Influence fields and materials
@@ -312,6 +328,7 @@ continuity, and the trail-first cinematic.
   separately constrained or reported.
 - Maximum grade can have reported exceptions when cut/fill limits cannot
   reconcile the terrain.
+- Alpine avoidance is a strong preference, not an absolute elevation ban.
 - The influence mask marks the complete planned path; the separate earthwork
   delta encodes the amount and sign of construction.
 - Wet cells are excluded from shaping and influence stamping, so the system

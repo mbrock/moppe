@@ -47,7 +47,15 @@ namespace moppe::terrain {
           !std::isfinite (meters_value (p.home_base_pad_radius)) ||
           p.home_base_pad_radius <= 0.0f * mp_units::si::metre ||
           !std::isfinite (meters_value (p.desired_circuit_radius)) ||
-          p.desired_circuit_radius <= 0.0f * mp_units::si::metre)
+          p.desired_circuit_radius <= 0.0f * mp_units::si::metre ||
+          !std::isfinite (
+            meters_value (p.highland_preference_height_above_sea)) ||
+          p.highland_preference_height_above_sea <=
+            0.0f * mp_units::si::metre ||
+          !std::isfinite (
+            meters_value (p.alpine_avoidance_height_above_sea)) ||
+          p.alpine_avoidance_height_above_sea <
+            p.highland_preference_height_above_sea)
         throw std::invalid_argument ("invalid trail formation parameters");
     }
 
@@ -241,6 +249,7 @@ namespace moppe::terrain {
         float mean_grade;
         float maximum_grade;
         float maximum_achievable_grade;
+        float maximum_elevation;
       };
 
       const TerrainView& terrain;
@@ -377,6 +386,7 @@ namespace moppe::terrain {
         };
         float previous_elevation =
           terrain.at (source_x_at (x0), source_y_at (y0)) * height_scale;
+        float maximum_elevation = previous_elevation;
         for (int step = 1; step <= steps; ++step) {
           const float t = static_cast<float> (step) / steps;
           int current_x = x0 + static_cast<int> (std::round (dx * t));
@@ -384,6 +394,7 @@ namespace moppe::terrain {
           const float current_elevation =
             terrain.at (source_x_at (current_x), source_y_at (current_y)) *
             height_scale;
+          maximum_elevation = std::max (maximum_elevation, current_elevation);
           const float run = std::hypot (
             (current_x - previous_x) * terrain.grid ().spacing_x_m (),
             (current_y - previous_y) * terrain.grid ().spacing_y_m ());
@@ -405,9 +416,36 @@ namespace moppe::terrain {
                                  ? accumulated_rise / accumulated_run
                                  : 0.0f,
                  .maximum_grade = maximum_grade,
-                 .maximum_achievable_grade = maximum_achievable };
+                 .maximum_achievable_grade = maximum_achievable,
+                 .maximum_elevation = maximum_elevation };
       }
     };
+
+    float sea_elevation (const PlanningGrid& grid,
+                         const TrailFormation& parameters) {
+      return parameters.sea_level * grid.height_scale;
+    }
+
+    float preferred_route_elevation (const PlanningGrid& grid,
+                                     const TrailFormation& parameters) {
+      return sea_elevation (grid, parameters) +
+             meters_value (parameters.highland_preference_height_above_sea);
+    }
+
+    float alpine_avoidance_elevation (const PlanningGrid& grid,
+                                      const TrailFormation& parameters) {
+      return sea_elevation (grid, parameters) +
+             meters_value (parameters.alpine_avoidance_height_above_sea);
+    }
+
+    float highland_ratio (float elevation,
+                          const PlanningGrid& grid,
+                          const TrailFormation& parameters) {
+      const float preferred = preferred_route_elevation (grid, parameters);
+      const float avoidance = alpine_avoidance_elevation (grid, parameters);
+      return std::max (0.0f, elevation - preferred) /
+             std::max (avoidance - preferred, 1.0f);
+    }
 
     PlanningGrid planning_grid (const TerrainView& terrain,
                                 const DrainageGraph& drainage,
@@ -548,7 +586,7 @@ namespace moppe::terrain {
     std::vector<HomeBaseSite>
     choose_home_bases (const PlanningGrid& grid,
                        const TrailFormation& parameters) {
-      const float sea = parameters.sea_level * grid.height_scale;
+      const float sea = sea_elevation (grid, parameters);
       const float target_water =
         meters_value (parameters.home_base_water_distance);
       const int shelter_reach =
@@ -609,8 +647,8 @@ namespace moppe::terrain {
           12.0f - 0.35f * std::fabs (std::clamp (shelter, 0.0f, 40.0f) - 16.0f);
         const float view_score =
           std::clamp (distant_relief, 0.0f, 180.0f) * 0.08f;
-        const float alpine_penalty =
-          std::max (0.0f, above_sea - 180.0f) * 0.08f;
+        const float alpine = highland_ratio (elevation, grid, parameters);
+        const float alpine_penalty = 45.0f * alpine * alpine;
         const float score = water_score + flat_score + shelter_score +
                             view_score - alpine_penalty;
         candidates.push_back ({ node, score });
@@ -662,7 +700,8 @@ namespace moppe::terrain {
         const float distance = grid.distance (base, node);
         if (distance < 0.52f * desired || distance > 1.48f * desired)
           continue;
-        float low = grid.elevation (node);
+        const float elevation = grid.elevation (node);
+        float low = elevation;
         float high = low;
         for (int dy : { -relief_reach, 0, relief_reach })
           for (int dx : { -relief_reach, 0, relief_reach }) {
@@ -676,7 +715,12 @@ namespace moppe::terrain {
         const float feature_score =
           (grid.wet (node) ? 38.0f : 0.0f) +
           std::clamp (high - low, 0.0f, 160.0f) * 0.22f;
-        const float score = distance_score + feature_score;
+        // Relief is scenery, not an instruction to put the trail on its
+        // summit. Prefer a low viewpoint beside the feature and progressively
+        // distrust alpine focuses as they approach the avoidance height.
+        const float alpine = highland_ratio (elevation, grid, parameters);
+        const float score =
+          distance_score + feature_score - 55.0f * alpine * alpine;
         if (score > best_score) {
           best_score = score;
           best = node;
@@ -728,7 +772,8 @@ namespace moppe::terrain {
                             float ideal_x,
                             float ideal_y,
                             int search_radius,
-                            const std::vector<std::uint8_t>& reachable) {
+                            const std::vector<std::uint8_t>& reachable,
+                            const TrailFormation& parameters) {
       float best_score = std::numeric_limits<float>::infinity ();
       const std::size_t count =
         static_cast<std::size_t> (grid.width) * grid.height;
@@ -740,9 +785,11 @@ namespace moppe::terrain {
                        static_cast<int> (std::round (ideal_y)) + dy);
           if (!reachable[node])
             continue;
+          const float alpine =
+            highland_ratio (grid.elevation (node), grid, parameters);
           const float score =
             std::hypot (static_cast<float> (dx), static_cast<float> (dy)) +
-            12.0f * grid.grade (node);
+            12.0f * grid.grade (node) + 18.0f * alpine * alpine;
           if (score < best_score) {
             best_score = score;
             best = node;
@@ -757,9 +804,12 @@ namespace moppe::terrain {
       for (std::size_t node = 0; node < count; ++node) {
         if (!reachable[node])
           continue;
-        const float score = grid.distance (ideal, node) /
-                              std::min (grid.spacing_x, grid.spacing_y) +
-                            12.0f * grid.grade (node);
+        const float alpine =
+          highland_ratio (grid.elevation (node), grid, parameters);
+        const float score =
+          grid.distance (ideal, node) /
+            std::min (grid.spacing_x, grid.spacing_y) +
+          12.0f * grid.grade (node) + 18.0f * alpine * alpine;
         if (score < best_score) {
           best_score = score;
           best = node;
@@ -887,6 +937,8 @@ namespace moppe::terrain {
           }
           const float valley = std::fabs (std::log (
             std::max (grid.catchment (next), 1.0f) / target_catchment));
+          const float alpine =
+            highland_ratio (profile.maximum_elevation, grid, parameters);
           const int seam_distance =
             std::min ({ grid.x (next),
                         grid.width - 1 - grid.x (next),
@@ -901,7 +953,8 @@ namespace moppe::terrain {
             (1.0f + 0.70f * grade_ratio * grade_ratio +
              12.0f * earthwork_ratio * earthwork_ratio +
              30.0f * maximum_excess * maximum_excess + 2.5f * turn * turn +
-             20.0f * corridor * corridor + 0.10f * valley + chart_edge);
+             20.0f * corridor * corridor + 0.10f * valley +
+             8.0f * alpine * alpine + chart_edge);
           const float next_cost = cost[current.state] + edge;
           const std::size_t next_state = state (next, next_heading);
           if (next_cost < cost[next_state]) {
@@ -986,19 +1039,22 @@ namespace moppe::terrain {
                                 focus_x - forward_y * flank,
                                 focus_y + forward_x * flank,
                                 anchor_search,
-                                reachable);
+                                reachable,
+                                parameters);
       const std::size_t far =
         nearest_buildable_site (planner,
                                 focus_x + forward_x * flank,
                                 focus_y + forward_y * flank,
                                 anchor_search,
-                                reachable);
+                                reachable,
+                                parameters);
       const std::size_t right =
         nearest_buildable_site (planner,
                                 focus_x + forward_y * flank,
                                 focus_y - forward_x * flank,
                                 anchor_search,
-                                reachable);
+                                reachable,
+                                parameters);
 
       const std::size_t planner_cells =
         static_cast<std::size_t> (planner.width) * planner.height;
@@ -1040,7 +1096,10 @@ namespace moppe::terrain {
             ? std::fabs (planner.elevation (to) - planner.elevation (from)) /
                 run
             : 0.0f;
-        route_cost += run * (1.0f + 8.0f * grade * grade);
+        const float alpine =
+          highland_ratio (planner.elevation (to), planner, parameters);
+        route_cost +=
+          run * (1.0f + 8.0f * grade * grade + 4.0f * alpine * alpine);
       }
       return CoarseCircuitPlan { .home_base = home_base,
                                  .scenic_focus = focus,
@@ -1443,6 +1502,8 @@ namespace moppe::terrain {
                                     mp_units::si::metre;
     double grade_distance = 0.0;
     double accumulated_rise = 0.0;
+    double maximum_height_above_sea = 0.0;
+    const double sea_m = parameters.sea_level * height_scale;
     for (std::size_t point = 0; point < alignment_count; ++point) {
       const std::size_t next = (point + 1) % alignment_count;
       const TrailAlignmentPoint next_position =
@@ -1450,6 +1511,10 @@ namespace moppe::terrain {
              : alignment_closure (network.alignment, grid);
       const double run =
         distance (network.alignment.points[point], next_position);
+      const double elevation_m =
+        sample_height_m (shaped, grid, network.alignment.points[point]);
+      maximum_height_above_sea =
+        std::max (maximum_height_above_sea, elevation_m - sea_m);
       if (run <= 0.0)
         continue;
       const double rise = std::fabs (
@@ -1468,6 +1533,8 @@ namespace moppe::terrain {
     }
     if (grade_distance > 0.0)
       report.mean_centerline_grade = accumulated_rise / grade_distance;
+    report.maximum_centerline_height_above_sea =
+      maximum_height_above_sea * mp_units::si::metre;
     network.earthwork_delta_m = std::move (earthwork_delta_m);
     return { .heights = std::move (shaped),
              .network = std::move (network),

@@ -35,6 +35,14 @@ namespace moppe::terrain {
     meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
     meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
     meters_t desired_circuit_radius = 900.0f * mp_units::si::metre;
+    // The first built circuit should visit foothills and viewpoints without
+    // becoming an alpine summit route. The quadratic preference begins at the
+    // first height and becomes strong at the second; neither is a hard wall.
+    // Height is measured from sea so the policy survives datum changes.
+    meters_t highland_preference_height_above_sea =
+      180.0f * mp_units::si::metre;
+    meters_t alpine_avoidance_height_above_sea =
+      285.0f * mp_units::si::metre;
   };
 
   struct TrailFormationReport {
@@ -49,6 +57,8 @@ namespace moppe::terrain {
     double mean_centerline_grade = 0.0;
     double maximum_centerline_grade = 0.0;
     std::size_t grade_exceptions = 0;
+    meters_f64_t maximum_centerline_height_above_sea =
+      0.0 * mp_units::si::metre;
     meters_f64_t maximum_centerline_step = 0.0 * mp_units::si::metre;
     meters_f64_t mean_absolute_change = 0.0 * mp_units::si::metre;
     meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;

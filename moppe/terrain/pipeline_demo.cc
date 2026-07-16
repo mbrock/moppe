@@ -229,10 +229,11 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.empty () || parts.size () > 9)
+      if (parts.empty () || parts.size () > 11)
         throw std::invalid_argument (
           "trails expects min_m2[,max_m2,width,shoulder,cut,fill,"
-          "max_grade,sea,designed_grade]");
+          "max_grade,sea,designed_grade,highland_preference,"
+          "alpine_avoidance]");
       TrailFormation trails;
       trails.minimum_catchment_area =
         parse_float (parts[0]) * mp_units::si::metre * mp_units::si::metre;
@@ -255,6 +256,12 @@ namespace {
       if (parts.size () > 8)
         trails.designed_grade =
           parse_float (parts[8]) * terrain_slope[mp_units::one];
+      if (parts.size () > 9)
+        trails.highland_preference_height_above_sea =
+          parse_float (parts[9]) * mp_units::si::metre;
+      if (parts.size () > 10)
+        trails.alpine_avoidance_height_above_sea =
+          parse_float (parts[10]) * mp_units::si::metre;
       program.transforms.emplace_back (trails);
     } else if (name == "diffuse") {
       const std::size_t comma = value.find (',');
@@ -398,6 +405,8 @@ int main (int argc, char** argv) {
                   << " mean_grade=" << report->mean_centerline_grade
                   << " max_grade=" << report->maximum_centerline_grade
                   << " grade_exceptions=" << report->grade_exceptions
+                  << " max_high_m=" << meters_value (
+                       report->maximum_centerline_height_above_sea)
                   << " max_step_m="
                   << meters_value (report->maximum_centerline_step)
                   << " mean_m=" << meters_value (report->mean_absolute_change)
