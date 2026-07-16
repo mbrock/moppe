@@ -7,9 +7,8 @@ How changes are made here, distilled from the ones that went well.
 Bitwise-reproducible world generation is the target invariant that makes
 everything else safe. Before migrating or refactoring anything that
 touches generation: capture golden outputs of the current behavior;
-migrate behind tests; verify byte-identical results (the standard
-proof line is "the refactored N-droplet terrain is byte-identical to
-the pre-refactor artifact"). The repository has deterministic replay
+migrate behind tests; verify byte-identical results when behavior is meant to
+stay fixed. The repository has deterministic replay
 and seam tests, but not yet a complete cross-machine golden corpus.
 When behavior must change, re-bless goldens as a conscious, named act
 in its own commit. Hunt determinism leaks proactively: floating-point
@@ -32,11 +31,11 @@ constantly-firing clamp is masking a calibration bug, not fixing a
 pathology). Report falsifications plainly and separate conclusions
 ("the sediment ledger is definitely broken; the rill/sink pathology is
 a second problem") rather than letting one fix claim credit for
-everything. Record experiments as runnable artifacts
-(`erosion_experiment.cc`, docs notes), not just as chat
-summaries. Distinct symptom populations get a census and a taxonomy
-before a cure; steady-state survivor rates matter more than birth
-rates.
+everything. Record experiments as runnable artifacts and research notes, not
+just as chat summaries. Distinct symptom populations get a census and a taxonomy
+before a cure; steady-state survivor rates matter more than birth rates.
+Retired experiments remain documented under `research/`, but their obsolete
+executables do not stay in the active build.
 
 ## Semantics must be explicit, never accidental
 

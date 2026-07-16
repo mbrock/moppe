@@ -34,14 +34,7 @@ namespace {
     using namespace moppe::terrain;
     if (option == "world") {
       const GeologicalLayer layer = program.source.layer;
-      program = make_default_world_program (program.randomness.seed.value);
-      program.source.layer = layer;
-      return;
-    }
-    if (option == "relief") {
-      const GeologicalLayer layer = program.source.layer;
-      program = make_relief_program (program.randomness.seed.value,
-                                     TerrainGenerationProfile::Research);
+      program = make_default_world_program (program.seed.value);
       program.source.layer = layer;
       return;
     }
@@ -51,10 +44,6 @@ namespace {
     }
     if (option == "normalize") {
       program.transforms.emplace_back (NormalizeHeights {});
-      return;
-    }
-    if (option == "carve") {
-      program.transforms.emplace_back (ChannelCarving {});
       return;
     }
     if (option == "trails") {
@@ -151,71 +140,6 @@ namespace {
         program.source.initial_bathymetric_relief =
           parse_float (parts[9]) * mp_units::si::metre;
       program.transforms.emplace_back (orogeny);
-    } else if (name == "hydraulic") {
-      std::vector<std::string_view> parts;
-      std::size_t start = 0;
-      while (start <= value.size ()) {
-        const std::size_t comma = value.find (',', start);
-        parts.push_back (value.substr (start,
-                                       comma == std::string_view::npos
-                                         ? value.size () - start
-                                         : comma - start));
-        if (comma == std::string_view::npos)
-          break;
-        start = comma + 1;
-      }
-      if (parts.empty () || parts.size () > 5)
-        throw std::invalid_argument (
-          "hydraulic expects drops[,batch,steps,water,discard|deposit]");
-      const int droplets = parse_int (parts[0]);
-      const int batch_size = parts.size () > 1 ? parse_int (parts[1]) : 256;
-      const int max_steps = parts.size () > 2 ? parse_int (parts[2]) : 64;
-      const float minimum_water =
-        parts.size () > 3 ? parse_float (parts[3]) : 0.0f;
-      SedimentDisposition disposition = SedimentDisposition::Discard;
-      if (parts.size () > 4) {
-        if (parts[4] == "deposit")
-          disposition = SedimentDisposition::Deposit;
-        else if (parts[4] != "discard")
-          throw std::invalid_argument (
-            "hydraulic sediment policy must be discard or deposit");
-      }
-      program.transforms.emplace_back (HydraulicErosion {
-        .droplets = droplet_count (droplets),
-        .batch_size = moppe::terrain::batch_size (batch_size),
-        .max_steps = step_count (max_steps),
-        .minimum_water = minimum_water,
-        .sediment_at_termination = disposition });
-    } else if (name == "carve") {
-      std::vector<std::string_view> parts;
-      std::size_t start = 0;
-      while (start <= value.size ()) {
-        const std::size_t comma = value.find (',', start);
-        parts.push_back (value.substr (start,
-                                       comma == std::string_view::npos
-                                         ? value.size () - start
-                                         : comma - start));
-        if (comma == std::string_view::npos)
-          break;
-        start = comma + 1;
-      }
-      if (parts.empty () || parts.size () > 6)
-        throw std::invalid_argument (
-          "carve expects area_cells[,depth_scale,min_depth,max_depth,"
-          "sea,blend]");
-      ChannelCarving carving;
-      carving.minimum_area_cells = parse_float (parts[0]);
-      if (parts.size () > 1)
-        carving.depth_per_sqrt_m2 = parse_float (parts[1]);
-      if (parts.size () > 2)
-        carving.minimum_depth = parse_float (parts[2]) * mp_units::si::metre;
-      if (parts.size () > 3)
-        carving.maximum_depth = parse_float (parts[3]) * mp_units::si::metre;
-      if (parts.size () > 4)
-        carving.sea_level = parse_float (parts[4]);
-      if (parts.size () > 5)
-        carving.bank_blend = parse_float (parts[5]) * mp_units::si::metre;
-      program.transforms.emplace_back (carving);
     } else if (name == "trails") {
       std::vector<std::string_view> parts;
       std::size_t start = 0;
@@ -379,13 +303,6 @@ int main (int argc, char** argv) {
                   << meters_value (report->mean_absolute_change)
                   << " max_change_m="
                   << meters_value (report->maximum_absolute_change) << "\n";
-      else if (const auto* report = std::get_if<ChannelCarvingReport> (&result))
-        std::cout << "carve: reaches=" << report->reaches
-                  << " cells=" << report->carved_cells << " lowered_m3="
-                  << cubic_meters_value (report->lowered_volume)
-                  << " mean_m=" << meters_value (report->mean_lowering)
-                  << " max_m=" << meters_value (report->maximum_lowering)
-                  << "\n";
       else if (const auto* report =
                  std::get_if<HillslopeDiffusionReport> (&result))
         std::cout << "diffuse: sweeps=" << report->sweeps << " lowered_m3="
@@ -412,20 +329,10 @@ int main (int argc, char** argv) {
                   << " mean_m=" << meters_value (report->mean_absolute_change)
                   << " max_m=" << meters_value (report->maximum_absolute_change)
                   << "\n";
-      else if (const auto* report =
-                 std::get_if<HydraulicErosionReport> (&result))
-        std::cout << "hydraulic: eroded=" << report->eroded
-                  << " deposited=" << report->deposited
-                  << " discarded=" << report->discarded_sediment
-                  << " discarded_fraction=" << report->discarded_fraction ()
-                  << " mean_steps=" << report->mean_steps ()
-                  << " cap=" << report->stopped_at_step_limit
-                  << " water=" << report->stopped_at_water_cutoff
-                  << " flat=" << report->stopped_flat << "\n";
   } catch (const std::exception& error) {
     std::cerr << "terrain pipeline demo: " << error.what () << "\n";
     std::cerr << "usage: terrain-pipeline-demo OUTPUT SIZE SEED LAYER "
-              << "[world|relief|raw|normalize|NAME=VALUE ...]\n";
+              << "[world|raw|normalize|NAME=VALUE ...]\n";
     return -1;
   }
 

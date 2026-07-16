@@ -4,25 +4,15 @@
 #include <moppe/map/generate.hh>
 #include <moppe/render/renderer.hh>
 #include <moppe/terrain/drainage.hh>
-#include <moppe/terrain/flood.hh>
 
 namespace moppe::game {
-  square_meters_t
-  visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept;
-
   render::DrawList build_river_ribbons (const map::HeightMap& map,
-                                        const terrain::FloodField& flood,
-                                        const terrain::LakeCensus& census,
-                                        const terrain::DrainageGraph& drainage,
                                         const terrain::RiverNetwork& rivers);
 
   class RiverSurface {
   public:
     void rebuild (render::Renderer& renderer,
                   const map::HeightMap& map,
-                  const terrain::FloodField& flood,
-                  const terrain::LakeCensus& census,
-                  const terrain::DrainageGraph& drainage,
                   const terrain::RiverNetwork& rivers);
     void clear ();
     void draw (render::Renderer& renderer, const Vec3& camera) const;

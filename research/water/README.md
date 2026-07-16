@@ -8,7 +8,7 @@ references that also apply to lakes and oceans.
 The papers suggest a useful progression rather than one giant water system:
 
 ```text
-carved bed and coherent water depth
+continuous trajectory and coherent cross-section
   -> flow coordinates and velocity field
   -> advected normals, color, foam, and debris
   -> local procedural waves around banks and obstacles
@@ -27,6 +27,17 @@ carved bed and coherent water depth
    a velocity field without destructive stretching.
 4. `jeschke-2018-water-surface-wavelets.pdf` when actual wave dynamics become
    more important than advected appearance.
+
+## Implemented slice (2026-07-16)
+
+Moppe now follows the common structure without adopting a full fluid solve:
+dense cubic trajectories and area-driven cross-sections from Riverscapes;
+two reset-and-handoff advection phases from Vlachos; and a shared local flow
+frame recovered along the curved mesh. The river's global arc coordinate is
+continuous through confluences. A seven-row ribbon carries depth, bank
+feather, rapid, and waterfall signals, then fades beneath standing water at
+the mouth. Yu's richer 2D velocity fields remain the next escalation if a
+centerline tangent cannot explain bank or junction flow.
 
 ## Production flow maps
 
@@ -85,8 +96,8 @@ logic through explicit bed inscription and animated water.
   kilometers long.
   [author copy](https://web.cs.dal.ca/~sbrooks/projects/waterRendering/AdvectedRiverTextures.pdf)
 
-Vlachos is the cheap fixed-flow version of this family.  These papers become
-valuable if a single tangent per reach cannot represent bends, bank effects,
+Vlachos is the cheap fixed-flow version of this family. These papers become
+valuable if the alignment's local tangent cannot represent bank effects,
 obstacles, confluences, or locally varying velocity.
 
 ## Dynamic waves and shallow water
@@ -107,9 +118,9 @@ obstacles, confluences, or locally varying velocity.
   refraction, and caustics to a shallow-water simulation.
   [author copy](https://web.mat.upc.edu/toni.susin/files/hybrid_lbmsw_rend_new.pdf)
 
-These are longer-term references.  They should not block carved channels,
-flow-aligned detail, or depth-based optical treatment, which are cheaper and
-more important to the current river scale.
+These are longer-term references. They should not block trajectory-aligned
+detail or depth-based optical treatment, which are cheaper and more important
+to the current river scale.
 
 ## Foam, volume, and optical layering
 

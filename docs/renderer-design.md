@@ -202,30 +202,29 @@ original gamma-space look. The sky shader forces depth to the far plane
 (z = 0 under reversed-Z) and tests against cleared depth, so terrain still
 occludes the expensive cloud shader.
 
-Rivers are not separate meshes: `terrain::paint_watercourses` paints them
-into the same per-cell sheets the sea and lakes render from.  The surface
-sheet starts as the permanent standing-water raster (ground height in dry
-cells; dry cells bordering water hold the neighbor's level just below
-ground, so the wet/dry zero crossing sits at the true sub-cell waterline) and stamps each reach's level along its centerline — bed plus a
-fixed fraction of the carved channel depth, bounded by the banks actually
-probed beside the channel so a backwater-floored mouth reach cannot flood
-the flats around it, monotone non-increasing downstream, and capped a
-couple of meters over the local ground so a cascade's sheet hugs the
-falling bed instead of bridging the drop.  A second sheet carries a flow
-arrow per wet cell (direction from the drainage path, speed from the slope
-and waterfall laws); overlapping stamps at a confluence average by weight,
-which is the entire junction treatment — there is no seam because there is
-no object.  The ocean shader advects its surface detail along the arrows
-with a two-phase flow map (each copy drifts briefly and hands over before
-it shears), whips up churn where the arrows run fast, suppresses tidal
-swash and beach foam on running water, and shortens the underwater
-extinction length so silty rivers read as bodies instead of glass.  The
-sheets are presentation-only readings: the ordered `RiverNetwork` and the
-terrain remain the authoritative routing and bed data.
+Running rivers are explicit meshes built from `RiverAlignment`, a dense
+continuous trajectory attached to every topological reach.  Drainage cells
+remain the routing authority; a damped cubic Hermite reading removes D8
+corners, interpolates area, slope, waterfall, and mouth state, and assigns an
+arc coordinate that is continuous through confluences.  Width and depth are
+physical functions of contributing area.  Seven vertices across each section
+form a soft-edged ribbon, with depth recovered against the unmodified orogeny
+heightfield and the derived water profile clamped non-increasing downstream.
+The ribbon dissolves beneath the standing surface after crossing a mouth.
 
-The legacy ribbon meshes (`game::RiverSurface`, river.metal) still build
-behind `MOPPE_RIVER_RIBBONS=1` for comparison captures and remain in use
-by the terrain lab overlay.
+`river.metal` orients its detail from screen derivatives of that curved mesh,
+so normals and foam follow bends rather than world axes.  Two advected phases
+reset and hand over out of phase, avoiding the texture stretch and snap of a
+single scrolling normal map.  The global arc coordinate keeps phase coherent
+at reach joins.  Rapid, depth, waterfall, and feather signals arrive in the
+vertex color channels.
+
+`terrain::paint_watercourses` now reserves the lattice water surface for real
+standing bodies.  It only stamps the continuous river current into wet cells
+past each mouth, allowing the ocean/lake material and ribbon to meet without
+inventing dry-reach water levels or reverse-engineering banks from a raster
+carve.  Terrain, drainage, and running-water geometry therefore remain three
+explicit readings instead of mutating one another.
 
 Feature-targeted visual checks use
 `tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `river`,
@@ -291,17 +290,17 @@ upload.  Interactive previews derive normals from the height texture, reuse
 terrain GPU resources, and morph old and new height textures over 120 ms.
 They restore exact CPU normals when leaving the lab.
 The next renderer boundary is to keep pointwise results GPU-resident through
-global normalization and rendering.  Hydraulic erosion remains a separate
-iterative problem rather than part of the pointwise graph.
+global normalization and rendering. Orogeny remains a separate iterative
+problem rather than part of the pointwise graph.
 
 ## Other shader ports
 
 - sky.frag (228 lines, fully procedural) → MSL 1:1; uniforms time, sunHeight,
   cloudiness, sunDir, fogColor.
 - ocean.vert/frag → MSL on a regular grid mesh; the vertex stage samples the
-  painted water surface (RG32F: level plus per-body wave amplitude) for
-  ocean, lake, and river elevation, and the fragment stage reads a second
-  RG16F sheet of flow arrows for the river advection. Waves fade at shore,
+  standing-water surface (RG32F: level plus per-body wave amplitude) for
+  ocean and lake elevation, and the fragment stage reads a second RG16F sheet
+  of mouth-current arrows. Waves fade at shore,
   scale with the body's classification so tarns do not heave like the sea,
   and drive the shoreline lap from the same classification: at maximum retreat
   the sea moves about 6 cm, lakes about 6 mm, and ponds about 2 mm. Dry

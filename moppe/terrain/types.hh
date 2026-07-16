@@ -19,12 +19,6 @@ namespace moppe::terrain {
     return Seed { seed.value + 1 };
   }
 
-  struct SequenceOffset {
-    std::uint64_t value;
-
-    friend constexpr bool operator== (SequenceOffset, SequenceOffset) = default;
-  };
-
   template <typename Tag>
   struct Identifier {
     std::uint32_t value;
@@ -92,18 +86,6 @@ namespace moppe::terrain {
   inline constexpr struct iteration_count
       : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
   } iteration_count;
-  inline constexpr struct droplet_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } droplet_count;
-  inline constexpr struct batch_size
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } batch_size;
-  inline constexpr struct step_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } step_count;
-  inline constexpr struct event_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } event_count;
   inline constexpr struct separation_cell_count
       : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
   } separation_cell_count;
@@ -113,11 +95,6 @@ namespace moppe::terrain {
     mp_units::quantity<reach_count[mp_units::one], std::size_t>;
   using IterationCount =
     mp_units::quantity<iteration_count[mp_units::one], int>;
-  using DropletCount = mp_units::quantity<droplet_count[mp_units::one], int>;
-  using BatchSize = mp_units::quantity<batch_size[mp_units::one], int>;
-  using StepCount = mp_units::quantity<step_count[mp_units::one], int>;
-  using EventCount =
-    mp_units::quantity<event_count[mp_units::one], std::uint64_t>;
   using SeparationCellCount =
     mp_units::quantity<separation_cell_count[mp_units::one], std::size_t>;
 

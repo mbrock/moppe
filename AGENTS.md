@@ -6,13 +6,11 @@
 - Unit tests: `ctest --test-dir build --output-on-failure`
 - Scalar-field visual check: `./build/terrain-field-demo /tmp/field.png 512`
 - Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
-  257 123 combined power=1.15 hydraulic=10000,256 thermal=2,0.003`
-  (further stages: `analytical=age[,uplift,k,m,sea,iters,relax]` and
-  `carve[=area_cells,depth_scale,min_depth,max_depth,sea,blend]`, plus
+  257 123 combined world`
+  (further stages: `orogeny=duration,dt,uplift,k,m,D[,sea,land_relief,
+  coast,bathymetry]`, `analytical=age[,uplift,k,m,sea,iters,relax]`, and
   `trails[=min_m2,max_m2,width,shoulder,cut,fill,max_grade,sea,designed_grade,
-  highland_preference,alpine_avoidance]`;
-  note the demo grid is unit-scale, so metric carve defaults suit the game
-  world)
+  highland_preference,alpine_avoidance]`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
   - Hang glider: boost the bike into the air and press `E` once the deploy

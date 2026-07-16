@@ -9,8 +9,7 @@ namespace moppe::terrain {
                                           GeologicalLayer layer) {
     return { .source = { .recipe = make_geological_recipe (root_seed),
                          .layer = layer },
-             .randomness = { .seed = Seed { root_seed },
-                             .offset = SequenceOffset { 3 } },
+             .seed = Seed { root_seed },
              .transforms = { NormalizeHeights {} } };
   }
 
@@ -41,31 +40,6 @@ namespace moppe::terrain {
     return program;
   }
 
-  int profile_droplet_count (TerrainGenerationProfile profile) noexcept {
-    switch (profile) {
-    case TerrainGenerationProfile::Fast:
-      return 100000;
-    case TerrainGenerationProfile::Play:
-      return 300000;
-    case TerrainGenerationProfile::Research:
-      return 500000;
-    }
-    return 100000;
-  }
-
-  int profile_stream_power_iterations (
-    TerrainGenerationProfile profile) noexcept {
-    switch (profile) {
-    case TerrainGenerationProfile::Fast:
-      return 4;
-    case TerrainGenerationProfile::Play:
-      return 4;
-    case TerrainGenerationProfile::Research:
-      return 4;
-    }
-    return 4;
-  }
-
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
     case TerrainGenerationProfile::Fast:
@@ -76,37 +50,6 @@ namespace moppe::terrain {
       return "research";
     }
     return "play";
-  }
-
-  TerrainProgram make_relief_program (std::uint32_t root_seed,
-                                      TerrainGenerationProfile profile) {
-    TerrainProgram program = make_geological_program (root_seed);
-    // Slight lowland squash; roughly 10-15% becomes ocean.
-    program.transforms.emplace_back (PowerHeights { 1.15f });
-    // Drainage-scale valley incision before droplet finishing; the 200 ky
-    // four-pass setting follows the recorded stream-power comparison.
-    program.transforms.emplace_back (AnalyticalErosion {
-      .duration = 200000.0f * mp_units::astronomy::Julian_year,
-      .fixed_point_iterations =
-        iteration_count (profile_stream_power_iterations (profile)) });
-    // The analytical stage leaves one-cell discontinuities (its paper calls
-    // hillslope treatment essential); a talus pass smooths them before the
-    // droplet budget, which is far thinner per cell at rider resolution
-    // than in the recorded 257-square experiment.
-    program.transforms.emplace_back (
-      ThermalErosion { iteration_count (2), 0.003f });
-    program.transforms.emplace_back (HydraulicErosion {
-      .droplets = droplet_count (profile_droplet_count (profile)),
-      .batch_size = batch_size (256),
-      .max_steps = step_count (512),
-      .minimum_water = 0.01f,
-      .sediment_at_termination = SedimentDisposition::Deposit });
-    // Talus angle is about 22 degrees at 2.4 m cells and 320 m height.
-    program.transforms.emplace_back (
-      ThermalErosion { iteration_count (2), 0.003f });
-    // Channel beds are stamped last so smoothing cannot refill them.
-    program.transforms.emplace_back (ChannelCarving {});
-    return program;
   }
 
   void validate_program (const TerrainProgram& program) {
@@ -128,15 +71,6 @@ namespace moppe::terrain {
                 operation.exponent <= 0.0f)
               throw std::invalid_argument (
                 "height exponent must be positive and finite");
-          } else if constexpr (std::is_same_v<T, HydraulicErosion>) {
-            if (operation.droplets < 0 || operation.batch_size <= 0 ||
-                operation.max_steps <= 0 ||
-                !std::isfinite (operation.minimum_water) ||
-                operation.minimum_water < 0.0f ||
-                operation.minimum_water >= 1.0f)
-              throw std::invalid_argument (
-                "hydraulic erosion needs a non-negative droplet count "
-                "and positive batch size and lifetime");
           } else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
             if (!std::isfinite (julian_years_value (operation.duration)) ||
                 operation.duration < 0.0f * mp_units::astronomy::Julian_year ||
@@ -192,20 +126,6 @@ namespace moppe::terrain {
                   0.0f)
               throw std::invalid_argument (
                 "hillslope diffusion parameters are invalid");
-          } else if constexpr (std::is_same_v<T, ChannelCarving>) {
-            if (!std::isfinite (operation.sea_level) ||
-                !std::isfinite (operation.minimum_area_cells) ||
-                operation.minimum_area_cells <= 0.0f ||
-                !std::isfinite (operation.depth_per_sqrt_m2) ||
-                operation.depth_per_sqrt_m2 < 0.0f ||
-                !std::isfinite (meters_value (operation.minimum_depth)) ||
-                operation.minimum_depth < 0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (operation.maximum_depth)) ||
-                operation.maximum_depth < operation.minimum_depth ||
-                !std::isfinite (meters_value (operation.bank_blend)) ||
-                operation.bank_blend < 0.0f * mp_units::si::metre)
-              throw std::invalid_argument (
-                "channel carving parameters are invalid");
           } else if constexpr (std::is_same_v<T, TrailFormation>) {
             if (!std::isfinite (operation.sea_level) ||
                 !std::isfinite (
@@ -273,14 +193,10 @@ namespace moppe::terrain {
           return "normalize";
         else if constexpr (std::is_same_v<T, PowerHeights>)
           return "power";
-        else if constexpr (std::is_same_v<T, HydraulicErosion>)
-          return "hydraulic";
         else if constexpr (std::is_same_v<T, AnalyticalErosion>)
           return "analytical";
         else if constexpr (std::is_same_v<T, OrogenyEvolution>)
           return "orogeny";
-        else if constexpr (std::is_same_v<T, ChannelCarving>)
-          return "carve";
         else if constexpr (std::is_same_v<T, TrailFormation>)
           return "trails";
         else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
@@ -304,8 +220,6 @@ namespace moppe::terrain {
           return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
         else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
           return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
-        else if constexpr (std::is_same_v<T, ChannelCarving>)
-          return { SpatialScope::Global, EvaluationOrder::Direct };
         else if constexpr (std::is_same_v<T, TrailFormation>)
           return { SpatialScope::Global, EvaluationOrder::Iterative };
         else

@@ -16,25 +16,24 @@ is orange where it scrapes material away and blue where it deposits it.
 
 The lesson is simple: water follows slope, and it carries things.
 
-Implemented: Terrain Lab's raindrop tool now places an ordinary droplet from
-the hydraulic erosion model, commits its path-monotone erosion and deposition,
-draws the signed material trail in world space, and follows the moving drop
-with the inspection camera.  The palette can replace its temporary text
-treatment independently.
+Historical note: an earlier Terrain Lab implemented this with the retired
+hydraulic droplet model. A future version should trace the current drainage
+graph without mutating terrain, so the lesson survives without reviving the
+obsolete simulation.
 
 ### The mega-droplet
 
-Make the meteorite idea physically honest: use the same droplet model, but
-turn up the erosion constants and give it a broad brush.  Instead of shaving
-off invisible fractions, a boulder-sized drop gouges a trench in real time,
-slows in a valley, and lays down a broad alluvial fan.  Follow it with a chase
-camera so the player rides just behind the canyon as it forms.
+Make the meteorite idea physically honest with a purpose-built interactive
+erosion brush. Instead of shaving off invisible fractions, a boulder-sized
+flow gouges a trench in real time, slows in a valley, and lays down a broad
+alluvial fan. Follow it with a chase camera so the player rides just behind
+the canyon as it forms.
 
 This makes erosion legible as an ordinary process repeated at enormous scale,
 not as a mysterious terrain effect.
 
-Likely reusable pieces are a droplet tracer, brush-scaled terrain commits,
-live heightmap uploads, and a chase camera.  **Estimated effort: medium.**
+Likely reusable pieces are a drainage tracer, brush-scaled terrain commits,
+live heightmap uploads, and a chase camera. **Estimated effort: large.**
 
 ### Raindrop race
 
@@ -56,9 +55,9 @@ per second, live terrain updates, theatrical rain streaks, and a counter such
 as `about 400 years of rain`.  Gullies organize themselves in front of the
 player.  Nobody draws them; they emerge from the repeated local rule.
 
-This is the existing erosion stage presented incrementally instead of hidden
-behind a loading screen.  It needs per-frame batches, incremental commits, and
-live heightmap uploads.  **Estimated effort: medium.**
+This now needs a new process model rather than exposing an existing stage;
+orogeny is deliberately not a rain-particle simulation. **Estimated effort:
+large.**
 
 ## The water map: understanding the flow graph
 

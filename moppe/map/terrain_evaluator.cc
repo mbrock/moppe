@@ -2,7 +2,6 @@
 
 #include <moppe/profile.hh>
 #include <moppe/terrain/analytical_erosion.hh>
-#include <moppe/terrain/carve.hh>
 #include <moppe/terrain/cpu_evaluator.hh>
 #include <moppe/terrain/trail.hh>
 
@@ -20,8 +19,6 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("TerrainEvaluator::begin");
     terrain::validate_program (program);
     m_trail_network.reset ();
-    m_randomness.seed (program.randomness.seed.value);
-    m_randomness.discard (program.randomness.offset.value);
     const terrain::GeologicalFields fields = [&] {
       MOPPE_PROFILE_ZONE ("terrain.expand_geological_recipe");
       return terrain::make_geological_fields (program.source.recipe);
@@ -98,22 +95,6 @@ namespace moppe::map {
                  std::get_if<terrain::PowerHeights> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.power_heights");
       m_target.exponentiate (power->exponent);
-    } else if (const auto* hydraulic =
-                 std::get_if<terrain::HydraulicErosion> (&transform)) {
-      MOPPE_PROFILE_ZONE ("terrain.hydraulic_erosion");
-      report = m_target.erode_hydraulically (
-        m_randomness,
-        terrain::count_value (hydraulic->droplets),
-        terrain::count_value (hydraulic->batch_size),
-        terrain::count_value (hydraulic->max_steps),
-        hydraulic->minimum_water,
-        hydraulic->sediment_at_termination,
-        hydraulic->carving_rule,
-        [this, &transform] (int completed, int total) {
-          if (m_iteration_progress)
-            m_iteration_progress (
-              m_transform_index, transform, completed, total);
-        });
     } else if (const auto* analytical =
                  std::get_if<terrain::AnalyticalErosion> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.analytical_erosion");
@@ -176,24 +157,6 @@ namespace moppe::map {
       MOPPE_PROFILE_ZONE ("terrain.hillslope_diffusion");
       report = m_target.diffuse_hillslopes (diffusion->duration,
                                             diffusion->diffusivity);
-    } else if (const auto* carving =
-                 std::get_if<terrain::ChannelCarving> (&transform)) {
-      MOPPE_PROFILE_ZONE ("terrain.channel_carving");
-      terrain::ChannelCarvingResult result =
-        terrain::carve_channels (m_target.terrain_view (), *carving);
-      const std::size_t width = m_target.unique_width ();
-      const std::size_t height = m_target.unique_height ();
-      for (std::size_t y = 0; y < height; ++y)
-        for (std::size_t x = 0; x < width; ++x) {
-          const float updated = result.heights[y * width + x];
-          m_target.record_material_change (
-            static_cast<int> (x),
-            static_cast<int> (y),
-            updated -
-              m_target.get (static_cast<int> (x), static_cast<int> (y)));
-          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
-        }
-      report = result.report;
     } else if (const auto* trails =
                  std::get_if<terrain::TrailFormation> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.trail_formation");
@@ -242,8 +205,7 @@ namespace moppe::map {
              .eroded = std::vector<float> (m_target.raw_eroded (),
                                            m_target.raw_eroded () + count),
              .deposited = std::vector<float> (
-               m_target.raw_deposited (), m_target.raw_deposited () + count),
-             .randomness = m_randomness };
+               m_target.raw_deposited (), m_target.raw_deposited () + count) };
   }
 
   void TerrainEvaluator::restore (const TerrainCheckpoint& checkpoint) {
@@ -265,7 +227,6 @@ namespace moppe::map {
       std::copy (checkpoint.deposited.begin (),
                  checkpoint.deposited.end (),
                  m_target.raw_deposited ());
-    m_randomness = checkpoint.randomness;
     m_trail_network.reset ();
   }
 }

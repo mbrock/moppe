@@ -35,10 +35,9 @@ something relative to that measurement.
   perform the calibration explicitly at one boundary
   (`docs/terrain-expressions.md`), and `NormalizedRaster` exists as "an
   explicit semantic conversion."  The concepts are half-born.
-- `height_scale` threading is pervasive: `watercourse.cc` multiplies
-  raw samples by `height_scale` in a dozen places; `carve`, the flood
-  epsilon, the shaders' `params0.y`, and the physics `m_scale[1]` all
-  carry the same conversion independently.
+- `height_scale` threading is pervasive: `watercourse.cc` converts raw
+  samples, while the flood epsilon, shaders' `params0.y`, and physics
+  `m_scale[1]` carry the same conversion independently.
 - `measure_height_range` is already the min/max reading normalization
   needs -- currently fused into the transform.
 
@@ -95,8 +94,7 @@ the world's relief, depending on what downstream multiplies by.
   at upload from the calibration.
 - Transform reordering becomes safe-by-construction where it is
   meaningful and a type error where it is not.
-- Honest units unlock honest physics constants elsewhere (see
-  RFC-013's lattice-unit discussion for the droplet model).
+- Honest units unlock honest physics constants elsewhere.
 
 ## Risks and alternatives
 
@@ -115,7 +113,7 @@ the world's relief, depending on what downstream multiplies by.
 
 1. Introduce datum types + `HeightCalibration`; extend `TerrainGrid` /
    `TerrainView` (`height_scale` becomes one field of the calibration).
-2. Port the hydrology stack (flood, census, carve, watercourse) to
+2. Port the hydrology stack (flood, census, drainage, watercourse) to
    typed thresholds -- this is where latent unit bugs would surface,
    so port it first and test against current outputs.
 3. Split `NormalizeHeights`; update `docs/terrain-expressions.md`'s

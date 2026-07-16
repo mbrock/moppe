@@ -11,8 +11,8 @@ This document is a reference for quantities we already use or may want to
 model. It does not prescribe the C++ types, API shapes, storage units, or naming
 conventions that should represent them. Those choices are being worked out as
 Moppe adopts mp-units. Nor does it claim that every current process is
-physically calibrated: the procedural field graph and particle hydraulic
-erosion model contain normalized and empirical quantities.
+physically calibrated: the procedural field graph still contains normalized
+and empirical quantities.
 
 Several examples below come from the project's research corpus. Parenthetical
 identifiers such as `#ZHQFZP` name the supporting excerpt in that corpus. They
@@ -289,10 +289,7 @@ bedload, dissolved load, and material leaving the modeled domain are separate
 terms in a complete budget.
 
 Moppe's physical reports use lowered or raised volume in m³ and mean or
-maximum elevation change in m. The particle hydraulic report instead records
-normalized height amounts. Those terms share a constant cell area and are
-useful for an internal balance, but they are not yet a calibrated sediment
-volume or mass.
+maximum elevation change in m.
 
 ### Stream power
 
@@ -563,13 +560,12 @@ its model and spatial scale.
 | lake area, depth, volume, surface | m², m, m³, m |
 | waterfall drop and run | m |
 | watercourse velocity | m/s |
-| channel width, depth, bank blend | m |
-| carved/lowered terrain report | m and m³ |
+| river alignment, width, depth, cross-section | m |
+| lowered/raised terrain report | m and m³ |
 | analytical erosion time | yr |
 | analytical uplift | m/yr |
 | analytical erodibility | dimensional, dependent on area exponent |
 | procedural field coordinates and noise | normalized field space |
-| hydraulic droplet water/sediment ledger | empirical normalized units |
 | thermal erosion talus | normalized neighboring-height difference |
 | moisture raster | dimensionless visual/ecological index `[0, 1]` |
 | frame/game animation time | s |
@@ -586,8 +582,7 @@ while their eventual types and boundaries are still being designed.
    basis. "Strength", "amount", and "scale" are not definitions.
 3. Separate state from flux and rate: water volume (m³), discharge (m³/s),
    and rainfall intensity (m/s) are different quantities.
-4. Separate counts from measures: cells are not m², iterations are not s,
-   and droplets are not m³.
+4. Separate counts from measures: cells are not m² and iterations are not s.
 5. Include unit conversions and resolution changes in tests. The same physical
    plane sampled at two resolutions should have the same slope and area;
    volume integrations should converge rather than scale with cell count.
