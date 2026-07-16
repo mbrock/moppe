@@ -55,6 +55,15 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
     smoothstep (0.0, 0.08, in.uv.x) * smoothstep (0.0, 0.08, 1.0 - in.uv.x);
   if (edge * in.opacity < 0.005)
     discard_fragment ();
+  const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
+  const float distance = length (to_frag);
+  const float fog = moppe_distance_fog (distance, frame.fog_color.w);
+  const float fog_factor = smoothstep (0.0, 0.9, fog);
+  // Periodic worlds submit nearby copies of the complete river network.
+  // Terrain already owns the fully opaque haze, so reject distant ribbons
+  // before procedural flow, derivatives, reflection, or shadow sampling.
+  if (fog_factor >= 0.995)
+    discard_fragment ();
 
   // Portal-style two-phase advection: each copy is reset only while the other
   // owns the pattern, avoiding both unbounded distortion and a visible pulse.
@@ -67,11 +76,13 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float handoff = abs (2.0 * phase0 - 1.0);
   const float2 base1 = float2 (in.uv.x * 7.0, in.uv.y * 0.9);
   const float2 base2 = float2 (in.uv.x * 11.0 + 3.7, in.uv.y * 0.45);
-  const float2 flow10 = base1 - float2 (0.0, phase0 * cycle * speed * 0.9);
+  const float2 flow10 =
+    base1 - float2 (0.0, phase0 * cycle * speed * 0.9);
   const float2 flow11 =
     base1 + float2 (4.13, 1.71) -
     float2 (0.0, phase1 * cycle * speed * 0.9);
-  const float2 flow20 = base2 - float2 (0.0, phase0 * cycle * speed * 0.55);
+  const float2 flow20 =
+    base2 - float2 (0.0, phase0 * cycle * speed * 0.55);
   const float2 flow21 =
     base2 + float2 (2.37, 5.29) -
     float2 (0.0, phase1 * cycle * speed * 0.55);
@@ -102,21 +113,21 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   }
   const float grad_across =
     0.6 * (mix (moppe_value_noise (flow10 + float2 (0.31, 0.0)),
-                    moppe_value_noise (flow11 + float2 (0.31, 0.0)),
-                    handoff) -
+                moppe_value_noise (flow11 + float2 (0.31, 0.0)),
+                handoff) -
            n1) +
     0.4 * (mix (moppe_value_noise (flow20 + float2 (0.27, 0.0)),
-                    moppe_value_noise (flow21 + float2 (0.27, 0.0)),
-                    handoff) -
+                moppe_value_noise (flow21 + float2 (0.27, 0.0)),
+                handoff) -
            n2);
   const float grad_downstream =
     0.6 * (mix (moppe_value_noise (flow10 + float2 (0.0, 0.23)),
-                    moppe_value_noise (flow11 + float2 (0.0, 0.23)),
-                    handoff) -
+                moppe_value_noise (flow11 + float2 (0.0, 0.23)),
+                handoff) -
            n1) +
     0.4 * (mix (moppe_value_noise (flow20 + float2 (0.0, 0.33)),
-                    moppe_value_noise (flow21 + float2 (0.0, 0.33)),
-                    handoff) -
+                moppe_value_noise (flow21 + float2 (0.0, 0.33)),
+                handoff) -
            n2);
   const float bump = 0.10 + 0.10 * in.rapid + 0.10 * in.waterfall;
   float3 n = normalize (in.normal +
@@ -128,9 +139,6 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
     0.035 + 0.965 * pow (1.0 - max (dot (n, view), 0.0), 5.0);
   const float3 reflection_dir = reflect (-view, n);
 
-  const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
-  const float distance = length (to_frag);
-  const float fog = moppe_distance_fog (distance, frame.fog_color.w);
   const float sun_visibility = moppe_sun_visibility (in.world_pos,
                                                      n,
                                                      frame.sun_dir.xyz,
@@ -177,7 +185,7 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
     pow (max (dot (n, half_vector), 0.0), 96.0) * (0.35 + 0.65 * fresnel);
   color += frame.sun_specular.rgb * glint * sun_visibility;
 
-  color = mix (color, fog_color, smoothstep (0.0, 0.9, fog));
+  color = mix (color, fog_color, fog_factor);
 
   // Transparency follows the water column: a hand-deep stream is glassy
   // over its bed, a meter of water reads as a body, and foam or falling

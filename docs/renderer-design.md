@@ -369,10 +369,12 @@ performance runs record the actual configuration. The legacy
 controls remain supported but are resolved centrally into the same settings.
 Each Boolean feature descriptor also records whether it is hot-switchable:
 changing a hot feature's stored value is sufficient for the next frame, with
-no resource rebuild or renderer-state reset. Ocean, particles, vehicle
-and star effects, bloom, automatic exposure, and lens flare are currently hot.
-Terrain shadows, river ribbons, and motion blur are conservatively marked not
-hot. The terrain topology overlay is hot and can be toggled with `G`.
+no resource rebuild or renderer-state reset. Ocean, river ribbons, particles,
+vehicle and star effects, bloom, automatic exposure, and lens flare are
+currently hot. River meshes are prepared once even when their draw is
+disabled, which lets the benchmark measure them independently. Terrain shadows
+and motion blur remain conservatively marked not hot. The terrain topology
+overlay is hot and can be toggled with `G`.
 To create a trace for Xcode's Metal debugger, run
 with `MOPPE_METAL_CAPTURE=/tmp/moppe.gputrace`; the first 120 frames are
 captured after the world is ready by default, or set

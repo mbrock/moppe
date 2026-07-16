@@ -1022,7 +1022,7 @@ namespace moppe {
 
         // Running rivers are continuous ribbon meshes. The water sheets below
         // retain standing bodies and carry each mouth's current into them.
-        if (m_rivers && m_graphics.river_ribbons) {
+        if (m_rivers) {
           MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
           m_river_surface.rebuild (r, m_map, *m_rivers);
         }
@@ -2097,13 +2097,6 @@ namespace moppe {
             m_stars.render (r, env);
         }
 
-        // Translucent water late so the seabed and fish show
-        // through; dust last so spray sits atop the surface.
-        if (terrain_lab)
-          m_terrain_lab.render_rivers (r, cam);
-        else
-          m_river_surface.draw (r, cam);
-
         // The lab keeps the game's painted water while the map is the
         // game's own; a rebuilt map invalidates the water sheets, so
         // they disappear until the lab's own analysis draws ribbons.
@@ -2125,6 +2118,15 @@ namespace moppe {
           r.draw_ocean (ocean);
         }
 
+        // Standing water writes depth first. Rivers then shade only their
+        // visible surface, rather than paying for fragments hidden beneath a
+        // lake or the sea, and retain a clean current layer through mouths.
+        if (terrain_lab)
+          m_terrain_lab.render_rivers (r, cam);
+        else if (m_graphics.river_ribbons)
+          m_river_surface.draw (r, cam);
+
+        // Dust last so spray sits atop every water surface.
         if (!terrain_lab && m_graphics.particles) {
           m_dust.render (r);
         }

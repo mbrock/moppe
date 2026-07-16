@@ -37,11 +37,11 @@ The intended experiment loop is:
 The built-in graphics benchmark implements this loop at a fixed 120 Hz. It
 constructs the checkpoint after a deterministic scripted prelude, then visits
 all Boolean combinations of a graphics-feature partition in Gray-code order.
-The current riding partition preserves grass, ocean, bloom, and automatic
-exposure as separate blocks and identifies particles, vehicle effects, star
-effects, and lens flare as one `small-effects` block. This reduces the ordinary
-sweep from 256 configurations to 32 without pretending those features no
-longer exist. Every
+The current riding partition preserves ocean, river ribbons, bloom, and
+automatic exposure as separate blocks and identifies particles, vehicle
+effects, star effects, lens flare, and fragment terrain normals as one
+`small-effects` block. This reduces the ordinary sweep from 512 configurations
+to 32 without pretending those features no longer exist. Every
 epoch restores `GameState`, resets renderer temporal history, replays the same
 input segment, discards settling frames, and records command-buffer GPU time
 for the remaining frames. For example:
