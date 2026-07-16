@@ -645,6 +645,7 @@ namespace moppe {
           m_overlay = OverlayMode::Deposited;
       }
       m_drainage.reset ();
+      m_channel_drainage.reset ();
       m_water_network.reset ();
       m_rivers.reset ();
       m_river_surface.clear ();
@@ -864,6 +865,7 @@ namespace moppe {
 
     void TerrainLab::invalidate_analysis () {
       m_drainage.reset ();
+      m_channel_drainage.reset ();
       m_water_network.reset ();
       m_rivers.reset ();
       m_river_surface.clear ();
@@ -933,10 +935,13 @@ namespace moppe {
           m_map->terrain_view (), standing_water (), *m_lakes);
         m_water_network =
           terrain::analyze_water_network (*m_flood, *m_lakes, *m_drainage);
+        m_channel_drainage = terrain::analyze_fractional_drainage (
+          m_map->terrain_view (), *m_flood, *m_lakes);
         m_rivers = terrain::extract_river_network (
           *m_flood,
           *m_lakes,
           *m_drainage,
+          *m_channel_drainage,
           terrain::visible_river_minimum_area (m_drainage->source_grid));
         m_river_surface.rebuild (*m_renderer, *m_map, *m_rivers);
         const double milliseconds = std::chrono::duration<double, std::milli> (

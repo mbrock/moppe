@@ -1,9 +1,11 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 
 #include <tests/test.hh>
 
 #include <array>
+#include <cmath>
 #include <vector>
 
 using namespace moppe::terrain;
@@ -238,6 +240,84 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
                       moppe::square_meters_value (b.contributing_area),
                       0.0f);
   }
+}
+
+MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
+  // A plane tilted between east and southeast: D8 routes due east while the
+  // true descent (and thus the D-infinity channel tangent) points ~22 degrees
+  // south of east. The refined extraction must keep the D8 reach topology
+  // exactly and only re-derive the continuous alignment geometry from the
+  // fractional columns.
+  constexpr std::size_t width = 8;
+  constexpr std::size_t height = 8;
+  std::vector<float> heights (width * height);
+  for (std::size_t y = 0; y < height; ++y)
+    for (std::size_t x = 0; x < width; ++x)
+      heights[y * width + x] =
+        30.0f - static_cast<float> (x) - 0.4f * static_cast<float> (y);
+  const TerrainView terrain ({ .width = width, .height = height }, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
+  const FractionalDrainage channels =
+    analyze_fractional_drainage (terrain, flood, census);
+  const auto minimum_area = 0.5f * mp_units::si::metre * mp_units::si::metre;
+  const RiverNetwork base =
+    extract_river_network (flood, census, wet, minimum_area);
+  const RiverNetwork refined =
+    extract_river_network (flood, census, wet, channels, minimum_area);
+
+  MOPPE_CHECK (refined.reach_by_cell == base.reach_by_cell);
+  MOPPE_CHECK (refined.waterfall_by_cell == base.waterfall_by_cell);
+  MOPPE_CHECK (refined.reaches.size () == base.reaches.size ());
+
+  const auto& fractional_areas =
+    moppe::spatial::get<fractional_contributing_area> (channels);
+  bool area_differs = false;
+  bool interior_bends = false;
+  for (std::size_t id = 0; id < refined.reaches.size (); ++id) {
+    const RiverReach& reach = refined.reaches[id];
+    const RiverReach& reference = base.reaches[id];
+    MOPPE_CHECK (reach.cells == reference.cells);
+    MOPPE_CHECK (reach.downstream_reach == reference.downstream_reach);
+    MOPPE_CHECK (!reach.alignment.points.empty ());
+
+    // Knots at the routed cells are exact, so the source point carries the
+    // fractional contributing area of its cell verbatim.
+    MOPPE_CHECK_NEAR (
+      reach.alignment.points.front ().contributing_area_m2,
+      fractional_areas[reach.cells.front ()].numerical_value_in (
+        mp_units::si::metre * mp_units::si::metre),
+      1e-4f);
+    MOPPE_CHECK_NEAR (reach.alignment.points.front ().x_m,
+                      reference.alignment.points.front ().x_m,
+                      1e-5f);
+    MOPPE_CHECK_NEAR (reach.alignment.points.front ().z_m,
+                      reference.alignment.points.front ().z_m,
+                      1e-5f);
+    MOPPE_CHECK_NEAR (reach.alignment.points.back ().x_m,
+                      reference.alignment.points.back ().x_m,
+                      1e-5f);
+    MOPPE_CHECK_NEAR (reach.alignment.points.back ().z_m,
+                      reference.alignment.points.back ().z_m,
+                      1e-5f);
+    for (const RiverAlignmentPoint& point : reach.alignment.points) {
+      MOPPE_CHECK (std::isfinite (point.x_m) && std::isfinite (point.z_m));
+      MOPPE_CHECK (point.contributing_area_m2 > 0.0f);
+    }
+    area_differs |=
+      std::fabs (reach.alignment.points.front ().contributing_area_m2 -
+                 reference.alignment.points.front ().contributing_area_m2) >
+      1e-4f;
+    if (reach.alignment.points.size () == reference.alignment.points.size ())
+      for (std::size_t point = 1; point + 1 < reach.alignment.points.size ();
+           ++point)
+        interior_bends |=
+          std::fabs (reach.alignment.points[point].z_m -
+                     reference.alignment.points[point].z_m) > 1e-3f;
+  }
+  MOPPE_CHECK (area_differs);
+  MOPPE_CHECK (interior_bends);
 }
 
 MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {

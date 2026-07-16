@@ -35,6 +35,7 @@
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/river.hh>
 #include <moppe/terrain/trail.hh>
@@ -973,11 +974,20 @@ namespace moppe {
           }
           set_loading_stage (LoadingStage::ExtractingRivers);
           {
+            // A memoryless D-infinity reading of the final terrain: the same
+            // kind of field that carved the valleys during orogeny, so river
+            // geometry lies in the trench erosion actually cut.
+            MOPPE_PROFILE_ZONE ("startup.analyze_channel_geometry");
+            m_channel_drainage = terrain::analyze_fractional_drainage (
+              m_map.terrain_view (), *m_standing_water, *m_lake_census);
+          }
+          {
             MOPPE_PROFILE_ZONE ("startup.extract_river_network");
             m_rivers = terrain::extract_river_network (
               *m_standing_water,
               *m_lake_census,
               *m_drainage,
+              *m_channel_drainage,
               terrain::visible_river_minimum_area (m_drainage->source_grid));
           }
           if (m_water_shot) {
@@ -2896,6 +2906,7 @@ namespace moppe {
         m_standing_water.reset ();
         m_lake_census.reset ();
         m_drainage.reset ();
+        m_channel_drainage.reset ();
         m_water_network.reset ();
         m_rivers.reset ();
         m_river_surface.clear ();
@@ -3054,6 +3065,7 @@ namespace moppe {
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;
+      std::optional<terrain::FractionalDrainage> m_channel_drainage;
       std::optional<terrain::WaterNetwork> m_water_network;
       std::optional<terrain::RiverNetwork> m_rivers;
       std::optional<terrain::TrailNetwork> m_trail_network;
