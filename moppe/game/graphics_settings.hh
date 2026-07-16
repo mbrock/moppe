@@ -77,7 +77,7 @@ namespace moppe::game {
     GraphicsFeatureId::river_ribbons,
     "river-ribbons",
     &GraphicsSettings::river_ribbons,
-    false
+    true
   };
   inline constexpr GraphicsFeature particles_feature {
     GraphicsFeatureId::particles,

@@ -33,12 +33,14 @@ namespace moppe::game {
     return index ^ (index >> 1);
   }
 
-  // The ordinary riding benchmark preserves the three distinctions that have
-  // shown measurable cost and deliberately identifies the small effects.
+  // The ordinary riding benchmark preserves the four distinctions that have
+  // shown measurable cost, including rivers, and deliberately identifies the
+  // small effects.
   // Its block type is local to this particular quotient.
   struct RidingGraphicsPartition {
     enum class Block {
       ocean,
+      rivers,
       bloom,
       auto_exposure,
       small_effects,
@@ -47,6 +49,7 @@ namespace moppe::game {
     using block_type = Block;
     inline static constexpr std::array blocks {
       Block::ocean,
+      Block::rivers,
       Block::bloom,
       Block::auto_exposure,
       Block::small_effects,
@@ -56,6 +59,8 @@ namespace moppe::game {
       switch (feature) {
       case GraphicsFeatureId::ocean:
         return Block::ocean;
+      case GraphicsFeatureId::river_ribbons:
+        return Block::rivers;
       case GraphicsFeatureId::bloom:
         return Block::bloom;
       case GraphicsFeatureId::auto_exposure:
@@ -69,6 +74,8 @@ namespace moppe::game {
       switch (block) {
       case Block::ocean:
         return "ocean";
+      case Block::rivers:
+        return "rivers";
       case Block::bloom:
         return "bloom";
       case Block::auto_exposure:

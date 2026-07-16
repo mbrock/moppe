@@ -116,6 +116,31 @@ graph without mutating the terrain.
 
 * Active work
 
+** DONE Keep periodic rivers on the ground and inside the frame budget
+
+Reach alignments are locally continuous on the torus, but the renderer used
+to join a reach to the downstream reach's canonical coordinate.  At a world
+seam that produced a map-wide translucent triangle: the apparent aerial
+waterways in wide views, and a large source of river/ocean overdraw.  Junctions
+now select the downstream endpoint's nearest periodic image, with a regression
+test that bounds every generated triangle edge.
+
+Rivers are also an independent hot graphics feature and benchmark block.  The
+standing-water pass writes depth before ribbons, and fully fogged ribbon
+fragments exit before procedural flow, reflection, and shadow work.  On the
+seed-123 aerial benchmark the all-features median improved from 25.35 ms to
+16.50 ms after the geometry repair and fog rejection; normal gameplay
+profiling returns to a steady 60 Hz, with occasional view-dependent spikes
+still worth addressing through spatial river-mesh partitioning.
+
+Acceptance evidence:
+
+- [X] A synthetic seam-crossing junction contains no map-wide triangle.
+- [X] Wide cinematic and feature-targeted river/mouth captures contain no
+  aerial sheets and retain clean mouth layering.
+- [X] The 32-case GPU partition measures ocean and river ribbons separately.
+- [X] Full build and test suite pass with the Metal river shader compiled.
+
 ** DONE Make continuous rivers the rendering authority
 
 The game and Terrain Lab build retained multi-row ribbons from dense

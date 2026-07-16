@@ -2,18 +2,19 @@ CREATE OR REPLACE TABLE samples AS
 SELECT * FROM read_csv_auto(getvariable('input'));
 
 CREATE OR REPLACE TABLE features(bit, name) AS VALUES
-  (0, 'grass'),
-  (1, 'ocean'),
+  (0, 'ocean'),
+  (1, 'river-ribbons'),
   (2, 'particles'),
   (3, 'vehicle-effects'),
   (4, 'star-effects'),
   (5, 'bloom'),
   (6, 'auto-exposure'),
-  (7, 'lens-flare');
+  (7, 'lens-flare'),
+  (8, 'terrain-fragment-normals');
 
 CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
-  (0, 'grass'),
-  (1, 'ocean'),
+  (0, 'ocean'),
+  (1, 'rivers'),
   (2, 'bloom'),
   (3, 'auto-exposure'),
   (4, 'small-effects');
@@ -142,14 +143,15 @@ ORDER BY logical_frame;
 
 CREATE OR REPLACE VIEW configurations AS
 SELECT c.*,
-       (c.mask & 1) != 0 AS grass,
-       (c.mask & 2) != 0 AS ocean,
+       (c.mask & 1) != 0 AS ocean,
+       (c.mask & 2) != 0 AS river_ribbons,
        (c.mask & 4) != 0 AS particles,
        (c.mask & 8) != 0 AS vehicle_effects,
        (c.mask & 16) != 0 AS star_effects,
        (c.mask & 32) != 0 AS bloom,
        (c.mask & 64) != 0 AS auto_exposure,
-       (c.mask & 128) != 0 AS lens_flare
+       (c.mask & 128) != 0 AS lens_flare,
+       (c.mask & 256) != 0 AS terrain_fragment_normals
 FROM configuration_stats c;
 
 CREATE OR REPLACE TABLE deadline_summary AS

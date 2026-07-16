@@ -18,6 +18,7 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
 
 MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::ocean_feature.hot);
+  MOPPE_CHECK (game::river_ribbons_feature.hot);
   MOPPE_CHECK (game::particles_feature.hot);
   MOPPE_CHECK (game::vehicle_effects_feature.hot);
   MOPPE_CHECK (game::star_effects_feature.hot);
@@ -27,7 +28,6 @@ MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::terrain_topology_feature.hot);
 
   MOPPE_CHECK (!game::terrain_shadows_feature.hot);
-  MOPPE_CHECK (!game::river_ribbons_feature.hot);
   MOPPE_CHECK (!game::motion_blur_feature.hot);
 }
 
@@ -70,7 +70,7 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
   const int bits = game::graphics_benchmark_dimension_count ();
-  MOPPE_CHECK (bits == 4);
+  MOPPE_CHECK (bits == 5);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {
@@ -91,12 +91,15 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
                            game::GraphicsFeatureId::lens_flare));
   MOPPE_CHECK (!equivalent (
     partition, game::GraphicsFeatureId::ocean, game::GraphicsFeatureId::bloom));
+  MOPPE_CHECK (!equivalent (partition,
+                            game::GraphicsFeatureId::river_ribbons,
+                            game::GraphicsFeatureId::ocean));
 
   game::GraphicsSettings settings = game::low_graphics_settings ();
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
-  MOPPE_CHECK (resolved == 0b11001110u);
+  MOPPE_CHECK (resolved == 0b110011100u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
@@ -104,6 +107,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   MOPPE_CHECK (settings.terrain_fragment_normals);
   MOPPE_CHECK (settings.terrain_topology);
   MOPPE_CHECK (!settings.ocean);
+  MOPPE_CHECK (!settings.river_ribbons);
   MOPPE_CHECK (!settings.bloom);
   MOPPE_CHECK (!settings.auto_exposure);
 }

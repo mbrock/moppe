@@ -124,6 +124,37 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
   MOPPE_CHECK (junction_vertices > 6);
 }
 
+MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
+  map::RandomHeightMap map (
+    9, 9, Vec3 (80, 20, 80), 0, terrain::Topology::Torus);
+  for (int z = 0; z < map.height (); ++z)
+    for (int x = 0; x < map.width (); ++x)
+      map.set (x, z, 0.3f);
+  map.recompute_normals ();
+
+  terrain::RiverReach tributary = reach_with_alignment ();
+  tributary.id = 0;
+  tributary.downstream_reach = 1;
+  tributary.alignment.points = { river_test_point (68, 20, -30, 25000),
+                                 river_test_point (78, 20, -20, 100000) };
+  terrain::RiverReach trunk = reach_with_alignment ();
+  trunk.id = 1;
+  trunk.alignment.points = { river_test_point (-2, 20, -20, 200000),
+                             river_test_point (8, 30, -10, 400000),
+                             river_test_point (18, 40, 0, 1000000, 1.0f) };
+  terrain::RiverNetwork rivers;
+  rivers.reaches = { tributary, trunk };
+
+  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const auto& vertices = draw.vertices ();
+  for (std::size_t triangle = 0; triangle < vertices.size (); triangle += 3)
+    for (int edge = 0; edge < 3; ++edge) {
+      const render::Vertex& a = vertices[triangle + edge];
+      const render::Vertex& b = vertices[triangle + (edge + 1) % 3];
+      MOPPE_CHECK (std::hypot (b.px - a.px, b.pz - a.pz) < 20.0f);
+    }
+}
+
 MOPPE_TEST (river_ribbons_encode_rapids_depth_and_waterfalls) {
   map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
   for (int z = 0; z < map.height (); ++z)

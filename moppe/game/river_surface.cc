@@ -40,6 +40,21 @@ namespace moppe::game {
 
     using RibbonRow = std::array<RibbonVertex, cross_positions.size ()>;
 
+    SurfacePoint nearest_image (SurfacePoint point,
+                                const SurfacePoint& reference,
+                                const map::HeightMap& map) {
+      if (!map.periodic ())
+        return point;
+      const Vec3 period = map.size ();
+      point.position[0] =
+        reference.position[0] +
+        std::remainder (point.position[0] - reference.position[0], period[0]);
+      point.position[2] =
+        reference.position[2] +
+        std::remainder (point.position[2] - reference.position[2], period[2]);
+      return point;
+    }
+
     float smoothstep (float low, float high, float value) {
       const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
       return t * t * (3.0f - 2.0f * t);
@@ -264,7 +279,8 @@ namespace moppe::game {
       if (reach.downstream_reach != terrain::RiverReach::no_id &&
           !points.empty () &&
           !reach_points[reach.downstream_reach].empty ()) {
-        auto transition = reach_points[reach.downstream_reach].front ();
+        auto transition = river_surface_detail::nearest_image (
+          reach_points[reach.downstream_reach].front (), points.back (), map);
         transition.opacity = std::min (transition.opacity,
                                        points.back ().opacity);
         points.push_back (transition);
