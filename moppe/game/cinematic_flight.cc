@@ -266,22 +266,17 @@ namespace moppe::game {
       }
     }
 
-    Vec3 trail_cell_position (terrain::CellIndex cell,
-                              const terrain::TrailNetwork& trail,
-                              const map::HeightMap& map) {
-      const int width = static_cast<int> (trail.source_grid.unique_width ());
-      const int x = static_cast<int> (cell.value % width);
-      const int z = static_cast<int> (cell.value / width);
-      const float world_x = x * trail.source_grid.spacing_x_m ();
-      const float world_z = z * trail.source_grid.spacing_y_m ();
+    Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
+                                   const map::HeightMap& map) {
       return Vec3 (
-        world_x, map.interpolated_height (world_x, world_z), world_z);
+        point.x_m, map.interpolated_height (point.x_m, point.z_m), point.z_m);
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
                            const map::HeightMap& map,
                            const terrain::TrailNetwork& trail) {
-      if (trail.cells.size () < 8 || trail.plan.home_base == no_cell)
+      const auto& alignment = trail.alignment.points;
+      if (alignment.size () < 8 || trail.plan.home_base == no_cell)
         return;
 
       // One quick oblique sweep establishes the circuit as a place before the
@@ -289,17 +284,15 @@ namespace moppe::game {
       // without making the drone consume the entire loop.
       constexpr std::size_t samples = 3;
       const std::size_t look_ahead =
-        std::max<std::size_t> (1, trail.cells.size () / 8);
-      Vec3 previous_ground =
-        trail_cell_position (trail.plan.home_base, trail, map);
+        std::max<std::size_t> (1, alignment.size () / 8);
+      Vec3 previous_ground = trail_alignment_position (alignment.front (), map);
       for (std::size_t sample = 0; sample < samples; ++sample) {
-        const std::size_t index = sample * trail.cells.size () / 4;
+        const std::size_t index = sample * alignment.size () / 4;
         const std::size_t ahead_index =
-          (index + look_ahead) % trail.cells.size ();
-        Vec3 ground = trail_cell_position (trail.cells[index], trail, map);
+          (index + look_ahead) % alignment.size ();
+        Vec3 ground = trail_alignment_position (alignment[index], map);
         ground = unwrap_near (ground, previous_ground, map);
-        Vec3 subject =
-          trail_cell_position (trail.cells[ahead_index], trail, map);
+        Vec3 subject = trail_alignment_position (alignment[ahead_index], map);
         subject = unwrap_near (subject, ground, map);
         Vec3 forward = subject - ground;
         forward[1] = 0.0f;
@@ -323,11 +316,11 @@ namespace moppe::game {
         previous_ground = ground;
       }
 
-      const Vec3 home = trail_cell_position (trail.plan.home_base, trail, map);
+      const Vec3 home = trail_alignment_position (alignment.front (), map);
       plan.landmarks.push_back (
         { .kind = CinematicLandmarkKind::Trail,
           .cell = trail.plan.home_base,
-          .score = static_cast<float> (trail.cells.size ()),
+          .score = static_cast<float> (alignment.size ()),
           .position = home });
     }
 

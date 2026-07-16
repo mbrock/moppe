@@ -23,6 +23,7 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
+#include <moppe/game/trail_surface.hh>
 #include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker.hh>
@@ -622,24 +623,19 @@ namespace moppe {
         return Vec3 (x, m_map.interpolated_height (x, z), z);
       }
 
+      Vec3 trail_alignment_position (
+        const terrain::TrailAlignmentPoint& point) const {
+        return Vec3 (point.x_m,
+                     m_map.interpolated_height (point.x_m, point.z_m),
+                     point.z_m);
+      }
+
       Vec3 trail_direction_from_home () const {
-        if (!m_trail_network)
+        if (!m_trail_network || m_trail_network->alignment.points.size () < 2)
           return Vec3 (0, 0, 1);
-        const terrain::CellIndex home = m_trail_network->plan.home_base;
-        const terrain::CellIndex next = m_trail_network->receiver[home.value];
         Vec3 direction =
-          trail_cell_position (next) - trail_cell_position (home);
-        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
-        const float period_x = grid.unique_width () * grid.spacing_x_m ();
-        const float period_z = grid.unique_height () * grid.spacing_y_m ();
-        if (direction[0] > period_x * 0.5f)
-          direction[0] -= period_x;
-        if (direction[0] < -period_x * 0.5f)
-          direction[0] += period_x;
-        if (direction[2] > period_z * 0.5f)
-          direction[2] -= period_z;
-        if (direction[2] < -period_z * 0.5f)
-          direction[2] += period_z;
+          trail_alignment_position (m_trail_network->alignment.points[1]) -
+          trail_alignment_position (m_trail_network->alignment.points[0]);
         direction[1] = 0.0f;
         return length2 (direction) > 1e-5f ? normalized (direction)
                                            : Vec3 (0, 0, 1);
@@ -684,12 +680,13 @@ namespace moppe {
         if (!m_trail_network || width_pts < 480 || height_pts < 360)
           return;
         const terrain::TerrainGrid& grid = m_trail_network->source_grid;
-        const std::size_t width = grid.unique_width ();
-        const float period_x = width * grid.spacing_x_m ();
+        const auto& alignment = m_trail_network->alignment.points;
+        if (alignment.size () < 2)
+          return;
+        const float period_x = grid.unique_width () * grid.spacing_x_m ();
         const float period_z = grid.unique_height () * grid.spacing_y_m ();
-        const terrain::CellIndex home = m_trail_network->plan.home_base;
-        const float home_x = (home.value % width) * grid.spacing_x_m ();
-        const float home_z = (home.value / width) * grid.spacing_y_m ();
+        const float home_x = alignment.front ().x_m;
+        const float home_z = alignment.front ().z_m;
         const auto wrap_delta = [] (float delta, float period) {
           if (delta > period * 0.5f)
             delta -= period;
@@ -697,18 +694,15 @@ namespace moppe {
             delta += period;
           return delta;
         };
-        const auto relative_cell = [&] (terrain::CellIndex cell) {
-          const float x = (cell.value % width) * grid.spacing_x_m ();
-          const float z = (cell.value / width) * grid.spacing_y_m ();
-          return Vec3 (wrap_delta (x - home_x, period_x),
-                       0,
-                       wrap_delta (z - home_z, period_z));
-        };
+        const auto relative_alignment =
+          [&] (terrain::TrailAlignmentPoint point) {
+            return Vec3 (point.x_m - home_x, 0, point.z_m - home_z);
+          };
 
         Vec3 low (0, 0, 0);
         Vec3 high (0, 0, 0);
-        for (const terrain::CellIndex cell : m_trail_network->cells) {
-          const Vec3 point = relative_cell (cell);
+        for (const terrain::TrailAlignmentPoint alignment_point : alignment) {
+          const Vec3 point = relative_alignment (alignment_point);
           low[0] = std::min (low[0], point[0]);
           low[2] = std::min (low[2], point[2]);
           high[0] = std::max (high[0], point[0]);
@@ -753,15 +747,12 @@ namespace moppe {
         dl.line (map_x, map_y + map_size, map_x, map_y, 1.0f);
 
         dl.color (1.0f, 0.58f, 0.12f, 0.96f);
-        for (const terrain::CellIndex cell : m_trail_network->cells) {
-          const terrain::CellIndex next = m_trail_network->receiver[cell.value];
-          if (next == terrain::no_cell)
-            continue;
-          const Vec3 a = relative_cell (cell);
-          const Vec3 b = relative_cell (next);
-          if (std::fabs (a[0] - b[0]) > period_x * 0.25f ||
-              std::fabs (a[2] - b[2]) > period_z * 0.25f)
-            continue;
+        for (std::size_t point = 0; point < alignment.size (); ++point) {
+          const Vec3 a = relative_alignment (alignment[point]);
+          Vec3 b =
+            relative_alignment (alignment[(point + 1) % alignment.size ()]);
+          b[0] = a[0] + wrap_delta (b[0] - a[0], period_x);
+          b[2] = a[2] + wrap_delta (b[2] - a[2], period_z);
           const Vec3 ma = map_point (a);
           const Vec3 mb = map_point (b);
           dl.line (ma[0], ma[1], mb[0], mb[1], 2.4f);
@@ -1150,14 +1141,41 @@ namespace moppe {
             });
           if (stage != program.transforms.end ()) {
             MOPPE_PROFILE_ZONE ("startup.analyze_trail_network");
-            if (m_generated_trail_network)
+            const std::size_t stage_index = static_cast<std::size_t> (
+              std::distance (program.transforms.begin (), stage));
+            const bool generated_network =
+              m_generated_trail_network.has_value ();
+            if (generated_network)
               m_trail_network = std::move (m_generated_trail_network);
-            else
+            else {
+              const terrain::TerrainView trail_source =
+                stage_index < m_terrain_history.size ()
+                  ? terrain::TerrainView (m_map.terrain_view ().grid (),
+                                          m_terrain_history[stage_index])
+                  : m_map.terrain_view ();
               m_trail_network = terrain::analyze_trail_network (
-                m_map.terrain_view (),
+                trail_source,
                 std::get<terrain::TrailFormation> (*stage),
                 *m_drainage,
                 *m_standing_water);
+              if (stage_index + 1 < m_terrain_history.size ()) {
+                const std::vector<float>& before =
+                  m_terrain_history[stage_index];
+                const std::vector<float>& after =
+                  m_terrain_history[stage_index + 1];
+                const std::size_t unique_width = m_map.unique_width ();
+                const std::size_t unique_height = m_map.unique_height ();
+                const std::size_t storage_width = m_map.width ();
+                const float height_scale = m_map.scale ()[1];
+                for (std::size_t y = 0; y < unique_height; ++y)
+                  for (std::size_t x = 0; x < unique_width; ++x) {
+                    const std::size_t source = y * storage_width + x;
+                    const std::size_t cell = y * unique_width + x;
+                    m_trail_network->earthwork_delta_m[cell] =
+                      (after[source] - before[source]) * height_scale;
+                  }
+              }
+            }
             m_pending_surface.trails =
               terrain::expand_trail_influence (*m_trail_network);
             m_pending_surface.home_base =
@@ -1166,7 +1184,9 @@ namespace moppe {
             m_surface.materialize_home_base_influence (
               m_pending_surface.home_base);
             std::cerr << "trail network: " << m_trail_network->cells.size ()
-                      << " centerline cells, " << std::fixed
+                      << " centerline cells, "
+                      << m_trail_network->alignment.points.size ()
+                      << " alignment samples, " << std::fixed
                       << std::setprecision (1)
                       << meters_value (
                            terrain::trail_circuit_length (*m_trail_network)) /
@@ -1179,6 +1199,10 @@ namespace moppe {
               trail_cell_position (m_trail_network->plan.scenic_focus);
             std::cerr << "home base: " << base << " scenic focus: " << focus
                       << '\n';
+            {
+              MOPPE_PROFILE_ZONE ("startup.rebuild_trail_ribbon");
+              m_trail_surface.rebuild (r, m_map, *m_trail_network);
+            }
           }
         }
 
@@ -2001,6 +2025,12 @@ namespace moppe {
         // cloud shader wherever terrain covers it.
         if (!terrain_lab)
           draw_world_sky ();
+
+        // The terrain material carries the broad formed shoulders. This
+        // feature-local ribbon gives the compacted core continuous geometry
+        // and true across/along coordinates below the heightmap resolution.
+        if (!terrain_lab)
+          m_trail_surface.draw (r, cam);
 
         if (!terrain_lab && !m_water_inspection && !m_tree_demo)
           m_forest.draw (
@@ -2846,6 +2876,7 @@ namespace moppe {
         m_water_network.reset ();
         m_rivers.reset ();
         m_river_surface.clear ();
+        m_trail_surface.clear ();
         m_terrain_history.clear ();
         ++m_seed;
         m_mode = M_BIKE;
@@ -3006,6 +3037,7 @@ namespace moppe {
       std::optional<terrain::TrailNetwork> m_trail_network;
       std::optional<terrain::TrailNetwork> m_generated_trail_network;
       RiverSurface m_river_surface;
+      TrailSurface m_trail_surface;
       Terrain m_terrain;
       // Surface data computed at finish_setup, uploaded once the terrain
       // textures exist (upload_world_terrain).

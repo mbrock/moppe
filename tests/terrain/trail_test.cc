@@ -113,6 +113,8 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
   MOPPE_CHECK (network.plan.scenic_focus != no_cell);
   MOPPE_CHECK (network.plan.circuit == network.cells);
   MOPPE_CHECK (network.cells.front () == network.plan.home_base);
+  MOPPE_CHECK (network.alignment.points.size () > network.cells.size ());
+  MOPPE_CHECK (network.alignment.length > 0.0 * mp_units::si::metre);
   MOPPE_CHECK (network.influence.values ().size () == original.size ());
   MOPPE_CHECK (network.home_base_influence.values ().size () ==
                original.size ());
@@ -138,6 +140,32 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
     MOPPE_CHECK (influence >= 0.0f);
     MOPPE_CHECK (influence <= 1.0f);
   }
+
+  const std::size_t width = network.source_grid.unique_width ();
+  const float home_x =
+    (network.plan.home_base.value % width) * network.source_grid.spacing_x_m ();
+  const float home_z =
+    (network.plan.home_base.value / width) * network.source_grid.spacing_y_m ();
+  MOPPE_CHECK_NEAR (network.alignment.points.front ().x_m, home_x, 1e-5f);
+  MOPPE_CHECK_NEAR (network.alignment.points.front ().z_m, home_z, 1e-5f);
+
+  float maximum_step = 0.0f;
+  bool has_non_grid_heading = false;
+  for (std::size_t point = 0; point < network.alignment.points.size ();
+       ++point) {
+    const TrailAlignmentPoint a = network.alignment.points[point];
+    const TrailAlignmentPoint b =
+      network.alignment.points[(point + 1) % network.alignment.points.size ()];
+    const float dx = b.x_m - a.x_m;
+    const float dz = b.z_m - a.z_m;
+    maximum_step = std::max (maximum_step, std::hypot (dx, dz));
+    has_non_grid_heading |= std::fabs (dx) > 1e-4f && std::fabs (dz) > 1e-4f &&
+                            std::fabs (std::fabs (dx) - std::fabs (dz)) > 1e-3f;
+  }
+  // Hermite speed varies slightly inside each chord, but sampling remains
+  // comfortably denser than the five-metre source lattice.
+  MOPPE_CHECK (maximum_step <= 3.0f);
+  MOPPE_CHECK (has_non_grid_heading);
 }
 
 MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
@@ -148,6 +176,10 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   const TrailFormationResult second = form_trails (terrain, parameters);
 
   MOPPE_CHECK (first.heights == second.heights);
+  MOPPE_CHECK (first.network.earthwork_delta_m ==
+               second.network.earthwork_delta_m);
+  MOPPE_CHECK (first.network.earthwork_delta_m.size () == original.size ());
+  MOPPE_CHECK (first.network.alignment == second.network.alignment);
   MOPPE_CHECK (first.network.receiver == second.network.receiver);
   MOPPE_CHECK (first.network.component_by_cell ==
                second.network.component_by_cell);
@@ -159,6 +191,7 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
     const float change_m = (first.heights[cell] - original[cell]) *
                            trail_valley_grid ().height_scale_m ();
+    MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);
     MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
   }

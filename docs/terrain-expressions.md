@@ -174,12 +174,17 @@ later be pruned.
 
 The plan retains home base, scenic focus, control sites, and ordered circuit as
 decisions. `TrailNetwork` is their graph materialization: one connected cycle
-whose receiver relation returns to home base. Its edges are projected toward a
-motorcycle-friendly maximum grade under bounded cut and fill, then stamped as
-a narrow core with soft shoulders. Separate continuous `trail_influence` and
-`home_base_influence` readings are materialized in `SurfaceBundle` and uploaded
-to the terrain shader. Thus intention stays discrete, while the resulting
-earthworks and compacted base become physical, sampleable parts of the world.
+whose receiver relation returns to home base. A damped periodic Hermite
+alignment refines that searched corridor into a continuous constructed route.
+Its arc-length profile is projected toward a motorcycle-friendly maximum grade
+under bounded cut and fill, then stamped as a narrow core with soft shoulders.
+The physical earthwork delta remains available separately from the composed
+heightmap. Continuous `trail_influence` and `home_base_influence` readings are
+materialized in `SurfaceBundle` and uploaded to the terrain shader. Thus
+intention begins discretely, while the resulting alignment, earthworks, and
+compacted base become physical, sampleable parts of the world. A retained
+feature-local ribbon uses the same alignment to give the compacted core smooth
+sub-heightmap geometry and explicit along/across coordinates.
 See [Trail system](trails.md) for the complete routing, grading, material, and
 runtime data flow.
 

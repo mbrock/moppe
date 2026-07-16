@@ -1,4 +1,5 @@
 #include <moppe/game/cinematic_flight.hh>
+#include <moppe/game/trail_surface.hh>
 
 #include <tests/test.hh>
 
@@ -115,22 +116,58 @@ namespace {
     }
     const terrain::CellIndex home = cells.front ();
     const terrain::CellIndex focus = cells[cells.size () / 2];
-    return { .source_grid = fixture.grid,
-             .plan = { .home_base = home,
-                       .scenic_focus = focus,
-                       .control_sites = { home, focus },
-                       .circuit = cells },
-             .receiver = std::move (receiver),
-             .component_by_cell = std::move (component_by_cell),
-             .cells = std::move (cells),
-             .components = { { .id = component,
-                               .anchor_cell = home,
-                               .cells = terrain::cell_count (24) } },
-             .influence = terrain::ScalarRaster (
-               fixture.domain, std::vector<float> (FlightFixture::count, 0.0f)),
-             .home_base_influence = terrain::ScalarRaster (
-               fixture.domain,
-               std::vector<float> (FlightFixture::count, 0.0f)) };
+    terrain::TrailAlignment alignment;
+    alignment.points.reserve (cells.size ());
+    double alignment_length = 0.0;
+    for (std::size_t i = 0; i < cells.size (); ++i) {
+      const terrain::CellIndex cell = cells[i];
+      const terrain::CellIndex next = cells[(i + 1) % cells.size ()];
+      const float x =
+        (cell.value % FlightFixture::side) * fixture.grid.spacing_x_m ();
+      const float z =
+        (cell.value / FlightFixture::side) * fixture.grid.spacing_y_m ();
+      const float next_x =
+        (next.value % FlightFixture::side) * fixture.grid.spacing_x_m ();
+      const float next_z =
+        (next.value / FlightFixture::side) * fixture.grid.spacing_y_m ();
+      alignment.points.push_back ({ x, z });
+      alignment_length += std::hypot (next_x - x, next_z - z);
+    }
+    alignment.length = alignment_length * mp_units::si::metre;
+    return {
+      .source_grid = fixture.grid,
+      .plan = { .home_base = home,
+                .scenic_focus = focus,
+                .control_sites = { home, focus },
+                .circuit = cells },
+      .receiver = std::move (receiver),
+      .component_by_cell = std::move (component_by_cell),
+      .cells = std::move (cells),
+      .components = { { .id = component,
+                        .anchor_cell = home,
+                        .cells = terrain::cell_count (24) } },
+      .alignment = std::move (alignment),
+      .formed_width = 3.0f * mp_units::si::metre,
+      .earthwork_delta_m = std::vector<float> (FlightFixture::count, 0.0f),
+      .influence = terrain::ScalarRaster (
+        fixture.domain, std::vector<float> (FlightFixture::count, 0.0f)),
+      .home_base_influence = terrain::ScalarRaster (
+        fixture.domain, std::vector<float> (FlightFixture::count, 0.0f))
+    };
+  }
+}
+
+MOPPE_TEST (trail_ribbon_materializes_the_continuous_alignment) {
+  FlightFixture fixture;
+  const terrain::TrailNetwork trail = trail_fixture (fixture);
+  const render::DrawList ribbon = game::build_trail_ribbon (fixture.map, trail);
+
+  MOPPE_CHECK (!ribbon.empty ());
+  MOPPE_CHECK (ribbon.vertices ().size () > trail.alignment.points.size ());
+  for (const render::Vertex& vertex : ribbon.vertices ()) {
+    MOPPE_CHECK (std::isfinite (vertex.px));
+    MOPPE_CHECK (std::isfinite (vertex.py));
+    MOPPE_CHECK (std::isfinite (vertex.pz));
   }
 }
 

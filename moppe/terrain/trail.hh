@@ -67,6 +67,27 @@ namespace moppe::terrain {
     std::vector<CellIndex> circuit;
   };
 
+  // The deliberately built, continuous plan-view route. A* supplies the
+  // discrete corridor above; this alignment is the geometric authority for
+  // grading, materials, and traversal-facing presentation. Points are stored
+  // in an unwrapped chart so a toroidal seam cannot introduce a false corner;
+  // the closing segment from the last point to the first is implicit.
+  struct TrailAlignmentPoint {
+    float x_m = 0.0f;
+    float z_m = 0.0f;
+
+    friend bool operator== (const TrailAlignmentPoint&,
+                            const TrailAlignmentPoint&) = default;
+  };
+
+  struct TrailAlignment {
+    std::vector<TrailAlignmentPoint> points;
+    meters_f64_t length = 0.0 * mp_units::si::metre;
+
+    friend bool operator== (const TrailAlignment&,
+                            const TrailAlignment&) = default;
+  };
+
   // The plan's one directed cycle, plus its two physical surface readings.
   // The graph is connected by construction: following receiver once per
   // circuit cell returns to home base.
@@ -77,6 +98,12 @@ namespace moppe::terrain {
     std::vector<TrailComponentId> component_by_cell;
     std::vector<CellIndex> cells;
     std::vector<TrailComponent> components;
+    TrailAlignment alignment;
+    meters_t formed_width = 0.0f * mp_units::si::metre;
+    // Physical metres relative to the terrain entering TrailFormation.
+    // The renderer and physics still consume the composed heightmap, while
+    // this retained construction layer remains inspectable and reversible.
+    std::vector<float> earthwork_delta_m;
     ScalarRaster influence;
     ScalarRaster home_base_influence;
 
