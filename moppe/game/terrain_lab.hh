@@ -108,19 +108,19 @@ namespace moppe {
       void remove_selected_stage ();
       float selected_property_normalized (int row) const;
       ParameterDomain selected_property_domain (int row) const;
+      bool selected_property_drag_enabled (int row) const;
       bool set_selected_property_normalized (int row, float value);
+      bool adjust_selected_continuous (int row, int direction);
       bool adjust_selected_natural (int row, int direction);
       void queue_parameter_rebuild ();
       void run_pending_parameter_rebuild ();
       void handle_click (float x, float y);
       void handle_friendly_click (float x, float y);
-      float friendly_control_normalized (int control) const;
-      bool set_friendly_control_normalized (int control, float value);
       void apply_friendly_preset (int preset);
       void
       draw_friendly (render::DrawList& dl, int width_pts, int height_pts) const;
       void draw_compass (render::DrawList& dl, int width_pts) const;
-      void draw_expert (render::DrawList& dl) const;
+      void draw_build (render::DrawList& dl) const;
       void ensure_selected_stage_visible ();
       void refresh (bool inspection_fog = true);
       void restore_game_map ();
@@ -195,9 +195,7 @@ namespace moppe {
       float m_camera_drag_distance;
       bool m_pan_drag;
       bool m_parameter_drag;
-      bool m_friendly_drag;
-      int m_friendly_drag_control;
-      bool m_expert_ui;
+      bool m_build_ui;
       int m_friendly_preset;
       mutable int m_ui_width;
       mutable int m_ui_height;

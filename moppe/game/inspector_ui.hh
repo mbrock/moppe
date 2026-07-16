@@ -24,6 +24,33 @@ namespace moppe {
       }
     };
 
+    enum class UiFlowDirection { Row, Column };
+
+    // A deliberately small retained-layout primitive for immediate-mode
+    // tools.  Callers describe rows, columns and grids instead of scattering
+    // fixed coordinates through their drawing and hit-testing code.
+    class UiFlow {
+    public:
+      UiFlow (const UiRect& bounds,
+              UiFlowDirection direction,
+              float gap = 0.0f);
+
+      UiRect take (float extent);
+      UiRect rest () const;
+
+    private:
+      UiRect m_remaining;
+      UiFlowDirection m_direction;
+      float m_gap;
+    };
+
+    UiRect ui_inset (const UiRect& bounds, float amount);
+    UiRect ui_grid_cell (const UiRect& bounds,
+                         int columns,
+                         int index,
+                         float row_height,
+                         float gap);
+
     UiRect parameter_control_rect (const UiRect& bounds);
     UiRect counter_minus_rect (const UiRect& bounds);
     UiRect counter_plus_rect (const UiRect& bounds);
@@ -87,9 +114,8 @@ namespace moppe {
                     bool plus_hot,
                     bool pressed) const;
 
-      // Spacious, friendly skin used by the public-facing Terrain Lab.  The
-      // old inspector widgets above deliberately remain available for the
-      // expert editor.
+      // Shared translucent instrument skin.  Terrain Lab uses the same
+      // vocabulary and drawing primitives at every disclosure level.
       void surface (render::DrawList& dl, const UiRect& bounds) const;
       void heading (render::DrawList& dl,
                     float x,
@@ -107,27 +133,6 @@ namespace moppe {
       void friendly_section (render::DrawList& dl,
                              const UiRect& bounds,
                              const std::string& title) const;
-      void session_button (render::DrawList& dl,
-                           const UiRect& bounds,
-                           const std::string& title,
-                           bool hot,
-                           bool pressed,
-                           int icon) const;
-      void preset_card (render::DrawList& dl,
-                        const UiRect& bounds,
-                        const std::string& title,
-                        bool hot,
-                        bool pressed,
-                        bool selected,
-                        int icon) const;
-      void tool_button (render::DrawList& dl,
-                        const UiRect& bounds,
-                        const std::string& title,
-                        const std::string& key,
-                        bool hot,
-                        bool pressed,
-                        bool selected,
-                        int icon) const;
       void friendly_button (render::DrawList& dl,
                             const UiRect& bounds,
                             const std::string& title,
