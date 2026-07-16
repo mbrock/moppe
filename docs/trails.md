@@ -279,9 +279,11 @@ repeated with the terrain on the torus. Its vertices carry true along-trail and
 cross-trail coordinates, while the underlying terrain material continues to
 provide broad shoulders, aggregate detail, water suppression, and cut/fill
 context. The ribbon fades under the same altitude-and-slope snow rule as the
-terrain material. It is treated as a translucent ground decal: reversed-Z
-depth bias keeps it continuously in front of the composed heightfield, and
-the generic material omits its hard prop-style specular highlight.
+terrain material. It is treated as a translucent near-field ground decal and
+fades before its width becomes subpixel; the terrain material owns the path at
+long range. Its small physical lift avoids coplanarity without allowing raster
+depth bias to pull it through hills, and the generic material omits its hard
+prop-style specular highlight.
 
 ## Runtime consumers
 

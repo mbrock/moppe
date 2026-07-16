@@ -166,12 +166,13 @@ MOPPE_TEST (trail_ribbon_materializes_the_continuous_alignment) {
   MOPPE_CHECK (ribbon.vertices ().size () > trail.alignment.points.size ());
   MOPPE_CHECK (!ribbon.runs ().empty ());
   MOPPE_CHECK (ribbon.runs ().front ().state.blend);
-  MOPPE_CHECK (ribbon.runs ().front ().state.depth_bias);
+  MOPPE_CHECK (!ribbon.runs ().front ().state.depth_bias);
   MOPPE_CHECK (!ribbon.runs ().front ().state.depth_write);
   for (const render::Vertex& vertex : ribbon.vertices ()) {
     MOPPE_CHECK (std::isfinite (vertex.px));
     MOPPE_CHECK (std::isfinite (vertex.py));
     MOPPE_CHECK (std::isfinite (vertex.pz));
+    MOPPE_CHECK (vertex.ground_decal == 1);
   }
 }
 

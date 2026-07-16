@@ -9,8 +9,9 @@ namespace moppe {
     DrawList::DrawList ()
         : m_top (0), m_normal_dirty (true), m_normal (0, 0, 1),
           m_world_normal (0, 0, 1), m_world_normal_dirty (true), m_u (0),
-          m_v (0), m_lit (true), m_fogged (true), m_wind (0), m_texture (0),
-          m_prim (Prim::Triangles), m_in_begin (false) {}
+          m_v (0), m_lit (true), m_fogged (true), m_ground_decal (false),
+          m_wind (0), m_texture (0), m_prim (Prim::Triangles),
+          m_in_begin (false) {}
 
     void DrawList::clear () {
       m_top = 0;
@@ -23,6 +24,7 @@ namespace moppe {
       m_u = m_v = 0;
       m_lit = true;
       m_fogged = true;
+      m_ground_decal = false;
       m_wind = 0;
       m_texture = 0;
       m_state = DrawState ();
@@ -118,6 +120,9 @@ namespace moppe {
     void DrawList::fogged (bool on) {
       m_fogged = on;
     }
+    void DrawList::ground_decal (bool on) {
+      m_ground_decal = on;
+    }
     void DrawList::wind (proportion_t w) {
       m_wind = PackedRgba8::quantize (scalar_value (w));
     }
@@ -161,7 +166,7 @@ namespace moppe {
       v.lit = m_lit ? 1 : 0;
       v.fogged = m_fogged ? 1 : 0;
       v.wind = m_wind;
-      v.reserved = 0;
+      v.ground_decal = m_ground_decal ? 1 : 0;
       return v;
     }
 

@@ -14,7 +14,7 @@ struct MoppeVertexIn {
   packed_float3 normal;
   packed_float2 uv;
   uchar4 color;
-  uchar4 flags; // x: lit, y: fogged, z: wind, w: grass
+  uchar4 flags; // x: lit, y: fogged, z: wind, w: near-field ground decal
 };
 
 // Wind sway: a slow prevailing gust plus a faster flutter,
