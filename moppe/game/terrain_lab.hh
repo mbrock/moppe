@@ -12,6 +12,7 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 
 #include <memory>
 #include <optional>
@@ -162,6 +163,7 @@ namespace moppe {
       std::vector<map::TerrainCheckpoint> m_checkpoints;
       std::vector<terrain::TerrainTransformReport> m_reports;
       std::optional<terrain::DrainageGraph> m_drainage;
+      std::optional<terrain::FractionalDrainage> m_channel_drainage;
       std::optional<terrain::WaterNetwork> m_water_network;
       std::optional<terrain::RiverNetwork> m_rivers;
       RiverSurface m_river_surface;

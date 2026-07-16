@@ -1,5 +1,6 @@
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 
 #include <moppe/profile.hh>
 
@@ -62,6 +63,46 @@ namespace moppe::terrain {
       return std::remainder (delta, period);
     }
 
+    // Optional per-cell channel readings from a D-infinity analysis. The D8
+    // graph keeps topological authority over reaches; these columns refine
+    // only the continuous geometry derived from it.
+    struct ChannelGeometry {
+      std::span<const FractionalContributingArea> area;
+      std::span<const ChannelTangent> tangent;
+
+      bool empty () const noexcept {
+        return area.empty ();
+      }
+    };
+
+    // Turn an eight-way finite-difference knot tangent toward the carved
+    // channel direction while keeping its magnitude, so the Hermite spline
+    // follows the valley the erosion actually cut instead of the quantized
+    // cell chain.
+    void align_knot_tangent (float& tangent_x,
+                             float& tangent_z,
+                             const Vec3& channel) {
+      const float finite_length = std::hypot (tangent_x, tangent_z);
+      const float channel_length = std::hypot (channel[0], channel[2]);
+      if (finite_length < 1e-6f || channel_length < 1e-6f)
+        return;
+      const float unit_x = tangent_x / finite_length;
+      const float unit_z = tangent_z / finite_length;
+      const float channel_x = channel[0] / channel_length;
+      const float channel_z = channel[2] / channel_length;
+      // An opposing or orthogonal channel reading marks a flat wet route or
+      // a lake crossing; the finite difference stays authoritative there.
+      if (unit_x * channel_x + unit_z * channel_z <= 0.0f)
+        return;
+      const float blended_x = 0.5f * (unit_x + channel_x);
+      const float blended_z = 0.5f * (unit_z + channel_z);
+      const float blended_length = std::hypot (blended_x, blended_z);
+      if (blended_length < 1e-6f)
+        return;
+      tangent_x = finite_length * blended_x / blended_length;
+      tangent_z = finite_length * blended_z / blended_length;
+    }
+
     RiverAlignmentPoint interpolate (const RiverAlignmentPoint& from,
                                      const RiverAlignmentPoint& to,
                                      float t) {
@@ -76,9 +117,10 @@ namespace moppe::terrain {
                .water_level_m = mix (from.water_level_m, to.water_level_m) };
     }
 
-    RiverAlignment smooth_river_alignment (
-      const std::vector<RiverAlignmentPoint>& raw,
-      const TerrainGrid& grid) {
+    RiverAlignment
+    smooth_river_alignment (const std::vector<RiverAlignmentPoint>& raw,
+                            std::span<const Vec3> knot_tangents,
+                            const TerrainGrid& grid) {
       RiverAlignment alignment;
       if (raw.size () < 2)
         return alignment;
@@ -96,10 +138,15 @@ namespace moppe::terrain {
         const RiverAlignmentPoint& before = segment ? raw[segment - 1] : a;
         const RiverAlignmentPoint& after =
           segment + 2 < raw.size () ? raw[segment + 2] : b;
-        const float tangent_ax = (b.x_m - before.x_m) * tangent_scale;
-        const float tangent_az = (b.z_m - before.z_m) * tangent_scale;
-        const float tangent_bx = (after.x_m - a.x_m) * tangent_scale;
-        const float tangent_bz = (after.z_m - a.z_m) * tangent_scale;
+        float tangent_ax = (b.x_m - before.x_m) * tangent_scale;
+        float tangent_az = (b.z_m - before.z_m) * tangent_scale;
+        float tangent_bx = (after.x_m - a.x_m) * tangent_scale;
+        float tangent_bz = (after.z_m - a.z_m) * tangent_scale;
+        if (!knot_tangents.empty ()) {
+          align_knot_tangent (tangent_ax, tangent_az, knot_tangents[segment]);
+          align_knot_tangent (
+            tangent_bx, tangent_bz, knot_tangents[segment + 1]);
+        }
         const float run = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
         const int subdivisions = std::max (
           1, static_cast<int> (std::ceil (run / sample_spacing)));
@@ -136,7 +183,8 @@ namespace moppe::terrain {
     void build_river_alignments (RiverNetwork& network,
                                  const FloodField& flood,
                                  const LakeCensus& census,
-                                 const DrainageGraph& drainage) {
+                                 const DrainageGraph& drainage,
+                                 const ChannelGeometry& channels) {
       const TerrainGrid& grid = drainage.source_grid;
       const int width = static_cast<int> (grid.unique_width ());
       const int height = static_cast<int> (grid.unique_height ());
@@ -187,6 +235,9 @@ namespace moppe::terrain {
 
         std::vector<RiverAlignmentPoint> raw;
         raw.reserve (cells.size ());
+        std::vector<Vec3> knot_tangents;
+        if (!channels.empty ())
+          knot_tangents.reserve (cells.size ());
         for (const CellIndex cell : cells) {
           float x = static_cast<float> (cell % width) * grid.spacing_x_m ();
           float z = static_cast<float> (cell / width) * grid.spacing_y_m ();
@@ -197,11 +248,17 @@ namespace moppe::terrain {
                 river_wrapped_delta (z - raw.back ().z_m, period_z);
           }
           const bool water = permanent_water_cell (cell);
+          // Fractional contributing area varies smoothly along a reach where
+          // the all-or-nothing D8 accumulation steps, so widths derived from
+          // it taper instead of popping between cells.
+          const float area_m2 =
+            channels.empty () ? drainage.contributing_area.values ()[cell]
+                              : channels.area[cell].numerical_value_in (
+                                  mp_units::si::metre * mp_units::si::metre);
           raw.push_back (
             { .x_m = x,
               .z_m = z,
-              .contributing_area_m2 =
-                drainage.contributing_area.values ()[cell],
+              .contributing_area_m2 = area_m2,
               .slope = drainage.slope.values ()[cell],
               .waterfall = network.waterfall_by_cell[cell] != Waterfall::no_id
                              ? 1.0f
@@ -209,8 +266,11 @@ namespace moppe::terrain {
               .standing_water = water ? 1.0f : 0.0f,
               .water_level_m =
                 flood.water_level.values ()[cell] * grid.height_scale_m () });
+          if (!channels.empty ())
+            knot_tangents.push_back (
+              channels.tangent[cell].numerical_value_in (mp_units::one));
         }
-        reach.alignment = smooth_river_alignment (raw, grid);
+        reach.alignment = smooth_river_alignment (raw, knot_tangents, grid);
       }
 
       // Give every point a confluence-continuous flow coordinate. A point's
@@ -732,7 +792,32 @@ namespace moppe::terrain {
       }
       emit_selected ();
     }
-    build_river_alignments (network, flood, census, drainage);
+    build_river_alignments (network, flood, census, drainage, {});
+    return network;
+  }
+
+  RiverNetwork
+  extract_river_network (const FloodField& flood,
+                         const LakeCensus& census,
+                         const DrainageGraph& drainage,
+                         const FractionalDrainage& channels,
+                         square_meters_t minimum_area,
+                         const WaterfallParameters& waterfall_parameters) {
+    RiverNetwork network = extract_river_network (
+      flood, census, drainage, minimum_area, waterfall_parameters);
+    if (channels.domain ().grid () != drainage.source_grid)
+      throw std::invalid_argument (
+        "channel geometry does not share the drainage lattice");
+    // Rebuild only the continuous geometry: the D8 reach topology above
+    // stays authoritative while the D-infinity columns supply smooth widths
+    // and carved-valley knot tangents.
+    build_river_alignments (
+      network,
+      flood,
+      census,
+      drainage,
+      { .area = spatial::get<fractional_contributing_area> (channels),
+        .tangent = spatial::get<channel_tangent> (channels) });
     return network;
   }
 }

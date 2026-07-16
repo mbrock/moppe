@@ -221,6 +221,18 @@ namespace moppe::terrain {
     const LakeCensus& census,
     std::span<const ChannelTangent> previous_tangent = {},
     ChannelPersistence persistence = 0.0f * channel_persistence[mp_units::one]);
+
+  // River extraction refined by a D-infinity reading of the same terrain.
+  // The D8 graph keeps topological authority over reaches and waterfalls;
+  // the fractional columns contribute smoothly varying contributing areas
+  // and carved-valley knot tangents to the continuous alignments.
+  RiverNetwork
+  extract_river_network (const FloodField& flood,
+                         const LakeCensus& census,
+                         const DrainageGraph& drainage,
+                         const FractionalDrainage& channels,
+                         square_meters_t minimum_area,
+                         const WaterfallParameters& waterfall_parameters = {});
 }
 
 #endif
