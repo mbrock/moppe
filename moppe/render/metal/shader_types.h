@@ -42,6 +42,7 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_TERRAIN_SHORE 11
 #define MOPPE_TEX_TERRAIN_PATHS 12
 #define MOPPE_TEX_TERRAIN_FOREST 13
+#define MOPPE_TEX_TERRAIN_SNOW_SUPPORT 14
 #define MOPPE_TEX_SCENE 0
 #define MOPPE_TEX_BLOOM 1            /* post passes */
 #define MOPPE_TEX_HEIGHTS 0          /* vertex stage */
@@ -93,6 +94,7 @@ struct MoppeTerrainUniforms {
                        // w=geology
   MoppeFloat4 params6; // x=fragment normals, y=shore, z=trail influence,
                        // w=forest cover
+  MoppeFloat4 params7; // x=filtered snow-support slope enabled
 };
 
 // Per-chunk terrain instance data.

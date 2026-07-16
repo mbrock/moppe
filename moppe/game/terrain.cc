@@ -85,6 +85,8 @@ namespace moppe {
       params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.fragment_normals = graphics.terrain_fragment_normals;
+      params.snow_support_filter = graphics.snow_support_filter &&
+                                   !interactive_preview && !loading_preview;
       params.periodic = map.periodic ();
       params.projection = projection;
       const float shortest_period = std::min (m_period[0], m_period[2]);

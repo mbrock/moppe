@@ -301,6 +301,8 @@ namespace moppe {
       void set_water_flow (std::span<const float> flow) override;
       void set_terrain_moisture (std::span<const float> moisture) override;
       void set_terrain_forest (std::span<const float> cover) override;
+      void
+      set_terrain_snow_support (std::span<const float> support) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
       void
@@ -465,6 +467,8 @@ namespace moppe {
       bool m_have_moisture = false;
       id<MTLTexture> m_forest = nil;
       bool m_have_forest = false;
+      id<MTLTexture> m_snow_support = nil;
+      bool m_have_snow_support = false;
       id<MTLTexture> m_geology = nil;
       bool m_have_geology = false;
       id<MTLTexture> m_shore = nil;
@@ -1601,6 +1605,40 @@ namespace moppe {
       upload_texture (m_forest, cover.data (), width, height, 4, false);
     }
 
+    void MetalRenderer::set_terrain_snow_support (
+      std::span<const float> support) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_snow_support");
+      const std::size_t expected =
+        static_cast<std::size_t> (m_terrain_params.width) *
+        m_terrain_params.height;
+      m_have_snow_support = expected != 0 && support.size () == expected;
+      if (!m_have_snow_support)
+        return;
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_snow_support ||
+          m_snow_support.width != static_cast<NSUInteger> (width) ||
+          m_snow_support.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
+                                       width:width
+                                      height:height
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageShaderRead;
+        m_snow_support = [m_device newTextureWithDescriptor:td];
+      }
+      std::vector<__fp16> halves (support.size ());
+      for (std::size_t i = 0; i < support.size (); ++i)
+        halves[i] = static_cast<__fp16> (support[i]);
+      upload_texture (m_snow_support,
+                      halves.data (),
+                      width,
+                      height,
+                      sizeof (__fp16),
+                      false);
+    }
+
     // -- targets -------------------------------------------------------
 
     id<MTLTexture> MetalRenderer::make_target (
@@ -1969,6 +2007,10 @@ namespace moppe {
       u.params6.y = m_have_shore ? 1.0f : 0.0f;
       u.params6.z = m_have_paths ? 1.0f : 0.0f;
       u.params6.w = m_have_forest ? 1.0f : 0.0f;
+      u.params7.x = (m_terrain_params.snow_support_filter &&
+                     m_have_snow_support)
+                      ? 1.0f
+                      : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -2014,6 +2056,8 @@ namespace moppe {
                       atIndex:MOPPE_TEX_TERRAIN_PATHS];
       [enc setFragmentTexture:(m_have_forest ? m_forest : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_FOREST];
+      [enc setFragmentTexture:(m_have_snow_support ? m_snow_support : m_heights)
+                      atIndex:MOPPE_TEX_TERRAIN_SNOW_SUPPORT];
 
       for (int i = 0; i < count; ++i) {
         const int lod =

@@ -20,6 +20,7 @@ namespace moppe::game {
     lens_flare,
     terrain_topology,
     terrain_fragment_normals,
+    snow_support_filter,
   };
 
   struct GraphicsSettings {
@@ -42,6 +43,7 @@ namespace moppe::game {
     bool lens_flare = true;
     bool terrain_topology = false;
     bool terrain_fragment_normals = true;
+    bool snow_support_filter = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -132,13 +134,21 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 12> graphics_features {
+  inline constexpr GraphicsFeature snow_support_filter_feature {
+    GraphicsFeatureId::snow_support_filter,
+    "snow-support-filter",
+    &GraphicsSettings::snow_support_filter,
+    true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 13> graphics_features {
     &terrain_shadows_feature,  &ocean_feature,
     &river_ribbons_feature,    &particles_feature,
     &vehicle_effects_feature,  &star_effects_feature,
     &motion_blur_feature,      &bloom_feature,
     &auto_exposure_feature,    &lens_flare_feature,
     &terrain_topology_feature, &terrain_fragment_normals_feature,
+    &snow_support_filter_feature,
   };
 
   GraphicsSettings high_graphics_settings ();
