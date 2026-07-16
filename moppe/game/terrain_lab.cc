@@ -32,19 +32,15 @@ namespace moppe {
         return "WATER";
       }
 
-      constexpr float window_x = 14.0f;
-      constexpr float window_y = 14.0f;
       constexpr float window_width = 520.0f;
       constexpr float window_height = 640.0f;
-      constexpr float left_x = 28.0f;
+      constexpr float left_x = 14.0f;
       constexpr float left_width = 226.0f;
-      constexpr float right_x = 262.0f;
+      constexpr float right_x = 248.0f;
       constexpr float right_width = 258.0f;
       constexpr float stage_row_height = 38.0f;
       constexpr float stage_row_stride = 41.0f;
       constexpr int visible_stage_rows = 7;
-      constexpr float readings_x = 548.0f;
-      constexpr float readings_y = 14.0f;
       constexpr float readings_width = 360.0f;
       constexpr float readings_height = 394.0f;
 
@@ -62,22 +58,9 @@ namespace moppe {
                                                "RIDGES", "MASK", "WARP X",
                                                "WARP Y" };
 
-      UiRect window_rect () {
-        return { window_x, window_y, window_width, window_height };
-      }
-
-      UiRect readings_rect () {
-        return { readings_x, readings_y, readings_width, readings_height };
-      }
-
-      bool ui_contains (float x, float y) {
-        return window_rect ().contains (x, y) ||
-               readings_rect ().contains (x, y);
-      }
-
       UiRect friendly_panel_rect (int height) {
         return {
-          18, 18, 330, static_cast<float> (std::max (420, height - 36))
+          0, 0, 330, static_cast<float> (std::max (420, height - 36))
         };
       }
 
@@ -103,12 +86,8 @@ namespace moppe {
         return ui_grid_cell (grid, 2, index, 30.0f, 4.0f);
       }
 
-      bool friendly_ui_contains (float x, float y, int, int height) {
-        return friendly_panel_rect (height).contains (x, y);
-      }
-
       UiRect observe_back_rect () {
-        return { 448, 52, 72, 28 };
+        return { 434, 38, 72, 28 };
       }
 
       UiRect overlay_rect (int index) {
@@ -117,68 +96,68 @@ namespace moppe {
         constexpr float width = (readings_width - 2 * margin - 3 * gap) / 4;
         const int row = index / 4;
         const int column = index % 4;
-        return { readings_x + margin + column * (width + gap),
-                 readings_y + 42 + row * 34,
+        return { margin + column * (width + gap),
+                 42.0f + row * 34.0f,
                  width,
                  28 };
       }
 
       UiRect close_rect () {
-        return { 505, 20, 22, 22 };
+        return { 491, 6, 22, 22 };
       }
 
       UiRect reset_rect () {
-        return { left_x, 52, 84, 28 };
+        return { left_x, 38, 84, 28 };
       }
 
       UiRect seed_rect () {
-        return { left_x + 90, 52, 128, 28 };
+        return { left_x + 90, 38, 128, 28 };
       }
 
       UiRect fit_rect () {
-        return { 252, 52, 72, 28 };
+        return { 238, 38, 72, 28 };
       }
 
       UiRect view_rect () {
-        return { 330, 52, 112, 28 };
+        return { 316, 38, 112, 28 };
       }
 
       UiRect hydraulic_preset_rect (int group, int index) {
         const float gap = 4.0f;
         const float width = (right_width - 3 * gap) / 4.0f;
         return {
-          right_x + index * (width + gap), 378.0f + group * 56.0f, width, 28
+          right_x + index * (width + gap), 364.0f + group * 56.0f, width, 28
         };
       }
 
       UiRect layer_rect (int index) {
         const float gap = 3.0f;
         const float width = (492.0f - 6 * gap) / 7.0f;
-        return { left_x + index * (width + gap), 89, width, 29 };
+        return { left_x + index * (width + gap), 75, width, 29 };
       }
 
       UiRect pipeline_header_rect () {
-        return { left_x, 128, left_width, 24 };
+        return { left_x, 114, left_width, 24 };
       }
 
       UiRect property_header_rect () {
-        return { right_x, 128, right_width, 24 };
+        return { right_x, 114, right_width, 24 };
       }
 
       UiRect source_rect () {
-        return { left_x, 157, left_width, stage_row_height };
+        return { left_x, 143, left_width, stage_row_height };
       }
 
       UiRect stage_rect (int visible_index) {
         return { left_x,
-                 201 + visible_index * stage_row_stride,
+                 187 + visible_index * stage_row_stride,
                  left_width,
                  stage_row_height };
       }
 
       UiRect stage_list_rect () {
         return {
-          left_x, 201, left_width, visible_stage_rows * stage_row_stride
+          left_x, 187, left_width, visible_stage_rows * stage_row_stride
         };
       }
 
@@ -188,18 +167,18 @@ namespace moppe {
         const int row = index / 5;
         const int column = index % 5;
         return {
-          left_x + column * (width + gap), 493.0f + row * 32.0f, width, 29.0f
+          left_x + column * (width + gap), 479.0f + row * 32.0f, width, 29.0f
         };
       }
 
       UiRect edit_stage_rect (int index) {
         const float gap = 3.0f;
         const float width = (left_width - 3 * gap) / 4.0f;
-        return { left_x + index * (width + gap), 558, width, 29 };
+        return { left_x + index * (width + gap), 544, width, 29 };
       }
 
       UiRect property_rect (int index) {
-        return { right_x, 157 + index * 41.0f, right_width, 39.0f };
+        return { right_x, 143 + index * 41.0f, right_width, 39.0f };
       }
 
       std::string format_float (float value, int precision) {
@@ -608,7 +587,11 @@ namespace moppe {
     }
 
     TerrainLab::TerrainLab ()
-        : m_renderer (0), m_map (0), m_terrain (0), m_world (0), m_graphics (0),
+        : m_observe_window ({ 18.0f, 18.0f, 330.0f, 604.0f }),
+          m_build_window ({ 14.0f, 14.0f, window_width, window_height }),
+          m_readings_window (
+            { 548.0f, 14.0f, readings_width, readings_height }),
+          m_renderer (0), m_map (0), m_terrain (0), m_world (0), m_graphics (0),
           m_history (nullptr), m_history_index (0), m_history_age (0.0f),
           m_history_playing (false), m_active (false), m_map_pristine (false),
           m_program (terrain::make_geological_program (0)),
@@ -696,6 +679,9 @@ namespace moppe {
       m_camera_drag = false;
       m_pan_drag = false;
       m_parameter_drag = false;
+      m_observe_window.end_drag ();
+      m_build_window.end_drag ();
+      m_readings_window.end_drag ();
       m_build_ui = std::getenv ("MOPPE_LAB_EXPERT") != nullptr;
       m_friendly_preset = -1;
       m_drag_property = -1;
@@ -2581,11 +2567,7 @@ namespace moppe {
       }
     }
 
-    void TerrainLab::handle_click (float x, float y) {
-      if (m_build_ui && observe_back_rect ().contains (x, y)) {
-        m_build_ui = false;
-        return;
-      }
+    void TerrainLab::handle_readings_click (float x, float y) {
       constexpr OverlayMode overlay_modes[] = {
         OverlayMode::None,           OverlayMode::Height,
         OverlayMode::Slope,          OverlayMode::Flow,
@@ -2600,6 +2582,13 @@ namespace moppe {
           set_overlay (overlay_modes[i]);
           return;
         }
+    }
+
+    void TerrainLab::handle_build_click (float x, float y) {
+      if (observe_back_rect ().contains (x, y)) {
+        m_build_ui = false;
+        return;
+      }
       if (close_rect ().contains (x, y)) {
         leave ();
         return;
@@ -3021,10 +3010,23 @@ namespace moppe {
         return;
       m_pointer_x = x;
       m_pointer_y = y;
+      if (m_observe_window.dragging ()) {
+        m_observe_window.drag_to (x, y, m_ui_width, m_ui_height);
+        return;
+      }
+      if (m_readings_window.dragging ()) {
+        m_readings_window.drag_to (x, y, m_ui_width, m_ui_height);
+        return;
+      }
+      if (m_build_window.dragging ()) {
+        m_build_window.drag_to (x, y, m_ui_width, m_ui_height);
+        return;
+      }
       if (m_droplet_armed) {
-        const bool over_ui =
-          m_build_ui ? ui_contains (x, y)
-                      : friendly_ui_contains (x, y, m_ui_width, m_ui_height);
+        const bool over_ui = m_build_ui
+                               ? m_build_window.contains (x, y) ||
+                                   m_readings_window.contains (x, y)
+                               : m_observe_window.contains (x, y);
         m_droplet_target =
           over_ui ? std::nullopt : terrain_point_at_screen (x, y);
       }
@@ -3066,32 +3068,62 @@ namespace moppe {
       m_pointer_y = y;
       if (button == platform::PointerButton::Primary) {
         m_pointer_down = down;
+        if (!down) {
+          const bool moved_window = m_observe_window.dragging () ||
+                                    m_build_window.dragging () ||
+                                    m_readings_window.dragging ();
+          m_observe_window.end_drag ();
+          m_build_window.end_drag ();
+          m_readings_window.end_drag ();
+          if (moved_window)
+            return;
+        }
         if (down) {
           if (!m_build_ui) {
-            if (friendly_ui_contains (x, y, m_ui_width, m_ui_height))
-              handle_friendly_click (x, y);
+            if (m_observe_window.begin_drag (x, y))
+              return;
+            if (m_observe_window.contains (x, y))
+              handle_friendly_click (m_observe_window.local_x (x),
+                                     m_observe_window.local_y (y));
             else {
               m_camera_drag = true;
               m_camera_drag_distance = 0.0f;
             }
           } else {
+            if (m_readings_window.begin_drag (x, y))
+              return;
+            const float build_x = m_build_window.local_x (x);
+            const float build_y = m_build_window.local_y (y);
+            if (m_build_window.contains (x, y) &&
+                close_rect ().contains (build_x, build_y)) {
+              handle_build_click (build_x, build_y);
+              return;
+            }
+            if (m_build_window.begin_drag (x, y))
+              return;
             int property_count = 9;
             if (m_selected_stage >= 0)
               property_count =
                 stage_property_count (m_program.transforms[m_selected_stage]);
-            for (int row = 0; row < property_count; ++row) {
-              if (!parameter_control_rect (property_rect (row)).contains (x, y))
-                continue;
-              if (!selected_property_drag_enabled (row))
-                continue;
-              m_parameter_drag = true;
-              m_drag_property = row;
-              m_drag_start_y = y;
-              m_drag_start_normalized = selected_property_normalized (row);
-              return;
+            if (m_build_window.contains (x, y)) {
+              for (int row = 0; row < property_count; ++row) {
+                if (!parameter_control_rect (property_rect (row))
+                       .contains (build_x, build_y))
+                  continue;
+                if (!selected_property_drag_enabled (row))
+                  continue;
+                m_parameter_drag = true;
+                m_drag_property = row;
+                m_drag_start_y = y;
+                m_drag_start_normalized = selected_property_normalized (row);
+                return;
+              }
             }
-            if (ui_contains (x, y))
-              handle_click (x, y);
+            if (m_readings_window.contains (x, y))
+              handle_readings_click (m_readings_window.local_x (x),
+                                     m_readings_window.local_y (y));
+            else if (m_build_window.contains (x, y))
+              handle_build_click (build_x, build_y);
             else {
               m_camera_drag = true;
               m_camera_drag_distance = 0.0f;
@@ -3121,11 +3153,14 @@ namespace moppe {
         return;
       m_pointer_x = x;
       m_pointer_y = y;
-      const bool over_ui =
-        m_build_ui ? ui_contains (x, y)
-                    : friendly_ui_contains (x, y, m_ui_width, m_ui_height);
+      const bool over_ui = m_build_ui
+                             ? m_build_window.contains (x, y) ||
+                                 m_readings_window.contains (x, y)
+                             : m_observe_window.contains (x, y);
       if (over_ui) {
-        if (m_build_ui && stage_list_rect ().contains (x, y) &&
+        if (m_build_ui && m_build_window.contains (x, y) &&
+            stage_list_rect ().contains (m_build_window.local_x (x),
+                                         m_build_window.local_y (y)) &&
             m_program.transforms.size () > visible_stage_rows) {
           m_stage_scroll += delta > 0.0f ? -1 : 1;
           const int maximum = static_cast<int> (m_program.transforms.size ()) -
@@ -3170,14 +3205,13 @@ namespace moppe {
                                     int height) const {
       (void)width;
       const auto hot = [this] (const UiRect& bounds) {
-        return bounds.contains (m_pointer_x, m_pointer_y);
+        return bounds.contains (m_observe_window.local_x (m_pointer_x),
+                                m_observe_window.local_y (m_pointer_y));
       };
       m_ui.begin (dl);
+      m_ui.begin_window (dl, m_observe_window, "TERRAIN LAB / OBSERVE");
       const UiRect panel = friendly_panel_rect (height);
       const UiRect content = friendly_content_rect (height);
-      m_ui.surface (dl, panel);
-      m_ui.friendly_section (
-        dl, { content.x, panel.y + 6.0f, content.width, 18.0f }, "TERRAIN LAB");
       m_ui.friendly_section (
         dl, { content.x, panel.y + 110.0f, content.width, 18.0f }, "WORLDS");
       m_ui.friendly_section (
@@ -3303,16 +3337,21 @@ namespace moppe {
                     content.x,
                     panel.y + panel.height - 17.0f,
                     "DRAG ORBIT   WHEEL ZOOM   SPACE PLAY   T BACK");
+      m_ui.end_window (dl);
       if (m_droplet_armed &&
-          !friendly_ui_contains (
-            m_pointer_x, m_pointer_y, m_ui_width, m_ui_height))
+          !m_observe_window.contains (m_pointer_x, m_pointer_y))
         m_ui.friendly_tool_cursor (dl, m_pointer_x, m_pointer_y, 14);
       m_ui.end (dl);
     }
 
-    void TerrainLab::draw (render::DrawList& dl, int width, int height) const {
+    void TerrainLab::draw (render::DrawList& dl, int width, int height) {
       m_ui_width = width;
       m_ui_height = height;
+      m_observe_window.set_size (friendly_panel_rect (height).width,
+                                 friendly_panel_rect (height).height);
+      m_observe_window.constrain (width, height);
+      m_build_window.constrain (width, height);
+      m_readings_window.constrain (width, height);
       if (!m_build_ui)
         draw_friendly (dl, width, height);
       else
@@ -3365,16 +3404,12 @@ namespace moppe {
 
     void TerrainLab::draw_build (render::DrawList& dl) const {
       const auto hot = [this] (const UiRect& bounds) {
-        return bounds.contains (m_pointer_x, m_pointer_y);
+        return bounds.contains (m_build_window.local_x (m_pointer_x),
+                                m_build_window.local_y (m_pointer_y));
       };
 
       m_ui.begin (dl);
-      m_ui.panel (dl,
-                  window_x,
-                  window_y,
-                  window_width,
-                  window_height,
-                  "TERRAIN LAB / BUILD");
+      m_ui.begin_window (dl, m_build_window, "TERRAIN LAB / BUILD");
       m_ui.button (dl, close_rect (), "X", hot (close_rect ()), m_pointer_down);
       m_ui.button (
         dl, reset_rect (), "RESET", hot (reset_rect ()), m_pointer_down);
@@ -3517,15 +3552,15 @@ namespace moppe {
           }
         }
         if (count <= 3) {
-          m_ui.label (dl, right_x + 8, 294, stage_name (stage), true);
-          m_ui.label (dl, right_x + 8, 316, stage_detail (stage));
-          m_ui.label (dl, right_x + 8, 338, semantics_detail (stage), true);
+          m_ui.label (dl, right_x + 8, 280, stage_name (stage), true);
+          m_ui.label (dl, right_x + 8, 302, stage_detail (stage));
+          m_ui.label (dl, right_x + 8, 324, semantics_detail (stage), true);
         }
         if (std::holds_alternative<terrain::NormalizeHeights> (stage)) {
           m_ui.label (
-            dl, right_x + 8, 366, "A whole-raster materialization barrier.");
+            dl, right_x + 8, 352, "A whole-raster materialization barrier.");
           m_ui.label (
-            dl, right_x + 8, 386, "It can be moved, copied, or deleted.");
+            dl, right_x + 8, 372, "It can be moved, copied, or deleted.");
         } else if (std::holds_alternative<terrain::HydraulicErosion> (stage)) {
           const auto& hydraulic = std::get<terrain::HydraulicErosion> (stage);
           constexpr const char* headings[] = { "DROP COUNT",
@@ -3541,7 +3576,7 @@ namespace moppe {
                                           { 1, 64, 256, 1024 } };
           for (int group = 0; group < 3; ++group) {
             m_ui.label (
-              dl, right_x + 8, 362 + group * 56, headings[group], true);
+              dl, right_x + 8, 348 + group * 56, headings[group], true);
             const int value =
               group == 0   ? terrain::count_value (hydraulic.droplets)
               : group == 1 ? terrain::count_value (hydraulic.max_steps)
@@ -3565,21 +3600,23 @@ namespace moppe {
         status << "field recipe";
       else
         status << (m_selected_stage + 1);
-      m_ui.label (dl, left_x, 604, status.str (), true);
+      m_ui.label (dl, left_x, 590, status.str (), true);
       m_ui.label (dl,
                   left_x,
-                  625,
+                  611,
                   "LEFT DRAG orbit | RIGHT DRAG pan | TERRAIN WHEEL zoom");
-      m_ui.label (dl, left_x, 646, "Select or reorder stages | T returns");
-      m_ui.key_hint (dl, right_x + 8, 558, "DIAL", "live direct value");
-      m_ui.key_hint (dl, right_x + 8, 584, "- / +", "count or costly step");
+      m_ui.label (dl, left_x, 632, "Select or reorder stages | T returns");
+      m_ui.key_hint (dl, right_x + 8, 544, "DIAL", "live direct value");
+      m_ui.key_hint (dl, right_x + 8, 570, "- / +", "count or costly step");
 
-      m_ui.panel (dl,
-                  readings_x,
-                  readings_y,
-                  readings_width,
-                  readings_height,
-                  "MAP READINGS");
+      m_ui.end_window (dl);
+      m_ui.begin_window (dl, m_readings_window, "MAP READINGS");
+      const auto readings_hot = [this] (const UiRect& bounds) {
+        return bounds.contains (m_readings_window.local_x (m_pointer_x),
+                                m_readings_window.local_y (m_pointer_y));
+      };
+      constexpr float readings_x = 0.0f;
+      constexpr float readings_y = 0.0f;
       constexpr const char* overlay_labels[] = {
         "MATERIAL", "HEIGHT", "SLOPE", "FLOW",  "STREAMS", "BASINS", "OUTLETS",
         "DELTA",    "TRACE",  "WATER", "LAKES", "FALLS",   "ERODED", "DEPOSIT"
@@ -3598,7 +3635,7 @@ namespace moppe {
         m_ui.button (dl,
                      bounds,
                      overlay_labels[i],
-                     hot (bounds),
+                     readings_hot (bounds),
                      m_pointer_down,
                      m_overlay == overlay_modes[i]);
       }
@@ -3816,6 +3853,7 @@ namespace moppe {
                                     2) +
                       " M");
       }
+      m_ui.end_window (dl);
       m_ui.end (dl);
     }
   }

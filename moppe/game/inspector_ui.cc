@@ -106,6 +106,91 @@ namespace moppe {
       return { bounds.x + 38.0f, bounds.y + 34.0f, bounds.width - 50.0f, 1.0f };
     }
 
+    UiWindow::UiWindow (const UiRect& bounds)
+        : m_bounds (bounds), m_drag_offset_x (0.0f), m_drag_offset_y (0.0f),
+          m_dragging (false) {}
+
+    const UiRect& UiWindow::bounds () const {
+      return m_bounds;
+    }
+
+    UiRect UiWindow::local_bounds () const {
+      return { 0.0f, 0.0f, m_bounds.width, m_bounds.height };
+    }
+
+    UiRect UiWindow::to_screen (const UiRect& local) const {
+      return { m_bounds.x + local.x,
+               m_bounds.y + local.y,
+               local.width,
+               local.height };
+    }
+
+    float UiWindow::local_x (float screen_x) const {
+      return screen_x - m_bounds.x;
+    }
+
+    float UiWindow::local_y (float screen_y) const {
+      return screen_y - m_bounds.y;
+    }
+
+    bool UiWindow::contains (float screen_x, float screen_y) const {
+      return m_bounds.contains (screen_x, screen_y);
+    }
+
+    void UiWindow::set_position (float x, float y) {
+      m_bounds.x = x;
+      m_bounds.y = y;
+    }
+
+    void UiWindow::set_size (float width, float height) {
+      m_bounds.width = std::max (0.0f, width);
+      m_bounds.height = std::max (0.0f, height);
+    }
+
+    void UiWindow::constrain (float viewport_width,
+                              float viewport_height,
+                              float margin) {
+      margin = std::max (0.0f, margin);
+      const float maximum_x =
+        std::max (margin, viewport_width - m_bounds.width - margin);
+      const float maximum_y =
+        std::max (margin, viewport_height - m_bounds.height - margin);
+      m_bounds.x = std::clamp (m_bounds.x, margin, maximum_x);
+      m_bounds.y = std::clamp (m_bounds.y, margin, maximum_y);
+    }
+
+    bool UiWindow::begin_drag (float screen_x,
+                               float screen_y,
+                               float title_height) {
+      const UiRect title {
+        m_bounds.x, m_bounds.y, m_bounds.width, title_height
+      };
+      if (!title.contains (screen_x, screen_y))
+        return false;
+      m_drag_offset_x = screen_x - m_bounds.x;
+      m_drag_offset_y = screen_y - m_bounds.y;
+      m_dragging = true;
+      return true;
+    }
+
+    void UiWindow::drag_to (float screen_x,
+                            float screen_y,
+                            float viewport_width,
+                            float viewport_height) {
+      if (!m_dragging)
+        return;
+      set_position (screen_x - m_drag_offset_x, screen_y - m_drag_offset_y);
+      constrain (viewport_width, viewport_height);
+    }
+
+    void UiWindow::end_drag () {
+      m_dragging = false;
+    }
+
+    bool UiWindow::dragging () const {
+      return m_dragging;
+    }
+
     UiFlow::UiFlow (const UiRect& bounds, UiFlowDirection direction, float gap)
         : m_remaining (bounds), m_direction (direction), m_gap (gap) {}
 
@@ -206,6 +291,38 @@ namespace moppe {
       dl.color (1, 1, 1, 1);
     }
 
+    void InspectorUi::begin_window (render::DrawList& dl,
+                                    const UiWindow& window,
+                                    const std::string& title) const {
+      dl.push ();
+      dl.translate (window.bounds ().x, window.bounds ().y, 0.0f);
+      const UiRect outer = window.local_bounds ();
+      surface (dl, outer);
+
+      const UiRect title_bar { 4.0f, 4.0f, outer.width - 8.0f, 28.0f };
+      dl.color (0.055f, 0.32f, 0.34f, 0.86f);
+      fill_rounded_rect (dl, title_bar, 8.0f);
+      dl.color (0.14f, 0.48f, 0.49f, 0.82f);
+      dl.line (title_bar.x + 3.0f,
+               title_bar.y + 4.0f,
+               title_bar.x + title_bar.width - 3.0f,
+               title_bar.y + 4.0f,
+               1.0f);
+      dl.line (title_bar.x + 3.0f,
+               title_bar.y + 8.0f,
+               title_bar.x + title_bar.width - 3.0f,
+               title_bar.y + 8.0f,
+               1.0f);
+      if (m_title) {
+        dl.color (0.94f, 1.0f, 0.84f, 0.99f);
+        m_title->draw (dl, 12.0f, 24.0f, title);
+      }
+    }
+
+    void InspectorUi::end_window (render::DrawList& dl) const {
+      dl.pop ();
+    }
+
     void InspectorUi::panel (render::DrawList& dl,
                              float x,
                              float y,
@@ -213,27 +330,9 @@ namespace moppe {
                              float height,
                              const std::string& title) const {
       const UiRect outer { x, y, width, height };
-      surface (dl, outer);
-
-      const UiRect title_bar { x + 4, y + 4, width - 8, 28 };
-      dl.color (0.055f, 0.32f, 0.34f, 0.86f);
-      fill_rounded_rect (dl, title_bar, 8.0f);
-      dl.color (0.14f, 0.48f, 0.49f, 0.82f);
-      dl.line (title_bar.x + 3,
-               title_bar.y + 4,
-               title_bar.x + title_bar.width - 3,
-               title_bar.y + 4,
-               1.0f);
-      dl.line (title_bar.x + 3,
-               title_bar.y + 8,
-               title_bar.x + title_bar.width - 3,
-               title_bar.y + 8,
-               1.0f);
-
-      if (m_title) {
-        dl.color (0.94f, 1.0f, 0.84f, 0.99f);
-        m_title->draw (dl, x + 12, y + 24, title);
-      }
+      UiWindow window (outer);
+      begin_window (dl, window, title);
+      end_window (dl);
     }
 
     void InspectorUi::label (render::DrawList& dl,

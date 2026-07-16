@@ -78,7 +78,7 @@ namespace moppe {
       void render_rivers (render::Renderer& renderer, const Vec3& camera) const;
       void render_droplet (render::Renderer& renderer, const Vec3& camera);
 
-      void draw (render::DrawList& dl, int width_pts, int height_pts) const;
+      void draw (render::DrawList& dl, int width_pts, int height_pts);
 
     private:
       enum class OverlayMode {
@@ -114,7 +114,8 @@ namespace moppe {
       bool adjust_selected_natural (int row, int direction);
       void queue_parameter_rebuild ();
       void run_pending_parameter_rebuild ();
-      void handle_click (float x, float y);
+      void handle_build_click (float x, float y);
+      void handle_readings_click (float x, float y);
       void handle_friendly_click (float x, float y);
       void apply_friendly_preset (int preset);
       void
@@ -142,6 +143,9 @@ namespace moppe {
       std::string history_snapshot_name (std::size_t index) const;
 
       InspectorUi m_ui;
+      UiWindow m_observe_window;
+      UiWindow m_build_window;
+      UiWindow m_readings_window;
       render::Renderer* m_renderer;
       map::RandomHeightMap* m_map;
       std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
@@ -197,8 +201,8 @@ namespace moppe {
       bool m_parameter_drag;
       bool m_build_ui;
       int m_friendly_preset;
-      mutable int m_ui_width;
-      mutable int m_ui_height;
+      int m_ui_width;
+      int m_ui_height;
       int m_drag_property;
       float m_drag_start_y;
       float m_drag_start_normalized;
