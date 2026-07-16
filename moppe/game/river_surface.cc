@@ -25,6 +25,10 @@ namespace moppe::game {
       float rapid;
       float waterfall;
       float opacity;
+      // Signed plan-view curvature in 1/m; positive when the channel bends
+      // toward the +across direction, i.e. the bend center lies on the
+      // +across side.
+      float curvature_across;
     };
 
     struct RibbonVertex {
@@ -162,9 +166,10 @@ namespace moppe::game {
             .flow_distance_m = center.flow_distance_m,
             .rapid = rapid_signal (center.slope),
             .waterfall = center.waterfall,
-            .opacity = source_opacity * mouth_opacity *
-                       (1.0f - smoothstep (
-                                  0.05f, 0.98f, center.standing_water)) });
+            .opacity =
+              source_opacity * mouth_opacity *
+              (1.0f - smoothstep (0.05f, 0.98f, center.standing_water)),
+            .curvature_across = 0.0f });
       }
 
       // Raise upstream samples over any downstream shoulder instead of
@@ -174,6 +179,30 @@ namespace moppe::game {
       for (std::size_t point = result.size () - 1; point > 0; --point)
         result[point - 1].position[1] =
           std::max (result[point - 1].position[1], result[point].position[1]);
+
+      // Signed bend curvature from the turn rate of neighbouring tangents;
+      // positive bends toward +across. Two smoothing passes keep the reading
+      // from inheriting knot-scale wiggle from the alignment spline.
+      for (std::size_t point = 1; point + 1 < result.size (); ++point) {
+        const Vec3& before = result[point - 1].tangent;
+        const Vec3& after = result[point + 1].tangent;
+        const float run = 0.5f * (result[point + 1].flow_distance_m -
+                                  result[point - 1].flow_distance_m);
+        if (run > 1e-3f)
+          result[point].curvature_across =
+            -(before[2] * after[0] - before[0] * after[2]) / run;
+      }
+      for (int pass = 0; pass < 2; ++pass) {
+        float previous =
+          result.empty () ? 0.0f : result.front ().curvature_across;
+        for (std::size_t point = 1; point + 1 < result.size (); ++point) {
+          const float smoothed = 0.25f * previous +
+                                 0.5f * result[point].curvature_across +
+                                 0.25f * result[point + 1].curvature_across;
+          previous = result[point].curvature_across;
+          result[point].curvature_across = smoothed;
+        }
+      }
       return result;
     }
 
@@ -190,10 +219,20 @@ namespace moppe::game {
       const float grade = run > 1e-5f
                             ? (after.position[1] - before.position[1]) / run
                             : 0.0f;
+      // Superelevation: moving water banks into its bends, so the shading
+      // normal leans toward the bend center by the centripetal crossfall
+      // v^2 k / g, exaggerated for legibility at ribbon scale.
+      const float speed = 2.0f + 3.5f * center.rapid + 5.0f * center.waterfall;
+      const float lean = std::clamp (
+        speed * speed * center.curvature_across / 9.81f * 3.0f, -0.22f, 0.22f);
       const Vec3 normal = normalized (
-        Vec3 (-center.tangent[0] * grade,
-              1.0f,
-              -center.tangent[2] * grade));
+        Vec3 (-center.tangent[0] * grade, 1.0f, -center.tangent[2] * grade) +
+        across * lean);
+      // Thalweg asymmetry: the deep line migrates to the outside of each
+      // bend, so depth reads dark against the outer bank and glassy over the
+      // inner point bar.
+      const float thalweg_shift = std::clamp (
+        center.curvature_across * center.width_m * 1.2f, -0.45f, 0.45f);
       const float half_width = 0.5f * center.width_m;
       RibbonRow row;
       for (std::size_t cross = 0; cross < row.size (); ++cross) {
@@ -202,7 +241,10 @@ namespace moppe::game {
         const float ground =
           map.interpolated_height (position[0], position[2]);
         const float depth =
-          std::clamp ((position[1] - ground) / depth_span_m, 0.0f, 1.0f);
+          std::clamp ((position[1] - ground) / depth_span_m *
+                        (1.0f - thalweg_shift * cross_positions[cross]),
+                      0.0f,
+                      1.0f);
         row[cross] = { .position = position,
                        .normal = normal,
                        .u = 0.5f * (cross_positions[cross] + 1.0f),
