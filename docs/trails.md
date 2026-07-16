@@ -55,6 +55,7 @@ The defaults describe the first leisure path:
 | maximum fill | 1.5 m | Most any sample may be raised from original terrain |
 | designed grade | 5% | Ordinary leisure-route target and search preference |
 | maximum grade | 12% | Formation target for constrained local exceptions |
+| crossfall | 3% | Tread drainage toward the naturally lower side |
 | grading iterations | 24 | Repeated relaxation passes around the circuit |
 | home base to water | 90 m | Preferred water distance during site selection |
 | home-base pad radius | 18 m | Compacted clearing around the circuit origin |
@@ -79,8 +80,11 @@ steep from side to side.
 
 Cross-slope is a different concern. The formation stamp pulls the riding
 surface toward the centerline elevation, which benches the path across a
-sidehill. Cut and fill limits bound that operation, so a sufficiently steep
-sidehill may retain some cross-slope.
+sidehill, then gives the compacted tread a 3% crossfall toward the naturally
+lower side, using the loop exterior where the ground is effectively level.
+That small deliberate fall lets rain cross the trail rather than collecting on
+a level bench. Cut and fill limits bound the operation, so a sufficiently
+steep sidehill may retain some of its original cross-slope.
 
 The designed and maximum grades are not equivalent:
 
@@ -216,8 +220,11 @@ clamped to its own original elevation plus the fill allowance or minus the cut
 allowance.
 
 Each nearby heightmap sample then finds its nearest point on the alignment and
-interpolates the relaxed vertical profile there. The compacted core targets
-that centerline height; the shoulder smoothly blends back to the original
+interpolates the relaxed vertical profile there. The formation pass samples
+the natural ground on both sides of every alignment segment and lowers the
+target by 3 centimetres per metre toward the lower side. This crossfall is
+clamped to the authored tread width even when a coarse preview widens the
+construction stamp. The shoulder smoothly blends back to the original
 surface. Standing-water cells are never shaped. The result retains a physical
 `earthwork_delta_m` layer relative to the pre-trail terrain while also
 materializing the composed heightmap used by the current renderer and physics.
@@ -320,8 +327,8 @@ continuity, and the trail-first cinematic.
 
 - There is one authored leisure circuit, not a hierarchy of paths or a dense
   network.
-- Grade is longitudinal. Cross-slope is reduced by benching but is not
-  separately constrained or reported.
+- Grade is longitudinal. Cross-slope is benched and given a drainage crossfall,
+  but the resulting cross-slope is not yet separately constrained or reported.
 - Maximum grade can have reported exceptions when cut/fill limits cannot
   reconcile the terrain.
 - Alpine avoidance is a strong preference, not an absolute elevation ban.

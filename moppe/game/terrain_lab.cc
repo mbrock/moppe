@@ -242,9 +242,14 @@ namespace moppe {
                      100.0f,
                    0) +
                  "% max / " +
-                 format_float (meters_value (
-                                 trails->alpine_avoidance_height_above_sea),
-                               0) +
+                 format_float (
+                   trails->crossfall.numerical_value_in (mp_units::one) *
+                     100.0f,
+                   0) +
+                 "% crossfall / " +
+                 format_float (
+                   meters_value (trails->alpine_avoidance_height_above_sea),
+                   0) +
                  " m alpine avoid";
         if (const auto* diffusion =
               std::get_if<terrain::HillslopeDiffusion> (&stage))
@@ -336,7 +341,7 @@ namespace moppe {
         if (std::holds_alternative<terrain::ThermalErosion> (stage))
           return 2;
         if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return 13;
+          return 14;
         if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
           return 2;
         return 0;
@@ -483,11 +488,15 @@ namespace moppe {
                                        ->highland_preference_height_above_sea),
                                    0),
                      ParameterDomain::Continuous };
-          return { "ALPINE AVOID (M)",
+          if (row == 12)
+            return { "ALPINE AVOID (M)",
+                     format_float (
+                       meters_value (trails->alpine_avoidance_height_above_sea),
+                       0),
+                     ParameterDomain::Continuous };
+          return { "CROSSFALL",
                    format_float (
-                     meters_value (
-                       trails->alpine_avoidance_height_above_sea),
-                     0),
+                     trails->crossfall.numerical_value_in (mp_units::one), 2),
                    ParameterDomain::Continuous };
         }
         if (const auto* diffusion =
@@ -1539,10 +1548,12 @@ namespace moppe {
                          trails->highland_preference_height_above_sea),
                        80.0f,
                        320.0f);
+        if (row == 12)
+          return unit (meters_value (trails->alpine_avoidance_height_above_sea),
+                       160.0f,
+                       380.0f);
         return unit (
-          meters_value (trails->alpine_avoidance_height_above_sea),
-          160.0f,
-          380.0f);
+          trails->crossfall.numerical_value_in (mp_units::one), 0.0f, 0.1f);
       }
       if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
         return row == 0 ? unit (terrain::count_value (thermal->iterations),
@@ -1805,13 +1816,19 @@ namespace moppe {
             mp_units::si::metre;
           return trails->highland_preference_height_above_sea != old;
         }
-        const auto old = trails->alpine_avoidance_height_above_sea;
-        trails->alpine_avoidance_height_above_sea =
-          std::max (
-            mix (160.0f, 380.0f),
-            meters_value (trails->highland_preference_height_above_sea)) *
-          mp_units::si::metre;
-        return trails->alpine_avoidance_height_above_sea != old;
+        if (row == 12) {
+          const auto old = trails->alpine_avoidance_height_above_sea;
+          trails->alpine_avoidance_height_above_sea =
+            std::max (
+              mix (160.0f, 380.0f),
+              meters_value (trails->highland_preference_height_above_sea)) *
+            mp_units::si::metre;
+          return trails->alpine_avoidance_height_above_sea != old;
+        }
+        const auto old = trails->crossfall;
+        trails->crossfall =
+          mix (0.0f, 0.1f) * terrain::terrain_slope[mp_units::one];
+        return trails->crossfall != old;
       }
       if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
         if (row == 0) {

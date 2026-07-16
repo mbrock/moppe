@@ -89,6 +89,25 @@ namespace {
              .spacing_y = 100.0f * mp_units::si::metre,
              .height_scale = 100.0f * mp_units::si::metre };
   }
+
+  float sample_height_m (const std::vector<float>& heights,
+                         const TerrainGrid& grid,
+                         float x_m,
+                         float z_m) {
+    const float x = std::clamp (
+      x_m / grid.spacing_x_m (), 0.0f, static_cast<float> (grid.width - 1));
+    const float y = std::clamp (
+      z_m / grid.spacing_y_m (), 0.0f, static_cast<float> (grid.height - 1));
+    const int x0 = static_cast<int> (std::floor (x));
+    const int y0 = static_cast<int> (std::floor (y));
+    const int x1 = std::min (x0 + 1, static_cast<int> (grid.width - 1));
+    const int y1 = std::min (y0 + 1, static_cast<int> (grid.height - 1));
+    const float top = std::lerp (
+      heights[y0 * grid.width + x0], heights[y0 * grid.width + x1], x - x0);
+    const float bottom = std::lerp (
+      heights[y1 * grid.width + x0], heights[y1 * grid.width + x1], x - x0);
+    return std::lerp (top, bottom, y - y0) * grid.height_scale_m ();
+  }
 }
 
 MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
@@ -218,6 +237,82 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
     MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
   }
+}
+
+MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
+  const std::vector<float> original = bumpy_valley ();
+  TrailFormation level_parameters = test_parameters ();
+  level_parameters.crossfall = 0.0f * terrain_slope[mp_units::one];
+  TrailFormation drained_parameters = level_parameters;
+  drained_parameters.crossfall = 0.08f * terrain_slope[mp_units::one];
+
+  const TrailFormationResult level = form_trails (
+    TerrainView (trail_valley_grid (), original), level_parameters);
+  const TrailFormationResult drained = form_trails (
+    TerrainView (trail_valley_grid (), original), drained_parameters);
+
+  // Crossfall changes only the constructed section, not the planned route.
+  MOPPE_CHECK (drained.network.alignment == level.network.alignment);
+  MOPPE_CHECK (drained.network.plan.circuit == level.network.plan.circuit);
+  MOPPE_CHECK (drained.heights != level.heights);
+  for (std::size_t cell = 0; cell < original.size (); ++cell) {
+    const float change_m = (drained.heights[cell] - original[cell]) *
+                           trail_valley_grid ().height_scale_m ();
+    MOPPE_CHECK (change_m >=
+                 -meters_value (drained_parameters.maximum_cut) - 1e-5f);
+    MOPPE_CHECK (change_m <=
+                 meters_value (drained_parameters.maximum_fill) + 1e-5f);
+  }
+
+  const TerrainGrid grid = trail_valley_grid ();
+  const float maximum_x = (grid.width - 1) * grid.spacing_x_m ();
+  const float maximum_z = (grid.height - 1) * grid.spacing_y_m ();
+  bool observed_downhill_fall = false;
+  for (std::size_t segment = 0;
+       segment + 1 < drained.network.alignment.points.size ();
+       ++segment) {
+    const TrailAlignmentPoint a = drained.network.alignment.points[segment];
+    const TrailAlignmentPoint b = drained.network.alignment.points[segment + 1];
+    const float dx = b.x_m - a.x_m;
+    const float dz = b.z_m - a.z_m;
+    const float length = std::hypot (dx, dz);
+    if (length <= 1e-5f)
+      continue;
+    const float mid_x = 0.5f * (a.x_m + b.x_m);
+    const float mid_z = 0.5f * (a.z_m + b.z_m);
+    const float nx = -dz / length;
+    const float nz = dx / length;
+    constexpr float natural_probe = 2.5f;
+    constexpr float tread_probe = 1.0f;
+    if (mid_x - natural_probe < 0.0f || mid_z - natural_probe < 0.0f ||
+        mid_x + natural_probe > maximum_x || mid_z + natural_probe > maximum_z)
+      continue;
+    const float natural_positive = sample_height_m (
+      original, grid, mid_x + nx * natural_probe, mid_z + nz * natural_probe);
+    const float natural_negative = sample_height_m (
+      original, grid, mid_x - nx * natural_probe, mid_z - nz * natural_probe);
+    const float downhill_sign =
+      natural_positive <= natural_negative ? 1.0f : -1.0f;
+    const auto cross_section = [&] (const std::vector<float>& heights) {
+      const float downhill =
+        sample_height_m (heights,
+                         grid,
+                         mid_x + downhill_sign * nx * tread_probe,
+                         mid_z + downhill_sign * nz * tread_probe);
+      const float uphill =
+        sample_height_m (heights,
+                         grid,
+                         mid_x - downhill_sign * nx * tread_probe,
+                         mid_z - downhill_sign * nz * tread_probe);
+      return downhill - uphill;
+    };
+    if (cross_section (drained.heights) <
+        cross_section (level.heights) - 1e-4f) {
+      observed_downhill_fall = true;
+      break;
+    }
+  }
+  MOPPE_CHECK (observed_downhill_fall);
 }
 
 MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {

@@ -10,7 +10,7 @@
   (further stages: `orogeny=duration,dt,uplift,k,m,D[,sea,land_relief,
   coast,bathymetry]`, `analytical=age[,uplift,k,m,sea,iters,relax]`, and
   `trails[=min_m2,max_m2,width,shoulder,cut,fill,max_grade,sea,designed_grade,
-  highland_preference,alpine_avoidance]`)
+  highland_preference,alpine_avoidance,crossfall]`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
   - Hang glider: boost the bike into the air and press `E` once the deploy

@@ -41,7 +41,11 @@ namespace moppe::terrain {
           !std::isfinite (
             p.designed_grade.numerical_value_in (mp_units::one)) ||
           p.designed_grade < 0.0f * terrain_slope[mp_units::one] ||
-          p.designed_grade > p.maximum_grade || p.grading_iterations < 0 ||
+          p.designed_grade > p.maximum_grade ||
+          !std::isfinite (p.crossfall.numerical_value_in (mp_units::one)) ||
+          p.crossfall < 0.0f * terrain_slope[mp_units::one] ||
+          p.crossfall > 0.1f * terrain_slope[mp_units::one] ||
+          p.grading_iterations < 0 ||
           !std::isfinite (meters_value (p.home_base_water_distance)) ||
           p.home_base_water_distance <= 0.0f * mp_units::si::metre ||
           !std::isfinite (meters_value (p.home_base_pad_radius)) ||
@@ -52,8 +56,7 @@ namespace moppe::terrain {
             meters_value (p.highland_preference_height_above_sea)) ||
           p.highland_preference_height_above_sea <=
             0.0f * mp_units::si::metre ||
-          !std::isfinite (
-            meters_value (p.alpine_avoidance_height_above_sea)) ||
+          !std::isfinite (meters_value (p.alpine_avoidance_height_above_sea)) ||
           p.alpine_avoidance_height_above_sea <
             p.highland_preference_height_above_sea)
         throw std::invalid_argument ("invalid trail formation parameters");
@@ -139,6 +142,7 @@ namespace moppe::terrain {
 
     struct AlignmentRaster {
       std::vector<float> distance_m;
+      std::vector<float> signed_distance_m;
       std::vector<std::size_t> segment;
       std::vector<float> segment_t;
     };
@@ -153,6 +157,7 @@ namespace moppe::terrain {
       AlignmentRaster result {
         .distance_m =
           std::vector<float> (count, std::numeric_limits<float>::infinity ()),
+        .signed_distance_m = std::vector<float> (count, 0.0f),
         .segment = std::vector<std::size_t> (count, no_segment),
         .segment_t = std::vector<float> (count, 0.0f)
       };
@@ -201,6 +206,11 @@ namespace moppe::terrain {
             const std::size_t cell = static_cast<std::size_t> (y) * width + x;
             if (candidate < result.distance_m[cell]) {
               result.distance_m[cell] = candidate;
+              const float inverse_length = 1.0f / std::sqrt (length2);
+              result.signed_distance_m[cell] =
+                ((point.x_m - nearest.x_m) * -ab.z_m +
+                 (point.z_m - nearest.z_m) * ab.x_m) *
+                inverse_length;
               result.segment[cell] = segment;
               result.segment_t[cell] = t;
             }
@@ -1445,13 +1455,67 @@ namespace moppe::terrain {
     // alignment. The geometric core still grows to one source cell at coarse
     // resolutions so collision remains a continuous formed surface; the
     // independently generated material footprint retains the authored width.
+    const float authored_half_width = 0.5f * meters_value (parameters.width);
     const float half_width =
-      std::max (0.5f * meters_value (parameters.width),
+      std::max (authored_half_width,
                 1.01f * std::max (grid.spacing_x_m (), grid.spacing_y_m ()));
     const float blend = meters_value (parameters.shoulder_blend);
     const float radius = half_width + blend;
     const AlignmentRaster formation_raster =
       rasterize_alignment (grid, network.alignment, radius);
+
+    // Pick the naturally lower side along the alignment, falling back to the
+    // loop exterior where the ground is effectively level. The crossfall is
+    // clamped to the authored tread width; a coarse preview may widen the
+    // construction stamp for continuity, but must not magnify a
+    // three-centimetres-per-metre drainage slope into a large terrace.
+    const float crossfall =
+      parameters.crossfall.numerical_value_in (mp_units::one);
+    const float probe_distance =
+      std::max (authored_half_width,
+                0.5f * std::min (grid.spacing_x_m (), grid.spacing_y_m ()));
+    std::vector<float> downhill_side (alignment_count, 1.0f);
+    double signed_area = 0.0;
+    for (std::size_t segment = 0; segment < alignment_count; ++segment) {
+      const TrailAlignmentPoint a = network.alignment.points[segment];
+      const TrailAlignmentPoint b =
+        segment + 1 < alignment_count
+          ? network.alignment.points[segment + 1]
+          : alignment_closure (network.alignment, grid);
+      signed_area += static_cast<double> (a.x_m) * b.z_m -
+                     static_cast<double> (b.x_m) * a.z_m;
+    }
+    const float exterior_side = signed_area >= 0.0 ? -1.0f : 1.0f;
+    for (std::size_t segment = 0; segment < alignment_count; ++segment) {
+      const TrailAlignmentPoint a = network.alignment.points[segment];
+      const TrailAlignmentPoint b =
+        segment + 1 < alignment_count
+          ? network.alignment.points[segment + 1]
+          : alignment_closure (network.alignment, grid);
+      const TrailAlignmentPoint along = b - a;
+      const float segment_length = distance (a, b);
+      if (segment_length <= 1e-5f)
+        continue;
+      const TrailAlignmentPoint midpoint = a + along * 0.5f;
+      const TrailAlignmentPoint normal { -along.z_m / segment_length,
+                                         along.x_m / segment_length };
+      const float positive_height =
+        sample_height_m (original, grid, midpoint + normal * probe_distance);
+      const float negative_height =
+        sample_height_m (original, grid, midpoint + normal * -probe_distance);
+      const float natural_difference = negative_height - positive_height;
+      const float natural_side = natural_difference >= 0.0f ? 1.0f : -1.0f;
+      const float transition = std::clamp (
+        (std::fabs (natural_difference) - 0.05f) / 0.20f, 0.0f, 1.0f);
+      const float smooth_transition =
+        transition * transition * (3.0f - 2.0f * transition);
+      // On an unambiguously sloped sidehill, drain with gravity. Around a
+      // ridge, saddle, or nearly level patch, ease toward the loop exterior
+      // instead of letting tiny height noise flip the crossfall every couple
+      // of metres.
+      downhill_side[segment] =
+        std::lerp (exterior_side, natural_side, smooth_transition);
+    }
 
     std::vector<float> shaped = original;
     std::vector<float> earthwork_delta_m (count, 0.0f);
@@ -1470,8 +1534,14 @@ namespace moppe::terrain {
       const float original_m = original[cell] * height_scale;
       const std::size_t segment = formation_raster.segment[cell];
       const std::size_t next = (segment + 1) % alignment_count;
-      const float target_m = std::lerp (
+      const float centerline_m = std::lerp (
         grade_m[segment], grade_m[next], formation_raster.segment_t[cell]);
+      const float across_m =
+        std::clamp (formation_raster.signed_distance_m[cell],
+                    -authored_half_width,
+                    authored_half_width);
+      const float target_m =
+        centerline_m - crossfall * downhill_side[segment] * across_m;
       const float influence =
         shoulder_ramp (formation_raster.distance_m[cell], half_width, blend);
       const float shaped_m =

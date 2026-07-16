@@ -153,11 +153,11 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.empty () || parts.size () > 11)
+      if (parts.empty () || parts.size () > 12)
         throw std::invalid_argument (
           "trails expects min_m2[,max_m2,width,shoulder,cut,fill,"
           "max_grade,sea,designed_grade,highland_preference,"
-          "alpine_avoidance]");
+          "alpine_avoidance,crossfall]");
       TrailFormation trails;
       trails.minimum_catchment_area =
         parse_float (parts[0]) * mp_units::si::metre * mp_units::si::metre;
@@ -186,6 +186,9 @@ namespace {
       if (parts.size () > 10)
         trails.alpine_avoidance_height_above_sea =
           parse_float (parts[10]) * mp_units::si::metre;
+      if (parts.size () > 11)
+        trails.crossfall =
+          parse_float (parts[11]) * terrain_slope[mp_units::one];
       program.transforms.emplace_back (trails);
     } else if (name == "diffuse") {
       const std::size_t comma = value.find (',');
