@@ -3,6 +3,7 @@
 #include <moppe/profile.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -65,8 +66,13 @@ namespace moppe::terrain {
           parameters.duration < 0.0f * mp_units::astronomy::Julian_year ||
           !std::isfinite (julian_years_value (parameters.time_step)) ||
           parameters.time_step <= 0.0f * mp_units::astronomy::Julian_year ||
-          !std::isfinite (parameters.erodibility) ||
-          parameters.erodibility < 0.0f ||
+          !std::isfinite (meters_per_julian_year_value (
+            parameters.reference_incision_rate)) ||
+          parameters.reference_incision_rate <
+            0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
+          !std::isfinite (square_meters_value (parameters.reference_area)) ||
+          parameters.reference_area <=
+            0.0f * mp_units::si::metre * mp_units::si::metre ||
           !std::isfinite (parameters.area_exponent) ||
           parameters.area_exponent < 0.0f ||
           !std::isfinite (
@@ -244,51 +250,112 @@ namespace moppe::terrain {
       const FloodField flood =
         analyze_standing_water (routed_terrain, parameters.sea_level);
       const LakeCensus census = census_lakes (flood);
-      const DrainageGraph drainage =
-        analyze_wet_drainage (routed_terrain, flood, census);
-      const std::vector<std::uint32_t> order =
-        downstream_first_order (drainage.receiver);
 
       std::vector<float> next = current;
       std::vector<std::uint8_t> boundary (count, 0);
       std::size_t fixed_boundaries = 0;
       {
         MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
-        for (const std::uint32_t cell : order) {
-          const std::uint32_t receiver = drainage.receiver[cell];
-          const bool ocean = flood.ocean[cell] != 0;
-          if (ocean || receiver == cell) {
+        const auto solve = [&] (std::uint32_t cell,
+                                bool fixed,
+                                square_meters_t area,
+                                meters_t run,
+                                double receiver_height_m) {
+          if (fixed) {
             boundary[cell] = 1;
             // Ocean cells are fixed base-level outlets, but their bed is not
             // the water surface. Preserve submerged relief rather than lifting
             // the entire ocean floor to sea level at every geological step.
             next[cell] = current[cell];
             ++fixed_boundaries;
-          } else {
-            const double distance_m = edge_distance_m (cell, receiver, grid);
-            const double area_m2 = std::max (
-              cell_area_m2,
-              static_cast<double> (drainage.contributing_area.values ()[cell]));
-            const double incision_rate =
-              parameters.erodibility *
-              std::pow (area_m2, parameters.area_exponent) / distance_m;
-            const double weight = dt * incision_rate;
-            if (!std::isfinite (weight))
-              throw std::overflow_error (
-                "stream-power implicit weight is not finite");
-            const double old_height_m = current[cell] * height_scale_m;
-            const double uplift_m =
-              dt * meters_per_julian_year_value (uplift_rate[cell]);
-            const double uplift_only_m = old_height_m + uplift_m;
-            const double receiver_height_m = next[receiver] * height_scale_m;
-            const double solved_m =
-              (uplift_only_m + weight * receiver_height_m) / (1.0 + weight);
-            // Depression routing may cross a raw uphill bed edge. Incision is
-            // not deposition: it may never raise a cell above uplift alone.
-            const double evolved_m = std::min (solved_m, uplift_only_m);
-            next[cell] = static_cast<float> (evolved_m / height_scale_m);
-            tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
-            incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
+            return;
+          }
+
+          const double area_ratio =
+            square_meters_value (area) /
+            square_meters_value (parameters.reference_area);
+          const auto incision_velocity =
+            std::pow (area_ratio, parameters.area_exponent) *
+            parameters.reference_incision_rate;
+          const auto coupling = incision_velocity / run;
+          const auto dimensionless_weight =
+            (static_cast<float> (dt) * mp_units::astronomy::Julian_year) *
+            coupling;
+          const double weight =
+            dimensionless_weight.numerical_value_in (mp_units::one);
+          if (!std::isfinite (weight))
+            throw std::overflow_error (
+              "stream-power implicit weight is not finite");
+          const double old_height_m = current[cell] * height_scale_m;
+          const double uplift_m =
+            dt * meters_per_julian_year_value (uplift_rate[cell]);
+          const double uplift_only_m = old_height_m + uplift_m;
+          const double solved_m =
+            (uplift_only_m + weight * receiver_height_m) / (1.0 + weight);
+          // Depression routing may cross a raw uphill bed edge. Incision is
+          // not deposition: it may never raise a cell above uplift alone.
+          const double evolved_m = std::min (solved_m, uplift_only_m);
+          next[cell] = static_cast<float> (evolved_m / height_scale_m);
+          tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
+          incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
+        };
+
+        if (parameters.routing == StreamPowerRouting::D8) {
+          const DrainageGraph drainage =
+            analyze_wet_drainage (routed_terrain, flood, census);
+          const std::vector<std::uint32_t> order =
+            downstream_first_order (drainage.receiver);
+          for (const std::uint32_t cell : order) {
+            const std::uint32_t receiver = drainage.receiver[cell];
+            const square_meters_t contributing_area =
+              std::max (square_meters_value (grid.cell_area ()),
+                        square_meters_value (drainage.contributing_area.sample (
+                          cell % width, cell / width))) *
+              mp_units::si::metre * mp_units::si::metre;
+            solve (cell,
+                   flood.ocean[cell] || receiver == cell,
+                   contributing_area,
+                   receiver == cell ? 1.0f * mp_units::si::metre
+                                    : static_cast<float> (edge_distance_m (
+                                        cell, receiver, grid)) *
+                                        mp_units::si::metre,
+                   next[receiver] * height_scale_m);
+          }
+        } else {
+          const FractionalDrainage drainage =
+            analyze_fractional_drainage (routed_terrain, flood, census);
+          const auto& area =
+            spatial::get<fractional_contributing_area> (drainage);
+          const auto order = drainage.domain ().topological_order ();
+          for (auto position = order.rbegin (); position != order.rend ();
+               ++position) {
+            const CellIndex cell = *position;
+            const FractionalFlowRoute& route = drainage.domain ().route (cell);
+            double receiver_height_m = next[cell.value] * height_scale_m;
+            if (route.arc_count == 1) {
+              receiver_height_m =
+                next[route.arcs[0].receiver.value] * height_scale_m;
+            } else if (route.arc_count == 2) {
+              const float interpolation =
+                route.receiver_interpolation.numerical_value_in (mp_units::one);
+              receiver_height_m = std::lerp (next[route.arcs[0].receiver.value],
+                                             next[route.arcs[1].receiver.value],
+                                             interpolation) *
+                                  height_scale_m;
+            }
+            const square_meters_t physical_area =
+              area[cell.value].numerical_value_in (mp_units::si::metre *
+                                                   mp_units::si::metre) *
+              mp_units::si::metre * mp_units::si::metre;
+            const square_meters_t contributing_area =
+              std::max (square_meters_value (grid.cell_area ()),
+                        square_meters_value (physical_area)) *
+              mp_units::si::metre * mp_units::si::metre;
+            solve (cell.value,
+                   flood.ocean[cell.value] || route.empty (),
+                   contributing_area,
+                   route.empty () ? 1.0f * mp_units::si::metre : route.run,
+                   receiver_height_m);
           }
         }
       }

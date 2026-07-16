@@ -408,8 +408,9 @@ namespace moppe {
                                    2),
                      ParameterDomain::Continuous };
           if (row == 3)
-            return { "ERODIBILITY",
-                     format_ledger (orogeny->evolution.erodibility),
+            return { "INCISION AT 1 M2 (M/Y)",
+                     format_ledger (meters_per_julian_year_value (
+                       orogeny->evolution.reference_incision_rate)),
                      ParameterDomain::Continuous };
           if (row == 4)
             return { "AREA EXPONENT",
@@ -1497,8 +1498,10 @@ namespace moppe {
             0.0f,
             0.003f);
         if (row == 3)
-          return unit (
-            std::log10 (orogeny->evolution.erodibility), -7.0f, -3.0f);
+          return unit (std::log10 (meters_per_julian_year_value (
+                         orogeny->evolution.reference_incision_rate)),
+                       -7.0f,
+                       -3.0f);
         if (row == 4)
           return unit (orogeny->evolution.area_exponent, 0.0f, 1.0f);
         if (row == 5)
@@ -1713,9 +1716,11 @@ namespace moppe {
           return orogeny->maximum_uplift_rate != old;
         }
         if (row == 3) {
-          const float old = orogeny->evolution.erodibility;
-          orogeny->evolution.erodibility = std::pow (10.0f, mix (-7.0f, -3.0f));
-          return orogeny->evolution.erodibility != old;
+          const auto old = orogeny->evolution.reference_incision_rate;
+          orogeny->evolution.reference_incision_rate =
+            std::pow (10.0f, mix (-7.0f, -3.0f)) * mp_units::si::metre /
+            mp_units::astronomy::Julian_year;
+          return orogeny->evolution.reference_incision_rate != old;
         }
         if (row == 4) {
           const float old = orogeny->evolution.area_exponent;
@@ -1954,7 +1959,8 @@ namespace moppe {
         recipe.blend.mountain_weight = 1.05f;
         orogeny.evolution.duration =
           650000.0f * mp_units::astronomy::Julian_year;
-        orogeny.evolution.erodibility = 0.00018f;
+        orogeny.evolution.reference_incision_rate =
+          0.00018f * mp_units::si::metre / mp_units::astronomy::Julian_year;
       } else {
         // Mountain texture becomes a tectonic-rate pattern over a shallow
         // continent seed. Four drainage refreshes keep the first interactive

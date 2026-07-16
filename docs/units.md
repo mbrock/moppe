@@ -312,6 +312,13 @@ parameter therefore follows the model-year dimensional convention above; it
 is not dimensionless. Sea level remains normalized at the terrain analysis
 boundary in the current implementation.
 
+The gameplay Orogeny solver instead writes the same `n = 1` law as
+`v_ref (A / A_ref)^m S`. Both `v_ref` (m/yr) and `A_ref` (m²) have stable
+dimensions independent of the runtime exponent. Its fractional drainage
+bundle stores direction as an angular quantity, slope as a dimensionless
+terrain-slope kind, flow splits as non-negative dimensionless quantities, and
+contributing area as its own semantic area quantity.
+
 The corpus illustrates plausible orders of magnitude without establishing
 defaults for Moppe. One experiment uses a 50 km by 50 km domain, uplift of
 `5e-4 m/yr`, an erosion coefficient printed as `5.61e-7 /yr`, and a
@@ -565,6 +572,9 @@ its model and spatial scale.
 | analytical erosion time | yr |
 | analytical uplift | m/yr |
 | analytical erodibility | dimensional, dependent on area exponent |
+| Orogeny reference incision velocity | m/yr |
+| Orogeny reference and fractional contributing area | m² |
+| fractional drainage direction and flow split | rad and dimensionless |
 | procedural field coordinates and noise | normalized field space |
 | thermal erosion talus | normalized neighboring-height difference |
 | moisture raster | dimensionless visual/ecological index `[0, 1]` |

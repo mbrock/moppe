@@ -100,8 +100,15 @@ namespace moppe::terrain {
                 !std::isfinite (julian_years_value (evolution.time_step)) ||
                 evolution.time_step <=
                   0.0f * mp_units::astronomy::Julian_year ||
-                !std::isfinite (evolution.erodibility) ||
-                evolution.erodibility < 0.0f ||
+                !std::isfinite (meters_per_julian_year_value (
+                  evolution.reference_incision_rate)) ||
+                evolution.reference_incision_rate <
+                  0.0f * mp_units::si::metre /
+                    mp_units::astronomy::Julian_year ||
+                !std::isfinite (
+                  square_meters_value (evolution.reference_area)) ||
+                evolution.reference_area <=
+                  0.0f * mp_units::si::metre * mp_units::si::metre ||
                 !std::isfinite (evolution.area_exponent) ||
                 evolution.area_exponent < 0.0f ||
                 !std::isfinite (square_meters_per_julian_year_value (

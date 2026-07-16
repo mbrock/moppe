@@ -106,9 +106,10 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.size () < 6 || parts.size () > 10)
-        throw std::invalid_argument ("orogeny expects duration,dt,uplift,k,m,D"
-                                     "[,sea,land_relief,coast,bathymetry]");
+      if (parts.size () < 6 || parts.size () > 11)
+        throw std::invalid_argument (
+          "orogeny expects duration,dt,uplift,reference_rate,m,D"
+          "[,sea,land_relief,coast,bathymetry,routing]");
       if (program.transforms.size () == 1 &&
           std::holds_alternative<NormalizeHeights> (
             program.transforms.front ()))
@@ -122,7 +123,9 @@ namespace {
       orogeny.maximum_uplift_rate = parse_float (parts[2]) *
                                     mp_units::si::metre /
                                     mp_units::astronomy::Julian_year;
-      orogeny.evolution.erodibility = parse_float (parts[3]);
+      orogeny.evolution.reference_incision_rate =
+        parse_float (parts[3]) * mp_units::si::metre /
+        mp_units::astronomy::Julian_year;
       orogeny.evolution.area_exponent = parse_float (parts[4]);
       orogeny.evolution.diffusivity =
         parse_float (parts[5]) * mp_units::si::metre * mp_units::si::metre /
@@ -139,6 +142,15 @@ namespace {
       if (parts.size () > 9)
         program.source.initial_bathymetric_relief =
           parse_float (parts[9]) * mp_units::si::metre;
+      if (parts.size () > 10) {
+        if (parts[10] == "d8")
+          orogeny.evolution.routing = StreamPowerRouting::D8;
+        else if (parts[10] == "d-infinity" || parts[10] == "dinf")
+          orogeny.evolution.routing = StreamPowerRouting::DInfinity;
+        else
+          throw std::invalid_argument (
+            "orogeny routing must be d8 or d-infinity");
+      }
       program.transforms.emplace_back (orogeny);
     } else if (name == "trails") {
       std::vector<std::string_view> parts;
@@ -325,8 +337,8 @@ int main (int argc, char** argv) {
                   << " mean_grade=" << report->mean_centerline_grade
                   << " max_grade=" << report->maximum_centerline_grade
                   << " grade_exceptions=" << report->grade_exceptions
-                  << " max_high_m=" << meters_value (
-                       report->maximum_centerline_height_above_sea)
+                  << " max_high_m="
+                  << meters_value (report->maximum_centerline_height_above_sea)
                   << " max_step_m="
                   << meters_value (report->maximum_centerline_step)
                   << " mean_m=" << meters_value (report->mean_absolute_change)

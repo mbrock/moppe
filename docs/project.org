@@ -76,6 +76,8 @@ Cross-machine bit identity is an aim, not yet a repository-wide guarantee.
 
 - [X] Periodic D8 dry-surface drainage with slope, contributing area,
   basins, and sinks.
+- [X] Orogeny-local D-infinity dry routing with conservative two-receiver
+  accumulation over a typed unique-sample terrain bundle.
 - [X] Finite-time =n=1= analytical stream-power transform with physical age,
   uplift, erodibility, drainage exponent, and routing controls.
 - [X] Default shallow-continent orogeny source with a typed uplift field,

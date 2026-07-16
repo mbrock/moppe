@@ -126,6 +126,18 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
   }
   MOPPE_CHECK (threw);
 
+  program = make_orogeny_program (123);
+  std::get<OrogenyEvolution> (program.transforms.front ())
+    .evolution.reference_area =
+    0.0f * mp_units::si::metre * mp_units::si::metre;
+  threw = false;
+  try {
+    validate_program (program);
+  } catch (const std::invalid_argument&) {
+    threw = true;
+  }
+  MOPPE_CHECK (threw);
+
   program = make_geological_program (123);
   program.transforms.emplace_back (TrailFormation {
     .minimum_catchment_area = 10.0f * mp_units::si::metre * mp_units::si::metre,

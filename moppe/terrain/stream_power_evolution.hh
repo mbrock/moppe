@@ -9,18 +9,25 @@
 #include <vector>
 
 namespace moppe::terrain {
+  enum class StreamPowerRouting { D8, DInfinity };
+
   // Backward-Euler landscape evolution for the n=1 stream-power equation.
-  // Erodibility follows the model-year convention documented in units.md:
-  // yr^-1 m^(1-2m) when contributing area is measured in square metres.
+  // Incision velocity is calibrated at a reference drainage area, keeping
+  // every parameter dimensionally stable while the area exponent remains an
+  // inspectable runtime value.
   struct StreamPowerEvolution {
     julian_years_t duration = 1000000.0f * mp_units::astronomy::Julian_year;
     julian_years_t time_step = 50000.0f * mp_units::astronomy::Julian_year;
-    float erodibility = 2e-5f;
+    meters_per_julian_year_t reference_incision_rate =
+      2e-5f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+    square_meters_t reference_area =
+      1.0f * mp_units::si::metre * mp_units::si::metre;
     float area_exponent = 0.4f;
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
     float sea_level = 50.0f / 650.0f;
+    StreamPowerRouting routing = StreamPowerRouting::DInfinity;
   };
 
   struct StreamPowerEvolutionReport {
