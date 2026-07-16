@@ -20,9 +20,63 @@ namespace moppe::map {
                                             : terrain::Topology::Bounded);
     }
 
+    int surface_coordinate (int coordinate, int extent, bool periodic) {
+      if (periodic)
+        return terrain::wrap_index (coordinate, extent);
+      return std::clamp (coordinate, 0, extent - 1);
+    }
+
+    struct SnowSupportStencil {
+      int width;
+      int height;
+      int dx;
+      int dz;
+      bool periodic;
+    };
+
+    SnowSupportStencil snow_support_stencil (const HeightMap& map) {
+      constexpr meters_t support_radius = 24.0f * u::m;
+      const bool periodic = map.periodic ();
+      const Vec3 spacing = map.scale ();
+      return {
+        .width = periodic ? map.width () - 1 : map.width (),
+        .height = periodic ? map.height () - 1 : map.height (),
+        .dx = std::max (1,
+                        static_cast<int> (std::lround (
+                          meters_value (support_radius) / spacing[0]))),
+        .dz = std::max (1,
+                        static_cast<int> (std::lround (
+                          meters_value (support_radius) / spacing[2]))),
+        .periodic = periodic,
+      };
+    }
+
+    Vec3 snow_support_normal (const HeightMap& map,
+                              const SnowSupportStencil& stencil,
+                              int column,
+                              int row) {
+      column = surface_coordinate (column, stencil.width, stencil.periodic);
+      row = surface_coordinate (row, stencil.height, stencil.periodic);
+      const auto sample = [&] (int x, int z) {
+        return map.normal (
+          surface_coordinate (column + x, stencil.width, stencil.periodic),
+          surface_coordinate (row + z, stencil.height, stencil.periodic));
+      };
+      Vec3 support = sample (0, 0) * 4.0f;
+      support += (sample (-stencil.dx, 0) + sample (stencil.dx, 0) +
+                  sample (0, -stencil.dz) + sample (0, stencil.dz)) *
+                 2.0f;
+      support += sample (-stencil.dx, -stencil.dz) +
+                 sample (stencil.dx, -stencil.dz) +
+                 sample (-stencil.dx, stencil.dz) +
+                 sample (stencil.dx, stencil.dz);
+      return normalized (support);
+    }
+
     void populate (SurfaceBundle& bundle, const HeightMap& map) {
       MOPPE_PROFILE_ZONE ("surface.populate_bundle");
       const float vertical_scale = map.scale ()[1];
+      const SnowSupportStencil support_stencil = snow_support_stencil (map);
       for (int row = 0; row < map.height (); ++row)
         for (int column = 0; column < map.width (); ++column) {
           const SurfaceIndex index { static_cast<std::size_t> (column),
@@ -32,6 +86,12 @@ namespace moppe::map {
             map.get (column, row) * vertical_scale * surface_elevation[u::m]);
           spatial::get<surface_normal> (sample) =
             map.normal (column, row) * surface_normal[one];
+          spatial::get<snow_support> (sample) =
+            std::clamp (
+              snow_support_normal (map, support_stencil, column, row)[1],
+              0.0f,
+              1.0f) *
+            snow_support[one];
           spatial::get<tree_habitat> (sample) = 0.0f * tree_habitat[one];
           spatial::get<forest_cover> (sample) = 0.0f * forest_cover[one];
           spatial::get<trail_influence> (sample) = 0.0f * trail_influence[one];

@@ -83,6 +83,9 @@ namespace moppe {
       // texture at fragment rate, decoupling shading detail from
       // geometric LOD.
       bool fragment_normals = true;
+      // Classify snow retention from a broad material-scale surface reading,
+      // leaving the detailed normal available for lighting.
+      bool snow_support_filter = true;
     };
 
     enum class TerrainOverlayRamp : uint8_t {
@@ -242,6 +245,11 @@ namespace moppe {
       // forest representation after individual crown geometry becomes small.
       virtual void set_terrain_forest (std::span<const float> cover) {
         (void)cover;
+      }
+
+      // Vertical component of the broad snow-support plane in [0,1].
+      virtual void set_terrain_snow_support (std::span<const float> support) {
+        (void)support;
       }
 
       // -- frame -------------------------------------------------------

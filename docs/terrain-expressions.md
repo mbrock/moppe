@@ -57,8 +57,12 @@ the next bundle.
 
 `map::Surface` is the first deliberately small gameplay proof. Its
 `SurfaceBundle` contains an affine elevation point, a vector-valued surface
-normal, tree-habitat suitability, trail influence, and home-base influence at
-every heightmap node.
+normal, snow support, tree-habitat suitability, trail influence, and home-base
+influence at every heightmap node. Snow support is the upward component of a
+24 m local support normal. The shader can therefore let fine normals light the
+terrain folds without letting every lattice-scale change in steepness punch a
+matching hole in the snow. `--graphics-disable snow-support-filter` restores
+the detailed-normal classification for direct comparisons.
 The Association's home-base clearing is a distinct quantity from trail
 influence: it is a place with a role, not merely a wide part of the path.
 `SurfaceDomain` supplies a four-node bilinear stencil for a world position.

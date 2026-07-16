@@ -531,6 +531,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
   texture2d<float, access::read> terrain_forest
   [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
+  texture2d<float, access::read> terrain_snow_support
+  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -625,8 +627,16 @@ fragment float4 terrain_fragment (
   // settles on flatter ground, sand stays off the cliffs.
   const float cliff_coef = 1.0 - smoothstep (0.60, 0.80, n.y + 0.06 * jitter);
   const float scree_coef = smoothstep (0.38, 0.58, hj);
+  // Snow retention is a material-scale reading of the broad hillside. The
+  // detailed normal still lights every fold, but no longer turns each
+  // lattice-scale steepness fluctuation into a hard snow/rock seam.
+  const float snow_support_up =
+    u.params7.x > 0.5
+      ? saturate (terrain_field_sample (in.field_uv, terrain_snow_support).r)
+      : n.y;
   const float snow_coef =
-    smoothstep (0.55, 0.68, hj) * smoothstep (0.58, 0.78, n.y);
+    smoothstep (0.55, 0.68, hj) *
+    smoothstep (0.58, 0.78, snow_support_up);
   // Use a world-space shoreline rule. The old normalized 0.03
   // band could mean tens of metres, leaving full grass fields growing from
   // visually sandy ground on tall worlds.

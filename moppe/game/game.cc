@@ -1045,6 +1045,18 @@ namespace moppe {
         m_pending_surface.trails.clear ();
         m_pending_surface.home_base.clear ();
         m_pending_surface.forest.clear ();
+        m_pending_surface.snow_support.clear ();
+        {
+          MOPPE_PROFILE_ZONE ("startup.materialize_snow_support");
+          const auto& support =
+            spatial::get<map::snow_support> (m_surface.samples ());
+          m_pending_surface.snow_support.resize (support.size ());
+          std::ranges::transform (support,
+                                  m_pending_surface.snow_support.begin (),
+                                  [] (map::SnowSupport value) {
+                                    return value.numerical_value_in (one);
+                                  });
+        }
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
           // lakes, sea, and rivers in one surface sheet, per-body wave
@@ -1378,6 +1390,7 @@ namespace moppe {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_forest");
           r.set_terrain_forest (m_pending_surface.forest);
         }
+        r.set_terrain_snow_support (m_pending_surface.snow_support);
         r.set_terrain_paths (m_pending_surface.trails,
                              m_pending_surface.home_base);
       }
@@ -3059,6 +3072,7 @@ namespace moppe {
         std::vector<float> trails;
         std::vector<float> home_base;
         std::vector<float> forest;
+        std::vector<float> snow_support;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
       ForestLandscape m_forest;

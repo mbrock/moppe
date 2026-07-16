@@ -47,6 +47,7 @@ namespace moppe::game {
     settings.bloom = false;
     settings.auto_exposure = false;
     settings.lens_flare = false;
+    settings.snow_support_filter = false;
     return settings;
   }
 

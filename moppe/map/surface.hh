@@ -25,6 +25,13 @@ namespace moppe::map {
                       mp_units::is_kind> {
   } surface_normal;
 
+  // The upward component of a broad local support plane. Snow responds to
+  // this material-scale reading rather than classifying every detailed
+  // lighting normal as stable or unstable ground.
+  inline constexpr struct snow_support
+      : quantity_spec<mp_units::dimensionless> {
+  } snow_support;
+
   // A dimensionless ecological reading materialized over the same surface
   // domain as elevation and normal. It combines drainage moisture, slope,
   // shore clearance, and the local tree line; consumers select sites from the
@@ -60,6 +67,7 @@ namespace moppe::map {
                    default_point_origin (surface_elevation[u::m]),
                    float>;
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
+  using SnowSupport = quantity<snow_support[one], float>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
   using ForestCover = quantity<forest_cover[one], float>;
   using TrailInfluence = quantity<trail_influence[one], float>;
@@ -158,6 +166,7 @@ namespace moppe::map {
   using SurfaceBundle = spatial::Bundle<SurfaceDomain,
                                         SurfaceElevation,
                                         SurfaceNormal,
+                                        SnowSupport,
                                         TreeHabitat,
                                         ForestCover,
                                         TrailInfluence,
@@ -178,6 +187,10 @@ namespace moppe::map {
 
     SurfaceNormal normal_at (const position_t& position) const {
       return spatial::sample<surface_normal> (samples (), position);
+    }
+
+    SnowSupport snow_support_at (const position_t& position) const {
+      return spatial::sample<snow_support> (samples (), position);
     }
 
     TreeHabitat tree_habitat_at (const position_t& position) const {
