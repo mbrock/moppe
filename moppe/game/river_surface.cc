@@ -1,130 +1,217 @@
 #include <moppe/game/river_surface.hh>
 
-#include <moppe/terrain/carve.hh>
+#include <moppe/terrain/river.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
-#include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace moppe::game {
-  namespace {
-    // The rendered surface fills the carved channel to this fraction of
-    // its stamped depth, leaving the rest as visible bank freeboard.
-    constexpr float channel_fill = 0.75f;
+  namespace river_surface_detail {
+    constexpr float depth_span_m = 2.5f;
+    constexpr std::array<float, 7> cross_positions = { -1.15f, -1.0f, -0.54f,
+                                                       0.0f,   0.54f, 1.0f,
+                                                       1.15f };
+    constexpr std::array<float, 7> cross_opacity = { 0.0f, 0.62f, 0.92f, 1.0f,
+                                                     0.92f, 0.62f, 0.0f };
 
-    // Water column under the surface, packed into the green vertex
-    // channel as a fraction of this span so the shader can recover
-    // meters.  Kept in sync with MOPPE_RIVER_DEPTH_SPAN in river.metal.
-    constexpr float depth_span_m = 2.0f;
-
-    struct RibbonPoint {
+    struct SurfacePoint {
       Vec3 position;
-      float width;
-      float distance;
+      Vec3 tangent;
+      float width_m;
+      float flow_distance_m;
+      float rapid;
+      float waterfall;
+      float opacity;
+    };
+
+    struct RibbonVertex {
+      Vec3 position;
+      Vec3 normal;
+      float u;
+      float flow_distance_m;
       float rapid;
       float depth;
       float waterfall;
       float opacity;
-      bool water;
     };
 
-    int minimum_image_delta (int delta, int period) {
-      if (delta > period / 2)
-        delta -= period;
-      else if (delta < -period / 2)
-        delta += period;
-      return delta;
+    using RibbonRow = std::array<RibbonVertex, cross_positions.size ()>;
+
+    float smoothstep (float low, float high, float value) {
+      const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
+      return t * t * (3.0f - 2.0f * t);
     }
 
     float rapid_signal (float slope) {
       return std::clamp ((slope - 0.035f) / 0.24f, 0.0f, 1.0f);
     }
 
-    Vec3 limited_tangent (const Vec3& value, float limit) {
-      Vec3 tangent (value[0], 0.0f, value[2]);
-      const float tangent_length = length (tangent);
-      if (tangent_length > limit && tangent_length > 1e-6f)
-        tangent *= limit / tangent_length;
-      return tangent;
-    }
-
-    float interpolate (float from, float to, float t) {
-      return from + (to - from) * t;
-    }
-
-    std::vector<RibbonPoint>
-    smooth_centerline (const std::vector<RibbonPoint>& raw) {
-      constexpr int subdivisions = 2;
-      std::vector<RibbonPoint> result;
-      if (raw.empty ())
-        return result;
-      result.reserve (1 + (raw.size () - 1) * subdivisions);
-      result.push_back (raw.front ());
-      for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
-        const RibbonPoint& before = raw[segment == 0 ? 0 : segment - 1];
-        const RibbonPoint& from = raw[segment];
-        const RibbonPoint& to = raw[segment + 1];
-        const RibbonPoint& after =
-          raw[segment + 2 < raw.size () ? segment + 2 : segment + 1];
-        const Vec3 edge = to.position - from.position;
-        const float edge_length = std::hypot (edge[0], edge[2]);
-        const Vec3 from_tangent =
-          limited_tangent ((to.position - before.position) * 0.5f, edge_length);
-        const Vec3 to_tangent = limited_tangent (
-          (after.position - from.position) * 0.5f, edge_length);
-        for (int step = 1; step <= subdivisions; ++step) {
-          const float t = static_cast<float> (step) / subdivisions;
-          const float t2 = t * t;
-          const float t3 = t2 * t;
-          const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
-          const float h10 = t3 - 2.0f * t2 + t;
-          const float h01 = -2.0f * t3 + 3.0f * t2;
-          const float h11 = t3 - t2;
-          Vec3 position = from.position * h00 + from_tangent * h10 +
-                          to.position * h01 + to_tangent * h11;
-          // Surface heights interpolate along the channel: the carved bed
-          // under the spline stays within the bank blend of the stamped
-          // centerline, so the water plane keeps a clean waterline.
-          position[1] = interpolate (from.position[1], to.position[1], t);
-          result.push_back (
-            { .position = position,
-              .width = interpolate (from.width, to.width, t),
-              .distance = 0.0f,
-              .rapid = interpolate (from.rapid, to.rapid, t),
-              .depth = interpolate (from.depth, to.depth, t),
-              .waterfall = interpolate (from.waterfall, to.waterfall, t),
-              .opacity = interpolate (from.opacity, to.opacity, t),
-              .water = from.water || to.water });
+    std::vector<SurfacePoint>
+    make_surface_points (const map::HeightMap& map,
+                         const terrain::RiverAlignment& alignment,
+                         bool fade_source) {
+      std::vector<SurfacePoint> result;
+      const auto& points = alignment.points;
+      result.reserve (points.size ());
+      float mouth_distance_m = std::numeric_limits<float>::infinity ();
+      bool falling_mouth = false;
+      for (std::size_t point = 0; point < points.size (); ++point)
+        if (points[point].standing_water >= 0.99f) {
+          mouth_distance_m = points[point].distance_m;
+          // The standing-water interpolation itself may have already hidden
+          // the steep routed cell. Inspect the approach to the mouth, not
+          // just its final sample, before deciding whether this is a fall.
+          for (std::size_t approach = 0; approach < point; ++approach)
+            if (mouth_distance_m - points[approach].distance_m <= 48.0f)
+              falling_mouth |= points[approach].waterfall > 0.5f ||
+                               points[approach].slope > 0.4f;
+          break;
         }
+      for (std::size_t point = 0; point < points.size (); ++point) {
+        const auto& before = points[point ? point - 1 : point];
+        const auto& center = points[point];
+        const auto& after =
+          points[point + 1 < points.size () ? point + 1 : point];
+        Vec3 tangent (after.x_m - before.x_m, 0.0f,
+                      after.z_m - before.z_m);
+        if (length2 (tangent) < 1e-6f)
+          tangent = Vec3 (0, 0, 1);
+        else
+          tangent = normalized (tangent);
+        const Vec3 across (-tangent[2], 0.0f, tangent[0]);
+        const auto area = center.contributing_area_m2 * mp_units::si::metre *
+                          mp_units::si::metre;
+        const float width_m = meters_value (terrain::river_width (area));
+        const float fill_depth =
+          0.72f * meters_value (terrain::river_depth (area));
+        const float center_ground =
+          map.interpolated_height (center.x_m, center.z_m);
+        const float bank_distance = 0.5f * width_m + 0.75f;
+        const float left_bank = map.interpolated_height (
+          center.x_m - across[0] * bank_distance,
+          center.z_m - across[2] * bank_distance);
+        const float right_bank = map.interpolated_height (
+          center.x_m + across[0] * bank_distance,
+          center.z_m + across[2] * bank_distance);
+        const float bank_limit = std::min (left_bank, right_bank) - 0.08f;
+        const float running_surface = std::max (
+          center_ground + 0.035f,
+          std::min (center_ground + fill_depth, bank_limit));
+        const float water_blend =
+          smoothstep (0.0f, 1.0f, center.standing_water);
+        float surface =
+          running_surface +
+          (center.water_level_m + 0.045f - running_surface) * water_blend;
+        // A plan-view spline can bow off the routed cell centers and cross a
+        // small shoulder. Keep the useful interior of the cross-section above
+        // the terrain it actually spans; the outer rows still intersect the
+        // banks naturally and feather the visible waterline.
+        for (const float cross : { -0.54f, 0.0f, 0.54f }) {
+          const float ground = map.interpolated_height (
+            center.x_m + across[0] * cross * 0.5f * width_m,
+            center.z_m + across[2] * cross * 0.5f * width_m);
+          surface = std::max (surface, ground + 0.045f);
+        }
+        const float source_opacity =
+          fade_source
+            ? smoothstep (0.0f, std::max (8.0f, 1.5f * width_m),
+                          center.distance_m)
+            : 1.0f;
+        float mouth_opacity = 1.0f;
+        if (std::isfinite (mouth_distance_m)) {
+          // Retire the ribbon just before the standing-water geometry owns
+          // the surface. This hides both coplanar overlap at ordinary mouths
+          // and a false tilted sheet across a coastal knickpoint.
+          const float lip_clearance =
+            falling_mouth ? std::max (8.0f, 0.75f * width_m)
+                          : std::max (3.0f, 0.35f * width_m);
+          const float fade_length =
+            falling_mouth ? std::max (8.0f, width_m)
+                          : std::max (12.0f, 1.5f * width_m);
+          const float fade_end = mouth_distance_m - lip_clearance;
+          mouth_opacity = 1.0f - smoothstep (
+                                      fade_end - fade_length,
+                                      fade_end,
+                                      center.distance_m);
+          mouth_opacity *= mouth_opacity;
+          if (falling_mouth)
+            mouth_opacity *= mouth_opacity;
+        }
+        result.push_back (
+          { .position = Vec3 (center.x_m, surface, center.z_m),
+            .tangent = tangent,
+            .width_m = width_m,
+            .flow_distance_m = center.flow_distance_m,
+            .rapid = rapid_signal (center.slope),
+            .waterfall = center.waterfall,
+            .opacity = source_opacity * mouth_opacity *
+                       (1.0f - smoothstep (
+                                  0.05f, 0.98f, center.standing_water)) });
       }
-      result.front ().water = raw.front ().water;
-      result.back ().water = raw.back ().water;
-      float distance = 0.0f;
-      result.front ().distance = 0.0f;
-      for (std::size_t i = 1; i < result.size (); ++i) {
-        const Vec3 delta = result[i].position - result[i - 1].position;
-        distance += std::hypot (delta[0], delta[2]);
-        result[i].distance = distance;
-      }
+
+      // Raise upstream samples over any downstream shoulder instead of
+      // lowering downstream water into the terrain. This is the least-change
+      // monotone envelope: flow never appears uphill and the ribbon never
+      // develops periodic dry holes along a smooth valley.
+      for (std::size_t point = result.size () - 1; point > 0; --point)
+        result[point - 1].position[1] =
+          std::max (result[point - 1].position[1], result[point].position[1]);
       return result;
     }
-  }
 
-  square_meters_t
-  visible_river_minimum_area (const terrain::TerrainGrid& grid) noexcept {
-    // Visible flow begins exactly where channels are carved: the shared
-    // existence rule (width law >= two lattice cells), so every rendered
-    // stream sits in a channel the heightmap actually holds. Smaller
-    // runoff stays with the analysis overlays and the material readings
-    // rather than rendering as sub-cell water threads.
-    return terrain::river_existence_minimum_area_cells () * grid.cell_area ();
+    RibbonRow make_row (const map::HeightMap& map,
+                        const std::vector<SurfacePoint>& points,
+                        std::size_t point) {
+      const SurfacePoint& center = points[point];
+      const SurfacePoint& before = points[point ? point - 1 : point];
+      const SurfacePoint& after =
+        points[point + 1 < points.size () ? point + 1 : point];
+      const Vec3 across (-center.tangent[2], 0.0f, center.tangent[0]);
+      const float run = std::hypot (after.position[0] - before.position[0],
+                                    after.position[2] - before.position[2]);
+      const float grade = run > 1e-5f
+                            ? (after.position[1] - before.position[1]) / run
+                            : 0.0f;
+      const Vec3 normal = normalized (
+        Vec3 (-center.tangent[0] * grade,
+              1.0f,
+              -center.tangent[2] * grade));
+      const float half_width = 0.5f * center.width_m;
+      RibbonRow row;
+      for (std::size_t cross = 0; cross < row.size (); ++cross) {
+        Vec3 position = center.position +
+                        across * (cross_positions[cross] * half_width);
+        const float ground =
+          map.interpolated_height (position[0], position[2]);
+        const float depth =
+          std::clamp ((position[1] - ground) / depth_span_m, 0.0f, 1.0f);
+        row[cross] = { .position = position,
+                       .normal = normal,
+                       .u = 0.5f * (cross_positions[cross] + 1.0f),
+                       .flow_distance_m = center.flow_distance_m,
+                       .rapid = center.rapid,
+                       .depth = depth,
+                       .waterfall = center.waterfall,
+                       .opacity = center.opacity * cross_opacity[cross] };
+      }
+      return row;
+    }
+
+    void emit (render::DrawList& draw, const RibbonVertex& vertex) {
+      draw.color (vertex.rapid,
+                  vertex.depth,
+                  vertex.waterfall,
+                  vertex.opacity);
+      draw.normal (vertex.normal);
+      draw.uv (vertex.u, vertex.flow_distance_m);
+      draw.vertex (vertex.position);
+    }
   }
 
   render::DrawList build_river_ribbons (const map::HeightMap& map,
-                                        const terrain::FloodField& flood,
-                                        const terrain::LakeCensus& census,
-                                        const terrain::DrainageGraph& drainage,
                                         const terrain::RiverNetwork& rivers) {
     render::DrawList draw;
     render::DrawState state;
@@ -135,163 +222,77 @@ namespace moppe::game {
     draw.lit (false);
     draw.fogged (true);
 
-    const int width = static_cast<int> (drainage.width ());
-    const int height = static_cast<int> (drainage.height ());
-    const Vec3 scale = map.scale ();
-    const bool periodic = map.periodic ();
-    const auto water_cell = [&] (std::uint32_t cell) {
-      return census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-    };
+    std::vector<std::size_t> upstream_reaches (rivers.reaches.size (), 0);
+    for (const terrain::RiverReach& reach : rivers.reaches)
+      if (reach.downstream_reach != terrain::RiverReach::no_id)
+        ++upstream_reaches[reach.downstream_reach];
 
-    std::vector<RibbonPoint> raw_points;
+    std::vector<std::vector<river_surface_detail::SurfacePoint>>
+      reach_points (rivers.reaches.size ());
     for (const terrain::RiverReach& reach : rivers.reaches) {
-      if (reach.cells.empty ())
+      const bool fade_source = upstream_reaches[reach.id] == 0 &&
+                               reach.upstream_body == terrain::no_water_body;
+      reach_points[reach.id] = river_surface_detail::make_surface_points (
+        map, reach.alignment, fade_source);
+    }
+
+    // Reaches share topology but build their bank envelopes independently.
+    // Reconcile the one shared section, then add a zero-length rotation row
+    // to cover the wedge between tributary and trunk tangents.
+    for (const terrain::RiverReach& reach : rivers.reaches) {
+      if (reach.downstream_reach == terrain::RiverReach::no_id ||
+          reach_points[reach.id].empty () ||
+          reach_points[reach.downstream_reach].empty ())
         continue;
-      raw_points.clear ();
-      std::vector<terrain::CellIndex> cells = reach.cells;
-      const std::uint32_t receiver = drainage.receiver[reach.cells.back ()];
-      if (receiver != reach.cells.back ())
-        cells.push_back (receiver);
-      std::size_t first_water = cells.size ();
-      if (water_cell (cells.back ())) {
-        first_water = cells.size () - 1;
-        for (int step = 0; step < 1; ++step) {
-          const std::uint32_t next = drainage.receiver[cells.back ()];
-          if (next == cells.back () || !water_cell (next))
-            break;
-          int dx = static_cast<int> (next % drainage.width ()) -
-                   static_cast<int> (cells.back () % drainage.width ());
-          int dz = static_cast<int> (next / drainage.width ()) -
-                   static_cast<int> (cells.back () / drainage.width ());
-          if (periodic) {
-            dx = minimum_image_delta (dx, width);
-            dz = minimum_image_delta (dz, height);
-          }
-          if (std::abs (dx) > 1 || std::abs (dz) > 1)
-            break;
-          cells.push_back (next);
-        }
-      }
+      auto& end = reach_points[reach.id].back ();
+      auto& start = reach_points[reach.downstream_reach].front ();
+      const float junction_height =
+        std::max (end.position[1], start.position[1]);
+      end.position[1] = junction_height;
+      start.position[1] = junction_height;
+      auto& upstream = reach_points[reach.id];
+      for (std::size_t point = upstream.size () - 1; point > 0; --point)
+        upstream[point - 1].position[1] =
+          std::max (upstream[point - 1].position[1],
+                    upstream[point].position[1]);
+    }
 
-      const std::size_t water_points =
-        first_water < cells.size () ? cells.size () - first_water : 0;
-
-      float world_x = static_cast<float> (cells[0] % width) * scale[0];
-      float world_z = static_cast<float> (cells[0] / width) * scale[2];
-      float distance = 0.0f;
-      for (std::size_t i = 0; i < cells.size (); ++i) {
-        const std::uint32_t cell = cells[i];
-        const int x = static_cast<int> (cell % width);
-        const int z = static_cast<int> (cell / width);
-        if (i > 0) {
-          const int previous_x = static_cast<int> (cells[i - 1] % width);
-          const int previous_z = static_cast<int> (cells[i - 1] / width);
-          int dx = x - previous_x;
-          int dz = z - previous_z;
-          if (periodic) {
-            dx = minimum_image_delta (dx, width);
-            dz = minimum_image_delta (dz, height);
-          }
-          const float step_x = static_cast<float> (dx) * scale[0];
-          const float step_z = static_cast<float> (dz) * scale[2];
-          world_x += step_x;
-          world_z += step_z;
-          distance += std::hypot (step_x, step_z);
-        }
-        const bool water = water_cell (cell);
-        const float area = drainage.contributing_area.values ()[cell];
-        // Dry reaches fill the channel carved under them: the heightmap
-        // already carries the stamped bed, so the surface rides at a fixed
-        // fraction of the shared depth law above it.
-        const float fill_depth = channel_fill * terrain::channel_depth_m (area);
-        const float y = water
-                          ? flood.water_level.values ()[cell] * scale[1] + 0.06f
-                          : map.get (x, z) * scale[1] + fill_depth;
-        const float column =
-          water ? flood.water_depth.values ()[cell] * scale[1] : fill_depth;
-        const float mouth_step =
-          i >= first_water ? static_cast<float> (i - first_water) : 0.0f;
-        const float mouth_fraction =
-          water_points > 1 && i >= first_water
-            ? mouth_step / static_cast<float> (water_points - 1)
-            : 0.0f;
-        const bool joins_downstream_reach =
-          i + 1 == cells.size () &&
-          reach.downstream_reach != terrain::RiverReach::no_id;
-        const terrain::CellIndex slope_cell = i + 1 == cells.size () && i > 0
-                                                ? cells[i - 1]
-                                                : terrain::CellIndex { cell };
-        const float slope = drainage.slope.values ()[slope_cell];
-        raw_points.push_back (
-          { .position = Vec3 (world_x, y, world_z),
-            .width = terrain::channel_width_m (area) *
-                     (water ? 1.35f + 0.55f * mouth_fraction : 1.0f),
-            .distance = distance,
-            .rapid = rapid_signal (slope),
-            .depth = std::clamp (column / depth_span_m, 0.0f, 1.0f),
-            .waterfall =
-              rivers.waterfall_by_cell[cell] != terrain::Waterfall::no_id
-                ? 1.0f
-                : 0.0f,
-            .opacity =
-              joins_downstream_reach ? 0.12f
-              : water
-                ? (water_points > 1 ? 0.78f * (1.0f - mouth_fraction) : 0.0f)
-                : 1.0f,
-            .water = water });
+    draw.begin (render::Prim::Triangles);
+    for (const terrain::RiverReach& reach : rivers.reaches) {
+      std::vector<river_surface_detail::SurfacePoint> points =
+        reach_points[reach.id];
+      if (reach.downstream_reach != terrain::RiverReach::no_id &&
+          !points.empty () &&
+          !reach_points[reach.downstream_reach].empty ()) {
+        auto transition = reach_points[reach.downstream_reach].front ();
+        transition.opacity = std::min (transition.opacity,
+                                       points.back ().opacity);
+        points.push_back (transition);
       }
-      const std::vector<RibbonPoint> points = smooth_centerline (raw_points);
       if (points.size () < 2)
         continue;
-
-      draw.begin (render::Prim::QuadStrip);
-      for (std::size_t i = 0; i < points.size (); ++i) {
-        const Vec3 before = points[i == 0 ? 0 : i - 1].position;
-        const Vec3 current = points[i].position;
-        const Vec3 after = points[i + 1 == points.size () ? i : i + 1].position;
-        Vec3 tangent (after[0] - before[0], 0.0f, after[2] - before[2]);
-        const float run = length (tangent);
-        if (run < 1e-5f)
-          tangent = Vec3 (1, 0, 0);
-        else
-          tangent = normalized (tangent);
-        const Vec3 across (-tangent[2], 0.0f, tangent[0]);
-        // Cross-sections are level: the water plane meets the carved banks
-        // and the depth test cuts the waterline. The normal is the surface
-        // normal of that plane tilted by the downstream drop.
-        const float drop = run < 1e-5f ? 0.0f : (after[1] - before[1]) / run;
-        const Vec3 normal =
-          normalized (Vec3 (-tangent[0] * drop, 1.0f, -tangent[2] * drop));
-        // Cross-sections overlap freely on the inside of bends; the river
-        // pass blends first-fragment-wins through the stencil, so the
-        // overlap never double-darkens.
-        const float half_width = 0.5f * points[i].width;
-        const Vec3 left = current - across * half_width;
-        const Vec3 right = current + across * half_width;
-        draw.color (points[i].rapid,
-                    points[i].depth,
-                    points[i].waterfall,
-                    points[i].opacity);
-        draw.normal (normal);
-        draw.uv (0.0f, points[i].distance);
-        draw.vertex (left);
-        draw.uv (1.0f, points[i].distance);
-        draw.vertex (right);
-      }
-      draw.end ();
+      std::vector<river_surface_detail::RibbonRow> rows;
+      rows.reserve (points.size ());
+      for (std::size_t point = 0; point < points.size (); ++point)
+        rows.push_back (river_surface_detail::make_row (map, points, point));
+      for (std::size_t row = 0; row + 1 < rows.size (); ++row)
+        for (std::size_t cross = 0; cross + 1 < rows[row].size (); ++cross) {
+          river_surface_detail::emit (draw, rows[row][cross]);
+          river_surface_detail::emit (draw, rows[row + 1][cross]);
+          river_surface_detail::emit (draw, rows[row + 1][cross + 1]);
+          river_surface_detail::emit (draw, rows[row][cross]);
+          river_surface_detail::emit (draw, rows[row + 1][cross + 1]);
+          river_surface_detail::emit (draw, rows[row][cross + 1]);
+        }
     }
+    draw.end ();
     return draw;
   }
 
   void RiverSurface::rebuild (render::Renderer& renderer,
                               const map::HeightMap& map,
-                              const terrain::FloodField& flood,
-                              const terrain::LakeCensus& census,
-                              const terrain::DrainageGraph& drainage,
                               const terrain::RiverNetwork& rivers) {
-    const render::DrawList draw =
-      build_river_ribbons (map, flood, census, drainage, rivers);
-    m_mesh = renderer.create_mesh (draw);
+    m_mesh = renderer.create_mesh (build_river_ribbons (map, rivers));
     m_period = map.size ();
     m_periodic = map.periodic ();
   }

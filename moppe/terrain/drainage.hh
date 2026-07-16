@@ -69,6 +69,28 @@ namespace moppe::terrain {
     std::vector<WaterBodyFlow> bodies;
   };
 
+  // A dense, unwrapped plan-view trajectory derived from a D8 reach. The
+  // drainage cells remain the topological authority; this continuous reading
+  // is shared by rendering, flow painting, and future traversal. Distance is
+  // local to the reach, while flow_distance_m is globally continuous through
+  // confluences and reaches zero at the final mouth.
+  struct RiverAlignmentPoint {
+    float x_m = 0.0f;
+    float z_m = 0.0f;
+    float distance_m = 0.0f;
+    float flow_distance_m = 0.0f;
+    float contributing_area_m2 = 0.0f;
+    float slope = 0.0f;
+    float waterfall = 0.0f;
+    float standing_water = 0.0f;
+    float water_level_m = 0.0f;
+  };
+
+  struct RiverAlignment {
+    std::vector<RiverAlignmentPoint> points;
+    meters_f64_t length = 0.0 * mp_units::si::metre;
+  };
+
   struct RiverReach {
     static constexpr RiverReachId no_id = no_river_reach;
 
@@ -81,6 +103,7 @@ namespace moppe::terrain {
     square_meters_t upstream_area;
     square_meters_t downstream_area;
     slope_t maximum_slope;
+    RiverAlignment alignment;
   };
 
   struct WaterfallParameters {

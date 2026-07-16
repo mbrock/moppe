@@ -279,12 +279,12 @@ add_library(moppe_terrain STATIC
   moppe/terrain/cpu_evaluator.cc
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
+  moppe/terrain/river.cc
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
   moppe/terrain/waterline.cc
   moppe/terrain/analytical_erosion.cc
   moppe/terrain/stream_power_evolution.cc
-  moppe/terrain/carve.cc
   moppe/terrain/trail.cc
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
@@ -376,16 +376,6 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
   )
   target_link_libraries(terrain-pipeline-demo PRIVATE moppe_game)
 
-  add_executable(terrain-erosion-experiment EXCLUDE_FROM_ALL
-    moppe/terrain/erosion_experiment.cc
-  )
-  target_link_libraries(terrain-erosion-experiment PRIVATE moppe_game)
-
-  add_executable(terrain-stream-power-experiment EXCLUDE_FROM_ALL
-    moppe/terrain/stream_power_experiment.cc
-  )
-  target_link_libraries(terrain-stream-power-experiment PRIVATE moppe_game)
-
   add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
     moppe/terrain/water_depth_experiment.cc
   )
@@ -397,8 +387,6 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
     foreach(tool
         map-test
         terrain-pipeline-demo
-        terrain-erosion-experiment
-        terrain-stream-power-experiment
         terrain-water-depth-experiment)
       target_link_libraries(${tool} PRIVATE moppe_platform_mac)
     endforeach()
@@ -454,7 +442,6 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/waterline_test.cc
     tests/terrain/analytical_erosion_test.cc
     tests/terrain/stream_power_evolution_test.cc
-    tests/terrain/carve_test.cc
     tests/terrain/trail_test.cc
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc

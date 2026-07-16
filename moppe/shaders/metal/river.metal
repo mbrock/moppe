@@ -1,6 +1,7 @@
 // Flow-aligned translucent water for routed streams. Geometry supplies
-// level cross-sections riding in carved channels: cross-stream u,
-// downstream distance v in meters, rapid strength in color.r, the water
+// level cross-sections over orogeny valleys: cross-stream u, a
+// confluence-continuous downstream coordinate v in meters, rapid strength in
+// color.r, the water
 // column depth in color.g (normalized by MOPPE_RIVER_DEPTH_SPAN meters),
 // waterfall strength in color.b, and fade opacity in color.a. Surface
 // detail scrolls along v so the pattern advects downstream like a flow
@@ -9,7 +10,7 @@
 
 #include "common.h"
 
-#define MOPPE_RIVER_DEPTH_SPAN 2.0
+#define MOPPE_RIVER_DEPTH_SPAN 2.5
 
 struct RiverVaryings {
   float4 position [[position]];
@@ -52,28 +53,75 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float time = frame.misc.x;
   const float edge =
     smoothstep (0.0, 0.08, in.uv.x) * smoothstep (0.0, 0.08, 1.0 - in.uv.x);
+  if (edge * in.opacity < 0.005)
+    discard_fragment ();
 
-  // Two noise layers advect downstream at different speeds so the
-  // surface shears instead of sliding as one sheet. v is in meters;
-  // wavelengths sit around one to two meters.
+  // Portal-style two-phase advection: each copy is reset only while the other
+  // owns the pattern, avoiding both unbounded distortion and a visible pulse.
+  // The two scales shear relative to one another instead of sliding as one
+  // sheet. v is in meters and is continuous across reach junctions.
   const float speed = 2.0 + 3.5 * in.rapid + 5.0 * in.waterfall;
-  const float2 flow1 =
-    float2 (in.uv.x * 7.0, in.uv.y * 0.9 - time * speed * 0.9);
-  const float2 flow2 =
-    float2 (in.uv.x * 11.0 + 3.7, in.uv.y * 0.45 - time * speed * 0.55);
-  const float n1 = moppe_value_noise (flow1);
-  const float n2 = moppe_value_noise (flow2);
+  const float cycle = 1.7;
+  const float phase0 = fract (time / cycle);
+  const float phase1 = fract (phase0 + 0.5);
+  const float handoff = abs (2.0 * phase0 - 1.0);
+  const float2 base1 = float2 (in.uv.x * 7.0, in.uv.y * 0.9);
+  const float2 base2 = float2 (in.uv.x * 11.0 + 3.7, in.uv.y * 0.45);
+  const float2 flow10 = base1 - float2 (0.0, phase0 * cycle * speed * 0.9);
+  const float2 flow11 =
+    base1 + float2 (4.13, 1.71) -
+    float2 (0.0, phase1 * cycle * speed * 0.9);
+  const float2 flow20 = base2 - float2 (0.0, phase0 * cycle * speed * 0.55);
+  const float2 flow21 =
+    base2 + float2 (2.37, 5.29) -
+    float2 (0.0, phase1 * cycle * speed * 0.55);
+  const float n10 = moppe_value_noise (flow10);
+  const float n11 = moppe_value_noise (flow11);
+  const float n20 = moppe_value_noise (flow20);
+  const float n21 = moppe_value_noise (flow21);
+  const float n1 = mix (n10, n11, handoff);
+  const float n2 = mix (n20, n21, handoff);
   const float surface = 0.6 * n1 + 0.4 * n2;
 
-  // Normal perturbation from the scrolled field; the pattern's motion,
-  // not the tilt axes, carries the flow direction.
+  // Recover the ribbon's cross-stream and downstream axes from derivatives of
+  // its true flow coordinates. Normal detail now turns around bends instead of
+  // being tilted along the world's x/z axes.
+  const float3 dpdx = dfdx (in.world_pos);
+  const float3 dpdy = dfdy (in.world_pos);
+  const float2 duvdx = dfdx (in.uv);
+  const float2 duvdy = dfdy (in.uv);
+  const float determinant =
+    duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+  float3 across_axis = float3 (1.0, 0.0, 0.0);
+  float3 downstream_axis = float3 (0.0, 0.0, 1.0);
+  if (abs (determinant) > 1e-7) {
+    across_axis = normalize (
+      (dpdx * duvdy.y - dpdy * duvdx.y) / determinant);
+    downstream_axis = normalize (
+      (dpdy * duvdx.x - dpdx * duvdy.x) / determinant);
+  }
+  const float grad_across =
+    0.6 * (mix (moppe_value_noise (flow10 + float2 (0.31, 0.0)),
+                    moppe_value_noise (flow11 + float2 (0.31, 0.0)),
+                    handoff) -
+           n1) +
+    0.4 * (mix (moppe_value_noise (flow20 + float2 (0.27, 0.0)),
+                    moppe_value_noise (flow21 + float2 (0.27, 0.0)),
+                    handoff) -
+           n2);
+  const float grad_downstream =
+    0.6 * (mix (moppe_value_noise (flow10 + float2 (0.0, 0.23)),
+                    moppe_value_noise (flow11 + float2 (0.0, 0.23)),
+                    handoff) -
+           n1) +
+    0.4 * (mix (moppe_value_noise (flow20 + float2 (0.0, 0.33)),
+                    moppe_value_noise (flow21 + float2 (0.0, 0.33)),
+                    handoff) -
+           n2);
   const float bump = 0.10 + 0.10 * in.rapid + 0.10 * in.waterfall;
-  float3 n = in.normal;
-  n.x += bump * (moppe_value_noise (flow1 + float2 (0.31, 0.0)) - n1 +
-                 0.6 * (moppe_value_noise (flow2 + float2 (0.27, 0.0)) - n2));
-  n.z += bump * (moppe_value_noise (flow1 + float2 (0.0, 0.23)) - n1 +
-                 0.6 * (moppe_value_noise (flow2 + float2 (0.0, 0.33)) - n2));
-  n = normalize (n);
+  float3 n = normalize (in.normal +
+                        bump * (grad_across * across_axis +
+                                grad_downstream * downstream_axis));
 
   const float3 view = normalize (frame.camera_pos.xyz - in.world_pos);
   const float fresnel =
@@ -105,7 +153,7 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   color = mix (color, sky_reflection, 0.5 * fresnel + 0.06);
 
   // Foam: broken water in rapids and falls, plus a thin contact line
-  // where the surface meets the carved bank.  Shallow streams get no
+  // where the surface meets the valley bank. Shallow streams get no
   // bank foam at all so they stay clear water instead of white tubes.
   const float churn =
     saturate (0.6 * in.rapid *

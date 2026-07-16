@@ -1,6 +1,6 @@
-# RFC-006: River channels as analytic fields, not raster carves
+# RFC-006: Continuous river alignments, not raster carves
 
-- Status: Draft
+- Status: Accepted; rendering phase implemented 2026-07-16
 - Area: terrain representation (simulation + rendering + physics)
 - Interacts with: RFC-007 (waterline), RFC-008 (tessellation), RFC-013
   (reconstruction discipline); flagship application of the "field, not
@@ -8,49 +8,51 @@
 
 ## Problem
 
-Rivers are the place where the 2.44 m lattice is most visible and most
-harmful.  A channel narrower than a cell cannot exist; `carve` quantizes
-every cross-section to lattice cells; the watercourse painter then works
-hard to reconstruct what the carve *meant* (bank-crest probing at three
-ray extents, `moppe/terrain/watercourse.cc:186`) because the raster no
-longer says.  Banks are staircases, widths jump in cell increments, and
-no downstream system can render or reason about the channel at better
-than lattice resolution -- even though the `RiverNetwork` knows the
-centerline, width law, and depth law exactly.
+Rivers are where the terrain lattice is most visible and most harmful.
+Raster carving quantized every cross-section to cells, while the watercourse
+painter had to reverse-engineer what the carve meant. Banks became
+staircases, widths jumped in cell increments, and downstream systems could
+not reason about a reach more precisely than its D8 cells even though the
+network already knew its order, area, slope, and junctions.
 
 ## Current situation
 
-- `moppe/terrain/carve.cc` lowers raster samples along each reach using
-  `channel_width_m` / `channel_depth_m` laws of contributing area.
-- `paint_watercourses` stamps water levels and flow into per-cell sheets,
-  reverse-engineering the carved channel from bank probes.
-- The ribbon renderer (`game/river_surface.cc`) already resamples reach
-  cells with bounded cubic tangents -- a smooth centerline exists.
-- Physics samples the carved raster bilinearly
-  (`HeightMap::interpolated_height`), ~10 queries/frame.
+- Orogeny creates the terrain and valleys; channel carving and the droplet
+  simulator have been removed from the program language and build.
+- Every `RiverReach` owns a dense, unwrapped `RiverAlignment`, derived with
+  the same damped cubic-Hermite discipline used by trail alignments.
+- Alignment samples carry contributing area, slope, waterfall state,
+  standing-water blend, water level, local distance, and a flow coordinate
+  continuous through confluences.
+- `game::RiverSurface` builds a seven-row ribbon directly from that value.
+  `paint_watercourses` paints only standing water and mouth currents.
+- Physics continues to sample the unmodified orogeny terrain. The river is
+  presently a water-surface feature, not a terrain collision feature.
 
 ## Proposal
 
-Represent each channel as a **vector feature evaluated at sample time**:
-per reach, a smoothed centerline polyline (the ribbon resampler's curve),
-the width/depth laws it already has, and an analytic cross-section
-profile.  The terrain height seen by rendering *and physics* becomes
+Represent each river as a **vector feature evaluated at sample time**:
+per reach, one shared continuous alignment, physical width/depth laws, and
+an explicit cross-section. Running-water rendering samples this value at its
+own density instead of recovering a curve from a raster.
+
+If rideable channels later require a shaped bed, add an optional analytic
+terrain composite around the same alignment:
 
     z(x) = z_base(x) - depth(s) * profile(d(x) / halfwidth(s))
 
-where `d` is distance to the centerline, `s` the arc position, and
-`profile` a smooth bed shape (flat-bottomed parabola with bank fillets),
-composited min-wise over the base heightfield.  The channel is never
-rasterized; it is sampled at whatever density the consumer brings --
-lattice vertices today, tessellated vertices under RFC-008, physics
-queries always.
+where `d` is distance to the alignment, `s` its arc position, and `profile`
+is a bounded bed shape. This composite is deliberately deferred: the current
+orogeny terrain already supplies valleys, and adding a second collision-height
+truth is only justified when gameplay needs it.
 
 Evaluation strategies:
 
-- **CPU (physics, analyses)**: a spatial hash of reach segments over the
-  grid; a query visits at most a few segments.  Ten queries a frame is
-  nothing; drainage-scale sweeps visit each cell's nearby segments once.
-- **GPU (terrain vertex/tessellation stage)**: bake a compact
+- **CPU (future traversal/physics)**: a spatial hash of alignment segments;
+  a query visits only nearby reaches and returns arc, cross-river offset,
+  width, depth, and flow direction. The value is suitable for a raft route
+  without changing today's motorcycle collision surface.
+- **GPU (future terrain shaping)**: bake a compact
   channel-parameter raster at 2-4x lattice resolution -- signed distance
   to nearest centerline, arc-interpolated halfwidth and depth (3-4
   channels of RG16F/RGBA16F) -- refreshed only when the network changes.
@@ -59,40 +61,37 @@ Evaluation strategies:
 
 ## Consequences
 
-- Sub-cell channel widths, clean parametric banks, and cross-sections
-  that hold their shape at any resolution or tessellation density.
-- `paint_watercourses` stops probing: the sheet level derives from the
-  analytic bed exactly, deleting the subtlest code in the painter.
-- Physics and rendering share one composite by construction -- the same
-  invariant the height-texture design already enforces for the base
-  terrain (`docs/renderer-design.md`: "sim and render cannot diverge").
-- Resolution independence: the Fast profile's 1025^2 worlds get the same
-  channels as Play's 2049^2.
+- Smooth curves and sub-cell widths are independent of terrain resolution.
+- Multi-row cross-sections provide stable depth, bank feathering, and normal
+  orientation rather than one flat quad across the whole river.
+- Flow phase is continuous across confluences, and the ribbon fades beneath
+  the standing-water surface at mouths.
+- One alignment can later support rendering, flow sampling, camera placement,
+  audio, navigation, or raft traversal without reinterpreting D8 cells.
+- The painter's bank probing, dry-reach stamps, raster carve, and droplet
+  machinery are deleted.
 
 ## Risks and alternatives
 
-- Two sources of height truth (base raster + channel field) is the real
-  cost.  Every consumer must composite: rendering, physics, shadow pass,
-  drainage/flood *if* they are to see channels.  Mitigation: define the
-  composite as a `TerrainView` wrapper (one choke point, RFC-013's
-  vocabulary), and migrate consumers incrementally -- rendering + physics
-  first behind a flag, analyses later or never (analyses may reasonably
-  keep operating on the un-carved surface plus the network, which is in
-  fact the more semantic reading).
-- The vehicle can enter a channel narrower than its wheelbase; the
-  profile function keeps bank slopes bounded, and the existing carve
-  never guaranteed otherwise either.
-- Keep `carve` as a fallback path until captures
-  (`tools/capture-water` river/confluence/mouth/waterfall/lake) confirm
-  parity or better at every feature.
+- Cubic smoothing must not cut visibly outside the routed valley. Tangents are
+  damped and the alignment stays a reading; regression captures cover rivers,
+  confluences, mouths, waterfalls, and lakes.
+- Separate reaches overlap geometrically at junctions. Their global arc
+  coordinate removes animation seams, while soft cross-section edges hide
+  harmless coverage overlap. A future junction patch is possible if close
+  cameras expose a silhouette crease.
+- Derived surface height is bank-limited and monotonically clamped downstream,
+  but it cannot manufacture a physically correct pool/cascade profile from an
+  under-resolved valley. A hydraulic surface solve remains future work.
 
 ## Implementation sketch
 
-1. Channel feature extraction: reuse the ribbon resampler's smoothed
-   centerline; store per-reach arrays (points, halfwidth, depth).
-2. CPU composite in a `ChannelField` + `TerrainView` wrapper; physics
-   flag `MOPPE_ANALYTIC_CHANNELS=1`; verify ride-through feel.
-3. Channel-parameter raster bake + `terrain.metal` vertex composite;
-   shadow pass uses the same term.
-4. Painter simplification; capture comparisons; retire raster carve from
-   the default program once profiles are re-blessed.
+1. **Done:** extract shared dense alignments and globally continuous flow
+   distance from the `RiverNetwork`.
+2. **Done:** render seven-row cross-sections with physical width/depth laws,
+   bank-limited levels, mouth fading, and curve-oriented two-phase advection.
+3. **Done:** simplify the painter to standing water plus mouth currents and
+   retire raster carving/droplets.
+4. **Later, gameplay-driven:** add segment lookup and a river-following frame
+   for traversal. Only then decide whether a collision-bed composite is
+   necessary.
