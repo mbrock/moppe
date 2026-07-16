@@ -1155,9 +1155,7 @@ namespace moppe {
                   : m_map.terrain_view ();
               m_trail_network = terrain::analyze_trail_network (
                 trail_source,
-                std::get<terrain::TrailFormation> (*stage),
-                *m_drainage,
-                *m_standing_water);
+                std::get<terrain::TrailFormation> (*stage));
               if (stage_index + 1 < m_terrain_history.size ()) {
                 const std::vector<float>& before =
                   m_terrain_history[stage_index];
@@ -1183,6 +1181,17 @@ namespace moppe {
             m_surface.materialize_trail_influence (m_pending_surface.trails);
             m_surface.materialize_home_base_influence (
               m_pending_surface.home_base);
+            const auto& trail_parameters =
+              std::get<terrain::TrailFormation> (*stage);
+            const float sea_elevation =
+              trail_parameters.sea_level * m_map.scale ()[1];
+            float maximum_height_above_sea = 0.0f;
+            for (const terrain::TrailAlignmentPoint point :
+                 m_trail_network->alignment.points)
+              maximum_height_above_sea = std::max (
+                maximum_height_above_sea,
+                m_map.interpolated_height (point.x_m, point.z_m) -
+                  sea_elevation);
             std::cerr << "trail network: " << m_trail_network->cells.size ()
                       << " centerline cells, "
                       << m_trail_network->alignment.points.size ()
@@ -1190,8 +1199,10 @@ namespace moppe {
                       << std::setprecision (1)
                       << meters_value (
                            terrain::trail_circuit_length (*m_trail_network)) /
-                           1000.0
-                      << " km, " << m_trail_network->components.size ()
+                         1000.0
+                      << " km, high " << maximum_height_above_sea
+                      << " m above sea, "
+                      << m_trail_network->components.size ()
                       << " connected components\n";
             const Vec3 base =
               trail_cell_position (m_trail_network->plan.home_base);

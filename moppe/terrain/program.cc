@@ -246,7 +246,17 @@ namespace moppe::terrain {
                 operation.home_base_pad_radius <= 0.0f * mp_units::si::metre ||
                 !std::isfinite (
                   meters_value (operation.desired_circuit_radius)) ||
-                operation.desired_circuit_radius <= 0.0f * mp_units::si::metre)
+                operation.desired_circuit_radius <=
+                  0.0f * mp_units::si::metre ||
+                !std::isfinite (meters_value (
+                  operation.highland_preference_height_above_sea)) ||
+                operation.highland_preference_height_above_sea <=
+                  0.0f * mp_units::si::metre ||
+                !std::isfinite (
+                  meters_value (
+                    operation.alpine_avoidance_height_above_sea)) ||
+                operation.alpine_avoidance_height_above_sea <
+                  operation.highland_preference_height_above_sea)
               throw std::invalid_argument (
                 "trail formation parameters are invalid");
           }

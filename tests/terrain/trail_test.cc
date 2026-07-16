@@ -66,6 +66,29 @@ namespace {
              .spacing_y = 24.0f * mp_units::si::metre,
              .height_scale = 20.0f * mp_units::si::metre };
   }
+
+  std::vector<float> alpine_temptation () {
+    constexpr int side = 25;
+    std::vector<float> heights (side * side, 0.16f);
+    for (int y = 0; y < side; ++y)
+      for (int x = 0; x < side; ++x) {
+        const float radius = std::hypot (x - 12.0f, y - 11.0f);
+        if (radius < 6.0f)
+          heights[static_cast<std::size_t> (y) * side + x] =
+            0.76f - 0.07f * radius;
+      }
+    for (int x = 0; x < side; ++x)
+      heights[24 * side + x] = -0.1f;
+    return heights;
+  }
+
+  TerrainGrid alpine_temptation_grid () {
+    return { .width = 25,
+             .height = 25,
+             .spacing_x = 100.0f * mp_units::si::metre,
+             .spacing_y = 100.0f * mp_units::si::metre,
+             .height_scale = 100.0f * mp_units::si::metre };
+  }
 }
 
 MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
@@ -212,4 +235,26 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
     const int y = static_cast<int> (site.value / 17);
     MOPPE_CHECK (!(x >= 6 && x <= 10 && y >= 6 && y <= 10));
   }
+}
+
+MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
+  const std::vector<float> original = alpine_temptation ();
+  TrailFormation parameters = test_parameters ();
+  parameters.home_base_water_distance = 200.0f * mp_units::si::metre;
+  parameters.desired_circuit_radius = 700.0f * mp_units::si::metre;
+  parameters.highland_preference_height_above_sea =
+    20.0f * mp_units::si::metre;
+  parameters.alpine_avoidance_height_above_sea =
+    40.0f * mp_units::si::metre;
+  const TrailFormationResult result = form_trails (
+    TerrainView (alpine_temptation_grid (), original), parameters);
+
+  float maximum_original_height = 0.0f;
+  for (const CellIndex cell : result.network.cells)
+    maximum_original_height =
+      std::max (maximum_original_height, original[cell.value] * 100.0f);
+  MOPPE_CHECK (maximum_original_height < 40.0f);
+  MOPPE_CHECK (meters_value (
+                 result.report.maximum_centerline_height_above_sea) <
+               40.0f);
 }
