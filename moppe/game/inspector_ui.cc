@@ -106,6 +106,60 @@ namespace moppe {
       return { bounds.x + 38.0f, bounds.y + 34.0f, bounds.width - 50.0f, 1.0f };
     }
 
+    UiFlow::UiFlow (const UiRect& bounds, UiFlowDirection direction, float gap)
+        : m_remaining (bounds), m_direction (direction), m_gap (gap) {}
+
+    UiRect UiFlow::take (float extent) {
+      if (m_direction == UiFlowDirection::Row) {
+        extent = std::clamp (extent, 0.0f, m_remaining.width);
+        const UiRect result {
+          m_remaining.x, m_remaining.y, extent, m_remaining.height
+        };
+        const float consumed = std::min (m_remaining.width, extent + m_gap);
+        m_remaining.x += consumed;
+        m_remaining.width -= consumed;
+        return result;
+      }
+      extent = std::clamp (extent, 0.0f, m_remaining.height);
+      const UiRect result {
+        m_remaining.x, m_remaining.y, m_remaining.width, extent
+      };
+      const float consumed = std::min (m_remaining.height, extent + m_gap);
+      m_remaining.y += consumed;
+      m_remaining.height -= consumed;
+      return result;
+    }
+
+    UiRect UiFlow::rest () const {
+      return m_remaining;
+    }
+
+    UiRect ui_inset (const UiRect& bounds, float amount) {
+      const float x = std::clamp (amount, 0.0f, bounds.width * 0.5f);
+      const float y = std::clamp (amount, 0.0f, bounds.height * 0.5f);
+      return { bounds.x + x,
+               bounds.y + y,
+               std::max (0.0f, bounds.width - x * 2.0f),
+               std::max (0.0f, bounds.height - y * 2.0f) };
+    }
+
+    UiRect ui_grid_cell (const UiRect& bounds,
+                         int columns,
+                         int index,
+                         float row_height,
+                         float gap) {
+      columns = std::max (1, columns);
+      index = std::max (0, index);
+      const int column = index % columns;
+      const int row = index / columns;
+      const float width =
+        std::max (0.0f, (bounds.width - gap * (columns - 1)) / columns);
+      return { bounds.x + column * (width + gap),
+               bounds.y + row * (row_height + gap),
+               width,
+               row_height };
+    }
+
     void InspectorUi::load (render::Renderer& renderer) {
       const float scale = renderer.scale_factor ();
       m_body.reset (
@@ -159,13 +213,11 @@ namespace moppe {
                              float height,
                              const std::string& title) const {
       const UiRect outer { x, y, width, height };
-      dl.color (0.11f, 0.17f, 0.17f, 0.96f);
-      fill_rect (dl, outer);
-      bevel (dl, outer, false);
+      surface (dl, outer);
 
       const UiRect title_bar { x + 4, y + 4, width - 8, 28 };
-      dl.color (0.055f, 0.32f, 0.34f, 0.98f);
-      fill_rect (dl, title_bar);
+      dl.color (0.055f, 0.32f, 0.34f, 0.86f);
+      fill_rounded_rect (dl, title_bar, 8.0f);
       dl.color (0.14f, 0.48f, 0.49f, 0.82f);
       dl.line (title_bar.x + 3,
                title_bar.y + 4,
@@ -177,7 +229,6 @@ namespace moppe {
                title_bar.x + title_bar.width - 3,
                title_bar.y + 8,
                1.0f);
-      bevel (dl, title_bar, false);
 
       if (m_title) {
         dl.color (0.94f, 1.0f, 0.84f, 0.99f);
@@ -252,8 +303,11 @@ namespace moppe {
         dl.color (0.25f, 0.39f, 0.37f, 0.98f);
       else
         dl.color (0.18f, 0.28f, 0.28f, 0.98f);
-      fill_rect (dl, bounds);
-      bevel (dl, bounds, pushed);
+      fill_rounded_rect (dl, bounds, 5.0f);
+      if (pushed) {
+        dl.color (0.02f, 0.08f, 0.08f, 0.34f);
+        fill_rounded_rect (dl, ui_inset (bounds, 2.0f), 4.0f);
+      }
       if (!m_body)
         return;
       dl.color (selected ? 0.98f : 0.86f,
@@ -282,16 +336,18 @@ namespace moppe {
         dl.color (0.18f, 0.29f, 0.285f, 0.99f);
       else
         dl.color (0.12f, 0.205f, 0.205f, 0.99f);
-      fill_rect (dl, bounds);
-      bevel (dl, bounds, pushed);
+      fill_rounded_rect (dl, bounds, 5.0f);
+      if (pushed) {
+        dl.color (0.02f, 0.08f, 0.08f, 0.32f);
+        fill_rounded_rect (dl, ui_inset (bounds, 2.0f), 4.0f);
+      }
 
       const UiRect badge { bounds.x + 5, bounds.y + 5, 25, bounds.height - 10 };
       dl.color (selected ? 0.48f : 0.27f,
                 selected ? 0.60f : 0.38f,
                 selected ? 0.27f : 0.35f,
                 0.98f);
-      fill_rect (dl, badge);
-      bevel (dl, badge, false);
+      fill_rounded_rect (dl, badge, 4.0f);
       if (m_key) {
         dl.color (0.95f, 0.98f, 0.78f, 0.99f);
         const float index_width = m_key->measure (index);
@@ -443,14 +499,14 @@ namespace moppe {
       };
       dl.color (0.005f, 0.02f, 0.035f, 0.64f);
       fill_rounded_rect (dl, shadow, 13.0f);
-      dl.color (0.14f, 0.34f, 0.45f, 0.94f);
+      dl.color (0.14f, 0.34f, 0.45f, 0.18f);
       fill_rounded_rect (dl, bounds, 13.0f);
-      dl.color (0.17f, 0.42f, 0.54f, 0.98f);
+      dl.color (0.17f, 0.42f, 0.54f, 0.22f);
       const UiRect inner {
         bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2
       };
       fill_rounded_rect (dl, inner, 12.0f);
-      dl.color (0.025f, 0.095f, 0.14f, 0.965f);
+      dl.color (0.025f, 0.095f, 0.14f, 0.75f);
       const UiRect face {
         bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 4
       };
@@ -551,180 +607,6 @@ namespace moppe {
                bounds.x + bounds.width,
                bounds.y + bounds.height + 4.0f,
                1.0f);
-    }
-
-    void InspectorUi::session_button (render::DrawList& dl,
-                                      const UiRect& bounds,
-                                      const std::string& title,
-                                      bool hot,
-                                      bool pressed,
-                                      int icon) const {
-      const bool pushed = hot && pressed;
-      dl.color (0.13f, hot ? 0.38f : 0.27f, hot ? 0.50f : 0.37f, 0.92f);
-      fill_rounded_rect (dl, bounds, 8.0f);
-      const UiRect inner {
-        bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2
-      };
-      dl.color (0.035f,
-                pushed ? 0.12f
-                : hot  ? 0.13f
-                       : 0.095f,
-                pushed ? 0.17f
-                : hot  ? 0.19f
-                       : 0.145f,
-                0.98f);
-      fill_rounded_rect (dl, inner, 7.0f);
-      const float icon_size = 35.0f;
-      friendly_icon (dl,
-                     { bounds.x + (bounds.width - icon_size) * 0.5f,
-                       bounds.y + 8.0f,
-                       icon_size,
-                       icon_size },
-                     icon,
-                     0.94f);
-      if (m_friendly_body) {
-        dl.color (0.91f, 0.96f, 0.98f, 1.0f);
-        const float width = m_friendly_body->measure (title);
-        m_friendly_body->draw (dl,
-                               bounds.x + (bounds.width - width) * 0.5f,
-                               bounds.y + bounds.height - 10.0f,
-                               title);
-      }
-    }
-
-    void InspectorUi::preset_card (render::DrawList& dl,
-                                   const UiRect& bounds,
-                                   const std::string& title,
-                                   bool hot,
-                                   bool pressed,
-                                   bool selected,
-                                   int icon) const {
-      if (selected) {
-        dl.color (0.20f, 0.95f, 0.94f, 0.18f);
-        fill_rounded_rect (
-          dl,
-          { bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6 },
-          9.0f);
-      }
-      dl.color (selected ? 0.24f
-                : hot    ? 0.22f
-                         : 0.12f,
-                selected ? 0.88f
-                : hot    ? 0.54f
-                         : 0.38f,
-                selected ? 0.90f
-                : hot    ? 0.66f
-                         : 0.50f,
-                0.96f);
-      fill_rounded_rect (dl, bounds, 7.0f);
-      const UiRect image {
-        bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 31
-      };
-      dl.color (
-        0.055f, pressed ? 0.13f : 0.16f, pressed ? 0.18f : 0.23f, 0.98f);
-      fill_rounded_rect (dl, image, 5.0f);
-      // The atlas emblems are deliberately enlarged and cool-tinted here.
-      // This region can later be replaced by truthful rendered thumbnails
-      // without changing card geometry or interaction.
-      const float icon_size = std::min (image.height - 8.0f, 76.0f);
-      friendly_icon (dl,
-                     { image.x + (image.width - icon_size) * 0.5f,
-                       image.y + (image.height - icon_size) * 0.5f,
-                       icon_size,
-                       icon_size },
-                     icon,
-                     selected ? 1.0f : 0.82f,
-                     selected ? 0.72f : 0.55f,
-                     selected ? 1.0f : 0.82f,
-                     1.0f);
-      const UiRect caption {
-        bounds.x + 2, bounds.y + bounds.height - 30, bounds.width - 4, 28
-      };
-      dl.color (0.018f, 0.065f, 0.10f, 0.99f);
-      fill_rounded_rect (dl, caption, 5.0f);
-      if (m_friendly_body) {
-        dl.color (0.94f, 0.97f, 0.99f, 1.0f);
-        const float width = m_friendly_body->measure (title);
-        m_friendly_body->draw (dl,
-                               caption.x + (caption.width - width) * 0.5f,
-                               caption.y + 20.0f,
-                               title);
-      }
-    }
-
-    void InspectorUi::tool_button (render::DrawList& dl,
-                                   const UiRect& bounds,
-                                   const std::string& title,
-                                   const std::string& key,
-                                   bool hot,
-                                   bool pressed,
-                                   bool selected,
-                                   int icon) const {
-      if (selected) {
-        dl.color (0.05f, 0.95f, 1.0f, 0.18f);
-        fill_rounded_rect (
-          dl,
-          { bounds.x - 4, bounds.y - 4, bounds.width + 8, bounds.height + 8 },
-          11.0f);
-      }
-      dl.color (selected ? 0.12f
-                : hot    ? 0.18f
-                         : 0.11f,
-                selected ? 0.90f
-                : hot    ? 0.55f
-                         : 0.37f,
-                selected ? 0.96f
-                : hot    ? 0.67f
-                         : 0.49f,
-                0.98f);
-      fill_rounded_rect (dl, bounds, 8.0f);
-      const UiRect inner {
-        bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 4
-      };
-      dl.color (0.035f,
-                pressed    ? 0.12f
-                : selected ? 0.19f
-                           : 0.095f,
-                pressed    ? 0.17f
-                : selected ? 0.26f
-                           : 0.145f,
-                0.99f);
-      fill_rounded_rect (dl, inner, 6.0f);
-      friendly_icon (dl,
-                     { bounds.x + (bounds.width - 44.0f) * 0.5f,
-                       bounds.y + 10.0f,
-                       44.0f,
-                       44.0f },
-                     icon,
-                     0.98f,
-                     selected ? 0.70f : 0.78f,
-                     0.96f,
-                     1.0f);
-      if (m_friendly_body) {
-        dl.color (0.91f, 0.96f, 0.99f, 1.0f);
-        const float width = m_friendly_body->measure (title);
-        m_friendly_body->draw (dl,
-                               bounds.x + (bounds.width - width) * 0.5f,
-                               bounds.y + 72.0f,
-                               title);
-      }
-      if (m_friendly_label) {
-        const UiRect badge { bounds.x + bounds.width * 0.5f - 8.0f,
-                             bounds.y + bounds.height - 19.0f,
-                             16.0f,
-                             15.0f };
-        dl.color (0.10f, 0.25f, 0.34f, 0.98f);
-        fill_rounded_rect (dl, badge, 3.0f);
-        dl.color (0.58f, 0.76f, 0.85f, 1.0f);
-        const float width = m_friendly_label->measure (key);
-        m_friendly_label->draw (
-          dl, badge.x + (badge.width - width) * 0.5f, badge.y + 12.0f, key);
-      }
-      if (selected) {
-        dl.color (0.75f, 1.0f, 0.74f, 1.0f);
-        draw_circle (
-          dl, bounds.x + bounds.width - 12.0f, bounds.y + 12.0f, 3.5f);
-      }
     }
 
     void InspectorUi::friendly_button (render::DrawList& dl,

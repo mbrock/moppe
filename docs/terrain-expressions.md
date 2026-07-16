@@ -335,21 +335,25 @@ gets a new identity and cannot trust an older binary's terrain. The explicit
 startup Moppe removes automatic terrain caches belonging to obsolete build
 identities, so ordinary source iteration does not accumulate abandoned maps.
 
-### Field Algebra Tycoon UI
+### Terrain Lab UI
 
-The Terrain Lab window presents the system as a small construction game:
+Terrain Lab has one instrument vocabulary with two levels of disclosure:
 
-- the friendly Orogeny preset begins from a shallow continent and grows its
-  relief under uplift, incision, and diffusion; its Age slider reaches zero
-  for a same-recipe before/after comparison, and slow iterative controls
-  rebuild when the drag is released rather than stalling through intermediate
-  values;
+- **Observe** is the default, narrow, translucent dock. It keeps the terrain
+  visible and puts every existing surface reading in one palette. World
+  presets remain explicit one-shot comparisons rather than draggable
+  parameters;
+- **Build** adds the source-field sections, retained pipeline, stage reports,
+  and parameter editing without changing the reading names or visual skin;
+- direct continuous values use rotary controls because they can update at
+  interactive speed. Neighborhood, reduction, and iterative values use
+  explicit stepped changes, so an expensive transform cannot be scrubbed
+  through obsolete intermediate rebuilds;
 - the geological source and every materialized stage are selectable rows;
 - normalization, power, analytical age, orogeny, droplet, thermal, channel
   carving, and diffusion stages can be appended independently and combined in
   any order;
 - selected stages can be moved, copied, deleted, and edited in place;
-- continuous values use synth-style rotary controls with vertical dragging;
 - natural-number values such as periodic wave counts, erosion droplets,
   batches, and passes use explicit digital minus/value/plus counters;
 - changing the inspected layer or random seed preserves the downstream stack;
@@ -362,28 +366,30 @@ The Terrain Lab window presents the system as a small construction game:
   gameplay LOD path and fades the finite draw horizon into distance haze;
 - Donut View embeds the periodic heightfield as an actual torus on the GPU.
 
-The separate **Map Readings** window keeps geometry and interpretation
+The shared **Map Readings** palette keeps geometry and interpretation
 independent. Material restores the ordinary terrain textures; Height and
 Slope drape scalar palettes over the current surface; Flow shows logarithmic
-contributing area; Streams thresholds that reading at 1,024 upstream cells;
-Basins colors shared sink catchments; Sinks marks local minima; Delta shows
+contributing area; Streams shows extracted river reaches; Basins colors
+shared outlet catchments; Outlets marks terminal wet routes; Delta shows
 signed height change across the selected pipeline stage; Water shows every
-priority-flood standing depth; and Lakes applies the permanence census used
-by gameplay. Trace accepts a click on terrain in Tile or
-Cover view, follows receiver links to a sink, and highlights the complete
-basin faintly beneath the path.
+priority-flood standing depth; Lakes applies the permanence census used by
+gameplay; Falls marks steep high-flow steps; and Eroded and Deposit expose the
+lifetime sediment ledgers. Trace accepts a click on terrain in Tile or Cover
+view, follows receiver links to an outlet, and highlights the complete basin
+faintly beneath the path. Drop releases one ordinary erosion-model droplet.
 
 These are all presentations of reusable analysis values. The renderer knows
 only an R32F scalar overlay, value range, opacity, and palette; it has no
 drainage-specific API. `MOPPE_LAB_OVERLAY` (`height`, `slope`, `flow`,
-`streams`, `basins`, `sinks`, `delta`, `trace`, `water`, or `lakes`) makes the
-same views scriptable. `MOPPE_LAB_STAGE` selects
-a stage for Delta, while
+`streams`, `basins`, `sinks`, `delta`, `trace`, `water`, `lakes`, `falls`,
+`eroded`, or `deposited`) makes the same views scriptable. `MOPPE_LAB_STAGE`
+selects a stage for Delta, while
 `MOPPE_LAB_TRACE_X` and `MOPPE_LAB_TRACE_Y` select a screen point for Trace.
 `MOPPE_LAB_EROSION=drops,batch,steps` appends a conservation-closed water
 stage for automated Lab captures. `MOPPE_LAB_ANALYTICAL=1` appends the
 finite-time stream-power stage. `MOPPE_LAB_OROGENY=1` selects the shallow
-continent source and calibrated fast orogeny program.
+continent source and calibrated fast orogeny program. `MOPPE_LAB_EXPERT=1`
+opens Build directly for deterministic UI captures.
 
 The three `WAVES` counters are integer spatial frequencies: how many periods
 fit around one fundamental side of the torus.  They are not literal counts of
@@ -397,9 +403,8 @@ working map and is not copied into redundant history.  The lab does not
 maintain a parallel shadow representation of the recipe itself.  Leaving the
 lab restores the exact playable heightmap snapshot.
 
-Knob motion updates the program value immediately, while evaluation is
-coalesced on the frame tick: direct fields update frequently, iterative stages
-use a slower cadence, and releasing the knob commits the newest value.  Each
+Live knob motion updates direct program values immediately, while evaluation
+is coalesced on the frame tick. Costly stepped edits run once per click. Each
 completed preview morphs from the previous height texture over 120 ms, with
 normals derived from the interpolated surface.  Its shadow is rebuilt
 immediately at 1024-square resolution from every second terrain sample, then
@@ -407,7 +412,9 @@ crossfaded from the previous shadow on the same 120 ms clock.  This keeps
 light and geometry together while dragging without paying for the gameplay
 shadow pass.  `MOPPE_PROFILE_SHADOW=1` reports the GPU time of either path.
 The UI itself is Moppe's small immediate-mode `InspectorUi` drawn through
-`DrawList`, not an external widget library.
+`DrawList`, not an external widget library. `UiFlow`, `ui_inset`, and
+`ui_grid_cell` provide its small flex-like layout vocabulary, shared by
+drawing and hit testing.
 
 For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
 1025-square field and skips canonical erosion, stars, fish, and
