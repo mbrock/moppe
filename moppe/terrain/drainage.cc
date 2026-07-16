@@ -69,6 +69,7 @@ namespace moppe::terrain {
     struct ChannelGeometry {
       std::span<const FractionalContributingArea> area;
       std::span<const ChannelTangent> tangent;
+      const FractionalFlowDomain* routes = nullptr;
 
       bool empty () const noexcept {
         return area.empty ();
@@ -238,9 +239,45 @@ namespace moppe::terrain {
         std::vector<Vec3> knot_tangents;
         if (!channels.empty ())
           knot_tangents.reserve (cells.size ());
-        for (const CellIndex cell : cells) {
+        for (std::size_t knot = 0; knot < cells.size (); ++knot) {
+          const CellIndex cell = cells[knot];
           float x = static_cast<float> (cell % width) * grid.spacing_x_m ();
           float z = static_cast<float> (cell / width) * grid.spacing_y_m ();
+          // Interior knots leave the lattice: the previous cell's D-infinity
+          // route records where its continuous flow ray crosses the segment
+          // between its two receivers, and pinning the knot to that crossing
+          // removes cell-center quantization while staying inside the routed
+          // corridor. Endpoint knots stay at their cell centers so tributary
+          // and trunk alignments continue to meet exactly.
+          if (channels.routes && knot > 0 && knot + 1 < cells.size ()) {
+            const FractionalFlowRoute& route =
+              channels.routes->route (cells[knot - 1]);
+            if (route.arc_count == 2 && (route.arcs[0].receiver == cell ||
+                                         route.arcs[1].receiver == cell)) {
+              const CellIndex cardinal = route.arcs[0].receiver;
+              const CellIndex diagonal = route.arcs[1].receiver;
+              const float t =
+                route.receiver_interpolation.numerical_value_in (mp_units::one);
+              const float cardinal_x =
+                static_cast<float> (cardinal % width) * grid.spacing_x_m ();
+              const float cardinal_z =
+                static_cast<float> (cardinal / width) * grid.spacing_y_m ();
+              const float diagonal_x =
+                static_cast<float> (diagonal % width) * grid.spacing_x_m ();
+              const float diagonal_z =
+                static_cast<float> (diagonal / width) * grid.spacing_y_m ();
+              x = cardinal_x +
+                  (periodic
+                     ? river_wrapped_delta (diagonal_x - cardinal_x, period_x)
+                     : diagonal_x - cardinal_x) *
+                    t;
+              z = cardinal_z +
+                  (periodic
+                     ? river_wrapped_delta (diagonal_z - cardinal_z, period_z)
+                     : diagonal_z - cardinal_z) *
+                    t;
+            }
+          }
           if (periodic && !raw.empty ()) {
             x = raw.back ().x_m +
                 river_wrapped_delta (x - raw.back ().x_m, period_x);
@@ -817,7 +854,8 @@ namespace moppe::terrain {
       census,
       drainage,
       { .area = spatial::get<fractional_contributing_area> (channels),
-        .tangent = spatial::get<channel_tangent> (channels) });
+        .tangent = spatial::get<channel_tangent> (channels),
+        .routes = &channels.domain () });
     return network;
   }
 }
