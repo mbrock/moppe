@@ -1,15 +1,17 @@
 # Trail system
 
 Moppe currently makes one deliberate leisure circuit. It is not a natural
-track network extracted from drainage, and it is not a road spline placed
-independently of the terrain. The system first chooses a plausible home base
-and a scenic reason for a loop, searches for two distinct rides around that
-feature, and then reconciles the chosen circuit with the heightmap using
-bounded cut and fill.
+track network extracted from drainage, and its continuous alignment is not
+placed independently of the terrain. The system first chooses a plausible
+home base and a scenic reason for a loop, searches for two distinct rides
+around that feature, refines the discrete route into a smooth designed
+alignment, and then reconciles that alignment with the heightmap using bounded
+cut and fill.
 
-The result has three related but separate meanings:
+The result has four related but separate meanings:
 
-- a discrete plan and directed circuit used by gameplay;
+- a discrete plan and directed circuit that records the searched topology;
+- a continuous plan-view alignment used by grading and presentation;
 - shaped terrain where construction was needed and possible;
 - continuous trail and home-base influence fields used by materials and
   surface queries.
@@ -27,6 +29,7 @@ geological source
   -> orogeny and erosion
   -> drainage and standing-water readings
   -> trail planning
+  -> continuous alignment fitting
   -> bounded trail grading and cross-section stamping
   -> refreshed heightmap and normals
   -> trail/home-base surface fields and renderer texture
@@ -162,6 +165,14 @@ expanded back to source-grid cells. Expansion must produce a continuous
 cycle of neighboring cells; an overlap that would create a jump is treated as
 a failed expedition rather than silently entering the network.
 
+The chosen planning loop also becomes a periodic cubic Hermite alignment in
+physical world coordinates. Its damped tangents round the eight-way A*
+corners without the larger overshoot of an unconstrained interpolating spline.
+The curve is sampled at approximately two-metre spacing and kept in an
+unwrapped coordinate chart, so the toroidal seam cannot introduce a false
+bend. A* therefore chooses the buildable corridor; the alignment defines the
+trail that is intentionally built inside it.
+
 ## 4. Plan and network
 
 `TrailPlan` retains the decisions:
@@ -173,24 +184,28 @@ a failed expedition rather than silently entering the network.
 `TrailNetwork` materializes those decisions as one connected directed cycle.
 Each circuit cell has one `receiver`, and following receivers once around the
 component returns to the home base. `component_by_cell` supports membership
-queries; the current design always produces one component.
+queries; the current design always produces one component. The network also
+owns `TrailAlignment`, the densely sampled continuous loop and its physical
+arc length.
 
-This graph is used independently of rendering. It supplies circuit length,
-the spawn heading, the minimap polyline, and the opening cinematic route.
+The discrete graph remains useful independently of rendering. The alignment
+supplies circuit length, spawn heading, the minimap curve, and the opening
+cinematic route.
 
 ## 5. Grading and earthworks
 
-Formation begins with the original physical elevation at every source cell.
-For 24 iterations, neighboring centerline samples whose elevation difference
+Formation samples the pre-trail terrain along the continuous alignment. For
+24 iterations, neighboring arc-length samples whose elevation difference
 exceeds the 12% target move halfway toward compliance. Every sample remains
 clamped to its own original elevation plus the fill allowance or minus the cut
 allowance.
 
-The relaxed centerline elevation is then stamped across the requested path
-width. Overlapping stamps form a weighted target, which avoids traversal-order
-artifacts. The compacted core targets the centerline height; the shoulder
-smoothly blends back to the original surface. Standing-water cells are never
-shaped.
+Each nearby heightmap sample then finds its nearest point on the alignment and
+interpolates the relaxed vertical profile there. The compacted core targets
+that centerline height; the shoulder smoothly blends back to the original
+surface. Standing-water cells are never shaped. The result retains a physical
+`earthwork_delta_m` layer relative to the pre-trail terrain while also
+materializing the composed heightmap used by the current renderer and physics.
 
 At coarse preview resolutions, the effective half-width is at least slightly
 more than one terrain cell. This preserves a continuous ribbon, but it also
@@ -207,12 +222,18 @@ means preview images may show a path wider than the nominal 3 metres.
 
 ## 6. Influence fields and materials
 
-Planning stamps two continuous scalar fields independently of whether a cell's
-height changed:
+Planning samples two continuous scalar fields independently of whether a
+cell's height changed:
 
 - `trail_influence` covers the full circuit with a solid core and soft
   shoulders;
 - `home_base_influence` is a separate radial field for the origin clearing.
+
+Trail influence is the authored cross-section evaluated from distance to the
+continuous alignment, rather than a union of disks around raster circuit
+cells. The construction stamp may still widen its geometric core to one
+heightmap cell at coarse resolutions for collision continuity; the material
+footprint retains the requested physical width.
 
 These fields are stored on `TrailNetwork`, expanded across the duplicated
 torus render seam, and materialized as typed columns in `map::Surface`. The
@@ -233,14 +254,23 @@ The shader has only a scalar distance-like influence, not a tangent or signed
 cross-track coordinate. Its paired wear bands are therefore contours within
 the mask, not simulated wheel tracks with independent direction data.
 
+At gameplay distance, a feature-local retained ribbon covers the compacted
+core. It is tessellated from the continuous alignment, draped against the
+composed collision height, feathered across the requested physical width, and
+repeated with the terrain on the torus. Its vertices carry true along-trail and
+cross-trail coordinates, while the underlying terrain material continues to
+provide broad shoulders, aggregate detail, water suppression, and cut/fill
+context. The ribbon fades under the same altitude-and-slope snow rule as the
+terrain material.
+
 ## Runtime consumers
 
 After generation, the game uses the trail system in several places:
 
-- The bike spawns at the home base facing the first receiver edge.
+- The bike spawns at the home base facing the alignment tangent.
 - A flag marks the base clearing.
-- The lower-left minimap draws the complete loop, home base, player position,
-  and heading on sufficiently large displays.
+- The lower-left minimap draws the smooth alignment, home base, player
+  position, and heading on sufficiently large displays.
 - The opening drone cinematic begins with a high oblique trail reveal, sweeps
   across the first half of the circuit, and then continues to the valley,
   waterfall or lake, saddle, peak, and arrival beats.
@@ -282,8 +312,8 @@ continuity, and the trail-first cinematic.
   separately constrained or reported.
 - Maximum grade can have reported exceptions when cut/fill limits cannot
   reconcile the terrain.
-- The influence mask marks the complete planned path; it does not encode the
-  amount or sign of earthwork.
+- The influence mask marks the complete planned path; the separate earthwork
+  delta encodes the amount and sign of construction.
 - Wet cells are excluded from shaping and influence stamping, so the system
   does not build bridges, causeways, or snow-specific trails.
 - The route search is terrain-aware but does not yet simulate a motorcycle to
@@ -292,5 +322,6 @@ continuity, and the trail-first cinematic.
 
 These boundaries are intentional enough to keep the first circuit legible,
 but they also identify the natural extension points: explicit crossfall,
-stronger guarantees around local grade exceptions, richer trail material
-coordinates, bridges, and multiple path classes.
+stronger guarantees around local grade exceptions, a dedicated ribbon shader
+that makes fuller use of its along/across coordinates, a feature-local
+collision surface, bridges, and multiple path classes.

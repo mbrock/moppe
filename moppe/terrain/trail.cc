@@ -83,6 +83,159 @@ namespace moppe::terrain {
       return std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
     }
 
+    TrailAlignmentPoint operator+ (TrailAlignmentPoint point,
+                                   TrailAlignmentPoint offset) {
+      return { point.x_m + offset.x_m, point.z_m + offset.z_m };
+    }
+
+    TrailAlignmentPoint operator- (TrailAlignmentPoint a,
+                                   TrailAlignmentPoint b) {
+      return { a.x_m - b.x_m, a.z_m - b.z_m };
+    }
+
+    TrailAlignmentPoint operator* (TrailAlignmentPoint point, float scale) {
+      return { point.x_m * scale, point.z_m * scale };
+    }
+
+    float distance (TrailAlignmentPoint a, TrailAlignmentPoint b) {
+      return std::hypot (a.x_m - b.x_m, a.z_m - b.z_m);
+    }
+
+    float wrapped_delta (float delta, float period) {
+      if (period <= 0.0f)
+        return delta;
+      return std::remainder (delta, period);
+    }
+
+    TrailAlignmentPoint nearest_image (TrailAlignmentPoint point,
+                                       TrailAlignmentPoint reference,
+                                       const TerrainGrid& grid) {
+      if (grid.topology != Topology::Torus)
+        return point;
+      const float period_x = grid.unique_width () * grid.spacing_x_m ();
+      const float period_z = grid.unique_height () * grid.spacing_y_m ();
+      point.x_m =
+        reference.x_m + wrapped_delta (point.x_m - reference.x_m, period_x);
+      point.z_m =
+        reference.z_m + wrapped_delta (point.z_m - reference.z_m, period_z);
+      return point;
+    }
+
+    TrailAlignmentPoint alignment_closure (const TrailAlignment& alignment,
+                                           const TerrainGrid& grid) {
+      if (alignment.points.empty ())
+        return {};
+      return nearest_image (
+        alignment.points.front (), alignment.points.back (), grid);
+    }
+
+    struct AlignmentRaster {
+      std::vector<float> distance_m;
+      std::vector<std::size_t> segment;
+      std::vector<float> segment_t;
+    };
+
+    AlignmentRaster rasterize_alignment (const TerrainGrid& grid,
+                                         const TrailAlignment& alignment,
+                                         float radius) {
+      const int width = static_cast<int> (grid.unique_width ());
+      const int height = static_cast<int> (grid.unique_height ());
+      const std::size_t count = grid.unique_size ();
+      const std::size_t no_segment = alignment.points.size ();
+      AlignmentRaster result {
+        .distance_m =
+          std::vector<float> (count, std::numeric_limits<float>::infinity ()),
+        .segment = std::vector<std::size_t> (count, no_segment),
+        .segment_t = std::vector<float> (count, 0.0f)
+      };
+      if (alignment.points.size () < 2)
+        return result;
+
+      const bool periodic = grid.topology == Topology::Torus;
+      const TrailAlignmentPoint closure = alignment_closure (alignment, grid);
+      for (std::size_t segment = 0; segment < alignment.points.size ();
+           ++segment) {
+        const TrailAlignmentPoint a = alignment.points[segment];
+        const TrailAlignmentPoint b = segment + 1 < alignment.points.size ()
+                                        ? alignment.points[segment + 1]
+                                        : closure;
+        const TrailAlignmentPoint ab = b - a;
+        const float length2 = ab.x_m * ab.x_m + ab.z_m * ab.z_m;
+        if (length2 <= 1e-8f)
+          continue;
+        const int min_x = static_cast<int> (std::floor (
+          (std::min (a.x_m, b.x_m) - radius) / grid.spacing_x_m ()));
+        const int max_x = static_cast<int> (
+          std::ceil ((std::max (a.x_m, b.x_m) + radius) / grid.spacing_x_m ()));
+        const int min_y = static_cast<int> (std::floor (
+          (std::min (a.z_m, b.z_m) - radius) / grid.spacing_y_m ()));
+        const int max_y = static_cast<int> (
+          std::ceil ((std::max (a.z_m, b.z_m) + radius) / grid.spacing_y_m ()));
+        for (int unwrapped_y = min_y; unwrapped_y <= max_y; ++unwrapped_y)
+          for (int unwrapped_x = min_x; unwrapped_x <= max_x; ++unwrapped_x) {
+            if (!periodic && (unwrapped_x < 0 || unwrapped_x >= width ||
+                              unwrapped_y < 0 || unwrapped_y >= height))
+              continue;
+            const TrailAlignmentPoint point { unwrapped_x * grid.spacing_x_m (),
+                                              unwrapped_y *
+                                                grid.spacing_y_m () };
+            const TrailAlignmentPoint ap = point - a;
+            const float t = std::clamp (
+              (ap.x_m * ab.x_m + ap.z_m * ab.z_m) / length2, 0.0f, 1.0f);
+            const TrailAlignmentPoint nearest = a + ab * t;
+            const float candidate = distance (point, nearest);
+            if (candidate > radius)
+              continue;
+            const int x =
+              periodic ? wrap_index (unwrapped_x, width) : unwrapped_x;
+            const int y =
+              periodic ? wrap_index (unwrapped_y, height) : unwrapped_y;
+            const std::size_t cell = static_cast<std::size_t> (y) * width + x;
+            if (candidate < result.distance_m[cell]) {
+              result.distance_m[cell] = candidate;
+              result.segment[cell] = segment;
+              result.segment_t[cell] = t;
+            }
+          }
+      }
+      return result;
+    }
+
+    float sample_height_m (std::span<const float> heights,
+                           const TerrainGrid& grid,
+                           TrailAlignmentPoint point) {
+      const int width = static_cast<int> (grid.unique_width ());
+      const int height = static_cast<int> (grid.unique_height ());
+      float x = point.x_m / grid.spacing_x_m ();
+      float y = point.z_m / grid.spacing_y_m ();
+      if (grid.topology == Topology::Torus) {
+        x = wrap_coordinate (x, static_cast<float> (width));
+        y = wrap_coordinate (y, static_cast<float> (height));
+      } else {
+        x = std::clamp (x, 0.0f, static_cast<float> (width - 1));
+        y = std::clamp (y, 0.0f, static_cast<float> (height - 1));
+      }
+      const int x0 = static_cast<int> (std::floor (x));
+      const int y0 = static_cast<int> (std::floor (y));
+      const int x1 = grid.topology == Topology::Torus
+                       ? wrap_index (x0 + 1, width)
+                       : std::min (x0 + 1, width - 1);
+      const int y1 = grid.topology == Topology::Torus
+                       ? wrap_index (y0 + 1, height)
+                       : std::min (y0 + 1, height - 1);
+      const float tx = x - x0;
+      const float ty = y - y0;
+      const float h0 =
+        std::lerp (heights[static_cast<std::size_t> (y0) * width + x0],
+                   heights[static_cast<std::size_t> (y0) * width + x1],
+                   tx);
+      const float h1 =
+        std::lerp (heights[static_cast<std::size_t> (y1) * width + x0],
+                   heights[static_cast<std::size_t> (y1) * width + x1],
+                   tx);
+      return std::lerp (h0, h1, ty) * grid.height_scale_m ();
+    }
+
     struct PlanningGrid {
       struct EdgeProfile {
         float mean_grade;
@@ -284,6 +437,89 @@ namespace moppe::terrain {
                .spacing_y = source_height * source.spacing_y_m () / height,
                .height_scale = source.height_scale_m (),
                .periodic = source.topology == Topology::Torus };
+    }
+
+    TrailAlignment
+    make_alignment (const PlanningGrid& planner,
+                    const std::vector<std::size_t>& coarse_circuit) {
+      const TerrainGrid& source = planner.terrain.grid ();
+      const float source_spacing_x = source.spacing_x_m ();
+      const float source_spacing_z = source.spacing_y_m ();
+      const float period_x = source.unique_width () * source_spacing_x;
+      const float period_z = source.unique_height () * source_spacing_z;
+      std::vector<TrailAlignmentPoint> raw;
+      raw.reserve (coarse_circuit.size ());
+      for (const std::size_t node : coarse_circuit) {
+        TrailAlignmentPoint point {
+          planner.source_x (planner.x (node)) * source_spacing_x,
+          planner.source_y (planner.y (node)) * source_spacing_z
+        };
+        if (!raw.empty () && source.topology == Topology::Torus) {
+          point.x_m = raw.back ().x_m +
+                      wrapped_delta (point.x_m - raw.back ().x_m, period_x);
+          point.z_m = raw.back ().z_m +
+                      wrapped_delta (point.z_m - raw.back ().z_m, period_z);
+        }
+        if (raw.empty () || distance (raw.back (), point) > 1e-4f)
+          raw.push_back (point);
+      }
+      if (raw.size () < 4)
+        throw std::runtime_error (
+          "trail circuit is too short for a smooth alignment");
+
+      // A damped periodic cubic Hermite curve passes through the A* route
+      // while rounding its eight-way corners. Short handles keep the curve
+      // close to the searched corridor instead of producing Catmull-Rom-style
+      // loops or large overshoots at alternating turns.
+      constexpr float tangent_scale = 0.34f;
+      const float sample_spacing = std::clamp (
+        0.4f * std::min (source_spacing_x, source_spacing_z), 0.75f, 2.0f);
+      const TrailAlignmentPoint closure =
+        nearest_image (raw.front (), raw.back (), source);
+      TrailAlignment alignment;
+      for (std::size_t segment = 0; segment < raw.size (); ++segment) {
+        const TrailAlignmentPoint a = raw[segment];
+        const TrailAlignmentPoint b =
+          segment + 1 < raw.size () ? raw[segment + 1] : closure;
+        const TrailAlignmentPoint before =
+          segment > 0 ? raw[segment - 1]
+                      : nearest_image (raw.back (), a, source);
+        TrailAlignmentPoint after;
+        if (segment + 2 < raw.size ())
+          after = raw[segment + 2];
+        else if (segment + 1 < raw.size ())
+          after = closure;
+        else
+          after = nearest_image (raw[1], b, source);
+        const TrailAlignmentPoint tangent_a = (b - before) * tangent_scale;
+        const TrailAlignmentPoint tangent_b = (after - a) * tangent_scale;
+        const int subdivisions = std::max (
+          1, static_cast<int> (std::ceil (distance (a, b) / sample_spacing)));
+        for (int step = 0; step < subdivisions; ++step) {
+          const float t = static_cast<float> (step) / subdivisions;
+          const float t2 = t * t;
+          const float t3 = t2 * t;
+          const float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+          const float h10 = t3 - 2.0f * t2 + t;
+          const float h01 = -2.0f * t3 + 3.0f * t2;
+          const float h11 = t3 - t2;
+          const TrailAlignmentPoint point =
+            a * h00 + tangent_a * h10 + b * h01 + tangent_b * h11;
+          if (alignment.points.empty () ||
+              distance (alignment.points.back (), point) > 1e-4f)
+            alignment.points.push_back (point);
+        }
+      }
+      if (alignment.points.size () < 4)
+        throw std::runtime_error (
+          "trail alignment sampling produced too few points");
+      double length_m = 0.0;
+      for (std::size_t i = 1; i < alignment.points.size (); ++i)
+        length_m += distance (alignment.points[i - 1], alignment.points[i]);
+      length_m += distance (alignment.points.back (),
+                            alignment_closure (alignment, source));
+      alignment.length = length_m * mp_units::si::metre;
+      return alignment;
     }
 
     float nearest_water (const PlanningGrid& grid,
@@ -932,6 +1168,7 @@ namespace moppe::terrain {
     const std::size_t left = chosen->left;
     const std::size_t far = chosen->far;
     const std::size_t right = chosen->right;
+    TrailAlignment alignment = make_alignment (planner, chosen->circuit);
     std::vector<CellIndex> cells = std::move (chosen_cells);
 
     std::vector<CellIndex> receiver (count, no_cell);
@@ -960,41 +1197,19 @@ namespace moppe::terrain {
 
     std::vector<float> influence (count, 0.0f);
     std::vector<float> home_base_influence (count, 0.0f);
-    const float half_width =
-      std::max (0.5f * meters_value (parameters.width),
-                1.01f * std::max (grid.spacing_x_m (), grid.spacing_y_m ()));
+    // Unlike the constructed height stamp, the material footprint keeps its
+    // authored width. Sampling a distance to the continuous alignment makes
+    // a narrow path legible without inflating its core to a whole grid cell.
+    const float half_width = 0.5f * meters_value (parameters.width);
     const float blend = meters_value (parameters.shoulder_blend);
     const float radius = half_width + blend;
-    constexpr int stamp_limit_cells = 64;
-    const int reach_x = std::min (
-      stamp_limit_cells,
-      static_cast<int> (std::ceil (radius / grid.spacing_x_m ())) + 1);
-    const int reach_y = std::min (
-      stamp_limit_cells,
-      static_cast<int> (std::ceil (radius / grid.spacing_y_m ())) + 1);
-    for (const CellIndex center : cells) {
-      const int cx = static_cast<int> (center.value % width);
-      const int cy = static_cast<int> (center.value / width);
-      for (int dy = -reach_y; dy <= reach_y; ++dy)
-        for (int dx = -reach_x; dx <= reach_x; ++dx) {
-          int x = cx + dx;
-          int y = cy + dy;
-          if (periodic) {
-            x = wrap_index (x, width);
-            y = wrap_index (y, height);
-          } else if (x < 0 || x >= width || y < 0 || y >= height)
-            continue;
-          const float distance =
-            std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
-          if (distance >= radius)
-            continue;
-          const std::size_t cell = static_cast<std::size_t> (y) * width + x;
-          if (flood.water_depth.values ()[cell] > 1e-7f)
-            continue;
-          influence[cell] = std::max (
-            influence[cell], shoulder_ramp (distance, half_width, blend));
-        }
-    }
+    const AlignmentRaster material_raster =
+      rasterize_alignment (grid, alignment, radius);
+    for (std::size_t cell = 0; cell < count; ++cell)
+      if (flood.water_depth.values ()[cell] <= 1e-7f &&
+          material_raster.distance_m[cell] < radius)
+        influence[cell] =
+          shoulder_ramp (material_raster.distance_m[cell], half_width, blend);
 
     const float base_radius = meters_value (parameters.home_base_pad_radius);
     const float base_blend = std::max (6.0f, 0.45f * base_radius);
@@ -1039,6 +1254,9 @@ namespace moppe::terrain {
              .components = { { .id = component,
                                .anchor_cell = home_base_cell,
                                .cells = circuit_cells } },
+             .alignment = std::move (alignment),
+             .formed_width = parameters.width,
+             .earthwork_delta_m = std::vector<float> (count, 0.0f),
              .influence = ScalarRaster (domain, std::move (influence)),
              .home_base_influence =
                ScalarRaster (domain, std::move (home_base_influence)) };
@@ -1088,6 +1306,8 @@ namespace moppe::terrain {
   }
 
   meters_f64_t trail_circuit_length (const TrailNetwork& network) {
+    if (network.alignment.length > 0.0 * mp_units::si::metre)
+      return network.alignment.length;
     meters_f64_t length = 0.0 * mp_units::si::metre;
     for (const CellIndex cell : network.cells) {
       const CellIndex next = network.receiver[cell.value];
@@ -1107,7 +1327,6 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
-    const bool periodic = grid.topology == Topology::Torus;
     const float height_scale = grid.height_scale_m ();
     const float cell_area = square_meters_value (grid.cell_area ());
 
@@ -1122,12 +1341,16 @@ namespace moppe::terrain {
     TrailNetwork network =
       analyze_trail_network (terrain, parameters, drainage, flood);
 
-    // Project every selected drainage edge toward the requested grade. Both
-    // endpoints move, but their own earthwork limits prevent the path from
-    // replacing the shape of the valley with an engineered road cutting.
-    std::vector<float> grade_m (count);
-    for (std::size_t cell = 0; cell < count; ++cell)
-      grade_m[cell] = original[cell] * height_scale;
+    // Solve the vertical profile along arc-length samples of the continuous
+    // alignment. Horizontal intent and longitudinal grade are deliberately
+    // separate: the former says where the trail goes, while this pass says
+    // what the bulldozer can build there within bounded cut and fill.
+    const std::size_t alignment_count = network.alignment.points.size ();
+    std::vector<float> original_profile_m (alignment_count);
+    for (std::size_t point = 0; point < alignment_count; ++point)
+      original_profile_m[point] =
+        sample_height_m (original, grid, network.alignment.points[point]);
+    std::vector<float> grade_m = original_profile_m;
     const float maximum_grade =
       parameters.maximum_grade.numerical_value_in (mp_units::one);
     const float maximum_cut = meters_value (parameters.maximum_cut);
@@ -1135,76 +1358,44 @@ namespace moppe::terrain {
     for (int iteration = 0;
          iteration < count_value (parameters.grading_iterations);
          ++iteration) {
-      for (std::size_t cell = 0; cell < count; ++cell) {
-        const CellIndex receiver = network.receiver[cell];
-        if (!network.contains (
-              CellIndex { static_cast<std::uint32_t> (cell) }) ||
-            receiver == no_cell)
-          continue;
-        const std::size_t next = receiver.value;
+      for (std::size_t point = 0; point < alignment_count; ++point) {
+        const std::size_t next = (point + 1) % alignment_count;
+        const TrailAlignmentPoint next_position =
+          next ? network.alignment.points[next]
+               : alignment_closure (network.alignment, grid);
         const float allowed =
-          maximum_grade * receiver_distance_m (cell, next, grid);
-        const float difference = grade_m[cell] - grade_m[next];
+          maximum_grade *
+          distance (network.alignment.points[point], next_position);
+        const float difference = grade_m[point] - grade_m[next];
         if (std::fabs (difference) <= allowed)
           continue;
         const float excess = std::fabs (difference) - allowed;
         const float direction = difference > 0.0f ? 1.0f : -1.0f;
-        grade_m[cell] -= direction * 0.5f * excess;
+        grade_m[point] -= direction * 0.5f * excess;
         grade_m[next] += direction * 0.5f * excess;
-        grade_m[cell] =
-          std::clamp (grade_m[cell],
-                      original[cell] * height_scale - maximum_cut,
-                      original[cell] * height_scale + maximum_fill);
-        grade_m[next] =
-          std::clamp (grade_m[next],
-                      original[next] * height_scale - maximum_cut,
-                      original[next] * height_scale + maximum_fill);
+        grade_m[point] = std::clamp (grade_m[point],
+                                     original_profile_m[point] - maximum_cut,
+                                     original_profile_m[point] + maximum_fill);
+        grade_m[next] = std::clamp (grade_m[next],
+                                    original_profile_m[next] - maximum_cut,
+                                    original_profile_m[next] + maximum_fill);
       }
     }
 
-    // A weighted stamp makes confluences independent of traversal order. At
-    // coarse preview resolutions the effective core grows just enough for
-    // adjacent D8 samples to remain a continuous ribbon.
-    std::vector<float> target_sum (count, 0.0f);
-    std::vector<float> influence_sum (count, 0.0f);
+    // Raster construction is derived from the nearest point on that same
+    // alignment. The geometric core still grows to one source cell at coarse
+    // resolutions so collision remains a continuous formed surface; the
+    // independently generated material footprint retains the authored width.
     const float half_width =
       std::max (0.5f * meters_value (parameters.width),
                 1.01f * std::max (grid.spacing_x_m (), grid.spacing_y_m ()));
     const float blend = meters_value (parameters.shoulder_blend);
     const float radius = half_width + blend;
-    constexpr int stamp_limit_cells = 64;
-    const int reach_x = std::min (
-      stamp_limit_cells,
-      static_cast<int> (std::ceil (radius / grid.spacing_x_m ())) + 1);
-    const int reach_y = std::min (
-      stamp_limit_cells,
-      static_cast<int> (std::ceil (radius / grid.spacing_y_m ())) + 1);
-    for (const CellIndex center : network.cells) {
-      const int cx = static_cast<int> (center.value % width);
-      const int cy = static_cast<int> (center.value / width);
-      for (int dy = -reach_y; dy <= reach_y; ++dy)
-        for (int dx = -reach_x; dx <= reach_x; ++dx) {
-          int x = cx + dx;
-          int y = cy + dy;
-          if (periodic) {
-            x = wrap_index (x, width);
-            y = wrap_index (y, height);
-          } else if (x < 0 || x >= width || y < 0 || y >= height)
-            continue;
-          const float distance =
-            std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
-          if (distance >= radius)
-            continue;
-          const std::size_t cell = static_cast<std::size_t> (y) * width + x;
-          if (flood.water_depth.values ()[cell] > 1e-7f)
-            continue;
-          const float influence = shoulder_ramp (distance, half_width, blend);
-          target_sum[cell] += influence * grade_m[center.value];
-          influence_sum[cell] += influence;
-        }
-    }
+    const AlignmentRaster formation_raster =
+      rasterize_alignment (grid, network.alignment, radius);
 
     std::vector<float> shaped = original;
+    std::vector<float> earthwork_delta_m (count, 0.0f);
     TrailFormationReport report;
     report.centerline_cells = cell_count (network.cells.size ());
     report.connected_components = network.components.size ();
@@ -1214,11 +1405,16 @@ namespace moppe::terrain {
     double cut_volume = 0.0;
     double fill_volume = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
-      if (influence_sum[cell] <= 0.0f)
+      if (formation_raster.segment[cell] >= alignment_count ||
+          flood.water_depth.values ()[cell] > 1e-7f)
         continue;
       const float original_m = original[cell] * height_scale;
-      const float target_m = target_sum[cell] / influence_sum[cell];
-      const float influence = std::min (influence_sum[cell], 1.0f);
+      const std::size_t segment = formation_raster.segment[cell];
+      const std::size_t next = (segment + 1) % alignment_count;
+      const float target_m = std::lerp (
+        grade_m[segment], grade_m[next], formation_raster.segment_t[cell]);
+      const float influence =
+        shoulder_ramp (formation_raster.distance_m[cell], half_width, blend);
       const float shaped_m =
         std::clamp (original_m + influence * (target_m - original_m),
                     original_m - maximum_cut,
@@ -1227,6 +1423,7 @@ namespace moppe::terrain {
       if (std::fabs (change) <= 1e-6)
         continue;
       shaped[cell] = shaped_m / height_scale;
+      earthwork_delta_m[cell] = static_cast<float> (change);
       ++report.shaped_cells;
       absolute_change += std::fabs (change);
       maximum_change = std::max (maximum_change, std::fabs (change));
@@ -1246,15 +1443,18 @@ namespace moppe::terrain {
                                     mp_units::si::metre;
     double grade_distance = 0.0;
     double accumulated_rise = 0.0;
-    for (const CellIndex cell : network.cells) {
-      const CellIndex next = network.receiver[cell.value];
-      if (next == no_cell)
-        continue;
-      const double run = receiver_distance_m (cell.value, next.value, grid);
+    for (std::size_t point = 0; point < alignment_count; ++point) {
+      const std::size_t next = (point + 1) % alignment_count;
+      const TrailAlignmentPoint next_position =
+        next ? network.alignment.points[next]
+             : alignment_closure (network.alignment, grid);
+      const double run =
+        distance (network.alignment.points[point], next_position);
       if (run <= 0.0)
         continue;
-      const double rise =
-        std::fabs (shaped[cell.value] - shaped[next.value]) * height_scale;
+      const double rise = std::fabs (
+        sample_height_m (shaped, grid, network.alignment.points[point]) -
+        sample_height_m (shaped, grid, next_position));
       const double grade = rise / run;
       grade_distance += run;
       accumulated_rise += rise;
@@ -1268,6 +1468,7 @@ namespace moppe::terrain {
     }
     if (grade_distance > 0.0)
       report.mean_centerline_grade = accumulated_rise / grade_distance;
+    network.earthwork_delta_m = std::move (earthwork_delta_m);
     return { .heights = std::move (shaped),
              .network = std::move (network),
              .report = report };
