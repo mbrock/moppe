@@ -80,8 +80,12 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     const float3 v = normalize (frame.camera_pos.xyz - in.world_pos);
     const float3 h = normalize (l + v);
     const float3 specular_tint = mix (base.rgb, float3 (1.0), 0.20);
+    // Soft ground overlays and translucent effects must not inherit the hard
+    // glossy prop highlight. Besides looking wet, it aliases badly when a
+    // nearly coplanar decal is seen at a grazing angle.
+    const float specular_coverage = smoothstep (0.82, 0.98, base.a);
     lit += specular_tint * frame.sun_specular.rgb * sun_visibility * 0.22 *
-           pow (max (dot (n, h), 0.0), 64.0);
+           pow (max (dot (n, h), 0.0), 64.0) * specular_coverage;
 
     // A restrained sky rim separates moving silhouettes from the
     // landscape, especially on their shadowed side.

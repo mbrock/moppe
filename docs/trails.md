@@ -260,7 +260,9 @@ The terrain fragment shader interprets trail influence as a formed
 cross-section. It adds a warm crushed-stone base, world-space aggregate
 variation, darker shoulders, paired wear bands, a subtle compacted center,
 and close-range detail normals. Broad color and shoulder contrast remain at
-overview distance while fine noise fades before it shimmers.
+overview distance. Fine aggregate and micro-normal frequencies fade according
+to their screen-space footprint, so shallow viewing angles cannot turn them
+into moire or temporal sparkle.
 
 Snow and standing water suppress the trail material. They do not delete the
 underlying circuit or influence field; the path can remain part of gameplay
@@ -277,7 +279,9 @@ repeated with the terrain on the torus. Its vertices carry true along-trail and
 cross-trail coordinates, while the underlying terrain material continues to
 provide broad shoulders, aggregate detail, water suppression, and cut/fill
 context. The ribbon fades under the same altitude-and-slope snow rule as the
-terrain material.
+terrain material. It is treated as a translucent ground decal: reversed-Z
+depth bias keeps it continuously in front of the composed heightfield, and
+the generic material omits its hard prop-style specular highlight.
 
 ## Runtime consumers
 

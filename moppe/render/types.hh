@@ -61,15 +61,16 @@ namespace moppe {
       bool depth_test;
       bool depth_write;
       bool cull; // back faces, CCW front
+      bool depth_bias; // pull a coplanar surface forward in reversed-Z
 
       DrawState ()
           : blend (false), additive (false), depth_test (true),
-            depth_write (true), cull (true) {}
+            depth_write (true), cull (true), depth_bias (false) {}
 
       bool operator== (const DrawState& o) const {
         return blend == o.blend && additive == o.additive &&
                depth_test == o.depth_test && depth_write == o.depth_write &&
-               cull == o.cull;
+               cull == o.cull && depth_bias == o.depth_bias;
       }
       bool operator!= (const DrawState& o) const {
         return !(*this == o);

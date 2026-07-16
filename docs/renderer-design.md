@@ -160,7 +160,7 @@ Replaces glBegin/glEnd + matrix stack + glColor + glutSolid*:
 
     dl.push(); dl.translate(v); dl.rotate_deg(a, axis); dl.scale(v);
     dl.color(r,g,b,a); dl.lit(true/false); dl.texture(tex or nullptr);
-    dl.state(DrawState{...});             // blend, depth write, cull
+    dl.state(DrawState{...});             // blend, depth write/bias, cull
     dl.begin(Prim::Quads); dl.vertex(v); dl.normal(n); dl.uv(u,v); dl.end();
     dl.cube(0.5); dl.sphere(r, 10, 8); dl.cone(...); dl.torus(...);
     dl.pop();
@@ -279,7 +279,10 @@ rasters. Submerged beds and damp banks lose diffuse energy and gain a restrained
 wet sheen; close shallow beds receive procedural pebble-scale bump detail.
 Grass responds more quietly to moisture, while cliff material uses triplanar
 projection, a slate/taupe palette, and world-height strata to avoid stretched
-red faces. These are shading effects only and do not alter collision geometry.
+red faces. Screen-space world-position derivatives suppress aggregate,
+micro-normal, pebble, and snow-specular frequencies as they become subpixel,
+including nearby ground viewed almost parallel to its surface. These are
+shading effects only and do not alter collision geometry.
 
 The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
 and runs in a compute kernel.  Terrain Lab currently reads the result back to
