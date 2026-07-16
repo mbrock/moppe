@@ -23,7 +23,6 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
-#include <moppe/game/trail_surface.hh>
 #include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker.hh>
@@ -1204,10 +1203,6 @@ namespace moppe {
               trail_cell_position (m_trail_network->plan.scenic_focus);
             std::cerr << "home base: " << base << " scenic focus: " << focus
                       << '\n';
-            {
-              MOPPE_PROFILE_ZONE ("startup.rebuild_trail_ribbon");
-              m_trail_surface.rebuild (r, m_map, *m_trail_network);
-            }
           }
         }
 
@@ -2030,12 +2025,6 @@ namespace moppe {
         // cloud shader wherever terrain covers it.
         if (!terrain_lab)
           draw_world_sky ();
-
-        // The terrain material carries the broad formed shoulders. This
-        // feature-local ribbon gives the compacted core continuous geometry
-        // and true across/along coordinates below the heightmap resolution.
-        if (!terrain_lab)
-          m_trail_surface.draw (r, cam);
 
         if (!terrain_lab && !m_water_inspection && !m_tree_demo)
           m_forest.draw (
@@ -2897,7 +2886,6 @@ namespace moppe {
         m_water_network.reset ();
         m_rivers.reset ();
         m_river_surface.clear ();
-        m_trail_surface.clear ();
         m_terrain_history.clear ();
         ++m_seed;
         m_mode = M_BIKE;
@@ -3058,7 +3046,6 @@ namespace moppe {
       std::optional<terrain::TrailNetwork> m_trail_network;
       std::optional<terrain::TrailNetwork> m_generated_trail_network;
       RiverSurface m_river_surface;
-      TrailSurface m_trail_surface;
       Terrain m_terrain;
       // Surface data computed at finish_setup, uploaded once the terrain
       // textures exist (upload_world_terrain).

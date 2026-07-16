@@ -53,7 +53,6 @@ namespace moppe {
       void color (DisplayColor c, float a = 1.0f);
       void lit (bool on);
       void fogged (bool on);
-      void ground_decal (bool on);
       // Wind sway weight for subsequent vertices (0 = anchored, 1 =
       // full amplitude); the scene vertex shader animates it.
       void wind (proportion_t w);
@@ -124,7 +123,6 @@ namespace moppe {
       float m_u, m_v;
       bool m_lit;
       bool m_fogged;
-      bool m_ground_decal;
       uint8_t m_wind;
       const Texture* m_texture;
       DrawState m_state;
