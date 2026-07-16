@@ -156,6 +156,10 @@ namespace moppe::terrain {
                 operation.designed_grade <
                   0.0f * terrain_slope[mp_units::one] ||
                 operation.designed_grade > operation.maximum_grade ||
+                !std::isfinite (
+                  operation.crossfall.numerical_value_in (mp_units::one)) ||
+                operation.crossfall < 0.0f * terrain_slope[mp_units::one] ||
+                operation.crossfall > 0.1f * terrain_slope[mp_units::one] ||
                 operation.grading_iterations < 0 ||
                 !std::isfinite (
                   meters_value (operation.home_base_water_distance)) ||
@@ -173,8 +177,7 @@ namespace moppe::terrain {
                 operation.highland_preference_height_above_sea <=
                   0.0f * mp_units::si::metre ||
                 !std::isfinite (
-                  meters_value (
-                    operation.alpine_avoidance_height_above_sea)) ||
+                  meters_value (operation.alpine_avoidance_height_above_sea)) ||
                 operation.alpine_avoidance_height_above_sea <
                   operation.highland_preference_height_above_sea)
               throw std::invalid_argument (

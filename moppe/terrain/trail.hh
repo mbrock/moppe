@@ -31,6 +31,9 @@ namespace moppe::terrain {
     // for, not the grade that the route search should routinely accept.
     slope_t maximum_grade = 0.12f * terrain_slope[mp_units::one];
     slope_t designed_grade = 0.05f * terrain_slope[mp_units::one];
+    // The compacted tread gently falls toward the naturally lower side so
+    // rain crosses the trail instead of being held on a level bench.
+    slope_t crossfall = 0.03f * terrain_slope[mp_units::one];
     IterationCount grading_iterations = iteration_count (24);
     meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
     meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
