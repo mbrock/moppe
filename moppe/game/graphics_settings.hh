@@ -32,7 +32,7 @@ namespace moppe::game {
 
     bool terrain_shadows = true;
     bool ocean = true;
-    bool river_ribbons = false;
+    bool river_ribbons = true;
     bool particles = true;
     bool vehicle_effects = true;
     bool star_effects = true;

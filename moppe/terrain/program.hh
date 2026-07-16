@@ -20,15 +20,6 @@ namespace moppe::terrain {
     float exponent;
   };
 
-  struct HydraulicErosion {
-    DropletCount droplets;
-    BatchSize batch_size = terrain::batch_size (256);
-    StepCount max_steps = step_count (64);
-    float minimum_water = 0.0f;
-    SedimentDisposition sediment_at_termination = SedimentDisposition::Discard;
-    CarvingRule carving_rule = CarvingRule::PathMonotone;
-  };
-
   struct ThermalErosion {
     IterationCount iterations;
     float talus;
@@ -49,17 +40,13 @@ namespace moppe::terrain {
                                         PowerHeights,
                                         AnalyticalErosion,
                                         OrogenyEvolution,
-                                        HydraulicErosion,
                                         ThermalErosion,
-                                        ChannelCarving,
                                         TrailFormation,
                                         HillslopeDiffusion>;
 
   using TerrainTransformReport = std::variant<std::monostate,
                                               AnalyticalErosionReport,
                                               StreamPowerEvolutionReport,
-                                              HydraulicErosionReport,
-                                              ChannelCarvingReport,
                                               TrailFormationReport,
                                               HillslopeDiffusionReport>;
 
@@ -74,14 +61,6 @@ namespace moppe::terrain {
   struct TransformSemantics {
     SpatialScope spatial_scope;
     EvaluationOrder evaluation_order;
-  };
-
-  // Serializable position in the pseudorandom stream used by stateful
-  // stages.  The offset preserves the historical sequence after the
-  // geological source consumed its three component seeds.
-  struct RandomSequence {
-    Seed seed;
-    SequenceOffset offset;
   };
 
   // A source is a value in its own right, rather than an implicit prelude to
@@ -102,7 +81,7 @@ namespace moppe::terrain {
 
   struct TerrainProgram {
     GeologicalSource source;
-    RandomSequence randomness;
+    Seed seed;
     std::vector<TerrainTransform> transforms;
   };
 
@@ -117,11 +96,6 @@ namespace moppe::terrain {
     TerrainGenerationProfile profile = TerrainGenerationProfile::Research);
   TerrainProgram make_world_program (std::uint32_t root_seed,
                                      TerrainGenerationProfile profile);
-  TerrainProgram make_relief_program (std::uint32_t root_seed,
-                                      TerrainGenerationProfile profile);
-  int profile_droplet_count (TerrainGenerationProfile profile) noexcept;
-  int profile_stream_power_iterations (
-    TerrainGenerationProfile profile) noexcept;
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
 
   void validate_program (const TerrainProgram& program);

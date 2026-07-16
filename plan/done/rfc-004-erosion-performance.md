@@ -1,10 +1,15 @@
 # RFC-004: The erosion performance path
 
-- Status: Draft
+- Status: Superseded on 2026-07-16
 - Area: terrain simulation, performance
 - Interacts with: RFC-001 (reduces droplet load), RFC-003 (ledger on GPU)
 
 ## Problem
+
+This proposal is retained as a historical design record. RFC-001's orogeny
+model replaced droplet erosion in ordinary world generation, and the unused
+droplet implementation was removed. None of the droplet GPU work below is on
+the active roadmap; source-field acceleration remains independently useful.
 
 World generation time is dominated by terrain work that the codebase has
 already architected for acceleration but not yet wired up.  The pointwise

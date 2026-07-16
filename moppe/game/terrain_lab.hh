@@ -76,7 +76,6 @@ namespace moppe {
       Vec3 forward () const;
       Mat4 view_matrix () const;
       void render_rivers (render::Renderer& renderer, const Vec3& camera) const;
-      void render_droplet (render::Renderer& renderer, const Vec3& camera);
 
       void draw (render::DrawList& dl, int width_pts, int height_pts);
 
@@ -134,11 +133,6 @@ namespace moppe {
       const terrain::FloodField& standing_water ();
       void inspect_drainage (float x, float y);
       std::optional<Vec3> terrain_point_at_screen (float x, float y) const;
-      void launch_droplet (float x, float y);
-      Vec3 droplet_world_position (std::size_t index) const;
-      Vec3 droplet_world_position (float progress) const;
-      float visible_droplet_pitch (const Vec3& droplet) const;
-      void update_droplet_overlay (bool force = false);
       void show_history_snapshot (std::size_t index);
       std::string history_snapshot_name (std::size_t index) const;
 
@@ -165,16 +159,6 @@ namespace moppe {
       bool m_active;
       bool m_map_pristine;
       terrain::TerrainProgram m_program;
-      map::HydraulicDropletTrace m_droplet_trace;
-      std::optional<Vec3> m_droplet_target;
-      std::vector<float> m_droplet_overlay;
-      std::size_t m_droplet_overlay_points;
-      render::DrawList m_droplet_draw;
-      float m_droplet_progress;
-      float m_droplet_settle;
-      bool m_droplet_armed;
-      bool m_droplet_follow;
-      float m_time;
       std::vector<map::TerrainCheckpoint> m_checkpoints;
       std::vector<terrain::TerrainTransformReport> m_reports;
       std::optional<terrain::DrainageGraph> m_drainage;

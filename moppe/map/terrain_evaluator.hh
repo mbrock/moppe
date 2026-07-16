@@ -7,24 +7,22 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
-#include <random>
 #include <utility>
 #include <vector>
 
 namespace moppe::map {
-  // A resumable value produced at a materialization barrier.  Capturing the
-  // random stream together with the raster makes a resumed program exactly
-  // equivalent to evaluating the same prefix again.
+  // A resumable value produced at a materialization barrier. Capturing the
+  // terrain and its change ledgers makes a resumed program equivalent to
+  // evaluating the same prefix again.
   struct TerrainCheckpoint {
     std::vector<float> heights;
     std::vector<float> eroded;
     std::vector<float> deposited;
-    std::mt19937 randomness;
   };
 
   // Interprets terrain-language values against concrete heightmap storage.
-  // RandomHeightMap owns samples and legacy shaping kernels; this class owns
-  // program order, random-stream position, progress, and resumable history.
+  // RandomHeightMap owns samples and shaping kernels; this class owns program
+  // order, progress, and resumable history.
   class TerrainEvaluator {
   public:
     using Progress =
@@ -59,7 +57,6 @@ namespace moppe::map {
   private:
     RandomHeightMap& m_target;
     const terrain::FieldEvaluator* m_source_evaluator;
-    std::mt19937 m_randomness;
     std::vector<float> m_relative_uplift;
     std::optional<terrain::TrailNetwork> m_trail_network;
     IterationProgress m_iteration_progress;

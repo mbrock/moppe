@@ -7,42 +7,6 @@
 #include <cstdint>
 
 namespace moppe::terrain {
-  enum class SedimentDisposition { Discard, Deposit };
-
-  enum class CarvingRule { Unconstrained, PathMonotone };
-
-  // Operational reading produced by one hydraulic erosion stage. Amounts are
-  // measured in normalized terrain-height units; the balance is independent
-  // of the physical cell area shared by every term.
-  struct HydraulicErosionReport {
-    EventCount droplets = event_count (0);
-    EventCount steps = event_count (0);
-    EventCount stopped_flat = event_count (0);
-    EventCount stopped_at_boundary = event_count (0);
-    EventCount stopped_at_step_limit = event_count (0);
-    EventCount stopped_at_water_cutoff = event_count (0);
-    double eroded = 0.0;
-    double deposited = 0.0;
-    double discarded_sediment = 0.0;
-    double final_water = 0.0;
-
-    double mean_steps () const noexcept {
-      return count_value (droplets)
-               ? static_cast<double> (count_value (steps)) /
-                   count_value (droplets)
-               : 0.0;
-    }
-
-    double mean_final_water () const noexcept {
-      return count_value (droplets) ? final_water / count_value (droplets)
-                                    : 0.0;
-    }
-
-    double discarded_fraction () const noexcept {
-      return eroded > 0.0 ? discarded_sediment / eroded : 0.0;
-    }
-  };
-
   // Finite-time n=1 stream-power evolution.  SI units keep age, uplift,
   // erodibility, drainage area, and terrain scale comparable across grid
   // resolutions.  sea_level is expressed in the source heightfield's units.
@@ -92,30 +56,6 @@ namespace moppe::terrain {
     meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;
   };
 
-  // Deterministic channel stamping along the extracted river network.
-  // Bed depth follows catchment area (hydraulic-geometry style) and beds
-  // are monotone downstream, so every carved channel drains to its mouth.
-  // Depths and widths are in meters; area threshold is in terrain cells so
-  // carved channels match the renderer's visible-river extraction.
-  struct ChannelCarving {
-    float sea_level = 50.0f / 650.0f;
-    // river_existence_minimum_area_cells(): carve only channels the
-    // lattice can actually hold (width law >= two cells).
-    float minimum_area_cells = 27778.0f;
-    float depth_per_sqrt_m2 = 0.0015f;
-    meters_t minimum_depth = 0.4f * mp_units::si::metre;
-    meters_t maximum_depth = 2.5f * mp_units::si::metre;
-    meters_t bank_blend = 6.0f * mp_units::si::metre;
-  };
-
-  struct ChannelCarvingReport {
-    ReachCount reaches = reach_count (0);
-    CellCount carved_cells = cell_count (0);
-    cubic_meters_f64_t lowered_volume =
-      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
-    meters_f64_t mean_lowering = 0.0 * mp_units::si::metre;
-    meters_f64_t maximum_lowering = 0.0 * mp_units::si::metre;
-  };
 }
 
 #endif

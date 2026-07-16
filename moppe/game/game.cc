@@ -37,6 +37,7 @@
 #include <moppe/mov/vehicle.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/river.hh>
 #include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/waterline.hh>
@@ -879,9 +880,7 @@ namespace moppe {
                         const terrain::TerrainTransform& transform,
                         int completed,
                         int total) {
-                  if (std::holds_alternative<terrain::HydraulicErosion> (
-                        transform) ||
-                      std::holds_alternative<terrain::OrogenyEvolution> (
+                  if (std::holds_alternative<terrain::OrogenyEvolution> (
                         transform)) {
                     set_loading_stage (LoadingStage::EvolvingTerrain);
                     m_loading_work_done = completed;
@@ -980,7 +979,7 @@ namespace moppe {
               *m_standing_water,
               *m_lake_census,
               *m_drainage,
-              visible_river_minimum_area (m_drainage->source_grid));
+              terrain::visible_river_minimum_area (m_drainage->source_grid));
           }
           if (m_water_shot) {
             m_water_inspection = choose_water_inspection (*m_water_shot,
@@ -1021,16 +1020,11 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("MoppeGame::finish_setup");
         render::Renderer& r = *m_renderer;
 
-        // Rivers are painted into the water sheets below; the optional ribbon
-        // meshes remain independently selectable for comparison captures.
+        // Running rivers are continuous ribbon meshes. The water sheets below
+        // retain standing bodies and carry each mouth's current into them.
         if (m_rivers && m_graphics.river_ribbons) {
           MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
-          m_river_surface.rebuild (r,
-                                   m_map,
-                                   *m_standing_water,
-                                   *m_lake_census,
-                                   *m_drainage,
-                                   *m_rivers);
+          m_river_surface.rebuild (r, m_map, *m_rivers);
         }
         // Renderer uploads that depend on the terrain texture dimensions
         // are staged here and flushed by upload_world_terrain after
@@ -2130,9 +2124,6 @@ namespace moppe {
           }
           r.draw_ocean (ocean);
         }
-
-        if (terrain_lab)
-          m_terrain_lab.render_droplet (r, cam);
 
         if (!terrain_lab && m_graphics.particles) {
           m_dust.render (r);

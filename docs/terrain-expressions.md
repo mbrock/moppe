@@ -137,23 +137,21 @@ recipe's seven inspectable layers to the former generator bit for bit.
 
 ## Programs and materialized transformations
 
-`TerrainProgram` contains a `GeologicalSource`, a reproducible random-stream
-position, and an ordered `std::vector<TerrainTransform>`.  A transform is one
+`TerrainProgram` contains a `GeologicalSource`, an explicit root seed, and an
+ordered `std::vector<TerrainTransform>`. A transform is one
 of these runtime variants:
 
 - `NormalizeHeights`
 - `PowerHeights`
 - `AnalyticalErosion`
 - `OrogenyEvolution`
-- `HydraulicErosion`
 - `ThermalErosion`
-- `ChannelCarving`
 - `TrailFormation`
 - `HillslopeDiffusion`
 
 `map::TerrainEvaluator` materializes the source and applies those transforms
-to concrete height storage.  It owns program order, random-stream position,
-progress reporting, and exact resumable checkpoints.  `RandomHeightMap` no
+to concrete height storage. It owns program order, progress reporting, and
+exact resumable checkpoints. `RandomHeightMap` no
 longer interprets programs; it stores samples and provides the concrete
 shaping kernels that the evaluator invokes.
 
@@ -245,8 +243,8 @@ each inland body one deterministic tree leading to its spill, and uses a
 general topological pass to carry the full upstream area across equal-height
 water. A `WaterNetwork` then records every dry-to-water inlet edge and its
 accumulated catchment area, plus each inland body's outflow area and downstream
-cell. These remain readings and do not mutate terrain. Hydraulic erosion does
-not yet consume them. In random-world gameplay, however, the
+cell. These remain readings and do not mutate terrain. In random-world
+gameplay, the
 same `FloodField::water_level` raster drives the animated water grid: vertices
 sample the local lake elevation, dry fragments are discarded, and wave
 amplitude fades toward each shore. This changes presentation and spawn-site
@@ -271,11 +269,12 @@ cascade foam on the continuous ribbon. A tested vertical-quad prototype was
 discarded because a heightfield step is still a continuous slope: the quad
 intersected terrain and visually disconnected the river.
 
-The retained ribbon renderer resamples those ordered cells twice per edge with
-bounded cubic tangents. It preserves exact reach endpoints and recomputes dry
-height and normals from the terrain, so this smoothing cannot alter routing or
-move an inlet, spill, or confluence. Interpolated flow distance and attributes
-drive the same shader material along the smoother presentation curve.
+Every reach owns a dense, unwrapped `RiverAlignment`. A damped cubic Hermite
+curve preserves routed endpoints while removing D8 corners; samples carry
+area, slope, waterfall, standing-water blend, and water level. Local arc
+length serves geometric consumers, while a negative distance-to-final-mouth
+coordinate is continuous through confluences and drives flow animation. The
+alignment is a reading: it cannot alter routing or move an inlet or spill.
 
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
@@ -287,8 +286,7 @@ descriptions for tools and evaluators, not a class hierarchy:
 | Thermal erosion | `Neighborhood` | `Iterative` |
 | Analytical erosion | `Global` | `Iterative` |
 | Orogeny evolution | `Global` | `Iterative` |
-| Hydraulic erosion | `Global` | `Iterative` |
-| Channel carving | `Global` | `Iterative` |
+| Trail formation | `Global` | `Iterative` |
 | Hillslope diffusion | `Neighborhood` | `Iterative` |
 
 In more abstract language these roughly separate timeless field algebra,
@@ -296,23 +294,16 @@ local context, whole-terrain knowledge, and historical evolution.  The code
 keeps the plain operational names because the axes overlap: normalization is
 global but not historical, while drainage is both global and evolving.
 
-The earlier relief-source Research profile remains available for comparison:
+The world program is deliberately short:
 
 ```text
-geological source
-  -> normalize
-  -> power(1.15)
-  -> analytical(200,000 years, 4 routing passes)
-  -> thermal(2 iterations, talus 0.003)
-  -> hydraulic(500,000 droplets, batches of 256,
-               1% water cutoff, 512-step safety cap, settle at death)
-  -> thermal(2 iterations, talus 0.003)
-  -> channel carving
+orogeny source
+  -> orogeny evolution(profile duration)
+  -> trail formation
 ```
 
-Terrain Lab retains a program value too.  Game generation, command-line
+Terrain Lab retains a program value too. Game generation, command-line
 experiments, and interactive inspection therefore use the same evaluator.
-The saved random-stream offset preserves the former erosion sequence.
 
 Gameplay selects an explicit `TerrainGenerationProfile`: **Fast** evolves a
 1025-square Orogeny world for 200,000 years, **Play** evolves a 2049-square
@@ -350,14 +341,13 @@ Terrain Lab has one instrument vocabulary with two levels of disclosure:
   explicit stepped changes, so an expensive transform cannot be scrubbed
   through obsolete intermediate rebuilds;
 - the geological source and every materialized stage are selectable rows;
-- normalization, power, analytical age, orogeny, droplet, thermal, channel
-  carving, and diffusion stages can be appended independently and combined in
-  any order;
+- normalization, power, analytical age, orogeny, thermal, trail, and
+  diffusion stages can be appended independently and combined in any order;
 - selected stages can be moved, copied, deleted, and edited in place;
-- natural-number values such as periodic wave counts, erosion droplets,
-  batches, and passes use explicit digital minus/value/plus counters;
+- natural-number values such as periodic wave counts, routing passes, and
+  relaxation iterations use explicit digital minus/value/plus counters;
 - changing the inspected layer or random seed preserves the downstream stack;
-- reset returns to the canonical normalized base recipe;
+- reset returns to the canonical Orogeny world recipe;
 - left-dragging outside the window orbits, right- or middle-dragging pans,
   and the mouse wheel zooms only while it is over the terrain;
 - Fit restores an overview appropriate to the selected view;
@@ -441,18 +431,14 @@ new-world cycle before its screenshot.
 In C++, a scripted experiment is ordinary value manipulation:
 
 ```cpp
-auto program = moppe::terrain::make_geological_program (123);
+auto program = moppe::terrain::make_world_program (
+  123, moppe::terrain::TerrainGenerationProfile::Play);
 program.source.recipe.mountains.cycles = 8;
 program.source.recipe.blend.mountain_weight = 0.9f;
-program.transforms.emplace_back (moppe::terrain::HydraulicErosion {
-  .droplets = 100000,
-  .batch_size = 256,
-  .max_steps = 512,
-  .minimum_water = 0.01f,
-  .sediment_at_termination =
-    moppe::terrain::SedimentDisposition::Deposit,
-  .carving_rule = moppe::terrain::CarvingRule::PathMonotone
-});
+auto& orogeny = std::get<moppe::terrain::OrogenyEvolution> (
+  program.transforms.front ());
+orogeny.evolution.duration =
+  650000.0f * mp_units::astronomy::Julian_year;
 moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
 
@@ -493,55 +479,18 @@ depression route cannot raise a cell above uplift alone.
 The calibrated maximum uplift is 1 mm/year, with `K = 2e-5`, `m = 0.4`,
 `D = 1e-4 m2/year`, and a 50,000-year step. Fast, Play, and Research orogeny
 programs run for 200,000, 500,000, and 1,000,000 years respectively. Ordinary
-world generation now uses these programs, selected by the existing terrain
-quality profile. The earlier relief-source pipeline remains available through
-`make_relief_program` for experiments and comparison. The report separates
+world generation uses these programs, selected by the existing terrain
+quality profile. The report separates
 prescribed tectonic uplift and implicit incision volumes from net
 raised/lowered volume, and exposes the last step's mean and maximum change as
 a convergence reading.
 
-The pass is deterministic and much cheaper than the droplet stage, but it is
-not the paper's complete solver yet. Fixed routing produces cell-scale
+The pass is deterministic, but it is not the paper's complete solver yet.
+Fixed routing produces cell-scale
 discontinuities; relaxed routing passes improve agreement but do not replace
 the paper's coarse-to-fine iteration and hillslope correction. Terrain Lab
 therefore exposes analytical age separately from Talus and reports lowered
 and raised volume plus mean and maximum physical change.
-
-Hydraulic batches advance their droplets in lockstep.  Every droplet reads
-the same heightfield for one simulation step, sparse erosion/deposition deltas
-are accumulated, and the batch is committed before the next step.  This is a
-deterministic CPU implementation of the work boundary a future compute kernel
-can execute in parallel.  Terrain Lab exposes batch-size presets of 1, 64,
-256, and 1024 as well as the numeric knob, making the visual effect of more
-simultaneous erosion directly comparable.
-
-Maximum lifetime is a first-class natural-number parameter too. The Lab has
-one-click experiment presets for droplet count (100K, 300K, 1M, 1.5M), maximum
-lifetime (64, 128, 256, 512), and batch size. Droplet plus/minus controls move
-through coarse 1-3-5-style values so each expensive rebuild changes the
-experiment materially.
-
-Every hydraulic evaluation returns a `HydraulicErosionReport`. The Map
-Readings window displays eroded, deposited, and discarded sediment; mean
-lifetime and final water; and termination counts for the safety cap, water
-cutoff, and flat terrain. Explicit 64-step, discard-at-death, unconstrained
-values reproduce the historical behavior. Generation profiles instead stop
-naturally at 1% water, settle their remaining load, and carve path-monotonely,
-closing the sediment ledger while avoiding footprint pits.
-
-Carving policy is another explicit enum. `Unconstrained` retains the earlier
-bilinear footprint behavior. `PathMonotone` clamps every affected sample so a
-drop cannot leave its footprint below the downstream handoff elevation; the
-clamp observes pending changes from every droplet in the current batch. This
-prevents the carve itself from minting a pit while preserving deterministic
-batch semantics and the sediment ledger.
-
-The present CPU implementation still evaluates droplets serially inside that
-logical batch.  A prototype using a persistent CPU worker team and two barriers
-per droplet step preserved output exactly but was substantially slower because
-the work between barriers is too small.  The next performance pass should
-therefore lower a whole lockstep batch to a GPU compute kernel, or redesign the
-CPU algorithm around much coarser per-worker tiles and private delta buffers.
 
 ## Tests and command-line feedback
 
@@ -584,9 +533,6 @@ game:
 ./build/terrain-pipeline-demo /tmp/tuned.png 257 123 combined \
   warp-amplitude=0.28 mountain-frequency=9 mountain-weight=0.9
 ./build/terrain-pipeline-demo /tmp/world.png 257 123 combined world
-./build/terrain-pipeline-demo /tmp/relief.png 257 123 combined relief
-./build/terrain-pipeline-demo /tmp/eroded.png 257 123 combined \
-  power=1.15 hydraulic=10000,256,512,0.01,deposit thermal=2,0.003
 ./build/terrain-pipeline-demo /tmp/orogeny.png 257 123 combined \
   orogeny=1000000,50000,0.001,2e-5,0.4,0.0001
 ```
@@ -596,36 +542,9 @@ The orogeny option is
 unit-scale legacy preview, this mode uses the game's 11 km by 11 km horizontal
 and 650 m vertical calibration so all physical rates retain their meaning.
 
-The controlled lifetime sweep used to choose those defaults is reproducible:
-
-```sh
-./build/terrain-erosion-experiment 513 1783728698 300000 1 \
-  64,128,256,305,512
-./build/terrain-erosion-experiment 513 1783728698 300000 1 \
-  512 0.01 settle
-```
-
-The command reports runtime, sinks, stream cells, maximum drainage area,
-longest receiver path, the sediment ledger, mean lifetime, and termination
-causes as CSV. The full measurements and falsified footprint experiment live
-in `research/terrain/erosion-lifetime-experiment.md`.
-
-The fixed-seed method comparison replays every mode from one physical-world
-checkpoint and can also write its height images:
-
-```sh
-./build/terrain-stream-power-experiment \
-  257 123 200000 4 30000 /tmp/moppe-stream
-```
-
-It reports source, analytical, analytical-plus-talus, droplets, combined, and
-combined-plus-talus metrics. The first recorded result and its negative
-findings live in `research/terrain/stream-power-experiment.md`.
-
 The initial preview program starts with normalization. `raw` clears its
 transforms; `normalize` appends normalization explicitly; `world` selects the
-Research Orogeny program; and `relief` selects the earlier complete Research
-pipeline. Recipe overrides include `warp-amplitude`, the three layer
+Research Orogeny program. Recipe overrides include `warp-amplitude`, the three layer
 frequencies, mask edges, and blend weights. Geological layer IDs are
 `combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and `warp-y`.
 
@@ -635,7 +554,6 @@ frequencies, mask edges, and blend weights. Geological layer IDs are
   parameter metadata so tools can generate controls without hard-coded rows.
 - Add a stable serialization format for sources and programs, then layer a
   lightweight scripting language over the same values.
-- Generalize hydraulic constants into their own first-class parameter value.
 - Keep the interactive Metal result GPU-resident through normalization,
   normal generation, and rendering; read back only when CPU transforms or
   gameplay need an authoritative map.
