@@ -106,10 +106,10 @@ namespace {
           break;
         start = comma + 1;
       }
-      if (parts.size () < 6 || parts.size () > 11)
+      if (parts.size () < 6 || parts.size () > 12)
         throw std::invalid_argument (
           "orogeny expects duration,dt,uplift,reference_rate,m,D"
-          "[,sea,land_relief,coast,bathymetry,routing]");
+          "[,sea,land_relief,coast,bathymetry,routing,channel_memory]");
       if (program.transforms.size () == 1 &&
           std::holds_alternative<NormalizeHeights> (
             program.transforms.front ()))
@@ -151,6 +151,9 @@ namespace {
           throw std::invalid_argument (
             "orogeny routing must be d8 or d-infinity");
       }
+      if (parts.size () > 11)
+        orogeny.evolution.channel_persistence =
+          parse_float (parts[11]) * channel_persistence[mp_units::one];
       program.transforms.emplace_back (orogeny);
     } else if (name == "trails") {
       std::vector<std::string_view> parts;

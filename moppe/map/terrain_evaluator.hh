@@ -7,17 +7,19 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
 namespace moppe::map {
   // A resumable value produced at a materialization barrier. Capturing the
-  // terrain and its change ledgers makes a resumed program equivalent to
-  // evaluating the same prefix again.
+  // terrain, change ledgers, and lagged channel tangent makes a resumed
+  // program equivalent to evaluating the same prefix again.
   struct TerrainCheckpoint {
     std::vector<float> heights;
     std::vector<float> eroded;
     std::vector<float> deposited;
+    std::vector<terrain::ChannelTangent> channel_tangents;
   };
 
   // Interprets terrain-language values against concrete heightmap storage.
@@ -53,11 +55,18 @@ namespace moppe::map {
     std::optional<terrain::TrailNetwork> release_trail_network () {
       return std::move (m_trail_network);
     }
+    std::span<const terrain::ChannelTangent> channel_tangents () const {
+      return m_channel_tangents;
+    }
+    std::vector<terrain::ChannelTangent> release_channel_tangents () {
+      return std::move (m_channel_tangents);
+    }
 
   private:
     RandomHeightMap& m_target;
     const terrain::FieldEvaluator* m_source_evaluator;
     std::vector<float> m_relative_uplift;
+    std::vector<terrain::ChannelTangent> m_channel_tangents;
     std::optional<terrain::TrailNetwork> m_trail_network;
     IterationProgress m_iteration_progress;
     std::size_t m_transform_index = 0;

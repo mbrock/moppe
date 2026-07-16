@@ -480,12 +480,29 @@ Every geological step recomputes the standing-water surface and constructs an
 Orogeny-local fractional drainage reading. Its domain contains only the
 heightmap's unique lattice samples, owns each cell's zero-, one-, or
 two-receiver route and deterministic topological order, and is materialized as
-a `Bundle` of typed direction, slope, and contributing-area columns. Dry
-strict descent uses D-infinity triangular facets. Lake flats, depression
-spills, and ocean identity continue to come from the established wet D8 graph.
-This makes fractional accumulation conservative and acyclic without changing
-the graph used by lakes, rivers, waterfalls, rendering, or the final
-`SurfaceBundle`.
+a `Bundle` of typed direction, slope, contributing area, channel tangent, and
+area-weighted tangent-flux columns. Dry strict descent uses D-infinity
+triangular facets. Lake flats, depression spills, and ocean identity continue
+to come from the established wet D8 graph. This makes fractional accumulation
+conservative and acyclic without changing the graph used by lakes, rivers,
+waterfalls, rendering, or the final `SurfaceBundle`.
+
+The channel tangent is the horizontal vector form of drainage direction after
+incoming area fluxes have been combined at confluences. It is persisted across
+geological steps. At the next step, `channel_persistence` multiplies each
+candidate's physical slope by `1 + p dot(d, d_previous)` before route
+selection. Only already-downhill candidates enter that comparison, so the
+height ordering and deterministic DAG remain intact. This is a lagged coupling:
+the completed routing pass produces the memory used by the following pass,
+never a same-pass routing feedback loop. A value of zero exactly recovers
+memoryless D-infinity; the default is 0.35 and Terrain Lab exposes the value as
+`CHANNEL MEMORY`.
+
+The typed tangent survives `TerrainEvaluator` checkpoints and is available at
+the evaluator boundary. It is intentionally not in `SurfaceBundle` or a shader
+texture yet. That next materialization step needs an explicit cache and seam
+policy rather than silently reconstructing a different vector from final
+heights.
 
 A downstream-to-upstream sweep interpolates the new elevation along a
 two-receiver facet edge, then solves the backward-Euler incision step exactly

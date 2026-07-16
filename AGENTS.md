@@ -8,8 +8,8 @@
 - Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
   257 123 combined world`
   (further stages: `orogeny=duration,dt,uplift,reference_rate,m,D[,sea,
-  land_relief,coast,bathymetry,routing]`, where routing is `d8` or
-  `d-infinity`; `analytical=age[,uplift,k,m,sea,iters,relax]`; and
+  land_relief,coast,bathymetry,routing,channel_memory]`, where routing is `d8`
+  or `d-infinity`; `analytical=age[,uplift,k,m,sea,iters,relax]`; and
   `trails[=min_m2,max_m2,width,shoulder,cut,fill,max_grade,sea,designed_grade,
   highland_preference,alpine_avoidance,crossfall]`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`

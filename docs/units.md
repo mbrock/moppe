@@ -317,7 +317,10 @@ The gameplay Orogeny solver instead writes the same `n = 1` law as
 dimensions independent of the runtime exponent. Its fractional drainage
 bundle stores direction as an angular quantity, slope as a dimensionless
 terrain-slope kind, flow splits as non-negative dimensionless quantities, and
-contributing area as its own semantic area quantity.
+contributing area as its own semantic area quantity. Its accumulated channel
+tangent is a dimensionless horizontal vector kind; the corresponding channel
+area flux uses a vector representation with area units. Channel persistence is
+a separate non-negative dimensionless kind rather than an unlabelled float.
 
 The corpus illustrates plausible orders of magnitude without establishing
 defaults for Moppe. One experiment uses a 50 km by 50 km domain, uplift of

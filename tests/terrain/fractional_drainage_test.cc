@@ -140,3 +140,54 @@ MOPPE_TEST (fractional_accumulation_is_conservative_acyclic_and_deterministic) {
                       square_meters_value (plane_grid ().cell_area ()),
                     1e-3f);
 }
+
+MOPPE_TEST (fractional_accumulation_materializes_an_area_weighted_tangent) {
+  const std::vector<float> heights = descending_plane (0.37f);
+  const FractionalDrainage drainage = analyze_plane (heights);
+  const auto& areas = spatial::get<fractional_contributing_area> (drainage);
+  const auto& tangents = spatial::get<channel_tangent> (drainage);
+  const auto& fluxes = spatial::get<channel_area_flux> (drainage);
+
+  for (std::size_t offset = 0; offset < width * height; ++offset) {
+    const Vec3 tangent = tangents[offset].numerical_value_in (mp_units::one);
+    const Vec3 flux = fluxes[offset].numerical_value_in (mp_units::si::metre *
+                                                         mp_units::si::metre);
+    const float area = areas[offset].numerical_value_in (mp_units::si::metre *
+                                                         mp_units::si::metre);
+    MOPPE_CHECK_NEAR (length (tangent), 1.0f, 1e-5f);
+    MOPPE_CHECK_NEAR (length (flux), area, 1e-3f);
+    MOPPE_CHECK_NEAR (tangent[1], 0.0f, 0.0f);
+  }
+}
+
+MOPPE_TEST (channel_memory_can_select_an_aligned_downhill_route) {
+  TerrainGrid grid = plane_grid ();
+  std::vector<float> heights (width * height, 20.0f);
+  constexpr std::size_t center_x = 4;
+  constexpr std::size_t center_y = 4;
+  constexpr CellIndex center { center_x + center_y * width };
+  heights[center.value] = 10.0f;
+  for (std::size_t x = center_x + 1; x < width; ++x)
+    heights[center_y * width + x] = 10.0f - (x - center_x);
+  for (std::size_t y = 0; y < center_y; ++y)
+    heights[y * width + center_x] =
+      10.0f - 0.9f * static_cast<float> (center_y - y);
+
+  const TerrainView terrain (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, -1000.0f);
+  const LakeCensus census = census_lakes (flood);
+  const FractionalDrainage memoryless =
+    analyze_fractional_drainage (terrain, flood, census);
+  std::vector<ChannelTangent> memory (width * height,
+                                      Vec3 () * channel_tangent[mp_units::one]);
+  memory[center.value] =
+    Vec3 (0.0f, 0.0f, -1.0f) * channel_tangent[mp_units::one];
+  const FractionalDrainage persistent = analyze_fractional_drainage (
+    terrain, flood, census, memory, 0.9f * channel_persistence[mp_units::one]);
+
+  MOPPE_CHECK (memoryless.domain ().route (center).arcs[0].receiver ==
+               CellIndex { center.value + 1 });
+  MOPPE_CHECK (persistent.domain ().route (center).arcs[0].receiver ==
+               CellIndex { center.value - width });
+  MOPPE_CHECK (heights[center.value - width] < heights[center.value]);
+}
