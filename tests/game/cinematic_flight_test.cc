@@ -1,5 +1,4 @@
 #include <moppe/game/cinematic_flight.hh>
-#include <moppe/game/trail_surface.hh>
 
 #include <tests/test.hh>
 
@@ -154,25 +153,6 @@ namespace {
       .home_base_influence = terrain::ScalarRaster (
         fixture.domain, std::vector<float> (FlightFixture::count, 0.0f))
     };
-  }
-}
-
-MOPPE_TEST (trail_ribbon_materializes_the_continuous_alignment) {
-  FlightFixture fixture;
-  const terrain::TrailNetwork trail = trail_fixture (fixture);
-  const render::DrawList ribbon = game::build_trail_ribbon (fixture.map, trail);
-
-  MOPPE_CHECK (!ribbon.empty ());
-  MOPPE_CHECK (ribbon.vertices ().size () > trail.alignment.points.size ());
-  MOPPE_CHECK (!ribbon.runs ().empty ());
-  MOPPE_CHECK (ribbon.runs ().front ().state.blend);
-  MOPPE_CHECK (!ribbon.runs ().front ().state.depth_bias);
-  MOPPE_CHECK (!ribbon.runs ().front ().state.depth_write);
-  for (const render::Vertex& vertex : ribbon.vertices ()) {
-    MOPPE_CHECK (std::isfinite (vertex.px));
-    MOPPE_CHECK (std::isfinite (vertex.py));
-    MOPPE_CHECK (std::isfinite (vertex.pz));
-    MOPPE_CHECK (vertex.ground_decal == 1);
   }
 }
 

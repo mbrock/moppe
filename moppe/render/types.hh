@@ -49,7 +49,7 @@ namespace moppe {
       uint8_t lit;    // Lambert + specular vs. emissive passthrough
       uint8_t fogged; // distance haze applied
       uint8_t wind;   // 0..255 sway amplitude for the vertex shader
-      uint8_t ground_decal; // near-field overlay; fades before subpixel aliasing
+      uint8_t reserved;
     };
     static_assert (sizeof (Vertex) == 40, "streamed vertex is 40 bytes");
 
@@ -61,16 +61,15 @@ namespace moppe {
       bool depth_test;
       bool depth_write;
       bool cull; // back faces, CCW front
-      bool depth_bias; // pull a coplanar surface forward in reversed-Z
 
       DrawState ()
           : blend (false), additive (false), depth_test (true),
-            depth_write (true), cull (true), depth_bias (false) {}
+            depth_write (true), cull (true) {}
 
       bool operator== (const DrawState& o) const {
         return blend == o.blend && additive == o.additive &&
                depth_test == o.depth_test && depth_write == o.depth_write &&
-               cull == o.cull && depth_bias == o.depth_bias;
+               cull == o.cull;
       }
       bool operator!= (const DrawState& o) const {
         return !(*this == o);

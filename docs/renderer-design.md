@@ -160,7 +160,7 @@ Replaces glBegin/glEnd + matrix stack + glColor + glutSolid*:
 
     dl.push(); dl.translate(v); dl.rotate_deg(a, axis); dl.scale(v);
     dl.color(r,g,b,a); dl.lit(true/false); dl.texture(tex or nullptr);
-    dl.state(DrawState{...});             // blend, depth write/bias, cull
+    dl.state(DrawState{...});             // blend, depth write, cull
     dl.begin(Prim::Quads); dl.vertex(v); dl.normal(n); dl.uv(u,v); dl.end();
     dl.cube(0.5); dl.sphere(r, 10, 8); dl.cone(...); dl.torus(...);
     dl.pop();

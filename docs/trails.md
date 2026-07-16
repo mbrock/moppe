@@ -270,20 +270,10 @@ while being visually covered.
 
 The shader has only a scalar distance-like influence, not a tangent or signed
 cross-track coordinate. Its paired wear bands are therefore contours within
-the mask, not simulated wheel tracks with independent direction data.
-
-At gameplay distance, a feature-local retained ribbon covers the compacted
-core. It is tessellated from the continuous alignment, draped against the
-composed collision height, feathered across the requested physical width, and
-repeated with the terrain on the torus. Its vertices carry true along-trail and
-cross-trail coordinates, while the underlying terrain material continues to
-provide broad shoulders, aggregate detail, water suppression, and cut/fill
-context. The ribbon fades under the same altitude-and-slope snow rule as the
-terrain material. It is treated as a translucent near-field ground decal and
-fades before its width becomes subpixel; the terrain material owns the path at
-long range. Its small physical lift avoids coplanarity without allowing raster
-depth bias to pull it through hills, and the generic material omits its hard
-prop-style specular highlight.
+the mask, not simulated wheel tracks with independent direction data. Keeping
+the path entirely in the terrain material also gives it the terrain's exact
+depth and sampling behavior; a separate translucent ribbon produced subpixel
+sparkle and could leak through distant terrain.
 
 ## Runtime consumers
 

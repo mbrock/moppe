@@ -14,7 +14,6 @@ struct UberVaryings {
   float4 color;
   float lit;
   float fogged;
-  float ground_decal;
 };
 
 vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
@@ -43,7 +42,6 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   out.color = float4 (moppe_srgb (c.rgb), c.a);
   out.lit = v.flags.x ? 1.0 : 0.0;
   out.fogged = v.flags.y ? 1.0 : 0.0;
-  out.ground_decal = v.flags.w ? 1.0 : 0.0;
   return out;
 }
 
@@ -56,19 +54,13 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
                                [[texture (MOPPE_TEX_SHADOW)]],
                                sampler smp [[sampler (0)]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
-  const float dist = length (in.world_pos - frame.camera_pos.xyz);
-
-  // Ground decals only add close-range geometric detail. At long range the
-  // terrain material owns their appearance; fading before the ribbon becomes
-  // subpixel prevents MSAA sparkle and isolated HDR pixels feeding bloom.
-  if (in.ground_decal > 0.5)
-    base.a *= 1.0 - smoothstep (180.0, 320.0, dist);
 
   float3 color = base.rgb;
   if (in.lit > 0.5) {
     float3 n = normalize (in.normal);
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
+    const float dist = length (in.world_pos - frame.camera_pos.xyz);
     const float fog = moppe_distance_fog (dist, frame.fog_color.w);
     const float sun_visibility = moppe_sun_visibility (in.world_pos,
                                                        n,
@@ -106,6 +98,7 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
 
   if (in.fogged > 0.5) {
     const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
+    const float dist = length (to_frag);
     const float fog = moppe_distance_fog (dist, frame.fog_color.w);
     const float3 fog_c = moppe_warmed_fog (
       frame.fog_color.rgb, to_frag / max (dist, 1e-4), frame.sun_dir.xyz);
