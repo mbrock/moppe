@@ -339,7 +339,7 @@ identities, so ordinary source iteration does not accumulate abandoned maps.
 
 Terrain Lab has one instrument vocabulary with two levels of disclosure:
 
-- **Observe** is the default, narrow, translucent dock. It keeps the terrain
+- **Observe** is the default, narrow, translucent window. It keeps the terrain
   visible and puts every existing surface reading in one palette. World
   presets remain explicit one-shot comparisons rather than draggable
   parameters;
@@ -412,9 +412,13 @@ crossfaded from the previous shadow on the same 120 ms clock.  This keeps
 light and geometry together while dragging without paying for the gameplay
 shadow pass.  `MOPPE_PROFILE_SHADOW=1` reports the GPU time of either path.
 The UI itself is Moppe's small immediate-mode `InspectorUi` drawn through
-`DrawList`, not an external widget library. `UiFlow`, `ui_inset`, and
-`ui_grid_cell` provide its small flex-like layout vocabulary, shared by
-drawing and hit testing.
+`DrawList`, not an external widget library. `UiWindow` owns persistent panel
+placement, title-bar dragging, viewport constraints, and the conversion from
+screen input to local widget coordinates. Observe, Build, Map Readings, and
+the in-game World Feel tool therefore share one translucent frame and input
+model. `UiFlow`, `ui_inset`, and `ui_grid_cell` provide the small flex-like
+layout vocabulary used by both drawing and hit testing. Drag any window by
+its title bar; its position persists while switching disclosure levels.
 
 For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
 1025-square field and skips canonical erosion, stars, fish, and

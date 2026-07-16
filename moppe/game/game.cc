@@ -2209,10 +2209,19 @@ namespace moppe {
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
           draw_trail_map (m_hud_dl, hud_width, hud_height);
           if (m_game_ui_open) {
-            m_game_ui_slider_x = std::max (44.0f, hud_width - 364.0f);
-            const UiRect panel { m_game_ui_slider_x - 20, 24, 360, 224 };
-            const UiRect horizontal { m_game_ui_slider_x, 82, 320, 64 };
-            const UiRect vertical { m_game_ui_slider_x, 156, 320, 64 };
+            if (!m_game_ui_window_positioned) {
+              m_game_ui_window.set_position (
+                std::max (24.0f, hud_width - 384.0f), 24.0f);
+              m_game_ui_window_positioned = true;
+            }
+            m_game_ui_window.set_size (360.0f, 224.0f);
+            m_game_ui_window.constrain (hud_width, hud_height);
+            const UiRect horizontal { 20, 58, 320, 64 };
+            const UiRect vertical { 20, 132, 320, 64 };
+            const float local_pointer_x =
+              m_game_ui_window.local_x (m_pointer_x);
+            const float local_pointer_y =
+              m_game_ui_window.local_y (m_pointer_y);
             std::ostringstream horizontal_label;
             horizontal_label << "LANDSCAPE WIDTH  " << std::fixed
                              << std::setprecision (2) << m_landscape_scale_x
@@ -2222,12 +2231,8 @@ namespace moppe {
                            << std::setprecision (2) << m_landscape_scale_y
                            << 'x';
             m_game_ui.begin (m_hud_dl);
-            m_game_ui.panel (m_hud_dl,
-                             panel.x,
-                             panel.y,
-                             panel.width,
-                             panel.height,
-                             "WORLD FEEL");
+            m_game_ui.begin_window (
+              m_hud_dl, m_game_ui_window, "WORLD FEEL");
             m_game_ui.friendly_slider (
               m_hud_dl,
               horizontal,
@@ -2235,7 +2240,7 @@ namespace moppe {
               "SMALLER",
               "LARGER",
               landscape_scale_normalized (m_landscape_scale_x),
-              horizontal.contains (m_pointer_x, m_pointer_y),
+              horizontal.contains (local_pointer_x, local_pointer_y),
               m_game_ui_dragging_axis == 1);
             m_game_ui.friendly_slider (
               m_hud_dl,
@@ -2244,8 +2249,9 @@ namespace moppe {
               "LOWER",
               "TALLER",
               landscape_scale_normalized (m_landscape_scale_y),
-              vertical.contains (m_pointer_x, m_pointer_y),
+              vertical.contains (local_pointer_x, local_pointer_y),
               m_game_ui_dragging_axis == 2);
+            m_game_ui.end_window (m_hud_dl);
             m_game_ui.end (m_hud_dl);
           }
         }
@@ -2547,10 +2553,14 @@ namespace moppe {
       void pointer_move (float x, float y, float dx, float dy) override {
         m_pointer_x = x;
         m_pointer_y = y;
-        if (m_game_ui_dragging_axis)
+        if (m_game_ui_window.dragging ()) {
+          m_game_ui_window.drag_to (
+            x, y, m_renderer->width_pts (), m_renderer->height_pts ());
+        } else if (m_game_ui_dragging_axis) {
           set_landscape_scale_from_pointer (x, m_game_ui_dragging_axis);
-        else if (m_terrain_lab.active ())
+        } else if (m_terrain_lab.active ()) {
           m_terrain_lab.pointer_move (x, y, dx, dy);
+        }
       }
 
       void pointer_button (platform::PointerButton button,
@@ -2558,15 +2568,20 @@ namespace moppe {
                            float x,
                            float y) override {
         if (m_game_ui_open && button == platform::PointerButton::Primary) {
-          const UiRect horizontal { m_game_ui_slider_x, 82, 320, 64 };
-          const UiRect vertical { m_game_ui_slider_x, 156, 320, 64 };
-          if (down && horizontal.contains (x, y)) {
+          const UiRect horizontal { 20, 58, 320, 64 };
+          const UiRect vertical { 20, 132, 320, 64 };
+          const float local_x = m_game_ui_window.local_x (x);
+          const float local_y = m_game_ui_window.local_y (y);
+          if (down && m_game_ui_window.begin_drag (x, y)) {
+            return;
+          } else if (down && horizontal.contains (local_x, local_y)) {
             m_game_ui_dragging_axis = 1;
             set_landscape_scale_from_pointer (x, 1);
-          } else if (down && vertical.contains (x, y)) {
+          } else if (down && vertical.contains (local_x, local_y)) {
             m_game_ui_dragging_axis = 2;
             set_landscape_scale_from_pointer (x, 2);
           } else if (!down) {
+            m_game_ui_window.end_drag ();
             m_game_ui_dragging_axis = 0;
           }
           return;
@@ -2737,7 +2752,9 @@ namespace moppe {
 
       void set_landscape_scale_from_pointer (float x, int axis) {
         const float normalized =
-          std::clamp ((x - m_game_ui_slider_x) / 320.0f, 0.0f, 1.0f);
+          std::clamp ((m_game_ui_window.local_x (x) - 20.0f) / 320.0f,
+                      0.0f,
+                      1.0f);
         const float scale = 0.05f * std::pow (400.0f, normalized);
         if (axis == 1)
           m_landscape_scale_x = scale;
@@ -3077,11 +3094,12 @@ namespace moppe {
       Walker m_walker;
       Hud m_hud;
       InspectorUi m_game_ui;
+      UiWindow m_game_ui_window { { 24, 24, 360, 224 } };
+      bool m_game_ui_window_positioned = false;
       bool m_game_ui_open = false;
       int m_game_ui_dragging_axis = 0;
       float m_landscape_scale_x = 1.0f;
       float m_landscape_scale_y = 1.0f;
-      float m_game_ui_slider_x = 44.0f;
       float m_pointer_x = -1.0f;
       float m_pointer_y = -1.0f;
       std::unique_ptr<render::FontAtlas> m_loading_font;

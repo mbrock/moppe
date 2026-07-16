@@ -24,6 +24,43 @@ namespace moppe {
       }
     };
 
+    // Persistent placement and pointer state for a movable tool window.
+    // Widgets and callers use local coordinates; only this object knows where
+    // the window currently sits on screen.
+    class UiWindow {
+    public:
+      explicit UiWindow (const UiRect& bounds = {});
+
+      const UiRect& bounds () const;
+      UiRect local_bounds () const;
+      UiRect to_screen (const UiRect& local) const;
+      float local_x (float screen_x) const;
+      float local_y (float screen_y) const;
+      bool contains (float screen_x, float screen_y) const;
+
+      void set_position (float x, float y);
+      void set_size (float width, float height);
+      void constrain (float viewport_width,
+                      float viewport_height,
+                      float margin = 8.0f);
+
+      bool begin_drag (float screen_x,
+                       float screen_y,
+                       float title_height = 34.0f);
+      void drag_to (float screen_x,
+                    float screen_y,
+                    float viewport_width,
+                    float viewport_height);
+      void end_drag ();
+      bool dragging () const;
+
+    private:
+      UiRect m_bounds;
+      float m_drag_offset_x;
+      float m_drag_offset_y;
+      bool m_dragging;
+    };
+
     enum class UiFlowDirection { Row, Column };
 
     // A deliberately small retained-layout primitive for immediate-mode
@@ -65,6 +102,13 @@ namespace moppe {
 
       void begin (render::DrawList& dl) const;
       void end (render::DrawList& dl) const;
+
+      // Pushes a local coordinate system and draws the shared translucent
+      // frame. Every begin_window() must be paired with end_window().
+      void begin_window (render::DrawList& dl,
+                         const UiWindow& window,
+                         const std::string& title) const;
+      void end_window (render::DrawList& dl) const;
 
       void panel (render::DrawList& dl,
                   float x,
