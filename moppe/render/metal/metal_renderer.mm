@@ -2326,8 +2326,12 @@ namespace moppe {
         [enc setCullMode:s.cull ? MTLCullModeBack : MTLCullModeNone];
         // Scene depth is reversed (near=1), so a positive bias pulls decals
         // toward the camera. Reset it for every run to prevent state leakage.
+        // A slope-scaled bias is unsafe for long terrain decals: a grazing or
+        // nearly degenerate triangle can receive enough bias to pass through
+        // an intervening hill. One depth unit is sufficient to make the trail
+        // win against the terrain it directly follows.
         [enc setDepthBias:s.depth_bias ? 1.0f : 0.0f
-               slopeScale:s.depth_bias ? 1.0f : 0.0f
+               slopeScale:0.0f
                     clamp:0.0f];
       }
 
