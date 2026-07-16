@@ -464,26 +464,49 @@ recipe's bounded mountain pattern as `RelativeUpliftField`, scales it by a
 physical maximum uplift velocity, and evolves relief through
 
 ```text
-dz/dt = U(x) - K A(x)^m S(x) + D laplacian(z).
+dz/dt = U(x) - v_ref (A(x) / A_ref)^m S(x) + D laplacian(z).
 ```
 
-Every geological step recomputes the standing-water surface and wet drainage
-graph. A downstream-to-upstream sweep then solves the backward-Euler incision
-step exactly for that discrete step; it is unconditionally stable for the
-linear `n = 1` term, but is not an exact continuous-time solution for an
-arbitrarily long step. Explicit stable hillslope-diffusion sweeps are
-interleaved after incision. Ocean cells and receiver roots retain their bed
-elevation rather than snapping terrain to the water surface, and an uphill
-depression route cannot raise a cell above uplift alone.
+Here `v_ref` is an incision velocity measured at the typed reference area
+`A_ref`. This keeps the runtime calibration dimensionally stable as `m`
+changes. The default `A_ref = 1 m²` and `v_ref = 2e-5 m/year` preserve the
+previous numerical `K A^m` calibration.
 
-The calibrated maximum uplift is 1 mm/year, with `K = 2e-5`, `m = 0.4`,
-`D = 1e-4 m2/year`, and a 50,000-year step. Fast, Play, and Research orogeny
-programs run for 200,000, 500,000, and 1,000,000 years respectively. Ordinary
-world generation uses these programs, selected by the existing terrain
-quality profile. The report separates
-prescribed tectonic uplift and implicit incision volumes from net
-raised/lowered volume, and exposes the last step's mean and maximum change as
-a convergence reading.
+Every geological step recomputes the standing-water surface and constructs an
+Orogeny-local fractional drainage reading. Its domain contains only the
+heightmap's unique lattice samples, owns each cell's zero-, one-, or
+two-receiver route and deterministic topological order, and is materialized as
+a `Bundle` of typed direction, slope, and contributing-area columns. Dry
+strict descent uses D-infinity triangular facets. Lake flats, depression
+spills, and ocean identity continue to come from the established wet D8 graph.
+This makes fractional accumulation conservative and acyclic without changing
+the graph used by lakes, rivers, waterfalls, rendering, or the final
+`SurfaceBundle`.
+
+A downstream-to-upstream sweep interpolates the new elevation along a
+two-receiver facet edge, then solves the backward-Euler incision step exactly
+for that discrete step. It is unconditionally stable for the linear `n = 1`
+term, but is not an exact continuous-time solution for an arbitrarily long
+step. Explicit stable hillslope-diffusion sweeps are interleaved after
+incision. Ocean cells and receiver roots retain their bed elevation rather
+than snapping terrain to the water surface, and an uphill depression route
+cannot raise a cell above uplift alone. `AnalyticalErosion` is deliberately
+outside this boundary and retains its experimental fixed-graph solver.
+
+The fixed-seed 513-square stress comparison shows a narrower result than
+"fractional routing removes the grid." D-infinity softens several hard
+herringbone steps and changes individual channel paths, but visible combing
+remains because incision is still materialized at lattice samples and the
+surface is still reconstructed bilinearly. The `d8` comparison mode remains
+available while that later raster-to-surface boundary is investigated.
+
+The calibrated maximum uplift is 1 mm/year, with `v_ref = 2e-5 m/year` at
+`A_ref = 1 m²`, `m = 0.4`, `D = 1e-4 m²/year`, and a 50,000-year step. Fast,
+Play, and Research orogeny programs run for 200,000, 500,000, and 1,000,000
+years respectively. Ordinary world generation uses these programs, selected
+by the existing terrain quality profile. The report separates prescribed
+tectonic uplift and implicit incision volumes from net raised/lowered volume,
+and exposes the last step's mean and maximum change as a convergence reading.
 
 The pass is deterministic, but it is not the paper's complete solver yet.
 Fixed routing produces cell-scale
@@ -538,7 +561,8 @@ game:
 ```
 
 The orogeny option is
-`duration,dt,uplift,k,m,D[,sea,land_relief,coastline,bathymetry]`. Unlike the
+`duration,dt,uplift,reference_rate,m,D[,sea,land_relief,coastline,
+bathymetry,routing]`, where routing is `d8` or `d-infinity`. Unlike the
 unit-scale legacy preview, this mode uses the game's 11 km by 11 km horizontal
 and 650 m vertical calibration so all physical rates retain their meaning.
 

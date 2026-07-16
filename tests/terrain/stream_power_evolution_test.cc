@@ -41,7 +41,7 @@ MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
   MOPPE_CHECK (result.report.steps == iteration_count (0));
 }
 
-MOPPE_TEST (zero_erodibility_applies_spatial_uplift_and_fixes_the_ocean) {
+MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
   const TerrainView terrain (profile_grid (), profile_heights);
   auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
   uplift[4] = 0.002f * mp_units::si::metre / mp_units::astronomy::Julian_year;
@@ -51,7 +51,8 @@ MOPPE_TEST (zero_erodibility_applies_spatial_uplift_and_fixes_the_ocean) {
     uplift,
     { .duration = 1000.0f * mp_units::astronomy::Julian_year,
       .time_step = 250.0f * mp_units::astronomy::Julian_year,
-      .erodibility = 0.0f,
+      .reference_incision_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .sea_level = 0.0f });
 
   MOPPE_CHECK_NEAR (result.heights[0], 0.0f, 0.0f);
@@ -75,7 +76,8 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
     uplift,
     { .duration = 1000.0f * mp_units::astronomy::Julian_year,
       .time_step = 1000.0f * mp_units::astronomy::Julian_year,
-      .erodibility = 0.0f,
+      .reference_incision_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .sea_level = 0.0f });
 
   MOPPE_CHECK_NEAR (result.heights[0], heights[0], 0.0f);
@@ -98,15 +100,79 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
     uplift,
     { .duration = 100.0f * mp_units::astronomy::Julian_year,
       .time_step = 100.0f * mp_units::astronomy::Julian_year,
-      .erodibility = 0.1f,
+      .reference_incision_rate =
+        0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = 0.0f,
-      .sea_level = 0.0f });
+      .sea_level = 0.0f,
+      .routing = StreamPowerRouting::D8 });
 
-  // dt K / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
+  // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
   MOPPE_CHECK_NEAR (result.heights[0], 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (result.heights[1], 0.5f, 1e-7f);
   MOPPE_CHECK_NEAR (result.heights[2], 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (result.heights[3], 0.5f, 1e-7f);
+}
+
+MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
+  constexpr std::array heights { 0.0f, 1.0f, 0.0f, 1.0f };
+  const TerrainView terrain ({ .width = 2,
+                               .height = 2,
+                               .spacing_x = 10.0f * mp_units::si::metre,
+                               .spacing_y = 10.0f * mp_units::si::metre,
+                               .height_scale = 100.0f * mp_units::si::metre },
+                             heights);
+  const auto uplift = uniform_uplift (heights.size (), 0.0f);
+  constexpr float duration_years = 1000.0f;
+  constexpr float legacy_k = 2e-5f;
+  constexpr float area_m2 = 100.0f;
+  constexpr float exponent = 0.4f;
+  constexpr float distance_m = 10.0f;
+  const StreamPowerEvolutionResult result = evolve_stream_power (
+    terrain,
+    uplift,
+    { .duration = duration_years * mp_units::astronomy::Julian_year,
+      .time_step = duration_years * mp_units::astronomy::Julian_year,
+      .reference_incision_rate =
+        legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
+      .area_exponent = exponent,
+      .sea_level = 0.0f,
+      .routing = StreamPowerRouting::D8 });
+  const float legacy_weight =
+    duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
+  const float expected = 1.0f / (1.0f + legacy_weight);
+
+  MOPPE_CHECK_NEAR (result.heights[1], expected, 1e-7f);
+  MOPPE_CHECK_NEAR (result.heights[3], expected, 1e-7f);
+}
+
+MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
+  const TerrainView terrain (profile_grid (), profile_heights);
+  const auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
+  constexpr float exponent = 0.4f;
+  const auto evolve = [&] (float reference_area_m2,
+                           float reference_rate_m_per_year) {
+    return evolve_stream_power (
+      terrain,
+      uplift,
+      { .duration = 10000.0f * mp_units::astronomy::Julian_year,
+        .time_step = 1000.0f * mp_units::astronomy::Julian_year,
+        .reference_incision_rate = reference_rate_m_per_year *
+                                   mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year,
+        .reference_area =
+          reference_area_m2 * mp_units::si::metre * mp_units::si::metre,
+        .area_exponent = exponent,
+        .sea_level = 0.0f,
+        .routing = StreamPowerRouting::D8 });
+  };
+  const StreamPowerEvolutionResult one_square_meter = evolve (1.0f, 2e-5f);
+  const StreamPowerEvolutionResult one_hundred_square_meters =
+    evolve (100.0f, 2e-5f * std::pow (100.0f, exponent));
+
+  for (std::size_t cell = 0; cell < profile_heights.size (); ++cell)
+    MOPPE_CHECK_NEAR (one_square_meter.heights[cell],
+                      one_hundred_square_meters.heights[cell],
+                      1e-6f);
 }
 
 MOPPE_TEST (implicit_stream_power_converges_toward_the_analytical_profile) {
@@ -127,9 +193,11 @@ MOPPE_TEST (implicit_stream_power_converges_toward_the_analytical_profile) {
       uplift,
       { .duration = duration * mp_units::astronomy::Julian_year,
         .time_step = dt * mp_units::astronomy::Julian_year,
-        .erodibility = erodibility,
+        .reference_incision_rate =
+          erodibility * mp_units::si::metre / mp_units::astronomy::Julian_year,
         .area_exponent = area_exponent,
-        .sea_level = 0.0f });
+        .sea_level = 0.0f,
+        .routing = StreamPowerRouting::D8 });
   };
   const StreamPowerEvolutionResult coarse = evolve (5000.0f);
   const StreamPowerEvolutionResult fine = evolve (100.0f);
@@ -194,7 +262,8 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
     uplift,
     { .duration = 1.0f * mp_units::astronomy::Julian_year,
       .time_step = 1.0f * mp_units::astronomy::Julian_year,
-      .erodibility = 0.0f,
+      .reference_incision_rate =
+        0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .diffusivity = 0.1f * mp_units::si::metre * mp_units::si::metre /
                      mp_units::astronomy::Julian_year,
       .sea_level = -1.0f });
