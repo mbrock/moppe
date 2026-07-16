@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <stdexcept>
 #include <type_traits>
 
 namespace {
@@ -126,6 +127,46 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
                       .numerical_value_in (one),
                     0.5f,
                     1e-6f);
+}
+
+MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    3, 3, Vec3 (30, 10, 30), 19, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  static_assert (mp_units::QuantityOf<decltype (surface.channel_flux_at (
+                                        position (Vec3 ()))),
+                                      map::channel_flux>);
+
+  // One planar vector per sample; the center carries a strong eastward flux
+  // whose magnitude must clamp to one, everything else is still.
+  std::vector<float> flux (2 * 9, 0.0f);
+  flux[2 * 4] = 3.0f;
+  flux[2 * 4 + 1] = 0.0f;
+  surface.materialize_channel_flux (flux);
+
+  const Vec3 center = surface.channel_flux_at (position (Vec3 (10, 0, 10)))
+                        .numerical_value_in (one);
+  MOPPE_CHECK_NEAR (center[0], 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (center[1], 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (center[2], 0.0f, 1e-6f);
+
+  // Interpolation is componentwise toward the still neighbour.
+  const Vec3 halfway = surface.channel_flux_at (position (Vec3 (5, 0, 10)))
+                         .numerical_value_in (one);
+  MOPPE_CHECK_NEAR (halfway[0], 0.5f, 1e-6f);
+
+  const std::array<float, 3> wrong_size { 0.0f, 0.0f, 0.0f };
+  bool rejected = false;
+  try {
+    surface.materialize_channel_flux (wrong_size);
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  MOPPE_CHECK (rejected);
 }
 
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {

@@ -32,6 +32,17 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } snow_support;
 
+  // Concentrated surface drainage as a planar vector: the D-infinity channel
+  // tangent scaled by a log-compressed fluvial activity in [0, 1]. Ridges and
+  // open hillsides read near zero; the field saturates where accumulation
+  // reaches the visible-channel threshold, so materials can follow the water
+  // that worked the ground below the rendered river network.
+  inline constexpr struct channel_flux
+      : quantity_spec<mp_units::dimensionless,
+                      mp_units::quantity_tensor_order::vector,
+                      mp_units::is_kind> {
+  } channel_flux;
+
   // A dimensionless ecological reading materialized over the same surface
   // domain as elevation and normal. It combines drainage moisture, slope,
   // shore clearance, and the local tree line; consumers select sites from the
@@ -68,6 +79,7 @@ namespace moppe::map {
                    float>;
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
   using SnowSupport = quantity<snow_support[one], float>;
+  using ChannelFlux = quantity<channel_flux[one], Vec3>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
   using ForestCover = quantity<forest_cover[one], float>;
   using TrailInfluence = quantity<trail_influence[one], float>;
@@ -167,6 +179,7 @@ namespace moppe::map {
                                         SurfaceElevation,
                                         SurfaceNormal,
                                         SnowSupport,
+                                        ChannelFlux,
                                         TreeHabitat,
                                         ForestCover,
                                         TrailInfluence,
@@ -191,6 +204,10 @@ namespace moppe::map {
 
     SnowSupport snow_support_at (const position_t& position) const {
       return spatial::sample<snow_support> (samples (), position);
+    }
+
+    ChannelFlux channel_flux_at (const position_t& position) const {
+      return spatial::sample<channel_flux> (samples (), position);
     }
 
     TreeHabitat tree_habitat_at (const position_t& position) const {
@@ -223,6 +240,9 @@ namespace moppe::map {
 
     void materialize_trail_influence (std::span<const float> influence);
     void materialize_home_base_influence (std::span<const float> influence);
+    // Interleaved (x, z) planar flux per surface sample; magnitudes clamp
+    // into [0, 1].
+    void materialize_channel_flux (std::span<const float> flux);
 
     const SurfaceBundle& samples () const;
 

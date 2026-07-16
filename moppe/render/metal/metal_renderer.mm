@@ -303,6 +303,7 @@ namespace moppe {
       void set_terrain_forest (std::span<const float> cover) override;
       void
       set_terrain_snow_support (std::span<const float> support) override;
+      void set_terrain_channel_flux (std::span<const float> flux) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
       void
@@ -469,6 +470,8 @@ namespace moppe {
       bool m_have_forest = false;
       id<MTLTexture> m_snow_support = nil;
       bool m_have_snow_support = false;
+      id<MTLTexture> m_channel_flux = nil;
+      bool m_have_channel_flux = false;
       id<MTLTexture> m_geology = nil;
       bool m_have_geology = false;
       id<MTLTexture> m_shore = nil;
@@ -1639,6 +1642,36 @@ namespace moppe {
                       false);
     }
 
+    void MetalRenderer::set_terrain_channel_flux (std::span<const float> flux) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_channel_flux");
+      // Interleaved (x, z) drainage flux per terrain sample; direction times
+      // a [0,1] activity fits comfortably in half precision.
+      const std::size_t expected =
+        2 * static_cast<std::size_t> (m_terrain_params.width) *
+        m_terrain_params.height;
+      m_have_channel_flux = expected != 0 && flux.size () == expected;
+      if (!m_have_channel_flux)
+        return;
+      const int width = m_terrain_params.width;
+      const int height = m_terrain_params.height;
+      if (!m_channel_flux ||
+          m_channel_flux.width != static_cast<NSUInteger> (width) ||
+          m_channel_flux.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td = [MTLTextureDescriptor
+          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
+                                       width:width
+                                      height:height
+                                   mipmapped:NO];
+        td.storageMode = MTLStorageModePrivate;
+        td.usage = MTLTextureUsageShaderRead;
+        m_channel_flux = [m_device newTextureWithDescriptor:td];
+      }
+      std::vector<__fp16> halves (flux.size ());
+      for (std::size_t i = 0; i < flux.size (); ++i)
+        halves[i] = static_cast<__fp16> (flux[i]);
+      upload_texture (m_channel_flux, halves.data (), width, height, 4, false);
+    }
+
     // -- targets -------------------------------------------------------
 
     id<MTLTexture> MetalRenderer::make_target (
@@ -2011,6 +2044,9 @@ namespace moppe {
                      m_have_snow_support)
                       ? 1.0f
                       : 0.0f;
+      u.params7.y =
+        (m_terrain_params.channel_flux_detail && m_have_channel_flux) ? 1.0f
+                                                                      : 0.0f;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
@@ -2058,6 +2094,8 @@ namespace moppe {
                       atIndex:MOPPE_TEX_TERRAIN_FOREST];
       [enc setFragmentTexture:(m_have_snow_support ? m_snow_support : m_heights)
                       atIndex:MOPPE_TEX_TERRAIN_SNOW_SUPPORT];
+      [enc setFragmentTexture:(m_have_channel_flux ? m_channel_flux : m_heights)
+                      atIndex:MOPPE_TEX_TERRAIN_CHANNEL_FLUX];
 
       for (int i = 0; i < count; ++i) {
         const int lod =

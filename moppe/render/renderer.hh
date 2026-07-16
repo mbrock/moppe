@@ -86,6 +86,9 @@ namespace moppe {
       // Classify snow retention from a broad material-scale surface reading,
       // leaving the detailed normal available for lighting.
       bool snow_support_filter = true;
+      // Band and rill the ground along the concentrated-drainage flux so
+      // headwater channels read as worked ground below the visible rivers.
+      bool channel_flux_detail = true;
     };
 
     enum class TerrainOverlayRamp : uint8_t {
@@ -250,6 +253,12 @@ namespace moppe {
       // Vertical component of the broad snow-support plane in [0,1].
       virtual void set_terrain_snow_support (std::span<const float> support) {
         (void)support;
+      }
+
+      // Concentrated-drainage flux per terrain sample: interleaved (x, z)
+      // world-plane direction scaled by fluvial activity in [0,1].
+      virtual void set_terrain_channel_flux (std::span<const float> flux) {
+        (void)flux;
       }
 
       // -- frame -------------------------------------------------------
