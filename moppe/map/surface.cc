@@ -92,6 +92,7 @@ namespace moppe::map {
               0.0f,
               1.0f) *
             snow_support[one];
+          spatial::get<channel_flux> (sample) = Vec3 () * channel_flux[one];
           spatial::get<tree_habitat> (sample) = 0.0f * tree_habitat[one];
           spatial::get<forest_cover> (sample) = 0.0f * forest_cover[one];
           spatial::get<trail_influence> (sample) = 0.0f * trail_influence[one];
@@ -288,6 +289,23 @@ namespace moppe::map {
     for (std::size_t offset = 0; offset < bundle.size (); ++offset)
       home_base[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * home_base_influence[one];
+  }
+
+  void Surface::materialize_channel_flux (std::span<const float> flux) {
+    if (!m_samples)
+      throw std::logic_error ("Surface has not been materialized");
+    SurfaceBundle& bundle = *m_samples;
+    if (flux.size () != 2 * bundle.size ())
+      throw std::invalid_argument (
+        "Channel flux needs one planar vector per surface sample");
+    auto& column = spatial::get<channel_flux> (bundle);
+    for (std::size_t offset = 0; offset < bundle.size (); ++offset) {
+      Vec3 value (flux[2 * offset], 0.0f, flux[2 * offset + 1]);
+      const float length = std::sqrt (length2 (value));
+      if (length > 1.0f)
+        value /= length;
+      column[offset] = value * channel_flux[one];
+    }
   }
 
   const SurfaceBundle& Surface::samples () const {

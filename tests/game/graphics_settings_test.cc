@@ -15,6 +15,8 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
   MOPPE_CHECK (bloom == &game::bloom_feature);
   MOPPE_CHECK (game::find_graphics_feature ("snow-support-filter") ==
                &game::snow_support_filter_feature);
+  MOPPE_CHECK (game::find_graphics_feature ("channel-flux-detail") ==
+               &game::channel_flux_detail_feature);
   MOPPE_CHECK (game::find_graphics_feature ("not-a-feature") == nullptr);
 }
 
@@ -29,6 +31,7 @@ MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::lens_flare_feature.hot);
   MOPPE_CHECK (game::terrain_topology_feature.hot);
   MOPPE_CHECK (game::snow_support_filter_feature.hot);
+  MOPPE_CHECK (game::channel_flux_detail_feature.hot);
 
   MOPPE_CHECK (!game::terrain_shadows_feature.hot);
   MOPPE_CHECK (!game::motion_blur_feature.hot);
@@ -103,13 +106,14 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   settings.terrain_topology = true;
   const uint32_t resolved = game::apply_graphics_benchmark_mask (
     settings, 1u << static_cast<unsigned> (Partition::Block::small_effects));
-  MOPPE_CHECK (resolved == 0b1110011100u);
+  MOPPE_CHECK (resolved == 0b11110011100u);
   MOPPE_CHECK (settings.particles);
   MOPPE_CHECK (settings.vehicle_effects);
   MOPPE_CHECK (settings.star_effects);
   MOPPE_CHECK (settings.lens_flare);
   MOPPE_CHECK (settings.terrain_fragment_normals);
   MOPPE_CHECK (settings.snow_support_filter);
+  MOPPE_CHECK (settings.channel_flux_detail);
   MOPPE_CHECK (settings.terrain_topology);
   MOPPE_CHECK (!settings.ocean);
   MOPPE_CHECK (!settings.river_ribbons);

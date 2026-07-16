@@ -21,6 +21,7 @@ namespace moppe::game {
     terrain_topology,
     terrain_fragment_normals,
     snow_support_filter,
+    channel_flux_detail,
   };
 
   struct GraphicsSettings {
@@ -44,6 +45,7 @@ namespace moppe::game {
     bool terrain_topology = false;
     bool terrain_fragment_normals = true;
     bool snow_support_filter = true;
+    bool channel_flux_detail = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -141,14 +143,21 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 13> graphics_features {
-    &terrain_shadows_feature,  &ocean_feature,
-    &river_ribbons_feature,    &particles_feature,
-    &vehicle_effects_feature,  &star_effects_feature,
-    &motion_blur_feature,      &bloom_feature,
-    &auto_exposure_feature,    &lens_flare_feature,
-    &terrain_topology_feature, &terrain_fragment_normals_feature,
-    &snow_support_filter_feature,
+  inline constexpr GraphicsFeature channel_flux_detail_feature {
+    GraphicsFeatureId::channel_flux_detail,
+    "channel-flux-detail",
+    &GraphicsSettings::channel_flux_detail,
+    true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 14> graphics_features {
+    &terrain_shadows_feature,     &ocean_feature,
+    &river_ribbons_feature,       &particles_feature,
+    &vehicle_effects_feature,     &star_effects_feature,
+    &motion_blur_feature,         &bloom_feature,
+    &auto_exposure_feature,       &lens_flare_feature,
+    &terrain_topology_feature,    &terrain_fragment_normals_feature,
+    &snow_support_filter_feature, &channel_flux_detail_feature,
   };
 
   GraphicsSettings high_graphics_settings ();

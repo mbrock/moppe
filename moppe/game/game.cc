@@ -1056,6 +1056,7 @@ namespace moppe {
         m_pending_surface.home_base.clear ();
         m_pending_surface.forest.clear ();
         m_pending_surface.snow_support.clear ();
+        m_pending_surface.channel_flux.clear ();
         {
           MOPPE_PROFILE_ZONE ("startup.materialize_snow_support");
           const auto& support =
@@ -1066,6 +1067,50 @@ namespace moppe {
                                   [] (map::SnowSupport value) {
                                     return value.numerical_value_in (one);
                                   });
+        }
+        if (m_channel_drainage) {
+          // Direction times a log-compressed activity: the flux fades in a
+          // few cells below a channelhead and saturates where accumulation
+          // reaches the visible-river threshold, so ground materials follow
+          // the same drainage field that carved the valleys.
+          MOPPE_PROFILE_ZONE ("startup.materialize_channel_flux");
+          const auto& tangents =
+            spatial::get<terrain::channel_tangent> (*m_channel_drainage);
+          const auto& areas =
+            spatial::get<terrain::fractional_contributing_area> (
+              *m_channel_drainage);
+          const terrain::TerrainGrid& grid =
+            m_channel_drainage->domain ().grid ();
+          const float floor_area_m2 =
+            4.0f * square_meters_value (grid.cell_area ());
+          const float channel_area_m2 =
+            square_meters_value (terrain::visible_river_minimum_area (grid));
+          const float activity_span =
+            std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
+          const std::size_t unique_width = grid.unique_width ();
+          const std::size_t unique_height = grid.unique_height ();
+          std::vector<float> flux (
+            2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
+          for (int y = 0; y < m_map.height (); ++y)
+            for (int x = 0; x < m_map.width (); ++x) {
+              const std::size_t cell =
+                (static_cast<std::size_t> (y) % unique_height) * unique_width +
+                static_cast<std::size_t> (x) % unique_width;
+              const float area_m2 =
+                areas[cell].numerical_value_in (u::m * u::m);
+              const float activity = std::clamp (
+                std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) /
+                  activity_span,
+                0.0f,
+                1.0f);
+              const Vec3 tangent = tangents[cell].numerical_value_in (one);
+              const std::size_t out =
+                2 * (static_cast<std::size_t> (y) * m_map.width () + x);
+              flux[out] = tangent[0] * activity;
+              flux[out + 1] = tangent[2] * activity;
+            }
+          m_pending_surface.channel_flux = std::move (flux);
+          m_surface.materialize_channel_flux (m_pending_surface.channel_flux);
         }
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
@@ -1401,6 +1446,7 @@ namespace moppe {
           r.set_terrain_forest (m_pending_surface.forest);
         }
         r.set_terrain_snow_support (m_pending_surface.snow_support);
+        r.set_terrain_channel_flux (m_pending_surface.channel_flux);
         r.set_terrain_paths (m_pending_surface.trails,
                              m_pending_surface.home_base);
       }
@@ -3085,6 +3131,7 @@ namespace moppe {
         std::vector<float> home_base;
         std::vector<float> forest;
         std::vector<float> snow_support;
+        std::vector<float> channel_flux;
       } m_pending_surface;
       TerrainLab m_terrain_lab;
       ForestLandscape m_forest;

@@ -533,6 +533,8 @@ fragment float4 terrain_fragment (
   [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   texture2d<float, access::read> terrain_snow_support
   [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+  texture2d<float, access::read> terrain_channel_flux
+  [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
   sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -593,6 +595,13 @@ fragment float4 terrain_fragment (
     u.params6.w > 0.5
       ? saturate (terrain_field_sample (in.field_uv, terrain_forest).r)
       : 0.0;
+  // Concentrated drainage as a planar vector: direction of flow scaled by a
+  // log-compressed activity that saturates at the visible-channel threshold.
+  const float2 channel_flux =
+    u.params7.y > 0.5
+      ? terrain_field_sample (in.field_uv, terrain_channel_flux).rg
+      : float2 (0.0);
+  const float channel_activity = min (length (channel_flux), 1.0);
 
   const float2 tc = in.uv;
   const float far_blend = smoothstep (40.0, 350.0, dist);
@@ -728,6 +737,17 @@ fragment float4 terrain_fragment (
     const float fill_flat = smoothstep (0.78, 0.93, n.y);
     texel = mix (texel, alluvium_c, fill * fill_flat * (1.0 - snow_coef) * 0.5);
   }
+  // Concentrated drainage leaves worked ground. A stony wash band follows
+  // the channel flux from the headwater gullies down to the visible rivers,
+  // so running water no longer appears from untouched hillside. The band
+  // edge wanders with the coarse jitter instead of tracing the lattice.
+  const float wash =
+    smoothstep (0.30, 0.85, channel_activity + 0.10 * jitter) *
+    (1.0 - snow_coef) * (1.0 - submerged);
+  const float3 wash_c =
+    mix (scree_c, scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
+    (0.82 + 0.30 * coarse);
+  texel = mix (texel, wash_c, 0.42 * wash);
   // Read the trail mask as a formed cross-section. Its falloff gives us two
   // edge-parallel wear bands without imposing a world-aligned texture on a
   // winding route. Coarse aggregate remains visible from the bike; the broad
@@ -837,6 +857,22 @@ fragment float4 terrain_fragment (
     n,
     pebble,
     pebble_strength * (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
+  // Water-worked ground is anisotropic: noise stretched far along the local
+  // drainage direction and kept short across it reads as rills and fluvial
+  // polish that turn with the channels. Computed unconditionally so screen
+  // derivatives stay defined; the strength gates it instead.
+  const float2 flow_dir =
+    channel_flux / max (channel_activity, 1e-4);
+  const float2 rill_coord =
+    float2 (dot (in.world_pos.xz, float2 (-flow_dir.y, flow_dir.x)) * 0.85,
+            dot (in.world_pos.xz, flow_dir) * 0.085);
+  const float rill = moppe_value_noise (rill_coord + float2 (13.7, 41.3));
+  const float rill_strength = smoothstep (0.18, 0.72, channel_activity) *
+                              (1.0 - 0.85 * snow_coef) *
+                              (1.0 - submerged * 0.5) *
+                              (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
+                              0.30;
+  n = terrain_detail_normal (in.world_pos, n, rill, rill_strength);
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor (
