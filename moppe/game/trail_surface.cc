@@ -100,10 +100,10 @@ namespace moppe::game {
     state.blend = true;
     state.depth_write = false;
     state.cull = false;
-    state.depth_bias = true;
     draw.state (state);
     draw.lit (true);
     draw.fogged (true);
+    draw.ground_decal (true);
 
     const float half_width = 0.5f * meters_value (trail.formed_width);
     std::vector<RibbonRow> rows;
