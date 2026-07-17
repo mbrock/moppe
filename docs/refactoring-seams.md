@@ -87,6 +87,34 @@ are read-only.
 mutation, frozen mover poses, shake behavior, cinematic/Terrain Lab selection,
 HUD and overlay snapshots, and flare-sightline readings.
 
+## Metal frame encoding
+
+`MetalRenderer` is a private backend facade, not a second renderer API or a
+generic render graph. It retains four concrete ownership values:
+`MetalTerrainResources` for one completed world's terrain, shadow, and
+terrain-presentation textures; `MetalWaterResources` for the matching ocean,
+standing-water, and flow state; `MetalFrameTargets` for resizeable scene,
+ping-pong, feedback, bloom, probe, and exposure targets; and
+`MetalFrameEncoding` for one drawable command-buffer submission.
+
+The Terrain, Water, Scene, Post, and HUD operations take explicit borrows of
+those values. Terrain, Water, and Scene intentionally encode through the same
+lazy scene render encoder, so their names do not create independent clears,
+resolves, or depth histories. Post closes that common encoder before its
+ping-pong sequence, and HUD performs the final composite even for an empty
+2D list. The fixed order remains game-shaped; no generic scheduling framework
+is introduced.
+
+The command-buffer lifecycle remains outside individual passes. The facade
+owns drawable acquisition, in-flight stream selection, timestamp-span labels,
+benchmark completion, ready-world Metal capture, screenshots, commit, and
+temporal-target reset. A move across these ownership boundaries must preserve
+the existing `GpuPass` timing names, capture-after-ready-world window, and
+benchmark sample completion contract. `./build/moppe-testbed`, the compact
+graphics benchmark, feature water captures, and an `MOPPE_METAL_CAPTURE`
+trace are the integration checks for this seam; portable unit tests alone do
+not exercise the Metal backend.
+
 ## Completed-world smoke path
 
 `tools/capture-water OUTPUT river` is the deterministic integration smoke

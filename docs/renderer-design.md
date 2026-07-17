@@ -13,8 +13,8 @@ the door open for WebGPU/Android backends later.
 4. Refactor as we go: split the 4000-line main.cc into modules, remove dead
    code, de-boost, kill hidden global state where cheap.
 5. Modernize where it pays: vertex-pulled terrain from a height texture
-   (replaces ~100 MB of CPU-built triangle-strip soup), explicit pass graph
-   for the post effects, background-thread world generation with a loading
+   (replaces ~100 MB of CPU-built triangle-strip soup), an explicit post chain,
+   background-thread world generation with a loading
    screen (required on iOS anyway).
 
 ## Review amendments (adopted)
@@ -180,7 +180,7 @@ u8x4 color, u8x4 flags (x: lit, y: fogged; rest reserved).
 State changes inside a bake (e.g. unlit lamp glow spheres) become run
 boundaries.
 
-### 3. Passes & frame graph
+### 3. Fixed passes and backend ownership
 
 Fixed pass structure per frame, expressed as explicit API on `Renderer`:
 
@@ -195,6 +195,40 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
        blit current → prevFrame (feedback persists across frames)
     present pass (MSAA → drawable): fullscreen quad of final scene + HUD
        draw list (2D ortho, y-down, top-left origin) + text
+
+The Metal implementation realizes this as a fixed, concrete encoding path,
+not as a generic render graph. `MetalRenderer` remains the small facade for
+the game-shaped `Renderer` interface. Its private resource owners make the
+otherwise long-lived Metal state visible at the right lifetime:
+
+| Owner | Lifetime and contents |
+| --- | --- |
+| `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
+| `MetalWaterResources` | A completed world: the ocean grid, standing-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
+| `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, and exposure resources. It recreates these on target-size or quality changes and owns temporal validity separately from a world resource. |
+| `MetalFrameEncoding` | One drawable frame: command buffer, drawable, frame parameters and uniforms, the selected in-flight stream slot, current scene target, timestamp spans, and capture bookkeeping. It owns no retained world texture. |
+
+Concrete Terrain, Water, Scene, Post, and HUD pass operations receive only
+the owners and pipeline state they read or write. Terrain and Water both
+borrow their retained resources plus `MetalFrameTargets` and
+`MetalFrameEncoding`; Scene owns sky, immediate world geometry, and effects;
+Post owns the explicit ping-pong/feedback sequence; HUD owns the final
+composite and 2D list. This is deliberately a set of named, game-specific
+operations rather than a scheduler or dependency-graph abstraction.
+
+Terrain, Water, and Scene still share one lazy scene render encoder. The
+encoder begins with the scene resolve/depth attachments, preserves their
+depth/stencil ordering across those operations, and closes exactly once before
+Post. Separate names therefore do not imply separate Metal encoders or a
+change to the established scene order. The HUD operation remains responsible
+for the final composite even when its 2D list is empty.
+
+`MetalRenderer` also remains the frame-lifecycle coordinator: it begins and
+commits the command buffer, attaches the stable GPU timing spans and benchmark
+completion handler, brackets ready-world Metal capture, performs screenshots,
+and returns the in-flight stream slot only after completion. Concrete passes
+encode work under that lifecycle; they do not create command buffers, commit,
+or independently manage capture/timing state.
 
 Conventions: reversed-Z (clear 0, GREATER_EQUAL; near 0.5, far 9000/30000
 demands it), Metal [0,1] clip z, non-sRGB formats everywhere to preserve the
