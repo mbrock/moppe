@@ -4,6 +4,8 @@
 - `renderer-design.md` — renderer and platform architecture.
 - `surface-atlas.md` — current surface domains, typed sections, and renderer
   presentation bridge.
+- `refactoring-seams.md` — characterization contracts for surface,
+  replay, and completed-world loading.
 - `terrain-expressions.md` — terrain program and evaluator design.
 - `trails.md` — leisure-circuit planning, grading, materials, and consumers.
 - `units.md` — scientific quantities, unit conventions, and simulation scale.
