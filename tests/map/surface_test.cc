@@ -39,7 +39,8 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   map.recompute_normals ();
 
   map::Surface surface (map);
-  const auto& samples = surface.sections ();
+  const map::SurfaceAtlas& atlas = surface.atlas ();
+  const auto& geometry = atlas.geometry ();
   static_assert (spatial::FiniteDomain<map::SurfaceDomain>);
   static_assert (spatial::InterpolationDomain<map::SurfaceDomain, position_t>);
   static_assert (mp_units::QuantityPointOf<decltype (surface.elevation_at (
@@ -53,23 +54,22 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
                                       map::snow_support>);
 
   const map::SurfaceIndex index { 2, 1 };
-  const auto elevation = spatial::get<map::surface_elevation> (samples[index]);
-  const auto normal = spatial::get<map::surface_normal> (samples[index]);
-  const auto snow_support = spatial::get<map::snow_support> (samples[index]);
-  const auto habitat = spatial::get<map::tree_habitat> (samples[index]);
-  const auto forest = spatial::get<map::forest_cover> (samples[index]);
-  const auto trail = spatial::get<map::trail_influence> (samples[index]);
-  const auto home_base =
-    spatial::get<map::home_base_influence> (samples[index]);
+  const auto elevation = spatial::get<map::surface_elevation> (geometry[index]);
+  const auto normal = spatial::get<map::surface_normal> (geometry[index]);
+  const auto snow_support = spatial::get<map::snow_support> (geometry[index]);
   MOPPE_CHECK_NEAR (
     elevation_value (elevation), map.get (2, 1) * map.scale ()[1], 1e-6f);
   check_surface_vector (normal_value (normal), map.normal (2, 1));
   MOPPE_CHECK (snow_support >= 0.0f * map::snow_support[one]);
   MOPPE_CHECK (snow_support <= 1.0f * map::snow_support[one]);
-  MOPPE_CHECK (habitat == 0.0f * map::tree_habitat[one]);
-  MOPPE_CHECK (forest == 0.0f * map::forest_cover[one]);
-  MOPPE_CHECK (trail == 0.0f * map::trail_influence[one]);
-  MOPPE_CHECK (home_base == 0.0f * map::home_base_influence[one]);
+  MOPPE_CHECK (!atlas.hydrology ().channel_flux ());
+  MOPPE_CHECK (!atlas.hydrology ().moisture ());
+  MOPPE_CHECK (!atlas.hydrology ().waterline ());
+  MOPPE_CHECK (!atlas.geology ().materials ());
+  MOPPE_CHECK (!atlas.ecology ().tree_habitat ());
+  MOPPE_CHECK (!atlas.ecology ().forest_cover ());
+  MOPPE_CHECK (!atlas.use ().trails ());
+  MOPPE_CHECK (!atlas.use ().home_base ());
 }
 
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
@@ -106,8 +106,12 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   surface.materialize_home_base_influence (influence);
   MOPPE_CHECK (surface.home_base_influence_at (position (Vec3 (10, 0, 10))) ==
                1.0f * map::home_base_influence[one]);
-  MOPPE_CHECK (surface.trail_influence_at (position (Vec3 (10, 0, 10))) ==
-               0.0f * map::trail_influence[one]);
+  const map::SurfaceHomeBaseSections* home_base =
+    surface.atlas ().use ().home_base ();
+  MOPPE_CHECK (home_base);
+  MOPPE_CHECK (spatial::get<map::home_base_influence> (*home_base)[0] ==
+               0.0f * map::home_base_influence[one]);
+  MOPPE_CHECK (!surface.atlas ().use ().trails ());
 }
 
 MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
@@ -202,7 +206,10 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0x12345678U);
 
-  const auto& first = spatial::get<map::forest_cover> (surface.sections ());
+  const map::SurfaceForestSections* first_sections =
+    surface.atlas ().ecology ().forest_cover ();
+  MOPPE_CHECK (first_sections);
+  const auto& first = spatial::get<map::forest_cover> (*first_sections);
   std::vector<float> values;
   values.reserve (first.size ());
   for (const map::ForestCover value : first)
@@ -213,14 +220,20 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
     MOPPE_CHECK_NEAR (values[row * 65], values[row * 65 + 64], 1e-6f);
 
   surface.derive_forest_cover (0x12345678U);
-  const auto& repeated = spatial::get<map::forest_cover> (surface.sections ());
+  const map::SurfaceForestSections* repeated_sections =
+    surface.atlas ().ecology ().forest_cover ();
+  MOPPE_CHECK (repeated_sections);
+  const auto& repeated = spatial::get<map::forest_cover> (*repeated_sections);
   for (std::size_t offset = 0; offset < values.size (); ++offset)
     MOPPE_CHECK_NEAR (
       values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
 
   surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));
   surface.derive_forest_cover (0x12345678U);
-  const auto& cleared = spatial::get<map::forest_cover> (surface.sections ());
+  const map::SurfaceForestSections* cleared_sections =
+    surface.atlas ().ecology ().forest_cover ();
+  MOPPE_CHECK (cleared_sections);
+  const auto& cleared = spatial::get<map::forest_cover> (*cleared_sections);
   MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
     return value == 0.0f * map::forest_cover[one];
   }));
@@ -270,7 +283,7 @@ MOPPE_TEST (surface_reconstruction_matches_periodic_seam_interpolation) {
   map::Surface surface (map);
 
   const auto& snow_support =
-    spatial::get<map::snow_support> (surface.sections ());
+    spatial::get<map::snow_support> (surface.atlas ().geometry ());
   for (int row = 0; row < map.height (); ++row)
     MOPPE_CHECK (snow_support[row * map.width ()] ==
                  snow_support[row * map.width () + map.width () - 1]);
@@ -312,8 +325,8 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
-  MOPPE_CHECK (!surface.has_section<map::channel_flux> ());
-  MOPPE_CHECK (!surface.has_section<map::trail_influence> ());
+  MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
+  MOPPE_CHECK (!surface.atlas ().use ().trails ());
 
   std::vector<float> trail (9, 0.0f);
   std::vector<float> home (9, 0.0f);
@@ -325,13 +338,14 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   surface.materialize_trail_influence (trail);
   surface.materialize_home_base_influence (home);
   surface.materialize_channel_flux (flux);
-  MOPPE_CHECK (surface.has_section<map::channel_flux> ());
-  MOPPE_CHECK (surface.has_section<map::trail_influence> ());
+  MOPPE_CHECK (surface.atlas ().hydrology ().channel_flux ());
+  MOPPE_CHECK (surface.atlas ().use ().trails ());
 
   game::SurfacePresentation presentation;
   presentation.refresh (surface);
 
-  MOPPE_CHECK (presentation.trails ().size () == surface.sections ().size ());
+  MOPPE_CHECK (presentation.trails ().size () ==
+               surface.atlas ().domain ().size ());
   MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.home_base ()[4], 0.25f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.channel_flux ()[8], 0.6f, 1e-6f);
@@ -340,8 +354,8 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (presentation.forest ().empty ());
 
   surface.refresh (map);
-  MOPPE_CHECK (!surface.has_section<map::channel_flux> ());
-  MOPPE_CHECK (!surface.has_section<map::trail_influence> ());
+  MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
+  MOPPE_CHECK (!surface.atlas ().use ().trails ());
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
@@ -371,26 +385,32 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
     mp_units::QuantityOf<map::SurfaceMoisture, map::surface_moisture>);
   static_assert (
     mp_units::QuantityOf<map::WaterlineDistance, map::waterline_distance>);
-  MOPPE_CHECK (surface.has_section<map::surface_moisture> ());
-  MOPPE_CHECK (surface.has_section<map::waterline_distance> ());
-  MOPPE_CHECK (surface.has_section<map::erosion_exposure> ());
-  MOPPE_CHECK (surface.section<map::surface_moisture> ()[4] ==
+  const map::SurfaceMoistureSections* moisture_sections =
+    surface.atlas ().hydrology ().moisture ();
+  const map::SurfaceWaterlineSections* waterline_sections =
+    surface.atlas ().hydrology ().waterline ();
+  const map::SurfaceGeologySections* geology_sections =
+    surface.atlas ().geology ().materials ();
+  MOPPE_CHECK (moisture_sections);
+  MOPPE_CHECK (waterline_sections);
+  MOPPE_CHECK (geology_sections);
+  MOPPE_CHECK (spatial::get<map::surface_moisture> (*moisture_sections)[4] ==
                1.0f * map::surface_moisture[one]);
-  MOPPE_CHECK (surface.section<map::waterline_distance> ()[4] ==
+  MOPPE_CHECK (spatial::get<map::waterline_distance> (*waterline_sections)[4] ==
                2.5f * map::waterline_distance[u::m]);
   const position_t center = position (Vec3 (10, 0, 10));
   MOPPE_CHECK (surface.moisture_at (center) ==
                1.0f * map::surface_moisture[one]);
   MOPPE_CHECK (surface.waterline_distance_at (center) ==
                2.5f * map::waterline_distance[u::m]);
-  MOPPE_CHECK_NEAR (
-    surface.section<map::erosion_exposure> ()[4].numerical_value_in (one),
-    0.5f,
-    1e-6f);
-  MOPPE_CHECK_NEAR (
-    surface.section<map::deposition_cover> ()[4].numerical_value_in (one),
-    0.5f,
-    1e-6f);
+  MOPPE_CHECK_NEAR (spatial::get<map::erosion_exposure> (*geology_sections)[4]
+                      .numerical_value_in (one),
+                    0.5f,
+                    1e-6f);
+  MOPPE_CHECK_NEAR (spatial::get<map::deposition_cover> (*geology_sections)[4]
+                      .numerical_value_in (one),
+                    0.5f,
+                    1e-6f);
 
   game::SurfacePresentation presentation;
   presentation.refresh (surface);

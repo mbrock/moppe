@@ -27,6 +27,9 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct AnalyticalErosionReport {
@@ -57,6 +60,9 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct HillslopeDiffusionReport {

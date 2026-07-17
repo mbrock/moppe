@@ -1,5 +1,6 @@
 #include <moppe/game/terrain_lab.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/editor.hh>
 #include <moppe/terrain/river.hh>
 
 #include <algorithm>
@@ -217,58 +218,6 @@ namespace moppe {
         return std::string (spatial) + " / " + order;
       }
 
-      PropertyText recipe_property (const terrain::GeologicalRecipe& recipe,
-                                    int row) {
-        switch (row) {
-        case 0:
-          return { "WARP STRENGTH",
-                   format_float (recipe.warp.amplitude, 3),
-                   ParameterDomain::Continuous };
-        case 1:
-          return { "CONTINENT WAVES",
-                   std::to_string (recipe.continent.noise.cycles),
-                   ParameterDomain::Natural };
-        case 2:
-          return { "PLAINS WAVES",
-                   std::to_string (recipe.plains.noise.cycles),
-                   ParameterDomain::Natural };
-        case 3:
-          return { "RIDGE WAVES",
-                   std::to_string (recipe.mountains.cycles),
-                   ParameterDomain::Natural };
-        case 4:
-          return { "MASK START",
-                   format_float (recipe.blend.mask_low, 3),
-                   ParameterDomain::Continuous };
-        case 5:
-          return { "MASK END",
-                   format_float (recipe.blend.mask_high, 3),
-                   ParameterDomain::Continuous };
-        case 6:
-          return { "CONTINENT MIX",
-                   format_float (recipe.blend.continent_weight, 2),
-                   ParameterDomain::Continuous };
-        case 7:
-          return { "PLAINS MIX",
-                   format_float (recipe.blend.plains_weight, 2),
-                   ParameterDomain::Continuous };
-        default:
-          return { "MOUNTAIN MIX",
-                   format_float (recipe.blend.mountain_weight, 2),
-                   ParameterDomain::Continuous };
-        }
-      }
-
-      int stage_property_count (const terrain::TerrainTransform& stage) {
-        return static_cast<int> (
-          terrain::terrain_transform_property_count (stage));
-      }
-
-      PropertyText stage_property (const terrain::TerrainTransform& stage,
-                                   int row) {
-        return terrain::terrain_transform_property (
-          stage, static_cast<std::size_t> (row));
-      }
     }
 
     TerrainLab::TerrainLab ()
@@ -276,13 +225,12 @@ namespace moppe {
           m_build_window ({ 14.0f, 14.0f, window_width, window_height }),
           m_readings_window (
             { 548.0f, 14.0f, readings_width, readings_height }),
-          m_renderer (0), m_map (0), m_terrain (0), m_world (0), m_graphics (0),
-          m_history (nullptr), m_history_index (0), m_history_age (0.0f),
-          m_history_playing (false), m_active (false), m_map_pristine (false),
-          m_program (terrain::make_geological_program (0)),
-          m_overlay (OverlayMode::None), m_selected_stage (-1),
-          m_stage_scroll (0), m_pointer_x (0), m_pointer_y (0),
-          m_pointer_down (false), m_camera_drag (false),
+          m_renderer (0), m_map (0), m_terrain (0), m_world (0),
+          m_world_recipe (0), m_graphics (0), m_history (nullptr),
+          m_history_index (0), m_history_age (0.0f), m_history_playing (false),
+          m_active (false), m_overlay (OverlayMode::None),
+          m_selected_stage (-1), m_stage_scroll (0), m_pointer_x (0),
+          m_pointer_y (0), m_pointer_down (false), m_camera_drag (false),
           m_camera_drag_distance (0.0f), m_pan_drag (false),
           m_parameter_drag (false), m_build_ui (false), m_friendly_preset (-1),
           m_ui_width (960), m_ui_height (640), m_drag_property (-1),
@@ -303,7 +251,7 @@ namespace moppe {
                             Terrain& terrain,
                             const WorldParams& world,
                             const GraphicsSettings& graphics,
-                            const terrain::TerrainProgram& program,
+                            const terrain::WorldRecipe& recipe,
                             std::span<const float> trail_influence,
                             std::span<const float> home_base_influence,
                             const std::vector<std::vector<float>>& history,
@@ -315,13 +263,12 @@ namespace moppe {
       m_map = &map;
       if (!m_source_evaluator)
         m_source_evaluator = platform::create_field_evaluator ();
-      m_evaluator = std::make_unique<map::TerrainEvaluator> (
-        map, m_source_evaluator.get ());
       m_terrain = &terrain;
       m_world = &world;
+      m_world_recipe = &recipe;
       m_graphics = &graphics;
       m_sun_dir = sun_dir;
-      m_program = program;
+      terrain::TerrainProgram lab_program = recipe.terrain_program ();
       m_saved_trail_influence.assign (trail_influence.begin (),
                                       trail_influence.end ());
       m_saved_home_base_influence.assign (home_base_influence.begin (),
@@ -332,14 +279,21 @@ namespace moppe {
       m_history_playing = false;
       bool env_stages = false;
       if (std::getenv ("MOPPE_LAB_OROGENY")) {
-        m_program = terrain::make_orogeny_program (
-          m_program.seed.value, terrain::TerrainGenerationProfile::Fast);
+        lab_program = calibrated_world_program (
+          lab_program.seed, terrain::TerrainGenerationProfile::Fast);
+        if (!lab_program.transforms.empty () &&
+            std::holds_alternative<terrain::TrailFormation> (
+              lab_program.transforms.back ()))
+          lab_program.transforms.pop_back ();
         env_stages = true;
       }
       if (std::getenv ("MOPPE_LAB_ANALYTICAL")) {
-        m_program.transforms.emplace_back (terrain::AnalyticalErosion {});
+        terrain::AnalyticalErosion analytical;
+        analytical.sea_level = lab_program.source.sea_level;
+        lab_program.transforms.emplace_back (analytical);
         env_stages = true;
       }
+      m_model.begin (map, lab_program, m_source_evaluator.get ());
       m_selected_stage = -1;
       m_stage_scroll = 0;
       m_pointer_down = false;
@@ -399,16 +353,11 @@ namespace moppe {
       m_tilt_up = m_tilt_down = false;
       fit_view ();
 
-      const size_t count = (size_t)map.width () * map.height ();
-      m_saved_heights.assign (map.raw_heights (), map.raw_heights () + count);
       m_active = true;
       // The map on screen IS this program's output (or the world it was
       // loaded from): entering the lab is just another view of it, so
       // don't rebuild.  The pipeline reruns only once something is
       // edited.  Env-var stages are additions and do need a run.
-      m_checkpoints.clear ();
-      m_reports.clear ();
-      m_map_pristine = true;
       if (env_stages)
         rebuild_program ();
       else
@@ -418,7 +367,7 @@ namespace moppe {
       if (const char* stage = std::getenv ("MOPPE_LAB_STAGE")) {
         const int selected = std::atoi (stage);
         if (selected >= 0 &&
-            selected < static_cast<int> (m_program.transforms.size ())) {
+            selected < static_cast<int> (this->program ().transforms.size ())) {
           m_selected_stage = selected;
           if (m_overlay == OverlayMode::HeightDelta)
             update_overlay ();
@@ -439,16 +388,10 @@ namespace moppe {
       if (m_renderer)
         m_renderer->clear_terrain_overlay ();
       restore_game_map ();
-      m_saved_heights.clear ();
-      m_saved_heights.shrink_to_fit ();
       m_saved_trail_influence.clear ();
       m_saved_trail_influence.shrink_to_fit ();
       m_saved_home_base_influence.clear ();
       m_saved_home_base_influence.shrink_to_fit ();
-      m_checkpoints.clear ();
-      m_checkpoints.shrink_to_fit ();
-      m_reports.clear ();
-      m_reports.shrink_to_fit ();
       m_river_surface.clear ();
       m_orbit_left = m_orbit_right = false;
       m_zoom_in = m_zoom_out = false;
@@ -459,11 +402,12 @@ namespace moppe {
       m_parameter_drag = false;
       m_parameter_rebuild_pending = false;
       m_active = false;
-      m_evaluator.reset ();
+      m_model.leave ();
       m_history = nullptr;
       m_map = 0;
       m_terrain = 0;
       m_world = 0;
+      m_world_recipe = 0;
     }
 
     void TerrainLab::fit_view () {
@@ -520,85 +464,81 @@ namespace moppe {
     }
 
     void TerrainLab::restore_game_map () {
-      if (!m_map || m_saved_heights.empty ())
+      if (!m_model.active ())
         return;
-      size_t i = 0;
-      for (int y = 0; y < m_map->height (); ++y)
-        for (int x = 0; x < m_map->width (); ++x)
-          m_map->set (x, y, m_saved_heights[i++]);
-      m_map_pristine = true;
+      m_model.restore_original_map ();
       refresh (false);
     }
 
     void TerrainLab::select (terrain::GeologicalLayer layer) {
-      if (layer == m_program.source.layer)
+      if (layer == program ().source.layer)
         return;
-      m_program.source.layer = layer;
+      program ().source.layer = layer;
       m_selected_stage = -1;
       rebuild_program ();
     }
 
     void TerrainLab::reset_program () {
-      const terrain::GeologicalLayer layer = m_program.source.layer;
-      m_program = terrain::make_world_program (
-        m_program.seed.value, terrain::TerrainGenerationProfile::Play);
-      m_program.source.layer = layer;
+      const terrain::GeologicalLayer layer = program ().source.layer;
+      program () = recipe_program (program ().seed);
+      program ().source.layer = layer;
       m_selected_stage = -1;
       m_stage_scroll = 0;
       rebuild_program ();
     }
 
+    terrain::TerrainProgram
+    TerrainLab::recipe_program (terrain::Seed seed) const {
+      if (!m_world_recipe)
+        throw std::logic_error ("terrain lab has no world recipe");
+      const bool geological = m_world_recipe->terrain_program ().source.mode ==
+                              terrain::GeologicalSource::Mode::Relief;
+      const terrain::WorldRecipe recipe =
+        geological
+          ? terrain::make_geological_world_recipe (
+              m_world_recipe->extent (),
+              m_world_recipe->resolution (),
+              m_world_recipe->topology (),
+              seed,
+              m_world_recipe->water_datum (),
+              m_world_recipe->generation_profile ())
+          : terrain::make_world_recipe (m_world_recipe->extent (),
+                                        m_world_recipe->resolution (),
+                                        m_world_recipe->topology (),
+                                        seed,
+                                        m_world_recipe->water_datum (),
+                                        m_world_recipe->generation_profile ());
+      return recipe.terrain_program ();
+    }
+
+    terrain::TerrainProgram TerrainLab::calibrated_world_program (
+      terrain::Seed seed, terrain::TerrainGenerationProfile profile) const {
+      if (!m_world_recipe)
+        throw std::logic_error ("terrain lab has no world recipe");
+      const terrain::WorldRecipe recipe =
+        terrain::make_world_recipe (m_world_recipe->extent (),
+                                    m_world_recipe->resolution (),
+                                    m_world_recipe->topology (),
+                                    seed,
+                                    m_world_recipe->water_datum (),
+                                    profile);
+      return recipe.terrain_program ();
+    }
+
     void TerrainLab::rebuild_program () {
-      if (!m_evaluator)
+      if (!m_model.active ())
         return;
-      m_map_pristine = false;
-      m_evaluator->begin (m_program);
-      m_checkpoints.clear ();
-      m_reports.clear ();
-      for (const terrain::TerrainTransform& transform : m_program.transforms) {
-        // A checkpoint is the input to a stage.  The final output is already
-        // resident in m_map, so copying it would only duplicate 16 MiB at the
-        // default lab resolution on every recipe edit.
-        m_checkpoints.push_back (m_evaluator->checkpoint ());
-        m_reports.push_back (m_evaluator->apply (transform));
-      }
+      m_model.rebuild_program ();
       invalidate_analysis ();
       refresh ();
     }
 
     void TerrainLab::rerun_program_from (int first_stage) {
-      const int stage_count = static_cast<int> (m_program.transforms.size ());
-      if (!m_evaluator || first_stage < 0 || first_stage > stage_count ||
-          first_stage > static_cast<int> (m_checkpoints.size ())) {
+      if (!m_model.active () || first_stage < 0) {
         rebuild_program ();
         return;
       }
-
-      m_map_pristine = false;
-      if (first_stage < static_cast<int> (m_checkpoints.size ()))
-        m_evaluator->restore (m_checkpoints[first_stage]);
-
-      // Appending a stage starts from the current final map.  Other edits start
-      // from their saved input, and discard only the now-invalid suffix.
-      const std::size_t retained =
-        std::min (static_cast<std::size_t> (stage_count),
-                  static_cast<std::size_t> (first_stage + 1));
-      if (m_checkpoints.size () > retained)
-        m_checkpoints.resize (retained);
-      if (m_reports.size () > static_cast<std::size_t> (first_stage))
-        m_reports.resize (static_cast<std::size_t> (first_stage));
-      for (std::size_t i = static_cast<std::size_t> (first_stage);
-           i < m_program.transforms.size ();
-           ++i) {
-        if (i >= m_checkpoints.size ())
-          m_checkpoints.push_back (m_evaluator->checkpoint ());
-        const terrain::TerrainTransformReport report =
-          m_evaluator->apply (m_program.transforms[i]);
-        if (i >= m_reports.size ())
-          m_reports.push_back (report);
-        else
-          m_reports[i] = report;
-      }
+      m_model.rerun_program_from (static_cast<std::size_t> (first_stage));
       invalidate_analysis ();
       refresh ();
     }
@@ -857,17 +797,19 @@ namespace moppe {
         params.ramp = render::TerrainOverlayRamp::Heat;
         m_overlay_status = "HEIGHT — normalized elevation";
       } else if (m_overlay == OverlayMode::HeightDelta) {
+        const std::vector<map::TerrainCheckpoint>& checkpoints =
+          m_model.checkpoints ();
         if (m_selected_stage < 0 ||
-            m_selected_stage >= static_cast<int> (m_checkpoints.size ())) {
+            m_selected_stage >= static_cast<int> (checkpoints.size ())) {
           m_renderer->clear_terrain_overlay ();
           m_overlay_status = "DELTA — select a pipeline stage";
           return;
         }
         const std::vector<float>& before =
-          m_checkpoints[static_cast<std::size_t> (m_selected_stage)].heights;
+          checkpoints[static_cast<std::size_t> (m_selected_stage)].heights;
         const float* after =
-          m_selected_stage + 1 < static_cast<int> (m_checkpoints.size ())
-            ? m_checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
+          m_selected_stage + 1 < static_cast<int> (checkpoints.size ())
+            ? checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
                 .heights.data ()
             : m_map->raw_heights ();
         float magnitude = 0.0f;
@@ -1113,9 +1055,9 @@ namespace moppe {
     }
 
     void TerrainLab::append_stage (terrain::TerrainTransform stage) {
-      const int first_stage = static_cast<int> (m_program.transforms.size ());
-      m_program.transforms.push_back (std::move (stage));
-      m_selected_stage = static_cast<int> (m_program.transforms.size ()) - 1;
+      const int first_stage = static_cast<int> (program ().transforms.size ());
+      program ().transforms.push_back (std::move (stage));
+      m_selected_stage = static_cast<int> (program ().transforms.size ()) - 1;
       ensure_selected_stage_visible ();
       rerun_program_from (first_stage);
     }
@@ -1125,10 +1067,10 @@ namespace moppe {
         std::min (m_selected_stage, m_selected_stage + direction);
       const int target = m_selected_stage + direction;
       if (m_selected_stage < 0 || target < 0 ||
-          target >= static_cast<int> (m_program.transforms.size ()))
+          target >= static_cast<int> (program ().transforms.size ()))
         return;
-      std::swap (m_program.transforms[m_selected_stage],
-                 m_program.transforms[target]);
+      std::swap (program ().transforms[m_selected_stage],
+                 program ().transforms[target]);
       m_selected_stage = target;
       ensure_selected_stage_visible ();
       rerun_program_from (first_stage);
@@ -1136,12 +1078,12 @@ namespace moppe {
 
     void TerrainLab::duplicate_selected_stage () {
       if (m_selected_stage < 0 ||
-          m_selected_stage >= static_cast<int> (m_program.transforms.size ()))
+          m_selected_stage >= static_cast<int> (program ().transforms.size ()))
         return;
       const int first_stage = m_selected_stage + 1;
-      const auto position = m_program.transforms.begin () + first_stage;
-      m_program.transforms.insert (position,
-                                   m_program.transforms[m_selected_stage]);
+      const auto position = program ().transforms.begin () + first_stage;
+      program ().transforms.insert (position,
+                                    program ().transforms[m_selected_stage]);
       ++m_selected_stage;
       ensure_selected_stage_visible ();
       rerun_program_from (first_stage);
@@ -1149,23 +1091,23 @@ namespace moppe {
 
     void TerrainLab::remove_selected_stage () {
       if (m_selected_stage < 0 ||
-          m_selected_stage >= static_cast<int> (m_program.transforms.size ()))
+          m_selected_stage >= static_cast<int> (program ().transforms.size ()))
         return;
       const int first_stage = m_selected_stage;
-      m_program.transforms.erase (m_program.transforms.begin () +
-                                  m_selected_stage);
-      if (m_program.transforms.empty ())
+      program ().transforms.erase (program ().transforms.begin () +
+                                   m_selected_stage);
+      if (program ().transforms.empty ())
         m_selected_stage = -1;
       else
         m_selected_stage =
           std::min (m_selected_stage,
-                    static_cast<int> (m_program.transforms.size ()) - 1);
+                    static_cast<int> (program ().transforms.size ()) - 1);
       ensure_selected_stage_visible ();
       rerun_program_from (first_stage);
     }
 
     void TerrainLab::ensure_selected_stage_visible () {
-      const int count = static_cast<int> (m_program.transforms.size ());
+      const int count = static_cast<int> (program ().transforms.size ());
       const int maximum = std::max (0, count - visible_stage_rows);
       if (m_selected_stage >= 0) {
         if (m_selected_stage < m_stage_scroll)
@@ -1177,181 +1119,38 @@ namespace moppe {
     }
 
     float TerrainLab::selected_property_normalized (int row) const {
-      const auto unit = [] (float value, float low, float high) {
-        return high > low
-                 ? std::clamp ((value - low) / (high - low), 0.0f, 1.0f)
-                 : 0.0f;
-      };
-      if (m_selected_stage < 0) {
-        const terrain::GeologicalRecipe& recipe = m_program.source.recipe;
-        switch (row) {
-        case 0:
-          return unit (recipe.warp.amplitude, 0.0f, 0.6f);
-        case 1:
-          return unit (recipe.continent.noise.cycles, 1.0f, 16.0f);
-        case 2:
-          return unit (recipe.plains.noise.cycles, 1.0f, 32.0f);
-        case 3:
-          return unit (recipe.mountains.cycles, 1.0f, 8.0f);
-        case 4:
-          return unit (
-            recipe.blend.mask_low, 0.0f, recipe.blend.mask_high - 0.001f);
-        case 5:
-          return unit (
-            recipe.blend.mask_high, recipe.blend.mask_low + 0.001f, 1.0f);
-        case 6:
-          return unit (recipe.blend.continent_weight, 0.0f, 1.5f);
-        case 7:
-          return unit (recipe.blend.plains_weight, 0.0f, 1.0f);
-        case 8:
-          return unit (recipe.blend.mountain_weight, 0.0f, 1.5f);
-        default:
-          return 0.0f;
-        }
-      }
-
-      const terrain::TerrainTransform& stage =
-        m_program.transforms[m_selected_stage];
-      if (const auto* power = std::get_if<terrain::PowerHeights> (&stage))
-        return unit (power->exponent, 0.1f, 4.0f);
-      if (const auto* analytical =
-            std::get_if<terrain::AnalyticalErosion> (&stage)) {
-        if (row == 0)
-          return unit (
-            julian_years_value (analytical->duration), 0.0f, 1600000.0f);
-        if (row == 1)
-          return unit (meters_per_julian_year_value (analytical->uplift_rate),
-                       0.0f,
-                       0.003f);
-        if (row == 2)
-          return unit (std::log10 (analytical->erodibility), -6.0f, -3.0f);
-        if (row == 3)
-          return unit (analytical->area_exponent, 0.0f, 1.0f);
-        if (row == 4)
-          return unit (
-            terrain::count_value (analytical->fixed_point_iterations),
-            1.0f,
-            12.0f);
-        return unit (analytical->relaxation, 0.1f, 1.0f);
-      }
-      if (const auto* orogeny =
-            std::get_if<terrain::OrogenyEvolution> (&stage)) {
-        if (row == 0)
-          return unit (
-            julian_years_value (orogeny->evolution.duration), 0.0f, 5000000.0f);
-        if (row == 1)
-          return unit (julian_years_value (orogeny->evolution.time_step),
-                       1000.0f,
-                       250000.0f);
-        if (row == 2)
-          return unit (
-            meters_per_julian_year_value (orogeny->maximum_uplift_rate),
-            0.0f,
-            0.003f);
-        if (row == 3)
-          return unit (std::log10 (meters_per_julian_year_value (
-                         orogeny->evolution.reference_incision_rate)),
-                       -7.0f,
-                       -3.0f);
-        if (row == 4)
-          return unit (orogeny->evolution.area_exponent, 0.0f, 1.0f);
-        if (row == 5)
-          return unit (square_meters_per_julian_year_value (
-                         orogeny->evolution.diffusivity),
-                       0.0f,
-                       0.005f);
-        if (row == 6)
-          return unit (
-            orogeny->evolution.channel_persistence.numerical_value_in (
-              mp_units::one),
-            0.0f,
-            0.95f);
-        return unit (orogeny->evolution.sea_level, 0.0f, 0.3f);
-      }
-      if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
-        if (row == 0)
-          return unit (square_meters_value (trails->minimum_catchment_area),
-                       100.0f,
-                       20000.0f);
-        if (row == 1)
-          return unit (square_meters_value (trails->maximum_catchment_area),
-                       20000.0f,
-                       250000.0f);
-        if (row == 2)
-          return unit (meters_value (trails->width), 1.0f, 12.0f);
-        if (row == 3)
-          return unit (meters_value (trails->shoulder_blend), 0.0f, 20.0f);
-        if (row == 4)
-          return unit (meters_value (trails->maximum_cut), 0.0f, 5.0f);
-        if (row == 5)
-          return unit (meters_value (trails->maximum_fill), 0.0f, 5.0f);
-        if (row == 6)
-          return unit (trails->maximum_grade.numerical_value_in (mp_units::one),
-                       0.05f,
-                       0.3f);
-        if (row == 7)
-          return unit (
-            trails->designed_grade.numerical_value_in (mp_units::one),
-            0.01f,
-            0.15f);
-        if (row == 8)
-          return unit (
-            meters_value (trails->home_base_water_distance), 20.0f, 250.0f);
-        if (row == 9)
-          return unit (
-            meters_value (trails->home_base_pad_radius), 8.0f, 45.0f);
-        if (row == 10)
-          return unit (
-            meters_value (trails->desired_circuit_radius), 250.0f, 1800.0f);
-        if (row == 11)
-          return unit (
-            meters_value (trails->highland_preference_height_above_sea),
-            80.0f,
-            320.0f);
-        if (row == 12)
-          return unit (meters_value (trails->alpine_avoidance_height_above_sea),
-                       160.0f,
-                       380.0f);
-        return unit (
-          trails->crossfall.numerical_value_in (mp_units::one), 0.0f, 0.1f);
-      }
-      if (const auto* thermal = std::get_if<terrain::ThermalErosion> (&stage))
-        return row == 0 ? unit (terrain::count_value (thermal->iterations),
-                                0.0f,
-                                20.0f)
-                        : unit (thermal->talus, 0.0f, 0.05f);
-      if (const auto* diffusion =
-            std::get_if<terrain::HillslopeDiffusion> (&stage))
-        return row == 0 ? unit (julian_years_value (diffusion->duration),
-                                0.0f,
-                                20000.0f)
-                        : unit (square_meters_per_julian_year_value (
-                                  diffusion->diffusivity),
-                                0.0f,
-                                0.1f);
-      return 0.0f;
+      const terrain::TerrainProgramEditor editor (program ());
+      const std::size_t property = static_cast<std::size_t> (row);
+      return m_selected_stage < 0
+               ? editor.source ().normalized_property (property)
+               : editor.transform (static_cast<std::size_t> (m_selected_stage))
+                   .normalized_property (property);
     }
 
     ParameterDomain TerrainLab::selected_property_domain (int row) const {
-      if (m_selected_stage < 0)
-        return recipe_property (m_program.source.recipe, row).domain;
-      return stage_property (m_program.transforms[m_selected_stage], row)
-        .domain;
+      const terrain::TerrainProgramEditor editor (program ());
+      const std::size_t property = static_cast<std::size_t> (row);
+      return m_selected_stage < 0
+               ? editor.source ().property (property).domain
+               : editor.transform (static_cast<std::size_t> (m_selected_stage))
+                   .property (property)
+                   .domain;
     }
 
     bool TerrainLab::selected_property_drag_enabled (int row) const {
       if (selected_property_domain (row) != ParameterDomain::Continuous)
         return false;
+      const terrain::TerrainProgram& lab_program = program ();
       if (m_selected_stage < 0) {
         return std::ranges::all_of (
-          m_program.transforms, [] (const terrain::TerrainTransform& stage) {
+          lab_program.transforms, [] (const terrain::TerrainTransform& stage) {
             return std::holds_alternative<terrain::NormalizeHeights> (stage) ||
                    std::holds_alternative<terrain::PowerHeights> (stage);
           });
       }
       const terrain::TransformSemantics semantics =
         terrain::terrain_transform_semantics (
-          m_program.transforms[m_selected_stage]);
+          lab_program.transforms[m_selected_stage]);
       return semantics.spatial_scope == terrain::SpatialScope::Pointwise &&
              semantics.evaluation_order == terrain::EvaluationOrder::Direct;
     }
@@ -1359,270 +1158,14 @@ namespace moppe {
     bool TerrainLab::set_selected_property_normalized (int row, float value) {
       if (selected_property_domain (row) != ParameterDomain::Continuous)
         return false;
-      value = std::clamp (value, 0.0f, 1.0f);
-      const auto mix = [value] (float low, float high) {
-        return low + value * (high - low);
-      };
-      if (m_selected_stage < 0) {
-        terrain::GeologicalRecipe& recipe = m_program.source.recipe;
-        switch (row) {
-        case 0: {
-          const float old = recipe.warp.amplitude;
-          recipe.warp.amplitude = mix (0.0f, 0.6f);
-          return recipe.warp.amplitude != old;
-        }
-        case 1: {
-          const int old = recipe.continent.noise.cycles;
-          recipe.continent.noise.cycles = std::lround (mix (1.0f, 16.0f));
-          return recipe.continent.noise.cycles != old;
-        }
-        case 2: {
-          const int old = recipe.plains.noise.cycles;
-          recipe.plains.noise.cycles = std::lround (mix (1.0f, 32.0f));
-          return recipe.plains.noise.cycles != old;
-        }
-        case 3: {
-          const int old = recipe.mountains.cycles;
-          recipe.mountains.cycles = std::lround (mix (1.0f, 8.0f));
-          return recipe.mountains.cycles != old;
-        }
-        case 4: {
-          const float old = recipe.blend.mask_low;
-          recipe.blend.mask_low = mix (0.0f, recipe.blend.mask_high - 0.001f);
-          return recipe.blend.mask_low != old;
-        }
-        case 5: {
-          const float old = recipe.blend.mask_high;
-          recipe.blend.mask_high = mix (recipe.blend.mask_low + 0.001f, 1.0f);
-          return recipe.blend.mask_high != old;
-        }
-        case 6: {
-          const float old = recipe.blend.continent_weight;
-          recipe.blend.continent_weight = mix (0.0f, 1.5f);
-          return recipe.blend.continent_weight != old;
-        }
-        case 7: {
-          const float old = recipe.blend.plains_weight;
-          recipe.blend.plains_weight = mix (0.0f, 1.0f);
-          return recipe.blend.plains_weight != old;
-        }
-        case 8: {
-          const float old = recipe.blend.mountain_weight;
-          recipe.blend.mountain_weight = mix (0.0f, 1.5f);
-          return recipe.blend.mountain_weight != old;
-        }
-        default:
-          return false;
-        }
-      }
-
-      terrain::TerrainTransform& stage = m_program.transforms[m_selected_stage];
-      if (auto* power = std::get_if<terrain::PowerHeights> (&stage)) {
-        const float old = power->exponent;
-        power->exponent = mix (0.1f, 4.0f);
-        return power->exponent != old;
-      }
-      if (auto* analytical = std::get_if<terrain::AnalyticalErosion> (&stage)) {
-        if (row == 0) {
-          const auto old = analytical->duration;
-          analytical->duration =
-            mix (0.0f, 1600000.0f) * mp_units::astronomy::Julian_year;
-          return analytical->duration != old;
-        }
-        if (row == 1) {
-          const auto old = analytical->uplift_rate;
-          analytical->uplift_rate = mix (0.0f, 0.003f) * mp_units::si::metre /
-                                    mp_units::astronomy::Julian_year;
-          return analytical->uplift_rate != old;
-        }
-        if (row == 2) {
-          const float old = analytical->erodibility;
-          analytical->erodibility = std::pow (10.0f, mix (-6.0f, -3.0f));
-          return analytical->erodibility != old;
-        }
-        if (row == 3) {
-          const float old = analytical->area_exponent;
-          analytical->area_exponent = mix (0.0f, 1.0f);
-          return analytical->area_exponent != old;
-        }
-        if (row == 5) {
-          const float old = analytical->relaxation;
-          analytical->relaxation = mix (0.1f, 1.0f);
-          return analytical->relaxation != old;
-        }
-        return false;
-      }
-      if (auto* orogeny = std::get_if<terrain::OrogenyEvolution> (&stage)) {
-        if (row == 0) {
-          const auto old = orogeny->evolution.duration;
-          orogeny->evolution.duration =
-            mix (0.0f, 5000000.0f) * mp_units::astronomy::Julian_year;
-          return orogeny->evolution.duration != old;
-        }
-        if (row == 1) {
-          const auto old = orogeny->evolution.time_step;
-          orogeny->evolution.time_step =
-            mix (1000.0f, 250000.0f) * mp_units::astronomy::Julian_year;
-          return orogeny->evolution.time_step != old;
-        }
-        if (row == 2) {
-          const auto old = orogeny->maximum_uplift_rate;
-          orogeny->maximum_uplift_rate = mix (0.0f, 0.003f) *
-                                         mp_units::si::metre /
-                                         mp_units::astronomy::Julian_year;
-          return orogeny->maximum_uplift_rate != old;
-        }
-        if (row == 3) {
-          const auto old = orogeny->evolution.reference_incision_rate;
-          orogeny->evolution.reference_incision_rate =
-            std::pow (10.0f, mix (-7.0f, -3.0f)) * mp_units::si::metre /
-            mp_units::astronomy::Julian_year;
-          return orogeny->evolution.reference_incision_rate != old;
-        }
-        if (row == 4) {
-          const float old = orogeny->evolution.area_exponent;
-          orogeny->evolution.area_exponent = mix (0.0f, 1.0f);
-          return orogeny->evolution.area_exponent != old;
-        }
-        if (row == 5) {
-          const auto old = orogeny->evolution.diffusivity;
-          orogeny->evolution.diffusivity =
-            mix (0.0f, 0.005f) * mp_units::si::metre * mp_units::si::metre /
-            mp_units::astronomy::Julian_year;
-          return orogeny->evolution.diffusivity != old;
-        }
-        if (row == 6) {
-          const auto old = orogeny->evolution.channel_persistence;
-          orogeny->evolution.channel_persistence =
-            mix (0.0f, 0.95f) * terrain::channel_persistence[mp_units::one];
-          return orogeny->evolution.channel_persistence != old;
-        }
-        const float old = orogeny->evolution.sea_level;
-        orogeny->evolution.sea_level = mix (0.0f, 0.3f);
-        m_program.source.sea_level = orogeny->evolution.sea_level;
-        return orogeny->evolution.sea_level != old;
-      }
-      if (auto* trails = std::get_if<terrain::TrailFormation> (&stage)) {
-        if (row == 0) {
-          const auto old = trails->minimum_catchment_area;
-          trails->minimum_catchment_area =
-            std::min (mix (100.0f, 20000.0f),
-                      square_meters_value (trails->maximum_catchment_area)) *
-            mp_units::si::metre * mp_units::si::metre;
-          return trails->minimum_catchment_area != old;
-        }
-        if (row == 1) {
-          const auto old = trails->maximum_catchment_area;
-          trails->maximum_catchment_area =
-            std::max (mix (20000.0f, 250000.0f),
-                      square_meters_value (trails->minimum_catchment_area)) *
-            mp_units::si::metre * mp_units::si::metre;
-          return trails->maximum_catchment_area != old;
-        }
-        if (row == 2) {
-          const auto old = trails->width;
-          trails->width = mix (1.0f, 12.0f) * mp_units::si::metre;
-          return trails->width != old;
-        }
-        if (row == 3) {
-          const auto old = trails->shoulder_blend;
-          trails->shoulder_blend = mix (0.0f, 20.0f) * mp_units::si::metre;
-          return trails->shoulder_blend != old;
-        }
-        if (row == 4) {
-          const auto old = trails->maximum_cut;
-          trails->maximum_cut = mix (0.0f, 5.0f) * mp_units::si::metre;
-          return trails->maximum_cut != old;
-        }
-        if (row == 5) {
-          const auto old = trails->maximum_fill;
-          trails->maximum_fill = mix (0.0f, 5.0f) * mp_units::si::metre;
-          return trails->maximum_fill != old;
-        }
-        if (row == 6) {
-          const auto old = trails->maximum_grade;
-          trails->maximum_grade =
-            std::max (
-              mix (0.05f, 0.3f),
-              trails->designed_grade.numerical_value_in (mp_units::one)) *
-            terrain::terrain_slope[mp_units::one];
-          return trails->maximum_grade != old;
-        }
-        if (row == 7) {
-          const auto old = trails->designed_grade;
-          trails->designed_grade =
-            std::min (
-              mix (0.01f, 0.15f),
-              trails->maximum_grade.numerical_value_in (mp_units::one)) *
-            terrain::terrain_slope[mp_units::one];
-          return trails->designed_grade != old;
-        }
-        if (row == 8) {
-          const auto old = trails->home_base_water_distance;
-          trails->home_base_water_distance =
-            mix (20.0f, 250.0f) * mp_units::si::metre;
-          return trails->home_base_water_distance != old;
-        }
-        if (row == 9) {
-          const auto old = trails->home_base_pad_radius;
-          trails->home_base_pad_radius =
-            mix (8.0f, 45.0f) * mp_units::si::metre;
-          return trails->home_base_pad_radius != old;
-        }
-        if (row == 10) {
-          const auto old = trails->desired_circuit_radius;
-          trails->desired_circuit_radius =
-            mix (250.0f, 1800.0f) * mp_units::si::metre;
-          return trails->desired_circuit_radius != old;
-        }
-        if (row == 11) {
-          const auto old = trails->highland_preference_height_above_sea;
-          trails->highland_preference_height_above_sea =
-            std::min (
-              mix (80.0f, 320.0f),
-              meters_value (trails->alpine_avoidance_height_above_sea)) *
-            mp_units::si::metre;
-          return trails->highland_preference_height_above_sea != old;
-        }
-        if (row == 12) {
-          const auto old = trails->alpine_avoidance_height_above_sea;
-          trails->alpine_avoidance_height_above_sea =
-            std::max (
-              mix (160.0f, 380.0f),
-              meters_value (trails->highland_preference_height_above_sea)) *
-            mp_units::si::metre;
-          return trails->alpine_avoidance_height_above_sea != old;
-        }
-        const auto old = trails->crossfall;
-        trails->crossfall =
-          mix (0.0f, 0.1f) * terrain::terrain_slope[mp_units::one];
-        return trails->crossfall != old;
-      }
-      if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
-        if (row == 0) {
-          const auto old = thermal->iterations;
-          thermal->iterations =
-            terrain::iteration_count (std::lround (mix (0.0f, 20.0f)));
-          return thermal->iterations != old;
-        }
-        const float old = thermal->talus;
-        thermal->talus = mix (0.0f, 0.05f);
-        return thermal->talus != old;
-      }
-      if (auto* diffusion = std::get_if<terrain::HillslopeDiffusion> (&stage)) {
-        if (row == 0) {
-          const auto old = diffusion->duration;
-          diffusion->duration =
-            mix (0.0f, 20000.0f) * mp_units::astronomy::Julian_year;
-          return diffusion->duration != old;
-        }
-        const auto old = diffusion->diffusivity;
-        diffusion->diffusivity = mix (0.0f, 0.1f) * mp_units::si::metre *
-                                 mp_units::si::metre /
-                                 mp_units::astronomy::Julian_year;
-        return diffusion->diffusivity != old;
-      }
-      return false;
+      terrain::TerrainProgramEditor editor (program ());
+      const std::size_t property = static_cast<std::size_t> (row);
+      return m_selected_stage < 0
+               ? editor.set_source_normalized_property (property, value)
+               : editor.set_transform_normalized_property (
+                   static_cast<std::size_t> (m_selected_stage),
+                   property,
+                   value);
     }
 
     bool TerrainLab::adjust_selected_continuous (int row, int direction) {
@@ -1637,40 +1180,14 @@ namespace moppe {
       if (direction == 0 ||
           selected_property_domain (row) != ParameterDomain::Natural)
         return false;
-      if (m_selected_stage < 0) {
-        terrain::GeologicalRecipe& recipe = m_program.source.recipe;
-        int* value = row == 1   ? &recipe.continent.noise.cycles
-                     : row == 2 ? &recipe.plains.noise.cycles
-                                : &recipe.mountains.cycles;
-        const int maximum = row == 1 ? 16 : row == 2 ? 32 : 8;
-        const int changed = std::clamp (*value + direction, 1, maximum);
-        if (changed == *value)
-          return false;
-        *value = changed;
-        return true;
-      }
-
-      terrain::TerrainTransform& stage = m_program.transforms[m_selected_stage];
-      if (auto* analytical = std::get_if<terrain::AnalyticalErosion> (&stage)) {
-        const int changed = std::clamp (
-          terrain::count_value (analytical->fixed_point_iterations) + direction,
-          1,
-          12);
-        if (changed ==
-            terrain::count_value (analytical->fixed_point_iterations))
-          return false;
-        analytical->fixed_point_iterations = terrain::iteration_count (changed);
-        return true;
-      }
-      if (auto* thermal = std::get_if<terrain::ThermalErosion> (&stage)) {
-        const int changed = std::clamp (
-          terrain::count_value (thermal->iterations) + direction, 0, 20);
-        if (changed == terrain::count_value (thermal->iterations))
-          return false;
-        thermal->iterations = terrain::iteration_count (changed);
-        return true;
-      }
-      return false;
+      terrain::TerrainProgramEditor editor (program ());
+      const std::size_t property = static_cast<std::size_t> (row);
+      return m_selected_stage < 0
+               ? editor.adjust_source_natural_property (property, direction)
+               : editor.adjust_transform_natural_property (
+                   static_cast<std::size_t> (m_selected_stage),
+                   property,
+                   direction);
     }
 
     void TerrainLab::queue_parameter_rebuild () {
@@ -1685,9 +1202,9 @@ namespace moppe {
       m_parameter_rebuild_pending = false;
       bool iterative = false;
       if (stage >= 0 &&
-          stage < static_cast<int> (m_program.transforms.size ())) {
+          stage < static_cast<int> (program ().transforms.size ())) {
         iterative =
-          terrain::terrain_transform_semantics (m_program.transforms[stage])
+          terrain::terrain_transform_semantics (program ().transforms[stage])
             .evaluation_order == terrain::EvaluationOrder::Iterative;
         rerun_program_from (stage);
       } else {
@@ -1697,12 +1214,11 @@ namespace moppe {
     }
 
     void TerrainLab::apply_friendly_preset (int preset) {
-      const std::uint32_t seed = m_program.seed.value;
-      m_program = terrain::make_world_program (
-        seed, terrain::TerrainGenerationProfile::Play);
-      auto& recipe = m_program.source.recipe;
+      program () = calibrated_world_program (
+        program ().seed, terrain::TerrainGenerationProfile::Play);
+      auto& recipe = program ().source.recipe;
       auto& orogeny =
-        std::get<terrain::OrogenyEvolution> (m_program.transforms.front ());
+        std::get<terrain::OrogenyEvolution> (program ().transforms.front ());
       if (preset == 0) {
         recipe.blend.mountain_weight = 1.35f;
         recipe.warp.amplitude = 0.22f;
@@ -1747,9 +1263,9 @@ namespace moppe {
         if (!friendly_action_rect (i, m_ui_height).contains (x, y))
           continue;
         if (i == 0) {
-          const std::uint32_t seed = terrain::next_seed (m_program.seed).value;
-          m_program = terrain::make_world_program (
-            seed, terrain::TerrainGenerationProfile::Play);
+          program () =
+            calibrated_world_program (terrain::next_seed (program ().seed),
+                                      terrain::TerrainGenerationProfile::Play);
           m_selected_stage = -1;
           m_friendly_preset = -1;
           rebuild_program ();
@@ -1814,10 +1330,10 @@ namespace moppe {
         return;
       }
       if (seed_rect ().contains (x, y)) {
-        const terrain::Seed seed = terrain::next_seed (m_program.seed);
-        m_program.source.recipe.seeds =
+        const terrain::Seed seed = terrain::next_seed (program ().seed);
+        program ().source.recipe.seeds =
           terrain::derive_geological_seeds (seed.value);
-        m_program.seed = seed;
+        program ().seed = seed;
         m_selected_stage = -1;
         rebuild_program ();
         return;
@@ -1844,7 +1360,7 @@ namespace moppe {
       }
       for (int row = 0; row < visible_stage_rows; ++row) {
         const int stage = m_stage_scroll + row;
-        if (stage < static_cast<int> (m_program.transforms.size ()) &&
+        if (stage < static_cast<int> (program ().transforms.size ()) &&
             stage_rect (row).contains (x, y)) {
           m_selected_stage = stage;
           if (m_overlay == OverlayMode::HeightDelta)
@@ -1862,14 +1378,14 @@ namespace moppe {
         else if (i == 2)
           append_stage (terrain::AnalyticalErosion {});
         else if (i == 3) {
-          m_program.source.mode = terrain::GeologicalSource::Mode::Orogeny;
-          if (m_program.transforms.size () == 1 &&
+          program ().source.mode = terrain::GeologicalSource::Mode::Orogeny;
+          if (program ().transforms.size () == 1 &&
               std::holds_alternative<terrain::NormalizeHeights> (
-                m_program.transforms.front ()))
-            m_program.transforms.clear ();
-          m_program.transforms.emplace_back (terrain::OrogenyEvolution {});
+                program ().transforms.front ()))
+            program ().transforms.clear ();
+          program ().transforms.emplace_back (terrain::OrogenyEvolution {});
           m_selected_stage =
-            static_cast<int> (m_program.transforms.size ()) - 1;
+            static_cast<int> (program ().transforms.size ()) - 1;
           ensure_selected_stage_visible ();
           rebuild_program ();
         } else if (i == 4)
@@ -1897,8 +1413,9 @@ namespace moppe {
 
       int property_count = 9;
       if (m_selected_stage >= 0)
-        property_count =
-          stage_property_count (m_program.transforms[m_selected_stage]);
+        property_count = terrain::TerrainTransformEditor (
+                           program ().transforms[m_selected_stage])
+                           .property_count ();
       for (int row = 0; row < property_count; ++row) {
         const ParameterDomain domain = selected_property_domain (row);
         const bool stepped_continuous = domain == ParameterDomain::Continuous &&
@@ -1935,7 +1452,8 @@ namespace moppe {
       // normals, small shadow map) is for maps the lab has rebuilt and
       // may rebuild again while a parameter drags.
       const bool interactive_preview =
-        inspection_fog && (!m_map_pristine || m_view == ViewMode::Torus);
+        inspection_fog &&
+        (!m_model.map_pristine () || m_view == ViewMode::Torus);
       if (!interactive_preview)
         m_map->recompute_normals ();
       WorldParams display = *m_world;
@@ -1953,13 +1471,13 @@ namespace moppe {
                         projection,
                         repeat,
                         interactive_preview);
-      if (m_map_pristine) {
+      if (m_model.map_pristine ()) {
         m_renderer->set_terrain_paths (m_saved_trail_influence,
                                        m_saved_home_base_influence);
-      } else if (m_evaluator && m_evaluator->trail_network ()) {
+      } else if (const auto& network = m_model.trail_network ()) {
         m_renderer->set_terrain_paths (
-          terrain::expand_trail_influence (*m_evaluator->trail_network ()),
-          terrain::expand_home_base_influence (*m_evaluator->trail_network ()));
+          terrain::expand_trail_influence (*network),
+          terrain::expand_home_base_influence (*network));
       } else {
         m_renderer->set_terrain_paths ({});
       }
@@ -2082,9 +1600,9 @@ namespace moppe {
         reset_program ();
         break;
       case Key::N:
-        m_program.seed = terrain::next_seed (m_program.seed);
-        m_program.source.recipe.seeds =
-          terrain::derive_geological_seeds (m_program.seed.value);
+        program ().seed = terrain::next_seed (program ().seed);
+        program ().source.recipe.seeds =
+          terrain::derive_geological_seeds (program ().seed.value);
         m_selected_stage = -1;
         rebuild_program ();
         break;
@@ -2100,9 +1618,9 @@ namespace moppe {
     std::string TerrainLab::history_snapshot_name (std::size_t index) const {
       if (index == 0)
         return "MATERIALIZED FIELD";
-      if (index <= m_program.transforms.size ()) {
+      if (index <= program ().transforms.size ()) {
         const std::string_view id =
-          terrain::terrain_transform_id (m_program.transforms[index - 1]);
+          terrain::terrain_transform_id (program ().transforms[index - 1]);
         std::string name (id);
         std::transform (name.begin (), name.end (), name.begin (), [] (char c) {
           return static_cast<char> (
@@ -2126,7 +1644,7 @@ namespace moppe {
       m_history_index = index;
       m_history_age = 0.0f;
       m_selected_stage = index == 0 ? -1 : static_cast<int> (index - 1);
-      m_map_pristine = index + 1 == m_history->size ();
+      m_model.set_map_pristine (index + 1 == m_history->size ());
       invalidate_analysis ();
       refresh ();
     }
@@ -2219,8 +1737,9 @@ namespace moppe {
               return;
             int property_count = 9;
             if (m_selected_stage >= 0)
-              property_count =
-                stage_property_count (m_program.transforms[m_selected_stage]);
+              property_count = terrain::TerrainTransformEditor (
+                                 program ().transforms[m_selected_stage])
+                                 .property_count ();
             if (m_build_window.contains (x, y)) {
               for (int row = 0; row < property_count; ++row) {
                 if (!parameter_control_rect (property_rect (row))
@@ -2274,9 +1793,9 @@ namespace moppe {
         if (m_build_ui && m_build_window.contains (x, y) &&
             stage_list_rect ().contains (m_build_window.local_x (x),
                                          m_build_window.local_y (y)) &&
-            m_program.transforms.size () > visible_stage_rows) {
+            program ().transforms.size () > visible_stage_rows) {
           m_stage_scroll += delta > 0.0f ? -1 : 1;
-          const int maximum = static_cast<int> (m_program.transforms.size ()) -
+          const int maximum = static_cast<int> (program ().transforms.size ()) -
                               visible_stage_rows;
           m_stage_scroll = std::clamp (m_stage_scroll, 0, maximum);
         }
@@ -2505,6 +2024,8 @@ namespace moppe {
         return bounds.contains (m_build_window.local_x (m_pointer_x),
                                 m_build_window.local_y (m_pointer_y));
       };
+      const terrain::TerrainProgram& lab_program = program ();
+      const terrain::TerrainProgramEditor editor (lab_program);
 
       m_ui.begin (dl);
       m_ui.begin_window (dl, m_build_window, "TERRAIN LAB / BUILD");
@@ -2513,7 +2034,7 @@ namespace moppe {
         dl, reset_rect (), "RESET", hot (reset_rect ()), m_pointer_down);
 
       std::ostringstream seed;
-      seed << "SEED " << m_program.seed.value << " >";
+      seed << "SEED " << lab_program.seed.value << " >";
       m_ui.button (
         dl, seed_rect (), seed.str (), hot (seed_rect ()), m_pointer_down);
       m_ui.button (dl, fit_rect (), "FIT", hot (fit_rect ()), m_pointer_down);
@@ -2538,7 +2059,7 @@ namespace moppe {
                      layer_labels[i],
                      hot (bounds),
                      m_pointer_down,
-                     m_program.source.layer == layers[i]);
+                     lab_program.source.layer == layers[i]);
       }
 
       m_ui.section_header (dl, pipeline_header_rect (), "PIPELINE");
@@ -2552,12 +2073,12 @@ namespace moppe {
         dl,
         source,
         "F",
-        m_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
+        lab_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
           ? "OROGENY SEED"
           : "GEOLOGICAL FIELD",
-        m_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
+        lab_program.source.mode == terrain::GeologicalSource::Mode::Orogeny
           ? "shallow continent / recipe becomes uplift"
-          : terrain::geological_layer_name (m_program.source.layer),
+          : terrain::geological_layer_name (lab_program.source.layer),
         hot (source),
         m_pointer_down,
         m_selected_stage < 0);
@@ -2570,14 +2091,14 @@ namespace moppe {
                2.0f);
       for (int row = 0; row < visible_stage_rows; ++row) {
         const int stage_index = m_stage_scroll + row;
-        if (stage_index >= static_cast<int> (m_program.transforms.size ()))
+        if (stage_index >= static_cast<int> (lab_program.transforms.size ()))
           break;
         const UiRect bounds = stage_rect (row);
         m_ui.pipeline_row (dl,
                            bounds,
                            std::to_string (stage_index + 1),
-                           stage_name (m_program.transforms[stage_index]),
-                           stage_detail (m_program.transforms[stage_index]),
+                           stage_name (lab_program.transforms[stage_index]),
+                           stage_detail (lab_program.transforms[stage_index]),
                            hot (bounds),
                            m_pointer_down,
                            m_selected_stage == stage_index);
@@ -2600,7 +2121,7 @@ namespace moppe {
         for (int row = 0; row < 9; ++row) {
           const UiRect bounds = property_rect (row);
           const PropertyText property =
-            recipe_property (m_program.source.recipe, row);
+            editor.source ().property (static_cast<std::size_t> (row));
           if (selected_property_drag_enabled (row)) {
             m_ui.knob (dl,
                        bounds,
@@ -2623,11 +2144,13 @@ namespace moppe {
         }
       } else {
         const terrain::TerrainTransform& stage =
-          m_program.transforms[m_selected_stage];
-        const int count = stage_property_count (stage);
+          lab_program.transforms[m_selected_stage];
+        const terrain::TerrainTransformEditor stage_editor (stage);
+        const int count = static_cast<int> (stage_editor.property_count ());
         for (int row = 0; row < count; ++row) {
           const UiRect bounds = property_rect (row);
-          const PropertyText property = stage_property (stage, row);
+          const PropertyText property =
+            stage_editor.property (static_cast<std::size_t> (row));
           if (selected_property_drag_enabled (row)) {
             m_ui.knob (dl,
                        bounds,
@@ -2662,7 +2185,7 @@ namespace moppe {
       }
 
       std::ostringstream status;
-      status << m_program.transforms.size () << " stages | selected ";
+      status << lab_program.transforms.size () << " stages | selected ";
       if (m_selected_stage < 0)
         status << "field recipe";
       else
@@ -2726,14 +2249,16 @@ namespace moppe {
       const terrain::AnalyticalErosionReport* analytical_report = nullptr;
       const terrain::StreamPowerEvolutionReport* orogeny_report = nullptr;
       const terrain::TrailFormationReport* trail_report = nullptr;
+      const std::vector<terrain::TerrainTransformReport>& reports =
+        m_model.reports ();
       if (m_selected_stage >= 0 &&
-          m_selected_stage < static_cast<int> (m_reports.size ())) {
+          m_selected_stage < static_cast<int> (reports.size ())) {
         analytical_report = std::get_if<terrain::AnalyticalErosionReport> (
-          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
+          &reports[static_cast<std::size_t> (m_selected_stage)]);
         orogeny_report = std::get_if<terrain::StreamPowerEvolutionReport> (
-          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
+          &reports[static_cast<std::size_t> (m_selected_stage)]);
         trail_report = std::get_if<terrain::TrailFormationReport> (
-          &m_reports[static_cast<std::size_t> (m_selected_stage)]);
+          &reports[static_cast<std::size_t> (m_selected_stage)]);
       }
       if (orogeny_report) {
         const auto& report = *orogeny_report;

@@ -84,22 +84,24 @@ namespace moppe::map {
   using TrailInfluence = quantity<trail_influence[one], float>;
   using HomeBaseInfluence = quantity<home_base_influence[one], float>;
 
-  // The intrinsic 0-cochains currently carried by the terrain lattice.
-  // Their common domain makes cross-section rules explicit and guarantees
-  // that one row always means one surface site.
-  using SurfaceSections = spatial::Bundle<SurfaceDomain,
-                                          SurfaceElevation,
-                                          SurfaceNormal,
-                                          SnowSupport,
-                                          ChannelFlux,
-                                          SurfaceMoisture,
-                                          WaterlineDistance,
-                                          ErosionExposure,
-                                          DepositionCover,
-                                          TreeHabitat,
-                                          ForestCover,
-                                          TrailInfluence,
-                                          HomeBaseInfluence>;
+  // Each named materialization group is a typed collection of 0-cochains over
+  // the same SurfaceDomain. SurfaceAtlas makes a group's presence explicit,
+  // so an unavailable reading cannot be mistaken for an ordinary zero.
+  using SurfaceGeometrySections = spatial::
+    Bundle<SurfaceDomain, SurfaceElevation, SurfaceNormal, SnowSupport>;
+  using SurfaceChannelFluxSections =
+    spatial::Bundle<SurfaceDomain, ChannelFlux>;
+  using SurfaceMoistureSections =
+    spatial::Bundle<SurfaceDomain, SurfaceMoisture>;
+  using SurfaceWaterlineSections =
+    spatial::Bundle<SurfaceDomain, WaterlineDistance>;
+  using SurfaceGeologySections =
+    spatial::Bundle<SurfaceDomain, ErosionExposure, DepositionCover>;
+  using SurfaceHabitatSections = spatial::Bundle<SurfaceDomain, TreeHabitat>;
+  using SurfaceForestSections = spatial::Bundle<SurfaceDomain, ForestCover>;
+  using SurfaceTrailSections = spatial::Bundle<SurfaceDomain, TrailInfluence>;
+  using SurfaceHomeBaseSections =
+    spatial::Bundle<SurfaceDomain, HomeBaseInfluence>;
 }
 
 #endif

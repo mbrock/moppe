@@ -67,6 +67,7 @@ namespace moppe::terrain {
     [[noreturn]] void invalid_analytical_transform_property_index () {
       throw std::out_of_range ("terrain transform property index is invalid");
     }
+
   }
 
   void AnalyticalErosion::validate () const {
@@ -132,6 +133,69 @@ namespace moppe::terrain {
     }
   }
 
+  float AnalyticalErosion::normalized_property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return normalized_edit_value (
+        julian_years_value (duration), 0.0f, 1600000.0f);
+    case 1:
+      return normalized_edit_value (
+        meters_per_julian_year_value (uplift_rate), 0.0f, 0.003f);
+    case 2:
+      return normalized_edit_value (std::log10 (erodibility), -6.0f, -3.0f);
+    case 3:
+      return normalized_edit_value (area_exponent, 0.0f, 1.0f);
+    case 4:
+      return normalized_edit_value (
+        static_cast<float> (count_value (fixed_point_iterations)), 1.0f, 12.0f);
+    case 5:
+      return normalized_edit_value (relaxation, 0.1f, 1.0f);
+    default:
+      invalid_analytical_transform_property_index ();
+    }
+  }
+
+  bool AnalyticalErosion::set_normalized_property (std::size_t index,
+                                                   float value) {
+    switch (index) {
+    case 0:
+      return replace_edit_value (duration,
+                                 edited_value (value, 0.0f, 1600000.0f) *
+                                   mp_units::astronomy::Julian_year);
+    case 1:
+      return replace_edit_value (uplift_rate,
+                                 edited_value (value, 0.0f, 0.003f) *
+                                   mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year);
+    case 2:
+      return replace_edit_value (
+        erodibility, std::pow (10.0f, edited_value (value, -6.0f, -3.0f)));
+    case 3:
+      return replace_edit_value (area_exponent,
+                                 edited_value (value, 0.0f, 1.0f));
+    case 4:
+      return false;
+    case 5:
+      return replace_edit_value (relaxation, edited_value (value, 0.1f, 1.0f));
+    default:
+      invalid_analytical_transform_property_index ();
+    }
+  }
+
+  bool AnalyticalErosion::adjust_natural_property (std::size_t index,
+                                                   int direction) {
+    if (index != 4) {
+      if (index >= property_count ())
+        invalid_analytical_transform_property_index ();
+      return false;
+    }
+    if (direction == 0)
+      return false;
+    const IterationCount value = iteration_count (
+      std::clamp (count_value (fixed_point_iterations) + direction, 1, 12));
+    return replace_edit_value (fixed_point_iterations, value);
+  }
+
   void HillslopeDiffusion::validate () const {
     if (!std::isfinite (julian_years_value (duration)) ||
         duration < 0.0f * mp_units::astronomy::Julian_year ||
@@ -171,6 +235,36 @@ namespace moppe::terrain {
                  square_meters_per_julian_year_value (diffusivity), 3),
                ParameterDomain::Continuous };
     invalid_analytical_transform_property_index ();
+  }
+
+  float HillslopeDiffusion::normalized_property (std::size_t index) const {
+    if (index == 0)
+      return normalized_edit_value (
+        julian_years_value (duration), 0.0f, 20000.0f);
+    if (index == 1)
+      return normalized_edit_value (
+        square_meters_per_julian_year_value (diffusivity), 0.0f, 0.1f);
+    invalid_analytical_transform_property_index ();
+  }
+
+  bool HillslopeDiffusion::set_normalized_property (std::size_t index,
+                                                    float value) {
+    if (index == 0)
+      return replace_edit_value (duration,
+                                 edited_value (value, 0.0f, 20000.0f) *
+                                   mp_units::astronomy::Julian_year);
+    if (index == 1)
+      return replace_edit_value (diffusivity,
+                                 edited_value (value, 0.0f, 0.1f) *
+                                   mp_units::si::metre * mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year);
+    invalid_analytical_transform_property_index ();
+  }
+
+  bool HillslopeDiffusion::adjust_natural_property (std::size_t index, int) {
+    if (index >= property_count ())
+      invalid_analytical_transform_property_index ();
+    return false;
   }
 
   AnalyticalErosionResult

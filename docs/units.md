@@ -70,8 +70,9 @@ heightfield:
 - physical elevation is `height * height_scale` metres;
 - one cell represents `spacing_x * spacing_y` square metres.
 
-For the default random world, `WorldParams::map_size` is 5,000 m by 5,000 m
-and 320 m high. Its sea level is 50 m. A 2049-sample toroidal heightmap has
+For the default random world, `terrain::WorldRecipe::extent()` is 5,000 m by
+5,000 m and 320 m high. Its water datum is 50 m. A 2049-sample toroidal
+heightmap has
 2048 unique intervals per side, so its sample spacing is approximately
 2.441 m. The duplicated seam is storage for rendering, not extra land area.
 

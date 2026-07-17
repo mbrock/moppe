@@ -11,15 +11,15 @@ this shape.
 | Storey | Current object | Responsibility |
 | --- | --- | --- |
 | Combinatorial | `map::SurfaceDomain` | The finite vertex lattice, index/offset correspondence, horizontal spacing, boundary topology, and bilinear reconstruction stencil. |
-| Intrinsic | `map::SurfaceSections`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in bundles belonging to the ground and water respectively. `map::Surface` owns the ground's materialization barriers. |
+| Intrinsic | `map::SurfaceAtlas`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in named ground groups and a distinct water bundle. `map::Surface` owns the ground's materialization barriers. |
 | Extrinsic | `game::SurfacePresentation`, `game::WaterPresentation` | Convert typed columns to plain scalar texture payloads and upload them through `render::Renderer`. These are the quantity-to-number bridges. |
 
 The authoritative `RandomHeightMap` and the terrain-generation pipeline still
 precede these storeys. `Surface::refresh` is the explicit point where their
-finished geometry becomes intrinsic section data. Hydrology, trails, and
-ecology add readings at later, named barriers. They do not mutate the domain.
-`Surface::has_section<quantity_spec>()` distinguishes a section that has not
-crossed its barrier from one whose legitimate value happens to be zero.
+finished geometry becomes intrinsic section data. Hydrology, geology, ecology,
+and use add readings at later, named barriers. They do not mutate the domain.
+`Surface::atlas()` exposes those views: a null section pointer means it has not
+crossed its barrier, while a present section can legitimately contain zeroes.
 
 ## Domain
 
@@ -33,27 +33,30 @@ does not disguise the current heightmap as the proposal's seam-free topology.
 
 ## Intrinsic sections
 
-All current sections are vertex 0-cochains in `SurfaceSections`.
+All current sections are vertex 0-cochains over the atlas's one
+`SurfaceDomain`. `geometry()` is always present after `Surface::refresh()`.
+The other views expose individual optional sections so their existing barriers
+remain visible without a parallel Boolean availability ledger.
 
-| Quantity specification | Value | Meaning | Materialized by |
+| Group and section | Value | Meaning | Becomes valid |
 | --- | --- | --- | --- |
-| `surface_elevation` | elevation point in metres | Height in the current default elevation frame | `Surface::refresh` |
-| `surface_normal` | dimensionless vector | Detailed lighting and contact normal | `Surface::refresh` |
-| `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `Surface::refresh` |
-| `channel_flux` | dimensionless planar vector | Channel tangent scaled by visible fluvial activity | drainage analysis in world setup |
-| `surface_moisture` | dimensionless scalar | Ground wetness synthesized from standing water and drainage | moisture analysis in world setup |
-| `waterline_distance` | length in metres | Horizontal distance to the extracted wet/dry curve | waterline analysis in world setup |
-| `erosion_exposure` | dimensionless scalar | Removed-material signal normalized against its robust datum | `derive_geology_materials` |
-| `deposition_cover` | dimensionless scalar | Deposited-material signal normalized against its robust datum | `derive_geology_materials` |
-| `tree_habitat` | dimensionless scalar | Ecological support from water, elevation, and slope | `derive_tree_habitat` |
-| `forest_cover` | dimensionless scalar | Recruited canopy after habitat, trails, and settlement | `derive_forest_cover` |
-| `trail_influence` | dimensionless scalar | Shoulder-blended membership in formed trails | trail analysis in world setup |
-| `home_base_influence` | dimensionless scalar | Membership in the inhabited clearing | trail analysis in world setup |
+| `geometry`: `surface_elevation` | elevation point in metres | Height in the current default elevation frame | `Surface::refresh` |
+| `geometry`: `surface_normal` | dimensionless vector | Detailed lighting and contact normal | `Surface::refresh` |
+| `geometry`: `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `Surface::refresh` |
+| `hydrology`: `channel_flux` | dimensionless planar vector | Channel tangent scaled by visible fluvial activity | drainage analysis in world setup |
+| `hydrology`: `surface_moisture` | dimensionless scalar | Ground wetness synthesized from standing water and drainage | moisture analysis in world setup |
+| `hydrology`: `waterline_distance` | length in metres | Horizontal distance to the extracted wet/dry curve | waterline analysis in world setup |
+| `geology`: `erosion_exposure`, `deposition_cover` | dimensionless scalars | Normalized removed- and deposited-material signals | `derive_geology_materials` |
+| `ecology`: `tree_habitat` | dimensionless scalar | Ecological support from water, elevation, and slope | `derive_tree_habitat` |
+| `ecology`: `forest_cover` | dimensionless scalar | Recruited canopy after habitat, trails, and settlement | `derive_forest_cover` |
+| `use`: `trail_influence` | dimensionless scalar | Shoulder-blended membership in formed trails | trail analysis in world setup |
+| `use`: `home_base_influence` | dimensionless scalar | Membership in the inhabited clearing | trail analysis in world setup |
 
 `moppe/map/surface_sections.hh` is the ontology page in code. Geometry
 materialization lives in `surface.cc`; ecological rules live in
-`surface_ecology.cc`. Consumers sample quantities from `map::Surface` or read a
-named column through `surface.section<quantity_spec>()`.
+`surface_ecology.cc`. Consumers sample quantities from `map::Surface` or read
+the appropriate named atlas view, such as
+`surface.atlas().ecology().forest_cover()`.
 
 ## Presentation mappings
 

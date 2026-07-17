@@ -7,8 +7,9 @@ not a second architecture proposal.
 ## Surface
 
 `map::Surface` is the materialized ground reading over one `SurfaceDomain`.
-The surface stores typed sections; `game::SurfacePresentation` is the only
-bridge that turns them into renderer lanes.
+Its `SurfaceAtlas` owns geometry plus named optional hydrology, geology,
+ecology, and use sections; `game::SurfacePresentation` is the only bridge that
+turns them into renderer lanes.
 
 | Contract | Characterization owner |
 | --- | --- |

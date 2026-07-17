@@ -23,13 +23,13 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
     1.0f, -2.0f, 2.0f, -3.0f, 3.0f, -4.0f, 4.0f, -5.0f,
   };
   map::WaterSurface water (
-    ground.sections ().domain (), level_and_amplitude, flow, 100.0f * u::m);
+    ground.atlas ().domain (), level_and_amplitude, flow, 100.0f * u::m);
 
   const map::SurfaceIndex first { 0, 0 };
   const auto water_elevation =
     spatial::get<map::surface_elevation> (water.sections ()[first]);
   const auto ground_elevation =
-    spatial::get<map::surface_elevation> (ground.sections ()[first]);
+    spatial::get<map::surface_elevation> (ground.atlas ().geometry ()[first]);
   const auto depth = water_elevation - ground_elevation;
   MOPPE_CHECK_NEAR (depth.numerical_value_in (u::m), 5.0f, 1e-6f);
   MOPPE_CHECK_NEAR (spatial::get<map::wave_amplitude> (water.sections ()[first])

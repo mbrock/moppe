@@ -1,12 +1,13 @@
 # Terrain expressions, recipes, and pipelines
 
-Moppe's portable terrain subsystem separates five kinds of value:
+Moppe's portable terrain subsystem separates six kinds of value:
 
 1. `ScalarField` is a lazy expression DAG.
 2. `GeologicalSource` retains the recipe and selected field to materialize.
 3. `TerrainTransform` describes a terrain-to-terrain operation.
 4. `TerrainProgram` composes one source with an ordered transform sequence.
-5. `TerrainView` lends materialized samples to readings and analyses.
+5. `WorldRecipe` binds a program to its physical world and water datum.
+6. `TerrainView` lends materialized samples to readings and analyses.
 
 The game, Terrain Lab, unit tests, and command-line tools share these types.
 None of them contains renderer or platform graphics API state.
@@ -56,13 +57,16 @@ traversal. `extend_into` applies one such rule at every focus and materializes
 the next bundle.
 
 `map::Surface` is the first deliberately small gameplay proof. Its
-`SurfaceSections` contains an affine elevation point, a vector-valued surface
-normal, snow support, channel flux, tree habitat, forest cover, trail
-influence, home-base influence, moisture, waterline distance, erosion
-exposure, and deposition cover at every heightmap node. Snow support is the
-upward component of a 24 m local support normal. The shader can therefore let
-fine normals light the terrain folds without letting every lattice-scale
-change in steepness punch a matching hole in the snow.
+`SurfaceAtlas` has always-present geometry sections and named hydrology,
+geology, ecology, and use views over the same domain. Each later section is
+optional until its analysis materializes it, so a zero reading never stands in
+for unavailable data. Together they contain an affine elevation point, a
+vector-valued surface normal, snow support, channel flux, tree habitat, forest
+cover, trail influence, home-base influence, moisture, waterline distance,
+erosion exposure, and deposition cover at every applicable heightmap node.
+Snow support is the upward component of a 24 m local support normal. The
+shader can therefore let fine normals light the terrain folds without letting
+every lattice-scale change in steepness punch a matching hole in the snow.
 `--graphics-disable snow-support-filter` restores the detailed-normal
 classification for direct comparisons.
 The Association's home-base clearing is a distinct quantity from trail
@@ -168,6 +172,14 @@ exact resumable checkpoints. `RandomHeightMap` no
 longer interprets programs; it stores samples and provides the concrete
 shaping kernels that the evaluator invokes.
 
+`WorldRecipe` is the immutable construction input around that program. It
+travels with the physical extent, sample resolution, topology, root seed,
+water datum, and named generation profile. The canonical factory calibrates
+the source, orogeny, and trail sea levels from the physical water datum before
+any evaluator sees the program. The normal game, the Terrain Lab preview, and
+the pipeline tool therefore begin from the same world vocabulary without
+carrying renderer state into terrain construction.
+
 Transforms are immutable values even when evaluating them reuses a mutable
 buffer.  This lets erosion participate in the terrain language without
 pretending that it is a pointwise `ScalarField`, and without requiring a new
@@ -191,7 +203,8 @@ Its arc-length profile is projected toward a motorcycle-friendly maximum grade
 under bounded cut and fill, then stamped as a narrow core with soft shoulders.
 The physical earthwork delta remains available separately from the composed
 heightmap. Continuous `trail_influence` and `home_base_influence` readings are
-materialized in `SurfaceSections` and uploaded to the terrain shader. Thus
+materialized in the `SurfaceAtlas` use view and uploaded to the terrain shader.
+Thus
 intention begins discretely, while the resulting alignment, earthworks, and
 compacted base become physical, sampleable parts of the world. A retained
 feature-local ribbon uses the same alignment to give the compacted core smooth
@@ -502,7 +515,7 @@ area-weighted tangent-flux columns. Dry strict descent uses D-infinity
 triangular facets. Lake flats, depression spills, and ocean identity continue
 to come from the established wet D8 graph. This makes fractional accumulation
 conservative and acyclic without changing the graph used by lakes, rivers,
-waterfalls, rendering, or the final `SurfaceSections`.
+waterfalls, rendering, or the final `SurfaceAtlas`.
 
 The channel tangent is the horizontal vector form of drainage direction after
 incoming area fluxes have been combined at confluences. It is persisted across
