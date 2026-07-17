@@ -1,6 +1,7 @@
+
 .PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks phone profile terrain-lab-shot testflight tracy \
+	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	xcode
 
@@ -22,6 +23,14 @@ format:
 # Measure per-function cyclomatic and cognitive complexity.
 complexity:
 	./tools/complexity-report
+
+# Validate the repository-native RFC and work-item dependency graph.
+plan:
+	./tools/plan check
+
+# Print the current work-item graph as Mermaid Markdown.
+plan-graph:
+	./tools/plan graph
 
 # Extract the static C++ call graph as CSV data.
 callgraph:

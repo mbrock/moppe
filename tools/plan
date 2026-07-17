@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Validate and render repository-native RFC work-item graphs."""
+
+import argparse
+import pathlib
+import sys
+import tomllib
+
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+PLANNING = ROOT / "planning"
+STATUSES = {"backlog", "ready", "active", "done", "dropped"}
+REQUIRED = {"id", "title", "rfc", "track", "status", "depends_on", "order"}
+
+
+def read_front_matter(path):
+  text = path.read_text()
+  if not text.startswith("+++\n"):
+    raise ValueError("missing TOML front matter")
+  end = text.find("\n+++\n", 4)
+  if end < 0:
+    raise ValueError("unterminated TOML front matter")
+  return tomllib.loads(text[4:end])
+
+
+def load_items():
+  items = []
+  for path in sorted(PLANNING.glob("tracks/*/items/*.md")):
+    try:
+      data = read_front_matter(path)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as error:
+      raise ValueError(f"{path.relative_to(ROOT)}: {error}") from error
+    missing = REQUIRED - data.keys()
+    if missing:
+      names = ", ".join(sorted(missing))
+      raise ValueError(f"{path.relative_to(ROOT)}: missing {names}")
+    if data["status"] not in STATUSES:
+      raise ValueError(
+        f"{path.relative_to(ROOT)}: unknown status {data['status']!r}")
+    if not isinstance(data["depends_on"], list) or not all(
+      isinstance(item, str) for item in data["depends_on"]):
+      raise ValueError(f"{path.relative_to(ROOT)}: depends_on must be strings")
+    if not isinstance(data["order"], int):
+      raise ValueError(f"{path.relative_to(ROOT)}: order must be an integer")
+    data["path"] = path.relative_to(ROOT).as_posix()
+    items.append(data)
+  return sorted(items, key=lambda item: (item["track"], item["order"], item["id"]))
+
+
+def validate(items):
+  errors = []
+  by_id = {}
+  for item in items:
+    if item["id"] in by_id:
+      errors.append(f"duplicate work-item id: {item['id']}")
+    by_id[item["id"]] = item
+  for item in items:
+    for dependency in item["depends_on"]:
+      if dependency not in by_id:
+        errors.append(f"{item['id']}: unknown dependency {dependency}")
+    if item["status"] == "ready":
+      unfinished = [
+        dependency for dependency in item["depends_on"]
+        if dependency in by_id and by_id[dependency]["status"] != "done"
+      ]
+      if unfinished:
+        errors.append(
+          f"{item['id']}: ready item has unfinished dependencies "
+          + ", ".join(unfinished))
+
+  visiting = set()
+  visited = set()
+
+  def visit(item_id, chain):
+    if item_id in visited:
+      return
+    if item_id in visiting:
+      errors.append("dependency cycle: " + " -> ".join([*chain, item_id]))
+      return
+    visiting.add(item_id)
+    for dependency in by_id[item_id]["depends_on"]:
+      if dependency in by_id:
+        visit(dependency, [*chain, item_id])
+    visiting.remove(item_id)
+    visited.add(item_id)
+
+  for item_id in by_id:
+    visit(item_id, [])
+  return errors
+
+
+def print_status(items):
+  print("id       status   dependencies  title")
+  for item in items:
+    dependencies = ",".join(item["depends_on"]) or "-"
+    print(f"{item['id']:<8} {item['status']:<8} {dependencies:<13} "
+          f"{item['title']}")
+
+
+def print_graph(items):
+  node_ids = {item["id"]: item["id"].replace("-", "_") for item in items}
+  print("```mermaid")
+  print("flowchart LR")
+  for item in items:
+    title = item["title"].replace('"', "'")
+    print(f"  {node_ids[item['id']]}[\"{item['id']}: {title}\"]")
+  for item in items:
+    for dependency in item["depends_on"]:
+      print(f"  {node_ids[dependency]} --> {node_ids[item['id']]}")
+  for status, colour in {
+      "ready": "#b7eb8f",
+      "active": "#91caff",
+      "done": "#d9f7be",
+      "backlog": "#f5f5f5",
+      "dropped": "#ffccc7",
+  }.items():
+    nodes = ",".join(
+      node_ids[item["id"]] for item in items if item["status"] == status)
+    if nodes:
+      print(f"  classDef {status} fill:{colour},stroke:#555")
+      print(f"  class {nodes} {status}")
+  print("```")
+
+
+def main():
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("command", choices=("check", "status", "graph"))
+  args = parser.parse_args()
+  try:
+    items = load_items()
+    errors = validate(items)
+  except ValueError as error:
+    print(f"plan: {error}", file=sys.stderr)
+    return 1
+  if errors:
+    print("plan: invalid dependency graph:", file=sys.stderr)
+    for error in errors:
+      print(f"  {error}", file=sys.stderr)
+    return 1
+  if args.command == "check":
+    print(f"plan: {len(items)} work items are valid")
+  elif args.command == "status":
+    print_status(items)
+  else:
+    print_graph(items)
+  return 0
+
+
+if __name__ == "__main__":
+  sys.exit(main())
