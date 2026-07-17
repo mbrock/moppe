@@ -332,6 +332,7 @@ endif()
 # Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
+  moppe/game/frame_view.cc
   moppe/game/game_session.cc
   moppe/map/generate.cc
   moppe/map/surface_domain.cc
@@ -352,6 +353,7 @@ add_library(moppe_game STATIC
   moppe/game/chase_camera.cc
   moppe/game/stars.cc
   moppe/game/dust.cc
+  moppe/game/walker_render.cc
   moppe/game/blob_shadow.cc
   moppe/game/sprites.cc
   moppe/game/model.cc
@@ -457,6 +459,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
+    tests/game/frame_view_test.cc
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc

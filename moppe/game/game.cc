@@ -13,6 +13,7 @@
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/forest.hh>
+#include <moppe/game/frame_view.hh>
 #include <moppe/game/game_session.hh>
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/glider_render.hh>
@@ -28,7 +29,7 @@
 #include <moppe/game/terrain_lab.hh>
 #include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
-#include <moppe/game/walker.hh>
+#include <moppe/game/walker_render.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
 #include <moppe/game/world.hh>
@@ -70,16 +71,6 @@
 
 namespace moppe {
   namespace game {
-    // THE sun: one fixed direction shared by the light, the shadow
-    // map, the sky's sun disc, and the ocean glint.
-    static const float SUN_AZIMUTH = 0.8f;
-    static Vec3 sun_direction_for (float height) {
-      const float el = (height - 0.5f) * 3.14159f;
-      return Vec3 (std::cos (el) * std::sin (SUN_AZIMUTH),
-                   std::sin (el),
-                   std::cos (el) * std::cos (SUN_AZIMUTH));
-    }
-
     struct GraphicsBenchmarkConfig {
       std::string output_path;
       int prelude_frames = 480;
@@ -91,12 +82,6 @@ namespace moppe {
       if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
         return std::max (1, ::atoi (value));
       return 450;
-    }
-
-    static float smooth_curve (float edge0, float edge1, float x) {
-      float t = (x - edge0) / (edge1 - edge0);
-      clamp (t, 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
     }
 
     enum class LoadingStage {
@@ -331,55 +316,6 @@ namespace moppe {
         if (terrain_file && name.find (build_id) == std::string::npos)
           std::filesystem::remove (entry.path (), error);
       }
-    }
-
-    static float sun_elevation_for (float sun_height) {
-      return std::sin ((sun_height - 0.5f) * 3.14159f);
-    }
-
-    static float daylight_for (float sun_height) {
-      return smooth_curve (-0.08f, 0.18f, sun_elevation_for (sun_height));
-    }
-
-    static float golden_light_for (float sun_height) {
-      const float elevation = sun_elevation_for (sun_height);
-      return daylight_for (sun_height) *
-             (1.0f - smooth_curve (0.15f, 0.65f, elevation));
-    }
-
-    // Sunlight is warm near the horizon and becomes a soft ivory as
-    // it rises.  Intensity follows the real elevation rather than the
-    // old cyclic sun-height color branches.
-    static void sun_light_colors (float sun_height,
-                                  DisplayColor& diffuse,
-                                  DisplayColor& specular) {
-      const float daylight = daylight_for (sun_height);
-      const float golden = golden_light_for (sun_height);
-      const DisplayColor warm (1.0f, 0.60f, 0.30f);
-      const DisplayColor ivory (1.0f, 0.96f, 0.84f);
-      const DisplayColor sun_color = mix_display (ivory, warm, golden);
-
-      diffuse = scale_display (sun_color, 0.10f + 0.98f * daylight);
-      specular = scale_display (mix_display (DisplayColor (0.92f, 0.95f, 1.0f),
-                                             DisplayColor (1.0f, 0.86f, 0.70f),
-                                             golden),
-                                0.15f + 0.85f * daylight);
-    }
-
-    // Sky horizon color (port of gfx::Sky::get_horizon_color): the
-    // CPU twin of the sky shader's horizon math, used to derive the
-    // fog color each tick.
-    static DisplayColor horizon_color_for (float sun_height) {
-      const float daylight = daylight_for (sun_height);
-      const float warmth = golden_light_for (sun_height) * 0.16f;
-      // Must track sky.metal's day_horizon so distant terrain fades
-      // into exactly the color the sky shows at the horizon.
-      const DisplayColor day_horizon (0.55f, 0.68f, 0.84f);
-      const DisplayColor night_horizon (0.035f, 0.045f, 0.09f);
-      const DisplayColor warm_horizon (0.92f, 0.58f, 0.32f);
-      return mix_display (mix_display (night_horizon, day_horizon, daylight),
-                          warm_horizon,
-                          warmth);
     }
 
     class MoppeGame : public platform::Game {
@@ -1357,6 +1293,7 @@ namespace moppe {
             m_cinematic.tick (dt, map (), controls);
             if (!m_cinematic.active ())
               leave_cinematic ();
+            update_frame_flare ();
             return;
           }
         }
@@ -1366,6 +1303,7 @@ namespace moppe {
         // useful frame of reference around the heightmap.
         if (m_terrain_lab.active ()) {
           m_terrain_lab.tick (dt);
+          update_frame_flare ();
           return;
         }
 
@@ -1375,6 +1313,7 @@ namespace moppe {
         if (m_tree_demo) {
           const TreeGrove& grove = m_tree_stand.grove ();
           session ().camera ().place (grove.camera_eye, grove.camera_target);
+          update_frame_flare ();
           return;
         }
 
@@ -1409,6 +1348,7 @@ namespace moppe {
 
         if (m_benchmark)
           finish_benchmark_frame (m_benchmark_replay->finish_frame ());
+        update_frame_flare ();
       }
 
       // -- rendering ---------------------------------------------------
@@ -1425,120 +1365,41 @@ namespace moppe {
           return;
         }
 
-        render::FrameParams fp;
         const float aspect =
           (float)r.width_pts () / std::max (1, r.height_pts ());
-        const bool terrain_lab = m_terrain_lab.active ();
-        const bool cinematic = m_cinematic.active ();
-        const float fov = cinematic ? m_cinematic.field_of_view ()
-                          : terrain_lab || m_water_inspection || m_tree_demo
-                            ? 70.0f
-                            : 100.0f + 9.0f * logic ().m_fov_k;
-        fp.proj = Mat4::perspective_reversed (
-          fov * u::deg,
-          aspect,
-          std::clamp (0.5f /
-                        std::max (m_landscape_scale_x, m_landscape_scale_y),
-                      0.02f,
-                      0.5f),
-          terrain_lab ? 30000.0f : 9000.0f);
+        const FrameView frame = compose_frame_view (frame_view_input (aspect));
+        const FrameVisibility& visibility = frame.visibility;
+        const bool terrain_lab = visibility.terrain_lab;
+        const bool cinematic = visibility.cinematic;
+        const Vec3& cam = frame.camera.position;
 
-        // Hard landings produce a brief continuous vibration. Randomizing the
-        // rotations each frame looked like violent camera teleportation.
-        Mat4 view = cinematic     ? m_cinematic.view_matrix ()
-                    : terrain_lab ? m_terrain_lab.view_matrix ()
-                                  : session ().camera ().view_matrix ();
-        if (!cinematic && !terrain_lab && !m_water_inspection && !m_tree_demo &&
-            logic ().m_shake > 0.005f) {
-          const Vec3 cam = session ().camera ().position ();
-          const float ground = map ().interpolated_height (cam[0], cam[2]);
-          const float clearance = cam[1] - ground;
-          const float room =
-            std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
-
-          const float pulse = logic ().m_shake * room;
-          const float roll =
-            pulse * std::sin (2.0f * PI * 15.0f * logic ().m_shake_time);
-          const float pitch =
-            pulse * 0.55f *
-            std::sin (2.0f * PI * 19.0f * logic ().m_shake_time + 0.7f);
-          view = view * Mat4::rotation (roll * u::deg, Vec3 (0, 0, 1)) *
-                 Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
-        }
-        fp.view = view;
-
-        const Vec3 cam = cinematic     ? m_cinematic.position ()
-                         : terrain_lab ? m_terrain_lab.position ()
-                                       : session ().camera ().position ();
-        fp.camera_pos = cam;
-        fp.cam_right = Vec3 (view.m[0], view.m[4], view.m[8]);
-        fp.cam_up = Vec3 (view.m[1], view.m[5], view.m[9]);
-        fp.cam_forward = Vec3 (-view.m[2], -view.m[6], -view.m[10]);
-        // The lab's plane views render the game's own sky and haze; the
-        // torus is an abstract inspection object on a dark backdrop.
-        fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
-                           ? DisplayColor (0.012f, 0.016f, 0.022f)
-                           : logic ().m_fog;
-        const attenuation_t scene_fog =
-          terrain_lab ? m_terrain_lab.scene_fog (world ().fog_scale)
-                      : world ().fog_scale;
-        fp.fog_scale = attenuation_value (scene_fog);
-        fp.sun_dir = sun_direction_for (m_graphics.sun_height);
-        sun_light_colors (
-          m_graphics.sun_height, fp.sun_diffuse, fp.sun_specular);
-        fp.sun_specular = scale_display (fp.sun_specular, 0.5f);
-        const float daylight = daylight_for (m_graphics.sun_height);
-        // Open terrain receives substantial skylight even when a mountain
-        // blocks the sun. Keep the fill cool so cast shadows retain shape and
-        // color instead of collapsing into near-black silhouettes.
-        fp.ambient = scale_display (DisplayColor (0.39f, 0.43f, 0.49f),
-                                    0.35f + 0.65f * daylight);
-        if (terrain_lab) {
-          // Keep the same time of day while giving the high overview a small
-          // legibility lift after automatic exposure.
-          fp.ambient = scale_display (fp.ambient, 1.15f);
-          fp.exposure_bias = 0.88f;
-        }
-        fp.time = logic ().m_total_time;
-        fp.scene_scale = m_graphics.scene_scale;
-        fp.render_scale_override = m_graphics.render_scale_override;
-        fp.bloom = m_graphics.bloom;
-        fp.auto_exposure = m_graphics.auto_exposure;
-        fp.lens_flare = m_graphics.lens_flare;
+        render::FrameParams fp;
+        fp.view = frame.camera.view;
+        fp.proj = frame.camera.projection;
+        fp.camera_pos = frame.camera.position;
+        fp.cam_right = frame.camera.right;
+        fp.cam_up = frame.camera.up;
+        fp.cam_forward = frame.camera.frame_forward;
+        fp.clear_color = frame.lighting.clear_color;
+        fp.fog_scale = attenuation_value (frame.lighting.fog_scale);
+        fp.sun_dir = frame.lighting.sun_direction;
+        fp.sun_diffuse = frame.lighting.sun_diffuse;
+        fp.sun_specular = frame.lighting.sun_specular;
+        fp.ambient = frame.lighting.ambient;
+        fp.exposure_bias = frame.lighting.exposure_bias;
+        fp.time = frame.lighting.time;
+        fp.sun_visibility = frame.lighting.sun_visibility;
+        fp.scene_scale = frame.graphics.scene_scale;
+        fp.render_scale_override = frame.graphics.render_scale_override;
+        fp.bloom = frame.graphics.bloom;
+        fp.auto_exposure = frame.graphics.auto_exposure;
+        fp.lens_flare = frame.graphics.lens_flare;
         fp.profile = true;
-        fp.benchmark_mask = m_benchmark_mask;
-        if (m_benchmark_render_frame) {
-          fp.benchmark_partition_mask =
-            m_benchmark_render_frame->partition_mask;
-          fp.benchmark_epoch = m_benchmark_render_frame->epoch;
-          fp.benchmark_frame = m_benchmark_render_frame->logical_frame;
-          fp.benchmark_measured = m_benchmark_render_frame->measured;
-        }
-
-        // Lens-flare occlusion: march toward the sun through the
-        // heightmap; any ridge above the ray kills the flare.  Cloud
-        // cover and submersion dim it; smoothed so it doesn't blink
-        // as hills sweep past the sun.
-        {
-          float vis = 1.0f;
-          if (cam[1] < meters_value (world ().water_level))
-            vis = 0.0f;
-          else {
-            for (int i = 1; i <= 40; ++i) {
-              const float t = 90.0f * i;
-              const Vec3 p = cam + fp.sun_dir * t;
-              if (!map ().in_bounds (p[0], p[2]))
-                break;
-              if (map ().interpolated_height (p[0], p[2]) > p[1]) {
-                vis = 0.0f;
-                break;
-              }
-            }
-          }
-          vis *= 1.0f - 0.65f * logic ().m_cloudiness;
-          logic ().m_flare += (vis - logic ().m_flare) * 0.12f;
-          fp.sun_visibility = terrain_lab ? 0.0f : logic ().m_flare;
-        }
+        fp.benchmark_mask = frame.benchmark.mask;
+        fp.benchmark_partition_mask = frame.benchmark.partition_mask;
+        fp.benchmark_epoch = frame.benchmark.epoch;
+        fp.benchmark_frame = frame.benchmark.logical_frame;
+        fp.benchmark_measured = frame.benchmark.measured;
 
         static const int screenshot_delay = [] {
           if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
@@ -1577,26 +1438,19 @@ namespace moppe {
         if (!r.begin_frame (fp))
           return;
 
-        FrameEnv env;
-        env.fog_color = logic ().m_fog;
-        env.fog_scale = scene_fog;
-        env.sun_dir = fp.sun_dir;
-        env.camera_pos = position (cam);
-        env.cam_right = fp.cam_right;
-        env.cam_up = fp.cam_up;
-        env.cam_forward = fp.cam_forward;
-        env.time = seconds (logic ().m_total_time);
+        const FrameEnv& env = frame.environment;
 
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
-          sky.time = logic ().m_total_time;
-          sky.sun_height = m_graphics.sun_height;
+          sky.time = frame.lighting.time;
+          sky.sun_height = frame.lighting.sun_height;
           // A world-shaping overview should keep the game world's moving sky,
           // without letting a passing front hide the land being edited.
-          sky.cloudiness = terrain_lab ? std::min (logic ().m_cloudiness, 0.35f)
-                                       : logic ().m_cloudiness;
-          sky.sun_dir = fp.sun_dir;
-          sky.fog_color = logic ().m_fog;
+          sky.cloudiness = terrain_lab
+                             ? std::min (frame.lighting.cloudiness, 0.35f)
+                             : frame.lighting.cloudiness;
+          sky.sun_dir = frame.lighting.sun_direction;
+          sky.fog_color = frame.lighting.fog_color;
           r.draw_sky (sky);
         };
 
@@ -1604,110 +1458,93 @@ namespace moppe {
         // exposes depth precision at the horizon.  Paint it first in the lab;
         // terrain then covers it deterministically.  Gameplay retains the
         // cheaper depth-culled order below.
-        if (terrain_lab && !m_terrain_lab.torus_view ())
+        if (visibility.sky_before_terrain)
           draw_world_sky ();
 
         // Terrain first, chunk-culled to the haze horizon.
-        m_terrain.render (r,
-                          cam,
-                          cinematic     ? m_cinematic.forward ()
-                          : terrain_lab ? m_terrain_lab.forward ()
-                                        : session ().camera ().forward (),
-                          terrain_lab
-                            ? 30000.0f
-                            : 3.0f / attenuation_value (world ().fog_scale));
+        m_terrain.render (r, cam, frame.camera.forward, frame.terrain_distance);
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.
-        if (!terrain_lab)
+        if (visibility.sky_after_terrain)
           draw_world_sky ();
 
-        if (!terrain_lab && !m_water_inspection && !m_tree_demo)
-          m_forest.draw (r,
-                         cam,
-                         cinematic ? m_cinematic.forward ()
-                                   : session ().camera ().forward ());
+        if (visibility.forest)
+          m_forest.draw (r, cam, frame.camera.forward);
 
-        if (!terrain_lab && !m_water_inspection)
+        if (visibility.tree_stand)
           m_tree_stand.draw (r);
 
-        if (!terrain_lab && !m_water_inspection && !m_tree_demo) {
+        if (visibility.actors) {
           // The world draw list, in the GL build's draw order.  Terrain lab
           // deliberately hides every placed object so generator differences are
           // not confused with stale actor positions.
           m_world_dl.clear ();
+          const FrameActors& actors = frame.actors;
 
           // Soft blob shadows under the movers.
           draw_home_base_marker (m_world_dl);
-          m_blob.draw (
-            m_world_dl, map (), session ().bike ().position (), 2.2f);
-          if (logic ().m_car_exists)
-            m_blob.draw (
-              m_world_dl, map (), session ().car ().position (), 2.9f);
-          if (logic ().m_mode == M_FOOT)
+          m_blob.draw (m_world_dl, map (), actors.bike.position, 2.2f);
+          if (actors.car)
+            m_blob.draw (m_world_dl, map (), actors.car->position, 2.9f);
+          if (actors.walker)
             m_blob.draw (m_world_dl,
                          map (),
-                         session ().walker ().position () + Vec3 (0, 0.5f, 0),
+                         actors.walker->position + Vec3 (0, 0.5f, 0),
                          0.8f);
-          if (logic ().m_mode == M_GLIDER)
-            m_blob.draw (
-              m_world_dl, map (), session ().glider ().position (), 3.4f);
+          if (actors.glider)
+            m_blob.draw (m_world_dl, map (), actors.glider->position, 3.4f);
 
           // In helmet cam you ARE the rider: don't draw yourself.
-          const bool helmet = (logic ().m_cam_mode == CAM_HELMET);
-          if (!(helmet && logic ().m_mode == M_BIKE))
+          const bool helmet = actors.helmet_camera;
+          if (!(helmet && actors.active_mode == M_BIKE))
             render_vehicle (r,
                             m_world_dl,
-                            session ().bike (),
-                            logic ().m_total_time,
-                            landscape_visual_scale ());
-          if (logic ().m_car_exists && !(helmet && logic ().m_mode == M_CAR))
+                            actors.bike,
+                            frame.lighting.time,
+                            actors.visual_scale);
+          if (actors.car && !(helmet && actors.active_mode == M_CAR))
             render_vehicle (r,
                             m_world_dl,
-                            session ().car (),
-                            logic ().m_total_time,
-                            landscape_visual_scale ());
-          if (logic ().m_mode == M_FOOT && !helmet)
-            session ().walker ().render (
-              m_world_dl, logic ().m_total_time, landscape_visual_scale ());
-          if (logic ().m_mode == M_GLIDER && !helmet)
+                            *actors.car,
+                            frame.lighting.time,
+                            actors.visual_scale);
+          if (actors.walker && !helmet)
+            render_walker (m_world_dl,
+                           *actors.walker,
+                           frame.lighting.time,
+                           actors.visual_scale);
+          if (actors.glider && !helmet)
             render_glider (m_world_dl,
-                           session ().glider (),
-                           logic ().m_total_time,
-                           landscape_visual_scale ());
+                           *actors.glider,
+                           frame.lighting.time,
+                           actors.visual_scale);
 
           r.draw_list (m_world_dl);
 
           // Additive glow after the solid list, so it blends over
           // everything already drawn: exhaust and jump-jet flames, then
           // the star pickups' halos.
-          if (m_graphics.vehicle_effects &&
-              !(helmet && logic ().m_mode == M_BIKE))
-            render_vehicle_flames (r,
-                                   session ().bike (),
-                                   logic ().m_total_time,
-                                   landscape_visual_scale ());
-          if (m_graphics.vehicle_effects && logic ().m_car_exists &&
-              !(helmet && logic ().m_mode == M_CAR))
-            render_vehicle_flames (r,
-                                   session ().car (),
-                                   logic ().m_total_time,
-                                   landscape_visual_scale ());
-          if (m_graphics.star_effects)
+          if (visibility.vehicle_effects &&
+              !(helmet && actors.active_mode == M_BIKE))
+            render_vehicle_flames (
+              r, actors.bike, frame.lighting.time, actors.visual_scale);
+          if (visibility.vehicle_effects && actors.car &&
+              !(helmet && actors.active_mode == M_CAR))
+            render_vehicle_flames (
+              r, *actors.car, frame.lighting.time, actors.visual_scale);
+          if (visibility.star_effects)
             session ().stars ().render (r, env);
         }
 
         // The lab keeps the game's painted water while the map is the
         // game's own; a rebuilt map invalidates the water sheets, so
         // they disappear until the lab's own analysis draws ribbons.
-        const bool draw_ocean =
-          m_graphics.ocean && (!terrain_lab || (!m_terrain_lab.torus_view () &&
-                                                m_terrain_lab.map_pristine ()));
-        if (draw_ocean) {
+        if (visibility.ocean) {
           render::OceanParams ocean;
-          ocean.time = logic ().m_total_time;
-          ocean.fog_color = logic ().m_fog;
-          ocean.fog_scale = attenuation_value (scene_fog);
+          ocean.time = frame.lighting.time;
+          ocean.fog_color = frame.lighting.fog_color;
+          ocean.fog_scale = attenuation_value (frame.lighting.fog_scale);
           if (world ().toroidal ()) {
             const Vec3& world_extent = extent_value (world ().map_size);
             const Vec3 center (
@@ -1721,30 +1558,21 @@ namespace moppe {
         // Standing water writes depth first. Rivers then shade only their
         // visible surface, rather than paying for fragments hidden beneath a
         // lake or the sea, and retain a clean current layer through mouths.
-        if (terrain_lab)
+        if (visibility.terrain_lab_rivers)
           m_terrain_lab.render_rivers (r, cam);
-        else if (m_graphics.river_ribbons)
+        else if (visibility.river_ribbons)
           m_river_surface.draw (r, cam);
 
         // Dust last so spray sits atop every water surface.
-        if (!terrain_lab && m_graphics.particles) {
+        if (visibility.dust) {
           session ().dust ().render (r);
         }
 
         // Post effects.
-        if (!terrain_lab && cam[1] < meters_value (world ().water_level))
-          r.apply_underwater (logic ().m_total_time);
-        if (!terrain_lab) {
-          float blur = 0.0f;
-          if (cinematic)
-            blur = m_cinematic.motion_blur ();
-          else {
-            const float kmh = subject_speed_kmh ();
-            blur = std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
-          }
-          if (m_graphics.motion_blur && blur > 0.01f)
-            r.apply_motion_blur (blur);
-        }
+        if (visibility.underwater)
+          r.apply_underwater (frame.lighting.time);
+        if (visibility.motion_blur)
+          r.apply_motion_blur (frame.motion_blur_amount);
 
         // HUD, kept inside the safe area (notch / home indicator).
         m_hud_dl.clear ();
@@ -1752,9 +1580,9 @@ namespace moppe {
         m_hud_dl.translate (si.left, si.top, 0);
         const int hud_width = r.width_pts () - (int)(si.left + si.right);
         const int hud_height = r.height_pts () - (int)(si.top + si.bottom);
-        if (terrain_lab) {
+        if (visibility.terrain_lab_hud) {
           m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
-        } else if (cinematic) {
+        } else if (visibility.cinematic_hud) {
           if (m_loading_font && m_loading_font->ok ()) {
             const std::string prompt = "SPACE TO RIDE";
             const float alpha = std::clamp (
@@ -1768,17 +1596,17 @@ namespace moppe {
                                   hud_height - 42.0f,
                                   prompt);
           }
-        } else if (!m_water_inspection && !m_tree_demo) {
+        } else if (visibility.game_hud) {
           HudState hs;
           hs.speed_kmh = subject_speed_kmh ();
           hs.fuel = logic ().m_fuel;
-          if (logic ().m_mode == M_GLIDER) {
+          if (frame.actors.active_mode == M_GLIDER) {
             const float lift =
               session ().glider ().air_mass_lift ().numerical_value_in (u::m /
                                                                         u::s);
             hs.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
           } else {
-            hs.boost_ready01 = (logic ().m_mode == M_FOOT)
+            hs.boost_ready01 = (frame.actors.active_mode == M_FOOT)
                                  ? 1.0f
                                  : active_vehicle ().boost_charge ();
           }
@@ -1791,11 +1619,11 @@ namespace moppe {
           hs.landed_airtime_s = logic ().m_landed_airtime;
           hs.landed_points = logic ().m_landed_points;
           hs.landed_age_s = logic ().m_landed_age;
-          hs.on_foot = (logic ().m_mode == M_FOOT);
-          hs.gliding = (logic ().m_mode == M_GLIDER);
+          hs.on_foot = (frame.actors.active_mode == M_FOOT);
+          hs.gliding = (frame.actors.active_mode == M_GLIDER);
           hs.can_deploy_glider = can_deploy_glider ();
           hs.vertical_speed_mps =
-            logic ().m_mode == M_GLIDER
+            frame.actors.active_mode == M_GLIDER
               ? session ().glider ().vertical_speed ().numerical_value_in (
                   u::m / u::s)
               : 0.0f;
@@ -1850,7 +1678,7 @@ namespace moppe {
             m_game_ui.end (m_hud_dl);
           }
         }
-        if (m_graphics.terrain_topology) {
+        if (visibility.terrain_topology_hint) {
           m_game_ui.begin (m_hud_dl);
           m_game_ui.key_hint (m_hud_dl,
                               24.0f,
@@ -2014,7 +1842,8 @@ namespace moppe {
         const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
         fp.clear_color = horizon_color_for (loading_sun_height);
         fp.sun_dir = normalized (horizon_side * 0.82f + Vec3 (0, 1, 0) * 0.58f);
-        sun_light_colors (loading_sun_height, fp.sun_diffuse, fp.sun_specular);
+        sun_light_colors_for (
+          loading_sun_height, fp.sun_diffuse, fp.sun_specular);
         fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
         fp.fog_scale =
           show_terrain ? attenuation_value (m_loading_world.fog_scale * 0.035f)
@@ -2277,10 +2106,74 @@ namespace moppe {
           m_landscape_scale_y = scale;
       }
 
-      Vec3 landscape_visual_scale () const {
-        return Vec3 (1.0f / m_landscape_scale_x,
-                     1.0f / m_landscape_scale_y,
-                     1.0f / m_landscape_scale_x);
+      FrameViewInput frame_view_input (float aspect) const {
+        FrameSceneMode scene = FrameSceneMode::Gameplay;
+        FrameCameraReading camera;
+        const bool cinematic = m_cinematic.active ();
+        const bool terrain_lab = m_terrain_lab.active ();
+
+        if (cinematic) {
+          scene = FrameSceneMode::Cinematic;
+          camera = {
+            .position = m_cinematic.position (),
+            .forward = m_cinematic.forward (),
+            .view = m_cinematic.view_matrix (),
+            .field_of_view = m_cinematic.field_of_view (),
+          };
+        } else if (terrain_lab) {
+          scene = FrameSceneMode::TerrainLab;
+          camera = {
+            .position = m_terrain_lab.position (),
+            .forward = m_terrain_lab.forward (),
+            .view = m_terrain_lab.view_matrix (),
+            .field_of_view = 70.0f,
+          };
+        } else {
+          if (m_water_inspection)
+            scene = FrameSceneMode::WaterInspection;
+          else if (m_tree_demo)
+            scene = FrameSceneMode::TreeDemo;
+          camera = {
+            .position = session ().camera ().position (),
+            .forward = session ().camera ().forward (),
+            .view = session ().camera ().view_matrix (),
+            .field_of_view = 70.0f,
+          };
+        }
+
+        FrameBenchmarkTag benchmark { .mask = m_benchmark_mask };
+        if (m_benchmark_render_frame) {
+          benchmark.partition_mask = m_benchmark_render_frame->partition_mask;
+          benchmark.epoch = m_benchmark_render_frame->epoch;
+          benchmark.logical_frame = m_benchmark_render_frame->logical_frame;
+          benchmark.measured = m_benchmark_render_frame->measured;
+        }
+
+        return {
+          .world = world (),
+          .terrain = map (),
+          .session = session (),
+          .graphics = m_graphics,
+          .selected_camera = camera,
+          .scene = scene,
+          .terrain_lab_fog = terrain_lab
+                               ? m_terrain_lab.scene_fog (world ().fog_scale)
+                               : world ().fog_scale,
+          .terrain_lab_torus = terrain_lab && m_terrain_lab.torus_view (),
+          .terrain_lab_pristine = !terrain_lab || m_terrain_lab.map_pristine (),
+          .aspect = aspect,
+          .landscape_scale_x = m_landscape_scale_x,
+          .landscape_scale_y = m_landscape_scale_y,
+          .cinematic_motion_blur =
+            cinematic ? m_cinematic.motion_blur () : 0.0f,
+          .benchmark = benchmark,
+        };
+      }
+
+      void update_frame_flare () {
+        const FrameView frame = compose_frame_view (frame_view_input (1.0f));
+        const float target = sun_visibility_target (frame, world (), map ());
+        logic ().m_flare += (target - logic ().m_flare) * 0.12f;
       }
 
       void prepare_benchmark_epoch () {

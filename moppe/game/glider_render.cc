@@ -17,19 +17,19 @@ namespace moppe::game {
       dl.vertex (c);
     }
 
-    Mat4 glider_frame (const mov::Glider& glider, const Vec3& visual_scale) {
-      const Vec3 fwd = normalized (glider.heading ());
+    Mat4 glider_frame (const GliderPose& glider, const Vec3& visual_scale) {
+      const Vec3 fwd = normalized (glider.heading);
       const Vec3 right = normalized (cross (Vec3 (0, 1, 0), fwd));
       const Vec3 up = cross (fwd, right);
-      return Mat4::translation (glider.position ()) *
+      return Mat4::translation (glider.position) *
              Mat4::basis (right, up, fwd) *
-             Mat4::rotation (-glider.bank (), Vec3 (0, 0, 1)) *
+             Mat4::rotation (-glider.bank_radians * u::rad, Vec3 (0, 0, 1)) *
              Mat4::scaling (visual_scale);
     }
   }
 
   void render_glider (render::DrawList& dl,
-                      const mov::Glider& glider,
+                      const GliderPose& glider,
                       float time,
                       const Vec3& visual_scale) {
     const Vec3 nose (0, 0.18f, 1.8f);

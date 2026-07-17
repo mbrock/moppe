@@ -60,6 +60,26 @@ renderer-free schedule; benchmark state therefore does not enter ordinary
 simulation. `graphics_benchmark_replay_reuses_the_public_session_tape` drives
 the schedule through `advance_game_session` against one completed world.
 
+## Frame presentation
+
+`game::FrameView` is the immutable presentation reading of a finished world
+frame. `MoppeGame` selects the active cinematic, Terrain Lab, inspection, or
+chase camera, then composes camera, lighting, weather, graphics choices,
+mode-specific visibility, benchmark coordinates, and value snapshots of the
+visible movers before encoding renderer parameters. It is not a scene graph
+and owns no renderer or platform type.
+
+The view intentionally carries two camera readings: the unshaken body and
+culling direction used for terrain and forest selection, plus the shaken view
+basis in `FrameEnv` used by billboards. Rendering may read the completed world,
+session presentation resources, and the view, but does not advance simulation.
+The temporal lens-flare accumulator updates in `tick()` after the active camera
+advances; `compose_frame_view` and rendering are read-only.
+
+`tests/game/frame_view_test.cc` owns the pure-composition contract: no session
+mutation, frozen mover poses, shake behavior, cinematic/Terrain Lab selection,
+and flare-sightline readings.
+
 ## Completed-world smoke path
 
 `tools/capture-water OUTPUT river` is the deterministic integration smoke

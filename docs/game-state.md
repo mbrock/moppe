@@ -24,6 +24,12 @@ state; immutable terrain and obstacle references, vehicle physical parameters,
 and renderer resources remain attached to live objects on the same completed
 world.
 
+`game::FrameView` is deliberately outside `GameState`: it is derived anew for
+each presentation frame from a completed world, a session reading, the active
+camera, and graphics settings. Its frozen visible poses and camera/light
+readings make rendering independent of later simulation mutation, but they are
+not replay checkpoint state.
+
 Ordinary playable simulation has one public fixed-step operation:
 `game::advance_game_session(context, session, input, seconds_t)`. Its compact
 context supplies only the completed world's parameters, terrain, obstacles,
