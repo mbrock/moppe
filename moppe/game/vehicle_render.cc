@@ -7,10 +7,10 @@
 
 namespace moppe {
   namespace game {
-    static degrees_t boost_nozzle_angle (const mov::Vehicle& v) {
+    static degrees_t boost_nozzle_angle (const VehiclePose& vehicle) {
       // The exhaust points opposite the force: backward when boosting
       // forward, straight down at neutral drive, and forward in reverse.
-      return (90.0f + 60.0f * v.boost_drive ()) * u::deg;
+      return (90.0f + 60.0f * vehicle.boost_drive) * u::deg;
     }
 
     // -- baked bike assemblies ------------------------------------------
@@ -249,10 +249,11 @@ namespace moppe {
 
       // The vehicle's model-to-world matrix, shared by render_vehicle's
       // matrix stack and the late flame pass so the two cannot drift.
-      Mat4 vehicle_frame (const mov::Vehicle& v, const Vec3& visual_scale) {
-        const Vec3 pos = v.position ();
-        const Vec3 fwd = normalized (v.render_orientation ());
-        const Vec3 right = normalized (cross (v.render_normal (), fwd));
+      Mat4 vehicle_frame (const VehiclePose& vehicle,
+                          const Vec3& visual_scale) {
+        const Vec3& pos = vehicle.position;
+        const Vec3 fwd = normalized (vehicle.render_orientation);
+        const Vec3 right = normalized (cross (vehicle.render_normal, fwd));
         const Vec3 up = cross (fwd, right);
 
         // Follow the smoothed surface frame on the ground and the velocity
@@ -262,9 +263,10 @@ namespace moppe {
         // origin, so world-feel experiments do not make a shrunken vehicle
         // hover or an enlarged one sink into the ground.
         const Vec3 contact_pivot (0, -1.5f, 0);
-        return Mat4::translation (Vec3 (pos[0], pos[1] + v.susp (), pos[2])) *
+        return Mat4::translation (
+                 Vec3 (pos[0], pos[1] + vehicle.suspension, pos[2])) *
                Mat4::basis (right, up, fwd) *
-               Mat4::rotation (v.lean (), Vec3 (0, 0, 1)) *
+               Mat4::rotation (vehicle.lean_radians * u::rad, Vec3 (0, 0, 1)) *
                Mat4::translation (Vec3 (0, 0.5f, 0)) *
                Mat4::translation (contact_pivot) *
                Mat4::scaling (visual_scale) *
@@ -276,14 +278,14 @@ namespace moppe {
     // A commandeered car (or truck), drawn in place of the bike.
     // Expects the orientation frame already on the matrix stack.
     static void
-    render_car (render::DrawList& dl, const mov::Vehicle& v, float time) {
-      const bool truck = (v.body_kind () == 3);
+    render_car (render::DrawList& dl, const VehiclePose& vehicle, float time) {
+      const bool truck = (vehicle.body_kind == 3);
       const float t = time;
 
       // model floor sits where the wheels touch
       dl.translate (0, -1.0f, 0);
 
-      const DisplayColor body = v.body_color ();
+      const DisplayColor body = vehicle.body_color;
       dl.color (body);
       dl.push ();
       dl.translate (0, truck ? 0.8f : 0.55f, 0);
@@ -322,7 +324,7 @@ namespace moppe {
         }
 
       // flashing light bar on police and fire vehicles
-      if (v.body_kind () >= 2) {
+      if (vehicle.body_kind >= 2) {
         dl.lit (false);
         const bool phase_a = std::fmod (t * 3.0f, 1.0f) < 0.5f;
         for (int s = -1; s <= 1; s += 2) {
@@ -345,14 +347,14 @@ namespace moppe {
 
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
-                         const mov::Vehicle& v,
+                         const VehiclePose& vehicle,
                          float time,
                          const Vec3& visual_scale) {
       dl.push ();
-      dl.mult (vehicle_frame (v, visual_scale));
+      dl.mult (vehicle_frame (vehicle, visual_scale));
 
-      if (v.body_kind () != 0) {
-        render_car (dl, v, time);
+      if (vehicle.body_kind != 0) {
+        render_car (dl, vehicle, time);
         dl.pop ();
         return;
       }
@@ -361,13 +363,14 @@ namespace moppe {
       const Mat4 frame = dl.matrix ();
 
       const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0), z_axis (0, 0, 1);
-      const Mat4 axle = Mat4::rotation (90 * u::deg, y_axis) *
-                        Mat4::rotation (v.wheel_spin (), z_axis);
+      const Mat4 axle =
+        Mat4::rotation (90 * u::deg, y_axis) *
+        Mat4::rotation (vehicle.wheel_spin_radians * u::rad, z_axis);
 
       // Suspension: the frame bobs on susp() at the root while the
       // wheels press back toward the ground, so landings visibly
       // compress the travel.  (Model space is 2/3 world scale.)
-      const float wheel_drop = -v.susp () * 0.45f;
+      const float wheel_drop = -vehicle.suspension * 0.45f;
 
       // Rear wheel on the swingarm.
       r.draw_mesh (*bm.wheel,
@@ -393,7 +396,7 @@ namespace moppe {
       r.draw_mesh (*bm.chassis, frame);
 
       // Steering assembly: triple clamp cluster, fork legs, front wheel.
-      const radians_t steer = -v.yaw () * 0.4f;
+      const radians_t steer = -vehicle.yaw_radians * 0.4f * u::rad;
       const Mat4 steering = frame * Mat4::translation (Vec3 (0, 0.05f, 0.55f)) *
                             Mat4::rotation (steer, y_axis);
       r.draw_mesh (*bm.steering, steering);
@@ -421,7 +424,7 @@ namespace moppe {
         r.draw_mesh (*bm.nozzle,
                      frame *
                        Mat4::translation (Vec3 (s * 0.14f, -0.45f, -0.35f)) *
-                       Mat4::rotation (boost_nozzle_angle (v), x_axis));
+                       Mat4::rotation (boost_nozzle_angle (vehicle), x_axis));
 
       dl.pop ();
     }
@@ -431,18 +434,18 @@ namespace moppe {
     // world draw list plays so the glow blends over the solids, the
     // same reason the star halos draw last.
     void render_vehicle_flames (render::Renderer& r,
-                                const mov::Vehicle& v,
+                                const VehiclePose& vehicle,
                                 float time,
                                 const Vec3& visual_scale) {
-      const bool bike = (v.body_kind () == 0);
-      const float thrust = scalar_value (abs (v.thrust ()));
+      const bool bike = (vehicle.body_kind == 0);
+      const float thrust = std::abs (vehicle.thrust);
       const bool exhaust = bike && thrust > 0.1f;
-      const bool boosting = v.boost_level () > 0.001f;
+      const bool boosting = vehicle.boost_level > 0.001f;
       if (!exhaust && !boosting)
         return;
 
       const FlameMeshes& fm = flame_meshes (r);
-      const Mat4 frame = vehicle_frame (v, visual_scale);
+      const Mat4 frame = vehicle_frame (vehicle, visual_scale);
       const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0);
 
       // Exhaust flame licking out of the muffler under load: an
@@ -468,7 +471,7 @@ namespace moppe {
       // shivering with engine flicker.  Additive layers sum where
       // they overlap, so the middle reads as incandescent.
       if (boosting) {
-        const float k = v.boost_level ();
+        const float k = vehicle.boost_level;
         const float flicker = bike ? 0.88f + 0.12f * std::sin (time * 41.0f) *
                                                std::sin (time * 27.0f + 1.7f)
                                    : 0.88f + 0.12f * std::sin (time * 39.0f) *
@@ -490,7 +493,7 @@ namespace moppe {
           const Mat4 jet =
             frame *
             Mat4::translation (Vec3 (s * nozzle[0], nozzle[1], nozzle[2])) *
-            Mat4::rotation (boost_nozzle_angle (v), x_axis);
+            Mat4::rotation (boost_nozzle_angle (vehicle), x_axis);
           r.draw_mesh (
             *fm.plume_sheath,
             jet * Mat4::scaling (Vec3 (sheath_r, sheath_r, sheath_l * len)));

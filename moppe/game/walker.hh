@@ -4,7 +4,6 @@
 #include <moppe/game/world.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/mov/vehicle.hh>
-#include <moppe/render/draw.hh>
 
 #include <vector>
 
@@ -66,11 +65,6 @@ namespace moppe {
       Vec3 heading () const {
         return m_heading;
       }
-
-      // The walk cycle runs off distance; time only drives idle breathing.
-      void render (render::DrawList& dl,
-                   float time,
-                   const Vec3& visual_scale = Vec3 (1, 1, 1)) const;
 
     private:
       void collide (const std::vector<mov::Box>& boxes);
