@@ -854,20 +854,26 @@ fragment float4 terrain_fragment (
                              pebble,
                              pebble_strength *
                                (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
-  // Water-worked ground is anisotropic: noise stretched far along the local
-  // drainage direction and kept short across it reads as rills and fluvial
-  // polish that turn with the channels. Computed unconditionally so screen
-  // derivatives stay defined; the strength gates it instead.
+  // Water-worked ground is anisotropic. The rill noise stays fixed in world
+  // space; removing the along-flow component of its gradient leaves relief
+  // that reads as streaks following the local drainage direction. Rotating
+  // the noise domain by the flow direction instead would swing the sample
+  // coordinate by the full world position wherever the direction turns,
+  // decorrelating into speckle and rings.
   const float2 flow_dir = channel_flux / max (channel_activity, 1e-4);
-  const float2 rill_coord =
-    float2 (dot (in.world_pos.xz, float2 (-flow_dir.y, flow_dir.x)) * 0.85,
-            dot (in.world_pos.xz, flow_dir) * 0.085);
-  const float rill = moppe_value_noise (rill_coord + float2 (13.7, 41.3));
+  const float2 rill_base = in.world_pos.xz * 0.9 + float2 (13.7, 41.3);
+  const float rill_center = moppe_value_noise (rill_base);
+  const float2 rill_gradient =
+    float2 (moppe_value_noise (rill_base + float2 (0.31, 0.0)) - rill_center,
+            moppe_value_noise (rill_base + float2 (0.0, 0.31)) - rill_center);
+  const float2 rill_across =
+    rill_gradient - flow_dir * dot (rill_gradient, flow_dir);
   const float rill_strength =
-    smoothstep (0.18, 0.72, channel_activity) * (1.0 - 0.85 * snow_coef) *
+    smoothstep (0.35, 0.90, channel_activity) * (1.0 - 0.85 * snow_coef) *
     (1.0 - submerged * 0.5) * (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
-    0.30;
-  n = terrain_detail_normal (in.world_pos, n, rill, rill_strength);
+    0.28;
+  n = normalize (
+    n - float3 (rill_across.x, 0.0, rill_across.y) * rill_strength);
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor (
