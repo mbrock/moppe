@@ -12,7 +12,7 @@ if [ ! -f "$build_dir/build.ninja" ]; then
   cmake -S "$root" -B "$build_dir" -G Ninja
 fi
 
-cmake --build "$build_dir" --target moppe
+cmake --build "$build_dir" --target moppe_bundle_shaders
 mkdir -p "$(dirname -- "$output")"
 
 MOPPE_SCREENSHOT_FRAMES=${MOPPE_SCREENSHOT_FRAMES:-45} \

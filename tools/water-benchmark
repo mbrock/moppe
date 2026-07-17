@@ -324,7 +324,10 @@ def main() -> int:
             ["cmake", "-S", str(root), "-B", str(build), "-G", "Ninja"],
             check=True,
         )
-    subprocess.run(["cmake", "--build", str(build), "--target", "moppe"], check=True)
+    subprocess.run(
+        ["cmake", "--build", str(build), "--target", "moppe_bundle_shaders"],
+        check=True,
+    )
 
     rows = []
     for index, (seed, profile, feature) in enumerate(cases, 1):

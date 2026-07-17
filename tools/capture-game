@@ -11,7 +11,7 @@ if [ ! -f "$build_dir/build.ninja" ]; then
   cmake -S "$root" -B "$build_dir" -G Ninja
 fi
 
-cmake --build "$build_dir" --target moppe
+cmake --build "$build_dir" --target moppe_bundle_shaders
 mkdir -p "$(dirname -- "$output")"
 
 MOPPE_DEMO=1 MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
