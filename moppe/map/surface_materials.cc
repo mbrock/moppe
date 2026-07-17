@@ -7,9 +7,9 @@
 namespace moppe::map {
   namespace {
     void require_surface_size (std::span<const float> input,
-                               const SurfaceSections& sections,
+                               const SurfaceDomain& domain,
                                const char* message) {
-      if (input.size () != sections.size ())
+      if (input.size () != domain.size ())
         throw std::invalid_argument (message);
     }
 
@@ -29,41 +29,45 @@ namespace moppe::map {
   }
 
   void Surface::materialize_moisture (std::span<const float> moisture) {
-    SurfaceSections& values = mutable_sections ();
+    SurfaceAtlas& atlas = mutable_atlas ();
     require_surface_size (
-      moisture, values, "Moisture needs one value per surface sample");
+      moisture, atlas.domain (), "Moisture needs one value per surface sample");
+    SurfaceMoistureSections& values =
+      atlas.hydrology ().materialize_moisture ();
     auto& column = spatial::get<surface_moisture> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       column[offset] =
         std::clamp (moisture[offset], 0.0f, 1.0f) * surface_moisture[one];
-    m_materialized.moisture = true;
   }
 
   void
   Surface::materialize_waterline_distance (std::span<const float> distance) {
-    SurfaceSections& values = mutable_sections ();
+    SurfaceAtlas& atlas = mutable_atlas ();
     require_surface_size (
       distance,
-      values,
+      atlas.domain (),
       "Waterline distance needs one value per surface sample");
+    SurfaceWaterlineSections& values =
+      atlas.hydrology ().materialize_waterline ();
     auto& column = spatial::get<waterline_distance> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       column[offset] =
         std::max (distance[offset], 0.0f) * waterline_distance[u::m];
-    m_materialized.waterline = true;
   }
 
   void Surface::derive_geology_materials (std::span<const float> eroded,
                                           std::span<const float> deposited) {
-    SurfaceSections& values = mutable_sections ();
-    require_surface_size (
-      eroded, values, "Erosion ledger needs one value per surface sample");
+    SurfaceAtlas& atlas = mutable_atlas ();
+    require_surface_size (eroded,
+                          atlas.domain (),
+                          "Erosion ledger needs one value per surface sample");
     require_surface_size (deposited,
-                          values,
+                          atlas.domain (),
                           "Deposition ledger needs one value per surface "
                           "sample");
     const float eroded_scale = robust_positive_scale (eroded);
     const float deposited_scale = robust_positive_scale (deposited);
+    SurfaceGeologySections& values = atlas.geology ().materialize_materials ();
     auto& exposure = spatial::get<erosion_exposure> (values);
     auto& cover = spatial::get<deposition_cover> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset) {
@@ -74,6 +78,5 @@ namespace moppe::map {
         std::clamp (deposited[offset] / deposited_scale, 0.0f, 1.0f) *
         deposition_cover[one];
     }
-    m_materialized.geology = true;
   }
 }

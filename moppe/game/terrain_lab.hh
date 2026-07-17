@@ -5,15 +5,16 @@
 #include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/terrain.hh>
+#include <moppe/game/terrain_lab_model.hh>
 #include <moppe/game/world.hh>
 #include <moppe/gfx/mat4.hh>
 #include <moppe/map/generate.hh>
-#include <moppe/map/terrain_evaluator.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/transform.hh>
+#include <moppe/terrain/world_recipe.hh>
 
 #include <memory>
 #include <optional>
@@ -38,7 +39,7 @@ namespace moppe {
                   Terrain& terrain,
                   const WorldParams& world,
                   const GraphicsSettings& graphics,
-                  const terrain::TerrainProgram& program,
+                  const terrain::WorldRecipe& recipe,
                   std::span<const float> trail_influence,
                   std::span<const float> home_base_influence,
                   const std::vector<std::vector<float>>& history,
@@ -58,7 +59,7 @@ namespace moppe {
       // screen is still the game's own, so the game's water sheets and
       // full-quality setup remain valid.
       bool map_pristine () const {
-        return m_map_pristine;
+        return m_model.map_pristine ();
       }
       // The haze the current lab view renders with; the orbit cameras
       // sit kilometres out, so full gameplay fog would swallow the map.
@@ -99,6 +100,9 @@ namespace moppe {
 
       void select (terrain::GeologicalLayer layer);
       void reset_program ();
+      terrain::TerrainProgram recipe_program (terrain::Seed seed) const;
+      terrain::TerrainProgram calibrated_world_program (
+        terrain::Seed seed, terrain::TerrainGenerationProfile profile) const;
       void rebuild_program ();
       void rerun_program_from (int first_stage);
       void append_stage (terrain::TerrainTransform stage);
@@ -135,6 +139,12 @@ namespace moppe {
       std::optional<Vec3> terrain_point_at_screen (float x, float y) const;
       void show_history_snapshot (std::size_t index);
       std::string history_snapshot_name (std::size_t index) const;
+      terrain::TerrainProgram& program () {
+        return m_model.program ();
+      }
+      const terrain::TerrainProgram& program () const {
+        return m_model.program ();
+      }
 
       InspectorUi m_ui;
       UiWindow m_observe_window;
@@ -143,12 +153,12 @@ namespace moppe {
       render::Renderer* m_renderer;
       map::RandomHeightMap* m_map;
       std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
-      std::unique_ptr<map::TerrainEvaluator> m_evaluator;
+      TerrainLabModel m_model;
       Terrain* m_terrain;
       const WorldParams* m_world;
+      const terrain::WorldRecipe* m_world_recipe;
       const GraphicsSettings* m_graphics;
       Vec3 m_sun_dir;
-      std::vector<float> m_saved_heights;
       std::vector<float> m_saved_trail_influence;
       std::vector<float> m_saved_home_base_influence;
       const std::vector<std::vector<float>>* m_history;
@@ -157,10 +167,6 @@ namespace moppe {
       bool m_history_playing;
 
       bool m_active;
-      bool m_map_pristine;
-      terrain::TerrainProgram m_program;
-      std::vector<map::TerrainCheckpoint> m_checkpoints;
-      std::vector<terrain::TerrainTransformReport> m_reports;
       std::optional<terrain::DrainageGraph> m_drainage;
       std::optional<terrain::FractionalDrainage> m_channel_drainage;
       std::optional<terrain::WaterNetwork> m_water_network;

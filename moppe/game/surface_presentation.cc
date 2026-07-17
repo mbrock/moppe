@@ -16,39 +16,44 @@ namespace moppe::game {
 
   void SurfacePresentation::refresh (const map::Surface& surface) {
     MOPPE_PROFILE_ZONE ("surface.materialize_presentation");
-    if (surface.has_section<map::trail_influence> ())
+    const map::SurfaceAtlas& atlas = surface.atlas ();
+    const map::SurfaceAtlas::Use& use = atlas.use ();
+    const map::SurfaceAtlas::Ecology& ecology = atlas.ecology ();
+    const map::SurfaceAtlas::Hydrology& hydrology = atlas.hydrology ();
+
+    if (const auto* trails = use.trails ())
       m_trails = scalar_values<map::TrailInfluence> (
-        surface.section<map::trail_influence> ());
+        spatial::get<map::trail_influence> (*trails));
     else
       m_trails.clear ();
-    if (surface.has_section<map::home_base_influence> ())
+    if (const auto* home_base = use.home_base ())
       m_home_base = scalar_values<map::HomeBaseInfluence> (
-        surface.section<map::home_base_influence> ());
+        spatial::get<map::home_base_influence> (*home_base));
     else
       m_home_base.clear ();
-    if (surface.has_section<map::forest_cover> ())
-      m_forest =
-        scalar_values<map::ForestCover> (surface.section<map::forest_cover> ());
+    if (const auto* forest = ecology.forest_cover ())
+      m_forest = scalar_values<map::ForestCover> (
+        spatial::get<map::forest_cover> (*forest));
     else
       m_forest.clear ();
-    if (surface.has_section<map::surface_moisture> ())
+    if (const auto* moisture = hydrology.moisture ())
       m_moisture = scalar_values<map::SurfaceMoisture> (
-        surface.section<map::surface_moisture> ());
+        spatial::get<map::surface_moisture> (*moisture));
     else
       m_moisture.clear ();
-    if (surface.has_section<map::waterline_distance> ()) {
-      const auto& distance = surface.section<map::waterline_distance> ();
+    if (const auto* waterline = hydrology.waterline ()) {
+      const auto& distance = spatial::get<map::waterline_distance> (*waterline);
       m_waterline_distance.resize (distance.size ());
       for (std::size_t offset = 0; offset < distance.size (); ++offset)
         m_waterline_distance[offset] =
           distance[offset].numerical_value_in (u::m);
     } else
       m_waterline_distance.clear ();
-    m_snow_support =
-      scalar_values<map::SnowSupport> (surface.section<map::snow_support> ());
+    m_snow_support = scalar_values<map::SnowSupport> (
+      spatial::get<map::snow_support> (atlas.geometry ()));
 
-    if (surface.has_section<map::channel_flux> ()) {
-      const auto& flux = surface.section<map::channel_flux> ();
+    if (const auto* channel_flux = hydrology.channel_flux ()) {
+      const auto& flux = spatial::get<map::channel_flux> (*channel_flux);
       m_channel_flux.resize (2 * flux.size ());
       for (std::size_t offset = 0; offset < flux.size (); ++offset) {
         const Vec3 value = flux[offset].numerical_value_in (one);
@@ -58,11 +63,11 @@ namespace moppe::game {
     } else
       m_channel_flux.clear ();
 
-    if (surface.has_section<map::erosion_exposure> ()) {
+    if (const auto* materials = atlas.geology ().materials ()) {
       const auto erosion = scalar_values<map::ErosionExposure> (
-        surface.section<map::erosion_exposure> ());
+        spatial::get<map::erosion_exposure> (*materials));
       const auto deposition = scalar_values<map::DepositionCover> (
-        surface.section<map::deposition_cover> ());
+        spatial::get<map::deposition_cover> (*materials));
       m_geology.resize (2 * erosion.size ());
       for (std::size_t offset = 0; offset < erosion.size (); ++offset) {
         m_geology[2 * offset] = erosion[offset];

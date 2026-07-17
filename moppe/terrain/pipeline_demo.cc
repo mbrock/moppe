@@ -2,10 +2,12 @@
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/image.hh>
 #include <moppe/terrain/program.hh>
+#include <moppe/terrain/world_recipe.hh>
 
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -30,11 +32,20 @@ namespace {
   }
 
   void apply_option (moppe::terrain::TerrainProgram& program,
+                     std::optional<moppe::terrain::WorldRecipe>& world_recipe,
+                     int resolution,
                      std::string_view option) {
     using namespace moppe::terrain;
     if (option == "world") {
       const GeologicalLayer layer = program.source.layer;
-      program = make_default_world_program (program.seed.value);
+      world_recipe.emplace (make_world_recipe (
+        moppe::spatial_extent_in_metres (moppe::Vec3 (11000, 650, 11000)),
+        resolution,
+        Topology::Torus,
+        program.seed,
+        50.0f * mp_units::si::metre,
+        TerrainGenerationProfile::Research));
+      program = world_recipe->terrain_program ();
       program.source.layer = layer;
       return;
     }
@@ -263,19 +274,30 @@ int main (int argc, char** argv) {
       throw std::invalid_argument ("unknown layer: " + std::string (layer_id));
 
     TerrainProgram program = make_geological_program (seed, *layer);
+    std::optional<WorldRecipe> world_recipe;
     for (int i = 5; i < argc; ++i)
-      apply_option (program, argv[i]);
+      apply_option (program, world_recipe, resolution, argv[i]);
+
+    if (world_recipe)
+      world_recipe = world_recipe->with_terrain_program (std::move (program));
+    const TerrainProgram& world_program =
+      world_recipe ? world_recipe->terrain_program () : program;
 
     const Vec3 physical_size =
-      program.source.mode == GeologicalSource::Mode::Orogeny
+      world_recipe ? extent_value (world_recipe->extent ())
+      : world_program.source.mode == GeologicalSource::Mode::Orogeny
         ? Vec3 (11000, 650, 11000)
         : Vec3 (1, 1, 1);
     map::RandomHeightMap map (
-      resolution, resolution, physical_size, seed, Topology::Torus);
+      world_recipe ? world_recipe->resolution () : resolution,
+      world_recipe ? world_recipe->resolution () : resolution,
+      physical_size,
+      world_recipe ? world_recipe->seed ().value : seed,
+      world_recipe ? world_recipe->topology () : Topology::Torus);
     map::TerrainEvaluator evaluator (map);
-    evaluator.begin (program);
+    evaluator.begin (world_program);
     std::vector<TerrainTransformReport> reports;
-    for (const TerrainTransform& transform : program.transforms)
+    for (const TerrainTransform& transform : world_program.transforms)
       reports.push_back (evaluator.apply (transform));
     const std::size_t count = static_cast<std::size_t> (resolution) *
                               static_cast<std::size_t> (resolution);
@@ -292,7 +314,7 @@ int main (int argc, char** argv) {
 
     std::cout << "wrote " << path << " (" << layer_id << ", seed " << seed
               << ", " << resolution << "x" << resolution << ", stages";
-    for (const TerrainTransform& transform : program.transforms)
+    for (const TerrainTransform& transform : world_program.transforms)
       std::cout << " " << terrain_transform_id (transform);
     std::cout << ")\n";
     for (const TerrainTransformReport& result : reports)

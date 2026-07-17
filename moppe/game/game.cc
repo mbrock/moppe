@@ -44,10 +44,13 @@
 #include <moppe/terrain/trail.hh>
 #include <moppe/terrain/watercourse.hh>
 #include <moppe/terrain/waterline.hh>
+#include <moppe/terrain/world_recipe.hh>
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -198,33 +201,38 @@ namespace moppe {
       return { "BUILDING THE WORLD", "Working", 0.0f };
     }
 
-    static std::string
-    terrain_cache_path (const WorldParams& world,
-                        terrain::TerrainGenerationProfile profile,
-                        int seed) {
+    // A cache must distinguish the exact physical recipe, not a rounded
+    // presentation of it.
+    static void append_cache_float (std::ostream& stream, float value) {
+      stream << std::hex << std::bit_cast<std::uint32_t> (value) << std::dec;
+    }
+
+    static std::string terrain_cache_path (const terrain::WorldRecipe& recipe) {
+      const Vec3 extent = extent_value (recipe.extent ());
       std::ostringstream name;
       name << "terrain-" << platform::executable_build_id () << '-'
-           << terrain::profile_id (profile) << '-' << world.resolution << '-'
-           << seed << (world.toroidal () ? "-torus.map" : "-bounded.map");
+           << terrain::profile_id (recipe.generation_profile ()) << '-'
+           << recipe.resolution () << '-' << recipe.seed ().value << "-extent-";
+      append_cache_float (name, extent[0]);
+      name << '-';
+      append_cache_float (name, extent[1]);
+      name << '-';
+      append_cache_float (name, extent[2]);
+      name << "-water-";
+      append_cache_float (name, meters_value (recipe.water_datum ()));
+      name << (recipe.topology () == terrain::Topology::Torus ? "-torus.map"
+                                                              : "-bounded.map");
       return platform::cache_path (name.str ());
     }
 
-    static terrain::TerrainProgram
-    make_game_world_program (const WorldParams& world,
-                             std::uint32_t seed,
-                             terrain::TerrainGenerationProfile profile) {
-      terrain::TerrainProgram program =
-        terrain::make_world_program (seed, profile);
-      const float sea_level =
-        meters_value (world.water_level) / extent_value (world.map_size)[1];
-      program.source.sea_level = sea_level;
-      for (terrain::TerrainTransform& transform : program.transforms)
-        if (auto* orogeny = std::get_if<terrain::OrogenyEvolution> (&transform))
-          orogeny->evolution.sea_level = sea_level;
-        else if (auto* trails =
-                   std::get_if<terrain::TrailFormation> (&transform))
-          trails->sea_level = sea_level;
-      return program;
+    static WorldParams
+    world_params_for_recipe (WorldParams world,
+                             const terrain::WorldRecipe& recipe) {
+      world.map_size = recipe.extent ();
+      world.resolution = recipe.resolution ();
+      world.water_level = recipe.water_datum ();
+      world.terrain_topology = recipe.topology ();
+      return world;
     }
 
     static bool
@@ -386,40 +394,40 @@ namespace moppe {
     class MoppeGame : public platform::Game, private GameLogicState {
     public:
       MoppeGame (const WorldParams& world,
+                 terrain::WorldRecipe recipe,
                  const GraphicsSettings& graphics,
                  bool start_in_terrain_lab,
                  bool terrain_lab_preview,
                  bool tree_demo,
                  std::size_t tree_count,
-                 int seed,
                  std::string screenshot_path,
                  std::optional<WaterShot> water_shot,
-                 terrain::TerrainGenerationProfile generation_profile,
                  std::optional<GraphicsBenchmarkConfig> benchmark)
-          : m_world (world), m_graphics (graphics),
-            m_spawn_position (position_value (world.spawn_position ())),
-            m_seed (seed), m_generation_profile (generation_profile),
-            m_map (world.resolution,
-                   world.resolution,
-                   extent_value (world.map_size),
-                   m_seed,
-                   world.topology ()),
-            m_loading_map (world.resolution,
-                           world.resolution,
-                           extent_value (world.map_size),
-                           m_seed,
-                           world.topology ()),
+          : m_recipe (std::move (recipe)),
+            m_world (world_params_for_recipe (world, m_recipe)),
+            m_graphics (graphics),
+            m_spawn_position (position_value (m_world.spawn_position ())),
+            m_map (m_recipe.resolution (),
+                   m_recipe.resolution (),
+                   extent_value (m_recipe.extent ()),
+                   m_recipe.seed ().value,
+                   m_recipe.topology ()),
+            m_loading_map (m_recipe.resolution (),
+                           m_recipe.resolution (),
+                           extent_value (m_recipe.extent ()),
+                           m_recipe.seed ().value,
+                           m_recipe.topology ()),
             m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
             // 5000 N constant force topped out near 300).
-            m_vehicle (world.spawn_position (),
+            m_vehicle (m_world.spawn_position (),
                        45 * u::deg,
                        m_map,
                        2600 * u::N,
                        30 * u::kW,
                        150 * u::kg),
-            m_car (world.spawn_position (),
+            m_car (m_world.spawn_position (),
                    45 * u::deg,
                    m_map,
                    14 * u::kN,
@@ -828,17 +836,14 @@ namespace moppe {
           set_loading_stage (LoadingStage::BuildingContinents);
           {
             MOPPE_PROFILE_ZONE ("startup.make_preview_program");
-            const terrain::TerrainProgram program =
-              terrain::make_geological_program (m_seed);
             map::TerrainEvaluator (m_map, m_field_evaluator.get ())
-              .evaluate (program);
+              .evaluate (m_recipe.terrain_program ());
           }
         } else {
           // Reuse the automatic build/profile/seed cache when possible.
           // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
           const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
-          const std::string automatic_cache =
-            terrain_cache_path (m_world, m_generation_profile, m_seed);
+          const std::string automatic_cache = terrain_cache_path (m_recipe);
           const char* cache =
             cache_override ? cache_override : automatic_cache.c_str ();
           set_loading_stage (LoadingStage::LookingForCache);
@@ -858,18 +863,12 @@ namespace moppe {
             publish_loading_terrain ();
           } else {
             set_loading_stage (LoadingStage::BuildingContinents);
-            terrain::TerrainProgram program;
-            {
-              MOPPE_PROFILE_ZONE ("startup.make_world_program");
-              program =
-                make_game_world_program (m_world, m_seed, m_generation_profile);
-            }
             map::TerrainEvaluator evaluator (m_map, m_field_evaluator.get ());
             m_terrain_history.clear ();
             {
               MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
               evaluator.evaluate (
-                program,
+                m_recipe.terrain_program (),
                 [this] (std::size_t,
                         const terrain::TerrainTransform& transform) {
                   const std::size_t count =
@@ -942,8 +941,7 @@ namespace moppe {
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview) {
           set_loading_stage (LoadingStage::FindingStandingWater);
-          const float sea_level = meters_value (m_world.water_level) /
-                                  extent_value (m_world.map_size)[1];
+          const float sea_level = m_recipe.normalized_water_datum ();
           {
             MOPPE_PROFILE_ZONE ("startup.analyze_standing_water");
             m_standing_water = terrain::analyze_standing_water (
@@ -1018,14 +1016,6 @@ namespace moppe {
           }
         }
         set_loading_stage (LoadingStage::AssemblingWorld);
-      }
-
-      // The recipe behind the current map: entering the lab shows the
-      // world's own pipeline instead of rebuilding a bare geological field.
-      terrain::TerrainProgram lab_program () const {
-        if (m_terrain_lab_preview)
-          return terrain::make_geological_program (m_seed);
-        return make_game_world_program (m_world, m_seed, m_generation_profile);
       }
 
       void finish_setup () {
@@ -1123,7 +1113,7 @@ namespace moppe {
               water_flow[out] = sheets.flow[2 * cell];
               water_flow[out + 1] = sheets.flow[2 * cell + 1];
             }
-          m_water_surface.emplace (m_surface.sections ().domain (),
+          m_water_surface.emplace (m_surface.atlas ().domain (),
                                    water_levels,
                                    water_flow,
                                    m_map.scale ()[1] * u::m);
@@ -1174,7 +1164,7 @@ namespace moppe {
         }
 
         if (m_standing_water && m_drainage) {
-          const terrain::TerrainProgram program = lab_program ();
+          const terrain::TerrainProgram& program = m_recipe.terrain_program ();
           const auto stage = std::ranges::find_if (
             program.transforms, [] (const terrain::TerrainTransform& value) {
               return std::holds_alternative<terrain::TrailFormation> (value);
@@ -1248,10 +1238,9 @@ namespace moppe {
           }
         }
 
-        if (m_surface.has_section<map::tree_habitat> ()) {
+        if (m_surface.atlas ().ecology ().tree_habitat ()) {
           MOPPE_PROFILE_ZONE ("startup.derive_forest_cover");
-          m_surface.derive_forest_cover (static_cast<std::uint32_t> (m_seed) ^
-                                         0x6f12ad37U);
+          m_surface.derive_forest_cover (m_recipe.seed ().value ^ 0x6f12ad37U);
         }
 
         {
@@ -1290,7 +1279,7 @@ namespace moppe {
         if (m_tree_demo) {
           MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
           m_tree_stand.rebuild (
-            r, m_surface, m_seed ^ 0x4f1bbcdcU, m_tree_count);
+            r, m_surface, m_recipe.seed ().value ^ 0x4f1bbcdcU, m_tree_count);
           if (m_tree_stand.empty ())
             throw std::runtime_error (
               "the generated surface has no viable tree habitat");
@@ -1305,7 +1294,7 @@ namespace moppe {
           {
             MOPPE_PROFILE_ZONE ("startup.build_global_forest");
             m_forest.rebuild (
-              r, m_surface, static_cast<std::uint32_t> (m_seed) ^ 0xa34c91e5U);
+              r, m_surface, m_recipe.seed ().value ^ 0xa34c91e5U);
             std::cerr << "global forest: " << m_forest.tree_count ()
                       << " canopy representatives\n";
           }
@@ -1313,7 +1302,7 @@ namespace moppe {
           constexpr std::size_t forest_size = 32;
           m_tree_stand.rebuild (r,
                                 m_surface,
-                                m_seed ^ 0x4f1bbcdcU,
+                                m_recipe.seed ().value ^ 0x4f1bbcdcU,
                                 forest_size,
                                 m_home_base_position);
           const TreeGrove& forest = m_tree_stand.grove ();
@@ -1352,7 +1341,9 @@ namespace moppe {
           std::cerr << '\n';
         }
         m_setup_complete = true;
-        remember_seed (m_world, m_generation_profile, m_seed);
+        remember_seed (m_world,
+                       m_recipe.generation_profile (),
+                       static_cast<int> (m_recipe.seed ().value));
         if (::getenv ("MOPPE_REGENERATE_ONCE") &&
             !m_automated_regeneration_done) {
           m_automated_regeneration_done = true;
@@ -2307,7 +2298,7 @@ namespace moppe {
                                    m_terrain,
                                    m_world,
                                    m_graphics,
-                                   lab_program (),
+                                   m_recipe,
                                    m_surface_presentation.trails (),
                                    m_surface_presentation.home_base (),
                                    m_terrain_history,
@@ -2630,7 +2621,7 @@ namespace moppe {
                                m_terrain,
                                m_world,
                                m_graphics,
-                               lab_program (),
+                               m_recipe,
                                m_surface_presentation.trails (),
                                m_surface_presentation.home_base (),
                                m_terrain_history,
@@ -2813,7 +2804,23 @@ namespace moppe {
         m_rivers.reset ();
         m_river_surface.clear ();
         m_terrain_history.clear ();
-        ++m_seed;
+        const terrain::Seed next_seed = terrain::next_seed (m_recipe.seed ());
+        if (m_terrain_lab_preview)
+          m_recipe = terrain::make_geological_world_recipe (
+            m_recipe.extent (),
+            m_recipe.resolution (),
+            m_recipe.topology (),
+            next_seed,
+            m_recipe.water_datum (),
+            m_recipe.generation_profile ());
+        else
+          m_recipe =
+            terrain::make_world_recipe (m_recipe.extent (),
+                                        m_recipe.resolution (),
+                                        m_recipe.topology (),
+                                        next_seed,
+                                        m_recipe.water_datum (),
+                                        m_recipe.generation_profile ());
         m_mode = M_BIKE;
         m_car_exists = false;
         m_game_over = false;
@@ -2958,12 +2965,11 @@ namespace moppe {
         m_game_over = false;
       }
 
+      terrain::WorldRecipe m_recipe;
       WorldParams m_world;
       GraphicsSettings m_graphics;
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
-      int m_seed;
-      terrain::TerrainGenerationProfile m_generation_profile;
       map::RandomHeightMap m_map;
       map::RandomHeightMap m_loading_map;
       map::Surface m_surface;
@@ -3259,16 +3265,31 @@ int main (int argc, char** argv) {
   if (seed < 0)
     seed = game::remembered_seed (world, generation_profile);
 
+  const terrain::Seed world_seed { static_cast<std::uint32_t> (seed) };
+  terrain::WorldRecipe recipe =
+    terrain_lab_preview
+      ? terrain::make_geological_world_recipe (world.map_size,
+                                               world.resolution,
+                                               world.topology (),
+                                               world_seed,
+                                               world.water_level,
+                                               generation_profile)
+      : terrain::make_world_recipe (world.map_size,
+                                    world.resolution,
+                                    world.topology (),
+                                    world_seed,
+                                    world.water_level,
+                                    generation_profile);
+
   game::MoppeGame game (world,
+                        std::move (recipe),
                         graphics,
                         start_in_terrain_lab,
                         terrain_lab_preview,
                         tree_demo,
                         tree_count,
-                        seed,
                         std::move (screenshot_path),
                         water_shot,
-                        generation_profile,
                         graphics_benchmark);
 
   try {

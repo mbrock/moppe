@@ -288,7 +288,9 @@ add_library(moppe_terrain STATIC
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc
+  moppe/terrain/editor.cc
   moppe/terrain/program.cc
+  moppe/terrain/world_recipe.cc
   moppe/terrain/image.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -357,6 +359,7 @@ add_library(moppe_game STATIC
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
+  moppe/game/terrain_lab_model.cc
   moppe/game/terrain_lab.cc
   moppe/game/forest.cc
   moppe/game/tree_stand.cc
@@ -438,6 +441,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc
     tests/terrain/program_test.cc
+    tests/terrain/world_recipe_test.cc
     tests/terrain/image_test.cc
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
@@ -454,6 +458,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
     tests/game/inspector_ui_test.cc
+    tests/game/terrain_lab_model_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc
     tests/game/forest_test.cc

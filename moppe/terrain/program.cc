@@ -29,6 +29,7 @@ namespace moppe::terrain {
     [[noreturn]] void invalid_program_transform_property_index () {
       throw std::out_of_range ("terrain transform property index is invalid");
     }
+
   }
 
   TerrainProgram make_geological_program (std::uint32_t root_seed,
@@ -78,6 +79,147 @@ namespace moppe::terrain {
     return "play";
   }
 
+  std::size_t GeologicalSource::property_count () const noexcept {
+    return 9;
+  }
+
+  TransformProperty GeologicalSource::property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return { "WARP STRENGTH",
+               format_program_transform_float (recipe.warp.amplitude, 3),
+               ParameterDomain::Continuous };
+    case 1:
+      return { "CONTINENT WAVES",
+               std::to_string (recipe.continent.noise.cycles),
+               ParameterDomain::Natural };
+    case 2:
+      return { "PLAINS WAVES",
+               std::to_string (recipe.plains.noise.cycles),
+               ParameterDomain::Natural };
+    case 3:
+      return { "RIDGE WAVES",
+               std::to_string (recipe.mountains.cycles),
+               ParameterDomain::Natural };
+    case 4:
+      return { "MASK START",
+               format_program_transform_float (recipe.blend.mask_low, 3),
+               ParameterDomain::Continuous };
+    case 5:
+      return { "MASK END",
+               format_program_transform_float (recipe.blend.mask_high, 3),
+               ParameterDomain::Continuous };
+    case 6:
+      return { "CONTINENT MIX",
+               format_program_transform_float (recipe.blend.continent_weight,
+                                               2),
+               ParameterDomain::Continuous };
+    case 7:
+      return { "PLAINS MIX",
+               format_program_transform_float (recipe.blend.plains_weight, 2),
+               ParameterDomain::Continuous };
+    case 8:
+      return { "MOUNTAIN MIX",
+               format_program_transform_float (recipe.blend.mountain_weight, 2),
+               ParameterDomain::Continuous };
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  float GeologicalSource::normalized_property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return normalized_edit_value (recipe.warp.amplitude, 0.0f, 0.6f);
+    case 1:
+      return normalized_edit_value (
+        static_cast<float> (recipe.continent.noise.cycles), 1.0f, 16.0f);
+    case 2:
+      return normalized_edit_value (
+        static_cast<float> (recipe.plains.noise.cycles), 1.0f, 32.0f);
+    case 3:
+      return normalized_edit_value (
+        static_cast<float> (recipe.mountains.cycles), 1.0f, 8.0f);
+    case 4:
+      return normalized_edit_value (
+        recipe.blend.mask_low, 0.0f, recipe.blend.mask_high - 0.001f);
+    case 5:
+      return normalized_edit_value (
+        recipe.blend.mask_high, recipe.blend.mask_low + 0.001f, 1.0f);
+    case 6:
+      return normalized_edit_value (recipe.blend.continent_weight, 0.0f, 1.5f);
+    case 7:
+      return normalized_edit_value (recipe.blend.plains_weight, 0.0f, 1.0f);
+    case 8:
+      return normalized_edit_value (recipe.blend.mountain_weight, 0.0f, 1.5f);
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  bool GeologicalSource::set_normalized_property (std::size_t index,
+                                                  float value) {
+    switch (index) {
+    case 0:
+      return replace_edit_value (recipe.warp.amplitude,
+                                 edited_value (value, 0.0f, 0.6f));
+    case 1:
+    case 2:
+    case 3:
+      return false;
+    case 4:
+      return replace_edit_value (
+        recipe.blend.mask_low,
+        edited_value (value, 0.0f, recipe.blend.mask_high - 0.001f));
+    case 5:
+      return replace_edit_value (
+        recipe.blend.mask_high,
+        edited_value (value, recipe.blend.mask_low + 0.001f, 1.0f));
+    case 6:
+      return replace_edit_value (recipe.blend.continent_weight,
+                                 edited_value (value, 0.0f, 1.5f));
+    case 7:
+      return replace_edit_value (recipe.blend.plains_weight,
+                                 edited_value (value, 0.0f, 1.0f));
+    case 8:
+      return replace_edit_value (recipe.blend.mountain_weight,
+                                 edited_value (value, 0.0f, 1.5f));
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  bool GeologicalSource::adjust_natural_property (std::size_t index,
+                                                  int direction) {
+    if (direction == 0)
+      return false;
+    switch (index) {
+    case 1: {
+      const int value =
+        std::clamp (recipe.continent.noise.cycles + direction, 1, 16);
+      return replace_edit_value (recipe.continent.noise.cycles, value);
+    }
+    case 2: {
+      const int value =
+        std::clamp (recipe.plains.noise.cycles + direction, 1, 32);
+      return replace_edit_value (recipe.plains.noise.cycles, value);
+    }
+    case 3: {
+      const int value = std::clamp (recipe.mountains.cycles + direction, 1, 8);
+      return replace_edit_value (recipe.mountains.cycles, value);
+    }
+    case 0:
+    case 4:
+    case 5:
+    case 6:
+    case 7:
+    case 8:
+      return false;
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
   void NormalizeHeights::validate () const {}
 
   TransformDescription NormalizeHeights::description () const noexcept {
@@ -96,6 +238,21 @@ namespace moppe::terrain {
 
   TransformProperty NormalizeHeights::property (std::size_t) const {
     invalid_program_transform_property_index ();
+  }
+
+  float NormalizeHeights::normalized_property (std::size_t index) const {
+    property (index);
+    return 0.0f;
+  }
+
+  bool NormalizeHeights::set_normalized_property (std::size_t index, float) {
+    property (index);
+    return false;
+  }
+
+  bool NormalizeHeights::adjust_natural_property (std::size_t index, int) {
+    property (index);
+    return false;
   }
 
   void PowerHeights::validate () const {
@@ -124,6 +281,24 @@ namespace moppe::terrain {
     return { "EXPONENT",
              format_program_transform_float (exponent, 2),
              ParameterDomain::Continuous };
+  }
+
+  float PowerHeights::normalized_property (std::size_t index) const {
+    if (index != 0)
+      invalid_program_transform_property_index ();
+    return normalized_edit_value (exponent, 0.1f, 4.0f);
+  }
+
+  bool PowerHeights::set_normalized_property (std::size_t index, float value) {
+    if (index != 0)
+      invalid_program_transform_property_index ();
+    return replace_edit_value (exponent, edited_value (value, 0.1f, 4.0f));
+  }
+
+  bool PowerHeights::adjust_natural_property (std::size_t index, int) {
+    if (index != 0)
+      invalid_program_transform_property_index ();
+    return false;
   }
 
   void ThermalErosion::validate () const {
@@ -156,6 +331,38 @@ namespace moppe::terrain {
                format_program_transform_float (talus, 4),
                ParameterDomain::Continuous };
     invalid_program_transform_property_index ();
+  }
+
+  float ThermalErosion::normalized_property (std::size_t index) const {
+    if (index == 0)
+      return normalized_edit_value (
+        static_cast<float> (count_value (iterations)), 0.0f, 20.0f);
+    if (index == 1)
+      return normalized_edit_value (talus, 0.0f, 0.05f);
+    invalid_program_transform_property_index ();
+  }
+
+  bool ThermalErosion::set_normalized_property (std::size_t index,
+                                                float value) {
+    if (index == 0)
+      return false;
+    if (index == 1)
+      return replace_edit_value (talus, edited_value (value, 0.0f, 0.05f));
+    invalid_program_transform_property_index ();
+  }
+
+  bool ThermalErosion::adjust_natural_property (std::size_t index,
+                                                int direction) {
+    if (index != 0) {
+      if (index >= property_count ())
+        invalid_program_transform_property_index ();
+      return false;
+    }
+    if (direction == 0)
+      return false;
+    const IterationCount value = iteration_count (
+      std::clamp (count_value (iterations) + direction, 0, 20));
+    return replace_edit_value (iterations, value);
   }
 
   void OrogenyEvolution::validate () const {
@@ -257,6 +464,88 @@ namespace moppe::terrain {
     default:
       invalid_program_transform_property_index ();
     }
+  }
+
+  float OrogenyEvolution::normalized_property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return normalized_edit_value (
+        julian_years_value (evolution.duration), 0.0f, 5000000.0f);
+    case 1:
+      return normalized_edit_value (
+        julian_years_value (evolution.time_step), 1000.0f, 250000.0f);
+    case 2:
+      return normalized_edit_value (
+        meters_per_julian_year_value (maximum_uplift_rate), 0.0f, 0.003f);
+    case 3:
+      return normalized_edit_value (std::log10 (meters_per_julian_year_value (
+                                      evolution.reference_incision_rate)),
+                                    -7.0f,
+                                    -3.0f);
+    case 4:
+      return normalized_edit_value (evolution.area_exponent, 0.0f, 1.0f);
+    case 5:
+      return normalized_edit_value (
+        square_meters_per_julian_year_value (evolution.diffusivity),
+        0.0f,
+        0.005f);
+    case 6:
+      return normalized_edit_value (
+        evolution.channel_persistence.numerical_value_in (mp_units::one),
+        0.0f,
+        0.95f);
+    case 7:
+      return normalized_edit_value (evolution.sea_level, 0.0f, 0.3f);
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  bool OrogenyEvolution::set_normalized_property (std::size_t index,
+                                                  float value) {
+    switch (index) {
+    case 0:
+      return replace_edit_value (evolution.duration,
+                                 edited_value (value, 0.0f, 5000000.0f) *
+                                   mp_units::astronomy::Julian_year);
+    case 1:
+      return replace_edit_value (evolution.time_step,
+                                 edited_value (value, 1000.0f, 250000.0f) *
+                                   mp_units::astronomy::Julian_year);
+    case 2:
+      return replace_edit_value (maximum_uplift_rate,
+                                 edited_value (value, 0.0f, 0.003f) *
+                                   mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year);
+    case 3:
+      return replace_edit_value (
+        evolution.reference_incision_rate,
+        std::pow (10.0f, edited_value (value, -7.0f, -3.0f)) *
+          mp_units::si::metre / mp_units::astronomy::Julian_year);
+    case 4:
+      return replace_edit_value (evolution.area_exponent,
+                                 edited_value (value, 0.0f, 1.0f));
+    case 5:
+      return replace_edit_value (evolution.diffusivity,
+                                 edited_value (value, 0.0f, 0.005f) *
+                                   mp_units::si::metre * mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year);
+    case 6:
+      return replace_edit_value (evolution.channel_persistence,
+                                 edited_value (value, 0.0f, 0.95f) *
+                                   channel_persistence[mp_units::one]);
+    case 7:
+      return replace_edit_value (evolution.sea_level,
+                                 edited_value (value, 0.0f, 0.3f));
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  bool OrogenyEvolution::adjust_natural_property (std::size_t index, int) {
+    if (index >= property_count ())
+      invalid_program_transform_property_index ();
+    return false;
   }
 
   void validate_transform (const TerrainTransform& transform) {

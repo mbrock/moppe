@@ -294,10 +294,16 @@ namespace moppe::game {
                            std::uint32_t seed,
                            std::size_t desired_count,
                            std::optional<Vec3> focus) {
-      const map::SurfaceSections& samples = surface.sections ();
-      const map::SurfaceDomain& domain = samples.domain ();
-      const auto& cover = spatial::get<map::forest_cover> (samples);
-      const auto& habitat = spatial::get<map::tree_habitat> (samples);
+      const map::SurfaceAtlas& atlas = surface.atlas ();
+      const map::SurfaceForestSections* forest =
+        atlas.ecology ().forest_cover ();
+      const map::SurfaceHabitatSections* habitats =
+        atlas.ecology ().tree_habitat ();
+      if (!forest || !habitats)
+        return {};
+      const map::SurfaceDomain& domain = atlas.domain ();
+      const auto& cover = spatial::get<map::forest_cover> (*forest);
+      const auto& habitat = spatial::get<map::tree_habitat> (*habitats);
       const std::size_t margin = std::max<std::size_t> (
         3, std::min (domain.width (), domain.height ()) / 20);
       const std::size_t step = std::max<std::size_t> (
@@ -407,7 +413,7 @@ namespace moppe::game {
 
     const std::size_t recruitment_count =
       std::max<std::size_t> (512, desired_count * 80);
-    const map::SurfaceDomain& domain = surface.sections ().domain ();
+    const map::SurfaceDomain& domain = surface.atlas ().domain ();
     const float maximum_x = meters_value (domain.maximum_interpolated_x ());
     const float maximum_z = meters_value (domain.maximum_interpolated_z ());
     for (std::size_t attempt = 0; attempt < recruitment_count; ++attempt) {

@@ -21,6 +21,9 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct PowerHeights {
@@ -31,6 +34,9 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct ThermalErosion {
@@ -42,6 +48,9 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   // A geological uplift pattern scaled into physical tectonic velocity and
@@ -59,6 +68,12 @@ namespace moppe::terrain {
     std::string detail () const;
     std::size_t property_count () const noexcept;
     TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
+    float source_sea_level () const noexcept {
+      return evolution.sea_level;
+    }
   };
 
   using TerrainTransform = std::variant<NormalizeHeights,
@@ -89,6 +104,12 @@ namespace moppe::terrain {
     float coastline = 0.4f;
     meters_t initial_land_relief = 20.0f * mp_units::si::metre;
     meters_t initial_bathymetric_relief = 240.0f * mp_units::si::metre;
+
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
+    float normalized_property (std::size_t index) const;
+    bool set_normalized_property (std::size_t index, float value);
+    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct TerrainProgram {

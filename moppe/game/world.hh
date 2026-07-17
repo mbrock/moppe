@@ -15,21 +15,22 @@ namespace moppe {
       int resolution;          // heightmap samples per side
       meters_t water_level;    // sea level above the model zero datum
       attenuation_t fog_scale; // atmospheric attenuation per metre
+      terrain::Topology terrain_topology;
       WorldParams ()
           : map_size (spatial_extent_in_metres (Vec3 (5000, 320, 5000))),
             resolution (2049), water_level (50 * u::m),
-            fog_scale (0.0004f / u::m) {}
+            fog_scale (0.0004f / u::m),
+            terrain_topology (terrain::Topology::Torus) {}
 
       position_t spawn_position () const {
         return position (Vec3 (50, 600, 50));
       }
 
       bool toroidal () const {
-        return true;
+        return terrain_topology == terrain::Topology::Torus;
       }
       terrain::Topology topology () const {
-        return toroidal () ? terrain::Topology::Torus
-                           : terrain::Topology::Bounded;
+        return terrain_topology;
       }
     };
 

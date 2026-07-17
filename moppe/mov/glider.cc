@@ -146,7 +146,7 @@ namespace moppe::mov {
   }
 
   void Glider::bound () {
-    const map::SurfaceDomain& domain = m_surface.sections ().domain ();
+    const map::SurfaceDomain& domain = m_surface.atlas ().domain ();
     if (domain.topology () == terrain::Topology::Torus)
       return;
     Vec3& p = position_value (m_position);

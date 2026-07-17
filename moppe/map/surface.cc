@@ -71,7 +71,8 @@ namespace moppe::map {
       return normalized (support);
     }
 
-    void populate_geometry (SurfaceSections& sections, const HeightMap& map) {
+    void populate_geometry (SurfaceGeometrySections& sections,
+                            const HeightMap& map) {
       MOPPE_PROFILE_ZONE ("surface.populate_geometry");
       const float vertical_scale = map.scale ()[1];
       const SnowSupportStencil support_stencil = snow_support_stencil (map);
@@ -90,18 +91,15 @@ namespace moppe::map {
               0.0f,
               1.0f) *
             snow_support[one];
-          spatial::get<channel_flux> (site) = Vec3 () * channel_flux[one];
-          spatial::get<surface_moisture> (site) = 0.0f * surface_moisture[one];
-          spatial::get<waterline_distance> (site) =
-            0.0f * waterline_distance[u::m];
-          spatial::get<erosion_exposure> (site) = 0.0f * erosion_exposure[one];
-          spatial::get<deposition_cover> (site) = 0.0f * deposition_cover[one];
-          spatial::get<tree_habitat> (site) = 0.0f * tree_habitat[one];
-          spatial::get<forest_cover> (site) = 0.0f * forest_cover[one];
-          spatial::get<trail_influence> (site) = 0.0f * trail_influence[one];
-          spatial::get<home_base_influence> (site) =
-            0.0f * home_base_influence[one];
         }
+    }
+
+    template <typename Sections>
+    const Sections& require_sections (const Sections* sections,
+                                      const char* message) {
+      if (!sections)
+        throw std::logic_error (message);
+      return *sections;
     }
   }
 
@@ -112,42 +110,45 @@ namespace moppe::map {
   void Surface::refresh (const HeightMap& map) {
     MOPPE_PROFILE_ZONE ("Surface::refresh");
     const SurfaceDomain domain = domain_for (map);
-    if (!m_sections || m_sections->domain () != domain)
-      m_sections.emplace (domain);
-    populate_geometry (*m_sections, map);
-    m_materialized = {};
+    if (!m_atlas || m_atlas->domain () != domain)
+      m_atlas.emplace (domain);
+    else
+      m_atlas->clear_derived ();
+    populate_geometry (m_atlas->geometry (), map);
   }
 
   void Surface::materialize_trail_influence (std::span<const float> influence) {
-    SurfaceSections& values = mutable_sections ();
-    if (influence.size () != values.size ())
+    SurfaceAtlas& atlas = mutable_atlas ();
+    if (influence.size () != atlas.domain ().size ())
       throw std::invalid_argument (
         "Trail influence needs one value per surface sample");
+    SurfaceTrailSections& values = atlas.use ().materialize_trails ();
     auto& trail = spatial::get<trail_influence> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       trail[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * trail_influence[one];
-    m_materialized.trails = true;
   }
 
   void
   Surface::materialize_home_base_influence (std::span<const float> influence) {
-    SurfaceSections& values = mutable_sections ();
-    if (influence.size () != values.size ())
+    SurfaceAtlas& atlas = mutable_atlas ();
+    if (influence.size () != atlas.domain ().size ())
       throw std::invalid_argument (
         "Home base influence needs one value per surface sample");
+    SurfaceHomeBaseSections& values = atlas.use ().materialize_home_base ();
     auto& home_base = spatial::get<home_base_influence> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       home_base[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * home_base_influence[one];
-    m_materialized.home_base = true;
   }
 
   void Surface::materialize_channel_flux (std::span<const float> flux) {
-    SurfaceSections& values = mutable_sections ();
-    if (flux.size () != 2 * values.size ())
+    SurfaceAtlas& atlas = mutable_atlas ();
+    if (flux.size () != 2 * atlas.domain ().size ())
       throw std::invalid_argument (
         "Channel flux needs one planar vector per surface sample");
+    SurfaceChannelFluxSections& values =
+      atlas.hydrology ().materialize_channel_flux ();
     auto& column = spatial::get<channel_flux> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset) {
       Vec3 value (flux[2 * offset], 0.0f, flux[2 * offset + 1]);
@@ -156,18 +157,97 @@ namespace moppe::map {
         value /= magnitude;
       column[offset] = value * channel_flux[one];
     }
-    m_materialized.channel_flux = true;
   }
 
-  const SurfaceSections& Surface::sections () const {
-    if (!m_sections)
-      throw std::logic_error ("Surface has not been materialized");
-    return *m_sections;
+  SurfaceElevation Surface::elevation_at (const position_t& position) const {
+    return spatial::sample<surface_elevation> (atlas ().geometry (), position);
   }
 
-  SurfaceSections& Surface::mutable_sections () {
-    if (!m_sections)
+  SurfaceNormal Surface::normal_at (const position_t& position) const {
+    return spatial::sample<surface_normal> (atlas ().geometry (), position);
+  }
+
+  SnowSupport Surface::snow_support_at (const position_t& position) const {
+    return spatial::sample<snow_support> (atlas ().geometry (), position);
+  }
+
+  ChannelFlux Surface::channel_flux_at (const position_t& position) const {
+    return spatial::sample<channel_flux> (
+      require_sections (atlas ().hydrology ().channel_flux (),
+                        "Surface channel flux has not been materialized"),
+      position);
+  }
+
+  SurfaceMoisture Surface::moisture_at (const position_t& position) const {
+    return spatial::sample<surface_moisture> (
+      require_sections (atlas ().hydrology ().moisture (),
+                        "Surface moisture has not been materialized"),
+      position);
+  }
+
+  WaterlineDistance
+  Surface::waterline_distance_at (const position_t& position) const {
+    return spatial::sample<waterline_distance> (
+      require_sections (atlas ().hydrology ().waterline (),
+                        "Surface waterline has not been materialized"),
+      position);
+  }
+
+  ErosionExposure
+  Surface::erosion_exposure_at (const position_t& position) const {
+    return spatial::sample<erosion_exposure> (
+      require_sections (atlas ().geology ().materials (),
+                        "Surface geology has not been materialized"),
+      position);
+  }
+
+  DepositionCover
+  Surface::deposition_cover_at (const position_t& position) const {
+    return spatial::sample<deposition_cover> (
+      require_sections (atlas ().geology ().materials (),
+                        "Surface geology has not been materialized"),
+      position);
+  }
+
+  TreeHabitat Surface::tree_habitat_at (const position_t& position) const {
+    return spatial::sample<tree_habitat> (
+      require_sections (atlas ().ecology ().tree_habitat (),
+                        "Surface tree habitat has not been materialized"),
+      position);
+  }
+
+  ForestCover Surface::forest_cover_at (const position_t& position) const {
+    return spatial::sample<forest_cover> (
+      require_sections (atlas ().ecology ().forest_cover (),
+                        "Surface forest cover has not been materialized"),
+      position);
+  }
+
+  TrailInfluence
+  Surface::trail_influence_at (const position_t& position) const {
+    return spatial::sample<trail_influence> (
+      require_sections (atlas ().use ().trails (),
+                        "Surface trails have not been materialized"),
+      position);
+  }
+
+  HomeBaseInfluence
+  Surface::home_base_influence_at (const position_t& position) const {
+    return spatial::sample<home_base_influence> (
+      require_sections (atlas ().use ().home_base (),
+                        "Surface home base has not been materialized"),
+      position);
+  }
+
+  const SurfaceAtlas& Surface::atlas () const {
+    if (!m_atlas)
       throw std::logic_error ("Surface has not been materialized");
-    return *m_sections;
+    return *m_atlas;
+  }
+
+  SurfaceAtlas& Surface::mutable_atlas () {
+    if (!m_atlas)
+      throw std::logic_error ("Surface has not been materialized");
+    return *m_atlas;
   }
 }

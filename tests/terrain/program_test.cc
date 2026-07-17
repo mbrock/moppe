@@ -1,3 +1,4 @@
+#include <moppe/terrain/editor.hh>
 #include <moppe/terrain/program.hh>
 
 #include <tests/test.hh>
@@ -154,6 +155,35 @@ MOPPE_TEST (transform_values_own_their_editable_descriptions) {
     terrain_transform_property (TerrainTransform { TrailFormation {} }, 2);
   MOPPE_CHECK (trail_property.label == "PATH WIDTH (M)");
   MOPPE_CHECK (trail_property.domain == ParameterDomain::Continuous);
+}
+
+MOPPE_TEST (terrain_program_editor_delegates_to_typed_transform_editors) {
+  TerrainProgram relief = make_geological_program (123);
+  relief.transforms.emplace_back (PowerHeights { 1.2f });
+  TerrainProgramEditor relief_editor (relief);
+  const int original_continent_waves =
+    relief.source.recipe.continent.noise.cycles;
+
+  MOPPE_CHECK (relief_editor.source ().property_count () == 9);
+  MOPPE_CHECK (relief_editor.set_source_normalized_property (0, 0.5f));
+  MOPPE_CHECK_NEAR (relief.source.recipe.warp.amplitude, 0.3f, 1e-6f);
+  MOPPE_CHECK (relief_editor.adjust_source_natural_property (1, 1));
+  MOPPE_CHECK (relief.source.recipe.continent.noise.cycles ==
+               original_continent_waves + 1);
+  MOPPE_CHECK (relief_editor.set_transform_normalized_property (1, 0, 0.5f));
+  MOPPE_CHECK_NEAR (
+    std::get<PowerHeights> (relief.transforms[1]).exponent, 2.05f, 1e-6f);
+
+  TerrainProgram orogeny = make_orogeny_program (123);
+  TerrainProgramEditor orogeny_editor (orogeny);
+  MOPPE_CHECK (orogeny_editor.set_transform_normalized_property (0, 7, 0.75f));
+  const auto& evolution = std::get<OrogenyEvolution> (orogeny.transforms[0]);
+  MOPPE_CHECK_NEAR (evolution.evolution.sea_level, 0.225f, 1e-6f);
+  MOPPE_CHECK_NEAR (orogeny.source.sea_level, 0.225f, 1e-6f);
+
+  const TerrainProgram& read_only_program = orogeny;
+  const TerrainProgramEditor read_only (read_only_program);
+  MOPPE_CHECK (read_only.transform (0).property (7).label == "SEA LEVEL");
 }
 
 MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {

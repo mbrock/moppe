@@ -1309,6 +1309,130 @@ namespace moppe::terrain {
     }
   }
 
+  float TrailFormation::normalized_property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return normalized_edit_value (
+        square_meters_value (minimum_catchment_area), 100.0f, 20000.0f);
+    case 1:
+      return normalized_edit_value (
+        square_meters_value (maximum_catchment_area), 20000.0f, 250000.0f);
+    case 2:
+      return normalized_edit_value (meters_value (width), 1.0f, 12.0f);
+    case 3:
+      return normalized_edit_value (meters_value (shoulder_blend), 0.0f, 20.0f);
+    case 4:
+      return normalized_edit_value (meters_value (maximum_cut), 0.0f, 5.0f);
+    case 5:
+      return normalized_edit_value (meters_value (maximum_fill), 0.0f, 5.0f);
+    case 6:
+      return normalized_edit_value (
+        maximum_grade.numerical_value_in (mp_units::one), 0.05f, 0.3f);
+    case 7:
+      return normalized_edit_value (
+        designed_grade.numerical_value_in (mp_units::one), 0.01f, 0.15f);
+    case 8:
+      return normalized_edit_value (
+        meters_value (home_base_water_distance), 20.0f, 250.0f);
+    case 9:
+      return normalized_edit_value (
+        meters_value (home_base_pad_radius), 8.0f, 45.0f);
+    case 10:
+      return normalized_edit_value (
+        meters_value (desired_circuit_radius), 250.0f, 1800.0f);
+    case 11:
+      return normalized_edit_value (
+        meters_value (highland_preference_height_above_sea), 80.0f, 320.0f);
+    case 12:
+      return normalized_edit_value (
+        meters_value (alpine_avoidance_height_above_sea), 160.0f, 380.0f);
+    case 13:
+      return normalized_edit_value (
+        crossfall.numerical_value_in (mp_units::one), 0.0f, 0.1f);
+    default:
+      invalid_trail_transform_property_index ();
+    }
+  }
+
+  bool TrailFormation::set_normalized_property (std::size_t index,
+                                                float value) {
+    switch (index) {
+    case 0:
+      return replace_edit_value (
+        minimum_catchment_area,
+        std::min (edited_value (value, 100.0f, 20000.0f),
+                  square_meters_value (maximum_catchment_area)) *
+          mp_units::si::metre * mp_units::si::metre);
+    case 1:
+      return replace_edit_value (
+        maximum_catchment_area,
+        std::max (edited_value (value, 20000.0f, 250000.0f),
+                  square_meters_value (minimum_catchment_area)) *
+          mp_units::si::metre * mp_units::si::metre);
+    case 2:
+      return replace_edit_value (
+        width, edited_value (value, 1.0f, 12.0f) * mp_units::si::metre);
+    case 3:
+      return replace_edit_value (shoulder_blend,
+                                 edited_value (value, 0.0f, 20.0f) *
+                                   mp_units::si::metre);
+    case 4:
+      return replace_edit_value (
+        maximum_cut, edited_value (value, 0.0f, 5.0f) * mp_units::si::metre);
+    case 5:
+      return replace_edit_value (
+        maximum_fill, edited_value (value, 0.0f, 5.0f) * mp_units::si::metre);
+    case 6:
+      return replace_edit_value (
+        maximum_grade,
+        std::max (edited_value (value, 0.05f, 0.3f),
+                  designed_grade.numerical_value_in (mp_units::one)) *
+          terrain_slope[mp_units::one]);
+    case 7:
+      return replace_edit_value (
+        designed_grade,
+        std::min (edited_value (value, 0.01f, 0.15f),
+                  maximum_grade.numerical_value_in (mp_units::one)) *
+          terrain_slope[mp_units::one]);
+    case 8:
+      return replace_edit_value (home_base_water_distance,
+                                 edited_value (value, 20.0f, 250.0f) *
+                                   mp_units::si::metre);
+    case 9:
+      return replace_edit_value (home_base_pad_radius,
+                                 edited_value (value, 8.0f, 45.0f) *
+                                   mp_units::si::metre);
+    case 10:
+      return replace_edit_value (desired_circuit_radius,
+                                 edited_value (value, 250.0f, 1800.0f) *
+                                   mp_units::si::metre);
+    case 11:
+      return replace_edit_value (
+        highland_preference_height_above_sea,
+        std::min (edited_value (value, 80.0f, 320.0f),
+                  meters_value (alpine_avoidance_height_above_sea)) *
+          mp_units::si::metre);
+    case 12:
+      return replace_edit_value (
+        alpine_avoidance_height_above_sea,
+        std::max (edited_value (value, 160.0f, 380.0f),
+                  meters_value (highland_preference_height_above_sea)) *
+          mp_units::si::metre);
+    case 13:
+      return replace_edit_value (crossfall,
+                                 edited_value (value, 0.0f, 0.1f) *
+                                   terrain_slope[mp_units::one]);
+    default:
+      invalid_trail_transform_property_index ();
+    }
+  }
+
+  bool TrailFormation::adjust_natural_property (std::size_t index, int) {
+    if (index >= property_count ())
+      invalid_trail_transform_property_index ();
+    return false;
+  }
+
   TrailNetwork analyze_trail_network (const TerrainView& terrain,
                                       const TrailFormation& parameters,
                                       const DrainageGraph& drainage,
