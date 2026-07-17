@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate per-function C++ complexity metrics as CSV."""
+"""Generate per-function C++ complexity metrics from a non-unity build."""
 
 import argparse
+import concurrent.futures
 import csv
 import json
 import os
@@ -15,6 +16,8 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build-homebrew"
+SOURCE_ROOTS = (ROOT / "moppe",)
+SOURCE_SUFFIXES = (".cc", ".cpp", ".mm")
 COGNITIVE_RE = re.compile(
     r"^(.*?):(\d+):\d+: warning: function '.*' has cognitive "
     r"complexity of (\d+) \(threshold 0\)"
@@ -40,6 +43,31 @@ def homebrew_llvm_prefix():
 
 def relative(path):
   return pathlib.Path(path).resolve().relative_to(ROOT).as_posix()
+
+
+def configure_analysis_build():
+  run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
+  cache = (BUILD / "CMakeCache.txt").read_text()
+  if ("MOPPE_UNITY_BUILD:BOOL=OFF" not in cache or
+      "BUILD_TESTING:BOOL=OFF" not in cache):
+    raise SystemExit(
+        "homebrew-llvm must be a non-unity, source-only analysis build; "
+        "remove build-homebrew and configure again")
+
+
+def write_metadata(output, sources):
+  metadata = {
+      "build_directory": relative(BUILD),
+      "configure_preset": "homebrew-llvm",
+      "unity_build": False,
+      "build_testing": False,
+      "source_roots": [relative(root) for root in SOURCE_ROOTS],
+      "source_suffixes": list(SOURCE_SUFFIXES),
+      "source_count": len(sources),
+  }
+  destination = output.with_name("complexity-metadata.json")
+  destination.write_text(json.dumps(metadata, indent=2) + "\n")
+  return destination
 
 
 def percentile(values, fraction):
@@ -69,17 +97,17 @@ def main():
 
   llvm = homebrew_llvm_prefix()
   clang_tidy = llvm / "bin/clang-tidy"
-  run_clang_tidy = llvm / "bin/run-clang-tidy"
-  if not clang_tidy.exists() or not run_clang_tidy.exists():
-    raise SystemExit(f"clang-tidy tools not found under {llvm}")
+  if not clang_tidy.exists():
+    raise SystemExit(f"clang-tidy not found under {llvm}")
 
-  run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
+  configure_analysis_build()
   commands = json.loads((BUILD / "compile_commands.json").read_text())
   sources = sorted({
       pathlib.Path(entry["file"]).resolve()
       for entry in commands
-      if pathlib.Path(entry["file"]).resolve().is_relative_to(ROOT / "moppe")
-      and pathlib.Path(entry["file"]).suffix in (".cc", ".cpp", ".mm")
+      if any(pathlib.Path(entry["file"]).resolve().is_relative_to(root)
+             for root in SOURCE_ROOTS)
+      and pathlib.Path(entry["file"]).suffix in SOURCE_SUFFIXES
   })
 
   with tempfile.TemporaryDirectory(prefix="moppe-complexity-") as tmp:
@@ -90,24 +118,31 @@ def main():
         *map(str, sources), "--csv", "-o", str(lizard_csv), "-i", "-1",
     ], cwd=ROOT)
 
-    tidy = run([
-        str(run_clang_tidy), "-p", str(BUILD), "-j", str(args.jobs),
-        "-clang-tidy-binary", str(clang_tidy),
+    tidy_command = [
+        str(clang_tidy), "-p", str(BUILD),
         "-checks=-*,readability-function-cognitive-complexity",
         "-config={CheckOptions: {readability-function-cognitive-complexity."
         "Threshold: 0, readability-function-cognitive-complexity."
-        "DescribeBasicIncrements: false}}",
-        r".*moppe/.*\.(cc|cpp|mm)$",
-    ], cwd=ROOT, text=True, stdout=subprocess.PIPE,
-       stderr=subprocess.STDOUT)
-    errors = [line for line in tidy.stdout.splitlines() if "error:" in line]
+        "DescribeBasicIncrements: false}}"
+    ]
+    print(f"+ clang-tidy {len(sources)} original source files", file=sys.stderr)
+
+    def analyze(source):
+      return subprocess.run(
+          [*tidy_command, str(source)], cwd=ROOT, text=True,
+          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+      tidy_results = list(pool.map(analyze, sources))
+    tidy_output = "\n".join(result.stdout for result in tidy_results)
+    errors = [line for line in tidy_output.splitlines() if "error:" in line]
     if errors:
       print("\n".join(errors[:20]), file=sys.stderr)
       raise SystemExit(
           f"clang-tidy reported {len(errors)} errors; report not written")
 
     cognitive = {}
-    for line in tidy.stdout.splitlines():
+    for line in tidy_output.splitlines():
       match = COGNITIVE_RE.match(line)
       if match:
         key = (relative(match.group(1)), int(match.group(2)))
@@ -140,7 +175,11 @@ def main():
     writer.writeheader()
     writer.writerows(rows)
 
+  metadata = write_metadata(args.output, sources)
   print(f"\nWrote {len(rows)} functions to {args.output}")
+  print("Analyzed moppe/ sources with the non-unity homebrew-llvm preset")
+  print(f"Build configuration: {BUILD}")
+  print(f"Source metadata: {metadata}")
   print("\nTop functions")
   print(f"{'cog':>4} {'cyc':>4} {'nloc':>5}  location  function")
   ranked = sorted(
