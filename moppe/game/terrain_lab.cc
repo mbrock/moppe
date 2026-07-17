@@ -1472,15 +1472,14 @@ namespace moppe {
                         repeat,
                         interactive_preview);
       if (m_model.map_pristine ()) {
-        m_renderer->set_terrain_paths (m_saved_trail_influence,
-                                       m_saved_home_base_influence);
+        m_path_presentation.reuse_path_payloads (m_saved_trail_influence,
+                                                 m_saved_home_base_influence);
       } else if (const auto& network = m_model.trail_network ()) {
-        m_renderer->set_terrain_paths (
-          terrain::expand_trail_influence (*network),
-          terrain::expand_home_base_influence (*network));
+        m_path_presentation.refresh_paths (*network);
       } else {
-        m_renderer->set_terrain_paths ({});
+        m_path_presentation.reuse_path_payloads ({}, {});
       }
+      m_path_presentation.upload_paths (*m_renderer);
       if (m_graphics->terrain_shadows)
         m_terrain->render_shadow (*m_renderer, *m_map, m_sun_dir);
       update_overlay ();

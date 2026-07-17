@@ -4,6 +4,7 @@
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
+#include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab_model.hh>
 #include <moppe/game/world.hh>
@@ -159,6 +160,7 @@ namespace moppe {
       const terrain::WorldRecipe* m_world_recipe;
       const GraphicsSettings* m_graphics;
       Vec3 m_sun_dir;
+      SurfacePresentation m_path_presentation;
       std::vector<float> m_saved_trail_influence;
       std::vector<float> m_saved_home_base_influence;
       const std::vector<std::vector<float>>* m_history;

@@ -13,7 +13,9 @@ namespace moppe::game {
   // for the renderer contract.
   class WaterPresentation {
   public:
-    void reset (render::OceanSetup ocean);
+    // The renderer's ocean setup is built here so that world assembly retains
+    // its physical datum and extent until the presentation boundary.
+    void reset (meters_t water_datum, const spatial_extent_t& world_extent);
     void refresh (const map::WaterSurface& water,
                   meters_t terrain_height_scale);
     void upload (render::Renderer& renderer) const;

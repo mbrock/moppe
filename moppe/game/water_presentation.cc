@@ -5,8 +5,17 @@
 #include <stdexcept>
 
 namespace moppe::game {
-  void WaterPresentation::reset (render::OceanSetup ocean) {
-    m_ocean = ocean;
+  namespace {
+    constexpr meters_t ocean_half_extent = 5500.0f * u::m;
+  }
+
+  void WaterPresentation::reset (meters_t water_datum,
+                                 const spatial_extent_t& world_extent) {
+    const Vec3& extent = extent_value (world_extent);
+    m_ocean.level = meters_value (water_datum);
+    m_ocean.center = Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2]);
+    m_ocean.half_extent = meters_value (ocean_half_extent);
+    m_ocean.cells = 300;
     m_levels.clear ();
     m_flow.clear ();
   }

@@ -359,6 +359,7 @@ add_library(moppe_game STATIC
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
   moppe/game/inspector_ui.cc
+  moppe/game/generated_world.cc
   moppe/game/terrain_lab_model.cc
   moppe/game/terrain_lab.cc
   moppe/game/forest.cc
@@ -458,6 +459,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
     tests/game/inspector_ui_test.cc
+    tests/game/generated_world_test.cc
     tests/game/terrain_lab_model_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc

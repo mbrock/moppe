@@ -1,6 +1,7 @@
 #include <moppe/game/surface_presentation.hh>
 
 #include <moppe/profile.hh>
+#include <moppe/terrain/trail.hh>
 
 namespace moppe::game {
   namespace {
@@ -12,6 +13,24 @@ namespace moppe::game {
         values.push_back (value.numerical_value_in (one));
       return values;
     }
+  }
+
+  void
+  SurfacePresentation::refresh_paths (const terrain::TrailNetwork& network) {
+    MOPPE_PROFILE_ZONE ("surface.materialize_trail_presentation");
+    reuse_path_payloads (terrain::expand_trail_influence (network),
+                         terrain::expand_home_base_influence (network));
+  }
+
+  void
+  SurfacePresentation::reuse_path_payloads (std::span<const float> trails,
+                                            std::span<const float> home_base) {
+    m_trails.assign (trails.begin (), trails.end ());
+    m_home_base.assign (home_base.begin (), home_base.end ());
+  }
+
+  void SurfacePresentation::upload_paths (render::Renderer& renderer) const {
+    renderer.set_terrain_paths (m_trails, m_home_base);
   }
 
   void SurfacePresentation::refresh (const map::Surface& surface) {
@@ -88,6 +107,6 @@ namespace moppe::game {
                                    : std::span<const float> ());
     renderer.set_terrain_snow_support (m_snow_support);
     renderer.set_terrain_channel_flux (m_channel_flux);
-    renderer.set_terrain_paths (m_trails, m_home_base);
+    upload_paths (renderer);
   }
 }

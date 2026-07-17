@@ -6,6 +6,10 @@ copyable checkpoint: restore a value, replay the same fixed-step inputs, and
 observe the same sequence of game states while rendering it under different
 graphics settings.
 
+`game::GeneratedWorld` now owns the stable renderer-free terrain, surface,
+water, and analysis artifacts outside that checkpoint; its construction and
+borrowing rules are documented in [Generated worlds](generated-world.md).
+
 `game::GameLogicState` currently gathers the game clock, derived weather and
 camera effects, player mode and inputs, health/fuel/scoring values, gameplay
 timers, and the effects random-number generator. `game::GameState` combines

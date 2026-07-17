@@ -15,8 +15,8 @@ turns them into renderer lanes.
 | --- | --- |
 | Continuous elevation and normal reads agree with the authoritative heightmap, including the periodic seam. | `surface_reconstruction_matches_bounded_heightmap_interpolation` and `surface_reconstruction_matches_periodic_seam_interpolation` in `tests/map/surface_test.cc` |
 | Mutating the heightmap does not change surface reads until `Surface::refresh`; refresh clears dependent materialized sections. | `surface_refresh_is_an_explicit_materialization_barrier` and `surface_presentation_is_the_numeric_bridge_for_typed_sections` in `tests/map/surface_test.cc` |
-| Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation. | The focused materialization tests in `tests/map/surface_test.cc` |
-| Ground and water use the same domain while retaining distinct section bundles. | `tests/map/water_surface_test.cc` |
+| Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation; a Terrain Lab rebuild uses that same path bridge. | The focused materialization tests, including `surface_presentation_materializes_preview_trails_at_the_bridge`, in `tests/map/surface_test.cc` |
+| Ground and water use the same domain while retaining distinct section bundles; water datum normalization and ocean setup happen only in `WaterPresentation`. | `tests/map/water_surface_test.cc` |
 
 ENG-010 and ENG-011 may change the concrete bundle and grouping mechanism, but
 not these sampling, refresh, and ownership contracts. ENG-012 owns any change
