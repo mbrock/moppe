@@ -21,6 +21,7 @@
 #include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/stars.hh>
+#include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
 #include <moppe/game/terrain_lab.hh>
 #include <moppe/game/tree_stand.hh>
@@ -931,7 +932,7 @@ namespace moppe {
           m_map.recompute_normals ();
         }
         {
-          MOPPE_PROFILE_ZONE ("startup.refresh_surface_bundle");
+          MOPPE_PROFILE_ZONE ("startup.refresh_surface_sections");
           m_surface.refresh (m_map);
         }
 
@@ -1039,35 +1040,19 @@ namespace moppe {
         // are staged here and flushed by upload_world_terrain after
         // set_terrain has run; the loading flow finishes setup before
         // the world terrain is uploaded.
-        render::OceanSetup& ocean = m_pending_surface.ocean;
+        render::OceanSetup& ocean = m_pending_terrain.ocean;
         ocean.level = meters_value (m_world.water_level);
         const Vec3& world_extent = extent_value (m_world.map_size);
         ocean.center = Vec3 (world_extent[0] / 2, 0, world_extent[2] / 2);
         ocean.half_extent = 5500.0f;
         ocean.cells = 300;
-        std::vector<float>& water_levels = m_pending_surface.water_levels;
-        std::vector<float>& water_flow = m_pending_surface.water_flow;
+        std::vector<float>& water_levels = m_pending_terrain.water_levels;
+        std::vector<float>& water_flow = m_pending_terrain.water_flow;
         water_levels.clear ();
         water_flow.clear ();
-        m_pending_surface.moisture.clear ();
-        m_pending_surface.geology.clear ();
-        m_pending_surface.shore.clear ();
-        m_pending_surface.trails.clear ();
-        m_pending_surface.home_base.clear ();
-        m_pending_surface.forest.clear ();
-        m_pending_surface.snow_support.clear ();
-        m_pending_surface.channel_flux.clear ();
-        {
-          MOPPE_PROFILE_ZONE ("startup.materialize_snow_support");
-          const auto& support =
-            spatial::get<map::snow_support> (m_surface.samples ());
-          m_pending_surface.snow_support.resize (support.size ());
-          std::ranges::transform (support,
-                                  m_pending_surface.snow_support.begin (),
-                                  [] (map::SnowSupport value) {
-                                    return value.numerical_value_in (one);
-                                  });
-        }
+        m_pending_terrain.moisture.clear ();
+        m_pending_terrain.geology.clear ();
+        m_pending_terrain.shore.clear ();
         if (m_channel_drainage) {
           // Direction times a log-compressed activity: the flux fades in a
           // few cells below a channelhead and saturates where accumulation
@@ -1109,8 +1094,7 @@ namespace moppe {
               flux[out] = tangent[0] * activity;
               flux[out + 1] = tangent[2] * activity;
             }
-          m_pending_surface.channel_flux = std::move (flux);
-          m_surface.materialize_channel_flux (m_pending_surface.channel_flux);
+          m_surface.materialize_channel_flux (flux);
         }
         if (m_standing_water && m_drainage && m_rivers) {
           // The complete waterscape painted onto the terrain lattice:
@@ -1163,7 +1147,7 @@ namespace moppe {
                 unique_shore[(static_cast<std::size_t> (y) % unique_height) *
                                unique_width +
                              static_cast<std::size_t> (x) % unique_width];
-          m_pending_surface.shore = std::move (shore);
+          m_pending_terrain.shore = std::move (shore);
         }
         if (m_standing_water && m_drainage) {
           // Ground moisture from the hydrology feeds terrain materials.
@@ -1184,11 +1168,11 @@ namespace moppe {
                 unique[(static_cast<std::size_t> (y) % unique_height) *
                          unique_width +
                        static_cast<std::size_t> (x) % unique_width];
-          m_pending_surface.moisture = std::move (expanded);
+          m_pending_terrain.moisture = std::move (expanded);
         }
-        if (!m_pending_surface.moisture.empty ()) {
+        if (!m_pending_terrain.moisture.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.derive_tree_habitat");
-          m_surface.derive_tree_habitat (m_pending_surface.moisture,
+          m_surface.derive_tree_habitat (m_pending_terrain.moisture,
                                          m_world.water_level,
                                          m_world.water_level + 145.0f * u::m);
         }
@@ -1233,13 +1217,10 @@ namespace moppe {
                   }
               }
             }
-            m_pending_surface.trails =
-              terrain::expand_trail_influence (*m_trail_network);
-            m_pending_surface.home_base =
-              terrain::expand_home_base_influence (*m_trail_network);
-            m_surface.materialize_trail_influence (m_pending_surface.trails);
+            m_surface.materialize_trail_influence (
+              terrain::expand_trail_influence (*m_trail_network));
             m_surface.materialize_home_base_influence (
-              m_pending_surface.home_base);
+              terrain::expand_home_base_influence (*m_trail_network));
             const auto& trail_parameters =
               std::get<terrain::TrailFormation> (*stage);
             const float sea_elevation =
@@ -1271,18 +1252,10 @@ namespace moppe {
           }
         }
 
-        if (!m_pending_surface.moisture.empty ()) {
+        if (!m_pending_terrain.moisture.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.derive_forest_cover");
           m_surface.derive_forest_cover (static_cast<std::uint32_t> (m_seed) ^
                                          0x6f12ad37U);
-          const auto& cover =
-            spatial::get<map::forest_cover> (m_surface.samples ());
-          m_pending_surface.forest.resize (cover.size ());
-          std::ranges::transform (cover,
-                                  m_pending_surface.forest.begin (),
-                                  [] (map::ForestCover value) {
-                                    return value.numerical_value_in (one);
-                                  });
         }
 
         {
@@ -1316,8 +1289,10 @@ namespace moppe {
             geology[2 * i + 1] =
               std::min (1.0f, m_map.raw_deposited ()[i] / deposited_scale);
           }
-          m_pending_surface.geology = std::move (geology);
+          m_pending_terrain.geology = std::move (geology);
         }
+
+        m_surface_presentation.refresh (m_surface);
 
         m_vehicle.set_water_level (m_world.water_level);
         m_car.set_water_level (m_world.water_level);
@@ -1421,32 +1396,25 @@ namespace moppe {
         // set_terrain has established the texture dimensions.
         {
           MOPPE_PROFILE_ZONE ("startup.upload_ocean_surface");
-          r.set_ocean (m_pending_surface.ocean, m_pending_surface.water_levels);
+          r.set_ocean (m_pending_terrain.ocean, m_pending_terrain.water_levels);
         }
         {
           MOPPE_PROFILE_ZONE ("startup.upload_water_flow");
-          r.set_water_flow (m_pending_surface.water_flow);
+          r.set_water_flow (m_pending_terrain.water_flow);
         }
-        if (!m_pending_surface.moisture.empty ()) {
+        if (!m_pending_terrain.moisture.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_moisture");
-          r.set_terrain_moisture (m_pending_surface.moisture);
+          r.set_terrain_moisture (m_pending_terrain.moisture);
         }
-        if (!m_pending_surface.geology.empty ()) {
+        if (!m_pending_terrain.geology.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_geology");
-          r.set_terrain_geology (m_pending_surface.geology);
+          r.set_terrain_geology (m_pending_terrain.geology);
         }
-        if (!m_pending_surface.shore.empty ()) {
+        if (!m_pending_terrain.shore.empty ()) {
           MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
-          r.set_terrain_shore (m_pending_surface.shore);
+          r.set_terrain_shore (m_pending_terrain.shore);
         }
-        if (!m_water_shot && !m_pending_surface.forest.empty ()) {
-          MOPPE_PROFILE_ZONE ("startup.upload_terrain_forest");
-          r.set_terrain_forest (m_pending_surface.forest);
-        }
-        r.set_terrain_snow_support (m_pending_surface.snow_support);
-        r.set_terrain_channel_flux (m_pending_surface.channel_flux);
-        r.set_terrain_paths (m_pending_surface.trails,
-                             m_pending_surface.home_base);
+        m_surface_presentation.upload (r, !m_water_shot);
       }
 
       void cast_world_shadows (render::Renderer& r) {
@@ -2369,8 +2337,8 @@ namespace moppe {
                                    m_world,
                                    m_graphics,
                                    lab_program (),
-                                   m_pending_surface.trails,
-                                   m_pending_surface.home_base,
+                                   m_surface_presentation.trails (),
+                                   m_surface_presentation.home_base (),
                                    m_terrain_history,
                                    sun_direction_for (m_graphics.sun_height));
               m_start_in_terrain_lab = false;
@@ -2710,8 +2678,8 @@ namespace moppe {
                                m_world,
                                m_graphics,
                                lab_program (),
-                               m_pending_surface.trails,
-                               m_pending_surface.home_base,
+                               m_surface_presentation.trails (),
+                               m_surface_presentation.home_base (),
                                m_terrain_history,
                                sun_direction_for (m_graphics.sun_height));
           return;
@@ -3083,6 +3051,7 @@ namespace moppe {
       map::RandomHeightMap m_map;
       map::RandomHeightMap m_loading_map;
       map::Surface m_surface;
+      SurfacePresentation m_surface_presentation;
       std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
       std::vector<std::vector<float>> m_terrain_history;
       std::mutex m_loading_mutex;
@@ -3115,19 +3084,14 @@ namespace moppe {
       Terrain m_terrain;
       // Surface data computed at finish_setup, uploaded once the terrain
       // textures exist (upload_world_terrain).
-      struct PendingSurfaceData {
+      struct PendingTerrainPresentation {
         render::OceanSetup ocean;
         std::vector<float> water_levels;
         std::vector<float> water_flow;
         std::vector<float> moisture;
         std::vector<float> geology;
         std::vector<float> shore;
-        std::vector<float> trails;
-        std::vector<float> home_base;
-        std::vector<float> forest;
-        std::vector<float> snow_support;
-        std::vector<float> channel_flux;
-      } m_pending_surface;
+      } m_pending_terrain;
       TerrainLab m_terrain_lab;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;

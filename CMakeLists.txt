@@ -333,12 +333,15 @@ endif()
 add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
   moppe/map/generate.cc
+  moppe/map/surface_domain.cc
   moppe/map/surface.cc
+  moppe/map/surface_ecology.cc
   moppe/map/terrain_evaluator.cc
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
+  moppe/game/surface_presentation.cc
   moppe/game/river_surface.cc
   moppe/game/water_capture.cc
   moppe/game/cinematic_flight.cc
