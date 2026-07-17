@@ -87,6 +87,56 @@ are read-only.
 mutation, frozen mover poses, shake behavior, cinematic/Terrain Lab selection,
 HUD and overlay snapshots, and flare-sightline readings.
 
+## Target graph
+
+The CMake graph follows the established ownership direction rather than source
+directory names alone. Arrows point from a target to the target it consumes:
+
+```mermaid
+flowchart LR
+  spatial["moppe_spatial"] --> units["mp-units"]
+  terrain["moppe_terrain"] --> spatial
+  world["moppe_world"] --> terrain
+  simulation["moppe_simulation"] --> world
+  scene["moppe_scene"] --> simulation
+  scene --> world
+  scene --> render["moppe_render"]
+  scene --> apple["moppe_apple"]
+  app["moppe_app"] --> scene
+  app --> mac["moppe_platform_mac"]
+  app --> ios["moppe_platform_ios"]
+  metal["moppe_metal"] --> render
+  terrain_metal["moppe_terrain_metal"] --> terrain
+  mac --> metal
+  mac --> terrain_metal
+  mac --> apple
+  ios --> metal
+  ios --> apple
+  desktop["moppe"] --> app
+  desktop --> mac
+  phone["moppe-ios"] --> app
+  phone --> ios
+```
+
+`moppe_spatial` is intentionally an interface target: its finite-section
+headers expose mp-units vocabulary but do not own a translation unit.
+`moppe_terrain` owns reusable fields, transforms, and hydrology algorithms;
+`moppe_world` adds a concrete heightmap, surface materialization,
+`GeneratedWorld`, the renderer-free Terrain Lab model, and inspection-camera
+selection. `moppe_simulation` owns `GameSession` and its movers. Its explicit
+dependency on `moppe_render` is currently real: session-owned Stars retain
+meshes and both Stars and Dust expose their presentation operations.
+
+`moppe_scene` composes `FrameView` and its focused world, actor, water,
+effect, and overlay presentation. It may use Apple-common asset and glyph
+services, but does not own an OS event loop or Metal backend. `moppe_app`
+holds the two host-service callers (`Terrain` and `TerrainLab`); terminal apps
+retain `game.cc` because it defines `main` and chooses the macOS or iOS host.
+Only the selected platform edge is present in any given build configuration.
+Terrain-only command-line tools depend on `moppe_world`, so they no longer
+pull the desktop platform merely because a unity archive contained unrelated
+scene code.
+
 ## Metal frame encoding
 
 `MetalRenderer` is a private backend facade, not a second renderer API or a
