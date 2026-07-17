@@ -454,7 +454,9 @@ namespace moppe {
           ::setenv ("MTL_CAPTURE_ENABLED", "1", 0);
 
         [NSApplication sharedApplication];
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+        [NSApp setActivationPolicy:config.activate
+                                     ? NSApplicationActivationPolicyRegular
+                                     : NSApplicationActivationPolicyAccessory];
 
         NSRect frame = NSMakeRect (0, 0, config.width, config.height);
         NSUInteger style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
@@ -492,13 +494,20 @@ namespace moppe {
 
         [delegate startDisplayLinkForView:view];
 
-        [window makeKeyAndOrderFront:nil];
-        [window makeFirstResponder:view];
-        window.acceptsMouseMovedEvents = YES;
-        [NSApp activateIgnoringOtherApps:YES];
-
-        if (config.fullscreen)
-          [window toggleFullScreen:nil];
+        if (config.activate) {
+          [window makeKeyAndOrderFront:nil];
+          [window makeFirstResponder:view];
+          window.acceptsMouseMovedEvents = YES;
+          [NSApp activateIgnoringOtherApps:YES];
+          if (config.fullscreen)
+            [window toggleFullScreen:nil];
+        } else {
+          // A visible, non-key window still receives CAMetalDrawables.  Do not
+          // activate screenshot and benchmark processes: a suite may launch
+          // dozens of them while somebody is using another application.
+          [window orderFront:nil];
+          std::cerr << "moppe: running without app activation" << std::endl;
+        }
 
         game.setup (
           *renderer, (int)view.bounds.size.width, (int)view.bounds.size.height);

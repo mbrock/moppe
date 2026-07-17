@@ -50,6 +50,7 @@ namespace moppe {
       int height = 800;
       bool fullscreen = false;
       bool capture_frames = false; // request blit-readable drawables
+      bool activate = true; // let automated runs stay behind the active app
     };
 
     // Continuous controls used by touch/gamepad-style platforms.  The

@@ -32,6 +32,8 @@
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;
     set `MOPPE_SEED` and `MOPPE_TERRAIN_PROFILE` for reproducible comparisons.
+  - Automated screenshots and graphics benchmarks keep their macOS windows
+    inactive, so repeated captures do not steal focus from the current app.
   - Partitioned hot-feature GPU benchmark (32 configurations):
     `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
