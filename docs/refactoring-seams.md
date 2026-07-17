@@ -65,20 +65,27 @@ the schedule through `advance_game_session` against one completed world.
 `game::FrameView` is the immutable presentation reading of a finished world
 frame. `MoppeGame` selects the active cinematic, Terrain Lab, inspection, or
 chase camera, then composes camera, lighting, weather, graphics choices,
-mode-specific visibility, benchmark coordinates, and value snapshots of the
-visible movers before encoding renderer parameters. It is not a scene graph
-and owns no renderer or platform type.
+mode-specific visibility, benchmark coordinates, mover poses, HUD values, and
+cinematic overlay readings before encoding renderer parameters. It is not a
+scene graph and owns no renderer or platform type.
 
 The view intentionally carries two camera readings: the unshaken body and
 culling direction used for terrain and forest selection, plus the shaken view
-basis in `FrameEnv` used by billboards. Rendering may read the completed world,
-session presentation resources, and the view, but does not advance simulation.
-The temporal lens-flare accumulator updates in `tick()` after the active camera
-advances; `compose_frame_view` and rendering are read-only.
+basis in `FrameEnv` used by billboards. `FrameHud` and `FrameOverlay` freeze
+every gameplay-HUD, trail-map, and cinematic-prompt value alongside those
+camera and mover readings.
+
+After application-state selection and capture requests, `MoppeGame::render`
+encodes `FrameParams` and delegates the ready-world frame in explicit order:
+world, actors, water surfaces, effects, then overlays. Each routine receives
+the same `FrameView`; only `Stars` and `Dust` remain read-only session
+presentation resources. The temporal lens-flare accumulator updates in
+`tick()` after the active camera advances; `compose_frame_view` and rendering
+are read-only.
 
 `tests/game/frame_view_test.cc` owns the pure-composition contract: no session
 mutation, frozen mover poses, shake behavior, cinematic/Terrain Lab selection,
-and flare-sightline readings.
+HUD and overlay snapshots, and flare-sightline readings.
 
 ## Completed-world smoke path
 

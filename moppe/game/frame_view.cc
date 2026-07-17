@@ -256,12 +256,53 @@ namespace moppe::game {
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera = logic.m_cam_mode == CAM_HELMET;
 
+    FrameHud& hud = result.hud;
+    hud.speed_kmh = input.session.subject_speed_kmh ();
+    hud.fuel = logic.m_fuel;
+    if (logic.m_mode == M_GLIDER) {
+      const float lift =
+        input.session.glider ().air_mass_lift ().numerical_value_in (u::m /
+                                                                     u::s);
+      hud.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
+      hud.vertical_speed_mps =
+        input.session.glider ().vertical_speed ().numerical_value_in (u::m /
+                                                                      u::s);
+    } else {
+      hud.boost_ready01 = logic.m_mode == M_FOOT
+                            ? 1.0f
+                            : input.session.active_vehicle ().boost_charge ();
+    }
+    hud.health01 = logic.m_health / 100.0f;
+    hud.odometer_m = static_cast<float> (logic.m_odometer);
+    hud.lives = logic.m_lives;
+    hud.stars = input.session.stars ().collected ();
+    hud.score = logic.m_score;
+    hud.airtime_s = logic.m_jump_airtime;
+    hud.landed_airtime_s = logic.m_landed_airtime;
+    hud.landed_points = logic.m_landed_points;
+    hud.landed_age_s = logic.m_landed_age;
+    hud.on_foot = logic.m_mode == M_FOOT;
+    hud.gliding = logic.m_mode == M_GLIDER;
+    hud.can_deploy_glider = input.session.can_deploy_glider (input.terrain);
+    hud.frame_time_s = logic.m_frame_time;
+    hud.subject_position = input.session.subject_position ();
+    hud.subject_heading = input.session.subject_heading ();
+    hud.heading_radians =
+      std::atan2 (hud.subject_heading[0], hud.subject_heading[2]);
+
     if (cinematic)
       result.motion_blur_amount = input.cinematic_motion_blur;
     else if (!terrain_lab) {
       const float kmh = input.session.subject_speed_kmh ();
       result.motion_blur_amount =
         std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
+    }
+
+    if (cinematic) {
+      result.overlay.cinematic_prompt_alpha = std::clamp (
+        1.0f - std::max (0.0f, input.cinematic_elapsed - 4.0f) / 2.0f,
+        0.0f,
+        0.72f);
     }
 
     const float fog = attenuation_value (input.world.fog_scale);

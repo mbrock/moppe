@@ -71,6 +71,36 @@ namespace moppe::game {
     bool helmet_camera = false;
   };
 
+  // Renderer-free readings for the compact driving HUD. They deliberately
+  // mirror the HUD's value inputs without importing its DrawList dependency
+  // into FrameView. The trail map needs the unprojected subject reading too.
+  struct FrameHud {
+    float speed_kmh = 0.0f;
+    float fuel = 100.0f;
+    float boost_ready01 = 1.0f;
+    float health01 = 1.0f;
+    float odometer_m = 0.0f;
+    int lives = 10;
+    int stars = 0;
+    int score = 0;
+    float airtime_s = 0.0f;
+    float landed_airtime_s = 0.0f;
+    int landed_points = 0;
+    float landed_age_s = 10.0f;
+    bool on_foot = false;
+    bool gliding = false;
+    bool can_deploy_glider = false;
+    float vertical_speed_mps = 0.0f;
+    float frame_time_s = 1.0f / 60.0f;
+    float heading_radians = 0.0f;
+    Vec3 subject_position {};
+    Vec3 subject_heading { 0, 0, 1 };
+  };
+
+  struct FrameOverlay {
+    float cinematic_prompt_alpha = 0.0f;
+  };
+
   // These flags retain the existing render paragraphs' selection decisions.
   // Their values are plain frame data, so a later presenter need not query
   // mutable application mode while encoding commands.
@@ -157,6 +187,8 @@ namespace moppe::game {
     FrameEnv environment {};
     FrameGraphics graphics {};
     FrameActors actors {};
+    FrameHud hud {};
+    FrameOverlay overlay {};
     FrameVisibility visibility {};
     float terrain_distance = 0.0f;
     float motion_blur_amount = 0.0f;
@@ -179,6 +211,7 @@ namespace moppe::game {
     float landscape_scale_x = 1.0f;
     float landscape_scale_y = 1.0f;
     float cinematic_motion_blur = 0.0f;
+    float cinematic_elapsed = 0.0f;
     FrameBenchmarkTag benchmark {};
   };
 

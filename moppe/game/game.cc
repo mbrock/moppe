@@ -730,7 +730,9 @@ namespace moppe {
 
       void draw_trail_map (render::DrawList& dl,
                            int width_pts,
-                           int height_pts) const {
+                           int height_pts,
+                           const Vec3& subject,
+                           Vec3 heading) const {
         if (!trail_network () || width_pts < 480 || height_pts < 360)
           return;
         const terrain::TerrainGrid& grid = trail_network ()->source_grid;
@@ -821,7 +823,6 @@ namespace moppe {
         dl.vertex (home_map[0] - 3.0f, home_map[1] + 3.0f);
         dl.end ();
 
-        const Vec3 subject = subject_position ();
         const Vec3 relative_subject (
           wrap_delta (subject[0] - home_x, period_x),
           0,
@@ -831,7 +832,6 @@ namespace moppe {
           std::clamp (player[0], map_x + 5.0f, map_x + map_size - 5.0f);
         player[1] =
           std::clamp (player[1], map_y + 5.0f, map_y + map_size - 5.0f);
-        Vec3 heading = subject_heading ();
         heading[1] = 0.0f;
         if (length2 (heading) < 1e-5f)
           heading = Vec3 (0, 0, 1);
@@ -1353,100 +1353,70 @@ namespace moppe {
 
       // -- rendering ---------------------------------------------------
 
-      void render (render::Renderer& r) override {
-        MOPPE_PROFILE_FRAME ();
-        MOPPE_PROFILE_ZONE ("MoppeGame::render");
-        if (!m_ready) {
-          render_loading (r);
-          return;
-        }
-        if (logic ().m_game_over) {
-          render_game_over (r);
-          return;
-        }
+      static render::FrameParams frame_params_for (const FrameView& frame) {
+        render::FrameParams params;
+        params.view = frame.camera.view;
+        params.proj = frame.camera.projection;
+        params.camera_pos = frame.camera.position;
+        params.cam_right = frame.camera.right;
+        params.cam_up = frame.camera.up;
+        params.cam_forward = frame.camera.frame_forward;
+        params.clear_color = frame.lighting.clear_color;
+        params.fog_scale = attenuation_value (frame.lighting.fog_scale);
+        params.sun_dir = frame.lighting.sun_direction;
+        params.sun_diffuse = frame.lighting.sun_diffuse;
+        params.sun_specular = frame.lighting.sun_specular;
+        params.ambient = frame.lighting.ambient;
+        params.exposure_bias = frame.lighting.exposure_bias;
+        params.time = frame.lighting.time;
+        params.sun_visibility = frame.lighting.sun_visibility;
+        params.scene_scale = frame.graphics.scene_scale;
+        params.render_scale_override = frame.graphics.render_scale_override;
+        params.bloom = frame.graphics.bloom;
+        params.auto_exposure = frame.graphics.auto_exposure;
+        params.lens_flare = frame.graphics.lens_flare;
+        params.profile = true;
+        params.benchmark_mask = frame.benchmark.mask;
+        params.benchmark_partition_mask = frame.benchmark.partition_mask;
+        params.benchmark_epoch = frame.benchmark.epoch;
+        params.benchmark_frame = frame.benchmark.logical_frame;
+        params.benchmark_measured = frame.benchmark.measured;
+        return params;
+      }
 
-        const float aspect =
-          (float)r.width_pts () / std::max (1, r.height_pts ());
-        const FrameView frame = compose_frame_view (frame_view_input (aspect));
+      static HudState hud_state_for (const FrameHud& reading) {
+        HudState state;
+        state.speed_kmh = reading.speed_kmh;
+        state.fuel = reading.fuel;
+        state.boost_ready01 = reading.boost_ready01;
+        state.health01 = reading.health01;
+        state.odometer_m = reading.odometer_m;
+        state.lives = reading.lives;
+        state.stars = reading.stars;
+        state.score = reading.score;
+        state.airtime_s = reading.airtime_s;
+        state.landed_airtime_s = reading.landed_airtime_s;
+        state.landed_points = reading.landed_points;
+        state.landed_age_s = reading.landed_age_s;
+        state.on_foot = reading.on_foot;
+        state.gliding = reading.gliding;
+        state.can_deploy_glider = reading.can_deploy_glider;
+        state.vertical_speed_mps = reading.vertical_speed_mps;
+        state.frame_time_s = reading.frame_time_s;
+        state.heading_radians = reading.heading_radians;
+        return state;
+      }
+
+      void draw_world_layers (render::Renderer& r, const FrameView& frame) {
         const FrameVisibility& visibility = frame.visibility;
-        const bool terrain_lab = visibility.terrain_lab;
-        const bool cinematic = visibility.cinematic;
-        const Vec3& cam = frame.camera.position;
-
-        render::FrameParams fp;
-        fp.view = frame.camera.view;
-        fp.proj = frame.camera.projection;
-        fp.camera_pos = frame.camera.position;
-        fp.cam_right = frame.camera.right;
-        fp.cam_up = frame.camera.up;
-        fp.cam_forward = frame.camera.frame_forward;
-        fp.clear_color = frame.lighting.clear_color;
-        fp.fog_scale = attenuation_value (frame.lighting.fog_scale);
-        fp.sun_dir = frame.lighting.sun_direction;
-        fp.sun_diffuse = frame.lighting.sun_diffuse;
-        fp.sun_specular = frame.lighting.sun_specular;
-        fp.ambient = frame.lighting.ambient;
-        fp.exposure_bias = frame.lighting.exposure_bias;
-        fp.time = frame.lighting.time;
-        fp.sun_visibility = frame.lighting.sun_visibility;
-        fp.scene_scale = frame.graphics.scene_scale;
-        fp.render_scale_override = frame.graphics.render_scale_override;
-        fp.bloom = frame.graphics.bloom;
-        fp.auto_exposure = frame.graphics.auto_exposure;
-        fp.lens_flare = frame.graphics.lens_flare;
-        fp.profile = true;
-        fp.benchmark_mask = frame.benchmark.mask;
-        fp.benchmark_partition_mask = frame.benchmark.partition_mask;
-        fp.benchmark_epoch = frame.benchmark.epoch;
-        fp.benchmark_frame = frame.benchmark.logical_frame;
-        fp.benchmark_measured = frame.benchmark.measured;
-
-        static const int screenshot_delay = [] {
-          if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
-            return std::max (1, ::atoi (frames));
-          return 30;
-        }();
-        const bool captured = !m_screenshot_path.empty () &&
-                              ++m_screenshot_frames >= screenshot_delay;
-        bool captured_cinematic = false;
-        if (cinematic) {
-          if (const char* directory =
-                ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
-            if (m_cinematic_capture_frame < cinematic_capture_frame_limit ()) {
-              if (m_cinematic_capture_frame == 0)
-                std::filesystem::create_directories (directory);
-              std::ostringstream path;
-              path << directory << "/frame-" << std::setfill ('0')
-                   << std::setw (5) << m_cinematic_capture_frame++ << ".png";
-              r.request_screenshot (path.str ());
-              captured_cinematic = true;
-            }
-          }
-        }
-        if (captured) {
-          if (m_water_inspection)
-            std::cerr << "water screenshot camera: eye="
-                      << session ().camera ().position ()
-                      << " target=" << m_water_inspection->target << '\n';
-          if (m_tree_demo)
-            std::cerr << "tree screenshot camera: eye="
-                      << session ().camera ().position ()
-                      << " target=" << m_tree_stand.grove ().camera_target
-                      << '\n';
-          r.request_screenshot (m_screenshot_path);
-        }
-        if (!r.begin_frame (fp))
-          return;
-
-        const FrameEnv& env = frame.environment;
-
+        const Vec3& camera = frame.camera.position;
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = frame.lighting.time;
           sky.sun_height = frame.lighting.sun_height;
           // A world-shaping overview should keep the game world's moving sky,
           // without letting a passing front hide the land being edited.
-          sky.cloudiness = terrain_lab
+          sky.cloudiness = visibility.terrain_lab
                              ? std::min (frame.lighting.cloudiness, 0.35f)
                              : frame.lighting.cloudiness;
           sky.sun_dir = frame.lighting.sun_direction;
@@ -1455,14 +1425,15 @@ namespace moppe {
         };
 
         // At this extreme altitude, drawing the far-plane dome after terrain
-        // exposes depth precision at the horizon.  Paint it first in the lab;
-        // terrain then covers it deterministically.  Gameplay retains the
+        // exposes depth precision at the horizon. Paint it first in the lab;
+        // terrain then covers it deterministically. Gameplay retains the
         // cheaper depth-culled order below.
         if (visibility.sky_before_terrain)
           draw_world_sky ();
 
         // Terrain first, chunk-culled to the haze horizon.
-        m_terrain.render (r, cam, frame.camera.forward, frame.terrain_distance);
+        m_terrain.render (
+          r, camera, frame.camera.forward, frame.terrain_distance);
 
         // Sky AFTER the terrain: depth testing kills the expensive
         // cloud shader wherever terrain covers it.
@@ -1470,76 +1441,84 @@ namespace moppe {
           draw_world_sky ();
 
         if (visibility.forest)
-          m_forest.draw (r, cam, frame.camera.forward);
+          m_forest.draw (r, camera, frame.camera.forward);
 
         if (visibility.tree_stand)
           m_tree_stand.draw (r);
+      }
 
-        if (visibility.actors) {
-          // The world draw list, in the GL build's draw order.  Terrain lab
-          // deliberately hides every placed object so generator differences are
-          // not confused with stale actor positions.
-          m_world_dl.clear ();
-          const FrameActors& actors = frame.actors;
+      void draw_actor_layers (render::Renderer& r, const FrameView& frame) {
+        const FrameVisibility& visibility = frame.visibility;
+        if (!visibility.actors)
+          return;
 
-          // Soft blob shadows under the movers.
-          draw_home_base_marker (m_world_dl);
-          m_blob.draw (m_world_dl, map (), actors.bike.position, 2.2f);
-          if (actors.car)
-            m_blob.draw (m_world_dl, map (), actors.car->position, 2.9f);
-          if (actors.walker)
-            m_blob.draw (m_world_dl,
-                         map (),
-                         actors.walker->position + Vec3 (0, 0.5f, 0),
-                         0.8f);
-          if (actors.glider)
-            m_blob.draw (m_world_dl, map (), actors.glider->position, 3.4f);
+        // The world draw list, in the GL build's draw order. Terrain Lab
+        // deliberately hides every placed object so generator differences are
+        // not confused with stale actor positions.
+        m_world_dl.clear ();
+        const FrameActors& actors = frame.actors;
 
-          // In helmet cam you ARE the rider: don't draw yourself.
-          const bool helmet = actors.helmet_camera;
-          if (!(helmet && actors.active_mode == M_BIKE))
-            render_vehicle (r,
-                            m_world_dl,
-                            actors.bike,
-                            frame.lighting.time,
-                            actors.visual_scale);
-          if (actors.car && !(helmet && actors.active_mode == M_CAR))
-            render_vehicle (r,
-                            m_world_dl,
-                            *actors.car,
-                            frame.lighting.time,
-                            actors.visual_scale);
-          if (actors.walker && !helmet)
-            render_walker (m_world_dl,
-                           *actors.walker,
-                           frame.lighting.time,
-                           actors.visual_scale);
-          if (actors.glider && !helmet)
-            render_glider (m_world_dl,
-                           *actors.glider,
-                           frame.lighting.time,
-                           actors.visual_scale);
+        // Soft blob shadows under the movers.
+        draw_home_base_marker (m_world_dl);
+        m_blob.draw (m_world_dl, map (), actors.bike.position, 2.2f);
+        if (actors.car)
+          m_blob.draw (m_world_dl, map (), actors.car->position, 2.9f);
+        if (actors.walker)
+          m_blob.draw (m_world_dl,
+                       map (),
+                       actors.walker->position + Vec3 (0, 0.5f, 0),
+                       0.8f);
+        if (actors.glider)
+          m_blob.draw (m_world_dl, map (), actors.glider->position, 3.4f);
 
-          r.draw_list (m_world_dl);
+        // In helmet cam you ARE the rider: don't draw yourself.
+        const bool helmet = actors.helmet_camera;
+        if (!(helmet && actors.active_mode == M_BIKE))
+          render_vehicle (r,
+                          m_world_dl,
+                          actors.bike,
+                          frame.lighting.time,
+                          actors.visual_scale);
+        if (actors.car && !(helmet && actors.active_mode == M_CAR))
+          render_vehicle (r,
+                          m_world_dl,
+                          *actors.car,
+                          frame.lighting.time,
+                          actors.visual_scale);
+        if (actors.walker && !helmet)
+          render_walker (m_world_dl,
+                         *actors.walker,
+                         frame.lighting.time,
+                         actors.visual_scale);
+        if (actors.glider && !helmet)
+          render_glider (m_world_dl,
+                         *actors.glider,
+                         frame.lighting.time,
+                         actors.visual_scale);
 
-          // Additive glow after the solid list, so it blends over
-          // everything already drawn: exhaust and jump-jet flames, then
-          // the star pickups' halos.
-          if (visibility.vehicle_effects &&
-              !(helmet && actors.active_mode == M_BIKE))
-            render_vehicle_flames (
-              r, actors.bike, frame.lighting.time, actors.visual_scale);
-          if (visibility.vehicle_effects && actors.car &&
-              !(helmet && actors.active_mode == M_CAR))
-            render_vehicle_flames (
-              r, *actors.car, frame.lighting.time, actors.visual_scale);
-          if (visibility.star_effects)
-            session ().stars ().render (r, env);
-        }
+        r.draw_list (m_world_dl);
 
-        // The lab keeps the game's painted water while the map is the
-        // game's own; a rebuilt map invalidates the water sheets, so
-        // they disappear until the lab's own analysis draws ribbons.
+        // Additive glow after the solid list, so it blends over everything
+        // already drawn: exhaust and jump-jet flames, then star halos.
+        if (visibility.vehicle_effects &&
+            !(helmet && actors.active_mode == M_BIKE))
+          render_vehicle_flames (
+            r, actors.bike, frame.lighting.time, actors.visual_scale);
+        if (visibility.vehicle_effects && actors.car &&
+            !(helmet && actors.active_mode == M_CAR))
+          render_vehicle_flames (
+            r, *actors.car, frame.lighting.time, actors.visual_scale);
+        if (visibility.star_effects)
+          session ().stars ().render (r, frame.environment);
+      }
+
+      void draw_water_surfaces (render::Renderer& r, const FrameView& frame) {
+        const FrameVisibility& visibility = frame.visibility;
+        const Vec3& camera = frame.camera.position;
+
+        // The lab keeps the game's painted water while the map is the game's
+        // own; a rebuilt map invalidates the water sheets, so they disappear
+        // until the lab's own analysis draws ribbons.
         if (visibility.ocean) {
           render::OceanParams ocean;
           ocean.time = frame.lighting.time;
@@ -1549,8 +1528,8 @@ namespace moppe {
             const Vec3& world_extent = extent_value (world ().map_size);
             const Vec3 center (
               0.5f * world_extent[0], 0, 0.5f * world_extent[2]);
-            ocean.world_offset[0] = cam[0] - center[0];
-            ocean.world_offset[2] = cam[2] - center[2];
+            ocean.world_offset[0] = camera[0] - center[0];
+            ocean.world_offset[2] = camera[2] - center[2];
           }
           r.draw_ocean (ocean);
         }
@@ -1559,37 +1538,43 @@ namespace moppe {
         // visible surface, rather than paying for fragments hidden beneath a
         // lake or the sea, and retain a clean current layer through mouths.
         if (visibility.terrain_lab_rivers)
-          m_terrain_lab.render_rivers (r, cam);
+          m_terrain_lab.render_rivers (r, camera);
         else if (visibility.river_ribbons)
-          m_river_surface.draw (r, cam);
+          m_river_surface.draw (r, camera);
+      }
+
+      void draw_effect_layers (render::Renderer& r, const FrameView& frame) {
+        const FrameVisibility& visibility = frame.visibility;
 
         // Dust last so spray sits atop every water surface.
-        if (visibility.dust) {
+        if (visibility.dust)
           session ().dust ().render (r);
-        }
 
         // Post effects.
         if (visibility.underwater)
           r.apply_underwater (frame.lighting.time);
         if (visibility.motion_blur)
           r.apply_motion_blur (frame.motion_blur_amount);
+      }
+
+      void draw_overlays (render::Renderer& r, const FrameView& frame) {
+        const FrameVisibility& visibility = frame.visibility;
 
         // HUD, kept inside the safe area (notch / home indicator).
         m_hud_dl.clear ();
-        const platform::Insets si = platform::safe_insets ();
-        m_hud_dl.translate (si.left, si.top, 0);
-        const int hud_width = r.width_pts () - (int)(si.left + si.right);
-        const int hud_height = r.height_pts () - (int)(si.top + si.bottom);
+        const platform::Insets safe_insets = platform::safe_insets ();
+        m_hud_dl.translate (safe_insets.left, safe_insets.top, 0);
+        const int hud_width =
+          r.width_pts () - (int)(safe_insets.left + safe_insets.right);
+        const int hud_height =
+          r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
         if (visibility.terrain_lab_hud) {
           m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
         } else if (visibility.cinematic_hud) {
           if (m_loading_font && m_loading_font->ok ()) {
             const std::string prompt = "SPACE TO RIDE";
-            const float alpha = std::clamp (
-              1.0f - std::max (0.0f, m_cinematic.elapsed () - 4.0f) / 2.0f,
-              0.0f,
-              0.72f);
-            m_hud_dl.color (0.91f, 1.0f, 0.92f, alpha);
+            m_hud_dl.color (
+              0.91f, 1.0f, 0.92f, frame.overlay.cinematic_prompt_alpha);
             m_loading_font->draw (m_hud_dl,
                                   hud_width - m_loading_font->measure (prompt) -
                                     28.0f,
@@ -1597,41 +1582,13 @@ namespace moppe {
                                   prompt);
           }
         } else if (visibility.game_hud) {
-          HudState hs;
-          hs.speed_kmh = subject_speed_kmh ();
-          hs.fuel = logic ().m_fuel;
-          if (frame.actors.active_mode == M_GLIDER) {
-            const float lift =
-              session ().glider ().air_mass_lift ().numerical_value_in (u::m /
-                                                                        u::s);
-            hs.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
-          } else {
-            hs.boost_ready01 = (frame.actors.active_mode == M_FOOT)
-                                 ? 1.0f
-                                 : active_vehicle ().boost_charge ();
-          }
-          hs.health01 = logic ().m_health / 100.0f;
-          hs.odometer_m = (float)logic ().m_odometer;
-          hs.lives = logic ().m_lives;
-          hs.stars = session ().stars ().collected ();
-          hs.score = logic ().m_score;
-          hs.airtime_s = logic ().m_jump_airtime;
-          hs.landed_airtime_s = logic ().m_landed_airtime;
-          hs.landed_points = logic ().m_landed_points;
-          hs.landed_age_s = logic ().m_landed_age;
-          hs.on_foot = (frame.actors.active_mode == M_FOOT);
-          hs.gliding = (frame.actors.active_mode == M_GLIDER);
-          hs.can_deploy_glider = can_deploy_glider ();
-          hs.vertical_speed_mps =
-            frame.actors.active_mode == M_GLIDER
-              ? session ().glider ().vertical_speed ().numerical_value_in (
-                  u::m / u::s)
-              : 0.0f;
-          hs.frame_time_s = logic ().m_frame_time;
-          const Vec3 heading = subject_heading ();
-          hs.heading_radians = std::atan2 (heading[0], heading[2]);
-          m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
-          draw_trail_map (m_hud_dl, hud_width, hud_height);
+          const HudState hud_state = hud_state_for (frame.hud);
+          m_hud.draw (m_hud_dl, hud_state, hud_width, hud_height);
+          draw_trail_map (m_hud_dl,
+                          hud_width,
+                          hud_height,
+                          frame.hud.subject_position,
+                          frame.hud.subject_heading);
           if (m_game_ui_open) {
             if (!m_game_ui_window_positioned) {
               m_game_ui_window.set_position (
@@ -1690,6 +1647,69 @@ namespace moppe {
         // Even a clean inspection capture needs this empty HUD pass: it is
         // also the final post-chain composite into the drawable.
         r.draw_hud (m_hud_dl);
+      }
+
+      void render (render::Renderer& r) override {
+        MOPPE_PROFILE_FRAME ();
+        MOPPE_PROFILE_ZONE ("MoppeGame::render");
+        if (!m_ready) {
+          render_loading (r);
+          return;
+        }
+        if (logic ().m_game_over) {
+          render_game_over (r);
+          return;
+        }
+
+        const float aspect =
+          (float)r.width_pts () / std::max (1, r.height_pts ());
+        const FrameView frame = compose_frame_view (frame_view_input (aspect));
+        const bool cinematic = frame.visibility.cinematic;
+
+        static const int screenshot_delay = [] {
+          if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
+            return std::max (1, ::atoi (frames));
+          return 30;
+        }();
+        const bool captured = !m_screenshot_path.empty () &&
+                              ++m_screenshot_frames >= screenshot_delay;
+        bool captured_cinematic = false;
+        if (cinematic) {
+          if (const char* directory =
+                ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
+            if (m_cinematic_capture_frame < cinematic_capture_frame_limit ()) {
+              if (m_cinematic_capture_frame == 0)
+                std::filesystem::create_directories (directory);
+              std::ostringstream path;
+              path << directory << "/frame-" << std::setfill ('0')
+                   << std::setw (5) << m_cinematic_capture_frame++ << ".png";
+              r.request_screenshot (path.str ());
+              captured_cinematic = true;
+            }
+          }
+        }
+        if (captured) {
+          if (m_water_inspection)
+            std::cerr << "water screenshot camera: eye="
+                      << session ().camera ().position ()
+                      << " target=" << m_water_inspection->target << '\n';
+          if (m_tree_demo)
+            std::cerr << "tree screenshot camera: eye="
+                      << session ().camera ().position ()
+                      << " target=" << m_tree_stand.grove ().camera_target
+                      << '\n';
+          r.request_screenshot (m_screenshot_path);
+        }
+        if (!r.begin_frame (frame_params_for (frame)))
+          return;
+
+        draw_world_layers (r, frame);
+        draw_actor_layers (r, frame);
+
+        draw_water_surfaces (r, frame);
+        draw_effect_layers (r, frame);
+
+        draw_overlays (r, frame);
 
         r.end_frame ();
         if (captured) {
@@ -2166,6 +2186,7 @@ namespace moppe {
           .landscape_scale_y = m_landscape_scale_y,
           .cinematic_motion_blur =
             cinematic ? m_cinematic.motion_blur () : 0.0f,
+          .cinematic_elapsed = cinematic ? m_cinematic.elapsed () : 0.0f,
           .benchmark = benchmark,
         };
       }
@@ -2240,24 +2261,12 @@ namespace moppe {
         platform::set_window_title (title.str ());
       }
 
-      mov::Vehicle& active_vehicle () {
-        return session ().active_vehicle ();
-      }
-
       Vec3 subject_position () const {
         return session ().subject_position ();
       }
 
       Vec3 subject_heading () const {
         return session ().subject_heading ();
-      }
-
-      float subject_speed_kmh () const {
-        return session ().subject_speed_kmh ();
-      }
-
-      bool can_deploy_glider () const {
-        return session ().can_deploy_glider (map ());
       }
 
       void leave_cinematic () {
