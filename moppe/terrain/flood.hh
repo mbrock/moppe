@@ -49,6 +49,15 @@ namespace moppe::terrain {
     CellIndex outlet_cell;
     CellIndex spill_cell;
     WaterBodyClass classification;
+    // Largest distance from any member cell to the shore: half the flooded
+    // width at the body's widest point. Size classes cannot tell a flooded
+    // channel segment from a lake; this shape reading can.
+    meters_t inradius;
+    // A permanent body narrow enough for the river ribbon to own: flooded
+    // channel water rather than a standing lake. The sheet renderer's
+    // one-flat-level-per-body model terraces such bodies into plates, while
+    // a ribbon renders them as pools of the river that flows through them.
+    bool channel_like;
   };
 
   struct LakeCensus {
