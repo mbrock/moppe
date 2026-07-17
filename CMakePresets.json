@@ -9,12 +9,14 @@
     {
       "name": "homebrew-llvm",
       "displayName": "Homebrew LLVM (macOS)",
-      "description": "Configure with Homebrew LLVM and export compile commands.",
+      "description": "Configure a non-unity Homebrew LLVM analysis build and export compile commands.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build-homebrew",
       "toolchainFile": "${sourceDir}/cmake/toolchains/homebrew-llvm.cmake",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "MOPPE_UNITY_BUILD": "OFF",
+        "BUILD_TESTING": "OFF"
       }
     },
     {

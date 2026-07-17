@@ -1,6 +1,7 @@
 #ifndef MOPPE_TERRAIN_EROSION_HH
 #define MOPPE_TERRAIN_EROSION_HH
 
+#include <moppe/quantities.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
