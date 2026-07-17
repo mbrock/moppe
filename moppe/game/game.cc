@@ -3333,7 +3333,8 @@ int main (int argc, char** argv) {
       water_shot = game::parse_water_shot (feature);
       if (!water_shot) {
         std::cerr << "unknown water feature: " << feature
-                  << " (use river, confluence, mouth, waterfall, or lake)\n";
+                  << " (use stream, river, confluence, mouth, waterfall, "
+                     "or lake)\n";
         return -1;
       }
       screenshot_path = argv[++i];

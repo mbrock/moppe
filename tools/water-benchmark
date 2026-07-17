@@ -1,0 +1,365 @@
+#!/usr/bin/env python3
+"""Capture and report a deterministic gallery of hydrology features."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import datetime as dt
+import html
+import itertools
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import struct
+import subprocess
+import sys
+import time
+
+
+FEATURES = ("stream", "river", "confluence", "mouth", "waterfall", "lake")
+CURATED_CASES = (
+    (123, "fast", "stream"),
+    (126, "fast", "stream"),
+    (123, "fast", "river"),
+    (133, "fast", "river"),
+    (126, "fast", "confluence"),
+    (133, "fast", "confluence"),
+    (123, "fast", "mouth"),
+    (126, "fast", "mouth"),
+    (123, "fast", "waterfall"),
+    (133, "fast", "waterfall"),
+    (123, "fast", "lake"),
+    (126, "fast", "lake"),
+)
+INSPECTION_RE = re.compile(
+    r"water screenshot: (?P<feature>\w+) cell=(?P<cell>\d+) "
+    r"score=(?P<score>[-+0-9.eE]+)"
+)
+
+
+def comma_values(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def png_dimensions(path: Path) -> tuple[int, int]:
+    with path.open("rb") as source:
+        header = source.read(24)
+    if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    return struct.unpack(">II", header[16:24])
+
+
+def git_value(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args], cwd=root, text=True, capture_output=True, check=False
+    )
+    return result.stdout.strip()
+
+
+def normalize_image(path: Path, size: tuple[int, int]) -> tuple[int, int]:
+    width, height = png_dimensions(path)
+    if (width, height) == size:
+        return width, height
+    sips = shutil.which("sips")
+    if not sips:
+        raise RuntimeError(
+            f"captured {width}x{height}; sips is unavailable to normalize it"
+        )
+    subprocess.run(
+        [sips, "-z", str(size[1]), str(size[0]), str(path)],
+        check=True,
+        stdout=subprocess.DEVNULL,
+    )
+    return png_dimensions(path)
+
+
+def make_cases(args: argparse.Namespace) -> list[tuple[int, str, str]]:
+    if args.seeds is None and args.profiles is None and args.features is None:
+        return list(CURATED_CASES)
+    seeds = [int(seed) for seed in comma_values(args.seeds or "123")]
+    profiles = comma_values(args.profiles or "fast")
+    features = comma_values(args.features or ",".join(FEATURES))
+    if not seeds or not profiles or not features:
+        raise ValueError("seed, profile, and feature lists must not be empty")
+    unknown_profiles = sorted(set(profiles) - {"fast", "play", "research"})
+    if unknown_profiles:
+        raise ValueError(f"unknown profiles: {', '.join(unknown_profiles)}")
+    unknown = sorted(set(features) - set(FEATURES))
+    if unknown:
+        raise ValueError(f"unknown features: {', '.join(unknown)}")
+    return list(itertools.product(seeds, profiles, features))
+
+
+def capture_case(
+    executable: Path,
+    output: Path,
+    seed: int,
+    profile: str,
+    feature: str,
+    size: tuple[int, int],
+    render_scale: float,
+    frames: int,
+    normalize: bool,
+) -> dict[str, object]:
+    stem = f"seed-{seed}-{profile}-{feature}"
+    image_path = output / "images" / f"{stem}.png"
+    log_path = output / "logs" / f"{stem}.log"
+    image_path.unlink(missing_ok=True)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "MOPPE_RENDERSCALE": str(render_scale),
+            "MOPPE_SCREENSHOT_FRAMES": str(frames),
+            "MOPPE_SUNHEIGHT": environment.get("MOPPE_SUNHEIGHT", "0.56"),
+        }
+    )
+    command = [
+        str(executable),
+        "--water-screenshot",
+        feature,
+        str(image_path),
+        "--seed",
+        str(seed),
+        "--terrain-quality",
+        profile,
+    ]
+    start = time.monotonic()
+    result = subprocess.run(
+        command,
+        cwd=executable.parents[3],
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    duration = time.monotonic() - start
+    log_path.write_text(result.stdout, encoding="utf-8")
+    inspection = INSPECTION_RE.search(result.stdout)
+    row: dict[str, object] = {
+        "seed": seed,
+        "profile": profile,
+        "feature": feature,
+        "status": "ok",
+        "cell": inspection.group("cell") if inspection else "",
+        "score": inspection.group("score") if inspection else "",
+        "width": "",
+        "height": "",
+        "generation_and_capture_seconds": round(duration, 3),
+        "image": f"images/{image_path.name}",
+        "log": f"logs/{log_path.name}",
+        "message": "",
+    }
+    if not image_path.is_file() or image_path.stat().st_size == 0:
+        row["status"] = "missing"
+        match = re.search(r"world generation failed: ([^\n]+)", result.stdout)
+        row["message"] = (
+            match.group(1)
+            if match
+            else f"no screenshot produced; process exited {result.returncode}"
+        )
+    elif result.returncode != 0:
+        row["status"] = "error"
+        row["message"] = f"process exited {result.returncode}"
+    else:
+        try:
+            dimensions = (
+                normalize_image(image_path, size)
+                if normalize
+                else png_dimensions(image_path)
+            )
+            row["width"], row["height"] = dimensions
+            if normalize and dimensions != size:
+                row["status"] = "error"
+                row["message"] = f"could not normalize to {size[0]}x{size[1]}"
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            row["status"] = "error"
+            row["message"] = str(error)
+    return row
+
+
+def write_manifest(output: Path, rows: list[dict[str, object]], metadata: dict) -> None:
+    fields = list(rows[0])
+    with (output / "manifest.csv").open("w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    (output / "summary.json").write_text(
+        json.dumps({"metadata": metadata, "cases": rows}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def image_panel(row: dict[str, object], baseline: Path | None) -> str:
+    if row["status"] != "ok":
+        return (
+            '<div class="missing"><strong>'
+            + html.escape(str(row["status"]))
+            + "</strong><br>"
+            + html.escape(str(row["message"]))
+            + "</div>"
+        )
+    current = html.escape(str(row["image"]), quote=True)
+    current_image = f'<a href="{current}"><img src="{current}"></a>'
+    if not baseline:
+        return current_image
+    baseline_image = baseline / str(row["image"])
+    if not baseline_image.is_file():
+        return current_image
+    baseline_href = html.escape(str(baseline_image.resolve()), quote=True)
+    return (
+        '<div class="pair"><figure><figcaption>baseline</figcaption>'
+        f'<a href="{baseline_href}"><img src="{baseline_href}"></a></figure>'
+        '<figure><figcaption>current</figcaption>'
+        f"{current_image}</figure></div>"
+    )
+
+
+def write_html(
+    output: Path,
+    rows: list[dict[str, object]],
+    metadata: dict,
+    baseline: Path | None,
+) -> None:
+    groups = []
+    for feature in FEATURES:
+        cards = []
+        for row in rows:
+            if row["feature"] != feature:
+                continue
+            details = (
+                f"seed {row['seed']} · {row['profile']} · "
+                f"cell {row['cell'] or 'n/a'} · score {row['score'] or 'n/a'} · "
+                f"{row['width'] or '?'}×{row['height'] or '?'} · "
+                f"{row['generation_and_capture_seconds']} s"
+            )
+            cards.append(
+                '<article class="card">'
+                + image_panel(row, baseline)
+                + f"<p>{html.escape(details)}</p>"
+                + f'<a class="log" href="{html.escape(str(row["log"]))}">log</a>'
+                + "</article>"
+            )
+        if cards:
+            groups.append(
+                f"<section><h2>{html.escape(feature.title())}</h2>"
+                + '<div class="grid">'
+                + "".join(cards)
+                + "</div></section>"
+            )
+    revision = html.escape(str(metadata["revision"]))
+    dirty = " + local changes" if metadata["dirty"] else ""
+    document = f"""<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moppe water benchmark</title>
+<style>
+  :root {{ color-scheme: dark; font: 15px system-ui, sans-serif; }}
+  body {{ margin: 2rem; background: #101716; color: #e8f0ed; }}
+  header, section {{ max-width: 1800px; margin: 0 auto 2.5rem; }}
+  h1 {{ margin-bottom: .25rem; }} h2 {{ border-bottom: 1px solid #3a4b46; }}
+  .grid {{ display: grid; grid-template-columns: repeat(auto-fit,
+           minmax(420px, 1fr)); gap: 1.25rem; }}
+  .card {{ padding: .8rem; border: 1px solid #30413c; border-radius: 8px;
+           background: #17201e; }}
+  img {{ display: block; width: 100%; height: auto; border-radius: 4px; }}
+  p {{ margin: .65rem 0 .2rem; color: #b9c8c3; }}
+  a {{ color: #8dd9c2; }} .log {{ font-size: .85rem; }}
+  .missing {{ min-height: 12rem; display: grid; place-content: center;
+              text-align: center; background: #35201f; color: #ffc1b7; }}
+  .pair {{ display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }}
+  figure {{ margin: 0; }} figcaption {{ color: #aab9b4; margin-bottom: .25rem; }}
+</style>
+<header>
+  <h1>Moppe water benchmark</h1>
+  <p>Revision {revision}{dirty}. Stable cameras, fixed sun, normalized output.
+     See <a href="manifest.csv">manifest.csv</a> and
+     <a href="summary.json">summary.json</a>.</p>
+</header>
+{''.join(groups)}
+"""
+    (output / "index.html").write_text(document, encoding="utf-8")
+
+
+def parse_size(value: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)x(\d+)", value)
+    if not match:
+        raise argparse.ArgumentTypeError("size must be WIDTHxHEIGHT")
+    return int(match.group(1)), int(match.group(2))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("output", nargs="?", default="/tmp/moppe-water-benchmark")
+    parser.add_argument("--seeds", help="comma-separated seed matrix")
+    parser.add_argument("--profiles", help="comma-separated fast/play/research")
+    parser.add_argument("--features", help="comma-separated feature matrix")
+    parser.add_argument(
+        "--baseline", type=Path, help="prior report to show beside current"
+    )
+    parser.add_argument("--size", type=parse_size, default=(1280, 784))
+    parser.add_argument("--render-scale", type=float, default=0.5)
+    parser.add_argument("--frames", type=int, default=2)
+    parser.add_argument("--no-normalize", action="store_true")
+    parser.add_argument("--allow-missing", action="store_true")
+    args = parser.parse_args()
+
+    root = Path(__file__).resolve().parent.parent
+    output = Path(args.output).resolve()
+    build = Path(os.environ.get("MOPPE_BUILD_DIR", root / "build"))
+    executable = build / "moppe.app" / "Contents" / "MacOS" / "moppe"
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "images").mkdir(exist_ok=True)
+    (output / "logs").mkdir(exist_ok=True)
+
+    try:
+        cases = make_cases(args)
+    except ValueError as error:
+        parser.error(str(error))
+    if not (build / "build.ninja").is_file():
+        subprocess.run(
+            ["cmake", "-S", str(root), "-B", str(build), "-G", "Ninja"],
+            check=True,
+        )
+    subprocess.run(["cmake", "--build", str(build), "--target", "moppe"], check=True)
+
+    rows = []
+    for index, (seed, profile, feature) in enumerate(cases, 1):
+        print(
+            f"[{index}/{len(cases)}] {feature} seed={seed} profile={profile}",
+            flush=True,
+        )
+        row = capture_case(
+            executable,
+            output,
+            seed,
+            profile,
+            feature,
+            args.size,
+            args.render_scale,
+            args.frames,
+            not args.no_normalize,
+        )
+        rows.append(row)
+        print(f"  {row['status']} ({row['generation_and_capture_seconds']} s)")
+
+    metadata = {
+        "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "revision": git_value(root, "rev-parse", "--short", "HEAD"),
+        "dirty": bool(git_value(root, "status", "--porcelain")),
+        "render_scale": args.render_scale,
+        "normalized_size": list(args.size) if not args.no_normalize else None,
+    }
+    write_manifest(output, rows, metadata)
+    write_html(output, rows, metadata, args.baseline)
+    failures = [row for row in rows if row["status"] != "ok"]
+    print(f"report: {output / 'index.html'}")
+    print(f"cases: {len(rows) - len(failures)} ok, {len(failures)} failed")
+    return 0 if not failures or args.allow_missing else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

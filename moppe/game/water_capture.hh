@@ -11,7 +11,7 @@
 #include <string_view>
 
 namespace moppe::game {
-  enum class WaterShot { River, Confluence, Mouth, Waterfall, Lake };
+  enum class WaterShot { Stream, River, Confluence, Mouth, Waterfall, Lake };
 
   struct WaterInspection {
     WaterShot kind;

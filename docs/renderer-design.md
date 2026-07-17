@@ -227,11 +227,15 @@ carve.  Terrain, drainage, and running-water geometry therefore remain three
 explicit readings instead of mutating one another.
 
 Feature-targeted visual checks use
-`tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `river`,
-`confluence`, `mouth`, `waterfall`, or `lake`. The selector consumes the same
-hydrology data, logs the chosen cell and score, uses a fixed clean camera, and
-still runs the empty HUD pass because that pass performs the final post-chain
-composite into the screenshot drawable.
+`tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `stream`,
+`river`, `confluence`, `mouth`, `waterfall`, or `lake`. The selector consumes
+the same hydrology data, logs the chosen cell and score, uses a fixed clean
+camera, and still runs the empty HUD pass because that pass performs the final
+post-chain composite into the screenshot drawable.
+
+`tools/water-benchmark` builds a multi-seed gallery around these inspection
+cameras, normalizes output dimensions, and records missing features and capture
+metadata. See `docs/water-benchmarks.md` for the corpus and review rubric.
 
 ## Terrain: vertex pulling (the big modernization)
 

@@ -14,10 +14,16 @@ fi
 
 cmake --build "$build_dir" --target moppe
 mkdir -p "$(dirname -- "$output")"
+rm -f "$output"
 
 MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
   "$build_dir/moppe.app/Contents/MacOS/moppe" \
   --water-screenshot "$feature" "$output" --seed "$seed" \
   --terrain-quality "$profile"
+
+if [ ! -s "$output" ]; then
+  echo "capture-water: no screenshot was produced" >&2
+  exit 1
+fi
 
 echo "$output"
