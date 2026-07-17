@@ -9,6 +9,11 @@
 - `units.md` — scientific quantities, unit conventions, and simulation scale.
 - `working-practices.md` — development and verification practices.
 
+Repository-native RFCs and their executable work-item graphs live in
+`../planning/`.  They describe accepted intended work and its dependencies;
+they are more concrete than the speculative essays in `../ideas/`, but do not
+claim that an item is implemented until its work item says so.
+
 The Atelier charters (`atelier-earth.md` and `atelier-tree.md`) describe the
 architectural line that the current engine may adopt organ by organ. They are
 proposals and proofs, not a claim that Moppe has already been rewritten.
