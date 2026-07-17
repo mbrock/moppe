@@ -1,9 +1,12 @@
-# Current-engine refactoring
+# Current-engine refactoring (completed)
 
-This is the executable track for [RFC-0001](../../rfcs/0001-current-engine-refactoring.md).
-It is a dependency graph, not a release calendar. Work can happen in parallel
-when nodes are independent, but an item becomes `ready` only when its declared
-dependencies are `done`.
+This is the completed executable track for
+[RFC-0001](../../rfcs/0001-current-engine-refactoring.md). It was a dependency
+graph, not a release calendar: work could happen in parallel when nodes were
+independent, and an item became `ready` only when its declared dependencies
+were `done`. All 19 work items are now `done`; the graph is preserved as the
+decision and validation history behind the current [engine atlas]
+(../../../docs/engine-atlas.md).
 
 The first item intentionally repairs the complexity instrument. The earlier
 report showed real cyclomatic concentration, but unity builds currently make
@@ -30,6 +33,7 @@ flowchart LR
   ENG042["ENG-042: terrain-lab model"]
   ENG043["ENG-043: Metal passes"]
   ENG050["ENG-050: target graph"]
+  ENG051["ENG-051: engine atlas and closure"]
   ENG001 --> ENG002
   ENG002 --> ENG010
   ENG010 --> ENG011 --> ENG012
@@ -40,8 +44,20 @@ flowchart LR
   ENG012 --> ENG041
   ENG020 --> ENG042 --> ENG050
   ENG033 --> ENG050
+  ENG050 --> ENG051
 ```
 
 Run `make plan-graph` to render this exact graph from the work-item metadata.
 The checked-in view above is a compact map for browsing; the item files are
 authoritative.
+
+## Closure
+
+The track completed the typed finite-section vocabulary and surface atlas,
+explicit world/session/frame boundaries, focused presentation and Metal pass
+ownership, and the matching CMake target graph. No work item was dropped.
+Deferred work is explicit rather than hidden: seam-free earth topology and
+registered frames, complete replay determinism, alternate renderer backends,
+and persistent world history are outside this track. The current implementation
+map lives in [docs/engine-atlas.md](../../../docs/engine-atlas.md); the item
+files retain the rationale and acceptance evidence for each completed move.

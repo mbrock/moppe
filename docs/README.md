@@ -1,11 +1,17 @@
 # Documentation
 
+- `engine-atlas.md` — current engine map: domains, world/session/frame
+  boundaries, presentation, and target dependencies.
 - `project.org` — living status, priorities, and dated progress notes.
-- `renderer-design.md` — renderer and platform architecture.
+- `generated-world.md` — completed-world construction, ownership, and
+  activation lifetime.
+- `game-state.md` — session checkpoint, frame reading, and replay boundary.
+- `renderer-design.md` — Metal/backend implementation detail and retained
+  port-design record.
 - `surface-atlas.md` — current surface domains, typed sections, and renderer
   presentation bridge.
 - `refactoring-seams.md` — characterization contracts for surface,
-  replay, and completed-world loading.
+  replay, completed-world loading, and target ownership.
 - `terrain-expressions.md` — terrain program and evaluator design.
 - `trails.md` — leisure-circuit planning, grading, materials, and consumers.
 - `units.md` — scientific quantities, unit conventions, and simulation scale.
