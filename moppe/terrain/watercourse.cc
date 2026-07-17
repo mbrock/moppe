@@ -148,9 +148,13 @@ namespace moppe::terrain {
         flow[2 * cell + 1] = flow_z[cell] / flow_weight[cell];
       }
 
-    // Sign the still-water shoreline. A dry cell beside water stores the
+    // Sign the still-water shoreline. A dry cell beside water stores a
     // neighboring level just below its ground so bilinear consumers find a
-    // true sub-cell zero crossing instead of a cell-edge staircase.
+    // true sub-cell zero crossing instead of a cell-edge staircase. It
+    // stores the LOWEST wet neighbor: on an ordinary shore every neighbor
+    // shares one body level, while on a sill between terraced bodies the
+    // higher plate then ends at its own waterline instead of extending
+    // across the sill and hanging in the air over the lower body.
     {
       constexpr float dry_margin = 1e-6f;
       std::vector<float> signed_surface = surface;
@@ -160,7 +164,7 @@ namespace moppe::terrain {
           const float ground = terrain.at (x, y);
           if (surface[cell] - ground > dry_margin)
             continue;
-          float wettest = -std::numeric_limits<float>::infinity ();
+          float lowest_wet = std::numeric_limits<float>::infinity ();
           for (int dy = -1; dy <= 1; ++dy)
             for (int dx = -1; dx <= 1; ++dx) {
               if (dx == 0 && dy == 0)
@@ -175,10 +179,10 @@ namespace moppe::terrain {
               const std::size_t neighbor =
                 static_cast<std::size_t> (ny) * width + nx;
               if (surface[neighbor] - terrain.at (nx, ny) > dry_margin)
-                wettest = std::max (wettest, surface[neighbor]);
+                lowest_wet = std::min (lowest_wet, surface[neighbor]);
             }
-          if (std::isfinite (wettest))
-            signed_surface[cell] = std::min (wettest, ground - dry_margin);
+          if (std::isfinite (lowest_wet))
+            signed_surface[cell] = std::min (lowest_wet, ground - dry_margin);
         }
       surface = std::move (signed_surface);
     }

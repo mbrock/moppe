@@ -66,6 +66,12 @@ namespace moppe::terrain {
       100.0f * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
   };
 
+  // The one shared reading of "this body is real water, not a transient
+  // puddle". The census, the standing-water sheet, and river routing must
+  // agree on it or rivers dry up at bodies the sheet never renders.
+  bool water_body_is_permanent (const WaterBody& body,
+                                const WaterPermanence& permanence = {});
+
   FloodField analyze_standing_water (const TerrainView& terrain,
                                      float sea_level);
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);

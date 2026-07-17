@@ -197,18 +197,12 @@ namespace moppe::terrain {
       const auto water_cell = [&] (CellIndex cell) {
         return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
       };
-      const WaterPermanence permanence;
       const auto permanent_water_cell = [&] (CellIndex cell) {
         if (flood.ocean[cell])
           return true;
         const WaterBodyId id = census.body[cell];
-        if (id == LakeCensus::dry)
-          return false;
-        const WaterBody& body = census.bodies[id];
-        return body.classification == WaterBodyClass::Sea ||
-               (body.area >= permanence.minimum_area &&
-                body.maximum_depth >= permanence.minimum_depth &&
-                body.volume >= permanence.minimum_volume);
+        return id != LakeCensus::dry &&
+               water_body_is_permanent (census.bodies[id]);
       };
 
       for (RiverReach& reach : network.reaches) {
@@ -760,18 +754,13 @@ namespace moppe::terrain {
     // A body below the permanence threshold is drainage structure, not a
     // rendered lake. Link its inlet reach directly to the spill reach so the
     // continuous alignment, flow coordinate, and junction surface bridge it.
-    const WaterPermanence permanence;
     for (RiverReach& reach : network.reaches) {
       if (reach.downstream_reach != RiverReach::no_id ||
           reach.downstream_body == no_water_body)
         continue;
       const WaterBody& body = census.bodies[reach.downstream_body];
-      const bool permanent = body.classification == WaterBodyClass::Sea ||
-                             (body.area >= permanence.minimum_area &&
-                              body.maximum_depth >= permanence.minimum_depth &&
-                              body.volume >= permanence.minimum_volume);
-      if (permanent || body.spill_cell == WaterBody::no_cell ||
-          !eligible[body.spill_cell])
+      if (water_body_is_permanent (body) ||
+          body.spill_cell == WaterBody::no_cell || !eligible[body.spill_cell])
         continue;
       reach.downstream_reach = network.reach_by_cell[body.spill_cell];
     }
