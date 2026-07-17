@@ -24,6 +24,17 @@ state; immutable terrain and obstacle references, vehicle physical parameters,
 and renderer resources remain attached to live objects on the same completed
 world.
 
+Ordinary playable simulation has one public fixed-step operation:
+`game::advance_game_session(context, session, input, seconds_t)`. Its compact
+context supplies only the completed world's parameters, terrain, obstacles,
+and the persistent landscape scale used by the chase camera; it does not
+expose `GeneratedWorld`, loading, platform, or renderer types. The operation
+applies the `InputFrame`, advances actors and effects, updates score, fuel,
+camera, and FOV, and reports the small set of application-side effects it
+cannot realize itself. `MoppeGame::tick` selects live or recorded input,
+continues the global clock and weather through paused cinematic, Terrain Lab,
+and tree-demo modes, then delegates ordinary play through that operation.
+
 A completed-world handoff retires the old session before its old generated
 world, then constructs a fresh session against the new world. In particular,
 pressing `N` begins a new world session rather than carrying a player, score,
@@ -44,8 +55,8 @@ The intended experiment loop is:
 2. Advance with a fixed timestep to an interesting point and copy
    `GameState`.
 3. For each graphics combination, restore the state, reset renderer history,
-   replay the same fixed-step input tape, discard settling frames, and measure
-   the remaining frames.
+   replay the same fixed-step input tape through `advance_game_session`,
+   discard settling frames, and measure the remaining frames.
 4. Tag every timing sample with the graphics-feature mask, replay epoch, and
    logical frame number.
 
