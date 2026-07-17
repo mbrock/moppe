@@ -188,20 +188,110 @@ hydrology) becomes clearly better than its moppe counterpart, moppe may
 adopt it as a library — the same way it links `atelier_botany` today.
 No flag day, no rewrite-in-place.
 
-## What comes after the ground (not now)
+## The second work: the hexagonal commons
+
+> Grow an equal-area hexagonal partition of the torus under the
+> pressure of relief.
+
+A height field does something to geometry that the flat lattice
+ignores.  The graph embedding pulls a metric back onto the plane, and
+the area element becomes `sqrt(1 + |grad h|^2) dx dz`: steep country
+literally contains more landscape per unit of map than flat country.
+That density is itself an object of the calculus — a face 2-cochain,
+the induced area measure divided by the flat one — and it is the
+"pressure" of this work's motto.
+
+Over the same base as the ground, a second combinatorial storey grows:
+a hexagonal partition whose cells divide wherever their quota of
+landscape area is exceeded, and merge again where the country calms.
+The tiling ends up equal-measure in the world's own metric — tiles of
+the same amount of *place*, not the same amount of *map*.  Where the
+mountains bunch the cloth, the tiling runs fine; across a plain, one
+calm hexagon suffices.
+
+The torus is the right home for this: with Euler characteristic zero
+it admits a defect-free all-hexagon tiling — no pentagon tax, unlike a
+sphere.  When adaptive division breaks regularity, the irregularity
+*means* relief instead of paying topology.
+
+The mechanism is largely already alive in the studio.  The cellular
+sheet has the periodic boundary, the binary division with lineage, and
+the rule that adjacency is rebuilt from intrinsic geometry so small
+cells naturally meet large neighbours.  The new work is a coupling,
+not a subdivision engine:
+
+- `material_demand` — a dimensionless face section on the commons: a
+  tile's integrated induced area over its footprint, divided by the
+  area quota.  A cell whose demand exceeds one divides, along the axis
+  that best splits its demand; a family whose joint demand falls well
+  under one merges.  Relaxation is pressure equalization — tiles
+  jostling like froth under the induced density until quotas agree.
+- The chart and the commons are joined by one typed arrow: sampling
+  the ground's sections at hex sites, and integrating them over hex
+  footprints.  Two domains over one base, one projection between them.
+- The partition's dual is a triangulation — simultaneously the natural
+  render mesh and exactly the Voronoi–Delaunay pairing that keeps the
+  discrete Hodge star well-behaved.  The tiling wanted for *meaning*
+  is the mesh wanted for *math and Metal*; that coincidence is the
+  tell that the object is right.
+
+Equal measure is what makes the commons a commons: per-tile integrals
+mean the same thing everywhere.  Uniform rain is one unit per tile;
+budgets — vegetation instances, texel density, simulation particles —
+become flat allocations; transport balances become legible at a
+glance.
+
+### Geology in commons space
+
+The commons is not only a way to *draw* terrain; it is the space to
+*simulate* it in.  Run uplift and erosion on the living partition and
+the scheme becomes variable-bit-rate geomorphology — resolution spent
+the way an audio codec spends bits, on the loud passages:
+
+- The demand field widens beyond static relief to *activity*: uplift
+  rate, incision rate, ice flux.  An orogeny is a loud passage and
+  recruits fine tiles while it plays; a quiet craton coasts at low
+  resolution for a hundred epochs; when activity fades, tiles merge
+  and the region is re-encoded cheaply.  Division and merger are the
+  codec.
+- Events are local spikes of demand with their own material: a
+  volcanic edifice arrives as new rock the partition must grow tiles
+  to carry; an ice sheet is another stratum with its own rheology and
+  its own melt.  The framework does not distinguish "terrain" from
+  "event" — both are material demanding tiles.
+- Each tile carries a stratified column — bedrock, regolith,
+  sediment, lava, ice — a surface-voxel manifold rather than a bare
+  height.  Moppe's sediment ledger (its eroded/deposited channels) is
+  the flat, two-layer ancestor of this; the commons gives the ledger
+  a body.  Height becomes a *derived* reading: the top of the column.
+- Traced through time, the partition is a worldsheet: a 2+1
+  spacetime complex in which divisions and mergers are events, and a
+  tile's lineage is its geological biography.  The terrain history
+  moppe keeps as raw snapshot vectors becomes a structured object —
+  and old mountains remain readable as fine-grained scar tissue in
+  the tiling long after erosion has calmed them.
+
+The wager of the second work, stated plainly: adaptivity in the
+world's own measure is not an optimization of the simulation; it is
+the honest form of it.
+
+## What comes after (not now)
 
 A ladder, each rung small and imageable:
 
 1. **Water as a datum** — a sea-level origin, an axis-inverting depth
    frame, shore materials from a typed distance-to-waterline reading.
-2. **The first flow** — a signed 1-cochain of transport on the edges;
-   accumulation as the tree's `accumulate_along_tree` generalized to
-   the lattice's flow ordering.  (Drainage, but stated as calculus.)
+2. **The first flow** — a signed 1-cochain of transport, inheriting
+   the commons: six equidistant neighbours with no diagonal ambiguity
+   make the hex partition the natural substrate for flow, where the
+   square lattice's eight directions were always a managed bias.
+   Accumulation as the tree's `accumulate_along_tree` generalized to
+   the flow ordering.  (Drainage, but stated as calculus.)
 3. **A datum family** — home site and spawn as heuristically placed,
    frame-guarded origins; the trail map becomes a chart at the home
    origin rather than arithmetic.
-4. **Time and evolution** — sections indexed by epochs; the terrain
-   history moppe keeps as raw snapshots becomes a typed sequence.
+4. **Geological time** — the commons run as variable-bit-rate
+   geomorphology above: uplift, erosion, stratified columns, events.
 5. **An inhabitant** — something moving on the ground, reading it only
    through sampled sections.
 
@@ -222,3 +312,7 @@ written as a value, watch `--ground` draw a landscape that repeats
 without a seam, and diff the capture against a golden image — and when
 the atlas can list, in one table, every domain, section, origin, and
 projection the earth so far contains.
+
+The second work is done when a capture shows the same landscape wearing
+its commons — fine tiles clinging to the ridges, broad tiles resting on
+the plains — and the histogram of per-tile landscape area is narrow.
