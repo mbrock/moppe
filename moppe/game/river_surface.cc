@@ -49,21 +49,6 @@ namespace moppe::game {
 
     using RibbonRow = std::array<RibbonVertex, cross_positions.size ()>;
 
-    SurfacePoint nearest_image (SurfacePoint point,
-                                const SurfacePoint& reference,
-                                const map::HeightMap& map) {
-      if (!map.periodic ())
-        return point;
-      const Vec3 period = map.size ();
-      point.position[0] =
-        reference.position[0] +
-        std::remainder (point.position[0] - reference.position[0], period[0]);
-      point.position[2] =
-        reference.position[2] +
-        std::remainder (point.position[2] - reference.position[2], period[2]);
-      return point;
-    }
-
     float smoothstep (float low, float high, float value) {
       const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
       return t * t * (3.0f - 2.0f * t);
@@ -80,10 +65,17 @@ namespace moppe::game {
       std::vector<SurfacePoint> result;
       const auto& points = alignment.points;
       result.reserve (points.size ());
+      const float source_width_m =
+        points.empty () ? 0.0f
+                        : meters_value (terrain::river_width (
+                            points.front ().contributing_area_m2 *
+                            mp_units::si::metre * mp_units::si::metre));
+      const float source_length_m = std::max (14.0f, 3.0f * source_width_m);
       float mouth_distance_m = std::numeric_limits<float>::infinity ();
       bool falling_mouth = false;
-      for (std::size_t point = 0; point < points.size (); ++point)
-        if (points[point].standing_water >= 0.99f) {
+      for (std::size_t point = 1; point < points.size (); ++point)
+        if (points[point].standing_water >= 0.99f &&
+            points[point - 1].standing_water < points[point].standing_water) {
           mouth_distance_m = points[point].distance_m;
           // The standing-water interpolation itself may have already hidden
           // the steep routed cell. Inspect the approach to the mouth, not
@@ -166,11 +158,17 @@ namespace moppe::game {
           half_left_m = std::max (half_left_m, pooled * waterline (-1.0f));
           half_right_m = std::max (half_right_m, pooled * waterline (1.0f));
         }
-        const float source_opacity =
-          fade_source ? smoothstep (0.0f,
-                                    std::max (8.0f, 1.5f * width_m),
-                                    center.distance_m)
+        // A rendered headwater starts where accumulated drainage crosses the
+        // visible-channel threshold, not where water is literally created.
+        // Pinch that threshold to a damp point at terrain height, then let it
+        // widen and lift into a readable stream over a physical run.
+        const float source_profile =
+          fade_source ? smoothstep (0.0f, source_length_m, center.distance_m)
                       : 1.0f;
+        surface = center_ground + 0.01f +
+                  source_profile * (surface - center_ground - 0.01f);
+        half_left_m *= source_profile;
+        half_right_m *= source_profile;
         float mouth_opacity = 1.0f;
         if (std::isfinite (mouth_distance_m)) {
           // Retire the ribbon just before the standing-water geometry owns
@@ -200,7 +198,7 @@ namespace moppe::game {
             .rapid = rapid_signal (center.slope),
             .waterfall = center.waterfall,
             .opacity =
-              source_opacity * mouth_opacity *
+              source_profile * mouth_opacity *
               (1.0f - smoothstep (0.05f, 0.98f, center.standing_water)),
             .curvature_across = 0.0f });
       }
@@ -311,6 +309,21 @@ namespace moppe::game {
       return row;
     }
 
+    SurfacePoint nearest_image (SurfacePoint point,
+                                const SurfacePoint& reference,
+                                const map::HeightMap& map) {
+      if (!map.periodic ())
+        return point;
+      const Vec3 period = map.size ();
+      point.position[0] =
+        reference.position[0] +
+        std::remainder (point.position[0] - reference.position[0], period[0]);
+      point.position[2] =
+        reference.position[2] +
+        std::remainder (point.position[2] - reference.position[2], period[2]);
+      return point;
+    }
+
     void emit (render::DrawList& draw, const RibbonVertex& vertex) {
       draw.color (vertex.rapid, vertex.depth, vertex.waterfall, vertex.opacity);
       draw.normal (vertex.normal);
@@ -330,52 +343,80 @@ namespace moppe::game {
     draw.lit (false);
     draw.fogged (true);
 
-    std::vector<std::size_t> upstream_reaches (rivers.reaches.size (), 0);
+    std::vector<std::vector<terrain::RiverReachId>> upstream_reaches (
+      rivers.reaches.size ());
     for (const terrain::RiverReach& reach : rivers.reaches)
       if (reach.downstream_reach != terrain::RiverReach::no_id)
-        ++upstream_reaches[reach.downstream_reach];
+        upstream_reaches[reach.downstream_reach].push_back (reach.id);
 
     std::vector<std::vector<river_surface_detail::SurfacePoint>> reach_points (
       rivers.reaches.size ());
     for (const terrain::RiverReach& reach : rivers.reaches) {
-      const bool fade_source = upstream_reaches[reach.id] == 0 &&
-                               reach.upstream_body == terrain::no_water_body;
+      const bool begins_in_standing_water =
+        !reach.alignment.points.empty () &&
+        reach.alignment.points.front ().standing_water >= 0.99f;
+      const bool fade_source =
+        upstream_reaches[reach.id].empty () && !begins_in_standing_water;
       reach_points[reach.id] = river_surface_detail::make_surface_points (
         map, reach.alignment, fade_source);
     }
 
-    // Reaches share topology but build their bank envelopes independently.
-    // Reconcile the one shared section, then add a zero-length rotation row
-    // to cover the wedge between tributary and trunk tangents.
-    for (const terrain::RiverReach& reach : rivers.reaches) {
-      if (reach.downstream_reach == terrain::RiverReach::no_id ||
-          reach_points[reach.id].empty () ||
-          reach_points[reach.downstream_reach].empty ())
+    // Every tributary now terminates on the downstream reach's exact first
+    // cross-section. Blend its tangent and bank envelope toward that shared
+    // row over roughly one channel width; this triangulates the join as a
+    // tapered arm instead of appending a zero-length rotated rectangle.
+    for (const terrain::RiverReach& downstream : rivers.reaches) {
+      if (upstream_reaches[downstream.id].empty () ||
+          reach_points[downstream.id].empty ())
         continue;
-      auto& end = reach_points[reach.id].back ();
-      auto& start = reach_points[reach.downstream_reach].front ();
-      const float junction_height =
-        std::max (end.position[1], start.position[1]);
-      end.position[1] = junction_height;
+      auto& start = reach_points[downstream.id].front ();
+      float junction_height = start.position[1];
+      for (const terrain::RiverReachId upstream :
+           upstream_reaches[downstream.id])
+        if (!reach_points[upstream].empty ())
+          junction_height = std::max (
+            junction_height, reach_points[upstream].back ().position[1]);
       start.position[1] = junction_height;
-      auto& upstream = reach_points[reach.id];
-      for (std::size_t point = upstream.size () - 1; point > 0; --point)
-        upstream[point - 1].position[1] = std::max (
-          upstream[point - 1].position[1], upstream[point].position[1]);
+      for (const terrain::RiverReachId upstream :
+           upstream_reaches[downstream.id]) {
+        if (reach_points[upstream].empty ())
+          continue;
+        auto& points = reach_points[upstream];
+        points.back ().position[1] = junction_height;
+        auto shared =
+          river_surface_detail::nearest_image (start, points.back (), map);
+        shared.opacity = std::min (shared.opacity, points.back ().opacity);
+        const float transition_m = std::max (4.0f, shared.width_m);
+        const float junction_flow_m = points.back ().flow_distance_m;
+        for (auto& point : points) {
+          const float remaining_m =
+            std::max (0.0f, junction_flow_m - point.flow_distance_m);
+          const float influence = 1.0f - river_surface_detail::smoothstep (
+                                           0.0f, transition_m, remaining_m);
+          const Vec3 tangent =
+            point.tangent * (1.0f - influence) + shared.tangent * influence;
+          if (length2 (tangent) > 1e-6f)
+            point.tangent = normalized (tangent);
+          point.width_m += influence * (shared.width_m - point.width_m);
+          point.half_left_m +=
+            influence * (shared.half_left_m - point.half_left_m);
+          point.half_right_m +=
+            influence * (shared.half_right_m - point.half_right_m);
+          point.rapid += influence * (shared.rapid - point.rapid);
+          point.opacity += influence * (shared.opacity - point.opacity);
+          point.curvature_across +=
+            influence * (shared.curvature_across - point.curvature_across);
+        }
+        points.back () = shared;
+        for (std::size_t point = points.size () - 1; point > 0; --point)
+          points[point - 1].position[1] =
+            std::max (points[point - 1].position[1], points[point].position[1]);
+      }
     }
 
     draw.begin (render::Prim::Triangles);
     for (const terrain::RiverReach& reach : rivers.reaches) {
-      std::vector<river_surface_detail::SurfacePoint> points =
-        reach_points[reach.id];
-      if (reach.downstream_reach != terrain::RiverReach::no_id &&
-          !points.empty () && !reach_points[reach.downstream_reach].empty ()) {
-        auto transition = river_surface_detail::nearest_image (
-          reach_points[reach.downstream_reach].front (), points.back (), map);
-        transition.opacity =
-          std::min (transition.opacity, points.back ().opacity);
-        points.push_back (transition);
-      }
+      const auto& points = reach_points[reach.id];
       if (points.size () < 2)
         continue;
       std::vector<river_surface_detail::RibbonRow> rows;

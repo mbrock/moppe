@@ -210,7 +210,11 @@ arc coordinate that is continuous through confluences.  Width and depth are
 physical functions of contributing area.  Seven vertices across each section
 form a soft-edged ribbon, with depth recovered against the unmodified orogeny
 heightfield and the derived water profile clamped non-increasing downstream.
-The ribbon dissolves beneath the standing surface after crossing a mouth.
+At a confluence every tributary blends toward the outgoing tangent and bank
+envelope, then terminates on the outgoing reach's exact seven-vertex first
+section. A true headwater pinches to a damp point; a lake-fed root extends one
+section into the wet outlet. The ribbon similarly dissolves beneath the
+standing surface after crossing a mouth.
 
 `river.metal` orients its detail from screen derivatives of that curved mesh,
 so normals and foam follow bends rather than world axes.  Two advected phases
@@ -235,7 +239,8 @@ Feature-targeted visual checks use
 `river`, `confluence`, `mouth`, `waterfall`, or `lake`. The selector consumes
 the same hydrology data, logs the chosen cell and score, uses a fixed clean
 camera, and still runs the empty HUD pass because that pass performs the final
-post-chain composite into the screenshot drawable.
+post-chain composite into the screenshot drawable. The stream view targets a
+root reach and looks upstream so its source or lake handoff remains in frame.
 
 `tools/water-benchmark` builds a multi-seed gallery around these inspection
 cameras, normalizes output dimensions, and records missing features and capture
