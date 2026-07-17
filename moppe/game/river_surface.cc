@@ -21,6 +21,11 @@ namespace moppe::game {
       Vec3 position;
       Vec3 tangent;
       float width_m;
+      // Cross-section extents to each side of the centerline. They default
+      // to half the discharge width; across ribbon-owned pools they extend
+      // to the probed waterline so flooded stretches keep real banks.
+      float half_left_m;
+      float half_right_m;
       float flow_distance_m;
       float rapid;
       float waterfall;
@@ -133,6 +138,34 @@ namespace moppe::game {
             center.z_m + across[2] * cross * 0.5f * width_m);
           surface = std::max (surface, ground + 0.045f);
         }
+        // Ribbon-owned pools: a flooded channel stretch holds its flood
+        // level and widens to the local waterline, so the pool ends on real
+        // banks instead of showing the discharge-width ribbon floating in a
+        // wider basin.
+        const float pooled = smoothstep (0.25f, 0.75f, center.pooled);
+        float half_left_m = 0.5f * width_m;
+        float half_right_m = half_left_m;
+        if (pooled > 0.0f) {
+          surface = std::max (surface, center.water_level_m + 0.045f);
+          // The route can hug one bank of the pool, so the far waterline may
+          // sit up to a full flooded width away: probe past twice the
+          // channel-classification inradius.
+          const float spacing = std::max (map.scale ()[0], map.scale ()[2]);
+          const float max_probe = std::max (7.0f * spacing, half_left_m);
+          const float probe_step = std::max (0.5f, 0.25f * spacing);
+          const auto waterline = [&] (float direction) {
+            float distance = probe_step;
+            while (distance < max_probe &&
+                   map.interpolated_height (
+                     center.x_m + direction * across[0] * distance,
+                     center.z_m + direction * across[2] * distance) <
+                     surface + 0.02f)
+              distance += probe_step;
+            return distance + 0.5f;
+          };
+          half_left_m = std::max (half_left_m, pooled * waterline (-1.0f));
+          half_right_m = std::max (half_right_m, pooled * waterline (1.0f));
+        }
         const float source_opacity =
           fade_source ? smoothstep (0.0f,
                                     std::max (8.0f, 1.5f * width_m),
@@ -161,6 +194,8 @@ namespace moppe::game {
           { .position = Vec3 (center.x_m, surface, center.z_m),
             .tangent = tangent,
             .width_m = width_m,
+            .half_left_m = half_left_m,
+            .half_right_m = half_right_m,
             .flow_distance_m = center.flow_distance_m,
             .rapid = rapid_signal (center.slope),
             .waterfall = center.waterfall,
@@ -201,6 +236,27 @@ namespace moppe::game {
           result[point].curvature_across = smoothed;
         }
       }
+
+      // Waterline-probed pool widths vary with the sampled bank profile;
+      // smooth them so pool banks sweep instead of sawtoothing.
+      for (int pass = 0; pass < 2; ++pass) {
+        float previous_left =
+          result.empty () ? 0.0f : result.front ().half_left_m;
+        float previous_right =
+          result.empty () ? 0.0f : result.front ().half_right_m;
+        for (std::size_t point = 1; point + 1 < result.size (); ++point) {
+          const float left = 0.25f * previous_left +
+                             0.5f * result[point].half_left_m +
+                             0.25f * result[point + 1].half_left_m;
+          const float right = 0.25f * previous_right +
+                              0.5f * result[point].half_right_m +
+                              0.25f * result[point + 1].half_right_m;
+          previous_left = result[point].half_left_m;
+          previous_right = result[point].half_right_m;
+          result[point].half_left_m = left;
+          result[point].half_right_m = right;
+        }
+      }
       return result;
     }
 
@@ -230,9 +286,11 @@ namespace moppe::game {
       // inner point bar.
       const float thalweg_shift = std::clamp (
         center.curvature_across * center.width_m * 1.2f, -0.45f, 0.45f);
-      const float half_width = 0.5f * center.width_m;
       RibbonRow row;
       for (std::size_t cross = 0; cross < row.size (); ++cross) {
+        const float half_width = cross_positions[cross] < 0.0f
+                                   ? center.half_left_m
+                                   : center.half_right_m;
         Vec3 position =
           center.position + across * (cross_positions[cross] * half_width);
         const float ground = map.interpolated_height (position[0], position[2]);
