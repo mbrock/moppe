@@ -8,8 +8,12 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <ranges>
+#include <span>
+#include <stdexcept>
 #include <string_view>
+#include <vector>
 
 namespace moppe::game {
   inline constexpr float GRAPHICS_BENCHMARK_DT = 1.0f / 120.0f;
@@ -122,6 +126,114 @@ namespace moppe::game {
     input.boost = std::fmod (t, 4.0f) < 0.8f ? 1.0f : 0.0f;
     return input;
   }
+
+  // The renderer-free schedule for one graphics benchmark.  It materializes
+  // its prelude and replay tapes independently: the latter starts again at
+  // logical frame zero for every graphics configuration.  The owner chooses
+  // when to checkpoint or restore a session and when to reset renderer
+  // history at the returned boundaries.
+  class GraphicsBenchmarkReplay {
+  public:
+    struct Config {
+      int prelude_frames = 480;
+      int settle_frames = 30;
+      int measured_frames = 120;
+    };
+
+    struct Frame {
+      InputFrame input;
+      int epoch = 0;
+      uint32_t partition_mask = 0;
+      int logical_frame = 0;
+      bool measured = false;
+      bool prelude = false;
+    };
+
+    enum class Boundary {
+      none,
+      prelude_complete,
+      epoch_complete,
+      complete,
+    };
+
+    explicit GraphicsBenchmarkReplay (Config config) : m_config (config) {
+      if (m_config.prelude_frames < 1 || m_config.settle_frames < 1 ||
+          m_config.measured_frames < 1)
+        throw std::invalid_argument (
+          "graphics benchmark frame counts must be positive");
+      m_prelude_tape = make_tape (m_config.prelude_frames);
+      m_replay_tape =
+        make_tape (m_config.settle_frames + m_config.measured_frames);
+    }
+
+    std::span<const InputFrame> prelude_tape () const noexcept {
+      return { m_prelude_tape.data (), m_prelude_tape.size () };
+    }
+
+    std::span<const InputFrame> replay_tape () const noexcept {
+      return { m_replay_tape.data (), m_replay_tape.size () };
+    }
+
+    int configuration_count () const noexcept {
+      return 1 << graphics_benchmark_dimension_count ();
+    }
+
+    std::optional<Frame> current_frame () const {
+      if (m_complete)
+        return std::nullopt;
+      if (!m_replaying)
+        return Frame {
+          m_prelude_tape[m_prelude_frame], 0, 0, m_prelude_frame, false, true
+        };
+      return Frame { m_replay_tape[m_logical_frame],
+                     m_epoch,
+                     gray_code (m_epoch),
+                     m_logical_frame,
+                     m_logical_frame >= m_config.settle_frames,
+                     false };
+    }
+
+    Boundary finish_frame () {
+      if (m_complete)
+        return Boundary::complete;
+
+      if (!m_replaying) {
+        ++m_prelude_frame;
+        if (m_prelude_frame < static_cast<int> (m_prelude_tape.size ()))
+          return Boundary::none;
+        m_replaying = true;
+        return Boundary::prelude_complete;
+      }
+
+      ++m_logical_frame;
+      if (m_logical_frame < static_cast<int> (m_replay_tape.size ()))
+        return Boundary::none;
+      m_logical_frame = 0;
+      ++m_epoch;
+      if (m_epoch < configuration_count ())
+        return Boundary::epoch_complete;
+      m_complete = true;
+      return Boundary::complete;
+    }
+
+  private:
+    static std::vector<InputFrame> make_tape (int frame_count) {
+      std::vector<InputFrame> tape;
+      tape.reserve (frame_count);
+      for (int frame = 0; frame < frame_count; ++frame)
+        tape.push_back (benchmark_input (frame));
+      return tape;
+    }
+
+    Config m_config;
+    std::vector<InputFrame> m_prelude_tape;
+    std::vector<InputFrame> m_replay_tape;
+    int m_prelude_frame = 0;
+    int m_epoch = 0;
+    int m_logical_frame = 0;
+    bool m_replaying = false;
+    bool m_complete = false;
+  };
 
   inline int hot_graphics_feature_count () {
     int count = 0;

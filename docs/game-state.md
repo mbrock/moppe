@@ -65,9 +65,10 @@ constructs the checkpoint after a deterministic scripted prelude, then visits
 all Boolean combinations of a graphics-feature partition in Gray-code order.
 The current riding partition preserves ocean, river ribbons, bloom, and
 automatic exposure as separate blocks and identifies particles, vehicle
-effects, star effects, lens flare, and fragment terrain normals as one
-`small-effects` block. This reduces the ordinary sweep from 512 configurations
-to 32 without pretending those features no longer exist. Every
+effects, star effects, lens flare, fragment terrain normals, snow-support
+filtering, and channel-flux detail as one `small-effects` block. This reduces
+the ordinary sweep from 2048 configurations to 32 without pretending those
+features no longer exist. Every
 epoch restores `GameState`, resets renderer temporal history, replays the same
 input segment, discards settling frames, and records command-buffer GPU time
 for the remaining frames. For example:
@@ -79,11 +80,11 @@ for the remaining frames. For example:
 ```
 
 The CSV contains epoch, the resolved feature mask, the quotient-space partition
-mask, logical frame, GPU milliseconds, and one Boolean column per hot feature.
-Defaults are 480 prelude frames, 30 settling frames, and 120 measured frames
-per configuration. The three counts can be overridden with
-`--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for quick
-smoke runs.
+mask, logical frame, GPU milliseconds, and one Boolean column per included
+riding-benchmark feature. Defaults are 480 prelude frames, 30 settling frames,
+and 120 measured frames per configuration. The three counts can be overridden
+with `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames` for
+quick smoke runs.
 
 Analyze a completed CSV with DuckDB:
 

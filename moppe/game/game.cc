@@ -431,7 +431,14 @@ namespace moppe {
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
             m_loading_stage (LoadingStage::Starting),
             m_benchmark (std::move (benchmark)),
-            m_benchmark_baseline (graphics) {}
+            m_benchmark_baseline (graphics) {
+        if (m_benchmark)
+          m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
+            m_benchmark->prelude_frames,
+            m_benchmark->settle_frames,
+            m_benchmark->measured_frames,
+          });
+      }
 
       ~MoppeGame () override {
         if (!m_generation_job)
@@ -443,14 +450,6 @@ namespace moppe {
         const std::lock_guard<std::mutex> lock (
           m_generation_job->lifetime_mutex);
         m_generation_job->game = nullptr;
-      }
-
-      GameState state () const {
-        return session ().state ();
-      }
-
-      void restore (const GameState& state) {
-        session ().restore (state);
       }
 
       // -- lifecycle ---------------------------------------------------
@@ -1292,7 +1291,7 @@ namespace moppe {
         if (m_benchmark) {
           dt = GRAPHICS_BENCHMARK_DT;
           if (m_benchmark_submitted) {
-            m_benchmark_measured = false;
+            m_benchmark_render_frame.reset ();
             if (m_renderer->benchmark_complete () &&
                 !m_benchmark_results_written) {
               m_renderer->write_benchmark_results ();
@@ -1301,44 +1300,22 @@ namespace moppe {
             }
             return;
           }
-          if (m_benchmark_checkpoint) {
-            const int epoch_frames =
-              m_benchmark->settle_frames + m_benchmark->measured_frames;
-            if (m_benchmark_frame == epoch_frames) {
-              ++m_benchmark_epoch;
-              const int configurations =
-                1 << graphics_benchmark_dimension_count ();
-              if (m_benchmark_epoch == configurations) {
-                m_benchmark_submitted = true;
-                m_benchmark_measured = false;
-                platform::set_window_title (
-                  "Moppe benchmark - finishing GPU samples");
-                return;
-              }
-              restore (*m_benchmark_checkpoint);
-              m_renderer->reset_temporal_state ();
-              m_graphics = m_benchmark_baseline;
-              m_benchmark_partition_mask = gray_code (m_benchmark_epoch);
-              m_benchmark_mask = apply_graphics_benchmark_mask (
-                m_graphics, m_benchmark_partition_mask);
-              m_benchmark_frame = 0;
-              update_benchmark_title ();
-            }
-            scripted_input = benchmark_input (m_benchmark_frame);
-            m_benchmark_measured =
-              m_benchmark_frame >= m_benchmark->settle_frames;
-          } else {
-            scripted_input = benchmark_input (m_benchmark_prelude_frame);
-            m_benchmark_measured = false;
-          }
+          prepare_benchmark_epoch ();
+          m_benchmark_render_frame = m_benchmark_replay->current_frame ();
+          if (!m_benchmark_render_frame)
+            throw std::logic_error ("graphics benchmark has no replay frame");
+          scripted_input = m_benchmark_render_frame->input;
         }
-        if (m_benchmark) {
+        if (m_benchmark_render_frame) {
           MOPPE_PROFILE_PLOT ("benchmark.mask", m_benchmark_mask);
           MOPPE_PROFILE_PLOT ("benchmark.partition_mask",
-                              m_benchmark_partition_mask);
-          MOPPE_PROFILE_PLOT ("benchmark.epoch", m_benchmark_epoch);
-          MOPPE_PROFILE_PLOT ("benchmark.logical_frame", m_benchmark_frame);
-          MOPPE_PROFILE_PLOT ("benchmark.measured", m_benchmark_measured);
+                              m_benchmark_render_frame->partition_mask);
+          MOPPE_PROFILE_PLOT ("benchmark.epoch",
+                              m_benchmark_render_frame->epoch);
+          MOPPE_PROFILE_PLOT ("benchmark.logical_frame",
+                              m_benchmark_render_frame->logical_frame);
+          MOPPE_PROFILE_PLOT ("benchmark.measured",
+                              m_benchmark_render_frame->measured);
         }
         logic ().m_frame_time = dt;
         if (!m_ready || logic ().m_game_over)
@@ -1430,26 +1407,8 @@ namespace moppe {
           session ().camera ().limit (map ());
         }
 
-        if (m_benchmark) {
-          if (m_benchmark_checkpoint) {
-            ++m_benchmark_frame;
-          } else if (++m_benchmark_prelude_frame ==
-                     m_benchmark->prelude_frames) {
-            m_benchmark_checkpoint = state ();
-            m_renderer->reset_temporal_state ();
-            m_benchmark_partition_mask = gray_code (0);
-            m_graphics = m_benchmark_baseline;
-            m_benchmark_mask = apply_graphics_benchmark_mask (
-              m_graphics, m_benchmark_partition_mask);
-            m_benchmark_frame = 0;
-            update_benchmark_title ();
-            std::cerr << "moppe: graphics benchmark: "
-                      << (1 << graphics_benchmark_dimension_count ())
-                      << " configurations, " << m_benchmark->settle_frames
-                      << " settle + " << m_benchmark->measured_frames
-                      << " measured frames each\n";
-          }
-        }
+        if (m_benchmark)
+          finish_benchmark_frame (m_benchmark_replay->finish_frame ());
       }
 
       // -- rendering ---------------------------------------------------
@@ -1548,10 +1507,13 @@ namespace moppe {
         fp.lens_flare = m_graphics.lens_flare;
         fp.profile = true;
         fp.benchmark_mask = m_benchmark_mask;
-        fp.benchmark_partition_mask = m_benchmark_partition_mask;
-        fp.benchmark_epoch = m_benchmark_epoch;
-        fp.benchmark_frame = m_benchmark_frame > 0 ? m_benchmark_frame - 1 : 0;
-        fp.benchmark_measured = m_benchmark_measured;
+        if (m_benchmark_render_frame) {
+          fp.benchmark_partition_mask =
+            m_benchmark_render_frame->partition_mask;
+          fp.benchmark_epoch = m_benchmark_render_frame->epoch;
+          fp.benchmark_frame = m_benchmark_render_frame->logical_frame;
+          fp.benchmark_measured = m_benchmark_render_frame->measured;
+        }
 
         // Lens-flare occlusion: march toward the sun through the
         // heightmap; any ridge above the ray kills the flare.  Cloud
@@ -2321,17 +2283,59 @@ namespace moppe {
                      1.0f / m_landscape_scale_x);
       }
 
-      void update_benchmark_title () const {
+      void prepare_benchmark_epoch () {
+        if (!m_benchmark_epoch_pending)
+          return;
+        const std::optional<GraphicsBenchmarkReplay::Frame> frame =
+          m_benchmark_replay->current_frame ();
+        if (!frame || frame->prelude || !m_benchmark_checkpoint)
+          throw std::logic_error ("graphics benchmark lost its checkpoint");
+
+        if (frame->epoch > 0)
+          session ().restore (*m_benchmark_checkpoint);
+        m_renderer->reset_temporal_state ();
+        m_graphics = m_benchmark_baseline;
+        m_benchmark_mask =
+          apply_graphics_benchmark_mask (m_graphics, frame->partition_mask);
+        update_benchmark_title (frame->epoch, frame->partition_mask);
+        m_benchmark_epoch_pending = false;
+      }
+
+      void finish_benchmark_frame (GraphicsBenchmarkReplay::Boundary boundary) {
+        switch (boundary) {
+        case GraphicsBenchmarkReplay::Boundary::none:
+          return;
+        case GraphicsBenchmarkReplay::Boundary::prelude_complete:
+          m_benchmark_checkpoint = session ().state ();
+          m_benchmark_epoch_pending = true;
+          std::cerr << "moppe: graphics benchmark: "
+                    << m_benchmark_replay->configuration_count ()
+                    << " configurations, " << m_benchmark->settle_frames
+                    << " settle + " << m_benchmark->measured_frames
+                    << " measured frames each\n";
+          return;
+        case GraphicsBenchmarkReplay::Boundary::epoch_complete:
+          m_benchmark_epoch_pending = true;
+          return;
+        case GraphicsBenchmarkReplay::Boundary::complete:
+          m_benchmark_submitted = true;
+          platform::set_window_title (
+            "Moppe benchmark - finishing GPU samples");
+          return;
+        }
+      }
+
+      void update_benchmark_title (int epoch, uint32_t partition_mask) const {
         if (!m_benchmark)
           return;
         const int configurations = 1 << graphics_benchmark_dimension_count ();
         std::ostringstream title;
-        title << "Moppe benchmark " << (m_benchmark_epoch + 1) << '/'
-              << configurations << " - ";
+        title << "Moppe benchmark " << (epoch + 1) << '/' << configurations
+              << " - ";
         bool any = false;
         for (std::size_t bit = 0; bit < RidingGraphicsPartition::blocks.size ();
              ++bit)
-          if (m_benchmark_partition_mask & (1u << bit)) {
+          if (partition_mask & (1u << bit)) {
             if (any)
               title << " + ";
             title << RidingGraphicsPartition::name (
@@ -2529,13 +2533,11 @@ namespace moppe {
       std::atomic<LoadingStage> m_loading_stage;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
+      std::optional<GraphicsBenchmarkReplay> m_benchmark_replay;
       std::optional<GameState> m_benchmark_checkpoint;
-      int m_benchmark_prelude_frame = 0;
-      int m_benchmark_epoch = 0;
-      int m_benchmark_frame = 0;
+      std::optional<GraphicsBenchmarkReplay::Frame> m_benchmark_render_frame;
       uint32_t m_benchmark_mask = 0;
-      uint32_t m_benchmark_partition_mask = 0;
-      bool m_benchmark_measured = false;
+      bool m_benchmark_epoch_pending = false;
       bool m_benchmark_submitted = false;
       bool m_benchmark_results_written = false;
 
@@ -2728,7 +2730,7 @@ int main (int argc, char** argv) {
     ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
     std::string feature_names;
     for (const game::GraphicsFeature* feature : game::graphics_features)
-      if (feature->hot) {
+      if (game::graphics_benchmark_includes (*feature)) {
         if (!feature_names.empty ())
           feature_names += ',';
         feature_names += feature->name;
