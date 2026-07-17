@@ -18,7 +18,9 @@ fixed fast-profile seeds selected because the relevant structures really exist;
 in particular, visible confluences are uncommon enough that seed 123 alone does
 not exercise them. Each run writes normalized PNGs, full logs, `manifest.csv`,
 `summary.json`, and an HTML gallery. A requested but absent feature is a failed
-case rather than a successful process with no image.
+case rather than a successful process with no image. Automated capture windows
+remain inactive on macOS, so running the suite does not steal keyboard focus
+from the application being used.
 
 ## Review layers
 

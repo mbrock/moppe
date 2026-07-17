@@ -3380,6 +3380,7 @@ int main (int argc, char** argv) {
     world.resolution = 1025;
   config.capture_frames =
     !screenshot_path.empty () || ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
+  config.activate = !config.capture_frames && !graphics_benchmark;
   if (!screenshot_path.empty () && seed < 0)
     seed = 123;
   game::prune_obsolete_terrain_caches ();
