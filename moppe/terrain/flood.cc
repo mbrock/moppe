@@ -333,10 +333,7 @@ namespace moppe::terrain {
       }
       if (body.ocean_connected)
         body.classification = WaterBodyClass::Sea;
-      else if (body.area < 600.0f * mp_units::si::metre * mp_units::si::metre ||
-               body.maximum_depth < 0.25f * mp_units::si::metre ||
-               body.volume < 100.0f * mp_units::si::metre *
-                               mp_units::si::metre * mp_units::si::metre)
+      else if (!water_body_is_permanent (body))
         body.classification = WaterBodyClass::Puddle;
       else if (body.area < 50000.0f * mp_units::si::metre * mp_units::si::metre)
         body.classification = WaterBodyClass::Pond;
@@ -345,6 +342,14 @@ namespace moppe::terrain {
       census.bodies.push_back (body);
     }
     return census;
+  }
+
+  bool water_body_is_permanent (const WaterBody& body,
+                                const WaterPermanence& permanence) {
+    return body.classification == WaterBodyClass::Sea ||
+           (body.area >= permanence.minimum_area &&
+            body.maximum_depth >= permanence.minimum_depth &&
+            body.volume >= permanence.minimum_volume);
   }
 
   ScalarRaster permanent_water_surface (const FloodField& flood,
@@ -364,14 +369,9 @@ namespace moppe::terrain {
     std::vector<float> surface (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const WaterBodyId id = census.body[cell];
-      bool permanent = false;
-      if (id != LakeCensus::dry) {
-        const WaterBody& body = census.bodies[id];
-        permanent = body.classification == WaterBodyClass::Sea ||
-                    (body.area >= permanence.minimum_area &&
-                     body.maximum_depth >= permanence.minimum_depth &&
-                     body.volume >= permanence.minimum_volume);
-      }
+      const bool permanent =
+        id != LakeCensus::dry &&
+        water_body_is_permanent (census.bodies[id], permanence);
       surface[cell] = permanent ? level[cell] : level[cell] - depth[cell];
     }
     return ScalarRaster (flood.water_level.domain (), std::move (surface));
