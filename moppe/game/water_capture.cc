@@ -53,6 +53,21 @@ namespace moppe::game {
       return normalized (result);
     }
 
+    float camera_obstruction (const Vec3& eye,
+                              const Vec3& target,
+                              const map::HeightMap& map) {
+      float obstruction = 0.0f;
+      for (int step = 1; step < 10; ++step) {
+        const float t = static_cast<float> (step) / 10.0f;
+        const Vec3 point = eye * (1.0f - t) + target * t;
+        if (!map.in_bounds (point[0], point[2]))
+          continue;
+        obstruction = std::max (
+          obstruction, map.interpolated_height (point[0], point[2]) - point[1]);
+      }
+      return obstruction;
+    }
+
     struct Candidate {
       std::uint32_t cell = terrain::RiverReach::no_id;
       std::uint32_t from = terrain::RiverReach::no_id;
@@ -84,6 +99,31 @@ namespace moppe::game {
           square_meters_value (reach.downstream_area) *
           std::sqrt (static_cast<float> (reach.cells.size ()));
         consider (best, cell, from, next, score);
+      }
+      return best;
+    }
+
+    Candidate choose_stream (const terrain::DrainageGraph& drainage,
+                             const terrain::RiverNetwork& rivers) {
+      Candidate best;
+      float smallest_area = std::numeric_limits<float>::infinity ();
+      std::size_t longest_reach = 0;
+      for (const terrain::RiverReach& reach : rivers.reaches) {
+        if (reach.cells.size () < 3)
+          continue;
+        const float area = square_meters_value (reach.downstream_area);
+        if (area > smallest_area ||
+            (area == smallest_area && reach.cells.size () <= longest_reach))
+          continue;
+        const std::size_t middle = reach.cells.size () / 2;
+        const terrain::CellIndex cell = reach.cells[middle];
+        const terrain::CellIndex from = reach.cells[middle - 1];
+        best = { .cell = cell,
+                 .from = from,
+                 .to = drainage.receiver[cell],
+                 .score = area };
+        smallest_area = area;
+        longest_reach = reach.cells.size ();
       }
       return best;
     }
@@ -178,6 +218,8 @@ namespace moppe::game {
   }
 
   std::optional<WaterShot> parse_water_shot (std::string_view name) noexcept {
+    if (name == "stream" || name == "headwater")
+      return WaterShot::Stream;
     if (name == "river")
       return WaterShot::River;
     if (name == "confluence")
@@ -193,6 +235,8 @@ namespace moppe::game {
 
   std::string_view water_shot_name (WaterShot shot) noexcept {
     switch (shot) {
+    case WaterShot::Stream:
+      return "stream";
     case WaterShot::River:
       return "river";
     case WaterShot::Confluence:
@@ -216,6 +260,9 @@ namespace moppe::game {
                            const terrain::RiverNetwork& rivers) {
     Candidate best;
     switch (shot) {
+    case WaterShot::Stream:
+      best = choose_stream (drainage, rivers);
+      break;
     case WaterShot::River:
       best = choose_river (drainage, rivers);
       break;
@@ -250,9 +297,9 @@ namespace moppe::game {
     if (shot == WaterShot::Waterfall) {
       target =
         (target + cell_position (best.to, map, flood, census, drainage)) * 0.5f;
-      back = -70.0f;
-      sideways = 45.0f;
-      height = 28.0f;
+      back = -18.0f;
+      sideways = 24.0f;
+      height = 14.0f;
     } else if (shot == WaterShot::Lake) {
       back = 110.0f;
       sideways = 75.0f;
@@ -265,6 +312,15 @@ namespace moppe::game {
     target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
     Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
     eye[1] = std::max (eye[1], map.interpolated_height (eye[0], eye[2]) + 4.0f);
+    if (shot == WaterShot::Waterfall) {
+      Vec3 opposite =
+        target - flow * back - side * sideways + Vec3 (0, height, 0);
+      opposite[1] = std::max (
+        opposite[1], map.interpolated_height (opposite[0], opposite[2]) + 4.0f);
+      if (camera_obstruction (opposite, target, map) <
+          camera_obstruction (eye, target, map))
+        eye = opposite;
+    }
     return WaterInspection { .kind = shot,
                              .cell = best.cell,
                              .score = best.score,

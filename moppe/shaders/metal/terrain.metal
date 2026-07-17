@@ -872,8 +872,8 @@ fragment float4 terrain_fragment (
     smoothstep (0.35, 0.90, channel_activity) * (1.0 - 0.85 * snow_coef) *
     (1.0 - submerged * 0.5) * (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
     0.28;
-  n = normalize (
-    n - float3 (rill_across.x, 0.0, rill_across.y) * rill_strength);
+  n =
+    normalize (n - float3 (rill_across.x, 0.0, rill_across.y) * rill_strength);
 
   // Per-pixel Lambert with real cast shadows.
   const float current_shadow = terrain_shadow_factor (

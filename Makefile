@@ -1,7 +1,8 @@
 .PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks phone profile terrain-lab-shot testflight tracy \
-	tracy-benchmark-capture tracy-capture tracy-import tree-shot xcode
+	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
+	xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -89,6 +90,10 @@ terrain-lab-shot:
 # Build a deterministic grove from surface habitat and capture it in-game.
 tree-shot:
 	./tools/capture-trees
+
+# Capture the curated hydrology gallery and write its HTML/CSV report.
+water-benchmark:
+	./tools/water-benchmark
 
 # Archive and upload a new build to App Store Connect for TestFlight.
 testflight:
