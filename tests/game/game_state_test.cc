@@ -1,5 +1,6 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/game_state.hh>
+#include <moppe/game/input_frame_adapter.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
@@ -7,6 +8,7 @@
 
 #include <algorithm>
 #include <type_traits>
+#include <vector>
 
 namespace {
   void check_vector (const moppe::Vec3& actual, const moppe::Vec3& expected) {
@@ -360,4 +362,84 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   check_position (replayed.camera.position, saved.camera.position);
   MOPPE_CHECK (replayed.stars.count == saved.stars.count);
   MOPPE_CHECK (replayed.dust.emissions.size () == saved.dust.emissions.size ());
+}
+
+MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
+  using namespace moppe;
+
+  using AdvanceGameSession =
+    game::GameSessionAdvanceResult (*) (const game::GameSessionAdvanceContext&,
+                                        game::GameSession&,
+                                        const game::InputFrame&,
+                                        seconds_t);
+  static_assert (
+    std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
+
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (map.size ());
+  world.resolution = map.width ();
+  world.water_level = 0 * u::m;
+  world.terrain_topology = terrain::Topology::Torus;
+  std::vector<mov::Box> obstacles;
+  const game::GameSessionAdvanceContext context { world, map, obstacles };
+
+  game::InputFrameAdapter recorder;
+  recorder.key (platform::Key::D, true);
+  recorder.key (platform::Key::W, true);
+  recorder.key (platform::Key::Space, true);
+  recorder.key (platform::Key::Tab, true);
+  std::vector<game::InputFrame> tape;
+  tape.push_back (recorder.take_frame ());
+  for (int i = 0; i < 179; ++i)
+    tape.push_back (recorder.take_frame ());
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::GameSession live (world, map, surface);
+  const game::GameSession::State checkpoint = live.state ();
+  for (const game::InputFrame& frame : tape)
+    game::advance_game_session (context, live, frame, step);
+  const game::GameSession::State live_state = live.state ();
+
+  // This must be more than a checkpoint round trip: the recorded keyboard
+  // tape drove and steered the bike, while its Tab edge changed the camera.
+  MOPPE_CHECK (length2 (position_value (live_state.vehicle.position) -
+                        position_value (checkpoint.vehicle.position)) > 1.0f);
+  MOPPE_CHECK (live_state.logic.m_mode == game::M_BIKE);
+  MOPPE_CHECK (live_state.logic.m_cam_mode == game::CAM_FRONT);
+  MOPPE_CHECK (live_state.logic.m_fuel < checkpoint.logic.m_fuel);
+
+  game::GameSession replay (world, map, surface);
+  replay.restore (checkpoint);
+  for (const game::InputFrame& frame : tape)
+    game::advance_game_session (context, replay, frame, step);
+  const game::GameSession::State replayed = replay.state ();
+
+  MOPPE_CHECK (replayed.logic.m_mode == live_state.logic.m_mode);
+  MOPPE_CHECK (replayed.logic.m_cam_mode == live_state.logic.m_cam_mode);
+  MOPPE_CHECK_NEAR (replayed.logic.m_fuel, live_state.logic.m_fuel, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    replayed.logic.m_odometer, live_state.logic.m_odometer, 1e-6f);
+  MOPPE_CHECK_NEAR (replayed.logic.m_fov_k, live_state.logic.m_fov_k, 1e-6f);
+  check_position (replayed.vehicle.position, live_state.vehicle.position);
+  check_velocity (replayed.vehicle.velocity, live_state.vehicle.velocity);
+  check_vector (replayed.vehicle.heading, live_state.vehicle.heading);
+  check_position (replayed.camera.position, live_state.camera.position);
+  check_position (replayed.camera.target, live_state.camera.target);
+  check_velocity (replayed.camera.position_velocity,
+                  live_state.camera.position_velocity);
+  MOPPE_CHECK (replayed.stars.count == live_state.stars.count);
+  MOPPE_CHECK (replayed.stars.collected == live_state.stars.collected);
+  MOPPE_CHECK (replayed.dust.next_id == live_state.dust.next_id);
+  MOPPE_CHECK (replayed.dust.emissions.size () ==
+               live_state.dust.emissions.size ());
+  MOPPE_CHECK_NEAR (seconds_value (replayed.dust.logical_time),
+                    seconds_value (live_state.dust.logical_time),
+                    1e-6f);
 }

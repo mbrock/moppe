@@ -1412,317 +1412,22 @@ namespace moppe {
           };
         }
 
-        apply_input_frame (input);
+        const GameSessionAdvanceContext advance_context {
+          world (),
+          map (),
+          m_obstacles,
+          m_landscape_scale_x,
+          m_landscape_scale_y,
+        };
+        const GameSessionAdvanceResult advance = advance_game_session (
+          advance_context, session (), input, seconds (dt));
+        if (advance.say_ouchies)
+          platform::say ("Ouchies. That hurts.");
 
-        session ().bike ().update (seconds (dt));
-        if (logic ().m_car_exists)
-          session ().car ().update (seconds (dt));
-        if (logic ().m_mode == M_GLIDER &&
-            session ().glider ().update (seconds (dt)))
-          finish_glide ();
-        if (logic ().m_mode == M_FOOT)
-          session ().walker ().update (
-            seconds (dt), map (), m_obstacles, world ());
-
-        const Vec3 vpos = subject_position ();
-        mov::Vehicle& av = active_vehicle ();
-
-        // Parked vehicles' impacts shouldn't linger until remount.
-        if (logic ().m_mode != M_BIKE) {
-          session ().bike ().pop_impact ();
-          session ().bike ().pop_fall_drop ();
-        }
-        if (logic ().m_car_exists && logic ().m_mode != M_CAR) {
-          session ().car ().pop_impact ();
-          session ().car ().pop_fall_drop ();
-        }
-
-        const bool in_water =
-          vpos[1] < meters_value (world ().water_level) + 1.0f;
-        const bool driving =
-          logic ().m_mode == M_BIKE || logic ().m_mode == M_CAR;
-
-        // Long jumps become score events after three seconds. Keep the last
-        // airborne time locally because Vehicle clears its timer on touchdown.
-        if (driving && av.airtime () > 0.0f) {
-          logic ().m_jump_airtime = av.airtime ();
-          logic ().m_landed_age += dt;
-        } else {
-          if (driving && logic ().m_jump_airtime >= 3.0f) {
-            logic ().m_landed_airtime = logic ().m_jump_airtime;
-            logic ().m_landed_points = (int)std::round (
-              100.0f * logic ().m_jump_airtime * logic ().m_jump_airtime);
-            logic ().m_score += logic ().m_landed_points;
-            logic ().m_landed_age = 0.0f;
-          }
-          logic ().m_jump_airtime = 0.0f;
-          logic ().m_landed_age += dt;
-        }
-        const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
-        const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
-        const DisplayColor spray_color (0.85f, 0.92f, 1.0f);
-        const Vec3 fwd = subject_heading ();
-        const Vec3 rear_wheel = vpos - fwd * 1.4f + Vec3 (0, -0.7f, 0);
-
-        // Drift kicks up dirt from the rear wheel (or spray).
-        if (driving && av.grounded () && av.drift_speed () > 6.0f) {
-          int n = std::min (4, (int)(av.drift_speed () * 0.2f));
-          session ().dust ().emit (position (rear_wheel),
-                                   velocity (av.velocity () * 0.15f),
-                                   n,
-                                   in_water ? spray_color : dust_color);
-        }
-
-        // Roost: hard throttle sprays an arc of dirt clods backward
-        // off the rear knobby, heaviest when the engine is winning
-        // against the ground (launches, corner exits).
-        if (driving && av.grounded () && !in_water && av.thrust () > 0.6f) {
-          const float speed = length (av.velocity ());
-          const float slip = scalar_value (av.thrust ()) *
-                             (1.0f - std::min (1.0f, speed / 30.0f));
-          if (slip > 0.15f) {
-            Dust::Style roost;
-            roost.size = 0.45f * u::m;
-            roost.lifetime = 0.9f * u::s;
-            roost.downward_acceleration =
-              12.0f * isq::acceleration[u::m / pow<2> (u::s)];
-            roost.spread = 0.5f * one;
-            session ().dust ().emit (position (rear_wheel),
-                                     velocity (fwd * (-6.0f - 14.0f * slip) +
-                                               Vec3 (0, 3.5f + 3.0f * slip, 0)),
-                                     1 + (int)(slip * 3.0f),
-                                     clod_color,
-                                     roost);
-          }
-        }
-
-        // Jet embers: hot additive sparks streaming out of the
-        // nozzles while the jets burn, arcing down and dying fast.
-        if (driving && av.boost_level () > 0.05f) {
-          std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-          // Poisson emission: an event rate scaled by the jet level,
-          // integrated over the frame into a probability.
-          const probability_t spark (34.0f / u::s * av.boost_level () *
-                                     (dt * u::s));
-          if (chance (logic ().m_fx_rng) < scalar_value (spark)) {
-            Dust::Style ember;
-            ember.size = 0.15f * u::m;
-            ember.lifetime = 0.45f * u::s;
-            ember.downward_acceleration =
-              6.0f * isq::acceleration[u::m / pow<2> (u::s)];
-            ember.spread = 0.3f * one;
-            ember.additive = true;
-            session ().dust ().emit (
-              position (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0)),
-              velocity (av.velocity () * 0.5f - fwd * 2.0f +
-                        Vec3 (0, -4.0f, 0)),
-              1,
-              DisplayColor (1.0f, 0.55f, 0.18f),
-              ember);
-          }
-        }
-
-        // Exhaust smoke: faint gray puffs that rise off the muffler
-        // while the throttle is open.
-        if (driving && abs (av.thrust ()) > 0.3f && logic ().m_mode == M_BIKE) {
-          std::uniform_real_distribution<float> chance (0.0f, 1.0f);
-          const probability_t puff (14.0f / u::s * (dt * u::s));
-          if (chance (logic ().m_fx_rng) < scalar_value (puff)) {
-            Dust::Style smoke;
-            smoke.size = 0.35f * u::m;
-            smoke.lifetime = 0.8f * u::s;
-            smoke.downward_acceleration =
-              -2.5f * isq::acceleration[u::m / pow<2> (u::s)]; // buoyant
-            smoke.spread = 0.25f * one;
-            session ().dust ().emit (
-              position (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0)),
-              velocity (av.velocity () * 0.25f),
-              1,
-              DisplayColor (0.45f, 0.45f, 0.48f),
-              smoke);
-          }
-        }
-
-        // Wading fast throws up a bow wave.
-        if (driving && in_water && length (av.velocity ()) > 15.0f)
-          session ().dust ().emit (position (vpos + Vec3 (0, -0.5f, 0)),
-                                   velocity (av.velocity () * 0.3f),
-                                   3,
-                                   spray_color);
-
-        // Hard landings shake the camera and burst dirt outward:
-        // a low pancake of dust plus a ring of ballistic clods.
-        const float impact = driving ? av.pop_impact () : 0.0f;
-        if (impact > 8.0f) {
-          logic ().m_shake = std::min (0.28f, 0.010f * impact);
-          logic ().m_shake_time = 0.0f;
-          session ().dust ().emit (position (vpos + Vec3 (0, -0.7f, 0)),
-                                   velocity (av.velocity () * 0.2f),
-                                   12,
-                                   in_water ? spray_color : dust_color);
-          if (!in_water) {
-            Dust::Style burst;
-            burst.size = 0.5f * u::m;
-            burst.lifetime = 1.1f * u::s;
-            burst.downward_acceleration =
-              10.0f * isq::acceleration[u::m / pow<2> (u::s)];
-            burst.spread = 1.4f * one;
-            session ().dust ().emit (
-              position (vpos + Vec3 (0, -0.6f, 0)),
-              velocity (av.velocity () * 0.15f +
-                        Vec3 (0, 2.0f + 0.15f * impact, 0)),
-              (int)std::min (10.0f, impact * 0.5f),
-              clod_color,
-              burst);
-          }
-        }
-
-        // Crashes hurt; health trickles back slowly.  Falls from
-        // above a hundred meters are simply fatal -- house rule.
-        if (impact > 9.0f)
-          logic ().m_health -= (impact - 9.0f) * 4.5f;
-        if (driving && av.pop_fall_drop () > 100.0f)
-          logic ().m_health = 0.0f;
-        logic ().m_health = std::min (100.0f, logic ().m_health + 1.5f * dt);
-        if (logic ().m_health <= 0.0f) {
-          session ().dust ().emit (position (vpos),
-                                   velocity (Vec3 (0, 6, 0)),
-                                   40,
-                                   DisplayColor (1.0f, 0.5f, 0.1f));
-          --logic ().m_lives;
-          if (logic ().m_lives <= 0) {
-            logic ().m_game_over = true;
-          } else {
-            // Halfway through the hearts, the game offers its
-            // sympathies out loud.
-            if (logic ().m_lives == 5)
-              platform::say ("Ouchies. That hurts.");
-
-            // Respawn where you crashed, upright on the ground.
-            // (Deaths used to teleport you 600 m above the map
-            // corner -- it read as falling through the cosmos.)
-            const float ground = map ().interpolated_height (vpos[0], vpos[2]);
-            av.reset (Vec3 (vpos[0], ground + 1.2f, vpos[2]));
-            logic ().m_health = 100.0f;
-            logic ().m_shake = 1.0f;
-            logic ().m_shake_time = 0.0f;
-          }
-        }
-
-        // Star pickups sparkle gold and top up fuel and boost reserves.
-        {
-          const int picked =
-            session ().stars ().update (vpos, logic ().m_total_time, dt);
-          if (picked > 0) {
-            Dust::Style sparkle;
-            sparkle.size = 0.38f * u::m;
-            sparkle.lifetime = 0.85f * u::s;
-            sparkle.downward_acceleration =
-              -1.5f * isq::acceleration[u::m / pow<2> (u::s)];
-            sparkle.spread = 1.7f * one;
-            sparkle.additive = true;
-            session ().dust ().emit (position (session ().stars ().last_pos ()),
-                                     velocity (Vec3 (0, 4, 0)),
-                                     32,
-                                     DisplayColor (1.0f, 0.72f, 0.12f),
-                                     sparkle);
-            Dust::Style flash;
-            flash.size = 0.9f * u::m;
-            flash.lifetime = 0.35f * u::s;
-            flash.spread = 0.25f * one;
-            flash.additive = true;
-            session ().dust ().emit (position (session ().stars ().last_pos ()),
-                                     velocity (Vec3 ()),
-                                     5,
-                                     DisplayColor (1.0f, 0.95f, 0.55f),
-                                     flash);
-            logic ().m_fuel =
-              std::min (100.0f, logic ().m_fuel + 25.0f * picked);
-            if (logic ().m_mode != M_GLIDER)
-              av.replenish_boost (0.25f * picked);
-          }
-        }
-
-        // Fuel: the throttle burns it; an empty tank limps along at
-        // a third power (never fully stranded).
-        if (driving) {
-          logic ().m_fuel = std::max (
-            0.0f,
-            logic ().m_fuel - scalar_value (abs (av.thrust ())) * 0.9f * dt);
-          logic ().m_odometer += length (av.velocity ()) * dt;
-
-          const float want =
-            logic ().m_go_input *
-            ((logic ().m_fuel <= 0.5f && logic ().m_go_input > 0) ? 0.3f
-                                                                  : 1.0f);
-          av.set_thrust (want);
-        }
-
-        session ().dust ().update (seconds (dt));
-        logic ().m_shake_time += dt;
-        logic ().m_shake *= decay (7.0f / u::s, dt * u::s);
-
-        if (logic ().m_cam_mode == CAM_HELMET) {
-          // Ride inside the rider's head; lightly smoothed so
-          // terrain bumps don't rattle the eyeballs.
-          Vec3 eye, look;
-          if (logic ().m_mode == M_FOOT) {
-            eye = session ().walker ().position () +
-                  Vec3 (0, 1.55f / m_landscape_scale_y, 0);
-            look = session ().walker ().heading ();
-          } else if (logic ().m_mode == M_GLIDER) {
-            eye = session ().glider ().position () -
-                  Vec3 (0, 0.75f / m_landscape_scale_y, 0);
-            look = session ().glider ().heading ();
-          } else {
-            eye = av.position () + Vec3 (0, 0.95f / m_landscape_scale_y, 0) +
-                  av.orientation () * (0.4f / m_landscape_scale_x);
-            look = av.orientation ();
-          }
-          logic ().m_fp_eye =
-            logic ().m_fp_eye + (eye - logic ().m_fp_eye) *
-                                  smoothing_alpha (25.0f / u::s, dt * u::s);
-          session ().camera ().place (logic ().m_fp_eye,
-                                      logic ().m_fp_eye + look * 10.0f);
-        } else {
-          session ().camera ().set_landscape_scale (m_landscape_scale_x,
-                                                    m_landscape_scale_y);
-          const float flip = (logic ().m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
-          if (logic ().m_mode == M_FOOT)
-            session ().camera ().update (
-              position (session ().walker ().position () +
-                        Vec3 (0, 1.0f / m_landscape_scale_y, 0)),
-              session ().walker ().heading () * flip,
-              velocity (Vec3 ()),
-              seconds (dt));
-          else if (logic ().m_mode == M_GLIDER)
-            session ().camera ().update (
-              session ().glider ().physical_position (),
-              session ().glider ().heading () * flip,
-              session ().glider ().physical_velocity (),
-              seconds (dt));
-          else
-            session ().camera ().update (av.physical_position (),
-                                         av.orientation () * flip,
-                                         av.physical_velocity (),
-                                         seconds (dt));
-          session ().camera ().limit (map ());
-        }
         if (m_water_inspection) {
           session ().camera ().place (m_water_inspection->eye,
                                       m_water_inspection->target);
           session ().camera ().limit (map ());
-        }
-
-        // Speed widens the field of view a touch.
-        {
-          const float kmh = (driving || logic ().m_mode == M_GLIDER)
-                              ? subject_speed_kmh ()
-                              : 0.0f;
-          const float k =
-            std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
-          logic ().m_fov_k +=
-            (k - logic ().m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
         }
 
         if (m_benchmark) {
@@ -2564,9 +2269,7 @@ namespace moppe {
         }
 
         if (k == Key::T && down && m_ready) {
-          input_turn (0);
-          input_go (0);
-          input_boost (0);
+          session ().clear_controls ();
           m_live_input.clear ();
           m_terrain_lab.enter (*m_renderer,
                                generated_world ().terrain_for_terrain_lab (),
@@ -2641,74 +2344,23 @@ namespace moppe {
       }
 
       mov::Vehicle& active_vehicle () {
-        return logic ().m_mode == M_CAR ? session ().car ()
-                                        : session ().bike ();
+        return session ().active_vehicle ();
       }
 
       Vec3 subject_position () const {
-        if (logic ().m_mode == M_FOOT)
-          return session ().walker ().position ();
-        if (logic ().m_mode == M_GLIDER)
-          return session ().glider ().position ();
-        return logic ().m_mode == M_CAR ? session ().car ().position ()
-                                        : session ().bike ().position ();
+        return session ().subject_position ();
       }
 
       Vec3 subject_heading () const {
-        if (logic ().m_mode == M_FOOT)
-          return session ().walker ().heading ();
-        if (logic ().m_mode == M_GLIDER)
-          return session ().glider ().heading ();
-        return logic ().m_mode == M_CAR ? session ().car ().orientation ()
-                                        : session ().bike ().orientation ();
+        return session ().subject_heading ();
       }
 
       float subject_speed_kmh () const {
-        if (logic ().m_mode == M_FOOT)
-          return 0.0f;
-        if (logic ().m_mode == M_GLIDER)
-          return session ().glider ().airspeed ().numerical_value_in (u::m /
-                                                                      u::s) *
-                 3.6f;
-        const Vec3 v = logic ().m_mode == M_CAR
-                         ? session ().car ().velocity ()
-                         : session ().bike ().velocity ();
-        return length (v) * 3.6f;
+        return session ().subject_speed_kmh ();
       }
 
       bool can_deploy_glider () const {
-        if (logic ().m_mode != M_BIKE || !session ().bike ().airborne ())
-          return false;
-        const Vec3 p = session ().bike ().position ();
-        const float ground = map ().interpolated_height (p[0], p[2]);
-        return p[1] - ground > 3.0f;
-      }
-
-      void deploy_glider () {
-        if (!can_deploy_glider ())
-          return;
-        const Vec3 p = session ().bike ().position ();
-        const Vec3 heading = session ().bike ().orientation ();
-        const velocity_t inherited = session ().bike ().physical_velocity ();
-        session ().bike ().set_thrust (0);
-        session ().bike ().set_yaw (0 * u::deg);
-        session ().bike ().set_boost (0, 0);
-        session ().glider ().launch (
-          position (p + Vec3 (0, 1.0f, 0)), inherited, heading);
-        logic ().m_mode = M_GLIDER;
-        session ().glider ().set_turn (logic ().m_turn_input);
-        session ().glider ().set_speed_control (logic ().m_go_input);
-        session ().glider ().set_flare (logic ().m_boost_input > 0.1f);
-      }
-
-      void finish_glide () {
-        const Vec3 p = session ().glider ().position ();
-        session ().walker ().spawn (position (p + Vec3 (0, 0.15f, 0)),
-                                    session ().glider ().heading ());
-        logic ().m_mode = M_FOOT;
-        input_turn (logic ().m_turn_input);
-        input_go (logic ().m_go_input);
-        input_boost (0);
+        return session ().can_deploy_glider (map ());
       }
 
       void leave_cinematic () {
@@ -2729,9 +2381,7 @@ namespace moppe {
       }
 
       void regenerate_world () {
-        input_turn (0.0f);
-        input_go (0.0f);
-        input_boost (0.0f);
+        session ().clear_controls ();
         m_live_input.clear ();
         m_ready = false;
         m_loading_work_done = 0;
@@ -2782,114 +2432,6 @@ namespace moppe {
         start_world_generation (std::move (next_recipe));
       }
 
-      void input_turn (float v) {
-        logic ().m_turn_input = v;
-        if (logic ().m_mode == M_FOOT)
-          session ().walker ().set_turn (v);
-        else if (logic ().m_mode == M_GLIDER)
-          session ().glider ().set_turn (v);
-        else
-          active_vehicle ().set_yaw ((90 * v) * u::deg);
-      }
-
-      void input_go (float v) {
-        logic ().m_go_input = v;
-        if (logic ().m_mode == M_FOOT)
-          session ().walker ().set_walk (v > 0 ? v : v * 0.6f);
-        else if (logic ().m_mode == M_GLIDER)
-          session ().glider ().set_speed_control (v);
-        else {
-          active_vehicle ().set_thrust (v);
-          active_vehicle ().set_boost (logic ().m_boost_input,
-                                       logic ().m_go_input);
-        }
-      }
-
-      void input_boost (float v) {
-        const float previous = logic ().m_boost_input;
-        logic ().m_boost_input = std::max (0.0f, std::min (1.0f, v));
-        if (logic ().m_mode == M_FOOT) {
-          if (logic ().m_boost_input > 0.1f && previous <= 0.1f)
-            session ().walker ().jump ();
-        } else if (logic ().m_mode == M_GLIDER)
-          session ().glider ().set_flare (logic ().m_boost_input > 0.1f);
-        else
-          active_vehicle ().set_boost (logic ().m_boost_input,
-                                       logic ().m_go_input);
-      }
-
-      // This is the single ordinary-gameplay read of live or recorded input.
-      // Loading, Terrain Lab, and application commands stay above this seam.
-      void apply_input_frame (const InputFrame& input) {
-        input_turn (input_value (input.turn));
-        input_go (input_value (input.drive));
-        input_boost (input_value (input.boost));
-
-        if (input.deploy_glider)
-          deploy_glider ();
-        if (input.toggle_mount) {
-          if (can_deploy_glider ())
-            deploy_glider ();
-          else
-            toggle_mount ();
-        }
-        if (input.cycle_camera) {
-          logic ().m_cam_mode = (CamMode)((logic ().m_cam_mode + 1) % 3);
-          if (logic ().m_cam_mode == CAM_HELMET)
-            logic ().m_fp_eye = session ().camera ().position ();
-        }
-      }
-
-      void toggle_mount () {
-        if (!m_ready)
-          return;
-
-        if (logic ().m_mode == M_GLIDER)
-          return;
-
-        if (logic ().m_mode != M_FOOT) {
-          // Step off to the side of whatever we're driving.
-          mov::Vehicle& av = active_vehicle ();
-          const Vec3 h = av.orientation ();
-          const Vec3 side (h[2], 0, -h[0]);
-          session ().walker ().spawn (
-            position (av.position () +
-                      side * (logic ().m_mode == M_CAR ? 2.4f : 1.8f)),
-            h);
-          av.set_thrust (0);
-          av.set_yaw (0 * u::deg);
-          av.set_boost (0, 0);
-          logic ().m_mode = M_FOOT;
-          input_turn (logic ().m_turn_input);
-          input_go (logic ().m_go_input);
-          return;
-        }
-
-        // On foot: bike first, then our parked car, then grand theft.
-        if (length2 (session ().walker ().position () -
-                     session ().bike ().position ()) < 5.0f * 5.0f) {
-          session ().bike ().set_thrust (0);
-          session ().bike ().set_yaw (0 * u::deg);
-          logic ().m_mode = M_BIKE;
-          input_turn (logic ().m_turn_input);
-          input_go (logic ().m_go_input);
-          input_boost (logic ().m_boost_input);
-          return;
-        }
-
-        if (logic ().m_car_exists &&
-            length2 (session ().walker ().position () -
-                     session ().car ().position ()) < 6.0f * 6.0f) {
-          session ().car ().set_thrust (0);
-          session ().car ().set_yaw (0 * u::deg);
-          logic ().m_mode = M_CAR;
-          input_turn (logic ().m_turn_input);
-          input_go (logic ().m_go_input);
-          input_boost (logic ().m_boost_input);
-          return;
-        }
-      }
-
       void revive () {
         logic ().m_lives = 10;
         logic ().m_health = 100.0f;
@@ -2911,13 +2453,8 @@ namespace moppe {
           Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
         // Key releases were swallowed during the game-over screen;
         // don't resume with the throttle stuck open.
-        logic ().m_turn_input = 0;
-        logic ().m_go_input = 0;
-        logic ().m_boost_input = 0;
         m_live_input.clear ();
-        session ().bike ().set_thrust (0);
-        session ().bike ().set_yaw (0 * u::deg);
-        session ().bike ().set_boost (0, 0);
+        session ().clear_controls ();
         logic ().m_game_over = false;
       }
 

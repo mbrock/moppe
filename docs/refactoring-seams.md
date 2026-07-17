@@ -41,12 +41,18 @@ Its copyable `game::GameState` checkpoint intentionally excludes generated
 terrain, resident resources, renderer history, and asynchronous loading. Each
 system that participates exposes a plain `state()` / `restore()` pair.
 
+`advance_game_session(context, session, input, seconds_t)` is the ordinary
+fixed-step seam. Its context names the completed-world values simulation reads
+without coupling it to `GeneratedWorld`; the application still selects input,
+advances weather during paused modes, and realizes platform effects. The
+central playable branch of `MoppeGame::tick` is only that delegation.
+
 `tests/game/game_state_test.cc` owns the restoration contracts for vehicle,
-camera, walker, glider, stars, dust, independent `GameState` copying, and
-same-world `GameSession` checkpoint replacement. The fixed-step benchmark loop
-described in [game-state.md](game-state.md) uses this seam; ENG-030 through
-ENG-033 will make its input and advance boundary explicit without expanding
-what a checkpoint owns.
+camera, walker, glider, stars, dust, independent `GameState` copying,
+same-world `GameSession` checkpoint replacement, and an adapter-recorded input
+tape replayed through that public advance operation. ENG-033 can now route the
+graphics benchmark through the same seam without expanding what a checkpoint
+owns.
 
 ## Completed-world smoke path
 
