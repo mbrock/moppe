@@ -1,6 +1,8 @@
 #include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
+#include <moppe/game/surface_presentation.hh>
+
 #include <tests/test.hh>
 
 #include <algorithm>
@@ -26,7 +28,7 @@ namespace {
   }
 }
 
-MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
+MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   using namespace moppe;
   map::RandomHeightMap map (
     4, 4, Vec3 (40, 20, 40), 1, terrain::Topology::Bounded);
@@ -37,7 +39,7 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
   map.recompute_normals ();
 
   map::Surface surface (map);
-  const auto& samples = surface.samples ();
+  const auto& samples = surface.sections ();
   static_assert (spatial::FiniteDomain<map::SurfaceDomain>);
   static_assert (spatial::InterpolationDomain<map::SurfaceDomain, position_t>);
   static_assert (mp_units::QuantityPointOf<decltype (surface.elevation_at (
@@ -198,7 +200,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
     std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0x12345678U);
 
-  const auto& first = spatial::get<map::forest_cover> (surface.samples ());
+  const auto& first = spatial::get<map::forest_cover> (surface.sections ());
   std::vector<float> values;
   values.reserve (first.size ());
   for (const map::ForestCover value : first)
@@ -209,14 +211,14 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
     MOPPE_CHECK_NEAR (values[row * 65], values[row * 65 + 64], 1e-6f);
 
   surface.derive_forest_cover (0x12345678U);
-  const auto& repeated = spatial::get<map::forest_cover> (surface.samples ());
+  const auto& repeated = spatial::get<map::forest_cover> (surface.sections ());
   for (std::size_t offset = 0; offset < values.size (); ++offset)
     MOPPE_CHECK_NEAR (
       values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
 
   surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));
   surface.derive_forest_cover (0x12345678U);
-  const auto& cleared = spatial::get<map::forest_cover> (surface.samples ());
+  const auto& cleared = spatial::get<map::forest_cover> (surface.sections ());
   MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
     return value == 0.0f * map::forest_cover[one];
   }));
@@ -266,7 +268,7 @@ MOPPE_TEST (surface_reconstruction_matches_periodic_seam_interpolation) {
   map::Surface surface (map);
 
   const auto& snow_support =
-    spatial::get<map::snow_support> (surface.samples ());
+    spatial::get<map::snow_support> (surface.sections ());
   for (int row = 0; row < map.height (); ++row)
     MOPPE_CHECK (snow_support[row * map.width ()] ==
                  snow_support[row * map.width () + map.width () - 1]);
@@ -299,4 +301,35 @@ MOPPE_TEST (surface_refresh_is_an_explicit_materialization_barrier) {
   MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)), before, 1e-6f);
   surface.refresh (map);
   MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)), 7.0f, 1e-6f);
+}
+
+MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    3, 3, Vec3 (30, 10, 30), 27, terrain::Topology::Bounded);
+  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  std::vector<float> trail (9, 0.0f);
+  std::vector<float> home (9, 0.0f);
+  std::vector<float> flux (18, 0.0f);
+  trail[4] = 0.75f;
+  home[4] = 0.25f;
+  flux[8] = 0.6f;
+  flux[9] = -0.8f;
+  surface.materialize_trail_influence (trail);
+  surface.materialize_home_base_influence (home);
+  surface.materialize_channel_flux (flux);
+
+  game::SurfacePresentation presentation;
+  presentation.refresh (surface);
+
+  MOPPE_CHECK (presentation.trails ().size () == surface.sections ().size ());
+  MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
+  MOPPE_CHECK_NEAR (presentation.home_base ()[4], 0.25f, 1e-6f);
+  MOPPE_CHECK_NEAR (presentation.channel_flux ()[8], 0.6f, 1e-6f);
+  MOPPE_CHECK_NEAR (presentation.channel_flux ()[9], -0.8f, 1e-6f);
+  MOPPE_CHECK (presentation.snow_support ().size () == 9);
+  MOPPE_CHECK (presentation.forest ().size () == 9);
 }

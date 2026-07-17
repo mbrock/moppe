@@ -56,13 +56,14 @@ traversal. `extend_into` applies one such rule at every focus and materializes
 the next bundle.
 
 `map::Surface` is the first deliberately small gameplay proof. Its
-`SurfaceBundle` contains an affine elevation point, a vector-valued surface
-normal, snow support, tree-habitat suitability, trail influence, and home-base
-influence at every heightmap node. Snow support is the upward component of a
-24 m local support normal. The shader can therefore let fine normals light the
-terrain folds without letting every lattice-scale change in steepness punch a
-matching hole in the snow. `--graphics-disable snow-support-filter` restores
-the detailed-normal classification for direct comparisons.
+`SurfaceSections` contains an affine elevation point, a vector-valued surface
+normal, snow support, channel flux, tree habitat, forest cover, trail
+influence, and home-base influence at every heightmap node. Snow support is the
+upward component of a 24 m local support normal. The shader can therefore let
+fine normals light the terrain folds without letting every lattice-scale
+change in steepness punch a matching hole in the snow.
+`--graphics-disable snow-support-filter` restores the detailed-normal
+classification for direct comparisons.
 The Association's home-base clearing is a distinct quantity from trail
 influence: it is a place with a role, not merely a wide part of the path.
 `SurfaceDomain` supplies a four-node bilinear stencil for a world position.
@@ -182,7 +183,7 @@ Its arc-length profile is projected toward a motorcycle-friendly maximum grade
 under bounded cut and fill, then stamped as a narrow core with soft shoulders.
 The physical earthwork delta remains available separately from the composed
 heightmap. Continuous `trail_influence` and `home_base_influence` readings are
-materialized in `SurfaceBundle` and uploaded to the terrain shader. Thus
+materialized in `SurfaceSections` and uploaded to the terrain shader. Thus
 intention begins discretely, while the resulting alignment, earthworks, and
 compacted base become physical, sampleable parts of the world. A retained
 feature-local ribbon uses the same alignment to give the compacted core smooth
@@ -485,7 +486,7 @@ area-weighted tangent-flux columns. Dry strict descent uses D-infinity
 triangular facets. Lake flats, depression spills, and ocean identity continue
 to come from the established wet D8 graph. This makes fractional accumulation
 conservative and acyclic without changing the graph used by lakes, rivers,
-waterfalls, rendering, or the final `SurfaceBundle`.
+waterfalls, rendering, or the final `SurfaceSections`.
 
 The channel tangent is the horizontal vector form of drainage direction after
 incoming area fluxes have been combined at confluences. It is persisted across
@@ -499,10 +500,11 @@ memoryless D-infinity; the default is 0.35 and Terrain Lab exposes the value as
 `CHANNEL MEMORY`.
 
 The typed tangent survives `TerrainEvaluator` checkpoints and is available at
-the evaluator boundary. It is intentionally not in `SurfaceBundle` or a shader
-texture yet. That next materialization step needs an explicit cache and seam
-policy rather than silently reconstructing a different vector from final
-heights.
+the evaluator boundary. World assembly reads the final drainage bundle,
+combines its tangent with log-compressed contributing area, and materializes
+that reading as the planar `channel_flux` section. `SurfacePresentation` is the
+single numeric bridge that turns this typed vector column into the shader's
+interleaved x/z texture payload.
 
 A downstream-to-upstream sweep interpolates the new elevation along a
 two-receiver facet edge, then solves the backward-Euler incision step exactly
