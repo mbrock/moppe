@@ -53,7 +53,12 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float time = frame.misc.x;
   const float edge =
     smoothstep (0.0, 0.08, in.uv.x) * smoothstep (0.0, 0.08, 1.0 - in.uv.x);
-  if (edge * in.opacity < 0.005)
+  const float depth_m = in.depth * MOPPE_RIVER_DEPTH_SPAN;
+  const float wet = smoothstep (0.015, 0.10, depth_m);
+  // Depth is evaluated against the terrain at every cross-section vertex.
+  // Discard the dry interpolation fringe instead of letting a transparent
+  // planar strip stamp the first-fragment stencil and hide real water below.
+  if (edge * in.opacity < 0.005 || (wet < 0.005 && in.waterfall < 0.01))
     discard_fragment ();
   const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
   const float distance = length (to_frag);
@@ -69,7 +74,12 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   // owns the pattern, avoiding both unbounded distortion and a visible pulse.
   // The two scales shear relative to one another instead of sliding as one
   // sheet. v is in meters and is continuous across reach junctions.
-  const float speed = 2.0 + 3.5 * in.rapid + 5.0 * in.waterfall;
+  const float cross_position = saturate (abs (in.uv.x - 0.5) * 2.0);
+  const float channel_profile = smoothstep (0.0, 0.78, 1.0 - cross_position);
+  const float depth_profile = smoothstep (0.02, 0.40, depth_m);
+  const float speed = (2.0 + 3.5 * in.rapid + 5.0 * in.waterfall) *
+                      mix (0.20, 1.0, channel_profile) *
+                      mix (0.35, 1.0, depth_profile);
   const float cycle = 1.7;
   const float phase0 = fract (time / cycle);
   const float phase1 = fract (phase0 + 0.5);
@@ -145,10 +155,15 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float3 sky_reflection =
     moppe_sky_radiance (frame.fog_color.rgb, reflection_dir, frame.sun_dir.xyz);
 
-  const float depth_m = in.depth * MOPPE_RIVER_DEPTH_SPAN;
   const float3 shallow = moppe_srgb (float3 (0.10, 0.38, 0.38));
   const float3 deep = moppe_srgb (float3 (0.03, 0.15, 0.24));
-  float3 color = mix (shallow, deep, smoothstep (0.15, 1.2, depth_m));
+  // A compact Beer-Lambert-like layer: red light attenuates faster than blue,
+  // while the real water column controls both hue and eventual opacity.
+  const float3 transmittance =
+    exp (-float3 (1.25, 0.55, 0.22) * max (depth_m, 0.0));
+  const float optical_depth =
+    1.0 - dot (transmittance, float3 (0.30, 0.45, 0.25));
+  float3 color = shallow * transmittance + deep * (1.0 - transmittance);
   // The sky reflects off the surface exactly as it does off the ocean;
   // without this the channel reads as a black trench.
   color = mix (color, sky_reflection, 0.5 * fresnel + 0.06);
@@ -157,14 +172,15 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   // where the surface meets the valley bank. Shallow streams get no
   // bank foam at all so they stay clear water instead of white tubes.
   const float churn =
-    saturate (0.6 * in.rapid *
+    saturate (0.6 * in.rapid * mix (0.55, 1.0, channel_profile) *
               smoothstep (0.55, 0.95, 0.5 * (n1 + n2) + 0.25 * in.rapid));
   const float fall =
     saturate (in.waterfall * (0.45 + 0.55 * smoothstep (0.3, 0.75, n1)));
-  const float bank = smoothstep (0.82, 0.98, abs (in.uv.x - 0.5) * 2.0) *
-                     (0.18 + 0.30 * surface) *
-                     smoothstep (0.30, 0.75, surface) *
-                     smoothstep (0.25, 0.9, depth_m) * (1.0 - in.waterfall);
+  const float bank_contact = smoothstep (0.025, 0.10, depth_m) *
+                             (1.0 - smoothstep (0.18, 0.48, depth_m));
+  const float bank = smoothstep (0.45, 0.95, cross_position) * bank_contact *
+                     (0.12 + 0.26 * surface) *
+                     smoothstep (0.30, 0.75, surface) * (1.0 - in.waterfall);
   const float foam = saturate (max (max (churn, fall), bank));
   const float3 foam_albedo = moppe_srgb (float3 (0.87, 0.95, 0.97));
   const float3 foam_light =
@@ -183,9 +199,10 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   // Transparency follows the water column: a hand-deep stream is glassy
   // over its bed, a meter of water reads as a body, and foam or falling
   // water stays visible regardless.
-  const float body = smoothstep (0.05, 1.0, depth_m);
-  const float alpha = edge * in.opacity *
-                      saturate (0.15 + 0.65 * body + 0.10 * fresnel +
-                                0.25 * in.waterfall + 0.45 * foam);
+  const float clear_surface =
+    wet * (0.04 + 0.74 * optical_depth + 0.12 * fresnel);
+  const float alpha =
+    edge * in.opacity *
+    saturate (clear_surface + 0.35 * in.waterfall + 0.55 * foam);
   return float4 (color, alpha);
 }

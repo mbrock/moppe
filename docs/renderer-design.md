@@ -216,8 +216,12 @@ The ribbon dissolves beneath the standing surface after crossing a mouth.
 so normals and foam follow bends rather than world axes.  Two advected phases
 reset and hand over out of phase, avoiding the texture stretch and snap of a
 single scrolling normal map.  The global arc coordinate keeps phase coherent
-at reach joins.  Rapid, depth, waterfall, and feather signals arrive in the
-vertex color channels.
+at reach joins. Rapid, depth, waterfall, and feather signals arrive in the
+vertex color channels. The measured water column drives spectral attenuation,
+opacity, and a shallow bank-contact band. Cross-channel position and depth
+shape advection speed, approximating a bank-confined velocity profile without
+a per-river flow solve. Dry ribbon fragments are discarded before the
+first-fragment overlap stencil can mask valid water underneath.
 
 `terrain::paint_watercourses` now reserves the lattice water surface for real
 standing bodies.  It only stamps the continuous river current into wet cells
