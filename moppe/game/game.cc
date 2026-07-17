@@ -28,6 +28,7 @@
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker.hh>
 #include <moppe/game/water_capture.hh>
+#include <moppe/game/water_presentation.hh>
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
@@ -1036,23 +1037,14 @@ namespace moppe {
           MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
           m_river_surface.rebuild (r, m_map, *m_rivers);
         }
-        // Renderer uploads that depend on the terrain texture dimensions
-        // are staged here and flushed by upload_world_terrain after
-        // set_terrain has run; the loading flow finishes setup before
-        // the world terrain is uploaded.
-        render::OceanSetup& ocean = m_pending_terrain.ocean;
+        render::OceanSetup ocean;
         ocean.level = meters_value (m_world.water_level);
         const Vec3& world_extent = extent_value (m_world.map_size);
         ocean.center = Vec3 (world_extent[0] / 2, 0, world_extent[2] / 2);
         ocean.half_extent = 5500.0f;
         ocean.cells = 300;
-        std::vector<float>& water_levels = m_pending_terrain.water_levels;
-        std::vector<float>& water_flow = m_pending_terrain.water_flow;
-        water_levels.clear ();
-        water_flow.clear ();
-        m_pending_terrain.moisture.clear ();
-        m_pending_terrain.geology.clear ();
-        m_pending_terrain.shore.clear ();
+        m_water_surface.reset ();
+        m_water_presentation.reset (ocean);
         if (m_channel_drainage) {
           // Direction times a log-compressed activity: the flux fades in a
           // few cells below a channelhead and saturates where accumulation
@@ -1112,9 +1104,9 @@ namespace moppe {
           }();
           MOPPE_PROFILE_NAMED_ZONE (expand_water_sheets,
                                     "startup.expand_water_sheets");
-          water_levels.resize (2 * static_cast<std::size_t> (m_map.width ()) *
-                               m_map.height ());
-          water_flow.resize (water_levels.size ());
+          std::vector<float> water_levels (
+            2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
+          std::vector<float> water_flow (water_levels.size ());
           const std::span<const float> unique = sheets.surface.values ();
           const std::size_t unique_width = m_standing_water->width ();
           const std::size_t unique_height = m_standing_water->height ();
@@ -1130,6 +1122,12 @@ namespace moppe {
               water_flow[out] = sheets.flow[2 * cell];
               water_flow[out + 1] = sheets.flow[2 * cell + 1];
             }
+          m_water_surface.emplace (m_surface.sections ().domain (),
+                                   water_levels,
+                                   water_flow,
+                                   m_map.scale ()[1] * u::m);
+          m_water_presentation.refresh (*m_water_surface,
+                                        m_map.scale ()[1] * u::m);
 
           // The extracted waterline: the one true wet/dry curve.  Its
           // distance field drives the terrain's damp shore band and
@@ -1147,7 +1145,7 @@ namespace moppe {
                 unique_shore[(static_cast<std::size_t> (y) % unique_height) *
                                unique_width +
                              static_cast<std::size_t> (x) % unique_width];
-          m_pending_terrain.shore = std::move (shore);
+          m_surface.materialize_waterline_distance (shore);
         }
         if (m_standing_water && m_drainage) {
           // Ground moisture from the hydrology feeds terrain materials.
@@ -1168,12 +1166,9 @@ namespace moppe {
                 unique[(static_cast<std::size_t> (y) % unique_height) *
                          unique_width +
                        static_cast<std::size_t> (x) % unique_width];
-          m_pending_terrain.moisture = std::move (expanded);
-        }
-        if (!m_pending_terrain.moisture.empty ()) {
+          m_surface.materialize_moisture (expanded);
           MOPPE_PROFILE_ZONE ("startup.derive_tree_habitat");
-          m_surface.derive_tree_habitat (m_pending_terrain.moisture,
-                                         m_world.water_level,
+          m_surface.derive_tree_habitat (m_world.water_level,
                                          m_world.water_level + 145.0f * u::m);
         }
 
@@ -1252,44 +1247,19 @@ namespace moppe {
           }
         }
 
-        if (!m_pending_terrain.moisture.empty ()) {
+        if (m_surface.has_section<map::tree_habitat> ()) {
           MOPPE_PROFILE_ZONE ("startup.derive_forest_cover");
           m_surface.derive_forest_cover (static_cast<std::uint32_t> (m_seed) ^
                                          0x6f12ad37U);
         }
 
         {
-          // Sediment ledger to materials: normalize each channel against
-          // a robust high quantile so one deep gully cannot flatten the
-          // signal everywhere else, then hand off interleaved RG pairs.
+          MOPPE_PROFILE_ZONE ("startup.derive_geology_materials");
           const std::size_t count =
             static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-          const auto robust_scale = [count] (const float* values) {
-            std::vector<float> positive;
-            positive.reserve (count / 8);
-            for (std::size_t i = 0; i < count; ++i)
-              if (values[i] > 0.0f)
-                positive.push_back (values[i]);
-            if (positive.empty ())
-              return 1.0f;
-            const std::size_t rank =
-              positive.size () * 49 / 50; // 98th percentile
-            std::nth_element (
-              positive.begin (), positive.begin () + rank, positive.end ());
-            return std::max (positive[rank], 1e-6f);
-          };
-          MOPPE_PROFILE_NAMED_ZONE (prepare_geology,
-                                    "startup.prepare_terrain_geology");
-          const float eroded_scale = robust_scale (m_map.raw_eroded ());
-          const float deposited_scale = robust_scale (m_map.raw_deposited ());
-          std::vector<float> geology (2 * count);
-          for (std::size_t i = 0; i < count; ++i) {
-            geology[2 * i] =
-              std::min (1.0f, m_map.raw_eroded ()[i] / eroded_scale);
-            geology[2 * i + 1] =
-              std::min (1.0f, m_map.raw_deposited ()[i] / deposited_scale);
-          }
-          m_pending_terrain.geology = std::move (geology);
+          m_surface.derive_geology_materials (
+            std::span (m_map.raw_eroded (), count),
+            std::span (m_map.raw_deposited (), count));
         }
 
         m_surface_presentation.refresh (m_surface);
@@ -1392,28 +1362,9 @@ namespace moppe {
       void upload_world_terrain (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
         m_terrain.setup (r, m_map, m_world, m_graphics);
-        // Flush the surface data staged by finish_setup, now that
+        // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
-        {
-          MOPPE_PROFILE_ZONE ("startup.upload_ocean_surface");
-          r.set_ocean (m_pending_terrain.ocean, m_pending_terrain.water_levels);
-        }
-        {
-          MOPPE_PROFILE_ZONE ("startup.upload_water_flow");
-          r.set_water_flow (m_pending_terrain.water_flow);
-        }
-        if (!m_pending_terrain.moisture.empty ()) {
-          MOPPE_PROFILE_ZONE ("startup.upload_terrain_moisture");
-          r.set_terrain_moisture (m_pending_terrain.moisture);
-        }
-        if (!m_pending_terrain.geology.empty ()) {
-          MOPPE_PROFILE_ZONE ("startup.upload_terrain_geology");
-          r.set_terrain_geology (m_pending_terrain.geology);
-        }
-        if (!m_pending_terrain.shore.empty ()) {
-          MOPPE_PROFILE_ZONE ("startup.upload_terrain_shore");
-          r.set_terrain_shore (m_pending_terrain.shore);
-        }
+        m_water_presentation.upload (r);
         m_surface_presentation.upload (r, !m_water_shot);
       }
 
@@ -3078,20 +3029,12 @@ namespace moppe {
       std::optional<terrain::FractionalDrainage> m_channel_drainage;
       std::optional<terrain::WaterNetwork> m_water_network;
       std::optional<terrain::RiverNetwork> m_rivers;
+      std::optional<map::WaterSurface> m_water_surface;
       std::optional<terrain::TrailNetwork> m_trail_network;
       std::optional<terrain::TrailNetwork> m_generated_trail_network;
       RiverSurface m_river_surface;
       Terrain m_terrain;
-      // Surface data computed at finish_setup, uploaded once the terrain
-      // textures exist (upload_world_terrain).
-      struct PendingTerrainPresentation {
-        render::OceanSetup ocean;
-        std::vector<float> water_levels;
-        std::vector<float> water_flow;
-        std::vector<float> moisture;
-        std::vector<float> geology;
-        std::vector<float> shore;
-      } m_pending_terrain;
+      WaterPresentation m_water_presentation;
       TerrainLab m_terrain_lab;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;

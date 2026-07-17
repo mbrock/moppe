@@ -91,6 +91,11 @@ namespace moppe::map {
               1.0f) *
             snow_support[one];
           spatial::get<channel_flux> (site) = Vec3 () * channel_flux[one];
+          spatial::get<surface_moisture> (site) = 0.0f * surface_moisture[one];
+          spatial::get<waterline_distance> (site) =
+            0.0f * waterline_distance[u::m];
+          spatial::get<erosion_exposure> (site) = 0.0f * erosion_exposure[one];
+          spatial::get<deposition_cover> (site) = 0.0f * deposition_cover[one];
           spatial::get<tree_habitat> (site) = 0.0f * tree_habitat[one];
           spatial::get<forest_cover> (site) = 0.0f * forest_cover[one];
           spatial::get<trail_influence> (site) = 0.0f * trail_influence[one];
@@ -110,6 +115,7 @@ namespace moppe::map {
     if (!m_sections || m_sections->domain () != domain)
       m_sections.emplace (domain);
     populate_geometry (*m_sections, map);
+    m_materialized = {};
   }
 
   void Surface::materialize_trail_influence (std::span<const float> influence) {
@@ -121,6 +127,7 @@ namespace moppe::map {
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       trail[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * trail_influence[one];
+    m_materialized.trails = true;
   }
 
   void
@@ -133,6 +140,7 @@ namespace moppe::map {
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       home_base[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * home_base_influence[one];
+    m_materialized.home_base = true;
   }
 
   void Surface::materialize_channel_flux (std::span<const float> flux) {
@@ -148,6 +156,7 @@ namespace moppe::map {
         value /= magnitude;
       column[offset] = value * channel_flux[one];
     }
+    m_materialized.channel_flux = true;
   }
 
   const SurfaceSections& Surface::sections () const {

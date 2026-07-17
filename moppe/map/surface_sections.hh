@@ -28,6 +28,26 @@ namespace moppe::map {
                       mp_units::is_kind> {
   } channel_flux;
 
+  // Ground wetness synthesized from standing water and accumulated drainage.
+  inline constexpr struct surface_moisture
+      : quantity_spec<mp_units::dimensionless> {
+  } surface_moisture;
+
+  // Horizontal distance to the extracted wet/dry curve.
+  inline constexpr struct waterline_distance
+      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
+  } waterline_distance;
+
+  // Normalized exposure of material removed during the world's history.
+  inline constexpr struct erosion_exposure
+      : quantity_spec<mp_units::dimensionless> {
+  } erosion_exposure;
+
+  // Normalized cover of material deposited during the world's history.
+  inline constexpr struct deposition_cover
+      : quantity_spec<mp_units::dimensionless> {
+  } deposition_cover;
+
   // Ecological support from drainage moisture, slope, shore, and tree line.
   inline constexpr struct tree_habitat
       : quantity_spec<mp_units::dimensionless> {
@@ -55,6 +75,10 @@ namespace moppe::map {
   using SurfaceNormal = quantity<surface_normal[one], Vec3>;
   using SnowSupport = quantity<snow_support[one], float>;
   using ChannelFlux = quantity<channel_flux[one], Vec3>;
+  using SurfaceMoisture = quantity<surface_moisture[one], float>;
+  using WaterlineDistance = quantity<waterline_distance[u::m], float>;
+  using ErosionExposure = quantity<erosion_exposure[one], float>;
+  using DepositionCover = quantity<deposition_cover[one], float>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
   using ForestCover = quantity<forest_cover[one], float>;
   using TrailInfluence = quantity<trail_influence[one], float>;
@@ -68,6 +92,10 @@ namespace moppe::map {
                                           SurfaceNormal,
                                           SnowSupport,
                                           ChannelFlux,
+                                          SurfaceMoisture,
+                                          WaterlineDistance,
+                                          ErosionExposure,
+                                          DepositionCover,
                                           TreeHabitat,
                                           ForestCover,
                                           TrailInfluence,

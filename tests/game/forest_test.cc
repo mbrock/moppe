@@ -13,8 +13,8 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (129 * 129, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (129 * 129, 0.48f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0xdecafbadU);
 
   const game::ForestPlan first =
@@ -40,8 +40,8 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));
   surface.derive_forest_cover (0xfeed1234U);
 

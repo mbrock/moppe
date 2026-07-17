@@ -25,6 +25,15 @@ namespace moppe::game {
     std::span<const float> forest () const noexcept {
       return m_forest;
     }
+    std::span<const float> moisture () const noexcept {
+      return m_moisture;
+    }
+    std::span<const float> waterline_distance () const noexcept {
+      return m_waterline_distance;
+    }
+    std::span<const float> geology () const noexcept {
+      return m_geology;
+    }
     std::span<const float> snow_support () const noexcept {
       return m_snow_support;
     }
@@ -36,6 +45,9 @@ namespace moppe::game {
     std::vector<float> m_trails;
     std::vector<float> m_home_base;
     std::vector<float> m_forest;
+    std::vector<float> m_moisture;
+    std::vector<float> m_waterline_distance;
+    std::vector<float> m_geology;
     std::vector<float> m_snow_support;
     std::vector<float> m_channel_flux;
   };

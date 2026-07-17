@@ -11,13 +11,15 @@ this shape.
 | Storey | Current object | Responsibility |
 | --- | --- | --- |
 | Combinatorial | `map::SurfaceDomain` | The finite vertex lattice, index/offset correspondence, horizontal spacing, boundary topology, and bilinear reconstruction stencil. |
-| Intrinsic | `map::SurfaceSections` | Typed 0-cochains sharing that domain. `map::Surface` owns their materialization barriers and sampling interface. |
-| Extrinsic | `game::SurfacePresentation` | Converts typed columns to plain scalar texture payloads and uploads them through `render::Renderer`. This is the quantity-to-number bridge. |
+| Intrinsic | `map::SurfaceSections`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in bundles belonging to the ground and water respectively. `map::Surface` owns the ground's materialization barriers. |
+| Extrinsic | `game::SurfacePresentation`, `game::WaterPresentation` | Convert typed columns to plain scalar texture payloads and upload them through `render::Renderer`. These are the quantity-to-number bridges. |
 
 The authoritative `RandomHeightMap` and the terrain-generation pipeline still
 precede these storeys. `Surface::refresh` is the explicit point where their
 finished geometry becomes intrinsic section data. Hydrology, trails, and
 ecology add readings at later, named barriers. They do not mutate the domain.
+`Surface::has_section<quantity_spec>()` distinguishes a section that has not
+crossed its barrier from one whose legitimate value happens to be zero.
 
 ## Domain
 
@@ -39,6 +41,10 @@ All current sections are vertex 0-cochains in `SurfaceSections`.
 | `surface_normal` | dimensionless vector | Detailed lighting and contact normal | `Surface::refresh` |
 | `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `Surface::refresh` |
 | `channel_flux` | dimensionless planar vector | Channel tangent scaled by visible fluvial activity | drainage analysis in world setup |
+| `surface_moisture` | dimensionless scalar | Ground wetness synthesized from standing water and drainage | moisture analysis in world setup |
+| `waterline_distance` | length in metres | Horizontal distance to the extracted wet/dry curve | waterline analysis in world setup |
+| `erosion_exposure` | dimensionless scalar | Removed-material signal normalized against its robust datum | `derive_geology_materials` |
+| `deposition_cover` | dimensionless scalar | Deposited-material signal normalized against its robust datum | `derive_geology_materials` |
 | `tree_habitat` | dimensionless scalar | Ecological support from water, elevation, and slope | `derive_tree_habitat` |
 | `forest_cover` | dimensionless scalar | Recruited canopy after habitat, trails, and settlement | `derive_forest_cover` |
 | `trail_influence` | dimensionless scalar | Shoulder-blended membership in formed trails | trail analysis in world setup |
@@ -59,12 +65,32 @@ terrain or ecology policy.
 | `forest_cover` | one float per terrain texel |
 | `snow_support` | one float per terrain texel |
 | `channel_flux` | interleaved world-plane x/z floats |
+| `surface_moisture` | one float per terrain texel |
+| `waterline_distance` | one metre-valued float per terrain texel |
+| `erosion_exposure`, `deposition_cover` | two scalar texture lanes |
 | `trail_influence`, `home_base_influence` | two scalar texture lanes |
 
-Moisture, water surface/flow, shoreline distance, and the sediment ledger are
-still staged as untyped renderer data in `game.cc`. They are the next honest
-candidates for section adoption; this atlas lists the boundary instead of
-claiming the migration is complete.
+## Water surface
+
+`WaterSurfaceSections` uses the same `SurfaceDomain` because the renderer's
+water sheet is sampled at the same sites, but it is not part of the ground
+bundle. Matching texture dimensions are a presentation fact, not an identity.
+
+| Quantity specification | Value | Meaning |
+| --- | --- | --- |
+| `surface_elevation` | elevation point in metres | Standing or running water height in the same affine elevation frame as the ground |
+| `wave_amplitude` | dimensionless scalar | Local multiplier for visible surface motion |
+| `water_velocity` | planar vector in metres per second | Horizontal movement of water detail through the sheet |
+
+`WaterPresentation` is where physical elevation is divided by the terrain
+height scale and where velocity loses its unit and y component for the Metal
+texture contract. `game.cc` now owns a `WaterSurface` rather than anonymous
+interleaved level and flow vectors.
+
+Water-body identity, wet/dry membership, the extracted waterline complex, and
+river-network incidence still live in their established terrain-analysis
+objects. They are not falsely represented as more vertex columns merely to
+make the atlas look complete.
 
 ## Frames and projections
 
