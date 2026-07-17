@@ -6,6 +6,9 @@ engine. The purpose is to make its topology, intrinsic readings, and rendering
 bridge enumerable without pretending that all terrain generation already has
 this shape.
 
+For the wider ownership, state, presentation, and target map, start with the
+[engine atlas](engine-atlas.md).
+
 ## Storeys
 
 | Storey | Current object | Responsibility |

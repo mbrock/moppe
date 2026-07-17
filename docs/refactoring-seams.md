@@ -1,8 +1,10 @@
 # Refactoring seams
 
-RFC-0001 moves proven boundaries one at a time. This page names the observable
-contracts that must survive those moves. It is a characterization baseline,
-not a second architecture proposal.
+RFC-0001 established these boundaries one at a time. This page preserves the
+observable contracts that survived those moves; it is a characterization
+baseline, not a second architecture proposal or a current work plan. The
+[engine atlas](engine-atlas.md) is the reader-facing map of the resulting
+ownership and target shape.
 
 ## Surface
 
@@ -18,9 +20,9 @@ turns them into renderer lanes.
 | Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation; a Terrain Lab rebuild uses that same path bridge. | The focused materialization tests, including `surface_presentation_materializes_preview_trails_at_the_bridge`, in `tests/map/surface_test.cc` |
 | Ground and water use the same domain while retaining distinct section bundles; water datum normalization and ocean setup happen only in `WaterPresentation`. | `tests/map/water_surface_test.cc` |
 
-ENG-010 and ENG-011 may change the concrete bundle and grouping mechanism, but
-not these sampling, refresh, and ownership contracts. ENG-012 owns any change
-to the numeric presentation bridge.
+The completed finite-section and presentation work changed the concrete bundle
+and grouping mechanism without changing these sampling, refresh, and ownership
+contracts. The numeric presentation bridge remains the named boundary.
 
 ## Terrain replay
 
@@ -30,8 +32,8 @@ remaining program suffix must produce the same completed height field.
 
 `orogeny_channel_memory_survives_a_checkpoint` and
 `checkpoint_resume_matches_complete_replay` in
-`tests/map/terrain_evaluator_test.cc` own this contract. ENG-020 and ENG-021
-may expose recipes and transform editing more directly, but must preserve the
+`tests/map/terrain_evaluator_test.cc` own this contract. Recipe and transform
+editing now expose those values more directly while preserving the
 checkpoint/resume result.
 
 ## Running-game replay
@@ -98,13 +100,14 @@ flowchart LR
   terrain["moppe_terrain"] --> spatial
   world["moppe_world"] --> terrain
   simulation["moppe_simulation"] --> world
+  simulation --> render["moppe_render"]
   scene["moppe_scene"] --> simulation
   scene --> world
-  scene --> render["moppe_render"]
-  scene --> apple["moppe_apple"]
+  scene --> render
+  scene -.-> apple["moppe_apple"]
   app["moppe_app"] --> scene
-  app --> mac["moppe_platform_mac"]
-  app --> ios["moppe_platform_ios"]
+  app -.-> mac["moppe_platform_mac"]
+  app -.-> ios["moppe_platform_ios"]
   metal["moppe_metal"] --> render
   terrain_metal["moppe_terrain_metal"] --> terrain
   mac --> metal

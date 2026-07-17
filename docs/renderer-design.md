@@ -1,9 +1,12 @@
-# Moppe rendering & platform architecture (Metal port)
+# Moppe rendering & platform architecture
 
-Status: design for the GLUT/OpenGL → Metal port (macOS + iOS), written to keep
-the door open for WebGPU/Android backends later.
+Status: current Metal/backend implementation record. This document preserves
+the port's technical decisions and implementation detail; the
+[engine atlas](engine-atlas.md) is the current map of source ownership, state,
+and CMake targets. WebGPU/Android remain future possibilities, not implemented
+backends.
 
-## Goals
+## Port goals and retained constraints
 
 1. Render through Metal on macOS and iOS with one shared game codebase.
 2. Keep the game's look and feel: same pass order, same haze/lighting math,
@@ -91,9 +94,9 @@ amended the first draft. The deltas, now integrated below, were:
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.
-- Mid-flight build policy is **copy-alongside**: game/ modules are new
-  files; main.cc and mov/vehicle.cc keep their GL code compiling under
-  scons until the step-4 cutover, when GL is deleted in one commit.
+- The mid-flight build policy was **copy-alongside**: game/ modules were new
+  files; main.cc and mov/vehicle.cc kept their GL code compiling under scons
+  until the step-4 cutover deleted GL in one commit.
 - Async world generation: `setup()` returns fast; generation runs on a
   QoS-userInitiated background queue behind a loading screen (both OSes);
   buffer/texture creation is thread-safe in Metal, drawable access is not;
@@ -111,30 +114,21 @@ amended the first draft. The deltas, now integrated below, were:
   (the physics is already variable-dt). macOS follows the active screen's
   maximum refresh rate with display sync enabled; iOS requests 60 FPS.
 
-## Module layout
+## Current module layout
 
-    moppe/gfx/math.hh        vectors + quaternions (de-boosted), Mat4 added
-    moppe/render/            portable renderer API (no GL/Metal in headers)
-      types.hh               handles, formats, draw-state structs, vertex layout
-      draw.hh/.cc            DrawList: immediate-mode recorder + matrix stack
-      mesh.hh                MeshBuilder (same recording API) → retained Mesh
-      renderer.hh            Renderer: resources, passes, frame lifecycle
-      text.hh/.cc            font atlas + text layout (uses platform rasterizer)
-      solids.cc              cube/sphere/cone/torus generators (glutSolid* repl.)
-    moppe/render/metal/      Metal backend (Objective-C++ .mm)
-    moppe/shaders/moppe.metal   all MSL shaders, built into moppe.metallib
-    moppe/platform/          platform API: app run loop, input, assets, speech
-      platform.hh            Game interface, KeyCode enum, asset_path(), say()
-      mac/                   AppKit + MTKView
-      ios/                   UIKit + MTKView + touch controls
-    moppe/game/              the game, split out of main.cc
-      world.hh               WorldParams (ex-globals: map_size, water_level, …)
-      game.cc                Game impl: setup, tick, render pass order, input
-      hud.cc, stars.cc, dust.cc, blob_shadow.cc, fish.cc,
-      wildlife.cc, city.cc, walker.cc, vehicle_render.cc, sky.cc, ocean.cc,
-      terrain.cc, loading.cc
-    moppe/map/               unchanged (already GL-free); boost → std
-    moppe/mov/vehicle.*      simulation only; all GL removed
+The engine atlas gives the ownership map; this source-oriented view points to
+the Metal implementation without treating one directory as one layer:
+
+| Location | Current responsibility |
+| --- | --- |
+| `moppe/spatial/` | Header-only finite typed bundles and quantity vocabulary. |
+| `moppe/terrain/` | Portable field DAG, programs, recipes, and terrain/hydrology algorithms. |
+| `moppe/map/` | Concrete map storage, surface domain/atlas materialization, and evaluator bridges. |
+| `moppe/mov/` | Vehicle and glider simulation. |
+| `moppe/game/` | World owner/model, session, frame snapshot, focused presentation, and host composition; its files span several engine domains. |
+| `moppe/render/` | Portable game-shaped renderer API, `DrawList`, text, and Metal backend. |
+| `moppe/shaders/metal/` | SDK-specific Metal shader sources built into `moppe.metallib`. |
+| `moppe/platform/` | Shared Apple services and macOS/iOS host implementations. |
 
 ## Renderer API shape
 
@@ -468,7 +462,10 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
 - Vehicle::render's hidden glutGet(GLUT_ELAPSED_TIME) becomes an injected
   time parameter.
 
-## Game-code refactor
+## Historical game-code cutover record
+
+The following notes record the port's source-level migration decisions. They
+are retained as rationale, not as a current file map.
 
 - main.cc splits into moppe/game/ one file per system; the file-scope mutable
   globals (map_size, water_level, fog_scale, fog color, mode flags) become a
@@ -485,19 +482,26 @@ WebGPU/Android later plug in stb_truetype/FreeType without touching game code.
   default seed is time(0)), shared_ptr, multi_array → small Array2D,
   operators.hpp → hand-written operators, format → snprintf.
 
-## Build
+## Build and host targets
 
-CMake (replaces SCons):
+CMake is the active build system. The [engine atlas](engine-atlas.md) names
+the full target graph; the terminal and common entry points are:
 
 - `moppe` — macOS .app bundle (also runs from the build tree; assets copied
   next to the binary), links Metal/MetalKit/AppKit/AVFoundation.
 - `moppe-ios` — iOS app bundle, same sources, UIKit platform layer; built
   with the iOS toolchain (simulator target for CI/verification).
-- `map-test` — the existing heightmap CLI tool, unchanged.
+- `moppe-tests` — portable/unit suite, including the scene-facing checks that
+  do not require a desktop event loop.
+- `map-test`, `terrain-pipeline-demo`, and related command-line tools —
+  developer-only world/terrain consumers.
 - .metal → .metallib via xcrun at build time; metallib + textures + data
   ship as bundle resources; `asset_path()` resolves per platform.
 
-## Porting order (each step verified by running the game)
+## Historical porting order
+
+The cutover completed in this order. The record remains useful when a current
+implementation detail looks intentionally game-shaped rather than generic:
 
 1. Foundation: Mat4, de-boosted math, render API headers, Metal device/
    swapchain/uber pipeline/streaming buffers, mac platform shell, CMake —
@@ -506,8 +510,8 @@ CMake (replaces SCons):
 3. Game systems, one agent-portable module at a time: vehicle split, walker,
    dust, blob shadow, stars, fish, wildlife, city, HUD, post
    effects, game glue/input.
-4. Parity check against the GL build (still building from scons until
-   cutover), then delete GL path + scons + vendor, update CLAUDE.md.
+4. Parity check against the GL build (then still building from scons), then
+   delete the GL path, scons, and vendored dependencies; update CLAUDE.md.
 5. iOS target: platform/ios, touch controls, loading screen, simulator build.
 
 ## Non-goals (for now)
