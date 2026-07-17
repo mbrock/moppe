@@ -122,9 +122,12 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
 }
 
 MOPPE_TEST (graphics_benchmark_input_tape_is_repeatable) {
-  const platform::ControlState a = game::benchmark_input (731);
-  const platform::ControlState b = game::benchmark_input (731);
-  MOPPE_CHECK_NEAR (a.steer, b.steer, 0.0f);
-  MOPPE_CHECK_NEAR (a.drive, b.drive, 0.0f);
-  MOPPE_CHECK_NEAR (a.boost, b.boost, 0.0f);
+  const game::InputFrame a = game::benchmark_input (731);
+  const game::InputFrame b = game::benchmark_input (731);
+  MOPPE_CHECK_NEAR (
+    game::input_value (a.turn), game::input_value (b.turn), 0.0f);
+  MOPPE_CHECK_NEAR (
+    game::input_value (a.drive), game::input_value (b.drive), 0.0f);
+  MOPPE_CHECK_NEAR (
+    game::input_value (a.boost), game::input_value (b.boost), 0.0f);
 }

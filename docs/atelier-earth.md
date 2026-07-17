@@ -174,9 +174,9 @@ Learning, not carrying:
   fine the kinds should be cut.
 - **The affine index experiment** — `terrain/discretization.hh`'s typed
   row/column/sample spaces, adopted where they pay rent.
-- **Bundle experience** — `spatial/bundle.hh` and `atelier/bundle.hh`
-  are siblings; the earth work continues the atelier line and feeds
-  improvements back where they generalize.
+- **Bundle experience** — `spatial/bundle.hh` is the shared finite,
+  typed-columnar store for terrain sections and atelier organisms; the earth
+  work feeds improvements back where they generalize.
 - **Renderer knowledge** — vertex pulling, reversed-Z, the capture
   discipline, the deterministic-benchmark habit.
 - **mp-units machinery** — `frame_projection` with runtime arguments,

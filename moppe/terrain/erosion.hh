@@ -2,6 +2,7 @@
 #define MOPPE_TERRAIN_EROSION_HH
 
 #include <moppe/quantities.hh>
+#include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -20,6 +21,12 @@ namespace moppe::terrain {
     float sea_level = 50.0f / 650.0f;
     IterationCount fixed_point_iterations = iteration_count (1);
     float relaxation = 1.0f;
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   struct AnalyticalErosionReport {
@@ -44,6 +51,12 @@ namespace moppe::terrain {
     square_meters_per_julian_year_t diffusivity =
       0.01f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   struct HillslopeDiffusionReport {

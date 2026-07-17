@@ -5,6 +5,7 @@
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 #include <moppe/terrain/trail.hh>
+#include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -14,15 +15,33 @@
 #include <vector>
 
 namespace moppe::terrain {
-  struct NormalizeHeights {};
+  struct NormalizeHeights {
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
+  };
 
   struct PowerHeights {
     float exponent;
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   struct ThermalErosion {
     IterationCount iterations;
     float talus;
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   // A geological uplift pattern scaled into physical tectonic velocity and
@@ -34,6 +53,12 @@ namespace moppe::terrain {
                                        0.0001f * mp_units::si::metre *
                                        mp_units::si::metre /
                                        mp_units::astronomy::Julian_year };
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   using TerrainTransform = std::variant<NormalizeHeights,
@@ -49,19 +74,6 @@ namespace moppe::terrain {
                                               StreamPowerEvolutionReport,
                                               TrailFormationReport,
                                               HillslopeDiffusionReport>;
-
-  // These two axes describe what an evaluator must observe, without
-  // prescribing whether it uses a CPU loop, a GPU kernel, or something
-  // else.  In more abstract language they distinguish pointwise maps,
-  // local context, and operations whose answer depends on the whole terrain.
-  enum class SpatialScope { Pointwise, Neighborhood, Global };
-
-  enum class EvaluationOrder { Direct, Reduction, Iterative };
-
-  struct TransformSemantics {
-    SpatialScope spatial_scope;
-    EvaluationOrder evaluation_order;
-  };
 
   // A source is a value in its own right, rather than an implicit prelude to
   // the transform list.  The geological source retains its recipe so tools
@@ -99,9 +111,18 @@ namespace moppe::terrain {
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
 
   void validate_program (const TerrainProgram& program);
+  void validate_transform (const TerrainTransform& transform);
   std::string_view terrain_transform_id (const TerrainTransform& transform);
   TransformSemantics
   terrain_transform_semantics (const TerrainTransform& transform);
+  TransformDescription
+  terrain_transform_description (const TerrainTransform& transform);
+  std::string terrain_transform_detail (const TerrainTransform& transform);
+  std::size_t
+  terrain_transform_property_count (const TerrainTransform& transform);
+  TransformProperty
+  terrain_transform_property (const TerrainTransform& transform,
+                              std::size_t index);
 }
 
 #endif

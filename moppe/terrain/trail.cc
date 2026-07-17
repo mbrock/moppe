@@ -7,10 +7,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <numbers>
 #include <optional>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -19,47 +21,21 @@ namespace moppe::terrain {
   namespace {
     constexpr float maximum_traversable_grade = 0.85f;
 
-    void validate (const TrailFormation& p) {
-      if (!std::isfinite (p.sea_level) ||
-          !std::isfinite (square_meters_value (p.minimum_catchment_area)) ||
-          !std::isfinite (square_meters_value (p.maximum_catchment_area)) ||
-          p.minimum_catchment_area <=
-            0.0f * mp_units::si::metre * mp_units::si::metre ||
-          p.maximum_catchment_area < p.minimum_catchment_area ||
-          !std::isfinite (meters_value (p.minimum_height_above_sea)) ||
-          p.minimum_height_above_sea < 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.width)) ||
-          p.width <= 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.shoulder_blend)) ||
-          p.shoulder_blend < 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.maximum_cut)) ||
-          p.maximum_cut < 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.maximum_fill)) ||
-          p.maximum_fill < 0.0f * mp_units::si::metre ||
-          !std::isfinite (p.maximum_grade.numerical_value_in (mp_units::one)) ||
-          p.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
-          !std::isfinite (
-            p.designed_grade.numerical_value_in (mp_units::one)) ||
-          p.designed_grade < 0.0f * terrain_slope[mp_units::one] ||
-          p.designed_grade > p.maximum_grade ||
-          !std::isfinite (p.crossfall.numerical_value_in (mp_units::one)) ||
-          p.crossfall < 0.0f * terrain_slope[mp_units::one] ||
-          p.crossfall > 0.1f * terrain_slope[mp_units::one] ||
-          p.grading_iterations < 0 ||
-          !std::isfinite (meters_value (p.home_base_water_distance)) ||
-          p.home_base_water_distance <= 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.home_base_pad_radius)) ||
-          p.home_base_pad_radius <= 0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.desired_circuit_radius)) ||
-          p.desired_circuit_radius <= 0.0f * mp_units::si::metre ||
-          !std::isfinite (
-            meters_value (p.highland_preference_height_above_sea)) ||
-          p.highland_preference_height_above_sea <=
-            0.0f * mp_units::si::metre ||
-          !std::isfinite (meters_value (p.alpine_avoidance_height_above_sea)) ||
-          p.alpine_avoidance_height_above_sea <
-            p.highland_preference_height_above_sea)
-        throw std::invalid_argument ("invalid trail formation parameters");
+    std::string format_trail_transform_float (float value, int precision) {
+      std::ostringstream stream;
+      stream << std::fixed << std::setprecision (precision) << value;
+      return stream.str ();
+    }
+
+    std::string format_trail_transform_count (int value) {
+      std::string text = std::to_string (value);
+      for (int i = static_cast<int> (text.size ()) - 3; i > 0; i -= 3)
+        text.insert (static_cast<std::size_t> (i), ",");
+      return text;
+    }
+
+    [[noreturn]] void invalid_trail_transform_property_index () {
+      throw std::out_of_range ("terrain transform property index is invalid");
     }
 
     float shoulder_ramp (float distance, float half_width, float blend) {
@@ -1190,12 +1166,155 @@ namespace moppe::terrain {
     }
   }
 
+  void TrailFormation::validate () const {
+    if (!std::isfinite (sea_level) ||
+        !std::isfinite (square_meters_value (minimum_catchment_area)) ||
+        !std::isfinite (square_meters_value (maximum_catchment_area)) ||
+        minimum_catchment_area <=
+          0.0f * mp_units::si::metre * mp_units::si::metre ||
+        maximum_catchment_area < minimum_catchment_area ||
+        !std::isfinite (meters_value (minimum_height_above_sea)) ||
+        minimum_height_above_sea < 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (width)) ||
+        width <= 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (shoulder_blend)) ||
+        shoulder_blend < 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (maximum_cut)) ||
+        maximum_cut < 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (maximum_fill)) ||
+        maximum_fill < 0.0f * mp_units::si::metre ||
+        !std::isfinite (maximum_grade.numerical_value_in (mp_units::one)) ||
+        maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
+        !std::isfinite (designed_grade.numerical_value_in (mp_units::one)) ||
+        designed_grade < 0.0f * terrain_slope[mp_units::one] ||
+        designed_grade > maximum_grade ||
+        !std::isfinite (crossfall.numerical_value_in (mp_units::one)) ||
+        crossfall < 0.0f * terrain_slope[mp_units::one] ||
+        crossfall > 0.1f * terrain_slope[mp_units::one] ||
+        grading_iterations < 0 ||
+        !std::isfinite (meters_value (home_base_water_distance)) ||
+        home_base_water_distance <= 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (home_base_pad_radius)) ||
+        home_base_pad_radius <= 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (desired_circuit_radius)) ||
+        desired_circuit_radius <= 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (highland_preference_height_above_sea)) ||
+        highland_preference_height_above_sea <= 0.0f * mp_units::si::metre ||
+        !std::isfinite (meters_value (alpine_avoidance_height_above_sea)) ||
+        alpine_avoidance_height_above_sea <
+          highland_preference_height_above_sea)
+      throw std::invalid_argument ("trail formation parameters are invalid");
+  }
+
+  TransformDescription TrailFormation::description () const noexcept {
+    return { "trails",
+             "MOTORCYCLE CIRCUIT",
+             { SpatialScope::Global, EvaluationOrder::Iterative } };
+  }
+
+  std::string TrailFormation::detail () const {
+    return format_trail_transform_float (
+             meters_value (desired_circuit_radius) / 1000.0f, 1) +
+           " km radius / " +
+           format_trail_transform_float (meters_value (width), 1) +
+           " m path / " +
+           format_trail_transform_float (
+             designed_grade.numerical_value_in (mp_units::one) * 100.0f, 0) +
+           "% design / " +
+           format_trail_transform_float (
+             maximum_grade.numerical_value_in (mp_units::one) * 100.0f, 0) +
+           "% max / " +
+           format_trail_transform_float (
+             crossfall.numerical_value_in (mp_units::one) * 100.0f, 0) +
+           "% crossfall / " +
+           format_trail_transform_float (
+             meters_value (alpine_avoidance_height_above_sea), 0) +
+           " m alpine avoid";
+  }
+
+  std::size_t TrailFormation::property_count () const noexcept {
+    return 14;
+  }
+
+  TransformProperty TrailFormation::property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return { "MIN CATCHMENT (M2)",
+               format_trail_transform_count (static_cast<int> (
+                 square_meters_value (minimum_catchment_area))),
+               ParameterDomain::Continuous };
+    case 1:
+      return { "MAX CATCHMENT (M2)",
+               format_trail_transform_count (static_cast<int> (
+                 square_meters_value (maximum_catchment_area))),
+               ParameterDomain::Continuous };
+    case 2:
+      return { "PATH WIDTH (M)",
+               format_trail_transform_float (meters_value (width), 1),
+               ParameterDomain::Continuous };
+    case 3:
+      return { "SHOULDER (M)",
+               format_trail_transform_float (meters_value (shoulder_blend), 1),
+               ParameterDomain::Continuous };
+    case 4:
+      return { "MAX CUT (M)",
+               format_trail_transform_float (meters_value (maximum_cut), 2),
+               ParameterDomain::Continuous };
+    case 5:
+      return { "MAX FILL (M)",
+               format_trail_transform_float (meters_value (maximum_fill), 2),
+               ParameterDomain::Continuous };
+    case 6:
+      return { "MAX GRADE",
+               format_trail_transform_float (
+                 maximum_grade.numerical_value_in (mp_units::one), 2),
+               ParameterDomain::Continuous };
+    case 7:
+      return { "DESIGNED GRADE",
+               format_trail_transform_float (
+                 designed_grade.numerical_value_in (mp_units::one), 2),
+               ParameterDomain::Continuous };
+    case 8:
+      return { "BASE TO WATER (M)",
+               format_trail_transform_float (
+                 meters_value (home_base_water_distance), 0),
+               ParameterDomain::Continuous };
+    case 9:
+      return { "BASE PAD (M)",
+               format_trail_transform_float (
+                 meters_value (home_base_pad_radius), 0),
+               ParameterDomain::Continuous };
+    case 10:
+      return { "CIRCUIT RADIUS (M)",
+               format_trail_transform_float (
+                 meters_value (desired_circuit_radius), 0),
+               ParameterDomain::Continuous };
+    case 11:
+      return { "HIGHLAND START (M)",
+               format_trail_transform_float (
+                 meters_value (highland_preference_height_above_sea), 0),
+               ParameterDomain::Continuous };
+    case 12:
+      return { "ALPINE AVOID (M)",
+               format_trail_transform_float (
+                 meters_value (alpine_avoidance_height_above_sea), 0),
+               ParameterDomain::Continuous };
+    case 13:
+      return { "CROSSFALL",
+               format_trail_transform_float (
+                 crossfall.numerical_value_in (mp_units::one), 2),
+               ParameterDomain::Continuous };
+    default:
+      invalid_trail_transform_property_index ();
+    }
+  }
+
   TrailNetwork analyze_trail_network (const TerrainView& terrain,
                                       const TrailFormation& parameters,
                                       const DrainageGraph& drainage,
                                       const FloodField& flood) {
     MOPPE_PROFILE_ZONE ("analyze_trail_network");
-    validate (parameters);
+    parameters.validate ();
     const TerrainGrid& grid = terrain.grid ();
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());
@@ -1389,7 +1508,7 @@ namespace moppe::terrain {
   TrailFormationResult form_trails (const TerrainView& terrain,
                                     const TrailFormation& parameters) {
     MOPPE_PROFILE_ZONE ("form_trails");
-    validate (parameters);
+    parameters.validate ();
     const TerrainGrid& grid = terrain.grid ();
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());

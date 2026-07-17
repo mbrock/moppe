@@ -2,8 +2,8 @@
 #define MOPPE_GAME_GRAPHICS_BENCHMARK_HH
 
 #include <moppe/game/graphics_settings.hh>
+#include <moppe/game/input_frame.hh>
 #include <moppe/partition.hh>
-#include <moppe/platform/platform.hh>
 
 #include <array>
 #include <cmath>
@@ -114,11 +114,11 @@ namespace moppe::game {
     return static_cast<int> (RidingGraphicsPartition::blocks.size ());
   }
 
-  inline platform::ControlState benchmark_input (int frame) {
+  inline InputFrame benchmark_input (int frame) {
     const float t = frame * GRAPHICS_BENCHMARK_DT;
-    platform::ControlState input;
+    InputFrame input;
     input.drive = 1.0f;
-    input.steer = 0.30f * std::sin (t * 0.7f) + 0.12f * std::sin (t * 1.9f);
+    input.turn = 0.30f * std::sin (t * 0.7f) + 0.12f * std::sin (t * 1.9f);
     input.boost = std::fmod (t, 4.0f) < 0.8f ? 1.0f : 0.0f;
     return input;
   }
