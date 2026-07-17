@@ -10,19 +10,26 @@ graphics settings.
 water, and analysis artifacts outside that checkpoint; its construction and
 borrowing rules are documented in [Generated worlds](generated-world.md).
 World construction is single-flight: a worker completes an owned candidate,
-then one main-thread activation retires and reconstructs terrain borrowers
-before making that candidate live. The loading preview observes copied height
+then one main-thread activation transitions the world/session pair while
+preserving terrain-borrow ordering. The loading preview observes copied height
 snapshots only, so neither it nor `GameState` owns an in-progress world.
 
-`game::GameLogicState` currently gathers the game clock, derived weather and
-camera effects, player mode and inputs, health/fuel/scoring values, gameplay
-timers, and the effects random-number generator. `game::GameState` combines
-that value with snapshots of both vehicles, the glider, the walker, the chase
-camera, the mutable portion of the generated star set, and a bounded
-dust-emission event log.
-Restoring those subsystem values changes only their mutable state; immutable
-terrain references, obstacle references, and vehicle physical parameters stay
-attached to the live objects.
+`game::GameSession` is the concrete owner of running gameplay state. It owns
+`game::GameLogicState` (the clock, weather and camera effects, player mode and
+inputs, health/fuel/scoring values, gameplay timers, and effects RNG) along
+with both vehicles, the glider, walker, chase camera, stars, and dust.
+`game::GameState` is its copyable checkpoint value: it combines that logic
+with snapshots of those mutable subsystems. Restoring it changes only mutable
+state; immutable terrain and obstacle references, vehicle physical parameters,
+and renderer resources remain attached to live objects on the same completed
+world.
+
+A completed-world handoff retires the old session before its old generated
+world, then constructs a fresh session against the new world. In particular,
+pressing `N` begins a new world session rather than carrying a player, score,
+or effect history across incompatible terrain. A `GameState` checkpoint is
+therefore portable between sessions prepared against the same world, not
+between generated worlds.
 
 This is the first replayable slice, not yet a claim of complete determinism.
 Renderer history is not in `GameState`. World generation,

@@ -1,3 +1,4 @@
+#include <moppe/game/game_session.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
@@ -278,4 +279,85 @@ MOPPE_TEST (game_state_is_an_independent_value) {
   second.logic.m_score = 900;
   MOPPE_CHECK (first.logic.m_total_time == 12.5);
   MOPPE_CHECK (first.logic.m_score == 400);
+}
+
+MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (map.size ());
+  world.water_level = 0 * u::m;
+
+  static_assert (!std::is_copy_constructible_v<game::GameSession>);
+  static_assert (!std::is_copy_assignable_v<game::GameSession>);
+  static_assert (!std::is_move_constructible_v<game::GameSession>);
+  static_assert (!std::is_move_assignable_v<game::GameSession>);
+
+  game::GameSession session (world, map, surface);
+  session.logic ().m_total_time = 12.5;
+  session.logic ().m_score = 400;
+  session.bike ().set_thrust (0.8f);
+  session.car ().set_thrust (-0.4f);
+  session.glider ().launch (
+    position (Vec3 (80, 70, 80)), velocity (Vec3 (8, 1, 14)), Vec3 (0, 0, 1));
+  session.glider ().set_turn (0.6f);
+  session.walker ().spawn (position (Vec3 (3, 4, 5)), Vec3 (1, 0, 0));
+  session.camera ().place (Vec3 (8, 9, 10), Vec3 (9, 9, 10));
+  session.stars ().generate (map, world, 4);
+  session.dust ().emit (position (Vec3 (1, 2, 3)),
+                        velocity (Vec3 (4, 5, 6)),
+                        3,
+                        DisplayColor (0.8f, 0.6f, 0.2f));
+  const game::GameSession::State saved = session.state ();
+
+  session.logic ().m_total_time = 20.0;
+  session.logic ().m_score = 900;
+  session.bike ().set_thrust (-1.0f);
+  session.car ().set_thrust (1.0f);
+  session.glider ().set_turn (-1.0f);
+  session.walker ().spawn (position (Vec3 (30, 40, 50)), Vec3 (0, 0, -1));
+  session.camera ().place (Vec3 (100, 100, 100), Vec3 ());
+  session.stars ().update (saved.stars.stars[0].position, 0.0f, 1.0f / 60.0f);
+  session.dust ().update (1.0f * u::s);
+  session.restore (saved);
+  const game::GameSession::State restored = session.state ();
+
+  // A checkpoint is a value, not a view into this particular live session.
+  // The replacement session is prepared against the same world before its
+  // mutable state is restored.
+  game::GameSession replacement (world, map, surface);
+  replacement.stars ().generate (map, world, 4);
+  replacement.restore (saved);
+  const game::GameSession::State replayed = replacement.state ();
+
+  MOPPE_CHECK (restored.logic.m_total_time == saved.logic.m_total_time);
+  MOPPE_CHECK (restored.logic.m_score == saved.logic.m_score);
+  MOPPE_CHECK_NEAR (scalar_value (restored.vehicle.thrust),
+                    scalar_value (saved.vehicle.thrust),
+                    1e-6f);
+  MOPPE_CHECK_NEAR (
+    scalar_value (restored.car.thrust), scalar_value (saved.car.thrust), 1e-6f);
+  check_position (restored.glider.position, saved.glider.position);
+  check_vector (restored.glider.heading, saved.glider.heading);
+  check_position (restored.walker.position, saved.walker.position);
+  check_position (restored.camera.position, saved.camera.position);
+  MOPPE_CHECK (restored.stars.count == saved.stars.count);
+  MOPPE_CHECK (restored.stars.collected == saved.stars.collected);
+  MOPPE_CHECK (restored.dust.emissions.size () == saved.dust.emissions.size ());
+  MOPPE_CHECK (replayed.logic.m_total_time == saved.logic.m_total_time);
+  MOPPE_CHECK (replayed.logic.m_score == saved.logic.m_score);
+  MOPPE_CHECK_NEAR (scalar_value (replayed.vehicle.thrust),
+                    scalar_value (saved.vehicle.thrust),
+                    1e-6f);
+  check_position (replayed.glider.position, saved.glider.position);
+  check_position (replayed.walker.position, saved.walker.position);
+  check_position (replayed.camera.position, saved.camera.position);
+  MOPPE_CHECK (replayed.stars.count == saved.stars.count);
+  MOPPE_CHECK (replayed.dust.emissions.size () == saved.dust.emissions.size ());
 }

@@ -332,6 +332,7 @@ endif()
 # Game logic + simulation (GL-free since the cutover).
 add_library(moppe_game STATIC
   moppe/game/graphics_settings.cc
+  moppe/game/game_session.cc
   moppe/map/generate.cc
   moppe/map/surface_domain.cc
   moppe/map/surface.cc

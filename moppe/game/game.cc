@@ -13,7 +13,7 @@
 #include <moppe/game/cinematic_flight.hh>
 #include <moppe/game/dust.hh>
 #include <moppe/game/forest.hh>
-#include <moppe/game/game_state.hh>
+#include <moppe/game/game_session.hh>
 #include <moppe/game/generated_world.hh>
 #include <moppe/game/glider_render.hh>
 #include <moppe/game/graphics_benchmark.hh>
@@ -382,7 +382,7 @@ namespace moppe {
                           warmth);
     }
 
-    class MoppeGame : public platform::Game, private GameLogicState {
+    class MoppeGame : public platform::Game {
       struct GenerationJob {
         GenerationJob (MoppeGame& owner,
                        WorldParams requested_params,
@@ -414,6 +414,8 @@ namespace moppe {
                  std::optional<GraphicsBenchmarkConfig> benchmark)
           : m_generated_world (
               std::make_unique<GeneratedWorld> (world, std::move (recipe))),
+            m_session (std::make_unique<GameSession> (
+              this->world (), this->map (), this->surface ())),
             m_graphics (graphics), m_spawn_position (position_value (
                                      this->world ().spawn_position ())),
             m_loading_world (this->world ()),
@@ -422,24 +424,7 @@ namespace moppe {
                            extent_value (this->recipe ().extent ()),
                            this->recipe ().seed ().value,
                            this->recipe ().topology ()),
-            m_camera (18 * u::deg, 6.5f * u::m),
-            // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
-            // hard low-end punch, ~125 km/h against drag (the old
-            // 5000 N constant force topped out near 300).
-            m_vehicle (this->world ().spawn_position (),
-                       45 * u::deg,
-                       this->map (),
-                       2600 * u::N,
-                       30 * u::kW,
-                       150 * u::kg),
-            m_car (this->world ().spawn_position (),
-                   45 * u::deg,
-                   this->map (),
-                   14 * u::kN,
-                   100 * u::kW,
-                   900 * u::kg),
-            m_glider (this->surface ()), m_renderer (0),
-            m_start_in_terrain_lab (start_in_terrain_lab),
+            m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
             m_tree_demo (tree_demo), m_tree_count (tree_count),
             m_screenshot_path (std::move (screenshot_path)),
@@ -461,25 +446,11 @@ namespace moppe {
       }
 
       GameState state () const {
-        return { static_cast<const GameLogicState&> (*this),
-                 m_vehicle.state (),
-                 m_car.state (),
-                 m_glider.state (),
-                 m_walker.state (),
-                 m_camera.state (),
-                 m_stars.state (),
-                 m_dust.state () };
+        return session ().state ();
       }
 
       void restore (const GameState& state) {
-        static_cast<GameLogicState&> (*this) = state.logic;
-        m_vehicle.restore (state.vehicle);
-        m_car.restore (state.car);
-        m_glider.restore (state.glider);
-        m_walker.restore (state.walker);
-        m_camera.restore (state.camera);
-        m_stars.restore (state.stars);
-        m_dust.restore (state.dust);
+        session ().restore (state);
       }
 
       // -- lifecycle ---------------------------------------------------
@@ -568,6 +539,22 @@ namespace moppe {
         platform::async (&MoppeGame::generate_thunk,
                          &MoppeGame::finish_thunk,
                          m_generation_job);
+      }
+
+      GameSession& session () noexcept {
+        return *m_session;
+      }
+
+      const GameSession& session () const noexcept {
+        return *m_session;
+      }
+
+      GameLogicState& logic () noexcept {
+        return session ().logic ();
+      }
+
+      const GameLogicState& logic () const noexcept {
+        return session ().logic ();
       }
 
       const GeneratedWorld& generated_world () const noexcept {
@@ -698,8 +685,8 @@ namespace moppe {
         };
 
         for (int i = 0; i < 6000; ++i) {
-          const float x = random_x (m_fx_rng);
-          const float z = random_z (m_fx_rng);
+          const float x = random_x (logic ().m_fx_rng);
+          const float z = random_z (logic ().m_fx_rng);
           const float h = elevation_at (x, z);
           const float hx0 = elevation_at (x - patch, z);
           const float hx1 = elevation_at (x + patch, z);
@@ -738,7 +725,7 @@ namespace moppe {
           // acceptable patch encountered.
           ++good_count;
           std::uniform_int_distribution<int> keep (1, good_count);
-          if (keep (m_fx_rng) == 1)
+          if (keep (logic ().m_fx_rng) == 1)
             chosen = Vec3 (x, h + 1.2f, z);
         }
 
@@ -1127,30 +1114,17 @@ namespace moppe {
         if (m_terrain_lab.active ())
           m_terrain_lab.leave ();
 
-        // Keep the outgoing world alive until all direct terrain/surface
-        // borrowers have been destroyed.  GeneratedWorld itself cannot move,
-        // so ownership, rather than its contents, crosses this boundary.
-        std::unique_ptr<GeneratedWorld> retired = std::move (m_generated_world);
-        std::destroy_at (std::addressof (m_vehicle));
-        std::destroy_at (std::addressof (m_car));
-        std::destroy_at (std::addressof (m_glider));
+        // Keep the outgoing session and world alive until the new session has
+        // bound to the completed world. The session owns every direct
+        // terrain/surface borrower, so it must retire before its old world.
+        std::unique_ptr<GeneratedWorld> retired_world =
+          std::move (m_generated_world);
+        std::unique_ptr<GameSession> retired_session = std::move (m_session);
         m_generated_world = std::move (completed);
-        std::construct_at (std::addressof (m_vehicle),
-                           world ().spawn_position (),
-                           45 * u::deg,
-                           map (),
-                           2600 * u::N,
-                           30 * u::kW,
-                           150 * u::kg);
-        std::construct_at (std::addressof (m_car),
-                           world ().spawn_position (),
-                           45 * u::deg,
-                           map (),
-                           14 * u::kN,
-                           100 * u::kW,
-                           900 * u::kg);
-        std::construct_at (std::addressof (m_glider), surface ());
-        retired.reset ();
+        m_session =
+          std::make_unique<GameSession> (world (), map (), surface ());
+        retired_session.reset ();
+        retired_world.reset ();
       }
 
       void finish_setup () {
@@ -1168,10 +1142,10 @@ namespace moppe {
           m_water_presentation.refresh (*water, map ().scale ()[1] * u::m);
         m_surface_presentation.refresh (surface ());
 
-        m_vehicle.set_water_level (world ().water_level);
-        m_car.set_water_level (world ().water_level);
-        m_vehicle.set_obstacles (&m_obstacles);
-        m_car.set_obstacles (&m_obstacles);
+        session ().bike ().set_water_level (world ().water_level);
+        session ().car ().set_water_level (world ().water_level);
+        session ().bike ().set_obstacles (&m_obstacles);
+        session ().car ().set_obstacles (&m_obstacles);
 
         if (!m_terrain_lab_preview && m_water_shot) {
           m_water_inspection = choose_water_inspection (*m_water_shot,
@@ -1192,7 +1166,7 @@ namespace moppe {
         if (!m_terrain_lab_preview) {
           set_loading_stage (LoadingStage::PlacingStars);
           MOPPE_PROFILE_ZONE ("startup.generate_stars");
-          m_stars.generate (map (), world (), 80);
+          session ().stars ().generate (map (), world (), 80);
         }
 
         if (!m_terrain_lab_preview) {
@@ -1208,9 +1182,9 @@ namespace moppe {
             m_spawn_position = choose_landscape_spawn ();
             m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
           }
-          m_vehicle.reset (m_spawn_position);
-          m_vehicle.set_heading (trail_network () ? trail_direction_from_home ()
-                                                  : Vec3 (0, 0, 1));
+          session ().bike ().reset (m_spawn_position);
+          session ().bike ().set_heading (
+            trail_network () ? trail_direction_from_home () : Vec3 (0, 0, 1));
         }
         if (m_tree_demo) {
           MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
@@ -1220,12 +1194,13 @@ namespace moppe {
             throw std::runtime_error (
               "the generated surface has no viable tree habitat");
           const TreeGrove& grove = m_tree_stand.grove ();
-          m_camera.place (grove.camera_eye, grove.camera_target);
+          session ().camera ().place (grove.camera_eye, grove.camera_target);
           std::cerr << "tree grove: " << grove.sites.size ()
                     << " organisms, eye=" << grove.camera_eye
                     << " target=" << grove.camera_target << '\n';
         } else if (m_water_inspection)
-          m_camera.place (m_water_inspection->eye, m_water_inspection->target);
+          session ().camera ().place (m_water_inspection->eye,
+                                      m_water_inspection->target);
         else if (!m_terrain_lab_preview) {
           {
             MOPPE_PROFILE_ZONE ("startup.build_global_forest");
@@ -1365,16 +1340,16 @@ namespace moppe {
           MOPPE_PROFILE_PLOT ("benchmark.logical_frame", m_benchmark_frame);
           MOPPE_PROFILE_PLOT ("benchmark.measured", m_benchmark_measured);
         }
-        m_frame_time = dt;
-        if (!m_ready || m_game_over)
+        logic ().m_frame_time = dt;
+        if (!m_ready || logic ().m_game_over)
           return;
 
         InputFrame input = m_live_input.take_frame ();
         if (scripted_input)
           input = *scripted_input;
 
-        m_total_time += dt;
-        const float total_time = m_total_time;
+        logic ().m_total_time += dt;
+        const float total_time = logic ().m_total_time;
 
         // Weather remains part of the world while actors are paused.  This
         // also initializes the shared horizon color when the game starts
@@ -1384,12 +1359,13 @@ namespace moppe {
           0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
           std::sin (total_time * 0.02f) * 0.05f;
         clamp (cloudiness, 0.0f, 1.0f);
-        m_cloudiness = cloudiness;
+        logic ().m_cloudiness = cloudiness;
 
         // Fog stays mostly sky-blue.  Directional warmth is added in
         // the shaders only when looking toward the sun.
         const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
-        m_fog = mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
+        logic ().m_fog =
+          mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
 
         if (m_cinematic.active ()) {
           if (input.leave_cinematic) {
@@ -1421,7 +1397,7 @@ namespace moppe {
         // moving in the renderer's wind field while actors remain paused.
         if (m_tree_demo) {
           const TreeGrove& grove = m_tree_stand.grove ();
-          m_camera.place (grove.camera_eye, grove.camera_target);
+          session ().camera ().place (grove.camera_eye, grove.camera_target);
           return;
         }
 
@@ -1438,46 +1414,49 @@ namespace moppe {
 
         apply_input_frame (input);
 
-        m_vehicle.update (seconds (dt));
-        if (m_car_exists)
-          m_car.update (seconds (dt));
-        if (m_mode == M_GLIDER && m_glider.update (seconds (dt)))
+        session ().bike ().update (seconds (dt));
+        if (logic ().m_car_exists)
+          session ().car ().update (seconds (dt));
+        if (logic ().m_mode == M_GLIDER &&
+            session ().glider ().update (seconds (dt)))
           finish_glide ();
-        if (m_mode == M_FOOT)
-          m_walker.update (seconds (dt), map (), m_obstacles, world ());
+        if (logic ().m_mode == M_FOOT)
+          session ().walker ().update (
+            seconds (dt), map (), m_obstacles, world ());
 
         const Vec3 vpos = subject_position ();
         mov::Vehicle& av = active_vehicle ();
 
         // Parked vehicles' impacts shouldn't linger until remount.
-        if (m_mode != M_BIKE) {
-          m_vehicle.pop_impact ();
-          m_vehicle.pop_fall_drop ();
+        if (logic ().m_mode != M_BIKE) {
+          session ().bike ().pop_impact ();
+          session ().bike ().pop_fall_drop ();
         }
-        if (m_car_exists && m_mode != M_CAR) {
-          m_car.pop_impact ();
-          m_car.pop_fall_drop ();
+        if (logic ().m_car_exists && logic ().m_mode != M_CAR) {
+          session ().car ().pop_impact ();
+          session ().car ().pop_fall_drop ();
         }
 
         const bool in_water =
           vpos[1] < meters_value (world ().water_level) + 1.0f;
-        const bool driving = m_mode == M_BIKE || m_mode == M_CAR;
+        const bool driving =
+          logic ().m_mode == M_BIKE || logic ().m_mode == M_CAR;
 
         // Long jumps become score events after three seconds. Keep the last
         // airborne time locally because Vehicle clears its timer on touchdown.
         if (driving && av.airtime () > 0.0f) {
-          m_jump_airtime = av.airtime ();
-          m_landed_age += dt;
+          logic ().m_jump_airtime = av.airtime ();
+          logic ().m_landed_age += dt;
         } else {
-          if (driving && m_jump_airtime >= 3.0f) {
-            m_landed_airtime = m_jump_airtime;
-            m_landed_points =
-              (int)std::round (100.0f * m_jump_airtime * m_jump_airtime);
-            m_score += m_landed_points;
-            m_landed_age = 0.0f;
+          if (driving && logic ().m_jump_airtime >= 3.0f) {
+            logic ().m_landed_airtime = logic ().m_jump_airtime;
+            logic ().m_landed_points = (int)std::round (
+              100.0f * logic ().m_jump_airtime * logic ().m_jump_airtime);
+            logic ().m_score += logic ().m_landed_points;
+            logic ().m_landed_age = 0.0f;
           }
-          m_jump_airtime = 0.0f;
-          m_landed_age += dt;
+          logic ().m_jump_airtime = 0.0f;
+          logic ().m_landed_age += dt;
         }
         const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
         const DisplayColor clod_color (0.42f, 0.34f, 0.24f);
@@ -1488,10 +1467,10 @@ namespace moppe {
         // Drift kicks up dirt from the rear wheel (or spray).
         if (driving && av.grounded () && av.drift_speed () > 6.0f) {
           int n = std::min (4, (int)(av.drift_speed () * 0.2f));
-          m_dust.emit (position (rear_wheel),
-                       velocity (av.velocity () * 0.15f),
-                       n,
-                       in_water ? spray_color : dust_color);
+          session ().dust ().emit (position (rear_wheel),
+                                   velocity (av.velocity () * 0.15f),
+                                   n,
+                                   in_water ? spray_color : dust_color);
         }
 
         // Roost: hard throttle sprays an arc of dirt clods backward
@@ -1508,12 +1487,12 @@ namespace moppe {
             roost.downward_acceleration =
               12.0f * isq::acceleration[u::m / pow<2> (u::s)];
             roost.spread = 0.5f * one;
-            m_dust.emit (position (rear_wheel),
-                         velocity (fwd * (-6.0f - 14.0f * slip) +
-                                   Vec3 (0, 3.5f + 3.0f * slip, 0)),
-                         1 + (int)(slip * 3.0f),
-                         clod_color,
-                         roost);
+            session ().dust ().emit (position (rear_wheel),
+                                     velocity (fwd * (-6.0f - 14.0f * slip) +
+                                               Vec3 (0, 3.5f + 3.0f * slip, 0)),
+                                     1 + (int)(slip * 3.0f),
+                                     clod_color,
+                                     roost);
           }
         }
 
@@ -1525,7 +1504,7 @@ namespace moppe {
           // integrated over the frame into a probability.
           const probability_t spark (34.0f / u::s * av.boost_level () *
                                      (dt * u::s));
-          if (chance (m_fx_rng) < scalar_value (spark)) {
+          if (chance (logic ().m_fx_rng) < scalar_value (spark)) {
             Dust::Style ember;
             ember.size = 0.15f * u::m;
             ember.lifetime = 0.45f * u::s;
@@ -1533,52 +1512,54 @@ namespace moppe {
               6.0f * isq::acceleration[u::m / pow<2> (u::s)];
             ember.spread = 0.3f * one;
             ember.additive = true;
-            m_dust.emit (position (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0)),
-                         velocity (av.velocity () * 0.5f - fwd * 2.0f +
-                                   Vec3 (0, -4.0f, 0)),
-                         1,
-                         DisplayColor (1.0f, 0.55f, 0.18f),
-                         ember);
+            session ().dust ().emit (
+              position (vpos - fwd * 0.5f + Vec3 (0, -0.5f, 0)),
+              velocity (av.velocity () * 0.5f - fwd * 2.0f +
+                        Vec3 (0, -4.0f, 0)),
+              1,
+              DisplayColor (1.0f, 0.55f, 0.18f),
+              ember);
           }
         }
 
         // Exhaust smoke: faint gray puffs that rise off the muffler
         // while the throttle is open.
-        if (driving && abs (av.thrust ()) > 0.3f && m_mode == M_BIKE) {
+        if (driving && abs (av.thrust ()) > 0.3f && logic ().m_mode == M_BIKE) {
           std::uniform_real_distribution<float> chance (0.0f, 1.0f);
           const probability_t puff (14.0f / u::s * (dt * u::s));
-          if (chance (m_fx_rng) < scalar_value (puff)) {
+          if (chance (logic ().m_fx_rng) < scalar_value (puff)) {
             Dust::Style smoke;
             smoke.size = 0.35f * u::m;
             smoke.lifetime = 0.8f * u::s;
             smoke.downward_acceleration =
               -2.5f * isq::acceleration[u::m / pow<2> (u::s)]; // buoyant
             smoke.spread = 0.25f * one;
-            m_dust.emit (position (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0)),
-                         velocity (av.velocity () * 0.25f),
-                         1,
-                         DisplayColor (0.45f, 0.45f, 0.48f),
-                         smoke);
+            session ().dust ().emit (
+              position (vpos - fwd * 1.2f + Vec3 (0, -0.4f, 0)),
+              velocity (av.velocity () * 0.25f),
+              1,
+              DisplayColor (0.45f, 0.45f, 0.48f),
+              smoke);
           }
         }
 
         // Wading fast throws up a bow wave.
         if (driving && in_water && length (av.velocity ()) > 15.0f)
-          m_dust.emit (position (vpos + Vec3 (0, -0.5f, 0)),
-                       velocity (av.velocity () * 0.3f),
-                       3,
-                       spray_color);
+          session ().dust ().emit (position (vpos + Vec3 (0, -0.5f, 0)),
+                                   velocity (av.velocity () * 0.3f),
+                                   3,
+                                   spray_color);
 
         // Hard landings shake the camera and burst dirt outward:
         // a low pancake of dust plus a ring of ballistic clods.
         const float impact = driving ? av.pop_impact () : 0.0f;
         if (impact > 8.0f) {
-          m_shake = std::min (0.28f, 0.010f * impact);
-          m_shake_time = 0.0f;
-          m_dust.emit (position (vpos + Vec3 (0, -0.7f, 0)),
-                       velocity (av.velocity () * 0.2f),
-                       12,
-                       in_water ? spray_color : dust_color);
+          logic ().m_shake = std::min (0.28f, 0.010f * impact);
+          logic ().m_shake_time = 0.0f;
+          session ().dust ().emit (position (vpos + Vec3 (0, -0.7f, 0)),
+                                   velocity (av.velocity () * 0.2f),
+                                   12,
+                                   in_water ? spray_color : dust_color);
           if (!in_water) {
             Dust::Style burst;
             burst.size = 0.5f * u::m;
@@ -1586,34 +1567,35 @@ namespace moppe {
             burst.downward_acceleration =
               10.0f * isq::acceleration[u::m / pow<2> (u::s)];
             burst.spread = 1.4f * one;
-            m_dust.emit (position (vpos + Vec3 (0, -0.6f, 0)),
-                         velocity (av.velocity () * 0.15f +
-                                   Vec3 (0, 2.0f + 0.15f * impact, 0)),
-                         (int)std::min (10.0f, impact * 0.5f),
-                         clod_color,
-                         burst);
+            session ().dust ().emit (
+              position (vpos + Vec3 (0, -0.6f, 0)),
+              velocity (av.velocity () * 0.15f +
+                        Vec3 (0, 2.0f + 0.15f * impact, 0)),
+              (int)std::min (10.0f, impact * 0.5f),
+              clod_color,
+              burst);
           }
         }
 
         // Crashes hurt; health trickles back slowly.  Falls from
         // above a hundred meters are simply fatal -- house rule.
         if (impact > 9.0f)
-          m_health -= (impact - 9.0f) * 4.5f;
+          logic ().m_health -= (impact - 9.0f) * 4.5f;
         if (driving && av.pop_fall_drop () > 100.0f)
-          m_health = 0.0f;
-        m_health = std::min (100.0f, m_health + 1.5f * dt);
-        if (m_health <= 0.0f) {
-          m_dust.emit (position (vpos),
-                       velocity (Vec3 (0, 6, 0)),
-                       40,
-                       DisplayColor (1.0f, 0.5f, 0.1f));
-          --m_lives;
-          if (m_lives <= 0) {
-            m_game_over = true;
+          logic ().m_health = 0.0f;
+        logic ().m_health = std::min (100.0f, logic ().m_health + 1.5f * dt);
+        if (logic ().m_health <= 0.0f) {
+          session ().dust ().emit (position (vpos),
+                                   velocity (Vec3 (0, 6, 0)),
+                                   40,
+                                   DisplayColor (1.0f, 0.5f, 0.1f));
+          --logic ().m_lives;
+          if (logic ().m_lives <= 0) {
+            logic ().m_game_over = true;
           } else {
             // Halfway through the hearts, the game offers its
             // sympathies out loud.
-            if (m_lives == 5)
+            if (logic ().m_lives == 5)
               platform::say ("Ouchies. That hurts.");
 
             // Respawn where you crashed, upright on the ground.
@@ -1621,15 +1603,16 @@ namespace moppe {
             // corner -- it read as falling through the cosmos.)
             const float ground = map ().interpolated_height (vpos[0], vpos[2]);
             av.reset (Vec3 (vpos[0], ground + 1.2f, vpos[2]));
-            m_health = 100.0f;
-            m_shake = 1.0f;
-            m_shake_time = 0.0f;
+            logic ().m_health = 100.0f;
+            logic ().m_shake = 1.0f;
+            logic ().m_shake_time = 0.0f;
           }
         }
 
         // Star pickups sparkle gold and top up fuel and boost reserves.
         {
-          const int picked = m_stars.update (vpos, m_total_time, dt);
+          const int picked =
+            session ().stars ().update (vpos, logic ().m_total_time, dt);
           if (picked > 0) {
             Dust::Style sparkle;
             sparkle.size = 0.38f * u::m;
@@ -1638,23 +1621,24 @@ namespace moppe {
               -1.5f * isq::acceleration[u::m / pow<2> (u::s)];
             sparkle.spread = 1.7f * one;
             sparkle.additive = true;
-            m_dust.emit (position (m_stars.last_pos ()),
-                         velocity (Vec3 (0, 4, 0)),
-                         32,
-                         DisplayColor (1.0f, 0.72f, 0.12f),
-                         sparkle);
+            session ().dust ().emit (position (session ().stars ().last_pos ()),
+                                     velocity (Vec3 (0, 4, 0)),
+                                     32,
+                                     DisplayColor (1.0f, 0.72f, 0.12f),
+                                     sparkle);
             Dust::Style flash;
             flash.size = 0.9f * u::m;
             flash.lifetime = 0.35f * u::s;
             flash.spread = 0.25f * one;
             flash.additive = true;
-            m_dust.emit (position (m_stars.last_pos ()),
-                         velocity (Vec3 ()),
-                         5,
-                         DisplayColor (1.0f, 0.95f, 0.55f),
-                         flash);
-            m_fuel = std::min (100.0f, m_fuel + 25.0f * picked);
-            if (m_mode != M_GLIDER)
+            session ().dust ().emit (position (session ().stars ().last_pos ()),
+                                     velocity (Vec3 ()),
+                                     5,
+                                     DisplayColor (1.0f, 0.95f, 0.55f),
+                                     flash);
+            logic ().m_fuel =
+              std::min (100.0f, logic ().m_fuel + 25.0f * picked);
+            if (logic ().m_mode != M_GLIDER)
               av.replenish_boost (0.25f * picked);
           }
         }
@@ -1662,73 +1646,83 @@ namespace moppe {
         // Fuel: the throttle burns it; an empty tank limps along at
         // a third power (never fully stranded).
         if (driving) {
-          m_fuel = std::max (
-            0.0f, m_fuel - scalar_value (abs (av.thrust ())) * 0.9f * dt);
-          m_odometer += length (av.velocity ()) * dt;
+          logic ().m_fuel = std::max (
+            0.0f,
+            logic ().m_fuel - scalar_value (abs (av.thrust ())) * 0.9f * dt);
+          logic ().m_odometer += length (av.velocity ()) * dt;
 
           const float want =
-            m_go_input * ((m_fuel <= 0.5f && m_go_input > 0) ? 0.3f : 1.0f);
+            logic ().m_go_input *
+            ((logic ().m_fuel <= 0.5f && logic ().m_go_input > 0) ? 0.3f
+                                                                  : 1.0f);
           av.set_thrust (want);
         }
 
-        m_dust.update (seconds (dt));
-        m_shake_time += dt;
-        m_shake *= decay (7.0f / u::s, dt * u::s);
+        session ().dust ().update (seconds (dt));
+        logic ().m_shake_time += dt;
+        logic ().m_shake *= decay (7.0f / u::s, dt * u::s);
 
-        if (m_cam_mode == CAM_HELMET) {
+        if (logic ().m_cam_mode == CAM_HELMET) {
           // Ride inside the rider's head; lightly smoothed so
           // terrain bumps don't rattle the eyeballs.
           Vec3 eye, look;
-          if (m_mode == M_FOOT) {
-            eye =
-              m_walker.position () + Vec3 (0, 1.55f / m_landscape_scale_y, 0);
-            look = m_walker.heading ();
-          } else if (m_mode == M_GLIDER) {
-            eye =
-              m_glider.position () - Vec3 (0, 0.75f / m_landscape_scale_y, 0);
-            look = m_glider.heading ();
+          if (logic ().m_mode == M_FOOT) {
+            eye = session ().walker ().position () +
+                  Vec3 (0, 1.55f / m_landscape_scale_y, 0);
+            look = session ().walker ().heading ();
+          } else if (logic ().m_mode == M_GLIDER) {
+            eye = session ().glider ().position () -
+                  Vec3 (0, 0.75f / m_landscape_scale_y, 0);
+            look = session ().glider ().heading ();
           } else {
             eye = av.position () + Vec3 (0, 0.95f / m_landscape_scale_y, 0) +
                   av.orientation () * (0.4f / m_landscape_scale_x);
             look = av.orientation ();
           }
-          m_fp_eye = m_fp_eye + (eye - m_fp_eye) *
+          logic ().m_fp_eye =
+            logic ().m_fp_eye + (eye - logic ().m_fp_eye) *
                                   smoothing_alpha (25.0f / u::s, dt * u::s);
-          m_camera.place (m_fp_eye, m_fp_eye + look * 10.0f);
+          session ().camera ().place (logic ().m_fp_eye,
+                                      logic ().m_fp_eye + look * 10.0f);
         } else {
-          m_camera.set_landscape_scale (m_landscape_scale_x,
-                                        m_landscape_scale_y);
-          const float flip = (m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
-          if (m_mode == M_FOOT)
-            m_camera.update (position (m_walker.position () +
-                                       Vec3 (0, 1.0f / m_landscape_scale_y, 0)),
-                             m_walker.heading () * flip,
-                             velocity (Vec3 ()),
-                             seconds (dt));
-          else if (m_mode == M_GLIDER)
-            m_camera.update (m_glider.physical_position (),
-                             m_glider.heading () * flip,
-                             m_glider.physical_velocity (),
-                             seconds (dt));
+          session ().camera ().set_landscape_scale (m_landscape_scale_x,
+                                                    m_landscape_scale_y);
+          const float flip = (logic ().m_cam_mode == CAM_FRONT) ? -1.0f : 1.0f;
+          if (logic ().m_mode == M_FOOT)
+            session ().camera ().update (
+              position (session ().walker ().position () +
+                        Vec3 (0, 1.0f / m_landscape_scale_y, 0)),
+              session ().walker ().heading () * flip,
+              velocity (Vec3 ()),
+              seconds (dt));
+          else if (logic ().m_mode == M_GLIDER)
+            session ().camera ().update (
+              session ().glider ().physical_position (),
+              session ().glider ().heading () * flip,
+              session ().glider ().physical_velocity (),
+              seconds (dt));
           else
-            m_camera.update (av.physical_position (),
-                             av.orientation () * flip,
-                             av.physical_velocity (),
-                             seconds (dt));
-          m_camera.limit (map ());
+            session ().camera ().update (av.physical_position (),
+                                         av.orientation () * flip,
+                                         av.physical_velocity (),
+                                         seconds (dt));
+          session ().camera ().limit (map ());
         }
         if (m_water_inspection) {
-          m_camera.place (m_water_inspection->eye, m_water_inspection->target);
-          m_camera.limit (map ());
+          session ().camera ().place (m_water_inspection->eye,
+                                      m_water_inspection->target);
+          session ().camera ().limit (map ());
         }
 
         // Speed widens the field of view a touch.
         {
-          const float kmh =
-            (driving || m_mode == M_GLIDER) ? subject_speed_kmh () : 0.0f;
+          const float kmh = (driving || logic ().m_mode == M_GLIDER)
+                              ? subject_speed_kmh ()
+                              : 0.0f;
           const float k =
             std::min (1.0f, std::max (0.0f, (kmh - 70.0f) / 180.0f));
-          m_fov_k += (k - m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
+          logic ().m_fov_k +=
+            (k - logic ().m_fov_k) * smoothing_alpha (5.0f / u::s, dt * u::s);
         }
 
         if (m_benchmark) {
@@ -1762,7 +1756,7 @@ namespace moppe {
           render_loading (r);
           return;
         }
-        if (m_game_over) {
+        if (logic ().m_game_over) {
           render_game_over (r);
           return;
         }
@@ -1775,7 +1769,7 @@ namespace moppe {
         const float fov = cinematic ? m_cinematic.field_of_view ()
                           : terrain_lab || m_water_inspection || m_tree_demo
                             ? 70.0f
-                            : 100.0f + 9.0f * m_fov_k;
+                            : 100.0f + 9.0f * logic ().m_fov_k;
         fp.proj = Mat4::perspective_reversed (
           fov * u::deg,
           aspect,
@@ -1789,20 +1783,21 @@ namespace moppe {
         // rotations each frame looked like violent camera teleportation.
         Mat4 view = cinematic     ? m_cinematic.view_matrix ()
                     : terrain_lab ? m_terrain_lab.view_matrix ()
-                                  : m_camera.view_matrix ();
+                                  : session ().camera ().view_matrix ();
         if (!cinematic && !terrain_lab && !m_water_inspection && !m_tree_demo &&
-            m_shake > 0.005f) {
-          const Vec3 cam = m_camera.position ();
+            logic ().m_shake > 0.005f) {
+          const Vec3 cam = session ().camera ().position ();
           const float ground = map ().interpolated_height (cam[0], cam[2]);
           const float clearance = cam[1] - ground;
           const float room =
             std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
 
-          const float pulse = m_shake * room;
+          const float pulse = logic ().m_shake * room;
           const float roll =
-            pulse * std::sin (2.0f * PI * 15.0f * m_shake_time);
+            pulse * std::sin (2.0f * PI * 15.0f * logic ().m_shake_time);
           const float pitch =
-            pulse * 0.55f * std::sin (2.0f * PI * 19.0f * m_shake_time + 0.7f);
+            pulse * 0.55f *
+            std::sin (2.0f * PI * 19.0f * logic ().m_shake_time + 0.7f);
           view = view * Mat4::rotation (roll * u::deg, Vec3 (0, 0, 1)) *
                  Mat4::rotation (pitch * u::deg, Vec3 (1, 0, 0));
         }
@@ -1810,7 +1805,7 @@ namespace moppe {
 
         const Vec3 cam = cinematic     ? m_cinematic.position ()
                          : terrain_lab ? m_terrain_lab.position ()
-                                       : m_camera.position ();
+                                       : session ().camera ().position ();
         fp.camera_pos = cam;
         fp.cam_right = Vec3 (view.m[0], view.m[4], view.m[8]);
         fp.cam_up = Vec3 (view.m[1], view.m[5], view.m[9]);
@@ -1819,7 +1814,7 @@ namespace moppe {
         // torus is an abstract inspection object on a dark backdrop.
         fp.clear_color = terrain_lab && m_terrain_lab.torus_view ()
                            ? DisplayColor (0.012f, 0.016f, 0.022f)
-                           : m_fog;
+                           : logic ().m_fog;
         const attenuation_t scene_fog =
           terrain_lab ? m_terrain_lab.scene_fog (world ().fog_scale)
                       : world ().fog_scale;
@@ -1840,7 +1835,7 @@ namespace moppe {
           fp.ambient = scale_display (fp.ambient, 1.15f);
           fp.exposure_bias = 0.88f;
         }
-        fp.time = m_total_time;
+        fp.time = logic ().m_total_time;
         fp.scene_scale = m_graphics.scene_scale;
         fp.render_scale_override = m_graphics.render_scale_override;
         fp.bloom = m_graphics.bloom;
@@ -1873,9 +1868,9 @@ namespace moppe {
               }
             }
           }
-          vis *= 1.0f - 0.65f * m_cloudiness;
-          m_flare += (vis - m_flare) * 0.12f;
-          fp.sun_visibility = terrain_lab ? 0.0f : m_flare;
+          vis *= 1.0f - 0.65f * logic ().m_cloudiness;
+          logic ().m_flare += (vis - logic ().m_flare) * 0.12f;
+          fp.sun_visibility = terrain_lab ? 0.0f : logic ().m_flare;
         }
 
         static const int screenshot_delay = [] {
@@ -1902,10 +1897,12 @@ namespace moppe {
         }
         if (captured) {
           if (m_water_inspection)
-            std::cerr << "water screenshot camera: eye=" << m_camera.position ()
+            std::cerr << "water screenshot camera: eye="
+                      << session ().camera ().position ()
                       << " target=" << m_water_inspection->target << '\n';
           if (m_tree_demo)
-            std::cerr << "tree screenshot camera: eye=" << m_camera.position ()
+            std::cerr << "tree screenshot camera: eye="
+                      << session ().camera ().position ()
                       << " target=" << m_tree_stand.grove ().camera_target
                       << '\n';
           r.request_screenshot (m_screenshot_path);
@@ -1914,25 +1911,25 @@ namespace moppe {
           return;
 
         FrameEnv env;
-        env.fog_color = m_fog;
+        env.fog_color = logic ().m_fog;
         env.fog_scale = scene_fog;
         env.sun_dir = fp.sun_dir;
         env.camera_pos = position (cam);
         env.cam_right = fp.cam_right;
         env.cam_up = fp.cam_up;
         env.cam_forward = fp.cam_forward;
-        env.time = seconds (m_total_time);
+        env.time = seconds (logic ().m_total_time);
 
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
-          sky.time = m_total_time;
+          sky.time = logic ().m_total_time;
           sky.sun_height = m_graphics.sun_height;
           // A world-shaping overview should keep the game world's moving sky,
           // without letting a passing front hide the land being edited.
-          sky.cloudiness =
-            terrain_lab ? std::min (m_cloudiness, 0.35f) : m_cloudiness;
+          sky.cloudiness = terrain_lab ? std::min (logic ().m_cloudiness, 0.35f)
+                                       : logic ().m_cloudiness;
           sky.sun_dir = fp.sun_dir;
-          sky.fog_color = m_fog;
+          sky.fog_color = logic ().m_fog;
           r.draw_sky (sky);
         };
 
@@ -1948,7 +1945,7 @@ namespace moppe {
                           cam,
                           cinematic     ? m_cinematic.forward ()
                           : terrain_lab ? m_terrain_lab.forward ()
-                                        : m_camera.forward (),
+                                        : session ().camera ().forward (),
                           terrain_lab
                             ? 30000.0f
                             : 3.0f / attenuation_value (world ().fog_scale));
@@ -1959,8 +1956,10 @@ namespace moppe {
           draw_world_sky ();
 
         if (!terrain_lab && !m_water_inspection && !m_tree_demo)
-          m_forest.draw (
-            r, cam, cinematic ? m_cinematic.forward () : m_camera.forward ());
+          m_forest.draw (r,
+                         cam,
+                         cinematic ? m_cinematic.forward ()
+                                   : session ().camera ().forward ());
 
         if (!terrain_lab && !m_water_inspection)
           m_tree_stand.draw (r);
@@ -1973,49 +1972,62 @@ namespace moppe {
 
           // Soft blob shadows under the movers.
           draw_home_base_marker (m_world_dl);
-          m_blob.draw (m_world_dl, map (), m_vehicle.position (), 2.2f);
-          if (m_car_exists)
-            m_blob.draw (m_world_dl, map (), m_car.position (), 2.9f);
-          if (m_mode == M_FOOT)
+          m_blob.draw (
+            m_world_dl, map (), session ().bike ().position (), 2.2f);
+          if (logic ().m_car_exists)
+            m_blob.draw (
+              m_world_dl, map (), session ().car ().position (), 2.9f);
+          if (logic ().m_mode == M_FOOT)
             m_blob.draw (m_world_dl,
                          map (),
-                         m_walker.position () + Vec3 (0, 0.5f, 0),
+                         session ().walker ().position () + Vec3 (0, 0.5f, 0),
                          0.8f);
-          if (m_mode == M_GLIDER)
-            m_blob.draw (m_world_dl, map (), m_glider.position (), 3.4f);
+          if (logic ().m_mode == M_GLIDER)
+            m_blob.draw (
+              m_world_dl, map (), session ().glider ().position (), 3.4f);
 
           // In helmet cam you ARE the rider: don't draw yourself.
-          const bool helmet = (m_cam_mode == CAM_HELMET);
-          if (!(helmet && m_mode == M_BIKE))
+          const bool helmet = (logic ().m_cam_mode == CAM_HELMET);
+          if (!(helmet && logic ().m_mode == M_BIKE))
             render_vehicle (r,
                             m_world_dl,
-                            m_vehicle,
-                            m_total_time,
+                            session ().bike (),
+                            logic ().m_total_time,
                             landscape_visual_scale ());
-          if (m_car_exists && !(helmet && m_mode == M_CAR))
-            render_vehicle (
-              r, m_world_dl, m_car, m_total_time, landscape_visual_scale ());
-          if (m_mode == M_FOOT && !helmet)
-            m_walker.render (
-              m_world_dl, m_total_time, landscape_visual_scale ());
-          if (m_mode == M_GLIDER && !helmet)
-            render_glider (
-              m_world_dl, m_glider, m_total_time, landscape_visual_scale ());
+          if (logic ().m_car_exists && !(helmet && logic ().m_mode == M_CAR))
+            render_vehicle (r,
+                            m_world_dl,
+                            session ().car (),
+                            logic ().m_total_time,
+                            landscape_visual_scale ());
+          if (logic ().m_mode == M_FOOT && !helmet)
+            session ().walker ().render (
+              m_world_dl, logic ().m_total_time, landscape_visual_scale ());
+          if (logic ().m_mode == M_GLIDER && !helmet)
+            render_glider (m_world_dl,
+                           session ().glider (),
+                           logic ().m_total_time,
+                           landscape_visual_scale ());
 
           r.draw_list (m_world_dl);
 
           // Additive glow after the solid list, so it blends over
           // everything already drawn: exhaust and jump-jet flames, then
           // the star pickups' halos.
-          if (m_graphics.vehicle_effects && !(helmet && m_mode == M_BIKE))
-            render_vehicle_flames (
-              r, m_vehicle, m_total_time, landscape_visual_scale ());
-          if (m_graphics.vehicle_effects && m_car_exists &&
-              !(helmet && m_mode == M_CAR))
-            render_vehicle_flames (
-              r, m_car, m_total_time, landscape_visual_scale ());
+          if (m_graphics.vehicle_effects &&
+              !(helmet && logic ().m_mode == M_BIKE))
+            render_vehicle_flames (r,
+                                   session ().bike (),
+                                   logic ().m_total_time,
+                                   landscape_visual_scale ());
+          if (m_graphics.vehicle_effects && logic ().m_car_exists &&
+              !(helmet && logic ().m_mode == M_CAR))
+            render_vehicle_flames (r,
+                                   session ().car (),
+                                   logic ().m_total_time,
+                                   landscape_visual_scale ());
           if (m_graphics.star_effects)
-            m_stars.render (r, env);
+            session ().stars ().render (r, env);
         }
 
         // The lab keeps the game's painted water while the map is the
@@ -2026,8 +2038,8 @@ namespace moppe {
                                                 m_terrain_lab.map_pristine ()));
         if (draw_ocean) {
           render::OceanParams ocean;
-          ocean.time = m_total_time;
-          ocean.fog_color = m_fog;
+          ocean.time = logic ().m_total_time;
+          ocean.fog_color = logic ().m_fog;
           ocean.fog_scale = attenuation_value (scene_fog);
           if (world ().toroidal ()) {
             const Vec3& world_extent = extent_value (world ().map_size);
@@ -2049,12 +2061,12 @@ namespace moppe {
 
         // Dust last so spray sits atop every water surface.
         if (!terrain_lab && m_graphics.particles) {
-          m_dust.render (r);
+          session ().dust ().render (r);
         }
 
         // Post effects.
         if (!terrain_lab && cam[1] < meters_value (world ().water_level))
-          r.apply_underwater (m_total_time);
+          r.apply_underwater (logic ().m_total_time);
         if (!terrain_lab) {
           float blur = 0.0f;
           if (cinematic)
@@ -2092,32 +2104,35 @@ namespace moppe {
         } else if (!m_water_inspection && !m_tree_demo) {
           HudState hs;
           hs.speed_kmh = subject_speed_kmh ();
-          hs.fuel = m_fuel;
-          if (m_mode == M_GLIDER) {
+          hs.fuel = logic ().m_fuel;
+          if (logic ().m_mode == M_GLIDER) {
             const float lift =
-              m_glider.air_mass_lift ().numerical_value_in (u::m / u::s);
+              session ().glider ().air_mass_lift ().numerical_value_in (u::m /
+                                                                        u::s);
             hs.boost_ready01 = std::clamp (lift / 4.0f, 0.0f, 1.0f);
           } else {
-            hs.boost_ready01 =
-              (m_mode == M_FOOT) ? 1.0f : active_vehicle ().boost_charge ();
+            hs.boost_ready01 = (logic ().m_mode == M_FOOT)
+                                 ? 1.0f
+                                 : active_vehicle ().boost_charge ();
           }
-          hs.health01 = m_health / 100.0f;
-          hs.odometer_m = (float)m_odometer;
-          hs.lives = m_lives;
-          hs.stars = m_stars.collected ();
-          hs.score = m_score;
-          hs.airtime_s = m_jump_airtime;
-          hs.landed_airtime_s = m_landed_airtime;
-          hs.landed_points = m_landed_points;
-          hs.landed_age_s = m_landed_age;
-          hs.on_foot = (m_mode == M_FOOT);
-          hs.gliding = (m_mode == M_GLIDER);
+          hs.health01 = logic ().m_health / 100.0f;
+          hs.odometer_m = (float)logic ().m_odometer;
+          hs.lives = logic ().m_lives;
+          hs.stars = session ().stars ().collected ();
+          hs.score = logic ().m_score;
+          hs.airtime_s = logic ().m_jump_airtime;
+          hs.landed_airtime_s = logic ().m_landed_airtime;
+          hs.landed_points = logic ().m_landed_points;
+          hs.landed_age_s = logic ().m_landed_age;
+          hs.on_foot = (logic ().m_mode == M_FOOT);
+          hs.gliding = (logic ().m_mode == M_GLIDER);
           hs.can_deploy_glider = can_deploy_glider ();
           hs.vertical_speed_mps =
-            m_mode == M_GLIDER
-              ? m_glider.vertical_speed ().numerical_value_in (u::m / u::s)
+            logic ().m_mode == M_GLIDER
+              ? session ().glider ().vertical_speed ().numerical_value_in (
+                  u::m / u::s)
               : 0.0f;
-          hs.frame_time_s = m_frame_time;
+          hs.frame_time_s = logic ().m_frame_time;
           const Vec3 heading = subject_heading ();
           hs.heading_radians = std::atan2 (heading[0], heading[2]);
           m_hud.draw (m_hud_dl, hs, hud_width, hud_height);
@@ -2453,7 +2468,7 @@ namespace moppe {
       // -- input -------------------------------------------------------
 
       void controls (const platform::ControlState& state) override {
-        if (m_game_over || m_terrain_lab.active ())
+        if (logic ().m_game_over || m_terrain_lab.active ())
           return;
         m_live_input.controls (state);
       }
@@ -2515,7 +2530,7 @@ namespace moppe {
         }
 
         // In great pain, only R (ride again) and ESC work.
-        if (m_game_over) {
+        if (logic ().m_game_over) {
           if (k == Key::R && down)
             revive ();
           else if (k == Key::Escape && down)
@@ -2626,40 +2641,45 @@ namespace moppe {
       }
 
       mov::Vehicle& active_vehicle () {
-        return m_mode == M_CAR ? m_car : m_vehicle;
+        return logic ().m_mode == M_CAR ? session ().car ()
+                                        : session ().bike ();
       }
 
       Vec3 subject_position () const {
-        if (m_mode == M_FOOT)
-          return m_walker.position ();
-        if (m_mode == M_GLIDER)
-          return m_glider.position ();
-        return m_mode == M_CAR ? m_car.position () : m_vehicle.position ();
+        if (logic ().m_mode == M_FOOT)
+          return session ().walker ().position ();
+        if (logic ().m_mode == M_GLIDER)
+          return session ().glider ().position ();
+        return logic ().m_mode == M_CAR ? session ().car ().position ()
+                                        : session ().bike ().position ();
       }
 
       Vec3 subject_heading () const {
-        if (m_mode == M_FOOT)
-          return m_walker.heading ();
-        if (m_mode == M_GLIDER)
-          return m_glider.heading ();
-        return m_mode == M_CAR ? m_car.orientation ()
-                               : m_vehicle.orientation ();
+        if (logic ().m_mode == M_FOOT)
+          return session ().walker ().heading ();
+        if (logic ().m_mode == M_GLIDER)
+          return session ().glider ().heading ();
+        return logic ().m_mode == M_CAR ? session ().car ().orientation ()
+                                        : session ().bike ().orientation ();
       }
 
       float subject_speed_kmh () const {
-        if (m_mode == M_FOOT)
+        if (logic ().m_mode == M_FOOT)
           return 0.0f;
-        if (m_mode == M_GLIDER)
-          return m_glider.airspeed ().numerical_value_in (u::m / u::s) * 3.6f;
-        const Vec3 v =
-          m_mode == M_CAR ? m_car.velocity () : m_vehicle.velocity ();
+        if (logic ().m_mode == M_GLIDER)
+          return session ().glider ().airspeed ().numerical_value_in (u::m /
+                                                                      u::s) *
+                 3.6f;
+        const Vec3 v = logic ().m_mode == M_CAR
+                         ? session ().car ().velocity ()
+                         : session ().bike ().velocity ();
         return length (v) * 3.6f;
       }
 
       bool can_deploy_glider () const {
-        if (m_mode != M_BIKE || !m_vehicle.airborne ())
+        if (logic ().m_mode != M_BIKE || !session ().bike ().airborne ())
           return false;
-        const Vec3 p = m_vehicle.position ();
+        const Vec3 p = session ().bike ().position ();
         const float ground = map ().interpolated_height (p[0], p[2]);
         return p[1] - ground > 3.0f;
       }
@@ -2667,33 +2687,36 @@ namespace moppe {
       void deploy_glider () {
         if (!can_deploy_glider ())
           return;
-        const Vec3 p = m_vehicle.position ();
-        const Vec3 heading = m_vehicle.orientation ();
-        const velocity_t inherited = m_vehicle.physical_velocity ();
-        m_vehicle.set_thrust (0);
-        m_vehicle.set_yaw (0 * u::deg);
-        m_vehicle.set_boost (0, 0);
-        m_glider.launch (position (p + Vec3 (0, 1.0f, 0)), inherited, heading);
-        m_mode = M_GLIDER;
-        m_glider.set_turn (m_turn_input);
-        m_glider.set_speed_control (m_go_input);
-        m_glider.set_flare (m_boost_input > 0.1f);
+        const Vec3 p = session ().bike ().position ();
+        const Vec3 heading = session ().bike ().orientation ();
+        const velocity_t inherited = session ().bike ().physical_velocity ();
+        session ().bike ().set_thrust (0);
+        session ().bike ().set_yaw (0 * u::deg);
+        session ().bike ().set_boost (0, 0);
+        session ().glider ().launch (
+          position (p + Vec3 (0, 1.0f, 0)), inherited, heading);
+        logic ().m_mode = M_GLIDER;
+        session ().glider ().set_turn (logic ().m_turn_input);
+        session ().glider ().set_speed_control (logic ().m_go_input);
+        session ().glider ().set_flare (logic ().m_boost_input > 0.1f);
       }
 
       void finish_glide () {
-        const Vec3 p = m_glider.position ();
-        m_walker.spawn (position (p + Vec3 (0, 0.15f, 0)), m_glider.heading ());
-        m_mode = M_FOOT;
-        input_turn (m_turn_input);
-        input_go (m_go_input);
+        const Vec3 p = session ().glider ().position ();
+        session ().walker ().spawn (position (p + Vec3 (0, 0.15f, 0)),
+                                    session ().glider ().heading ());
+        logic ().m_mode = M_FOOT;
+        input_turn (logic ().m_turn_input);
+        input_go (logic ().m_go_input);
         input_boost (0);
       }
 
       void leave_cinematic () {
         m_cinematic.stop ();
         m_live_input.clear ();
-        const Vec3 subject = subject_position () +
-                             (m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
+        const Vec3 subject =
+          subject_position () +
+          (logic ().m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
         Vec3 heading = subject_heading ();
         heading[1] = 0.0f;
         if (length2 (heading) < 1e-5f)
@@ -2701,8 +2724,8 @@ namespace moppe {
         else
           normalize (heading);
         const Vec3 eye = subject - heading * 6.2f + Vec3 (0, 2.5f, 0);
-        m_camera.place (eye, subject + heading * 2.0f);
-        m_camera.limit (map ());
+        session ().camera ().place (eye, subject + heading * 2.0f);
+        session ().camera ().limit (map ());
       }
 
       void regenerate_world () {
@@ -2751,46 +2774,48 @@ namespace moppe {
                                           next_seed,
                                           recipe ().water_datum (),
                                           recipe ().generation_profile ());
-        m_mode = M_BIKE;
-        m_car_exists = false;
-        m_game_over = false;
-        m_health = 100.0f;
-        m_fuel = 100.0f;
+        logic ().m_mode = M_BIKE;
+        logic ().m_car_exists = false;
+        logic ().m_game_over = false;
+        logic ().m_health = 100.0f;
+        logic ().m_fuel = 100.0f;
         start_world_generation (std::move (next_recipe));
       }
 
       void input_turn (float v) {
-        m_turn_input = v;
-        if (m_mode == M_FOOT)
-          m_walker.set_turn (v);
-        else if (m_mode == M_GLIDER)
-          m_glider.set_turn (v);
+        logic ().m_turn_input = v;
+        if (logic ().m_mode == M_FOOT)
+          session ().walker ().set_turn (v);
+        else if (logic ().m_mode == M_GLIDER)
+          session ().glider ().set_turn (v);
         else
           active_vehicle ().set_yaw ((90 * v) * u::deg);
       }
 
       void input_go (float v) {
-        m_go_input = v;
-        if (m_mode == M_FOOT)
-          m_walker.set_walk (v > 0 ? v : v * 0.6f);
-        else if (m_mode == M_GLIDER)
-          m_glider.set_speed_control (v);
+        logic ().m_go_input = v;
+        if (logic ().m_mode == M_FOOT)
+          session ().walker ().set_walk (v > 0 ? v : v * 0.6f);
+        else if (logic ().m_mode == M_GLIDER)
+          session ().glider ().set_speed_control (v);
         else {
           active_vehicle ().set_thrust (v);
-          active_vehicle ().set_boost (m_boost_input, m_go_input);
+          active_vehicle ().set_boost (logic ().m_boost_input,
+                                       logic ().m_go_input);
         }
       }
 
       void input_boost (float v) {
-        const float previous = m_boost_input;
-        m_boost_input = std::max (0.0f, std::min (1.0f, v));
-        if (m_mode == M_FOOT) {
-          if (m_boost_input > 0.1f && previous <= 0.1f)
-            m_walker.jump ();
-        } else if (m_mode == M_GLIDER)
-          m_glider.set_flare (m_boost_input > 0.1f);
+        const float previous = logic ().m_boost_input;
+        logic ().m_boost_input = std::max (0.0f, std::min (1.0f, v));
+        if (logic ().m_mode == M_FOOT) {
+          if (logic ().m_boost_input > 0.1f && previous <= 0.1f)
+            session ().walker ().jump ();
+        } else if (logic ().m_mode == M_GLIDER)
+          session ().glider ().set_flare (logic ().m_boost_input > 0.1f);
         else
-          active_vehicle ().set_boost (m_boost_input, m_go_input);
+          active_vehicle ().set_boost (logic ().m_boost_input,
+                                       logic ().m_go_input);
       }
 
       // This is the single ordinary-gameplay read of live or recorded input.
@@ -2809,9 +2834,9 @@ namespace moppe {
             toggle_mount ();
         }
         if (input.cycle_camera) {
-          m_cam_mode = (CamMode)((m_cam_mode + 1) % 3);
-          if (m_cam_mode == CAM_HELMET)
-            m_fp_eye = m_camera.position ();
+          logic ().m_cam_mode = (CamMode)((logic ().m_cam_mode + 1) % 3);
+          if (logic ().m_cam_mode == CAM_HELMET)
+            logic ().m_fp_eye = session ().camera ().position ();
         }
       }
 
@@ -2819,59 +2844,61 @@ namespace moppe {
         if (!m_ready)
           return;
 
-        if (m_mode == M_GLIDER)
+        if (logic ().m_mode == M_GLIDER)
           return;
 
-        if (m_mode != M_FOOT) {
+        if (logic ().m_mode != M_FOOT) {
           // Step off to the side of whatever we're driving.
           mov::Vehicle& av = active_vehicle ();
           const Vec3 h = av.orientation ();
           const Vec3 side (h[2], 0, -h[0]);
-          m_walker.spawn (
-            position (av.position () + side * (m_mode == M_CAR ? 2.4f : 1.8f)),
+          session ().walker ().spawn (
+            position (av.position () +
+                      side * (logic ().m_mode == M_CAR ? 2.4f : 1.8f)),
             h);
           av.set_thrust (0);
           av.set_yaw (0 * u::deg);
           av.set_boost (0, 0);
-          m_mode = M_FOOT;
-          input_turn (m_turn_input);
-          input_go (m_go_input);
+          logic ().m_mode = M_FOOT;
+          input_turn (logic ().m_turn_input);
+          input_go (logic ().m_go_input);
           return;
         }
 
         // On foot: bike first, then our parked car, then grand theft.
-        if (length2 (m_walker.position () - m_vehicle.position ()) <
-            5.0f * 5.0f) {
-          m_vehicle.set_thrust (0);
-          m_vehicle.set_yaw (0 * u::deg);
-          m_mode = M_BIKE;
-          input_turn (m_turn_input);
-          input_go (m_go_input);
-          input_boost (m_boost_input);
+        if (length2 (session ().walker ().position () -
+                     session ().bike ().position ()) < 5.0f * 5.0f) {
+          session ().bike ().set_thrust (0);
+          session ().bike ().set_yaw (0 * u::deg);
+          logic ().m_mode = M_BIKE;
+          input_turn (logic ().m_turn_input);
+          input_go (logic ().m_go_input);
+          input_boost (logic ().m_boost_input);
           return;
         }
 
-        if (m_car_exists &&
-            length2 (m_walker.position () - m_car.position ()) < 6.0f * 6.0f) {
-          m_car.set_thrust (0);
-          m_car.set_yaw (0 * u::deg);
-          m_mode = M_CAR;
-          input_turn (m_turn_input);
-          input_go (m_go_input);
-          input_boost (m_boost_input);
+        if (logic ().m_car_exists &&
+            length2 (session ().walker ().position () -
+                     session ().car ().position ()) < 6.0f * 6.0f) {
+          session ().car ().set_thrust (0);
+          session ().car ().set_yaw (0 * u::deg);
+          logic ().m_mode = M_CAR;
+          input_turn (logic ().m_turn_input);
+          input_go (logic ().m_go_input);
+          input_boost (logic ().m_boost_input);
           return;
         }
       }
 
       void revive () {
-        m_lives = 10;
-        m_health = 100.0f;
-        m_fuel = 100.0f;
-        m_shake = 0.0f;
-        m_shake_time = 0.0f;
-        m_jump_airtime = 0.0f;
-        m_landed_age = 10.0f;
-        m_mode = M_BIKE;
+        logic ().m_lives = 10;
+        logic ().m_health = 100.0f;
+        logic ().m_fuel = 100.0f;
+        logic ().m_shake = 0.0f;
+        logic ().m_shake_time = 0.0f;
+        logic ().m_jump_airtime = 0.0f;
+        logic ().m_landed_age = 10.0f;
+        logic ().m_mode = M_BIKE;
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
@@ -2880,24 +2907,27 @@ namespace moppe {
               position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
             .quantity_from_zero ()
             .numerical_value_in (u::m);
-        m_vehicle.reset (
+        session ().bike ().reset (
           Vec3 (m_spawn_position[0], ground + 1.2f, m_spawn_position[2]));
         // Key releases were swallowed during the game-over screen;
         // don't resume with the throttle stuck open.
-        m_turn_input = 0;
-        m_go_input = 0;
-        m_boost_input = 0;
+        logic ().m_turn_input = 0;
+        logic ().m_go_input = 0;
+        logic ().m_boost_input = 0;
         m_live_input.clear ();
-        m_vehicle.set_thrust (0);
-        m_vehicle.set_yaw (0 * u::deg);
-        m_vehicle.set_boost (0, 0);
-        m_game_over = false;
+        session ().bike ().set_thrust (0);
+        session ().bike ().set_yaw (0 * u::deg);
+        session ().bike ().set_boost (0, 0);
+        logic ().m_game_over = false;
       }
 
       // The active owner changes only in activate_completed_world().  All
       // gameplay reads go through the accessors above, so no stale reference
       // aliases survive a handoff.
       std::unique_ptr<GeneratedWorld> m_generated_world;
+      // Declared after its world so session-held terrain and surface borrows
+      // release first during normal teardown.
+      std::unique_ptr<GameSession> m_session;
       std::shared_ptr<GenerationJob> m_generation_job;
       std::mutex m_completed_world_mutex;
       std::unique_ptr<GeneratedWorld> m_completed_world;
@@ -2931,15 +2961,8 @@ namespace moppe {
       TerrainLab m_terrain_lab;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;
-      ChaseCamera m_camera;
-      mov::Vehicle m_vehicle;
-      mov::Vehicle m_car;
-      mov::Glider m_glider;
-      Stars m_stars;
-      Dust m_dust;
       BlobShadow m_blob;
       std::vector<mov::Box> m_obstacles;
-      Walker m_walker;
       Hud m_hud;
       InspectorUi m_game_ui;
       UiWindow m_game_ui_window { { 24, 24, 360, 224 } };

@@ -345,7 +345,8 @@ world for 500,000 years, and **Research** evolves the reference 2049-square
 world for 1,000,000 years. `--fast` is shorthand for the fast profile;
 `--terrain-quality fast|play|research` selects all three directly. Pressing
 `N` during play increments the seed and builds a new world behind the loading
-screen. Game generation derives the normalized erosion base level from the
+screen. The completed-world handoff starts a fresh game session against that
+new terrain. Game generation derives the normalized erosion base level from the
 current world's physical water level and vertical extent, so tectonic
 evolution and the subsequently materialized sea and lakes share one datum.
 The Orogeny source uses separate land and submarine relief scales: low initial
