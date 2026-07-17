@@ -1,10 +1,36 @@
 #include <moppe/terrain/program.hh>
 
 #include <cmath>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
-#include <type_traits>
 
 namespace moppe::terrain {
+  namespace {
+    std::string format_program_transform_float (float value, int precision) {
+      std::ostringstream stream;
+      stream << std::fixed << std::setprecision (precision) << value;
+      return stream.str ();
+    }
+
+    std::string format_program_transform_count (int value) {
+      std::string text = std::to_string (value);
+      for (int i = static_cast<int> (text.size ()) - 3; i > 0; i -= 3)
+        text.insert (static_cast<std::size_t> (i), ",");
+      return text;
+    }
+
+    std::string format_program_transform_ledger (double value) {
+      std::ostringstream stream;
+      stream << std::scientific << std::setprecision (2) << value;
+      return stream.str ();
+    }
+
+    [[noreturn]] void invalid_program_transform_property_index () {
+      throw std::out_of_range ("terrain transform property index is invalid");
+    }
+  }
+
   TerrainProgram make_geological_program (std::uint32_t root_seed,
                                           GeologicalLayer layer) {
     return { .source = { .recipe = make_geological_recipe (root_seed),
@@ -52,6 +78,199 @@ namespace moppe::terrain {
     return "play";
   }
 
+  void NormalizeHeights::validate () const {}
+
+  TransformDescription NormalizeHeights::description () const noexcept {
+    return { "normalize",
+             "NORMALIZE",
+             { SpatialScope::Global, EvaluationOrder::Reduction } };
+  }
+
+  std::string NormalizeHeights::detail () const {
+    return "map sampled range to 0..1";
+  }
+
+  std::size_t NormalizeHeights::property_count () const noexcept {
+    return 0;
+  }
+
+  TransformProperty NormalizeHeights::property (std::size_t) const {
+    invalid_program_transform_property_index ();
+  }
+
+  void PowerHeights::validate () const {
+    if (!std::isfinite (exponent) || exponent <= 0.0f)
+      throw std::invalid_argument (
+        "height exponent must be positive and finite");
+  }
+
+  TransformDescription PowerHeights::description () const noexcept {
+    return { "power",
+             "POWER CURVE",
+             { SpatialScope::Pointwise, EvaluationOrder::Direct } };
+  }
+
+  std::string PowerHeights::detail () const {
+    return "height ^ " + format_program_transform_float (exponent, 2);
+  }
+
+  std::size_t PowerHeights::property_count () const noexcept {
+    return 1;
+  }
+
+  TransformProperty PowerHeights::property (std::size_t index) const {
+    if (index != 0)
+      invalid_program_transform_property_index ();
+    return { "EXPONENT",
+             format_program_transform_float (exponent, 2),
+             ParameterDomain::Continuous };
+  }
+
+  void ThermalErosion::validate () const {
+    if (iterations < 0 || !std::isfinite (talus) || talus < 0.0f)
+      throw std::invalid_argument ("thermal erosion parameters are invalid");
+  }
+
+  TransformDescription ThermalErosion::description () const noexcept {
+    return { "thermal",
+             "TALUS RELAX",
+             { SpatialScope::Neighborhood, EvaluationOrder::Iterative } };
+  }
+
+  std::string ThermalErosion::detail () const {
+    return std::to_string (count_value (iterations)) + " passes @ " +
+           format_program_transform_float (talus, 4);
+  }
+
+  std::size_t ThermalErosion::property_count () const noexcept {
+    return 2;
+  }
+
+  TransformProperty ThermalErosion::property (std::size_t index) const {
+    if (index == 0)
+      return { "PASSES",
+               std::to_string (count_value (iterations)),
+               ParameterDomain::Natural };
+    if (index == 1)
+      return { "TALUS",
+               format_program_transform_float (talus, 4),
+               ParameterDomain::Continuous };
+    invalid_program_transform_property_index ();
+  }
+
+  void OrogenyEvolution::validate () const {
+    const StreamPowerEvolution& parameters = evolution;
+    if (!std::isfinite (meters_per_julian_year_value (maximum_uplift_rate)) ||
+        maximum_uplift_rate <
+          0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
+        !std::isfinite (julian_years_value (parameters.duration)) ||
+        parameters.duration < 0.0f * mp_units::astronomy::Julian_year ||
+        !std::isfinite (julian_years_value (parameters.time_step)) ||
+        parameters.time_step <= 0.0f * mp_units::astronomy::Julian_year ||
+        !std::isfinite (
+          meters_per_julian_year_value (parameters.reference_incision_rate)) ||
+        parameters.reference_incision_rate <
+          0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
+        !std::isfinite (square_meters_value (parameters.reference_area)) ||
+        parameters.reference_area <=
+          0.0f * mp_units::si::metre * mp_units::si::metre ||
+        !std::isfinite (parameters.area_exponent) ||
+        parameters.area_exponent < 0.0f ||
+        !std::isfinite (
+          square_meters_per_julian_year_value (parameters.diffusivity)) ||
+        parameters.diffusivity < 0.0f * mp_units::si::metre *
+                                   mp_units::si::metre /
+                                   mp_units::astronomy::Julian_year ||
+        !std::isfinite (parameters.sea_level) ||
+        !std::isfinite (
+          parameters.channel_persistence.numerical_value_in (mp_units::one)) ||
+        parameters.channel_persistence <
+          0.0f * channel_persistence[mp_units::one] ||
+        parameters.channel_persistence >=
+          1.0f * channel_persistence[mp_units::one])
+      throw std::invalid_argument ("orogeny evolution parameters are invalid");
+  }
+
+  TransformDescription OrogenyEvolution::description () const noexcept {
+    return { "orogeny",
+             "OROGENY EVOLUTION",
+             { SpatialScope::Global, EvaluationOrder::Iterative } };
+  }
+
+  std::string OrogenyEvolution::detail () const {
+    const float duration = julian_years_value (evolution.duration);
+    const float time_step = julian_years_value (evolution.time_step);
+    return format_program_transform_float (duration / 1000.0f, 0) + " ky / " +
+           format_program_transform_count (
+             static_cast<int> (std::ceil (duration / time_step))) +
+           " geological steps";
+  }
+
+  std::size_t OrogenyEvolution::property_count () const noexcept {
+    return 8;
+  }
+
+  TransformProperty OrogenyEvolution::property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return { "DURATION (KY)",
+               format_program_transform_float (
+                 julian_years_value (evolution.duration) / 1000.0f, 0),
+               ParameterDomain::Continuous };
+    case 1:
+      return { "STEP (KY)",
+               format_program_transform_float (
+                 julian_years_value (evolution.time_step) / 1000.0f, 0),
+               ParameterDomain::Continuous };
+    case 2:
+      return { "UPLIFT (MM/Y)",
+               format_program_transform_float (
+                 meters_per_julian_year_value (maximum_uplift_rate) * 1000.0f,
+                 2),
+               ParameterDomain::Continuous };
+    case 3:
+      return { "INCISION AT 1 M2 (M/Y)",
+               format_program_transform_ledger (meters_per_julian_year_value (
+                 evolution.reference_incision_rate)),
+               ParameterDomain::Continuous };
+    case 4:
+      return { "AREA EXPONENT",
+               format_program_transform_float (evolution.area_exponent, 2),
+               ParameterDomain::Continuous };
+    case 5:
+      return { "DIFFUSIVITY",
+               format_program_transform_float (
+                 square_meters_per_julian_year_value (evolution.diffusivity),
+                 5),
+               ParameterDomain::Continuous };
+    case 6:
+      return {
+        "CHANNEL MEMORY",
+        format_program_transform_float (
+          evolution.channel_persistence.numerical_value_in (mp_units::one), 2),
+        ParameterDomain::Continuous
+      };
+    case 7:
+      return { "SEA LEVEL",
+               format_program_transform_float (evolution.sea_level, 3),
+               ParameterDomain::Continuous };
+    default:
+      invalid_program_transform_property_index ();
+    }
+  }
+
+  void validate_transform (const TerrainTransform& transform) {
+    std::visit ([] (const auto& operation) { operation.validate (); },
+                transform);
+  }
+
+  TransformDescription
+  terrain_transform_description (const TerrainTransform& transform) {
+    return std::visit (
+      [] (const auto& operation) { return operation.description (); },
+      transform);
+  }
+
   void validate_program (const TerrainProgram& program) {
     validate_geological_recipe (program.source.recipe);
     if (!std::isfinite (program.source.sea_level) ||
@@ -62,186 +281,36 @@ namespace moppe::terrain {
           meters_value (program.source.initial_bathymetric_relief)) ||
         program.source.initial_bathymetric_relief < 0.0f * mp_units::si::metre)
       throw std::invalid_argument ("orogeny source parameters are invalid");
-    for (const TerrainTransform& transform : program.transforms) {
-      std::visit (
-        [] (const auto& operation) {
-          using T = std::decay_t<decltype (operation)>;
-          if constexpr (std::is_same_v<T, PowerHeights>) {
-            if (!std::isfinite (operation.exponent) ||
-                operation.exponent <= 0.0f)
-              throw std::invalid_argument (
-                "height exponent must be positive and finite");
-          } else if constexpr (std::is_same_v<T, AnalyticalErosion>) {
-            if (!std::isfinite (julian_years_value (operation.duration)) ||
-                operation.duration < 0.0f * mp_units::astronomy::Julian_year ||
-                !std::isfinite (
-                  meters_per_julian_year_value (operation.uplift_rate)) ||
-                operation.uplift_rate < 0.0f * mp_units::si::metre /
-                                          mp_units::astronomy::Julian_year ||
-                !std::isfinite (operation.erodibility) ||
-                operation.erodibility <= 0.0f ||
-                !std::isfinite (operation.area_exponent) ||
-                operation.area_exponent < 0.0f ||
-                !std::isfinite (operation.sea_level) ||
-                operation.fixed_point_iterations <= 0 ||
-                !std::isfinite (operation.relaxation) ||
-                operation.relaxation <= 0.0f || operation.relaxation > 1.0f)
-              throw std::invalid_argument (
-                "analytical erosion parameters are invalid");
-          } else if constexpr (std::is_same_v<T, OrogenyEvolution>) {
-            const StreamPowerEvolution& evolution = operation.evolution;
-            if (!std::isfinite (meters_per_julian_year_value (
-                  operation.maximum_uplift_rate)) ||
-                operation.maximum_uplift_rate <
-                  0.0f * mp_units::si::metre /
-                    mp_units::astronomy::Julian_year ||
-                !std::isfinite (julian_years_value (evolution.duration)) ||
-                evolution.duration < 0.0f * mp_units::astronomy::Julian_year ||
-                !std::isfinite (julian_years_value (evolution.time_step)) ||
-                evolution.time_step <=
-                  0.0f * mp_units::astronomy::Julian_year ||
-                !std::isfinite (meters_per_julian_year_value (
-                  evolution.reference_incision_rate)) ||
-                evolution.reference_incision_rate <
-                  0.0f * mp_units::si::metre /
-                    mp_units::astronomy::Julian_year ||
-                !std::isfinite (
-                  square_meters_value (evolution.reference_area)) ||
-                evolution.reference_area <=
-                  0.0f * mp_units::si::metre * mp_units::si::metre ||
-                !std::isfinite (evolution.area_exponent) ||
-                evolution.area_exponent < 0.0f ||
-                !std::isfinite (square_meters_per_julian_year_value (
-                  evolution.diffusivity)) ||
-                evolution.diffusivity < 0.0f * mp_units::si::metre *
-                                          mp_units::si::metre /
-                                          mp_units::astronomy::Julian_year ||
-                !std::isfinite (evolution.sea_level) ||
-                !std::isfinite (
-                  evolution.channel_persistence.numerical_value_in (
-                    mp_units::one)) ||
-                evolution.channel_persistence <
-                  0.0f * channel_persistence[mp_units::one] ||
-                evolution.channel_persistence >=
-                  1.0f * channel_persistence[mp_units::one])
-              throw std::invalid_argument (
-                "orogeny evolution parameters are invalid");
-          } else if constexpr (std::is_same_v<T, ThermalErosion>) {
-            if (operation.iterations < 0 || !std::isfinite (operation.talus) ||
-                operation.talus < 0.0f)
-              throw std::invalid_argument (
-                "thermal erosion parameters are invalid");
-          } else if constexpr (std::is_same_v<T, HillslopeDiffusion>) {
-            if (!std::isfinite (julian_years_value (operation.duration)) ||
-                operation.duration < 0.0f * mp_units::astronomy::Julian_year ||
-                !std::isfinite (square_meters_per_julian_year_value (
-                  operation.diffusivity)) ||
-                square_meters_per_julian_year_value (operation.diffusivity) <
-                  0.0f)
-              throw std::invalid_argument (
-                "hillslope diffusion parameters are invalid");
-          } else if constexpr (std::is_same_v<T, TrailFormation>) {
-            if (!std::isfinite (operation.sea_level) ||
-                !std::isfinite (
-                  square_meters_value (operation.minimum_catchment_area)) ||
-                !std::isfinite (
-                  square_meters_value (operation.maximum_catchment_area)) ||
-                operation.minimum_catchment_area <=
-                  0.0f * mp_units::si::metre * mp_units::si::metre ||
-                operation.maximum_catchment_area <
-                  operation.minimum_catchment_area ||
-                !std::isfinite (
-                  meters_value (operation.minimum_height_above_sea)) ||
-                operation.minimum_height_above_sea <
-                  0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (operation.width)) ||
-                operation.width <= 0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (operation.shoulder_blend)) ||
-                operation.shoulder_blend < 0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (operation.maximum_cut)) ||
-                operation.maximum_cut < 0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (operation.maximum_fill)) ||
-                operation.maximum_fill < 0.0f * mp_units::si::metre ||
-                !std::isfinite (
-                  operation.maximum_grade.numerical_value_in (mp_units::one)) ||
-                operation.maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
-                !std::isfinite (operation.designed_grade.numerical_value_in (
-                  mp_units::one)) ||
-                operation.designed_grade <
-                  0.0f * terrain_slope[mp_units::one] ||
-                operation.designed_grade > operation.maximum_grade ||
-                !std::isfinite (
-                  operation.crossfall.numerical_value_in (mp_units::one)) ||
-                operation.crossfall < 0.0f * terrain_slope[mp_units::one] ||
-                operation.crossfall > 0.1f * terrain_slope[mp_units::one] ||
-                operation.grading_iterations < 0 ||
-                !std::isfinite (
-                  meters_value (operation.home_base_water_distance)) ||
-                operation.home_base_water_distance <=
-                  0.0f * mp_units::si::metre ||
-                !std::isfinite (
-                  meters_value (operation.home_base_pad_radius)) ||
-                operation.home_base_pad_radius <= 0.0f * mp_units::si::metre ||
-                !std::isfinite (
-                  meters_value (operation.desired_circuit_radius)) ||
-                operation.desired_circuit_radius <=
-                  0.0f * mp_units::si::metre ||
-                !std::isfinite (meters_value (
-                  operation.highland_preference_height_above_sea)) ||
-                operation.highland_preference_height_above_sea <=
-                  0.0f * mp_units::si::metre ||
-                !std::isfinite (
-                  meters_value (operation.alpine_avoidance_height_above_sea)) ||
-                operation.alpine_avoidance_height_above_sea <
-                  operation.highland_preference_height_above_sea)
-              throw std::invalid_argument (
-                "trail formation parameters are invalid");
-          }
-        },
-        transform);
-    }
+    for (const TerrainTransform& transform : program.transforms)
+      validate_transform (transform);
   }
 
   std::string_view terrain_transform_id (const TerrainTransform& transform) {
-    return std::visit (
-      [] (const auto& operation) -> std::string_view {
-        using T = std::decay_t<decltype (operation)>;
-        if constexpr (std::is_same_v<T, NormalizeHeights>)
-          return "normalize";
-        else if constexpr (std::is_same_v<T, PowerHeights>)
-          return "power";
-        else if constexpr (std::is_same_v<T, AnalyticalErosion>)
-          return "analytical";
-        else if constexpr (std::is_same_v<T, OrogenyEvolution>)
-          return "orogeny";
-        else if constexpr (std::is_same_v<T, TrailFormation>)
-          return "trails";
-        else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
-          return "diffuse";
-        else
-          return "thermal";
-      },
-      transform);
+    return terrain_transform_description (transform).id;
   }
 
   TransformSemantics
   terrain_transform_semantics (const TerrainTransform& transform) {
+    return terrain_transform_description (transform).semantics;
+  }
+
+  std::string terrain_transform_detail (const TerrainTransform& transform) {
     return std::visit (
-      [] (const auto& operation) -> TransformSemantics {
-        using T = std::decay_t<decltype (operation)>;
-        if constexpr (std::is_same_v<T, PowerHeights>)
-          return { SpatialScope::Pointwise, EvaluationOrder::Direct };
-        else if constexpr (std::is_same_v<T, NormalizeHeights>)
-          return { SpatialScope::Global, EvaluationOrder::Reduction };
-        else if constexpr (std::is_same_v<T, ThermalErosion>)
-          return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
-        else if constexpr (std::is_same_v<T, HillslopeDiffusion>)
-          return { SpatialScope::Neighborhood, EvaluationOrder::Iterative };
-        else if constexpr (std::is_same_v<T, TrailFormation>)
-          return { SpatialScope::Global, EvaluationOrder::Iterative };
-        else
-          return { SpatialScope::Global, EvaluationOrder::Iterative };
-      },
+      [] (const auto& operation) { return operation.detail (); }, transform);
+  }
+
+  std::size_t
+  terrain_transform_property_count (const TerrainTransform& transform) {
+    return std::visit (
+      [] (const auto& operation) { return operation.property_count (); },
+      transform);
+  }
+
+  TransformProperty
+  terrain_transform_property (const TerrainTransform& transform,
+                              std::size_t index) {
+    return std::visit (
+      [index] (const auto& operation) { return operation.property (index); },
       transform);
   }
 }

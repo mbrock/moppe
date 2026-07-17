@@ -80,7 +80,6 @@ FetchContent_MakeAvailable(mp-units)
 add_library(atelier_botany STATIC
   atelier/tree.cc
   atelier/tree.hh
-  atelier/bundle.hh
   atelier/space.hh
 )
 target_include_directories(atelier_botany PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -125,7 +124,6 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     atelier/atelier_renderer.cc
     atelier/atelier_renderer.hh
     atelier/atelier_shaders.hh
-    atelier/bundle.hh
     atelier/camera.hh
     atelier/carpet.hh
     atelier/embedding.cc
@@ -454,6 +452,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
     tests/game/graphics_settings_test.cc
+    tests/game/input_frame_test.cc
     tests/game/inspector_ui_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc

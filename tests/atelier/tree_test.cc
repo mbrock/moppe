@@ -7,6 +7,7 @@
 
 using namespace atelier;
 using namespace mp_units::si::unit_symbols;
+using moppe::spatial::get;
 
 MOPPE_TEST (tree_is_one_valid_oriented_complex) {
   const Tree tree;

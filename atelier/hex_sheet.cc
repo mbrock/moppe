@@ -9,6 +9,12 @@
 #include <utility>
 
 namespace atelier {
+  using moppe::spatial::bundle_values;
+  using moppe::spatial::BundleFocus;
+  using moppe::spatial::extend_into;
+  using moppe::spatial::fold_neighbourhood;
+  using moppe::spatial::get;
+  using moppe::spatial::laplacian;
   using namespace si::unit_symbols;
 
   namespace {

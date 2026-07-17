@@ -6,6 +6,7 @@
 #include <ranges>
 
 namespace atelier {
+  using moppe::spatial::get;
   using namespace si::unit_symbols;
 
   namespace {

@@ -96,7 +96,7 @@ namespace moppe::game {
     std::vector<Vec3> rest_positions (const atelier::Tree& tree) {
       const atelier::DirectedTreeTopology& topology = tree.topology ();
       const auto& length =
-        atelier::get<atelier::branch_rest_length> (tree.edges ());
+        spatial::get<atelier::branch_rest_length> (tree.edges ());
       std::vector<Vec3> positions (topology.vertex_count (), Vec3 ());
       for (atelier::TreeVertexId vertex = 1; vertex < topology.vertex_count ();
            ++vertex) {
@@ -163,7 +163,7 @@ namespace moppe::game {
 
     float branch_end_radius (const atelier::Tree& tree,
                              atelier::TreeEdgeId edge) {
-      const auto& radius = atelier::get<atelier::branch_radius> (tree.edges ());
+      const auto& radius = spatial::get<atelier::branch_radius> (tree.edges ());
       const atelier::TreeVertexId child = tree.topology ().edge (edge).child;
       float continuation = 0.0f;
       for (atelier::TreeEdgeId next : tree.topology ().child_edges (child))
@@ -183,7 +183,7 @@ namespace moppe::game {
       if (tree.topology ().edge (edge).organ == atelier::TreeOrgan::root)
         return 0.0f;
       const auto& flexibility =
-        atelier::get<atelier::branch_flexibility> (tree.edges ());
+        spatial::get<atelier::branch_flexibility> (tree.edges ());
       const float flex = flexibility[edge].numerical_value_in (one);
       const float height =
         static_cast<float> (tree.topology ().vertex (vertex).generation) /
@@ -199,7 +199,7 @@ namespace moppe::game {
                         const std::vector<Vec3>& local_positions,
                         const std::vector<Vec3>& world_positions,
                         float maximum_generation) {
-      const auto& vigor = atelier::get<atelier::bud_vigor> (tree.vertices ());
+      const auto& vigor = spatial::get<atelier::bud_vigor> (tree.vertices ());
       for (atelier::TreeVertexId vertex = 1;
            vertex < tree.topology ().vertex_count ();
            ++vertex) {
@@ -259,7 +259,7 @@ namespace moppe::game {
                     static_cast<float> (topology.vertex (vertex).generation));
       }
 
-      const auto& radius = atelier::get<atelier::branch_radius> (tree.edges ());
+      const auto& radius = spatial::get<atelier::branch_radius> (tree.edges ());
       for (atelier::TreeEdgeId id = 0; id < topology.edge_count (); ++id) {
         const atelier::TreeEdge& edge = topology.edge (id);
         const float r0 =

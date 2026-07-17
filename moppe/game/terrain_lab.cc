@@ -18,6 +18,9 @@
 namespace moppe {
   namespace game {
     namespace {
+      using ParameterDomain = terrain::ParameterDomain;
+      using PropertyText = terrain::TransformProperty;
+
       std::string_view
       water_body_class_name (terrain::WaterBodyClass classification) {
         switch (classification) {
@@ -187,78 +190,12 @@ namespace moppe {
       }
 
       std::string stage_name (const terrain::TerrainTransform& stage) {
-        if (std::holds_alternative<terrain::NormalizeHeights> (stage))
-          return "NORMALIZE";
-        if (std::holds_alternative<terrain::PowerHeights> (stage))
-          return "POWER CURVE";
-        if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
-          return "STREAM POWER AGE";
-        if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
-          return "OROGENY EVOLUTION";
-        if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return "MOTORCYCLE CIRCUIT";
-        if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
-          return "SOIL CREEP";
-        return "TALUS RELAX";
+        return std::string (
+          terrain::terrain_transform_description (stage).title);
       }
 
       std::string stage_detail (const terrain::TerrainTransform& stage) {
-        if (std::holds_alternative<terrain::NormalizeHeights> (stage))
-          return "map sampled range to 0..1";
-        if (const auto* power = std::get_if<terrain::PowerHeights> (&stage))
-          return "height ^ " + format_float (power->exponent, 2);
-        if (const auto* analytical =
-              std::get_if<terrain::AnalyticalErosion> (&stage))
-          return format_float (
-                   julian_years_value (analytical->duration) / 1000.0f, 0) +
-                 " ky / " +
-                 std::to_string (
-                   terrain::count_value (analytical->fixed_point_iterations)) +
-                 " routing passes";
-        if (const auto* orogeny =
-              std::get_if<terrain::OrogenyEvolution> (&stage)) {
-          const float duration =
-            julian_years_value (orogeny->evolution.duration);
-          const float dt = julian_years_value (orogeny->evolution.time_step);
-          return format_float (duration / 1000.0f, 0) + " ky / " +
-                 format_count (static_cast<int> (std::ceil (duration / dt))) +
-                 " geological steps";
-        }
-        if (const auto* trails = std::get_if<terrain::TrailFormation> (&stage))
-          return format_float (
-                   meters_value (trails->desired_circuit_radius) / 1000.0f, 1) +
-                 " km radius / " +
-                 format_float (meters_value (trails->width), 1) + " m path / " +
-                 format_float (
-                   trails->designed_grade.numerical_value_in (mp_units::one) *
-                     100.0f,
-                   0) +
-                 "% design / " +
-                 format_float (
-                   trails->maximum_grade.numerical_value_in (mp_units::one) *
-                     100.0f,
-                   0) +
-                 "% max / " +
-                 format_float (
-                   trails->crossfall.numerical_value_in (mp_units::one) *
-                     100.0f,
-                   0) +
-                 "% crossfall / " +
-                 format_float (
-                   meters_value (trails->alpine_avoidance_height_above_sea),
-                   0) +
-                 " m alpine avoid";
-        if (const auto* diffusion =
-              std::get_if<terrain::HillslopeDiffusion> (&stage))
-          return format_float (
-                   julian_years_value (diffusion->duration) / 1000.0f, 1) +
-                 " ky @ D " +
-                 format_float (
-                   square_meters_per_julian_year_value (diffusion->diffusivity),
-                   3);
-        const auto& thermal = std::get<terrain::ThermalErosion> (stage);
-        return std::to_string (terrain::count_value (thermal.iterations)) +
-               " passes @ " + format_float (thermal.talus, 4);
+        return terrain::terrain_transform_detail (stage);
       }
 
       std::string
@@ -279,12 +216,6 @@ namespace moppe {
             : "ITERATIVE";
         return std::string (spatial) + " / " + order;
       }
-
-      struct PropertyText {
-        std::string label;
-        std::string value;
-        ParameterDomain domain;
-      };
 
       PropertyText recipe_property (const terrain::GeologicalRecipe& recipe,
                                     int row) {
@@ -329,200 +260,14 @@ namespace moppe {
       }
 
       int stage_property_count (const terrain::TerrainTransform& stage) {
-        if (std::holds_alternative<terrain::PowerHeights> (stage))
-          return 1;
-        if (std::holds_alternative<terrain::AnalyticalErosion> (stage))
-          return 6;
-        if (std::holds_alternative<terrain::OrogenyEvolution> (stage))
-          return 8;
-        if (std::holds_alternative<terrain::ThermalErosion> (stage))
-          return 2;
-        if (std::holds_alternative<terrain::TrailFormation> (stage))
-          return 14;
-        if (std::holds_alternative<terrain::HillslopeDiffusion> (stage))
-          return 2;
-        return 0;
+        return static_cast<int> (
+          terrain::terrain_transform_property_count (stage));
       }
 
       PropertyText stage_property (const terrain::TerrainTransform& stage,
                                    int row) {
-        if (const auto* power = std::get_if<terrain::PowerHeights> (&stage))
-          return { "EXPONENT",
-                   format_float (power->exponent, 2),
-                   ParameterDomain::Continuous };
-        if (const auto* analytical =
-              std::get_if<terrain::AnalyticalErosion> (&stage)) {
-          if (row == 0)
-            return { "AGE (KY)",
-                     format_float (
-                       julian_years_value (analytical->duration) / 1000.0f, 0),
-                     ParameterDomain::Continuous };
-          if (row == 1)
-            return { "UPLIFT (MM/Y)",
-                     format_float (
-                       meters_per_julian_year_value (analytical->uplift_rate) *
-                         1000.0f,
-                       2),
-                     ParameterDomain::Continuous };
-          if (row == 2)
-            return { "ERODIBILITY",
-                     format_ledger (analytical->erodibility),
-                     ParameterDomain::Continuous };
-          if (row == 3)
-            return { "AREA EXPONENT",
-                     format_float (analytical->area_exponent, 2),
-                     ParameterDomain::Continuous };
-          if (row == 4)
-            return { "ROUTING PASSES",
-                     std::to_string (terrain::count_value (
-                       analytical->fixed_point_iterations)),
-                     ParameterDomain::Natural };
-          return { "RELAXATION",
-                   format_float (analytical->relaxation, 2),
-                   ParameterDomain::Continuous };
-        }
-        if (const auto* orogeny =
-              std::get_if<terrain::OrogenyEvolution> (&stage)) {
-          if (row == 0)
-            return {
-              "DURATION (KY)",
-              format_float (
-                julian_years_value (orogeny->evolution.duration) / 1000.0f, 0),
-              ParameterDomain::Continuous
-            };
-          if (row == 1)
-            return {
-              "STEP (KY)",
-              format_float (
-                julian_years_value (orogeny->evolution.time_step) / 1000.0f, 0),
-              ParameterDomain::Continuous
-            };
-          if (row == 2)
-            return { "UPLIFT (MM/Y)",
-                     format_float (meters_per_julian_year_value (
-                                     orogeny->maximum_uplift_rate) *
-                                     1000.0f,
-                                   2),
-                     ParameterDomain::Continuous };
-          if (row == 3)
-            return { "INCISION AT 1 M2 (M/Y)",
-                     format_ledger (meters_per_julian_year_value (
-                       orogeny->evolution.reference_incision_rate)),
-                     ParameterDomain::Continuous };
-          if (row == 4)
-            return { "AREA EXPONENT",
-                     format_float (orogeny->evolution.area_exponent, 2),
-                     ParameterDomain::Continuous };
-          if (row == 5)
-            return { "DIFFUSIVITY",
-                     format_float (square_meters_per_julian_year_value (
-                                     orogeny->evolution.diffusivity),
-                                   5),
-                     ParameterDomain::Continuous };
-          if (row == 6)
-            return { "CHANNEL MEMORY",
-                     format_float (orogeny->evolution.channel_persistence
-                                     .numerical_value_in (mp_units::one),
-                                   2),
-                     ParameterDomain::Continuous };
-          return { "SEA LEVEL",
-                   format_float (orogeny->evolution.sea_level, 3),
-                   ParameterDomain::Continuous };
-        }
-        if (const auto* trails =
-              std::get_if<terrain::TrailFormation> (&stage)) {
-          if (row == 0)
-            return { "MIN CATCHMENT (M2)",
-                     format_count (static_cast<int> (
-                       square_meters_value (trails->minimum_catchment_area))),
-                     ParameterDomain::Continuous };
-          if (row == 1)
-            return { "MAX CATCHMENT (M2)",
-                     format_count (static_cast<int> (
-                       square_meters_value (trails->maximum_catchment_area))),
-                     ParameterDomain::Continuous };
-          if (row == 2)
-            return { "PATH WIDTH (M)",
-                     format_float (meters_value (trails->width), 1),
-                     ParameterDomain::Continuous };
-          if (row == 3)
-            return { "SHOULDER (M)",
-                     format_float (meters_value (trails->shoulder_blend), 1),
-                     ParameterDomain::Continuous };
-          if (row == 4)
-            return { "MAX CUT (M)",
-                     format_float (meters_value (trails->maximum_cut), 2),
-                     ParameterDomain::Continuous };
-          if (row == 5)
-            return { "MAX FILL (M)",
-                     format_float (meters_value (trails->maximum_fill), 2),
-                     ParameterDomain::Continuous };
-          if (row == 6)
-            return { "MAX GRADE",
-                     format_float (
-                       trails->maximum_grade.numerical_value_in (mp_units::one),
-                       2),
-                     ParameterDomain::Continuous };
-          if (row == 7)
-            return { "DESIGNED GRADE",
-                     format_float (trails->designed_grade.numerical_value_in (
-                                     mp_units::one),
-                                   2),
-                     ParameterDomain::Continuous };
-          if (row == 8)
-            return { "BASE TO WATER (M)",
-                     format_float (
-                       meters_value (trails->home_base_water_distance), 0),
-                     ParameterDomain::Continuous };
-          if (row == 9)
-            return { "BASE PAD (M)",
-                     format_float (meters_value (trails->home_base_pad_radius),
-                                   0),
-                     ParameterDomain::Continuous };
-          if (row == 10)
-            return { "CIRCUIT RADIUS (M)",
-                     format_float (
-                       meters_value (trails->desired_circuit_radius), 0),
-                     ParameterDomain::Continuous };
-          if (row == 11)
-            return {
-              "HIGHLAND START (M)",
-              format_float (
-                meters_value (trails->highland_preference_height_above_sea), 0),
-              ParameterDomain::Continuous
-            };
-          if (row == 12)
-            return { "ALPINE AVOID (M)",
-                     format_float (
-                       meters_value (trails->alpine_avoidance_height_above_sea),
-                       0),
-                     ParameterDomain::Continuous };
-          return { "CROSSFALL",
-                   format_float (
-                     trails->crossfall.numerical_value_in (mp_units::one), 2),
-                   ParameterDomain::Continuous };
-        }
-        if (const auto* diffusion =
-              std::get_if<terrain::HillslopeDiffusion> (&stage)) {
-          if (row == 0)
-            return { "DURATION (KY)",
-                     format_float (
-                       julian_years_value (diffusion->duration) / 1000.0f, 1),
-                     ParameterDomain::Continuous };
-          return { "DIFFUSIVITY",
-                   format_float (square_meters_per_julian_year_value (
-                                   diffusion->diffusivity),
-                                 3),
-                   ParameterDomain::Continuous };
-        }
-        const auto& thermal = std::get<terrain::ThermalErosion> (stage);
-        if (row == 0)
-          return { "PASSES",
-                   std::to_string (terrain::count_value (thermal.iterations)),
-                   ParameterDomain::Natural };
-        return { "TALUS",
-                 format_float (thermal.talus, 4),
-                 ParameterDomain::Continuous };
+        return terrain::terrain_transform_property (
+          stage, static_cast<std::size_t> (row));
       }
     }
 

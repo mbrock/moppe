@@ -1,7 +1,8 @@
 #pragma once
 
-#include "atelier/bundle.hh"
 #include "atelier/space.hh"
+
+#include <moppe/spatial/bundle.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -177,14 +178,14 @@ namespace atelier {
 
   class Tree {
   public:
-    using VertexState =
+    using VertexState = moppe::spatial::
       Bundle<TreeVertexDomain, WaterPotential, SugarPotential, BudVigor>;
-    using EdgeState = Bundle<TreeEdgeDomain,
-                             BranchRestLength,
-                             BranchRadius,
-                             BranchFlexibility,
-                             XylemFlux,
-                             PhloemFlux>;
+    using EdgeState = moppe::spatial::Bundle<TreeEdgeDomain,
+                                             BranchRestLength,
+                                             BranchRadius,
+                                             BranchFlexibility,
+                                             XylemFlux,
+                                             PhloemFlux>;
 
     explicit Tree (std::uint32_t seed = 0x5eedU);
 

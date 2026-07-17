@@ -1,7 +1,8 @@
 #pragma once
 
-#include "atelier/bundle.hh"
 #include "atelier/space.hh"
+
+#include <moppe/spatial/bundle.hh>
 
 #include <cstddef>
 #include <cstdint>
@@ -113,10 +114,10 @@ namespace atelier {
 
   class HexSheet {
   public:
-    using TileState = Bundle<HexSheetTopology,
-                             NormalDisplacement,
-                             NormalVelocity,
-                             NormalAcceleration>;
+    using TileState = moppe::spatial::Bundle<HexSheetTopology,
+                                             NormalDisplacement,
+                                             NormalVelocity,
+                                             NormalAcceleration>;
 
     explicit HexSheet (SheetBoundary boundary = SheetBoundary::periodic);
 
@@ -128,15 +129,15 @@ namespace atelier {
 
     [[nodiscard]] const std::vector<NormalDisplacement>&
     displacements () const {
-      return get<normal_displacement> (m_tiles);
+      return moppe::spatial::get<normal_displacement> (m_tiles);
     }
 
     [[nodiscard]] const std::vector<NormalVelocity>& velocities () const {
-      return get<normal_velocity> (m_tiles);
+      return moppe::spatial::get<normal_velocity> (m_tiles);
     }
 
     [[nodiscard]] const std::vector<NormalAcceleration>& drives () const {
-      return get<normal_acceleration> (m_tiles);
+      return moppe::spatial::get<normal_acceleration> (m_tiles);
     }
 
     [[nodiscard]] bool topology_is_valid () const;

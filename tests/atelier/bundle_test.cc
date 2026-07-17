@@ -1,5 +1,6 @@
-#include <atelier/bundle.hh>
 #include <atelier/space.hh>
+
+#include <moppe/spatial/bundle.hh>
 
 #include <tests/test.hh>
 
@@ -8,6 +9,12 @@
 
 using namespace atelier;
 using namespace mp_units::si::unit_symbols;
+using moppe::spatial::Bundle;
+using moppe::spatial::bundle_values;
+using moppe::spatial::BundleFocus;
+using moppe::spatial::extend_into;
+using moppe::spatial::get;
+using moppe::spatial::laplacian;
 
 namespace {
   struct AtelierFourSites {
@@ -72,12 +79,12 @@ namespace {
   concept HasColumn = requires (B& bundle) { get<QS> (bundle); };
 
   static_assert (std::tuple_size_v<AtelierTestBundle> == 2);
-  static_assert (FiniteDomain<AtelierFourSites>);
-  static_assert (!NeighbourhoodDomain<AtelierFourSites>);
-  static_assert (NeighbourhoodDomain<AtelierThreeSiteRing>);
-  static_assert (
-    NeighbourhoodPolicy<AtelierSquaredInfluence, AtelierThreeSiteRing>);
-  static_assert (!FiniteDomain<AtelierEuclideanSpace>);
+  static_assert (moppe::spatial::FiniteDomain<AtelierFourSites>);
+  static_assert (!moppe::spatial::NeighbourhoodDomain<AtelierFourSites>);
+  static_assert (moppe::spatial::NeighbourhoodDomain<AtelierThreeSiteRing>);
+  static_assert (moppe::spatial::NeighbourhoodPolicy<AtelierSquaredInfluence,
+                                                     AtelierThreeSiteRing>);
+  static_assert (!moppe::spatial::FiniteDomain<AtelierEuclideanSpace>);
   static_assert (HasColumn<normal_displacement, AtelierTestBundle>);
   static_assert (HasColumn<normal_velocity, AtelierTestBundle>);
   static_assert (!HasColumn<isq::mass, AtelierTestBundle>);

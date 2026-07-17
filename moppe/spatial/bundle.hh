@@ -16,7 +16,8 @@
 
 // A Bundle is an eager, finite materialization of a heterogeneous section
 // over a domain.  Values are stored by column, while BundleRow and
-// BundleFocus expose one typed site to local rules.
+// BundleFocus expose one typed site to local rules.  Its finiteness is a
+// storage boundary, not a claim about a more general section calculus.
 
 namespace moppe::spatial {
   namespace detail {
@@ -131,6 +132,10 @@ namespace moppe::spatial {
       requires contains<QS>
     static constexpr std::size_t spec_index =
       detail::bundle_spec_index<QS, Quantities...> ();
+
+    Bundle ()
+      requires std::default_initializable<Domain>
+        : Bundle (Domain {}) {}
 
     explicit Bundle (Domain domain)
         : m_domain (std::move (domain)),

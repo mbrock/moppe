@@ -307,6 +307,14 @@ local context, whole-terrain knowledge, and historical evolution.  The code
 keeps the plain operational names because the axes overlap: normalization is
 global but not historical, while drainage is both global and evolving.
 
+Each concrete transform also owns its validation, stable identity, Lab title,
+detail text, and editable property descriptions. `TerrainProgram` keeps the
+same variant value and only visits those local operations; it does not grow a
+second validation or UI switchboard. `ParameterDomain` lives with the terrain
+metadata, so a consumer can distinguish continuous values from natural-number
+counters without knowing a transform's concrete type. The transform semantics
+still decide whether a continuous control can be scrubbed interactively.
+
 The world program is deliberately short:
 
 ```text
@@ -605,8 +613,6 @@ frequencies, mask edges, and blend weights. Geological layer IDs are
 
 ## Next boundaries
 
-- Promote the current continuous/natural UI domains into terrain-level
-  parameter metadata so tools can generate controls without hard-coded rows.
 - Add a stable serialization format for sources and programs, then layer a
   lightweight scripting language over the same values.
 - Keep the interactive Metal result GPU-resident through normalization,

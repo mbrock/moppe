@@ -8,6 +8,7 @@
 #include <utility>
 
 namespace atelier {
+  using moppe::spatial::get;
   using namespace si::unit_symbols;
 
   DirectedTreeTopology::DirectedTreeTopology (std::vector<TreeVertex> vertices,

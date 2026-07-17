@@ -2,7 +2,9 @@
 
 #include <tests/test.hh>
 
+#include <array>
 #include <stdexcept>
+#include <string>
 #include <variant>
 
 using namespace moppe::terrain;
@@ -115,74 +117,75 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
     EvaluationOrder::Iterative);
 }
 
+MOPPE_TEST (transform_values_own_their_editable_descriptions) {
+  const PowerHeights power { 1.2f };
+  const TransformDescription power_description = power.description ();
+  MOPPE_CHECK (power_description.id == "power");
+  MOPPE_CHECK (power_description.title == "POWER CURVE");
+  MOPPE_CHECK (power_description.semantics.spatial_scope ==
+               SpatialScope::Pointwise);
+  MOPPE_CHECK (power.detail () == "height ^ 1.20");
+  MOPPE_CHECK (power.property_count () == 1);
+  const TransformProperty power_property = power.property (0);
+  MOPPE_CHECK (power_property.label == "EXPONENT");
+  MOPPE_CHECK (power_property.value == "1.20");
+  MOPPE_CHECK (power_property.domain == ParameterDomain::Continuous);
+
+  const std::array transforms {
+    TerrainTransform { NormalizeHeights {} },
+    TerrainTransform { PowerHeights { 1.2f } },
+    TerrainTransform { AnalyticalErosion {} },
+    TerrainTransform { OrogenyEvolution {} },
+    TerrainTransform { ThermalErosion { iteration_count (1), 0.01f } },
+    TerrainTransform { TrailFormation {} },
+    TerrainTransform { HillslopeDiffusion {} },
+  };
+  const std::array<std::size_t, 7> property_counts = { 0, 1, 6, 8, 2, 14, 2 };
+  for (std::size_t i = 0; i < transforms.size (); ++i) {
+    const TransformDescription description =
+      terrain_transform_description (transforms[i]);
+    MOPPE_CHECK (!description.id.empty ());
+    MOPPE_CHECK (!description.title.empty ());
+    MOPPE_CHECK (terrain_transform_property_count (transforms[i]) ==
+                 property_counts[i]);
+  }
+
+  const TransformProperty trail_property =
+    terrain_transform_property (TerrainTransform { TrailFormation {} }, 2);
+  MOPPE_CHECK (trail_property.label == "PATH WIDTH (M)");
+  MOPPE_CHECK (trail_property.domain == ParameterDomain::Continuous);
+}
+
 MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
-  TerrainProgram program = make_geological_program (123);
-  program.transforms.emplace_back (AnalyticalErosion { .erodibility = 0.0f });
-  bool threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
+  const auto validation_error = [] (TerrainTransform transform) {
+    TerrainProgram program = make_geological_program (123);
+    program.transforms.emplace_back (std::move (transform));
+    try {
+      validate_program (program);
+    } catch (const std::invalid_argument& error) {
+      return std::string (error.what ());
+    }
+    return std::string {};
+  };
 
-  program = make_orogeny_program (123);
-  std::get<OrogenyEvolution> (program.transforms.front ())
-    .evolution.reference_area =
-    0.0f * mp_units::si::metre * mp_units::si::metre;
-  threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
-
-  program = make_geological_program (123);
-  program.transforms.emplace_back (TrailFormation {
-    .minimum_catchment_area = 10.0f * mp_units::si::metre * mp_units::si::metre,
-    .maximum_catchment_area =
-      9.0f * mp_units::si::metre * mp_units::si::metre });
-  threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
-
-  program = make_geological_program (123);
-  program.transforms.emplace_back (
-    TrailFormation { .maximum_grade = 0.1f * terrain_slope[mp_units::one],
-                     .designed_grade = 0.2f * terrain_slope[mp_units::one] });
-  threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
-
-  program = make_geological_program (123);
-  program.transforms.emplace_back (
-    TrailFormation { .crossfall = 0.2f * terrain_slope[mp_units::one] });
-  threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
-
-  program = make_geological_program (123);
-  program.transforms.emplace_back (TrailFormation {
-    .highland_preference_height_above_sea = 300.0f * mp_units::si::metre,
-    .alpine_avoidance_height_above_sea = 200.0f * mp_units::si::metre });
-  threw = false;
-  try {
-    validate_program (program);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
+  MOPPE_CHECK (validation_error (PowerHeights { 0.0f }) ==
+               "height exponent must be positive and finite");
+  MOPPE_CHECK (validation_error (AnalyticalErosion { .erodibility = 0.0f }) ==
+               "analytical erosion parameters are invalid");
+  MOPPE_CHECK (validation_error (OrogenyEvolution {
+                 .evolution = { .reference_area = 0.0f * mp_units::si::metre *
+                                                  mp_units::si::metre } }) ==
+               "orogeny evolution parameters are invalid");
+  MOPPE_CHECK (
+    validation_error (ThermalErosion { iteration_count (-1), 0.0f }) ==
+    "thermal erosion parameters are invalid");
+  MOPPE_CHECK (validation_error (TrailFormation {
+                 .minimum_catchment_area =
+                   10.0f * mp_units::si::metre * mp_units::si::metre,
+                 .maximum_catchment_area =
+                   9.0f * mp_units::si::metre * mp_units::si::metre }) ==
+               "trail formation parameters are invalid");
+  MOPPE_CHECK (validation_error (HillslopeDiffusion {
+                 .duration = -1.0f * mp_units::astronomy::Julian_year }) ==
+               "hillslope diffusion parameters are invalid");
 }

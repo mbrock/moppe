@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -50,25 +52,131 @@ namespace moppe::terrain {
                          static_cast<float> (dy) * grid.spacing_y_m ());
     }
 
-    void validate (const AnalyticalErosion& p) {
-      if (!std::isfinite (julian_years_value (p.duration)) ||
-          p.duration < 0.0f * mp_units::astronomy::Julian_year ||
-          !std::isfinite (meters_per_julian_year_value (p.uplift_rate)) ||
-          p.uplift_rate <
-            0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
-          !std::isfinite (p.erodibility) || p.erodibility <= 0.0f ||
-          !std::isfinite (p.area_exponent) || p.area_exponent < 0.0f ||
-          !std::isfinite (p.sea_level) || p.fixed_point_iterations <= 0 ||
-          !std::isfinite (p.relaxation) || p.relaxation <= 0.0f ||
-          p.relaxation > 1.0f)
-        throw std::invalid_argument ("invalid analytical erosion parameters");
+    std::string format_analytical_transform_float (float value, int precision) {
+      std::ostringstream stream;
+      stream << std::fixed << std::setprecision (precision) << value;
+      return stream.str ();
     }
+
+    std::string format_analytical_transform_ledger (double value) {
+      std::ostringstream stream;
+      stream << std::scientific << std::setprecision (2) << value;
+      return stream.str ();
+    }
+
+    [[noreturn]] void invalid_analytical_transform_property_index () {
+      throw std::out_of_range ("terrain transform property index is invalid");
+    }
+  }
+
+  void AnalyticalErosion::validate () const {
+    if (!std::isfinite (julian_years_value (duration)) ||
+        duration < 0.0f * mp_units::astronomy::Julian_year ||
+        !std::isfinite (meters_per_julian_year_value (uplift_rate)) ||
+        uplift_rate <
+          0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
+        !std::isfinite (erodibility) || erodibility <= 0.0f ||
+        !std::isfinite (area_exponent) || area_exponent < 0.0f ||
+        !std::isfinite (sea_level) || fixed_point_iterations <= 0 ||
+        !std::isfinite (relaxation) || relaxation <= 0.0f || relaxation > 1.0f)
+      throw std::invalid_argument ("analytical erosion parameters are invalid");
+  }
+
+  TransformDescription AnalyticalErosion::description () const noexcept {
+    return { "analytical",
+             "STREAM POWER AGE",
+             { SpatialScope::Global, EvaluationOrder::Iterative } };
+  }
+
+  std::string AnalyticalErosion::detail () const {
+    return format_analytical_transform_float (
+             julian_years_value (duration) / 1000.0f, 0) +
+           " ky / " + std::to_string (count_value (fixed_point_iterations)) +
+           " routing passes";
+  }
+
+  std::size_t AnalyticalErosion::property_count () const noexcept {
+    return 6;
+  }
+
+  TransformProperty AnalyticalErosion::property (std::size_t index) const {
+    switch (index) {
+    case 0:
+      return { "AGE (KY)",
+               format_analytical_transform_float (
+                 julian_years_value (duration) / 1000.0f, 0),
+               ParameterDomain::Continuous };
+    case 1:
+      return { "UPLIFT (MM/Y)",
+               format_analytical_transform_float (
+                 meters_per_julian_year_value (uplift_rate) * 1000.0f, 2),
+               ParameterDomain::Continuous };
+    case 2:
+      return { "ERODIBILITY",
+               format_analytical_transform_ledger (erodibility),
+               ParameterDomain::Continuous };
+    case 3:
+      return { "AREA EXPONENT",
+               format_analytical_transform_float (area_exponent, 2),
+               ParameterDomain::Continuous };
+    case 4:
+      return { "ROUTING PASSES",
+               std::to_string (count_value (fixed_point_iterations)),
+               ParameterDomain::Natural };
+    case 5:
+      return { "RELAXATION",
+               format_analytical_transform_float (relaxation, 2),
+               ParameterDomain::Continuous };
+    default:
+      invalid_analytical_transform_property_index ();
+    }
+  }
+
+  void HillslopeDiffusion::validate () const {
+    if (!std::isfinite (julian_years_value (duration)) ||
+        duration < 0.0f * mp_units::astronomy::Julian_year ||
+        !std::isfinite (square_meters_per_julian_year_value (diffusivity)) ||
+        square_meters_per_julian_year_value (diffusivity) < 0.0f)
+      throw std::invalid_argument (
+        "hillslope diffusion parameters are invalid");
+  }
+
+  TransformDescription HillslopeDiffusion::description () const noexcept {
+    return { "diffuse",
+             "SOIL CREEP",
+             { SpatialScope::Neighborhood, EvaluationOrder::Iterative } };
+  }
+
+  std::string HillslopeDiffusion::detail () const {
+    return format_analytical_transform_float (
+             julian_years_value (duration) / 1000.0f, 1) +
+           " ky @ D " +
+           format_analytical_transform_float (
+             square_meters_per_julian_year_value (diffusivity), 3);
+  }
+
+  std::size_t HillslopeDiffusion::property_count () const noexcept {
+    return 2;
+  }
+
+  TransformProperty HillslopeDiffusion::property (std::size_t index) const {
+    if (index == 0)
+      return { "DURATION (KY)",
+               format_analytical_transform_float (
+                 julian_years_value (duration) / 1000.0f, 1),
+               ParameterDomain::Continuous };
+    if (index == 1)
+      return { "DIFFUSIVITY",
+               format_analytical_transform_float (
+                 square_meters_per_julian_year_value (diffusivity), 3),
+               ParameterDomain::Continuous };
+    invalid_analytical_transform_property_index ();
   }
 
   AnalyticalErosionResult
   erode_analytically (const TerrainView& terrain,
                       const AnalyticalErosion& parameters) {
-    validate (parameters);
+    parameters.validate ();
     const TerrainGrid& grid = terrain.grid ();
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();

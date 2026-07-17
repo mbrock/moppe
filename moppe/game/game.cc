@@ -18,6 +18,7 @@
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
+#include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/inspector_ui.hh>
 #include <moppe/game/river_surface.hh>
 #include <moppe/game/stars.hh>
@@ -1378,6 +1379,7 @@ namespace moppe {
 
       void tick (float dt) override {
         MOPPE_PROFILE_ZONE ("MoppeGame::tick");
+        std::optional<InputFrame> scripted_input;
         if (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
           const int fps = [] {
             if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FPS"))
@@ -1421,11 +1423,11 @@ namespace moppe {
               m_benchmark_frame = 0;
               update_benchmark_title ();
             }
-            controls (benchmark_input (m_benchmark_frame));
+            scripted_input = benchmark_input (m_benchmark_frame);
             m_benchmark_measured =
               m_benchmark_frame >= m_benchmark->settle_frames;
           } else {
-            controls (benchmark_input (m_benchmark_prelude_frame));
+            scripted_input = benchmark_input (m_benchmark_prelude_frame);
             m_benchmark_measured = false;
           }
         }
@@ -1440,6 +1442,10 @@ namespace moppe {
         m_frame_time = dt;
         if (!m_ready || m_game_over)
           return;
+
+        InputFrame input = m_live_input.take_frame ();
+        if (scripted_input)
+          input = *scripted_input;
 
         m_total_time += dt;
         const float total_time = m_total_time;
@@ -1460,10 +1466,20 @@ namespace moppe {
         m_fog = mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
 
         if (m_cinematic.active ()) {
-          m_cinematic.tick (dt, m_map, m_cinematic_controls);
-          if (!m_cinematic.active ())
+          if (input.leave_cinematic) {
             leave_cinematic ();
-          return;
+            input = {};
+          } else {
+            const CinematicFlightControls controls {
+              .lateral = input_value (input.turn),
+              .lift = input_value (input.boost),
+              .pace = input_value (input.drive),
+            };
+            m_cinematic.tick (dt, m_map, controls);
+            if (!m_cinematic.active ())
+              leave_cinematic ();
+            return;
+          }
         }
 
         // Terrain inspection pauses actors and vehicle physics, but keeps the
@@ -1487,10 +1503,14 @@ namespace moppe {
         // lazy arc with periodic boost-assisted leaps.
         static const bool demo = ::getenv ("MOPPE_DEMO") != 0;
         if (demo && !m_water_inspection) {
-          input_go (1.0f);
-          input_turn (0.35f * std::sin (total_time * 0.25f));
-          input_boost (std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f);
+          input = {
+            .turn = 0.35f * std::sin (total_time * 0.25f),
+            .drive = 1.0f,
+            .boost = std::fmod (total_time, 11.0f) < 1.35f ? 1.0f : 0.0f,
+          };
         }
+
+        apply_input_frame (input);
 
         m_vehicle.update (seconds (dt));
         if (m_car_exists)
@@ -2296,6 +2316,7 @@ namespace moppe {
             } else if (!automated && !m_skip_cinematic_requested &&
                        !m_cinematic_plan.empty ()) {
               m_cinematic.start (m_cinematic_plan, m_map);
+              m_live_input.clear ();
             }
             return;
           }
@@ -2506,15 +2527,7 @@ namespace moppe {
       void controls (const platform::ControlState& state) override {
         if (m_game_over || m_terrain_lab.active ())
           return;
-        if (m_cinematic.active ()) {
-          m_cinematic_controls.lateral = state.steer;
-          m_cinematic_controls.pace = state.drive;
-          m_cinematic_controls.lift = state.boost;
-          return;
-        }
-        input_turn (state.steer);
-        input_go (state.drive);
-        input_boost (state.boost);
+        m_live_input.controls (state);
       }
 
       void pointer_move (float x, float y, float dx, float dy) override {
@@ -2564,7 +2577,6 @@ namespace moppe {
 
       void key (platform::Key k, bool down) override {
         using platform::Key;
-        const float factor = down ? 1.0f : 0.0f;
 
         if (!m_ready) {
           if (k == Key::Space && down)
@@ -2593,21 +2605,10 @@ namespace moppe {
         }
 
         if (m_cinematic.active ()) {
-          if (k == Key::Space && down) {
-            leave_cinematic ();
-          } else if (k == Key::Escape && down) {
+          if (k == Key::Escape && down)
             platform::request_quit ();
-          } else if (k == Key::Left || k == Key::A) {
-            m_cinematic_controls.lateral = down ? -1.0f : 0.0f;
-          } else if (k == Key::Right || k == Key::D) {
-            m_cinematic_controls.lateral = down ? 1.0f : 0.0f;
-          } else if (k == Key::Up || k == Key::W) {
-            m_cinematic_controls.pace = down ? 1.0f : 0.0f;
-          } else if (k == Key::Down || k == Key::S) {
-            m_cinematic_controls.pace = down ? -1.0f : 0.0f;
-          } else if (k == Key::E) {
-            m_cinematic_controls.lift = down ? 1.0f : 0.0f;
-          }
+          else
+            m_live_input.cinematic_key (k, down);
           return;
         }
 
@@ -2623,6 +2624,7 @@ namespace moppe {
           input_turn (0);
           input_go (0);
           input_boost (0);
+          m_live_input.clear ();
           m_terrain_lab.enter (*m_renderer,
                                m_map,
                                m_terrain,
@@ -2647,69 +2649,9 @@ namespace moppe {
           return;
         }
 
-        if (k == Key::E && down) {
-          deploy_glider ();
-          return;
-        }
-
-        // The secret dismount combo: 7, then 5, then R.  Arrow keys
-        // bypass it (they were "special" codes dispatched before the
-        // combo machine in the GLUT build).
-        const bool arrow =
-          (k == Key::Left || k == Key::Right || k == Key::Up || k == Key::Down);
-        if (down && !arrow) {
-          static const Key want[3] = { Key::Seven, Key::Five, Key::R };
-          if (k == want[m_combo]) {
-            if (++m_combo == 3) {
-              m_combo = 0;
-              if (can_deploy_glider ())
-                deploy_glider ();
-              else
-                toggle_mount ();
-            }
-          } else
-            m_combo = (k == Key::Seven) ? 1 : 0;
-        }
-
-        switch (k) {
-        case Key::Left:
-        case Key::A:
-          input_turn (-1 * factor);
-          break;
-        case Key::Right:
-        case Key::D:
-          input_turn (1 * factor);
-          break;
-        case Key::Up:
-        case Key::W:
-          input_go (1 * factor);
-          break;
-        case Key::Down:
-        case Key::S:
-          input_go (-1 * factor);
-          break;
-
-        case Key::Tab:
-          if (down) {
-            m_cam_mode = (CamMode)((m_cam_mode + 1) % 3);
-            if (m_cam_mode == CAM_HELMET)
-              m_fp_eye = m_camera.position (); // glide in
-          }
-          break;
-
-        case Key::Space:
-          if (m_ready)
-            input_boost (factor);
-          break;
-
-        case Key::Escape:
-          if (down)
-            platform::request_quit ();
-          break;
-
-        default:
-          break;
-        }
+        m_live_input.key (k, down);
+        if (k == Key::Escape && down)
+          platform::request_quit ();
       }
 
     private:
@@ -2821,7 +2763,7 @@ namespace moppe {
 
       void leave_cinematic () {
         m_cinematic.stop ();
-        m_cinematic_controls = {};
+        m_live_input.clear ();
         const Vec3 subject = subject_position () +
                              (m_mode == M_FOOT ? Vec3 (0, 1.0f, 0) : Vec3 ());
         Vec3 heading = subject_heading ();
@@ -2839,6 +2781,7 @@ namespace moppe {
         input_turn (0.0f);
         input_go (0.0f);
         input_boost (0.0f);
+        m_live_input.clear ();
         m_ready = false;
         m_loading_work_done = 0;
         m_loading_work_total = 1;
@@ -2860,7 +2803,6 @@ namespace moppe {
         m_loading_activation_stage = 0;
         m_skip_cinematic_requested = false;
         m_cinematic.stop ();
-        m_cinematic_controls = {};
         m_cinematic_plan = {};
         m_setup_complete = false;
         m_standing_water.reset ();
@@ -2913,6 +2855,28 @@ namespace moppe {
           m_glider.set_flare (m_boost_input > 0.1f);
         else
           active_vehicle ().set_boost (m_boost_input, m_go_input);
+      }
+
+      // This is the single ordinary-gameplay read of live or recorded input.
+      // Loading, Terrain Lab, and application commands stay above this seam.
+      void apply_input_frame (const InputFrame& input) {
+        input_turn (input_value (input.turn));
+        input_go (input_value (input.drive));
+        input_boost (input_value (input.boost));
+
+        if (input.deploy_glider)
+          deploy_glider ();
+        if (input.toggle_mount) {
+          if (can_deploy_glider ())
+            deploy_glider ();
+          else
+            toggle_mount ();
+        }
+        if (input.cycle_camera) {
+          m_cam_mode = (CamMode)((m_cam_mode + 1) % 3);
+          if (m_cam_mode == CAM_HELMET)
+            m_fp_eye = m_camera.position ();
+        }
       }
 
       void toggle_mount () {
@@ -2987,6 +2951,7 @@ namespace moppe {
         m_turn_input = 0;
         m_go_input = 0;
         m_boost_input = 0;
+        m_live_input.clear ();
         m_vehicle.set_thrust (0);
         m_vehicle.set_yaw (0 * u::deg);
         m_vehicle.set_boost (0, 0);
@@ -3022,7 +2987,7 @@ namespace moppe {
       bool m_skip_cinematic_requested = false;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
-      CinematicFlightControls m_cinematic_controls;
+      InputFrameAdapter m_live_input;
       std::optional<terrain::FloodField> m_standing_water;
       std::optional<terrain::LakeCensus> m_lake_census;
       std::optional<terrain::DrainageGraph> m_drainage;

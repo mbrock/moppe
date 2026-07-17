@@ -3,6 +3,7 @@
 
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/terrain_view.hh>
+#include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -45,6 +46,12 @@ namespace moppe::terrain {
     meters_t highland_preference_height_above_sea =
       180.0f * mp_units::si::metre;
     meters_t alpine_avoidance_height_above_sea = 285.0f * mp_units::si::metre;
+
+    void validate () const;
+    TransformDescription description () const noexcept;
+    std::string detail () const;
+    std::size_t property_count () const noexcept;
+    TransformProperty property (std::size_t index) const;
   };
 
   struct TrailFormationReport {
