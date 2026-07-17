@@ -81,6 +81,12 @@ namespace moppe::terrain {
   bool water_body_is_permanent (const WaterBody& body,
                                 const WaterPermanence& permanence = {});
 
+  // Rivers terminate only at bodies wide enough to stand as sheets: the sea
+  // and permanent non-channel lakes. Channel-like bodies pass rivers through
+  // and become ribbon-rendered pools of the river that traverses them.
+  bool water_body_terminates_rivers (const WaterBody& body,
+                                     const WaterPermanence& permanence = {});
+
   FloodField analyze_standing_water (const TerrainView& terrain,
                                      float sea_level);
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);

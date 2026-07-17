@@ -136,6 +136,74 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   MOPPE_CHECK_NEAR (sheets.surface.values ()[sill], 0.3f, 1e-5f);
 }
 
+MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
+  // A valley descending to the sea with a flooded channel stretch midway:
+  // five cells of flat water one cell wide, permanent by size but shaped
+  // like a river. The route must cross it as one continuous alignment that
+  // pools at the flood level, and the standing-water sheet must yield the
+  // stretch to the ribbon.
+  constexpr std::size_t width = 14;
+  constexpr std::size_t height = 3;
+  const std::array<float, width> profile { 0.9f,  0.55f, 0.5f,  0.45f, 0.2f,
+                                           0.2f,  0.2f,  0.2f,  0.2f,  0.25f,
+                                           0.15f, 0.1f,  -0.1f, 0.9f };
+  std::vector<float> heights (width * height);
+  for (std::size_t y = 0; y < height; ++y)
+    for (std::size_t x = 0; x < width; ++x)
+      heights[y * width + x] = y == 1 ? profile[x] : 0.9f;
+  const TerrainGrid grid { .width = width,
+                           .height = height,
+                           .spacing_x = 20.0f * mp_units::si::metre,
+                           .spacing_y = 20.0f * mp_units::si::metre,
+                           .height_scale = 100.0f * mp_units::si::metre };
+  const TerrainView terrain (grid, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+
+  const WaterBodyId pond_id = census.body[1 * width + 6];
+  MOPPE_CHECK (pond_id != LakeCensus::dry);
+  const WaterBody& pond = census.bodies[pond_id];
+  MOPPE_CHECK (water_body_is_permanent (pond));
+  MOPPE_CHECK (pond.channel_like);
+  MOPPE_CHECK (!water_body_terminates_rivers (pond));
+
+  const DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
+  const RiverNetwork rivers =
+    extract_river_network (flood,
+                           census,
+                           drainage,
+                           1000.0f * mp_units::si::metre * mp_units::si::metre);
+
+  MOPPE_CHECK (rivers.body_traversed.size () == census.bodies.size ());
+  MOPPE_CHECK (rivers.body_traversed[pond_id]);
+
+  // The inlet reach continues across the pond: it links downstream and its
+  // alignment pools at the flood level with the ribbon staying opaque.
+  const RiverReachId inlet_id = rivers.reach_by_cell[1 * width + 3];
+  MOPPE_CHECK (inlet_id != RiverReach::no_id);
+  const RiverReach& inlet = rivers.reaches[inlet_id];
+  MOPPE_CHECK (inlet.downstream_reach != RiverReach::no_id);
+  bool pooled_point = false;
+  for (const RiverAlignmentPoint& point : inlet.alignment.points)
+    if (point.pooled > 0.9f) {
+      pooled_point = true;
+      MOPPE_CHECK (point.standing_water < 0.1f);
+      MOPPE_CHECK_NEAR (point.water_level_m, 0.25f * 100.0f, 0.5f);
+    }
+  MOPPE_CHECK (pooled_point);
+
+  // The sheet yields the traversed stretch: its cells drop to ground level
+  // and carry no wave amplitude, while the sea keeps its plate.
+  const WaterSheets sheets =
+    paint_watercourses (terrain, flood, census, drainage, rivers);
+  const std::size_t pond_cell = 1 * width + 6;
+  MOPPE_CHECK_NEAR (
+    sheets.surface.values ()[pond_cell], heights[pond_cell], 1e-4f);
+  MOPPE_CHECK_NEAR (sheets.amplitude[pond_cell], 0.0f, 0.0f);
+  const std::size_t sea_cell = 1 * width + 12;
+  MOPPE_CHECK_NEAR (sheets.surface.values ()[sea_cell], 0.0f, 1e-5f);
+}
+
 MOPPE_TEST (dry_ridges_remain_still) {
   const PaintedValley valley = paint_valley ();
   const std::size_t ridge = 0;

@@ -65,6 +65,24 @@ namespace moppe::terrain {
     for (std::size_t cell = 0; cell < count; ++cell)
       amplitude[cell] = wave_amplitude (flood, census, cell);
 
+    // A channel-like body a river traverses renders as ribbon pools with
+    // real banks; pull it out of the sheet so the two representations never
+    // overlap. Untraversed channel bodies are stagnant water with no river
+    // to own them and keep their plate.
+    if (!rivers.body_traversed.empty ()) {
+      const std::span<const float> level = flood.water_level.values ();
+      const std::span<const float> depth = flood.water_depth.values ();
+      for (std::size_t cell = 0; cell < count; ++cell) {
+        const WaterBodyId id = census.body[cell];
+        if (id == LakeCensus::dry || id >= rivers.body_traversed.size ())
+          continue;
+        if (census.bodies[id].channel_like && rivers.body_traversed[id]) {
+          surface[cell] = level[cell] - depth[cell];
+          amplitude[cell] = 0.0f;
+        }
+      }
+    }
+
     // Continue each vector river's current into the standing body at its
     // mouth. Dense alignment samples make this field smooth even though its
     // storage remains the shared terrain lattice.

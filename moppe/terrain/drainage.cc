@@ -115,7 +115,8 @@ namespace moppe::terrain {
                .slope = mix (from.slope, to.slope),
                .waterfall = mix (from.waterfall, to.waterfall),
                .standing_water = mix (from.standing_water, to.standing_water),
-               .water_level_m = mix (from.water_level_m, to.water_level_m) };
+               .water_level_m = mix (from.water_level_m, to.water_level_m),
+               .pooled = mix (from.pooled, to.pooled) };
     }
 
     RiverAlignment
@@ -197,12 +198,12 @@ namespace moppe::terrain {
       const auto water_cell = [&] (CellIndex cell) {
         return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
       };
-      const auto permanent_water_cell = [&] (CellIndex cell) {
+      const auto terminating_water_cell = [&] (CellIndex cell) {
         if (flood.ocean[cell])
           return true;
         const WaterBodyId id = census.body[cell];
         return id != LakeCensus::dry &&
-               water_body_is_permanent (census.bodies[id]);
+               water_body_terminates_rivers (census.bodies[id]);
       };
 
       for (RiverReach& reach : network.reaches) {
@@ -212,23 +213,37 @@ namespace moppe::terrain {
         CellIndex next = drainage.receiver[cells.back ()];
         if (next != cells.back ())
           cells.push_back (next);
-        // Carry permanent mouths far enough into their standing surface for
-        // the ribbon to dissolve below it. Tiny non-rendered depressions are
-        // instead crossed along their proven receiver route, so they cannot
-        // punch dry gaps into an otherwise continuous visible river.
-        if (permanent_water_cell (cells.back ())) {
+        // Carry sheet-rendered mouths far enough into their standing surface
+        // for the ribbon to dissolve below it. Channel-like bodies and tiny
+        // non-rendered depressions are instead crossed along their proven
+        // receiver route, so they cannot punch dry gaps into an otherwise
+        // continuous visible river; each body crossed end to end is recorded
+        // so the sheet can yield it to the ribbon.
+        std::vector<WaterBodyId> crossings;
+        if (terminating_water_cell (cells.back ())) {
           next = drainage.receiver[cells.back ()];
-          if (next != cells.back () && permanent_water_cell (next))
+          if (next != cells.back () && terminating_water_cell (next))
             cells.push_back (next);
         } else {
           while (water_cell (cells.back ()) &&
-                 !permanent_water_cell (cells.back ())) {
+                 !terminating_water_cell (cells.back ())) {
+            const WaterBodyId id = census.body[cells.back ()];
+            if (id != LakeCensus::dry &&
+                (crossings.empty () || crossings.back () != id))
+              crossings.push_back (id);
             next = drainage.receiver[cells.back ()];
             if (next == cells.back ())
               break;
             cells.push_back (next);
           }
         }
+        // A walk that dead-ends inside a body did not cross it: a terminal
+        // pond keeps its sheet even when shaped like a channel.
+        const bool exited =
+          !water_cell (cells.back ()) || terminating_water_cell (cells.back ());
+        if (exited)
+          for (const WaterBodyId id : crossings)
+            network.body_traversed[id] = 1;
 
         std::vector<RiverAlignmentPoint> raw;
         raw.reserve (cells.size ());
@@ -280,7 +295,8 @@ namespace moppe::terrain {
             z = raw.back ().z_m +
                 river_wrapped_delta (z - raw.back ().z_m, period_z);
           }
-          const bool water = permanent_water_cell (cell);
+          const bool terminating = terminating_water_cell (cell);
+          const bool pooled = !terminating && water_cell (cell);
           // Fractional contributing area varies smoothly along a reach where
           // the all-or-nothing D8 accumulation steps, so widths derived from
           // it taper instead of popping between cells.
@@ -296,9 +312,10 @@ namespace moppe::terrain {
               .waterfall = network.waterfall_by_cell[cell] != Waterfall::no_id
                              ? 1.0f
                              : 0.0f,
-              .standing_water = water ? 1.0f : 0.0f,
+              .standing_water = terminating ? 1.0f : 0.0f,
               .water_level_m =
-                flood.water_level.values ()[cell] * grid.height_scale_m () });
+                flood.water_level.values ()[cell] * grid.height_scale_m (),
+              .pooled = pooled ? 1.0f : 0.0f });
           if (!channels.empty ())
             knot_tangents.push_back (
               channels.tangent[cell].numerical_value_in (mp_units::one));
@@ -700,7 +717,8 @@ namespace moppe::terrain {
       .minimum_area = minimum_area,
       .waterfall_parameters = waterfall_parameters,
       .reach_by_cell = std::vector<RiverReachId> (count, RiverReach::no_id),
-      .waterfall_by_cell = std::vector<WaterfallId> (count, Waterfall::no_id)
+      .waterfall_by_cell = std::vector<WaterfallId> (count, Waterfall::no_id),
+      .body_traversed = std::vector<std::uint8_t> (census.bodies.size (), 0)
     };
     for (std::uint32_t start = 0; start < count; ++start) {
       if (!eligible[start] ||
@@ -751,15 +769,16 @@ namespace moppe::terrain {
       if (eligible[next])
         reach.downstream_reach = network.reach_by_cell[next];
     }
-    // A body below the permanence threshold is drainage structure, not a
-    // rendered lake. Link its inlet reach directly to the spill reach so the
+    // A body that does not terminate rivers — a transient depression or a
+    // channel-like flooded segment — is drainage structure, not a rendered
+    // lake. Link its inlet reach directly to the spill reach so the
     // continuous alignment, flow coordinate, and junction surface bridge it.
     for (RiverReach& reach : network.reaches) {
       if (reach.downstream_reach != RiverReach::no_id ||
           reach.downstream_body == no_water_body)
         continue;
       const WaterBody& body = census.bodies[reach.downstream_body];
-      if (water_body_is_permanent (body) ||
+      if (water_body_terminates_rivers (body) ||
           body.spill_cell == WaterBody::no_cell || !eligible[body.spill_cell])
         continue;
       reach.downstream_reach = network.reach_by_cell[body.spill_cell];

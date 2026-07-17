@@ -352,6 +352,9 @@ namespace moppe::terrain {
     // terrace it into plates.
     {
       MOPPE_PROFILE_ZONE ("census.measure_body_shape");
+      // Two cells of inradius keeps ribbon ownership to pools four to five
+      // cells wide. Wider flooded reaches can hide arms the alignment never
+      // visits, which would drain visibly if the sheet yielded them.
       constexpr float channel_inradius_cells = 2.05f;
       const float cell_step_m = std::min (flood.source_grid.spacing_x_m (),
                                           flood.source_grid.spacing_y_m ());
@@ -410,6 +413,12 @@ namespace moppe::terrain {
            (body.area >= permanence.minimum_area &&
             body.maximum_depth >= permanence.minimum_depth &&
             body.volume >= permanence.minimum_volume);
+  }
+
+  bool water_body_terminates_rivers (const WaterBody& body,
+                                     const WaterPermanence& permanence) {
+    return body.classification == WaterBodyClass::Sea ||
+           (water_body_is_permanent (body, permanence) && !body.channel_like);
   }
 
   ScalarRaster permanent_water_surface (const FloodField& flood,

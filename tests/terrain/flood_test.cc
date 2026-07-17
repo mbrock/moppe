@@ -148,10 +148,10 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
 
 MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   // Two permanent bodies of similar volume but different shape: a one-cell
-  // wide flooded channel strip and a compact five-by-five lake. The shape
+  // wide flooded channel strip and a compact seven-by-seven lake. The shape
   // census must hand the strip to the river system and keep the lake.
-  constexpr std::size_t width = 12;
-  constexpr std::size_t height = 12;
+  constexpr std::size_t width = 14;
+  constexpr std::size_t height = 14;
   constexpr std::size_t count = width * height;
   const TerrainGrid grid { .width = width,
                            .height = height,
@@ -161,8 +161,8 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   std::vector<float> depth (count, 0.0f);
   for (std::size_t x = 2; x <= 9; ++x)
     depth[2 * width + x] = 0.3f;
-  for (std::size_t y = 5; y <= 9; ++y)
-    for (std::size_t x = 3; x <= 7; ++x)
+  for (std::size_t y = 5; y <= 11; ++y)
+    for (std::size_t x = 3; x <= 9; ++x)
       depth[y * width + x] = 0.3f;
   std::vector<CellIndex> receiver (count, CellIndex { 0 });
   const FloodField flood {
@@ -180,11 +180,11 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
 
   MOPPE_CHECK (census.bodies.size () == 2);
   const WaterBody& strip = census.bodies[census.body[2 * width + 5]];
-  const WaterBody& lake = census.bodies[census.body[7 * width + 5]];
+  const WaterBody& lake = census.bodies[census.body[8 * width + 6]];
   MOPPE_CHECK (water_body_is_permanent (strip));
   MOPPE_CHECK (water_body_is_permanent (lake));
   MOPPE_CHECK_NEAR (moppe::meters_value (strip.inradius), 20.0f, 0.0f);
-  MOPPE_CHECK_NEAR (moppe::meters_value (lake.inradius), 60.0f, 0.0f);
+  MOPPE_CHECK_NEAR (moppe::meters_value (lake.inradius), 80.0f, 0.0f);
   MOPPE_CHECK (strip.channel_like);
   MOPPE_CHECK (!lake.channel_like);
 }
