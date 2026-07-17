@@ -110,12 +110,20 @@ namespace moppe {
       [synth speakUtterance:u];
     }
 
-    void async (void (*work) (void*), void (*done) (void*), void* ctx) {
+    void async (void (*work) (void*),
+                void (*done) (void*),
+                std::shared_ptr<void> context) {
       dispatch_queue_t q =
         dispatch_get_global_queue (QOS_CLASS_USER_INITIATED, 0);
+      // Blocks capture this plain pointer, while the shared owner keeps the
+      // context alive from work dispatch through done's return.
+      auto* retained = new std::shared_ptr<void> (std::move (context));
       dispatch_async (q, ^{
-        work (ctx);
-        dispatch_async (dispatch_get_main_queue (), ^{ done (ctx); });
+        work (retained->get ());
+        dispatch_async (dispatch_get_main_queue (), ^{
+          done (retained->get ());
+          delete retained;
+        });
       });
     }
 

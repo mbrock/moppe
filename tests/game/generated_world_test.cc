@@ -2,6 +2,8 @@
 
 #include <tests/test.hh>
 
+#include <memory>
+#include <type_traits>
 #include <vector>
 
 MOPPE_TEST (generated_world_owns_a_complete_named_world) {
@@ -68,4 +70,35 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (!world.hydrology ().has_value ());
   MOPPE_CHECK (!world.water_surface ().has_value ());
   MOPPE_CHECK (!world.trails ().has_value ());
+}
+
+MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  static_assert (!std::is_move_constructible_v<game::GeneratedWorld>);
+  static_assert (!std::is_move_assignable_v<game::GeneratedWorld>);
+
+  const spatial_extent_t extent =
+    spatial_extent_in_metres (Vec3 (640, 650, 640));
+  game::WorldParams params;
+  params.map_size = extent;
+  params.resolution = 17;
+  params.water_level = 50.0f * u::m;
+  params.terrain_topology = Topology::Torus;
+  auto completed = std::make_unique<game::GeneratedWorld> (
+    params,
+    make_geological_world_recipe (extent,
+                                  17,
+                                  Topology::Torus,
+                                  Seed { 72 },
+                                  50.0f * u::m,
+                                  TerrainGenerationProfile::Fast));
+  const game::GeneratedWorld* address = completed.get ();
+
+  std::unique_ptr<game::GeneratedWorld> active = std::move (completed);
+
+  MOPPE_CHECK (!completed);
+  MOPPE_CHECK (active.get () == address);
+  MOPPE_CHECK (active->recipe ().seed () == Seed { 72 });
 }

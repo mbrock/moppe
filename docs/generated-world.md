@@ -25,29 +25,44 @@ trail stage.
 ## Mutability and lifetime
 
 `GeneratedWorld` is non-copyable and non-movable. Vehicles, the glider, and
-the Terrain Lab borrow its terrain or surface, so regeneration resets the
-existing subobjects in place rather than replacing the world. A reset accepts
-only a recipe with the same terrain storage layout; it clears derived artifacts
-and reseeds the existing map before construction starts again.
+the Terrain Lab borrow its terrain or surface. `MoppeGame` therefore keeps the
+active world behind an owning `unique_ptr`: a worker builds a fresh completed
+world, and the main thread transfers that owner exactly once at
+`activate_completed_world()`.
+
+At activation, Terrain Lab first restores and releases its raw borrows. The
+outgoing owner remains alive while the two vehicles and glider are destroyed;
+the completed owner becomes active; then those three borrowers are constructed
+again against the new terrain and surface. Only after that handoff does the
+main thread build renderer-facing river, water, ground, forest, and actor
+presentation. The active world is consequently never half-mutated by a
+loading worker.
+
+Generation is deliberately single-flight: running builds are never cancelled.
+Its job owns the requested recipe until the platform's main-thread completion
+callback has observed a published completed owner. The platform retains that
+job through the callback; its lifetime mutex keeps worker and callback game
+access behind the same shutdown boundary. `MoppeGame` takes that mutex before
+it clears the job's raw game pointer, so closing during generation waits for
+the worker and a queued callback simply does nothing. A failed build retains
+the existing clear failure behavior: it logs the generation error and exits
+rather than exposing an incomplete candidate. While it runs, the loading
+screen sees only copied height snapshots in its separate preview map; it
+neither borrows nor owns a candidate world's terrain state.
 
 Ordinary gameplay receives const readings. `Builder` is the explicit capability
-used by loading to evaluate terrain, record history, rebuild the surface,
+used by the loading worker to evaluate terrain, record history, rebuild the surface,
 analyze hydrology, and materialize the derived atlas and water surface.
 Terrain Lab has one deliberately named mutable borrow,
 `terrain_for_terrain_lab()`: its model restores the source map when the Lab
 leaves, so it does not make a permanently edited world implicit.
 
-The current loading task still builds that stable value directly while reporting
-progress. The later asynchronous-handoff step can establish one handoff around
-a completed `GeneratedWorld` without first having to discover which parallel
-optional in `MoppeGame` belongs with it.
-
 ## Checks
 
 `tests/game/generated_world_test.cc` verifies the named completed artifacts,
-their materialized atlas groups, and in-place reset addresses without a
-renderer. The deterministic Terrain Lab and water-capture tools exercise the
-two runtime consumers:
+their materialized atlas groups, and that a non-movable world transfers by its
+owner rather than a value move. The deterministic Terrain Lab and water-capture
+tools exercise the two runtime consumers:
 
 ```sh
 tools/capture-terrain-lab /tmp/terrain-lab.png
