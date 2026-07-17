@@ -3,6 +3,7 @@
 #include <moppe/map/surface.hh>
 #include <moppe/map/water_surface.hh>
 
+#include <tests/recording_renderer.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
@@ -57,12 +58,20 @@ MOPPE_TEST (water_presentation_is_the_only_normalization_and_packing_bridge) {
   const map::WaterSurface water (
     domain, level_and_amplitude, flow, 100.0f * u::m);
 
-  render::OceanSetup ocean;
-  ocean.level = 10.0f;
   game::WaterPresentation presentation;
-  presentation.reset (ocean);
+  presentation.reset (10.0f * u::m,
+                      spatial_extent_in_metres (Vec3 (200, 100, 300)));
   MOPPE_CHECK (presentation.levels ().empty ());
   MOPPE_CHECK (presentation.flow ().empty ());
+  test::RecordingRenderer renderer;
+  presentation.upload (renderer);
+  MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (renderer.ocean.center[0], 100.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (renderer.ocean.center[2], 150.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (renderer.ocean.half_extent, 5500.0f, 1e-6f);
+  MOPPE_CHECK (renderer.ocean.cells == 300);
+  MOPPE_CHECK (renderer.water_levels.empty ());
+  MOPPE_CHECK (renderer.water_flow.empty ());
   presentation.refresh (water, 100.0f * u::m);
 
   MOPPE_CHECK (presentation.levels ().size () == level_and_amplitude.size ());
@@ -72,4 +81,9 @@ MOPPE_TEST (water_presentation_is_the_only_normalization_and_packing_bridge) {
       presentation.levels ()[index], level_and_amplitude[index], 1e-6f);
   for (std::size_t index = 0; index < flow.size (); ++index)
     MOPPE_CHECK_NEAR (presentation.flow ()[index], flow[index], 1e-6f);
+
+  presentation.upload (renderer);
+  MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
+  MOPPE_CHECK (std::ranges::equal (renderer.water_levels, level_and_amplitude));
+  MOPPE_CHECK (std::ranges::equal (renderer.water_flow, flow));
 }

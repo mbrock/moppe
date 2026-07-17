@@ -14,6 +14,7 @@
 #include <moppe/game/dust.hh>
 #include <moppe/game/forest.hh>
 #include <moppe/game/game_state.hh>
+#include <moppe/game/generated_world.hh>
 #include <moppe/game/glider_render.hh>
 #include <moppe/game/graphics_benchmark.hh>
 #include <moppe/game/graphics_settings.hh>
@@ -225,16 +226,6 @@ namespace moppe {
       return platform::cache_path (name.str ());
     }
 
-    static WorldParams
-    world_params_for_recipe (WorldParams world,
-                             const terrain::WorldRecipe& recipe) {
-      world.map_size = recipe.extent ();
-      world.resolution = recipe.resolution ();
-      world.water_level = recipe.water_datum ();
-      world.terrain_topology = recipe.topology ();
-      return world;
-    }
-
     static bool
     load_terrain_history (const std::string& path,
                           std::size_t samples,
@@ -403,20 +394,18 @@ namespace moppe {
                  std::string screenshot_path,
                  std::optional<WaterShot> water_shot,
                  std::optional<GraphicsBenchmarkConfig> benchmark)
-          : m_recipe (std::move (recipe)),
-            m_world (world_params_for_recipe (world, m_recipe)),
-            m_graphics (graphics),
+          : m_generated_world (world, std::move (recipe)),
+            m_recipe (m_generated_world.recipe ()),
+            m_world (m_generated_world.params ()), m_graphics (graphics),
             m_spawn_position (position_value (m_world.spawn_position ())),
-            m_map (m_recipe.resolution (),
-                   m_recipe.resolution (),
-                   extent_value (m_recipe.extent ()),
-                   m_recipe.seed ().value,
-                   m_recipe.topology ()),
+            m_map (m_generated_world.terrain ()),
             m_loading_map (m_recipe.resolution (),
                            m_recipe.resolution (),
                            extent_value (m_recipe.extent ()),
                            m_recipe.seed ().value,
                            m_recipe.topology ()),
+            m_surface (m_generated_world.surface ()),
+            m_terrain_history (m_generated_world.terrain_history ()),
             m_camera (18 * u::deg, 6.5f * u::m),
             // Dirt-bike figures: 2600 N of launch, 30 kW of engine --
             // hard low-end punch, ~125 km/h against drag (the old
@@ -527,6 +516,36 @@ namespace moppe {
           m_map.raw_heights (), m_map.raw_heights () + count);
       }
 
+      const GeneratedWorld::Hydrology* hydrology () const noexcept {
+        const auto& value = m_generated_world.hydrology ();
+        return value ? &*value : nullptr;
+      }
+
+      const terrain::FloodField* standing_water () const noexcept {
+        const auto* value = hydrology ();
+        return value ? &value->standing_water () : nullptr;
+      }
+
+      const terrain::LakeCensus* lake_census () const noexcept {
+        const auto* value = hydrology ();
+        return value ? &value->lakes () : nullptr;
+      }
+
+      const terrain::DrainageGraph* drainage () const noexcept {
+        const auto* value = hydrology ();
+        return value ? &value->drainage () : nullptr;
+      }
+
+      const terrain::RiverNetwork* rivers () const noexcept {
+        const auto* value = hydrology ();
+        return value ? &value->rivers () : nullptr;
+      }
+
+      const terrain::TrailNetwork* trail_network () const noexcept {
+        const auto& value = m_generated_world.trails ();
+        return value ? &*value : nullptr;
+      }
+
       Vec3 choose_landscape_spawn () {
         MOPPE_PROFILE_ZONE ("startup.choose_landscape_spawn");
         // The generated landscape has no authored start.  Sample the
@@ -559,9 +578,9 @@ namespace moppe {
         float fallback_score = -1000000.0f;
 
         const auto standing_depth = [this, &world_extent] (float x, float z) {
-          if (!m_standing_water)
+          if (!standing_water ())
             return 0.0f;
-          const terrain::TerrainGrid& grid = m_standing_water->source_grid;
+          const terrain::TerrainGrid& grid = standing_water ()->source_grid;
           const auto wrap = [] (float value, float period) {
             value = std::fmod (value, period);
             return value < 0.0f ? value + period : value;
@@ -569,12 +588,12 @@ namespace moppe {
           const std::size_t gx =
             static_cast<std::size_t> (wrap (x, world_extent[0]) /
                                       grid.spacing_x_m ()) %
-            m_standing_water->width ();
+            standing_water ()->width ();
           const std::size_t gz =
             static_cast<std::size_t> (wrap (z, world_extent[2]) /
                                       grid.spacing_y_m ()) %
-            m_standing_water->height ();
-          return m_standing_water->water_depth.at (gx, gz) * world_extent[1];
+            standing_water ()->height ();
+          return standing_water ()->water_depth.at (gx, gz) * world_extent[1];
         };
 
         for (int i = 0; i < 6000; ++i) {
@@ -626,9 +645,9 @@ namespace moppe {
       }
 
       Vec3 trail_cell_position (terrain::CellIndex cell) const {
-        if (!m_trail_network || cell == terrain::no_cell)
+        if (!trail_network () || cell == terrain::no_cell)
           return {};
-        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
+        const terrain::TerrainGrid& grid = trail_network ()->source_grid;
         const std::size_t width = grid.unique_width ();
         const float x = (cell.value % width) * grid.spacing_x_m ();
         const float z = (cell.value / width) * grid.spacing_y_m ();
@@ -643,18 +662,18 @@ namespace moppe {
       }
 
       Vec3 trail_direction_from_home () const {
-        if (!m_trail_network || m_trail_network->alignment.points.size () < 2)
+        if (!trail_network () || trail_network ()->alignment.points.size () < 2)
           return Vec3 (0, 0, 1);
         Vec3 direction =
-          trail_alignment_position (m_trail_network->alignment.points[1]) -
-          trail_alignment_position (m_trail_network->alignment.points[0]);
+          trail_alignment_position (trail_network ()->alignment.points[1]) -
+          trail_alignment_position (trail_network ()->alignment.points[0]);
         direction[1] = 0.0f;
         return length2 (direction) > 1e-5f ? normalized (direction)
                                            : Vec3 (0, 0, 1);
       }
 
       void draw_home_base_marker (render::DrawList& dl) const {
-        if (!m_trail_network)
+        if (!trail_network ())
           return;
         const Vec3 base = m_home_base_position;
         render::DrawState marker_state;
@@ -689,10 +708,10 @@ namespace moppe {
       void draw_trail_map (render::DrawList& dl,
                            int width_pts,
                            int height_pts) const {
-        if (!m_trail_network || width_pts < 480 || height_pts < 360)
+        if (!trail_network () || width_pts < 480 || height_pts < 360)
           return;
-        const terrain::TerrainGrid& grid = m_trail_network->source_grid;
-        const auto& alignment = m_trail_network->alignment.points;
+        const terrain::TerrainGrid& grid = trail_network ()->source_grid;
+        const auto& alignment = trail_network ()->alignment.points;
         if (alignment.size () < 2)
           return;
         const float period_x = grid.unique_width () * grid.spacing_x_m ();
@@ -826,6 +845,10 @@ namespace moppe {
 
       void generate_world_inner () {
         MOPPE_PROFILE_ZONE ("MoppeGame::generate_world_inner");
+        GeneratedWorld::Builder build = m_generated_world.build ();
+        map::RandomHeightMap& terrain = build.terrain ();
+        std::vector<std::vector<float>>& history = build.terrain_history ();
+        std::optional<terrain::TrailNetwork> generated_trails;
         // The accelerated pointwise-field backend; null deliberately
         // selects the portable CPU interpreter.
         if (!m_field_evaluator) {
@@ -836,7 +859,7 @@ namespace moppe {
           set_loading_stage (LoadingStage::BuildingContinents);
           {
             MOPPE_PROFILE_ZONE ("startup.make_preview_program");
-            map::TerrainEvaluator (m_map, m_field_evaluator.get ())
+            map::TerrainEvaluator (terrain, m_field_evaluator.get ())
               .evaluate (m_recipe.terrain_program ());
           }
         } else {
@@ -850,31 +873,31 @@ namespace moppe {
           bool cache_loaded = false;
           {
             MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
-            cache_loaded = cache && m_map.try_load_cache (cache);
+            cache_loaded = cache && terrain.try_load_cache (cache);
           }
           if (cache_loaded) {
             set_loading_stage (LoadingStage::ReadingCache);
             const std::size_t count =
-              static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+              static_cast<std::size_t> (terrain.width ()) * terrain.height ();
             {
               MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
-              load_terrain_history (cache, count, m_terrain_history);
+              load_terrain_history (cache, count, history);
             }
             publish_loading_terrain ();
           } else {
             set_loading_stage (LoadingStage::BuildingContinents);
-            map::TerrainEvaluator evaluator (m_map, m_field_evaluator.get ());
-            m_terrain_history.clear ();
+            map::TerrainEvaluator evaluator (terrain, m_field_evaluator.get ());
+            history.clear ();
             {
               MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
               evaluator.evaluate (
                 m_recipe.terrain_program (),
-                [this] (std::size_t,
-                        const terrain::TerrainTransform& transform) {
+                [this, &history] (std::size_t,
+                                  const terrain::TerrainTransform& transform) {
                   const std::size_t count =
                     static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-                  m_terrain_history.emplace_back (m_map.raw_heights (),
-                                                  m_map.raw_heights () + count);
+                  history.emplace_back (m_map.raw_heights (),
+                                        m_map.raw_heights () + count);
                   publish_loading_terrain ();
                   (void)transform;
                 },
@@ -899,113 +922,92 @@ namespace moppe {
                   m_loading_source_total = static_cast<int> (total);
                 });
             }
-            m_generated_trail_network = evaluator.release_trail_network ();
+            generated_trails = evaluator.release_trail_network ();
             const std::size_t count =
-              static_cast<std::size_t> (m_map.width ()) * m_map.height ();
+              static_cast<std::size_t> (terrain.width ()) * terrain.height ();
             {
               MOPPE_PROFILE_ZONE ("startup.snapshot_finished_terrain");
-              m_terrain_history.emplace_back (m_map.raw_heights (),
-                                              m_map.raw_heights () + count);
+              history.emplace_back (terrain.raw_heights (),
+                                    terrain.raw_heights () + count);
             }
             if (cache) {
               set_loading_stage (LoadingStage::SavingTerrain);
               {
                 MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
-                m_map.save_cache (cache);
+                terrain.save_cache (cache);
               }
               {
                 MOPPE_PROFILE_ZONE ("startup.save_terrain_history");
-                save_terrain_history (cache, m_terrain_history);
+                save_terrain_history (cache, history);
               }
             }
           }
         }
-        if (m_terrain_history.empty ()) {
+        if (history.empty ()) {
           const std::size_t count =
-            static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-          m_terrain_history.emplace_back (m_map.raw_heights (),
-                                          m_map.raw_heights () + count);
+            static_cast<std::size_t> (terrain.width ()) * terrain.height ();
+          history.emplace_back (terrain.raw_heights (),
+                                terrain.raw_heights () + count);
         }
         publish_loading_terrain ();
         set_loading_stage (LoadingStage::RebuildingSurface);
         {
           MOPPE_PROFILE_ZONE ("startup.recompute_terrain_normals");
-          m_map.recompute_normals ();
-        }
-        {
-          MOPPE_PROFILE_ZONE ("startup.refresh_surface_sections");
-          m_surface.refresh (m_map);
+          build.rebuild_surface ();
         }
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
         if (!m_terrain_lab_preview) {
-          set_loading_stage (LoadingStage::FindingStandingWater);
-          const float sea_level = m_recipe.normalized_water_datum ();
-          {
-            MOPPE_PROFILE_ZONE ("startup.analyze_standing_water");
-            m_standing_water = terrain::analyze_standing_water (
-              m_map.terrain_view (), sea_level);
-          }
-          set_loading_stage (LoadingStage::CataloguingLakes);
-          {
-            MOPPE_PROFILE_ZONE ("startup.census_lakes");
-            m_lake_census = terrain::census_lakes (*m_standing_water);
-          }
+          build.analyze_hydrology (
+            [this] (GeneratedWorld::HydrologyStage stage) {
+              switch (stage) {
+              case GeneratedWorld::HydrologyStage::StandingWater:
+                set_loading_stage (LoadingStage::FindingStandingWater);
+                break;
+              case GeneratedWorld::HydrologyStage::Lakes:
+                set_loading_stage (LoadingStage::CataloguingLakes);
+                break;
+              case GeneratedWorld::HydrologyStage::Drainage:
+                set_loading_stage (LoadingStage::TracingDrainage);
+                break;
+              case GeneratedWorld::HydrologyStage::Waterways:
+                set_loading_stage (LoadingStage::ConnectingWaterways);
+                break;
+              case GeneratedWorld::HydrologyStage::Channels:
+              case GeneratedWorld::HydrologyStage::Rivers:
+                set_loading_stage (LoadingStage::ExtractingRivers);
+                break;
+              }
+            });
           {
             // A one-line hydrology reading at load: pond explosions from
             // erosion regressions show up here before any capture does.
             std::size_t wet = 0;
-            for (const terrain::WaterBody& body : m_lake_census->bodies)
+            for (const terrain::WaterBody& body : lake_census ()->bodies)
               wet += terrain::count_value (body.cells);
-            std::cerr << "standing water: " << m_lake_census->bodies.size ()
+            std::cerr << "standing water: " << lake_census ()->bodies.size ()
                       << " bodies, " << wet << " wet cells\n";
           }
-          set_loading_stage (LoadingStage::TracingDrainage);
-          {
-            MOPPE_PROFILE_ZONE ("startup.analyze_wet_drainage");
-            m_drainage = terrain::analyze_wet_drainage (
-              m_map.terrain_view (), *m_standing_water, *m_lake_census);
-          }
-          set_loading_stage (LoadingStage::ConnectingWaterways);
-          {
-            MOPPE_PROFILE_ZONE ("startup.analyze_water_network");
-            m_water_network = terrain::analyze_water_network (
-              *m_standing_water, *m_lake_census, *m_drainage);
-          }
-          set_loading_stage (LoadingStage::ExtractingRivers);
-          {
-            // A memoryless D-infinity reading of the final terrain: the same
-            // kind of field that carved the valleys during orogeny, so river
-            // geometry lies in the trench erosion actually cut.
-            MOPPE_PROFILE_ZONE ("startup.analyze_channel_geometry");
-            m_channel_drainage = terrain::analyze_fractional_drainage (
-              m_map.terrain_view (), *m_standing_water, *m_lake_census);
-          }
-          {
-            MOPPE_PROFILE_ZONE ("startup.extract_river_network");
-            m_rivers = terrain::extract_river_network (
-              *m_standing_water,
-              *m_lake_census,
-              *m_drainage,
-              *m_channel_drainage,
-              terrain::visible_river_minimum_area (m_drainage->source_grid));
-          }
-          if (m_water_shot) {
-            m_water_inspection = choose_water_inspection (*m_water_shot,
-                                                          m_map,
-                                                          *m_standing_water,
-                                                          *m_lake_census,
-                                                          *m_drainage,
-                                                          *m_rivers);
-            if (!m_water_inspection)
-              throw std::runtime_error (
-                "no " + std::string (water_shot_name (*m_water_shot)) +
-                " available for water screenshot");
-            std::cerr << "water screenshot: " << water_shot_name (*m_water_shot)
-                      << " cell=" << m_water_inspection->cell
-                      << " score=" << m_water_inspection->score << '\n';
-          }
+        }
+
+        set_loading_stage (LoadingStage::AssemblingWorld);
+        build.materialize_analyses (std::move (generated_trails));
+
+        if (!m_terrain_lab_preview && m_water_shot) {
+          m_water_inspection = choose_water_inspection (*m_water_shot,
+                                                        m_map,
+                                                        *standing_water (),
+                                                        *lake_census (),
+                                                        *drainage (),
+                                                        *rivers ());
+          if (!m_water_inspection)
+            throw std::runtime_error (
+              "no " + std::string (water_shot_name (*m_water_shot)) +
+              " available for water screenshot");
+          std::cerr << "water screenshot: " << water_shot_name (*m_water_shot)
+                    << " cell=" << m_water_inspection->cell
+                    << " score=" << m_water_inspection->score << '\n';
         }
 
         if (!m_terrain_lab_preview) {
@@ -1015,7 +1017,6 @@ namespace moppe {
             m_stars.generate (m_map, m_world, 80);
           }
         }
-        set_loading_stage (LoadingStage::AssemblingWorld);
       }
 
       void finish_setup () {
@@ -1024,234 +1025,13 @@ namespace moppe {
 
         // Running rivers are continuous ribbon meshes. The water sheets below
         // retain standing bodies and carry each mouth's current into them.
-        if (m_rivers) {
+        if (rivers ()) {
           MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
-          m_river_surface.rebuild (r, m_map, *m_rivers);
+          m_river_surface.rebuild (r, m_map, *rivers ());
         }
-        render::OceanSetup ocean;
-        ocean.level = meters_value (m_world.water_level);
-        const Vec3& world_extent = extent_value (m_world.map_size);
-        ocean.center = Vec3 (world_extent[0] / 2, 0, world_extent[2] / 2);
-        ocean.half_extent = 5500.0f;
-        ocean.cells = 300;
-        m_water_surface.reset ();
-        m_water_presentation.reset (ocean);
-        if (m_channel_drainage) {
-          // Direction times a log-compressed activity: the flux fades in a
-          // few cells below a channelhead and saturates where accumulation
-          // reaches the visible-river threshold, so ground materials follow
-          // the same drainage field that carved the valleys.
-          MOPPE_PROFILE_ZONE ("startup.materialize_channel_flux");
-          const auto& tangents =
-            spatial::get<terrain::channel_tangent> (*m_channel_drainage);
-          const auto& areas =
-            spatial::get<terrain::fractional_contributing_area> (
-              *m_channel_drainage);
-          const terrain::TerrainGrid& grid =
-            m_channel_drainage->domain ().grid ();
-          const float floor_area_m2 =
-            4.0f * square_meters_value (grid.cell_area ());
-          const float channel_area_m2 =
-            square_meters_value (terrain::visible_river_minimum_area (grid));
-          const float activity_span =
-            std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
-          const std::size_t unique_width = grid.unique_width ();
-          const std::size_t unique_height = grid.unique_height ();
-          std::vector<float> flux (
-            2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
-          for (int y = 0; y < m_map.height (); ++y)
-            for (int x = 0; x < m_map.width (); ++x) {
-              const std::size_t cell =
-                (static_cast<std::size_t> (y) % unique_height) * unique_width +
-                static_cast<std::size_t> (x) % unique_width;
-              const float area_m2 =
-                areas[cell].numerical_value_in (u::m * u::m);
-              const float activity = std::clamp (
-                std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) /
-                  activity_span,
-                0.0f,
-                1.0f);
-              const Vec3 tangent = tangents[cell].numerical_value_in (one);
-              const std::size_t out =
-                2 * (static_cast<std::size_t> (y) * m_map.width () + x);
-              flux[out] = tangent[0] * activity;
-              flux[out + 1] = tangent[2] * activity;
-            }
-          m_surface.materialize_channel_flux (flux);
-        }
-        if (m_standing_water && m_drainage && m_rivers) {
-          // The complete waterscape painted onto the terrain lattice:
-          // lakes, sea, and rivers in one surface sheet, per-body wave
-          // amplitude, and a flow arrow in every wet cell. Rivers render
-          // through the same lattice water pass as the lakes; the flow
-          // sheet is what carries their motion.
-          const terrain::WaterSheets sheets = [&] {
-            MOPPE_PROFILE_ZONE ("startup.paint_watercourses");
-            return terrain::paint_watercourses (m_map.terrain_view (),
-                                                *m_standing_water,
-                                                *m_lake_census,
-                                                *m_drainage,
-                                                *m_rivers);
-          }();
-          MOPPE_PROFILE_NAMED_ZONE (expand_water_sheets,
-                                    "startup.expand_water_sheets");
-          std::vector<float> water_levels (
-            2 * static_cast<std::size_t> (m_map.width ()) * m_map.height ());
-          std::vector<float> water_flow (water_levels.size ());
-          const std::span<const float> unique = sheets.surface.values ();
-          const std::size_t unique_width = m_standing_water->width ();
-          const std::size_t unique_height = m_standing_water->height ();
-          for (int y = 0; y < m_map.height (); ++y)
-            for (int x = 0; x < m_map.width (); ++x) {
-              const std::size_t cell =
-                (static_cast<std::size_t> (y) % unique_height) * unique_width +
-                static_cast<std::size_t> (x) % unique_width;
-              const std::size_t out =
-                2 * (static_cast<std::size_t> (y) * m_map.width () + x);
-              water_levels[out] = unique[cell];
-              water_levels[out + 1] = sheets.amplitude[cell];
-              water_flow[out] = sheets.flow[2 * cell];
-              water_flow[out + 1] = sheets.flow[2 * cell + 1];
-            }
-          m_water_surface.emplace (m_surface.atlas ().domain (),
-                                   water_levels,
-                                   water_flow,
-                                   m_map.scale ()[1] * u::m);
-          m_water_presentation.refresh (*m_water_surface,
-                                        m_map.scale ()[1] * u::m);
-
-          // The extracted waterline: the one true wet/dry curve.  Its
-          // distance field drives the terrain's damp shore band and
-          // swash-zone relief so they hug the actual curve.
-          const terrain::Waterline waterline = terrain::extract_waterline (
-            m_map.terrain_view (), sheets.surface, *m_lake_census);
-          const terrain::ScalarRaster proximity =
-            terrain::waterline_proximity (waterline);
-          std::vector<float> shore (static_cast<std::size_t> (m_map.width ()) *
-                                    m_map.height ());
-          const std::span<const float> unique_shore = proximity.values ();
-          for (int y = 0; y < m_map.height (); ++y)
-            for (int x = 0; x < m_map.width (); ++x)
-              shore[static_cast<std::size_t> (y) * m_map.width () + x] =
-                unique_shore[(static_cast<std::size_t> (y) % unique_height) *
-                               unique_width +
-                             static_cast<std::size_t> (x) % unique_width];
-          m_surface.materialize_waterline_distance (shore);
-        }
-        if (m_standing_water && m_drainage) {
-          // Ground moisture from the hydrology feeds terrain materials.
-          const terrain::ScalarRaster moisture = [&] {
-            MOPPE_PROFILE_ZONE ("startup.analyze_moisture");
-            return terrain::analyze_moisture (
-              *m_standing_water, *m_lake_census, *m_drainage);
-          }();
-          MOPPE_PROFILE_NAMED_ZONE (expand_moisture, "startup.expand_moisture");
-          std::vector<float> expanded (
-            static_cast<std::size_t> (m_map.width ()) * m_map.height ());
-          const std::span<const float> unique = moisture.values ();
-          const std::size_t unique_width = m_standing_water->width ();
-          const std::size_t unique_height = m_standing_water->height ();
-          for (int y = 0; y < m_map.height (); ++y)
-            for (int x = 0; x < m_map.width (); ++x)
-              expanded[static_cast<std::size_t> (y) * m_map.width () + x] =
-                unique[(static_cast<std::size_t> (y) % unique_height) *
-                         unique_width +
-                       static_cast<std::size_t> (x) % unique_width];
-          m_surface.materialize_moisture (expanded);
-          MOPPE_PROFILE_ZONE ("startup.derive_tree_habitat");
-          m_surface.derive_tree_habitat (m_world.water_level,
-                                         m_world.water_level + 145.0f * u::m);
-        }
-
-        if (m_standing_water && m_drainage) {
-          const terrain::TerrainProgram& program = m_recipe.terrain_program ();
-          const auto stage = std::ranges::find_if (
-            program.transforms, [] (const terrain::TerrainTransform& value) {
-              return std::holds_alternative<terrain::TrailFormation> (value);
-            });
-          if (stage != program.transforms.end ()) {
-            MOPPE_PROFILE_ZONE ("startup.analyze_trail_network");
-            const std::size_t stage_index = static_cast<std::size_t> (
-              std::distance (program.transforms.begin (), stage));
-            const bool generated_network =
-              m_generated_trail_network.has_value ();
-            if (generated_network)
-              m_trail_network = std::move (m_generated_trail_network);
-            else {
-              const terrain::TerrainView trail_source =
-                stage_index < m_terrain_history.size ()
-                  ? terrain::TerrainView (m_map.terrain_view ().grid (),
-                                          m_terrain_history[stage_index])
-                  : m_map.terrain_view ();
-              m_trail_network = terrain::analyze_trail_network (
-                trail_source, std::get<terrain::TrailFormation> (*stage));
-              if (stage_index + 1 < m_terrain_history.size ()) {
-                const std::vector<float>& before =
-                  m_terrain_history[stage_index];
-                const std::vector<float>& after =
-                  m_terrain_history[stage_index + 1];
-                const std::size_t unique_width = m_map.unique_width ();
-                const std::size_t unique_height = m_map.unique_height ();
-                const std::size_t storage_width = m_map.width ();
-                const float height_scale = m_map.scale ()[1];
-                for (std::size_t y = 0; y < unique_height; ++y)
-                  for (std::size_t x = 0; x < unique_width; ++x) {
-                    const std::size_t source = y * storage_width + x;
-                    const std::size_t cell = y * unique_width + x;
-                    m_trail_network->earthwork_delta_m[cell] =
-                      (after[source] - before[source]) * height_scale;
-                  }
-              }
-            }
-            m_surface.materialize_trail_influence (
-              terrain::expand_trail_influence (*m_trail_network));
-            m_surface.materialize_home_base_influence (
-              terrain::expand_home_base_influence (*m_trail_network));
-            const auto& trail_parameters =
-              std::get<terrain::TrailFormation> (*stage);
-            const float sea_elevation =
-              trail_parameters.sea_level * m_map.scale ()[1];
-            float maximum_height_above_sea = 0.0f;
-            for (const terrain::TrailAlignmentPoint point :
-                 m_trail_network->alignment.points)
-              maximum_height_above_sea =
-                std::max (maximum_height_above_sea,
-                          m_map.interpolated_height (point.x_m, point.z_m) -
-                            sea_elevation);
-            std::cerr << "trail network: " << m_trail_network->cells.size ()
-                      << " centerline cells, "
-                      << m_trail_network->alignment.points.size ()
-                      << " alignment samples, " << std::fixed
-                      << std::setprecision (1)
-                      << meters_value (
-                           terrain::trail_circuit_length (*m_trail_network)) /
-                           1000.0
-                      << " km, high " << maximum_height_above_sea
-                      << " m above sea, " << m_trail_network->components.size ()
-                      << " connected components\n";
-            const Vec3 base =
-              trail_cell_position (m_trail_network->plan.home_base);
-            const Vec3 focus =
-              trail_cell_position (m_trail_network->plan.scenic_focus);
-            std::cerr << "home base: " << base << " scenic focus: " << focus
-                      << '\n';
-          }
-        }
-
-        if (m_surface.atlas ().ecology ().tree_habitat ()) {
-          MOPPE_PROFILE_ZONE ("startup.derive_forest_cover");
-          m_surface.derive_forest_cover (m_recipe.seed ().value ^ 0x6f12ad37U);
-        }
-
-        {
-          MOPPE_PROFILE_ZONE ("startup.derive_geology_materials");
-          const std::size_t count =
-            static_cast<std::size_t> (m_map.width ()) * m_map.height ();
-          m_surface.derive_geology_materials (
-            std::span (m_map.raw_eroded (), count),
-            std::span (m_map.raw_deposited (), count));
-        }
-
+        m_water_presentation.reset (m_world.water_level, m_world.map_size);
+        if (const auto& water = m_generated_world.water_surface ())
+          m_water_presentation.refresh (*water, m_map.scale ()[1] * u::m);
         m_surface_presentation.refresh (m_surface);
 
         m_vehicle.set_water_level (m_world.water_level);
@@ -1260,9 +1040,9 @@ namespace moppe {
         m_car.set_obstacles (&m_obstacles);
 
         if (!m_terrain_lab_preview) {
-          if (m_trail_network) {
+          if (trail_network ()) {
             m_home_base_position =
-              trail_cell_position (m_trail_network->plan.home_base);
+              trail_cell_position (trail_network ()->plan.home_base);
             m_spawn_position =
               m_home_base_position - trail_direction_from_home () * 8.0f;
             m_spawn_position[1] = m_map.interpolated_height (
@@ -1273,8 +1053,8 @@ namespace moppe {
             m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
           }
           m_vehicle.reset (m_spawn_position);
-          m_vehicle.set_heading (m_trail_network ? trail_direction_from_home ()
-                                                 : Vec3 (0, 0, 1));
+          m_vehicle.set_heading (trail_network () ? trail_direction_from_home ()
+                                                  : Vec3 (0, 0, 1));
         }
         if (m_tree_demo) {
           MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
@@ -1318,16 +1098,15 @@ namespace moppe {
                     << cohort_count (TreeCohort::sapling) << " saplings)\n";
         }
 
-        if (m_standing_water && m_lake_census && m_drainage && m_rivers) {
+        if (standing_water () && lake_census () && drainage () && rivers ()) {
           MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
-          m_cinematic_plan = plan_cinematic_flight (
-            m_map,
-            *m_standing_water,
-            *m_lake_census,
-            *m_drainage,
-            *m_rivers,
-            m_spawn_position,
-            m_trail_network ? &*m_trail_network : nullptr);
+          m_cinematic_plan = plan_cinematic_flight (m_map,
+                                                    *standing_water (),
+                                                    *lake_census (),
+                                                    *drainage (),
+                                                    *rivers (),
+                                                    m_spawn_position,
+                                                    trail_network ());
         }
         if (!m_cinematic_plan.empty ()) {
           std::cerr << "cinematic flight: "
@@ -2294,7 +2073,7 @@ namespace moppe {
                                    ::getenv ("MOPPE_DEMO");
             if (m_start_in_terrain_lab) {
               m_terrain_lab.enter (r,
-                                   m_map,
+                                   m_generated_world.terrain_for_terrain_lab (),
                                    m_terrain,
                                    m_world,
                                    m_graphics,
@@ -2617,7 +2396,7 @@ namespace moppe {
           input_boost (0);
           m_live_input.clear ();
           m_terrain_lab.enter (*m_renderer,
-                               m_map,
+                               m_generated_world.terrain_for_terrain_lab (),
                                m_terrain,
                                m_world,
                                m_graphics,
@@ -2796,31 +2575,24 @@ namespace moppe {
         m_cinematic.stop ();
         m_cinematic_plan = {};
         m_setup_complete = false;
-        m_standing_water.reset ();
-        m_lake_census.reset ();
-        m_drainage.reset ();
-        m_channel_drainage.reset ();
-        m_water_network.reset ();
-        m_rivers.reset ();
         m_river_surface.clear ();
-        m_terrain_history.clear ();
         const terrain::Seed next_seed = terrain::next_seed (m_recipe.seed ());
-        if (m_terrain_lab_preview)
-          m_recipe = terrain::make_geological_world_recipe (
-            m_recipe.extent (),
-            m_recipe.resolution (),
-            m_recipe.topology (),
-            next_seed,
-            m_recipe.water_datum (),
-            m_recipe.generation_profile ());
-        else
-          m_recipe =
-            terrain::make_world_recipe (m_recipe.extent (),
-                                        m_recipe.resolution (),
-                                        m_recipe.topology (),
-                                        next_seed,
-                                        m_recipe.water_datum (),
-                                        m_recipe.generation_profile ());
+        const terrain::WorldRecipe next_recipe =
+          m_terrain_lab_preview
+            ? terrain::make_geological_world_recipe (
+                m_recipe.extent (),
+                m_recipe.resolution (),
+                m_recipe.topology (),
+                next_seed,
+                m_recipe.water_datum (),
+                m_recipe.generation_profile ())
+            : terrain::make_world_recipe (m_recipe.extent (),
+                                          m_recipe.resolution (),
+                                          m_recipe.topology (),
+                                          next_seed,
+                                          m_recipe.water_datum (),
+                                          m_recipe.generation_profile ());
+        m_generated_world.build ().reset (next_recipe);
         m_mode = M_BIKE;
         m_car_exists = false;
         m_game_over = false;
@@ -2965,17 +2737,20 @@ namespace moppe {
         m_game_over = false;
       }
 
-      terrain::WorldRecipe m_recipe;
-      WorldParams m_world;
+      // These are stable borrows into GeneratedWorld, retained only to keep
+      // the gameplay code's reads compact.  MoppeGame owns none of them.
+      GeneratedWorld m_generated_world;
+      const terrain::WorldRecipe& m_recipe;
+      const WorldParams& m_world;
       GraphicsSettings m_graphics;
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
-      map::RandomHeightMap m_map;
+      const map::RandomHeightMap& m_map;
       map::RandomHeightMap m_loading_map;
-      map::Surface m_surface;
+      const map::Surface& m_surface;
       SurfacePresentation m_surface_presentation;
       std::unique_ptr<terrain::FieldEvaluator> m_field_evaluator;
-      std::vector<std::vector<float>> m_terrain_history;
+      const std::vector<std::vector<float>>& m_terrain_history;
       std::mutex m_loading_mutex;
       std::vector<LoadingEvent> m_loading_events;
       std::shared_ptr<const std::vector<float>> m_loading_heights;
@@ -2994,15 +2769,6 @@ namespace moppe {
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       InputFrameAdapter m_live_input;
-      std::optional<terrain::FloodField> m_standing_water;
-      std::optional<terrain::LakeCensus> m_lake_census;
-      std::optional<terrain::DrainageGraph> m_drainage;
-      std::optional<terrain::FractionalDrainage> m_channel_drainage;
-      std::optional<terrain::WaterNetwork> m_water_network;
-      std::optional<terrain::RiverNetwork> m_rivers;
-      std::optional<map::WaterSurface> m_water_surface;
-      std::optional<terrain::TrailNetwork> m_trail_network;
-      std::optional<terrain::TrailNetwork> m_generated_trail_network;
       RiverSurface m_river_surface;
       Terrain m_terrain;
       WaterPresentation m_water_presentation;

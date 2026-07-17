@@ -61,7 +61,10 @@ the appropriate named atlas view, such as
 ## Presentation mappings
 
 `game::SurfacePresentation` is deliberately mechanical. It performs no
-terrain or ecology policy.
+terrain or ecology policy. The Terrain Lab uses its narrow path-payload route
+too: a rebuilt `TrailNetwork` becomes the same terrain-path texture lanes only
+at this bridge, while a pristine Lab view reuses its already materialized
+payload.
 
 | Intrinsic section | Renderer payload |
 | --- | --- |
@@ -87,8 +90,9 @@ bundle. Matching texture dimensions are a presentation fact, not an identity.
 
 `WaterPresentation` is where physical elevation is divided by the terrain
 height scale and where velocity loses its unit and y component for the Metal
-texture contract. `game.cc` now owns a `WaterSurface` rather than anonymous
-interleaved level and flow vectors.
+texture contract. It also turns the metre-valued water datum and typed world
+extent into the renderer's numeric ocean setup. World assembly owns a
+`WaterSurface` rather than anonymous interleaved level and flow vectors.
 
 Water-body identity, wet/dry membership, the extracted waterline complex, and
 river-network incidence still live in their established terrain-analysis

@@ -2,7 +2,9 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
+#include <moppe/terrain/trail.hh>
 
+#include <tests/recording_renderer.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
@@ -356,6 +358,41 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   surface.refresh (map);
   MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
   MOPPE_CHECK (!surface.atlas ().use ().trails ());
+}
+
+MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
+  using namespace moppe;
+  const terrain::FieldSamplingGrid2D domain { .width = 2, .height = 2 };
+  const terrain::TrailNetwork network {
+    .source_grid = { .width = 3,
+                     .height = 3,
+                     .spacing_x = 10.0f * u::m,
+                     .spacing_y = 10.0f * u::m,
+                     .height_scale = 100.0f * u::m,
+                     .topology = terrain::Topology::Torus },
+    .influence = terrain::ScalarRaster (domain, { 0.10f, 0.20f, 0.30f, 0.40f }),
+    .home_base_influence =
+      terrain::ScalarRaster (domain, { 0.90f, 0.80f, 0.70f, 0.60f }),
+  };
+
+  game::SurfacePresentation presentation;
+  presentation.refresh_paths (network);
+
+  const std::array expected_trails {
+    0.10f, 0.20f, 0.10f, 0.30f, 0.40f, 0.30f, 0.10f, 0.20f, 0.10f,
+  };
+  const std::array expected_home_base {
+    0.90f, 0.80f, 0.90f, 0.70f, 0.60f, 0.70f, 0.90f, 0.80f, 0.90f,
+  };
+  MOPPE_CHECK (std::ranges::equal (presentation.trails (), expected_trails));
+  MOPPE_CHECK (
+    std::ranges::equal (presentation.home_base (), expected_home_base));
+
+  test::RecordingRenderer renderer;
+  presentation.upload_paths (renderer);
+  MOPPE_CHECK (std::ranges::equal (renderer.trail_influence, expected_trails));
+  MOPPE_CHECK (
+    std::ranges::equal (renderer.home_base_influence, expected_home_base));
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {

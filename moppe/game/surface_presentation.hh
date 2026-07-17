@@ -7,6 +7,10 @@
 #include <span>
 #include <vector>
 
+namespace moppe::terrain {
+  struct TrailNetwork;
+}
+
 namespace moppe::game {
   // The explicit bridge from typed intrinsic surface sections to the scalar
   // texture payloads consumed by the renderer. No simulation rule belongs
@@ -14,6 +18,15 @@ namespace moppe::game {
   class SurfacePresentation {
   public:
     void refresh (const map::Surface& surface);
+    // A TerrainLab rebuild has a trail network but not a materialized atlas.
+    // This is its named route to the same renderer payload used by a world
+    // surface.
+    void refresh_paths (const terrain::TrailNetwork& network);
+    // A pristine Terrain Lab reuses the paths its source presentation already
+    // materialized. This copies that payload; it performs no new conversion.
+    void reuse_path_payloads (std::span<const float> trails,
+                              std::span<const float> home_base);
+    void upload_paths (render::Renderer& renderer) const;
     void upload (render::Renderer& renderer, bool include_forest) const;
 
     std::span<const float> trails () const noexcept {
