@@ -265,7 +265,9 @@ namespace moppe::terrain {
                        .ocean_connected = false,
                        .outlet_cell = WaterBody::no_cell,
                        .spill_cell = WaterBody::no_cell,
-                       .classification = WaterBodyClass::Puddle };
+                       .classification = WaterBodyClass::Puddle,
+                       .inradius = 0.0f * mp_units::si::metre,
+                       .channel_like = false };
       double surface_sum_m = 0.0;
       std::vector<std::uint32_t> members;
       census.body[origin] = id;
@@ -340,6 +342,64 @@ namespace moppe::terrain {
       else
         body.classification = WaterBodyClass::Lake;
       census.bodies.push_back (body);
+    }
+
+    // Shape reading: a multi-source sweep from every dry cell measures each
+    // wet cell's distance to shore in cell steps, and a body's largest such
+    // distance is its flooded inradius. A permanent inland body no wider
+    // than a few cells is a flooded channel segment, not a lake: the river
+    // ribbon can own it with proper banks, where the flat sheet would
+    // terrace it into plates.
+    {
+      MOPPE_PROFILE_ZONE ("census.measure_body_shape");
+      constexpr float channel_inradius_cells = 2.05f;
+      const float cell_step_m = std::min (flood.source_grid.spacing_x_m (),
+                                          flood.source_grid.spacing_y_m ());
+      std::vector<std::int32_t> shore_distance (count, -1);
+      std::queue<std::uint32_t> sweep;
+      for (std::uint32_t cell = 0; cell < count; ++cell)
+        if (census.body[cell] == LakeCensus::dry) {
+          shore_distance[cell] = 0;
+          sweep.push (cell);
+        }
+      while (!sweep.empty ()) {
+        const std::uint32_t cell = sweep.front ();
+        sweep.pop ();
+        const std::size_t x = cell % width;
+        const std::size_t y = cell / width;
+        for (const FloodOffset offset : flood_neighbors) {
+          const int raw_x = static_cast<int> (x) + offset.x;
+          const int raw_y = static_cast<int> (y) + offset.y;
+          if (!periodic &&
+              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
+               raw_y >= static_cast<int> (height)))
+            continue;
+          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
+                                          : static_cast<std::size_t> (raw_x);
+          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
+                                          : static_cast<std::size_t> (raw_y);
+          const std::uint32_t next =
+            static_cast<std::uint32_t> (ny * width + nx);
+          if (shore_distance[next] < 0) {
+            shore_distance[next] = shore_distance[cell] + 1;
+            sweep.push (next);
+          }
+        }
+      }
+      for (std::uint32_t cell = 0; cell < count; ++cell) {
+        const WaterBodyId id = census.body[cell];
+        if (id == LakeCensus::dry || shore_distance[cell] < 0)
+          continue;
+        WaterBody& body = census.bodies[id];
+        body.inradius = std::max (body.inradius,
+                                  static_cast<float> (shore_distance[cell]) *
+                                    cell_step_m * mp_units::si::metre);
+      }
+      for (WaterBody& body : census.bodies)
+        body.channel_like =
+          !body.ocean_connected && water_body_is_permanent (body) &&
+          body.inradius <=
+            channel_inradius_cells * cell_step_m * mp_units::si::metre;
     }
     return census;
   }

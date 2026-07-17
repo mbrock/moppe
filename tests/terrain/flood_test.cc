@@ -146,6 +146,49 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
   MOPPE_CHECK (census.bodies[0].spill_cell == 5);
 }
 
+MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
+  // Two permanent bodies of similar volume but different shape: a one-cell
+  // wide flooded channel strip and a compact five-by-five lake. The shape
+  // census must hand the strip to the river system and keep the lake.
+  constexpr std::size_t width = 12;
+  constexpr std::size_t height = 12;
+  constexpr std::size_t count = width * height;
+  const TerrainGrid grid { .width = width,
+                           .height = height,
+                           .spacing_x = 20.0f * mp_units::si::metre,
+                           .spacing_y = 20.0f * mp_units::si::metre,
+                           .height_scale = 10.0f * mp_units::si::metre };
+  std::vector<float> depth (count, 0.0f);
+  for (std::size_t x = 2; x <= 9; ++x)
+    depth[2 * width + x] = 0.3f;
+  for (std::size_t y = 5; y <= 9; ++y)
+    for (std::size_t x = 3; x <= 7; ++x)
+      depth[y * width + x] = 0.3f;
+  std::vector<CellIndex> receiver (count, CellIndex { 0 });
+  const FloodField flood {
+    .source_grid = grid,
+    .sea_level = 0.0f,
+    .has_ocean = false,
+    .water_level = ScalarRaster ({ .width = width, .height = height },
+                                 std::vector<float> (count, 1.0f)),
+    .water_depth = ScalarRaster ({ .width = width, .height = height }, depth),
+    .ocean = std::vector<std::uint8_t> (count, 0),
+    .spill_receiver = std::move (receiver),
+    .outlets = { 0 }
+  };
+  const LakeCensus census = census_lakes (flood);
+
+  MOPPE_CHECK (census.bodies.size () == 2);
+  const WaterBody& strip = census.bodies[census.body[2 * width + 5]];
+  const WaterBody& lake = census.bodies[census.body[7 * width + 5]];
+  MOPPE_CHECK (water_body_is_permanent (strip));
+  MOPPE_CHECK (water_body_is_permanent (lake));
+  MOPPE_CHECK_NEAR (moppe::meters_value (strip.inradius), 20.0f, 0.0f);
+  MOPPE_CHECK_NEAR (moppe::meters_value (lake.inradius), 60.0f, 0.0f);
+  MOPPE_CHECK (strip.channel_like);
+  MOPPE_CHECK (!lake.channel_like);
+}
+
 MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
   const std::array heights { -2.f, -1.f, 1.f, 2.f };
   const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
