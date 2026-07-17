@@ -55,13 +55,11 @@ namespace moppe::map {
     }
   }
 
-  void Surface::derive_tree_habitat (std::span<const float> moisture,
-                                     meters_t water_level,
-                                     meters_t tree_line) {
+  void Surface::derive_tree_habitat (meters_t water_level, meters_t tree_line) {
     SurfaceSections& values = mutable_sections ();
-    if (moisture.size () != values.size ())
-      throw std::invalid_argument (
-        "Tree habitat needs one moisture value per surface sample");
+    if (!m_materialized.moisture)
+      throw std::logic_error (
+        "Tree habitat needs a materialized moisture section");
     if (tree_line <= water_level + 20.0f * u::m)
       throw std::invalid_argument (
         "Tree line must leave a terrestrial habitat band");
@@ -70,6 +68,7 @@ namespace moppe::map {
     const float upper = meters_value (tree_line);
     const auto& elevation = spatial::get<surface_elevation> (values);
     const auto& normal = spatial::get<surface_normal> (values);
+    const auto& moisture = spatial::get<surface_moisture> (values);
     auto& habitat = spatial::get<tree_habitat> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset) {
       const float height =
@@ -79,17 +78,21 @@ namespace moppe::map {
       const float below_tree_line =
         1.0f - smoothstep (upper - 35.0f, upper, height);
       const float stable_soil = smoothstep (0.72f, 0.96f, up);
-      const float hydrated = smoothstep (0.10f, 0.42f, moisture[offset]);
-      const float not_sodden =
-        1.0f - smoothstep (0.78f, 0.98f, moisture[offset]);
+      const float wetness = moisture[offset].numerical_value_in (one);
+      const float hydrated = smoothstep (0.10f, 0.42f, wetness);
+      const float not_sodden = 1.0f - smoothstep (0.78f, 0.98f, wetness);
       const float water_response = 0.28f + 0.72f * hydrated * not_sodden;
       habitat[offset] = dry_ground * below_tree_line * stable_soil *
                         water_response * tree_habitat[one];
     }
+    m_materialized.tree_habitat = true;
   }
 
   void Surface::derive_forest_cover (std::uint32_t seed) {
     SurfaceSections& values = mutable_sections ();
+    if (!m_materialized.tree_habitat)
+      throw std::logic_error (
+        "Forest cover needs a materialized tree habitat section");
     const SurfaceDomain& domain = values.domain ();
     const auto& habitat = spatial::get<tree_habitat> (values);
     const auto& trails = spatial::get<trail_influence> (values);
@@ -124,5 +127,6 @@ namespace moppe::map {
                     1.0f) *
         forest_cover[one];
     }
+    m_materialized.forest_cover = true;
   }
 }

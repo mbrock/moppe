@@ -336,12 +336,15 @@ add_library(moppe_game STATIC
   moppe/map/surface_domain.cc
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc
+  moppe/map/surface_materials.cc
+  moppe/map/water_surface.cc
   moppe/map/terrain_evaluator.cc
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/gfx/tga.cc
   moppe/game/terrain.cc
   moppe/game/surface_presentation.cc
+  moppe/game/water_presentation.cc
   moppe/game/river_surface.cc
   moppe/game/water_capture.cc
   moppe/game/cinematic_flight.cc
@@ -458,6 +461,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/game/tree_stand_test.cc
     tests/game/cinematic_flight_test.cc
     tests/map/surface_test.cc
+    tests/map/water_surface_test.cc
     tests/map/terrain_evaluator_test.cc
   )
   target_link_libraries(moppe-tests PRIVATE moppe_game)

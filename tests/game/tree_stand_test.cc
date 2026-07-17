@@ -13,8 +13,8 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (1234);
 
   const game::TreeGrove grove = game::plan_tree_grove (surface, 1234, 9);
@@ -37,8 +37,8 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (65 * 65, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (4567);
 
   const game::TreeGrove first = game::plan_tree_grove (surface, 4567, 7);
@@ -62,8 +62,8 @@ MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
   std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (129 * 129, 0.48f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (129 * 129, 0.48f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (6789);
 
   const game::TreeGrove forest =
@@ -91,8 +91,8 @@ MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
   std::fill (map.raw_heights (), map.raw_heights () + 33 * 33, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
-  surface.derive_tree_habitat (
-    std::vector<float> (33 * 33, 1.0f), 50.0f * u::m, 160.0f * u::m);
+  surface.materialize_moisture (std::vector<float> (33 * 33, 1.0f));
+  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (8910);
 
   MOPPE_CHECK (game::plan_tree_grove (surface, 8910, 4).sites.empty ());

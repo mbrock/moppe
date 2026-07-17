@@ -71,8 +71,10 @@
   pipeline values, evaluator backends, and artifact writers; see
   `docs/terrain-expressions.md`.
 - `moppe/spatial/` contains finite typed quantity bundles and generic local or
-  interpolated sampling operations. `moppe/map/surface.*` materializes the
-  heightmap's elevation and normal columns over one shared surface domain.
+  interpolated sampling operations. `moppe/map/surface*` materializes typed
+  ground sections over one shared surface domain; `water_surface.*` carries a
+  distinct water bundle in the same elevation frame. Game-side presentation
+  bridges are the only place those quantities become renderer texture lanes.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
 - Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,

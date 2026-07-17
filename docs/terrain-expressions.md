@@ -58,7 +58,8 @@ the next bundle.
 `map::Surface` is the first deliberately small gameplay proof. Its
 `SurfaceSections` contains an affine elevation point, a vector-valued surface
 normal, snow support, channel flux, tree habitat, forest cover, trail
-influence, and home-base influence at every heightmap node. Snow support is the
+influence, home-base influence, moisture, waterline distance, erosion
+exposure, and deposition cover at every heightmap node. Snow support is the
 upward component of a 24 m local support normal. The shader can therefore let
 fine normals light the terrain folds without letting every lattice-scale
 change in steepness punch a matching hole in the snow.
@@ -71,6 +72,13 @@ Generic `spatial::sample<QS>` then chooses its algebra from the mp-units value
 category: quantities form weighted sums, while quantity points use one anchor
 plus weighted point differences. Bounded and toroidal surfaces use the same
 operation.
+
+`map::WaterSurfaceSections` is a second bundle over the same lattice rather
+than more columns in the ground bundle. Its water elevation reuses the ground
+elevation specification and affine frame, so their difference is a physical
+depth. Wave amplitude and planar water velocity remain properties of water.
+Only `game::WaterPresentation` converts elevation back to the renderer's
+normalized height and packs velocity into numeric x/z lanes.
 
 The current heightmap remains authoritative. World generation explicitly
 refreshes the surface materialization after recomputing normals, and spawn
