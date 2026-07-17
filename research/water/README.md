@@ -51,11 +51,27 @@ bank-confined velocity profile in the spirit of Yu without introducing a 2D
 solver. Shore foam is limited to the shallow contact band rather than being
 generated at every nominal mesh edge.
 
-The benchmark comparison is also a useful negative result: improved optics do
-not conceal the planar bridges at confluences and mouths, or turn a steep
+The benchmark comparison was also a useful negative result: improved optics
+did not conceal the planar bridges at confluences and mouths, or turn a steep
 terrain-following strip into falling water. Those are surface-construction
-problems. The next geometric slice should form a single junction boundary and
-triangulation before adding a richer junction velocity field.
+problems.
+
+## Implemented junction slice (2026-07-17)
+
+Tributaries now rotate and widen toward the downstream reach's exact first
+cross-section over roughly one channel width. All arms therefore share seven
+identical junction vertices instead of appending a zero-length, fully rotated
+rectangle for every tributary. A tempting central triangle fan was rejected by
+the visual corpus: although topologically tidy, its long triangles made the
+derivative-recovered flow frame visibly discontinuous and flooded the terrain
+wedge between branches.
+
+Visible-network roots now distinguish two actual structures. A drainage-
+threshold headwater pinches to terrain height and zero width, then emerges over
+a short physical run. A river born at a rendered lake includes the lake's wet
+outlet in its alignment and dissolves into the standing-water sheet. The stream
+benchmark camera looks back at that root; its former mid-reach view could slice
+the first section with the near plane and falsely resemble a hard source.
 
 ## Production flow maps
 

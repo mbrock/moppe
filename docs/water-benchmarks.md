@@ -22,6 +22,12 @@ case rather than a successful process with no image. Automated capture windows
 remain inactive on macOS, so running the suite does not steal keyboard focus
 from the application being used.
 
+The stream cases select roots of the visible river network and look upstream
+at their first section. Depending on the generated hydrology, that section is
+either a drainage-threshold headwater emerging from damp ground or a lake-fed
+spill handing off from standing water. This is intentional: both used to look
+like the same unexplained full-width cutoff from the old mid-reach camera.
+
 ## Review layers
 
 Review the suite in three layers. They answer different questions and should

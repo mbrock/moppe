@@ -210,6 +210,17 @@ namespace moppe::terrain {
         std::vector<CellIndex> cells = reach.cells;
         if (cells.empty ())
           continue;
+        // A reach born at a lake spill starts on the first dry cell. Include
+        // the wet outlet immediately upstream so its ribbon can dissolve into
+        // the standing-water sheet instead of appearing at a hard dry
+        // cross-section.
+        if (reach.upstream_body != no_water_body) {
+          const WaterBody& body = census.bodies[reach.upstream_body];
+          if (water_body_terminates_rivers (body) &&
+              body.outlet_cell != WaterBody::no_cell &&
+              body.outlet_cell != cells.front ())
+            cells.insert (cells.begin (), body.outlet_cell);
+        }
         CellIndex next = drainage.receiver[cells.back ()];
         if (next != cells.back ())
           cells.push_back (next);

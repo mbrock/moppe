@@ -108,18 +108,24 @@ namespace moppe::game {
       Candidate best;
       float smallest_area = std::numeric_limits<float>::infinity ();
       std::size_t longest_reach = 0;
+      std::vector<std::uint32_t> incoming (rivers.reaches.size (), 0);
+      for (const terrain::RiverReach& reach : rivers.reaches)
+        if (reach.downstream_reach != terrain::RiverReach::no_id)
+          ++incoming[reach.downstream_reach];
       for (const terrain::RiverReach& reach : rivers.reaches) {
-        if (reach.cells.size () < 3)
+        // Inspect a root of the visible network rather than a narrow reach
+        // below another channel. Roots include both drainage-threshold
+        // headwaters and lake-fed spills; their two handoffs are deliberate
+        // benchmark cases for the same apparent "stream start."
+        if (reach.cells.size () < 3 || incoming[reach.id] != 0)
           continue;
         const float area = square_meters_value (reach.downstream_area);
         if (area > smallest_area ||
             (area == smallest_area && reach.cells.size () <= longest_reach))
           continue;
-        const std::size_t middle = reach.cells.size () / 2;
-        const terrain::CellIndex cell = reach.cells[middle];
-        const terrain::CellIndex from = reach.cells[middle - 1];
+        const terrain::CellIndex cell = reach.cells.front ();
         best = { .cell = cell,
-                 .from = from,
+                 .from = cell,
                  .to = drainage.receiver[cell],
                  .score = area };
         smallest_area = area;
@@ -294,7 +300,15 @@ namespace moppe::game {
     float back = 30.0f;
     float sideways = 22.0f;
     float height = 16.0f;
-    if (shot == WaterShot::Waterfall) {
+    if (shot == WaterShot::Stream) {
+      // Look back into the source so the benchmark shows whether water
+      // pinches out on damp ground or hands off from an upstream lake. The old
+      // mid-reach camera often put the first section through the near plane,
+      // creating a misleading straight cutoff.
+      back = -22.0f;
+      sideways = 18.0f;
+      height = 12.0f;
+    } else if (shot == WaterShot::Waterfall) {
       target =
         (target + cell_position (best.to, map, flood, census, drainage)) * 0.5f;
       back = -18.0f;
