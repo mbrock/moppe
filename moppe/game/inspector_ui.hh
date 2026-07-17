@@ -44,9 +44,8 @@ namespace moppe {
                       float viewport_height,
                       float margin = 8.0f);
 
-      bool begin_drag (float screen_x,
-                       float screen_y,
-                       float title_height = 34.0f);
+      bool
+      begin_drag (float screen_x, float screen_y, float title_height = 34.0f);
       void drag_to (float screen_x,
                     float screen_y,
                     float viewport_width,

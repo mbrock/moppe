@@ -119,10 +119,9 @@ namespace moppe {
     }
 
     UiRect UiWindow::to_screen (const UiRect& local) const {
-      return { m_bounds.x + local.x,
-               m_bounds.y + local.y,
-               local.width,
-               local.height };
+      return {
+        m_bounds.x + local.x, m_bounds.y + local.y, local.width, local.height
+      };
     }
 
     float UiWindow::local_x (float screen_x) const {
@@ -159,9 +158,8 @@ namespace moppe {
       m_bounds.y = std::clamp (m_bounds.y, margin, maximum_y);
     }
 
-    bool UiWindow::begin_drag (float screen_x,
-                               float screen_y,
-                               float title_height) {
+    bool
+    UiWindow::begin_drag (float screen_x, float screen_y, float title_height) {
       const UiRect title {
         m_bounds.x, m_bounds.y, m_bounds.width, title_height
       };

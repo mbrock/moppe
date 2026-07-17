@@ -46,15 +46,14 @@ MOPPE_TEST (surface_bundle_materializes_typed_height_and_normal_columns) {
   static_assert (
     mp_units::QuantityOf<decltype (surface.normal_at (position (Vec3 ()))),
                          map::surface_normal>);
-  static_assert (mp_units::QuantityOf<
-                 decltype (surface.snow_support_at (position (Vec3 ()))),
-                 map::snow_support>);
+  static_assert (mp_units::QuantityOf<decltype (surface.snow_support_at (
+                                        position (Vec3 ()))),
+                                      map::snow_support>);
 
   const map::SurfaceIndex index { 2, 1 };
   const auto elevation = spatial::get<map::surface_elevation> (samples[index]);
   const auto normal = spatial::get<map::surface_normal> (samples[index]);
-  const auto snow_support =
-    spatial::get<map::snow_support> (samples[index]);
+  const auto snow_support = spatial::get<map::snow_support> (samples[index]);
   const auto habitat = spatial::get<map::tree_habitat> (samples[index]);
   const auto forest = spatial::get<map::forest_cover> (samples[index]);
   const auto trail = spatial::get<map::trail_influence> (samples[index]);
@@ -83,11 +82,10 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
   map::Surface surface (map);
 
   const float detailed_up = map.normal (4, 4)[1];
-  const float supported_up = surface
-                               .snow_support_at (position (Vec3 (40, 0, 40)))
-                               .numerical_value_in (one);
-  const float flat_up = surface
-                          .snow_support_at (position (Vec3 (80, 0, 40)))
+  const float supported_up =
+    surface.snow_support_at (position (Vec3 (40, 0, 40)))
+      .numerical_value_in (one);
+  const float flat_up = surface.snow_support_at (position (Vec3 (80, 0, 40)))
                           .numerical_value_in (one);
   MOPPE_CHECK (supported_up > detailed_up + 0.05f);
   MOPPE_CHECK (flat_up > 0.99f);
@@ -270,13 +268,11 @@ MOPPE_TEST (surface_reconstruction_matches_periodic_seam_interpolation) {
   const auto& snow_support =
     spatial::get<map::snow_support> (surface.samples ());
   for (int row = 0; row < map.height (); ++row)
-    MOPPE_CHECK (
-      snow_support[row * map.width ()] ==
-      snow_support[row * map.width () + map.width () - 1]);
+    MOPPE_CHECK (snow_support[row * map.width ()] ==
+                 snow_support[row * map.width () + map.width () - 1]);
   for (int column = 0; column < map.width (); ++column)
-    MOPPE_CHECK (
-      snow_support[column] ==
-      snow_support[(map.height () - 1) * map.width () + column]);
+    MOPPE_CHECK (snow_support[column] ==
+                 snow_support[(map.height () - 1) * map.width () + column]);
 
   const Vec3 point (39.25f, 0, 37.5f);
   const position_t p = position (point);

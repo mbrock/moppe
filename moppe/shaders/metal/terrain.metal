@@ -644,8 +644,7 @@ fragment float4 terrain_fragment (
       ? saturate (terrain_field_sample (in.field_uv, terrain_snow_support).r)
       : n.y;
   const float snow_coef =
-    smoothstep (0.55, 0.68, hj) *
-    smoothstep (0.58, 0.78, snow_support_up);
+    smoothstep (0.55, 0.68, hj) * smoothstep (0.58, 0.78, snow_support_up);
   // Use a world-space shoreline rule. The old normalized 0.03
   // band could mean tens of metres, leaving full grass fields growing from
   // visually sandy ground on tall worlds.
@@ -741,9 +740,8 @@ fragment float4 terrain_fragment (
   // the channel flux from the headwater gullies down to the visible rivers,
   // so running water no longer appears from untouched hillside. The band
   // edge wanders with the coarse jitter instead of tracing the lattice.
-  const float wash =
-    smoothstep (0.30, 0.85, channel_activity + 0.10 * jitter) *
-    (1.0 - snow_coef) * (1.0 - submerged);
+  const float wash = smoothstep (0.30, 0.85, channel_activity + 0.10 * jitter) *
+                     (1.0 - snow_coef) * (1.0 - submerged);
   const float3 wash_c =
     mix (scree_c, scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
     (0.82 + 0.30 * coarse);
@@ -759,14 +757,14 @@ fragment float4 terrain_fragment (
   const float trail_shoulder =
     smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
   const float close_trail = 1.0 - smoothstep (55.0, 240.0, dist);
-  const float trail_gravel_coarse = mix (
-    0.5,
-    moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
-    coarse_detail_visibility);
-  const float trail_gravel_fine = mix (
-    0.5,
-    moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
-    fine_detail_visibility);
+  const float trail_gravel_coarse =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
+         coarse_detail_visibility);
+  const float trail_gravel_fine =
+    mix (0.5,
+         moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
+         fine_detail_visibility);
   const float trail_gravel =
     0.58 * trail_gravel_coarse + 0.42 * trail_gravel_fine;
   const float worn_bands =
@@ -807,9 +805,9 @@ fragment float4 terrain_fragment (
   const float3 forest_c =
     ground_value * float3 (0.55, 0.82, 0.40) * (0.82 + 0.30 * canopy_grain);
   const float forest_distance = smoothstep (280.0, 1450.0, dist);
-  const float forest_material =
-    forest_presence * mix (0.20, 0.62, forest_distance) *
-    (1.0 - base_material) * (1.0 - trail_material);
+  const float forest_material = forest_presence *
+                                mix (0.20, 0.62, forest_distance) *
+                                (1.0 - base_material) * (1.0 - trail_material);
   texel = mix (texel, forest_c, forest_material);
   // Wet soil loses diffuse energy and saturation. Underwater ground is
   // darkest; moisture alone is a quieter bank/lowland treatment.
@@ -839,8 +837,7 @@ fragment float4 terrain_fragment (
     (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief +
      0.10 * trail_material * close_trail) *
     (1.0 - 0.55 * fill_relief) * (1.0 - 0.8 * far_blend) *
-    (1.0 - 0.85 * snow_coef) *
-    (1.0 - smoothstep (0.45, 2.2, ground_pixel_m));
+    (1.0 - 0.85 * snow_coef) * (1.0 - smoothstep (0.45, 2.2, ground_pixel_m));
   const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
   n = terrain_detail_normal (in.world_pos, n, material_signal, detail_strength);
   // Close wet flats pick up rounded pebble-scale relief. This is deliberately
@@ -852,26 +849,24 @@ fragment float4 terrain_fragment (
   const float pebble_strength = max (submerged, 0.8 * swash_zone) *
                                 smoothstep (0.45, 0.92, n.y) *
                                 (1.0 - smoothstep (18.0, 120.0, dist)) * 0.28;
-  n = terrain_detail_normal (
-    in.world_pos,
-    n,
-    pebble,
-    pebble_strength * (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
+  n = terrain_detail_normal (in.world_pos,
+                             n,
+                             pebble,
+                             pebble_strength *
+                               (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
   // Water-worked ground is anisotropic: noise stretched far along the local
   // drainage direction and kept short across it reads as rills and fluvial
   // polish that turn with the channels. Computed unconditionally so screen
   // derivatives stay defined; the strength gates it instead.
-  const float2 flow_dir =
-    channel_flux / max (channel_activity, 1e-4);
+  const float2 flow_dir = channel_flux / max (channel_activity, 1e-4);
   const float2 rill_coord =
     float2 (dot (in.world_pos.xz, float2 (-flow_dir.y, flow_dir.x)) * 0.85,
             dot (in.world_pos.xz, flow_dir) * 0.085);
   const float rill = moppe_value_noise (rill_coord + float2 (13.7, 41.3));
-  const float rill_strength = smoothstep (0.18, 0.72, channel_activity) *
-                              (1.0 - 0.85 * snow_coef) *
-                              (1.0 - submerged * 0.5) *
-                              (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
-                              0.30;
+  const float rill_strength =
+    smoothstep (0.18, 0.72, channel_activity) * (1.0 - 0.85 * snow_coef) *
+    (1.0 - submerged * 0.5) * (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
+    0.30;
   n = terrain_detail_normal (in.world_pos, n, rill, rill_strength);
 
   // Per-pixel Lambert with real cast shadows.

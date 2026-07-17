@@ -14,8 +14,7 @@ namespace moppe::terrain {
   // A visible channel begins when the width law reaches two terrain cells.
   // Expressing that threshold through the source grid keeps the same physical
   // river network across generation profiles.
-  square_meters_t
-  visible_river_minimum_area (const TerrainGrid& grid) noexcept;
+  square_meters_t visible_river_minimum_area (const TerrainGrid& grid) noexcept;
 }
 
 #endif

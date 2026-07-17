@@ -48,11 +48,8 @@ namespace moppe::game {
 
     using block_type = Block;
     inline static constexpr std::array blocks {
-      Block::ocean,
-      Block::rivers,
-      Block::bloom,
-      Block::auto_exposure,
-      Block::small_effects,
+      Block::ocean,         Block::rivers,        Block::bloom,
+      Block::auto_exposure, Block::small_effects,
     };
 
     constexpr Block operator() (GraphicsFeatureId feature) const {

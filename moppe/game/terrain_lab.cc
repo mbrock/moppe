@@ -60,9 +60,7 @@ namespace moppe {
                                                "WARP Y" };
 
       UiRect friendly_panel_rect (int height) {
-        return {
-          0, 0, 330, static_cast<float> (std::max (420, height - 36))
-        };
+        return { 0, 0, 330, static_cast<float> (std::max (420, height - 36)) };
       }
 
       UiRect friendly_content_rect (int height) {
@@ -97,10 +95,9 @@ namespace moppe {
         constexpr float width = (readings_width - 2 * margin - 3 * gap) / 4;
         const int row = index / 4;
         const int column = index % 4;
-        return { margin + column * (width + gap),
-                 42.0f + row * 34.0f,
-                 width,
-                 28 };
+        return {
+          margin + column * (width + gap), 42.0f + row * 34.0f, width, 28
+        };
       }
 
       UiRect close_rect () {
@@ -483,18 +480,17 @@ namespace moppe {
                                    0),
                      ParameterDomain::Continuous };
           if (row == 10)
+            return { "CIRCUIT RADIUS (M)",
+                     format_float (
+                       meters_value (trails->desired_circuit_radius), 0),
+                     ParameterDomain::Continuous };
+          if (row == 11)
             return {
-              "CIRCUIT RADIUS (M)",
-              format_float (meters_value (trails->desired_circuit_radius), 0),
+              "HIGHLAND START (M)",
+              format_float (
+                meters_value (trails->highland_preference_height_above_sea), 0),
               ParameterDomain::Continuous
             };
-          if (row == 11)
-            return { "HIGHLAND START (M)",
-                     format_float (meters_value (
-                                     trails
-                                       ->highland_preference_height_above_sea),
-                                   0),
-                     ParameterDomain::Continuous };
           if (row == 12)
             return { "ALPINE AVOID (M)",
                      format_float (
@@ -592,8 +588,7 @@ namespace moppe {
       bool env_stages = false;
       if (std::getenv ("MOPPE_LAB_OROGENY")) {
         m_program = terrain::make_orogeny_program (
-          m_program.seed.value,
-          terrain::TerrainGenerationProfile::Fast);
+          m_program.seed.value, terrain::TerrainGenerationProfile::Fast);
         env_stages = true;
       }
       if (std::getenv ("MOPPE_LAB_ANALYTICAL")) {
@@ -1564,10 +1559,10 @@ namespace moppe {
           return unit (
             meters_value (trails->desired_circuit_radius), 250.0f, 1800.0f);
         if (row == 11)
-          return unit (meters_value (
-                         trails->highland_preference_height_above_sea),
-                       80.0f,
-                       320.0f);
+          return unit (
+            meters_value (trails->highland_preference_height_above_sea),
+            80.0f,
+            320.0f);
         if (row == 12)
           return unit (meters_value (trails->alpine_avoidance_height_above_sea),
                        160.0f,
@@ -1838,9 +1833,9 @@ namespace moppe {
         if (row == 11) {
           const auto old = trails->highland_preference_height_above_sea;
           trails->highland_preference_height_above_sea =
-            std::min (mix (80.0f, 320.0f),
-                      meters_value (
-                        trails->alpine_avoidance_height_above_sea)) *
+            std::min (
+              mix (80.0f, 320.0f),
+              meters_value (trails->alpine_avoidance_height_above_sea)) *
             mp_units::si::metre;
           return trails->highland_preference_height_above_sea != old;
         }
@@ -1968,15 +1963,15 @@ namespace moppe {
         recipe.warp.amplitude = 0.22f;
         orogeny.evolution.duration =
           180000.0f * mp_units::astronomy::Julian_year;
-        orogeny.maximum_uplift_rate = 0.0027f * mp_units::si::metre /
-                                      mp_units::astronomy::Julian_year;
+        orogeny.maximum_uplift_rate =
+          0.0027f * mp_units::si::metre / mp_units::astronomy::Julian_year;
       } else if (preset == 1) {
         recipe.blend.mountain_weight = 0.45f;
         recipe.warp.amplitude = 0.08f;
         orogeny.evolution.duration =
           800000.0f * mp_units::astronomy::Julian_year;
-        orogeny.maximum_uplift_rate = 0.0007f * mp_units::si::metre /
-                                      mp_units::astronomy::Julian_year;
+        orogeny.maximum_uplift_rate =
+          0.0007f * mp_units::si::metre / mp_units::astronomy::Julian_year;
       } else if (preset == 2) {
         recipe.blend.continent_weight = 0.72f;
         recipe.blend.mountain_weight = 1.05f;
@@ -2007,8 +2002,7 @@ namespace moppe {
         if (!friendly_action_rect (i, m_ui_height).contains (x, y))
           continue;
         if (i == 0) {
-          const std::uint32_t seed =
-            terrain::next_seed (m_program.seed).value;
+          const std::uint32_t seed = terrain::next_seed (m_program.seed).value;
           m_program = terrain::make_world_program (
             seed, terrain::TerrainGenerationProfile::Play);
           m_selected_stage = -1;
@@ -2528,10 +2522,9 @@ namespace moppe {
         return;
       m_pointer_x = x;
       m_pointer_y = y;
-      const bool over_ui = m_build_ui
-                             ? m_build_window.contains (x, y) ||
-                                 m_readings_window.contains (x, y)
-                             : m_observe_window.contains (x, y);
+      const bool over_ui = m_build_ui ? m_build_window.contains (x, y) ||
+                                          m_readings_window.contains (x, y)
+                                      : m_observe_window.contains (x, y);
       if (over_ui) {
         if (m_build_ui && m_build_window.contains (x, y) &&
             stage_list_rect ().contains (m_build_window.local_x (x),
@@ -2611,12 +2604,10 @@ namespace moppe {
       constexpr const char* preset_titles[] = {
         "YOUNG PEAKS", "OLD HILLS", "RIVER COUNTRY", "OROGENY"
       };
-      constexpr const char* preset_details[] = {
-        "sharp relief",
-        "aged + relaxed",
-        "river alignments",
-        "uplift + incision"
-      };
+      constexpr const char* preset_details[] = { "sharp relief",
+                                                 "aged + relaxed",
+                                                 "river alignments",
+                                                 "uplift + incision" };
       for (int i = 0; i < 4; ++i) {
         const UiRect bounds = friendly_preset_rect (i, height);
         m_ui.friendly_button (dl,
@@ -2630,9 +2621,8 @@ namespace moppe {
       }
 
       constexpr const char* overlay_titles[] = {
-        "MATERIAL", "HEIGHT",  "SLOPE",  "FLOW",    "STREAMS",
-        "BASINS",   "OUTLETS", "TRACE",  "WATER",   "LAKES",
-        "FALLS",    "DELTA",   "ERODED", "DEPOSIT"
+        "MATERIAL", "HEIGHT", "SLOPE", "FLOW",  "STREAMS", "BASINS", "OUTLETS",
+        "TRACE",    "WATER",  "LAKES", "FALLS", "DELTA",   "ERODED", "DEPOSIT"
       };
       constexpr const char* overlay_details[] = {
         "Terrain materials and relief",
@@ -2848,9 +2838,8 @@ namespace moppe {
                            m_selected_stage == stage_index);
       }
 
-      static const char* add_labels[] = { "+NORM", "+POWER", "+AGE",
-                                          "+OROG", "+TALUS", "+CREEP",
-                                          "+TRAIL" };
+      static const char* add_labels[] = { "+NORM",  "+POWER", "+AGE",  "+OROG",
+                                          "+TALUS", "+CREEP", "+TRAIL" };
       static const char* edit_labels[] = { "UP", "DOWN", "COPY", "DEL" };
       for (int i = 0; i < 7; ++i) {
         const UiRect add = add_stage_rect (i);
@@ -3082,23 +3071,23 @@ namespace moppe {
             " / " + format_float (report.maximum_centerline_grade, 3) +
             "  EXCEPTIONS " +
             format_count (static_cast<int> (report.grade_exceptions)));
-        m_ui.label (dl,
-                    readings_x + 10,
-                    readings_y + 354,
-                    "HIGH " +
-                      format_float (static_cast<float> (meters_value (
-                                      report
-                                        .maximum_centerline_height_above_sea)),
-                                    0) +
-                      " M  CHANGE MEAN / MAX " +
-                      format_float (static_cast<float> (meters_value (
-                                      report.mean_absolute_change)),
-                                    2) +
-                      " / " +
-                      format_float (static_cast<float> (meters_value (
-                                      report.maximum_absolute_change)),
-                                    2) +
-                      " M");
+        m_ui.label (
+          dl,
+          readings_x + 10,
+          readings_y + 354,
+          "HIGH " +
+            format_float (static_cast<float> (meters_value (
+                            report.maximum_centerline_height_above_sea)),
+                          0) +
+            " M  CHANGE MEAN / MAX " +
+            format_float (
+              static_cast<float> (meters_value (report.mean_absolute_change)),
+              2) +
+            " / " +
+            format_float (static_cast<float> (
+                            meters_value (report.maximum_absolute_change)),
+                          2) +
+            " M");
       } else if (analytical_report) {
         const auto& report = *analytical_report;
         m_ui.label (dl,

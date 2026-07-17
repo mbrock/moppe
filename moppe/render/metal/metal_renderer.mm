@@ -301,8 +301,7 @@ namespace moppe {
       void set_water_flow (std::span<const float> flow) override;
       void set_terrain_moisture (std::span<const float> moisture) override;
       void set_terrain_forest (std::span<const float> cover) override;
-      void
-      set_terrain_snow_support (std::span<const float> support) override;
+      void set_terrain_snow_support (std::span<const float> support) override;
       void set_terrain_channel_flux (std::span<const float> flux) override;
       void set_terrain_geology (std::span<const float> geology) override;
       void set_terrain_shore (std::span<const float> distance) override;
@@ -1608,8 +1607,8 @@ namespace moppe {
       upload_texture (m_forest, cover.data (), width, height, 4, false);
     }
 
-    void MetalRenderer::set_terrain_snow_support (
-      std::span<const float> support) {
+    void
+    MetalRenderer::set_terrain_snow_support (std::span<const float> support) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_snow_support");
       const std::size_t expected =
         static_cast<std::size_t> (m_terrain_params.width) *
@@ -1634,12 +1633,8 @@ namespace moppe {
       std::vector<__fp16> halves (support.size ());
       for (std::size_t i = 0; i < support.size (); ++i)
         halves[i] = static_cast<__fp16> (support[i]);
-      upload_texture (m_snow_support,
-                      halves.data (),
-                      width,
-                      height,
-                      sizeof (__fp16),
-                      false);
+      upload_texture (
+        m_snow_support, halves.data (), width, height, sizeof (__fp16), false);
     }
 
     void MetalRenderer::set_terrain_channel_flux (std::span<const float> flux) {
@@ -2040,10 +2035,9 @@ namespace moppe {
       u.params6.y = m_have_shore ? 1.0f : 0.0f;
       u.params6.z = m_have_paths ? 1.0f : 0.0f;
       u.params6.w = m_have_forest ? 1.0f : 0.0f;
-      u.params7.x = (m_terrain_params.snow_support_filter &&
-                     m_have_snow_support)
-                      ? 1.0f
-                      : 0.0f;
+      u.params7.x =
+        (m_terrain_params.snow_support_filter && m_have_snow_support) ? 1.0f
+                                                                      : 0.0f;
       u.params7.y =
         (m_terrain_params.channel_flux_detail && m_have_channel_flux) ? 1.0f
                                                                       : 0.0f;
