@@ -24,19 +24,19 @@ trail stage.
 
 ## Mutability and lifetime
 
-`GeneratedWorld` is non-copyable and non-movable. Vehicles, the glider, and
-the Terrain Lab borrow its terrain or surface. `MoppeGame` therefore keeps the
-active world behind an owning `unique_ptr`: a worker builds a fresh completed
-world, and the main thread transfers that owner exactly once at
-`activate_completed_world()`.
+`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles
+and glider, plus Terrain Lab, borrow its terrain or surface. `MoppeGame`
+therefore keeps the active world behind an owning `unique_ptr`: a worker builds
+a fresh completed world, and the main thread transfers that owner exactly once
+at `activate_completed_world()`.
 
 At activation, Terrain Lab first restores and releases its raw borrows. The
-outgoing owner remains alive while the two vehicles and glider are destroyed;
-the completed owner becomes active; then those three borrowers are constructed
-again against the new terrain and surface. Only after that handoff does the
-main thread build renderer-facing river, water, ground, forest, and actor
-presentation. The active world is consequently never half-mutated by a
-loading worker.
+outgoing session and world remain alive while the completed owner becomes
+active and a fresh session binds its new terrain and surface. The retired
+session then releases its old borrows before the retired world is destroyed.
+Only after that handoff does the main thread build renderer-facing river,
+water, ground, forest, and actor presentation. The active world is
+consequently never half-mutated by a loading worker.
 
 Generation is deliberately single-flight: running builds are never cancelled.
 Its job owns the requested recipe until the platform's main-thread completion

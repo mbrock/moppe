@@ -36,16 +36,17 @@ checkpoint/resume result.
 
 ## Running-game replay
 
-`game::GameState` is a copyable checkpoint of mutable running state. It
-intentionally excludes generated terrain, resident resources, renderer
-history, and asynchronous loading. Each system that participates exposes a
-plain `state()` / `restore()` pair.
+`game::GameSession` owns mutable running state against one completed world.
+Its copyable `game::GameState` checkpoint intentionally excludes generated
+terrain, resident resources, renderer history, and asynchronous loading. Each
+system that participates exposes a plain `state()` / `restore()` pair.
 
 `tests/game/game_state_test.cc` owns the restoration contracts for vehicle,
-camera, walker, glider, stars, dust, and independent `GameState` copying.
-The fixed-step benchmark loop described in [game-state.md](game-state.md)
-uses this seam; ENG-030 through ENG-033 will make its input and advance
-boundary explicit without expanding what a checkpoint owns.
+camera, walker, glider, stars, dust, independent `GameState` copying, and
+same-world `GameSession` checkpoint replacement. The fixed-step benchmark loop
+described in [game-state.md](game-state.md) uses this seam; ENG-030 through
+ENG-033 will make its input and advance boundary explicit without expanding
+what a checkpoint owns.
 
 ## Completed-world smoke path
 
@@ -57,9 +58,11 @@ are seed `123` and the `fast` terrain profile unless overridden by `MOPPE_SEED`
 and `MOPPE_TERRAIN_PROFILE`.
 
 `MOPPE_REGENERATE_ONCE=1` exercises the same path twice: while the second
-candidate builds, the first active world remains owned and valid; its terrain
-borrows are released and rebuilt only at activation. Generation is intentionally
-single-flight rather than cancellable asynchronous infrastructure.
+candidate builds, the first active world and its session remain owned and
+valid. At activation, the old session releases its terrain borrows before the
+old world retires, and a fresh session binds to the completed world. Generation
+is intentionally single-flight rather than cancellable asynchronous
+infrastructure.
 
 The screenshot is deliberately **not a golden**: it proves that loading
 reaches a usable generated world, while visual look remains under the

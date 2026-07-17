@@ -15,7 +15,7 @@ namespace moppe::game {
   enum Mode { M_BIKE, M_FOOT, M_CAR, M_GLIDER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
-  // The directly copyable logical state owned by MoppeGame.  Generated world
+  // The directly copyable logical state owned by GameSession. Generated world
   // data, renderer resources, platform state, and asynchronous loading state
   // deliberately live outside this value.
   struct GameLogicState {
@@ -48,8 +48,8 @@ namespace moppe::game {
     std::mt19937 m_fx_rng { 7 };
   };
 
-  // First replayable slice of the running game.  Immutable world/resource
-  // references remain attached to their live systems when this value is
+  // First replayable slice of a GameSession. Immutable world/resource
+  // references remain attached to its live systems when this value is
   // restored. Mutable city actors are deliberately outside the snapshot.
   struct GameState {
     GameLogicState logic;
