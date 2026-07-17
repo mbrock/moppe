@@ -1,6 +1,8 @@
 CREATE OR REPLACE TABLE samples AS
 SELECT * FROM read_csv_auto(getvariable('input'));
 
+-- Feature bits follow graphics_benchmark_includes() in graphics_features
+-- order. terrain-topology is a hot debug view, not an ordinary-riding bit.
 CREATE OR REPLACE TABLE features(bit, name) AS VALUES
   (0, 'ocean'),
   (1, 'river-ribbons'),
@@ -10,7 +12,9 @@ CREATE OR REPLACE TABLE features(bit, name) AS VALUES
   (5, 'bloom'),
   (6, 'auto-exposure'),
   (7, 'lens-flare'),
-  (8, 'terrain-fragment-normals');
+  (8, 'terrain-fragment-normals'),
+  (9, 'snow-support-filter'),
+  (10, 'channel-flux-detail');
 
 CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
   (0, 'ocean'),
@@ -151,7 +155,9 @@ SELECT c.*,
        (c.mask & 32) != 0 AS bloom,
        (c.mask & 64) != 0 AS auto_exposure,
        (c.mask & 128) != 0 AS lens_flare,
-       (c.mask & 256) != 0 AS terrain_fragment_normals
+       (c.mask & 256) != 0 AS terrain_fragment_normals,
+       (c.mask & 512) != 0 AS snow_support_filter,
+       (c.mask & 1024) != 0 AS channel_flux_detail
 FROM configuration_stats c;
 
 CREATE OR REPLACE TABLE deadline_summary AS

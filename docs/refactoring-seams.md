@@ -50,9 +50,15 @@ central playable branch of `MoppeGame::tick` is only that delegation.
 `tests/game/game_state_test.cc` owns the restoration contracts for vehicle,
 camera, walker, glider, stars, dust, independent `GameState` copying,
 same-world `GameSession` checkpoint replacement, and an adapter-recorded input
-tape replayed through that public advance operation. ENG-033 can now route the
-graphics benchmark through the same seam without expanding what a checkpoint
-owns.
+tape replayed through that public advance operation.
+
+`GraphicsBenchmarkReplay` materializes distinct prelude and replay tapes and
+describes the pre-step epoch, Gray-code partition mask, logical frame, and
+measurement flag. `MoppeGame` owns the session checkpoint, renderer-history
+reset, graphics-mask application, and GPU-drain lifecycle around that
+renderer-free schedule; benchmark state therefore does not enter ordinary
+simulation. `graphics_benchmark_replay_reuses_the_public_session_tape` drives
+the schedule through `advance_game_session` against one completed world.
 
 ## Completed-world smoke path
 

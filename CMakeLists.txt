@@ -457,6 +457,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     tests/terrain/moisture_test.cc
     tests/terrain/watercourse_test.cc
     tests/game/game_state_test.cc
+    tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
     tests/game/inspector_ui_test.cc
