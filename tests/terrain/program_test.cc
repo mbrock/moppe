@@ -31,12 +31,16 @@ MOPPE_TEST (orogeny_program_uses_a_bathymetric_seed_and_evolution_stage) {
   const auto& orogeny =
     std::get<OrogenyEvolution> (program.transforms.front ());
   MOPPE_CHECK_NEAR (
-    meters_per_julian_year_value (orogeny.maximum_uplift_rate), 0.001f, 0.0f);
+    moppe::meters_per_julian_year_value (orogeny.maximum_uplift_rate),
+    0.001f,
+    0.0f);
   MOPPE_CHECK_NEAR (
     orogeny.evolution.sea_level, program.source.sea_level, 0.0f);
   MOPPE_CHECK_NEAR (program.source.coastline, 0.4f, 0.0f);
   MOPPE_CHECK_NEAR (
-    meters_value (program.source.initial_bathymetric_relief), 240.0f, 0.0f);
+    moppe::meters_value (program.source.initial_bathymetric_relief),
+    240.0f,
+    0.0f);
 }
 
 MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
@@ -47,7 +51,7 @@ MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
   const TerrainProgram research =
     make_orogeny_program (123, TerrainGenerationProfile::Research);
   const auto duration = [] (const TerrainProgram& program) {
-    return julian_years_value (
+    return moppe::julian_years_value (
       std::get<OrogenyEvolution> (program.transforms.front ())
         .evolution.duration);
   };
@@ -65,7 +69,7 @@ MOPPE_TEST (default_world_program_forms_trails_after_research_orogeny) {
   const auto& orogeny =
     std::get<OrogenyEvolution> (program.transforms.front ());
   MOPPE_CHECK_NEAR (
-    julian_years_value (orogeny.evolution.duration), 1000000.0f, 0.0f);
+    moppe::julian_years_value (orogeny.evolution.duration), 1000000.0f, 0.0f);
   MOPPE_CHECK (
     std::holds_alternative<TrailFormation> (program.transforms.back ()));
   MOPPE_CHECK (terrain_transform_id (program.transforms.back ()) == "trails");

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <vector>
 
+using moppe::meters_value;
 using namespace moppe::terrain;
 
 namespace {
