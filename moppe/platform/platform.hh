@@ -146,9 +146,12 @@ namespace moppe {
     // Speak a phrase, asynchronously and best-effort.
     void say (const std::string& phrase);
 
-    // Run work on a background (user-initiated QoS) queue, then call
-    // done on the main/render thread.
-    void async (void (*work) (void*), void (*done) (void*), void* ctx);
+    // Run work on a background (user-initiated QoS) queue, then call done on
+    // the main/render thread.  The platform retains context through done(),
+    // so a caller can make its raw callback context shutdown-safe.
+    void async (void (*work) (void*),
+                void (*done) (void*),
+                std::shared_ptr<void> context);
 
     // Rasterize a glyph run for the font atlas: platform-specific text
     // rendering behind a portable call.  Returns an 8-bit coverage

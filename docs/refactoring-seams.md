@@ -51,10 +51,15 @@ boundary explicit without expanding what a checkpoint owns.
 
 `tools/capture-water OUTPUT river` is the deterministic integration smoke
 path. It starts the normal loading flow, waits for world generation, terrain
-and hydrology analysis, main-thread world assembly, and renderer activation,
-then writes a river screenshot. Its deterministic inputs are seed `123` and
-the `fast` terrain profile unless overridden by `MOPPE_SEED` and
-`MOPPE_TERRAIN_PROFILE`.
+and hydrology analysis, the single main-thread completed-world handoff, and
+renderer activation, then writes a river screenshot. Its deterministic inputs
+are seed `123` and the `fast` terrain profile unless overridden by `MOPPE_SEED`
+and `MOPPE_TERRAIN_PROFILE`.
+
+`MOPPE_REGENERATE_ONCE=1` exercises the same path twice: while the second
+candidate builds, the first active world remains owned and valid; its terrain
+borrows are released and rebuilt only at activation. Generation is intentionally
+single-flight rather than cancellable asynchronous infrastructure.
 
 The screenshot is deliberately **not a golden**: it proves that loading
 reaches a usable generated world, while visual look remains under the

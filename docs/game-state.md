@@ -9,6 +9,10 @@ graphics settings.
 `game::GeneratedWorld` now owns the stable renderer-free terrain, surface,
 water, and analysis artifacts outside that checkpoint; its construction and
 borrowing rules are documented in [Generated worlds](generated-world.md).
+World construction is single-flight: a worker completes an owned candidate,
+then one main-thread activation retires and reconstructs terrain borrowers
+before making that candidate live. The loading preview observes copied height
+snapshots only, so neither it nor `GameState` owns an in-progress world.
 
 `game::GameLogicState` currently gathers the game clock, derived weather and
 camera effects, player mode and inputs, health/fuel/scoring values, gameplay
