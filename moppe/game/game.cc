@@ -1214,8 +1214,7 @@ namespace moppe {
                                           m_terrain_history[stage_index])
                   : m_map.terrain_view ();
               m_trail_network = terrain::analyze_trail_network (
-                trail_source,
-                std::get<terrain::TrailFormation> (*stage));
+                trail_source, std::get<terrain::TrailFormation> (*stage));
               if (stage_index + 1 < m_terrain_history.size ()) {
                 const std::vector<float>& before =
                   m_terrain_history[stage_index];
@@ -1248,10 +1247,10 @@ namespace moppe {
             float maximum_height_above_sea = 0.0f;
             for (const terrain::TrailAlignmentPoint point :
                  m_trail_network->alignment.points)
-              maximum_height_above_sea = std::max (
-                maximum_height_above_sea,
-                m_map.interpolated_height (point.x_m, point.z_m) -
-                  sea_elevation);
+              maximum_height_above_sea =
+                std::max (maximum_height_above_sea,
+                          m_map.interpolated_height (point.x_m, point.z_m) -
+                            sea_elevation);
             std::cerr << "trail network: " << m_trail_network->cells.size ()
                       << " centerline cells, "
                       << m_trail_network->alignment.points.size ()
@@ -1259,10 +1258,9 @@ namespace moppe {
                       << std::setprecision (1)
                       << meters_value (
                            terrain::trail_circuit_length (*m_trail_network)) /
-                         1000.0
+                           1000.0
                       << " km, high " << maximum_height_above_sea
-                      << " m above sea, "
-                      << m_trail_network->components.size ()
+                      << " m above sea, " << m_trail_network->components.size ()
                       << " connected components\n";
             const Vec3 base =
               trail_cell_position (m_trail_network->plan.home_base);
@@ -2282,8 +2280,7 @@ namespace moppe {
                            << std::setprecision (2) << m_landscape_scale_y
                            << 'x';
             m_game_ui.begin (m_hud_dl);
-            m_game_ui.begin_window (
-              m_hud_dl, m_game_ui_window, "WORLD FEEL");
+            m_game_ui.begin_window (m_hud_dl, m_game_ui_window, "WORLD FEEL");
             m_game_ui.friendly_slider (
               m_hud_dl,
               horizontal,
@@ -2802,10 +2799,8 @@ namespace moppe {
       }
 
       void set_landscape_scale_from_pointer (float x, int axis) {
-        const float normalized =
-          std::clamp ((m_game_ui_window.local_x (x) - 20.0f) / 320.0f,
-                      0.0f,
-                      1.0f);
+        const float normalized = std::clamp (
+          (m_game_ui_window.local_x (x) - 20.0f) / 320.0f, 0.0f, 1.0f);
         const float scale = 0.05f * std::pow (400.0f, normalized);
         if (axis == 1)
           m_landscape_scale_x = scale;

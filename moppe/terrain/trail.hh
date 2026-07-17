@@ -44,8 +44,7 @@ namespace moppe::terrain {
     // Height is measured from sea so the policy survives datum changes.
     meters_t highland_preference_height_above_sea =
       180.0f * mp_units::si::metre;
-    meters_t alpine_avoidance_height_above_sea =
-      285.0f * mp_units::si::metre;
+    meters_t alpine_avoidance_height_above_sea = 285.0f * mp_units::si::metre;
   };
 
   struct TrailFormationReport {

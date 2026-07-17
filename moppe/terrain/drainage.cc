@@ -110,8 +110,8 @@ namespace moppe::terrain {
       const auto mix = [t] (float a, float b) { return a + (b - a) * t; };
       return { .x_m = mix (from.x_m, to.x_m),
                .z_m = mix (from.z_m, to.z_m),
-               .contributing_area_m2 = mix (from.contributing_area_m2,
-                                            to.contributing_area_m2),
+               .contributing_area_m2 =
+                 mix (from.contributing_area_m2, to.contributing_area_m2),
                .slope = mix (from.slope, to.slope),
                .waterfall = mix (from.waterfall, to.waterfall),
                .standing_water = mix (from.standing_water, to.standing_water),
@@ -131,8 +131,10 @@ namespace moppe::terrain {
       // corners. Sampling below source-cell spacing makes the visible banks
       // independent of the terrain lattice.
       constexpr float tangent_scale = 0.34f;
-      const float sample_spacing = std::clamp (
-        0.4f * std::min (grid.spacing_x_m (), grid.spacing_y_m ()), 0.75f, 2.0f);
+      const float sample_spacing =
+        std::clamp (0.4f * std::min (grid.spacing_x_m (), grid.spacing_y_m ()),
+                    0.75f,
+                    2.0f);
       for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
         const RiverAlignmentPoint& a = raw[segment];
         const RiverAlignmentPoint& b = raw[segment + 1];
@@ -149,8 +151,8 @@ namespace moppe::terrain {
             tangent_bx, tangent_bz, knot_tangents[segment + 1]);
         }
         const float run = std::hypot (b.x_m - a.x_m, b.z_m - a.z_m);
-        const int subdivisions = std::max (
-          1, static_cast<int> (std::ceil (run / sample_spacing)));
+        const int subdivisions =
+          std::max (1, static_cast<int> (std::ceil (run / sample_spacing)));
         for (int step = 0; step < subdivisions; ++step) {
           const float t = static_cast<float> (step) / subdivisions;
           const float t2 = t * t;
@@ -160,10 +162,10 @@ namespace moppe::terrain {
           const float h01 = -2.0f * t3 + 3.0f * t2;
           const float h11 = t3 - t2;
           RiverAlignmentPoint point = interpolate (a, b, t);
-          point.x_m = a.x_m * h00 + tangent_ax * h10 + b.x_m * h01 +
-                      tangent_bx * h11;
-          point.z_m = a.z_m * h00 + tangent_az * h10 + b.z_m * h01 +
-                      tangent_bz * h11;
+          point.x_m =
+            a.x_m * h00 + tangent_ax * h10 + b.x_m * h01 + tangent_bx * h11;
+          point.z_m =
+            a.z_m * h00 + tangent_az * h10 + b.z_m * h01 + tangent_bz * h11;
           alignment.points.push_back (point);
         }
       }
@@ -173,8 +175,8 @@ namespace moppe::terrain {
       for (std::size_t point = 1; point < alignment.points.size (); ++point) {
         const auto& before = alignment.points[point - 1];
         auto& current = alignment.points[point];
-        length_m += std::hypot (current.x_m - before.x_m,
-                                current.z_m - before.z_m);
+        length_m +=
+          std::hypot (current.x_m - before.x_m, current.z_m - before.z_m);
         current.distance_m = static_cast<float> (length_m);
       }
       alignment.length = length_m * mp_units::si::metre;
@@ -764,11 +766,10 @@ namespace moppe::terrain {
           reach.downstream_body == no_water_body)
         continue;
       const WaterBody& body = census.bodies[reach.downstream_body];
-      const bool permanent =
-        body.classification == WaterBodyClass::Sea ||
-        (body.area >= permanence.minimum_area &&
-         body.maximum_depth >= permanence.minimum_depth &&
-         body.volume >= permanence.minimum_volume);
+      const bool permanent = body.classification == WaterBodyClass::Sea ||
+                             (body.area >= permanence.minimum_area &&
+                              body.maximum_depth >= permanence.minimum_depth &&
+                              body.volume >= permanence.minimum_volume);
       if (permanent || body.spill_cell == WaterBody::no_cell ||
           !eligible[body.spill_cell])
         continue;

@@ -337,19 +337,16 @@ MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
   TrailFormation parameters = test_parameters ();
   parameters.home_base_water_distance = 200.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 700.0f * mp_units::si::metre;
-  parameters.highland_preference_height_above_sea =
-    20.0f * mp_units::si::metre;
-  parameters.alpine_avoidance_height_above_sea =
-    40.0f * mp_units::si::metre;
-  const TrailFormationResult result = form_trails (
-    TerrainView (alpine_temptation_grid (), original), parameters);
+  parameters.highland_preference_height_above_sea = 20.0f * mp_units::si::metre;
+  parameters.alpine_avoidance_height_above_sea = 40.0f * mp_units::si::metre;
+  const TrailFormationResult result =
+    form_trails (TerrainView (alpine_temptation_grid (), original), parameters);
 
   float maximum_original_height = 0.0f;
   for (const CellIndex cell : result.network.cells)
     maximum_original_height =
       std::max (maximum_original_height, original[cell.value] * 100.0f);
   MOPPE_CHECK (maximum_original_height < 40.0f);
-  MOPPE_CHECK (meters_value (
-                 result.report.maximum_centerline_height_above_sea) <
-               40.0f);
+  MOPPE_CHECK (
+    meters_value (result.report.maximum_centerline_height_above_sea) < 40.0f);
 }

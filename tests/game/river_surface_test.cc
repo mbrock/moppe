@@ -10,12 +10,11 @@
 using namespace moppe;
 
 namespace {
-  terrain::RiverAlignmentPoint river_test_point (
-    float x,
-    float z,
-    float flow_distance,
-    float area,
-    float standing_water = 0.0f) {
+  terrain::RiverAlignmentPoint river_test_point (float x,
+                                                 float z,
+                                                 float flow_distance,
+                                                 float area,
+                                                 float standing_water = 0.0f) {
     return { .x_m = x,
              .z_m = z,
              .flow_distance_m = flow_distance,

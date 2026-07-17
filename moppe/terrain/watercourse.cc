@@ -89,20 +89,19 @@ namespace moppe::terrain {
             continue;
           const float direction_x = run_x / run;
           const float direction_z = run_z / run;
-          const float speed =
-            meters_per_second_value (
-              parameters.base_speed +
-              parameters.rapid_speed * rapid_signal (center.slope) +
-              parameters.waterfall_speed * center.waterfall);
+          const float speed = meters_per_second_value (
+            parameters.base_speed +
+            parameters.rapid_speed * rapid_signal (center.slope) +
+            parameters.waterfall_speed * center.waterfall);
           const float radius =
-            0.5f * meters_value (river_width (
-                     center.contributing_area_m2 * mp_units::si::metre *
-                     mp_units::si::metre)) +
+            0.5f * meters_value (river_width (center.contributing_area_m2 *
+                                              mp_units::si::metre *
+                                              mp_units::si::metre)) +
             meters_value (parameters.bank_margin);
-          const int cx = static_cast<int> (
-            std::lround (center.x_m / grid.spacing_x_m ()));
-          const int cy = static_cast<int> (
-            std::lround (center.z_m / grid.spacing_y_m ()));
+          const int cx =
+            static_cast<int> (std::lround (center.x_m / grid.spacing_x_m ()));
+          const int cy =
+            static_cast<int> (std::lround (center.z_m / grid.spacing_y_m ()));
           constexpr int stamp_limit_cells = 16;
           const int reach_x = std::min (
             stamp_limit_cells,
@@ -122,10 +121,9 @@ namespace moppe::terrain {
               float delta_x = x * grid.spacing_x_m () - center.x_m;
               float delta_z = y * grid.spacing_y_m () - center.z_m;
               if (periodic) {
-                delta_x = std::remainder (
-                  delta_x, width * grid.spacing_x_m ());
-                delta_z = std::remainder (
-                  delta_z, height * grid.spacing_y_m ());
+                delta_x = std::remainder (delta_x, width * grid.spacing_x_m ());
+                delta_z =
+                  std::remainder (delta_z, height * grid.spacing_y_m ());
               }
               const float distance = std::hypot (delta_x, delta_z);
               if (distance >= radius)
@@ -133,8 +131,8 @@ namespace moppe::terrain {
               const std::size_t cell = static_cast<std::size_t> (y) * width + x;
               if (surface[cell] - terrain.at (x, y) <= 1e-6f)
                 continue;
-              const float weight = (1.0f - distance / radius) *
-                                   center.standing_water;
+              const float weight =
+                (1.0f - distance / radius) * center.standing_water;
               flow_x[cell] += weight * direction_x * speed;
               flow_z[cell] += weight * direction_z * speed;
               flow_weight[cell] += weight;

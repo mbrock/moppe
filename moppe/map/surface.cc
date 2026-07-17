@@ -66,10 +66,9 @@ namespace moppe::map {
       support += (sample (-stencil.dx, 0) + sample (stencil.dx, 0) +
                   sample (0, -stencil.dz) + sample (0, stencil.dz)) *
                  2.0f;
-      support += sample (-stencil.dx, -stencil.dz) +
-                 sample (stencil.dx, -stencil.dz) +
-                 sample (-stencil.dx, stencil.dz) +
-                 sample (stencil.dx, stencil.dz);
+      support +=
+        sample (-stencil.dx, -stencil.dz) + sample (stencil.dx, -stencil.dz) +
+        sample (-stencil.dx, stencil.dz) + sample (stencil.dx, stencil.dz);
       return normalized (support);
     }
 

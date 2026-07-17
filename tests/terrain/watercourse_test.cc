@@ -41,14 +41,14 @@ namespace {
     FloodField flood = analyze_standing_water (terrain, 0.0f);
     LakeCensus census = census_lakes (flood);
     DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
-    RiverNetwork rivers = extract_river_network (
-      flood,
-      census,
-      drainage,
-      100.0f * mp_units::si::metre * mp_units::si::metre);
+    RiverNetwork rivers = extract_river_network (flood,
+                                                 census,
+                                                 drainage,
+                                                 100.0f * mp_units::si::metre *
+                                                   mp_units::si::metre);
     WaterSheets sheets =
       paint_watercourses (terrain, flood, census, drainage, rivers);
-    return { std::move (heights), std::move (flood), std::move (census),
+    return { std::move (heights),  std::move (flood),  std::move (census),
              std::move (drainage), std::move (rivers), std::move (sheets) };
   }
 }

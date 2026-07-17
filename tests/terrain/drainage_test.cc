@@ -93,16 +93,14 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
     if (reach.downstream_body == lake.id &&
         reach.downstream_reach != RiverReach::no_id) {
       links_across_lake = true;
-      const RiverReach& downstream =
-        rivers.reaches[reach.downstream_reach];
+      const RiverReach& downstream = rivers.reaches[reach.downstream_reach];
       MOPPE_CHECK (!reach.alignment.points.empty ());
       MOPPE_CHECK (!downstream.alignment.points.empty ());
       const RiverAlignmentPoint& inlet = reach.alignment.points.back ();
       const RiverAlignmentPoint& spill = downstream.alignment.points.front ();
       MOPPE_CHECK_NEAR (inlet.x_m, spill.x_m, 1e-5f);
       MOPPE_CHECK_NEAR (inlet.z_m, spill.z_m, 1e-5f);
-      MOPPE_CHECK_NEAR (
-        inlet.flow_distance_m, spill.flow_distance_m, 1e-5f);
+      MOPPE_CHECK_NEAR (inlet.flow_distance_m, spill.flow_distance_m, 1e-5f);
     }
     for (const std::uint32_t member : reach.cells) {
       MOPPE_CHECK (census.body[member] == LakeCensus::dry);
@@ -209,17 +207,11 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
       const RiverAlignmentPoint& point_b = b.alignment.points[point];
       MOPPE_CHECK_NEAR (point_a.x_m, point_b.x_m, 0.0f);
       MOPPE_CHECK_NEAR (point_a.z_m, point_b.z_m, 0.0f);
+      MOPPE_CHECK_NEAR (point_a.flow_distance_m, point_b.flow_distance_m, 0.0f);
       MOPPE_CHECK_NEAR (
-        point_a.flow_distance_m, point_b.flow_distance_m, 0.0f);
-      MOPPE_CHECK_NEAR (point_a.contributing_area_m2,
-                        point_b.contributing_area_m2,
-                        0.0f);
-      MOPPE_CHECK_NEAR (point_a.water_level_m,
-                        point_b.water_level_m,
-                        0.0f);
-      MOPPE_CHECK_NEAR (point_a.standing_water,
-                        point_b.standing_water,
-                        0.0f);
+        point_a.contributing_area_m2, point_b.contributing_area_m2, 0.0f);
+      MOPPE_CHECK_NEAR (point_a.water_level_m, point_b.water_level_m, 0.0f);
+      MOPPE_CHECK_NEAR (point_a.standing_water, point_b.standing_water, 0.0f);
     }
     MOPPE_CHECK_NEAR (moppe::square_meters_value (a.downstream_area),
                       moppe::square_meters_value (b.downstream_area),

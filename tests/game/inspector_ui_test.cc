@@ -20,10 +20,8 @@ MOPPE_TEST (ui_flow_consumes_rows_with_gaps) {
 
 MOPPE_TEST (ui_grid_cells_share_available_width) {
   const game::UiRect bounds { 20.0f, 30.0f, 290.0f, 200.0f };
-  const game::UiRect first =
-    game::ui_grid_cell (bounds, 2, 0, 30.0f, 4.0f);
-  const game::UiRect fourth =
-    game::ui_grid_cell (bounds, 2, 3, 30.0f, 4.0f);
+  const game::UiRect first = game::ui_grid_cell (bounds, 2, 0, 30.0f, 4.0f);
+  const game::UiRect fourth = game::ui_grid_cell (bounds, 2, 3, 30.0f, 4.0f);
 
   MOPPE_CHECK_NEAR (first.width, 143.0f, 0.0f);
   MOPPE_CHECK_NEAR (fourth.x, 167.0f, 0.0f);
@@ -41,8 +39,7 @@ MOPPE_TEST (ui_inset_never_produces_negative_space) {
 
 MOPPE_TEST (ui_window_translates_between_local_and_screen_space) {
   const game::UiWindow window ({ 40.0f, 70.0f, 320.0f, 200.0f });
-  const game::UiRect screen =
-    window.to_screen ({ 12.0f, 18.0f, 80.0f, 30.0f });
+  const game::UiRect screen = window.to_screen ({ 12.0f, 18.0f, 80.0f, 30.0f });
 
   MOPPE_CHECK_NEAR (screen.x, 52.0f, 0.0f);
   MOPPE_CHECK_NEAR (screen.y, 88.0f, 0.0f);

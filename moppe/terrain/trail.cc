@@ -816,10 +816,9 @@ namespace moppe::terrain {
           continue;
         const float alpine =
           highland_ratio (grid.elevation (node), grid, parameters);
-        const float score =
-          grid.distance (ideal, node) /
-            std::min (grid.spacing_x, grid.spacing_y) +
-          12.0f * grid.grade (node) + 18.0f * alpine * alpine;
+        const float score = grid.distance (ideal, node) /
+                              std::min (grid.spacing_x, grid.spacing_y) +
+                            12.0f * grid.grade (node) + 18.0f * alpine * alpine;
         if (score < best_score) {
           best_score = score;
           best = node;
@@ -959,12 +958,11 @@ namespace moppe::terrain {
               ? static_cast<float> (4 - seam_distance) * 8.0f
               : 0.0f;
           const float edge =
-            run *
-            (1.0f + 0.70f * grade_ratio * grade_ratio +
-             12.0f * earthwork_ratio * earthwork_ratio +
-             30.0f * maximum_excess * maximum_excess + 2.5f * turn * turn +
-             20.0f * corridor * corridor + 0.10f * valley +
-             8.0f * alpine * alpine + chart_edge);
+            run * (1.0f + 0.70f * grade_ratio * grade_ratio +
+                   12.0f * earthwork_ratio * earthwork_ratio +
+                   30.0f * maximum_excess * maximum_excess +
+                   2.5f * turn * turn + 20.0f * corridor * corridor +
+                   0.10f * valley + 8.0f * alpine * alpine + chart_edge);
           const float next_cost = cost[current.state] + edge;
           const std::size_t next_state = state (next, next_heading);
           if (next_cost < cost[next_state]) {

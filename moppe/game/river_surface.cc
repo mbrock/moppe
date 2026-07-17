@@ -14,7 +14,7 @@ namespace moppe::game {
     constexpr std::array<float, 7> cross_positions = { -1.15f, -1.0f, -0.54f,
                                                        0.0f,   0.54f, 1.0f,
                                                        1.15f };
-    constexpr std::array<float, 7> cross_opacity = { 0.0f, 0.62f, 0.92f, 1.0f,
+    constexpr std::array<float, 7> cross_opacity = { 0.0f,  0.62f, 0.92f, 1.0f,
                                                      0.92f, 0.62f, 0.0f };
 
     struct SurfacePoint {
@@ -94,8 +94,7 @@ namespace moppe::game {
         const auto& center = points[point];
         const auto& after =
           points[point + 1 < points.size () ? point + 1 : point];
-        Vec3 tangent (after.x_m - before.x_m, 0.0f,
-                      after.z_m - before.z_m);
+        Vec3 tangent (after.x_m - before.x_m, 0.0f, after.z_m - before.z_m);
         if (length2 (tangent) < 1e-6f)
           tangent = Vec3 (0, 0, 1);
         else
@@ -109,16 +108,16 @@ namespace moppe::game {
         const float center_ground =
           map.interpolated_height (center.x_m, center.z_m);
         const float bank_distance = 0.5f * width_m + 0.75f;
-        const float left_bank = map.interpolated_height (
-          center.x_m - across[0] * bank_distance,
-          center.z_m - across[2] * bank_distance);
-        const float right_bank = map.interpolated_height (
-          center.x_m + across[0] * bank_distance,
-          center.z_m + across[2] * bank_distance);
+        const float left_bank =
+          map.interpolated_height (center.x_m - across[0] * bank_distance,
+                                   center.z_m - across[2] * bank_distance);
+        const float right_bank =
+          map.interpolated_height (center.x_m + across[0] * bank_distance,
+                                   center.z_m + across[2] * bank_distance);
         const float bank_limit = std::min (left_bank, right_bank) - 0.08f;
-        const float running_surface = std::max (
-          center_ground + 0.035f,
-          std::min (center_ground + fill_depth, bank_limit));
+        const float running_surface =
+          std::max (center_ground + 0.035f,
+                    std::min (center_ground + fill_depth, bank_limit));
         const float water_blend =
           smoothstep (0.0f, 1.0f, center.standing_water);
         float surface =
@@ -135,26 +134,25 @@ namespace moppe::game {
           surface = std::max (surface, ground + 0.045f);
         }
         const float source_opacity =
-          fade_source
-            ? smoothstep (0.0f, std::max (8.0f, 1.5f * width_m),
-                          center.distance_m)
-            : 1.0f;
+          fade_source ? smoothstep (0.0f,
+                                    std::max (8.0f, 1.5f * width_m),
+                                    center.distance_m)
+                      : 1.0f;
         float mouth_opacity = 1.0f;
         if (std::isfinite (mouth_distance_m)) {
           // Retire the ribbon just before the standing-water geometry owns
           // the surface. This hides both coplanar overlap at ordinary mouths
           // and a false tilted sheet across a coastal knickpoint.
-          const float lip_clearance =
-            falling_mouth ? std::max (8.0f, 0.75f * width_m)
-                          : std::max (3.0f, 0.35f * width_m);
-          const float fade_length =
-            falling_mouth ? std::max (8.0f, width_m)
-                          : std::max (12.0f, 1.5f * width_m);
+          const float lip_clearance = falling_mouth
+                                        ? std::max (8.0f, 0.75f * width_m)
+                                        : std::max (3.0f, 0.35f * width_m);
+          const float fade_length = falling_mouth
+                                      ? std::max (8.0f, width_m)
+                                      : std::max (12.0f, 1.5f * width_m);
           const float fade_end = mouth_distance_m - lip_clearance;
-          mouth_opacity = 1.0f - smoothstep (
-                                      fade_end - fade_length,
-                                      fade_end,
-                                      center.distance_m);
+          mouth_opacity =
+            1.0f -
+            smoothstep (fade_end - fade_length, fade_end, center.distance_m);
           mouth_opacity *= mouth_opacity;
           if (falling_mouth)
             mouth_opacity *= mouth_opacity;
@@ -216,9 +214,8 @@ namespace moppe::game {
       const Vec3 across (-center.tangent[2], 0.0f, center.tangent[0]);
       const float run = std::hypot (after.position[0] - before.position[0],
                                     after.position[2] - before.position[2]);
-      const float grade = run > 1e-5f
-                            ? (after.position[1] - before.position[1]) / run
-                            : 0.0f;
+      const float grade =
+        run > 1e-5f ? (after.position[1] - before.position[1]) / run : 0.0f;
       // Superelevation: moving water banks into its bends, so the shading
       // normal leans toward the bend center by the centripetal crossfall
       // v^2 k / g, exaggerated for legibility at ribbon scale.
@@ -236,10 +233,9 @@ namespace moppe::game {
       const float half_width = 0.5f * center.width_m;
       RibbonRow row;
       for (std::size_t cross = 0; cross < row.size (); ++cross) {
-        Vec3 position = center.position +
-                        across * (cross_positions[cross] * half_width);
-        const float ground =
-          map.interpolated_height (position[0], position[2]);
+        Vec3 position =
+          center.position + across * (cross_positions[cross] * half_width);
+        const float ground = map.interpolated_height (position[0], position[2]);
         const float depth =
           std::clamp ((position[1] - ground) / depth_span_m *
                         (1.0f - thalweg_shift * cross_positions[cross]),
@@ -258,10 +254,7 @@ namespace moppe::game {
     }
 
     void emit (render::DrawList& draw, const RibbonVertex& vertex) {
-      draw.color (vertex.rapid,
-                  vertex.depth,
-                  vertex.waterfall,
-                  vertex.opacity);
+      draw.color (vertex.rapid, vertex.depth, vertex.waterfall, vertex.opacity);
       draw.normal (vertex.normal);
       draw.uv (vertex.u, vertex.flow_distance_m);
       draw.vertex (vertex.position);
@@ -284,8 +277,8 @@ namespace moppe::game {
       if (reach.downstream_reach != terrain::RiverReach::no_id)
         ++upstream_reaches[reach.downstream_reach];
 
-    std::vector<std::vector<river_surface_detail::SurfacePoint>>
-      reach_points (rivers.reaches.size ());
+    std::vector<std::vector<river_surface_detail::SurfacePoint>> reach_points (
+      rivers.reaches.size ());
     for (const terrain::RiverReach& reach : rivers.reaches) {
       const bool fade_source = upstream_reaches[reach.id] == 0 &&
                                reach.upstream_body == terrain::no_water_body;
@@ -309,9 +302,8 @@ namespace moppe::game {
       start.position[1] = junction_height;
       auto& upstream = reach_points[reach.id];
       for (std::size_t point = upstream.size () - 1; point > 0; --point)
-        upstream[point - 1].position[1] =
-          std::max (upstream[point - 1].position[1],
-                    upstream[point].position[1]);
+        upstream[point - 1].position[1] = std::max (
+          upstream[point - 1].position[1], upstream[point].position[1]);
     }
 
     draw.begin (render::Prim::Triangles);
@@ -319,12 +311,11 @@ namespace moppe::game {
       std::vector<river_surface_detail::SurfacePoint> points =
         reach_points[reach.id];
       if (reach.downstream_reach != terrain::RiverReach::no_id &&
-          !points.empty () &&
-          !reach_points[reach.downstream_reach].empty ()) {
+          !points.empty () && !reach_points[reach.downstream_reach].empty ()) {
         auto transition = river_surface_detail::nearest_image (
           reach_points[reach.downstream_reach].front (), points.back (), map);
-        transition.opacity = std::min (transition.opacity,
-                                       points.back ().opacity);
+        transition.opacity =
+          std::min (transition.opacity, points.back ().opacity);
         points.push_back (transition);
       }
       if (points.size () < 2)

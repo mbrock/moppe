@@ -76,16 +76,12 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float handoff = abs (2.0 * phase0 - 1.0);
   const float2 base1 = float2 (in.uv.x * 7.0, in.uv.y * 0.9);
   const float2 base2 = float2 (in.uv.x * 11.0 + 3.7, in.uv.y * 0.45);
-  const float2 flow10 =
-    base1 - float2 (0.0, phase0 * cycle * speed * 0.9);
+  const float2 flow10 = base1 - float2 (0.0, phase0 * cycle * speed * 0.9);
   const float2 flow11 =
-    base1 + float2 (4.13, 1.71) -
-    float2 (0.0, phase1 * cycle * speed * 0.9);
-  const float2 flow20 =
-    base2 - float2 (0.0, phase0 * cycle * speed * 0.55);
+    base1 + float2 (4.13, 1.71) - float2 (0.0, phase1 * cycle * speed * 0.9);
+  const float2 flow20 = base2 - float2 (0.0, phase0 * cycle * speed * 0.55);
   const float2 flow21 =
-    base2 + float2 (2.37, 5.29) -
-    float2 (0.0, phase1 * cycle * speed * 0.55);
+    base2 + float2 (2.37, 5.29) - float2 (0.0, phase1 * cycle * speed * 0.55);
   const float n10 = moppe_value_noise (flow10);
   const float n11 = moppe_value_noise (flow11);
   const float n20 = moppe_value_noise (flow20);
@@ -101,15 +97,13 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float3 dpdy = dfdy (in.world_pos);
   const float2 duvdx = dfdx (in.uv);
   const float2 duvdy = dfdy (in.uv);
-  const float determinant =
-    duvdx.x * duvdy.y - duvdx.y * duvdy.x;
+  const float determinant = duvdx.x * duvdy.y - duvdx.y * duvdy.x;
   float3 across_axis = float3 (1.0, 0.0, 0.0);
   float3 downstream_axis = float3 (0.0, 0.0, 1.0);
   if (abs (determinant) > 1e-7) {
-    across_axis = normalize (
-      (dpdx * duvdy.y - dpdy * duvdx.y) / determinant);
-    downstream_axis = normalize (
-      (dpdy * duvdx.x - dpdx * duvdy.x) / determinant);
+    across_axis = normalize ((dpdx * duvdy.y - dpdy * duvdx.y) / determinant);
+    downstream_axis =
+      normalize ((dpdy * duvdx.x - dpdx * duvdy.x) / determinant);
   }
   const float grad_across =
     0.6 * (mix (moppe_value_noise (flow10 + float2 (0.31, 0.0)),
@@ -130,9 +124,8 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
                 handoff) -
            n2);
   const float bump = 0.10 + 0.10 * in.rapid + 0.10 * in.waterfall;
-  float3 n = normalize (in.normal +
-                        bump * (grad_across * across_axis +
-                                grad_downstream * downstream_axis));
+  float3 n = normalize (in.normal + bump * (grad_across * across_axis +
+                                            grad_downstream * downstream_axis));
 
   const float3 view = normalize (frame.camera_pos.xyz - in.world_pos);
   const float fresnel =
