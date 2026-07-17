@@ -39,6 +39,24 @@ feather, rapid, and waterfall signals, then fades beneath standing water at
 the mouth. Yu's richer 2D velocity fields remain the next escalation if a
 centerline tangent cannot explain bank or junction flow.
 
+## Implemented slice (2026-07-17)
+
+The ribbon's measured water column now drives a compact Beer-Lambert-like
+optical layer instead of selecting between two colors with a depth threshold.
+Shallow water remains clear over its bed, increasing depth preferentially
+attenuates red light, and dry interpolated ribbon fragments are discarded
+before they can claim the overlap stencil. Cross-channel position and depth
+also shape advection speed, giving the existing flow texture a cheap
+bank-confined velocity profile in the spirit of Yu without introducing a 2D
+solver. Shore foam is limited to the shallow contact band rather than being
+generated at every nominal mesh edge.
+
+The benchmark comparison is also a useful negative result: improved optics do
+not conceal the planar bridges at confluences and mouths, or turn a steep
+terrain-following strip into falling water. Those are surface-construction
+problems. The next geometric slice should form a single junction boundary and
+triangulation before adding a richer junction velocity field.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in
