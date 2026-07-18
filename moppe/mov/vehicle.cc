@@ -182,8 +182,7 @@ namespace moppe {
         // roll, so sidehill touchdowns meet both tires instead of one edge.
         forward = m_heading - up * dot (m_heading, up);
         if (length2 (forward) < 0.0001f) {
-          const Vec3 impact_velocity =
-            velocity + Vec3 (0, -gravity * t, 0);
+          const Vec3 impact_velocity = velocity + Vec3 (0, -gravity * t, 0);
           forward = impact_velocity - up * dot (impact_velocity, up);
         }
         if (length2 (forward) < 0.0001f)
@@ -462,10 +461,8 @@ namespace moppe {
       damping_t pose_rate = 10.0f / u::s;
       if (airborne () && length2 (velocity) > 4.0f) {
         float time_to_landing = 0.0f;
-        if (expected_landing_pose (
-              pose_forward, pose_up, time_to_landing)) {
-          const float response =
-            4.0f + 5.0f / std::max (0.5f, time_to_landing);
+        if (expected_landing_pose (pose_forward, pose_up, time_to_landing)) {
+          const float response = 4.0f + 5.0f / std::max (0.5f, time_to_landing);
           pose_rate = response / u::s;
         } else {
           pose_forward = normalized (velocity);
