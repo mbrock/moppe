@@ -50,7 +50,9 @@ rather than exposing an incomplete candidate. While it runs, the loading
 screen sees only copied, display-resolution height snapshots in its separate
 preview map; it neither borrows nor owns a candidate world's terrain state.
 Orogeny publishes one such snapshot after every geological interval, and the
-renderer morphs between the latest two without queueing old terrain states.
+loading preview keeps those snapshots in a short ordered sequence. Each GPU
+morph finishes before the next snapshot begins, so a newer erosion step never
+replaces the destination of an in-flight transition.
 
 Ordinary gameplay receives const readings. `Builder` is the explicit capability
 used by the loading worker to evaluate terrain, record history, rebuild the surface,

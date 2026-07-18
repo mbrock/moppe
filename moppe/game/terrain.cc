@@ -81,7 +81,8 @@ namespace moppe {
                                  : 0.85f;
       params.shadow_resolution = interactive_preview ? 1024 : 4096;
       params.shadow_sample_step = interactive_preview ? 2 : 1;
-      params.height_transition_duration = loading_preview ? 1.65f : 0.12f;
+      params.height_transition_duration =
+        loading_preview ? loading_transition_seconds : 0.12f;
       params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.fragment_normals = graphics.terrain_fragment_normals;
