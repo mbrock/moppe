@@ -16,7 +16,7 @@ snapshots only, so neither it nor `GameState` owns an in-progress world.
 
 `game::GameSession` is the concrete owner of running gameplay state. It owns
 `game::GameLogicState` (the clock, weather and camera effects, player mode and
-inputs, health/fuel/scoring values, gameplay timers, and effects RNG) along
+inputs, health/scoring values, gameplay timers, and effects RNG) along
 with both vehicles, the glider, walker, chase camera, stars, and dust.
 `game::GameState` is its copyable checkpoint value: it combines that logic
 with snapshots of those mutable subsystems. Restoring it changes only mutable
@@ -35,7 +35,7 @@ Ordinary playable simulation has one public fixed-step operation:
 context supplies only the completed world's parameters, terrain, obstacles,
 and the persistent landscape scale used by the chase camera; it does not
 expose `GeneratedWorld`, loading, platform, or renderer types. The operation
-applies the `InputFrame`, advances actors and effects, updates score, fuel,
+applies the `InputFrame`, advances actors and effects, updates score,
 camera, and FOV, and reports the small set of application-side effects it
 cannot realize itself. `MoppeGame::tick` selects live or recorded input,
 continues the global clock and weather through paused cinematic, Terrain Lab,

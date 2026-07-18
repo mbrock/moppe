@@ -128,6 +128,7 @@ namespace moppe::game {
       .position = glider.position (),
       .heading = glider.heading (),
       .bank_radians = radians_value (glider.bank ()),
+      .bike_attached = glider.bike_attached (),
     };
   }
 
@@ -258,7 +259,6 @@ namespace moppe::game {
 
     FrameHud& hud = result.hud;
     hud.speed_kmh = input.session.subject_speed_kmh ();
-    hud.fuel = logic.m_fuel;
     if (logic.m_mode == M_GLIDER) {
       const float lift =
         input.session.glider ().air_mass_lift ().numerical_value_in (u::m /
@@ -284,6 +284,7 @@ namespace moppe::game {
     hud.on_foot = logic.m_mode == M_FOOT;
     hud.gliding = logic.m_mode == M_GLIDER;
     hud.can_deploy_glider = input.session.can_deploy_glider (input.terrain);
+    hud.can_drop_bike = input.session.can_drop_bike ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
     hud.subject_heading = input.session.subject_heading ();

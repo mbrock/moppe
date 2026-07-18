@@ -108,6 +108,7 @@ namespace moppe::game {
     Vec3 subject_heading () const;
     float subject_speed_kmh () const;
     bool can_deploy_glider (const map::HeightMap& terrain) const;
+    bool can_drop_bike () const;
     void clear_controls ();
 
     State state () const;

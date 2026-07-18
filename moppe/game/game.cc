@@ -1517,7 +1517,6 @@ namespace moppe {
       static HudState hud_state_for (const FrameHud& reading) {
         HudState state;
         state.speed_kmh = reading.speed_kmh;
-        state.fuel = reading.fuel;
         state.boost_ready01 = reading.boost_ready01;
         state.health01 = reading.health01;
         state.odometer_m = reading.odometer_m;
@@ -1531,6 +1530,7 @@ namespace moppe {
         state.on_foot = reading.on_foot;
         state.gliding = reading.gliding;
         state.can_deploy_glider = reading.can_deploy_glider;
+        state.can_drop_bike = reading.can_drop_bike;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;
@@ -2556,14 +2556,12 @@ namespace moppe {
         logic ().m_car_exists = false;
         logic ().m_game_over = false;
         logic ().m_health = 100.0f;
-        logic ().m_fuel = 100.0f;
         start_world_generation (std::move (next_recipe));
       }
 
       void revive () {
         logic ().m_lives = 10;
         logic ().m_health = 100.0f;
-        logic ().m_fuel = 100.0f;
         logic ().m_shake = 0.0f;
         logic ().m_shake_time = 0.0f;
         logic ().m_jump_airtime = 0.0f;

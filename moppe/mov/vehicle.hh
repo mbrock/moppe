@@ -102,6 +102,12 @@ namespace moppe {
         m_obstacles = boxes;
       }
 
+      // Move an inactive bike as a rigid payload beneath the glider.
+      void carry (position_t position,
+                  velocity_t velocity,
+                  const Vec3& heading,
+                  const Vec3& up);
+
       // Respawn: back to a spot, stationary, jets cooled down
       void reset (const Vec3& position) {
         m_position = moppe::position (position);
@@ -229,6 +235,9 @@ namespace moppe {
       void check_ground_collision ();
       void collide_with_walls ();
       void bound ();
+      bool expected_landing_pose (Vec3& forward,
+                                  Vec3& up,
+                                  float& time_to_landing) const;
       bool is_grounded () const;
       bool driving_contact () const;
 
