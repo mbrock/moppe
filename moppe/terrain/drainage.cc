@@ -459,11 +459,12 @@ namespace moppe::terrain {
              .sinks = std::move (sinks) };
   }
 
-  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
-                                      const FloodField& flood,
-                                      const LakeCensus& census,
-                                      const DrainageParameters& parameters) {
-    MOPPE_PROFILE_ZONE ("analyze_wet_drainage");
+  WetDrainageRouting
+  route_wet_drainage (const TerrainView& terrain,
+                      const FloodField& flood,
+                      const LakeCensus& census,
+                      const DrainageParameters& parameters) {
+    MOPPE_PROFILE_ZONE ("route_wet_drainage");
     if (parameters.routing != DrainageRouting::D8)
       throw std::invalid_argument ("unsupported drainage routing");
 
@@ -563,6 +564,24 @@ namespace moppe::terrain {
       }
     }
 
+    return { .source_grid = grid,
+             .receiver = std::move (receiver),
+             .slope = std::move (slope) };
+  }
+
+  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
+                                      const FloodField& flood,
+                                      const LakeCensus& census,
+                                      const DrainageParameters& parameters) {
+    MOPPE_PROFILE_ZONE ("analyze_wet_drainage");
+    WetDrainageRouting routing =
+      route_wet_drainage (terrain, flood, census, parameters);
+    const TerrainGrid& grid = routing.source_grid;
+    const std::size_t width = grid.unique_width ();
+    const std::size_t height = grid.unique_height ();
+    const std::size_t count = width * height;
+    std::vector<CellIndex>& receiver = routing.receiver;
+
     // Equal-height lake routes cannot be accumulated by elevation order.
     // Receiver edges either lower the filled surface or follow the acyclic
     // priority-flood forest, so a general topological pass handles both.
@@ -616,6 +635,11 @@ namespace moppe::terrain {
       std::sort (sinks.begin (), sinks.end ());
     }
 
+    std::vector<CellIndex> topological_order;
+    topological_order.reserve (order.size ());
+    for (const std::uint32_t cell : order)
+      topological_order.push_back (CellIndex { cell });
+
     const FieldSamplingGrid2D domain {
       .width = width,
       .height = height,
@@ -624,11 +648,13 @@ namespace moppe::terrain {
     };
     return { .source_grid = grid,
              .receiver = std::move (receiver),
-             .slope = SlopeRaster (ScalarRaster (domain, std::move (slope))),
+             .slope =
+               SlopeRaster (ScalarRaster (domain, std::move (routing.slope))),
              .contributing_area =
                ContributingAreaRaster (ScalarRaster (domain, std::move (area))),
              .basin = std::move (basin),
-             .sinks = std::move (sinks) };
+             .sinks = std::move (sinks),
+             .topological_order = std::move (topological_order) };
   }
 
   WaterNetwork analyze_water_network (const FloodField& flood,

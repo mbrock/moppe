@@ -9,24 +9,22 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <queue>
 #include <stdexcept>
 #include <vector>
 
 namespace moppe::terrain {
   namespace {
-    std::vector<float>
-    expand_evolution_samples (const TerrainGrid& grid,
-                              const std::vector<float>& unique) {
+    void expand_evolution_samples (const TerrainGrid& grid,
+                                   const std::vector<float>& unique,
+                                   std::vector<float>& expanded) {
       MOPPE_PROFILE_ZONE ("orogeny.expand_periodic_samples");
       const std::size_t width = grid.unique_width ();
       const std::size_t height = grid.unique_height ();
-      std::vector<float> expanded (grid.width * grid.height);
+      expanded.resize (grid.width * grid.height);
       for (std::size_t y = 0; y < grid.height; ++y)
         for (std::size_t x = 0; x < grid.width; ++x)
           expanded[y * grid.width + x] =
             unique[(y % height) * width + x % width];
-      return expanded;
     }
 
     double edge_distance_m (std::uint32_t cell,
@@ -98,45 +96,6 @@ namespace moppe::terrain {
             "stream-power heights and uplift rates must be finite and uplift "
             "must be non-negative");
       }
-    }
-
-    std::vector<std::uint32_t>
-    downstream_first_order (const std::vector<CellIndex>& receiver) {
-      MOPPE_PROFILE_ZONE ("orogeny.downstream_first_order");
-      const std::size_t count = receiver.size ();
-      std::vector<std::uint32_t> donors (count, 0);
-      for (std::uint32_t cell = 0; cell < count; ++cell) {
-        const std::uint32_t next = receiver[cell];
-        if (next >= count)
-          throw std::logic_error (
-            "stream-power drainage receiver is outside terrain");
-        if (next != cell)
-          ++donors[next];
-      }
-
-      std::priority_queue<std::uint32_t,
-                          std::vector<std::uint32_t>,
-                          std::greater<std::uint32_t>>
-        ready;
-      for (std::uint32_t cell = 0; cell < count; ++cell)
-        if (donors[cell] == 0)
-          ready.push (cell);
-
-      std::vector<std::uint32_t> order;
-      order.reserve (count);
-      while (!ready.empty ()) {
-        const std::uint32_t cell = ready.top ();
-        ready.pop ();
-        order.push_back (cell);
-        const std::uint32_t next = receiver[cell];
-        if (next != cell && --donors[next] == 0)
-          ready.push (next);
-      }
-      if (order.size () != count)
-        throw std::logic_error (
-          "stream-power drainage does not form an acyclic forest");
-      std::reverse (order.begin (), order.end ());
-      return order;
     }
 
     int diffuse_evolution_step (std::vector<float>& heights,
@@ -268,20 +227,22 @@ namespace moppe::terrain {
     int diffusion_sweeps = 0;
     double tectonic_uplift_volume_m3 = 0.0;
     double incised_volume_m3 = 0.0;
+    std::vector<float> expanded (grid.width * grid.height);
+    std::vector<float> next (count);
+    std::vector<std::uint8_t> boundary (count);
 
     for (int step = 0; step < steps; ++step) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
       const double elapsed = static_cast<double> (step) * time_step_years;
       const double dt = std::min (time_step_years, duration_years - elapsed);
-      const std::vector<float> expanded =
-        expand_evolution_samples (grid, current);
+      expand_evolution_samples (grid, current, expanded);
       const TerrainView routed_terrain (grid, expanded);
       const FloodField flood =
         analyze_standing_water (routed_terrain, parameters.sea_level);
       const LakeCensus census = census_lakes (flood);
 
-      std::vector<float> next = current;
-      std::vector<std::uint8_t> boundary (count, 0);
+      std::copy (current.begin (), current.end (), next.begin ());
+      std::fill (boundary.begin (), boundary.end (), 0);
       std::size_t fixed_boundaries = 0;
       {
         MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
@@ -332,9 +293,10 @@ namespace moppe::terrain {
         if (parameters.routing == StreamPowerRouting::D8) {
           const DrainageGraph drainage =
             analyze_wet_drainage (routed_terrain, flood, census);
-          const std::vector<std::uint32_t> order =
-            downstream_first_order (drainage.receiver);
-          for (const std::uint32_t cell : order) {
+          for (auto position = drainage.topological_order.rbegin ();
+               position != drainage.topological_order.rend ();
+               ++position) {
+            const std::uint32_t cell = position->value;
             const std::uint32_t receiver = drainage.receiver[cell];
             const square_meters_t contributing_area =
               std::max (square_meters_value (grid.cell_area ()),

@@ -128,14 +128,25 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
+  const WetDrainageRouting routing =
+    route_wet_drainage (terrain, flood, census);
   const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
 
+  MOPPE_CHECK (routing.receiver == wet.receiver);
   MOPPE_CHECK (wet.receiver == dry.receiver);
   MOPPE_CHECK (wet.sinks == dry.sinks);
-  for (std::size_t cell = 0; cell < heights.size (); ++cell)
+  MOPPE_CHECK (wet.topological_order.size () == heights.size ());
+  std::vector<std::size_t> position (heights.size ());
+  for (std::size_t i = 0; i < wet.topological_order.size (); ++i)
+    position[wet.topological_order[i]] = i;
+  for (std::size_t cell = 0; cell < heights.size (); ++cell) {
+    MOPPE_CHECK_NEAR (routing.slope[cell], wet.slope.values ()[cell], 0.0f);
     MOPPE_CHECK_NEAR (wet.contributing_area.values ()[cell],
                       dry.contributing_area.values ()[cell],
                       0.0f);
+    if (wet.receiver[cell] != cell)
+      MOPPE_CHECK (position[cell] < position[wet.receiver[cell]]);
+  }
 }
 
 MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
