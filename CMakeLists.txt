@@ -328,7 +328,7 @@ if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
 endif()
 
-if(APPLE AND NOT MOPPE_MOBILE_APPLE)
+if(APPLE AND NOT MOPPE_IOS)
   add_library(moppe_terrain_metal STATIC
     moppe/terrain/metal/metal_evaluator.mm
   )
@@ -339,7 +339,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     "-framework Metal" "-framework Foundation")
   add_dependencies(moppe_terrain_metal moppe_shaders)
 
-  if(MOPPE_BUILD_DEVELOPER_TOOLS)
+  if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     add_executable(terrain-metal-demo EXCLUDE_FROM_ALL
       moppe/terrain/metal/metal_field_demo.cc)
     target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
@@ -620,7 +620,7 @@ if(APPLE AND MOPPE_TVOS)
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(moppe_platform_tvos PRIVATE -fobjc-arc)
   target_link_libraries(moppe_platform_tvos PUBLIC
-    moppe_metal moppe_apple "-framework UIKit")
+    moppe_metal moppe_terrain_metal moppe_apple "-framework UIKit")
   target_link_libraries(moppe_app PUBLIC moppe_platform_tvos)
 
   add_executable(moppe-tvos MACOSX_BUNDLE

@@ -5,7 +5,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 device="${MOPPE_TVOS_DEVICE:-Living Room}"
 team="${MOPPE_TVOS_TEAM:-AA8RNDKMB9}"
-configuration="${MOPPE_TVOS_CONFIGURATION:-Debug}"
+configuration="${MOPPE_TVOS_CONFIGURATION:-Release}"
 build_dir="${MOPPE_TVOS_BUILD_DIR:-$root/build-tvos-device}"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
