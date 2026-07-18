@@ -756,7 +756,7 @@ namespace moppe {
       }
 
       if (m_profile_gpu_passes) {
-        if (@available (macOS 11.0, iOS 14.0, *)) {
+        if (@available (macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
           id<MTLCounterSet> timestamps = nil;
           for (id<MTLCounterSet> set in m_device.counterSets)
             if ([set.name isEqualToString:MTLCommonCounterSetTimestamp]) {
@@ -854,7 +854,7 @@ namespace moppe {
 #else
       m_memoryless_ok = [m_device supportsFamily:MTLGPUFamilyApple2];
 #endif
-      if (@available (macOS 13.0, iOS 16.0, *))
+      if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *))
         m_pipelines.mesh_shaders_ok =
           [m_device supportsFamily:MTLGPUFamilyMetal3];
 
@@ -1066,7 +1066,7 @@ namespace moppe {
                                             true,
                                             true);
       if (m_pipelines.mesh_shaders_ok) {
-        if (@available (macOS 13.0, iOS 16.0, *)) {
+        if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
           const auto make_dust_mesh = [&] (bool additive) {
             MTLMeshRenderPipelineDescriptor* p =
               [[MTLMeshRenderPipelineDescriptor alloc] init];
@@ -2562,7 +2562,7 @@ namespace moppe {
               vertexCount:water_resources.ocean_vcount];
 
       if (lattice) {
-        if (@available (macOS 13.0, iOS 16.0, *)) {
+        if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
           MoppeOceanUniforms t = u;
           t.tiles.w = -fine_radius;
           [enc setRenderPipelineState:pipelines.water_tiles];
@@ -2637,7 +2637,7 @@ namespace moppe {
         id<MTLRenderPipelineState> mesh_pipeline =
           additive ? pipelines.dust_mesh_add : pipelines.dust_mesh_soft;
         if (mesh_pipeline) {
-          if (@available (macOS 13.0, iOS 16.0, *)) {
+          if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
             id<MTLBuffer> buffer = [device
               newBufferWithBytes:packed.data ()
                           length:packed.size () * sizeof (MoppeDustEmission)

@@ -2258,7 +2258,7 @@ namespace moppe {
 
         // In great pain, only R (ride again) and ESC work.
         if (logic ().m_game_over) {
-          if (k == Key::R && down)
+          if ((k == Key::R || k == Key::Restart) && down)
             revive ();
           else if (k == Key::Escape && down)
             platform::request_quit ();
@@ -2695,7 +2695,11 @@ int main (int argc, char** argv) {
   MOPPE_PROFILE_ZONE ("main");
 
   game::WorldParams world;
+#ifdef MOPPE_DEFAULT_BALANCED_GRAPHICS
+  game::GraphicsSettings graphics = game::balanced_graphics_settings ();
+#else
   game::GraphicsSettings graphics = game::high_graphics_settings ();
+#endif
   platform::Config config;
   bool start_in_terrain_lab = false;
   bool terrain_lab_preview = false;

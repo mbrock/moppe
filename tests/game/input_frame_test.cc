@@ -54,6 +54,11 @@ MOPPE_TEST (input_frame_adapter_maps_keyboard_controls_and_actions) {
   input.key (platform::Key::R, true);
   frame = input.take_frame ();
   MOPPE_CHECK (frame.toggle_mount);
+
+  input.key (platform::Key::Mount, true);
+  frame = input.take_frame ();
+  MOPPE_CHECK (frame.toggle_mount);
+  MOPPE_CHECK (!input.take_frame ().toggle_mount);
 }
 
 MOPPE_TEST (input_frame_adapter_maps_touch_and_cinematic_controls) {
@@ -69,4 +74,18 @@ MOPPE_TEST (input_frame_adapter_maps_touch_and_cinematic_controls) {
   frame = input.take_frame ();
   MOPPE_CHECK_NEAR (game::input_value (frame.boost), 1.0f, 0.0f);
   MOPPE_CHECK (frame.leave_cinematic);
+}
+
+MOPPE_TEST (input_frame_adapter_combines_keyboard_and_controller_controls) {
+  game::InputFrameAdapter input;
+  input.controls ({ .steer = 0.5f, .drive = 0.75f, .boost = 0.4f });
+  input.key (platform::Key::A, true);
+  game::InputFrame frame = input.take_frame ();
+  MOPPE_CHECK_NEAR (game::input_value (frame.turn), -1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (game::input_value (frame.drive), 0.75f, 0.0f);
+  MOPPE_CHECK_NEAR (game::input_value (frame.boost), 0.4f, 0.0f);
+
+  input.key (platform::Key::A, false);
+  frame = input.take_frame ();
+  MOPPE_CHECK_NEAR (game::input_value (frame.turn), 0.5f, 0.0f);
 }

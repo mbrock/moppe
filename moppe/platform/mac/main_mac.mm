@@ -5,6 +5,7 @@
 #import <MetalKit/MetalKit.h>
 #import <QuartzCore/CAMetalDisplayLink.h>
 
+#include <moppe/platform/apple/game_controller.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/terrain/metal/metal_evaluator.hh>
@@ -294,6 +295,7 @@ static void log_runtime_parameters (MoppeView* view) {
                                      CAMetalDisplayLinkDelegate>
 @property (nonatomic, assign) Game* game;
 @property (nonatomic, assign) moppe::render::Renderer* renderer;
+- (void)connectGameController;
 - (void)startDisplayLinkForView:(MoppeView*)view;
 @end
 
@@ -307,6 +309,7 @@ static void log_runtime_parameters (MoppeView* view) {
   bool m_profile_cpu;
   CAMetalDisplayLink* m_display_link;
   MoppeView* m_view;
+  std::unique_ptr<moppe::platform::AppleGameController> m_controller;
 }
 
 - (instancetype)init {
@@ -330,6 +333,8 @@ static void log_runtime_parameters (MoppeView* view) {
   if (dt > 0.05f)
     dt = 0.05f; // anti-tunneling clamp, as in the GL build
   const double tick_start = moppe::platform::now ();
+  if (m_controller)
+    m_controller->poll ();
   if (dt > 0)
     self.game->tick (dt);
   const double render_start = moppe::platform::now ();
@@ -357,6 +362,11 @@ static void log_runtime_parameters (MoppeView* view) {
       m_profile_frames = 0;
     }
   }
+}
+
+- (void)connectGameController {
+  m_controller =
+    std::make_unique<moppe::platform::AppleGameController> (*self.game);
 }
 
 - (void)drawInMTKView:(MTKView*)view {
@@ -424,6 +434,8 @@ static void log_runtime_parameters (MoppeView* view) {
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {
   [m_display_link invalidate];
+  if (m_controller)
+    m_controller->disconnect ();
   return NSTerminateNow;
 }
 @end
@@ -505,6 +517,7 @@ namespace moppe {
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
         delegate.game = &game;
         delegate.renderer = renderer;
+        [delegate connectGameController];
         view.delegate = delegate;
         window.delegate = delegate;
         NSApp.delegate = delegate;

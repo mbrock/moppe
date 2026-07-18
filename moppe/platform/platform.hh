@@ -29,6 +29,8 @@ namespace moppe {
       Space,
       Tab,
       Escape,
+      Mount,
+      Restart,
       E,
       G,
       M,
