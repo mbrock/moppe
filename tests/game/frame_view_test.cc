@@ -172,7 +172,6 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
   game::GameLogicState& logic = session.logic ();
-  logic.m_fuel = 47.0f;
   logic.m_health = 83.0f;
   logic.m_odometer = 1234.0;
   logic.m_lives = 6;
@@ -183,7 +182,6 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
 
   const game::FrameView frozen =
     game::compose_frame_view (gameplay_input (fixture));
-  MOPPE_CHECK_NEAR (frozen.hud.fuel, 47.0f, 1e-6f);
   MOPPE_CHECK_NEAR (frozen.hud.health01, 0.83f, 1e-6f);
   MOPPE_CHECK_NEAR (frozen.hud.odometer_m, 1234.0f, 1e-6f);
   MOPPE_CHECK (frozen.hud.lives == 6);
@@ -193,17 +191,14 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   MOPPE_CHECK_NEAR (frozen.hud.frame_time_s, 0.0125f, 1e-6f);
   MOPPE_CHECK_NEAR (frozen.hud.heading_radians, 0.0f, 1e-6f);
 
-  logic.m_fuel = 9.0f;
   logic.m_score = 7;
   session.bike ().reset (Vec3 (96, 11.2f, 48));
   session.bike ().set_heading (Vec3 (1, 0, 0));
   const game::FrameView changed =
     game::compose_frame_view (gameplay_input (fixture));
-  MOPPE_CHECK_NEAR (frozen.hud.fuel, 47.0f, 1e-6f);
   MOPPE_CHECK (frozen.hud.score == 420);
   frame_view_check_vector (frozen.hud.subject_position, Vec3 (48, 11.2f, 48));
   MOPPE_CHECK_NEAR (frozen.hud.heading_radians, 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (changed.hud.fuel, 9.0f, 1e-6f);
   MOPPE_CHECK (changed.hud.score == 7);
   MOPPE_CHECK_NEAR (changed.hud.heading_radians, 0.5f * PI, 1e-6f);
 

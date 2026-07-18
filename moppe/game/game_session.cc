@@ -436,7 +436,7 @@ namespace moppe::game {
       }
     }
 
-    // Star pickups sparkle gold and top up fuel and boost reserves.
+    // Star pickups sparkle gold and top up the boost reserve.
     {
       const int picked =
         session.stars ().update (vehicle_position, logic.m_total_time, elapsed);
@@ -463,25 +463,13 @@ namespace moppe::game {
                               5,
                               DisplayColor (1.0f, 0.95f, 0.55f),
                               flash);
-        logic.m_fuel = std::min (100.0f, logic.m_fuel + 25.0f * picked);
         if (logic.m_mode != M_GLIDER)
           vehicle.replenish_boost (0.25f * picked);
       }
     }
 
-    // Fuel: the throttle burns it; an empty tank limps along at a third power
-    // (never fully stranded).
-    if (driving) {
-      logic.m_fuel = std::max (
-        0.0f,
-        logic.m_fuel - scalar_value (abs (vehicle.thrust ())) * 0.9f * elapsed);
+    if (driving)
       logic.m_odometer += length (vehicle.velocity ()) * elapsed;
-
-      const float want =
-        logic.m_go_input *
-        ((logic.m_fuel <= 0.5f && logic.m_go_input > 0) ? 0.3f : 1.0f);
-      vehicle.set_thrust (want);
-    }
 
     session.dust ().update (dt);
     logic.m_shake_time += elapsed;
