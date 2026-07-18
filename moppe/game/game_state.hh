@@ -31,7 +31,6 @@ namespace moppe::game {
     float m_fov_k = 0.0f;
     int m_lives = 10;
     bool m_game_over = false;
-    float m_fuel = 100.0f;
     double m_odometer = 0.0;
     float m_turn_input = 0.0f;
     float m_go_input = 0.0f;

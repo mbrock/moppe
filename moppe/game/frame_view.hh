@@ -51,6 +51,7 @@ namespace moppe::game {
     Vec3 position {};
     Vec3 heading { 0, 0, 1 };
     float bank_radians = 0.0f;
+    bool bike_attached = false;
   };
 
   struct WalkerPose {
@@ -76,7 +77,6 @@ namespace moppe::game {
   // into FrameView. The trail map needs the unprojected subject reading too.
   struct FrameHud {
     float speed_kmh = 0.0f;
-    float fuel = 100.0f;
     float boost_ready01 = 1.0f;
     float health01 = 1.0f;
     float odometer_m = 0.0f;
@@ -90,6 +90,7 @@ namespace moppe::game {
     bool on_foot = false;
     bool gliding = false;
     bool can_deploy_glider = false;
+    bool can_drop_bike = false;
     float vertical_speed_mps = 0.0f;
     float frame_time_s = 1.0f / 60.0f;
     float heading_radians = 0.0f;

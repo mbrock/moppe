@@ -18,8 +18,6 @@ namespace moppe {
       // length(active_vehicle().velocity()) * 3.6f; ignored (treated
       // as 0) while on_foot, as at the old call site.
       float speed_kmh;
-      // m_fuel: 0..100.  Drives the fuel needle sweep.
-      float fuel;
       // active_vehicle().boost_charge(): 0..1.  Drives the boost dial's
       // blue reserve arc; ignored (treated as 1.0) on foot.
       float boost_ready01;
@@ -44,6 +42,7 @@ namespace moppe {
       // dial becomes a variometer and an airborne bike gets a deploy prompt.
       bool gliding;
       bool can_deploy_glider;
+      bool can_drop_bike;
       float vertical_speed_mps;
       // Real draw-callback interval, used by the ECU telemetry trace.
       float frame_time_s;
@@ -51,16 +50,16 @@ namespace moppe {
       float heading_radians;
 
       HudState ()
-          : speed_kmh (0), fuel (100.0f), boost_ready01 (1.0f), health01 (1.0f),
+          : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),
             odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
             landed_airtime_s (0), landed_points (0), landed_age_s (10),
             on_foot (false), gliding (false), can_deploy_glider (false),
-            vertical_speed_mps (0), frame_time_s (1.0f / 60.0f),
-            heading_radians (0.0f) {}
+            can_drop_bike (false), vertical_speed_mps (0),
+            frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 
     // Compact instrument cluster: a digital speed arc with overlapping
-    // fuel and boost mini dials, plus top-left star, health, and life
+    // boost mini dial, plus top-left star, health, and life
     // readouts.  Records into the caller's HUD DrawList in point
     // coordinates, y-down, origin top-left.
     class Hud {
@@ -80,7 +79,7 @@ namespace moppe {
       void draw_game_over (render::DrawList& dl, int width_pts, int height_pts);
 
     private:
-      void rebuild_static (int width_pts, int height_pts, bool low_fuel);
+      void rebuild_static (int width_pts, int height_pts);
 
       std::unique_ptr<render::FontAtlas> m_helv10;    // dial labels
       std::unique_ptr<render::FontAtlas> m_helv12;    // ON FOOT etc.
@@ -94,12 +93,10 @@ namespace moppe {
       // Everything that only depends on the layout (dial faces, ticks,
       // panels, fixed labels) is tessellated once into this list and
       // spliced into the frame each draw; only needles, arcs, bars, and
-      // live text re-record.  The low-fuel warning ring has two alpha
-      // states, so it keys the bake alongside the window size.
+      // live text re-record.
       render::DrawList m_static;
       int m_static_width;
       int m_static_height;
-      bool m_static_low_fuel;
     };
   }
 }

@@ -38,7 +38,6 @@ namespace {
                     const moppe::game::GameState& expected) {
     MOPPE_CHECK (actual.logic.m_mode == expected.logic.m_mode);
     MOPPE_CHECK (actual.logic.m_cam_mode == expected.logic.m_cam_mode);
-    MOPPE_CHECK_NEAR (actual.logic.m_fuel, expected.logic.m_fuel, 1e-6f);
     MOPPE_CHECK_NEAR (static_cast<float> (actual.logic.m_odometer),
                       static_cast<float> (expected.logic.m_odometer),
                       1e-6f);
@@ -157,7 +156,8 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
     MOPPE_CHECK (frame_count == config.settle_frames + config.measured_frames);
 
   MOPPE_CHECK (checkpoint.has_value ());
-  MOPPE_CHECK (epoch_ends.front ().logic.m_fuel < checkpoint->logic.m_fuel);
+  MOPPE_CHECK (epoch_ends.front ().logic.m_odometer >
+               checkpoint->logic.m_odometer);
   for (const game::GameState& end : epoch_ends)
     check_state (end, epoch_ends.front ());
 }

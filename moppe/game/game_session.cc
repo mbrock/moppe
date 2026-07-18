@@ -6,6 +6,16 @@
 
 namespace moppe::game {
   namespace {
+    void sync_attached_bike (GameSession& session) {
+      const mov::Glider& glider = session.glider ();
+      const Vec3 up =
+        Quaternion::rotate (Vec3 (0, 1, 0), glider.heading (), -glider.bank ());
+      session.bike ().carry (glider.physical_position () - up * 2.4f * u::m,
+                             glider.physical_velocity (),
+                             glider.heading (),
+                             up);
+    }
+
     void set_turn (GameSession& session, float value) {
       GameLogicState& logic = session.logic ();
       logic.m_turn_input = value;
@@ -55,20 +65,42 @@ namespace moppe::game {
       session.bike ().set_thrust (0);
       session.bike ().set_yaw (0 * u::deg);
       session.bike ().set_boost (0, 0);
-      session.glider ().launch (
-        moppe::position (position + Vec3 (0, 1.0f, 0)), inherited, heading);
+      session.glider ().launch (moppe::position (position + Vec3 (0, 2.4f, 0)),
+                                inherited,
+                                heading,
+                                true);
       GameLogicState& logic = session.logic ();
       logic.m_mode = M_GLIDER;
       session.glider ().set_turn (logic.m_turn_input);
       session.glider ().set_speed_control (logic.m_go_input);
       session.glider ().set_flare (logic.m_boost_input > 0.1f);
+      sync_attached_bike (session);
+    }
+
+    void use_glider_control (GameSession& session,
+                             const map::HeightMap& terrain) {
+      if (session.logic ().m_mode == M_GLIDER) {
+        session.glider ().drop_bike ();
+        return;
+      }
+      deploy_glider (session, terrain);
     }
 
     void finish_glide (GameSession& session) {
+      GameLogicState& logic = session.logic ();
+      if (session.glider ().bike_attached ()) {
+        sync_attached_bike (session);
+        session.glider ().drop_bike ();
+        logic.m_mode = M_BIKE;
+        set_turn (session, logic.m_turn_input);
+        set_go (session, logic.m_go_input);
+        set_boost (session, 0);
+        return;
+      }
+
       const Vec3 position = session.glider ().position ();
       session.walker ().spawn (moppe::position (position + Vec3 (0, 0.15f, 0)),
                                session.glider ().heading ());
-      GameLogicState& logic = session.logic ();
       logic.m_mode = M_FOOT;
       set_turn (session, logic.m_turn_input);
       set_go (session, logic.m_go_input);
@@ -130,10 +162,10 @@ namespace moppe::game {
       set_boost (session, input_value (input.boost));
 
       if (input.deploy_glider)
-        deploy_glider (session, terrain);
+        use_glider_control (session, terrain);
       if (input.toggle_mount) {
-        if (session.can_deploy_glider (terrain))
-          deploy_glider (session, terrain);
+        if (session.can_deploy_glider (terrain) || session.can_drop_bike ())
+          use_glider_control (session, terrain);
         else
           toggle_mount (session);
       }
@@ -203,6 +235,10 @@ namespace moppe::game {
     return position[1] - ground > 3.0f;
   }
 
+  bool GameSession::can_drop_bike () const {
+    return m_logic.m_mode == M_GLIDER && m_glider.bike_attached ();
+  }
+
   void GameSession::clear_controls () {
     set_turn (*this, 0.0f);
     set_go (*this, 0.0f);
@@ -240,11 +276,17 @@ namespace moppe::game {
 
     apply_input_frame (session, context.terrain, input);
 
-    session.bike ().update (dt);
+    if (!session.can_drop_bike ())
+      session.bike ().update (dt);
     if (logic.m_car_exists)
       session.car ().update (dt);
-    if (logic.m_mode == M_GLIDER && session.glider ().update (dt))
-      finish_glide (session);
+    if (logic.m_mode == M_GLIDER) {
+      const bool landed = session.glider ().update (dt);
+      if (session.glider ().bike_attached ())
+        sync_attached_bike (session);
+      if (landed)
+        finish_glide (session);
+    }
     if (logic.m_mode == M_FOOT)
       session.walker ().update (
         dt, context.terrain, context.obstacles, context.world);
@@ -436,7 +478,7 @@ namespace moppe::game {
       }
     }
 
-    // Star pickups sparkle gold and top up fuel and boost reserves.
+    // Star pickups sparkle gold and top up the boost reserve.
     {
       const int picked =
         session.stars ().update (vehicle_position, logic.m_total_time, elapsed);
@@ -463,25 +505,13 @@ namespace moppe::game {
                               5,
                               DisplayColor (1.0f, 0.95f, 0.55f),
                               flash);
-        logic.m_fuel = std::min (100.0f, logic.m_fuel + 25.0f * picked);
         if (logic.m_mode != M_GLIDER)
           vehicle.replenish_boost (0.25f * picked);
       }
     }
 
-    // Fuel: the throttle burns it; an empty tank limps along at a third power
-    // (never fully stranded).
-    if (driving) {
-      logic.m_fuel = std::max (
-        0.0f,
-        logic.m_fuel - scalar_value (abs (vehicle.thrust ())) * 0.9f * elapsed);
+    if (driving)
       logic.m_odometer += length (vehicle.velocity ()) * elapsed;
-
-      const float want =
-        logic.m_go_input *
-        ((logic.m_fuel <= 0.5f && logic.m_go_input > 0) ? 0.3f : 1.0f);
-      vehicle.set_thrust (want);
-    }
 
     session.dust ().update (dt);
     logic.m_shake_time += elapsed;

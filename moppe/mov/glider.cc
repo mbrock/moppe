@@ -9,6 +9,9 @@ namespace moppe::mov {
     constexpr airspeed_t trim_speed = 16.0f * airspeed[u::m / u::s];
     constexpr airspeed_t minimum_speed = 10.0f * airspeed[u::m / u::s];
     constexpr airspeed_t maximum_speed = 28.0f * airspeed[u::m / u::s];
+    // Rider and wing are the unloaded reference mass. Carrying the 150 kg
+    // motocross raises total weight to roughly 2.5 times that baseline.
+    constexpr float loaded_weight_ratio = 2.5f;
 
     // A persistent, readable prevailing wind.  Its horizontal velocity is
     // included in ground speed and its encounter with windward slopes makes
@@ -21,8 +24,10 @@ namespace moppe::mov {
 
   void Glider::launch (position_t position,
                        velocity_t inherited_velocity,
-                       const Vec3& heading) {
+                       const Vec3& heading,
+                       bool bike_attached) {
     m_position = position;
+    m_bike_attached = bike_attached;
     const Vec3 inherited = velocity_value (inherited_velocity);
     Vec3 horizontal (inherited[0], 0, inherited[2]);
     const float inherited_speed = length (horizontal);
@@ -36,9 +41,11 @@ namespace moppe::mov {
     else
       m_heading = Vec3 (0, 0, 1);
 
+    const float load_scale =
+      m_bike_attached ? std::sqrt (loaded_weight_ratio) : 1.0f;
     m_airspeed = std::clamp (inherited_speed * moppe::airspeed[u::m / u::s],
-                             minimum_speed,
-                             maximum_speed);
+                             minimum_speed * load_scale,
+                             maximum_speed * load_scale);
     m_vertical_speed = inherited[1] * rate_of_climb_speed[u::m / u::s];
     m_air_mass_lift = 0.0f * rate_of_climb_speed[u::m / u::s];
     m_velocity = inherited_velocity;
@@ -92,11 +99,15 @@ namespace moppe::mov {
     const radians_t bank_target = turn * 48.0f * u::deg;
     m_bank += (bank_target - m_bank) * smoothing_alpha (3.2f / u::s, dt);
 
+    const float load_scale =
+      m_bike_attached ? std::sqrt (loaded_weight_ratio) : 1.0f;
     airspeed_t target_speed =
-      trim_speed + speed_input * (8.0f * moppe::airspeed[u::m / u::s]);
+      (trim_speed + speed_input * (8.0f * moppe::airspeed[u::m / u::s])) *
+      load_scale;
     if (m_flare)
-      target_speed = minimum_speed;
-    target_speed = std::clamp (target_speed, minimum_speed, maximum_speed);
+      target_speed = minimum_speed * load_scale;
+    target_speed = std::clamp (
+      target_speed, minimum_speed * load_scale, maximum_speed * load_scale);
     const damping_t speed_response = m_flare ? 2.8f / u::s : 1.3f / u::s;
     m_airspeed +=
       (target_speed - m_airspeed) * smoothing_alpha (speed_response, dt);
@@ -111,8 +122,10 @@ namespace moppe::mov {
 
     m_air_mass_lift = ridge_lift ();
     const float bank_load = 1.0f / std::max (0.45f, std::cos (bank));
+    const airspeed_t unloaded_airspeed = m_airspeed / load_scale;
     rate_of_climb_t target_vertical =
-      m_air_mass_lift + polar_sink (m_airspeed) * bank_load * bank_load;
+      m_air_mass_lift +
+      polar_sink (unloaded_airspeed) * load_scale * bank_load * bank_load;
 
     // Pulling the bar through a flare converts some excess airspeed into a
     // brief climb.  Once the speed is gone the low-speed side of the polar
@@ -134,8 +147,9 @@ namespace moppe::mov {
     const float ground = m_surface.elevation_at (m_position)
                            .quantity_from_zero ()
                            .numerical_value_in (u::m);
-    if (p[1] <= ground + 0.75f) {
-      p[1] = ground + 0.75f;
+    const float landing_clearance = m_bike_attached ? 3.4f : 0.75f;
+    if (p[1] <= ground + landing_clearance) {
+      p[1] = ground + landing_clearance;
       m_velocity = moppe::velocity (Vec3 ());
       m_vertical_speed = 0.0f * rate_of_climb_speed[u::m / u::s];
       m_air_mass_lift = 0.0f * rate_of_climb_speed[u::m / u::s];
@@ -175,7 +189,7 @@ namespace moppe::mov {
   Glider::State Glider::state () const {
     return { m_position,      m_velocity,       m_heading,       m_bank,
              m_airspeed,      m_vertical_speed, m_air_mass_lift, m_turn,
-             m_speed_control, m_flare,          m_landed };
+             m_speed_control, m_flare,          m_bike_attached, m_landed };
   }
 
   void Glider::restore (const State& state) {
@@ -189,6 +203,7 @@ namespace moppe::mov {
     m_turn = state.turn;
     m_speed_control = state.speed_control;
     m_flare = state.flare;
+    m_bike_attached = state.bike_attached;
     m_landed = state.landed;
   }
 }

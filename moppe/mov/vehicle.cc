@@ -101,6 +101,27 @@ namespace moppe {
       m_body_color = state.body_color;
     }
 
+    void Vehicle::carry (position_t position,
+                         velocity_t velocity,
+                         const Vec3& heading,
+                         const Vec3& up) {
+      m_position = position;
+      m_velocity = velocity;
+      m_heading = Vec3 (heading[0], 0, heading[2]);
+      if (length2 (m_heading) > 0.0001f)
+        normalize (m_heading);
+      else
+        m_heading = Vec3 (0, 0, 1);
+      m_thrust_orientation = m_heading;
+      m_render_heading = m_heading;
+      m_render_normal = normalized (up);
+      m_lean = 0;
+      m_yaw = 0 * u::rad;
+      m_yaw_target = 0 * u::rad;
+      m_airborne_time = seconds (0.2f);
+      m_fall_top = std::max (m_fall_top, position_value (m_position)[1] * u::m);
+    }
+
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
         const Vec3& p = position_value (m_position);
@@ -151,6 +172,47 @@ namespace moppe {
         return true;
       return m_airborne_time < seconds (0.12f) &&
              position_value (m_position)[1] - ground_height () < radius + 0.6f;
+    }
+
+    bool Vehicle::expected_landing_pose (Vec3& forward,
+                                         Vec3& up,
+                                         float& time_to_landing) const {
+      const Vec3& position = position_value (m_position);
+      const Vec3& velocity = velocity_value (m_velocity);
+      constexpr float gravity = 9.82f;
+      constexpr float step = 0.08f;
+      constexpr float horizon = 3.0f;
+
+      for (float t = step; t <= horizon; t += step) {
+        Vec3 sample = position + velocity * t;
+        sample[1] -= 0.5f * gravity * t * t;
+        if (!m_map.in_bounds (sample[0], sample[2]))
+          return false;
+        const float surface =
+          m_map.interpolated_height (sample[0], sample[2]) + radius;
+        if (sample[1] > surface)
+          continue;
+
+        up = m_map.interpolated_normal (sample[0], sample[2]);
+        if (length2 (up) < 0.000001f)
+          return false;
+        normalize (up);
+
+        // Preserve the rider's chosen yaw, but pitch the chassis tangent to
+        // the landing surface. The sampled normal supplies the corresponding
+        // roll, so sidehill touchdowns meet both tires instead of one edge.
+        forward = m_heading - up * dot (m_heading, up);
+        if (length2 (forward) < 0.0001f) {
+          const Vec3 impact_velocity = velocity + Vec3 (0, -gravity * t, 0);
+          forward = impact_velocity - up * dot (impact_velocity, up);
+        }
+        if (length2 (forward) < 0.0001f)
+          return false;
+        normalize (forward);
+        time_to_landing = t;
+        return true;
+      }
+      return false;
     }
 
     // The obstacle box whose roof is the effective ground under the
@@ -412,22 +474,28 @@ namespace moppe {
       }
 
       // Visual attitude is separate from the steering heading. In flight the
-      // bike follows its trajectory, while steering can still yaw the bike
-      // without redirecting its momentum. Near a vertical arc, retain the
-      // previous right axis so the bike cannot arbitrarily roll over.
+      // rider looks ahead along the ballistic arc and prepares the chassis
+      // for the expected landing plane. If no touchdown is in prediction
+      // range, the bike follows its trajectory as before.
       Vec3 pose_forward = m_heading;
       Vec3 pose_up = ground_normal ();
       damping_t pose_rate = 10.0f / u::s;
       if (airborne () && length2 (velocity) > 4.0f) {
-        pose_forward = normalized (velocity);
-        Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
-        if (length2 (right) < 0.0001f)
-          right = cross (m_render_normal, m_render_heading);
-        if (length2 (right) < 0.0001f)
-          right = Vec3 (1, 0, 0);
-        normalize (right);
-        pose_up = cross (pose_forward, right);
-        pose_rate = 4.5f / u::s;
+        float time_to_landing = 0.0f;
+        if (expected_landing_pose (pose_forward, pose_up, time_to_landing)) {
+          const float response = 4.0f + 5.0f / std::max (0.5f, time_to_landing);
+          pose_rate = response / u::s;
+        } else {
+          pose_forward = normalized (velocity);
+          Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
+          if (length2 (right) < 0.0001f)
+            right = cross (m_render_normal, m_render_heading);
+          if (length2 (right) < 0.0001f)
+            right = Vec3 (1, 0, 0);
+          normalize (right);
+          pose_up = cross (pose_forward, right);
+          pose_rate = 4.5f / u::s;
+        }
       }
 
       const float pose_alpha = smoothing_alpha (pose_rate, dt);
