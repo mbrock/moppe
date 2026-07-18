@@ -258,7 +258,6 @@ namespace moppe::game {
 
     FrameHud& hud = result.hud;
     hud.speed_kmh = input.session.subject_speed_kmh ();
-    hud.fuel = logic.m_fuel;
     if (logic.m_mode == M_GLIDER) {
       const float lift =
         input.session.glider ().air_mass_lift ().numerical_value_in (u::m /

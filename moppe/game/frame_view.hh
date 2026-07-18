@@ -76,7 +76,6 @@ namespace moppe::game {
   // into FrameView. The trail map needs the unprojected subject reading too.
   struct FrameHud {
     float speed_kmh = 0.0f;
-    float fuel = 100.0f;
     float boost_ready01 = 1.0f;
     float health01 = 1.0f;
     float odometer_m = 0.0f;

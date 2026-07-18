@@ -55,15 +55,13 @@ namespace moppe {
         Rect status;
         Point cluster_anchor;
         Dial speed;
-        Dial fuel;
         Dial boost;
 
         HudLayout (float width, float height)
             : status (10, 8, 171, 77), cluster_anchor (width - 10, height - 10),
               speed (Point (-58, -61), 54) {
           const float mini_x = speed.center.x - speed.radius - 33.0f;
-          fuel = Dial (Point (mini_x, speed.center.y - 37.0f), 28);
-          boost = Dial (Point (mini_x, speed.center.y + 23.0f), 28);
+          boost = Dial (Point (mini_x, speed.center.y), 28);
         }
       };
 
@@ -145,37 +143,6 @@ namespace moppe {
           const Point p1 = dial.at (outer, angle);
           dl.line (p0.x, p0.y, p1.x, p1.y, width);
         }
-      }
-
-      // A tapered needle with a counterweight tail and a hub
-      void hud_needle (DrawList& dl,
-                       const Dial& dial,
-                       float a_deg,
-                       float len_scale,
-                       float tail_scale,
-                       float w,
-                       float cr,
-                       float cg,
-                       float cb) {
-        const float a = a_deg * PI / 180.0f;
-        const float dx = std::cos (a), dy = -std::sin (a);
-        const float px = -dy, py = dx;
-        const float cx = dial.center.x, cy = dial.center.y;
-        const float len = dial.radius * len_scale;
-        const float tail = dial.radius * tail_scale;
-
-        dl.color (cr, cg, cb, 0.96f);
-        dl.begin (Prim::Triangles);
-        dl.vertex (cx + px * w, cy + py * w);
-        dl.vertex (cx - px * w, cy - py * w);
-        dl.vertex (cx + dx * len, cy + dy * len);
-        dl.vertex (cx + px * w * 1.5f, cy + py * w * 1.5f);
-        dl.vertex (cx - px * w * 1.5f, cy - py * w * 1.5f);
-        dl.vertex (cx - dx * tail, cy - dy * tail);
-        dl.end ();
-
-        hud_disc (dl, dial.center, w * 2.6f, 0.16f, 0.17f, 0.19f, 1.0f);
-        hud_disc (dl, dial.center, w * 1.4f, 0.75f, 0.77f, 0.80f, 1.0f);
       }
 
       // Metallic bezel + dark face + glass highlight
@@ -292,7 +259,7 @@ namespace moppe {
 
     Hud::Hud ()
         : m_fps (0), m_fps_cursor (0), m_fps_count (0), m_static_width (-1),
-          m_static_height (-1), m_static_low_fuel (false) {
+          m_static_height (-1) {
       std::fill (m_fps_history, m_fps_history + 48, 0.0f);
     }
 
@@ -309,7 +276,7 @@ namespace moppe {
     // live element drawn per frame sits strictly on top of these (or
     // doesn't overlap them), so splicing the bake first preserves the
     // original paint order.
-    void Hud::rebuild_static (int width_pts, int height_pts, bool low_fuel) {
+    void Hud::rebuild_static (int width_pts, int height_pts) {
       DrawList& dl = m_static;
       dl.clear ();
 
@@ -319,31 +286,6 @@ namespace moppe {
       // ---- instrument cluster ----
       dl.push ();
       dl.translate (layout.cluster_anchor.x, layout.cluster_anchor.y, 0);
-
-      // Fuel: face, reserve-zone marker, ticks (the needle is live).
-      hud_dial_face (dl, layout.fuel);
-      hud_ring (dl,
-                layout.fuel,
-                0.62f,
-                0.88f,
-                132,
-                160,
-                0.95f,
-                0.32f,
-                0.04f,
-                low_fuel ? 0.9f : 0.45f);
-      hud_ticks (dl,
-                 layout.fuel,
-                 5,
-                 160,
-                 20,
-                 0.66f,
-                 0.86f,
-                 1.5f,
-                 0.88f,
-                 0.9f,
-                 0.94f,
-                 0.9f);
 
       // Boost: face and the lightning-bolt mark inside the charge arc.
       hud_dial_face (dl, layout.boost);
@@ -382,18 +324,6 @@ namespace moppe {
                       layout.speed.center.x - m_helv10->measure (unit) * 0.5f,
                       layout.speed.center.y + 18,
                       unit);
-
-      // Fuel endpoints; the boost dial uses the bolt symbol above.
-      dl.color (0.8f, 0.3f, 0.2f);
-      m_helv10->draw (dl,
-                      layout.fuel.center.x - layout.fuel.radius * 0.95f,
-                      layout.fuel.center.y - layout.fuel.radius * 0.24f,
-                      "E");
-      dl.color (0.8f, 0.85f, 0.9f);
-      m_helv10->draw (dl,
-                      layout.fuel.center.x + layout.fuel.radius * 0.82f,
-                      layout.fuel.center.y - layout.fuel.radius * 0.24f,
-                      "F");
 
       dl.pop ();
 
@@ -444,7 +374,6 @@ namespace moppe {
 
       m_static_width = width_pts;
       m_static_height = height_pts;
-      m_static_low_fuel = low_fuel;
     }
 
     void Hud::draw (render::DrawList& dl,
@@ -458,7 +387,6 @@ namespace moppe {
       const float kmh = riding ? st.speed_kmh : 0.0f;
       const float speed_fraction = clamp01 (kmh / 300.0f);
       const float charge = clamp01 (riding ? st.boost_ready01 : 1.0f);
-      const float fuel = std::max (0.0f, std::min (100.0f, st.fuel));
       const HudLayout layout ((float)width_pts, (float)height_pts);
       const float frame_time = std::max (st.frame_time_s, 0.001f);
       const float instant_fps = std::min (240.0f, 1.0f / frame_time);
@@ -471,26 +399,13 @@ namespace moppe {
 
       // Splice in the baked static geometry (dial faces, ticks, panels,
       // fixed labels), re-tessellating only when its key changes.
-      const bool low_fuel = fuel < 20.0f;
-      if (m_static_width != width_pts || m_static_height != height_pts ||
-          m_static_low_fuel != low_fuel)
-        rebuild_static (width_pts, height_pts, low_fuel);
+      if (m_static_width != width_pts || m_static_height != height_pts)
+        rebuild_static (width_pts, height_pts);
       dl.append (m_static);
 
       // All cluster geometry is local to one bottom-right anchor.
       dl.push ();
       dl.translate (layout.cluster_anchor.x, layout.cluster_anchor.y, 0);
-
-      // ==================== FUEL GAUGE ====================
-      hud_needle (dl,
-                  layout.fuel,
-                  160.0f - 140.0f * (fuel / 100.0f),
-                  0.74f,
-                  0.2f,
-                  2.2f,
-                  0.92f,
-                  0.92f,
-                  0.95f);
 
       // ==================== BOOST GAUGE ====================
       hud_ring (dl,

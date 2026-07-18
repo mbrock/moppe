@@ -39,7 +39,7 @@ effects above or beside the call.
 keyboard input with `InputFrameAdapter`, advances a live session, restores its
 checkpoint into a replacement session, and replays the exact frames through
 the same public operation. It checks non-vacuous motion and camera action plus
-the replayed physics, camera, fuel, odometer, star, and dust state.
+the replayed physics, camera, odometer, star, and dust state.
 
 `./tools/format --check`, `git diff --check`, `cmake --build build -j 2`,
 `./build/moppe-tests` (195 tests), `ctest --test-dir build
