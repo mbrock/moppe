@@ -166,10 +166,21 @@ namespace moppe::terrain {
     }
   }
 
+  FractionalDrainage CpuStreamPowerEvolutionBackend::route_fractional (
+    const TerrainView& terrain,
+    const FloodField& flood,
+    const LakeCensus& census,
+    std::span<const ChannelTangent> previous_tangent,
+    ChannelPersistence persistence) const {
+    return analyze_fractional_drainage (
+      terrain, flood, census, previous_tangent, persistence);
+  }
+
   StreamPowerEvolutionResult evolve_stream_power (
     const TerrainView& terrain,
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
+    const StreamPowerEvolutionBackend& backend,
     const StreamPowerProgress& progress,
     std::span<const ChannelTangent> initial_channel_tangents) {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
@@ -314,11 +325,11 @@ namespace moppe::terrain {
           }
         } else {
           const FractionalDrainage drainage =
-            analyze_fractional_drainage (routed_terrain,
-                                         flood,
-                                         census,
-                                         channel_memory,
-                                         parameters.channel_persistence);
+            backend.route_fractional (routed_terrain,
+                                      flood,
+                                      census,
+                                      channel_memory,
+                                      parameters.channel_persistence);
           channel_memory = spatial::get<channel_tangent> (drainage);
           const auto& area =
             spatial::get<fractional_contributing_area> (drainage);
@@ -419,5 +430,20 @@ namespace moppe::terrain {
     return { .heights = std::move (current),
              .channel_tangents = std::move (channel_memory),
              .report = report };
+  }
+
+  StreamPowerEvolutionResult evolve_stream_power (
+    const TerrainView& terrain,
+    std::span<const meters_per_julian_year_t> uplift_rate,
+    const StreamPowerEvolution& parameters,
+    const StreamPowerProgress& progress,
+    std::span<const ChannelTangent> initial_channel_tangents) {
+    static const CpuStreamPowerEvolutionBackend backend;
+    return evolve_stream_power (terrain,
+                                uplift_rate,
+                                parameters,
+                                backend,
+                                progress,
+                                initial_channel_tangents);
   }
 }

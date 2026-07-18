@@ -91,6 +91,7 @@ namespace moppe {
       ReadingCache,
       BuildingContinents,
       EvolvingTerrain,
+      RefiningTerrain,
       SavingTerrain,
       RebuildingSurface,
       FindingStandingWater,
@@ -143,6 +144,10 @@ namespace moppe {
         return { "Running geological time",
                  "Uplift and erosion are reshaping the land",
                  0.20f };
+      case LoadingStage::RefiningTerrain:
+        return { "Refining the terrain",
+                 "Shaping coasts, channels, and the overland route",
+                 0.68f };
       case LoadingStage::SavingTerrain:
         return { "Saving the terrain",
                  "Keeping this expensive result for the next launch",
@@ -946,15 +951,19 @@ namespace moppe {
         std::optional<terrain::TrailNetwork> generated_trails;
         const terrain::WorldRecipe& recipe = completed->recipe ();
         std::unique_ptr<terrain::FieldEvaluator> field_evaluator;
+        std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution_backend;
         {
           MOPPE_PROFILE_ZONE ("startup.create_field_evaluator");
           field_evaluator = platform::create_field_evaluator ();
+          evolution_backend =
+            platform::create_stream_power_evolution_backend ();
         }
         if (job.terrain_lab_preview) {
           set_loading_stage (LoadingStage::BuildingContinents);
           {
             MOPPE_PROFILE_ZONE ("startup.make_preview_program");
-            map::TerrainEvaluator (terrain, field_evaluator.get ())
+            map::TerrainEvaluator (
+              terrain, field_evaluator.get (), evolution_backend.get ())
               .evaluate (recipe.terrain_program ());
           }
         } else {
@@ -981,7 +990,8 @@ namespace moppe {
             publish_loading_terrain (terrain);
           } else {
             set_loading_stage (LoadingStage::BuildingContinents);
-            map::TerrainEvaluator evaluator (terrain, field_evaluator.get ());
+            map::TerrainEvaluator evaluator (
+              terrain, field_evaluator.get (), evolution_backend.get ());
             history.clear ();
             {
               MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
@@ -995,7 +1005,9 @@ namespace moppe {
                   history.emplace_back (terrain.raw_heights (),
                                         terrain.raw_heights () + count);
                   publish_loading_terrain (terrain);
-                  (void)transform;
+                  if (std::holds_alternative<terrain::OrogenyEvolution> (
+                        transform))
+                    set_loading_stage (LoadingStage::RefiningTerrain);
                 },
                 [this, &terrain] (std::size_t,
                                   const terrain::TerrainTransform& transform,
@@ -1884,7 +1896,6 @@ namespace moppe {
           } else if (m_loading_progress_display >= 0.995f) {
             m_ready = true;
             MOPPE_PROFILE_PLOT ("startup.ready", 1);
-
             const bool automated = !m_screenshot_path.empty () ||
                                    m_benchmark.has_value () ||
                                    m_water_shot.has_value () || m_tree_demo ||
@@ -1934,6 +1945,27 @@ namespace moppe {
         const float frame_dt =
           std::clamp (sky_time - m_loading_last_frame_time, 0.0f, 0.1f);
         m_loading_last_frame_time = sky_time;
+        if (stage == LoadingStage::EvolvingTerrain &&
+            ::getenv ("MOPPE_LOADING_BENCHMARK")) {
+          ++m_loading_evolution_frames;
+          m_loading_evolution_frame_time += frame_dt;
+          m_loading_evolution_max_frame_time =
+            std::max (m_loading_evolution_max_frame_time, frame_dt);
+          if (frame_dt > 0.020f)
+            ++m_loading_evolution_frames_over_20ms;
+        } else if (::getenv ("MOPPE_LOADING_BENCHMARK") &&
+                   m_loading_evolution_frames > 0 &&
+                   !m_loading_benchmark_reported) {
+          const double elapsed_ms = 1000.0 * m_loading_evolution_frame_time;
+          const double mean_ms = elapsed_ms / m_loading_evolution_frames;
+          std::cerr << "loading benchmark: evolution_elapsed_ms=" << elapsed_ms
+                    << " evolution_frames=" << m_loading_evolution_frames
+                    << " evolution_mean_ms=" << mean_ms << " evolution_max_ms="
+                    << 1000.0 * m_loading_evolution_max_frame_time
+                    << " evolution_over_20ms="
+                    << m_loading_evolution_frames_over_20ms << std::endl;
+          m_loading_benchmark_reported = true;
+        }
         const float progress_blend = 1.0f - std::exp (-5.0f * frame_dt);
         m_loading_progress_display +=
           (m_loading_progress_target - m_loading_progress_display) *
@@ -2478,6 +2510,11 @@ namespace moppe {
         m_loading_progress_display = 0.0f;
         m_loading_progress_target = 0.0f;
         m_loading_last_frame_time = 0.0f;
+        m_loading_evolution_frames = 0;
+        m_loading_evolution_frame_time = 0.0;
+        m_loading_evolution_max_frame_time = 0.0f;
+        m_loading_evolution_frames_over_20ms = 0;
+        m_loading_benchmark_reported = false;
         m_loading_height_transition_ready_time = 0.0f;
         m_loading_capture_done = false;
         m_loading_clock_start = platform::now ();
@@ -2581,6 +2618,11 @@ namespace moppe {
       float m_loading_progress_display = 0.0f;
       float m_loading_progress_target = 0.0f;
       float m_loading_last_frame_time = 0.0f;
+      int m_loading_evolution_frames = 0;
+      double m_loading_evolution_frame_time = 0.0;
+      float m_loading_evolution_max_frame_time = 0.0f;
+      int m_loading_evolution_frames_over_20ms = 0;
+      bool m_loading_benchmark_reported = false;
       float m_loading_height_transition_ready_time = 0.0f;
       double m_loading_clock_start = platform::now ();
       bool m_loading_capture_done = false;

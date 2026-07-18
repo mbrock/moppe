@@ -154,6 +154,7 @@ namespace moppe {
       render::Renderer* m_renderer;
       map::RandomHeightMap* m_map;
       std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
+      std::unique_ptr<terrain::StreamPowerEvolutionBackend> m_evolution_backend;
       TerrainLabModel m_model;
       Terrain* m_terrain;
       const WorldParams* m_world;

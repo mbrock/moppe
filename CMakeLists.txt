@@ -180,6 +180,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/post.metal
   moppe/shaders/metal/terrain.metal
   moppe/shaders/metal/field.metal
+  moppe/shaders/metal/orogeny.metal
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
   moppe/shaders/metal/river.metal
@@ -190,6 +191,7 @@ set(MOPPE_METAL_DEPS
   moppe/shaders/metal/common.h
   moppe/render/metal/shader_types.h
   moppe/terrain/metal/field_shader_types.h
+  moppe/terrain/metal/orogeny_shader_types.h
 )
 
 execute_process(
@@ -236,6 +238,9 @@ else()
   file(READ moppe/terrain/metal/field_shader_types.h
     MOPPE_METAL_FIELD_TYPES)
   string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_FIELD_TYPES}\n")
+  file(READ moppe/terrain/metal/orogeny_shader_types.h
+    MOPPE_METAL_OROGENY_TYPES)
+  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_OROGENY_TYPES}\n")
   file(READ moppe/shaders/metal/common.h MOPPE_METAL_COMMON)
   string(REPLACE
     "#include \"../../render/metal/shader_types.h\"" ""
@@ -247,6 +252,9 @@ else()
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(REPLACE
       "#include \"../../terrain/metal/field_shader_types.h\"" ""
+      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
+    string(REPLACE
+      "#include \"../../terrain/metal/orogeny_shader_types.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
   endforeach()
@@ -310,6 +318,7 @@ endif()
 if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_library(moppe_terrain_metal STATIC
     moppe/terrain/metal/metal_evaluator.mm
+    moppe/terrain/metal/metal_stream_power_evolution.mm
   )
   target_include_directories(moppe_terrain_metal
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -430,6 +439,13 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
     moppe/terrain/orogeny_benchmark.cc
   )
   target_link_libraries(terrain-orogeny-benchmark PRIVATE moppe_world)
+  if(TARGET moppe_terrain_metal)
+    target_link_libraries(terrain-orogeny-benchmark
+      PRIVATE moppe_terrain_metal)
+    target_compile_definitions(terrain-orogeny-benchmark PRIVATE
+      MOPPE_OROGENY_METAL_BACKEND=1
+      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
+  endif()
 
   add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
     moppe/terrain/water_depth_experiment.cc
@@ -515,7 +531,8 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(moppe-tests PRIVATE moppe_scene)
   if(TARGET moppe_terrain_metal)
     target_sources(moppe-tests PRIVATE
-      tests/terrain/metal_evaluator_test.cc)
+      tests/terrain/metal_evaluator_test.cc
+      tests/terrain/metal_stream_power_evolution_test.cc)
     target_link_libraries(moppe-tests PRIVATE moppe_terrain_metal)
     target_compile_definitions(moppe-tests PRIVATE
       MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")

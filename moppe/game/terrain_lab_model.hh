@@ -38,9 +38,11 @@ namespace moppe::game {
 
     // Borrow the map for a Lab session.  A caller may supply any field
     // evaluator, including none for a portable CPU-only session.
-    void begin (map::RandomHeightMap& map,
-                const terrain::TerrainProgram& program,
-                const terrain::FieldEvaluator* source_evaluator = nullptr);
+    void begin (
+      map::RandomHeightMap& map,
+      const terrain::TerrainProgram& program,
+      const terrain::FieldEvaluator* source_evaluator = nullptr,
+      const terrain::StreamPowerEvolutionBackend* evolution_backend = nullptr);
     void leave ();
 
     bool active () const noexcept {

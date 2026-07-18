@@ -6,16 +6,17 @@
 namespace moppe::game {
   TerrainLabModel::~TerrainLabModel () = default;
 
-  void
-  TerrainLabModel::begin (map::RandomHeightMap& map,
-                          const terrain::TerrainProgram& program,
-                          const terrain::FieldEvaluator* source_evaluator) {
+  void TerrainLabModel::begin (
+    map::RandomHeightMap& map,
+    const terrain::TerrainProgram& program,
+    const terrain::FieldEvaluator* source_evaluator,
+    const terrain::StreamPowerEvolutionBackend* evolution_backend) {
     if (active ())
       throw std::logic_error ("terrain lab model is already active");
 
     m_map = &map;
-    m_evaluator =
-      std::make_unique<map::TerrainEvaluator> (map, source_evaluator);
+    m_evaluator = std::make_unique<map::TerrainEvaluator> (
+      map, source_evaluator, evolution_backend);
     m_program = program;
     m_original_map = m_evaluator->checkpoint ();
     m_checkpoints.clear ();

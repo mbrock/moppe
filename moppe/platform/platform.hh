@@ -10,6 +10,7 @@
 namespace moppe {
   namespace terrain {
     class FieldEvaluator;
+    class StreamPowerEvolutionBackend;
   }
   namespace platform {
     // Unified key codes: removes the old ASCII/GLUT_KEY_* numeric
@@ -135,6 +136,11 @@ namespace moppe {
     // Returns the platform's accelerated pointwise-field backend when one is
     // available.  A null result deliberately selects the portable CPU backend.
     std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator ();
+
+    // Returns the platform's accelerated landscape-evolution backend when
+    // available. A null result keeps the authoritative portable CPU path.
+    std::unique_ptr<terrain::StreamPowerEvolutionBackend>
+    create_stream_power_evolution_backend ();
 
     // Screen areas covered by notches / home indicators, in points.
     // Zero on macOS.  The HUD and touch zones stay inside these.
