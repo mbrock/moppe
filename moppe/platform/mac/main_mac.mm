@@ -8,6 +8,7 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/terrain/metal/metal_evaluator.hh>
+#include <moppe/terrain/metal/metal_stream_power_evolution.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -439,6 +440,22 @@ namespace moppe {
           asset_path (MOPPE_SHADER_NAME));
       } catch (const std::exception& error) {
         std::cerr << "moppe: Metal field evaluator unavailable: "
+                  << error.what () << std::endl;
+        return {};
+      }
+    }
+
+    std::unique_ptr<terrain::StreamPowerEvolutionBackend>
+    create_stream_power_evolution_backend () {
+      const char* enabled = ::getenv ("MOPPE_METAL_OROGENY");
+      if (!enabled || std::string_view (enabled) == "0")
+        return {};
+      try {
+        return std::make_unique<
+          terrain::metal::MetalStreamPowerEvolutionBackend> (
+          asset_path (MOPPE_SHADER_NAME));
+      } catch (const std::exception& error) {
+        std::cerr << "moppe: Metal orogeny backend unavailable: "
                   << error.what () << std::endl;
         return {};
       }

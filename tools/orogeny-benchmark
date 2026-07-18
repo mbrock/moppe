@@ -29,6 +29,7 @@ def main() -> None:
     parser.add_argument("--seeds", default="123,731")
     parser.add_argument("--steps", default="4,20")
     parser.add_argument("--routing", default="d8,d-infinity")
+    parser.add_argument("--backend", default="cpu")
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
@@ -60,15 +61,16 @@ def main() -> None:
         for seed in comma_ints(args.seeds):
             for steps in comma_ints(args.steps):
                 for routing in comma_values(args.routing):
-                    result = subprocess.run(
-                        [str(executable), str(resolution), str(seed),
-                         str(steps), routing, str(args.repeats)],
-                        cwd=root,
-                        check=True,
-                        text=True,
-                        capture_output=True,
-                    )
-                    rows.extend(csv.DictReader(io.StringIO(result.stdout)))
+                    for backend in comma_values(args.backend):
+                        result = subprocess.run(
+                            [str(executable), str(resolution), str(seed),
+                             str(steps), routing, str(args.repeats), backend],
+                            cwd=root,
+                            check=True,
+                            text=True,
+                            capture_output=True,
+                        )
+                        rows.extend(csv.DictReader(io.StringIO(result.stdout)))
 
     if not rows:
         raise SystemExit("benchmark matrix produced no rows")

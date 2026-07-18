@@ -263,6 +263,9 @@ namespace moppe {
       m_map = &map;
       if (!m_source_evaluator)
         m_source_evaluator = platform::create_field_evaluator ();
+      if (!m_evolution_backend)
+        m_evolution_backend =
+          platform::create_stream_power_evolution_backend ();
       m_terrain = &terrain;
       m_world = &world;
       m_world_recipe = &recipe;
@@ -293,7 +296,10 @@ namespace moppe {
         lab_program.transforms.emplace_back (analytical);
         env_stages = true;
       }
-      m_model.begin (map, lab_program, m_source_evaluator.get ());
+      m_model.begin (map,
+                     lab_program,
+                     m_source_evaluator.get (),
+                     m_evolution_backend.get ());
       m_selected_stage = -1;
       m_stage_scroll = 0;
       m_pointer_down = false;

@@ -11,8 +11,11 @@
 
 namespace moppe::map {
   TerrainEvaluator::TerrainEvaluator (
-    RandomHeightMap& target, const terrain::FieldEvaluator* source_evaluator)
-      : m_target (target), m_source_evaluator (source_evaluator) {}
+    RandomHeightMap& target,
+    const terrain::FieldEvaluator* source_evaluator,
+    const terrain::StreamPowerEvolutionBackend* evolution_backend)
+      : m_target (target), m_source_evaluator (source_evaluator),
+        m_evolution_backend (evolution_backend) {}
 
   void TerrainEvaluator::begin (const terrain::TerrainProgram& program,
                                 const SourceProgress& source_progress) {
@@ -130,26 +133,34 @@ namespace moppe::map {
       for (const float relative : m_relative_uplift)
         uplift.push_back (relative * maximum_uplift * mp_units::si::metre /
                           mp_units::astronomy::Julian_year);
+      const terrain::StreamPowerProgress iteration_progress =
+        [this, &transform] (
+          int completed, int total, std::span<const float> heights) {
+          const std::size_t width = m_target.unique_width ();
+          const std::size_t height = m_target.unique_height ();
+          for (std::size_t y = 0; y < height; ++y)
+            for (std::size_t x = 0; x < width; ++x)
+              m_target.set (static_cast<int> (x),
+                            static_cast<int> (y),
+                            heights[y * width + x]);
+          m_target.synchronize_periodic_edges ();
+          if (m_iteration_progress)
+            m_iteration_progress (
+              m_transform_index, transform, completed, total);
+        };
       terrain::StreamPowerEvolutionResult result =
-        terrain::evolve_stream_power (
-          m_target.terrain_view (),
-          uplift,
-          orogeny->evolution,
-          [this, &transform] (
-            int completed, int total, std::span<const float> heights) {
-            const std::size_t width = m_target.unique_width ();
-            const std::size_t height = m_target.unique_height ();
-            for (std::size_t y = 0; y < height; ++y)
-              for (std::size_t x = 0; x < width; ++x)
-                m_target.set (static_cast<int> (x),
-                              static_cast<int> (y),
-                              heights[y * width + x]);
-            m_target.synchronize_periodic_edges ();
-            if (m_iteration_progress)
-              m_iteration_progress (
-                m_transform_index, transform, completed, total);
-          },
-          m_channel_tangents);
+        m_evolution_backend
+          ? terrain::evolve_stream_power (m_target.terrain_view (),
+                                          uplift,
+                                          orogeny->evolution,
+                                          *m_evolution_backend,
+                                          iteration_progress,
+                                          m_channel_tangents)
+          : terrain::evolve_stream_power (m_target.terrain_view (),
+                                          uplift,
+                                          orogeny->evolution,
+                                          iteration_progress,
+                                          m_channel_tangents);
       const std::size_t width = m_target.unique_width ();
       const std::size_t height = m_target.unique_height ();
       for (std::size_t y = 0; y < height; ++y)

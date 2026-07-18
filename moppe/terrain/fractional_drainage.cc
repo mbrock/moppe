@@ -109,26 +109,24 @@ namespace moppe::terrain {
         }
         for (std::size_t i = 0; i < facet_offsets.size (); ++i) {
           const FacetOffsets offsets = facet_offsets[i];
-          const meters_t d1 = offset_distance (
-            offsets.cardinal_x, offsets.cardinal_y, grid);
-          const meters_t d2 = offset_distance (
-            offsets.diagonal_x - offsets.cardinal_x,
-            offsets.diagonal_y - offsets.cardinal_y,
-            grid);
+          const meters_t d1 =
+            offset_distance (offsets.cardinal_x, offsets.cardinal_y, grid);
+          const meters_t d2 =
+            offset_distance (offsets.diagonal_x - offsets.cardinal_x,
+                             offsets.diagonal_y - offsets.cardinal_y,
+                             grid);
           const float d1_m = meters_value (d1);
           const float d2_m = meters_value (d2);
-          facets[i] = {
-            .offsets = offsets,
-            .d1 = d1,
-            .d2 = d2,
-            .extent = std::atan2 (d2_m, d1_m),
-            .u1_x = offsets.cardinal_x * grid.spacing_x_m () / d1_m,
-            .u1_z = offsets.cardinal_y * grid.spacing_y_m () / d1_m,
-            .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
-                    grid.spacing_x_m () / d2_m,
-            .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
-                    grid.spacing_y_m () / d2_m
-          };
+          facets[i] = { .offsets = offsets,
+                        .d1 = d1,
+                        .d2 = d2,
+                        .extent = std::atan2 (d2_m, d1_m),
+                        .u1_x = offsets.cardinal_x * grid.spacing_x_m () / d1_m,
+                        .u1_z = offsets.cardinal_y * grid.spacing_y_m () / d1_m,
+                        .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
+                                grid.spacing_x_m () / d2_m,
+                        .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
+                                grid.spacing_y_m () / d2_m };
         }
       }
     };
@@ -158,11 +156,10 @@ namespace moppe::terrain {
       const float previous_length_squared = length2 (previous);
       if (previous_length_squared <= 1e-12f)
         return slope;
-      const float alignment =
-        std::clamp (dot (direction, previous) /
-                      std::sqrt (previous_length_squared),
-                    -1.0f,
-                    1.0f);
+      const float alignment = std::clamp (dot (direction, previous) /
+                                            std::sqrt (previous_length_squared),
+                                          -1.0f,
+                                          1.0f);
       const float memory = persistence.numerical_value_in (mp_units::one);
       return slope * (1.0f + memory * alignment);
     }
@@ -232,14 +229,12 @@ namespace moppe::terrain {
                                      focus.row (*receiver));
         const float slope =
           (drop / geometry.distance).numerical_value_in (mp_units::one);
-        const float score = route_score (slope,
-                                         geometry.unit_direction,
-                                         previous_tangent,
-                                         persistence);
+        const float score = route_score (
+          slope, geometry.unit_direction, previous_tangent, persistence);
         if (score > best_score) {
           best_score = score;
-          best.route = single_route (
-            *receiver, geometry.columns, geometry.rows, grid);
+          best.route =
+            single_route (*receiver, geometry.columns, geometry.rows, grid);
           best.direction = geometry.direction;
           best.slope = slope * terrain_slope[mp_units::one];
         }
@@ -247,10 +242,10 @@ namespace moppe::terrain {
 
       for (const FacetGeometry& geometry : stencil.facets) {
         const FacetOffsets offsets = geometry.offsets;
-        const auto cardinal = domain.neighbour (
-          cell, offsets.cardinal_x, offsets.cardinal_y);
-        const auto diagonal = domain.neighbour (
-          cell, offsets.diagonal_x, offsets.diagonal_y);
+        const auto cardinal =
+          domain.neighbour (cell, offsets.cardinal_x, offsets.cardinal_y);
+        const auto diagonal =
+          domain.neighbour (cell, offsets.diagonal_x, offsets.diagonal_y);
         if (!cardinal || !diagonal)
           continue;
         const RoutingSurfaceElevation cardinal_height =
@@ -269,18 +264,16 @@ namespace moppe::terrain {
           continue;
         const float facet_slope = std::hypot (s1, s2);
 
-        const float direction_x =
-          std::cos (relative) * geometry.u1_x +
-          std::sin (relative) * geometry.u2_x;
-        const float direction_z =
-          std::cos (relative) * geometry.u1_z +
-          std::sin (relative) * geometry.u2_z;
+        const float direction_x = std::cos (relative) * geometry.u1_x +
+                                  std::sin (relative) * geometry.u2_x;
+        const float direction_z = std::cos (relative) * geometry.u1_z +
+                                  std::sin (relative) * geometry.u2_z;
         const float diagonal_fraction = relative / geometry.extent;
-        const float interpolation = std::clamp (
-          meters_value (geometry.d1) * std::tan (relative) /
-            meters_value (geometry.d2),
-          0.0f,
-          1.0f);
+        const float interpolation =
+          std::clamp (meters_value (geometry.d1) * std::tan (relative) /
+                        meters_value (geometry.d2),
+                      0.0f,
+                      1.0f);
         const DrainageDirection direction =
           normalized_angle (std::atan2 (direction_z, direction_x)) *
           drainage_direction[mp_units::angular::radian];
@@ -431,93 +424,139 @@ namespace moppe::terrain {
         "fractional flow domain data does not match terrain lattice");
   }
 
+  namespace {
+    FractionalDrainage analyze_fractional_drainage_impl (
+      const TerrainView& terrain,
+      const FloodField& flood,
+      const LakeCensus& census,
+      std::span<const ChannelTangent> previous_tangent,
+      ChannelPersistence persistence,
+      const FractionalRouteBackend* backend) {
+      MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
+      const TerrainGrid& grid = terrain.grid ();
+      if (flood.source_grid != grid ||
+          census.body.size () != grid.unique_size ())
+        throw std::invalid_argument (
+          "fractional drainage inputs do not share one terrain lattice");
+      const float persistence_value =
+        persistence.numerical_value_in (mp_units::one);
+      if ((!previous_tangent.empty () &&
+           previous_tangent.size () != grid.unique_size ()) ||
+          !std::isfinite (persistence_value) || persistence_value < 0.0f ||
+          persistence_value >= 1.0f)
+        throw std::invalid_argument (
+          "fractional drainage channel memory is invalid");
+
+      TerrainLatticeDomain lattice (grid);
+      RoutingSurface surface (lattice);
+      const std::span<const float> levels = flood.water_level.values ();
+      auto& elevations = spatial::get<routing_surface_elevation> (surface);
+      for (std::size_t offset = 0; offset < lattice.size (); ++offset)
+        elevations[offset] = RoutingSurfaceElevation (
+          levels[offset] * grid.height_scale_m () *
+          routing_surface_elevation[mp_units::si::metre]);
+
+      // The established wet graph remains the authority for flat lake routes
+      // and proven depression spills. D-infinity replaces only strict dry-land
+      // descent inside this Orogeny-specific reading.
+      const WetDrainageRouting wet =
+        route_wet_drainage (terrain, flood, census);
+      std::vector<FractionalFlowRoute> routes (lattice.size ());
+      std::vector<DrainageDirection> directions (
+        lattice.size (), 0.0f * drainage_direction[mp_units::angular::radian]);
+      std::vector<slope_t> slopes (lattice.size (),
+                                   0.0f * terrain_slope[mp_units::one]);
+
+      if (backend) {
+        backend->select_dry_routes (grid,
+                                    levels,
+                                    previous_tangent,
+                                    persistence,
+                                    flood.ocean,
+                                    census.body,
+                                    routes,
+                                    directions,
+                                    slopes);
+      } else {
+        const DInfinityStencil stencil (grid);
+        for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
+          if (flood.ocean[offset] || census.body[offset] != LakeCensus::dry)
+            continue;
+          const CellIndex cell = lattice.index (offset);
+          const RouteReading reading = d_infinity_route (
+            surface,
+            cell,
+            previous_tangent.empty ()
+              ? ChannelTangent (Vec3 () * channel_tangent[mp_units::one])
+              : previous_tangent[offset],
+            persistence,
+            stencil);
+          routes[offset] = reading.route;
+          directions[offset] = reading.direction;
+          slopes[offset] = reading.slope;
+        }
+      }
+
+      for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
+        if (flood.ocean[offset])
+          continue;
+        const CellIndex cell = lattice.index (offset);
+        RouteReading reading { .route = routes[offset],
+                               .direction = directions[offset],
+                               .slope = slopes[offset] };
+        if (reading.route.empty () && wet.receiver[offset] != cell) {
+          const CellIndex receiver = wet.receiver[offset];
+          const auto delta = receiver_offset (cell, receiver, lattice);
+          reading.route = single_route (receiver, delta[0], delta[1], grid);
+          reading.direction = direction_for_offset (delta[0], delta[1], grid);
+          reading.slope = wet.slope[offset] * terrain_slope[mp_units::one];
+        }
+        routes[offset] = reading.route;
+        directions[offset] = reading.direction;
+        slopes[offset] = reading.slope;
+      }
+
+      const float cell_area_m2 = square_meters_value (grid.cell_area ());
+      std::vector<FractionalContributingArea> areas (
+        lattice.size (),
+        cell_area_m2 * fractional_contributing_area[mp_units::si::metre *
+                                                    mp_units::si::metre]);
+      std::vector<ChannelTangent> tangents (
+        lattice.size (), Vec3 () * channel_tangent[mp_units::one]);
+      std::vector<ChannelAreaFlux> area_fluxes (
+        lattice.size (),
+        Vec3 () * channel_area_flux[mp_units::si::metre * mp_units::si::metre]);
+      std::vector<CellIndex> order =
+        accumulate (lattice, routes, directions, areas, tangents, area_fluxes);
+      FractionalDrainage result (FractionalFlowDomain (
+        std::move (lattice), std::move (routes), std::move (order)));
+      spatial::get<drainage_direction> (result) = std::move (directions);
+      spatial::get<terrain_slope> (result) = std::move (slopes);
+      spatial::get<fractional_contributing_area> (result) = std::move (areas);
+      spatial::get<channel_tangent> (result) = std::move (tangents);
+      spatial::get<channel_area_flux> (result) = std::move (area_fluxes);
+      return result;
+    }
+  }
+
   FractionalDrainage
   analyze_fractional_drainage (const TerrainView& terrain,
                                const FloodField& flood,
                                const LakeCensus& census,
                                std::span<const ChannelTangent> previous_tangent,
                                ChannelPersistence persistence) {
-    MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
-    const TerrainGrid& grid = terrain.grid ();
-    if (flood.source_grid != grid || census.body.size () != grid.unique_size ())
-      throw std::invalid_argument (
-        "fractional drainage inputs do not share one terrain lattice");
-    const float persistence_value =
-      persistence.numerical_value_in (mp_units::one);
-    if ((!previous_tangent.empty () &&
-         previous_tangent.size () != grid.unique_size ()) ||
-        !std::isfinite (persistence_value) || persistence_value < 0.0f ||
-        persistence_value >= 1.0f)
-      throw std::invalid_argument (
-        "fractional drainage channel memory is invalid");
+    return analyze_fractional_drainage_impl (
+      terrain, flood, census, previous_tangent, persistence, nullptr);
+  }
 
-    TerrainLatticeDomain lattice (grid);
-    const DInfinityStencil stencil (grid);
-    RoutingSurface surface (lattice);
-    const std::span<const float> levels = flood.water_level.values ();
-    auto& elevations = spatial::get<routing_surface_elevation> (surface);
-    for (std::size_t offset = 0; offset < lattice.size (); ++offset)
-      elevations[offset] = RoutingSurfaceElevation (
-        levels[offset] * grid.height_scale_m () *
-        routing_surface_elevation[mp_units::si::metre]);
-
-    // The established wet graph remains the authority for flat lake routes
-    // and proven depression spills. D-infinity replaces only strict dry-land
-    // descent inside this Orogeny-specific reading.
-    const WetDrainageRouting wet =
-      route_wet_drainage (terrain, flood, census);
-    std::vector<FractionalFlowRoute> routes (lattice.size ());
-    std::vector<DrainageDirection> directions (
-      lattice.size (), 0.0f * drainage_direction[mp_units::angular::radian]);
-    std::vector<slope_t> slopes (lattice.size (),
-                                 0.0f * terrain_slope[mp_units::one]);
-
-    for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
-      const CellIndex cell = lattice.index (offset);
-      if (flood.ocean[offset])
-        continue;
-
-      RouteReading reading;
-      if (census.body[offset] == LakeCensus::dry)
-        reading = d_infinity_route (
-          surface,
-          cell,
-          previous_tangent.empty ()
-            ? ChannelTangent (Vec3 () * channel_tangent[mp_units::one])
-            : previous_tangent[offset],
-          persistence,
-          stencil);
-      if (reading.route.empty () && wet.receiver[offset] != cell) {
-        const CellIndex receiver = wet.receiver[offset];
-        const auto delta = receiver_offset (cell, receiver, lattice);
-        reading.route = single_route (receiver, delta[0], delta[1], grid);
-        reading.direction = direction_for_offset (delta[0], delta[1], grid);
-        reading.slope = wet.slope[offset] * terrain_slope[mp_units::one];
-      }
-      routes[offset] = reading.route;
-      directions[offset] = reading.direction;
-      slopes[offset] = reading.slope;
-    }
-
-    const float cell_area_m2 = square_meters_value (grid.cell_area ());
-    std::vector<FractionalContributingArea> areas (
-      lattice.size (),
-      cell_area_m2 * fractional_contributing_area[mp_units::si::metre *
-                                                  mp_units::si::metre]);
-    std::vector<ChannelTangent> tangents (
-      lattice.size (), Vec3 () * channel_tangent[mp_units::one]);
-    std::vector<ChannelAreaFlux> area_fluxes (
-      lattice.size (),
-      Vec3 () * channel_area_flux[mp_units::si::metre * mp_units::si::metre]);
-    std::vector<CellIndex> order =
-      accumulate (lattice, routes, directions, areas, tangents, area_fluxes);
-    FractionalDrainage result (FractionalFlowDomain (
-      std::move (lattice), std::move (routes), std::move (order)));
-    spatial::get<drainage_direction> (result) = std::move (directions);
-    spatial::get<terrain_slope> (result) = std::move (slopes);
-    spatial::get<fractional_contributing_area> (result) = std::move (areas);
-    spatial::get<channel_tangent> (result) = std::move (tangents);
-    spatial::get<channel_area_flux> (result) = std::move (area_fluxes);
-    return result;
+  FractionalDrainage
+  analyze_fractional_drainage (const TerrainView& terrain,
+                               const FloodField& flood,
+                               const LakeCensus& census,
+                               std::span<const ChannelTangent> previous_tangent,
+                               ChannelPersistence persistence,
+                               const FractionalRouteBackend& backend) {
+    return analyze_fractional_drainage_impl (
+      terrain, flood, census, previous_tangent, persistence, &backend);
   }
 }

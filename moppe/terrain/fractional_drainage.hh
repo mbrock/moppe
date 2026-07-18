@@ -215,12 +215,38 @@ namespace moppe::terrain {
                                              ChannelTangent,
                                              ChannelAreaFlux>;
 
+  // Optional accelerator for the independent dry-cell portion of D-infinity
+  // routing. Lake fallback and fractional accumulation remain in the shared
+  // portable implementation so an accelerator has one narrow contract.
+  class FractionalRouteBackend {
+  public:
+    virtual ~FractionalRouteBackend () = default;
+
+    virtual void
+    select_dry_routes (const TerrainGrid& grid,
+                       std::span<const float> routing_surface_levels,
+                       std::span<const ChannelTangent> previous_tangent,
+                       ChannelPersistence persistence,
+                       std::span<const std::uint8_t> ocean,
+                       std::span<const WaterBodyId> water_body,
+                       std::span<FractionalFlowRoute> routes,
+                       std::span<DrainageDirection> directions,
+                       std::span<slope_t> slopes) const = 0;
+  };
+
   FractionalDrainage analyze_fractional_drainage (
     const TerrainView& terrain,
     const FloodField& flood,
     const LakeCensus& census,
     std::span<const ChannelTangent> previous_tangent = {},
     ChannelPersistence persistence = 0.0f * channel_persistence[mp_units::one]);
+  FractionalDrainage
+  analyze_fractional_drainage (const TerrainView& terrain,
+                               const FloodField& flood,
+                               const LakeCensus& census,
+                               std::span<const ChannelTangent> previous_tangent,
+                               ChannelPersistence persistence,
+                               const FractionalRouteBackend& backend);
 
   // River extraction refined by a D-infinity reading of the same terrain.
   // The D8 graph keeps topological authority over reaches and waterfalls;
