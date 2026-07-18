@@ -56,6 +56,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -591,7 +592,11 @@ namespace moppe {
           }
         }
         const std::lock_guard<std::mutex> lock (m_loading_mutex);
-        m_loading_heights = std::move (heights);
+        if (!m_last_published_loading_heights ||
+            *m_last_published_loading_heights != *heights) {
+          m_last_published_loading_heights = heights;
+          m_loading_height_queue.push_back (std::move (heights));
+        }
       }
 
       const GeneratedWorld::Hydrology* hydrology () const noexcept {
@@ -1836,7 +1841,21 @@ namespace moppe {
       }
 
       void render_loading (render::Renderer& r) {
-        if (m_generation_complete && !m_setup_complete) {
+        const float width = static_cast<float> (r.width_pts ());
+        const float height = static_cast<float> (r.height_pts ());
+        const double now = platform::now ();
+        const float sky_time = static_cast<float> (now - m_loading_clock_start);
+        bool preview_queue_empty = false;
+        {
+          const std::lock_guard<std::mutex> lock (m_loading_mutex);
+          preview_queue_empty = m_loading_height_queue.empty ();
+        }
+        const bool preview_sequence_complete =
+          preview_queue_empty &&
+          sky_time >= m_loading_height_transition_ready_time;
+
+        if (m_generation_complete && !m_setup_complete &&
+            preview_sequence_complete) {
           if (!m_loading_finalize_announced) {
             set_loading_stage (LoadingStage::PreparingWater);
             m_loading_finalize_announced = true;
@@ -1892,11 +1911,6 @@ namespace moppe {
           }
         }
 
-        const float width = static_cast<float> (r.width_pts ());
-        const float height = static_cast<float> (r.height_pts ());
-        const double now = platform::now ();
-        const float sky_time = static_cast<float> (now - m_loading_clock_start);
-
         const LoadingStage stage = m_loading_stage.load ();
         const LoadingStageText copy = loading_stage_text (stage);
         float progress = copy.progress;
@@ -1931,10 +1945,15 @@ namespace moppe {
         std::vector<LoadingEvent> loading_events;
         {
           const std::lock_guard<std::mutex> lock (m_loading_mutex);
-          loading_heights = m_loading_heights;
+          if (!m_loading_height_queue.empty () &&
+              sky_time >= m_loading_height_transition_ready_time) {
+            loading_heights = std::move (m_loading_height_queue.front ());
+            m_loading_height_queue.pop_front ();
+          }
           loading_events = m_loading_events;
         }
-        if (loading_heights && loading_heights != m_displayed_loading_heights) {
+        if (loading_heights) {
+          const bool transition = m_loading_terrain_visible;
           std::copy (loading_heights->begin (),
                      loading_heights->end (),
                      m_loading_map.raw_heights ());
@@ -1948,7 +1967,9 @@ namespace moppe {
                            true,
                            true);
           m_loading_terrain_visible = true;
-          m_displayed_loading_heights = std::move (loading_heights);
+          m_loading_height_transition_ready_time =
+            transition ? sky_time + Terrain::loading_transition_handoff_seconds
+                       : sky_time;
         }
 
         const bool show_terrain = m_loading_terrain_visible;
@@ -2457,14 +2478,15 @@ namespace moppe {
         m_loading_progress_display = 0.0f;
         m_loading_progress_target = 0.0f;
         m_loading_last_frame_time = 0.0f;
+        m_loading_height_transition_ready_time = 0.0f;
         m_loading_capture_done = false;
         m_loading_clock_start = platform::now ();
         m_loading_terrain_visible = false;
-        m_displayed_loading_heights.reset ();
         {
           const std::lock_guard<std::mutex> lock (m_loading_mutex);
           m_loading_events.clear ();
-          m_loading_heights.reset ();
+          m_loading_height_queue.clear ();
+          m_last_published_loading_heights.reset ();
         }
         set_loading_stage (LoadingStage::Starting);
         m_generation_complete = false;
@@ -2546,8 +2568,10 @@ namespace moppe {
       SurfacePresentation m_surface_presentation;
       std::mutex m_loading_mutex;
       std::vector<LoadingEvent> m_loading_events;
-      std::shared_ptr<const std::vector<float>> m_loading_heights;
-      std::shared_ptr<const std::vector<float>> m_displayed_loading_heights;
+      std::deque<std::shared_ptr<const std::vector<float>>>
+        m_loading_height_queue;
+      std::shared_ptr<const std::vector<float>>
+        m_last_published_loading_heights;
       std::atomic<int> m_loading_work_done = 0;
       std::atomic<int> m_loading_work_total = 1;
       std::atomic<int> m_loading_geological_years_done = 0;
@@ -2557,6 +2581,7 @@ namespace moppe {
       float m_loading_progress_display = 0.0f;
       float m_loading_progress_target = 0.0f;
       float m_loading_last_frame_time = 0.0f;
+      float m_loading_height_transition_ready_time = 0.0f;
       double m_loading_clock_start = platform::now ();
       bool m_loading_capture_done = false;
       bool m_loading_terrain_visible = false;

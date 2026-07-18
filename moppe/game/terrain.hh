@@ -16,6 +16,11 @@ namespace moppe {
     // Replaces gfx::TerrainRenderer + gfx::ShadowMap.
     class Terrain {
     public:
+      static constexpr float loading_transition_seconds = 0.55f;
+      // Leave one ordinary display interval after the morph so the renderer
+      // retires its previous texture before the loading sequencer advances.
+      static constexpr float loading_transition_handoff_seconds = 0.60f;
+
       // Uploads heights/normals and the splat textures; call again
       // after the heightmap changes (e.g. city baking).  Takes the
       // concrete map type: raw_heights()/raw_normals() live there.

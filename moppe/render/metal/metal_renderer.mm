@@ -1311,6 +1311,15 @@ namespace moppe {
         m_terrain_resources.heights &&
         m_terrain_resources.heights.width == (NSUInteger)w &&
         m_terrain_resources.heights.height == (NSUInteger)h;
+      if (m_terrain_resources.height_transition_active) {
+        const float elapsed = std::max (
+          0.0f,
+          m_frame.params.time - m_terrain_resources.height_transition_start);
+        const float duration = std::max (
+          0.001f, m_terrain_resources.params.height_transition_duration);
+        if (elapsed >= duration)
+          m_terrain_resources.height_transition_active = false;
+      }
       const bool continue_transition =
         transition && m_terrain_resources.height_transition_active &&
         m_terrain_resources.previous_heights;
