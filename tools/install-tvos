@@ -24,11 +24,31 @@ EOF
 fi
 
 echo "Checking $device..."
+device_id="$device"
 if ! xcrun devicectl device info details \
-  --device "$device" >/dev/null 2>&1; then
+  --device "$device_id" >/dev/null 2>&1; then
+  device_id="$({ xcrun devicectl list devices 2>/dev/null || true; } | awk \
+    -v name="$device" 'index($0, name) == 1 {
+      for (i = 1; i <= NF; ++i)
+        if (length($i) == 36 && substr($i, 9, 1) == "-" &&
+            substr($i, 14, 1) == "-" && substr($i, 19, 1) == "-" &&
+            substr($i, 24, 1) == "-") {
+          print $i
+          exit
+        }
+    }')"
+fi
+if [[ -z "$device_id" ]] || ! xcrun devicectl device info details \
+  --device "$device_id" >/dev/null 2>&1; then
   echo "error: $device is not paired and available to Xcode." >&2
   echo "Open Settings > Remotes and Devices > Remote App and Devices" >&2
   echo "on Apple TV, then pair it in Xcode's Device Hub." >&2
+  exit 1
+fi
+device_udid="$(xcrun devicectl device info details --device "$device_id" | \
+  awk '/udid:/ { print $NF; exit }')"
+if [[ -z "$device_udid" ]]; then
+  echo "error: could not determine Xcode's identifier for $device." >&2
   exit 1
 fi
 
@@ -40,10 +60,12 @@ cmake -S "$root" -B "$build_dir" -G Xcode \
 
 echo "Building and signing Moppe for $device..."
 xcodebuild -quiet \
+  -allowProvisioningDeviceRegistration \
+  -allowProvisioningUpdates \
   -project "$build_dir/moppe.xcodeproj" \
   -scheme moppe-tvos \
   -configuration "$configuration" \
-  -destination "platform=tvOS,name=$device" \
+  -destination "platform=tvOS,id=$device_udid" \
   CODE_SIGN_STYLE=Automatic \
   DEVELOPMENT_TEAM="$team" \
   build
@@ -55,10 +77,10 @@ if [[ ! -d "$app" ]]; then
 fi
 
 echo "Installing Moppe on $device..."
-xcrun devicectl device install app --device "$device" "$app"
+xcrun devicectl device install app --device "$device_id" "$app"
 
 echo "Launching Moppe..."
 xcrun devicectl device process launch \
-  --device "$device" se.brockman.moppe.tvos
+  --device "$device_id" se.brockman.moppe.tvos
 
 echo "Moppe is installed and running on $device."

@@ -65,8 +65,7 @@ static __weak UIWindow* g_window = nil;
 
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
   if (g_game)
-    g_game->resize ((int)view.bounds.size.width,
-                    (int)view.bounds.size.height);
+    g_game->resize ((int)view.bounds.size.width, (int)view.bounds.size.height);
 }
 @end
 
@@ -101,9 +100,8 @@ static __weak UIWindow* g_window = nil;
   [self.window makeKeyAndVisible];
   [vc connectGameController];
 
-  g_game->setup (*renderer,
-                 (int)view.bounds.size.width,
-                 (int)view.bounds.size.height);
+  g_game->setup (
+    *renderer, (int)view.bounds.size.width, (int)view.bounds.size.height);
   return YES;
 }
 
