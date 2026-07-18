@@ -426,6 +426,11 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND
   )
   target_link_libraries(terrain-pipeline-demo PRIVATE moppe_world)
 
+  add_executable(terrain-orogeny-benchmark EXCLUDE_FROM_ALL
+    moppe/terrain/orogeny_benchmark.cc
+  )
+  target_link_libraries(terrain-orogeny-benchmark PRIVATE moppe_world)
+
   add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
     moppe/terrain/water_depth_experiment.cc
   )

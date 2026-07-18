@@ -27,6 +27,15 @@ namespace moppe::terrain {
     DrainageRouting routing = DrainageRouting::D8;
   };
 
+  // Receiver selection shared by full D8 drainage and D-infinity's fallback
+  // across lakes and proven depression spills. It deliberately omits the
+  // downstream products that fractional drainage recomputes for its own DAG.
+  struct WetDrainageRouting {
+    TerrainGrid source_grid;
+    std::vector<CellIndex> receiver;
+    std::vector<float> slope;
+  };
+
   // A compact functional graph. Dry drainage uses strictly lower receivers;
   // wet drainage may also follow acyclic equal-surface routes through water.
   // Rasters contain unique torus samples without the duplicated render seam.
@@ -37,6 +46,7 @@ namespace moppe::terrain {
     ContributingAreaRaster contributing_area;
     std::vector<CellIndex> basin;
     std::vector<CellIndex> sinks;
+    std::vector<CellIndex> topological_order;
 
     std::size_t width () const noexcept {
       return source_grid.unique_width ();
@@ -145,6 +155,11 @@ namespace moppe::terrain {
 
   DrainageGraph analyze_drainage (const TerrainView& terrain,
                                   const DrainageParameters& parameters = {});
+  WetDrainageRouting
+  route_wet_drainage (const TerrainView& terrain,
+                      const FloodField& flood,
+                      const LakeCensus& census,
+                      const DrainageParameters& parameters = {});
   DrainageGraph
   analyze_wet_drainage (const TerrainView& terrain,
                         const FloodField& flood,
