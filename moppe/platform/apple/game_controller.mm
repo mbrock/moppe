@@ -14,9 +14,8 @@ namespace moppe::platform {
       const float magnitude = std::abs (value);
       if (magnitude <= dead_zone)
         return 0;
-      const float scaled = std::min (1.0f,
-                                     (magnitude - dead_zone) /
-                                       (1.0f - dead_zone));
+      const float scaled =
+        std::min (1.0f, (magnitude - dead_zone) / (1.0f - dead_zone));
       return std::copysign (scaled, value);
     }
 
@@ -50,16 +49,16 @@ namespace moppe::platform {
       ControlState controls;
       GCExtendedGamepad* extended = controller.extendedGamepad;
       if (extended) {
-        const float stick_x = axis_with_dead_zone (
-          extended.leftThumbstick.xAxis.value);
-        const float stick_y = axis_with_dead_zone (
-          extended.leftThumbstick.yAxis.value);
+        const float stick_x =
+          axis_with_dead_zone (extended.leftThumbstick.xAxis.value);
+        const float stick_y =
+          axis_with_dead_zone (extended.leftThumbstick.yAxis.value);
         const float dpad_x = axis_with_dead_zone (extended.dpad.xAxis.value);
         const float dpad_y = axis_with_dead_zone (extended.dpad.yAxis.value);
         controls.steer = stick_x != 0 ? stick_x : dpad_x;
         controls.drive = stick_y != 0 ? stick_y : dpad_y;
-        controls.boost = std::max (extended.rightTrigger.value,
-                                   extended.buttonY.value);
+        controls.boost =
+          std::max (extended.rightTrigger.value, extended.buttonY.value);
 
         edge (0, button_down (extended.buttonA), Key::E);
         edge (1, button_down (extended.buttonA), Key::Restart);
@@ -113,10 +112,9 @@ namespace moppe::platform {
     }
 
     void release_all () {
-      static constexpr Key keys[] = {
-        Key::E, Key::Restart, Key::Mount, Key::Tab,
-        Key::Left, Key::Right, Key::Up, Key::Down, Key::Space
-      };
+      static constexpr Key keys[] = { Key::E,   Key::Restart, Key::Mount,
+                                      Key::Tab, Key::Left,    Key::Right,
+                                      Key::Up,  Key::Down,    Key::Space };
       for (int i = 0; i < 9; ++i)
         if (m_buttons[i]) {
           m_game.key (keys[i], false);
@@ -132,7 +130,7 @@ namespace moppe::platform {
   };
 
   AppleGameController::AppleGameController (Game& game)
-    : m_impl (std::make_unique<Impl> (game)) {}
+      : m_impl (std::make_unique<Impl> (game)) {}
 
   AppleGameController::~AppleGameController () = default;
 
