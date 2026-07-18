@@ -135,7 +135,16 @@ namespace moppe::map {
           m_target.terrain_view (),
           uplift,
           orogeny->evolution,
-          [this, &transform] (int completed, int total) {
+          [this, &transform] (
+            int completed, int total, std::span<const float> heights) {
+            const std::size_t width = m_target.unique_width ();
+            const std::size_t height = m_target.unique_height ();
+            for (std::size_t y = 0; y < height; ++y)
+              for (std::size_t x = 0; x < width; ++x)
+                m_target.set (static_cast<int> (x),
+                              static_cast<int> (y),
+                              heights[y * width + x]);
+            m_target.synchronize_periodic_edges ();
             if (m_iteration_progress)
               m_iteration_progress (
                 m_transform_index, transform, completed, total);
