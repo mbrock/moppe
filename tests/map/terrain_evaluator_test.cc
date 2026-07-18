@@ -146,16 +146,26 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
   orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
   map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), 0, Topology::Torus);
   std::vector<int> completed;
+  std::vector<std::vector<float>> snapshots;
 
   map::TerrainEvaluator (map).evaluate (
     program,
     {},
-    [&completed] (std::size_t, const TerrainTransform&, int done, int total) {
+    [&] (std::size_t, const TerrainTransform&, int done, int total) {
       MOPPE_CHECK (total == 4);
       completed.push_back (done);
+      const std::size_t count =
+        static_cast<std::size_t> (map.width ()) * map.height ();
+      snapshots.emplace_back (map.raw_heights (), map.raw_heights () + count);
     });
 
   MOPPE_CHECK (completed == std::vector<int> ({ 1, 2, 3, 4 }));
+  MOPPE_CHECK (snapshots.size () == 4);
+  MOPPE_CHECK (snapshots.front () != snapshots.back ());
+  MOPPE_CHECK (
+    snapshots.back () ==
+    std::vector<float> (map.raw_heights (),
+                        map.raw_heights () + snapshots.back ().size ()));
 }
 
 MOPPE_TEST (orogeny_seed_separates_land_and_bathymetric_relief) {

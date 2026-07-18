@@ -62,7 +62,11 @@ namespace moppe::terrain {
     StreamPowerEvolutionReport report;
   };
 
-  using StreamPowerProgress = std::function<void (int, int)>;
+  // Called after each geological step. The height span contains the current
+  // unique samples (periodic render seams omitted) and remains valid only for
+  // the duration of the callback.
+  using StreamPowerProgress =
+    std::function<void (int, int, std::span<const float>)>;
 
   StreamPowerEvolutionResult evolve_stream_power (
     const TerrainView& terrain,

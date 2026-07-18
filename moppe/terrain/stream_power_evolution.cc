@@ -422,7 +422,7 @@ namespace moppe::terrain {
         maximum_step_change_m * mp_units::si::metre;
       current.swap (next);
       if (progress)
-        progress (step + 1, steps);
+        progress (step + 1, steps, current);
     }
     report.diffusion_sweeps = iteration_count (diffusion_sweeps);
     report.tectonic_uplift_volume = tectonic_uplift_volume_m3 *

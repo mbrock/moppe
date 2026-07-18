@@ -47,8 +47,10 @@ it clears the job's raw game pointer, so closing during generation waits for
 the worker and a queued callback simply does nothing. A failed build retains
 the existing clear failure behavior: it logs the generation error and exits
 rather than exposing an incomplete candidate. While it runs, the loading
-screen sees only copied height snapshots in its separate preview map; it
-neither borrows nor owns a candidate world's terrain state.
+screen sees only copied, display-resolution height snapshots in its separate
+preview map; it neither borrows nor owns a candidate world's terrain state.
+Orogeny publishes one such snapshot after every geological interval, and the
+renderer morphs between the latest two without queueing old terrain states.
 
 Ordinary gameplay receives const readings. `Builder` is the explicit capability
 used by the loading worker to evaluate terrain, record history, rebuild the surface,

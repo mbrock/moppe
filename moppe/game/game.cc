@@ -97,8 +97,13 @@ namespace moppe {
       TracingDrainage,
       ConnectingWaterways,
       ExtractingRivers,
-      PlacingStars,
       AssemblingWorld,
+      PreparingWater,
+      PreparingSurface,
+      PlacingStars,
+      GrowingForest,
+      PlantingTrailside,
+      PlanningJourney,
       UploadingTerrain,
       CastingShadows,
       Ready,
@@ -118,73 +123,107 @@ namespace moppe {
     static LoadingStageText loading_stage_text (LoadingStage stage) {
       switch (stage) {
       case LoadingStage::Starting:
-        return { "WAKING THE WORLD BUILDER",
+        return { "Waking the world builder",
                  "Preparing terrain storage and compute",
                  0.02f };
       case LoadingStage::LookingForCache:
-        return { "LOOKING FOR SAVED TERRAIN",
+        return { "Looking for saved terrain",
                  "Checking this build, profile, and seed",
                  0.04f };
       case LoadingStage::ReadingCache:
-        return { "READING SAVED TERRAIN",
+        return { "Reading saved terrain",
                  "Reusing the finished heightfield",
                  0.10f };
       case LoadingStage::BuildingContinents:
-        return { "DRAWING THE CONTINENTS",
+        return { "Drawing the continents",
                  "Materializing the geological field",
                  0.06f };
       case LoadingStage::EvolvingTerrain:
-        return { "RUNNING GEOLOGICAL TIME",
+        return { "Running geological time",
                  "Uplift and erosion are reshaping the land",
                  0.20f };
       case LoadingStage::SavingTerrain:
-        return { "SAVING THE TERRAIN",
+        return { "Saving the terrain",
                  "Keeping this expensive result for the next launch",
                  0.69f };
       case LoadingStage::RebuildingSurface:
-        return { "CALCULATING SLOPES",
+        return { "Calculating slopes",
                  "Rebuilding normals and the sampled surface",
                  0.72f };
       case LoadingStage::FindingStandingWater:
-        return { "FILLING SEAS AND LAKES",
+        return { "Filling seas and lakes",
                  "Finding the connected water surface",
                  0.75f };
       case LoadingStage::CataloguingLakes:
-        return { "CATALOGUING LAKES",
+        return { "Cataloguing lakes",
                  "Measuring every separate body of water",
                  0.78f };
       case LoadingStage::TracingDrainage:
-        return { "TRACING THE DRAINAGE",
+        return { "Tracing the drainage",
                  "Following every wet cell downhill",
                  0.81f };
       case LoadingStage::ConnectingWaterways:
-        return { "CONNECTING THE WATERWAYS",
+        return { "Connecting the waterways",
                  "Joining lakes, outlets, and the sea",
                  0.84f };
       case LoadingStage::ExtractingRivers:
-        return { "EXTRACTING THE RIVERS",
+        return { "Extracting the rivers",
                  "Selecting the channels visible in the world",
                  0.87f };
+      case LoadingStage::AssemblingWorld:
+        return { "Assembling the world",
+                 "Painting water, moisture, materials, and the opening route",
+                 0.90f };
+      case LoadingStage::PreparingWater:
+        return { "Setting the water in motion",
+                 "Building river ribbons and standing-water surfaces",
+                 0.91f };
+      case LoadingStage::PreparingSurface:
+        return { "Painting the surface",
+                 "Preparing moisture and geological materials",
+                 0.925f };
       case LoadingStage::PlacingStars:
-        return { "PLACING THE STARS",
+        return { "Placing the stars",
                  "Finding bright landmarks across the terrain",
                  0.94f };
-      case LoadingStage::AssemblingWorld:
-        return { "ASSEMBLING THE WORLD",
-                 "Painting water, moisture, materials, and the opening route",
+      case LoadingStage::GrowingForest:
+        return { "Growing the forest",
+                 "Distributing the canopy across the landscape",
                  0.95f };
-      case LoadingStage::UploadingTerrain:
-        return { "UPLOADING THE LANDSCAPE",
-                 "Moving the finished world onto the GPU",
+      case LoadingStage::PlantingTrailside:
+        return { "Planting the trailside",
+                 "Growing the first stand around the journey's beginning",
+                 0.96f };
+      case LoadingStage::PlanningJourney:
+        return { "Planning the first journey",
+                 "Choosing a route through the new landscape",
                  0.97f };
+      case LoadingStage::UploadingTerrain:
+        return { "Uploading the landscape",
+                 "Moving the finished world onto the GPU",
+                 0.98f };
       case LoadingStage::CastingShadows:
-        return { "CASTING THE FIRST SHADOWS",
+        return { "Casting the first shadows",
                  "Precomputing sunlight across the terrain",
                  0.99f };
       case LoadingStage::Ready:
-        return { "THE WORLD IS READY", "Setting out", 1.0f };
+        return { "The world is ready", "Setting out", 1.0f };
       }
-      return { "BUILDING THE WORLD", "Working", 0.0f };
+      return { "Building the world", "Working", 0.0f };
+    }
+
+    static std::string grouped_number (int value) {
+      std::string result = std::to_string (value);
+      for (std::ptrdiff_t i = static_cast<std::ptrdiff_t> (result.size ()) - 3;
+           i > 0;
+           i -= 3)
+        result.insert (static_cast<std::size_t> (i), ",");
+      return result;
+    }
+
+    static int loading_preview_resolution (int terrain_resolution) {
+      constexpr int maximum_preview_resolution = 513;
+      return std::min (terrain_resolution, maximum_preview_resolution);
     }
 
     // A cache must distinguish the exact physical recipe, not a rounded
@@ -355,11 +394,13 @@ namespace moppe {
             m_graphics (graphics), m_spawn_position (position_value (
                                      this->world ().spawn_position ())),
             m_loading_world (this->world ()),
-            m_loading_map (this->recipe ().resolution (),
-                           this->recipe ().resolution (),
-                           extent_value (this->recipe ().extent ()),
-                           this->recipe ().seed ().value,
-                           this->recipe ().topology ()),
+            m_loading_seed (this->recipe ().seed ().value),
+            m_loading_map (
+              loading_preview_resolution (this->recipe ().resolution ()),
+              loading_preview_resolution (this->recipe ().resolution ()),
+              extent_value (this->recipe ().extent ()),
+              this->recipe ().seed ().value,
+              this->recipe ().topology ()),
             m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
             m_terrain_lab_preview (terrain_lab_preview),
             m_tree_demo (tree_demo), m_tree_count (tree_count),
@@ -412,7 +453,11 @@ namespace moppe {
         {
           MOPPE_PROFILE_ZONE ("startup.load_loading_font");
           m_loading_font.reset (new render::FontAtlas (
-            r, "AvenirNext-Medium", 24, r.scale_factor ()));
+            r, "AvenirNext-Medium", 16, r.scale_factor ()));
+          m_loading_title_font.reset (new render::FontAtlas (
+            r, "AvenirNext-DemiBold", 30, r.scale_factor ()));
+          m_loading_meta_font.reset (
+            new render::FontAtlas (r, "Menlo", 11, r.scale_factor ()));
         }
         {
           MOPPE_PROFILE_ZONE ("startup.load_blob_shadow");
@@ -471,6 +516,7 @@ namespace moppe {
         m_generation_job = std::make_shared<GenerationJob> (
           *this, world (), std::move (recipe), m_terrain_lab_preview);
         m_loading_world = m_generation_job->params;
+        m_loading_seed = m_generation_job->recipe.seed ().value;
         platform::async (&MoppeGame::generate_thunk,
                          &MoppeGame::finish_thunk,
                          m_generation_job);
@@ -530,11 +576,22 @@ namespace moppe {
       }
 
       void publish_loading_terrain (const map::RandomHeightMap& terrain) {
-        const std::size_t count =
-          static_cast<std::size_t> (terrain.width ()) * terrain.height ();
+        const int width = m_loading_map.width ();
+        const int height = m_loading_map.height ();
+        auto heights = std::make_shared<std::vector<float>> (
+          static_cast<std::size_t> (width) * height);
+        for (int y = 0; y < height; ++y) {
+          const int source_y =
+            y * (terrain.height () - 1) / std::max (1, height - 1);
+          for (int x = 0; x < width; ++x) {
+            const int source_x =
+              x * (terrain.width () - 1) / std::max (1, width - 1);
+            (*heights)[static_cast<std::size_t> (y) * width + x] =
+              terrain.get (source_x, source_y);
+          }
+        }
         const std::lock_guard<std::mutex> lock (m_loading_mutex);
-        m_loading_heights = std::make_shared<const std::vector<float>> (
-          terrain.raw_heights (), terrain.raw_heights () + count);
+        m_loading_heights = std::move (heights);
       }
 
       const GeneratedWorld::Hydrology* hydrology () const noexcept {
@@ -935,15 +992,26 @@ namespace moppe {
                   publish_loading_terrain (terrain);
                   (void)transform;
                 },
-                [this] (std::size_t,
-                        const terrain::TerrainTransform& transform,
-                        int completed,
-                        int total) {
+                [this, &terrain] (std::size_t,
+                                  const terrain::TerrainTransform& transform,
+                                  int completed,
+                                  int total) {
                   if (std::holds_alternative<terrain::OrogenyEvolution> (
                         transform)) {
+                    const auto& orogeny =
+                      std::get<terrain::OrogenyEvolution> (transform);
                     set_loading_stage (LoadingStage::EvolvingTerrain);
                     m_loading_work_done = completed;
                     m_loading_work_total = total;
+                    const float duration =
+                      julian_years_value (orogeny.evolution.duration);
+                    const float step =
+                      julian_years_value (orogeny.evolution.time_step);
+                    m_loading_geological_years_done = static_cast<int> (
+                      std::lround (std::min (duration, completed * step)));
+                    m_loading_geological_years_total =
+                      static_cast<int> (std::lround (duration));
+                    publish_loading_terrain (terrain);
                   }
                 },
                 [this] (std::size_t completed, std::size_t total) {
@@ -1062,21 +1130,21 @@ namespace moppe {
         retired_world.reset ();
       }
 
-      void finish_setup () {
-        MOPPE_PROFILE_ZONE ("MoppeGame::finish_setup");
+      void prepare_world_water () {
+        MOPPE_PROFILE_ZONE ("startup.prepare_world_water");
         render::Renderer& r = *m_renderer;
-
-        // Running rivers are continuous ribbon meshes. The water sheets below
-        // retain standing bodies and carry each mouth's current into them.
-        if (rivers ()) {
-          MOPPE_PROFILE_ZONE ("startup.rebuild_river_ribbons");
+        // Running rivers are continuous ribbon meshes. The water sheets retain
+        // standing bodies and carry each mouth's current into them.
+        if (rivers ())
           m_river_surface.rebuild (r, map (), *rivers ());
-        }
         m_water_presentation.reset (world ().water_level, world ().map_size);
         if (const auto& water = generated_world ().water_surface ())
           m_water_presentation.refresh (*water, map ().scale ()[1] * u::m);
-        m_surface_presentation.refresh (surface ());
+      }
 
+      void prepare_world_surface () {
+        MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
+        m_surface_presentation.refresh (surface ());
         session ().bike ().set_water_level (world ().water_level);
         session ().car ().set_water_level (world ().water_level);
         session ().bike ().set_obstacles (&m_obstacles);
@@ -1097,32 +1165,44 @@ namespace moppe {
                     << " cell=" << m_water_inspection->cell
                     << " score=" << m_water_inspection->score << '\n';
         }
+      }
 
-        if (!m_terrain_lab_preview) {
-          set_loading_stage (LoadingStage::PlacingStars);
-          MOPPE_PROFILE_ZONE ("startup.generate_stars");
-          session ().stars ().generate (map (), world (), 80);
+      void place_stars_and_player () {
+        MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
+        if (m_terrain_lab_preview)
+          return;
+        session ().stars ().generate (map (), world (), 80);
+        if (trail_network ()) {
+          m_home_base_position =
+            trail_cell_position (trail_network ()->plan.home_base);
+          m_spawn_position =
+            m_home_base_position - trail_direction_from_home () * 8.0f;
+          m_spawn_position[1] = map ().interpolated_height (
+                                  m_spawn_position[0], m_spawn_position[2]) +
+                                1.2f;
+        } else {
+          m_spawn_position = choose_landscape_spawn ();
+          m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
         }
+        session ().bike ().reset (m_spawn_position);
+        session ().bike ().set_heading (
+          trail_network () ? trail_direction_from_home () : Vec3 (0, 0, 1));
+      }
 
-        if (!m_terrain_lab_preview) {
-          if (trail_network ()) {
-            m_home_base_position =
-              trail_cell_position (trail_network ()->plan.home_base);
-            m_spawn_position =
-              m_home_base_position - trail_direction_from_home () * 8.0f;
-            m_spawn_position[1] = map ().interpolated_height (
-                                    m_spawn_position[0], m_spawn_position[2]) +
-                                  1.2f;
-          } else {
-            m_spawn_position = choose_landscape_spawn ();
-            m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
-          }
-          session ().bike ().reset (m_spawn_position);
-          session ().bike ().set_heading (
-            trail_network () ? trail_direction_from_home () : Vec3 (0, 0, 1));
-        }
+      void grow_global_forest () {
+        MOPPE_PROFILE_ZONE ("startup.build_global_forest");
+        if (m_tree_demo || m_water_inspection || m_terrain_lab_preview)
+          return;
+        m_forest.rebuild (
+          *m_renderer, surface (), recipe ().seed ().value ^ 0xa34c91e5U);
+        std::cerr << "global forest: " << m_forest.tree_count ()
+                  << " canopy representatives\n";
+      }
+
+      void plant_trailside () {
+        MOPPE_PROFILE_ZONE ("startup.plant_trailside");
+        render::Renderer& r = *m_renderer;
         if (m_tree_demo) {
-          MOPPE_PROFILE_ZONE ("startup.build_tree_grove");
           m_tree_stand.rebuild (
             r, surface (), recipe ().seed ().value ^ 0x4f1bbcdcU, m_tree_count);
           if (m_tree_stand.empty ())
@@ -1133,39 +1213,37 @@ namespace moppe {
           std::cerr << "tree grove: " << grove.sites.size ()
                     << " organisms, eye=" << grove.camera_eye
                     << " target=" << grove.camera_target << '\n';
-        } else if (m_water_inspection)
+          return;
+        }
+        if (m_water_inspection) {
           session ().camera ().place (m_water_inspection->eye,
                                       m_water_inspection->target);
-        else if (!m_terrain_lab_preview) {
-          {
-            MOPPE_PROFILE_ZONE ("startup.build_global_forest");
-            m_forest.rebuild (
-              r, surface (), recipe ().seed ().value ^ 0xa34c91e5U);
-            std::cerr << "global forest: " << m_forest.tree_count ()
-                      << " canopy representatives\n";
-          }
-          MOPPE_PROFILE_ZONE ("startup.build_forest");
-          constexpr std::size_t forest_size = 32;
-          m_tree_stand.rebuild (r,
-                                surface (),
-                                recipe ().seed ().value ^ 0x4f1bbcdcU,
-                                forest_size,
-                                m_home_base_position);
-          const TreeGrove& forest = m_tree_stand.grove ();
-          const auto cohort_count = [&] (TreeCohort cohort) {
-            return std::ranges::count_if (forest.sites,
-                                          [cohort] (const TreeSite& site) {
-                                            return site.cohort == cohort;
-                                          });
-          };
-          std::cerr << "forest: " << forest.sites.size () << " organisms ("
-                    << cohort_count (TreeCohort::canopy) << " canopy, "
-                    << cohort_count (TreeCohort::young) << " young, "
-                    << cohort_count (TreeCohort::sapling) << " saplings)\n";
+          return;
         }
+        if (m_terrain_lab_preview)
+          return;
 
-        if (standing_water () && lake_census () && drainage () && rivers ()) {
-          MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
+        constexpr std::size_t forest_size = 32;
+        m_tree_stand.rebuild (r,
+                              surface (),
+                              recipe ().seed ().value ^ 0x4f1bbcdcU,
+                              forest_size,
+                              m_home_base_position);
+        const TreeGrove& forest = m_tree_stand.grove ();
+        const auto cohort_count = [&] (TreeCohort cohort) {
+          return std::ranges::count_if (
+            forest.sites,
+            [cohort] (const TreeSite& site) { return site.cohort == cohort; });
+        };
+        std::cerr << "forest: " << forest.sites.size () << " organisms ("
+                  << cohort_count (TreeCohort::canopy) << " canopy, "
+                  << cohort_count (TreeCohort::young) << " young, "
+                  << cohort_count (TreeCohort::sapling) << " saplings)\n";
+      }
+
+      void plan_opening_journey () {
+        MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
+        if (standing_water () && lake_census () && drainage () && rivers ())
           m_cinematic_plan = plan_cinematic_flight (map (),
                                                     *standing_water (),
                                                     *lake_census (),
@@ -1173,18 +1251,21 @@ namespace moppe {
                                                     *rivers (),
                                                     m_spawn_position,
                                                     trail_network ());
+        if (m_cinematic_plan.empty ())
+          return;
+        std::cerr << "cinematic flight: " << m_cinematic_plan.waypoints.size ()
+                  << " gates through ";
+        for (std::size_t i = 0; i < m_cinematic_plan.landmarks.size (); ++i) {
+          if (i)
+            std::cerr << ", ";
+          std::cerr << cinematic_landmark_name (
+            m_cinematic_plan.landmarks[i].kind);
         }
-        if (!m_cinematic_plan.empty ()) {
-          std::cerr << "cinematic flight: "
-                    << m_cinematic_plan.waypoints.size () << " gates through ";
-          for (std::size_t i = 0; i < m_cinematic_plan.landmarks.size (); ++i) {
-            if (i)
-              std::cerr << ", ";
-            std::cerr << cinematic_landmark_name (
-              m_cinematic_plan.landmarks[i].kind);
-          }
-          std::cerr << '\n';
-        }
+        std::cerr << '\n';
+      }
+
+      void complete_world_setup () {
+        MOPPE_PROFILE_ZONE ("startup.complete_world_setup");
         m_setup_complete = true;
         remember_seed (world (),
                        recipe ().generation_profile (),
@@ -1193,6 +1274,38 @@ namespace moppe {
             !m_automated_regeneration_done) {
           m_automated_regeneration_done = true;
           regenerate_world ();
+        }
+      }
+
+      void finish_setup_step () {
+        MOPPE_PROFILE_ZONE ("MoppeGame::finish_setup_step");
+        switch (m_loading_setup_stage++) {
+        case 0:
+          prepare_world_water ();
+          set_loading_stage (LoadingStage::PreparingSurface);
+          break;
+        case 1:
+          prepare_world_surface ();
+          set_loading_stage (LoadingStage::PlacingStars);
+          break;
+        case 2:
+          place_stars_and_player ();
+          set_loading_stage (LoadingStage::GrowingForest);
+          break;
+        case 3:
+          grow_global_forest ();
+          set_loading_stage (LoadingStage::PlantingTrailside);
+          break;
+        case 4:
+          plant_trailside ();
+          set_loading_stage (LoadingStage::PlanningJourney);
+          break;
+        case 5:
+          plan_opening_journey ();
+          break;
+        default:
+          complete_world_setup ();
+          break;
         }
       }
 
@@ -1725,10 +1838,10 @@ namespace moppe {
       void render_loading (render::Renderer& r) {
         if (m_generation_complete && !m_setup_complete) {
           if (!m_loading_finalize_announced) {
-            set_loading_stage (LoadingStage::AssemblingWorld);
+            set_loading_stage (LoadingStage::PreparingWater);
             m_loading_finalize_announced = true;
           } else {
-            finish_setup ();
+            finish_setup_step ();
           }
         }
 
@@ -1749,7 +1862,7 @@ namespace moppe {
               cast_world_shadows (r);
             set_loading_stage (LoadingStage::Ready);
             m_loading_activation_stage = 3;
-          } else {
+          } else if (m_loading_progress_display >= 0.995f) {
             m_ready = true;
             MOPPE_PROFILE_PLOT ("startup.ready", 1);
 
@@ -1802,8 +1915,17 @@ namespace moppe {
           local_progress = erosion;
           progress = 0.20f + 0.48f * erosion;
         }
-        m_loading_progress_display =
-          std::max (m_loading_progress_display, progress);
+        m_loading_progress_target =
+          std::max (m_loading_progress_target, progress);
+        const float frame_dt =
+          std::clamp (sky_time - m_loading_last_frame_time, 0.0f, 0.1f);
+        m_loading_last_frame_time = sky_time;
+        const float progress_blend = 1.0f - std::exp (-5.0f * frame_dt);
+        m_loading_progress_display +=
+          (m_loading_progress_target - m_loading_progress_display) *
+          progress_blend;
+        if (m_loading_progress_target - m_loading_progress_display < 0.0005f)
+          m_loading_progress_display = m_loading_progress_target;
 
         std::shared_ptr<const std::vector<float>> loading_heights;
         std::vector<LoadingEvent> loading_events;
@@ -1894,63 +2016,99 @@ namespace moppe {
         m_hud_dl.lit (false);
         m_hud_dl.fogged (false);
 
-        if (m_loading_font && m_loading_font->ok ()) {
-          const float text_x = 42.0f;
-          m_hud_dl.push ();
-          m_hud_dl.translate (text_x, 38.0f, 0.0f);
-          m_hud_dl.scale (0.55f, 0.55f, 1.0f);
-          m_hud_dl.color (0.80f, 0.90f, 0.82f, 0.78f);
-          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, "BUILDING THE WORLD");
-          m_hud_dl.pop ();
+        if (m_loading_font && m_loading_font->ok () && m_loading_title_font &&
+            m_loading_title_font->ok () && m_loading_meta_font &&
+            m_loading_meta_font->ok ()) {
+          const float panel_x = 24.0f;
+          const float panel_width = std::min (660.0f, width - 48.0f);
+          const float panel_height = 214.0f;
+          const float panel_y = std::max (24.0f, height - panel_height - 24.0f);
+          const float text_x = panel_x + 24.0f;
+          const float content_width = panel_width - 48.0f;
+          const auto fill_rect = [this] (float x, float y, float w, float h) {
+            m_hud_dl.begin (render::Prim::Quads);
+            m_hud_dl.vertex (x, y);
+            m_hud_dl.vertex (x + w, y);
+            m_hud_dl.vertex (x + w, y + h);
+            m_hud_dl.vertex (x, y + h);
+            m_hud_dl.end ();
+          };
 
-          m_hud_dl.push ();
-          m_hud_dl.translate (text_x, 71.0f, 0.0f);
-          m_hud_dl.scale (1.18f, 1.18f, 1.0f);
-          m_hud_dl.color (0.93f, 1.0f, 0.91f, 0.96f);
-          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, copy.title);
-          m_hud_dl.pop ();
+          m_hud_dl.color (0.025f, 0.055f, 0.045f, 0.78f);
+          fill_rect (panel_x, panel_y, panel_width, panel_height);
+          m_hud_dl.color (0.69f, 0.89f, 0.70f, 0.78f);
+          fill_rect (panel_x, panel_y, 3.0f, panel_height);
 
-          std::string detail = copy.detail;
-          if (local_progress >= 0.0f) {
-            const int done = stage == LoadingStage::BuildingContinents
-                               ? m_loading_source_done.load ()
-                               : m_loading_work_done.load ();
-            const int total = stage == LoadingStage::BuildingContinents
-                                ? m_loading_source_total.load ()
-                                : m_loading_work_total.load ();
-            std::ostringstream status;
-            status << detail << "  " << done << " / " << total;
-            detail = status.str ();
+          std::ostringstream eyebrow;
+          eyebrow << "WORLD GENERATION  /  SEED " << m_loading_seed.load ();
+          m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.88f);
+          m_loading_meta_font->draw (
+            m_hud_dl, text_x, panel_y + 29.0f, eyebrow.str ());
+
+          m_hud_dl.color (0.95f, 1.0f, 0.94f, 0.98f);
+          m_loading_title_font->draw (
+            m_hud_dl, text_x, panel_y + 67.0f, copy.title);
+
+          m_hud_dl.color (0.78f, 0.88f, 0.79f, 0.94f);
+          m_loading_font->draw (m_hud_dl, text_x, panel_y + 94.0f, copy.detail);
+
+          std::string status;
+          if (stage == LoadingStage::EvolvingTerrain &&
+              local_progress >= 0.0f) {
+            std::ostringstream stream;
+            const int years_done = m_loading_geological_years_done.load ();
+            const int years_total = m_loading_geological_years_total.load ();
+            stream << "Geological time  " << grouped_number (years_done)
+                   << " / " << grouped_number (years_total)
+                   << " years  /  step " << m_loading_work_done.load ()
+                   << " of " << m_loading_work_total.load ();
+            status = stream.str ();
+          } else if (stage == LoadingStage::BuildingContinents &&
+                     local_progress >= 0.0f) {
+            std::ostringstream stream;
+            stream << "Field row " << m_loading_source_done.load () << " of "
+                   << m_loading_source_total.load ();
+            status = stream.str ();
           }
-          m_hud_dl.push ();
-          m_hud_dl.translate (text_x, 106.0f, 0.0f);
-          m_hud_dl.scale (0.72f, 0.72f, 1.0f);
-          m_hud_dl.color (0.80f, 0.90f, 0.82f, 0.90f);
-          m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, detail);
-          m_hud_dl.pop ();
 
-          const int available_lines =
-            std::max (1, static_cast<int> ((height - 160.0f) / 22.0f));
-          const std::size_t first =
-            loading_events.size () > static_cast<std::size_t> (available_lines)
-              ? loading_events.size () - available_lines
-              : 0;
-          float line_y = 157.0f;
-          for (std::size_t i = first; i < loading_events.size (); ++i) {
+          const float rail_y = panel_y + 119.0f;
+          m_hud_dl.color (0.28f, 0.38f, 0.31f, 0.82f);
+          fill_rect (text_x, rail_y, content_width, 3.0f);
+          m_hud_dl.color (0.70f, 0.94f, 0.71f, 0.98f);
+          fill_rect (text_x,
+                     rail_y,
+                     content_width *
+                       std::clamp (m_loading_progress_display, 0.0f, 1.0f),
+                     3.0f);
+
+          std::ostringstream percent;
+          percent << static_cast<int> (
+                       std::lround (m_loading_progress_display * 100.0f))
+                  << '%';
+          m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.90f);
+          m_loading_meta_font->draw (
+            m_hud_dl,
+            text_x + content_width -
+              m_loading_meta_font->measure (percent.str ()),
+            panel_y + 143.0f,
+            percent.str ());
+          if (!status.empty ())
+            m_loading_meta_font->draw (
+              m_hud_dl, text_x, panel_y + 143.0f, status);
+
+          const std::size_t history_end =
+            loading_events.empty () ? 0 : loading_events.size () - 1;
+          const std::size_t history_begin =
+            history_end > 2 ? history_end - 2 : 0;
+          float line_y = panel_y + 174.0f;
+          for (std::size_t i = history_begin; i < history_end; ++i) {
             const LoadingEvent& event = loading_events[i];
-            const LoadingStageText event_text =
-              loading_stage_text (event.stage);
             std::ostringstream line;
             line << std::fixed << std::setprecision (1) << event.elapsed
-                 << "s  " << event_text.title << "  -  " << event_text.detail;
-            m_hud_dl.push ();
-            m_hud_dl.translate (text_x, line_y, 0.0f);
-            m_hud_dl.scale (0.53f, 0.53f, 1.0f);
-            const bool current = i + 1 == loading_events.size ();
-            m_hud_dl.color (0.83f, 0.93f, 0.84f, current ? 0.96f : 0.68f);
-            m_loading_font->draw (m_hud_dl, 0.0f, 0.0f, line.str ());
-            m_hud_dl.pop ();
-            line_y += 22.0f;
+                 << "s  " << loading_stage_text (event.stage).title;
+            m_hud_dl.color (0.64f, 0.75f, 0.65f, 0.76f);
+            m_loading_meta_font->draw (m_hud_dl, text_x, line_y, line.str ());
+            line_y += 20.0f;
           }
         }
 
@@ -2292,9 +2450,13 @@ namespace moppe {
         m_ready = false;
         m_loading_work_done = 0;
         m_loading_work_total = 1;
+        m_loading_geological_years_done = 0;
+        m_loading_geological_years_total = 0;
         m_loading_source_done = 0;
         m_loading_source_total = 1;
         m_loading_progress_display = 0.0f;
+        m_loading_progress_target = 0.0f;
+        m_loading_last_frame_time = 0.0f;
         m_loading_capture_done = false;
         m_loading_clock_start = platform::now ();
         m_loading_terrain_visible = false;
@@ -2307,6 +2469,7 @@ namespace moppe {
         set_loading_stage (LoadingStage::Starting);
         m_generation_complete = false;
         m_loading_finalize_announced = false;
+        m_loading_setup_stage = 0;
         m_loading_activation_stage = 0;
         m_skip_cinematic_requested = false;
         m_cinematic.stop ();
@@ -2378,6 +2541,7 @@ namespace moppe {
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
       WorldParams m_loading_world;
+      std::atomic<std::uint32_t> m_loading_seed;
       map::RandomHeightMap m_loading_map;
       SurfacePresentation m_surface_presentation;
       std::mutex m_loading_mutex;
@@ -2386,13 +2550,18 @@ namespace moppe {
       std::shared_ptr<const std::vector<float>> m_displayed_loading_heights;
       std::atomic<int> m_loading_work_done = 0;
       std::atomic<int> m_loading_work_total = 1;
+      std::atomic<int> m_loading_geological_years_done = 0;
+      std::atomic<int> m_loading_geological_years_total = 0;
       std::atomic<int> m_loading_source_done = 0;
       std::atomic<int> m_loading_source_total = 1;
       float m_loading_progress_display = 0.0f;
+      float m_loading_progress_target = 0.0f;
+      float m_loading_last_frame_time = 0.0f;
       double m_loading_clock_start = platform::now ();
       bool m_loading_capture_done = false;
       bool m_loading_terrain_visible = false;
       bool m_loading_finalize_announced = false;
+      int m_loading_setup_stage = 0;
       int m_loading_activation_stage = 0;
       bool m_skip_cinematic_requested = false;
       CinematicFlightPlan m_cinematic_plan;
@@ -2417,6 +2586,8 @@ namespace moppe {
       float m_pointer_x = -1.0f;
       float m_pointer_y = -1.0f;
       std::unique_ptr<render::FontAtlas> m_loading_font;
+      std::unique_ptr<render::FontAtlas> m_loading_title_font;
+      std::unique_ptr<render::FontAtlas> m_loading_meta_font;
 
       render::Renderer* m_renderer;
       bool m_start_in_terrain_lab;
