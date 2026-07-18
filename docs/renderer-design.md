@@ -393,12 +393,15 @@ frame deadline distinguishable from compositor or drawable back-pressure.
 `MOPPE_PROFILE_GPU_SIMPLE=1` reports only command-buffer GPU time without
 injecting the more intrusive per-encoder counter samples.
 
-The supported `--graphics-quality low` preset is a deliberately severe
+The supported `--graphics-quality balanced` preset renders the 3D scene at
+two-thirds resolution while retaining every high-quality graphics feature.
+It is the normal performance compromise for high-refresh or unusually wide
+displays. The `--graphics-quality low` preset remains a deliberately severe
 performance baseline: half-resolution 3D scene, no terrain shadows, ocean
-surface, decorative particles, motion blur, bloom,
-exposure probe, or lens flare. `--graphics-quality high` is the default full
-presentation. The low preset retains terrain, vehicles, physics, sky, rivers,
-and HUD so it remains playable while isolating optional rendering cost.
+surface, decorative particles, motion blur, bloom, exposure probe, or lens
+flare. `--graphics-quality high` is the default full presentation. The low
+preset retains terrain, vehicles, physics, sky, rivers, and HUD so it remains
+playable while isolating optional rendering cost.
 Presets resolve into a typed graphics-settings value rather than remaining a
 quality-mode branch. Boolean features can then be changed independently with
 `--graphics-enable` and `--graphics-disable`; each accepts a comma-separated
