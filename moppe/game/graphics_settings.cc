@@ -35,6 +35,12 @@ namespace moppe::game {
     return {};
   }
 
+  GraphicsSettings balanced_graphics_settings () {
+    GraphicsSettings settings;
+    settings.scene_scale = 2.0f / 3.0f;
+    return settings;
+  }
+
   GraphicsSettings low_graphics_settings () {
     GraphicsSettings settings;
     settings.scene_scale = 0.5f;

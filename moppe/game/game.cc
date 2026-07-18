@@ -2479,12 +2479,14 @@ int main (int argc, char** argv) {
       config.fullscreen = false;
     } else if (arg == "--graphics-quality") {
       if (i + 1 >= argc) {
-        std::cerr << "--graphics-quality requires low or high\n";
+        std::cerr << "--graphics-quality requires low, balanced, or high\n";
         return -1;
       }
       const std::string quality = argv[++i];
       if (quality == "low")
         graphics = game::low_graphics_settings ();
+      else if (quality == "balanced")
+        graphics = game::balanced_graphics_settings ();
       else if (quality == "high")
         graphics = game::high_graphics_settings ();
       else {

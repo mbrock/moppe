@@ -161,6 +161,7 @@ namespace moppe::game {
   };
 
   GraphicsSettings high_graphics_settings ();
+  GraphicsSettings balanced_graphics_settings ();
   GraphicsSettings low_graphics_settings ();
   const GraphicsFeature* find_graphics_feature (std::string_view name);
 

@@ -19,7 +19,7 @@
     touching down folds the wing and continues on foot. On iOS, the
     mount/dismount corner deploys the wing while airborne.
   - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
-    `--graphics-quality low|high`
+    `--graphics-quality low|balanced|high`
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
   - Fast deterministic UI capture: `make terrain-lab-shot` (writes
