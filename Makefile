@@ -1,7 +1,7 @@
 
 .PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy \
+	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	xcode
 
@@ -91,6 +91,10 @@ archive:
 # Build, install, and launch Moppe on the paired iPhone.
 phone:
 	./tools/install-ios
+
+# Build, install, and launch Moppe on the paired Apple TV.
+tv:
+	./tools/install-tvos
 
 # Build a fast deterministic Terrain Lab preview, capture it, and exit.
 terrain-lab-shot:

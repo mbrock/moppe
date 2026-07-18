@@ -14,6 +14,10 @@
   highland_preference,alpine_avoidance,crossfall]`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
+  - Game controller: left stick drives and steers; right trigger boosts; `A`
+    deploys the glider or restarts; `B` mounts/dismounts; `X` cycles the camera;
+    and `Y` boosts, flares, or skips the cinematic. The D-pad navigates Terrain
+    Lab. Xbox, PlayStation, and compatible MFi controllers use this layout.
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
     touching down folds the wing and continues on foot. On iOS, the
@@ -48,6 +52,13 @@
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target
   with `CODE_SIGNING_ALLOWED=NO`
+- tvOS (simulator): `cmake -B build-tvos -G Xcode -DCMAKE_SYSTEM_NAME=tvOS
+  -DCMAKE_OSX_SYSROOT=appletvsimulator` then build the `moppe-tvos` target
+  with `CODE_SIGNING_ALLOWED=NO`
+- Apple TV (build, install, launch): `make tv`
+  - Pair the Apple TV in Xcode's Device Hub first. Overrides:
+    `MOPPE_TVOS_DEVICE`, `MOPPE_TVOS_TEAM`, `MOPPE_TVOS_CONFIGURATION`, and
+    `MOPPE_TVOS_BUILD_DIR`.
 - iPhone (build, install, launch): `make phone`
   - The paired phone must be unlocked and reachable; its Personal Hotspot
     works when other Wi-Fi networks isolate clients.

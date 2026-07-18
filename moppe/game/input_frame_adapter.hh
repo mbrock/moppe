@@ -5,6 +5,7 @@
 #include <moppe/platform/platform.hh>
 
 #include <algorithm>
+#include <cmath>
 
 namespace moppe::game {
   // A narrow adapter for the callbacks already supplied by platform::Game.
@@ -13,9 +14,9 @@ namespace moppe::game {
   class InputFrameAdapter {
   public:
     void controls (const platform::ControlState& state) {
-      m_held.turn = std::clamp (state.steer, -1.0f, 1.0f);
-      m_held.drive = std::clamp (state.drive, -1.0f, 1.0f);
-      m_held.boost = std::clamp (state.boost, 0.0f, 1.0f);
+      m_analog.turn = std::clamp (state.steer, -1.0f, 1.0f);
+      m_analog.drive = std::clamp (state.drive, -1.0f, 1.0f);
+      m_analog.boost = std::clamp (state.boost, 0.0f, 1.0f);
     }
 
     void key (platform::Key key, bool down) {
@@ -27,6 +28,11 @@ namespace moppe::game {
       if (key == Key::E) {
         if (down)
           m_deploy_glider = true;
+        return;
+      }
+      if (key == Key::Mount) {
+        if (down)
+          m_toggle_mount = true;
         return;
       }
       if (key == Key::Tab) {
@@ -45,22 +51,22 @@ namespace moppe::game {
       switch (key) {
       case Key::Left:
       case Key::A:
-        m_held.turn = -value;
+        m_keys.turn = -value;
         break;
       case Key::Right:
       case Key::D:
-        m_held.turn = value;
+        m_keys.turn = value;
         break;
       case Key::Up:
       case Key::W:
-        m_held.drive = value;
+        m_keys.drive = value;
         break;
       case Key::Down:
       case Key::S:
-        m_held.drive = -value;
+        m_keys.drive = -value;
         break;
       case Key::Space:
-        m_held.boost = value;
+        m_keys.boost = value;
         break;
       default:
         break;
@@ -77,22 +83,22 @@ namespace moppe::game {
         break;
       case Key::Left:
       case Key::A:
-        m_held.turn = -value;
+        m_keys.turn = -value;
         break;
       case Key::Right:
       case Key::D:
-        m_held.turn = value;
+        m_keys.turn = value;
         break;
       case Key::Up:
       case Key::W:
-        m_held.drive = value;
+        m_keys.drive = value;
         break;
       case Key::Down:
       case Key::S:
-        m_held.drive = -value;
+        m_keys.drive = -value;
         break;
       case Key::E:
-        m_held.boost = value;
+        m_keys.boost = value;
         break;
       default:
         break;
@@ -100,7 +106,15 @@ namespace moppe::game {
     }
 
     InputFrame take_frame () {
-      InputFrame frame = m_held;
+      InputFrame frame = m_analog;
+      if (std::abs (input_value (m_keys.turn)) >
+          std::abs (input_value (frame.turn)))
+        frame.turn = m_keys.turn;
+      if (std::abs (input_value (m_keys.drive)) >
+          std::abs (input_value (frame.drive)))
+        frame.drive = m_keys.drive;
+      frame.boost =
+        std::max (input_value (frame.boost), input_value (m_keys.boost));
       frame.deploy_glider = m_deploy_glider;
       frame.toggle_mount = m_toggle_mount;
       frame.cycle_camera = m_cycle_camera;
@@ -113,7 +127,8 @@ namespace moppe::game {
     }
 
     void clear () {
-      m_held = {};
+      m_analog = {};
+      m_keys = {};
       m_deploy_glider = false;
       m_toggle_mount = false;
       m_cycle_camera = false;
@@ -135,7 +150,8 @@ namespace moppe::game {
       }
     }
 
-    InputFrame m_held;
+    InputFrame m_analog;
+    InputFrame m_keys;
     bool m_deploy_glider = false;
     bool m_toggle_mount = false;
     bool m_cycle_camera = false;
