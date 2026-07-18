@@ -26,6 +26,7 @@ namespace moppe::mov {
       control_signal_t turn {};
       control_signal_t speed_control {};
       bool flare {};
+      bool bike_attached {};
       bool landed {};
     };
 
@@ -33,7 +34,8 @@ namespace moppe::mov {
 
     void launch (position_t position,
                  velocity_t inherited_velocity,
-                 const Vec3& heading);
+                 const Vec3& heading,
+                 bool bike_attached = false);
     bool update (seconds_t dt);
 
     State state () const;
@@ -47,6 +49,11 @@ namespace moppe::mov {
     }
     void set_flare (bool flare) {
       m_flare = flare;
+    }
+    bool drop_bike () {
+      const bool was_attached = m_bike_attached;
+      m_bike_attached = false;
+      return was_attached;
     }
 
     Vec3 position () const {
@@ -79,6 +86,9 @@ namespace moppe::mov {
     bool landed () const {
       return m_landed;
     }
+    bool bike_attached () const {
+      return m_bike_attached;
+    }
 
     static rate_of_climb_t polar_sink (airspeed_t airspeed);
     static glide_ratio_t glide_ratio_at (airspeed_t airspeed);
@@ -98,6 +108,7 @@ namespace moppe::mov {
     control_signal_t m_turn {};
     control_signal_t m_speed_control {};
     bool m_flare = false;
+    bool m_bike_attached = false;
     bool m_landed = true;
   };
 }

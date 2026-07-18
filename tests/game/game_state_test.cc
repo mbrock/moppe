@@ -219,8 +219,10 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
   map::Surface surface (map);
 
   mov::Glider glider (surface);
-  glider.launch (
-    position (Vec3 (40, 70, 40)), velocity (Vec3 (12, -1, 15)), Vec3 (0, 0, 1));
+  glider.launch (position (Vec3 (40, 70, 40)),
+                 velocity (Vec3 (12, -1, 15)),
+                 Vec3 (0, 0, 1),
+                 true);
   glider.set_turn (-0.7f);
   glider.set_speed_control (0.8f);
   glider.set_flare (true);
@@ -242,7 +244,95 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
                     saved.airspeed.numerical_value_in (u::m / u::s),
                     1e-6f);
   MOPPE_CHECK (restored.flare == saved.flare);
+  MOPPE_CHECK (restored.bike_attached == saved.bike_attached);
   MOPPE_CHECK (restored.landed == saved.landed);
+}
+
+MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+
+  mov::Glider loaded (surface);
+  loaded.launch (position (Vec3 (80, 100, 80)),
+                 velocity (Vec3 (0, 0, 22)),
+                 Vec3 (0, 0, 1),
+                 true);
+  mov::Glider light (surface);
+  light.restore (loaded.state ());
+  MOPPE_CHECK (light.drop_bike ());
+
+  for (int i = 0; i < 480; ++i) {
+    loaded.update (seconds (1.0f / 60.0f));
+    light.update (seconds (1.0f / 60.0f));
+  }
+
+  MOPPE_CHECK (loaded.bike_attached ());
+  MOPPE_CHECK (!light.bike_attached ());
+  MOPPE_CHECK (loaded.airspeed () > light.airspeed ());
+  MOPPE_CHECK (loaded.vertical_speed () < light.vertical_speed ());
+  MOPPE_CHECK (loaded.position ()[1] < light.position ()[1]);
+}
+
+MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
+  using namespace moppe;
+  map::RandomHeightMap map (
+    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+  std::fill (map.raw_heights (),
+             map.raw_heights () + map.width () * map.height (),
+             0.5f);
+  map.recompute_normals ();
+  map::Surface surface (map);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (map.size ());
+  world.resolution = map.width ();
+  world.water_level = 0 * u::m;
+  world.terrain_topology = terrain::Topology::Torus;
+  std::vector<mov::Box> obstacles;
+  const game::GameSessionAdvanceContext context { world, map, obstacles };
+  game::GameSession session (world, map, surface);
+
+  mov::Vehicle::State airborne = session.bike ().state ();
+  airborne.position = position (Vec3 (80, 40, 80));
+  airborne.velocity = velocity (Vec3 (0, 1, 20));
+  airborne.heading = Vec3 (0, 0, 1);
+  airborne.thrust_orientation = airborne.heading;
+  airborne.airborne_time = seconds (0.3f);
+  airborne.fall_top = 40 * u::m;
+  session.bike ().restore (airborne);
+
+  game::InputFrame deploy;
+  deploy.deploy_glider = true;
+  game::advance_game_session (context, session, deploy, seconds (1.0f / 60.0f));
+
+  MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
+  MOPPE_CHECK (session.glider ().bike_attached ());
+  MOPPE_CHECK (session.can_drop_bike ());
+  MOPPE_CHECK_NEAR (
+    length (session.glider ().position () - session.bike ().position ()),
+    2.4f,
+    1e-4f);
+
+  game::InputFrame drop;
+  drop.deploy_glider = true;
+  game::advance_game_session (context, session, drop, seconds (1.0f / 60.0f));
+  const Vec3 dropped_position = session.bike ().position ();
+
+  MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
+  MOPPE_CHECK (!session.glider ().bike_attached ());
+  MOPPE_CHECK (!session.can_drop_bike ());
+
+  for (int i = 0; i < 60; ++i)
+    game::advance_game_session (
+      context, session, game::InputFrame {}, seconds (1.0f / 60.0f));
+  MOPPE_CHECK (session.bike ().position ()[1] < dropped_position[1]);
+  MOPPE_CHECK (length (session.glider ().position () -
+                       session.bike ().position ()) > 2.0f);
 }
 
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {

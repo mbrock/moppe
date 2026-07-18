@@ -101,6 +101,27 @@ namespace moppe {
       m_body_color = state.body_color;
     }
 
+    void Vehicle::carry (position_t position,
+                         velocity_t velocity,
+                         const Vec3& heading,
+                         const Vec3& up) {
+      m_position = position;
+      m_velocity = velocity;
+      m_heading = Vec3 (heading[0], 0, heading[2]);
+      if (length2 (m_heading) > 0.0001f)
+        normalize (m_heading);
+      else
+        m_heading = Vec3 (0, 0, 1);
+      m_thrust_orientation = m_heading;
+      m_render_heading = m_heading;
+      m_render_normal = normalized (up);
+      m_lean = 0;
+      m_yaw = 0 * u::rad;
+      m_yaw_target = 0 * u::rad;
+      m_airborne_time = seconds (0.2f);
+      m_fall_top = std::max (m_fall_top, position_value (m_position)[1] * u::m);
+    }
+
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
         const Vec3& p = position_value (m_position);

@@ -16,8 +16,10 @@
   (or `open build/moppe.app`)
   - Hang glider: boost the bike into the air and press `E` once the deploy
     prompt appears. `A`/`D` bank, `W`/`S` select airspeed, and `Space` flares;
-    touching down folds the wing and continues on foot. On iOS, the
-    mount/dismount corner deploys the wing while airborne.
+    the motocross stays tethered beneath the wing. Press `E` again to drop it
+    and reduce wing loading; otherwise touching down folds the wing and
+    continues on the bike. On iOS, the mount/dismount corner deploys the wing
+    while airborne and drops the attached bike while gliding.
   - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
     - Override Boolean graphics features with comma-separated
