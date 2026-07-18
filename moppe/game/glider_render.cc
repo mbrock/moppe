@@ -71,6 +71,12 @@ namespace moppe::game {
     model::link (dl, nose, hang, 0.04f);
     model::link (dl, tail, hang, 0.04f);
 
+    if (glider.bike_attached) {
+      dl.color (0.70f, 0.72f, 0.75f);
+      model::link (dl, hang, Vec3 (-0.45f, -2.25f, -0.25f), 0.025f);
+      model::link (dl, hang, Vec3 (0.45f, -2.25f, -0.25f), 0.025f);
+    }
+
     const float sway = std::sin (time * 3.1f) * 0.035f;
     dl.push ();
     dl.translate (sway, -1.45f, -0.35f);

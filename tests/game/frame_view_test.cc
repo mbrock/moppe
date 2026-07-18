@@ -234,11 +234,15 @@ MOPPE_TEST (frame_view_actor_snapshots_survive_session_mutation) {
                1.0f);
 
   session.logic ().m_mode = game::M_GLIDER;
-  session.glider ().launch (
-    position (Vec3 (72, 42, 72)), velocity (Vec3 (0, 1, 14)), Vec3 (0, 0, 1));
+  session.glider ().launch (position (Vec3 (72, 42, 72)),
+                            velocity (Vec3 (0, 1, 14)),
+                            Vec3 (0, 0, 1),
+                            true);
   const game::FrameView gliding =
     game::compose_frame_view (gameplay_input (fixture));
   MOPPE_CHECK (gliding.actors.glider.has_value ());
+  MOPPE_CHECK (gliding.actors.glider->bike_attached);
+  MOPPE_CHECK (gliding.hud.can_drop_bike);
   const Vec3 glider_position = gliding.actors.glider->position;
   session.glider ().launch (
     position (Vec3 (108, 55, 72)), velocity (Vec3 (0, 1, 14)), Vec3 (0, 0, 1));

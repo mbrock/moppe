@@ -1518,6 +1518,7 @@ namespace moppe {
         state.on_foot = reading.on_foot;
         state.gliding = reading.gliding;
         state.can_deploy_glider = reading.can_deploy_glider;
+        state.can_drop_bike = reading.can_drop_bike;
         state.vertical_speed_mps = reading.vertical_speed_mps;
         state.frame_time_s = reading.frame_time_s;
         state.heading_radians = reading.heading_radians;

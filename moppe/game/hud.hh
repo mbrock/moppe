@@ -42,6 +42,7 @@ namespace moppe {
       // dial becomes a variometer and an airborne bike gets a deploy prompt.
       bool gliding;
       bool can_deploy_glider;
+      bool can_drop_bike;
       float vertical_speed_mps;
       // Real draw-callback interval, used by the ECU telemetry trace.
       float frame_time_s;
@@ -53,8 +54,8 @@ namespace moppe {
             odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
             landed_airtime_s (0), landed_points (0), landed_age_s (10),
             on_foot (false), gliding (false), can_deploy_glider (false),
-            vertical_speed_mps (0), frame_time_s (1.0f / 60.0f),
-            heading_radians (0.0f) {}
+            can_drop_bike (false), vertical_speed_mps (0),
+            frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}
     };
 
     // Compact instrument cluster: a digital speed arc with overlapping
