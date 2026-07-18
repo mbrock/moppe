@@ -245,11 +245,11 @@ namespace moppe::terrain::metal {
     }
   }
 
-  class MetalEvaluator::Impl {
+  class API_AVAILABLE (macos (26.0), tvos (26.0)) MetalEvaluator::Impl {
   public:
     explicit Impl (const std::string& library_path) {
       MOPPE_PROFILE_ZONE ("MetalEvaluator::initialize");
-      if (@available (macOS 26.0, *)) {
+      if (@available (macOS 26.0, tvOS 26.0, *)) {
         m_device = MTLCreateSystemDefaultDevice ();
         if (!m_device)
           throw std::runtime_error ("Metal has no default GPU device");
@@ -283,7 +283,7 @@ namespace moppe::terrain::metal {
           throw std::runtime_error ("failed to create Metal command queue");
         m_pipelines = [NSMutableDictionary dictionary];
       } else {
-        throw std::runtime_error ("Metal 4 requires macOS 26 or later");
+        throw std::runtime_error ("Metal 4 requires macOS or tvOS 26 or later");
       }
     }
 

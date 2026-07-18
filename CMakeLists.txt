@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.24)
 
+set(MOPPE_IOS FALSE)
+set(MOPPE_TVOS FALSE)
+set(MOPPE_MOBILE_APPLE FALSE)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set(MOPPE_IOS TRUE)
+  set(MOPPE_MOBILE_APPLE TRUE)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
+  set(MOPPE_TVOS TRUE)
+  set(MOPPE_MOBILE_APPLE TRUE)
+endif()
+
 # Ninja and Makefiles otherwise default to an unoptimized build. Keep symbols
 # for useful crash reports while making the normal desktop build representative
 # of real gameplay performance.
@@ -12,10 +23,14 @@ endif()
 
 # Without an explicit target, Xcode uses the installed SDK version as the
 # minimum OS, making device builds uninstallable on slightly older iPhones.
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND
-   NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
-    "Minimum supported iOS version")
+if(MOPPE_MOBILE_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  if(MOPPE_TVOS)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING
+      "Minimum supported tvOS version")
+  else()
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
+      "Minimum supported iOS version")
+  endif()
 endif()
 
 project(moppe LANGUAGES CXX)
@@ -111,7 +126,7 @@ endif()
 # ---------------------------------------------------------------
 # Atelier: a deliberately tiny, standalone Metal graphics workshop.
 
-if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   FetchContent_Declare(metal-cpp
     GIT_REPOSITORY https://github.com/apple/metal-cpp.git
     GIT_TAG 27c4382b7151d55a51692cdcb27aaa98752240de)
@@ -161,11 +176,16 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 
 # ---------------------------------------------------------------
-# Metal shader library: one metallib per SDK (macosx / iphoneos /
-# iphonesimulator) -- AIR is platform-targeted and a mac library
-# fails to load on iOS and vice versa.
+# Metal shader library: one metallib per Apple SDK. AIR is
+# platform-targeted, so each app must load a library built for its OS.
 
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(MOPPE_TVOS)
+  if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
+    set(MOPPE_METAL_SDK appletvsimulator)
+  else()
+    set(MOPPE_METAL_SDK appletvos)
+  endif()
+elseif(MOPPE_IOS)
   if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     set(MOPPE_METAL_SDK iphonesimulator)
   else()
@@ -226,8 +246,9 @@ if(MOPPE_METAL_RESULT EQUAL 0)
     COMMENT "Linking moppe.metallib (${MOPPE_METAL_SDK})"
     VERBATIM)
 else()
-  if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    message(FATAL_ERROR "The iOS build requires Xcode's Metal toolchain")
+  if(MOPPE_MOBILE_APPLE)
+    message(FATAL_ERROR
+      "The iOS/tvOS build requires Xcode's Metal toolchain")
   endif()
 
   # Command Line Tools includes the Metal runtime but not the offline shader
@@ -315,7 +336,7 @@ if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
 endif()
 
-if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(APPLE AND NOT MOPPE_IOS)
   add_library(moppe_terrain_metal STATIC
     moppe/terrain/metal/metal_evaluator.mm
     moppe/terrain/metal/metal_stream_power_evolution.mm
@@ -327,7 +348,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     "-framework Metal" "-framework Foundation")
   add_dependencies(moppe_terrain_metal moppe_shaders)
 
-  if(MOPPE_BUILD_DEVELOPER_TOOLS)
+  if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     add_executable(terrain-metal-demo EXCLUDE_FROM_ALL
       moppe/terrain/metal/metal_field_demo.cc)
     target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
@@ -337,8 +358,7 @@ if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
 endif()
 
-if(MOPPE_BUILD_DEVELOPER_TOOLS AND
-   NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   add_executable(terrain-field-demo EXCLUDE_FROM_ALL
     moppe/terrain/field_demo.cc)
   target_link_libraries(terrain-field-demo PRIVATE moppe_terrain)
@@ -425,8 +445,7 @@ target_include_directories(moppe_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_app PUBLIC moppe_scene)
 
 # Developer tools for inspecting and iterating on terrain generation.
-if(MOPPE_BUILD_DEVELOPER_TOOLS AND
-   NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   add_executable(map-test EXCLUDE_FROM_ALL moppe/map/test.cc)
   target_link_libraries(map-test PRIVATE moppe_world)
 
@@ -472,13 +491,15 @@ if(APPLE)
 
   add_library(moppe_apple STATIC
     moppe/platform/apple/apple_common.mm
+    moppe/platform/apple/game_controller.mm
   )
   target_include_directories(moppe_apple PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_compile_options(moppe_apple PRIVATE -fobjc-arc)
   target_link_libraries(moppe_apple PUBLIC
     mp-units::mp-units
     "-framework Foundation" "-framework CoreText"
-    "-framework CoreGraphics" "-framework AVFoundation")
+    "-framework CoreGraphics" "-framework AVFoundation"
+    "-framework GameController")
 
   # InspectorUi and the portable text path use Apple-common asset and glyph
   # services, but the host event loop stays above the scene target.
@@ -488,7 +509,7 @@ endif()
 # Keep the entire portable test suite behind one executable and one unity
 # translation unit.  The macOS Metal evaluator test joins the same binary when
 # that backend is available; it does not need its own copy of test_main.cc.
-if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   add_executable(moppe-tests
     tests/test_main.cc
     tests/units_test.cc
@@ -561,7 +582,7 @@ if(BUILD_TESTING AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
   add_test(NAME moppe-tests COMMAND moppe-tests)
 endif()
 
-if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(APPLE AND MOPPE_IOS)
   set(MOPPE_IOS_ASSETS
     ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/ios/Assets.xcassets)
   set_source_files_properties(${MOPPE_IOS_ASSETS} PROPERTIES
@@ -613,7 +634,54 @@ if(APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
     COMMENT "Bundling assets into Moppe.app (iOS)")
 endif()
 
-if(APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(APPLE AND MOPPE_TVOS)
+  add_library(moppe_platform_tvos STATIC
+    moppe/platform/tvos/main_tvos.mm
+  )
+  target_include_directories(moppe_platform_tvos
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(moppe_platform_tvos PRIVATE -fobjc-arc)
+  target_link_libraries(moppe_platform_tvos PUBLIC
+    moppe_metal moppe_terrain_metal moppe_apple "-framework UIKit")
+  target_link_libraries(moppe_app PUBLIC moppe_platform_tvos)
+
+  add_executable(moppe-tvos MACOSX_BUNDLE
+    moppe/game/game.cc
+  )
+  target_compile_definitions(moppe-tvos PRIVATE
+    MOPPE_DEFAULT_BALANCED_GRAPHICS)
+  target_link_libraries(moppe-tvos PRIVATE moppe_app moppe_platform_tvos)
+  set_target_properties(moppe-tvos PROPERTIES
+    OUTPUT_NAME "Moppe"
+    XCODE_GENERATE_SCHEME TRUE
+    MACOSX_BUNDLE_INFO_PLIST
+      ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/tvos/Info.plist.in
+    MACOSX_BUNDLE_BUNDLE_NAME "Moppe"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "se.brockman.moppe.tvos"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${MOPPE_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${MOPPE_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION "${MOPPE_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+    XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES"
+    XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
+    XCODE_ATTRIBUTE_MARKETING_VERSION "${MOPPE_VERSION}"
+    XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe.tvos"
+    XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+    XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "3")
+  add_custom_command(TARGET moppe-tvos POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${MOPPE_SHADER_ASSET}
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/${MOPPE_SHADER_NAME}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/textures
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/textures
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+      ${CMAKE_CURRENT_SOURCE_DIR}/data
+      $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/data
+    COMMENT "Bundling assets into Moppe.app (tvOS)")
+endif()
+
+if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   add_library(moppe_platform_mac STATIC
     moppe/platform/mac/main_mac.mm
   )
