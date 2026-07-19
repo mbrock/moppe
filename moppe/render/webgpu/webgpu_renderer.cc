@@ -67,6 +67,7 @@ fn color_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     constexpr const char* terrain_shader_source = R"wgsl(
 struct TerrainUniforms {
   view_proj: mat4x4<f32>,
+  light_matrix: mat4x4<f32>,
   camera_fog: vec4<f32>,
   sun_direction: vec4<f32>,
   sun_diffuse: vec4<f32>,
@@ -75,6 +76,7 @@ struct TerrainUniforms {
   fog_color: vec4<f32>,
   terrain_scale: vec4<f32>,
   material_params: vec4<f32>,
+  shadow_params: vec4<f32>,
 };
 
 struct ChunkUniforms {
@@ -91,6 +93,8 @@ struct ChunkUniforms {
 @group(0) @binding(5) var rock_texture: texture_2d<f32>;
 @group(0) @binding(6) var snow_texture: texture_2d<f32>;
 @group(0) @binding(7) var terrain_sampler: sampler;
+@group(0) @binding(8) var shadow_map: texture_depth_2d;
+@group(0) @binding(9) var shadow_sampler: sampler_comparison;
 @group(1) @binding(0) var<uniform> chunk: ChunkUniforms;
 
 struct VertexInput {
@@ -105,6 +109,7 @@ struct VertexOutput {
   @location(3) fog: f32,
   @location(4) grid_coord: vec2<f32>,
   @location(5) @interpolate(flat) lod_step: f32,
+  @location(6) shadow_coordinate: vec4<f32>,
 };
 
 fn sample_position(position: vec2<i32>) -> vec2<i32> {
@@ -268,6 +273,9 @@ fn terrain_vertex(input: VertexInput) -> VertexOutput {
   output.fog = clamp(fog, 0.0, 1.0);
   output.grid_coord = grid;
   output.lod_step = chunk.origin_step.z;
+  let shadow_world = vec3<f32>(canonical_xz.x, world.y, canonical_xz.y);
+  output.shadow_coordinate = terrain.light_matrix *
+                             vec4<f32>(shadow_world, 1.0);
   return output;
 }
 
@@ -296,6 +304,36 @@ fn display_srgb(linear_color: vec3<f32>) -> vec3<f32> {
   let high = 1.055 * pow(positive, vec3<f32>(1.0 / 2.4)) -
              vec3<f32>(0.055);
   return select(high, low, positive <= vec3<f32>(0.0031308));
+}
+
+fn terrain_shadow(coordinate: vec4<f32>, fog: f32,
+                  normal: vec3<f32>, light: vec3<f32>) -> f32 {
+  let strength = terrain.shadow_params.x;
+  if (strength < 0.01) {
+    return 1.0;
+  }
+  let projected = coordinate.xyz / coordinate.w;
+  if (any(projected < vec3<f32>(0.0)) ||
+      any(projected > vec3<f32>(1.0))) {
+    return 1.0;
+  }
+  let bias = 0.0006 + 0.0025 *
+             (1.0 - max(dot(normal, light), 0.0));
+  let reference_depth = projected.z - bias;
+  let texel = terrain.shadow_params.y;
+  var shadow = 0.4 * textureSampleCompareLevel(
+    shadow_map, shadow_sampler, projected.xy, reference_depth);
+  for (var y = -1; y <= 1; y = y + 2) {
+    for (var x = -1; x <= 1; x = x + 2) {
+      let offset = vec2<f32>(f32(x), f32(y)) * texel * 1.5;
+      shadow += 0.15 * textureSampleCompareLevel(
+        shadow_map, shadow_sampler, projected.xy + offset,
+        reference_depth);
+    }
+  }
+  shadow = pow(shadow, 1.3);
+  let fade = clamp(2.5 * (1.0 - fog), 0.0, 1.0);
+  return mix(1.0, shadow, strength * fade);
 }
 
 @fragment
@@ -398,6 +436,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   material = mix(material, sand, beach);
 
   let light_direction = normalize(terrain.sun_direction.xyz);
+  let shadow = terrain_shadow(input.shadow_coordinate, input.fog,
+                              normal, light_direction);
   let direct = clamp((dot(light_direction, normal) + 0.08) / 1.08,
                      0.0, 1.0);
   let hemisphere_mix = 0.5 + 0.5 * normal.y;
@@ -405,7 +445,7 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     mix(authored_linear(vec3<f32>(0.92, 0.74, 0.58)),
         authored_linear(vec3<f32>(0.74, 0.92, 1.12)),
         hemisphere_mix);
-  let diffuse = terrain.sun_diffuse.rgb * direct * 0.9 + hemisphere;
+  let diffuse = terrain.sun_diffuse.rgb * direct * shadow * 0.9 + hemisphere;
   var color = material * max(diffuse, vec3<f32>(0.08));
   let to_camera = normalize(terrain.camera_fog.xyz - input.world_position);
   let half_vector = normalize(light_direction + to_camera);
@@ -413,8 +453,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   let specular = (0.012 + 0.035 * (1.0 - roughness)) *
                  pow(max(dot(normal, half_vector), 0.0),
                      mix(18.0, 72.0, 1.0 - roughness));
-  color += terrain.sun_specular.rgb * specular;
-  color += snow_cover * terrain.sun_specular.rgb *
+  color += terrain.sun_specular.rgb * specular * shadow;
+  color += snow_cover * terrain.sun_specular.rgb * shadow *
            pow(max(dot(normal, half_vector), 0.0), 32.0) * 0.18;
 
   if (terrain.material_params.w > 0.5) {
@@ -432,6 +472,39 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                   mix(vec3<f32>(1.0), vec3<f32>(1.10, 1.03, 0.91), sun_glow);
   let fog_factor = smoothstep(0.0, 0.9, input.fog);
   return vec4<f32>(display_srgb(mix(color, fog_color, fog_factor)), 1.0);
+}
+)wgsl";
+
+    constexpr const char* terrain_shadow_shader_source = R"wgsl(
+struct ShadowUniforms {
+  light_view_proj: mat4x4<f32>,
+  terrain_scale: vec4<f32>,
+};
+
+struct ChunkUniforms {
+  origin_step: vec4<f32>,
+  morph: vec4<f32>,
+  world_offset: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> shadow: ShadowUniforms;
+@group(0) @binding(1) var heights: texture_2d<f32>;
+@group(1) @binding(0) var<uniform> chunk: ChunkUniforms;
+
+struct VertexInput {
+  @location(0) local_grid: vec2<f32>,
+};
+
+@vertex
+fn shadow_vertex(input: VertexInput) -> @builtin(position) vec4<f32> {
+  let grid = chunk.origin_step.xy + input.local_grid * chunk.origin_step.z;
+  let limit = vec2<i32>(textureDimensions(heights)) - vec2<i32>(1);
+  let position = clamp(vec2<i32>(round(grid)), vec2<i32>(0), limit);
+  let height = textureLoad(heights, position, 0).r;
+  let world = vec3<f32>(grid.x * shadow.terrain_scale.x,
+                        height * shadow.terrain_scale.y,
+                        grid.y * shadow.terrain_scale.z);
+  return shadow.light_view_proj * vec4<f32>(world, 1.0);
 }
 )wgsl";
 
@@ -650,6 +723,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 
     struct alignas (16) TerrainUniforms {
       Mat4 view_proj;
+      Mat4 light_matrix;
       std::array<float, 4> camera_fog;
       std::array<float, 4> sun_direction;
       std::array<float, 4> sun_diffuse;
@@ -658,6 +732,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::array<float, 4> fog_color;
       std::array<float, 4> terrain_scale;
       std::array<float, 4> material_params;
+      std::array<float, 4> shadow_params;
     };
 
     struct alignas (16) TerrainChunkUniforms {
@@ -671,6 +746,11 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::array<float, 4> sun_direction;
       std::array<float, 4> fog_color;
       std::array<float, 4> params;
+    };
+
+    struct alignas (16) ShadowUniforms {
+      Mat4 light_view_proj;
+      std::array<float, 4> terrain_scale;
     };
 
     constexpr int terrain_lod_count = 5;
@@ -807,6 +887,16 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     wgpu::BindGroupLayout terrain_chunk_layout;
     wgpu::PipelineLayout terrain_pipeline_layout;
     wgpu::RenderPipeline terrain_pipeline;
+    wgpu::ShaderModule terrain_shadow_shader;
+    wgpu::BindGroupLayout terrain_shadow_layout;
+    wgpu::PipelineLayout terrain_shadow_pipeline_layout;
+    wgpu::RenderPipeline terrain_shadow_pipeline;
+    wgpu::Texture terrain_shadow_texture;
+    wgpu::TextureView terrain_shadow_view;
+    wgpu::Sampler terrain_shadow_sampler;
+    Mat4 terrain_light_matrix;
+    int terrain_shadow_size = 1;
+    bool have_terrain_shadow = false;
     wgpu::Texture terrain_heights;
     wgpu::TextureView terrain_height_view;
     wgpu::Texture terrain_normals;
@@ -1076,7 +1166,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         },
         this);
 
-      std::array<wgpu::BindGroupLayoutEntry, 8> frame_entries {};
+      std::array<wgpu::BindGroupLayoutEntry, 10> frame_entries {};
       frame_entries[0].binding = 0;
       frame_entries[0].visibility =
         wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
@@ -1104,6 +1194,13 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       frame_entries[7].binding = 7;
       frame_entries[7].visibility = wgpu::ShaderStage::Fragment;
       frame_entries[7].sampler.type = wgpu::SamplerBindingType::Filtering;
+      frame_entries[8].binding = 8;
+      frame_entries[8].visibility = wgpu::ShaderStage::Fragment;
+      frame_entries[8].texture.sampleType = wgpu::TextureSampleType::Depth;
+      frame_entries[8].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+      frame_entries[9].binding = 9;
+      frame_entries[9].visibility = wgpu::ShaderStage::Fragment;
+      frame_entries[9].sampler.type = wgpu::SamplerBindingType::Comparison;
       wgpu::BindGroupLayoutDescriptor frame_descriptor {};
       frame_descriptor.entryCount = frame_entries.size ();
       frame_descriptor.entries = frame_entries.data ();
@@ -1169,6 +1266,90 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       pipeline_descriptor.depthStencil = &depth;
       terrain_pipeline = device.CreateRenderPipeline (&pipeline_descriptor);
 
+      wgpu::ShaderSourceWGSL shadow_wgsl {};
+      shadow_wgsl.code = terrain_shadow_shader_source;
+      wgpu::ShaderModuleDescriptor shadow_shader_descriptor {};
+      shadow_shader_descriptor.nextInChain = &shadow_wgsl;
+      terrain_shadow_shader =
+        device.CreateShaderModule (&shadow_shader_descriptor);
+      terrain_shadow_shader.GetCompilationInfo (
+        wgpu::CallbackMode::AllowSpontaneous,
+        [] (wgpu::CompilationInfoRequestStatus status,
+            const wgpu::CompilationInfo* info,
+            State* state) {
+          if (status != wgpu::CompilationInfoRequestStatus::Success || !info)
+            return;
+          for (size_t i = 0; i < info->messageCount; ++i) {
+            const wgpu::CompilationMessage& diagnostic = info->messages[i];
+            if (diagnostic.type != wgpu::CompilationMessageType::Error)
+              continue;
+            const std::string message (
+              diagnostic.message.data ? diagnostic.message.data : "",
+              diagnostic.message.length);
+            state->device_error =
+              "shadow shader line " + std::to_string (diagnostic.lineNum) +
+              ":" + std::to_string (diagnostic.linePos) + ": " + message;
+            std::cerr << "moppe: " << state->device_error << std::endl;
+          }
+        },
+        this);
+      std::array<wgpu::BindGroupLayoutEntry, 2> shadow_entries {};
+      shadow_entries[0].binding = 0;
+      shadow_entries[0].visibility = wgpu::ShaderStage::Vertex;
+      shadow_entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
+      shadow_entries[0].buffer.minBindingSize = sizeof (ShadowUniforms);
+      shadow_entries[1].binding = 1;
+      shadow_entries[1].visibility = wgpu::ShaderStage::Vertex;
+      shadow_entries[1].texture.sampleType =
+        wgpu::TextureSampleType::UnfilterableFloat;
+      shadow_entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+      wgpu::BindGroupLayoutDescriptor shadow_layout_descriptor {};
+      shadow_layout_descriptor.entryCount = shadow_entries.size ();
+      shadow_layout_descriptor.entries = shadow_entries.data ();
+      terrain_shadow_layout =
+        device.CreateBindGroupLayout (&shadow_layout_descriptor);
+      std::array<wgpu::BindGroupLayout, 2> shadow_layouts = {
+        terrain_shadow_layout,
+        terrain_chunk_layout,
+      };
+      wgpu::PipelineLayoutDescriptor shadow_pipeline_layout_descriptor {};
+      shadow_pipeline_layout_descriptor.bindGroupLayoutCount =
+        shadow_layouts.size ();
+      shadow_pipeline_layout_descriptor.bindGroupLayouts =
+        shadow_layouts.data ();
+      terrain_shadow_pipeline_layout =
+        device.CreatePipelineLayout (&shadow_pipeline_layout_descriptor);
+      wgpu::DepthStencilState shadow_depth {};
+      shadow_depth.format = wgpu::TextureFormat::Depth32Float;
+      shadow_depth.depthWriteEnabled = wgpu::OptionalBool::True;
+      shadow_depth.depthCompare = wgpu::CompareFunction::Less;
+      shadow_depth.depthBias = 2;
+      shadow_depth.depthBiasSlopeScale = 2.0f;
+      wgpu::RenderPipelineDescriptor shadow_pipeline_descriptor {};
+      shadow_pipeline_descriptor.layout = terrain_shadow_pipeline_layout;
+      shadow_pipeline_descriptor.vertex.module = terrain_shadow_shader;
+      shadow_pipeline_descriptor.vertex.entryPoint = "shadow_vertex";
+      shadow_pipeline_descriptor.vertex.bufferCount = 1;
+      shadow_pipeline_descriptor.vertex.buffers = &vertex_layout;
+      shadow_pipeline_descriptor.primitive.topology =
+        wgpu::PrimitiveTopology::TriangleStrip;
+      shadow_pipeline_descriptor.primitive.stripIndexFormat =
+        wgpu::IndexFormat::Uint32;
+      shadow_pipeline_descriptor.primitive.cullMode = wgpu::CullMode::None;
+      shadow_pipeline_descriptor.depthStencil = &shadow_depth;
+      terrain_shadow_pipeline =
+        device.CreateRenderPipeline (&shadow_pipeline_descriptor);
+
+      wgpu::SamplerDescriptor shadow_sampler_descriptor {};
+      shadow_sampler_descriptor.addressModeU = wgpu::AddressMode::ClampToEdge;
+      shadow_sampler_descriptor.addressModeV = wgpu::AddressMode::ClampToEdge;
+      shadow_sampler_descriptor.magFilter = wgpu::FilterMode::Linear;
+      shadow_sampler_descriptor.minFilter = wgpu::FilterMode::Linear;
+      shadow_sampler_descriptor.compare = wgpu::CompareFunction::LessEqual;
+      terrain_shadow_sampler =
+        device.CreateSampler (&shadow_sampler_descriptor);
+      create_terrain_shadow_texture (1);
+
       for (int lod = 0; lod < terrain_lod_count; ++lod) {
         const int vertices_per_row = terrain_lod_vertices[lod];
         std::vector<std::array<float, 2>> vertices;
@@ -1194,6 +1375,22 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         terrain_indices[lod] =
           upload_buffer (device, indices, wgpu::BufferUsage::Index);
       }
+    }
+
+    void create_terrain_shadow_texture (int size) {
+      terrain_shadow_size = std::max (1, size);
+      wgpu::TextureDescriptor descriptor {};
+      descriptor.size = {
+        static_cast<uint32_t> (terrain_shadow_size),
+        static_cast<uint32_t> (terrain_shadow_size),
+        1,
+      };
+      descriptor.format = wgpu::TextureFormat::Depth32Float;
+      descriptor.usage = wgpu::TextureUsage::RenderAttachment |
+                         wgpu::TextureUsage::TextureBinding;
+      terrain_shadow_texture = device.CreateTexture (&descriptor);
+      terrain_shadow_view = terrain_shadow_texture.CreateView ();
+      have_terrain_shadow = false;
     }
 
     TexturePtr make_texture (const TextureDesc& descriptor,
@@ -1579,6 +1776,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                                  packed_normals.size (),
                                  &normal_layout,
                                  &extent);
+    m_state->have_terrain_shadow = false;
     m_state->have_terrain = true;
   }
   void WebGpuRenderer::set_terrain_topology_overlay (bool enabled) {
@@ -1596,7 +1794,104 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   void WebGpuRenderer::set_terrain_overlay (const TerrainOverlayParams&,
                                             std::span<const float>) {}
   void WebGpuRenderer::clear_terrain_overlay () {}
-  void WebGpuRenderer::render_terrain_shadow (const Mat4&) {}
+  void WebGpuRenderer::render_terrain_shadow (const Mat4& light_view_proj) {
+    if (!m_state->device || !m_state->have_terrain ||
+        !m_state->terrain_shadow_pipeline || m_state->frame_open)
+      return;
+    const int shadow_size =
+      std::max (256, m_state->terrain_params.shadow_resolution);
+    if (shadow_size != m_state->terrain_shadow_size)
+      m_state->create_terrain_shadow_texture (shadow_size);
+
+    Mat4 bias;
+    bias.m[0] = 0.5f;
+    bias.m[5] = -0.5f;
+    bias.m[12] = 0.5f;
+    bias.m[13] = 0.5f;
+    m_state->terrain_light_matrix = bias * light_view_proj;
+
+    const TerrainParams& terrain = m_state->terrain_params;
+    const ShadowUniforms uniforms {
+      .light_view_proj = light_view_proj,
+      .terrain_scale = { terrain.scale[0],
+                         terrain.scale[1],
+                         terrain.scale[2],
+                         0.0f },
+    };
+    std::vector<ShadowUniforms> uniform_values { uniforms };
+    wgpu::Buffer uniform_buffer = upload_buffer (
+      m_state->device, uniform_values, wgpu::BufferUsage::Uniform);
+    std::array<wgpu::BindGroupEntry, 2> entries {};
+    entries[0].binding = 0;
+    entries[0].buffer = uniform_buffer;
+    entries[0].size = sizeof (ShadowUniforms);
+    entries[1].binding = 1;
+    entries[1].textureView = m_state->terrain_height_view;
+    wgpu::BindGroupDescriptor group_descriptor {};
+    group_descriptor.layout = m_state->terrain_shadow_layout;
+    group_descriptor.entryCount = entries.size ();
+    group_descriptor.entries = entries.data ();
+    wgpu::BindGroup frame_group =
+      m_state->device.CreateBindGroup (&group_descriptor);
+
+    wgpu::CommandEncoder encoder = m_state->device.CreateCommandEncoder ();
+    wgpu::RenderPassDepthStencilAttachment depth {};
+    depth.view = m_state->terrain_shadow_view;
+    depth.depthClearValue = 1.0f;
+    depth.depthLoadOp = wgpu::LoadOp::Clear;
+    depth.depthStoreOp = wgpu::StoreOp::Store;
+    wgpu::RenderPassDescriptor pass_descriptor {};
+    pass_descriptor.depthStencilAttachment = &depth;
+    wgpu::RenderPassEncoder pass = encoder.BeginRenderPass (&pass_descriptor);
+    pass.SetPipeline (m_state->terrain_shadow_pipeline);
+    pass.SetBindGroup (0, frame_group);
+
+    int lod = static_cast<int> (TerrainLod::Native);
+    const int requested_step = std::max (1, terrain.shadow_sample_step);
+    while (lod + 1 < terrain_lod_count &&
+           terrain_lod_steps[lod] < requested_step)
+      ++lod;
+    const float step = terrain_lod_steps[lod];
+    const int chunks_x = (terrain.width - 1) / 128;
+    const int chunks_z = (terrain.height - 1) / 128;
+    std::vector<wgpu::Buffer> chunk_buffers;
+    std::vector<wgpu::BindGroup> chunk_groups;
+    chunk_buffers.reserve (chunks_x * chunks_z);
+    chunk_groups.reserve (chunks_x * chunks_z);
+    pass.SetVertexBuffer (0, m_state->terrain_vertices[lod]);
+    pass.SetIndexBuffer (m_state->terrain_indices[lod],
+                         wgpu::IndexFormat::Uint32);
+    for (int z = 0; z < chunks_z; ++z)
+      for (int x = 0; x < chunks_x; ++x) {
+        const TerrainChunkUniforms chunk_uniforms {
+          .origin_step = { static_cast<float> (x * 128),
+                           static_cast<float> (z * 128),
+                           step,
+                           step },
+          .morph = {},
+          .world_offset = {},
+        };
+        std::vector<TerrainChunkUniforms> chunk_values { chunk_uniforms };
+        chunk_buffers.push_back (upload_buffer (
+          m_state->device, chunk_values, wgpu::BufferUsage::Uniform));
+        wgpu::BindGroupEntry chunk_entry {};
+        chunk_entry.binding = 0;
+        chunk_entry.buffer = chunk_buffers.back ();
+        chunk_entry.size = sizeof (TerrainChunkUniforms);
+        wgpu::BindGroupDescriptor chunk_descriptor {};
+        chunk_descriptor.layout = m_state->terrain_chunk_layout;
+        chunk_descriptor.entryCount = 1;
+        chunk_descriptor.entries = &chunk_entry;
+        chunk_groups.push_back (
+          m_state->device.CreateBindGroup (&chunk_descriptor));
+        pass.SetBindGroup (1, chunk_groups.back ());
+        pass.DrawIndexed (m_state->terrain_index_counts[lod]);
+      }
+    pass.End ();
+    wgpu::CommandBuffer command = encoder.Finish ();
+    m_state->queue.Submit (1, &command);
+    m_state->have_terrain_shadow = true;
+  }
   void WebGpuRenderer::set_ocean (const OceanSetup& setup,
                                   std::span<const float>) {
     DrawList water;
@@ -1670,6 +1965,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     const TerrainParams& terrain = m_state->terrain_params;
     const TerrainUniforms uniforms {
       .view_proj = frame.proj * frame.view,
+      .light_matrix = m_state->terrain_light_matrix,
       .camera_fog = { frame.camera_pos[0],
                       frame.camera_pos[1],
                       frame.camera_pos[2],
@@ -1702,12 +1998,17 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                            terrain.height_scale,
                            terrain.fragment_normals ? 1.0f : 0.0f,
                            terrain.topology_overlay ? 1.0f : 0.0f },
+      .shadow_params = { m_state->have_terrain_shadow ? terrain.shadow_strength
+                                                      : 0.0f,
+                         1.0f / m_state->terrain_shadow_size,
+                         0.0f,
+                         0.0f },
     };
     std::vector<TerrainUniforms> terrain_uniforms { uniforms };
     wgpu::Buffer terrain_buffer = upload_buffer (
       m_state->device, terrain_uniforms, wgpu::BufferUsage::Uniform);
     m_state->frame_uniform_buffers.push_back (terrain_buffer);
-    std::array<wgpu::BindGroupEntry, 8> terrain_entries {};
+    std::array<wgpu::BindGroupEntry, 10> terrain_entries {};
     terrain_entries[0].binding = 0;
     terrain_entries[0].buffer = terrain_buffer;
     terrain_entries[0].size = sizeof (TerrainUniforms);
@@ -1741,6 +2042,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     terrain_entries[6].textureView = snow->view;
     terrain_entries[7].binding = 7;
     terrain_entries[7].sampler = grass->sampler;
+    terrain_entries[8].binding = 8;
+    terrain_entries[8].textureView = m_state->terrain_shadow_view;
+    terrain_entries[9].binding = 9;
+    terrain_entries[9].sampler = m_state->terrain_shadow_sampler;
     wgpu::BindGroupDescriptor terrain_descriptor {};
     terrain_descriptor.layout = m_state->terrain_frame_layout;
     terrain_descriptor.entryCount = terrain_entries.size ();
