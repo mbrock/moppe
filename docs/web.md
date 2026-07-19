@@ -48,6 +48,28 @@ controls: `W`/`S` drive, `A`/`D` steer, `Space` boosts or skips the opening
 cinematic, and `E` performs contextual actions. Clicking the canvas requests
 pointer lock for pointer-driven modes.
 
+## Public releases
+
+The latest browser build is published at <https://moppe.less.rest>. To build
+and deploy a new release to Igloo:
+
+```sh
+make web-deploy
+```
+
+The deployer uploads the game to a unique path under `/releases/` and then
+atomically replaces the small homepage that points at it. The homepage is
+served with `Cache-Control: no-store`; versioned HTML, JavaScript, WebAssembly,
+and game data are served with a one-year immutable cache. Consequently a visit
+to the stable URL always discovers the latest release while an already-loaded
+release never mixes files from different builds.
+
+The one-time Caddy site from `tools/moppe.Caddyfile` lives in
+`/etc/caddy/Caddyfile` on Igloo. It serves `/home/mbrock/moppe-web`, enables
+zstd and gzip, and supplies the COOP and COEP headers required by WebAssembly
+threads. `MOPPE_WEB_HOST` and `MOPPE_WEB_ROOT` can override the deployer's
+`igloo` and `/home/mbrock/moppe-web` defaults.
+
 ## Backend scope
 
 The WebGPU backend owns browser-native WGSL and resource lifetimes; it does not
