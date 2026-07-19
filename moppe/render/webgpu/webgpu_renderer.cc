@@ -286,6 +286,10 @@ fn value_noise(position: vec2<f32>) -> f32 {
   return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
 }
 
+fn authored_linear(color: vec3<f32>) -> vec3<f32> {
+  return pow(max(color, vec3<f32>(0.0)), vec3<f32>(2.2));
+}
+
 fn display_srgb(linear_color: vec3<f32>) -> vec3<f32> {
   let positive = max(linear_color, vec3<f32>(0.0));
   let low = positive * 12.92;
@@ -329,12 +333,24 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   projection_weights /= max(projection_weights.x + projection_weights.y +
                             projection_weights.z, 0.0001);
   let rock_scale = terrain.material_params.x * 1.7;
-  let rock_x = textureSample(rock_texture, terrain_sampler,
-                             input.world_position.zy * rock_scale).rgb;
-  let rock_y = textureSample(rock_texture, terrain_sampler,
-                             input.world_position.xz * rock_scale).rgb;
-  let rock_z = textureSample(rock_texture, terrain_sampler,
-                             input.world_position.xy * rock_scale).rgb;
+  let rock_x = mix(textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.zy * rock_scale).rgb,
+                   textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.zy * rock_scale * 0.19 +
+                                   far_offset).rgb,
+                   far_blend);
+  let rock_y = mix(textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.xz * rock_scale).rgb,
+                   textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.xz * rock_scale * 0.19 +
+                                   far_offset).rgb,
+                   far_blend);
+  let rock_z = mix(textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.xy * rock_scale).rgb,
+                   textureSample(rock_texture, terrain_sampler,
+                                 input.world_position.xy * rock_scale * 0.19 +
+                                   far_offset).rgb,
+                   far_blend);
   var rock = rock_x * projection_weights.x + rock_y * projection_weights.y +
              rock_z * projection_weights.z;
 
@@ -363,7 +379,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 
   let grass_value = dot(grass, vec3<f32>(0.299, 0.587, 0.114));
   grass = mix(grass,
-              grass_value * vec3<f32>(0.68, 1.0, 0.52), 0.34) * 1.36;
+              grass_value * authored_linear(vec3<f32>(0.68, 1.0, 0.52)),
+              0.34) * 1.36;
   grass *= 0.88 + 0.55 * coarse;
   grass *= mix(vec3<f32>(0.84, 0.95, 0.76),
                vec3<f32>(1.10, 1.06, 0.92), macro_variation);
@@ -383,7 +400,11 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   let light_direction = normalize(terrain.sun_direction.xyz);
   let direct = clamp((dot(light_direction, normal) + 0.08) / 1.08,
                      0.0, 1.0);
-  let hemisphere = terrain.ambient.rgb * (0.65 + 0.35 * normal.y);
+  let hemisphere_mix = 0.5 + 0.5 * normal.y;
+  let hemisphere = terrain.ambient.rgb *
+    mix(authored_linear(vec3<f32>(0.92, 0.74, 0.58)),
+        authored_linear(vec3<f32>(0.74, 0.92, 1.12)),
+        hemisphere_mix);
   let diffuse = terrain.sun_diffuse.rgb * direct * 0.9 + hemisphere;
   var color = material * max(diffuse, vec3<f32>(0.08));
   let to_camera = normalize(terrain.camera_fog.xyz - input.world_position);
@@ -414,6 +435,213 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 }
 )wgsl";
 
+    constexpr const char* sky_shader_source = R"wgsl(
+struct SkyUniforms {
+  view_proj: mat4x4<f32>,
+  sun_direction: vec4<f32>,
+  fog_color: vec4<f32>,
+  params: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> sky: SkyUniforms;
+
+struct VertexInput {
+  @location(0) position: vec3<f32>,
+};
+
+struct VertexOutput {
+  @builtin(position) position: vec4<f32>,
+  @location(0) direction: vec3<f32>,
+};
+
+@vertex
+fn sky_vertex(input: VertexInput) -> VertexOutput {
+  var output: VertexOutput;
+  var clip = sky.view_proj * vec4<f32>(input.position, 1.0);
+  clip.z = 0.0;
+  output.position = clip;
+  output.direction = input.position;
+  return output;
+}
+
+fn authored_linear(color: vec3<f32>) -> vec3<f32> {
+  return pow(max(color, vec3<f32>(0.0)), vec3<f32>(2.2));
+}
+
+fn display_srgb(linear_color: vec3<f32>) -> vec3<f32> {
+  let positive = max(linear_color, vec3<f32>(0.0));
+  let low = positive * 12.92;
+  let high = 1.055 * pow(positive, vec3<f32>(1.0 / 2.4)) -
+             vec3<f32>(0.055);
+  return select(high, low, positive <= vec3<f32>(0.0031308));
+}
+
+fn sky_hash(value: f32) -> f32 {
+  return fract(sin(value) * 43758.5453);
+}
+
+fn sky_noise(position: vec3<f32>) -> f32 {
+  let cell = floor(position);
+  let fraction = fract(position);
+  let blend = fraction * fraction *
+              (vec3<f32>(3.0) - 2.0 * fraction);
+  let index = cell.x + cell.y * 57.0 + cell.z * 113.0;
+  let lower = mix(mix(sky_hash(index), sky_hash(index + 1.0), blend.x),
+                  mix(sky_hash(index + 57.0), sky_hash(index + 58.0),
+                      blend.x),
+                  blend.y);
+  let upper = mix(mix(sky_hash(index + 113.0), sky_hash(index + 114.0),
+                      blend.x),
+                  mix(sky_hash(index + 170.0), sky_hash(index + 171.0),
+                      blend.x),
+                  blend.y);
+  return mix(lower, upper, blend.z);
+}
+
+fn sky_fbm(start: vec3<f32>) -> f32 {
+  var position = start;
+  var result = 0.0;
+  var amplitude = 0.5;
+  for (var octave = 0; octave < 4; octave = octave + 1) {
+    result += amplitude * sky_noise(position);
+    position = 2.03 *
+      vec3<f32>(0.8 * position.x + 0.6 * position.z,
+                position.y + 7.31,
+                -0.6 * position.x + 0.8 * position.z);
+    amplitude *= 0.5;
+  }
+  return result;
+}
+
+fn atmosphere(ray: vec3<f32>, sun: vec3<f32>) -> vec3<f32> {
+  let daylight = smoothstep(-0.08, 0.18, sun.y);
+  let golden = daylight * (1.0 - smoothstep(0.15, 0.65, sun.y));
+  let zenith = abs(ray.y);
+  let thickness = 1.0 - zenith;
+  let day_zenith = authored_linear(vec3<f32>(0.06, 0.20, 0.55));
+  let day_middle = authored_linear(vec3<f32>(0.25, 0.46, 0.78));
+  let day_horizon = authored_linear(vec3<f32>(0.55, 0.68, 0.84));
+  let night_zenith = authored_linear(vec3<f32>(0.004, 0.009, 0.05));
+  let night_middle = authored_linear(vec3<f32>(0.015, 0.022, 0.06));
+  let night_horizon = authored_linear(vec3<f32>(0.035, 0.045, 0.09));
+  let horizon_color = mix(night_horizon, day_horizon, daylight);
+
+  var color: vec3<f32>;
+  if (ray.y >= 0.0) {
+    let zenith_color = mix(night_zenith, day_zenith, daylight);
+    let middle_color = mix(night_middle, day_middle, daylight);
+    let t = pow(thickness, 0.72);
+    if (t < 0.62) {
+      color = mix(zenith_color, middle_color, t / 0.62);
+    } else {
+      color = mix(middle_color, horizon_color, (t - 0.62) / 0.38);
+    }
+    let horizon_band = pow(thickness, 4.0);
+    color = mix(color, authored_linear(vec3<f32>(0.94, 0.52, 0.26)),
+                0.16 * golden * horizon_band);
+    let toward_sun = max(dot(ray, sun), 0.0);
+    let broad = pow(toward_sun, 4.0);
+    let tight = pow(toward_sun, 32.0);
+    let scatter = mix(authored_linear(vec3<f32>(1.0, 0.96, 0.82)),
+                      authored_linear(vec3<f32>(1.0, 0.55, 0.24)), golden);
+    color += scatter * daylight *
+             (broad * (0.07 + 0.12 * golden) +
+              tight * (0.10 + 0.22 * golden) *
+                (0.4 + 0.6 * horizon_band));
+  } else {
+    let ground = authored_linear(vec3<f32>(0.08, 0.09, 0.13));
+    color = mix(ground * (0.2 + 0.8 * daylight), horizon_color,
+                pow(1.0 - zenith, 8.0));
+  }
+  return color;
+}
+
+fn cloud_shape(position: vec3<f32>, coverage: f32, time: f32) -> f32 {
+  let base = sky_fbm(position * 0.3);
+  let detail = sky_fbm(position * 1.2 +
+                       vec3<f32>(time * 0.05, 0.0, time * 0.03));
+  let threshold = 0.4 + coverage * 0.4;
+  return smoothstep(threshold, threshold + 0.13, base + detail * 0.2);
+}
+
+fn cloud_lighting(density: f32, ray: vec3<f32>,
+                  sun: vec3<f32>) -> vec3<f32> {
+  let daylight = smoothstep(-0.08, 0.18, sun.y);
+  let golden = daylight * (1.0 - smoothstep(0.15, 0.65, sun.y));
+  let sunset = golden * golden;
+  let lit = mix(authored_linear(vec3<f32>(1.04, 1.03, 1.00)),
+                authored_linear(vec3<f32>(1.05, 0.76, 0.50)), sunset);
+  let shade = mix(authored_linear(vec3<f32>(0.55, 0.63, 0.76)),
+                  authored_linear(vec3<f32>(0.48, 0.44, 0.58)), sunset);
+  let core = pow(clamp(density, 0.0, 1.0), 0.75);
+  var color = mix(lit, shade, 0.85 * core);
+  color += lit * pow(max(dot(ray, sun), 0.0), 16.0) *
+           (1.0 - core) * (0.5 + 0.7 * golden) * daylight;
+  return mix(color * 0.12, color, daylight);
+}
+
+@fragment
+fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
+  let time = sky.params.x;
+  let cloudiness = sky.params.z;
+  let ray = normalize(input.direction);
+  let sun = normalize(sky.sun_direction.xyz);
+  var color = atmosphere(ray, sun);
+
+  if (ray.y > 0.08) {
+    var cirrus_position = ray * (900.0 / ray.y);
+    cirrus_position += vec3<f32>(time * 0.6, 0.0, time * 0.25);
+    var streak = sky_fbm(vec3<f32>(cirrus_position.x * 0.0035,
+                                   cirrus_position.y * 0.008,
+                                   cirrus_position.z * 0.0065));
+    streak = smoothstep(0.48, 0.85, streak) *
+             smoothstep(0.08, 0.25, ray.y) *
+             (0.10 + 0.08 * cloudiness);
+    let daylight = smoothstep(-0.08, 0.18, sun.y);
+    let cirrus_color = mix(authored_linear(vec3<f32>(0.9, 0.95, 1.05)),
+                           authored_linear(vec3<f32>(1.0, 0.9, 0.8)),
+                           pow(max(dot(ray, sun), 0.0), 4.0));
+    color = mix(color, cirrus_color, streak * (0.25 + 0.75 * daylight));
+  }
+
+  var clouds = 0.0;
+  if (ray.y > 0.05) {
+    var cloud_position = ray * (200.0 / ray.y);
+    cloud_position += vec3<f32>(time * 2.0, 0.0, time);
+    clouds = cloud_shape(cloud_position * 0.01, cloudiness, time) *
+             smoothstep(0.05, 0.1, ray.y);
+    if (clouds > 0.01) {
+      color = mix(color, cloud_lighting(clouds, ray, sun), clouds * 0.9);
+    }
+  }
+
+  color = mix(color, sky.fog_color.rgb,
+              pow(1.0 - clamp(ray.y, 0.0, 1.0), 6.0));
+  let sun_dot = max(dot(ray, sun), 0.0);
+  let daylight = smoothstep(-0.08, 0.18, sun.y);
+  let golden = daylight * (1.0 - smoothstep(0.15, 0.65, sun.y));
+  let sun_color = mix(authored_linear(vec3<f32>(1.0, 0.96, 0.84)),
+                      authored_linear(vec3<f32>(1.0, 0.58, 0.28)), golden);
+  let occlusion = 1.0 - clamp(clouds, 0.0, 1.0) * 0.92;
+  color += (pow(sun_dot, 2600.0) * 4.05 +
+            pow(sun_dot, 160.0) * 0.51) * sun_color * occlusion;
+  color += pow(sun_dot, 14.0) * 0.075 * sun_color * daylight;
+
+  if (daylight < 0.2 && ray.y > 0.0) {
+    let stars = pow(sky_noise(ray * 100.0), 20.0) *
+                (1.0 - daylight) * 0.3 * smoothstep(0.0, 0.4, ray.y);
+    let star_color = mix(authored_linear(vec3<f32>(0.8, 0.9, 1.0)),
+                         authored_linear(vec3<f32>(1.0, 0.9, 0.8)),
+                         sky_noise(ray * 10.0));
+    color += stars * star_color;
+  }
+
+  color += vec3<f32>((fract(sin(dot(ray.xy, vec2<f32>(12.9898, 78.233))) *
+                              43758.5453) - 0.5) / 255.0);
+  return vec4<f32>(display_srgb(color), 1.0);
+}
+)wgsl";
+
     struct FrameUniforms {
       Mat4 view_proj;
       Mat4 hud_proj;
@@ -436,6 +664,13 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::array<float, 4> origin_step;
       std::array<float, 4> morph;
       std::array<float, 4> world_offset;
+    };
+
+    struct alignas (16) SkyUniforms {
+      Mat4 view_proj;
+      std::array<float, 4> sun_direction;
+      std::array<float, 4> fog_color;
+      std::array<float, 4> params;
     };
 
     constexpr int terrain_lod_count = 5;
@@ -487,6 +722,10 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       const float encoded = value / 255.0f;
       return encoded <= 0.04045f ? encoded / 12.92f
                                  : std::pow ((encoded + 0.055f) / 1.055f, 2.4f);
+    }
+
+    float display_to_linear (float value) {
+      return std::pow (std::max (value, 0.0f), 2.2f);
     }
 
     uint8_t linear_to_srgb (float value) {
@@ -555,6 +794,13 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     wgpu::PipelineLayout pipeline_layout;
     std::map<int, wgpu::RenderPipeline> pipelines;
     std::shared_ptr<WebGpuTexture> white;
+
+    wgpu::ShaderModule sky_shader;
+    wgpu::BindGroupLayout sky_layout;
+    wgpu::PipelineLayout sky_pipeline_layout;
+    wgpu::RenderPipeline sky_pipeline;
+    wgpu::Buffer sky_vertices;
+    uint32_t sky_vertex_count = 0;
 
     wgpu::ShaderModule terrain_shader;
     wgpu::BindGroupLayout terrain_frame_layout;
@@ -687,7 +933,119 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       const std::array<unsigned char, 4> white_pixel = { 255, 255, 255, 255 };
       white = std::static_pointer_cast<WebGpuTexture> (
         make_texture (white_descriptor, white_pixel.data ()));
+      build_sky_resources ();
       build_terrain_resources ();
+    }
+
+    void build_sky_resources () {
+      wgpu::ShaderSourceWGSL wgsl {};
+      wgsl.code = sky_shader_source;
+      wgpu::ShaderModuleDescriptor shader_descriptor {};
+      shader_descriptor.nextInChain = &wgsl;
+      sky_shader = device.CreateShaderModule (&shader_descriptor);
+      sky_shader.GetCompilationInfo (
+        wgpu::CallbackMode::AllowSpontaneous,
+        [] (wgpu::CompilationInfoRequestStatus status,
+            const wgpu::CompilationInfo* info,
+            State* state) {
+          if (status != wgpu::CompilationInfoRequestStatus::Success || !info)
+            return;
+          for (size_t i = 0; i < info->messageCount; ++i) {
+            const wgpu::CompilationMessage& diagnostic = info->messages[i];
+            if (diagnostic.type != wgpu::CompilationMessageType::Error)
+              continue;
+            const std::string message (
+              diagnostic.message.data ? diagnostic.message.data : "",
+              diagnostic.message.length);
+            state->device_error =
+              "sky shader line " + std::to_string (diagnostic.lineNum) + ":" +
+              std::to_string (diagnostic.linePos) + ": " + message;
+            std::cerr << "moppe: " << state->device_error << std::endl;
+          }
+        },
+        this);
+
+      wgpu::BindGroupLayoutEntry uniform_entry {};
+      uniform_entry.binding = 0;
+      uniform_entry.visibility =
+        wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
+      uniform_entry.buffer.type = wgpu::BufferBindingType::Uniform;
+      uniform_entry.buffer.minBindingSize = sizeof (SkyUniforms);
+      wgpu::BindGroupLayoutDescriptor layout_descriptor {};
+      layout_descriptor.entryCount = 1;
+      layout_descriptor.entries = &uniform_entry;
+      sky_layout = device.CreateBindGroupLayout (&layout_descriptor);
+      wgpu::PipelineLayoutDescriptor pipeline_layout_descriptor {};
+      pipeline_layout_descriptor.bindGroupLayoutCount = 1;
+      pipeline_layout_descriptor.bindGroupLayouts = &sky_layout;
+      sky_pipeline_layout =
+        device.CreatePipelineLayout (&pipeline_layout_descriptor);
+
+      wgpu::VertexAttribute attribute {};
+      attribute.format = wgpu::VertexFormat::Float32x3;
+      attribute.shaderLocation = 0;
+      wgpu::VertexBufferLayout vertex_layout {};
+      vertex_layout.arrayStride = sizeof (float) * 3;
+      vertex_layout.stepMode = wgpu::VertexStepMode::Vertex;
+      vertex_layout.attributeCount = 1;
+      vertex_layout.attributes = &attribute;
+      wgpu::ColorTargetState target {};
+      target.format = surface_format;
+      wgpu::FragmentState fragment {};
+      fragment.module = sky_shader;
+      fragment.entryPoint = "sky_fragment";
+      fragment.targetCount = 1;
+      fragment.targets = &target;
+      wgpu::DepthStencilState depth {};
+      depth.format = wgpu::TextureFormat::Depth32Float;
+      depth.depthWriteEnabled = wgpu::OptionalBool::False;
+      depth.depthCompare = wgpu::CompareFunction::GreaterEqual;
+      wgpu::RenderPipelineDescriptor pipeline_descriptor {};
+      pipeline_descriptor.layout = sky_pipeline_layout;
+      pipeline_descriptor.vertex.module = sky_shader;
+      pipeline_descriptor.vertex.entryPoint = "sky_vertex";
+      pipeline_descriptor.vertex.bufferCount = 1;
+      pipeline_descriptor.vertex.buffers = &vertex_layout;
+      pipeline_descriptor.primitive.topology =
+        wgpu::PrimitiveTopology::TriangleList;
+      pipeline_descriptor.primitive.cullMode = wgpu::CullMode::None;
+      pipeline_descriptor.fragment = &fragment;
+      pipeline_descriptor.depthStencil = &depth;
+      sky_pipeline = device.CreateRenderPipeline (&pipeline_descriptor);
+
+      constexpr float radius = 4000.0f;
+      constexpr int slices = 24;
+      constexpr int stacks = 24;
+      constexpr float pi = 3.14159265358979323846f;
+      std::vector<std::array<float, 3>> vertices;
+      vertices.reserve (stacks * slices * 6);
+      for (int stack = 0; stack < stacks; ++stack) {
+        const float altitude0 = pi * stack / stacks - pi / 2.0f;
+        const float altitude1 = pi * (stack + 1) / stacks - pi / 2.0f;
+        const float y0 = radius * std::sin (altitude0);
+        const float y1 = radius * std::sin (altitude1);
+        const float ring0 = radius * std::cos (altitude0);
+        const float ring1 = radius * std::cos (altitude1);
+        for (int slice = 0; slice < slices; ++slice) {
+          const float azimuth0 = 2.0f * pi * slice / slices;
+          const float azimuth1 = 2.0f * pi * (slice + 1) / slices;
+          const std::array<std::array<float, 3>, 4> points = {
+            std::array<float, 3> {
+              ring0 * std::cos (azimuth0), y0, ring0 * std::sin (azimuth0) },
+            std::array<float, 3> {
+              ring0 * std::cos (azimuth1), y0, ring0 * std::sin (azimuth1) },
+            std::array<float, 3> {
+              ring1 * std::cos (azimuth0), y1, ring1 * std::sin (azimuth0) },
+            std::array<float, 3> {
+              ring1 * std::cos (azimuth1), y1, ring1 * std::sin (azimuth1) },
+          };
+          for (int index : { 0, 2, 1, 1, 2, 3 })
+            vertices.push_back (points[index]);
+        }
+      }
+      sky_vertex_count = vertices.size ();
+      sky_vertices =
+        upload_buffer (device, vertices, wgpu::BufferUsage::Vertex);
     }
 
     void build_terrain_resources () {
@@ -1320,21 +1678,21 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                          frame.sun_dir[1],
                          frame.sun_dir[2],
                          0.0f },
-      .sun_diffuse = { frame.sun_diffuse.red,
-                       frame.sun_diffuse.green,
-                       frame.sun_diffuse.blue,
+      .sun_diffuse = { display_to_linear (frame.sun_diffuse.red),
+                       display_to_linear (frame.sun_diffuse.green),
+                       display_to_linear (frame.sun_diffuse.blue),
                        1.0f },
-      .sun_specular = { frame.sun_specular.red,
-                        frame.sun_specular.green,
-                        frame.sun_specular.blue,
+      .sun_specular = { display_to_linear (frame.sun_specular.red),
+                        display_to_linear (frame.sun_specular.green),
+                        display_to_linear (frame.sun_specular.blue),
                         1.0f },
-      .ambient = { frame.ambient.red,
-                   frame.ambient.green,
-                   frame.ambient.blue,
+      .ambient = { display_to_linear (frame.ambient.red),
+                   display_to_linear (frame.ambient.green),
+                   display_to_linear (frame.ambient.blue),
                    1.0f },
-      .fog_color = { frame.clear_color.red,
-                     frame.clear_color.green,
-                     frame.clear_color.blue,
+      .fog_color = { display_to_linear (frame.clear_color.red),
+                     display_to_linear (frame.clear_color.green),
+                     display_to_linear (frame.clear_color.blue),
                      1.0f },
       .terrain_scale = { terrain.scale[0],
                          terrain.scale[1],
@@ -1429,7 +1787,45 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       m_state->pass.DrawIndexed (m_state->terrain_index_counts[lod]);
     }
   }
-  void WebGpuRenderer::draw_sky (const SkyParams&) {}
+  void WebGpuRenderer::draw_sky (const SkyParams& params) {
+    if (!m_state->frame_open || !m_state->sky_pipeline ||
+        !m_state->sky_vertices)
+      return;
+    Mat4 view_rotation = m_state->frame_params.view;
+    view_rotation.m[12] = 0.0f;
+    view_rotation.m[13] = 0.0f;
+    view_rotation.m[14] = 0.0f;
+    const SkyUniforms uniforms {
+      .view_proj = m_state->frame_params.proj * view_rotation,
+      .sun_direction = { params.sun_dir[0],
+                         params.sun_dir[1],
+                         params.sun_dir[2],
+                         0.0f },
+      .fog_color = { display_to_linear (params.fog_color.red),
+                     display_to_linear (params.fog_color.green),
+                     display_to_linear (params.fog_color.blue),
+                     1.0f },
+      .params = { params.time, params.sun_height, params.cloudiness, 0.0f },
+    };
+    std::vector<SkyUniforms> values { uniforms };
+    wgpu::Buffer uniform_buffer =
+      upload_buffer (m_state->device, values, wgpu::BufferUsage::Uniform);
+    m_state->frame_uniform_buffers.push_back (uniform_buffer);
+    wgpu::BindGroupEntry entry {};
+    entry.binding = 0;
+    entry.buffer = uniform_buffer;
+    entry.size = sizeof (SkyUniforms);
+    wgpu::BindGroupDescriptor descriptor {};
+    descriptor.layout = m_state->sky_layout;
+    descriptor.entryCount = 1;
+    descriptor.entries = &entry;
+    wgpu::BindGroup group = m_state->device.CreateBindGroup (&descriptor);
+    m_state->frame_bind_groups.push_back (group);
+    m_state->pass.SetPipeline (m_state->sky_pipeline);
+    m_state->pass.SetBindGroup (0, group);
+    m_state->pass.SetVertexBuffer (0, m_state->sky_vertices);
+    m_state->pass.Draw (m_state->sky_vertex_count);
+  }
   void WebGpuRenderer::draw_ocean (const OceanParams& params) {
     if (!m_state->ocean_mesh)
       return;
