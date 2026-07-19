@@ -262,6 +262,11 @@ fn terrain_vertex(input: VertexInput) -> VertexOutput {
                           chunk.world_offset.z);
   let distance_to_camera = length(world - terrain.camera_fog.xyz);
   var fog = 1.0 - exp(-pow(distance_to_camera * terrain.camera_fog.w, 1.5));
+  // High ridges rise above the valley haze instead of dissolving into the
+  // horizon with the lowlands. This keeps the world's distant relief legible
+  // while nearby valleys retain the original atmospheric depth.
+  let high_relief = smoothstep(0.36, 0.82, height);
+  fog *= mix(1.0, 0.58, high_relief);
   let lowness = 1.0 - smoothstep(45.0, 170.0, world.y);
   fog += 0.3 * lowness * smoothstep(150.0, 1500.0, distance_to_camera);
 
