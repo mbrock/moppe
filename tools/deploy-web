@@ -33,7 +33,7 @@ sed "s|__MOPPE_RELEASE__|$release|g" tools/web-index.html \
 
 ssh "$host" "mkdir -p '$remote_root/releases' && \
   test ! -e '$upload' && test ! -e '$destination' && mkdir '$upload'"
-rsync -a --info=progress2 "${artifacts[@]}" "$host:$upload/"
+rsync -a "${artifacts[@]}" "$host:$upload/"
 rsync -a "$temporary/index.html" "$host:$remote_root/.index-$release.html"
 ssh "$host" "mv '$upload' '$destination' && \
   mv '$remote_root/.index-$release.html' '$remote_root/index.html'"
