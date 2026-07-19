@@ -3,7 +3,7 @@
 	check-format \
 	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
-	xcode
+	web web-serve xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -95,6 +95,17 @@ phone:
 # Build, install, and launch Moppe on the paired Apple TV.
 tv:
 	./tools/install-tvos
+
+# Build the browser testbed and the real WebAssembly/WebGPU game.
+web:
+	@[ -f build-web/build.ninja ] || \
+		emcmake cmake -B build-web -G Ninja -DBUILD_TESTING=OFF \
+			-DMOPPE_UNITY_BUILD=OFF
+	cmake --build build-web --target moppe-web-testbed moppe-web
+
+# Serve the browser build with the cross-origin isolation pthreads require.
+web-serve: web
+	bun run tools/serve-web.ts
 
 # Build a fast deterministic Terrain Lab preview, capture it, and exit.
 terrain-lab-shot:

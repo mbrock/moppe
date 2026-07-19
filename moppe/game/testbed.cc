@@ -174,6 +174,6 @@ int main (int argc, char** argv) {
   (void)argv;
   Testbed game;
   platform::Config config;
-  config.title = "moppe metal testbed";
+  config.title = "Moppe Renderer Testbed";
   return platform::run (game, config);
 }

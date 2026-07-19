@@ -4,6 +4,8 @@
 - Configure: `cmake -B build -G Ninja`
 - Build everything: `cmake --build build`
 - Unit tests: `ctest --test-dir build --output-on-failure`
+- WebAssembly/WebGPU: `make web-serve`, then open
+  `http://localhost:8080` (renderer testbed: `/moppe-web-testbed.html`)
 - Scalar-field visual check: `./build/terrain-field-demo /tmp/field.png 512`
 - Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
   257 123 combined world`
@@ -70,10 +72,12 @@
 ## Architecture (see docs/renderer-design.md)
 - `moppe/render/` — portable renderer API (DrawList immediate mode,
   MeshBuilder-baked meshes, game-shaped Renderer interface); no GL/Metal
-  types in headers. `moppe/render/metal/` — the Metal backend (.mm).
+  types in headers. `moppe/render/metal/` and `moppe/render/webgpu/` own the
+  native Metal and browser WGSL/WebGPU backends.
 - `moppe/shaders/metal/` — MSL shaders, built into moppe.metallib per SDK.
-- `moppe/platform/` — Game interface, input, assets, speech; `mac/`,
-  `ios/`, and shared `apple/` layers (MTKView; CoreText glyph rasterizer).
+- `moppe/platform/` — Game interface, input, assets, speech; `mac/`, `ios/`,
+  `web/`, and shared `apple/` layers. The browser host uses Canvas2D glyph
+  rasterization and a `requestAnimationFrame` loop.
 - `moppe/game/` — the game systems, one file each (terrain, city, wildlife,
   dust, HUD, vehicle rendering; glue in game.cc).
   Mutable replay state is gathered incrementally in `game/game_state.hh`; see

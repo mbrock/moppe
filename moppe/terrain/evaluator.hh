@@ -34,7 +34,7 @@ namespace moppe::terrain {
   // Storage remains a compact float vector; sample() reconstructs a quantity
   // only at the domain boundary.
   template <auto R>
-    requires mp_units::Reference<std::remove_const_t<decltype (R)>>
+    requires mp_units::Reference<std::remove_cvref_t<decltype (R)>>
   class Raster {
   public:
     static constexpr auto reference = R;
@@ -65,7 +65,7 @@ namespace moppe::terrain {
   // A raster whose field coordinates and physical terrain geometry remain
   // coupled to the samples that materialized them.
   template <auto R>
-    requires mp_units::Reference<std::remove_const_t<decltype (R)>>
+    requires mp_units::Reference<std::remove_cvref_t<decltype (R)>>
   class TerrainRaster {
   public:
     TerrainRaster (Raster<R> raster, TerrainDiscretization discretization)

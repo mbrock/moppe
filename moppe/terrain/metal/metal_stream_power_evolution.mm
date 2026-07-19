@@ -38,11 +38,12 @@ namespace moppe::terrain::metal {
       FacetOffsets { 0, 1, 1, 1 },    FacetOffsets { 1, 0, 1, 1 }
     };
 
-    NSString* ns_string (const std::string& value) {
+    NSString* orogeny_ns_string (const std::string& value) {
       return [NSString stringWithUTF8String:value.c_str ()];
     }
 
-    std::runtime_error metal_error (const char* action, NSError* error) {
+    std::runtime_error orogeny_metal_error (const char* action,
+                                            NSError* error) {
       std::string message = action;
       message += ": ";
       message +=
@@ -113,7 +114,7 @@ namespace moppe::terrain::metal {
         throw std::runtime_error ("Metal has no default GPU device");
 
       NSError* error = nil;
-      NSString* path = ns_string (library_path);
+      NSString* path = orogeny_ns_string (library_path);
       if ([path.pathExtension isEqualToString:@"metal"]) {
         NSString* source =
           [NSString stringWithContentsOfFile:path
@@ -128,7 +129,8 @@ namespace moppe::terrain::metal {
                                           error:&error];
       }
       if (!m_library)
-        throw metal_error ("failed to load orogeny shader library", error);
+        throw orogeny_metal_error ("failed to load orogeny shader library",
+                                   error);
       id<MTLFunction> function =
         [m_library newFunctionWithName:@"moppe_select_d_infinity_routes"];
       if (!function)
@@ -137,7 +139,8 @@ namespace moppe::terrain::metal {
       m_pipeline = [m_device newComputePipelineStateWithFunction:function
                                                            error:&error];
       if (!m_pipeline)
-        throw metal_error ("failed to create orogeny compute pipeline", error);
+        throw orogeny_metal_error ("failed to create orogeny compute pipeline",
+                                   error);
       m_queue = [m_device newCommandQueue];
       if (!m_queue)
         throw std::runtime_error ("failed to create Metal command queue");
@@ -225,7 +228,8 @@ namespace moppe::terrain::metal {
       [command commit];
       [command waitUntilCompleted];
       if (command.status == MTLCommandBufferStatusError)
-        throw metal_error ("Metal D-infinity dispatch failed", command.error);
+        throw orogeny_metal_error ("Metal D-infinity dispatch failed",
+                                   command.error);
 
       const auto* gpu_routes =
         static_cast<const MoppeOrogenyRoute*> (m_routes.contents);

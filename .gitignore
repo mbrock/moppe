@@ -9,6 +9,7 @@ build-ios-device/
 build-ios-testflight/
 build-tvos/
 build-tvos-device/
+build-web/
 dist/
 traces/
 .DS_Store
