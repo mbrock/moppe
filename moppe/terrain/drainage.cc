@@ -459,11 +459,10 @@ namespace moppe::terrain {
              .sinks = std::move (sinks) };
   }
 
-  WetDrainageRouting
-  route_wet_drainage (const TerrainView& terrain,
-                      const FloodField& flood,
-                      const LakeCensus& census,
-                      const DrainageParameters& parameters) {
+  WetDrainageRouting route_wet_drainage (const TerrainView& terrain,
+                                         const FloodField& flood,
+                                         const LakeCensus& census,
+                                         const DrainageParameters& parameters) {
     MOPPE_PROFILE_ZONE ("route_wet_drainage");
     if (parameters.routing != DrainageRouting::D8)
       throw std::invalid_argument ("unsupported drainage routing");
