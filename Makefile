@@ -3,7 +3,7 @@
 	check-format \
 	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
-	web web-serve xcode
+	web web-deploy web-serve xcode
 
 # Configure (if needed) and build everything for macOS.
 all:
@@ -106,6 +106,10 @@ web:
 # Serve the browser build with the cross-origin isolation pthreads require.
 web-serve: web
 	bun run tools/serve-web.ts
+
+# Publish an immutable browser release and point moppe.less.rest at it.
+web-deploy:
+	./tools/deploy-web
 
 # Build a fast deterministic Terrain Lab preview, capture it, and exit.
 terrain-lab-shot:

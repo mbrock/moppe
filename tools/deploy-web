@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+host=${MOPPE_WEB_HOST:-igloo}
+remote_root=${MOPPE_WEB_ROOT:-/home/mbrock/moppe-web}
+commit=$(git rev-parse --short=12 HEAD)
+released_at=$(date -u +%Y%m%dT%H%M%SZ)
+release="$released_at-$commit"
+upload="$remote_root/releases/.$release.uploading"
+destination="$remote_root/releases/$release"
+
+if [[ ${MOPPE_WEB_SKIP_BUILD:-0} != 1 ]]; then
+  make web
+fi
+
+artifacts=(
+  build-web/moppe-web.data
+  build-web/moppe-web.html
+  build-web/moppe-web.js
+  build-web/moppe-web.wasm
+)
+for artifact in "${artifacts[@]}"; do
+  if [[ ! -f $artifact ]]; then
+    echo "Missing web artifact: $artifact" >&2
+    exit 1
+  fi
+done
+
+temporary=$(mktemp -d)
+trap 'rm -rf "$temporary"' EXIT
+sed "s|__MOPPE_RELEASE__|$release|g" tools/web-index.html \
+  >"$temporary/index.html"
+
+ssh "$host" "mkdir -p '$remote_root/releases' && \
+  test ! -e '$upload' && test ! -e '$destination' && mkdir '$upload'"
+rsync -a --info=progress2 "${artifacts[@]}" "$host:$upload/"
+rsync -a "$temporary/index.html" "$host:$remote_root/.index-$release.html"
+ssh "$host" "mv '$upload' '$destination' && \
+  mv '$remote_root/.index-$release.html' '$remote_root/index.html'"
+
+echo "Published https://moppe.less.rest/releases/$release/moppe-web.html"
