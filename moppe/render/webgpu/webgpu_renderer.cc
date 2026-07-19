@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -68,19 +70,27 @@ struct TerrainUniforms {
   camera_fog: vec4<f32>,
   sun_direction: vec4<f32>,
   sun_diffuse: vec4<f32>,
+  sun_specular: vec4<f32>,
   ambient: vec4<f32>,
   fog_color: vec4<f32>,
   terrain_scale: vec4<f32>,
+  material_params: vec4<f32>,
 };
 
 struct ChunkUniforms {
   origin_step: vec4<f32>,
+  morph: vec4<f32>,
   world_offset: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> terrain: TerrainUniforms;
 @group(0) @binding(1) var heights: texture_2d<f32>;
 @group(0) @binding(2) var normals: texture_2d<f32>;
+@group(0) @binding(3) var grass_texture: texture_2d<f32>;
+@group(0) @binding(4) var dirt_texture: texture_2d<f32>;
+@group(0) @binding(5) var rock_texture: texture_2d<f32>;
+@group(0) @binding(6) var snow_texture: texture_2d<f32>;
+@group(0) @binding(7) var terrain_sampler: sampler;
 @group(1) @binding(0) var<uniform> chunk: ChunkUniforms;
 
 struct VertexInput {
@@ -93,19 +103,153 @@ struct VertexOutput {
   @location(1) normal: vec3<f32>,
   @location(2) normalized_height: f32,
   @location(3) fog: f32,
+  @location(4) grid_coord: vec2<f32>,
+  @location(5) @interpolate(flat) lod_step: f32,
 };
+
+fn sample_position(position: vec2<i32>) -> vec2<i32> {
+  let limit = vec2<i32>(textureDimensions(heights)) - vec2<i32>(1);
+  return clamp(position, vec2<i32>(0), limit);
+}
+
+fn read_height(position: vec2<i32>) -> f32 {
+  return textureLoad(heights, sample_position(position), 0).r;
+}
+
+fn read_normal(position: vec2<i32>) -> vec3<f32> {
+  let packed = textureLoad(normals, sample_position(position), 0).xyz;
+  return normalize(vec3<f32>(packed.x, max(packed.y, 0.001), packed.z));
+}
+
+fn cubic(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> vec2<f32> {
+  let a = 0.5 * (-p0 + 3.0 * p1 - 3.0 * p2 + p3);
+  let b = 0.5 * (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3);
+  let c = 0.5 * (-p0 + p2);
+  return vec2<f32>(((a * t + b) * t + c) * t + p1,
+                   (3.0 * a * t + 2.0 * b) * t + c);
+}
+
+fn smooth_height(grid: vec2<f32>) -> vec3<f32> {
+  let dimensions = vec2<f32>(textureDimensions(heights));
+  let clamped_grid = clamp(grid, vec2<f32>(0.0), dimensions - vec2<f32>(1.0));
+  let cell = vec2<i32>(floor(clamped_grid));
+  let fraction = fract(clamped_grid);
+  var rows: array<f32, 4>;
+  var derivatives_x: array<f32, 4>;
+  for (var j = 0; j < 4; j = j + 1) {
+    var samples: array<f32, 4>;
+    for (var i = 0; i < 4; i = i + 1) {
+      samples[i] = read_height(cell + vec2<i32>(i - 1, j - 1));
+    }
+    let value = cubic(samples[0], samples[1], samples[2], samples[3],
+                      fraction.x);
+    rows[j] = value.x;
+    derivatives_x[j] = value.y;
+  }
+  let value_z = cubic(rows[0], rows[1], rows[2], rows[3], fraction.y);
+  let value_x = cubic(derivatives_x[0], derivatives_x[1],
+                      derivatives_x[2], derivatives_x[3], fraction.y).x;
+
+  let h00 = read_height(cell);
+  let h10 = read_height(cell + vec2<i32>(1, 0));
+  let h01 = read_height(cell + vec2<i32>(0, 1));
+  let h11 = read_height(cell + vec2<i32>(1, 1));
+  let low = min(min(h00, h10), min(h01, h11));
+  let high = max(max(h00, h10), max(h01, h11));
+  if (value_z.x < low || value_z.x > high) {
+    let h0 = mix(h00, h10, fraction.x);
+    let h1 = mix(h01, h11, fraction.x);
+    let dx = mix(h10 - h00, h11 - h01, fraction.y);
+    return vec3<f32>(mix(h0, h1, fraction.y), dx, h1 - h0);
+  }
+  return vec3<f32>(value_z.x, value_x, value_z.y);
+}
+
+fn height_on_lattice(grid: vec2<f32>, step: f32) -> f32 {
+  let limit = vec2<f32>(textureDimensions(heights)) - vec2<f32>(1.0);
+  let cell = min(floor(grid / step) * step, limit - vec2<f32>(step));
+  let fraction = clamp((grid - cell) / step, vec2<f32>(0.0),
+                       vec2<f32>(1.0));
+  let stride = i32(round(step));
+  let p00 = vec2<i32>(cell);
+  let h00 = read_height(p00);
+  let h10 = read_height(p00 + vec2<i32>(stride, 0));
+  let h01 = read_height(p00 + vec2<i32>(0, stride));
+  let h11 = read_height(p00 + vec2<i32>(stride, stride));
+  if (fraction.x + fraction.y <= 1.0) {
+    return h00 + fraction.x * (h10 - h00) +
+           fraction.y * (h01 - h00);
+  }
+  return h11 + (1.0 - fraction.y) * (h10 - h11) +
+         (1.0 - fraction.x) * (h01 - h11);
+}
+
+fn normal_on_lattice(grid: vec2<f32>, step: f32) -> vec3<f32> {
+  let limit = vec2<f32>(textureDimensions(normals)) - vec2<f32>(1.0);
+  let cell = min(floor(grid / step) * step, limit - vec2<f32>(step));
+  let fraction = clamp((grid - cell) / step, vec2<f32>(0.0),
+                       vec2<f32>(1.0));
+  let stride = i32(round(step));
+  let p00 = vec2<i32>(cell);
+  let n00 = read_normal(p00);
+  let n10 = read_normal(p00 + vec2<i32>(stride, 0));
+  let n01 = read_normal(p00 + vec2<i32>(0, stride));
+  let n11 = read_normal(p00 + vec2<i32>(stride, stride));
+  if (fraction.x + fraction.y <= 1.0) {
+    return n00 + fraction.x * (n10 - n00) +
+           fraction.y * (n01 - n00);
+  }
+  return n11 + (1.0 - fraction.y) * (n10 - n11) +
+         (1.0 - fraction.x) * (n01 - n11);
+}
+
+fn normal_bilinear(grid: vec2<f32>) -> vec3<f32> {
+  let dimensions = vec2<f32>(textureDimensions(normals));
+  let clamped_grid = clamp(grid, vec2<f32>(0.0), dimensions - vec2<f32>(1.0));
+  let cell = vec2<i32>(floor(clamped_grid));
+  let fraction = fract(clamped_grid);
+  let n0 = mix(read_normal(cell), read_normal(cell + vec2<i32>(1, 0)),
+               fraction.x);
+  let n1 = mix(read_normal(cell + vec2<i32>(0, 1)),
+               read_normal(cell + vec2<i32>(1, 1)), fraction.x);
+  return normalize(mix(n0, n1, fraction.y));
+}
 
 @vertex
 fn terrain_vertex(input: VertexInput) -> VertexOutput {
   let grid = chunk.origin_step.xy + input.local_grid * chunk.origin_step.z;
-  let dimensions = vec2<i32>(textureDimensions(heights));
-  let sample_position = clamp(vec2<i32>(round(grid)),
-                              vec2<i32>(0), dimensions - vec2<i32>(1));
-  let height = textureLoad(heights, sample_position, 0).r;
-  let packed_normal = textureLoad(normals, sample_position, 0).xyz;
-  let normal = normalize(vec3<f32>(packed_normal.x,
-                                   max(packed_normal.y, 0.001),
-                                   packed_normal.z));
+  var height: f32;
+  var normal: vec3<f32>;
+  if (chunk.origin_step.z < 1.0) {
+    let reconstructed = smooth_height(grid);
+    height = reconstructed.x;
+    let tangent_x = vec3<f32>(terrain.terrain_scale.x,
+                              reconstructed.y * terrain.terrain_scale.y, 0.0);
+    let tangent_z = vec3<f32>(0.0,
+                              reconstructed.z * terrain.terrain_scale.y,
+                              terrain.terrain_scale.z);
+    normal = normalize(cross(tangent_z, tangent_x));
+  } else {
+    height = read_height(vec2<i32>(round(grid)));
+    normal = read_normal(vec2<i32>(round(grid)));
+  }
+
+  let canonical_xz = grid * terrain.terrain_scale.xz;
+  let world_xz = canonical_xz + chunk.world_offset.xz;
+  if (chunk.origin_step.w > chunk.origin_step.z &&
+      chunk.morph.y > chunk.morph.x) {
+    let distance_to_camera = length(world_xz - terrain.camera_fog.xz);
+    let morph = smoothstep(chunk.morph.x, chunk.morph.y,
+                           distance_to_camera);
+    if (morph > 0.0) {
+      height = mix(height,
+                   height_on_lattice(grid, chunk.origin_step.w), morph);
+      normal = normalize(mix(normal,
+                             normal_on_lattice(grid, chunk.origin_step.w),
+                             morph));
+    }
+  }
+
   let world = vec3<f32>(grid.x * terrain.terrain_scale.x +
                           chunk.world_offset.x,
                         height * terrain.terrain_scale.y,
@@ -122,32 +266,151 @@ fn terrain_vertex(input: VertexInput) -> VertexOutput {
   output.normal = normal;
   output.normalized_height = height;
   output.fog = clamp(fog, 0.0, 1.0);
+  output.grid_coord = grid;
+  output.lod_step = chunk.origin_step.z;
   return output;
+}
+
+fn hash_value(position: vec2<f32>) -> f32 {
+  return fract(sin(dot(position, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+fn value_noise(position: vec2<f32>) -> f32 {
+  let cell = floor(position);
+  var fraction = fract(position);
+  fraction = fraction * fraction * (vec2<f32>(3.0) - 2.0 * fraction);
+  let a = hash_value(cell);
+  let b = hash_value(cell + vec2<f32>(1.0, 0.0));
+  let c = hash_value(cell + vec2<f32>(0.0, 1.0));
+  let d = hash_value(cell + vec2<f32>(1.0, 1.0));
+  return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
+}
+
+fn display_srgb(linear_color: vec3<f32>) -> vec3<f32> {
+  let positive = max(linear_color, vec3<f32>(0.0));
+  let low = positive * 12.92;
+  let high = 1.055 * pow(positive, vec3<f32>(1.0 / 2.4)) -
+             vec3<f32>(0.055);
+  return select(high, low, positive <= vec3<f32>(0.0031308));
 }
 
 @fragment
 fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
-  let slope = 1.0 - clamp(input.normal.y, 0.0, 1.0);
-  let sea = terrain.terrain_scale.w;
-  let beach = 1.0 - smoothstep(0.012, 0.045,
-                               abs(input.normalized_height - sea));
-  let grass = vec3<f32>(0.16, 0.34, 0.09);
-  let dirt = vec3<f32>(0.34, 0.24, 0.12);
-  let rock = vec3<f32>(0.34, 0.35, 0.32);
-  let sand = vec3<f32>(0.54, 0.47, 0.29);
-  let snow = vec3<f32>(0.78, 0.84, 0.82);
-  var material = mix(grass, dirt, smoothstep(0.18, 0.5, slope));
-  material = mix(material, rock, smoothstep(0.48, 0.78, slope));
-  material = mix(material, sand, beach * (1.0 - smoothstep(0.5, 0.8, slope)));
-  let snow_line = smoothstep(0.58, 0.72, input.normalized_height) *
-                    (1.0 - smoothstep(0.4, 0.75, slope));
-  material = mix(material, snow, snow_line);
+  let resolved_normal = select(normalize(input.normal),
+                               normal_bilinear(input.grid_coord),
+                               terrain.material_params.z > 0.5 &&
+                               input.lod_step >= 1.0);
+  let normal = normalize(resolved_normal);
+  let to_fragment = input.world_position - terrain.camera_fog.xyz;
+  let distance_to_camera = length(to_fragment);
+  let view_direction = to_fragment / max(distance_to_camera, 0.0001);
+  let texture_coordinates = input.world_position.xz * terrain.material_params.x;
+  let far_blend = smoothstep(40.0, 350.0, distance_to_camera);
+  let far_offset = vec2<f32>(0.13, 0.71);
 
-  let direct = max(dot(normalize(input.normal),
-                       normalize(terrain.sun_direction.xyz)), 0.0);
-  let light = terrain.ambient.rgb + terrain.sun_diffuse.rgb * direct;
-  let lit = material * max(light, vec3<f32>(0.15));
-  return vec4<f32>(mix(lit, terrain.fog_color.rgb, input.fog), 1.0);
+  let grass_near = textureSample(grass_texture, terrain_sampler,
+                                 texture_coordinates).rgb;
+  let grass_far = textureSample(grass_texture, terrain_sampler,
+                                texture_coordinates * 0.19 + far_offset).rgb;
+  var grass = mix(grass_near, grass_far, far_blend);
+  let dirt_near = textureSample(dirt_texture, terrain_sampler,
+                                texture_coordinates).rgb;
+  let dirt_far = textureSample(dirt_texture, terrain_sampler,
+                               texture_coordinates * 0.19 + far_offset).rgb;
+  var dirt = mix(dirt_near, dirt_far, far_blend);
+  let snow_near = textureSample(snow_texture, terrain_sampler,
+                                texture_coordinates).rgb;
+  let snow_far = textureSample(snow_texture, terrain_sampler,
+                               texture_coordinates * 0.19 + far_offset).rgb;
+  var snow = mix(snow_near, snow_far, far_blend);
+
+  var projection_weights = abs(normal);
+  projection_weights = projection_weights * projection_weights;
+  projection_weights /= max(projection_weights.x + projection_weights.y +
+                            projection_weights.z, 0.0001);
+  let rock_scale = terrain.material_params.x * 1.7;
+  let rock_x = textureSample(rock_texture, terrain_sampler,
+                             input.world_position.zy * rock_scale).rgb;
+  let rock_y = textureSample(rock_texture, terrain_sampler,
+                             input.world_position.xz * rock_scale).rgb;
+  let rock_z = textureSample(rock_texture, terrain_sampler,
+                             input.world_position.xy * rock_scale).rgb;
+  var rock = rock_x * projection_weights.x + rock_y * projection_weights.y +
+             rock_z * projection_weights.z;
+
+  let coarse = dot(textureSample(grass_texture, terrain_sampler,
+                                 texture_coordinates * 0.083 +
+                                   vec2<f32>(0.37, 0.19)).rgb,
+                   vec3<f32>(0.299, 0.587, 0.114));
+  let macro_variation =
+    0.65 * value_noise(input.world_position.xz * 0.0027 +
+                       vec2<f32>(19.1, 7.3)) +
+    0.35 * value_noise(input.world_position.xz * 0.0091 +
+                       vec2<f32>(3.7, 31.9));
+  let jitter = coarse - 0.5;
+  let height = input.normalized_height;
+  let adjusted_height =
+    height + 0.045 * jitter + 0.012 * (macro_variation - 0.5);
+  let cliff = 1.0 - smoothstep(0.60, 0.80, normal.y + 0.06 * jitter);
+  let scree = smoothstep(0.38, 0.58, adjusted_height);
+  let snow_cover = smoothstep(0.55, 0.68, adjusted_height) *
+                    smoothstep(0.58, 0.78, normal.y);
+  let sea = terrain.terrain_scale.w;
+  let beach_low = sea + 0.5 / terrain.material_params.y;
+  let beach_high = sea + 3.0 / terrain.material_params.y;
+  let beach = (1.0 - smoothstep(beach_low, beach_high, adjusted_height)) *
+              smoothstep(0.55, 0.75, normal.y);
+
+  let grass_value = dot(grass, vec3<f32>(0.299, 0.587, 0.114));
+  grass = mix(grass,
+              grass_value * vec3<f32>(0.68, 1.0, 0.52), 0.34) * 1.36;
+  grass *= 0.88 + 0.55 * coarse;
+  grass *= mix(vec3<f32>(0.84, 0.95, 0.76),
+               vec3<f32>(1.10, 1.06, 0.92), macro_variation);
+  let dirt_value = dot(dirt, vec3<f32>(0.299, 0.587, 0.114));
+  dirt = mix(dirt, dirt_value * vec3<f32>(1.0, 0.96, 0.86), 0.72);
+  let rock_value = dot(rock, vec3<f32>(0.299, 0.587, 0.114));
+  rock = mix(rock, rock_value * vec3<f32>(0.78, 0.80, 0.79), 0.9);
+  snow *= 0.88 + 0.32 * coarse;
+
+  var material = grass;
+  material = mix(material, dirt, scree);
+  material = mix(material, rock, cliff);
+  material = mix(material, snow, snow_cover);
+  let sand = mix(dirt, dirt_value * vec3<f32>(1.12, 1.03, 0.82), 0.82);
+  material = mix(material, sand, beach);
+
+  let light_direction = normalize(terrain.sun_direction.xyz);
+  let direct = clamp((dot(light_direction, normal) + 0.08) / 1.08,
+                     0.0, 1.0);
+  let hemisphere = terrain.ambient.rgb * (0.65 + 0.35 * normal.y);
+  let diffuse = terrain.sun_diffuse.rgb * direct * 0.9 + hemisphere;
+  var color = material * max(diffuse, vec3<f32>(0.08));
+  let to_camera = normalize(terrain.camera_fog.xyz - input.world_position);
+  let half_vector = normalize(light_direction + to_camera);
+  let roughness = mix(0.92, 0.68, cliff);
+  let specular = (0.012 + 0.035 * (1.0 - roughness)) *
+                 pow(max(dot(normal, half_vector), 0.0),
+                     mix(18.0, 72.0, 1.0 - roughness));
+  color += terrain.sun_specular.rgb * specular;
+  color += snow_cover * terrain.sun_specular.rgb *
+           pow(max(dot(normal, half_vector), 0.0), 32.0) * 0.18;
+
+  if (terrain.material_params.w > 0.5) {
+    let cell = fract(input.grid_coord / input.lod_step);
+    let width = max(fwidth(input.grid_coord / input.lod_step),
+                    vec2<f32>(0.0001));
+    let edge = min(min(cell.x, 1.0 - cell.x) / width.x,
+                   min(cell.y, 1.0 - cell.y) / width.y);
+    let line = 1.0 - smoothstep(0.45, 1.25, edge);
+    color = mix(color, vec3<f32>(0.015, 0.16, 0.19), 0.82 * line);
+  }
+
+  let sun_glow = pow(max(dot(view_direction, light_direction), 0.0), 8.0);
+  let fog_color = terrain.fog_color.rgb *
+                  mix(vec3<f32>(1.0), vec3<f32>(1.10, 1.03, 0.91), sun_glow);
+  let fog_factor = smoothstep(0.0, 0.9, input.fog);
+  return vec4<f32>(display_srgb(mix(color, fog_color, fog_factor)), 1.0);
 }
 )wgsl";
 
@@ -162,22 +425,25 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::array<float, 4> camera_fog;
       std::array<float, 4> sun_direction;
       std::array<float, 4> sun_diffuse;
+      std::array<float, 4> sun_specular;
       std::array<float, 4> ambient;
       std::array<float, 4> fog_color;
       std::array<float, 4> terrain_scale;
+      std::array<float, 4> material_params;
     };
 
     struct alignas (16) TerrainChunkUniforms {
       std::array<float, 4> origin_step;
+      std::array<float, 4> morph;
       std::array<float, 4> world_offset;
     };
 
-    constexpr int terrain_lod_count = 4;
+    constexpr int terrain_lod_count = 5;
     constexpr std::array<float, terrain_lod_count> terrain_lod_steps = {
-      1.0f, 2.0f, 4.0f, 8.0f
+      0.25f, 1.0f, 2.0f, 4.0f, 8.0f
     };
     constexpr std::array<int, terrain_lod_count> terrain_lod_vertices = {
-      129, 65, 33, 17
+      513, 129, 65, 33, 17
     };
     constexpr uint32_t frame_uniform_stride = 256;
     constexpr uint32_t frame_uniform_slots = 4096;
@@ -215,6 +481,54 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::memcpy (buffer.GetMappedRange (), values.data (), descriptor.size);
       buffer.Unmap ();
       return buffer;
+    }
+
+    float srgb_to_linear (uint8_t value) {
+      const float encoded = value / 255.0f;
+      return encoded <= 0.04045f ? encoded / 12.92f
+                                 : std::pow ((encoded + 0.055f) / 1.055f, 2.4f);
+    }
+
+    uint8_t linear_to_srgb (float value) {
+      const float linear = std::clamp (value, 0.0f, 1.0f);
+      const float encoded =
+        linear <= 0.0031308f ? linear * 12.92f
+                             : 1.055f * std::pow (linear, 1.0f / 2.4f) - 0.055f;
+      return static_cast<uint8_t> (
+        std::clamp (std::lround (encoded * 255.0f), 0l, 255l));
+    }
+
+    std::vector<uint8_t> downsample_srgba (const std::vector<uint8_t>& source,
+                                           int width,
+                                           int height) {
+      const int next_width = std::max (1, width / 2);
+      const int next_height = std::max (1, height / 2);
+      std::vector<uint8_t> result (static_cast<std::size_t> (next_width) *
+                                   next_height * 4);
+      for (int y = 0; y < next_height; ++y)
+        for (int x = 0; x < next_width; ++x) {
+          std::array<float, 4> total {};
+          int samples = 0;
+          for (int dy = 0; dy < 2; ++dy)
+            for (int dx = 0; dx < 2; ++dx) {
+              const int source_x = std::min (width - 1, x * 2 + dx);
+              const int source_y = std::min (height - 1, y * 2 + dy);
+              const std::size_t offset =
+                (static_cast<std::size_t> (source_y) * width + source_x) * 4;
+              for (int component = 0; component < 3; ++component)
+                total[component] += srgb_to_linear (source[offset + component]);
+              total[3] += source[offset + 3] / 255.0f;
+              ++samples;
+            }
+          const std::size_t destination =
+            (static_cast<std::size_t> (y) * next_width + x) * 4;
+          for (int component = 0; component < 3; ++component)
+            result[destination + component] =
+              linear_to_srgb (total[component] / samples);
+          result[destination + 3] = static_cast<uint8_t> (
+            std::clamp (std::lround (total[3] * 255.0f / samples), 0l, 255l));
+        }
+      return result;
     }
   }
 
@@ -273,6 +587,7 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     std::vector<wgpu::Buffer> frame_uniform_buffers;
     std::vector<wgpu::BindGroup> frame_bind_groups;
     FrameParams frame_params;
+    std::string device_error;
     bool frame_open = false;
 
     State (const char* selector, int width, int height, float factor)
@@ -381,22 +696,56 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       wgpu::ShaderModuleDescriptor shader_descriptor {};
       shader_descriptor.nextInChain = &wgsl;
       terrain_shader = device.CreateShaderModule (&shader_descriptor);
+      terrain_shader.GetCompilationInfo (
+        wgpu::CallbackMode::AllowSpontaneous,
+        [] (wgpu::CompilationInfoRequestStatus status,
+            const wgpu::CompilationInfo* info,
+            State* state) {
+          if (status != wgpu::CompilationInfoRequestStatus::Success || !info)
+            return;
+          for (size_t i = 0; i < info->messageCount; ++i) {
+            const wgpu::CompilationMessage& diagnostic = info->messages[i];
+            if (diagnostic.type != wgpu::CompilationMessageType::Error)
+              continue;
+            const std::string message (
+              diagnostic.message.data ? diagnostic.message.data : "",
+              diagnostic.message.length);
+            state->device_error =
+              "terrain shader line " + std::to_string (diagnostic.lineNum) +
+              ":" + std::to_string (diagnostic.linePos) + ": " + message;
+            std::cerr << "moppe: " << state->device_error << std::endl;
+          }
+        },
+        this);
 
-      std::array<wgpu::BindGroupLayoutEntry, 3> frame_entries {};
+      std::array<wgpu::BindGroupLayoutEntry, 8> frame_entries {};
       frame_entries[0].binding = 0;
       frame_entries[0].visibility =
         wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
       frame_entries[0].buffer.type = wgpu::BufferBindingType::Uniform;
       frame_entries[0].buffer.minBindingSize = sizeof (TerrainUniforms);
       frame_entries[1].binding = 1;
-      frame_entries[1].visibility = wgpu::ShaderStage::Vertex;
+      frame_entries[1].visibility =
+        wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
       frame_entries[1].texture.sampleType =
         wgpu::TextureSampleType::UnfilterableFloat;
       frame_entries[1].texture.viewDimension = wgpu::TextureViewDimension::e2D;
       frame_entries[2].binding = 2;
-      frame_entries[2].visibility = wgpu::ShaderStage::Vertex;
+      frame_entries[2].visibility =
+        wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
       frame_entries[2].texture.sampleType = wgpu::TextureSampleType::Float;
       frame_entries[2].texture.viewDimension = wgpu::TextureViewDimension::e2D;
+      for (uint32_t binding = 3; binding <= 6; ++binding) {
+        frame_entries[binding].binding = binding;
+        frame_entries[binding].visibility = wgpu::ShaderStage::Fragment;
+        frame_entries[binding].texture.sampleType =
+          wgpu::TextureSampleType::Float;
+        frame_entries[binding].texture.viewDimension =
+          wgpu::TextureViewDimension::e2D;
+      }
+      frame_entries[7].binding = 7;
+      frame_entries[7].visibility = wgpu::ShaderStage::Fragment;
+      frame_entries[7].sampler.type = wgpu::SamplerBindingType::Filtering;
       wgpu::BindGroupLayoutDescriptor frame_descriptor {};
       frame_descriptor.entryCount = frame_entries.size ();
       frame_descriptor.entries = frame_entries.data ();
@@ -452,7 +801,9 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       pipeline_descriptor.vertex.bufferCount = 1;
       pipeline_descriptor.vertex.buffers = &vertex_layout;
       pipeline_descriptor.primitive.topology =
-        wgpu::PrimitiveTopology::TriangleList;
+        wgpu::PrimitiveTopology::TriangleStrip;
+      pipeline_descriptor.primitive.stripIndexFormat =
+        wgpu::IndexFormat::Uint32;
       pipeline_descriptor.primitive.frontFace = wgpu::FrontFace::CCW;
       pipeline_descriptor.primitive.cullMode = wgpu::CullMode::Back;
       pipeline_descriptor.multisample.count = 1;
@@ -473,15 +824,14 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 
         std::vector<uint32_t> indices;
         const int cells = vertices_per_row - 1;
-        indices.reserve (cells * cells * 6);
-        for (int z = 0; z < cells; ++z)
-          for (int x = 0; x < cells; ++x) {
-            const uint32_t a = z * vertices_per_row + x;
-            const uint32_t b = a + 1;
-            const uint32_t c = a + vertices_per_row;
-            const uint32_t d = c + 1;
-            indices.insert (indices.end (), { a, c, b, b, c, d });
+        indices.reserve (cells * (vertices_per_row * 2 + 1));
+        for (int z = 0; z < cells; ++z) {
+          for (int x = 0; x < vertices_per_row; ++x) {
+            indices.push_back (z * vertices_per_row + x);
+            indices.push_back ((z + 1) * vertices_per_row + x);
           }
+          indices.push_back (0xFFFFFFFFu);
+        }
         terrain_index_counts[lod] = indices.size ();
         terrain_indices[lod] =
           upload_buffer (device, indices, wgpu::BufferUsage::Index);
@@ -496,47 +846,69 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       result->width = descriptor.width;
       result->height = descriptor.height;
 
+      std::vector<uint8_t> base (static_cast<std::size_t> (descriptor.width) *
+                                 descriptor.height * 4);
+      const auto* source = static_cast<const uint8_t*> (pixels);
+      if (descriptor.format == TextureFormat::RGB8) {
+        for (int i = 0; i < descriptor.width * descriptor.height; ++i) {
+          base[i * 4 + 0] = source[i * 3 + 0];
+          base[i * 4 + 1] = source[i * 3 + 1];
+          base[i * 4 + 2] = source[i * 3 + 2];
+          base[i * 4 + 3] = 255;
+        }
+      } else {
+        std::memcpy (base.data (), pixels, base.size ());
+      }
+
+      const bool generate_mips = descriptor.filter == TextureFilter::Mipmap;
+      std::vector<std::vector<uint8_t>> levels;
+      levels.push_back (std::move (base));
+      int level_width = descriptor.width;
+      int level_height = descriptor.height;
+      while (generate_mips && (level_width > 1 || level_height > 1)) {
+        levels.push_back (
+          downsample_srgba (levels.back (), level_width, level_height));
+        level_width = std::max (1, level_width / 2);
+        level_height = std::max (1, level_height / 2);
+      }
+
       wgpu::TextureDescriptor texture_descriptor {};
       texture_descriptor.size = {
         static_cast<uint32_t> (descriptor.width),
         static_cast<uint32_t> (descriptor.height),
         1,
       };
-      texture_descriptor.format = wgpu::TextureFormat::RGBA8Unorm;
+      texture_descriptor.format = generate_mips
+                                    ? wgpu::TextureFormat::RGBA8UnormSrgb
+                                    : wgpu::TextureFormat::RGBA8Unorm;
+      texture_descriptor.mipLevelCount = levels.size ();
       texture_descriptor.usage =
         wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
       result->texture = device.CreateTexture (&texture_descriptor);
       result->view = result->texture.CreateView ();
 
-      std::vector<unsigned char> expanded;
-      const void* upload = pixels;
-      if (descriptor.format == TextureFormat::RGB8) {
-        const auto* source = static_cast<const unsigned char*> (pixels);
-        expanded.resize (descriptor.width * descriptor.height * 4);
-        for (int i = 0; i < descriptor.width * descriptor.height; ++i) {
-          expanded[i * 4 + 0] = source[i * 3 + 0];
-          expanded[i * 4 + 1] = source[i * 3 + 1];
-          expanded[i * 4 + 2] = source[i * 3 + 2];
-          expanded[i * 4 + 3] = 255;
-        }
-        upload = expanded.data ();
+      level_width = descriptor.width;
+      level_height = descriptor.height;
+      for (uint32_t level = 0; level < levels.size (); ++level) {
+        wgpu::TexelCopyTextureInfo destination {};
+        destination.texture = result->texture;
+        destination.mipLevel = level;
+        wgpu::TexelCopyBufferLayout layout {};
+        layout.bytesPerRow = level_width * 4;
+        layout.rowsPerImage = level_height;
+        const wgpu::Extent3D extent = {
+          static_cast<uint32_t> (level_width),
+          static_cast<uint32_t> (level_height),
+          1,
+        };
+        queue.WriteTexture (&destination,
+                            levels[level].data (),
+                            levels[level].size (),
+                            &layout,
+                            &extent);
+        level_width = std::max (1, level_width / 2);
+        level_height = std::max (1, level_height / 2);
       }
-
-      wgpu::TexelCopyTextureInfo destination {};
-      destination.texture = result->texture;
-      wgpu::TexelCopyBufferLayout layout {};
-      layout.bytesPerRow = descriptor.width * 4;
-      layout.rowsPerImage = descriptor.height;
-      wgpu::Extent3D extent = {
-        static_cast<uint32_t> (descriptor.width),
-        static_cast<uint32_t> (descriptor.height),
-        1,
-      };
-      queue.WriteTexture (&destination,
-                          upload,
-                          descriptor.width * descriptor.height * 4,
-                          &layout,
-                          &extent);
 
       wgpu::SamplerDescriptor sampler_descriptor {};
       const bool nearest = descriptor.filter == TextureFilter::Nearest;
@@ -551,6 +923,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                                           : wgpu::AddressMode::ClampToEdge;
       sampler_descriptor.addressModeU = address;
       sampler_descriptor.addressModeV = address;
+      sampler_descriptor.maxAnisotropy = static_cast<uint16_t> (
+        std::clamp (std::lround (descriptor.max_anisotropy), 1l, 16l));
       result->sampler = device.CreateSampler (&sampler_descriptor);
 
       std::array<wgpu::BindGroupEntry, 2> entries {};
@@ -723,13 +1097,19 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         }
         m_state->adapter = std::move (adapter);
         wgpu::DeviceDescriptor descriptor {};
-        descriptor.SetUncapturedErrorCallback ([] (const wgpu::Device&,
-                                                   wgpu::ErrorType type,
-                                                   wgpu::StringView error) {
-          std::cerr << "moppe: WebGPU error " << static_cast<int> (type) << ": "
-                    << std::string (error.data ? error.data : "", error.length)
-                    << std::endl;
-        });
+        descriptor.SetUncapturedErrorCallback (
+          [] (const wgpu::Device&,
+              wgpu::ErrorType type,
+              wgpu::StringView error,
+              State* state) {
+            const std::string message (error.data ? error.data : "",
+                                       error.length);
+            if (state->device_error.empty ())
+              state->device_error = message;
+            std::cerr << "moppe: WebGPU error " << static_cast<int> (type)
+                      << ": " << message << std::endl;
+          },
+          m_state.get ());
         m_state->adapter.RequestDevice (
           &descriptor,
           wgpu::CallbackMode::AllowSpontaneous,
@@ -885,6 +1265,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
   }
 
   bool WebGpuRenderer::begin_frame (const FrameParams& params) {
+    if (!m_state->device_error.empty ())
+      throw std::runtime_error (m_state->device_error);
     if (!m_state->device || m_state->frame_open)
       return false;
     m_state->surface_texture = {};
@@ -942,6 +1324,10 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                        frame.sun_diffuse.green,
                        frame.sun_diffuse.blue,
                        1.0f },
+      .sun_specular = { frame.sun_specular.red,
+                        frame.sun_specular.green,
+                        frame.sun_specular.blue,
+                        1.0f },
       .ambient = { frame.ambient.red,
                    frame.ambient.green,
                    frame.ambient.blue,
@@ -954,12 +1340,16 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                          terrain.scale[1],
                          terrain.scale[2],
                          terrain.sea_level_norm },
+      .material_params = { terrain.tex_scale,
+                           terrain.height_scale,
+                           terrain.fragment_normals ? 1.0f : 0.0f,
+                           terrain.topology_overlay ? 1.0f : 0.0f },
     };
     std::vector<TerrainUniforms> terrain_uniforms { uniforms };
     wgpu::Buffer terrain_buffer = upload_buffer (
       m_state->device, terrain_uniforms, wgpu::BufferUsage::Uniform);
     m_state->frame_uniform_buffers.push_back (terrain_buffer);
-    std::array<wgpu::BindGroupEntry, 3> terrain_entries {};
+    std::array<wgpu::BindGroupEntry, 8> terrain_entries {};
     terrain_entries[0].binding = 0;
     terrain_entries[0].buffer = terrain_buffer;
     terrain_entries[0].size = sizeof (TerrainUniforms);
@@ -967,6 +1357,32 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     terrain_entries[1].textureView = m_state->terrain_height_view;
     terrain_entries[2].binding = 2;
     terrain_entries[2].textureView = m_state->terrain_normal_view;
+    const auto grass =
+      m_state->terrain_grass
+        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_grass)
+        : m_state->white;
+    const auto dirt =
+      m_state->terrain_dirt
+        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_dirt)
+        : m_state->white;
+    const auto rock =
+      m_state->terrain_rock
+        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_rock)
+        : m_state->white;
+    const auto snow =
+      m_state->terrain_snow
+        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_snow)
+        : m_state->white;
+    terrain_entries[3].binding = 3;
+    terrain_entries[3].textureView = grass->view;
+    terrain_entries[4].binding = 4;
+    terrain_entries[4].textureView = dirt->view;
+    terrain_entries[5].binding = 5;
+    terrain_entries[5].textureView = rock->view;
+    terrain_entries[6].binding = 6;
+    terrain_entries[6].textureView = snow->view;
+    terrain_entries[7].binding = 7;
+    terrain_entries[7].sampler = grass->sampler;
     wgpu::BindGroupDescriptor terrain_descriptor {};
     terrain_descriptor.layout = m_state->terrain_frame_layout;
     terrain_descriptor.entryCount = terrain_entries.size ();
@@ -979,12 +1395,16 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     m_state->pass.SetBindGroup (0, terrain_group);
     for (int i = 0; i < count; ++i) {
       const int requested_lod = static_cast<int> (chunks[i].lod);
-      const int lod = std::clamp (requested_lod - 1, 0, terrain_lod_count - 1);
+      const int lod = std::clamp (requested_lod, 0, terrain_lod_count - 1);
+      const float parent_step = lod + 1 < terrain_lod_count
+                                  ? terrain_lod_steps[lod + 1]
+                                  : terrain_lod_steps[lod];
       const TerrainChunkUniforms chunk_uniforms {
         .origin_step = { static_cast<float> (chunks[i].x0),
                          static_cast<float> (chunks[i].z0),
                          terrain_lod_steps[lod],
-                         0.0f },
+                         parent_step },
+        .morph = { chunks[i].morph_start, chunks[i].morph_end, 0.0f, 0.0f },
         .world_offset = { chunks[i].offset_x, 0.0f, chunks[i].offset_z, 0.0f },
       };
       std::vector<TerrainChunkUniforms> chunk_values { chunk_uniforms };
