@@ -73,9 +73,11 @@ threads. `MOPPE_WEB_HOST` and `MOPPE_WEB_ROOT` can override the deployer's
 ## Backend scope
 
 The WebGPU backend owns browser-native WGSL and resource lifetimes; it does not
-translate Metal shaders. It currently favors a stable gameplay preset over
-Metal visual parity: terrain materials and standing water are simplified, and
-terrain shadows, particles, bloom, motion blur, and other post effects are
+translate Metal shaders. Terrain uses the same five-level render lattice as
+Metal, including the quarter-cell near field, parent-surface LOD morphing,
+fragment-rate normals, and mipmapped grass, dirt, rock, and snow materials.
+Standing water remains simplified, and terrain shadows, hydrology-informed
+ground materials, particles, bloom, motion blur, and other post effects are
 disabled by the default low profile. The simulation, world recipe, renderer
 interface, game state, input semantics, and generated assets remain shared
 with the native builds.
