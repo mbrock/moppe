@@ -77,9 +77,10 @@ translate Metal shaders. Terrain uses the same five-level render lattice as
 Metal, including the quarter-cell near field, parent-surface LOD morphing,
 fragment-rate normals, and mipmapped grass, dirt, rock, and snow materials.
 The procedural sky carries the same atmospheric gradient, cloud layers, sun,
-stars, and fog-matched horizon as the Metal pass. Standing water remains
-simplified, and terrain shadows, hydrology-informed ground materials,
-particles, bloom, motion blur, and other post effects are disabled by the
-default low profile. The simulation, world recipe, renderer interface, game
-state, input semantics, and generated assets remain shared with the native
-builds.
+stars, and fog-matched horizon as the Metal pass. Terrain also casts a filtered
+heightfield shadow map using the shared sun transform; the browser shell enables
+this and the ocean on top of its default low profile. Standing water remains
+simplified, while hydrology-informed ground materials, particles, bloom, motion
+blur, and other post effects remain absent. The simulation, world recipe,
+renderer interface, game state, input semantics, and generated assets remain
+shared with the native builds.
