@@ -3,8 +3,9 @@
 Status: current Metal/backend implementation record. This document preserves
 the port's technical decisions and implementation detail; the
 [engine atlas](engine-atlas.md) is the current map of source ownership, state,
-and CMake targets. WebGPU/Android remain future possibilities, not implemented
-backends.
+and CMake targets. A playable browser backend now implements the same renderer
+contract through WebGPU; see [WebAssembly and WebGPU](web.md). Android remains
+a future possibility.
 
 ## Port goals and retained constraints
 
@@ -126,9 +127,9 @@ the Metal implementation without treating one directory as one layer:
 | `moppe/map/` | Concrete map storage, surface domain/atlas materialization, and evaluator bridges. |
 | `moppe/mov/` | Vehicle and glider simulation. |
 | `moppe/game/` | World owner/model, session, frame snapshot, focused presentation, and host composition; its files span several engine domains. |
-| `moppe/render/` | Portable game-shaped renderer API, `DrawList`, text, and Metal backend. |
+| `moppe/render/` | Portable game-shaped renderer API, `DrawList`, text, and Metal/WebGPU backends. |
 | `moppe/shaders/metal/` | SDK-specific Metal shader sources built into `moppe.metallib`. |
-| `moppe/platform/` | Shared Apple services and macOS/iOS host implementations. |
+| `moppe/platform/` | Apple services plus macOS, iOS, and browser hosts. |
 
 ## Renderer API shape
 

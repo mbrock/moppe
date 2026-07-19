@@ -7,7 +7,9 @@
 #include <mp-units/systems/si/chrono.h>
 #include <mp-units/utility/cartesian_vector.h>
 
+#ifdef __APPLE__
 #include <simd/simd.h>
+#endif
 
 // The atelier's model space: a three-dimensional metric stage.
 //
@@ -109,6 +111,7 @@ namespace atelier {
     return angle.numerical_value_in (angular::radian);
   }
 
+#ifdef __APPLE__
   [[nodiscard]] inline simd_float3 as_simd (const Vec3& v) {
     return { v[0], v[1], v[2] };
   }
@@ -121,4 +124,5 @@ namespace atelier {
   [[nodiscard]] inline simd_float3 in_metres (const Point& p) {
     return in_metres (p - scene);
   }
+#endif
 }

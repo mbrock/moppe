@@ -41,12 +41,32 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(CTest)
 include(FetchContent)
-find_package(ZLIB REQUIRED)
+
+# Emscripten ships zlib as a compiler port rather than a host CMake package.
+# Keep that dependency on the target which actually uses it so native builds
+# continue to resolve the system library in the ordinary way.
+if(EMSCRIPTEN)
+  add_library(moppe_zlib INTERFACE)
+  target_compile_options(moppe_zlib INTERFACE --use-port=zlib)
+  target_link_options(moppe_zlib INTERFACE --use-port=zlib)
+  add_library(ZLIB::ZLIB ALIAS moppe_zlib)
+else()
+  find_package(ZLIB REQUIRED)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall)
+
+# A Moppe web build keeps world generation off the browser UI thread. Every
+# object in a shared-memory WebAssembly executable must be compiled with the
+# atomics/bulk-memory feature set, not only the platform target which creates
+# the worker.
+if(EMSCRIPTEN)
+  add_compile_options(-pthread)
+  add_link_options(-pthread)
+endif()
 
 set(MOPPE_VERSION "1.0.0" CACHE STRING "Moppe release version")
 set(MOPPE_BUILD_NUMBER "1" CACHE STRING "Moppe release build number")
@@ -179,6 +199,7 @@ endif()
 # Metal shader library: one metallib per Apple SDK. AIR is
 # platform-targeted, so each app must load a library built for its OS.
 
+if(APPLE)
 if(MOPPE_TVOS)
   if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
     set(MOPPE_METAL_SDK appletvsimulator)
@@ -287,6 +308,7 @@ else()
 endif()
 
 add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
+endif()
 
 # ---------------------------------------------------------------
 # Portable core: rendering abstraction + game-independent code.
@@ -303,6 +325,17 @@ add_library(moppe_render STATIC
 )
 target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_render PUBLIC mp-units::mp-units)
+
+if(EMSCRIPTEN)
+  add_library(moppe_webgpu STATIC
+    moppe/render/webgpu/webgpu_renderer.cc
+    moppe/render/webgpu/webgpu_renderer.hh
+  )
+  target_include_directories(moppe_webgpu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(moppe_webgpu PUBLIC --use-port=emdawnwebgpu)
+  target_link_options(moppe_webgpu PUBLIC --use-port=emdawnwebgpu)
+  target_link_libraries(moppe_webgpu PUBLIC moppe_render)
+endif()
 
 # Runtime scalar-field expressions plus evaluator backends.  This stays
 # independent of game and platform code so tools and tests use the same DAG.
@@ -734,6 +767,47 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
       $<TARGET_BUNDLE_CONTENT_DIR:moppe>/Resources/${MOPPE_SHADER_NAME}
     DEPENDS ${MOPPE_SHADER_ASSET} moppe
     COMMENT "Refreshing bundled shaders")
+endif()
+
+if(EMSCRIPTEN)
+  add_library(moppe_platform_web STATIC
+    moppe/platform/web/main_web.cc
+  )
+  target_include_directories(moppe_platform_web
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(moppe_platform_web PUBLIC
+    -pthread
+    --use-port=emdawnwebgpu)
+  target_link_options(moppe_platform_web PUBLIC
+    -pthread
+    --use-port=emdawnwebgpu
+    -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency
+    -sALLOW_MEMORY_GROWTH=1
+    -sINITIAL_MEMORY=268435456
+    -sDISABLE_EXCEPTION_CATCHING=0)
+  target_link_libraries(moppe_platform_web PUBLIC
+    moppe_webgpu
+    moppe_terrain)
+  target_link_libraries(moppe_app PUBLIC moppe_platform_web)
+
+  function(moppe_configure_web_executable target)
+    set_target_properties(${target} PROPERTIES
+      SUFFIX ".html"
+      LINK_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web/shell.html")
+    target_link_options(${target} PRIVATE
+      "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/web/shell.html"
+      "--preload-file=${CMAKE_CURRENT_SOURCE_DIR}/textures@/textures"
+      -sASSERTIONS=1)
+  endfunction()
+
+  add_executable(moppe-web-testbed moppe/game/testbed.cc)
+  target_link_libraries(moppe-web-testbed PRIVATE moppe_platform_web)
+  moppe_configure_web_executable(moppe-web-testbed)
+
+  add_executable(moppe-web moppe/game/game.cc)
+  target_link_libraries(moppe-web PRIVATE moppe_app moppe_platform_web)
+  moppe_configure_web_executable(moppe-web)
 endif()
 
 # CMake's Xcode generator normally presents the project target-by-target,

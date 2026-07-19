@@ -217,7 +217,7 @@ namespace moppe::terrain {
 
   template <auto QS>
   concept FieldSpec =
-    mp_units::QuantitySpec<std::remove_const_t<decltype (QS)>>;
+    mp_units::QuantitySpec<std::remove_cvref_t<decltype (QS)>>;
 
   namespace detail {
     // The kind algebra of field products.  A proportion (a mask or

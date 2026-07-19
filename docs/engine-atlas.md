@@ -22,6 +22,7 @@ flowchart LR
   view --> scene["world, actor, water, effect, HUD presentation"]
   scene --> renderer["render::Renderer"]
   renderer --> metal["Metal backend"]
+  renderer --> webgpu["WebGPU backend"]
   app["application: loading, input, mode selection"] --> build
   app --> session
   app --> view
@@ -149,17 +150,22 @@ flowchart LR
   app["moppe_app"] --> scene
   app -.-> mac["moppe_platform_mac"]
   app -.-> ios["moppe_platform_ios"]
+  app -.-> web["moppe_platform_web"]
   metal["moppe_metal"] --> render
+  webgpu["moppe_webgpu"] --> render
   terrain_metal["moppe_terrain_metal"] --> terrain
   mac --> metal
   mac --> terrain_metal
   mac --> apple
   ios --> metal
   ios --> apple
+  web --> webgpu
   desktop["moppe"] --> app
   desktop --> mac
   phone["moppe-ios"] --> app
   phone --> ios
+  browser["moppe-web"] --> app
+  browser --> web
   tests["moppe-tests"] --> scene
   tools["terrain tools"] --> world
 ```
@@ -175,9 +181,9 @@ Stars retain meshes and Stars/Dust expose their presentation operations. This
 is an explicit current constraint, not a claim that physics needs Metal.
 `moppe_scene` composes the completed-world and session readings, with
 Apple-common asset/glyph support where available, but has no OS event loop or
-Metal backend. `moppe_app` holds the two host-service callers (`Terrain` and
-`TerrainLab`); terminal programs retain `game.cc` because it defines `main`
-and chooses the macOS or iOS host.
+renderer backend. `moppe_app` holds the two host-service callers (`Terrain`
+and `TerrainLab`); terminal programs retain `game.cc` because it defines
+`main` and chooses the macOS, iOS, or browser host.
 
 The ordinary desktop game consumes the app/scene path; portable tests begin at
 the testable scene target and do not link a desktop event loop. Terrain
@@ -189,15 +195,16 @@ a broad archive.
 
 This atlas describes the completed RFC-0001 slice. It does not claim that the
 Atelier proposals have replaced Moppe, that every run is bitwise reproducible,
-or that any alternate renderer backend exists today.
+or that every renderer backend has visual feature parity.
 
 - The duplicated periodic heightmap seam and implicit elevation/chart origins
   remain current-engine facts; a seam-free topology and registered frame
   projections remain Atelier-earth work.
 - `GameState` makes fixed-world session replay practical, but world generation,
   renderer history, window state, and loading are not checkpoint state.
-- Metal is the current backend. The portable renderer interface keeps a future
-  backend possible, but WebGPU/Android support is not implemented by this RFC.
+- Metal is the full-fidelity native backend. WebGPU is the supported playable
+  browser backend, with a deliberately lower-cost default presentation;
+  Android remains unimplemented.
 - Persistent places, routes, and player traces belong to later world work, not
   to the completed-world/session boundary described here.
 
