@@ -767,6 +767,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     };
     constexpr uint32_t frame_uniform_stride = 256;
     constexpr uint32_t frame_uniform_slots = 4096;
+    constexpr uint32_t terrain_chunk_uniform_slots = 1024;
+    constexpr uint64_t stream_vertex_buffer_bytes = 32 * 1024 * 1024;
 
     struct WebGpuTexture final : Texture {
       wgpu::Texture texture;
@@ -779,6 +781,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::vector<Vertex> vertices;
       std::vector<DrawList::Run> runs;
       wgpu::Buffer vertex_buffer;
+      mutable wgpu::Buffer river_vertex_buffer;
     };
 
     int pipeline_key (const DrawState& state, bool hud) {
@@ -884,6 +887,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     wgpu::BindGroupLayout sky_layout;
     wgpu::PipelineLayout sky_pipeline_layout;
     wgpu::RenderPipeline sky_pipeline;
+    wgpu::Buffer sky_uniform_buffer;
+    wgpu::BindGroup sky_bind_group;
     wgpu::Buffer sky_vertices;
     uint32_t sky_vertex_count = 0;
 
@@ -906,6 +911,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     wgpu::TextureView terrain_height_view;
     wgpu::Texture terrain_normals;
     wgpu::TextureView terrain_normal_view;
+    wgpu::Buffer terrain_frame_buffer;
+    wgpu::BindGroup terrain_frame_bind_group;
+    wgpu::Buffer terrain_chunk_buffer;
+    std::vector<wgpu::BindGroup> terrain_chunk_bind_groups;
     std::array<wgpu::Buffer, terrain_lod_count> terrain_vertices;
     std::array<wgpu::Buffer, terrain_lod_count> terrain_indices;
     std::array<uint32_t, terrain_lod_count> terrain_index_counts {};
@@ -924,9 +933,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     wgpu::Buffer frame_buffer;
     wgpu::BindGroup frame_bind_group;
     uint32_t frame_uniform_cursor = 0;
-    std::vector<wgpu::Buffer> frame_vertex_buffers;
-    std::vector<wgpu::Buffer> frame_uniform_buffers;
-    std::vector<wgpu::BindGroup> frame_bind_groups;
+    wgpu::Buffer stream_vertex_buffer;
+    uint64_t stream_vertex_cursor = 0;
     FrameParams frame_params;
     std::string device_error;
     bool frame_open = false;
@@ -999,6 +1007,12 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       persistent_frame_descriptor.entries = &persistent_frame_entry;
       frame_bind_group = device.CreateBindGroup (&persistent_frame_descriptor);
 
+      wgpu::BufferDescriptor stream_descriptor {};
+      stream_descriptor.size = stream_vertex_buffer_bytes;
+      stream_descriptor.usage =
+        wgpu::BufferUsage::Vertex | wgpu::BufferUsage::CopyDst;
+      stream_vertex_buffer = device.CreateBuffer (&stream_descriptor);
+
       std::array<wgpu::BindGroupLayoutEntry, 2> texture_entries {};
       texture_entries[0].binding = 0;
       texture_entries[0].visibility = wgpu::ShaderStage::Fragment;
@@ -1070,6 +1084,20 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       layout_descriptor.entryCount = 1;
       layout_descriptor.entries = &uniform_entry;
       sky_layout = device.CreateBindGroupLayout (&layout_descriptor);
+      wgpu::BufferDescriptor sky_buffer_descriptor {};
+      sky_buffer_descriptor.size = frame_uniform_stride;
+      sky_buffer_descriptor.usage =
+        wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      sky_uniform_buffer = device.CreateBuffer (&sky_buffer_descriptor);
+      wgpu::BindGroupEntry sky_entry {};
+      sky_entry.binding = 0;
+      sky_entry.buffer = sky_uniform_buffer;
+      sky_entry.size = sizeof (SkyUniforms);
+      wgpu::BindGroupDescriptor sky_group_descriptor {};
+      sky_group_descriptor.layout = sky_layout;
+      sky_group_descriptor.entryCount = 1;
+      sky_group_descriptor.entries = &sky_entry;
+      sky_bind_group = device.CreateBindGroup (&sky_group_descriptor);
       wgpu::PipelineLayoutDescriptor pipeline_layout_descriptor {};
       pipeline_layout_descriptor.bindGroupLayoutCount = 1;
       pipeline_layout_descriptor.bindGroupLayouts = &sky_layout;
@@ -1220,6 +1248,19 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       chunk_descriptor.entryCount = 1;
       chunk_descriptor.entries = &chunk_entry;
       terrain_chunk_layout = device.CreateBindGroupLayout (&chunk_descriptor);
+
+      wgpu::BufferDescriptor terrain_frame_descriptor {};
+      terrain_frame_descriptor.size = sizeof (TerrainUniforms);
+      terrain_frame_descriptor.usage =
+        wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      terrain_frame_buffer = device.CreateBuffer (&terrain_frame_descriptor);
+      wgpu::BufferDescriptor terrain_chunk_descriptor {};
+      terrain_chunk_descriptor.size =
+        frame_uniform_stride * terrain_chunk_uniform_slots;
+      terrain_chunk_descriptor.usage =
+        wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst;
+      terrain_chunk_buffer = device.CreateBuffer (&terrain_chunk_descriptor);
+      terrain_chunk_bind_groups.clear ();
 
       std::array<wgpu::BindGroupLayout, 2> layouts = {
         terrain_frame_layout,
@@ -1396,6 +1437,69 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       terrain_shadow_texture = device.CreateTexture (&descriptor);
       terrain_shadow_view = terrain_shadow_texture.CreateView ();
       have_terrain_shadow = false;
+      terrain_frame_bind_group = {};
+    }
+
+    void ensure_terrain_chunk_bind_groups (std::size_t count) {
+      if (count > terrain_chunk_uniform_slots)
+        throw std::runtime_error ("WebGPU terrain chunk ring exhausted");
+      while (terrain_chunk_bind_groups.size () < count) {
+        wgpu::BindGroupEntry entry {};
+        entry.binding = 0;
+        entry.buffer = terrain_chunk_buffer;
+        entry.offset = terrain_chunk_bind_groups.size () * frame_uniform_stride;
+        entry.size = sizeof (TerrainChunkUniforms);
+        wgpu::BindGroupDescriptor descriptor {};
+        descriptor.layout = terrain_chunk_layout;
+        descriptor.entryCount = 1;
+        descriptor.entries = &entry;
+        terrain_chunk_bind_groups.push_back (
+          device.CreateBindGroup (&descriptor));
+      }
+    }
+
+    void ensure_terrain_frame_bind_group () {
+      if (terrain_frame_bind_group)
+        return;
+      const auto grass =
+        terrain_grass ? std::static_pointer_cast<WebGpuTexture> (terrain_grass)
+                      : white;
+      const auto dirt =
+        terrain_dirt ? std::static_pointer_cast<WebGpuTexture> (terrain_dirt)
+                     : white;
+      const auto rock =
+        terrain_rock ? std::static_pointer_cast<WebGpuTexture> (terrain_rock)
+                     : white;
+      const auto snow =
+        terrain_snow ? std::static_pointer_cast<WebGpuTexture> (terrain_snow)
+                     : white;
+      std::array<wgpu::BindGroupEntry, 10> entries {};
+      entries[0].binding = 0;
+      entries[0].buffer = terrain_frame_buffer;
+      entries[0].size = sizeof (TerrainUniforms);
+      entries[1].binding = 1;
+      entries[1].textureView = terrain_height_view;
+      entries[2].binding = 2;
+      entries[2].textureView = terrain_normal_view;
+      entries[3].binding = 3;
+      entries[3].textureView = grass->view;
+      entries[4].binding = 4;
+      entries[4].textureView = dirt->view;
+      entries[5].binding = 5;
+      entries[5].textureView = rock->view;
+      entries[6].binding = 6;
+      entries[6].textureView = snow->view;
+      entries[7].binding = 7;
+      entries[7].sampler = grass->sampler;
+      entries[8].binding = 8;
+      entries[8].textureView = terrain_shadow_view;
+      entries[9].binding = 9;
+      entries[9].sampler = terrain_shadow_sampler;
+      wgpu::BindGroupDescriptor descriptor {};
+      descriptor.layout = terrain_frame_layout;
+      descriptor.entryCount = entries.size ();
+      descriptor.entries = entries.data ();
+      terrain_frame_bind_group = device.CreateBindGroup (&descriptor);
     }
 
     TexturePtr make_texture (const TextureDesc& descriptor,
@@ -1580,7 +1684,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                       std::size_t vertex_count,
                       const std::vector<DrawList::Run>& runs,
                       bool hud,
-                      const Mat4& model) {
+                      const Mat4& model,
+                      uint64_t vertex_offset = 0) {
       if (!frame_open || !vertex_buffer || vertex_count == 0)
         return;
       if (frame_uniform_cursor >= frame_uniform_slots)
@@ -1595,7 +1700,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         frame_uniform_cursor++ * frame_uniform_stride;
       queue.WriteBuffer (
         frame_buffer, uniform_offset, &uniforms, sizeof (uniforms));
-      pass.SetVertexBuffer (0, vertex_buffer);
+      pass.SetVertexBuffer (
+        0, vertex_buffer, vertex_offset, vertex_count * sizeof (Vertex));
       pass.SetBindGroup (0, frame_bind_group, 1, &uniform_offset);
 
       for (const DrawList::Run& run : runs) {
@@ -1615,11 +1721,20 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                bool hud) {
       if (!frame_open || vertices.empty ())
         return;
-      wgpu::Buffer vertex_buffer =
-        upload_buffer (device, vertices, wgpu::BufferUsage::Vertex);
-      frame_vertex_buffers.push_back (vertex_buffer);
-      play_buffer (
-        vertex_buffer, vertices.size (), runs, hud, Mat4::identity ());
+      const uint64_t byte_count = vertices.size () * sizeof (Vertex);
+      if (stream_vertex_cursor + byte_count > stream_vertex_buffer_bytes)
+        throw std::runtime_error ("WebGPU streamed vertex buffer exhausted");
+      queue.WriteBuffer (stream_vertex_buffer,
+                         stream_vertex_cursor,
+                         vertices.data (),
+                         byte_count);
+      play_buffer (stream_vertex_buffer,
+                   vertices.size (),
+                   runs,
+                   hud,
+                   Mat4::identity (),
+                   stream_vertex_cursor);
+      stream_vertex_cursor += byte_count;
     }
   };
 
@@ -1782,6 +1897,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                                  &normal_layout,
                                  &extent);
     m_state->have_terrain_shadow = false;
+    m_state->terrain_frame_bind_group = {};
     m_state->have_terrain = true;
   }
   void WebGpuRenderer::set_terrain_topology_overlay (bool enabled) {
@@ -1795,6 +1911,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     m_state->terrain_dirt = std::move (dirt);
     m_state->terrain_rock = std::move (rock);
     m_state->terrain_snow = std::move (snow);
+    m_state->terrain_frame_bind_group = {};
   }
   void WebGpuRenderer::set_terrain_overlay (const TerrainOverlayParams&,
                                             std::span<const float>) {}
@@ -1859,13 +1976,13 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     const float step = terrain_lod_steps[lod];
     const int chunks_x = (terrain.width - 1) / 128;
     const int chunks_z = (terrain.height - 1) / 128;
-    std::vector<wgpu::Buffer> chunk_buffers;
-    std::vector<wgpu::BindGroup> chunk_groups;
-    chunk_buffers.reserve (chunks_x * chunks_z);
-    chunk_groups.reserve (chunks_x * chunks_z);
+    const std::size_t chunk_count =
+      static_cast<std::size_t> (chunks_x) * chunks_z;
+    m_state->ensure_terrain_chunk_bind_groups (chunk_count);
     pass.SetVertexBuffer (0, m_state->terrain_vertices[lod]);
     pass.SetIndexBuffer (m_state->terrain_indices[lod],
                          wgpu::IndexFormat::Uint32);
+    std::size_t chunk_index = 0;
     for (int z = 0; z < chunks_z; ++z)
       for (int x = 0; x < chunks_x; ++x) {
         const TerrainChunkUniforms chunk_uniforms {
@@ -1876,21 +1993,14 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
           .morph = {},
           .world_offset = {},
         };
-        std::vector<TerrainChunkUniforms> chunk_values { chunk_uniforms };
-        chunk_buffers.push_back (upload_buffer (
-          m_state->device, chunk_values, wgpu::BufferUsage::Uniform));
-        wgpu::BindGroupEntry chunk_entry {};
-        chunk_entry.binding = 0;
-        chunk_entry.buffer = chunk_buffers.back ();
-        chunk_entry.size = sizeof (TerrainChunkUniforms);
-        wgpu::BindGroupDescriptor chunk_descriptor {};
-        chunk_descriptor.layout = m_state->terrain_chunk_layout;
-        chunk_descriptor.entryCount = 1;
-        chunk_descriptor.entries = &chunk_entry;
-        chunk_groups.push_back (
-          m_state->device.CreateBindGroup (&chunk_descriptor));
-        pass.SetBindGroup (1, chunk_groups.back ());
+        const uint64_t offset = chunk_index * frame_uniform_stride;
+        m_state->queue.WriteBuffer (m_state->terrain_chunk_buffer,
+                                    offset,
+                                    &chunk_uniforms,
+                                    sizeof (chunk_uniforms));
+        pass.SetBindGroup (1, m_state->terrain_chunk_bind_groups[chunk_index]);
         pass.DrawIndexed (m_state->terrain_index_counts[lod]);
+        ++chunk_index;
       }
     pass.End ();
     wgpu::CommandBuffer command = encoder.Finish ();
@@ -1934,9 +2044,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     m_state->surface_view = m_state->surface_texture.texture.CreateView ();
     m_state->command_encoder = m_state->device.CreateCommandEncoder ();
     m_state->frame_params = params;
-    m_state->frame_vertex_buffers.clear ();
-    m_state->frame_uniform_buffers.clear ();
-    m_state->frame_bind_groups.clear ();
+    m_state->stream_vertex_cursor = 0;
     m_state->frame_uniform_cursor = 0;
 
     wgpu::RenderPassColorAttachment color {};
@@ -2009,58 +2117,14 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                          0.0f,
                          0.0f },
     };
-    std::vector<TerrainUniforms> terrain_uniforms { uniforms };
-    wgpu::Buffer terrain_buffer = upload_buffer (
-      m_state->device, terrain_uniforms, wgpu::BufferUsage::Uniform);
-    m_state->frame_uniform_buffers.push_back (terrain_buffer);
-    std::array<wgpu::BindGroupEntry, 10> terrain_entries {};
-    terrain_entries[0].binding = 0;
-    terrain_entries[0].buffer = terrain_buffer;
-    terrain_entries[0].size = sizeof (TerrainUniforms);
-    terrain_entries[1].binding = 1;
-    terrain_entries[1].textureView = m_state->terrain_height_view;
-    terrain_entries[2].binding = 2;
-    terrain_entries[2].textureView = m_state->terrain_normal_view;
-    const auto grass =
-      m_state->terrain_grass
-        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_grass)
-        : m_state->white;
-    const auto dirt =
-      m_state->terrain_dirt
-        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_dirt)
-        : m_state->white;
-    const auto rock =
-      m_state->terrain_rock
-        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_rock)
-        : m_state->white;
-    const auto snow =
-      m_state->terrain_snow
-        ? std::static_pointer_cast<WebGpuTexture> (m_state->terrain_snow)
-        : m_state->white;
-    terrain_entries[3].binding = 3;
-    terrain_entries[3].textureView = grass->view;
-    terrain_entries[4].binding = 4;
-    terrain_entries[4].textureView = dirt->view;
-    terrain_entries[5].binding = 5;
-    terrain_entries[5].textureView = rock->view;
-    terrain_entries[6].binding = 6;
-    terrain_entries[6].textureView = snow->view;
-    terrain_entries[7].binding = 7;
-    terrain_entries[7].sampler = grass->sampler;
-    terrain_entries[8].binding = 8;
-    terrain_entries[8].textureView = m_state->terrain_shadow_view;
-    terrain_entries[9].binding = 9;
-    terrain_entries[9].sampler = m_state->terrain_shadow_sampler;
-    wgpu::BindGroupDescriptor terrain_descriptor {};
-    terrain_descriptor.layout = m_state->terrain_frame_layout;
-    terrain_descriptor.entryCount = terrain_entries.size ();
-    terrain_descriptor.entries = terrain_entries.data ();
-    wgpu::BindGroup terrain_group =
-      m_state->device.CreateBindGroup (&terrain_descriptor);
-    m_state->frame_bind_groups.push_back (terrain_group);
+    m_state->queue.WriteBuffer (
+      m_state->terrain_frame_buffer, 0, &uniforms, sizeof (uniforms));
+    m_state->ensure_terrain_frame_bind_group ();
+    m_state->ensure_terrain_chunk_bind_groups (
+      static_cast<std::size_t> (count));
 
     m_state->pass.SetPipeline (m_state->terrain_pipeline);
-    m_state->pass.SetBindGroup (0, terrain_group);
+    m_state->pass.SetBindGroup (0, m_state->terrain_frame_bind_group);
     for (int i = 0; i < count; ++i) {
       const int requested_lod = static_cast<int> (chunks[i].lod);
       const int lod = std::clamp (requested_lod, 0, terrain_lod_count - 1);
@@ -2075,22 +2139,13 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         .morph = { chunks[i].morph_start, chunks[i].morph_end, 0.0f, 0.0f },
         .world_offset = { chunks[i].offset_x, 0.0f, chunks[i].offset_z, 0.0f },
       };
-      std::vector<TerrainChunkUniforms> chunk_values { chunk_uniforms };
-      wgpu::Buffer chunk_buffer = upload_buffer (
-        m_state->device, chunk_values, wgpu::BufferUsage::Uniform);
-      m_state->frame_uniform_buffers.push_back (chunk_buffer);
-      wgpu::BindGroupEntry chunk_entry {};
-      chunk_entry.binding = 0;
-      chunk_entry.buffer = chunk_buffer;
-      chunk_entry.size = sizeof (TerrainChunkUniforms);
-      wgpu::BindGroupDescriptor chunk_descriptor {};
-      chunk_descriptor.layout = m_state->terrain_chunk_layout;
-      chunk_descriptor.entryCount = 1;
-      chunk_descriptor.entries = &chunk_entry;
-      wgpu::BindGroup chunk_group =
-        m_state->device.CreateBindGroup (&chunk_descriptor);
-      m_state->frame_bind_groups.push_back (chunk_group);
-      m_state->pass.SetBindGroup (1, chunk_group);
+      const uint64_t offset = static_cast<uint64_t> (i) * frame_uniform_stride;
+      m_state->queue.WriteBuffer (m_state->terrain_chunk_buffer,
+                                  offset,
+                                  &chunk_uniforms,
+                                  sizeof (chunk_uniforms));
+      m_state->pass.SetBindGroup (
+        1, m_state->terrain_chunk_bind_groups[static_cast<std::size_t> (i)]);
       m_state->pass.SetVertexBuffer (0, m_state->terrain_vertices[lod]);
       m_state->pass.SetIndexBuffer (m_state->terrain_indices[lod],
                                     wgpu::IndexFormat::Uint32);
@@ -2117,22 +2172,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                      1.0f },
       .params = { params.time, params.sun_height, params.cloudiness, 0.0f },
     };
-    std::vector<SkyUniforms> values { uniforms };
-    wgpu::Buffer uniform_buffer =
-      upload_buffer (m_state->device, values, wgpu::BufferUsage::Uniform);
-    m_state->frame_uniform_buffers.push_back (uniform_buffer);
-    wgpu::BindGroupEntry entry {};
-    entry.binding = 0;
-    entry.buffer = uniform_buffer;
-    entry.size = sizeof (SkyUniforms);
-    wgpu::BindGroupDescriptor descriptor {};
-    descriptor.layout = m_state->sky_layout;
-    descriptor.entryCount = 1;
-    descriptor.entries = &entry;
-    wgpu::BindGroup group = m_state->device.CreateBindGroup (&descriptor);
-    m_state->frame_bind_groups.push_back (group);
+    m_state->queue.WriteBuffer (
+      m_state->sky_uniform_buffer, 0, &uniforms, sizeof (uniforms));
     m_state->pass.SetPipeline (m_state->sky_pipeline);
-    m_state->pass.SetBindGroup (0, group);
+    m_state->pass.SetBindGroup (0, m_state->sky_bind_group);
     m_state->pass.SetVertexBuffer (0, m_state->sky_vertices);
     m_state->pass.Draw (m_state->sky_vertex_count);
   }
@@ -2142,7 +2185,34 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     draw_mesh (*m_state->ocean_mesh, Mat4::translation (params.world_offset));
   }
   void WebGpuRenderer::draw_rivers (const Mesh& mesh, const Mat4& model) {
-    draw_mesh (mesh, model);
+    const auto& source = static_cast<const WebGpuMesh&> (mesh);
+    if (!source.river_vertex_buffer) {
+      std::vector<Vertex> vertices = source.vertices;
+      for (Vertex& vertex : vertices) {
+        const float rapid = vertex.color.r / 255.0f;
+        const float depth = vertex.color.g / 255.0f;
+        const float waterfall = vertex.color.b / 255.0f;
+        const float opacity = vertex.color.a / 255.0f;
+        const float body = std::clamp (depth * 5.0f, 0.0f, 1.0f);
+        const float foam =
+          std::clamp (0.32f * rapid + 0.72f * waterfall, 0.0f, 0.88f);
+        DisplayColor color = mix_display (DisplayColor (0.09f, 0.38f, 0.46f),
+                                          DisplayColor (0.025f, 0.12f, 0.24f),
+                                          body);
+        color = mix_display (color, DisplayColor (0.78f, 0.90f, 0.94f), foam);
+        const float alpha =
+          opacity *
+          std::clamp (0.28f + 0.64f * body + 0.38f * waterfall, 0.28f, 0.94f);
+        vertex.color = PackedRgba8 (color.red, color.green, color.blue, alpha);
+      }
+      source.river_vertex_buffer =
+        upload_buffer (m_state->device, vertices, wgpu::BufferUsage::Vertex);
+    }
+    m_state->play_buffer (source.river_vertex_buffer,
+                          source.vertices.size (),
+                          source.runs,
+                          false,
+                          model);
   }
 
   void WebGpuRenderer::draw_mesh (const Mesh& mesh, const Mat4& model) {
