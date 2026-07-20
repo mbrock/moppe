@@ -56,9 +56,9 @@ MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
         .evolution.duration);
   };
 
-  MOPPE_CHECK_NEAR (duration (fast), 200000.0f, 0.0f);
-  MOPPE_CHECK_NEAR (duration (play), 500000.0f, 0.0f);
-  MOPPE_CHECK_NEAR (duration (research), 1000000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (duration (fast), 750000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (duration (play), 1500000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (duration (research), 2000000.0f, 0.0f);
 }
 
 MOPPE_TEST (default_world_program_forms_trails_after_research_orogeny) {
@@ -69,7 +69,7 @@ MOPPE_TEST (default_world_program_forms_trails_after_research_orogeny) {
   const auto& orogeny =
     std::get<OrogenyEvolution> (program.transforms.front ());
   MOPPE_CHECK_NEAR (
-    moppe::julian_years_value (orogeny.evolution.duration), 1000000.0f, 0.0f);
+    moppe::julian_years_value (orogeny.evolution.duration), 2000000.0f, 0.0f);
   MOPPE_CHECK (
     std::holds_alternative<TrailFormation> (program.transforms.back ()));
   MOPPE_CHECK (terrain_transform_id (program.transforms.back ()) == "trails");
