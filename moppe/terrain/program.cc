@@ -51,10 +51,10 @@ namespace moppe::terrain {
     program.transforms.clear ();
     OrogenyEvolution orogeny;
     const float duration =
-      profile == TerrainGenerationProfile::Fast       ? 200000.0f
-      : profile == TerrainGenerationProfile::Play     ? 500000.0f
-      : profile == TerrainGenerationProfile::Research ? 1000000.0f
-                                                      : 200000.0f;
+      profile == TerrainGenerationProfile::Fast       ? 750000.0f
+      : profile == TerrainGenerationProfile::Play     ? 1500000.0f
+      : profile == TerrainGenerationProfile::Research ? 2000000.0f
+                                                      : 750000.0f;
     orogeny.evolution.duration = duration * mp_units::astronomy::Julian_year;
     program.transforms.emplace_back (orogeny);
     return program;

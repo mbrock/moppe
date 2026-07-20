@@ -340,9 +340,9 @@ Terrain Lab retains a program value too. Game generation, command-line
 experiments, and interactive inspection therefore use the same evaluator.
 
 Gameplay selects an explicit `TerrainGenerationProfile`: **Fast** evolves a
-1025-square Orogeny world for 200,000 years, **Play** evolves a 2049-square
-world for 500,000 years, and **Research** evolves the reference 2049-square
-world for 1,000,000 years. `--fast` is shorthand for the fast profile;
+1025-square Orogeny world for 750,000 years, **Play** evolves a 2049-square
+world for 1,500,000 years, and **Research** evolves the reference 2049-square
+world for 2,000,000 years. `--fast` is shorthand for the fast profile;
 `--terrain-quality fast|play|research` selects all three directly. Pressing
 `N` during play increments the seed and builds a new world behind the loading
 screen. The completed-world handoff starts a fresh game session against that
@@ -555,7 +555,7 @@ available while that later raster-to-surface boundary is investigated.
 
 The calibrated maximum uplift is 1 mm/year, with `v_ref = 2e-5 m/year` at
 `A_ref = 1 m²`, `m = 0.4`, `D = 1e-4 m²/year`, and a 50,000-year step. Fast,
-Play, and Research orogeny programs run for 200,000, 500,000, and 1,000,000
+Play, and Research orogeny programs run for 750,000, 1,500,000, and 2,000,000
 years respectively. Ordinary world generation uses these programs, selected
 by the existing terrain quality profile. The report separates prescribed
 tectonic uplift and implicit incision volumes from net raised/lowered volume,
