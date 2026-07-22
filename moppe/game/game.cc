@@ -2693,8 +2693,8 @@ int main (int argc, char** argv) {
   MOPPE_PROFILE_ZONE ("main");
 
   game::WorldParams world;
-#ifdef MOPPE_DEFAULT_BALANCED_GRAPHICS
-  game::GraphicsSettings graphics = game::balanced_graphics_settings ();
+#ifdef MOPPE_DEFAULT_APPLE_TV_GRAPHICS
+  game::GraphicsSettings graphics = game::apple_tv_graphics_settings ();
 #else
   game::GraphicsSettings graphics = game::high_graphics_settings ();
 #endif

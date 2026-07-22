@@ -403,6 +403,15 @@ surface, decorative particles, motion blur, bloom, exposure probe, or lens
 flare. `--graphics-quality high` is the default full presentation. The low
 preset retains terrain, vehicles, physics, sky, rivers, and HUD so it remains
 playable while isolating optional rendering cost.
+
+The Apple TV default retains the high-quality feature set but uses 75% of
+UIKit point resolution for the 3D scene. The present pass and HUD still use
+the native drawable. tvOS also uses 2x scene MSAA instead of 4x. MSAA alone
+halves scene color/depth sample traffic; on a 2x 4K drawable, point-relative
+resolution takes the combined reduction to about 84% versus the former
+two-thirds-native, 4x-MSAA default. Explicit quality presets remain relative
+to the point-resolution baseline, and `MOPPE_RENDERSCALE` remains an absolute
+drawable fraction.
 Presets resolve into a typed graphics-settings value rather than remaining a
 quality-mode branch. Boolean features can then be changed independently with
 `--graphics-enable` and `--graphics-disable`; each accepts a comma-separated
