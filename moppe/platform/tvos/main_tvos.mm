@@ -9,6 +9,7 @@
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/metal/metal_evaluator.hh>
+#include <moppe/terrain/stream_power_evolution.hh>
 
 #include <iostream>
 #include <memory>
@@ -131,6 +132,13 @@ namespace moppe::platform {
                   << error.what () << std::endl;
       }
     }
+    return {};
+  }
+
+  std::unique_ptr<terrain::StreamPowerEvolutionBackend>
+  create_stream_power_evolution_backend () {
+    // The portable backend remains faster when world generation and loading
+    // presentation contend for Apple TV's GPU.
     return {};
   }
 
