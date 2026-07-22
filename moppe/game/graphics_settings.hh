@@ -163,6 +163,10 @@ namespace moppe::game {
   GraphicsSettings high_graphics_settings ();
   GraphicsSettings balanced_graphics_settings ();
   GraphicsSettings low_graphics_settings ();
+  // Apple TV renders the scene below UIKit point resolution. This keeps a 4K
+  // drawable from silently turning the 3D pass into a 4K workload while
+  // preserving the complete presentation feature set.
+  GraphicsSettings apple_tv_graphics_settings ();
   const GraphicsFeature* find_graphics_feature (std::string_view name);
 
   // Parses a comma-separated list of canonical feature names.

@@ -1,6 +1,6 @@
 // Metal backend for moppe/render.  One command buffer per frame:
 //
-//   scene pass   MSAA 4x -> resolve into sceneA (reversed-Z depth)
+//   scene pass   MSAA -> resolve into sceneA (reversed-Z depth)
 //   post passes  underwater grade / motion-blur ghosts on sceneA/B
 //   present pass fullscreen quad of the final scene + HUD overlay
 //
@@ -55,7 +55,13 @@ namespace moppe {
   namespace render {
     namespace {
       const int FRAMES_IN_FLIGHT = 3;
+#if TARGET_OS_TV
+      // At television viewing distance 2x MSAA preserves stable terrain edges
+      // while halving the dominant scene-pass color and depth sample traffic.
+      const int MSAA_SAMPLES = 2;
+#else
       const int MSAA_SAMPLES = 4;
+#endif
       const int CHUNK_CELLS = 128;
       const int TERRAIN_LOD_COUNT = (int)TerrainLod::Count;
       const int TERRAIN_NATIVE_LOD = (int)TerrainLod::Native;
@@ -80,7 +86,12 @@ namespace moppe {
       float scene_render_scale (float backing_scale,
                                 float requested_scale,
                                 float scale_override) {
-#if TARGET_OS_IPHONE
+#if TARGET_OS_TV
+        // When a 4K television uses a 2x UIKit backing scale, keep the
+        // expensive 3D scene relative to point resolution and let the
+        // inexpensive present/HUD pass target the native drawable.
+        float scale = requested_scale / std::max (1.0f, backing_scale);
+#elif TARGET_OS_IPHONE
         (void)backing_scale;
         float scale = requested_scale;
 #else

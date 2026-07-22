@@ -58,6 +58,12 @@ namespace moppe::game {
     return settings;
   }
 
+  GraphicsSettings apple_tv_graphics_settings () {
+    GraphicsSettings settings = high_graphics_settings ();
+    settings.scene_scale = 0.75f;
+    return settings;
+  }
+
   const GraphicsFeature* find_graphics_feature (std::string_view name) {
     const auto found = std::find_if (graphics_features.begin (),
                                      graphics_features.end (),

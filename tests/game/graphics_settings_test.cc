@@ -61,6 +61,14 @@ MOPPE_TEST (balanced_graphics_reduces_resolution_without_removing_features) {
       MOPPE_CHECK (feature->enabled (settings));
 }
 
+MOPPE_TEST (apple_tv_graphics_preserves_the_complete_feature_set) {
+  const game::GraphicsSettings settings = game::apple_tv_graphics_settings ();
+  MOPPE_CHECK_NEAR (settings.scene_scale, 0.75f, 0.0f);
+  for (const game::GraphicsFeature* feature : game::graphics_features)
+    if (feature != &game::terrain_topology_feature)
+      MOPPE_CHECK (feature->enabled (settings));
+}
+
 MOPPE_TEST (graphics_feature_lists_reject_unknown_and_empty_names) {
   game::GraphicsSettings settings;
   std::string error;

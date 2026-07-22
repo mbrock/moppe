@@ -682,7 +682,7 @@ if(APPLE AND MOPPE_TVOS)
     moppe/game/game.cc
   )
   target_compile_definitions(moppe-tvos PRIVATE
-    MOPPE_DEFAULT_BALANCED_GRAPHICS)
+    MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
   target_link_libraries(moppe-tvos PRIVATE moppe_app moppe_platform_tvos)
   set_target_properties(moppe-tvos PROPERTIES
     OUTPUT_NAME "Moppe"
