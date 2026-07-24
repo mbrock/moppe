@@ -6,6 +6,29 @@
 #include <type_traits>
 #include <vector>
 
+namespace {
+  moppe::terrain::WorldRecipe world_without_trails (
+    moppe::spatial_extent_t extent, int resolution, moppe::terrain::Seed seed) {
+    using namespace moppe;
+    using namespace moppe::terrain;
+    return make_world_recipe (extent,
+                              resolution,
+                              Topology::Torus,
+                              seed,
+                              50.0f * u::m,
+                              TerrainGenerationProfile::Fast)
+      .with_terrain_program (
+        make_orogeny_program (seed.value, TerrainGenerationProfile::Fast));
+  }
+
+  void fill_test_terrain (moppe::map::RandomHeightMap& map) {
+    for (int y = 0; y < map.height (); ++y)
+      for (int x = 0; x < map.width (); ++x)
+        map.set (x, y, 0.25f + 0.01f * static_cast<float> ((x + y) % 7));
+    map.synchronize_periodic_edges ();
+  }
+}
+
 MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   using namespace moppe;
   using namespace moppe::terrain;
@@ -17,17 +40,11 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
   params.terrain_topology = Topology::Torus;
-  const WorldRecipe recipe =
-    make_geological_world_recipe (extent,
-                                  17,
-                                  Topology::Torus,
-                                  Seed { 42 },
-                                  50.0f * u::m,
-                                  TerrainGenerationProfile::Fast);
+  const WorldRecipe recipe = world_without_trails (extent, 17, Seed { 42 });
 
   game::GeneratedWorld world (params, recipe);
   game::GeneratedWorld::Builder build = world.build ();
-  build.terrain ().randomize_uniformly ();
+  fill_test_terrain (build.terrain ());
   build.rebuild_surface ();
 
   std::vector<game::GeneratedWorld::HydrologyStage> stages;
@@ -57,12 +74,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
 
   const auto* stable_terrain = &world.terrain ();
   const auto* stable_surface = &world.surface ();
-  build.reset (make_geological_world_recipe (extent,
-                                             17,
-                                             Topology::Torus,
-                                             Seed { 43 },
-                                             50.0f * u::m,
-                                             TerrainGenerationProfile::Fast));
+  build.reset (world_without_trails (extent, 17, Seed { 43 }));
   MOPPE_CHECK (&world.terrain () == stable_terrain);
   MOPPE_CHECK (&world.surface () == stable_surface);
   MOPPE_CHECK (world.recipe ().seed () == Seed { 43 });
@@ -87,13 +99,7 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   params.water_level = 50.0f * u::m;
   params.terrain_topology = Topology::Torus;
   auto completed = std::make_unique<game::GeneratedWorld> (
-    params,
-    make_geological_world_recipe (extent,
-                                  17,
-                                  Topology::Torus,
-                                  Seed { 72 },
-                                  50.0f * u::m,
-                                  TerrainGenerationProfile::Fast));
+    params, world_without_trails (extent, 17, Seed { 72 }));
   const game::GeneratedWorld* address = completed.get ();
 
   std::unique_ptr<game::GeneratedWorld> active = std::move (completed);

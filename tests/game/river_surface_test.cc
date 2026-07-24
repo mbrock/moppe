@@ -56,7 +56,7 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
 }
 
 MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -103,7 +103,7 @@ MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
 }
 
 MOPPE_TEST (headwater_ribbons_emerge_from_a_point) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -132,7 +132,7 @@ MOPPE_TEST (headwater_ribbons_emerge_from_a_point) {
 }
 
 MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -161,8 +161,7 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
 }
 
 MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
-  map::RandomHeightMap map (
-    9, 9, Vec3 (80, 20, 80), 0, terrain::Topology::Torus);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), terrain::Topology::Torus);
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -192,7 +191,7 @@ MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
 }
 
 MOPPE_TEST (confluences_share_one_downstream_cross_section) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);
@@ -232,7 +231,7 @@ MOPPE_TEST (confluences_share_one_downstream_cross_section) {
 }
 
 MOPPE_TEST (river_ribbons_encode_rapids_depth_and_waterfalls) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), 0);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);

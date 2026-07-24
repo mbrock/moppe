@@ -39,8 +39,11 @@ namespace {
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   using namespace moppe;
   map::RandomHeightMap map (
-    9, 9, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
-  map.randomize_geologically ();
+    9, 9, Vec3 (100, 20, 100), terrain::Topology::Torus);
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x)
+      map.set (x, y, 0.05f * static_cast<float> (x + y));
+  map.synchronize_periodic_edges ();
   map.recompute_normals ();
   mov::Vehicle vehicle (position (Vec3 (20, 0, 20)),
                         15 * u::deg,
@@ -106,7 +109,7 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (160, 80, 160), 1, terrain::Topology::Bounded);
+    17, 17, Vec3 (160, 80, 160), terrain::Topology::Bounded);
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.raw_heights ()[z * map.width () + x] = 0.10f + 0.02f * x;
@@ -172,7 +175,7 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
 MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Bounded);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Bounded);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -211,7 +214,7 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
 MOPPE_TEST (glider_state_restores_the_flight_computer) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.35f);
@@ -251,7 +254,7 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
 MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -282,7 +285,7 @@ MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
 MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -338,7 +341,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (100, 20, 100), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (100, 20, 100), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -410,7 +413,7 @@ MOPPE_TEST (game_state_is_an_independent_value) {
 MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   using namespace moppe;
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -500,7 +503,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);

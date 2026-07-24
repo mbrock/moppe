@@ -1,4 +1,3 @@
-#include <moppe/terrain/analytical_erosion.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <tests/test.hh>
@@ -177,45 +176,6 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
     MOPPE_CHECK_NEAR (one_square_meter.heights[cell],
                       one_hundred_square_meters.heights[cell],
                       1e-6f);
-}
-
-MOPPE_TEST (implicit_stream_power_converges_toward_the_analytical_profile) {
-  const TerrainView terrain (profile_grid (), profile_heights);
-  const auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
-  constexpr float duration = 10000.0f;
-  constexpr float erodibility = 2e-5f;
-  constexpr float area_exponent = 0.4f;
-  const AnalyticalErosionResult analytical = erode_analytically (
-    terrain,
-    { .duration = duration * mp_units::astronomy::Julian_year,
-      .erodibility = erodibility,
-      .area_exponent = area_exponent,
-      .sea_level = 0.0f });
-  const auto evolve = [&] (float dt) {
-    return evolve_stream_power (
-      terrain,
-      uplift,
-      { .duration = duration * mp_units::astronomy::Julian_year,
-        .time_step = dt * mp_units::astronomy::Julian_year,
-        .reference_incision_rate =
-          erodibility * mp_units::si::metre / mp_units::astronomy::Julian_year,
-        .area_exponent = area_exponent,
-        .sea_level = 0.0f,
-        .routing = StreamPowerRouting::D8 });
-  };
-  const StreamPowerEvolutionResult coarse = evolve (5000.0f);
-  const StreamPowerEvolutionResult fine = evolve (100.0f);
-  const auto error = [&] (const StreamPowerEvolutionResult& result) {
-    double sum = 0.0;
-    for (std::size_t i = 0; i < result.heights.size (); ++i)
-      sum += std::fabs (result.heights[i] - analytical.heights[i]);
-    return sum;
-  };
-
-  MOPPE_CHECK (error (fine) < error (coarse));
-  MOPPE_CHECK (fine.report.lowered_volume > 0.0);
-  MOPPE_CHECK (fine.report.raised_volume == 0.0);
-  MOPPE_CHECK (fine.report.incised_volume > 0.0);
 }
 
 MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
