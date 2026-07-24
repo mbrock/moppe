@@ -59,7 +59,6 @@ namespace moppe::game {
         m_terrain (m_recipe.resolution (),
                    m_recipe.resolution (),
                    extent_value (m_recipe.extent ()),
-                   m_recipe.seed ().value,
                    m_recipe.topology ()) {
     bind_world_params (m_params, m_recipe);
   }
@@ -79,7 +78,6 @@ namespace moppe::game {
 
     m_recipe = std::move (recipe);
     bind_world_params (m_params, m_recipe);
-    m_terrain.reseed (m_recipe.seed ().value);
     m_terrain.reset_sediment_ledger ();
     m_surface = map::Surface ();
     m_terrain_history.clear ();

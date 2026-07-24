@@ -23,13 +23,11 @@ relief; see `orogeny-water-depth-experiment.md`.
 - geological step: 50,000 years
 - routing: priority flood and wet drainage recomputed every step
 
-The fixed-seed Research command is:
-
-```sh
-./build/terrain-pipeline-demo /tmp/moppe-orogeny.png \
-  257 123 combined \
-  orogeny=1000000,50000,0.001,2e-5,0.4,0.0001,0.076923,20,0.5,20
-```
+The fixed-seed Research run used a 257-square map, seed 123, one million
+years of orogeny in 50,000-year steps, 0.001 m/year maximum uplift,
+`v_ref = 2e-5 m/year`, `m = 0.4`, and `D = 0.0001 m2/year`. The retired
+general-purpose pipeline demo produced this original calibration; current
+end-to-end measurements use `tools/orogeny-benchmark`.
 
 ## Duration calibration
 

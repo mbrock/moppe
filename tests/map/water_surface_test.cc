@@ -12,7 +12,7 @@
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
   map::RandomHeightMap map (
-    2, 2, Vec3 (20, 100, 20), 51, terrain::Topology::Bounded);
+    2, 2, Vec3 (20, 100, 20), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 4, 0.05f);
   map.recompute_normals ();
   map::Surface ground (map);

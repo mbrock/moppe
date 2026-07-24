@@ -32,23 +32,15 @@ namespace moppe::terrain {
 
   }
 
-  TerrainProgram make_geological_program (std::uint32_t root_seed,
-                                          GeologicalLayer layer) {
-    return { .source = { .recipe = make_geological_recipe (root_seed),
-                         .layer = layer },
-             .seed = Seed { root_seed },
-             .transforms = { NormalizeHeights {} } };
-  }
-
   TerrainProgram make_default_world_program (std::uint32_t root_seed) {
     return make_world_program (root_seed, TerrainGenerationProfile::Research);
   }
 
   TerrainProgram make_orogeny_program (std::uint32_t root_seed,
                                        TerrainGenerationProfile profile) {
-    TerrainProgram program = make_geological_program (root_seed);
-    program.source.mode = GeologicalSource::Mode::Orogeny;
-    program.transforms.clear ();
+    TerrainProgram program { .source = { .recipe =
+                                           make_geological_recipe (root_seed) },
+                             .seed = Seed { root_seed } };
     OrogenyEvolution orogeny;
     const float duration =
       profile == TerrainGenerationProfile::Fast       ? 750000.0f
@@ -218,151 +210,6 @@ namespace moppe::terrain {
     default:
       invalid_program_transform_property_index ();
     }
-  }
-
-  void NormalizeHeights::validate () const {}
-
-  TransformDescription NormalizeHeights::description () const noexcept {
-    return { "normalize",
-             "NORMALIZE",
-             { SpatialScope::Global, EvaluationOrder::Reduction } };
-  }
-
-  std::string NormalizeHeights::detail () const {
-    return "map sampled range to 0..1";
-  }
-
-  std::size_t NormalizeHeights::property_count () const noexcept {
-    return 0;
-  }
-
-  TransformProperty NormalizeHeights::property (std::size_t) const {
-    invalid_program_transform_property_index ();
-  }
-
-  float NormalizeHeights::normalized_property (std::size_t index) const {
-    property (index);
-    return 0.0f;
-  }
-
-  bool NormalizeHeights::set_normalized_property (std::size_t index, float) {
-    property (index);
-    return false;
-  }
-
-  bool NormalizeHeights::adjust_natural_property (std::size_t index, int) {
-    property (index);
-    return false;
-  }
-
-  void PowerHeights::validate () const {
-    if (!std::isfinite (exponent) || exponent <= 0.0f)
-      throw std::invalid_argument (
-        "height exponent must be positive and finite");
-  }
-
-  TransformDescription PowerHeights::description () const noexcept {
-    return { "power",
-             "POWER CURVE",
-             { SpatialScope::Pointwise, EvaluationOrder::Direct } };
-  }
-
-  std::string PowerHeights::detail () const {
-    return "height ^ " + format_program_transform_float (exponent, 2);
-  }
-
-  std::size_t PowerHeights::property_count () const noexcept {
-    return 1;
-  }
-
-  TransformProperty PowerHeights::property (std::size_t index) const {
-    if (index != 0)
-      invalid_program_transform_property_index ();
-    return { "EXPONENT",
-             format_program_transform_float (exponent, 2),
-             ParameterDomain::Continuous };
-  }
-
-  float PowerHeights::normalized_property (std::size_t index) const {
-    if (index != 0)
-      invalid_program_transform_property_index ();
-    return normalized_edit_value (exponent, 0.1f, 4.0f);
-  }
-
-  bool PowerHeights::set_normalized_property (std::size_t index, float value) {
-    if (index != 0)
-      invalid_program_transform_property_index ();
-    return replace_edit_value (exponent, edited_value (value, 0.1f, 4.0f));
-  }
-
-  bool PowerHeights::adjust_natural_property (std::size_t index, int) {
-    if (index != 0)
-      invalid_program_transform_property_index ();
-    return false;
-  }
-
-  void ThermalErosion::validate () const {
-    if (iterations < 0 || !std::isfinite (talus) || talus < 0.0f)
-      throw std::invalid_argument ("thermal erosion parameters are invalid");
-  }
-
-  TransformDescription ThermalErosion::description () const noexcept {
-    return { "thermal",
-             "TALUS RELAX",
-             { SpatialScope::Neighborhood, EvaluationOrder::Iterative } };
-  }
-
-  std::string ThermalErosion::detail () const {
-    return std::to_string (count_value (iterations)) + " passes @ " +
-           format_program_transform_float (talus, 4);
-  }
-
-  std::size_t ThermalErosion::property_count () const noexcept {
-    return 2;
-  }
-
-  TransformProperty ThermalErosion::property (std::size_t index) const {
-    if (index == 0)
-      return { "PASSES",
-               std::to_string (count_value (iterations)),
-               ParameterDomain::Natural };
-    if (index == 1)
-      return { "TALUS",
-               format_program_transform_float (talus, 4),
-               ParameterDomain::Continuous };
-    invalid_program_transform_property_index ();
-  }
-
-  float ThermalErosion::normalized_property (std::size_t index) const {
-    if (index == 0)
-      return normalized_edit_value (
-        static_cast<float> (count_value (iterations)), 0.0f, 20.0f);
-    if (index == 1)
-      return normalized_edit_value (talus, 0.0f, 0.05f);
-    invalid_program_transform_property_index ();
-  }
-
-  bool ThermalErosion::set_normalized_property (std::size_t index,
-                                                float value) {
-    if (index == 0)
-      return false;
-    if (index == 1)
-      return replace_edit_value (talus, edited_value (value, 0.0f, 0.05f));
-    invalid_program_transform_property_index ();
-  }
-
-  bool ThermalErosion::adjust_natural_property (std::size_t index,
-                                                int direction) {
-    if (index != 0) {
-      if (index >= property_count ())
-        invalid_program_transform_property_index ();
-      return false;
-    }
-    if (direction == 0)
-      return false;
-    const IterationCount value = iteration_count (
-      std::clamp (count_value (iterations) + direction, 0, 20));
-    return replace_edit_value (iterations, value);
   }
 
   void OrogenyEvolution::validate () const {
@@ -570,6 +417,14 @@ namespace moppe::terrain {
           meters_value (program.source.initial_bathymetric_relief)) ||
         program.source.initial_bathymetric_relief < 0.0f * mp_units::si::metre)
       throw std::invalid_argument ("orogeny source parameters are invalid");
+    if (program.transforms.empty () ||
+        !std::holds_alternative<OrogenyEvolution> (
+          program.transforms.front ()) ||
+        program.transforms.size () > 2 ||
+        (program.transforms.size () == 2 &&
+         !std::holds_alternative<TrailFormation> (program.transforms.back ())))
+      throw std::invalid_argument (
+        "terrain program must contain orogeny followed by optional trails");
     for (const TerrainTransform& transform : program.transforms)
       validate_transform (transform);
   }

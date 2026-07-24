@@ -33,7 +33,7 @@ namespace {
 MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   using namespace moppe;
   map::RandomHeightMap map (
-    4, 4, Vec3 (40, 20, 40), 1, terrain::Topology::Bounded);
+    4, 4, Vec3 (40, 20, 40), terrain::Topology::Bounded);
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
       map.raw_heights ()[row * map.width () + column] =
@@ -77,7 +77,7 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
   using namespace moppe;
   map::RandomHeightMap map (
-    9, 9, Vec3 (90, 80, 90), 41, terrain::Topology::Bounded);
+    9, 9, Vec3 (90, 80, 90), terrain::Topology::Bounded);
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
       map.raw_heights ()[row * map.width () + column] =
@@ -98,7 +98,7 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
 MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 20, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -119,7 +119,7 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
 MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 19, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -138,7 +138,7 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
 MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 19, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -178,7 +178,7 @@ MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   using namespace moppe;
   map::RandomHeightMap map (
-    5, 5, Vec3 (50, 200, 50), 8, terrain::Topology::Bounded);
+    5, 5, Vec3 (50, 200, 50), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 25, 0.40f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -200,7 +200,7 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
 MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   using namespace moppe;
   map::RandomHeightMap map (
-    65, 65, Vec3 (320, 180, 320), 31, terrain::Topology::Torus);
+    65, 65, Vec3 (320, 180, 320), terrain::Topology::Torus);
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -244,7 +244,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
 MOPPE_TEST (surface_reconstruction_matches_bounded_heightmap_interpolation) {
   using namespace moppe;
   map::RandomHeightMap map (
-    5, 5, Vec3 (50, 30, 50), 2, terrain::Topology::Bounded);
+    5, 5, Vec3 (50, 30, 50), terrain::Topology::Bounded);
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
       map.raw_heights ()[row * map.width () + column] =
@@ -269,8 +269,7 @@ MOPPE_TEST (surface_reconstruction_matches_bounded_heightmap_interpolation) {
 
 MOPPE_TEST (surface_reconstruction_matches_periodic_seam_interpolation) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    5, 5, Vec3 (40, 20, 40), 3, terrain::Topology::Torus);
+  map::RandomHeightMap map (5, 5, Vec3 (40, 20, 40), terrain::Topology::Torus);
   for (int row = 0; row < map.unique_height (); ++row)
     for (int column = 0; column < map.unique_width (); ++column)
       map.raw_heights ()[row * map.width () + column] =
@@ -306,7 +305,7 @@ MOPPE_TEST (surface_reconstruction_matches_periodic_seam_interpolation) {
 MOPPE_TEST (surface_refresh_is_an_explicit_materialization_barrier) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 4, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -323,7 +322,7 @@ MOPPE_TEST (surface_refresh_is_an_explicit_materialization_barrier) {
 MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 27, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -398,7 +397,7 @@ MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   using namespace moppe;
   map::RandomHeightMap map (
-    3, 3, Vec3 (30, 10, 30), 28, terrain::Topology::Bounded);
+    3, 3, Vec3 (30, 10, 30), terrain::Topology::Bounded);
   std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
   map.recompute_normals ();
   map::Surface surface (map);

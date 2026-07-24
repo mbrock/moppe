@@ -34,11 +34,17 @@ namespace {
 MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), 7, Topology::Torus);
-  map.randomize_uniformly ();
+  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  for (int y = 0; y < map.height (); ++y)
+    for (int x = 0; x < map.width (); ++x)
+      map.set (x, y, static_cast<float> (x + y) / 64.0f);
+  map.synchronize_periodic_edges ();
   const std::vector<float> original = heights_of (map);
-  TerrainProgram program = make_geological_program (42);
-  program.transforms.emplace_back (PowerHeights { 1.15f });
+  TerrainProgram program =
+    make_orogeny_program (42, TerrainGenerationProfile::Fast);
+  auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
+  orogeny.evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
+  orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
 
   game::TerrainLabModel model;
   model.begin (map, program);
@@ -47,7 +53,7 @@ MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   MOPPE_CHECK (model.map_pristine ());
   MOPPE_CHECK (model.checkpoints ().empty ());
   MOPPE_CHECK (model.reports ().empty ());
-  MOPPE_CHECK (model.progress ().total_stages == 2);
+  MOPPE_CHECK (model.progress ().total_stages == 1);
 
   // Entering the Lab observes the already-generated game map. The first edit
   // still needs a source materialization and checkpointed replay, even when
@@ -55,18 +61,20 @@ MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   model.rerun_program_from (0);
 
   MOPPE_CHECK (!model.map_pristine ());
-  MOPPE_CHECK (model.checkpoints ().size () == 2);
-  MOPPE_CHECK (model.reports ().size () == 2);
+  MOPPE_CHECK (model.checkpoints ().size () == 1);
+  MOPPE_CHECK (model.reports ().size () == 1);
   MOPPE_CHECK (!model.progress ().evaluating ());
-  MOPPE_CHECK (model.progress ().completed_stages == 2);
-  MOPPE_CHECK (model.progress ().total_stages == 2);
+  MOPPE_CHECK (model.progress ().completed_stages == 1);
+  MOPPE_CHECK (model.progress ().total_stages == 1);
 
-  auto& power = std::get<PowerHeights> (model.program ().transforms[1]);
-  power.exponent = 1.6f;
-  model.rerun_program_from (1);
+  auto& edited =
+    std::get<OrogenyEvolution> (model.program ().transforms.front ());
+  edited.maximum_uplift_rate =
+    0.0012f * mp_units::si::metre / mp_units::astronomy::Julian_year;
+  model.rerun_program_from (0);
 
   map::RandomHeightMap reference (
-    33, 33, Vec3 (640, 650, 640), 8, Topology::Torus);
+    33, 33, Vec3 (640, 650, 640), Topology::Torus);
   map::TerrainEvaluator (reference).evaluate (model.program ());
   MOPPE_CHECK (model_maps_match (map, reference));
 

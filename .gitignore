@@ -1,15 +1,6 @@
 .env
 build/
-build-homebrew/
-build-tracy/
-build-xcode/
-build-ios/
-build-ios-dev/
-build-ios-device/
-build-ios-testflight/
-build-tvos/
-build-tvos-device/
-build-web/
+build-*
 dist/
 traces/
 .DS_Store

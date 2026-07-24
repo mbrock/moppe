@@ -99,20 +99,14 @@ namespace moppe {
         Deposited
       };
 
-      void select (terrain::GeologicalLayer layer);
       void reset_program ();
       terrain::TerrainProgram recipe_program (terrain::Seed seed) const;
       terrain::TerrainProgram calibrated_world_program (
         terrain::Seed seed, terrain::TerrainGenerationProfile profile) const;
       void rebuild_program ();
       void rerun_program_from (int first_stage);
-      void append_stage (terrain::TerrainTransform stage);
-      void move_selected_stage (int direction);
-      void duplicate_selected_stage ();
-      void remove_selected_stage ();
       float selected_property_normalized (int row) const;
       terrain::ParameterDomain selected_property_domain (int row) const;
-      bool selected_property_drag_enabled (int row) const;
       bool set_selected_property_normalized (int row, float value);
       bool adjust_selected_continuous (int row, int direction);
       bool adjust_selected_natural (int row, int direction);
@@ -126,7 +120,6 @@ namespace moppe {
       draw_friendly (render::DrawList& dl, int width_pts, int height_pts) const;
       void draw_compass (render::DrawList& dl, int width_pts) const;
       void draw_build (render::DrawList& dl) const;
-      void ensure_selected_stage_visible ();
       void refresh (bool inspection_fog = true);
       void restore_game_map ();
       void fit_view ();
@@ -192,14 +185,10 @@ namespace moppe {
       bool m_camera_drag;
       float m_camera_drag_distance;
       bool m_pan_drag;
-      bool m_parameter_drag;
       bool m_build_ui;
       int m_friendly_preset;
       int m_ui_width;
       int m_ui_height;
-      int m_drag_property;
-      float m_drag_start_y;
-      float m_drag_start_normalized;
       bool m_parameter_rebuild_pending;
       int m_parameter_rebuild_stage;
       float m_parameter_rebuild_delay;

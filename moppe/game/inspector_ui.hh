@@ -142,13 +142,6 @@ namespace moppe {
                          bool hot,
                          bool pressed,
                          bool selected) const;
-      void knob (render::DrawList& dl,
-                 const UiRect& bounds,
-                 const std::string& label,
-                 const std::string& value,
-                 float normalized,
-                 bool hot,
-                 bool active) const;
       void counter (render::DrawList& dl,
                     const UiRect& bounds,
                     const std::string& label,

@@ -65,9 +65,9 @@ rider.
 ## Readings: the world measured
 
 A *reading* derives numbers, rasters, or structured analyses from
-terrain without mutating it—we already have two hiding inside
-`NormalizeHeights`, plus `DrainageGraph`, `FloodField`, and the lake
-census. The inhabitation layer runs on a stack of them. Some share
+terrain without mutating it—we already have `HeightRange`,
+`DrainageGraph`, `FloodField`, and the lake census. The inhabitation
+layer runs on a stack of them. Some share
 drainage traversals; others require independent global work:
 
 **Flow accumulation** (how much world drains through here), **slope**

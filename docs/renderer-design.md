@@ -506,8 +506,8 @@ the full target graph; the terminal and common entry points are:
   with the iOS toolchain (simulator target for CI/verification).
 - `moppe-tests` — portable/unit suite, including the scene-facing checks that
   do not require a desktop event loop.
-- `map-test`, `terrain-pipeline-demo`, and related command-line tools —
-  developer-only world/terrain consumers.
+- `terrain-orogeny-benchmark` and water-depth experiments — developer-only
+  world/terrain consumers.
 - .metal → .metallib via xcrun at build time; metallib + textures + data
   ship as bundle resources; `asset_path()` resolves per platform.
 

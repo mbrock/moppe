@@ -6,14 +6,6 @@
 - Unit tests: `ctest --test-dir build --output-on-failure`
 - WebAssembly/WebGPU: `make web-serve`, then open
   `http://localhost:8080` (renderer testbed: `/moppe-web-testbed.html`)
-- Scalar-field visual check: `./build/terrain-field-demo /tmp/field.png 512`
-- Terrain pipeline check: `./build/terrain-pipeline-demo /tmp/terrain.png
-  257 123 combined world`
-  (further stages: `orogeny=duration,dt,uplift,reference_rate,m,D[,sea,
-  land_relief,coast,bathymetry,routing,channel_memory]`, where routing is `d8`
-  or `d-infinity`; `analytical=age[,uplift,k,m,sea,iters,relax]`; and
-  `trails[=min_m2,max_m2,width,shoulder,cut,fill,max_grade,sea,designed_grade,
-  highland_preference,alpine_avoidance,crossfall]`)
 - Run the game: `./build/moppe.app/Contents/MacOS/moppe`
   (or `open build/moppe.app`)
   - Game controller: left stick drives and steers; right trigger boosts; `A`
@@ -26,7 +18,7 @@
     and reduce wing loading; otherwise touching down folds the wing and
     continues on the bike. On iOS, the mount/dismount corner deploys the wing
     while airborne and drops the attached bike while gliding.
-  - Modes: `--terrain-lab`, `--terrain-lab-preview`, `--fullscreen`, `--windowed`,
+  - Modes: `--terrain-lab`, `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
@@ -52,7 +44,6 @@
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
     `MOPPE_RENDERSCALE=<0.25..1>`
 - Renderer smoke test: `./build/moppe-testbed`
-- Heightmap tool: `./build/map-test [seed]` (writes test.tga)
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target
   with `CODE_SIGNING_ALLOWED=NO`

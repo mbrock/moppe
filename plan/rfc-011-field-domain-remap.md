@@ -111,8 +111,8 @@ blocking the rest.
 1. `Domain` value + domain-checked constructors; `remap` node with
    affine + displacement cases; evaluator lowering by coordinate-program
    composition (both backends already do this implicitly).
-2. Port the geological recipe; image and golden comparisons via
-   `terrain-field-demo` / `terrain-pipeline-demo`.
+2. Port the geological recipe; prove the existing raster goldens and the
+   end-to-end orogeny evaluator tests unchanged.
 3. Collapse periodic noise variants; delete dead node types and MSL.
 4. Optional: expanded fBm behind a feature flag; measure Metal compile
    and dispatch cost before making it the default lowering.

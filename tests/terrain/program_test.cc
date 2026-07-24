@@ -10,21 +10,10 @@
 
 using namespace moppe::terrain;
 
-MOPPE_TEST (geological_program_has_an_explicit_normalization_transform) {
-  const TerrainProgram program =
-    make_geological_program (123, GeologicalLayer::Mountains);
-
-  MOPPE_CHECK (program.source.layer == GeologicalLayer::Mountains);
-  MOPPE_CHECK (program.seed == Seed { 123 });
-  MOPPE_CHECK (program.transforms.size () == 1);
-  MOPPE_CHECK (
-    std::holds_alternative<NormalizeHeights> (program.transforms[0]));
-}
-
 MOPPE_TEST (orogeny_program_uses_a_bathymetric_seed_and_evolution_stage) {
   const TerrainProgram program = make_orogeny_program (123);
 
-  MOPPE_CHECK (program.source.mode == GeologicalSource::Mode::Orogeny);
+  MOPPE_CHECK (program.seed == Seed { 123 });
   MOPPE_CHECK (program.transforms.size () == 1);
   MOPPE_CHECK (
     std::holds_alternative<OrogenyEvolution> (program.transforms.front ()));
@@ -64,7 +53,6 @@ MOPPE_TEST (orogeny_profiles_calibrate_geological_duration) {
 MOPPE_TEST (default_world_program_forms_trails_after_research_orogeny) {
   const TerrainProgram program = make_default_world_program (123);
 
-  MOPPE_CHECK (program.source.mode == GeologicalSource::Mode::Orogeny);
   MOPPE_CHECK (program.transforms.size () == 2);
   const auto& orogeny =
     std::get<OrogenyEvolution> (program.transforms.front ());
@@ -81,34 +69,7 @@ MOPPE_TEST (profile_ids_are_stable_recipe_names) {
   MOPPE_CHECK (profile_id (TerrainGenerationProfile::Research) == "research");
 }
 
-MOPPE_TEST (transform_semantics_describe_execution_requirements) {
-  MOPPE_CHECK (
-    terrain_transform_semantics (PowerHeights { 1.2f }).spatial_scope ==
-    SpatialScope::Pointwise);
-  MOPPE_CHECK (
-    terrain_transform_semantics (PowerHeights { 1.2f }).evaluation_order ==
-    EvaluationOrder::Direct);
-
-  MOPPE_CHECK (
-    terrain_transform_semantics (NormalizeHeights {}).spatial_scope ==
-    SpatialScope::Global);
-  MOPPE_CHECK (
-    terrain_transform_semantics (NormalizeHeights {}).evaluation_order ==
-    EvaluationOrder::Reduction);
-
-  MOPPE_CHECK (
-    terrain_transform_semantics (ThermalErosion { iteration_count (1), 0.01f })
-      .spatial_scope == SpatialScope::Neighborhood);
-  MOPPE_CHECK (
-    terrain_transform_semantics (ThermalErosion { iteration_count (1), 0.01f })
-      .evaluation_order == EvaluationOrder::Iterative);
-
-  MOPPE_CHECK (
-    terrain_transform_semantics (AnalyticalErosion {}).spatial_scope ==
-    SpatialScope::Global);
-  MOPPE_CHECK (
-    terrain_transform_semantics (AnalyticalErosion {}).evaluation_order ==
-    EvaluationOrder::Iterative);
+MOPPE_TEST (canonical_stage_semantics_describe_execution_requirements) {
   MOPPE_CHECK (
     terrain_transform_semantics (OrogenyEvolution {}).spatial_scope ==
     SpatialScope::Global);
@@ -122,30 +83,12 @@ MOPPE_TEST (transform_semantics_describe_execution_requirements) {
     EvaluationOrder::Iterative);
 }
 
-MOPPE_TEST (transform_values_own_their_editable_descriptions) {
-  const PowerHeights power { 1.2f };
-  const TransformDescription power_description = power.description ();
-  MOPPE_CHECK (power_description.id == "power");
-  MOPPE_CHECK (power_description.title == "POWER CURVE");
-  MOPPE_CHECK (power_description.semantics.spatial_scope ==
-               SpatialScope::Pointwise);
-  MOPPE_CHECK (power.detail () == "height ^ 1.20");
-  MOPPE_CHECK (power.property_count () == 1);
-  const TransformProperty power_property = power.property (0);
-  MOPPE_CHECK (power_property.label == "EXPONENT");
-  MOPPE_CHECK (power_property.value == "1.20");
-  MOPPE_CHECK (power_property.domain == ParameterDomain::Continuous);
-
+MOPPE_TEST (canonical_stages_own_their_editable_descriptions) {
   const std::array transforms {
-    TerrainTransform { NormalizeHeights {} },
-    TerrainTransform { PowerHeights { 1.2f } },
-    TerrainTransform { AnalyticalErosion {} },
     TerrainTransform { OrogenyEvolution {} },
-    TerrainTransform { ThermalErosion { iteration_count (1), 0.01f } },
     TerrainTransform { TrailFormation {} },
-    TerrainTransform { HillslopeDiffusion {} },
   };
-  const std::array<std::size_t, 7> property_counts = { 0, 1, 6, 8, 2, 14, 2 };
+  const std::array<std::size_t, 2> property_counts = { 8, 14 };
   for (std::size_t i = 0; i < transforms.size (); ++i) {
     const TransformDescription description =
       terrain_transform_description (transforms[i]);
@@ -161,39 +104,31 @@ MOPPE_TEST (transform_values_own_their_editable_descriptions) {
   MOPPE_CHECK (trail_property.domain == ParameterDomain::Continuous);
 }
 
-MOPPE_TEST (terrain_program_editor_delegates_to_typed_transform_editors) {
-  TerrainProgram relief = make_geological_program (123);
-  relief.transforms.emplace_back (PowerHeights { 1.2f });
-  TerrainProgramEditor relief_editor (relief);
+MOPPE_TEST (terrain_program_editor_delegates_to_typed_stage_editors) {
+  TerrainProgram program =
+    make_world_program (123, TerrainGenerationProfile::Fast);
+  TerrainProgramEditor editor (program);
   const int original_continent_waves =
-    relief.source.recipe.continent.noise.cycles;
+    program.source.recipe.continent.noise.cycles;
 
-  MOPPE_CHECK (relief_editor.source ().property_count () == 9);
-  MOPPE_CHECK (relief_editor.set_source_normalized_property (0, 0.5f));
-  MOPPE_CHECK_NEAR (relief.source.recipe.warp.amplitude, 0.3f, 1e-6f);
-  MOPPE_CHECK (relief_editor.adjust_source_natural_property (1, 1));
-  MOPPE_CHECK (relief.source.recipe.continent.noise.cycles ==
+  MOPPE_CHECK (editor.source ().property_count () == 9);
+  MOPPE_CHECK (editor.set_source_normalized_property (0, 0.5f));
+  MOPPE_CHECK_NEAR (program.source.recipe.warp.amplitude, 0.3f, 1e-6f);
+  MOPPE_CHECK (editor.adjust_source_natural_property (1, 1));
+  MOPPE_CHECK (program.source.recipe.continent.noise.cycles ==
                original_continent_waves + 1);
-  MOPPE_CHECK (relief_editor.set_transform_normalized_property (1, 0, 0.5f));
-  MOPPE_CHECK_NEAR (
-    std::get<PowerHeights> (relief.transforms[1]).exponent, 2.05f, 1e-6f);
-
-  TerrainProgram orogeny = make_orogeny_program (123);
-  TerrainProgramEditor orogeny_editor (orogeny);
-  MOPPE_CHECK (orogeny_editor.set_transform_normalized_property (0, 7, 0.75f));
-  const auto& evolution = std::get<OrogenyEvolution> (orogeny.transforms[0]);
+  MOPPE_CHECK (editor.set_transform_normalized_property (0, 7, 0.75f));
+  const auto& evolution = std::get<OrogenyEvolution> (program.transforms[0]);
   MOPPE_CHECK_NEAR (evolution.evolution.sea_level, 0.225f, 1e-6f);
-  MOPPE_CHECK_NEAR (orogeny.source.sea_level, 0.225f, 1e-6f);
+  MOPPE_CHECK_NEAR (program.source.sea_level, 0.225f, 1e-6f);
 
-  const TerrainProgram& read_only_program = orogeny;
+  const TerrainProgram& read_only_program = program;
   const TerrainProgramEditor read_only (read_only_program);
   MOPPE_CHECK (read_only.transform (0).property (7).label == "SEA LEVEL");
 }
 
-MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
-  const auto validation_error = [] (TerrainTransform transform) {
-    TerrainProgram program = make_geological_program (123);
-    program.transforms.emplace_back (std::move (transform));
+MOPPE_TEST (program_validation_rejects_invalid_canonical_stages) {
+  const auto validation_error = [] (TerrainProgram program) {
     try {
       validate_program (program);
     } catch (const std::invalid_argument& error) {
@@ -202,24 +137,27 @@ MOPPE_TEST (program_validation_rejects_invalid_transform_parameters) {
     return std::string {};
   };
 
-  MOPPE_CHECK (validation_error (PowerHeights { 0.0f }) ==
-               "height exponent must be positive and finite");
-  MOPPE_CHECK (validation_error (AnalyticalErosion { .erodibility = 0.0f }) ==
-               "analytical erosion parameters are invalid");
-  MOPPE_CHECK (validation_error (OrogenyEvolution {
-                 .evolution = { .reference_area = 0.0f * mp_units::si::metre *
-                                                  mp_units::si::metre } }) ==
+  TerrainProgram invalid_orogeny = make_orogeny_program (123);
+  std::get<OrogenyEvolution> (invalid_orogeny.transforms.front ())
+    .evolution.reference_area =
+    0.0f * mp_units::si::metre * mp_units::si::metre;
+  MOPPE_CHECK (validation_error (invalid_orogeny) ==
                "orogeny evolution parameters are invalid");
-  MOPPE_CHECK (
-    validation_error (ThermalErosion { iteration_count (-1), 0.0f }) ==
-    "thermal erosion parameters are invalid");
-  MOPPE_CHECK (validation_error (TrailFormation {
-                 .minimum_catchment_area =
-                   10.0f * mp_units::si::metre * mp_units::si::metre,
-                 .maximum_catchment_area =
-                   9.0f * mp_units::si::metre * mp_units::si::metre }) ==
+
+  TerrainProgram invalid_trail =
+    make_world_program (123, TerrainGenerationProfile::Fast);
+  auto& trails = std::get<TrailFormation> (invalid_trail.transforms.back ());
+  trails.minimum_catchment_area =
+    10.0f * mp_units::si::metre * mp_units::si::metre;
+  trails.maximum_catchment_area =
+    9.0f * mp_units::si::metre * mp_units::si::metre;
+  MOPPE_CHECK (validation_error (invalid_trail) ==
                "trail formation parameters are invalid");
-  MOPPE_CHECK (validation_error (HillslopeDiffusion {
-                 .duration = -1.0f * mp_units::astronomy::Julian_year }) ==
-               "hillslope diffusion parameters are invalid");
+
+  TerrainProgram wrong_order =
+    make_world_program (123, TerrainGenerationProfile::Fast);
+  std::swap (wrong_order.transforms[0], wrong_order.transforms[1]);
+  MOPPE_CHECK (
+    validation_error (wrong_order) ==
+    "terrain program must contain orogeny followed by optional trails");
 }

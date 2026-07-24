@@ -42,18 +42,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include(CTest)
 include(FetchContent)
 
-# Emscripten ships zlib as a compiler port rather than a host CMake package.
-# Keep that dependency on the target which actually uses it so native builds
-# continue to resolve the system library in the ordinary way.
-if(EMSCRIPTEN)
-  add_library(moppe_zlib INTERFACE)
-  target_compile_options(moppe_zlib INTERFACE --use-port=zlib)
-  target_link_options(moppe_zlib INTERFACE --use-port=zlib)
-  add_library(ZLIB::ZLIB ALIAS moppe_zlib)
-else()
-  find_package(ZLIB REQUIRED)
-endif()
-
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -350,7 +338,6 @@ add_library(moppe_terrain STATIC
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
   moppe/terrain/waterline.cc
-  moppe/terrain/analytical_erosion.cc
   moppe/terrain/stream_power_evolution.cc
   moppe/terrain/trail.cc
   moppe/terrain/moisture.cc
@@ -359,12 +346,11 @@ add_library(moppe_terrain STATIC
   moppe/terrain/editor.cc
   moppe/terrain/program.cc
   moppe/terrain/world_recipe.cc
-  moppe/terrain/image.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # The field DAG stays float-typed, but the recipe layer's phantom
 # quantity kinds (Field<QS>) come from mp-units.
-target_link_libraries(moppe_terrain PUBLIC moppe_spatial ZLIB::ZLIB)
+target_link_libraries(moppe_terrain PUBLIC moppe_spatial)
 if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
 endif()
@@ -381,20 +367,6 @@ if(APPLE AND NOT MOPPE_IOS)
     "-framework Metal" "-framework Foundation")
   add_dependencies(moppe_terrain_metal moppe_shaders)
 
-  if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
-    add_executable(terrain-metal-demo EXCLUDE_FROM_ALL
-      moppe/terrain/metal/metal_field_demo.cc)
-    target_link_libraries(terrain-metal-demo PRIVATE moppe_terrain_metal)
-    target_compile_definitions(terrain-metal-demo PRIVATE
-      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
-  endif()
-
-endif()
-
-if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
-  add_executable(terrain-field-demo EXCLUDE_FROM_ALL
-    moppe/terrain/field_demo.cc)
-  target_link_libraries(terrain-field-demo PRIVATE moppe_terrain)
 endif()
 
 # Concrete completed-world storage, its finite surface sections, and the
@@ -479,14 +451,6 @@ target_link_libraries(moppe_app PUBLIC moppe_scene)
 
 # Developer tools for inspecting and iterating on terrain generation.
 if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
-  add_executable(map-test EXCLUDE_FROM_ALL moppe/map/test.cc)
-  target_link_libraries(map-test PRIVATE moppe_world)
-
-  add_executable(terrain-pipeline-demo EXCLUDE_FROM_ALL
-    moppe/terrain/pipeline_demo.cc
-  )
-  target_link_libraries(terrain-pipeline-demo PRIVATE moppe_world)
-
   add_executable(terrain-orogeny-benchmark EXCLUDE_FROM_ALL
     moppe/terrain/orogeny_benchmark.cc
   )
@@ -553,14 +517,12 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/geological_test.cc
     tests/terrain/program_test.cc
     tests/terrain/world_recipe_test.cc
-    tests/terrain/image_test.cc
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
     tests/terrain/fractional_drainage_test.cc
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
     tests/terrain/waterline_test.cc
-    tests/terrain/analytical_erosion_test.cc
     tests/terrain/stream_power_evolution_test.cc
     tests/terrain/trail_test.cc
     tests/terrain/moisture_test.cc
