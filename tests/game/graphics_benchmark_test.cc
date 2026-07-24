@@ -74,7 +74,7 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
     check_input (replay.replay_tape ()[frame], game::benchmark_input (frame));
 
   map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), 1, terrain::Topology::Torus);
+    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);

@@ -149,22 +149,17 @@ continent + plains + mountains + mask -> combined terrain
 ```
 
 Changing a recipe creates a different graph the next time it is built; it
-does not mutate an existing graph or raster.  Golden tests lock the canonical
-recipe's seven inspectable layers to the former generator bit for bit.
+does not mutate an existing graph or raster. Golden tests lock the recipe's
+seven internal fields bit for bit.
 
 ## Programs and materialized transformations
 
 `TerrainProgram` contains a `GeologicalSource`, an explicit root seed, and an
-ordered `std::vector<TerrainTransform>`. A transform is one
-of these runtime variants:
+ordered `std::vector<TerrainTransform>`. The runtime variant is deliberately
+limited to the two stages used to build a world:
 
-- `NormalizeHeights`
-- `PowerHeights`
-- `AnalyticalErosion`
 - `OrogenyEvolution`
-- `ThermalErosion`
 - `TrailFormation`
-- `HillslopeDiffusion`
 
 `map::TerrainEvaluator` materializes the source and applies those transforms
 to concrete height storage. It owns program order, progress reporting, and
@@ -174,10 +169,10 @@ shaping kernels that the evaluator invokes.
 
 `WorldRecipe` is the immutable construction input around that program. It
 travels with the physical extent, sample resolution, topology, root seed,
-water datum, and named generation profile. The canonical factory calibrates
+water datum, and named generation profile. Its factory calibrates
 the source, orogeny, and trail sea levels from the physical water datum before
-any evaluator sees the program. The normal game, the Terrain Lab preview, and
-the pipeline tool therefore begin from the same world vocabulary without
+any evaluator sees the program. The game and Terrain Lab therefore use the
+same world vocabulary without
 carrying renderer state into terrain construction.
 
 Transforms are immutable values even when evaluating them reuses a mutable
@@ -422,14 +417,15 @@ continents, plains, or mountain ranges; integer frequencies are what make the
 noise join seamlessly at the world boundary.
 
 Every action edits the `TerrainProgram` or `GeologicalRecipe` value.  The lab
-keeps exact height-and-random-state checkpoints at stage inputs, so a stage
+keeps exact height, sediment-ledger, and channel checkpoints at stage inputs,
+so a stage
 edit only replays the affected suffix.  The final output already lives in the
 working map and is not copied into redundant history.  The lab does not
 maintain a parallel shadow representation of the recipe itself.  Leaving the
 lab restores the exact playable heightmap snapshot.
 
-Live knob motion updates direct program values immediately, while evaluation
-is coalesced on the frame tick. Costly stepped edits run once per click. Each
+Canonical orogeny and trail parameters are stepped once per click because both
+stages require global evaluation. Each
 completed preview morphs from the previous height texture over 120 ms, with
 normals derived from the interpolated surface.  Its shadow is rebuilt
 immediately at 1024-square resolution from every second terrain sample, then
@@ -445,9 +441,9 @@ model. `UiFlow`, `ui_inset`, and `ui_grid_cell` provide the small flex-like
 layout vocabulary used by both drawing and hit testing. Drag any window by
 its title bar; its position persists while switching disclosure levels.
 
-For UI iteration, `--terrain-lab-preview` uses a deterministic-capable
-1025-square field and skips canonical erosion, stars, fish, and
-wildlife setup.  The full build-and-capture loop is scriptable:
+Terrain Lab always inspects the canonical orogeny-and-trails world. The capture
+helper selects the Fast generation profile to keep the deterministic
+build-and-capture loop practical:
 
 ```sh
 make terrain-lab-shot
@@ -476,22 +472,6 @@ orogeny.evolution.duration =
   650000.0f * mp_units::astronomy::Julian_year;
 moppe::map::TerrainEvaluator (map).evaluate (program);
 ```
-
-`AnalyticalErosion` is the first finite-time `n = 1` stream-power slice from
-Tzathas et al. It computes one depression-aware drainage graph, traverses its
-trees from fixed ocean cells toward ridges, and evaluates the characteristic
-solution
-
-```text
-z(x,t) = z0(D(x,t)) + integral[D(x,t), x] u(s) / (k A(s)^m) ds
-```
-
-where travel time from `D` to `x` is `t`. Age, uplift, `k`, `m`, sea level,
-fixed-point routing passes, and relaxation are explicit transform parameters
-in physical units. The detachment-limited erosion term cannot raise terrain,
-so the implementation caps change at the prescribed tectonic uplift even
-when a depression route crosses a dry saddle. Ocean cells remain fixed at
-their bed elevation.
 
 `OrogenyEvolution` reverses the older source semantics. It starts from a
 continent and bathymetry around the configured sea level, interprets the
@@ -543,8 +523,7 @@ term, but is not an exact continuous-time solution for an arbitrarily long
 step. Explicit stable hillslope-diffusion sweeps are interleaved after
 incision. Ocean cells and receiver roots retain their bed elevation rather
 than snapping terrain to the water surface, and an uphill depression route
-cannot raise a cell above uplift alone. `AnalyticalErosion` is deliberately
-outside this boundary and retains its experimental fixed-graph solver.
+cannot raise a cell above uplift alone.
 
 The fixed-seed 513-square stress comparison shows a narrower result than
 "fractional routing removes the grid." D-infinity softens several hard
@@ -561,13 +540,6 @@ by the existing terrain quality profile. The report separates prescribed
 tectonic uplift and implicit incision volumes from net raised/lowered volume,
 and exposes the last step's mean and maximum change as a convergence reading.
 
-The pass is deterministic, but it is not the paper's complete solver yet.
-Fixed routing produces cell-scale
-discontinuities; relaxed routing passes improve agreement but do not replace
-the paper's coarse-to-fine iteration and hillslope correction. Terrain Lab
-therefore exposes analytical age separately from Talus and reports lowered
-and raised volume plus mean and maximum physical change.
-
 ## Tests and command-line feedback
 
 Run both the pure terrain tests and map integration tests with:
@@ -576,54 +548,18 @@ Run both the pure terrain tests and map integration tests with:
 ctest --test-dir build --output-on-failure
 ```
 
-On macOS 26 this also runs `moppe-metal-tests`, comparing every field operation
-and the complete geological source against `CpuEvaluator`.  The standalone
-Metal timing and agreement check is:
-
-```sh
-./build/terrain-metal-demo 2049 123
-```
-
-On an M2 Pro, the initial checkpoint measured the 2049-square combined field
-at about 200 ms in the parallel CPU interpreter and 16 ms in a cached stitched
-Metal dispatch, including allocation, synchronization, and CPU readback.
-Profiling the actual Terrain Lab controls then reduced a recipe-parameter click
-from about 102 ms to roughly 23--25 ms.  Interactive previews reuse evaluator
-buffers, height and normal textures, and terrain index buffers; normalize in
-two CPU passes; derive preview normals from the height texture in the terrain
-vertex shader; use conservative chunk bounds; and maintain a live
-reduced-quality shadow map.
+On macOS the suite also compares every Metal field operation and the complete
+geological source against `CpuEvaluator`. Interactive Lab rebuilds reuse
+evaluator buffers, height and normal textures, and terrain index buffers,
+derive preview normals from the height texture in the terrain vertex shader,
+use conservative chunk bounds, and maintain a live reduced-quality shadow map.
 The exact CPU normal map is rebuilt when returning to gameplay.
 
-The field preview evaluates one lazy field:
+End-to-end orogeny performance is measured by the reproducible benchmark:
 
 ```sh
-./build/terrain-field-demo /tmp/mountains.png 512 mountains 123
+tools/orogeny-benchmark /tmp/orogeny-benchmark.csv
 ```
-
-The pipeline preview uses the same program value and `TerrainEvaluator` as the
-game:
-
-```sh
-./build/terrain-pipeline-demo /tmp/base.png 257 123 combined
-./build/terrain-pipeline-demo /tmp/tuned.png 257 123 combined \
-  warp-amplitude=0.28 mountain-frequency=9 mountain-weight=0.9
-./build/terrain-pipeline-demo /tmp/world.png 257 123 combined world
-./build/terrain-pipeline-demo /tmp/orogeny.png 257 123 combined \
-  orogeny=1000000,50000,0.001,2e-5,0.4,0.0001
-```
-
-The orogeny option is
-`duration,dt,uplift,reference_rate,m,D[,sea,land_relief,coastline,
-bathymetry,routing]`, where routing is `d8` or `d-infinity`. Unlike the
-unit-scale legacy preview, this mode uses the game's 11 km by 11 km horizontal
-and 650 m vertical calibration so all physical rates retain their meaning.
-
-The initial preview program starts with normalization. `raw` clears its
-transforms; `normalize` appends normalization explicitly; `world` selects the
-Research Orogeny program. Recipe overrides include `warp-amplitude`, the three layer
-frequencies, mask edges, and blend weights. Geological layer IDs are
-`combined`, `continent`, `plains`, `mountains`, `mask`, `warp-x`, and `warp-y`.
 
 ## Next boundaries
 

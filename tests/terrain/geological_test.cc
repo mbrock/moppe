@@ -27,33 +27,32 @@ namespace {
 }
 
 MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
-  struct GoldenLayer {
-    GeologicalLayer layer;
-    std::uint64_t hash;
-  };
   constexpr std::array golden {
-    GoldenLayer { GeologicalLayer::Combined, 0x863524e29ef4a927ull },
-    GoldenLayer { GeologicalLayer::Continent, 0x5e8c75981b887e30ull },
-    GoldenLayer { GeologicalLayer::Plains, 0xf45bb04923b0c0b4ull },
-    GoldenLayer { GeologicalLayer::Mountains, 0x05dc0a7fb3a5cd60ull },
-    GoldenLayer { GeologicalLayer::MountainMask, 0x6dad6253ffe20c62ull },
-    GoldenLayer { GeologicalLayer::WarpX, 0x6c928009ffd5c17aull },
-    GoldenLayer { GeologicalLayer::WarpY, 0x3f8851268f877c20ull }
+    0x863524e29ef4a927ull, 0x5e8c75981b887e30ull, 0xf45bb04923b0c0b4ull,
+    0x05dc0a7fb3a5cd60ull, 0x6dad6253ffe20c62ull, 0x6c928009ffd5c17aull,
+    0x3f8851268f877c20ull,
   };
-  const GeologicalFields fields =
-    make_geological_fields (derive_geological_seeds (123));
+  const GeologicalFields geological =
+    make_geological_fields (make_geological_recipe (123));
+  const std::array fields {
+    geological.combined.untyped (),      geological.continent.untyped (),
+    geological.plains.untyped (),        geological.mountains.untyped (),
+    geological.mountain_mask.untyped (), geological.warp_x.untyped (),
+    geological.warp_y.untyped ()
+  };
   const FieldSamplingGrid2D domain { .width = 65, .height = 65 };
 
-  for (const GoldenLayer& expected : golden) {
-    const ScalarRaster raster = normalize (CpuEvaluator ().evaluate (
-      geological_layer (fields, expected.layer), domain));
-    MOPPE_CHECK (raster_hash (raster) == expected.hash);
-  }
+  for (std::size_t i = 0; i < fields.size (); ++i)
+    MOPPE_CHECK (raster_hash (normalize (
+                   CpuEvaluator ().evaluate (fields[i], domain))) == golden[i]);
 }
 
 MOPPE_TEST (geological_fields_share_warp_subexpressions) {
-  const GeologicalFields fields = make_geological_fields (
-    { .base = Seed { 1 }, .ridge = Seed { 2 }, .warp = Seed { 3 } });
+  GeologicalRecipe recipe;
+  recipe.seeds = { .base = Seed { 1 },
+                   .ridge = Seed { 2 },
+                   .warp = Seed { 3 } };
+  const GeologicalFields fields = make_geological_fields (recipe);
   static_assert (std::same_as<decltype (fields.warp_x), NoiseField>);
   static_assert (
     std::same_as<decltype (fields.combined), RelativeElevationField>);
@@ -69,20 +68,6 @@ MOPPE_TEST (geological_fields_share_warp_subexpressions) {
   // both warped coordinates (it was duplicated before the typed
   // recipe hoisted it).
   MOPPE_CHECK (unique_node_count (fields.combined.untyped ()) == 55);
-}
-
-MOPPE_TEST (geological_layer_ids_round_trip) {
-  constexpr GeologicalLayer layers[] = {
-    GeologicalLayer::Combined,     GeologicalLayer::Continent,
-    GeologicalLayer::Plains,       GeologicalLayer::Mountains,
-    GeologicalLayer::MountainMask, GeologicalLayer::WarpX,
-    GeologicalLayer::WarpY
-  };
-  for (GeologicalLayer layer : layers) {
-    const auto parsed = geological_layer_from_id (geological_layer_id (layer));
-    MOPPE_CHECK (parsed && *parsed == layer);
-  }
-  MOPPE_CHECK (!geological_layer_from_id ("not-a-layer"));
 }
 
 MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
@@ -120,18 +105,18 @@ MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
 }
 
 MOPPE_TEST (every_geological_layer_is_periodic) {
-  const GeologicalFields fields =
+  const GeologicalFields geological =
     make_geological_fields (make_geological_recipe (123));
-  constexpr GeologicalLayer layers[] = {
-    GeologicalLayer::Combined,     GeologicalLayer::Continent,
-    GeologicalLayer::Plains,       GeologicalLayer::Mountains,
-    GeologicalLayer::MountainMask, GeologicalLayer::WarpX,
-    GeologicalLayer::WarpY
+  const std::array fields {
+    geological.combined.untyped (),      geological.continent.untyped (),
+    geological.plains.untyped (),        geological.mountains.untyped (),
+    geological.mountain_mask.untyped (), geological.warp_x.untyped (),
+    geological.warp_y.untyped ()
   };
 
-  for (GeologicalLayer layer : layers) {
-    const ScalarRaster raster = CpuEvaluator ().evaluate (
-      geological_layer (fields, layer), { .width = 65, .height = 65 });
+  for (const ScalarField& field : fields) {
+    const ScalarRaster raster =
+      CpuEvaluator ().evaluate (field, { .width = 65, .height = 65 });
     for (std::size_t i = 0; i < 65; ++i) {
       MOPPE_CHECK_NEAR (raster.at (0, i), raster.at (64, i), 1e-5f);
       MOPPE_CHECK_NEAR (raster.at (i, 0), raster.at (i, 64), 1e-5f);

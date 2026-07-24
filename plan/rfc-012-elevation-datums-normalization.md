@@ -1,4 +1,4 @@
-# RFC-012: Elevation datums, calibrated rasters, and honest normalization
+# RFC-012: Elevation datums and calibrated rasters
 
 - Status: Draft
 - Area: semantic foundations (heights, units, calibration)
@@ -8,18 +8,17 @@
 ## Problem
 
 A height in Moppe is a bare `float`, and what it *means* depends on
-where you are standing in the pipeline.  Before normalization it is in
-raw noise units; after `NormalizeHeights` it is in [0, 1]; multiplied by
-`height_scale` it is metres above the model datum; sea level exists
-simultaneously as metres (`WorldParams::water_level = 50 m`), as a
-normalized fraction (`TerrainParams::sea_level_norm`), and as raw floats
-compared directly against samples (`AnalyticalErosion::sea_level`,
-`analyze_standing_water`'s `sea_level` -- both in whatever units the
-terrain happens to be in *at that stage of the program*).  Reordering
-pipeline stages, or handing a metric threshold to a pre-normalization
-stage, silently changes meaning.  The codebase that types row indices
-as `quantity_point`s (`moppe/terrain/discretization.hh`) leaves its
-single most important scalar untyped.
+where you are standing in world construction. The geological field is a
+dimensionless relative pattern; `TerrainEvaluator` maps its continent around
+sea level using physical land and bathymetric relief divided by the world's
+vertical extent; orogeny then evolves those stored samples. Multiplying a
+stored value by `height_scale` yields metres above the model datum. Sea level
+still exists simultaneously as metres (`WorldParams::water_level = 50 m`) and
+as a normalized fraction compared directly against stored samples
+(`OrogenyEvolution::evolution.sea_level`, `analyze_standing_water`'s
+`sea_level`). The codebase that types row indices as `quantity_point`s
+(`moppe/terrain/discretization.hh`) leaves its single most important scalar
+untyped.
 
 There is also a conceptual gap worth naming: **elevation is affine, not
 linear**.  Differences of elevations are lengths; elevations themselves
@@ -38,8 +37,8 @@ something relative to that measurement.
 - `height_scale` threading is pervasive: `watercourse.cc` converts raw
   samples, while the flood epsilon, shaders' `params0.y`, and physics
   `m_scale[1]` carry the same conversion independently.
-- `measure_height_range` is already the min/max reading normalization
-  needs -- currently fused into the transform.
+- `measure_height_range` is already the reusable min/max reading needed by
+  inspection code.
 
 ## Proposal
 
@@ -63,27 +62,18 @@ stored floats to `Elevation`:
     // stored * scale + offset = elevation above model_datum
 
 `RandomHeightMap` keeps storing floats exactly as now; the calibration
-travels with the view.  `TerrainView::elevation_at` becomes the *only*
-crossing, and every consumer (flood, carve, watercourse, analytical
-erosion, shader-uniform upload) asks the view instead of multiplying by
-a smuggled `height_scale`.
+travels with the view. `TerrainView::elevation_at` becomes the *only*
+crossing, and every consumer (flood, trails, watercourse, orogeny,
+shader-uniform upload) asks the view instead of multiplying by a smuggled
+`height_scale`.
 
-### 3. Normalization = reading + reparameterization
+### 3. Make source calibration explicit
 
-`NormalizeHeights` splits into what it already secretly is:
-
-1. a **reading**: `measure_height_range` over this raster (recorded in
-   the transform report, visible in the Lab);
-2. an **affine rewrite** of stored values *and* the calibration
-   together, so the represented elevations are unchanged unless the
-   program explicitly asks for a rescale (the historical behavior --
-   "stretch relief to fill [0,1] * height_scale" -- becomes an honest,
-   named operation: `RescaleReliefToRange`, distinct from a pure
-   storage renormalization).
-
-This distinction is currently invisible and is exactly where meaning
-slips: today "normalize" both re-parameterizes storage *and* changes
-the world's relief, depending on what downstream multiplies by.
+The continent-to-relief mapping in `TerrainEvaluator::begin` becomes an
+explicit source-calibration value. It maps relative continent samples to
+typed elevations around a typed sea datum. Orogeny, checkpoints, hydrology,
+and rendering then share that calibration instead of assuming that one stored
+unit always means the world's full vertical extent.
 
 ## Consequences
 
@@ -92,8 +82,8 @@ the world's relief, depending on what downstream multiplies by.
   physically meaningful mid-program.
 - `height_scale` threading collapses to derived uniform values computed
   at upload from the calibration.
-- Transform reordering becomes safe-by-construction where it is
-  meaningful and a type error where it is not.
+- Source construction and the two canonical stages become
+  safe-by-construction at their typed boundaries.
 - Honest units unlock honest physics constants elsewhere.
 
 ## Risks and alternatives
@@ -101,9 +91,8 @@ the world's relief, depending on what downstream multiplies by.
 - Breadth, not depth: many call sites, each mechanical.  Migrate
   view-first (introduce calibrated `TerrainView` everywhere, keep raw
   accessors marked legacy), then chase the shader-uniform boundary.
-- Bit-exactness: pure refactor stages must not change stored floats;
-  the `RescaleReliefToRange` split must reproduce the historical
-  normalize exactly for existing programs (golden-tested).
+- Bit-exactness: pure refactor stages must not change stored floats; the
+  current orogeny source and fixed-seed world outputs remain golden-tested.
 - Alternative "store metres directly" (drop normalized storage): more
   radical, breaks texture range assumptions (R32F is fine, but shaders
   and caches assume [0,1]); the calibration approach gets the semantics
@@ -116,6 +105,6 @@ the world's relief, depending on what downstream multiplies by.
 2. Port the hydrology stack (flood, census, drainage, watercourse) to
    typed thresholds -- this is where latent unit bugs would surface,
    so port it first and test against current outputs.
-3. Split `NormalizeHeights`; update `docs/terrain-expressions.md`'s
-   transform table and the Lab stage rows.
+3. Move the orogeny source mapping into a typed calibration operation and
+   update Terrain Lab readings to show that calibration.
 4. Derive shader uniforms from the calibration at `set_terrain` time.

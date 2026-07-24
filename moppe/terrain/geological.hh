@@ -5,20 +5,7 @@
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
-#include <optional>
-#include <string_view>
-
 namespace moppe::terrain {
-  enum class GeologicalLayer {
-    Combined,
-    Continent,
-    Plains,
-    Mountains,
-    MountainMask,
-    WarpX,
-    WarpY
-  };
-
   struct GeologicalSeeds {
     Seed base;
     Seed ridge;
@@ -90,12 +77,6 @@ namespace moppe::terrain {
   GeologicalRecipe make_geological_recipe (std::uint32_t root_seed);
   void validate_geological_recipe (const GeologicalRecipe& recipe);
   GeologicalFields make_geological_fields (const GeologicalRecipe& recipe);
-  GeologicalFields make_geological_fields (const GeologicalSeeds& seeds);
-  ScalarField geological_layer (const GeologicalFields& fields,
-                                GeologicalLayer layer);
-  const char* geological_layer_name (GeologicalLayer layer);
-  std::string_view geological_layer_id (GeologicalLayer layer);
-  std::optional<GeologicalLayer> geological_layer_from_id (std::string_view id);
 }
 
 #endif

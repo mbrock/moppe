@@ -35,8 +35,8 @@ geological source
   -> trail/home-base surface fields and renderer texture
 ```
 
-`TrailFormation` is a `TerrainTransform`, so the game, Terrain Lab, tests, and
-`terrain-pipeline-demo` execute the same operation. The main implementation is
+`TrailFormation` is a `TerrainTransform`, so the game, Terrain Lab, and tests
+execute the same operation. The main implementation is
 in [`trail.cc`](../moppe/terrain/trail.cc), with its public values and result
 types in [`trail.hh`](../moppe/terrain/trail.hh).
 
@@ -301,12 +301,6 @@ The relevant runtime code is in
 is in [`terrain.metal`](../moppe/shaders/metal/terrain.metal).
 
 ## Inspection and verification
-
-Run the shared world pipeline and print the trail report:
-
-```sh
-./build/terrain-pipeline-demo /tmp/trails.png 257 123 combined world
-```
 
 The game logs the number of centerline cells, circuit length, component count,
 home base, scenic focus, and cinematic landmark order during startup.

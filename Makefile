@@ -111,7 +111,7 @@ web-serve: web
 web-deploy:
 	./tools/deploy-web
 
-# Build a fast deterministic Terrain Lab preview, capture it, and exit.
+# Build the canonical terrain with the Fast profile, capture the Lab, and exit.
 terrain-lab-shot:
 	./tools/capture-terrain-lab
 

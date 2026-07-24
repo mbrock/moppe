@@ -2,6 +2,8 @@
 #include <moppe/terrain/merge_tree.hh>
 
 #include <moppe/map/generate.hh>
+#include <moppe/map/terrain_evaluator.hh>
+#include <moppe/terrain/program.hh>
 
 #include <tests/test.hh>
 
@@ -78,10 +80,8 @@ MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
 
 MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
   for (const int seed : { 7, 123, 4041 }) {
-    map::RandomHeightMap map (
-      65, 65, Vec3 (100, 20, 100), seed, Topology::Torus);
-    map.randomize_geologically ();
-    map.normalize ();
+    map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), Topology::Torus);
+    map::TerrainEvaluator (map).begin (make_orogeny_program (seed));
     const TerrainView terrain = map.terrain_view ();
     for (const float sea_level : { 0.05f, 50.0f / 650.0f, 0.3f, 0.95f })
       check_matches_priority_flood (terrain, sea_level);
@@ -89,9 +89,8 @@ MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
 }
 
 MOPPE_TEST (merge_tree_construction_is_deterministic) {
-  map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), 9, Topology::Torus);
-  map.randomize_geologically ();
-  map.normalize ();
+  map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), Topology::Torus);
+  map::TerrainEvaluator (map).begin (make_orogeny_program (9));
   const TerrainView terrain = map.terrain_view ();
   const MergeTree first = build_merge_tree (terrain);
   const MergeTree second = build_merge_tree (terrain);

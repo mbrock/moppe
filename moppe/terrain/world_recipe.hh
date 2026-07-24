@@ -54,14 +54,6 @@ namespace moppe::terrain {
                        Seed seed,
                        meters_t water_datum,
                        TerrainGenerationProfile generation_profile);
-    friend WorldRecipe
-    make_geological_world_recipe (spatial_extent_t extent,
-                                  int resolution,
-                                  Topology topology,
-                                  Seed seed,
-                                  meters_t water_datum,
-                                  TerrainGenerationProfile generation_profile);
-
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
                  Topology topology,
@@ -86,16 +78,6 @@ namespace moppe::terrain {
                                  Seed seed,
                                  meters_t water_datum,
                                  TerrainGenerationProfile generation_profile);
-
-  // Terrain Lab's fast field-only preview has the same world vocabulary even
-  // though it deliberately omits the canonical erosion-and-trails program.
-  WorldRecipe
-  make_geological_world_recipe (spatial_extent_t extent,
-                                int resolution,
-                                Topology topology,
-                                Seed seed,
-                                meters_t water_datum,
-                                TerrainGenerationProfile generation_profile);
 }
 
 #endif

@@ -367,11 +367,9 @@ namespace moppe {
       struct GenerationJob {
         GenerationJob (MoppeGame& owner,
                        WorldParams requested_params,
-                       terrain::WorldRecipe requested_recipe,
-                       bool requested_terrain_lab_preview)
+                       terrain::WorldRecipe requested_recipe)
             : game (&owner), params (std::move (requested_params)),
-              recipe (std::move (requested_recipe)),
-              terrain_lab_preview (requested_terrain_lab_preview) {}
+              recipe (std::move (requested_recipe)) {}
 
         // The worker and main-thread callback each hold this while touching
         // game.  Destruction takes it before revoking the raw game pointer.
@@ -379,7 +377,6 @@ namespace moppe {
         MoppeGame* game;
         WorldParams params;
         terrain::WorldRecipe recipe;
-        bool terrain_lab_preview;
       };
 
     public:
@@ -387,7 +384,6 @@ namespace moppe {
                  terrain::WorldRecipe recipe,
                  const GraphicsSettings& graphics,
                  bool start_in_terrain_lab,
-                 bool terrain_lab_preview,
                  bool tree_demo,
                  std::size_t tree_count,
                  std::string screenshot_path,
@@ -405,10 +401,8 @@ namespace moppe {
               loading_preview_resolution (this->recipe ().resolution ()),
               loading_preview_resolution (this->recipe ().resolution ()),
               extent_value (this->recipe ().extent ()),
-              this->recipe ().seed ().value,
               this->recipe ().topology ()),
             m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
-            m_terrain_lab_preview (terrain_lab_preview),
             m_tree_demo (tree_demo), m_tree_count (tree_count),
             m_screenshot_path (std::move (screenshot_path)),
             m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
@@ -519,8 +513,8 @@ namespace moppe {
           if (m_completed_world)
             throw std::logic_error ("a completed world has not activated");
         }
-        m_generation_job = std::make_shared<GenerationJob> (
-          *this, world (), std::move (recipe), m_terrain_lab_preview);
+        m_generation_job =
+          std::make_shared<GenerationJob> (*this, world (), std::move (recipe));
         m_loading_world = m_generation_job->params;
         m_loading_seed = m_generation_job->recipe.seed ().value;
         platform::async (&MoppeGame::generate_thunk,
@@ -958,107 +952,96 @@ namespace moppe {
           evolution_backend =
             platform::create_stream_power_evolution_backend ();
         }
-        if (job.terrain_lab_preview) {
-          set_loading_stage (LoadingStage::BuildingContinents);
+        // Reuse the automatic build/profile/seed cache when possible.
+        // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
+        const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
+        const std::string automatic_cache = terrain_cache_path (recipe);
+        const char* cache =
+          cache_override ? cache_override : automatic_cache.c_str ();
+        set_loading_stage (LoadingStage::LookingForCache);
+        bool cache_loaded = false;
+        {
+          MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
+          cache_loaded = cache && terrain.try_load_cache (cache);
+        }
+        if (cache_loaded) {
+          set_loading_stage (LoadingStage::ReadingCache);
+          const std::size_t count =
+            static_cast<std::size_t> (terrain.width ()) * terrain.height ();
           {
-            MOPPE_PROFILE_ZONE ("startup.make_preview_program");
-            map::TerrainEvaluator (
-              terrain, field_evaluator.get (), evolution_backend.get ())
-              .evaluate (recipe.terrain_program ());
+            MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
+            load_terrain_history (cache, count, history);
           }
+          publish_loading_terrain (terrain);
         } else {
-          // Reuse the automatic build/profile/seed cache when possible.
-          // MOPPE_MAPCACHE=<file> remains an explicit experiment override.
-          const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
-          const std::string automatic_cache = terrain_cache_path (recipe);
-          const char* cache =
-            cache_override ? cache_override : automatic_cache.c_str ();
-          set_loading_stage (LoadingStage::LookingForCache);
-          bool cache_loaded = false;
+          set_loading_stage (LoadingStage::BuildingContinents);
+          map::TerrainEvaluator evaluator (
+            terrain, field_evaluator.get (), evolution_backend.get ());
+          history.clear ();
           {
-            MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
-            cache_loaded = cache && terrain.try_load_cache (cache);
-          }
-          if (cache_loaded) {
-            set_loading_stage (LoadingStage::ReadingCache);
-            const std::size_t count =
-              static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-            {
-              MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
-              load_terrain_history (cache, count, history);
-            }
-            publish_loading_terrain (terrain);
-          } else {
-            set_loading_stage (LoadingStage::BuildingContinents);
-            map::TerrainEvaluator evaluator (
-              terrain, field_evaluator.get (), evolution_backend.get ());
-            history.clear ();
-            {
-              MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
-              evaluator.evaluate (
-                recipe.terrain_program (),
-                [this, &history, &terrain] (
-                  std::size_t, const terrain::TerrainTransform& transform) {
-                  const std::size_t count =
-                    static_cast<std::size_t> (terrain.width ()) *
-                    terrain.height ();
-                  history.emplace_back (terrain.raw_heights (),
-                                        terrain.raw_heights () + count);
+            MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
+            evaluator.evaluate (
+              recipe.terrain_program (),
+              [this, &history, &terrain] (
+                std::size_t, const terrain::TerrainTransform& transform) {
+                const std::size_t count =
+                  static_cast<std::size_t> (terrain.width ()) *
+                  terrain.height ();
+                history.emplace_back (terrain.raw_heights (),
+                                      terrain.raw_heights () + count);
+                publish_loading_terrain (terrain);
+                if (std::holds_alternative<terrain::OrogenyEvolution> (
+                      transform))
+                  set_loading_stage (LoadingStage::RefiningTerrain);
+              },
+              [this, &terrain] (std::size_t,
+                                const terrain::TerrainTransform& transform,
+                                int completed,
+                                int total) {
+                if (std::holds_alternative<terrain::OrogenyEvolution> (
+                      transform)) {
+                  const auto& orogeny =
+                    std::get<terrain::OrogenyEvolution> (transform);
+                  set_loading_stage (LoadingStage::EvolvingTerrain);
+                  m_loading_work_done = completed;
+                  m_loading_work_total = total;
+                  const float duration =
+                    julian_years_value (orogeny.evolution.duration);
+                  const float step =
+                    julian_years_value (orogeny.evolution.time_step);
+                  m_loading_geological_years_done = static_cast<int> (
+                    std::lround (std::min (duration, completed * step)));
+                  m_loading_geological_years_total =
+                    static_cast<int> (std::lround (duration));
                   publish_loading_terrain (terrain);
-                  if (std::holds_alternative<terrain::OrogenyEvolution> (
-                        transform))
-                    set_loading_stage (LoadingStage::RefiningTerrain);
-                },
-                [this, &terrain] (std::size_t,
-                                  const terrain::TerrainTransform& transform,
-                                  int completed,
-                                  int total) {
-                  if (std::holds_alternative<terrain::OrogenyEvolution> (
-                        transform)) {
-                    const auto& orogeny =
-                      std::get<terrain::OrogenyEvolution> (transform);
-                    set_loading_stage (LoadingStage::EvolvingTerrain);
-                    m_loading_work_done = completed;
-                    m_loading_work_total = total;
-                    const float duration =
-                      julian_years_value (orogeny.evolution.duration);
-                    const float step =
-                      julian_years_value (orogeny.evolution.time_step);
-                    m_loading_geological_years_done = static_cast<int> (
-                      std::lround (std::min (duration, completed * step)));
-                    m_loading_geological_years_total =
-                      static_cast<int> (std::lround (duration));
-                    publish_loading_terrain (terrain);
-                  }
-                },
-                [this] (std::size_t completed, std::size_t total) {
-                  int observed = m_loading_source_done.load ();
-                  const int value = static_cast<int> (completed);
-                  while (observed < value &&
-                         !m_loading_source_done.compare_exchange_weak (observed,
-                                                                       value)) {
-                  }
-                  m_loading_source_total = static_cast<int> (total);
-                });
-            }
-            generated_trails = evaluator.release_trail_network ();
-            const std::size_t count =
-              static_cast<std::size_t> (terrain.width ()) * terrain.height ();
+                }
+              },
+              [this] (std::size_t completed, std::size_t total) {
+                int observed = m_loading_source_done.load ();
+                const int value = static_cast<int> (completed);
+                while (observed < value &&
+                       !m_loading_source_done.compare_exchange_weak (observed,
+                                                                     value)) {}
+                m_loading_source_total = static_cast<int> (total);
+              });
+          }
+          generated_trails = evaluator.release_trail_network ();
+          const std::size_t count =
+            static_cast<std::size_t> (terrain.width ()) * terrain.height ();
+          {
+            MOPPE_PROFILE_ZONE ("startup.snapshot_finished_terrain");
+            history.emplace_back (terrain.raw_heights (),
+                                  terrain.raw_heights () + count);
+          }
+          if (cache) {
+            set_loading_stage (LoadingStage::SavingTerrain);
             {
-              MOPPE_PROFILE_ZONE ("startup.snapshot_finished_terrain");
-              history.emplace_back (terrain.raw_heights (),
-                                    terrain.raw_heights () + count);
+              MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
+              terrain.save_cache (cache);
             }
-            if (cache) {
-              set_loading_stage (LoadingStage::SavingTerrain);
-              {
-                MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
-                terrain.save_cache (cache);
-              }
-              {
-                MOPPE_PROFILE_ZONE ("startup.save_terrain_history");
-                save_terrain_history (cache, history);
-              }
+            {
+              MOPPE_PROFILE_ZONE ("startup.save_terrain_history");
+              save_terrain_history (cache, history);
             }
           }
         }
@@ -1077,41 +1060,37 @@ namespace moppe {
 
         // The random world's sea and lakes are one priority-flood surface.
         // Keep this as a reading: terrain and erosion remain authoritative.
-        if (!job.terrain_lab_preview) {
-          build.analyze_hydrology (
-            [this] (GeneratedWorld::HydrologyStage stage) {
-              switch (stage) {
-              case GeneratedWorld::HydrologyStage::StandingWater:
-                set_loading_stage (LoadingStage::FindingStandingWater);
-                break;
-              case GeneratedWorld::HydrologyStage::Lakes:
-                set_loading_stage (LoadingStage::CataloguingLakes);
-                break;
-              case GeneratedWorld::HydrologyStage::Drainage:
-                set_loading_stage (LoadingStage::TracingDrainage);
-                break;
-              case GeneratedWorld::HydrologyStage::Waterways:
-                set_loading_stage (LoadingStage::ConnectingWaterways);
-                break;
-              case GeneratedWorld::HydrologyStage::Channels:
-              case GeneratedWorld::HydrologyStage::Rivers:
-                set_loading_stage (LoadingStage::ExtractingRivers);
-                break;
-              }
-            });
-          {
-            // A one-line hydrology reading at load: pond explosions from
-            // erosion regressions show up here before any capture does.
-            const auto& hydrology = completed->hydrology ();
-            if (!hydrology)
-              throw std::logic_error ("completed world has no hydrology");
-            std::size_t wet = 0;
-            for (const terrain::WaterBody& body : hydrology->lakes ().bodies)
-              wet += terrain::count_value (body.cells);
-            std::cerr << "standing water: "
-                      << hydrology->lakes ().bodies.size () << " bodies, "
-                      << wet << " wet cells\n";
+        build.analyze_hydrology ([this] (GeneratedWorld::HydrologyStage stage) {
+          switch (stage) {
+          case GeneratedWorld::HydrologyStage::StandingWater:
+            set_loading_stage (LoadingStage::FindingStandingWater);
+            break;
+          case GeneratedWorld::HydrologyStage::Lakes:
+            set_loading_stage (LoadingStage::CataloguingLakes);
+            break;
+          case GeneratedWorld::HydrologyStage::Drainage:
+            set_loading_stage (LoadingStage::TracingDrainage);
+            break;
+          case GeneratedWorld::HydrologyStage::Waterways:
+            set_loading_stage (LoadingStage::ConnectingWaterways);
+            break;
+          case GeneratedWorld::HydrologyStage::Channels:
+          case GeneratedWorld::HydrologyStage::Rivers:
+            set_loading_stage (LoadingStage::ExtractingRivers);
+            break;
           }
+        });
+        {
+          // A one-line hydrology reading at load: pond explosions from
+          // erosion regressions show up here before any capture does.
+          const auto& hydrology = completed->hydrology ();
+          if (!hydrology)
+            throw std::logic_error ("completed world has no hydrology");
+          std::size_t wet = 0;
+          for (const terrain::WaterBody& body : hydrology->lakes ().bodies)
+            wet += terrain::count_value (body.cells);
+          std::cerr << "standing water: " << hydrology->lakes ().bodies.size ()
+                    << " bodies, " << wet << " wet cells\n";
         }
 
         set_loading_stage (LoadingStage::AssemblingWorld);
@@ -1167,7 +1146,7 @@ namespace moppe {
         session ().bike ().set_obstacles (&m_obstacles);
         session ().car ().set_obstacles (&m_obstacles);
 
-        if (!m_terrain_lab_preview && m_water_shot) {
+        if (m_water_shot) {
           m_water_inspection = choose_water_inspection (*m_water_shot,
                                                         map (),
                                                         *standing_water (),
@@ -1186,8 +1165,6 @@ namespace moppe {
 
       void place_stars_and_player () {
         MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
-        if (m_terrain_lab_preview)
-          return;
         session ().stars ().generate (map (), world (), 80);
         if (trail_network ()) {
           m_home_base_position =
@@ -1208,7 +1185,7 @@ namespace moppe {
 
       void grow_global_forest () {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
-        if (m_tree_demo || m_water_inspection || m_terrain_lab_preview)
+        if (m_tree_demo || m_water_inspection)
           return;
         m_forest.rebuild (
           *m_renderer, surface (), recipe ().seed ().value ^ 0xa34c91e5U);
@@ -1237,9 +1214,6 @@ namespace moppe {
                                       m_water_inspection->target);
           return;
         }
-        if (m_terrain_lab_preview)
-          return;
-
         constexpr std::size_t forest_size = 32;
         m_tree_stand.rebuild (r,
                               surface (),
@@ -1883,13 +1857,13 @@ namespace moppe {
           } else if (m_loading_activation_stage == 1) {
             r.clear_terrain_overlay ();
             upload_world_terrain (r);
-            if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
+            if (m_graphics.terrain_shadows)
               set_loading_stage (LoadingStage::CastingShadows);
             else
               set_loading_stage (LoadingStage::Ready);
             m_loading_activation_stage = 2;
           } else if (m_loading_activation_stage == 2) {
-            if (!m_terrain_lab_preview && m_graphics.terrain_shadows)
+            if (m_graphics.terrain_shadows)
               cast_world_shadows (r);
             set_loading_stage (LoadingStage::Ready);
             m_loading_activation_stage = 3;
@@ -2538,20 +2512,12 @@ namespace moppe {
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
         terrain::WorldRecipe next_recipe =
-          m_terrain_lab_preview
-            ? terrain::make_geological_world_recipe (
-                recipe ().extent (),
-                recipe ().resolution (),
-                recipe ().topology (),
-                next_seed,
-                recipe ().water_datum (),
-                recipe ().generation_profile ())
-            : terrain::make_world_recipe (recipe ().extent (),
-                                          recipe ().resolution (),
-                                          recipe ().topology (),
-                                          next_seed,
-                                          recipe ().water_datum (),
-                                          recipe ().generation_profile ());
+          terrain::make_world_recipe (recipe ().extent (),
+                                      recipe ().resolution (),
+                                      recipe ().topology (),
+                                      next_seed,
+                                      recipe ().water_datum (),
+                                      recipe ().generation_profile ());
         logic ().m_mode = M_BIKE;
         logic ().m_car_exists = false;
         logic ().m_game_over = false;
@@ -2656,7 +2622,6 @@ namespace moppe {
 
       render::Renderer* m_renderer;
       bool m_start_in_terrain_lab;
-      bool m_terrain_lab_preview;
       bool m_tree_demo;
       std::size_t m_tree_count;
       bool m_automated_regeneration_done = false;
@@ -2700,7 +2665,6 @@ int main (int argc, char** argv) {
 #endif
   platform::Config config;
   bool start_in_terrain_lab = false;
-  bool terrain_lab_preview = false;
   bool tree_demo = false;
   std::size_t tree_count = 9;
   std::string screenshot_path;
@@ -2787,11 +2751,6 @@ int main (int argc, char** argv) {
       }
     } else if (arg == "--terrain-lab") {
       start_in_terrain_lab = true;
-    } else if (arg == "--terrain-lab-preview") {
-      start_in_terrain_lab = true;
-      terrain_lab_preview = true;
-      config.fullscreen = false;
-      world.resolution = 1025;
     } else if (arg == "--tree-demo") {
       tree_demo = true;
     } else if (arg == "--tree-count") {
@@ -2820,7 +2779,6 @@ int main (int argc, char** argv) {
       }
       screenshot_path = argv[++i];
       start_in_terrain_lab = true;
-      terrain_lab_preview = true;
       config.fullscreen = false;
       world.resolution = 1025;
     } else if (arg == "--screenshot") {
@@ -2853,8 +2811,6 @@ int main (int argc, char** argv) {
       seed = std::atoi (argv[++i]);
     }
   }
-  if (terrain_lab_preview)
-    config.fullscreen = false;
   std::string graphics_error;
   if (!game::apply_graphics_environment (graphics, graphics_error)) {
     std::cerr << graphics_error << '\n';
@@ -2881,8 +2837,7 @@ int main (int argc, char** argv) {
       }
     ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
   }
-  if (generation_profile == terrain::TerrainGenerationProfile::Fast &&
-      !terrain_lab_preview)
+  if (generation_profile == terrain::TerrainGenerationProfile::Fast)
     world.resolution = 1025;
   config.capture_frames =
     !screenshot_path.empty () || ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
@@ -2894,26 +2849,17 @@ int main (int argc, char** argv) {
     seed = game::remembered_seed (world, generation_profile);
 
   const terrain::Seed world_seed { static_cast<std::uint32_t> (seed) };
-  terrain::WorldRecipe recipe =
-    terrain_lab_preview
-      ? terrain::make_geological_world_recipe (world.map_size,
-                                               world.resolution,
-                                               world.topology (),
-                                               world_seed,
-                                               world.water_level,
-                                               generation_profile)
-      : terrain::make_world_recipe (world.map_size,
-                                    world.resolution,
-                                    world.topology (),
-                                    world_seed,
-                                    world.water_level,
-                                    generation_profile);
+  terrain::WorldRecipe recipe = terrain::make_world_recipe (world.map_size,
+                                                            world.resolution,
+                                                            world.topology (),
+                                                            world_seed,
+                                                            world.water_level,
+                                                            generation_profile);
 
   game::MoppeGame game (world,
                         std::move (recipe),
                         graphics,
                         start_in_terrain_lab,
-                        terrain_lab_preview,
                         tree_demo,
                         tree_count,
                         std::move (screenshot_path),
