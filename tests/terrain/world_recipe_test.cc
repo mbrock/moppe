@@ -47,7 +47,6 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
   map::RandomHeightMap map (recipe.resolution (),
                             recipe.resolution (),
                             extent_value (recipe.extent ()),
-                            recipe.seed ().value,
                             recipe.topology ());
   map::TerrainEvaluator (map).evaluate (recipe.terrain_program ());
   MOPPE_CHECK (std::isfinite (map.get (0, 0)));

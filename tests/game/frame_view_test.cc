@@ -33,7 +33,7 @@ namespace {
 
   struct FrameFixture {
     map::RandomHeightMap map {
-      17, 17, Vec3 (160, 40, 160), 7, terrain::Topology::Bounded
+      17, 17, Vec3 (160, 40, 160), terrain::Topology::Bounded
     };
     game::WorldParams world;
     map::Surface surface;

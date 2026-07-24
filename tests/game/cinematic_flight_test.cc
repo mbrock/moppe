@@ -12,7 +12,7 @@ namespace {
     static constexpr int side = 17;
     static constexpr std::size_t count = side * side;
 
-    map::RandomHeightMap map { side, side, Vec3 (1600, 240, 1600), 7 };
+    map::RandomHeightMap map { side, side, Vec3 (1600, 240, 1600) };
     terrain::TerrainGrid grid = map.terrain_view ().grid ();
     terrain::FieldSamplingGrid2D domain { .width = side, .height = side };
     terrain::FloodField flood;
@@ -231,7 +231,6 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   map::RandomHeightMap map (storage_side,
                             storage_side,
                             Vec3 (1600, 240, 1600),
-                            9,
                             terrain::Topology::Torus);
   for (int z = 0; z < storage_side; ++z)
     for (int x = 0; x < storage_side; ++x) {

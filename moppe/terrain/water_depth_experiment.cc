@@ -115,7 +115,6 @@ int main (int argc, char** argv) {
         resolution,
         resolution,
         Vec3 (world_width_m, world_height_m, world_width_m),
-        seed,
         Topology::Torus);
       TerrainProgram program = make_world_program (seed, profile);
       program.source.sea_level = sea_level;

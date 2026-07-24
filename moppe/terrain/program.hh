@@ -1,7 +1,6 @@
 #ifndef MOPPE_TERRAIN_PROGRAM_HH
 #define MOPPE_TERRAIN_PROGRAM_HH
 
-#include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 #include <moppe/terrain/trail.hh>
@@ -15,44 +14,6 @@
 #include <vector>
 
 namespace moppe::terrain {
-  struct NormalizeHeights {
-    void validate () const;
-    TransformDescription description () const noexcept;
-    std::string detail () const;
-    std::size_t property_count () const noexcept;
-    TransformProperty property (std::size_t index) const;
-    float normalized_property (std::size_t index) const;
-    bool set_normalized_property (std::size_t index, float value);
-    bool adjust_natural_property (std::size_t index, int direction);
-  };
-
-  struct PowerHeights {
-    float exponent;
-
-    void validate () const;
-    TransformDescription description () const noexcept;
-    std::string detail () const;
-    std::size_t property_count () const noexcept;
-    TransformProperty property (std::size_t index) const;
-    float normalized_property (std::size_t index) const;
-    bool set_normalized_property (std::size_t index, float value);
-    bool adjust_natural_property (std::size_t index, int direction);
-  };
-
-  struct ThermalErosion {
-    IterationCount iterations;
-    float talus;
-
-    void validate () const;
-    TransformDescription description () const noexcept;
-    std::string detail () const;
-    std::size_t property_count () const noexcept;
-    TransformProperty property (std::size_t index) const;
-    float normalized_property (std::size_t index) const;
-    bool set_normalized_property (std::size_t index, float value);
-    bool adjust_natural_property (std::size_t index, int direction);
-  };
-
   // A geological uplift pattern scaled into physical tectonic velocity and
   // evolved against stream-power incision plus interleaved soil diffusion.
   struct OrogenyEvolution {
@@ -76,27 +37,16 @@ namespace moppe::terrain {
     }
   };
 
-  using TerrainTransform = std::variant<NormalizeHeights,
-                                        PowerHeights,
-                                        AnalyticalErosion,
-                                        OrogenyEvolution,
-                                        ThermalErosion,
-                                        TrailFormation,
-                                        HillslopeDiffusion>;
+  using TerrainTransform = std::variant<OrogenyEvolution, TrailFormation>;
 
-  using TerrainTransformReport = std::variant<std::monostate,
-                                              AnalyticalErosionReport,
-                                              StreamPowerEvolutionReport,
-                                              TrailFormationReport,
-                                              HillslopeDiffusionReport>;
+  using TerrainTransformReport = std::
+    variant<std::monostate, StreamPowerEvolutionReport, TrailFormationReport>;
 
   // A source is a value in its own right, rather than an implicit prelude to
   // the transform list.  The geological source retains its recipe so tools
   // can edit meaningful parameters and expand it into a ScalarField on demand.
   struct GeologicalSource {
     GeologicalRecipe recipe;
-    GeologicalLayer layer;
-    enum class Mode { Relief, Orogeny } mode = Mode::Relief;
     // Orogeny begins from a continent-shaped seed with separate emergent and
     // submerged scales. Mountain relief must then be earned by uplift against
     // erosion, while the fixed ocean boundary retains real bathymetry.
@@ -120,9 +70,6 @@ namespace moppe::terrain {
 
   enum class TerrainGenerationProfile { Fast, Play, Research };
 
-  TerrainProgram
-  make_geological_program (std::uint32_t root_seed,
-                           GeologicalLayer layer = GeologicalLayer::Combined);
   TerrainProgram make_default_world_program (std::uint32_t root_seed);
   TerrainProgram make_orogeny_program (
     std::uint32_t root_seed,

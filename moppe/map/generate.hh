@@ -3,16 +3,11 @@
 #define MOPPE_GENERATE_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/terrain/erosion.hh>
 #include <moppe/terrain/evaluator.hh>
-#include <moppe/terrain/geological.hh>
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/topology.hh>
 
 #include <cmath>
-#include <iostream>
-#include <memory>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -226,7 +221,6 @@ namespace moppe {
       RandomHeightMap (int width,
                        int height,
                        const Vec3& size,
-                       int seed = 0,
                        terrain::Topology topology = terrain::Topology::Bounded);
 
       inline float get (int x, int y) const {
@@ -275,40 +269,13 @@ namespace moppe {
           m_deposited[index] += delta;
       }
 
-      void normalize ();
-      void translate (float d);
-      void rescale (float k);
-      void exponentiate (float k);
       void synchronize_periodic_edges ();
-
-      // Restart all procedural choices from a known seed.  Terrain
-      // tools use this before selecting a component so every view is
-      // sampled from the same underlying noise fields.
-      void reseed (int seed) {
-        m_rng.seed (std::mt19937::result_type (seed));
-      }
-
-      void randomize_uniformly ();
-      void randomize_plasmally (float roughness);
-
-      // Noise-composed terrain: smooth warped plains low down,
-      // ridged mountains up high.  Leaves normals to the caller so
-      // further shaping passes can run first.
-      void randomize_geologically (
-        terrain::GeologicalLayer layer = terrain::GeologicalLayer::Combined);
 
       // Sample an arbitrary scalar-field value into this storage.  Choosing and
       // expanding a program source belongs to TerrainEvaluator.
       void materialize (const terrain::ScalarField& field);
       void materialize (const terrain::ScalarField& field,
                         const terrain::FieldEvaluator& evaluator);
-
-      // Load raw little-endian uint16 heights (width x height, row 0
-      // first); value * meters_per_unit gives meters, normalized
-      // against max_height_m.
-      void load_raw_u16 (const std::string& path,
-                         float meters_per_unit,
-                         float max_height_m);
 
       // Save/load the finished heightfield. Gameplay supplies an automatic
       // build/profile/seed-keyed path; MOPPE_MAPCACHE can override it.
@@ -317,29 +284,13 @@ namespace moppe {
       bool try_load_cache (const std::string& path);
       void save_cache (const std::string& path) const;
 
-      // Talus relaxation: material on too-steep slopes slides to the
-      // foot, smoothing single-cell erosion spikes into scree.
-      void erode_thermally (int iterations, float talus);
-
-      // Linear hillslope diffusion (soil creep): explicit 5-point
-      // Jacobi sweeps of dz/dt = D * laplacian(z) with an internally
-      // derived stable timestep. Rounds crests and softens erosion spikes
-      // where talus never triggers.
-      terrain::HillslopeDiffusionReport
-      diffuse_hillslopes (julian_years_t duration,
-                          square_meters_per_julian_year_t diffusivity);
-
     private:
       void synchronize_periodic_ledger_edges ();
 
       Array2D<float> m_data;
       std::vector<float> m_eroded;
       std::vector<float> m_deposited;
-
-      std::mt19937 m_rng;
     };
-
-    void write_tga (std::ostream& stream, const HeightMap& map);
   }
 }
 

@@ -90,7 +90,8 @@ namespace moppe::game {
 
     map::RandomHeightMap* m_map = nullptr;
     std::unique_ptr<map::TerrainEvaluator> m_evaluator;
-    terrain::TerrainProgram m_program = terrain::make_geological_program (0);
+    terrain::TerrainProgram m_program =
+      terrain::make_world_program (0, terrain::TerrainGenerationProfile::Fast);
     std::optional<map::TerrainCheckpoint> m_original_map;
     std::vector<map::TerrainCheckpoint> m_checkpoints;
     std::vector<terrain::TerrainTransformReport> m_reports;

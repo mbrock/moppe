@@ -156,7 +156,6 @@ int main (int argc, char** argv) {
       map::RandomHeightMap reference_map (resolution,
                                           resolution,
                                           Vec3 (11000.0f, 650.0f, 11000.0f),
-                                          seed,
                                           Topology::Torus);
       map::TerrainEvaluator reference_evaluator (reference_map);
       reference_evaluator.begin (program);
@@ -179,7 +178,6 @@ int main (int argc, char** argv) {
       map::RandomHeightMap map (resolution,
                                 resolution,
                                 Vec3 (11000.0f, 650.0f, 11000.0f),
-                                seed,
                                 Topology::Torus);
       map::TerrainEvaluator evaluator (map, nullptr, backend.get ());
       evaluator.begin (program);

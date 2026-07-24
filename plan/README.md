@@ -49,8 +49,7 @@ bridge between them: concrete enough to start, honest about cost.
   an explicit domain: `remap`/precomposition as the one warp operator,
   periodicity as a quotient domain, fBm as a derived combinator.
 - [RFC-012](rfc-012-elevation-datums-normalization.md) — Elevation as a
-  datum-anchored point; rasters carry their calibration; normalization
-  split into a measurement and an affine reparameterization.
+  datum-anchored point with an explicit raster calibration.
 - [RFC-013](rfc-013-discretization-reconstruction.md) — A
   discretization is a lattice *plus a reconstruction*: name the four
   existing continuizations and make their invariants explicit.
