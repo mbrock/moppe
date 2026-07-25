@@ -2,6 +2,7 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -22,6 +23,14 @@ namespace {
   Vec3 sheet_velocity (const WaterSheets& sheets, std::size_t cell) {
     return spatial::get<water_velocity> (sheets)[cell].numerical_value_in (
       u::m / u::s);
+  }
+
+  const RiverReach* watercourse_reach_containing (const RiverNetwork& network,
+                                                  CellIndex cell) {
+    for (const RiverReach& reach : network.reaches)
+      if (std::ranges::find (reach.cells, cell) != reach.cells.end ())
+        return &reach;
+    return nullptr;
   }
 
   std::vector<float> valley_to_sea () {
@@ -184,12 +193,14 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
 
   // The inlet reach continues across the pond: it links downstream and its
   // alignment pools at the flood level with the ribbon staying opaque.
-  const RiverReachId inlet_id = rivers.reach_by_cell[1 * width + 3];
-  MOPPE_CHECK (inlet_id != RiverReach::no_id);
-  const RiverReach& inlet = rivers.reaches[inlet_id];
-  MOPPE_CHECK (inlet.downstream_reach != RiverReach::no_id);
+  const RiverReach* inlet =
+    watercourse_reach_containing (rivers, 1 * width + 3);
+  MOPPE_CHECK (inlet);
+  if (!inlet)
+    return;
+  MOPPE_CHECK (inlet->downstream_reach != RiverReach::no_id);
   bool pooled_point = false;
-  for (const RiverAlignmentPoint& point : inlet.alignment.points)
+  for (const RiverAlignmentPoint& point : inlet->alignment.points)
     if (point.pooled > 0.9f) {
       pooled_point = true;
       MOPPE_CHECK (point.standing_water < 0.1f);

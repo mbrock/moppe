@@ -194,6 +194,9 @@ namespace moppe::terrain {
       const int height = static_cast<int> (grid.height ());
       const float period_x = width * meters_value (grid.spacing_x ());
       const float period_z = height * meters_value (grid.spacing_z ());
+      std::vector<std::uint8_t> waterfall_cells (grid.size (), 0);
+      for (const Waterfall& waterfall : network.waterfalls)
+        waterfall_cells[waterfall.lip_cell] = 1;
       const auto water_cell = [&] (CellIndex cell) {
         return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
       };
@@ -317,9 +320,7 @@ namespace moppe::terrain {
               .contributing_area_m2 = area_m2,
               .slope =
                 drainage.slope_at (cell).numerical_value_in (mp_units::one),
-              .waterfall = network.waterfall_by_cell[cell] != Waterfall::no_id
-                             ? 1.0f
-                             : 0.0f,
+              .waterfall = waterfall_cells[cell] ? 1.0f : 0.0f,
               .standing_water = terminating ? 1.0f : 0.0f,
               .water_level_m = flood.water_level_m (cell),
               .pooled = pooled ? 1.0f : 0.0f });
@@ -415,23 +416,8 @@ namespace moppe::terrain {
       if (receiver[cell] != cell)
         area[receiver[cell]] += area[cell];
 
-    std::vector<CellIndex> basin (count, no_cell);
-    std::vector<CellIndex> sinks;
-    for (auto i = order.rbegin (); i != order.rend (); ++i) {
-      const std::uint32_t cell = *i;
-      if (receiver[cell] == cell) {
-        basin[cell] = cell;
-        sinks.push_back (cell);
-      } else {
-        basin[cell] = basin[receiver[cell]];
-      }
-    }
-    std::sort (sinks.begin (), sinks.end ());
-
     return { .readings = make_drainage_readings (domain, slope, area),
-             .receiver = std::move (receiver),
-             .basin = std::move (basin),
-             .sinks = std::move (sinks) };
+             .receiver = std::move (receiver) };
   }
 
   WetDrainageRouting route_wet_drainage (const FloodField& flood,
@@ -566,74 +552,8 @@ namespace moppe::terrain {
     if (order.size () != count)
       throw std::logic_error ("wet drainage routing contains a cycle");
 
-    std::vector<CellIndex> basin (count, no_cell);
-    std::vector<CellIndex> sinks;
-    {
-      MOPPE_PROFILE_ZONE ("wet_drainage.assign_basins");
-      for (auto i = order.rbegin (); i != order.rend (); ++i) {
-        const std::uint32_t cell = *i;
-        if (receiver[cell] == cell) {
-          basin[cell] = cell;
-          sinks.push_back (cell);
-        } else {
-          basin[cell] = basin[receiver[cell]];
-        }
-      }
-      std::sort (sinks.begin (), sinks.end ());
-    }
-
-    std::vector<CellIndex> topological_order;
-    topological_order.reserve (order.size ());
-    for (const std::uint32_t cell : order)
-      topological_order.push_back (CellIndex { cell });
-
     return { .readings = make_drainage_readings (grid, routing.slope, area),
-             .receiver = std::move (receiver),
-             .basin = std::move (basin),
-             .sinks = std::move (sinks),
-             .topological_order = std::move (topological_order) };
-  }
-
-  WaterNetwork analyze_water_network (const FloodField& flood,
-                                      const LakeCensus& census,
-                                      const DrainageGraph& drainage) {
-    MOPPE_PROFILE_ZONE ("analyze_water_network");
-    const std::size_t count = flood.width () * flood.height ();
-    if (census.body.size () != count || drainage.width () != flood.width () ||
-        drainage.height () != flood.height ())
-      throw std::invalid_argument ("water analyses do not share a domain");
-
-    WaterNetwork network;
-    network.bodies.reserve (census.bodies.size ());
-    for (const WaterBody& body : census.bodies) {
-      WaterBodyFlow flow { .body_id = body.id,
-                           .inflow_area =
-                             0.0f * mp_units::si::metre * mp_units::si::metre,
-                           .outlet_cell = body.outlet_cell,
-                           .spill_cell = body.spill_cell,
-                           .downstream_cell = WaterBodyFlow::no_cell,
-                           .outflow_area =
-                             0.0f * mp_units::si::metre * mp_units::si::metre };
-      if (body.spill_cell != WaterBody::no_cell) {
-        flow.downstream_cell = drainage.receiver[body.spill_cell];
-        flow.outflow_area = drainage.contributing_area_at (body.spill_cell);
-      }
-      network.bodies.push_back (std::move (flow));
-    }
-
-    for (std::uint32_t cell = 0; cell < count; ++cell) {
-      const std::uint32_t next = drainage.receiver[cell];
-      if (next == cell || census.body[cell] != LakeCensus::dry ||
-          census.body[next] == LakeCensus::dry)
-        continue;
-      WaterBodyFlow& flow = network.bodies[census.body[next]];
-      const square_meters_t area = drainage.contributing_area_at (cell);
-      flow.inlets.push_back ({ .upstream_cell = cell,
-                               .water_cell = next,
-                               .contributing_area = area });
-      flow.inflow_area += area;
-    }
-    return network;
+             .receiver = std::move (receiver) };
   }
 
   RiverNetwork
@@ -682,16 +602,13 @@ namespace moppe::terrain {
         ocean_body = body.id;
     }
 
-    RiverNetwork network {
-      .minimum_area = minimum_area,
-      .waterfall_parameters = waterfall_parameters,
-      .reach_by_cell = std::vector<RiverReachId> (count, RiverReach::no_id),
-      .waterfall_by_cell = std::vector<WaterfallId> (count, Waterfall::no_id),
-      .body_traversed = std::vector<std::uint8_t> (census.bodies.size (), 0)
-    };
+    RiverNetwork network { .minimum_area = minimum_area,
+                           .waterfall_parameters = waterfall_parameters,
+                           .body_traversed = std::vector<std::uint8_t> (
+                             census.bodies.size (), 0) };
+    std::vector<RiverReachId> reach_by_cell (count, RiverReach::no_id);
     for (std::uint32_t start = 0; start < count; ++start) {
-      if (!eligible[start] ||
-          network.reach_by_cell[start] != RiverReach::no_id ||
+      if (!eligible[start] || reach_by_cell[start] != RiverReach::no_id ||
           (river_donors[start] == 1 && body_at_spill[start] == no_water_body))
         continue;
       RiverReach reach { .id =
@@ -705,9 +622,8 @@ namespace moppe::terrain {
                            drainage.contributing_area_at (start),
                          .maximum_slope = 0.0f * terrain_slope[mp_units::one] };
       std::uint32_t cell = start;
-      while (eligible[cell] &&
-             network.reach_by_cell[cell] == RiverReach::no_id) {
-        network.reach_by_cell[cell] = reach.id;
+      while (eligible[cell] && reach_by_cell[cell] == RiverReach::no_id) {
+        reach_by_cell[cell] = reach.id;
         reach.cells.push_back (cell);
         reach.downstream_area = drainage.contributing_area_at (cell);
         reach.maximum_slope =
@@ -731,7 +647,7 @@ namespace moppe::terrain {
     for (RiverReach& reach : network.reaches) {
       const std::uint32_t next = drainage.receiver[reach.cells.back ()];
       if (eligible[next])
-        reach.downstream_reach = network.reach_by_cell[next];
+        reach.downstream_reach = reach_by_cell[next];
     }
     // A body that does not terminate rivers — a transient depression or a
     // channel-like flooded segment — is drainage structure, not a rendered
@@ -745,7 +661,7 @@ namespace moppe::terrain {
       if (water_body_terminates_rivers (body) ||
           body.spill_cell == WaterBody::no_cell || !eligible[body.spill_cell])
         continue;
-      reach.downstream_reach = network.reach_by_cell[body.spill_cell];
+      reach.downstream_reach = reach_by_cell[body.spill_cell];
     }
 
     for (const RiverReach& reach : network.reaches) {
@@ -758,8 +674,6 @@ namespace moppe::terrain {
       const auto emit_selected = [&] {
         if (!has_selected)
           return;
-        selected.id = static_cast<std::uint32_t> (network.waterfalls.size ());
-        network.waterfall_by_cell[selected.lip_cell] = selected.id;
         network.waterfalls.push_back (selected);
         has_selected = false;
         selected_score = 0.0f;

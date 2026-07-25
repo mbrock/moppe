@@ -21,14 +21,13 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
                            .sea_level = -1.0f,
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
-                           .spill_receiver = std::vector<CellIndex> (count, 40),
-                           .outlets = { 40 } };
+                           .spill_receiver =
+                             std::vector<CellIndex> (count, 40) };
   const LakeCensus census { .body = std::move (body) };
   const DrainageGraph drainage { .readings =
                                    make_drainage_readings (grid, slopes, areas),
-                                 .receiver = std::vector<CellIndex> (count, 40),
-                                 .basin = std::vector<CellIndex> (count, 0),
-                                 .sinks = { 40 } };
+                                 .receiver =
+                                   std::vector<CellIndex> (count, 40) };
 
   const MoistureMap moisture = analyze_moisture (flood, census, drainage);
   const auto& values = spatial::get<surface_moisture> (moisture);

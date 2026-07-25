@@ -26,12 +26,10 @@ namespace moppe::game {
                                         terrain::LakeCensus lakes,
                                         terrain::DrainageGraph drainage,
                                         terrain::FractionalDrainage channels,
-                                        terrain::WaterNetwork waterways,
                                         terrain::RiverNetwork rivers)
       : m_standing_water (std::move (standing_water)),
         m_lakes (std::move (lakes)), m_drainage (std::move (drainage)),
-        m_channels (std::move (channels)), m_waterways (std::move (waterways)),
-        m_rivers (std::move (rivers)) {}
+        m_channels (std::move (channels)), m_rivers (std::move (rivers)) {}
 
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe)
@@ -65,10 +63,6 @@ namespace moppe::game {
     terrain::DrainageGraph drainage =
       terrain::analyze_wet_drainage (standing_water, lakes);
 
-    report (HydrologyStage::Waterways);
-    terrain::WaterNetwork waterways =
-      terrain::analyze_water_network (standing_water, lakes, drainage);
-
     report (HydrologyStage::Channels);
     terrain::FractionalDrainage channels =
       terrain::analyze_fractional_drainage (standing_water, lakes);
@@ -85,7 +79,6 @@ namespace moppe::game {
                                     std::move (lakes),
                                     std::move (drainage),
                                     std::move (channels),
-                                    std::move (waterways),
                                     std::move (rivers)));
   }
 

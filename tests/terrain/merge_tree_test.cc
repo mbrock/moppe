@@ -26,8 +26,13 @@ namespace {
       flood_from_merge_tree (tree, terrain, sea_level);
 
     MOPPE_CHECK (flood.has_ocean == oracle.has_ocean);
-    MOPPE_CHECK (oracle.outlets.size () == 1);
-    MOPPE_CHECK (flood.root_cell == oracle.outlets.front ());
+    CellIndex oracle_root = no_cell;
+    for (std::uint32_t cell = 0; cell < oracle.spill_receiver.size (); ++cell)
+      if (oracle.spill_receiver[cell] == cell) {
+        MOPPE_CHECK (oracle_root == no_cell);
+        oracle_root = cell;
+      }
+    MOPPE_CHECK (flood.root_cell == oracle_root);
     const auto expected = oracle.water_levels ();
     const auto& actual = spatial::get<surface_elevation> (flood.water_level);
     MOPPE_CHECK (expected.size () == actual.size ());

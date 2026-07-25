@@ -50,14 +50,10 @@ namespace moppe::terrain {
   struct CellIndexTag;
   struct WaterBodyIdTag;
   struct RiverReachIdTag;
-  struct WaterfallIdTag;
-  struct TrailComponentIdTag;
 
   using CellIndex = Identifier<CellIndexTag>;
   using WaterBodyId = Identifier<WaterBodyIdTag>;
   using RiverReachId = Identifier<RiverReachIdTag>;
-  using WaterfallId = Identifier<WaterfallIdTag>;
-  using TrailComponentId = Identifier<TrailComponentIdTag>;
 
   inline constexpr CellIndex no_cell {
     std::numeric_limits<std::uint32_t>::max ()
@@ -68,13 +64,6 @@ namespace moppe::terrain {
   inline constexpr RiverReachId no_river_reach {
     std::numeric_limits<std::uint32_t>::max ()
   };
-  inline constexpr WaterfallId no_waterfall {
-    std::numeric_limits<std::uint32_t>::max ()
-  };
-  inline constexpr TrailComponentId no_trail_component {
-    std::numeric_limits<std::uint32_t>::max ()
-  };
-
   // Numbers of entities are quantities of dimension one.  Distinct kinds
   // preserve their algebra while preventing unrelated counts from mixing.
   inline constexpr struct cell_count

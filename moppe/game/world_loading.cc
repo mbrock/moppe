@@ -198,9 +198,6 @@ namespace moppe::game {
                  "Measuring every separate body of water" };
       case Stage::Drainage:
         return { "Tracing the drainage", "Following every wet cell downhill" };
-      case Stage::Waterways:
-        return { "Connecting the waterways",
-                 "Joining lakes, outlets, and the sea" };
       case Stage::Channels:
       case Stage::Rivers:
         return { "Extracting the rivers",

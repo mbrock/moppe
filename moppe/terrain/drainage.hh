@@ -59,9 +59,6 @@ namespace moppe::terrain {
   struct DrainageGraph {
     DrainageReadings readings;
     std::vector<CellIndex> receiver;
-    std::vector<CellIndex> basin;
-    std::vector<CellIndex> sinks;
-    std::vector<CellIndex> topological_order;
 
     std::size_t width () const noexcept {
       return readings.domain ().width ();
@@ -90,28 +87,6 @@ namespace moppe::terrain {
     square_meters_t contributing_area_at (std::size_t cell) const {
       return contributing_areas ()[cell];
     }
-  };
-
-  struct WaterInlet {
-    CellIndex upstream_cell;
-    CellIndex water_cell;
-    square_meters_t contributing_area;
-  };
-
-  struct WaterBodyFlow {
-    static constexpr CellIndex no_cell = terrain::no_cell;
-
-    WaterBodyId body_id;
-    std::vector<WaterInlet> inlets;
-    square_meters_t inflow_area;
-    CellIndex outlet_cell;
-    CellIndex spill_cell;
-    CellIndex downstream_cell;
-    square_meters_t outflow_area;
-  };
-
-  struct WaterNetwork {
-    std::vector<WaterBodyFlow> bodies;
   };
 
   // A dense, unwrapped plan-view trajectory derived from a receiver chain.
@@ -163,9 +138,6 @@ namespace moppe::terrain {
   };
 
   struct Waterfall {
-    static constexpr WaterfallId no_id = no_waterfall;
-
-    WaterfallId id;
     RiverReachId reach_id;
     CellIndex lip_cell;
     CellIndex foot_cell;
@@ -178,8 +150,6 @@ namespace moppe::terrain {
   struct RiverNetwork {
     square_meters_t minimum_area;
     WaterfallParameters waterfall_parameters;
-    std::vector<RiverReachId> reach_by_cell;
-    std::vector<WaterfallId> waterfall_by_cell;
     std::vector<RiverReach> reaches;
     std::vector<Waterfall> waterfalls;
     // One flag per census body: a river alignment passes through it from
@@ -203,9 +173,6 @@ namespace moppe::terrain {
                                          const LakeCensus& census);
   DrainageGraph analyze_wet_drainage (const FloodField& flood,
                                       const LakeCensus& census);
-  WaterNetwork analyze_water_network (const FloodField& flood,
-                                      const LakeCensus& census,
-                                      const DrainageGraph& drainage);
   RiverNetwork
   extract_river_network (const FloodField& flood,
                          const LakeCensus& census,

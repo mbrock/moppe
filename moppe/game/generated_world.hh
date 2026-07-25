@@ -24,7 +24,6 @@ namespace moppe::game {
       StandingWater,
       Lakes,
       Drainage,
-      Waterways,
       Channels,
       Rivers,
     };
@@ -49,10 +48,6 @@ namespace moppe::game {
         return m_channels;
       }
 
-      const terrain::WaterNetwork& waterways () const noexcept {
-        return m_waterways;
-      }
-
       const terrain::RiverNetwork& rivers () const noexcept {
         return m_rivers;
       }
@@ -64,14 +59,12 @@ namespace moppe::game {
                  terrain::LakeCensus lakes,
                  terrain::DrainageGraph drainage,
                  terrain::FractionalDrainage channels,
-                 terrain::WaterNetwork waterways,
                  terrain::RiverNetwork rivers);
 
       terrain::FloodField m_standing_water;
       terrain::LakeCensus m_lakes;
       terrain::DrainageGraph m_drainage;
       terrain::FractionalDrainage m_channels;
-      terrain::WaterNetwork m_waterways;
       terrain::RiverNetwork m_rivers;
     };
 

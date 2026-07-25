@@ -78,7 +78,7 @@ because both surfaces have matching texture dimensions.
 
 `GeneratedWorld::Hydrology` is similarly a complete analytical value rather
 than a collection of app-level optionals. It contains standing water, lake
-census, drainage, fractional channels, waterways, and the river network.
+census, drainage, fractional channels, and the river network.
 `WaterSurface` and `TrailNetwork` use optional storage to express their
 construction boundary and to support focused tests. Ordinary completed worlds
 build both. The detailed vocabulary, validity rules, and quantity-to-texture

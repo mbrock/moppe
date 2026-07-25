@@ -116,7 +116,6 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.heights.size () == original.size ());
   MOPPE_CHECK (result.report.centerline_cells > cell_count (0));
   MOPPE_CHECK (result.report.shaped_cells > cell_count (0));
-  MOPPE_CHECK (result.report.connected_components > 0);
   MOPPE_CHECK (result.report.cut_volume > 0.0);
   MOPPE_CHECK (result.report.fill_volume > 0.0);
   MOPPE_CHECK (result.report.mean_centerline_grade >= 0.0);
@@ -138,41 +137,39 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
     MOPPE_CHECK_NEAR (result.heights[8 * 9 + x], original[8 * 9 + x], 1e-7f);
 }
 
-MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
+MOPPE_TEST (trail_network_retains_connected_circuit_and_material_footprint) {
   const std::vector<float> original = bumpy_valley ();
   const TrailFormationResult result = form_trails (
     make_elevation_map (trail_valley_grid (), original), test_parameters ());
   const TrailNetwork& network = result.network;
 
-  MOPPE_CHECK (!network.cells.empty ());
-  MOPPE_CHECK (network.components.size () == 1);
+  MOPPE_CHECK (!network.plan.circuit.empty ());
   MOPPE_CHECK (network.plan.home_base != no_cell);
   MOPPE_CHECK (network.plan.scenic_focus != no_cell);
-  MOPPE_CHECK (network.plan.circuit == network.cells);
-  MOPPE_CHECK (network.cells.front () == network.plan.home_base);
-  MOPPE_CHECK (network.alignment.points.size () > network.cells.size ());
+  MOPPE_CHECK (network.plan.circuit.front () == network.plan.home_base);
+  MOPPE_CHECK (network.alignment.points.size () > network.plan.circuit.size ());
   MOPPE_CHECK (network.alignment.length > 0.0 * mp_units::si::metre);
   const auto& influence = spatial::get<trail_influence> (network.use);
   const auto& home_base = spatial::get<home_base_influence> (network.use);
   MOPPE_CHECK (influence.size () == original.size ());
   MOPPE_CHECK (home_base.size () == original.size ());
-  MOPPE_CHECK (network.components.front ().anchor_cell ==
-               network.plan.home_base);
   MOPPE_CHECK_NEAR (
     home_base[network.plan.home_base.value].numerical_value_in (mp_units::one),
     1.0f,
     1e-6f);
-  for (const CellIndex cell : network.cells) {
-    MOPPE_CHECK (network.contains (cell));
-    const CellIndex next = network.receiver[cell.value];
-    MOPPE_CHECK (next != no_cell);
-    MOPPE_CHECK (network.contains (next));
-    MOPPE_CHECK (network.component_by_cell[cell.value] ==
-                 network.component_by_cell[next.value]);
-    CellIndex cursor = cell;
-    for (std::size_t steps = 0; steps < network.cells.size (); ++steps)
-      cursor = network.receiver[cursor.value];
-    MOPPE_CHECK (cursor == cell);
+  const std::size_t circuit_size = network.plan.circuit.size ();
+  const int circuit_width = static_cast<int> (network.domain.width ());
+  const int circuit_height = static_cast<int> (network.domain.height ());
+  for (std::size_t i = 0; i < circuit_size; ++i) {
+    const CellIndex cell = network.plan.circuit[i];
+    const CellIndex next = network.plan.circuit[(i + 1) % circuit_size];
+    int dx = std::abs (static_cast<int> (cell.value % circuit_width) -
+                       static_cast<int> (next.value % circuit_width));
+    int dy = std::abs (static_cast<int> (cell.value / circuit_width) -
+                       static_cast<int> (next.value / circuit_width));
+    dx = std::min (dx, circuit_width - dx);
+    dy = std::min (dy, circuit_height - dy);
+    MOPPE_CHECK ((dx != 0 || dy != 0) && dx <= 1 && dy <= 1);
   }
   for (const TrailInfluence value : influence) {
     MOPPE_CHECK (value >= 0.0f * trail_influence[mp_units::one]);
@@ -219,9 +216,7 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
                second.network.earthwork_delta_m);
   MOPPE_CHECK (first.network.earthwork_delta_m.size () == original.size ());
   MOPPE_CHECK (first.network.alignment == second.network.alignment);
-  MOPPE_CHECK (first.network.receiver == second.network.receiver);
-  MOPPE_CHECK (first.network.component_by_cell ==
-               second.network.component_by_cell);
+  MOPPE_CHECK (first.network.plan.circuit == second.network.plan.circuit);
   MOPPE_CHECK (first.network.plan.home_base == second.network.plan.home_base);
   MOPPE_CHECK (first.network.plan.control_sites ==
                second.network.plan.control_sites);
@@ -320,8 +315,7 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   const TrailFormationResult result = form_trails (
     make_elevation_map (moated_peak_grid (), moated_peak ()), parameters);
 
-  MOPPE_CHECK (result.network.components.size () == 1);
-  MOPPE_CHECK (result.network.cells.size () >= 4);
+  MOPPE_CHECK (result.network.plan.circuit.size () >= 4);
   // Control sites stay on dry land; the moat is never a control site.
   const std::vector<float> heights = moated_peak ();
   for (const CellIndex site : result.network.plan.control_sites)
@@ -339,7 +333,7 @@ MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
     make_elevation_map (alpine_temptation_grid (), original), parameters);
 
   float maximum_original_height = 0.0f;
-  for (const CellIndex cell : result.network.cells)
+  for (const CellIndex cell : result.network.plan.circuit)
     maximum_original_height =
       std::max (maximum_original_height, original[cell.value]);
   MOPPE_CHECK (maximum_original_height < 40.0f);
