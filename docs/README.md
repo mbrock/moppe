@@ -15,6 +15,9 @@
 - `terrain-expressions.md` — direct terrain generation and analysis design.
 - `trails.md` — leisure-circuit planning, grading, materials, and consumers.
 - `units.md` — scientific quantities, unit conventions, and simulation scale.
+- `ontology.md` — what kinds of things the game world contains: fields and
+  fiat objects, substances and qualities, processes, populations, and what
+  makes a representation faithful. A vocabulary, not a specification.
 - `working-practices.md` — development and verification practices.
 
 Repository-native RFCs and their executable work-item graphs live in
