@@ -18,16 +18,20 @@ namespace {
       return false;
     for (int y = 0; y < left.height (); ++y)
       for (int x = 0; x < left.width (); ++x)
-        if (std::bit_cast<std::uint32_t> (left.relative_elevation_at (x, y)) !=
-            std::bit_cast<std::uint32_t> (right.relative_elevation_at (x, y)))
+        if (std::bit_cast<std::uint32_t> (
+              terrain::surface_elevation_value (left.elevation_at (x, y))) !=
+            std::bit_cast<std::uint32_t> (
+              terrain::surface_elevation_value (right.elevation_at (x, y))))
           return false;
     return true;
   }
 
   std::vector<float> heights_of (const moppe::map::Surface& map) {
     std::vector<float> values;
-    values.reserve (map.elevations ().size ());
-    for (const auto elevation : map.elevations ())
+    const auto& elevations =
+      moppe::spatial::get<moppe::terrain::surface_elevation> (map.geometry ());
+    values.reserve (elevations.size ());
+    for (const auto elevation : elevations)
       values.push_back (moppe::terrain::surface_elevation_value (elevation));
     return values;
   }
@@ -39,7 +43,11 @@ MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   map::Surface map (33, 33, Vec3 (640, 650, 640));
   for (int y = 0; y < map.height (); ++y)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, y, static_cast<float> (x + y) / 64.0f);
+      map.set_elevation (
+        x,
+        y,
+        moppe::terrain::surface_elevation_point (
+          (static_cast<float> (x + y) / 64.0f) * 650.0f * mp_units::si::metre));
   const std::vector<float> original = heights_of (map);
   TerrainProgram program =
     make_orogeny_program (42, TerrainGenerationProfile::Fast);

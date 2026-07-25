@@ -11,8 +11,8 @@ This document is a reference for quantities we already use or may want to
 model. It does not prescribe the C++ types, API shapes, storage units, or naming
 conventions that should represent them. Those choices are being worked out as
 Moppe adopts mp-units. Nor does it claim that every current process is
-physically calibrated: the procedural field graph still contains normalized
-and empirical quantities.
+physically calibrated: the direct procedural geology recipe still contains
+normalized and empirical quantities.
 
 Several examples below come from the project's research corpus. Parenthetical
 identifiers such as `#ZHQFZP` name the supporting excerpt in that corpus. They
@@ -146,10 +146,9 @@ depth = max(water_surface_elevation - ground_elevation, 0)
 volume = sum(depth * cell_area)
 ```
 
-Moppe's `FloodField` stores normalized water level and depth because it shares
-the terrain raster representation. `LakeCensus` converts its public
-measurements to `area_m2`, depth in metres, `volume_m3`, and
-`surface_level_m`. `WaterPermanence` thresholds use the same physical units.
+Moppe's `FloodField` stores water level and depth directly in metres.
+`LakeCensus` records physical area, depth, volume, and surface level.
+`WaterPermanence` thresholds use the same physical units.
 
 Stage is water-surface elevation relative to a datum, in metres. Depth is
 stage minus bed elevation. Freeboard is the vertical distance between water
@@ -298,8 +297,8 @@ paper without copying its complete formulation and unit convention.
 Moppe's analytical erosion uses `n = 1`, `time_years`, uplift in m/yr,
 physical area in m², and physical path distance in m. Its `erodibility`
 parameter therefore follows the model-year dimensional convention above; it
-is not dimensionless. Sea level remains normalized at the terrain analysis
-boundary in the current implementation.
+is not dimensionless. Sea level remains in metres at the terrain analysis
+boundary.
 
 The gameplay Orogeny solver instead writes the same `n = 1` law as
 `v_ref (A / A_ref)^m S`. Both `v_ref` (m/yr) and `A_ref` (m²) have stable
@@ -355,11 +354,11 @@ kg/(m s) per unit width, or a volumetric equivalent. An arbitrary droplet
 ### Hillslopes, weathering, and mass wasting
 
 A talus or repose threshold may be represented as slope ratio, angle, or
-height difference between neighboring samples. Moppe's current thermal
-erosion `talus` is a normalized sample-height difference, so its physical
-meaning changes with height scale and grid spacing. A future physical form
-should use a critical slope or angle and a transport coefficient with stated
-dimensions.
+height difference between neighboring samples. Moppe's former thermal-erosion
+pass used a normalized neighbouring-height threshold; that pass was deleted
+rather than carried into the physical-elevation architecture. Any future mass
+wasting model should use a critical slope or angle and a transport coefficient
+with stated dimensions.
 
 Published thermal-erosion controls show the distinction. A common talus limit
 is 30 degrees, while one experiment varies it from 6 to 54 degrees to model
@@ -550,10 +549,10 @@ its model and spatial scale.
 | Quantity | Current representation |
 | --- | --- |
 | world position and map extent | m |
-| stored terrain height | normalized; multiply by `height_scale` for m |
+| stored terrain elevation | affine point in m |
 | terrain sample spacing | m |
 | sea level at world/game boundary | m |
-| sea level in terrain analyses | normalized height |
+| sea level in terrain analyses | m |
 | drainage slope | dimensionless m/m |
 | contributing area | m² |
 | lake area, depth, volume, surface | m², m, m³, m |
@@ -567,14 +566,13 @@ its model and spatial scale.
 | Orogeny reference incision velocity | m/yr |
 | Orogeny reference and fractional contributing area | m² |
 | fractional drainage direction and flow split | rad and dimensionless |
-| procedural field coordinates and noise | normalized field space |
-| thermal erosion talus | normalized neighboring-height difference |
-| moisture raster | dimensionless visual/ecological index `[0, 1]` |
+| geological noise coordinates | periodic lattice parameter space |
+| moisture map | typed dimensionless bundle column `[0, 1]` |
 | frame/game animation time | s |
 
-The table is a snapshot of the code during the mp-units migration, not a
-proposed end state. It records enough context to interpret current algorithms
-while their eventual types and boundaries are still being designed.
+The table describes the live quantity boundaries. Numerical kernels may still
+use native scalar representations internally, but their public finite products
+should preserve the meanings listed here.
 
 ## Questions for new systems
 

@@ -11,18 +11,18 @@
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
   map::Surface map (2, 2, Vec3 (20, 100, 20));
-  map.fill_relative_elevation (0.05f);
+  map.fill_elevation (
+    map::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]));
   map.recompute_normals ();
   map::Surface& ground = map;
 
   const std::array level_and_amplitude {
-    0.10f, 0.20f, 0.20f, 0.30f, 0.30f, 0.40f, 0.40f, 0.50f,
+    10.0f, 0.20f, 20.0f, 0.30f, 30.0f, 0.40f, 40.0f, 0.50f,
   };
   const std::array flow {
     1.0f, -2.0f, 2.0f, -3.0f, 3.0f, -4.0f, 4.0f, -5.0f,
   };
-  map::WaterSurface water (
-    ground.atlas ().domain (), level_and_amplitude, flow, 100.0f * u::m);
+  map::WaterSurface water (ground.domain (), level_and_amplitude, flow);
 
   const map::SurfaceIndex first { 0, 0 };
   const auto water_elevation =
@@ -42,17 +42,16 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   MOPPE_CHECK_NEAR (velocity[2], -2.0f, 1e-6f);
 }
 
-MOPPE_TEST (water_presentation_is_the_only_normalization_and_packing_bridge) {
+MOPPE_TEST (water_presentation_packs_physical_bundle_sections) {
   using namespace moppe;
   const map::SurfaceDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
   const std::array level_and_amplitude {
-    0.10f, 0.20f, 0.20f, 0.30f, 0.30f, 0.40f, 0.40f, 0.50f,
+    10.0f, 0.20f, 20.0f, 0.30f, 30.0f, 0.40f, 40.0f, 0.50f,
   };
   const std::array flow {
     1.0f, -2.0f, 2.0f, -3.0f, 3.0f, -4.0f, 4.0f, -5.0f,
   };
-  const map::WaterSurface water (
-    domain, level_and_amplitude, flow, 100.0f * u::m);
+  const map::WaterSurface water (domain, level_and_amplitude, flow);
 
   game::WaterPresentation presentation;
   presentation.reset (10.0f * u::m,
@@ -68,7 +67,7 @@ MOPPE_TEST (water_presentation_is_the_only_normalization_and_packing_bridge) {
   MOPPE_CHECK (renderer.ocean.cells == 300);
   MOPPE_CHECK (renderer.water_levels.empty ());
   MOPPE_CHECK (renderer.water_flow.empty ());
-  presentation.refresh (water, 100.0f * u::m);
+  presentation.refresh (water);
 
   MOPPE_CHECK (presentation.levels ().size () == level_and_amplitude.size ());
   MOPPE_CHECK (presentation.flow ().size () == flow.size ());

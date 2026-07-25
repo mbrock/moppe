@@ -209,7 +209,7 @@ namespace moppe::game {
                                  float spacing) {
     if (spacing <= 0.0f)
       throw std::invalid_argument ("Forest spacing must be positive");
-    const map::SurfaceDomain& domain = surface.atlas ().domain ();
+    const map::SurfaceDomain& domain = surface.domain ();
     ForestPlan plan;
     const float width =
       meters_value (domain.spacing_x ()) * static_cast<float> (domain.width ());

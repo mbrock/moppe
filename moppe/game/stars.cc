@@ -45,7 +45,7 @@ namespace moppe {
         throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
-      const Vec3 size = map.size ();
+      const Vec3 size = map.world_extent ();
       m_period = size;
       m_collected = 0;
 

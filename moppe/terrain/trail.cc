@@ -1482,8 +1482,9 @@ namespace moppe::terrain {
                      .circuit = cells };
     const CellCount circuit_cells = cell_count (cells.size ());
 
-    std::vector<float> influence (count, 0.0f);
-    std::vector<float> home_base_influence (count, 0.0f);
+    std::vector<TrailInfluence> influence (count, 0.0f * trail_influence[one]);
+    std::vector<HomeBaseInfluence> home_base_influence (
+      count, 0.0f * terrain::home_base_influence[one]);
     // Unlike the constructed height stamp, the material footprint keeps its
     // authored width. Sampling a distance to the continuous alignment makes
     // a narrow path legible without inflating its core to a whole grid cell.
@@ -1496,7 +1497,8 @@ namespace moppe::terrain {
       if (flood.water_depth.values ()[cell] <= 1e-7f &&
           material_raster.distance_m[cell] < radius)
         influence[cell] =
-          shoulder_ramp (material_raster.distance_m[cell], half_width, blend);
+          shoulder_ramp (material_raster.distance_m[cell], half_width, blend) *
+          trail_influence[one];
 
     const float base_radius = meters_value (parameters.home_base_pad_radius);
     const float base_blend = std::max (6.0f, 0.45f * base_radius);
@@ -1520,15 +1522,10 @@ namespace moppe::terrain {
         const std::size_t cell = static_cast<std::size_t> (y) * width + x;
         if (flood.water_depth.values ()[cell] <= 1e-7f)
           home_base_influence[cell] =
-            shoulder_ramp (distance, base_radius, base_blend);
+            shoulder_ramp (distance, base_radius, base_blend) *
+            terrain::home_base_influence[one];
       }
 
-    const RasterDomain domain { .width = static_cast<std::size_t> (width),
-                                .height = static_cast<std::size_t> (height),
-                                .max_x =
-                                  meters_value (grid.spacing_x ()) * width,
-                                .max_y =
-                                  meters_value (grid.spacing_z ()) * height };
     return { .domain = grid,
              .plan = std::move (plan),
              .receiver = std::move (receiver),
@@ -1540,9 +1537,8 @@ namespace moppe::terrain {
              .alignment = std::move (alignment),
              .formed_width = parameters.width,
              .earthwork_delta_m = std::vector<float> (count, 0.0f),
-             .influence = ScalarRaster (domain, std::move (influence)),
-             .home_base_influence =
-               ScalarRaster (domain, std::move (home_base_influence)) };
+             .use = TrailUseMap (
+               grid, std::move (influence), std::move (home_base_influence)) };
   }
 
   TrailNetwork

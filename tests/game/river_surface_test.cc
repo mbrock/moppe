@@ -57,7 +57,10 @@ MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
   terrain::RiverNetwork rivers;
   terrain::RiverReach reach = reach_with_alignment ();
@@ -104,7 +107,10 @@ MOPPE_TEST (headwater_ribbons_emerge_from_a_point) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
   terrain::RiverNetwork rivers;
   rivers.reaches.push_back (reach_with_alignment ());
@@ -133,7 +139,10 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
 
   terrain::RiverReach tributary = reach_with_alignment ();
@@ -162,7 +171,10 @@ MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
 
   terrain::RiverReach tributary = reach_with_alignment ();
@@ -192,7 +204,10 @@ MOPPE_TEST (confluences_share_one_downstream_cross_section) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
 
   terrain::RiverReach left = reach_with_alignment ();
@@ -232,7 +247,10 @@ MOPPE_TEST (river_ribbons_encode_rapids_depth_and_waterfalls) {
   map::Surface map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.set_relative_elevation (x, z, 0.3f);
+      map.set_elevation (x,
+                         z,
+                         moppe::terrain::surface_elevation_point (
+                           (0.3f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
   terrain::RiverReach reach = reach_with_alignment ();
   reach.alignment.points[1].waterfall = 1.0f;

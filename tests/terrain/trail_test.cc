@@ -152,13 +152,14 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
   MOPPE_CHECK (network.cells.front () == network.plan.home_base);
   MOPPE_CHECK (network.alignment.points.size () > network.cells.size ());
   MOPPE_CHECK (network.alignment.length > 0.0 * mp_units::si::metre);
-  MOPPE_CHECK (network.influence.values ().size () == original.size ());
-  MOPPE_CHECK (network.home_base_influence.values ().size () ==
-               original.size ());
+  const auto& influence = spatial::get<trail_influence> (network.use);
+  const auto& home_base = spatial::get<home_base_influence> (network.use);
+  MOPPE_CHECK (influence.size () == original.size ());
+  MOPPE_CHECK (home_base.size () == original.size ());
   MOPPE_CHECK (network.components.front ().anchor_cell ==
                network.plan.home_base);
   MOPPE_CHECK_NEAR (
-    network.home_base_influence.values ()[network.plan.home_base.value],
+    home_base[network.plan.home_base.value].numerical_value_in (mp_units::one),
     1.0f,
     1e-6f);
   for (const CellIndex cell : network.cells) {
@@ -173,9 +174,9 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
       cursor = network.receiver[cursor.value];
     MOPPE_CHECK (cursor == cell);
   }
-  for (const float influence : network.influence.values ()) {
-    MOPPE_CHECK (influence >= 0.0f);
-    MOPPE_CHECK (influence <= 1.0f);
+  for (const TrailInfluence value : influence) {
+    MOPPE_CHECK (value >= 0.0f * trail_influence[mp_units::one]);
+    MOPPE_CHECK (value <= 1.0f * trail_influence[mp_units::one]);
   }
 
   const std::size_t width = network.domain.width ();
@@ -224,8 +225,8 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   MOPPE_CHECK (first.network.plan.home_base == second.network.plan.home_base);
   MOPPE_CHECK (first.network.plan.control_sites ==
                second.network.plan.control_sites);
-  MOPPE_CHECK (std::ranges::equal (first.network.influence.values (),
-                                   second.network.influence.values ()));
+  MOPPE_CHECK (spatial::get<trail_influence> (first.network.use) ==
+               spatial::get<trail_influence> (second.network.use));
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
     const float change_m = first.heights[cell] - original[cell];
     MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);

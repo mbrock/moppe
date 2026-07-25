@@ -44,9 +44,11 @@ namespace {
     std::uint64_t hash = 14695981039346656037ull;
     const std::size_t count =
       static_cast<std::size_t> (map.width ()) * map.height ();
+    const auto& elevations =
+      moppe::spatial::get<moppe::terrain::surface_elevation> (map.geometry ());
     for (std::size_t cell = 0; cell < count; ++cell) {
       std::uint32_t bits = std::bit_cast<std::uint32_t> (
-        moppe::terrain::surface_elevation_value (map.elevations ()[cell]));
+        moppe::terrain::surface_elevation_value (elevations[cell]));
       for (int byte = 0; byte < 4; ++byte) {
         hash ^= bits & 0xffu;
         hash *= 1099511628211ull;
@@ -76,10 +78,11 @@ namespace {
     std::size_t cells_over_one_meter = 0;
     std::vector<double> differences;
     differences.reserve (count);
+    const auto& elevations =
+      moppe::spatial::get<moppe::terrain::surface_elevation> (map.geometry ());
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const double difference =
-        std::fabs ((map.elevations ()[cell] - reference[cell])
-                     .numerical_value_in (moppe::u::m));
+      const double difference = std::fabs (
+        (elevations[cell] - reference[cell]).numerical_value_in (moppe::u::m));
       total += difference;
       maximum = std::max (maximum, difference);
       cells_over_one_meter += difference > 1.0;
@@ -141,7 +144,9 @@ int main (int argc, char** argv) {
       map::TerrainEvaluator reference_evaluator (reference_map);
       reference_evaluator.begin (program);
       reference_evaluator.apply (program.transforms.front ());
-      reference_heights = reference_map.elevations ();
+      reference_heights =
+        moppe::spatial::get<moppe::terrain::surface_elevation> (
+          reference_map.geometry ());
     }
 
     std::cout << "resolution,cells,seed,backend,steps,repeat,"
@@ -169,8 +174,8 @@ int main (int argc, char** argv) {
                                    : height_difference (map, reference_heights);
 
       std::cout << resolution << ','
-                << static_cast<std::size_t> (resolution - 1) *
-                     static_cast<std::size_t> (resolution - 1)
+                << static_cast<std::size_t> (resolution) *
+                     static_cast<std::size_t> (resolution)
                 << ',' << seed << ',' << backend_id << ',' << steps << ','
                 << repeat << ',' << std::fixed << std::setprecision (3)
                 << elapsed_ms << "," << std::hex << height_hash (map)

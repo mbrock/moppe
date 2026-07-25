@@ -22,7 +22,7 @@ namespace moppe::map {
     const terrain::GeologicalSections geology = [&] {
       MOPPE_PROFILE_ZONE ("terrain.generate_geology");
       return terrain::generate_geology (
-        m_target.atlas ().domain (), program.source.recipe, source_progress);
+        m_target.domain (), program.source.recipe, source_progress);
     }();
 
     MOPPE_PROFILE_ZONE ("terrain.shape_initial_orogeny_relief");
@@ -31,7 +31,8 @@ namespace moppe::map {
     const float land_relief = meters_value (program.source.initial_land_relief);
     const float bathymetric_relief =
       meters_value (program.source.initial_bathymetric_relief);
-    auto& elevations = m_target.elevations ();
+    auto& elevations =
+      spatial::get<terrain::surface_elevation> (m_target.geometry ());
     for (std::size_t offset = 0; offset < geology.size (); ++offset) {
       const float continent_value =
         continent[offset].numerical_value_in (one) - program.source.coastline;
@@ -84,13 +85,13 @@ namespace moppe::map {
         };
       terrain::StreamPowerEvolutionResult result =
         m_evolution_backend
-          ? terrain::evolve_stream_power (m_target.atlas ().geometry (),
+          ? terrain::evolve_stream_power (m_target.geometry (),
                                           uplift,
                                           orogeny->evolution,
                                           *m_evolution_backend,
                                           iteration_progress,
                                           m_channel_tangents)
-          : terrain::evolve_stream_power (m_target.atlas ().geometry (),
+          : terrain::evolve_stream_power (m_target.geometry (),
                                           uplift,
                                           orogeny->evolution,
                                           iteration_progress,
@@ -111,7 +112,7 @@ namespace moppe::map {
                  std::get_if<terrain::TrailFormation> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.trail_formation");
       terrain::TrailFormationResult result =
-        terrain::form_trails (m_target.atlas ().geometry (), *trails);
+        terrain::form_trails (m_target.geometry (), *trails);
       const std::size_t width = m_target.width ();
       const std::size_t height = m_target.height ();
       for (std::size_t y = 0; y < height; ++y)
@@ -150,9 +151,12 @@ namespace moppe::map {
   }
 
   TerrainCheckpoint TerrainEvaluator::checkpoint () const {
-    return { .elevations = m_target.elevations (),
-             .eroded = m_target.eroded_material (),
-             .deposited = m_target.deposited_material (),
+    return { .elevations =
+               spatial::get<terrain::surface_elevation> (m_target.geometry ()),
+             .eroded =
+               spatial::get<eroded_surface_material> (m_target.geometry ()),
+             .deposited =
+               spatial::get<deposited_surface_material> (m_target.geometry ()),
              .channel_tangents = m_channel_tangents };
   }
 
@@ -162,12 +166,15 @@ namespace moppe::map {
     if (checkpoint.elevations.size () != expected)
       throw std::invalid_argument (
         "terrain checkpoint dimensions do not match target");
-    m_target.elevations () = checkpoint.elevations;
+    spatial::get<terrain::surface_elevation> (m_target.geometry ()) =
+      checkpoint.elevations;
     m_target.reset_material_history ();
     if (checkpoint.eroded.size () == expected)
-      m_target.eroded_material () = checkpoint.eroded;
+      spatial::get<eroded_surface_material> (m_target.geometry ()) =
+        checkpoint.eroded;
     if (checkpoint.deposited.size () == expected)
-      m_target.deposited_material () = checkpoint.deposited;
+      spatial::get<deposited_surface_material> (m_target.geometry ()) =
+        checkpoint.deposited;
     const std::size_t unique =
       static_cast<std::size_t> (m_target.width ()) * m_target.height ();
     if (checkpoint.channel_tangents.size () == unique)

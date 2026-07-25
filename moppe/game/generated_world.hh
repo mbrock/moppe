@@ -16,7 +16,7 @@
 namespace moppe::game {
   // A stable home for a generated world's durable, renderer-free artifacts.
   // The loading worker constructs one by calling the three build steps in
-  // order (rebuild_surface, analyze_hydrology, materialize_analyses) after
+  // order (rebuild_surface, analyze_hydrology, derive_surface_readings) after
   // evaluating the terrain. Geometry and analyses share one SurfaceAtlas.
   class GeneratedWorld {
   public:
@@ -112,7 +112,7 @@ namespace moppe::game {
     // The three build steps, in the order the loading worker runs them.
     void rebuild_surface ();
     void analyze_hydrology (const HydrologyProgress& progress = {});
-    void materialize_analyses (
+    void derive_surface_readings (
       std::optional<terrain::TrailNetwork> generated_trails = {});
 
   private:

@@ -1,10 +1,8 @@
 # The current-engine surface atlas
 
-This is the small atlas for the part of Moppe that has adopted the Atelier
-earth vocabulary. It describes the current engine, not the proposed second
-engine. The purpose is to make its topology, intrinsic readings, and rendering
-bridge enumerable without pretending that all terrain generation already has
-this shape.
+This is the small atlas for Moppe's adopted Atelier earth vocabulary. It
+describes the current engine, not the proposed second engine. The purpose is
+to make its topology, intrinsic readings, and rendering bridge enumerable.
 
 For the wider ownership, state, presentation, and target map, start with the
 [engine atlas](engine-atlas.md).
@@ -36,12 +34,13 @@ translated images; it does not add lattice sites.
 
 All current sections are vertex 0-cochains over the atlas's one
 `SurfaceDomain`. `geometry()` exists for the whole lifetime of `Surface`.
-The other views expose individual optional sections so their existing barriers
-remain visible without a parallel Boolean availability ledger.
+The other views expose optional named sections so their existing barriers
+remain visible without a parallel Boolean availability ledger. Trail and
+home-base readings share one use bundle because they are one analysis product.
 
 | Group and section | Value | Meaning | Becomes valid |
 | --- | --- | --- | --- |
-| `geometry`: `relative_terrain_elevation` | semantic dimensionless scalar | Authoritative elevation relative to the world's vertical scale | terrain evaluation or cache load |
+| `geometry`: `surface_elevation` | affine elevation point in metres | Authoritative position in the world's vertical frame | terrain evaluation or cache load |
 | `geometry`: `terrain_normal` | dimensionless vector | Detailed lighting and contact normal | `rebuild_geometry_readings` |
 | `geometry`: `eroded_surface_material`, `deposited_surface_material` | semantic dimensionless scalars | Lifetime cut/fill history in terrain storage units | terrain evolution |
 | `geometry`: `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `rebuild_geometry_readings` |
@@ -90,9 +89,9 @@ bundle. Matching texture dimensions are a presentation fact, not an identity.
 | `wave_amplitude` | dimensionless scalar | Local multiplier for visible surface motion |
 | `water_velocity` | planar vector in metres per second | Horizontal movement of water detail through the sheet |
 
-`WaterPresentation` is where physical elevation is divided by the terrain
-height scale and where velocity loses its unit and y component for the Metal
-texture contract. It also turns the metre-valued water datum and typed world
+`WaterPresentation` keeps elevation in metres while packing elevation,
+amplitude, and the x/z components of velocity into the renderer's homogeneous
+numeric lanes. It also turns the metre-valued water datum and typed world
 extent into the renderer's numeric ocean setup. World assembly owns a
 `WaterSurface` rather than anonymous interleaved level and flow vectors.
 

@@ -72,8 +72,7 @@ namespace moppe::map {
     const auto& elevation = spatial::get<terrain::surface_elevation> (geometry);
     const auto& normal = spatial::get<terrain::terrain_normal> (geometry);
     const auto& moisture = spatial::get<surface_moisture> (*moisture_sections);
-    SurfaceHabitatSections& values =
-      atlas.ecology ().materialize_tree_habitat ();
+    SurfaceHabitatSections values (atlas.domain ());
     auto& habitat = spatial::get<tree_habitat> (values);
     for (std::size_t offset = 0; offset < geometry.size (); ++offset) {
       const float height = terrain::surface_elevation_value (elevation[offset]);
@@ -89,6 +88,7 @@ namespace moppe::map {
       habitat[offset] = dry_ground * below_tree_line * stable_soil *
                         water_response * tree_habitat[one];
     }
+    atlas.ecology ().set_tree_habitat (std::move (values));
   }
 
   void Surface::derive_forest_cover (std::uint32_t seed) {
@@ -98,12 +98,10 @@ namespace moppe::map {
     if (!habitat_sections)
       throw std::logic_error (
         "Forest cover needs a materialized tree habitat section");
-    const SurfaceTrailSections* trail_sections = atlas.use ().trails ();
-    const SurfaceHomeBaseSections* home_sections = atlas.use ().home_base ();
+    const SurfaceUseSections* use_sections = atlas.use ().readings ();
     const SurfaceDomain& domain = atlas.domain ();
     const auto& habitat = spatial::get<tree_habitat> (*habitat_sections);
-    SurfaceForestSections& values =
-      atlas.ecology ().materialize_forest_cover ();
+    SurfaceForestSections values (domain);
     auto& cover = spatial::get<forest_cover> (values);
     const float width = static_cast<float> (domain.width ());
     const float height = static_cast<float> (domain.height ());
@@ -121,14 +119,13 @@ namespace moppe::map {
       const float support =
         std::pow (habitat[offset].numerical_value_in (one), 1.15f);
       const float route_clearance =
-        trail_sections
-          ? 1.0f -
-              0.96f * spatial::get<trail_influence> (*trail_sections)[offset]
-                        .numerical_value_in (one)
+        use_sections
+          ? 1.0f - 0.96f * spatial::get<trail_influence> (*use_sections)[offset]
+                             .numerical_value_in (one)
           : 1.0f;
       const float settled_clearance =
-        home_sections
-          ? 1.0f - spatial::get<home_base_influence> (*home_sections)[offset]
+        use_sections
+          ? 1.0f - spatial::get<home_base_influence> (*use_sections)[offset]
                      .numerical_value_in (one)
           : 1.0f;
       cover[offset] =
@@ -137,5 +134,6 @@ namespace moppe::map {
                     1.0f) *
         forest_cover[one];
     }
+    atlas.ecology ().set_forest_cover (std::move (values));
   }
 }

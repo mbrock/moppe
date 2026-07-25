@@ -1,10 +1,14 @@
 #ifndef MOPPE_TERRAIN_MOISTURE_HH
 #define MOPPE_TERRAIN_MOISTURE_HH
 
+#include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/terrain_quantities.hh>
 
 namespace moppe::terrain {
+  using MoistureMap = spatial::Bundle<TerrainDomain, SurfaceMoisture>;
+
   // How wet the ground is for material rendering, in
   // [0, 1]: proximity to standing water dominates, with a smaller term
   // from accumulated drainage so runnels read damp between the lakes.
@@ -14,10 +18,10 @@ namespace moppe::terrain {
     float drainage_span_log2 = 14.0f;
   };
 
-  ScalarRaster analyze_moisture (const FloodField& flood,
-                                 const LakeCensus& census,
-                                 const DrainageGraph& drainage,
-                                 const MoistureParameters& parameters = {});
+  MoistureMap analyze_moisture (const FloodField& flood,
+                                const LakeCensus& census,
+                                const DrainageGraph& drainage,
+                                const MoistureParameters& parameters = {});
 }
 
 #endif

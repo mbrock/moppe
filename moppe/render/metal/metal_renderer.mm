@@ -1322,7 +1322,7 @@ namespace moppe {
       const std::size_t sample_count = static_cast<std::size_t> (w) * h;
       if (w < 2 || h < 2 || heights.size () != sample_count ||
           (!normals.empty () && normals.size () != sample_count) ||
-          params.height_scale <= 0.0f)
+          params.scale[1] != 1.0f)
         throw std::invalid_argument ("invalid Metal terrain raster");
       const bool transition =
         params.derive_normals && m_terrain_resources.have_terrain &&
@@ -1366,16 +1366,8 @@ namespace moppe {
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.heights = [m_device newTextureWithDescriptor:td];
       }
-      // The renderer still consumes normalized texture lanes. Keep that
-      // conversion at this presentation boundary while terrain storage and
-      // simulation use physical elevations.
-      std::vector<float> presented_heights (sample_count);
-      for (std::size_t offset = 0; offset < sample_count; ++offset)
-        presented_heights[offset] =
-          terrain::surface_elevation_value (heights[offset]) /
-          params.height_scale;
       upload_texture (m_terrain_resources.heights,
-                      presented_heights.data (),
+                      heights.data (),
                       w,
                       h,
                       sizeof (float),
@@ -2270,8 +2262,8 @@ namespace moppe {
       u.params0.y = terrain.params.scale[1];
       u.params0.z = terrain.params.scale[2];
       u.params0.w = terrain.params.tex_scale;
-      u.params1.x = terrain.params.height_scale;
-      u.params1.y = terrain.params.sea_level_norm;
+      u.params1.x = 1.0f;
+      u.params1.y = terrain.params.sea_level;
       u.params1.z = terrain.have_shadow ? terrain.params.shadow_strength : 0;
       u.params1.w = terrain.shadow_map ? 1.0f / (float)terrain.shadow_map.width
                                        : 1.0f / 4096.0f;

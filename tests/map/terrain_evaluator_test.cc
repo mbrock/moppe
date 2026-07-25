@@ -17,8 +17,10 @@ namespace {
       return false;
     for (int y = 0; y < left.height (); ++y)
       for (int x = 0; x < left.width (); ++x)
-        if (std::bit_cast<std::uint32_t> (left.relative_elevation_at (x, y)) !=
-            std::bit_cast<std::uint32_t> (right.relative_elevation_at (x, y)))
+        if (std::bit_cast<std::uint32_t> (
+              terrain::surface_elevation_value (left.elevation_at (x, y))) !=
+            std::bit_cast<std::uint32_t> (
+              terrain::surface_elevation_value (right.elevation_at (x, y))))
           return false;
     return true;
   }
@@ -110,7 +112,7 @@ MOPPE_TEST (periodic_program_wraps_continuously) {
 
   // The lattice is seamless: sampling one period apart reads the same
   // ground in both axes.
-  const Vec3 period = map.size ();
+  const Vec3 period = map.world_extent ();
   for (const float t : { 3.7f, 611.2f, 2499.9f }) {
     MOPPE_CHECK_NEAR (map.interpolated_height (t, t * 0.4f),
                       map.interpolated_height (t + period[0], t * 0.4f),
@@ -139,8 +141,10 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
       MOPPE_CHECK (total == 4);
       completed.push_back (done);
       std::vector<float> snapshot;
-      snapshot.reserve (map.elevations ().size ());
-      for (const auto elevation : map.elevations ())
+      const auto& elevations =
+        spatial::get<terrain::surface_elevation> (map.geometry ());
+      snapshot.reserve (elevations.size ());
+      for (const auto elevation : elevations)
         snapshot.push_back (surface_elevation_value (elevation));
       snapshots.push_back (std::move (snapshot));
     });
@@ -149,8 +153,10 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
   MOPPE_CHECK (snapshots.size () == 4);
   MOPPE_CHECK (snapshots.front () != snapshots.back ());
   std::vector<float> final;
-  final.reserve (map.elevations ().size ());
-  for (const auto elevation : map.elevations ())
+  const auto& elevations =
+    spatial::get<terrain::surface_elevation> (map.geometry ());
+  final.reserve (elevations.size ());
+  for (const auto elevation : elevations)
     final.push_back (surface_elevation_value (elevation));
   MOPPE_CHECK (snapshots.back () == final);
 }

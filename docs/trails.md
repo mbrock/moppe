@@ -100,10 +100,11 @@ segments instead of pretending the maximum was achieved.
 
 ## 1. Planning grid and terrain readings
 
-Planning uses the materialized `TerrainView`, `DrainageGraph`, and
-`FloodField`. A planning grid samples the full heightmap at approximately
-16-metre spacing. It retains physical elevation, distance, local slope,
-catchment area, and standing-water occupancy. Its indexing always wraps.
+Planning accepts any terrain bundle containing `surface_elevation`, plus its
+`DrainageGraph` and `FloodField`. A planning lattice samples the authoritative
+bundle at approximately 16-metre spacing. It retains physical elevation,
+distance, local slope, catchment area, and standing-water occupancy. Its
+indexing always wraps.
 
 Every coarse edge is inspected at full source resolution. Its profile records
 mean grade, maximum local grade, and the best grade that could remain after

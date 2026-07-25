@@ -13,7 +13,7 @@ namespace {
     static constexpr std::size_t count = side * side;
 
     map::Surface map { side, side, Vec3 (1600, 240, 1600) };
-    terrain::TerrainDomain grid = map.atlas ().geometry ().domain ();
+    terrain::TerrainDomain grid = map.domain ();
     terrain::RasterDomain domain { .width = side, .height = side };
     terrain::FloodField flood;
     terrain::LakeCensus census;
@@ -55,7 +55,11 @@ namespace {
             std::max (0.0f, 1.0f - std::hypot (x - 12.0f, z - 5.0f) / 7.0f);
           const float saddle =
             0.06f * std::abs (z - 11.0f) - 0.025f * std::abs (x - 7.0f);
-          map.set_relative_elevation (x, z, 0.16f + 0.55f * peak + saddle);
+          map.set_elevation (
+            x,
+            z,
+            moppe::terrain::surface_elevation_point (
+              (0.16f + 0.55f * peak + saddle) * 240.0f * mp_units::si::metre));
           const std::size_t cell = z * side + x;
           const std::size_t next = z + 1 < side ? cell + side : cell;
           flood.spill_receiver[cell] = next;
@@ -148,10 +152,13 @@ namespace {
       .alignment = std::move (alignment),
       .formed_width = 3.0f * mp_units::si::metre,
       .earthwork_delta_m = std::vector<float> (FlightFixture::count, 0.0f),
-      .influence = terrain::ScalarRaster (
-        fixture.domain, std::vector<float> (FlightFixture::count, 0.0f)),
-      .home_base_influence = terrain::ScalarRaster (
-        fixture.domain, std::vector<float> (FlightFixture::count, 0.0f))
+      .use = terrain::TrailUseMap (
+        fixture.grid,
+        std::vector<terrain::TrailInfluence> (
+          FlightFixture::count, 0.0f * terrain::trail_influence[mp_units::one]),
+        std::vector<terrain::HomeBaseInfluence> (
+          FlightFixture::count,
+          0.0f * terrain::home_base_influence[mp_units::one]))
     };
   }
 }
@@ -235,11 +242,15 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
         std::min (x % unique_side, unique_side - x % unique_side);
       const float dz =
         std::min (z % unique_side, unique_side - z % unique_side);
-      map.set_relative_elevation (x, z, 0.2f + 0.02f * (dx + dz));
+      map.set_elevation (
+        x,
+        z,
+        moppe::terrain::surface_elevation_point ((0.2f + 0.02f * (dx + dz)) *
+                                                 240.0f * mp_units::si::metre));
     }
   map.recompute_normals ();
 
-  const terrain::TerrainDomain grid = map.atlas ().geometry ().domain ();
+  const terrain::TerrainDomain grid = map.domain ();
   const terrain::RasterDomain domain { .width = unique_side,
                                        .height = unique_side };
   std::vector<terrain::CellIndex> receiver (count);

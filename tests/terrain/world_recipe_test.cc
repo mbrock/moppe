@@ -40,5 +40,6 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
                     recipe.resolution (),
                     extent_value (recipe.extent ()));
   map::TerrainEvaluator (map).evaluate (recipe.terrain_program ());
-  MOPPE_CHECK (std::isfinite (map.relative_elevation_at (0, 0)));
+  MOPPE_CHECK (
+    std::isfinite (surface_elevation_value (map.elevation_at (0, 0))));
 }

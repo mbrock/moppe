@@ -523,7 +523,7 @@ namespace moppe {
           m_river_surface.rebuild (r, surface (), *rivers ());
         m_water_presentation.reset (world ().water_level, world ().map_size);
         if (const auto& water = generated_world ().water_surface ())
-          m_water_presentation.refresh (*water, surface ().scale ()[1] * u::m);
+          m_water_presentation.refresh (*water);
       }
 
       void prepare_world_surface () {

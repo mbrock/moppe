@@ -140,11 +140,20 @@ namespace moppe::spatial {
     explicit Bundle (Domain domain)
         : m_domain (std::move (domain)),
           m_columns (std::vector<Quantities> (m_domain.size ())...) {
-      static_assert (
-        ((detail::bundle_spec_count<Quantities::quantity_spec,
-                                    Quantities...> () == 1) &&
-         ...),
-        "A Bundle row cannot contain the same quantity specification twice");
+      validate_specs ();
+    }
+
+    Bundle (Domain domain, std::vector<Quantities>... columns)
+        : m_domain (std::move (domain)), m_columns (std::move (columns)...) {
+      validate_specs ();
+      const bool sizes_match = std::apply (
+        [this] (const auto&... column) {
+          return ((column.size () == m_domain.size ()) && ...);
+        },
+        m_columns);
+      if (!sizes_match)
+        throw std::invalid_argument (
+          "bundle columns need one value per domain site");
     }
 
     const Domain& domain () const noexcept {
@@ -178,6 +187,14 @@ namespace moppe::spatial {
     }
 
   private:
+    static consteval void validate_specs () {
+      static_assert (
+        ((detail::bundle_spec_count<Quantities::quantity_spec,
+                                    Quantities...> () == 1) &&
+         ...),
+        "A Bundle row cannot contain the same quantity specification twice");
+    }
+
     Domain m_domain;
     std::tuple<std::vector<Quantities>...> m_columns;
   };

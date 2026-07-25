@@ -123,13 +123,19 @@ MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
   LakeCensus census { .body = std::vector<WaterBodyId> (9, WaterBodyId { 0 }) };
   const Waterline waterline =
     extract_waterline (terrain, surface, census, 0.0f);
-  const ScalarRaster proximity = waterline_proximity (waterline, 2.5f);
+  const WaterlineProximity proximity =
+    waterline_proximity (waterline, 2.5f * u::m);
+  const auto& distance = spatial::get<waterline_distance> (proximity);
+  const auto at = [&] (std::size_t x, std::size_t y) {
+    return distance[proximity.domain ().offset ({ x, y })].numerical_value_in (
+      u::m);
+  };
 
   // Nodes measure to the nearer of the two shorelines (x = 0.5 and,
   // across the wrap, x = 5.75).
-  MOPPE_CHECK_NEAR (proximity.at (0, 1), 0.25f, 1e-5f);
-  MOPPE_CHECK_NEAR (proximity.at (1, 1), 1.5f, 1e-5f);
-  MOPPE_CHECK_NEAR (proximity.at (2, 1), 1.75f, 1e-5f);
+  MOPPE_CHECK_NEAR (at (0, 1), 0.25f, 1e-5f);
+  MOPPE_CHECK_NEAR (at (1, 1), 1.5f, 1e-5f);
+  MOPPE_CHECK_NEAR (at (2, 1), 1.75f, 1e-5f);
 }
 
 MOPPE_TEST (waterline_extraction_is_deterministic) {

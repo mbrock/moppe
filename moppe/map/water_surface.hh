@@ -35,9 +35,8 @@ namespace moppe::map {
     WaterSurface (SurfaceDomain domain, const terrain::WaterSheets& sheets);
 
     WaterSurface (SurfaceDomain domain,
-                  std::span<const float> normalized_level_and_amplitude,
-                  std::span<const float> planar_flow,
-                  meters_t terrain_height_scale);
+                  std::span<const float> level_and_amplitude,
+                  std::span<const float> planar_flow);
 
     const WaterSurfaceSections& sections () const noexcept {
       return m_sections;

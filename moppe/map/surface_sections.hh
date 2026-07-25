@@ -30,15 +30,8 @@ namespace moppe::map {
                       mp_units::is_kind> {
   } channel_flux;
 
-  // Ground wetness synthesized from standing water and accumulated drainage.
-  inline constexpr struct surface_moisture
-      : quantity_spec<mp_units::dimensionless> {
-  } surface_moisture;
-
-  // Horizontal distance to the extracted wet/dry curve.
-  inline constexpr struct waterline_distance
-      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
-  } waterline_distance;
+  using terrain::surface_moisture;
+  using terrain::waterline_distance;
 
   // Normalized exposure of material removed during the world's history.
   inline constexpr struct erosion_exposure
@@ -60,15 +53,8 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } forest_cover;
 
-  // Shoulder-blended membership in the generated trail network.
-  inline constexpr struct trail_influence
-      : quantity_spec<mp_units::dimensionless> {
-  } trail_influence;
-
-  // Membership in the Association's cleared arrival and gathering place.
-  inline constexpr struct home_base_influence
-      : quantity_spec<mp_units::dimensionless> {
-  } home_base_influence;
+  using terrain::home_base_influence;
+  using terrain::trail_influence;
 
   using SurfaceNormal = terrain::TerrainNormal;
   using SnowSupport = quantity<snow_support[one], float>;
@@ -76,14 +62,14 @@ namespace moppe::map {
   using DepositedSurfaceMaterial =
     quantity<deposited_surface_material[one], float>;
   using ChannelFlux = quantity<channel_flux[one], Vec3>;
-  using SurfaceMoisture = quantity<surface_moisture[one], float>;
-  using WaterlineDistance = quantity<waterline_distance[u::m], float>;
+  using terrain::SurfaceMoisture;
+  using terrain::WaterlineDistance;
   using ErosionExposure = quantity<erosion_exposure[one], float>;
   using DepositionCover = quantity<deposition_cover[one], float>;
   using TreeHabitat = quantity<tree_habitat[one], float>;
   using ForestCover = quantity<forest_cover[one], float>;
-  using TrailInfluence = quantity<trail_influence[one], float>;
-  using HomeBaseInfluence = quantity<home_base_influence[one], float>;
+  using terrain::HomeBaseInfluence;
+  using terrain::TrailInfluence;
 
   // Each named materialization group is a typed collection of 0-cochains over
   // the same SurfaceDomain. SurfaceAtlas makes a group's presence explicit,
@@ -104,9 +90,8 @@ namespace moppe::map {
     spatial::Bundle<SurfaceDomain, ErosionExposure, DepositionCover>;
   using SurfaceHabitatSections = spatial::Bundle<SurfaceDomain, TreeHabitat>;
   using SurfaceForestSections = spatial::Bundle<SurfaceDomain, ForestCover>;
-  using SurfaceTrailSections = spatial::Bundle<SurfaceDomain, TrailInfluence>;
-  using SurfaceHomeBaseSections =
-    spatial::Bundle<SurfaceDomain, HomeBaseInfluence>;
+  using SurfaceUseSections =
+    spatial::Bundle<SurfaceDomain, TrailInfluence, HomeBaseInfluence>;
 }
 
 #endif

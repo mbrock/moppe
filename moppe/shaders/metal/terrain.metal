@@ -12,7 +12,7 @@ struct TerrainVaryings {
   float4 position [[position]];
   float3 world_pos;
   float3 normal; // world space
-  float height;  // altitude / height_scale, [0,1]
+  float height;  // altitude in metres
   float fog;     // haze factor incl. valley mist
   float4 shadow_coord;
   float2 uv;
@@ -40,7 +40,7 @@ static inline uint2 terrain_sample_position (int2 p, uint2 size) {
   return uint2 (p);
 }
 
-// Returns normalized height and derivatives with respect to source-grid x/z.
+// Returns metre-valued elevation and derivatives with respect to grid x/z.
 static inline float3
 terrain_height_smooth (float2 grid,
                        constant MoppeTerrainUniforms& u,

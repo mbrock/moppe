@@ -73,10 +73,11 @@ the native representation of a `float`; it is neither boxed nor normalized.
 geometry refresh copy.
 
 Generation, Terrain Lab checkpoints, physics, hydrology, and rendering all
-read or mutate those columns. `TerrainView` is a borrowed analysis adapter,
-not another allocation. The renderer accepts typed elevation and normal spans
-directly; compile-time layout checks guarantee their representations are the
-native float and `Vec3` payloads expected by the GPU upload boundary.
+read or mutate those columns. Analysis entry points accept any
+`TerrainDomain` bundle containing `surface_elevation`; there is no borrowed
+terrain adapter. The renderer accepts the typed elevation and normal columns
+directly. Compile-time layout checks guarantee their representations are the
+native `float` and `Vec3` payloads expected by GPU upload.
 
 Deleted with the old layer:
 
@@ -86,18 +87,18 @@ Deleted with the old layer:
 - raw height/normal/ledger pointers;
 - `Surface::refresh` and the copied geometry materialization barrier.
 
-## Stage: physical elevation (in progress)
+## Stage: physical elevation (done)
 
 The authoritative geometry column, CPU reconstruction, hydrology, terrain
-evolution, trails, and water sheets now share one physical elevation frame in
-metres. The old vertical scale survives only as a temporary presentation
-calibration: the existing terrain and water shaders still consume normalized
-texture lanes, so their renderer upload boundaries perform that conversion.
+evolution, trails, water sheets, renderer textures, and shaders share one
+physical elevation frame in metres. `SurfaceElevation` is an affine point;
+water elevation uses the same specification, so subtraction yields physical
+depth. GPU height and water lanes contain metre floats unchanged, with a
+vertical shader scale of one.
 
-Compatibility methods named `relative_elevation` and the corresponding
-`TerrainGrid::height_scale` remain while test fixtures and analysis entry
-points move to typed bundles. They are migration scaffolding, not part of the
-intended model.
+The constructor's vertical world extent remains a camera/shadow bound. It is
+not a calibration for stored elevations. Relative-elevation methods,
+analysis-side height scales, and presentation normalization are deleted.
 
 ## Stage: direct finite geology (done)
 
@@ -117,14 +118,40 @@ Deleted with the interchange:
 - tests for expression compilation and backends that production no longer
   used.
 
-This pass removed 3,261 net lines. `TerrainDomain` is now the shared finite
+This pass removed 3,026 net lines. `TerrainDomain` is now the shared finite
 domain for the surface and geological bundles.
 
-## Remaining stages
+## Stage: one lattice value (done)
 
-1. **Finish physical elevation** — migrate fixtures and analysis APIs, delete
-   relative-elevation access and vertical scaling, then let shaders consume
-   metre-valued elevations directly.
-2. **Finish one lattice value** — move remaining analysis results from
-   `TerrainGrid`/`TerrainView` adapters onto `TerrainDomain` and bundle
-   concepts.
+`TerrainGrid`, `TerrainDiscretization`, and `TerrainView` are deleted.
+`TerrainDomain` owns periodic width, height, spacing, area, indexing, and
+continuous reconstruction. Flood, drainage, merge-tree, trail, and waterline
+results retain that same domain value. Inputs that need ground elevation are
+constrained by the `TerrainElevations` bundle concept. Wet and fractional
+drainage take only flood/census products because the filled routing surface,
+not the original ground column, is their actual input.
+
+`Surface` now exposes its mandatory geometry as one bundle instead of parallel
+raw column getters. `sample_spacing()` and `world_extent()` name the remaining
+3D presentation readings explicitly; neither participates in elevation
+storage.
+
+## Stage: typed analysis handoff (done)
+
+Moisture analysis, waterline proximity, and trail analysis now return their
+final quantity columns as finite bundles over `TerrainDomain`. The surface
+adopts those bundles directly. It no longer accepts arbitrary float spans,
+checks only their length, loops over them again, and invents the missing
+semantics during a copy.
+
+Trail and home-base influence are one `TrailUseMap`, because they are produced
+and become valid together. The atlas likewise stores one optional use bundle
+instead of coordinating two independent optionals. The renderer bridge is
+still the deliberate place where typed quantities become homogeneous float
+texture lanes.
+
+`ScalarRaster` remains only inside established hydrology products whose
+algorithms still operate numerically on water sheets, slope, and contributing
+area. It is no longer the interchange format for optional surface readings.
+If those products are migrated later, each should become a named finite
+product; this pass deliberately does not recreate a generic field framework.

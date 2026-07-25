@@ -667,8 +667,8 @@ namespace moppe {
       }
 
       const Vec3 point = origin + direction * hit_t;
-      const Vec3 period = m_map->size ();
-      const Vec3 scale = m_map->scale ();
+      const Vec3 period = m_map->world_extent ();
+      const Vec3 scale = m_map->sample_spacing ();
       const auto wrap = [] (float value, float size) {
         value = std::fmod (value, size);
         return value < 0.0f ? value + size : value;
@@ -700,9 +700,10 @@ namespace moppe {
       render::TerrainOverlayParams params {
         .width = width, .height = height, .minimum = 0.0f, .maximum = 1.0f
       };
+      const auto& elevations =
+        spatial::get<terrain::surface_elevation> (m_map->geometry ());
 
       if (m_overlay == OverlayMode::Height) {
-        const auto& elevations = m_map->elevations ();
         for (std::size_t i = 0; i < count; ++i)
           values[i] = terrain::surface_elevation_value (elevations[i]);
         const auto [minimum, maximum] =
@@ -726,7 +727,7 @@ namespace moppe {
           m_selected_stage + 1 < static_cast<int> (checkpoints.size ())
             ? checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
                 .elevations
-            : m_map->elevations ();
+            : elevations;
         float magnitude = 0.0f;
         for (std::size_t i = 0; i < count; ++i) {
           values[i] = (after[i] - before[i]).numerical_value_in (u::m);
@@ -764,12 +765,15 @@ namespace moppe {
                  m_overlay == OverlayMode::Deposited) {
         // Lifetime sediment ledger; square-root scaling keeps the sparse
         // heavy-tailed cut/fill pattern legible under the heat ramp.
+        const auto& eroded =
+          spatial::get<map::eroded_surface_material> (m_map->geometry ());
+        const auto& deposited =
+          spatial::get<map::deposited_surface_material> (m_map->geometry ());
         for (std::size_t i = 0; i < count; ++i) {
           const float ledger =
             m_overlay == OverlayMode::Eroded
-              ? m_map->eroded_material ()[i].numerical_value_in (mp_units::one)
-              : m_map->deposited_material ()[i].numerical_value_in (
-                  mp_units::one);
+              ? eroded[i].numerical_value_in (mp_units::one)
+              : deposited[i].numerical_value_in (mp_units::one);
           values[i] = std::sqrt (std::max (0.0f, ledger));
         }
         const float maximum =

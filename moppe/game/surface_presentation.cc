@@ -17,9 +17,11 @@ namespace moppe::game {
 
   void
   SurfacePresentation::refresh_paths (const terrain::TrailNetwork& network) {
-    MOPPE_PROFILE_ZONE ("surface.materialize_trail_presentation");
-    reuse_path_payloads (network.influence.values (),
-                         network.home_base_influence.values ());
+    MOPPE_PROFILE_ZONE ("surface.pack_trail_presentation");
+    m_trails = scalar_values<terrain::TrailInfluence> (
+      spatial::get<terrain::trail_influence> (network.use));
+    m_home_base = scalar_values<terrain::HomeBaseInfluence> (
+      spatial::get<terrain::home_base_influence> (network.use));
   }
 
   void
@@ -34,22 +36,21 @@ namespace moppe::game {
   }
 
   void SurfacePresentation::refresh (const map::Surface& surface) {
-    MOPPE_PROFILE_ZONE ("surface.materialize_presentation");
+    MOPPE_PROFILE_ZONE ("surface.pack_presentation");
     const map::SurfaceAtlas& atlas = surface.atlas ();
     const map::SurfaceAtlas::Use& use = atlas.use ();
     const map::SurfaceAtlas::Ecology& ecology = atlas.ecology ();
     const map::SurfaceAtlas::Hydrology& hydrology = atlas.hydrology ();
 
-    if (const auto* trails = use.trails ())
+    if (const auto* readings = use.readings ()) {
       m_trails = scalar_values<map::TrailInfluence> (
-        spatial::get<map::trail_influence> (*trails));
-    else
-      m_trails.clear ();
-    if (const auto* home_base = use.home_base ())
+        spatial::get<map::trail_influence> (*readings));
       m_home_base = scalar_values<map::HomeBaseInfluence> (
-        spatial::get<map::home_base_influence> (*home_base));
-    else
+        spatial::get<map::home_base_influence> (*readings));
+    } else {
+      m_trails.clear ();
       m_home_base.clear ();
+    }
     if (const auto* forest = ecology.forest_cover ())
       m_forest = scalar_values<map::ForestCover> (
         spatial::get<map::forest_cover> (*forest));

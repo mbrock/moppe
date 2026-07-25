@@ -33,7 +33,7 @@ namespace moppe::game {
 
     Vec3
     unwrap_near (Vec3 point, const Vec3& reference, const map::Surface& map) {
-      const Vec3 size = map.size ();
+      const Vec3 size = map.world_extent ();
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
           point[axis] -= size[axis];
@@ -57,7 +57,7 @@ namespace moppe::game {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map.scale ();
+      const Vec3 scale = map.sample_spacing ();
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y =
@@ -80,7 +80,8 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = flight_minimum_image_delta (dx, width);
       dz = flight_minimum_image_delta (dz, height);
-      Vec3 direction (dx * map.scale ()[0], 0, dz * map.scale ()[2]);
+      Vec3 direction (
+        dx * map.sample_spacing ()[0], 0, dz * map.sample_spacing ()[2]);
       if (length2 (direction) < 1e-5f)
         direction = Vec3 (0, 0, 1);
       return normalized (direction);
@@ -459,7 +460,8 @@ namespace moppe::game {
         flight_cell_position (peak.cell, map, flood, census, drainage);
       if (!plan.waypoints.empty ())
         subject = unwrap_near (subject, plan.waypoints.back ().position, map);
-      const float radius = std::clamp (map.size ()[0] * 0.055f, 160.0f, 330.0f);
+      const float radius =
+        std::clamp (map.world_extent ()[0] * 0.055f, 160.0f, 330.0f);
       Vec3 incoming (1, 0, 0);
       if (!plan.waypoints.empty ()) {
         incoming = subject - plan.waypoints.back ().position;

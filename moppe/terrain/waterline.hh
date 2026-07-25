@@ -1,8 +1,10 @@
 #ifndef MOPPE_TERRAIN_WATERLINE_HH
 #define MOPPE_TERRAIN_WATERLINE_HH
 
+#include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/raster.hh>
+#include <moppe/terrain/terrain_quantities.hh>
 #include <moppe/terrain/types.hh>
 
 #include <vector>
@@ -39,9 +41,11 @@ namespace moppe::terrain {
     std::vector<WaterlineContour> contours;
   };
 
+  using WaterlineProximity = spatial::Bundle<TerrainDomain, WaterlineDistance>;
+
   // surface is the painted water sheet (or the flood's water level):
-  // ground height in dry cells, water level in wet ones, in the same
-  // normalized units as the terrain samples.  wet_epsilon matches the
+  // ground elevation in dry cells, water elevation in wet ones, in metres
+  // in the terrain's vertical frame. wet_epsilon matches the
   // census convention: a cell is wet where surface - ground exceeds it.
   namespace detail {
     Waterline extract_waterline (const TerrainDomain& domain,
@@ -65,8 +69,8 @@ namespace moppe::terrain {
   // band_m beyond it.  The terrain's wet-soil band keys off this
   // instead of the vertical water-column proxy, so damp ground hugs
   // the actual shoreline curve.
-  ScalarRaster waterline_proximity (const Waterline& waterline,
-                                    float band_m = 8.0f);
+  WaterlineProximity waterline_proximity (const Waterline& waterline,
+                                          meters_t band = 8.0f * u::m);
 }
 
 #endif
