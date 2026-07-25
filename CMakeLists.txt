@@ -359,7 +359,6 @@ add_library(moppe_world STATIC
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc
   moppe/map/surface_materials.cc
-  moppe/map/water_surface.cc
   moppe/map/terrain_generation.cc
   moppe/game/generated_world.cc
   moppe/game/water_capture.cc

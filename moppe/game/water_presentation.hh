@@ -1,8 +1,8 @@
 #ifndef MOPPE_GAME_WATER_PRESENTATION_HH
 #define MOPPE_GAME_WATER_PRESENTATION_HH
 
-#include <moppe/map/water_surface.hh>
 #include <moppe/render/renderer.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <span>
 #include <vector>
@@ -16,7 +16,7 @@ namespace moppe::game {
     // The renderer's ocean setup is built here so that world assembly retains
     // its physical datum and extent until the presentation boundary.
     void reset (meters_t water_datum, const spatial_extent_t& world_extent);
-    void refresh (const map::WaterSurface& water);
+    void refresh (const terrain::WaterSheets& water);
     void upload (render::Renderer& renderer) const;
 
     std::span<const float> levels () const noexcept {
