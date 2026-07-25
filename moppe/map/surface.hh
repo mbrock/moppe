@@ -12,10 +12,12 @@ namespace moppe::map {
   class Surface {
   public:
     Surface (int width, int height, const Vec3& size);
+    // A lattice this large is never copied by accident, but a finished one
+    // does move into the world that owns it.
     Surface (const Surface&) = delete;
     Surface& operator= (const Surface&) = delete;
-    Surface (Surface&&) = delete;
-    Surface& operator= (Surface&&) = delete;
+    Surface (Surface&&) = default;
+    Surface& operator= (Surface&&) = default;
 
     int width () const noexcept;
     int height () const noexcept;
