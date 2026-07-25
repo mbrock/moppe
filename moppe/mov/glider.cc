@@ -160,30 +160,7 @@ namespace moppe::mov {
   }
 
   void Glider::bound () {
-    const map::SurfaceDomain& domain = m_surface.atlas ().domain ();
-    if (domain.topology () == terrain::Topology::Torus)
-      return;
-    Vec3& p = position_value (m_position);
-    const float margin = 2.0f;
-    const float max_x =
-      meters_value (domain.maximum_interpolated_x ()) - margin;
-    const float max_z =
-      meters_value (domain.maximum_interpolated_z ()) - margin;
-    if (p[0] < margin) {
-      p[0] = margin;
-      m_heading[0] = std::abs (m_heading[0]);
-    } else if (p[0] > max_x) {
-      p[0] = max_x;
-      m_heading[0] = -std::abs (m_heading[0]);
-    }
-    if (p[2] < margin) {
-      p[2] = margin;
-      m_heading[2] = std::abs (m_heading[2]);
-    } else if (p[2] > max_z) {
-      p[2] = max_z;
-      m_heading[2] = -std::abs (m_heading[2]);
-    }
-    normalize (m_heading);
+    // The world is a torus; there is no edge to bounce off.
   }
 
   Glider::State Glider::state () const {

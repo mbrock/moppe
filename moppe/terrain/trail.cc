@@ -57,16 +57,14 @@ namespace moppe::terrain {
         static_cast<int> (receiver % width) - static_cast<int> (cell % width);
       int dy =
         static_cast<int> (receiver / width) - static_cast<int> (cell / width);
-      if (grid.topology == Topology::Torus) {
-        if (dx > width / 2)
-          dx -= width;
-        if (dx < -width / 2)
-          dx += width;
-        if (dy > height / 2)
-          dy -= height;
-        if (dy < -height / 2)
-          dy += height;
-      }
+      if (dx > width / 2)
+        dx -= width;
+      if (dx < -width / 2)
+        dx += width;
+      if (dy > height / 2)
+        dy -= height;
+      if (dy < -height / 2)
+        dy += height;
       return std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
     }
 
@@ -97,8 +95,6 @@ namespace moppe::terrain {
     TrailAlignmentPoint nearest_image (TrailAlignmentPoint point,
                                        TrailAlignmentPoint reference,
                                        const TerrainGrid& grid) {
-      if (grid.topology != Topology::Torus)
-        return point;
       const float period_x = grid.unique_width () * grid.spacing_x_m ();
       const float period_z = grid.unique_height () * grid.spacing_y_m ();
       point.x_m =
@@ -140,7 +136,7 @@ namespace moppe::terrain {
       if (alignment.points.size () < 2)
         return result;
 
-      const bool periodic = grid.topology == Topology::Torus;
+      constexpr bool periodic = true;
       const TrailAlignmentPoint closure = alignment_closure (alignment, grid);
       for (std::size_t segment = 0; segment < alignment.points.size ();
            ++segment) {
@@ -202,21 +198,12 @@ namespace moppe::terrain {
       const int height = static_cast<int> (grid.unique_height ());
       float x = point.x_m / grid.spacing_x_m ();
       float y = point.z_m / grid.spacing_y_m ();
-      if (grid.topology == Topology::Torus) {
-        x = wrap_coordinate (x, static_cast<float> (width));
-        y = wrap_coordinate (y, static_cast<float> (height));
-      } else {
-        x = std::clamp (x, 0.0f, static_cast<float> (width - 1));
-        y = std::clamp (y, 0.0f, static_cast<float> (height - 1));
-      }
+      x = wrap_coordinate (x, static_cast<float> (width));
+      y = wrap_coordinate (y, static_cast<float> (height));
       const int x0 = static_cast<int> (std::floor (x));
       const int y0 = static_cast<int> (std::floor (y));
-      const int x1 = grid.topology == Topology::Torus
-                       ? wrap_index (x0 + 1, width)
-                       : std::min (x0 + 1, width - 1);
-      const int y1 = grid.topology == Topology::Torus
-                       ? wrap_index (y0 + 1, height)
-                       : std::min (y0 + 1, height - 1);
+      const int x1 = wrap_index (x0 + 1, width);
+      const int y1 = wrap_index (y0 + 1, height);
       const float tx = x - x0;
       const float ty = y - y0;
       const float h0 =
@@ -460,7 +447,7 @@ namespace moppe::terrain {
                .spacing_x = source_width * source.spacing_x_m () / width,
                .spacing_y = source_height * source.spacing_y_m () / height,
                .height_scale = source.height_scale_m (),
-               .periodic = source.topology == Topology::Torus };
+               .periodic = true };
     }
 
     TrailAlignment
@@ -478,7 +465,7 @@ namespace moppe::terrain {
           planner.source_x (planner.x (node)) * source_spacing_x,
           planner.source_y (planner.y (node)) * source_spacing_z
         };
-        if (!raw.empty () && source.topology == Topology::Torus) {
+        if (!raw.empty ()) {
           point.x_m = raw.back ().x_m +
                       wrapped_delta (point.x_m - raw.back ().x_m, period_x);
           point.z_m = raw.back ().z_m +
@@ -1155,10 +1142,8 @@ namespace moppe::terrain {
                            static_cast<int> (to.value % width));
         int dy = std::abs (static_cast<int> (from.value / width) -
                            static_cast<int> (to.value / width));
-        if (grid.topology == Topology::Torus) {
-          dx = std::min (dx, width - dx);
-          dy = std::min (dy, height - dy);
-        }
+        dx = std::min (dx, width - dx);
+        dy = std::min (dy, height - dy);
         if ((dx == 0 && dy == 0) || dx > 1 || dy > 1)
           return false;
       }
@@ -1443,7 +1428,7 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     if (drainage.width () != static_cast<std::size_t> (width) ||
         drainage.height () != static_cast<std::size_t> (height) ||
         flood.width () != static_cast<std::size_t> (width) ||

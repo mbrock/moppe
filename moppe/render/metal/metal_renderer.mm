@@ -1571,7 +1571,7 @@ namespace moppe {
              TERRAIN_LOD_STEP[shadow_lod] < requested_step)
         ++shadow_lod;
       const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
-      const int chunks = (m_terrain_resources.params.width - 1) / CHUNK_CELLS;
+      const int chunks = m_terrain_resources.params.width / CHUNK_CELLS;
       for (int cz = 0; cz < chunks; ++cz)
         for (int cx = 0; cx < chunks; ++cx) {
           MoppeChunkUniforms c;

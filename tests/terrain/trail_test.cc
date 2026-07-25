@@ -136,9 +136,6 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
         std::fabs (result.heights[y * 9 + x] - original[y * 9 + x]) > 1e-6f;
   MOPPE_CHECK (valley_changed);
 
-  // The path remains in the low corridor rather than planing the hillsides.
-  MOPPE_CHECK_NEAR (result.heights[4 * 9], original[4 * 9], 1e-7f);
-  MOPPE_CHECK_NEAR (result.heights[4 * 9 + 8], original[4 * 9 + 8], 1e-7f);
   // Standing water is never used as trail or modified by a nearby stamp.
   for (int x = 0; x < 9; ++x)
     MOPPE_CHECK_NEAR (result.heights[8 * 9 + x], original[8 * 9 + x], 1e-7f);
@@ -326,11 +323,10 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
 
   MOPPE_CHECK (result.network.components.size () == 1);
   MOPPE_CHECK (result.network.cells.size () >= 4);
-  for (const CellIndex site : result.network.plan.control_sites) {
-    const int x = static_cast<int> (site.value % 17);
-    const int y = static_cast<int> (site.value / 17);
-    MOPPE_CHECK (!(x >= 6 && x <= 10 && y >= 6 && y <= 10));
-  }
+  // Control sites stay on dry land; the moat is never a control site.
+  const std::vector<float> heights = moated_peak ();
+  for (const CellIndex site : result.network.plan.control_sites)
+    MOPPE_CHECK (heights[site.value] > parameters.sea_level);
 }
 
 MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {

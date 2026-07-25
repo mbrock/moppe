@@ -373,8 +373,8 @@ namespace moppe::terrain {
     validate (domain);
     const Program program = compile (field);
     std::vector<float> output (domain.width * domain.height);
-    const float inv_x = 1.0f / static_cast<float> (domain.width - 1);
-    const float inv_y = 1.0f / static_cast<float> (domain.height - 1);
+    const float inv_x = 1.0f / static_cast<float> (domain.width);
+    const float inv_y = 1.0f / static_cast<float> (domain.height);
 
     std::atomic<std::size_t> next_row = 0;
     std::atomic<std::size_t> completed_rows = 0;

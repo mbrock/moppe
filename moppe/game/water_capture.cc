@@ -43,10 +43,8 @@ namespace moppe::game {
       const int to_z = static_cast<int> (to / drainage.width ());
       int dx = to_x - from_x;
       int dz = to_z - from_z;
-      if (map.periodic ()) {
-        dx = capture_minimum_image_delta (dx, width);
-        dz = capture_minimum_image_delta (dz, height);
-      }
+      dx = capture_minimum_image_delta (dx, width);
+      dz = capture_minimum_image_delta (dz, height);
       Vec3 result (dx * map.scale ()[0], 0.0f, dz * map.scale ()[2]);
       if (length2 (result) < 1e-6f)
         result = Vec3 (0, 0, 1);

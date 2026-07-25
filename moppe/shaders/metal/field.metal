@@ -272,8 +272,8 @@ kernel void moppe_materialize_field (
   uint2 position [[thread_position_in_grid]]) {
   if (position.x >= domain.width || position.y >= domain.height)
     return;
-  const float fx = float (position.x) / float (domain.width - 1);
-  const float fy = float (position.y) / float (domain.height - 1);
+  const float fx = float (position.x) / float (domain.width);
+  const float fy = float (position.y) / float (domain.height);
   const float2 sample_position = float2 (mix (domain.min_x, domain.max_x, fx),
                                          mix (domain.min_y, domain.max_y, fy));
   output[position.y * domain.width + position.x] =

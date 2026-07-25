@@ -47,7 +47,6 @@ namespace moppe::map {
           continent < 0.0f ? bathymetric_relief : land_relief;
         m_target.set (x, y, program.source.sea_level + relief * continent);
       }
-    m_target.synchronize_periodic_edges ();
 
     m_relative_uplift.clear ();
     MOPPE_PROFILE_ZONE ("terrain.materialize_uplift_field");
@@ -102,7 +101,6 @@ namespace moppe::map {
               m_target.set (static_cast<int> (x),
                             static_cast<int> (y),
                             heights[y * width + x]);
-          m_target.synchronize_periodic_edges ();
           if (m_iteration_progress)
             m_iteration_progress (
               m_transform_index, transform, completed, total);
@@ -149,7 +147,6 @@ namespace moppe::map {
       report = result.report;
       m_trail_network = std::move (result.network);
     }
-    m_target.synchronize_periodic_edges ();
     return report;
   }
 

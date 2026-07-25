@@ -26,8 +26,7 @@ namespace moppe::map {
     SurfaceDomain (std::size_t width,
                    std::size_t height,
                    meters_t spacing_x,
-                   meters_t spacing_z,
-                   terrain::Topology topology);
+                   meters_t spacing_z);
 
     friend bool operator== (const SurfaceDomain&,
                             const SurfaceDomain&) = default;
@@ -40,9 +39,6 @@ namespace moppe::map {
     }
     std::size_t height () const noexcept {
       return m_height;
-    }
-    terrain::Topology topology () const noexcept {
-      return m_topology;
     }
     meters_t maximum_interpolated_x () const noexcept {
       return static_cast<float> (m_width - 2) * m_spacing_x;
@@ -63,32 +59,24 @@ namespace moppe::map {
     template <typename Visitor>
     void visit_interpolation_stencil (const position_t& position,
                                       Visitor&& visitor) const {
-      float x = position_value (position)[0] / meters_value (m_spacing_x);
-      float z = position_value (position)[2] / meters_value (m_spacing_z);
-      if (m_topology == terrain::Topology::Torus) {
-        x = terrain::wrap_coordinate (x, static_cast<float> (m_width - 1));
-        z = terrain::wrap_coordinate (z, static_cast<float> (m_height - 1));
-      }
+      const float x = terrain::wrap_coordinate (position_value (position)[0] /
+                                                  meters_value (m_spacing_x),
+                                                static_cast<float> (m_width));
+      const float z = terrain::wrap_coordinate (position_value (position)[2] /
+                                                  meters_value (m_spacing_z),
+                                                static_cast<float> (m_height));
 
-      std::ptrdiff_t x0 = static_cast<std::ptrdiff_t> (std::floor (x));
-      std::ptrdiff_t z0 = static_cast<std::ptrdiff_t> (std::floor (z));
-      x0 = std::clamp<std::ptrdiff_t> (x0, 0, m_width - 2);
-      z0 = std::clamp<std::ptrdiff_t> (z0, 0, m_height - 2);
+      const std::size_t x0 = static_cast<std::size_t> (std::floor (x));
+      const std::size_t z0 = static_cast<std::size_t> (std::floor (z));
+      const std::size_t x1 = (x0 + 1) % m_width;
+      const std::size_t z1 = (z0 + 1) % m_height;
       const float tx = x - static_cast<float> (x0);
       const float tz = z - static_cast<float> (z0);
 
-      visitor (SurfaceIndex { static_cast<std::size_t> (x0),
-                              static_cast<std::size_t> (z0) },
-               (1.0f - tx) * (1.0f - tz));
-      visitor (SurfaceIndex { static_cast<std::size_t> (x0 + 1),
-                              static_cast<std::size_t> (z0) },
-               tx * (1.0f - tz));
-      visitor (SurfaceIndex { static_cast<std::size_t> (x0),
-                              static_cast<std::size_t> (z0 + 1) },
-               (1.0f - tx) * tz);
-      visitor (SurfaceIndex { static_cast<std::size_t> (x0 + 1),
-                              static_cast<std::size_t> (z0 + 1) },
-               tx * tz);
+      visitor (SurfaceIndex { x0, z0 }, (1.0f - tx) * (1.0f - tz));
+      visitor (SurfaceIndex { x1, z0 }, tx * (1.0f - tz));
+      visitor (SurfaceIndex { x0, z1 }, (1.0f - tx) * tz);
+      visitor (SurfaceIndex { x1, z1 }, tx * tz);
     }
 
   private:
@@ -96,7 +84,6 @@ namespace moppe::map {
     std::size_t m_height;
     meters_t m_spacing_x;
     meters_t m_spacing_z;
-    terrain::Topology m_topology;
   };
 }
 

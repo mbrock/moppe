@@ -32,13 +32,13 @@ namespace {
 MOPPE_TEST (heightmap_materializes_an_arbitrary_scalar_field) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::RandomHeightMap map (3, 3, Vec3 (1, 1, 1));
+  map::RandomHeightMap map (4, 4, Vec3 (1, 1, 1));
 
   map.materialize (coordinate_x () + 2.0f * coordinate_y ());
 
   MOPPE_CHECK_NEAR (map.get (0, 0), 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (map.get (1, 1), 1.5f, 1e-6f);
-  MOPPE_CHECK_NEAR (map.get (2, 2), 3.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (map.get (2, 2), 1.5f, 1e-6f);
+  MOPPE_CHECK_NEAR (map.get (3, 3), 2.25f, 1e-6f);
 }
 
 MOPPE_TEST (orogeny_evaluation_is_deterministic) {
@@ -49,8 +49,8 @@ MOPPE_TEST (orogeny_evaluation_is_deterministic) {
   auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
   orogeny.evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
   orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::RandomHeightMap first (33, 33, Vec3 (640, 650, 640), Topology::Torus);
-  map::RandomHeightMap second (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap first (33, 33, Vec3 (640, 650, 640));
+  map::RandomHeightMap second (33, 33, Vec3 (640, 650, 640));
 
   evaluate (first, program);
   evaluate (second, program);
@@ -66,13 +66,13 @@ MOPPE_TEST (orogeny_channel_memory_survives_a_checkpoint) {
   auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
   orogeny.evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
   orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::RandomHeightMap map (17, 17, Vec3 (320, 650, 320), Topology::Torus);
+  map::RandomHeightMap map (17, 17, Vec3 (320, 650, 320));
   map::TerrainEvaluator evaluator (map);
 
   evaluator.begin (program);
   evaluator.apply (program.transforms.front ());
   const map::TerrainCheckpoint checkpoint = evaluator.checkpoint ();
-  MOPPE_CHECK (checkpoint.channel_tangents.size () == 16 * 16);
+  MOPPE_CHECK (checkpoint.channel_tangents.size () == 17 * 17);
   MOPPE_CHECK (std::ranges::any_of (
     checkpoint.channel_tangents, [] (ChannelTangent tangent) {
       return length2 (tangent.numerical_value_in (mp_units::one)) > 0.0f;
@@ -93,8 +93,8 @@ MOPPE_TEST (checkpoint_resume_matches_complete_replay) {
   auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
   orogeny.evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
   orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::RandomHeightMap replayed (33, 33, Vec3 (640, 650, 640), Topology::Torus);
-  map::RandomHeightMap resumed (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap replayed (33, 33, Vec3 (640, 650, 640));
+  map::RandomHeightMap resumed (33, 33, Vec3 (640, 650, 640));
 
   evaluate (replayed, program);
   map::TerrainEvaluator evaluator (resumed);
@@ -107,10 +107,10 @@ MOPPE_TEST (checkpoint_resume_matches_complete_replay) {
   MOPPE_CHECK (maps_match (replayed, resumed));
 }
 
-MOPPE_TEST (periodic_program_preserves_height_and_normal_seams) {
+MOPPE_TEST (periodic_program_wraps_continuously) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::RandomHeightMap map (33, 33, Vec3 (5000, 650, 3000), Topology::Torus);
+  map::RandomHeightMap map (32, 32, Vec3 (5000, 650, 3000));
   TerrainProgram program =
     make_orogeny_program (123, TerrainGenerationProfile::Fast);
   auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
@@ -120,17 +120,16 @@ MOPPE_TEST (periodic_program_preserves_height_and_normal_seams) {
   evaluate (map, program);
   map.recompute_normals ();
 
-  for (int i = 0; i < map.width (); ++i) {
-    MOPPE_CHECK (map.get (i, 0) == map.get (i, map.height () - 1));
-    MOPPE_CHECK (map.get (0, i) == map.get (map.width () - 1, i));
-    const Vec3 row_a = map.normal (i, 0);
-    const Vec3 row_b = map.normal (i, map.height () - 1);
-    const Vec3 column_a = map.normal (0, i);
-    const Vec3 column_b = map.normal (map.width () - 1, i);
-    for (int axis = 0; axis < 3; ++axis) {
-      MOPPE_CHECK_NEAR (row_a[axis], row_b[axis], 1e-6f);
-      MOPPE_CHECK_NEAR (column_a[axis], column_b[axis], 1e-6f);
-    }
+  // The lattice is seamless: sampling one period apart reads the same
+  // ground in both axes.
+  const Vec3 period = map.size ();
+  for (const float t : { 3.7f, 611.2f, 2499.9f }) {
+    MOPPE_CHECK_NEAR (map.interpolated_height (t, t * 0.4f),
+                      map.interpolated_height (t + period[0], t * 0.4f),
+                      1e-3f);
+    MOPPE_CHECK_NEAR (map.interpolated_height (t, t * 0.4f),
+                      map.interpolated_height (t, t * 0.4f + period[2]),
+                      1e-3f);
   }
 }
 
@@ -141,7 +140,7 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
   auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
   orogeny.evolution.duration = 200000.0f * mp_units::astronomy::Julian_year;
   orogeny.evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640));
   std::vector<int> completed;
   std::vector<std::vector<float>> snapshots;
 
@@ -169,7 +168,7 @@ MOPPE_TEST (orogeny_seed_separates_land_and_bathymetric_relief) {
   using namespace moppe;
   using namespace moppe::terrain;
   const TerrainProgram program = make_orogeny_program (731);
-  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640));
 
   map::TerrainEvaluator (map).begin (program);
 

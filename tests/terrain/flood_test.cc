@@ -50,11 +50,9 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
   MOPPE_CHECK (census.bodies[1].spill_cell != WaterBody::no_cell);
 }
 
-MOPPE_TEST (periodic_flood_can_spill_across_the_duplicated_seam) {
-  const std::array heights { 1.f, 3.f, 0.f, 1.f, 1.f, 3.f, 0.f, 1.f,
-                             1.f, 3.f, 0.f, 1.f, 1.f, 3.f, 0.f, 1.f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+MOPPE_TEST (periodic_flood_can_spill_across_the_wrap) {
+  const std::array heights { 1.f, 3.f, 0.f, 1.f, 3.f, 0.f, 1.f, 3.f, 0.f };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
   MOPPE_CHECK (flood.width () == 3);
@@ -62,10 +60,8 @@ MOPPE_TEST (periodic_flood_can_spill_across_the_duplicated_seam) {
 }
 
 MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
-  const std::array heights { 4.f, 3.f, 2.f, 4.f, 4.f, 1.f, 3.f, 4.f,
-                             4.f, 4.f, 4.f, 4.f, 4.f, 3.f, 2.f, 4.f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 4.f, 3.f, 2.f, 4.f, 1.f, 3.f, 4.f, 4.f, 4.f };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
   MOPPE_CHECK (flood.outlets.size () == 1);
@@ -75,10 +71,8 @@ MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
 }
 
 MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
-  const std::array heights { 0.f, 4.f, 3.f, 0.f, 2.f, 1.f, 5.f, 2.f,
-                             3.f, 2.f, 4.f, 3.f, 0.f, 4.f, 3.f, 0.f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const std::size_t count = flood.width () * flood.height ();
 

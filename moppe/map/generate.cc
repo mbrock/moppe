@@ -42,32 +42,14 @@ namespace moppe {
           normalize (m_data.at (y, x));
     }
 
-    RandomHeightMap::RandomHeightMap (int width,
-                                      int height,
-                                      const Vec3& size,
-                                      terrain::Topology topology)
-        : NormalComputingHeightMap (width, height, size, topology),
+    RandomHeightMap::RandomHeightMap (int width, int height, const Vec3& size)
+        : NormalComputingHeightMap (width, height, size),
           m_data (width, height), m_eroded ((std::size_t)width * height, 0.0f),
           m_deposited ((std::size_t)width * height, 0.0f) {}
 
     void RandomHeightMap::reset_sediment_ledger () {
       std::fill (m_eroded.begin (), m_eroded.end (), 0.0f);
       std::fill (m_deposited.begin (), m_deposited.end (), 0.0f);
-    }
-
-    void RandomHeightMap::synchronize_periodic_ledger_edges () {
-      if (!periodic ())
-        return;
-      const auto seam = [this] (std::vector<float>& ledger) {
-        for (int y = 0; y < unique_height (); ++y)
-          ledger[(std::size_t)y * m_width + m_width - 1] =
-            ledger[(std::size_t)y * m_width];
-        for (int x = 0; x < m_width; ++x)
-          ledger[(std::size_t)(m_height - 1) * m_width + x] =
-            ledger[(std::size_t)x];
-      };
-      seam (m_eroded);
-      seam (m_deposited);
     }
 
 #define FORALL(x, y)                                                           \
@@ -127,19 +109,7 @@ namespace moppe {
           .height = height,
           .spacing_x = m_scale[0] * mp_units::si::metre,
           .spacing_y = m_scale[2] * mp_units::si::metre,
-          .height_scale = m_scale[1] * mp_units::si::metre,
-          .topology = periodic () ? terrain::Topology::Torus
-                                  : terrain::Topology::Bounded });
-    }
-
-    void RandomHeightMap::synchronize_periodic_edges () {
-      if (!periodic ())
-        return;
-      for (int y = 0; y < unique_height (); ++y)
-        set (m_width - 1, y, get (0, y));
-      for (int x = 0; x < m_width; ++x)
-        set (x, m_height - 1, get (x, 0));
-      synchronize_periodic_ledger_edges ();
+          .height_scale = m_scale[1] * mp_units::si::metre });
     }
 
     void RandomHeightMap::materialize (const terrain::ScalarField& field) {
@@ -156,7 +126,6 @@ namespace moppe {
 
       std::copy (
         raster.values ().begin (), raster.values ().end (), m_data.raw ());
-      synchronize_periodic_edges ();
       // A fresh source field starts a fresh sediment history.
       reset_sediment_ledger ();
       // NB: no recompute_normals() here -- the caller shapes further
@@ -164,8 +133,7 @@ namespace moppe {
 
     // Heightfield cache format: 4-byte magic, int32 width, int32
     // height, then width*height little-endian float32, row 0 first.
-    static const char bounded_heightfield_magic[4] = { 'M', 'O', 'P', 'C' };
-    static const char torus_heightfield_magic[4] = { 'M', 'O', 'P', '2' };
+    static const char heightfield_magic[4] = { 'M', 'O', 'P', '3' };
     static const char sediment_ledger_magic[4] = { 'L', 'G', 'R', '1' };
 
     bool RandomHeightMap::try_load_cache (const std::string& path) {
@@ -178,10 +146,8 @@ namespace moppe {
       f.read (magic, 4);
       f.read ((char*)&w, 4);
       f.read ((char*)&h, 4);
-      const char* expected_magic =
-        periodic () ? torus_heightfield_magic : bounded_heightfield_magic;
-      if (!f || std::memcmp (magic, expected_magic, 4) != 0 || w != m_width ||
-          h != m_height)
+      if (!f || std::memcmp (magic, heightfield_magic, 4) != 0 ||
+          w != m_width || h != m_height)
         return false;
 
       std::vector<float> heights ((size_t)m_width * m_height);
@@ -191,7 +157,6 @@ namespace moppe {
 
       FORALL (x, y)
       set (x, y, heights[(size_t)y * m_width + x]);
-      synchronize_periodic_edges ();
 
       // Sediment ledger: a tagged section after the heights.  A cache
       // without the tag leaves the ledger zeroed.
@@ -217,8 +182,7 @@ namespace moppe {
         throw std::runtime_error ("can't write map cache: " + path);
 
       const int32_t w = m_width, h = m_height;
-      f.write (
-        periodic () ? torus_heightfield_magic : bounded_heightfield_magic, 4);
+      f.write (heightfield_magic, 4);
       f.write ((const char*)&w, 4);
       f.write ((const char*)&h, 4);
       f.write ((const char*)raw_heights (),
@@ -234,51 +198,39 @@ namespace moppe {
                              NormalMap& normal_map) {
       MOPPE_PROFILE_ZONE ("compute_normal_map");
       normal_map.reset ();
-
-      if (height_map.periodic ()) {
-        const int period_x = height_map.unique_width ();
-        const int period_y = height_map.unique_height ();
-        for (int y = 0; y < period_y; ++y)
-          for (int x = 0; x < period_x; ++x) {
-            const Vec3 left =
-              height_map.triangle_normal (x, y, x, y + 1, x + 1, y + 1);
-            const Vec3 right =
-              height_map.triangle_normal (x, y, x + 1, y + 1, x + 1, y);
-            const int x1 = terrain::wrap_index (x + 1, period_x);
-            const int y1 = terrain::wrap_index (y + 1, period_y);
-            normal_map.add (x, y, left);
-            normal_map.add (x, y1, left);
-            normal_map.add (x1, y1, left);
-            normal_map.add (x, y, right);
-            normal_map.add (x1, y, right);
-            normal_map.add (x1, y1, right);
-          }
-        normal_map.normalize_all ();
-        for (int y = 0; y < period_y; ++y)
-          normal_map.set (period_x, y, normal_map.at (0, y));
-        for (int x = 0; x <= period_x; ++x)
-          normal_map.set (x, period_y, normal_map.at (x, 0));
-        return;
-      }
-
+      const int period_x = height_map.width ();
+      const int period_y = height_map.height ();
+      const Vec3 scale = height_map.scale ();
       // Each vertex accumulates the normals of every triangle that
-      // touches it (up to six), which smooths adequately on a dense
-      // grid; anything fancier is far too slow at 4M vertices.
-      for (int y = 0; y < height_map.height () - 1; ++y)
-        for (int x = 0; x < height_map.width () - 1; ++x) {
-          Vec3 left = height_map.triangle_normal (x, y, x, y + 1, x + 1, y + 1);
-          Vec3 right =
-            height_map.triangle_normal (x, y, x + 1, y + 1, x + 1, y);
-
+      // touches it (up to six).  Edge triangles continue past the lattice
+      // in space while their heights wrap around the torus.
+      const auto vertex = [&] (int x, int y) {
+        return Vec3 (scale[0] * x,
+                     scale[1] *
+                       height_map.get (terrain::wrap_index (x, period_x),
+                                       terrain::wrap_index (y, period_y)),
+                     scale[2] * y);
+      };
+      const auto face_normal =
+        [&] (int x1, int y1, int x2, int y2, int x3, int y3) {
+          const Vec3 a = vertex (x1, y1);
+          const Vec3 b = vertex (x2, y2);
+          const Vec3 c = vertex (x3, y3);
+          return normalized (cross (b - a, c - a));
+        };
+      for (int y = 0; y < period_y; ++y)
+        for (int x = 0; x < period_x; ++x) {
+          const Vec3 left = face_normal (x, y, x, y + 1, x + 1, y + 1);
+          const Vec3 right = face_normal (x, y, x + 1, y + 1, x + 1, y);
+          const int x1 = terrain::wrap_index (x + 1, period_x);
+          const int y1 = terrain::wrap_index (y + 1, period_y);
           normal_map.add (x, y, left);
-          normal_map.add (x, y + 1, left);
-          normal_map.add (x + 1, y + 1, left);
-
+          normal_map.add (x, y1, left);
+          normal_map.add (x1, y1, left);
           normal_map.add (x, y, right);
-          normal_map.add (x + 1, y, right);
-          normal_map.add (x + 1, y + 1, right);
+          normal_map.add (x1, y, right);
+          normal_map.add (x1, y1, right);
         }
-
       normal_map.normalize_all ();
     }
   }

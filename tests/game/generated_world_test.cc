@@ -13,7 +13,6 @@ namespace {
     using namespace moppe::terrain;
     return make_world_recipe (extent,
                               resolution,
-                              Topology::Torus,
                               seed,
                               50.0f * u::m,
                               TerrainGenerationProfile::Fast)
@@ -25,7 +24,6 @@ namespace {
     for (int y = 0; y < map.height (); ++y)
       for (int x = 0; x < map.width (); ++x)
         map.set (x, y, 0.25f + 0.01f * static_cast<float> ((x + y) % 7));
-    map.synchronize_periodic_edges ();
   }
 }
 
@@ -39,7 +37,6 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   params.map_size = extent;
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
-  params.terrain_topology = Topology::Torus;
   const WorldRecipe recipe = world_without_trails (extent, 17, Seed { 42 });
 
   game::GeneratedWorld world (params, recipe);
@@ -58,10 +55,10 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.surface ().atlas ().geometry ().domain ().width () == 17);
   MOPPE_CHECK (stages.size () == 6);
   MOPPE_CHECK (world.hydrology ().has_value ());
-  MOPPE_CHECK (world.hydrology ()->standing_water ().width () == 16);
-  MOPPE_CHECK (world.hydrology ()->lakes ().body.size () == 16 * 16);
-  MOPPE_CHECK (world.hydrology ()->drainage ().receiver.size () == 16 * 16);
-  MOPPE_CHECK (world.hydrology ()->channels ().domain ().size () == 16 * 16);
+  MOPPE_CHECK (world.hydrology ()->standing_water ().width () == 17);
+  MOPPE_CHECK (world.hydrology ()->lakes ().body.size () == 17 * 17);
+  MOPPE_CHECK (world.hydrology ()->drainage ().receiver.size () == 17 * 17);
+  MOPPE_CHECK (world.hydrology ()->channels ().domain ().size () == 17 * 17);
   MOPPE_CHECK (world.hydrology ()->waterways ().bodies.size () <=
                world.hydrology ()->lakes ().bodies.size ());
   MOPPE_CHECK (world.water_surface ().has_value ());
@@ -85,7 +82,6 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   params.map_size = extent;
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
-  params.terrain_topology = Topology::Torus;
   auto completed = std::make_unique<game::GeneratedWorld> (
     params, world_without_trails (extent, 17, Seed { 72 }));
   const game::GeneratedWorld* address = completed.get ();

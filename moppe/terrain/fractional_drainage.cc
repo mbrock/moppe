@@ -185,16 +185,14 @@ namespace moppe::terrain {
                static_cast<int> (cell.value % domain.width ());
       int dy = static_cast<int> (receiver.value / domain.width ()) -
                static_cast<int> (cell.value / domain.width ());
-      if (domain.grid ().topology == Topology::Torus) {
-        if (dx > width / 2)
-          dx -= width;
-        if (dx < -width / 2)
-          dx += width;
-        if (dy > height / 2)
-          dy -= height;
-        if (dy < -height / 2)
-          dy += height;
-      }
+      if (dx > width / 2)
+        dx -= width;
+      if (dx < -width / 2)
+        dx += width;
+      if (dy > height / 2)
+        dy -= height;
+      if (dy < -height / 2)
+        dy += height;
       return { dx, dy };
     }
 
@@ -378,9 +376,7 @@ namespace moppe::terrain {
     if (grid.width < 2 || grid.height < 2 ||
         grid.spacing_x <= 0.0f * mp_units::si::metre ||
         grid.spacing_y <= 0.0f * mp_units::si::metre ||
-        grid.height_scale <= 0.0f * mp_units::si::metre ||
-        (grid.topology == Topology::Torus &&
-         (grid.width < 3 || grid.height < 3)))
+        grid.height_scale <= 0.0f * mp_units::si::metre)
       throw std::invalid_argument ("invalid terrain lattice domain");
   }
 
@@ -402,13 +398,8 @@ namespace moppe::terrain {
     const std::size_t cell = offset (index);
     int x = static_cast<int> (cell % width ()) + columns;
     int y = static_cast<int> (cell / width ()) + rows;
-    if (m_grid.topology == Topology::Torus) {
-      x = wrap_index (x, static_cast<int> (width ()));
-      y = wrap_index (y, static_cast<int> (height ()));
-    } else if (x < 0 || y < 0 || x >= static_cast<int> (width ()) ||
-               y >= static_cast<int> (height ())) {
-      return std::nullopt;
-    }
+    x = wrap_index (x, static_cast<int> (width ()));
+    y = wrap_index (y, static_cast<int> (height ()));
     return CellIndex { static_cast<std::uint32_t> (
       static_cast<std::size_t> (y) * width () + static_cast<std::size_t> (x)) };
   }

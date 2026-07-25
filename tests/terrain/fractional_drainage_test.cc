@@ -46,9 +46,8 @@ namespace {
   }
 }
 
-MOPPE_TEST (terrain_lattice_domain_omits_the_periodic_rendering_seam) {
-  const TerrainLatticeDomain domain (
-    { .width = 4, .height = 4, .topology = Topology::Torus });
+MOPPE_TEST (terrain_lattice_domain_is_the_periodic_lattice) {
+  const TerrainLatticeDomain domain ({ .width = 3, .height = 3 });
 
   MOPPE_CHECK (domain.width () == 3);
   MOPPE_CHECK (domain.height () == 3);

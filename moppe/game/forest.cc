@@ -211,15 +211,11 @@ namespace moppe::game {
       throw std::invalid_argument ("Forest spacing must be positive");
     const map::SurfaceDomain& domain = surface.atlas ().domain ();
     ForestPlan plan;
-    plan.periodic = domain.topology () == terrain::Topology::Torus;
+    plan.periodic = true;
     const float width =
-      meters_value (domain.spacing_x ()) *
-      static_cast<float> (plan.periodic ? domain.width () - 1
-                                        : domain.width () - 2);
-    const float depth =
-      meters_value (domain.spacing_z ()) *
-      static_cast<float> (plan.periodic ? domain.height () - 1
-                                        : domain.height () - 2);
+      meters_value (domain.spacing_x ()) * static_cast<float> (domain.width ());
+    const float depth = meters_value (domain.spacing_z ()) *
+                        static_cast<float> (domain.height ());
     plan.period = Vec3 (width, 0, depth);
     const std::uint32_t columns =
       std::max (1U, static_cast<std::uint32_t> (std::ceil (width / spacing)));

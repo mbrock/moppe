@@ -161,7 +161,7 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
 }
 
 MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
-  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80), terrain::Topology::Torus);
+  map::RandomHeightMap map (9, 9, Vec3 (80, 20, 80));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, z, 0.3f);

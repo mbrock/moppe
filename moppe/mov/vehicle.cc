@@ -531,49 +531,7 @@ namespace moppe {
     }
 
     void Vehicle::bound () {
-      if (m_map.periodic ())
-        return;
-
-      // Invisible walls at the map edge, bouncing like the building
-      // walls do.  (The old build flung you across the sky toward
-      // the map center at 400 km/h -- it read as a glitchy teleport,
-      // especially near the corner spawn.)
-      const float margin = 2; // metres
-      const float max_x = (m_map.width () - 2) * m_map.scale ()[0] - margin;
-      const float max_z = (m_map.height () - 2) * m_map.scale ()[2] - margin;
-
-      Vec3& position = position_value (m_position);
-      Vec3& velocity = velocity_value (m_velocity);
-      float bounced = 0;
-      if (position[0] < margin) {
-        position[0] = margin;
-        if (velocity[0] < 0) {
-          bounced = -velocity[0];
-          velocity[0] *= -0.35f;
-        }
-      } else if (position[0] > max_x) {
-        position[0] = max_x;
-        if (velocity[0] > 0) {
-          bounced = velocity[0];
-          velocity[0] *= -0.35f;
-        }
-      }
-      if (position[2] < margin) {
-        position[2] = margin;
-        if (velocity[2] < 0) {
-          bounced = max (bounced, -velocity[2]);
-          velocity[2] *= -0.35f;
-        }
-      } else if (position[2] > max_z) {
-        position[2] = max_z;
-        if (velocity[2] > 0) {
-          bounced = max (bounced, velocity[2]);
-          velocity[2] *= -0.35f;
-        }
-      }
-
-      if (bounced > 0)
-        m_impact = std::max (m_impact, 0.4f * bounced * u::m / u::s);
+      // The world is a torus; there is no edge to bounce off.
     }
 
   }

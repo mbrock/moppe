@@ -35,18 +35,15 @@ MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
     1e-6f);
 }
 
-MOPPE_TEST (periodic_drainage_crosses_the_duplicated_seam) {
-  // The last row and column duplicate the first. Cell (0,0) reaches the low
-  // point at (2,0) by crossing the periodic seam.
-  const std::array heights { 2.0f, 3.0f, 0.0f, 2.0f, 4.0f, 4.0f, 4.0f, 4.0f,
-                             4.0f, 4.0f, 4.0f, 4.0f, 2.0f, 3.0f, 0.0f, 2.0f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+MOPPE_TEST (periodic_drainage_crosses_the_wrap) {
+  // Cell (0,0) reaches the low point at (2,0) by crossing the wrap.
+  const std::array heights { 2.0f, 3.0f, 0.0f, 4.0f, 4.0f,
+                             4.0f, 4.0f, 4.0f, 4.0f };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
   MOPPE_CHECK (graph.width () == 3);
   MOPPE_CHECK (graph.height () == 3);
-  MOPPE_CHECK (graph.source_grid.topology == Topology::Torus);
   MOPPE_CHECK (graph.receiver[0] == 2);
   MOPPE_CHECK (graph.basin[0] == 2);
 }
@@ -150,10 +147,8 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
 }
 
 MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
-  const std::array heights { 0.f, 4.f, 3.f, 0.f, 2.f, 1.f, 5.f, 2.f,
-                             3.f, 2.f, 4.f, 3.f, 0.f, 4.f, 3.f, 0.f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   const FloodField flood_a = analyze_standing_water (terrain, 0.0f);
   const FloodField flood_b = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census_a = census_lakes (flood_a);

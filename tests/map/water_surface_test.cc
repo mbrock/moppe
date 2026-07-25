@@ -11,8 +11,7 @@
 
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    2, 2, Vec3 (20, 100, 20), terrain::Topology::Bounded);
+  map::RandomHeightMap map (2, 2, Vec3 (20, 100, 20));
   std::fill (map.raw_heights (), map.raw_heights () + 4, 0.05f);
   map.recompute_normals ();
   map::Surface ground (map);
@@ -47,8 +46,7 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
 
 MOPPE_TEST (water_presentation_is_the_only_normalization_and_packing_bridge) {
   using namespace moppe;
-  const map::SurfaceDomain domain (
-    2, 2, 10.0f * u::m, 10.0f * u::m, terrain::Topology::Bounded);
+  const map::SurfaceDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
   const std::array level_and_amplitude {
     0.10f, 0.20f, 0.20f, 0.30f, 0.30f, 0.40f, 0.40f, 0.50f,
   };

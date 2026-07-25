@@ -23,14 +23,12 @@ namespace moppe::terrain {
 
   WorldRecipe::WorldRecipe (spatial_extent_t extent,
                             int resolution,
-                            Topology topology,
                             Seed seed,
                             meters_t water_datum,
                             TerrainGenerationProfile generation_profile,
                             TerrainProgram terrain_program)
-      : m_extent (extent), m_resolution (resolution), m_topology (topology),
-        m_seed (seed), m_water_datum (water_datum),
-        m_generation_profile (generation_profile),
+      : m_extent (extent), m_resolution (resolution), m_seed (seed),
+        m_water_datum (water_datum), m_generation_profile (generation_profile),
         m_terrain_program (std::move (terrain_program)) {
     if (m_terrain_program.seed != m_seed)
       throw std::invalid_argument (
@@ -42,13 +40,12 @@ namespace moppe::terrain {
   }
 
   WorldRecipe WorldRecipe::with_terrain_program (TerrainProgram program) const {
-    return { m_extent,      m_resolution,         m_topology,         m_seed,
+    return { m_extent,      m_resolution,         m_seed,
              m_water_datum, m_generation_profile, std::move (program) };
   }
 
   WorldRecipe make_world_recipe (spatial_extent_t extent,
                                  int resolution,
-                                 Topology topology,
                                  Seed seed,
                                  meters_t water_datum,
                                  TerrainGenerationProfile generation_profile) {
@@ -56,7 +53,7 @@ namespace moppe::terrain {
       make_world_program (seed.value, generation_profile);
     set_program_water_datum (program,
                              normalized_water_datum_for (extent, water_datum));
-    return { extent,      resolution,         topology,           seed,
+    return { extent,      resolution,         seed,
              water_datum, generation_profile, std::move (program) };
   }
 }

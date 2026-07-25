@@ -190,7 +190,7 @@ namespace moppe::game {
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           options.start_in_terrain_lab = true;
           // The Lab capture inspects one world's shape, not its detail.
-          options.world.resolution = 1025;
+          options.world.resolution = 1024;
           capture_to (options, values[0]);
           return true;
         } },
@@ -242,7 +242,7 @@ namespace moppe::game {
         return false;
       }
       if (options.generation_profile == terrain::TerrainGenerationProfile::Fast)
-        options.world.resolution = 1025;
+        options.world.resolution = 1024;
       options.config.capture_frames = !options.screenshot_path.empty () ||
                                       ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
       // An automated run stays behind whatever the developer is looking at.
@@ -296,7 +296,6 @@ namespace moppe::game {
     const terrain::Seed seed { static_cast<std::uint32_t> (options.seed) };
     return terrain::make_world_recipe (options.world.map_size,
                                        options.world.resolution,
-                                       options.world.topology (),
                                        seed,
                                        options.world.water_level,
                                        options.generation_profile);

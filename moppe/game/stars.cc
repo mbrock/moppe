@@ -47,13 +47,12 @@ namespace moppe {
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
       const Vec3 size = map.size ();
       m_period = size;
-      m_periodic = map.periodic ();
       m_collected = 0;
 
       m_stars.clear ();
       while ((int)m_stars.size () < count) {
         Star s;
-        s.pos[0] = size[0] * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
+        s.pos[0] = size[0] * u (rng);
         s.pos[2] = size[2] * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
 
         float ground = map.interpolated_height (s.pos[0], s.pos[2]);

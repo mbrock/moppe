@@ -1028,13 +1028,10 @@ namespace moppe {
           ocean.time = frame.lighting.time;
           ocean.fog_color = frame.lighting.fog_color;
           ocean.fog_scale = attenuation_value (frame.lighting.fog_scale);
-          if (world ().toroidal ()) {
-            const Vec3& world_extent = extent_value (world ().map_size);
-            const Vec3 center (
-              0.5f * world_extent[0], 0, 0.5f * world_extent[2]);
-            ocean.world_offset[0] = camera[0] - center[0];
-            ocean.world_offset[2] = camera[2] - center[2];
-          }
+          const Vec3& world_extent = extent_value (world ().map_size);
+          const Vec3 center (0.5f * world_extent[0], 0, 0.5f * world_extent[2]);
+          ocean.world_offset[0] = camera[0] - center[0];
+          ocean.world_offset[2] = camera[2] - center[2];
           r.draw_ocean (ocean);
         }
 
@@ -1710,7 +1707,6 @@ namespace moppe {
         terrain::WorldRecipe next_recipe =
           terrain::make_world_recipe (recipe ().extent (),
                                       recipe ().resolution (),
-                                      recipe ().topology (),
                                       next_seed,
                                       recipe ().water_datum (),
                                       recipe ().generation_profile ());

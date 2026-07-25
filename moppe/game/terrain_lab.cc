@@ -426,7 +426,6 @@ namespace moppe {
       const terrain::WorldRecipe recipe =
         terrain::make_world_recipe (m_world_recipe->extent (),
                                     m_world_recipe->resolution (),
-                                    m_world_recipe->topology (),
                                     seed,
                                     m_world_recipe->water_datum (),
                                     m_world_recipe->generation_profile ());
@@ -440,7 +439,6 @@ namespace moppe {
       const terrain::WorldRecipe recipe =
         terrain::make_world_recipe (m_world_recipe->extent (),
                                     m_world_recipe->resolution (),
-                                    m_world_recipe->topology (),
                                     seed,
                                     m_world_recipe->water_datum (),
                                     profile);

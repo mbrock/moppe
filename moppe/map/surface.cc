@@ -15,9 +15,7 @@ namespace moppe::map {
       return SurfaceDomain (static_cast<std::size_t> (map.width ()),
                             static_cast<std::size_t> (map.height ()),
                             scale[0] * u::m,
-                            scale[2] * u::m,
-                            map.periodic () ? terrain::Topology::Torus
-                                            : terrain::Topology::Bounded);
+                            scale[2] * u::m);
     }
 
     int surface_coordinate (int coordinate, int extent, bool periodic) {
@@ -36,18 +34,17 @@ namespace moppe::map {
 
     SnowSupportStencil snow_support_stencil (const HeightMap& map) {
       constexpr meters_t support_radius = 24.0f * u::m;
-      const bool periodic = map.periodic ();
       const Vec3 spacing = map.scale ();
       return {
-        .width = periodic ? map.width () - 1 : map.width (),
-        .height = periodic ? map.height () - 1 : map.height (),
+        .width = map.width (),
+        .height = map.height (),
         .dx = std::max (1,
                         static_cast<int> (std::lround (
                           meters_value (support_radius) / spacing[0]))),
         .dz = std::max (1,
                         static_cast<int> (std::lround (
                           meters_value (support_radius) / spacing[2]))),
-        .periodic = periodic,
+        .periodic = true,
       };
     }
 

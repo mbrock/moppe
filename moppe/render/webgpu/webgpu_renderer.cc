@@ -113,8 +113,8 @@ struct VertexOutput {
 };
 
 fn sample_position(position: vec2<i32>) -> vec2<i32> {
-  let limit = vec2<i32>(textureDimensions(heights)) - vec2<i32>(1);
-  return clamp(position, vec2<i32>(0), limit);
+  let period = vec2<i32>(textureDimensions(heights));
+  return (position % period + period) % period;
 }
 
 fn read_height(position: vec2<i32>) -> f32 {
@@ -136,9 +136,9 @@ fn cubic(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> vec2<f32> {
 
 fn smooth_height(grid: vec2<f32>) -> vec3<f32> {
   let dimensions = vec2<f32>(textureDimensions(heights));
-  let clamped_grid = clamp(grid, vec2<f32>(0.0), dimensions - vec2<f32>(1.0));
-  let cell = vec2<i32>(floor(clamped_grid));
-  let fraction = fract(clamped_grid);
+  let wrapped_grid = grid - floor(grid / dimensions) * dimensions;
+  let cell = vec2<i32>(floor(wrapped_grid));
+  let fraction = fract(wrapped_grid);
   var rows: array<f32, 4>;
   var derivatives_x: array<f32, 4>;
   for (var j = 0; j < 4; j = j + 1) {
@@ -171,9 +171,10 @@ fn smooth_height(grid: vec2<f32>) -> vec3<f32> {
 }
 
 fn height_on_lattice(grid: vec2<f32>, step: f32) -> f32 {
-  let limit = vec2<f32>(textureDimensions(heights)) - vec2<f32>(1.0);
-  let cell = min(floor(grid / step) * step, limit - vec2<f32>(step));
-  let fraction = clamp((grid - cell) / step, vec2<f32>(0.0),
+  let dimensions = vec2<f32>(textureDimensions(heights));
+  let wrapped = grid - floor(grid / dimensions) * dimensions;
+  let cell = floor(wrapped / step) * step;
+  let fraction = clamp((wrapped - cell) / step, vec2<f32>(0.0),
                        vec2<f32>(1.0));
   let stride = i32(round(step));
   let p00 = vec2<i32>(cell);
@@ -190,9 +191,10 @@ fn height_on_lattice(grid: vec2<f32>, step: f32) -> f32 {
 }
 
 fn normal_on_lattice(grid: vec2<f32>, step: f32) -> vec3<f32> {
-  let limit = vec2<f32>(textureDimensions(normals)) - vec2<f32>(1.0);
-  let cell = min(floor(grid / step) * step, limit - vec2<f32>(step));
-  let fraction = clamp((grid - cell) / step, vec2<f32>(0.0),
+  let dimensions = vec2<f32>(textureDimensions(normals));
+  let wrapped = grid - floor(grid / dimensions) * dimensions;
+  let cell = floor(wrapped / step) * step;
+  let fraction = clamp((wrapped - cell) / step, vec2<f32>(0.0),
                        vec2<f32>(1.0));
   let stride = i32(round(step));
   let p00 = vec2<i32>(cell);
@@ -210,9 +212,9 @@ fn normal_on_lattice(grid: vec2<f32>, step: f32) -> vec3<f32> {
 
 fn normal_bilinear(grid: vec2<f32>) -> vec3<f32> {
   let dimensions = vec2<f32>(textureDimensions(normals));
-  let clamped_grid = clamp(grid, vec2<f32>(0.0), dimensions - vec2<f32>(1.0));
-  let cell = vec2<i32>(floor(clamped_grid));
-  let fraction = fract(clamped_grid);
+  let wrapped_grid = grid - floor(grid / dimensions) * dimensions;
+  let cell = vec2<i32>(floor(wrapped_grid));
+  let fraction = fract(wrapped_grid);
   let n0 = mix(read_normal(cell), read_normal(cell + vec2<i32>(1, 0)),
                fraction.x);
   let n1 = mix(read_normal(cell + vec2<i32>(0, 1)),
@@ -503,8 +505,8 @@ struct VertexInput {
 @vertex
 fn shadow_vertex(input: VertexInput) -> @builtin(position) vec4<f32> {
   let grid = chunk.origin_step.xy + input.local_grid * chunk.origin_step.z;
-  let limit = vec2<i32>(textureDimensions(heights)) - vec2<i32>(1);
-  let position = clamp(vec2<i32>(round(grid)), vec2<i32>(0), limit);
+  let period = vec2<i32>(textureDimensions(heights));
+  let position = (vec2<i32>(round(grid)) % period + period) % period;
   let height = textureLoad(heights, position, 0).r;
   let world = vec3<f32>(grid.x * shadow.terrain_scale.x,
                         height * shadow.terrain_scale.y,
@@ -1974,8 +1976,8 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
            terrain_lod_steps[lod] < requested_step)
       ++lod;
     const float step = terrain_lod_steps[lod];
-    const int chunks_x = (terrain.width - 1) / 128;
-    const int chunks_z = (terrain.height - 1) / 128;
+    const int chunks_x = terrain.width / 128;
+    const int chunks_z = terrain.height / 128;
     const std::size_t chunk_count =
       static_cast<std::size_t> (chunks_x) * chunks_z;
     m_state->ensure_terrain_chunk_bind_groups (chunk_count);

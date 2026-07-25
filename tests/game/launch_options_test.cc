@@ -104,14 +104,14 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
 
 MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
   // A fast world and the Terrain Lab capture both drop to the coarse grid.
-  MOPPE_CHECK (parsed ({ "--fast" }).world.resolution == 1025);
+  MOPPE_CHECK (parsed ({ "--fast" }).world.resolution == 1024);
   MOPPE_CHECK (parsed ({ "--terrain-quality", "fast" }).world.resolution ==
-               1025);
+               1024);
   const game::LaunchOptions lab =
     parsed ({ "--terrain-lab-screenshot", "/tmp/lab.png" });
   MOPPE_CHECK (lab.start_in_terrain_lab);
-  MOPPE_CHECK (lab.world.resolution == 1025);
-  MOPPE_CHECK (parsed ({}).world.resolution != 1025);
+  MOPPE_CHECK (lab.world.resolution == 1024);
+  MOPPE_CHECK (parsed ({}).world.resolution != 1024);
 }
 
 MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {

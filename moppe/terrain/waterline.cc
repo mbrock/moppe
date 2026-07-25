@@ -39,7 +39,7 @@ namespace moppe::terrain {
       throw std::invalid_argument ("water surface does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const std::span<const float> level = surface.values ();
 
     // Signed wetness at each lattice node; positive is wet.  The
@@ -277,7 +277,7 @@ namespace moppe::terrain {
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const float spacing_x = grid.spacing_x_m ();
     const float spacing_y = grid.spacing_y_m ();
     const float world_x = spacing_x * static_cast<float> (width);

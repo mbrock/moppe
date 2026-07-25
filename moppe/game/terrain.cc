@@ -53,7 +53,6 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
       m_scale = map.scale ();
       m_period = map.size ();
-      m_periodic = map.periodic ();
       m_repeat_periodically = repeat_periodically;
       m_projection = projection;
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
@@ -81,7 +80,7 @@ namespace moppe {
         graphics.snow_support_filter && !interactive_preview;
       params.channel_flux_detail =
         graphics.channel_flux_detail && !interactive_preview;
-      params.periodic = map.periodic ();
+      params.periodic = true;
       params.projection = projection;
       const float shortest_period = std::min (m_period[0], m_period[2]);
       params.torus_major_radius = 0.34f * shortest_period;
@@ -105,7 +104,7 @@ namespace moppe {
 
       // Chunk bounding spheres from the actual height range.
       MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
-      const int chunks_per_side = (map.width () - 1) / CHUNK;
+      const int chunks_per_side = map.width () / CHUNK;
       m_chunks.clear ();
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
       for (int cz = 0; cz < chunks_per_side; ++cz)
@@ -116,7 +115,9 @@ namespace moppe {
             ymax = -1e9f;
             for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
               for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-                const float h = map.get (x, z);
+                const float h =
+                  map.get (terrain::wrap_index (x, map.width ()),
+                           terrain::wrap_index (z, map.height ()));
                 ymin = std::min (ymin, h);
                 ymax = std::max (ymax, h);
               }
@@ -186,7 +187,7 @@ namespace moppe {
       for (size_t i = 0; i < m_chunks.size (); ++i) {
         const Chunk& c = m_chunks[i];
         const float reach = max_dist + c.radius;
-        const bool repeat = m_periodic && m_repeat_periodically;
+        const bool repeat = m_repeat_periodically;
         const int min_tile_x =
           repeat ? static_cast<int> (
                      std::ceil ((cam[0] - reach - c.center[0]) / m_period[0]))

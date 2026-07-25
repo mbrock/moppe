@@ -67,18 +67,11 @@ namespace moppe {
 
     class HeightMap {
     public:
-      HeightMap (int width,
-                 int height,
-                 const Vec3& size,
-                 terrain::Topology topology = terrain::Topology::Bounded)
+      // width x height unique periodic samples -- no duplicated seam.
+      // The lattice period equals the world extent: spacing = size/width.
+      HeightMap (int width, int height, const Vec3& size)
           : m_width (width), m_height (height),
-            m_scale (
-              size[0] /
-                (topology == terrain::Topology::Torus ? width - 1 : width),
-              size[1],
-              size[2] /
-                (topology == terrain::Topology::Torus ? height - 1 : height)),
-            m_topology (topology) {}
+            m_scale (size[0] / width, size[1], size[2] / height) {}
 
       virtual ~HeightMap () {}
 
@@ -93,60 +86,44 @@ namespace moppe {
       }
 
       bool in_bounds (float x, float y) const {
-        if (periodic ())
-          return std::isfinite (x) && std::isfinite (y);
-        // Test the floats: integer truncation would admit a strip of
-        // slightly-negative coordinates on two edges
-        return x >= 0 && y >= 0 && x <= (m_width - 2) * m_scale[0] &&
-               y <= (m_height - 2) * m_scale[2];
+        return std::isfinite (x) && std::isfinite (y);
       }
 
       float interpolated_height (float x, float y) const {
-        float gx = x / m_scale[0], gy = y / m_scale[2];
-        if (periodic ()) {
-          gx =
-            terrain::wrap_coordinate (gx, static_cast<float> (unique_width ()));
-          gy = terrain::wrap_coordinate (gy,
-                                         static_cast<float> (unique_height ()));
-        }
-        int xi = static_cast<int> (std::floor (gx));
-        int yi = static_cast<int> (std::floor (gy));
+        float gx = terrain::wrap_coordinate (
+          x / m_scale[0], static_cast<float> (unique_width ()));
+        float gy = terrain::wrap_coordinate (
+          y / m_scale[2], static_cast<float> (unique_height ()));
+        const int xi = static_cast<int> (std::floor (gx));
+        const int yi = static_cast<int> (std::floor (gy));
+        const int xi1 = terrain::wrap_index (xi + 1, m_width);
+        const int yi1 = terrain::wrap_index (yi + 1, m_height);
 
-        clamp (xi, 0, m_width - 2);
-        clamp (yi, 0, m_height - 2);
+        const float ax = gx - xi;
+        const float ay = gy - yi;
 
-        float ax = gx - xi;
-        float ay = gy - yi;
-
-        float r1 = linear_interpolate (get (xi, yi), get (xi + 1, yi), ax);
-        float r2 =
-          linear_interpolate (get (xi, yi + 1), get (xi + 1, yi + 1), ax);
+        const float r1 = linear_interpolate (get (xi, yi), get (xi1, yi), ax);
+        const float r2 = linear_interpolate (get (xi, yi1), get (xi1, yi1), ax);
         return m_scale[1] * linear_interpolate (r1, r2, ay);
-
-        //      return m_scale[1] * get (x / m_scale[0], y / m_scale[2]);
       }
 
       Vec3 interpolated_normal (float x, float y) const {
-        float gx = x / m_scale[0], gy = y / m_scale[2];
-        if (periodic ()) {
-          gx =
-            terrain::wrap_coordinate (gx, static_cast<float> (unique_width ()));
-          gy = terrain::wrap_coordinate (gy,
-                                         static_cast<float> (unique_height ()));
-        }
-        int xi = static_cast<int> (std::floor (gx));
-        int yi = static_cast<int> (std::floor (gy));
+        float gx = terrain::wrap_coordinate (
+          x / m_scale[0], static_cast<float> (unique_width ()));
+        float gy = terrain::wrap_coordinate (
+          y / m_scale[2], static_cast<float> (unique_height ()));
+        const int xi = static_cast<int> (std::floor (gx));
+        const int yi = static_cast<int> (std::floor (gy));
+        const int xi1 = terrain::wrap_index (xi + 1, m_width);
+        const int yi1 = terrain::wrap_index (yi + 1, m_height);
 
-        clamp (xi, 0, m_width - 2);
-        clamp (yi, 0, m_height - 2);
-
-        float ax = gx - xi;
-        float ay = gy - yi;
+        const float ax = gx - xi;
+        const float ay = gy - yi;
 
         Vec3 r1 =
-          linear_vector_interpolate (normal (xi, yi), normal (xi + 1, yi), ax);
-        Vec3 r2 = linear_vector_interpolate (
-          normal (xi, yi + 1), normal (xi + 1, yi + 1), ax);
+          linear_vector_interpolate (normal (xi, yi), normal (xi1, yi), ax);
+        Vec3 r2 =
+          linear_vector_interpolate (normal (xi, yi1), normal (xi1, yi1), ax);
         return linear_vector_interpolate (r1, r2, ay);
       }
 
@@ -156,14 +133,12 @@ namespace moppe {
       inline int height () const {
         return m_height;
       }
+      // Synonyms retained from the two-lattice era; storage is unique now.
       inline int unique_width () const {
-        return periodic () ? m_width - 1 : m_width;
+        return m_width;
       }
       inline int unique_height () const {
-        return periodic () ? m_height - 1 : m_height;
-      }
-      inline bool periodic () const {
-        return m_topology == terrain::Topology::Torus;
+        return m_height;
       }
 
       inline Vec3 scale () const {
@@ -182,7 +157,6 @@ namespace moppe {
       const int m_width;
       const int m_height;
       const Vec3 m_scale;
-      const terrain::Topology m_topology;
     };
 
     void compute_normal_map (const HeightMap& height_map,
@@ -190,13 +164,8 @@ namespace moppe {
 
     class NormalComputingHeightMap : public HeightMap {
     public:
-      NormalComputingHeightMap (
-        int width,
-        int height,
-        Vec3 size,
-        terrain::Topology topology = terrain::Topology::Bounded)
-          : HeightMap (width, height, size, topology),
-            m_normals (width, height) {}
+      NormalComputingHeightMap (int width, int height, Vec3 size)
+          : HeightMap (width, height, size), m_normals (width, height) {}
 
       void recompute_normals () {
         compute_normal_map (*this, m_normals);
@@ -218,10 +187,7 @@ namespace moppe {
 
     class RandomHeightMap : public NormalComputingHeightMap {
     public:
-      RandomHeightMap (int width,
-                       int height,
-                       const Vec3& size,
-                       terrain::Topology topology = terrain::Topology::Bounded);
+      RandomHeightMap (int width, int height, const Vec3& size);
 
       inline float get (int x, int y) const {
         return m_data.at (y, x);
@@ -269,8 +235,6 @@ namespace moppe {
           m_deposited[index] += delta;
       }
 
-      void synchronize_periodic_edges ();
-
       // Sample an arbitrary scalar-field value into this storage.  Choosing and
       // expanding a program source belongs to TerrainEvaluator.
       void materialize (const terrain::ScalarField& field);
@@ -285,8 +249,6 @@ namespace moppe {
       void save_cache (const std::string& path) const;
 
     private:
-      void synchronize_periodic_ledger_edges ();
-
       Array2D<float> m_data;
       std::vector<float> m_eroded;
       std::vector<float> m_deposited;

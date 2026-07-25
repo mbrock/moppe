@@ -28,9 +28,9 @@ namespace {
 
 MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
   constexpr std::array golden {
-    0x863524e29ef4a927ull, 0x5e8c75981b887e30ull, 0xf45bb04923b0c0b4ull,
-    0x05dc0a7fb3a5cd60ull, 0x6dad6253ffe20c62ull, 0x6c928009ffd5c17aull,
-    0x3f8851268f877c20ull,
+    0x7fa9c60de2c8b12aull, 0x7743e0bc60467f8bull, 0x69a3a0627f5528a7ull,
+    0xc218106e05b58a8cull, 0xd687407b2012cf60ull, 0x6c5c1eca10eb410eull,
+    0xd3ac77c0ce2e1f46ull,
   };
   const GeologicalFields geological =
     make_geological_fields (make_geological_recipe (123));
@@ -117,9 +117,14 @@ MOPPE_TEST (every_geological_layer_is_periodic) {
   for (const ScalarField& field : fields) {
     const ScalarRaster raster =
       CpuEvaluator ().evaluate (field, { .width = 65, .height = 65 });
-    for (std::size_t i = 0; i < 65; ++i) {
-      MOPPE_CHECK_NEAR (raster.at (0, i), raster.at (64, i), 1e-5f);
-      MOPPE_CHECK_NEAR (raster.at (i, 0), raster.at (i, 64), 1e-5f);
-    }
+    const ScalarRaster shifted = CpuEvaluator ().evaluate (field,
+                                                           { .width = 65,
+                                                             .height = 65,
+                                                             .min_x = 1.0f,
+                                                             .max_x = 2.0f,
+                                                             .min_y = 1.0f,
+                                                             .max_y = 2.0f });
+    for (std::size_t i = 0; i < 65 * 65; ++i)
+      MOPPE_CHECK_NEAR (raster.values ()[i], shifted.values ()[i], 1e-4f);
   }
 }

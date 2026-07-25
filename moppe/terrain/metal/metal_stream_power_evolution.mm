@@ -196,7 +196,7 @@ namespace moppe::terrain::metal {
       const MoppeOrogenyParameters parameters {
         .width = static_cast<std::uint32_t> (grid.unique_width ()),
         .height = static_cast<std::uint32_t> (grid.unique_height ()),
-        .periodic = grid.topology == Topology::Torus,
+        .periodic = true,
         .has_previous_tangent = !previous_tangent.empty (),
         .height_scale_m = 1.0f,
         .persistence = persistence.numerical_value_in (mp_units::one)

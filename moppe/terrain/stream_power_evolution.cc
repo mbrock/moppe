@@ -36,16 +36,14 @@ namespace moppe::terrain {
         static_cast<int> (cell % width) - static_cast<int> (receiver % width);
       int dy =
         static_cast<int> (cell / width) - static_cast<int> (receiver / width);
-      if (grid.topology == Topology::Torus) {
-        if (dx > width / 2)
-          dx -= width;
-        if (dx < -width / 2)
-          dx += width;
-        if (dy > height / 2)
-          dy -= height;
-        if (dy < -height / 2)
-          dy += height;
-      }
+      if (dx > width / 2)
+        dx -= width;
+      if (dx < -width / 2)
+        dx += width;
+      if (dy > height / 2)
+        dy -= height;
+      if (dy < -height / 2)
+        dy += height;
       return std::hypot (static_cast<double> (dx) * grid.spacing_x_m (),
                          static_cast<double> (dy) * grid.spacing_y_m ());
     }
@@ -123,7 +121,7 @@ namespace moppe::terrain {
         static_cast<float> (diffusivity_m2_per_year * dt / (hx * hx));
       const float cy =
         static_cast<float> (diffusivity_m2_per_year * dt / (hy * hy));
-      const bool periodic = grid.topology == Topology::Torus;
+      constexpr bool periodic = true;
       const auto neighbor =
         [] (std::ptrdiff_t value, std::size_t extent, bool wrap) {
           if (wrap) {

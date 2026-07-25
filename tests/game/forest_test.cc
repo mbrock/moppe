@@ -8,8 +8,7 @@
 
 MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    129, 129, Vec3 (640, 180, 640), terrain::Topology::Bounded);
+  map::RandomHeightMap map (129, 129, Vec3 (640, 180, 640));
   std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -35,8 +34,7 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
 
 MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    65, 65, Vec3 (320, 180, 320), terrain::Topology::Bounded);
+  map::RandomHeightMap map (65, 65, Vec3 (320, 180, 320));
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);

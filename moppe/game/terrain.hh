@@ -54,7 +54,6 @@ namespace moppe {
       Vec3 m_scale;
       Vec3 m_period;
       float m_lod_scale = 1;
-      bool m_periodic = false;
       bool m_repeat_periodically = true;
       render::TerrainProjection m_projection = render::TerrainProjection::Plane;
       render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
