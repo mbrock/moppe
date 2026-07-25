@@ -3,12 +3,15 @@
 
 #include <moppe/spatial/bundle.hh>
 
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include <format>
 #include <istream>
 #include <optional>
 #include <ostream>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -44,8 +47,7 @@ namespace moppe::spatial {
     std::default_initializable<Value>;
 
   namespace detail {
-    inline constexpr char bundle_magic[8] = { 'M', 'O', 'P', 'B',
-                                              'N', 'D', 'L', '1' };
+    inline constexpr std::string_view bundle_magic = "MOPBNDL2";
 
     template <typename Scalar>
     void write_scalar (std::ostream& out, Scalar value) {
@@ -56,6 +58,37 @@ namespace moppe::spatial {
     bool read_scalar (std::istream& in, Scalar& value) {
       in.read (reinterpret_cast<char*> (&value), sizeof (value));
       return static_cast<bool> (in);
+    }
+
+    inline bool read_line (std::istream& in, std::string_view expected) {
+      std::string line;
+      return static_cast<bool> (std::getline (in, line)) && line == expected;
+    }
+
+    inline bool read_sites (std::istream& in, std::uint64_t& sites) {
+      std::string line;
+      if (!std::getline (in, line))
+        return false;
+      constexpr std::string_view prefix = "sites=";
+      if (!line.starts_with (prefix))
+        return false;
+      const std::string_view number (line.data () + prefix.size (),
+                                     line.size () - prefix.size ());
+      const auto [end, error] =
+        std::from_chars (number.begin (), number.end (), sites);
+      return error == std::errc {} && end == number.end ();
+    }
+
+    template <typename Value>
+    std::string column_description () {
+      constexpr std::string_view kind =
+        mp_units::QuantityPoint<Value> ? "point" : "quantity";
+      return std::format (
+        "quantity kind={} bytes={} unit=[{:P}] dimension=[{:P}]",
+        kind,
+        sizeof (Value),
+        Value::unit,
+        Value::dimension);
     }
 
     template <typename Value>
@@ -79,13 +112,11 @@ namespace moppe::spatial {
     requires StorableDomain<Domain> && (StorableValue<Quantities> && ...)
   void write_bundle (std::ostream& out,
                      const Bundle<Domain, Quantities...>& bundle) {
-    out.write (detail::bundle_magic, sizeof (detail::bundle_magic));
-    detail::write_scalar (out,
-                          static_cast<std::uint32_t> (sizeof...(Quantities)));
-    (detail::write_scalar (out,
-                           static_cast<std::uint32_t> (sizeof (Quantities))),
-     ...);
-    detail::write_scalar (out, static_cast<std::uint64_t> (bundle.size ()));
+    out << detail::bundle_magic << '\n';
+    out << std::format ("columns={}\n", sizeof...(Quantities));
+    ((out << detail::column_description<Quantities> () << '\n'), ...);
+    out << std::format ("sites={}\n", bundle.size ());
+    out << "data\n";
     DomainStorage<Domain>::write (out, bundle.domain ());
     [&]<std::size_t... Column> (std::index_sequence<Column...>) {
       (detail::write_column (out, get<Column> (bundle)), ...);
@@ -101,27 +132,20 @@ namespace moppe::spatial {
     using bundle_type = Bundle<Domain, Quantities...>;
 
     static std::optional<bundle_type> read (std::istream& in) {
-      char magic[sizeof (detail::bundle_magic)] {};
-      in.read (magic, sizeof (magic));
-      if (!in || std::memcmp (magic, detail::bundle_magic, sizeof (magic)) != 0)
+      if (!detail::read_line (in, detail::bundle_magic) ||
+          !detail::read_line (
+            in, std::format ("columns={}", sizeof...(Quantities))))
         return std::nullopt;
 
-      std::uint32_t stored_columns = 0;
-      if (!detail::read_scalar (in, stored_columns) ||
-          stored_columns != sizeof...(Quantities))
-        return std::nullopt;
-      const bool widths_match =
-        (([&] {
-           std::uint32_t stored_width = 0;
-           return detail::read_scalar (in, stored_width) &&
-                  stored_width == sizeof (Quantities);
-         }()) &&
+      const bool columns_match =
+        (detail::read_line (in, detail::column_description<Quantities> ()) &&
          ...);
-      if (!widths_match)
+      if (!columns_match)
         return std::nullopt;
 
       std::uint64_t stored_sites = 0;
-      if (!detail::read_scalar (in, stored_sites))
+      if (!detail::read_sites (in, stored_sites) ||
+          !detail::read_line (in, "data"))
         return std::nullopt;
       std::optional<Domain> domain = DomainStorage<Domain>::read (in);
       if (!domain || domain->size () != stored_sites)
