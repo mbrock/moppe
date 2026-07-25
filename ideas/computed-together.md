@@ -114,6 +114,74 @@ When the parameter you sweep is monotone, you can afford to compute the
 whole family at once.
 
 
+## Chains and walks in the lattice of partitions
+
+That distinction has a proper home. David Ellerman's work on the
+subset–partition duality treats the partitions of a set as a lattice
+ordered by refinement: at the top the discrete partition where every
+element is its own block, at the bottom the indiscrete one where
+everything is a single block. Join is common refinement; meet is common
+coarsening.
+
+Put a flooding landscape into that lattice and it moves in one direction
+only. As the water rises, bodies merge, blocks fuse, the partition
+coarsens, and the world descends toward the indiscrete partition — which
+is exactly one global ocean. As the water falls, it climbs back toward
+finer partitions. A merge tree is therefore a **chain** in the lattice: a
+totally ordered family of partitions, monotone in the refinement order,
+indexed by level. That is why the whole history fits in one structure.
+
+Coupled bodies trace a **walk** instead. Islands merge and split, so the
+trajectory wanders up and down without monotonicity, and there is no
+single object that records it in advance.
+
+This also says exactly what union-find is. It can only ever fuse blocks,
+so it is a **monotone** structure in the refinement order: it moves in the
+coarsening direction and has no reverse gear. Merging is nearly free
+because it is the operation the structure exists for; splitting is
+expensive because it means travelling the other way. Box3D's merge-eagerly
+and split-lazily is not an engineering compromise so much as the shape of
+the data structure showing through.
+
+Ellerman's duality is worth keeping in mind for its own sake. A subset is
+described by the elements it *contains*; a partition by the pairs it
+*distinguishes*. Refinement is inclusion of those distinguished pairs.
+Where the subset lattice measures size, the partition lattice measures
+information — which gives us a genuinely useful reading of a landscape.
+
+
+## Measuring how differentiated a world is
+
+Following Rota's slogan that probability is to subsets what information is
+to partitions, the measure of a partition is its **logical entropy**:
+
+    h = 1 - sum over blocks of (block size / total size)^2
+
+which is simply the probability that two randomly drawn elements fall in
+different blocks. For the water-body partition it reads directly: *the
+chance that two random cells of the world belong to different bodies of
+water.*
+
+A merge tree already carries component sizes at every level, so this is
+one pass over data we compute anyway, giving `h` as a function of sea
+level. Two things follow, and neither needs any new machinery.
+
+The **maximum** of that curve is the most hydrologically differentiated
+version of a world: the level with the most distinct water bodies,
+weighted by their size. That is a plausible criterion for choosing a sea
+level, or for judging a generated world before anything is rendered — the
+alternative extremes being one drowned plain and one dry rock, both of
+which score near zero.
+
+The **steep drops** are the dramatic merges, where two large basins join
+at a saddle. Those are the beats of a rising-water spectacle: rather than
+animating the level linearly, animate it through the entropy drops.
+
+The quantity itself is the familiar Simpson index. What the partition
+reading adds is knowing what it measures and why it is the right measure
+to reach for.
+
+
 ## The other partition, on the other rank
 
 Within one island the parts are coupled, so the solver must iterate over
@@ -267,5 +335,8 @@ kind it is.
   reverse sweep.
 - `atelier/hex_sheet.cc` — anchors as boundary, and a neighbourhood whose
   coupling is preserved when the partition changes.
+- David Ellerman, *A Fundamental Duality in the Mathematical and Natural
+  Sciences* (2024), in `research/logic/` — the lattice of partitions,
+  refinement, logical entropy, and the selectionist/generative pair.
 - `docs/ontology.md` and `ideas/the-machine.md` for the vocabulary used
   here.
