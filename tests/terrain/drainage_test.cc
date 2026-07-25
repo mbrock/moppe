@@ -4,11 +4,33 @@
 
 #include <tests/test.hh>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <vector>
 
 using namespace moppe::terrain;
+
+namespace {
+  CellIndex receiver_root (const DrainageGraph& graph, CellIndex origin) {
+    CellIndex cell = origin;
+    for (std::size_t steps = 0; steps < graph.receiver.size (); ++steps) {
+      const CellIndex next = graph.receiver[cell];
+      if (next == cell)
+        return cell;
+      cell = next;
+    }
+    return no_cell;
+  }
+
+  const RiverReach* drainage_reach_containing (const RiverNetwork& network,
+                                               CellIndex cell) {
+    for (const RiverReach& reach : network.reaches)
+      if (std::ranges::find (reach.cells, cell) != reach.cells.end ())
+        return &reach;
+    return nullptr;
+  }
+}
 
 MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
   const std::array heights { 30.0f, 20.0f, 30.0f, 20.0f, 0.0f,
@@ -19,8 +41,6 @@ MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
     heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
-  MOPPE_CHECK (graph.sinks.size () == 1);
-  MOPPE_CHECK (graph.sinks[0] == 4);
   for (std::uint32_t cell = 0; cell < 9; ++cell)
     MOPPE_CHECK (graph.receiver[cell] == 4);
   MOPPE_CHECK_NEAR (graph.contributing_area_at (4).numerical_value_in (
@@ -43,7 +63,7 @@ MOPPE_TEST (periodic_drainage_crosses_the_wrap) {
   MOPPE_CHECK (graph.width () == 3);
   MOPPE_CHECK (graph.height () == 3);
   MOPPE_CHECK (graph.receiver[0] == 2);
-  MOPPE_CHECK (graph.basin[0] == 2);
+  MOPPE_CHECK (receiver_root (graph, 0) == 2);
 }
 
 MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
@@ -59,7 +79,7 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
 
   MOPPE_CHECK (dry.receiver[12] == 12);
   MOPPE_CHECK (wet.receiver[12] != 12);
-  MOPPE_CHECK (wet.sinks.size () == flood.outlets.size ());
+  MOPPE_CHECK (receiver_root (wet, 12) != no_cell);
 
   const WaterBody& lake = census.bodies[0];
   std::size_t exits = 0;
@@ -69,14 +89,6 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
       ++exits;
   MOPPE_CHECK (exits == 1);
   MOPPE_CHECK (wet.receiver[lake.outlet_cell] == lake.spill_cell);
-
-  const WaterNetwork network = analyze_water_network (flood, census, wet);
-  const WaterBodyFlow& flow = network.bodies[lake.id];
-  MOPPE_CHECK (!flow.inlets.empty ());
-  MOPPE_CHECK (flow.outlet_cell == lake.outlet_cell);
-  MOPPE_CHECK (flow.spill_cell == lake.spill_cell);
-  MOPPE_CHECK (flow.downstream_cell == wet.receiver[lake.spill_cell]);
-  MOPPE_CHECK (flow.outflow_area > flow.inflow_area);
 
   const RiverNetwork rivers = extract_river_network (
     flood, census, wet, 1.0f * mp_units::si::metre * mp_units::si::metre);
@@ -106,7 +118,7 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   MOPPE_CHECK (enters_lake);
   MOPPE_CHECK (leaves_lake);
   MOPPE_CHECK (links_across_lake);
-  MOPPE_CHECK (rivers.reach_by_cell[lake.outlet_cell] == RiverReach::no_id);
+  MOPPE_CHECK (!drainage_reach_containing (rivers, lake.outlet_cell));
 
   std::uint32_t cell = 12;
   std::size_t steps = 0;
@@ -133,11 +145,6 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
 
   MOPPE_CHECK (routing.receiver == wet.receiver);
   MOPPE_CHECK (wet.receiver == dry.receiver);
-  MOPPE_CHECK (wet.sinks == dry.sinks);
-  MOPPE_CHECK (wet.topological_order.size () == heights.size ());
-  std::vector<std::size_t> position (heights.size ());
-  for (std::size_t i = 0; i < wet.topological_order.size (); ++i)
-    position[wet.topological_order[i]] = i;
   for (std::size_t cell = 0; cell < heights.size (); ++cell) {
     MOPPE_CHECK_NEAR (routing.slope[cell],
                       wet.slope_at (cell).numerical_value_in (mp_units::one),
@@ -146,12 +153,13 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
       wet.contributing_area_at (cell).numerical_value_in (u::m * u::m),
       dry.contributing_area_at (cell).numerical_value_in (u::m * u::m),
       0.0f);
-    if (wet.receiver[cell] != cell)
-      MOPPE_CHECK (position[cell] < position[wet.receiver[cell]]);
+    MOPPE_CHECK (
+      receiver_root (wet, CellIndex { static_cast<std::uint32_t> (cell) }) !=
+      no_cell);
   }
 }
 
-MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
+MOPPE_TEST (wet_drainage_and_river_network_are_deterministic) {
   const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
@@ -161,10 +169,6 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   const LakeCensus census_b = census_lakes (flood_b);
   const DrainageGraph graph_a = analyze_wet_drainage (flood_a, census_a);
   const DrainageGraph graph_b = analyze_wet_drainage (flood_b, census_b);
-  const WaterNetwork network_a =
-    analyze_water_network (flood_a, census_a, graph_a);
-  const WaterNetwork network_b =
-    analyze_water_network (flood_b, census_b, graph_b);
   const RiverNetwork rivers_a =
     extract_river_network (flood_a,
                            census_a,
@@ -178,11 +182,6 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
 
   MOPPE_CHECK (flood_a.spill_receiver == flood_b.spill_receiver);
   MOPPE_CHECK (graph_a.receiver == graph_b.receiver);
-  MOPPE_CHECK (graph_a.basin == graph_b.basin);
-  MOPPE_CHECK (graph_a.sinks == graph_b.sinks);
-  MOPPE_CHECK (network_a.bodies.size () == network_b.bodies.size ());
-  MOPPE_CHECK (rivers_a.reach_by_cell == rivers_b.reach_by_cell);
-  MOPPE_CHECK (rivers_a.waterfall_by_cell == rivers_b.waterfall_by_cell);
   MOPPE_CHECK (rivers_a.reaches.size () == rivers_b.reaches.size ());
   MOPPE_CHECK (rivers_a.waterfalls.size () == rivers_b.waterfalls.size ());
   for (std::size_t i = 0; i < graph_a.contributing_areas ().size (); ++i)
@@ -190,20 +189,6 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
       graph_a.contributing_area_at (i).numerical_value_in (u::m * u::m),
       graph_b.contributing_area_at (i).numerical_value_in (u::m * u::m),
       0.0f);
-  for (std::size_t i = 0; i < network_a.bodies.size (); ++i) {
-    const WaterBodyFlow& a = network_a.bodies[i];
-    const WaterBodyFlow& b = network_b.bodies[i];
-    MOPPE_CHECK (a.inlets.size () == b.inlets.size ());
-    MOPPE_CHECK (a.outlet_cell == b.outlet_cell);
-    MOPPE_CHECK (a.spill_cell == b.spill_cell);
-    MOPPE_CHECK (a.downstream_cell == b.downstream_cell);
-    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.inflow_area),
-                      moppe::square_meters_value (b.inflow_area),
-                      0.0f);
-    MOPPE_CHECK_NEAR (moppe::square_meters_value (a.outflow_area),
-                      moppe::square_meters_value (b.outflow_area),
-                      0.0f);
-  }
   for (std::size_t i = 0; i < rivers_a.reaches.size (); ++i) {
     const RiverReach& a = rivers_a.reaches[i];
     const RiverReach& b = rivers_b.reaches[i];
@@ -271,8 +256,6 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
   const RiverNetwork refined =
     extract_river_network (flood, census, wet, channels, minimum_area);
 
-  MOPPE_CHECK (refined.reach_by_cell == base.reach_by_cell);
-  MOPPE_CHECK (refined.waterfall_by_cell == base.waterfall_by_cell);
   MOPPE_CHECK (refined.reaches.size () == base.reaches.size ());
 
   const auto& fractional_areas =
@@ -341,15 +324,12 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                            .sea_level = 0.0f,
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
-                           .spill_receiver = receiver,
-                           .outlets = { 5, 6, 7, 8, 9, 10, 11 } };
+                           .spill_receiver = receiver };
   const LakeCensus census { .body = std::vector<WaterBodyId> (
                               count, LakeCensus::dry) };
   const DrainageGraph drainage { .readings =
                                    make_drainage_readings (grid, slopes, areas),
-                                 .receiver = receiver,
-                                 .basin = std::vector<CellIndex> (count, 5),
-                                 .sinks = { 5, 6, 7, 8, 9, 10, 11 } };
+                                 .receiver = receiver };
 
   const RiverNetwork rivers = extract_river_network (
     flood,
@@ -367,6 +347,4 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   MOPPE_CHECK_NEAR (
     moppe::meters_value (rivers.waterfalls[0].drop), 2.4f, 1e-6f);
   MOPPE_CHECK (rivers.waterfalls[1].lip_cell == 4);
-  MOPPE_CHECK (rivers.waterfall_by_cell[2] == 0);
-  MOPPE_CHECK (rivers.waterfall_by_cell[4] == 1);
 }

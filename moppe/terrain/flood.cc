@@ -65,7 +65,6 @@ namespace moppe::terrain {
     std::vector<float> depth (count, 0.0f);
     std::vector<CellIndex> receiver (count, CellIndex { 0 });
     std::vector<std::uint8_t> visited (count, 0);
-    std::vector<CellIndex> outlets;
     std::priority_queue<Cell, std::vector<Cell>, HigherCell> frontier;
 
     // A torus has no exterior boundary that identifies the ocean. Treat the
@@ -120,7 +119,6 @@ namespace moppe::terrain {
       water[root] = sea_level;
       receiver[root] = root;
       visited[root] = 1;
-      outlets.push_back (root);
       sea_frontier.push (root);
       while (!sea_frontier.empty ()) {
         const std::uint32_t cell = sea_frontier.front ();
@@ -148,8 +146,8 @@ namespace moppe::terrain {
 
     // An all-land torus has no geometric boundary. Root its minimax water
     // surface at the deterministic global minimum so the analysis remains
-    // defined while making that endorheic choice explicit in `outlets`.
-    if (outlets.empty ()) {
+    // defined.
+    if (!has_ocean) {
       MOPPE_PROFILE_ZONE ("flood.seed_endorheic_minimum");
       std::uint32_t minimum_cell = 0;
       float minimum = elevation_at (grid, elevations, 0, 0);
@@ -164,7 +162,6 @@ namespace moppe::terrain {
       water[minimum_cell] = minimum;
       receiver[minimum_cell] = minimum_cell;
       visited[minimum_cell] = 1;
-      outlets.push_back (minimum_cell);
       frontier.push ({ minimum, minimum_cell });
     }
 
@@ -214,8 +211,7 @@ namespace moppe::terrain {
              .sea_level = sea_level,
              .has_ocean = has_ocean,
              .ocean = std::move (ocean_cell),
-             .spill_receiver = std::move (receiver),
-             .outlets = std::move (outlets) };
+             .spill_receiver = std::move (receiver) };
   }
 
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon) {

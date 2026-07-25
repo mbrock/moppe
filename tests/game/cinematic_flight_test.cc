@@ -40,22 +40,14 @@ namespace {
                   .sea_level = 0.1f,
                   .has_ocean = false,
                   .ocean = std::vector<std::uint8_t> (count, 0),
-                  .spill_receiver = std::vector<terrain::CellIndex> (count),
-                  .outlets = {} },
+                  .spill_receiver = std::vector<terrain::CellIndex> (count) },
           census { .body = std::vector<terrain::WaterBodyId> (
                      count, terrain::LakeCensus::dry) },
           drainage { .readings = constant_drainage_readings (
                        grid, count, 0.05f, 10000.0f),
-                     .receiver = std::vector<terrain::CellIndex> (count),
-                     .basin =
-                       std::vector<terrain::CellIndex> (count, count - 1),
-                     .sinks = { count - 1 } },
+                     .receiver = std::vector<terrain::CellIndex> (count) },
           rivers { .minimum_area =
-                     10000.0f * mp_units::si::metre * mp_units::si::metre,
-                   .reach_by_cell = std::vector<terrain::RiverReachId> (
-                     count, terrain::RiverReach::no_id),
-                   .waterfall_by_cell = std::vector<terrain::WaterfallId> (
-                     count, terrain::Waterfall::no_id) } {
+                     10000.0f * mp_units::si::metre * mp_units::si::metre } {
       for (int z = 0; z < side; ++z)
         for (int x = 0; x < side; ++x) {
           const float peak =
@@ -77,9 +69,6 @@ namespace {
       std::vector<terrain::CellIndex> cells;
       for (int z = 1; z < 15; ++z)
         cells.push_back (z * side + 3);
-      for (std::size_t i = 0; i < cells.size (); ++i) {
-        rivers.reach_by_cell[cells[i]] = 0;
-      }
       rivers.reaches.push_back (
         { .id = 0,
           .cells = cells,
@@ -92,8 +81,7 @@ namespace {
             700000.0f * mp_units::si::metre * mp_units::si::metre,
           .maximum_slope = 0.2f * terrain::terrain_slope[mp_units::one] });
       rivers.waterfalls.push_back (
-        { .id = 0,
-          .reach_id = 0,
+        { .reach_id = 0,
           .lip_cell = cells[7],
           .foot_cell = cells[8],
           .drop = 18.0f * mp_units::si::metre,
@@ -115,15 +103,6 @@ namespace {
     for (int z = 10; z >= 6; --z)
       cells.emplace_back (z * FlightFixture::side + 5);
 
-    std::vector<terrain::CellIndex> receiver (FlightFixture::count,
-                                              terrain::no_cell);
-    std::vector<terrain::TrailComponentId> component_by_cell (
-      FlightFixture::count, terrain::no_trail_component);
-    const terrain::TrailComponentId component { 0 };
-    for (std::size_t i = 0; i < cells.size (); ++i) {
-      receiver[cells[i].value] = cells[(i + 1) % cells.size ()];
-      component_by_cell[cells[i].value] = component;
-    }
     const terrain::CellIndex home = cells.front ();
     const terrain::CellIndex focus = cells[cells.size () / 2];
     terrain::TrailAlignment alignment;
@@ -149,13 +128,7 @@ namespace {
       .plan = { .home_base = home,
                 .scenic_focus = focus,
                 .control_sites = { home, focus },
-                .circuit = cells },
-      .receiver = std::move (receiver),
-      .component_by_cell = std::move (component_by_cell),
-      .cells = std::move (cells),
-      .components = { { .id = component,
-                        .anchor_cell = home,
-                        .cells = terrain::cell_count (24) } },
+                .circuit = std::move (cells) },
       .alignment = std::move (alignment),
       .formed_width = 3.0f * mp_units::si::metre,
       .earthwork_delta_m = std::vector<float> (FlightFixture::count, 0.0f),
@@ -263,23 +236,16 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     .sea_level = 0.0f,
     .has_ocean = false,
     .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = receiver,
-    .outlets = { terrain::CellIndex (0) }
+    .spill_receiver = receiver
   };
   const terrain::LakeCensus census { .body = std::vector<terrain::WaterBodyId> (
                                        count, terrain::LakeCensus::dry) };
   const terrain::DrainageGraph drainage {
     .readings = constant_drainage_readings (grid, count, 0.0f, 10000.0f),
-    .receiver = receiver,
-    .basin = std::vector<terrain::CellIndex> (count, 0),
-    .sinks = { terrain::CellIndex (0) }
+    .receiver = receiver
   };
   const terrain::RiverNetwork rivers {
-    .minimum_area = 10000.0f * mp_units::si::metre * mp_units::si::metre,
-    .reach_by_cell =
-      std::vector<terrain::RiverReachId> (count, terrain::RiverReach::no_id),
-    .waterfall_by_cell =
-      std::vector<terrain::WaterfallId> (count, terrain::Waterfall::no_id)
+    .minimum_area = 10000.0f * mp_units::si::metre * mp_units::si::metre
   };
 
   const game::CinematicFlightPlan plan = game::plan_cinematic_flight (

@@ -41,7 +41,6 @@ namespace moppe::terrain {
     bool has_ocean;
     std::vector<std::uint8_t> ocean;
     std::vector<CellIndex> spill_receiver;
-    std::vector<CellIndex> outlets;
 
     std::size_t width () const noexcept {
       return surface.domain ().width ();

@@ -29,27 +29,6 @@ namespace moppe::terrain {
       return 1.0f - smooth;
     }
 
-    float receiver_distance_m (std::size_t cell,
-                               std::size_t receiver,
-                               const TerrainDomain& grid) {
-      const int width = static_cast<int> (grid.width ());
-      const int height = static_cast<int> (grid.height ());
-      int dx =
-        static_cast<int> (receiver % width) - static_cast<int> (cell % width);
-      int dy =
-        static_cast<int> (receiver / width) - static_cast<int> (cell / width);
-      if (dx > width / 2)
-        dx -= width;
-      if (dx < -width / 2)
-        dx += width;
-      if (dy > height / 2)
-        dy -= height;
-      if (dy < -height / 2)
-        dy += height;
-      return std::hypot (dx * meters_value (grid.spacing_x ()),
-                         dy * meters_value (grid.spacing_z ()));
-    }
-
     TrailAlignmentPoint operator+ (TrailAlignmentPoint point,
                                    TrailAlignmentPoint offset) {
       return { point.x_m + offset.x_m, point.z_m + offset.z_m };
@@ -1210,15 +1189,7 @@ namespace moppe::terrain {
     const std::size_t far = chosen->far;
     const std::size_t right = chosen->right;
     TrailAlignment alignment = make_alignment (planner, chosen->circuit);
-    std::vector<CellIndex> cells = std::move (chosen_cells);
 
-    std::vector<CellIndex> receiver (count, no_cell);
-    std::vector<TrailComponentId> component_by_cell (count, no_trail_component);
-    const TrailComponentId component { 0 };
-    for (std::size_t i = 0; i < cells.size (); ++i) {
-      receiver[cells[i].value] = cells[(i + 1) % cells.size ()];
-      component_by_cell[cells[i].value] = component;
-    }
     const CellIndex home_base_cell { static_cast<std::uint32_t> (
       planner.source_cell (home_base)) };
     const CellIndex focus_cell { static_cast<std::uint32_t> (
@@ -1233,8 +1204,7 @@ namespace moppe::terrain {
                                         source_cell (left),
                                         source_cell (far),
                                         source_cell (right) },
-                     .circuit = cells };
-    const CellCount circuit_cells = cell_count (cells.size ());
+                     .circuit = std::move (chosen_cells) };
 
     std::vector<TrailInfluence> influence (count, 0.0f * trail_influence[one]);
     std::vector<HomeBaseInfluence> home_base_influence (
@@ -1282,12 +1252,6 @@ namespace moppe::terrain {
 
     return { .domain = grid,
              .plan = std::move (plan),
-             .receiver = std::move (receiver),
-             .component_by_cell = std::move (component_by_cell),
-             .cells = std::move (cells),
-             .components = { { .id = component,
-                               .anchor_cell = home_base_cell,
-                               .cells = circuit_cells } },
              .alignment = std::move (alignment),
              .formed_width = parameters.width,
              .earthwork_delta_m = std::vector<float> (count, 0.0f),
@@ -1304,19 +1268,6 @@ namespace moppe::terrain {
       analyze_standing_water (domain, elevations, parameters.sea_level);
     return analyze_trail_network (
       domain, elevations, parameters, drainage, flood);
-  }
-
-  meters_f64_t trail_circuit_length (const TrailNetwork& network) {
-    if (network.alignment.length > 0.0 * mp_units::si::metre)
-      return network.alignment.length;
-    meters_f64_t length = 0.0 * mp_units::si::metre;
-    for (const CellIndex cell : network.cells) {
-      const CellIndex next = network.receiver[cell.value];
-      if (next != no_cell)
-        length += receiver_distance_m (cell.value, next.value, network.domain) *
-                  mp_units::si::metre;
-    }
-    return length;
   }
 
   TrailFormationResult
@@ -1454,9 +1405,8 @@ namespace moppe::terrain {
     std::vector<float> shaped = original;
     std::vector<float> earthwork_delta_m (count, 0.0f);
     TrailFormationReport report;
-    report.centerline_cells = cell_count (network.cells.size ());
-    report.connected_components = network.components.size ();
-    report.circuit_length = trail_circuit_length (network);
+    report.centerline_cells = cell_count (network.plan.circuit.size ());
+    report.circuit_length = network.alignment.length;
     double absolute_change = 0.0;
     double maximum_change = 0.0;
     double cut_volume = 0.0;

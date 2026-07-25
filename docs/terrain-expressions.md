@@ -119,7 +119,7 @@ elevation bundle + sea level
   -> FloodField
        water level and depth in metres
        ocean membership
-       spill receivers and outlets
+       spill receivers
   -> LakeCensus
        physical area, depth, volume, level, and spill
 ```
@@ -136,7 +136,6 @@ FloodField + LakeCensus
        receiver topology
        slope
        contributing area
-       basins, sinks, topological order
   -> FractionalDrainage
        D-infinity routes
        fractional contributing area

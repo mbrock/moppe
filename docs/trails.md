@@ -200,12 +200,10 @@ trail that is intentionally built inside it.
 - the four control sites;
 - the ordered circuit cells.
 
-`TrailNetwork` materializes those decisions as one connected directed cycle.
-Each circuit cell has one `receiver`, and following receivers once around the
-component returns to the home base. `component_by_cell` supports membership
-queries; the current design always produces one component. The network also
-owns `TrailAlignment`, the densely sampled continuous loop and its physical
-arc length.
+`TrailNetwork` retains that one connected ordered circuit directly. Successive
+cells, including the final return to the first, are adjacent by construction.
+It also owns `TrailAlignment`, the densely sampled continuous loop and its
+physical arc length.
 
 The discrete graph remains useful independently of rendering. The alignment
 supplies circuit length, spawn heading, the minimap curve, and the opening
@@ -301,8 +299,8 @@ is in [`terrain.metal`](../moppe/shaders/metal/terrain.metal).
 
 ## Inspection and verification
 
-The game logs the number of centerline cells, circuit length, component count,
-home base, scenic focus, and cinematic landmark order during startup.
+The game logs the number of centerline cells, circuit length, home base, scenic
+focus, and cinematic landmark order during startup.
 
 Useful interactive and deterministic checks are:
 

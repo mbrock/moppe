@@ -44,8 +44,7 @@ MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
   MOPPE_CHECK_NEAR (water_depth_at (flood, 0, 0), 2.0f, 0.0f);
   MOPPE_CHECK_NEAR (water_depth_at (flood, 1, 0), 1.0f, 0.0f);
   MOPPE_CHECK (flood.has_ocean);
-  MOPPE_CHECK (flood.outlets.size () == 1);
-  MOPPE_CHECK (flood.outlets[0] == 0);
+  MOPPE_CHECK (flood.spill_receiver[0] == 0);
   MOPPE_CHECK (flood.spill_receiver[1] == 0);
 }
 
@@ -58,7 +57,6 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
-  MOPPE_CHECK (flood.outlets.size () == 1);
   MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 3.0f, 0.0f);
   MOPPE_CHECK (census.bodies.size () == 2);
   MOPPE_CHECK (census.bodies[0].ocean_connected);
@@ -77,15 +75,13 @@ MOPPE_TEST (periodic_flood_can_spill_across_the_wrap) {
   MOPPE_CHECK (flood.spill_receiver[0] == 2);
 }
 
-MOPPE_TEST (all_land_torus_uses_its_global_minimum_as_an_outlet) {
+MOPPE_TEST (all_land_torus_roots_at_its_global_minimum) {
   const std::array heights { 4.f, 3.f, 2.f, 4.f, 1.f, 3.f, 4.f, 4.f, 4.f };
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (3, 3), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
-  MOPPE_CHECK (flood.outlets.size () == 1);
   MOPPE_CHECK (!flood.has_ocean);
-  MOPPE_CHECK (flood.outlets[0] == 4);
   MOPPE_CHECK (flood.spill_receiver[4] == 4);
 }
 
@@ -143,8 +139,7 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
                            .sea_level = 0.0f,
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (9, 0),
-                           .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 },
-                           .outlets = { 8 } };
+                           .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 } };
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.bodies.size () == 1);
@@ -173,8 +168,7 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
                            .sea_level = 0.0f,
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
-                           .spill_receiver = std::move (receiver),
-                           .outlets = { 0 } };
+                           .spill_receiver = std::move (receiver) };
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.bodies.size () == 2);

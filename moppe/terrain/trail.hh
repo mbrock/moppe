@@ -53,7 +53,6 @@ namespace moppe::terrain {
   struct TrailFormationReport {
     CellCount centerline_cells = cell_count (0);
     CellCount shaped_cells = cell_count (0);
-    std::size_t connected_components = 0;
     meters_f64_t circuit_length = 0.0 * mp_units::si::metre;
     cubic_meters_f64_t cut_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
@@ -67,12 +66,6 @@ namespace moppe::terrain {
     meters_f64_t maximum_centerline_step = 0.0 * mp_units::si::metre;
     meters_f64_t mean_absolute_change = 0.0 * mp_units::si::metre;
     meters_f64_t maximum_absolute_change = 0.0 * mp_units::si::metre;
-  };
-
-  struct TrailComponent {
-    TrailComponentId id;
-    CellIndex anchor_cell;
-    CellCount cells = cell_count (0);
   };
 
   struct TrailPlan {
@@ -106,16 +99,11 @@ namespace moppe::terrain {
   using TrailUseMap =
     spatial::Bundle<TerrainDomain, TrailInfluence, HomeBaseInfluence>;
 
-  // The plan's one directed cycle, plus its two physical surface readings.
-  // The graph is connected by construction: following receiver once per
-  // circuit cell returns to home base.
+  // The plan's one circuit, its continuous alignment, and its two physical
+  // surface readings. The ordered circuit is connected by construction.
   struct TrailNetwork {
     TerrainDomain domain;
     TrailPlan plan;
-    std::vector<CellIndex> receiver;
-    std::vector<TrailComponentId> component_by_cell;
-    std::vector<CellIndex> cells;
-    std::vector<TrailComponent> components;
     TrailAlignment alignment;
     meters_t formed_width = 0.0f * mp_units::si::metre;
     // Physical metres relative to the terrain entering TrailFormation.
@@ -123,11 +111,6 @@ namespace moppe::terrain {
     // this retained construction layer remains inspectable and reversible.
     std::vector<float> earthwork_delta_m;
     TrailUseMap use;
-
-    bool contains (CellIndex cell) const noexcept {
-      return cell.value < component_by_cell.size () &&
-             component_by_cell[cell.value] != no_trail_component;
-    }
   };
 
   struct TrailFormationResult {
@@ -135,8 +118,6 @@ namespace moppe::terrain {
     TrailNetwork network;
     TrailFormationReport report;
   };
-
-  meters_f64_t trail_circuit_length (const TrailNetwork& network);
 
   namespace detail {
     TrailNetwork
