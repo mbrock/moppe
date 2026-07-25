@@ -82,7 +82,7 @@ namespace moppe::game {
       lakes,
       drainage,
       channels,
-      terrain::visible_river_minimum_area (drainage.source_grid));
+      terrain::visible_river_minimum_area (drainage.domain));
 
     m_hydrology.emplace (Hydrology (std::move (standing_water),
                                     std::move (lakes),

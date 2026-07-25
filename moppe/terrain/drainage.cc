@@ -37,9 +37,9 @@ namespace moppe::terrain {
 
     meters_t receiver_distance (std::uint32_t cell,
                                 std::uint32_t receiver,
-                                const TerrainGrid& grid) {
-      const int width = static_cast<int> (grid.width);
-      const int height = static_cast<int> (grid.height);
+                                const TerrainDomain& grid) {
+      const int width = static_cast<int> (grid.width ());
+      const int height = static_cast<int> (grid.height ());
       int dx =
         static_cast<int> (cell % width) - static_cast<int> (receiver % width);
       int dy =
@@ -52,8 +52,9 @@ namespace moppe::terrain {
         dy -= height;
       if (dy < -height / 2)
         dy += height;
-      return std::hypot (static_cast<float> (dx) * grid.spacing_x_m (),
-                         static_cast<float> (dy) * grid.spacing_y_m ()) *
+      return std::hypot (
+               static_cast<float> (dx) * meters_value (grid.spacing_x ()),
+               static_cast<float> (dy) * meters_value (grid.spacing_z ())) *
              mp_units::si::metre;
     }
 
@@ -120,7 +121,7 @@ namespace moppe::terrain {
     RiverAlignment
     smooth_river_alignment (const std::vector<RiverAlignmentPoint>& raw,
                             std::span<const Vec3> knot_tangents,
-                            const TerrainGrid& grid) {
+                            const TerrainDomain& grid) {
       RiverAlignment alignment;
       if (raw.size () < 2)
         return alignment;
@@ -131,7 +132,8 @@ namespace moppe::terrain {
       // independent of the terrain lattice.
       constexpr float tangent_scale = 0.34f;
       const float sample_spacing =
-        std::clamp (0.4f * std::min (grid.spacing_x_m (), grid.spacing_y_m ()),
+        std::clamp (0.4f * std::min (meters_value (grid.spacing_x ()),
+                                     meters_value (grid.spacing_z ())),
                     0.75f,
                     2.0f);
       for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
@@ -187,11 +189,11 @@ namespace moppe::terrain {
                                  const LakeCensus& census,
                                  const DrainageGraph& drainage,
                                  const ChannelGeometry& channels) {
-      const TerrainGrid& grid = drainage.source_grid;
-      const int width = static_cast<int> (grid.width);
-      const int height = static_cast<int> (grid.height);
-      const float period_x = width * grid.spacing_x_m ();
-      const float period_z = height * grid.spacing_y_m ();
+      const TerrainDomain& grid = drainage.domain;
+      const int width = static_cast<int> (grid.width ());
+      const int height = static_cast<int> (grid.height ());
+      const float period_x = width * meters_value (grid.spacing_x ());
+      const float period_z = height * meters_value (grid.spacing_z ());
       const auto water_cell = [&] (CellIndex cell) {
         return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
       };
@@ -260,8 +262,10 @@ namespace moppe::terrain {
           knot_tangents.reserve (cells.size ());
         for (std::size_t knot = 0; knot < cells.size (); ++knot) {
           const CellIndex cell = cells[knot];
-          float x = static_cast<float> (cell % width) * grid.spacing_x_m ();
-          float z = static_cast<float> (cell / width) * grid.spacing_y_m ();
+          float x = static_cast<float> (cell % width) *
+                    meters_value (grid.spacing_x ());
+          float z = static_cast<float> (cell / width) *
+                    meters_value (grid.spacing_z ());
           // Interior knots leave the lattice: the previous cell's D-infinity
           // route records where its continuous flow ray crosses the segment
           // between its two receivers, and pinning the knot to that crossing
@@ -277,14 +281,14 @@ namespace moppe::terrain {
               const CellIndex diagonal = route.arcs[1].receiver;
               const float t =
                 route.receiver_interpolation.numerical_value_in (mp_units::one);
-              const float cardinal_x =
-                static_cast<float> (cardinal % width) * grid.spacing_x_m ();
-              const float cardinal_z =
-                static_cast<float> (cardinal / width) * grid.spacing_y_m ();
-              const float diagonal_x =
-                static_cast<float> (diagonal % width) * grid.spacing_x_m ();
-              const float diagonal_z =
-                static_cast<float> (diagonal / width) * grid.spacing_y_m ();
+              const float cardinal_x = static_cast<float> (cardinal % width) *
+                                       meters_value (grid.spacing_x ());
+              const float cardinal_z = static_cast<float> (cardinal / width) *
+                                       meters_value (grid.spacing_z ());
+              const float diagonal_x = static_cast<float> (diagonal % width) *
+                                       meters_value (grid.spacing_x ());
+              const float diagonal_z = static_cast<float> (diagonal / width) *
+                                       meters_value (grid.spacing_z ());
               x = cardinal_x +
                   river_wrapped_delta (diagonal_x - cardinal_x, period_x) * t;
               z = cardinal_z +
@@ -354,9 +358,9 @@ namespace moppe::terrain {
 
   DrainageGraph analyze_drainage (const TerrainView& terrain) {
     MOPPE_PROFILE_ZONE ("analyze_drainage");
-    const TerrainGrid& source_grid = terrain.grid ();
-    const std::size_t width = source_grid.width;
-    const std::size_t height = source_grid.height;
+    const TerrainDomain& domain = terrain.domain ();
+    const std::size_t width = domain.width ();
+    const std::size_t height = domain.height ();
     const std::size_t count = width * height;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
@@ -380,8 +384,8 @@ namespace moppe::terrain {
             const float neighbor_elevation =
               meters_value (terrain.elevation_at (nx, ny));
             const float distance =
-              std::hypot (offset.x * source_grid.spacing_x_m (),
-                          offset.y * source_grid.spacing_y_m ());
+              std::hypot (offset.x * domain.spacing_x_m (),
+                          offset.y * domain.spacing_z_m ());
             const float candidate = (elevation - neighbor_elevation) / distance;
             if (candidate > steepest) {
               steepest = candidate;
@@ -401,7 +405,7 @@ namespace moppe::terrain {
         return terrain.at (ax, ay) > terrain.at (bx, by);
       });
 
-    const float cell_area = square_meters_value (source_grid.cell_area ());
+    const float cell_area = square_meters_value (domain.cell_area ());
     std::vector<float> area (count, cell_area);
     for (const std::uint32_t cell : order)
       if (receiver[cell] != cell)
@@ -420,17 +424,18 @@ namespace moppe::terrain {
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const RasterDomain domain {
+    const RasterDomain raster_domain {
       .width = width,
       .height = height,
-      .max_x = source_grid.spacing_x_m () * static_cast<float> (width),
-      .max_y = source_grid.spacing_y_m () * static_cast<float> (height)
+      .max_x = domain.spacing_x_m () * static_cast<float> (width),
+      .max_y = domain.spacing_z_m () * static_cast<float> (height)
     };
-    return { .source_grid = source_grid,
+    return { .domain = domain,
              .receiver = std::move (receiver),
-             .slope = SlopeRaster (ScalarRaster (domain, std::move (slope))),
-             .contributing_area =
-               ContributingAreaRaster (ScalarRaster (domain, std::move (area))),
+             .slope =
+               SlopeRaster (ScalarRaster (raster_domain, std::move (slope))),
+             .contributing_area = ContributingAreaRaster (
+               ScalarRaster (raster_domain, std::move (area))),
              .basin = std::move (basin),
              .sinks = std::move (sinks) };
   }
@@ -439,13 +444,11 @@ namespace moppe::terrain {
                                          const FloodField& flood,
                                          const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("route_wet_drainage");
-    const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = terrain.domain ();
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    if (flood.width () != width || flood.height () != height ||
-        flood.source_grid.spacing_x != grid.spacing_x ||
-        flood.source_grid.spacing_y != grid.spacing_y)
+    if (flood.domain != grid)
       throw std::invalid_argument ("flood field does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
@@ -470,8 +473,9 @@ namespace moppe::terrain {
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
             const std::size_t next = index (nx, ny);
-            const float distance = std::hypot (offset.x * grid.spacing_x_m (),
-                                               offset.y * grid.spacing_y_m ());
+            const float distance =
+              std::hypot (offset.x * meters_value (grid.spacing_x ()),
+                          offset.y * meters_value (grid.spacing_z ()));
             const float candidate = (surface[cell] - surface[next]) / distance;
             if (candidate > steepest) {
               steepest = candidate;
@@ -517,7 +521,7 @@ namespace moppe::terrain {
       }
     }
 
-    return { .source_grid = grid,
+    return { .domain = grid,
              .receiver = std::move (receiver),
              .slope = std::move (slope) };
   }
@@ -527,9 +531,9 @@ namespace moppe::terrain {
                                       const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("analyze_wet_drainage");
     WetDrainageRouting routing = route_wet_drainage (terrain, flood, census);
-    const TerrainGrid& grid = routing.source_grid;
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = routing.domain;
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
     std::vector<CellIndex>& receiver = routing.receiver;
 
@@ -594,10 +598,10 @@ namespace moppe::terrain {
     const RasterDomain domain {
       .width = width,
       .height = height,
-      .max_x = grid.spacing_x_m () * static_cast<float> (width),
-      .max_y = grid.spacing_y_m () * static_cast<float> (height)
+      .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
+      .max_y = meters_value (grid.spacing_z ()) * static_cast<float> (height)
     };
-    return { .source_grid = grid,
+    return { .domain = grid,
              .receiver = std::move (receiver),
              .slope =
                SlopeRaster (ScalarRaster (domain, std::move (routing.slope))),
@@ -774,7 +778,7 @@ namespace moppe::terrain {
 
     for (const RiverReach& reach : network.reaches) {
       const square_meters_t reference_area =
-        std::max (minimum_area, drainage.source_grid.cell_area ());
+        std::max (minimum_area, drainage.domain.cell_area ());
       Waterfall selected {};
       bool has_selected = false;
       std::size_t last_candidate = 0;
@@ -792,7 +796,7 @@ namespace moppe::terrain {
         const std::uint32_t cell = reach.cells[i];
         const std::uint32_t next = drainage.receiver[cell];
         const meters_t distance =
-          receiver_distance (cell, next, drainage.source_grid);
+          receiver_distance (cell, next, drainage.domain);
         const slope_t slope = drainage.slope.sample (cell % drainage.width (),
                                                      cell / drainage.width ());
         const meters_t drop =
@@ -839,7 +843,7 @@ namespace moppe::terrain {
                          const WaterfallParameters& waterfall_parameters) {
     RiverNetwork network = extract_river_network (
       flood, census, drainage, minimum_area, waterfall_parameters);
-    if (channels.domain ().grid () != drainage.source_grid)
+    if (channels.domain ().terrain_domain () != drainage.domain)
       throw std::invalid_argument (
         "channel geometry does not share the drainage lattice");
     // Rebuild only the continuous geometry: the receiver topology above

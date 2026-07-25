@@ -22,7 +22,7 @@ namespace moppe::terrain {
   }
 
   square_meters_t
-  visible_river_minimum_area (const TerrainGrid& grid) noexcept {
+  visible_river_minimum_area (const TerrainDomain& grid) noexcept {
     constexpr float cells_across = 2.0f / width_per_sqrt_m2;
     return cells_across * cells_across * grid.cell_area ();
   }

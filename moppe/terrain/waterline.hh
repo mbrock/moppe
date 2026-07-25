@@ -36,7 +36,7 @@ namespace moppe::terrain {
   };
 
   struct Waterline {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     std::vector<WaterlineContour> contours;
   };
 

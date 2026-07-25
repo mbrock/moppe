@@ -14,11 +14,12 @@ namespace moppe::terrain {
                                  const DrainageGraph& drainage,
                                  const MoistureParameters& parameters) {
     MOPPE_PROFILE_ZONE ("analyze_moisture");
-    const TerrainGrid& grid = flood.source_grid;
-    const int width = static_cast<int> (grid.width);
-    const int height = static_cast<int> (grid.height);
-    const std::size_t count = grid.width * grid.height;
-    const float spacing = 0.5f * (grid.spacing_x_m () + grid.spacing_y_m ());
+    const TerrainDomain& grid = flood.domain;
+    const int width = static_cast<int> (grid.width ());
+    const int height = static_cast<int> (grid.height ());
+    const std::size_t count = grid.width () * grid.height ();
+    const float spacing = 0.5f * (meters_value (grid.spacing_x ()) +
+                                  meters_value (grid.spacing_z ()));
 
     // Multi-source BFS distance (in grid steps) from every standing-water
     // cell. Grid distance is close enough to metric distance here: the

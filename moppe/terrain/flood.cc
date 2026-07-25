@@ -52,9 +52,9 @@ namespace moppe::terrain {
     if (!std::isfinite (sea_level))
       throw std::invalid_argument ("standing-water sea level must be finite");
 
-    const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = terrain.domain ();
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
@@ -200,10 +200,10 @@ namespace moppe::terrain {
     const RasterDomain domain {
       .width = width,
       .height = height,
-      .max_x = grid.spacing_x_m () * static_cast<float> (width),
-      .max_y = grid.spacing_y_m () * static_cast<float> (height)
+      .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
+      .max_y = meters_value (grid.spacing_z ()) * static_cast<float> (height)
     };
-    return { .source_grid = grid,
+    return { .domain = grid,
              .sea_level = sea_level,
              .has_ocean = has_ocean,
              .water_level = ScalarRaster (domain, std::move (water)),
@@ -225,7 +225,7 @@ namespace moppe::terrain {
     LakeCensus census { .body =
                           std::vector<WaterBodyId> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
-    const square_meters_t cell_area = flood.source_grid.cell_area ();
+    const square_meters_t cell_area = flood.domain.cell_area ();
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (depth[origin] <= wet_epsilon ||
@@ -328,8 +328,9 @@ namespace moppe::terrain {
       // cells wide. Wider flooded reaches can hide arms the alignment never
       // visits, which would drain visibly if the sheet yielded them.
       constexpr float channel_inradius_cells = 2.05f;
-      const float cell_step_m = std::min (flood.source_grid.spacing_x_m (),
-                                          flood.source_grid.spacing_y_m ());
+      const float cell_step_m =
+        std::min (meters_value (flood.domain.spacing_x ()),
+                  meters_value (flood.domain.spacing_z ()));
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
       for (std::uint32_t cell = 0; cell < count; ++cell)

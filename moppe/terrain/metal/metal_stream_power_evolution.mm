@@ -51,9 +51,10 @@ namespace moppe::terrain::metal {
       return std::runtime_error (message);
     }
 
-    float offset_distance (int columns, int rows, const TerrainGrid& grid) {
-      return std::hypot (static_cast<float> (columns) * grid.spacing_x_m (),
-                         static_cast<float> (rows) * grid.spacing_y_m ());
+    float offset_distance (int columns, int rows, const TerrainDomain& grid) {
+      return std::hypot (
+        static_cast<float> (columns) * meters_value (grid.spacing_x ()),
+        static_cast<float> (rows) * meters_value (grid.spacing_z ()));
     }
 
     float normalized_angle (float radians) {
@@ -62,13 +63,15 @@ namespace moppe::terrain::metal {
       return radians < 0.0f ? radians + turn : radians;
     }
 
-    MoppeOrogenyStencil make_stencil (const TerrainGrid& grid) {
+    MoppeOrogenyStencil make_stencil (const TerrainDomain& grid) {
       MoppeOrogenyStencil stencil {};
       for (std::size_t i = 0; i < neighbour_offsets.size (); ++i) {
         const int columns = neighbour_offsets[i][0];
         const int rows = neighbour_offsets[i][1];
-        const float x = static_cast<float> (columns) * grid.spacing_x_m ();
-        const float z = static_cast<float> (rows) * grid.spacing_y_m ();
+        const float x =
+          static_cast<float> (columns) * meters_value (grid.spacing_x ());
+        const float z =
+          static_cast<float> (rows) * meters_value (grid.spacing_z ());
         const float direction = normalized_angle (std::atan2 (z, x));
         stencil.neighbours[i] = { .columns = columns,
                                   .rows = rows,
@@ -93,12 +96,12 @@ namespace moppe::terrain::metal {
           .d1_m = d1,
           .d2_m = d2,
           .extent = std::atan2 (d2, d1),
-          .u1_x = offsets.cardinal_x * grid.spacing_x_m () / d1,
-          .u1_z = offsets.cardinal_y * grid.spacing_y_m () / d1,
+          .u1_x = offsets.cardinal_x * meters_value (grid.spacing_x ()) / d1,
+          .u1_z = offsets.cardinal_y * meters_value (grid.spacing_z ()) / d1,
           .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
-                  grid.spacing_x_m () / d2,
-          .u2_z =
-            (offsets.diagonal_y - offsets.cardinal_y) * grid.spacing_y_m () / d2
+                  meters_value (grid.spacing_x ()) / d2,
+          .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
+                  meters_value (grid.spacing_z ()) / d2
         };
       }
       return stencil;
@@ -146,7 +149,7 @@ namespace moppe::terrain::metal {
         throw std::runtime_error ("failed to create Metal command queue");
     }
 
-    void select (const TerrainGrid& grid,
+    void select (const TerrainDomain& grid,
                  std::span<const float> levels,
                  std::span<const ChannelTangent> previous_tangent,
                  ChannelPersistence persistence,
@@ -156,7 +159,7 @@ namespace moppe::terrain::metal {
                  std::span<DrainageDirection> directions,
                  std::span<slope_t> slopes) {
       MOPPE_PROFILE_ZONE ("metal_orogeny.select_d_infinity_routes");
-      const std::size_t count = grid.width * grid.height;
+      const std::size_t count = grid.width () * grid.height ();
       if (levels.size () != count || ocean.size () != count ||
           water_body.size () != count || routes.size () != count ||
           directions.size () != count || slopes.size () != count ||
@@ -194,8 +197,8 @@ namespace moppe::terrain::metal {
         active[cell] = !ocean[cell] && water_body[cell] == LakeCensus::dry;
       }
       const MoppeOrogenyParameters parameters {
-        .width = static_cast<std::uint32_t> (grid.width),
-        .height = static_cast<std::uint32_t> (grid.height),
+        .width = static_cast<std::uint32_t> (grid.width ()),
+        .height = static_cast<std::uint32_t> (grid.height ()),
         .has_previous_tangent = !previous_tangent.empty (),
         .padding_uint = 0,
         .persistence = persistence.numerical_value_in (mp_units::one),
@@ -327,7 +330,7 @@ namespace moppe::terrain::metal {
   }
 
   void MetalStreamPowerEvolutionBackend::select_dry_routes (
-    const TerrainGrid& grid,
+    const TerrainDomain& grid,
     std::span<const float> routing_surface_levels,
     std::span<const ChannelTangent> previous_tangent,
     ChannelPersistence persistence,

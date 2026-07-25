@@ -34,7 +34,7 @@ namespace moppe::terrain {
   };
 
   struct MergeTree {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     std::vector<MergeTreeNode> nodes;
     // The node each unique cell was inserted into during the upward
     // sweep; the cell's component at any level L >= height(cell) is an
@@ -42,10 +42,10 @@ namespace moppe::terrain {
     std::vector<std::uint32_t> cell_node;
 
     std::size_t width () const noexcept {
-      return source_grid.width;
+      return domain.width ();
     }
     std::size_t height () const noexcept {
-      return source_grid.height;
+      return domain.height ();
     }
   };
 

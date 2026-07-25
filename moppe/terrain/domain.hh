@@ -25,8 +25,8 @@ namespace moppe::terrain {
 
     TerrainDomain (std::size_t width,
                    std::size_t height,
-                   meters_t spacing_x,
-                   meters_t spacing_z)
+                   meters_t spacing_x = 1.0f * u::m,
+                   meters_t spacing_z = 1.0f * u::m)
         : m_width (width), m_height (height), m_spacing_x (spacing_x),
           m_spacing_z (spacing_z) {
       if (width < 2 || height < 2 || spacing_x <= 0.0f * u::m ||
@@ -57,6 +57,12 @@ namespace moppe::terrain {
     }
     meters_t spacing_z () const noexcept {
       return m_spacing_z;
+    }
+    float spacing_x_m () const noexcept {
+      return meters_value (m_spacing_x);
+    }
+    float spacing_z_m () const noexcept {
+      return meters_value (m_spacing_z);
     }
     square_meters_t cell_area () const noexcept {
       return m_spacing_x * m_spacing_z;

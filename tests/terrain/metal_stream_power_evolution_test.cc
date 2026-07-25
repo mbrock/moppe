@@ -16,11 +16,8 @@ namespace {
   constexpr std::size_t metal_test_width = 17;
   constexpr std::size_t metal_test_height = 17;
 
-  TerrainGrid test_grid () {
-    return { .width = metal_test_width,
-             .height = metal_test_height,
-             .spacing_x = 20.0f * mp_units::si::metre,
-             .spacing_y = 30.0f * mp_units::si::metre };
+  TerrainDomain test_grid () {
+    return { metal_test_width, metal_test_height, 20.0f * u::m, 30.0f * u::m };
   }
 
   std::vector<float> test_heights () {

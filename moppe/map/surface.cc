@@ -147,9 +147,9 @@ namespace moppe::map {
     const auto& tangents = spatial::get<terrain::channel_tangent> (channels);
     const auto& areas =
       spatial::get<terrain::fractional_contributing_area> (channels);
-    const terrain::TerrainGrid& grid = channels.domain ().grid ();
+    const terrain::TerrainDomain& grid = channels.domain ().terrain_domain ();
     const SurfaceDomain& domain = atlas ().domain ();
-    if (grid.width != domain.width () || grid.height != domain.height ())
+    if (grid.width () != domain.width () || grid.height () != domain.height ())
       throw std::invalid_argument (
         "Channel analysis does not share the surface lattice");
     // Activity compresses contributing area logarithmically onto 0..1:

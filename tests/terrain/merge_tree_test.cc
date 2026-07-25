@@ -44,7 +44,7 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
                              0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
                              3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
-  const TerrainView terrain ({ .width = 5, .height = 5 }, heights);
+  const TerrainView terrain (TerrainDomain (5, 5), heights);
   check_matches_priority_flood (terrain, 0.0f);
 
   const MergeTree tree = build_merge_tree (terrain);
@@ -57,7 +57,7 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
 
 MOPPE_TEST (merge_tree_flood_matches_an_all_land_torus) {
   const std::array heights { 5.f, 4.f, 7.f, 3.f };
-  const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
+  const TerrainView terrain (TerrainDomain (2, 2), heights);
   check_matches_priority_flood (terrain, -1.0f);
 
   const MergeTree tree = build_merge_tree (terrain);
@@ -72,7 +72,7 @@ MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
   const std::array heights {
     -3.f, -3.f, -3.f, -3.f, 5.f, -3.f, -3.f, -3.f, -3.f
   };
-  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
+  const TerrainView terrain (TerrainDomain (3, 3), heights);
   check_matches_priority_flood (terrain, 0.0f);
 }
 

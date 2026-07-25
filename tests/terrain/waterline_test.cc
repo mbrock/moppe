@@ -30,9 +30,8 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
   // the painter does.  The level meets the ground slope a quarter of
   // the way along the first edge.
   const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
-  const TerrainView terrain (
-    { .width = 3, .height = 3, .spacing_x = 2.0f * mp_units::si::metre },
-    ground);
+  const TerrainView terrain (TerrainDomain (3, 3, 2.0f * mp_units::si::metre),
+                             ground);
   const ScalarRaster surface =
     raster (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   const Waterline waterline = extract_waterline (
@@ -64,7 +63,7 @@ MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
   ground[2 * 5 + 2] = -2.0f;
   std::vector<float> level = ground;
   level[2 * 5 + 2] = -1.0f;
-  const TerrainView terrain ({ .width = 5, .height = 5 }, ground);
+  const TerrainView terrain (TerrainDomain (5, 5), ground);
   LakeCensus census { .body = std::vector<WaterBodyId> (25, LakeCensus::dry) };
   census.body[2 * 5 + 2] = WaterBodyId { 7 };
   const Waterline waterline =
@@ -93,7 +92,7 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
   std::vector<float> level (unique * unique, 0.0f);
   for (std::size_t y = 0; y < unique; ++y)
     level[y * unique] = -1.0f;
-  const TerrainView terrain ({ .width = unique, .height = unique }, ground);
+  const TerrainView terrain (TerrainDomain (unique, unique), ground);
   const Waterline waterline =
     extract_waterline (terrain,
                        raster (unique, unique, level),
@@ -114,9 +113,8 @@ MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
   // The straight shoreline at x = 0.5 m (see the crossing test): node
   // distances are |x_world - 0.5|, clamped to the band.
   const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
-  const TerrainView terrain (
-    { .width = 3, .height = 3, .spacing_x = 2.0f * mp_units::si::metre },
-    ground);
+  const TerrainView terrain (TerrainDomain (3, 3, 2.0f * mp_units::si::metre),
+                             ground);
   const ScalarRaster surface =
     ScalarRaster ({ .width = 3, .height = 3 },
                   { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
@@ -139,7 +137,7 @@ MOPPE_TEST (waterline_extraction_is_deterministic) {
     for (std::size_t x = 0; x < 7; ++x)
       level[y * 7 + x] = 0.5f * std::sin (0.9f * static_cast<float> (x)) +
                          0.4f * std::cos (1.3f * static_cast<float> (y)) - 0.2f;
-  const TerrainView terrain ({ .width = 7, .height = 7 }, ground);
+  const TerrainView terrain (TerrainDomain (7, 7), ground);
   const LakeCensus census = uniform_census (49, WaterBodyId { 1 });
   const Waterline first =
     extract_waterline (terrain, raster (7, 7, level), census);

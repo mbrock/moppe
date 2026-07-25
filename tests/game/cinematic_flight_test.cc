@@ -13,7 +13,7 @@ namespace {
     static constexpr std::size_t count = side * side;
 
     map::Surface map { side, side, Vec3 (1600, 240, 1600) };
-    terrain::TerrainGrid grid = map.terrain_view ().grid ();
+    terrain::TerrainDomain grid = map.terrain_view ().domain ();
     terrain::RasterDomain domain { .width = side, .height = side };
     terrain::FloodField flood;
     terrain::LakeCensus census;
@@ -21,7 +21,7 @@ namespace {
     terrain::RiverNetwork rivers;
 
     FlightFixture ()
-        : flood { .source_grid = grid,
+        : flood { .domain = grid,
                   .sea_level = 0.1f,
                   .has_ocean = false,
                   .water_level = terrain::ScalarRaster (
@@ -33,7 +33,7 @@ namespace {
                   .outlets = {} },
           census { .body = std::vector<terrain::WaterBodyId> (
                      count, terrain::LakeCensus::dry) },
-          drainage { .source_grid = grid,
+          drainage { .domain = grid,
                      .receiver = std::vector<terrain::CellIndex> (count),
                      .slope = terrain::SlopeRaster (terrain::ScalarRaster (
                        domain, std::vector<float> (count, 0.05f))),
@@ -121,20 +121,20 @@ namespace {
     for (std::size_t i = 0; i < cells.size (); ++i) {
       const terrain::CellIndex cell = cells[i];
       const terrain::CellIndex next = cells[(i + 1) % cells.size ()];
-      const float x =
-        (cell.value % FlightFixture::side) * fixture.grid.spacing_x_m ();
-      const float z =
-        (cell.value / FlightFixture::side) * fixture.grid.spacing_y_m ();
-      const float next_x =
-        (next.value % FlightFixture::side) * fixture.grid.spacing_x_m ();
-      const float next_z =
-        (next.value / FlightFixture::side) * fixture.grid.spacing_y_m ();
+      const float x = (cell.value % FlightFixture::side) *
+                      meters_value (fixture.grid.spacing_x ());
+      const float z = (cell.value / FlightFixture::side) *
+                      meters_value (fixture.grid.spacing_z ());
+      const float next_x = (next.value % FlightFixture::side) *
+                           meters_value (fixture.grid.spacing_x ());
+      const float next_z = (next.value / FlightFixture::side) *
+                           meters_value (fixture.grid.spacing_z ());
       alignment.points.push_back ({ x, z });
       alignment_length += std::hypot (next_x - x, next_z - z);
     }
     alignment.length = alignment_length * mp_units::si::metre;
     return {
-      .source_grid = fixture.grid,
+      .domain = fixture.grid,
       .plan = { .home_base = home,
                 .scenic_focus = focus,
                 .control_sites = { home, focus },
@@ -239,14 +239,14 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     }
   map.recompute_normals ();
 
-  const terrain::TerrainGrid grid = map.terrain_view ().grid ();
+  const terrain::TerrainDomain grid = map.terrain_view ().domain ();
   const terrain::RasterDomain domain { .width = unique_side,
                                        .height = unique_side };
   std::vector<terrain::CellIndex> receiver (count);
   for (std::uint32_t cell = 0; cell < count; ++cell)
     receiver[cell] = terrain::CellIndex (cell);
   const terrain::FloodField flood {
-    .source_grid = grid,
+    .domain = grid,
     .sea_level = 0.0f,
     .has_ocean = false,
     .water_level =
@@ -260,7 +260,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   const terrain::LakeCensus census { .body = std::vector<terrain::WaterBodyId> (
                                        count, terrain::LakeCensus::dry) };
   const terrain::DrainageGraph drainage {
-    .source_grid = grid,
+    .domain = grid,
     .receiver = receiver,
     .slope = terrain::SlopeRaster (
       terrain::ScalarRaster (domain, std::vector<float> (count, 0.0f))),

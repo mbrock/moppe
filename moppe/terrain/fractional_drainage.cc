@@ -52,16 +52,20 @@ namespace moppe::terrain {
       return radians < 0.0f ? radians + turn : radians;
     }
 
-    meters_t offset_distance (int columns, int rows, const TerrainGrid& grid) {
-      return std::hypot (static_cast<float> (columns) * grid.spacing_x_m (),
-                         static_cast<float> (rows) * grid.spacing_y_m ()) *
+    meters_t
+    offset_distance (int columns, int rows, const TerrainDomain& grid) {
+      return std::hypot (
+               static_cast<float> (columns) * meters_value (grid.spacing_x ()),
+               static_cast<float> (rows) * meters_value (grid.spacing_z ())) *
              mp_units::si::metre;
     }
 
     DrainageDirection
-    direction_for_offset (int columns, int rows, const TerrainGrid& grid) {
-      const float x = static_cast<float> (columns) * grid.spacing_x_m ();
-      const float z = static_cast<float> (rows) * grid.spacing_y_m ();
+    direction_for_offset (int columns, int rows, const TerrainDomain& grid) {
+      const float x =
+        static_cast<float> (columns) * meters_value (grid.spacing_x ());
+      const float z =
+        static_cast<float> (rows) * meters_value (grid.spacing_z ());
       return normalized_angle (std::atan2 (z, x)) *
              drainage_direction[mp_units::angular::radian];
     }
@@ -95,7 +99,7 @@ namespace moppe::terrain {
       std::array<NeighbourGeometry, neighbour_offsets.size ()> neighbours;
       std::array<FacetGeometry, facet_offsets.size ()> facets;
 
-      explicit DInfinityStencil (const TerrainGrid& grid) {
+      explicit DInfinityStencil (const TerrainDomain& grid) {
         for (std::size_t i = 0; i < neighbour_offsets.size (); ++i) {
           const int columns = neighbour_offsets[i][0];
           const int rows = neighbour_offsets[i][1];
@@ -121,12 +125,14 @@ namespace moppe::terrain {
                         .d1 = d1,
                         .d2 = d2,
                         .extent = std::atan2 (d2_m, d1_m),
-                        .u1_x = offsets.cardinal_x * grid.spacing_x_m () / d1_m,
-                        .u1_z = offsets.cardinal_y * grid.spacing_y_m () / d1_m,
+                        .u1_x = offsets.cardinal_x *
+                                meters_value (grid.spacing_x ()) / d1_m,
+                        .u1_z = offsets.cardinal_y *
+                                meters_value (grid.spacing_z ()) / d1_m,
                         .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
-                                grid.spacing_x_m () / d2_m,
+                                meters_value (grid.spacing_x ()) / d2_m,
                         .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
-                                grid.spacing_y_m () / d2_m };
+                                meters_value (grid.spacing_z ()) / d2_m };
         }
       }
     };
@@ -167,7 +173,7 @@ namespace moppe::terrain {
     FractionalFlowRoute single_route (CellIndex receiver,
                                       int columns,
                                       int rows,
-                                      const TerrainGrid& grid) {
+                                      const TerrainDomain& grid) {
       FractionalFlowRoute route;
       route.arcs[0] = { .receiver = receiver,
                         .fraction = 1.0f * flow_fraction[mp_units::one] };
@@ -209,7 +215,7 @@ namespace moppe::terrain {
                                    ChannelPersistence persistence,
                                    const DInfinityStencil& stencil) {
       const TerrainLatticeDomain& domain = surface.domain ();
-      const TerrainGrid& grid = domain.grid ();
+      const TerrainDomain& grid = domain.terrain_domain ();
       const auto focus = spatial::BundleFocus (surface, cell);
       const RoutingSurfaceElevation center =
         spatial::get<routing_surface_elevation> (focus);
@@ -371,13 +377,8 @@ namespace moppe::terrain {
     }
   }
 
-  TerrainLatticeDomain::TerrainLatticeDomain (TerrainGrid grid)
-      : m_grid (grid) {
-    if (grid.width < 2 || grid.height < 2 ||
-        grid.spacing_x <= 0.0f * mp_units::si::metre ||
-        grid.spacing_y <= 0.0f * mp_units::si::metre)
-      throw std::invalid_argument ("invalid terrain lattice domain");
-  }
+  TerrainLatticeDomain::TerrainLatticeDomain (TerrainDomain domain)
+      : m_domain (std::move (domain)) {}
 
   std::size_t TerrainLatticeDomain::offset (CellIndex index) const {
     if (index.value >= size ())
@@ -423,15 +424,15 @@ namespace moppe::terrain {
       ChannelPersistence persistence,
       const FractionalRouteBackend* backend) {
       MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
-      const TerrainGrid& grid = terrain.grid ();
-      if (flood.source_grid != grid ||
-          census.body.size () != grid.width * grid.height)
+      const TerrainDomain& grid = terrain.domain ();
+      if (flood.domain != grid ||
+          census.body.size () != grid.width () * grid.height ())
         throw std::invalid_argument (
           "fractional drainage inputs do not share one terrain lattice");
       const float persistence_value =
         persistence.numerical_value_in (mp_units::one);
       if ((!previous_tangent.empty () &&
-           previous_tangent.size () != grid.width * grid.height) ||
+           previous_tangent.size () != grid.width () * grid.height ()) ||
           !std::isfinite (persistence_value) || persistence_value < 0.0f ||
           persistence_value >= 1.0f)
         throw std::invalid_argument (
