@@ -84,11 +84,12 @@ namespace moppe::spatial {
       constexpr std::string_view kind =
         mp_units::QuantityPoint<Value> ? "point" : "quantity";
       return std::format (
-        "quantity kind={} bytes={} unit=[{:P}] dimension=[{:P}]",
+        "quantity kind={} bytes={} unit=[{:P}] dimension=[{:P}] type={}",
         kind,
         sizeof (Value),
         Value::unit,
-        Value::dimension);
+        Value::dimension,
+        mp_units::detail::type_name<Value> ());
     }
 
     template <typename Value>
