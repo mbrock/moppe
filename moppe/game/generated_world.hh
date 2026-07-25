@@ -3,7 +3,6 @@
 
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
-#include <moppe/map/water_surface.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/trail.hh>
@@ -94,7 +93,7 @@ namespace moppe::game {
       return m_hydrology;
     }
 
-    const std::optional<map::WaterSurface>& water_surface () const noexcept {
+    const std::optional<terrain::WaterSheets>& water_surface () const noexcept {
       return m_water_surface;
     }
 
@@ -113,7 +112,7 @@ namespace moppe::game {
     terrain::WorldRecipe m_recipe;
     map::Surface m_surface;
     std::optional<Hydrology> m_hydrology;
-    std::optional<map::WaterSurface> m_water_surface;
+    std::optional<terrain::WaterSheets> m_water_surface;
     std::optional<terrain::TrailNetwork> m_trails;
   };
 }

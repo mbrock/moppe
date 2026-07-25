@@ -20,17 +20,14 @@ namespace moppe::game {
     m_flow.clear ();
   }
 
-  void WaterPresentation::refresh (const map::WaterSurface& water) {
+  void WaterPresentation::refresh (const terrain::WaterSheets& water) {
     MOPPE_PROFILE_ZONE ("water.pack_presentation");
-    const auto& elevation =
-      spatial::get<map::surface_elevation> (water.sections ());
-    const auto& amplitude =
-      spatial::get<map::wave_amplitude> (water.sections ());
-    const auto& velocity =
-      spatial::get<map::water_velocity> (water.sections ());
-    m_levels.resize (2 * water.sections ().size ());
-    m_flow.resize (2 * water.sections ().size ());
-    for (std::size_t offset = 0; offset < water.sections ().size (); ++offset) {
+    const auto& elevation = spatial::get<terrain::surface_elevation> (water);
+    const auto& amplitude = spatial::get<terrain::wave_amplitude> (water);
+    const auto& velocity = spatial::get<terrain::water_velocity> (water);
+    m_levels.resize (2 * water.size ());
+    m_flow.resize (2 * water.size ());
+    for (std::size_t offset = 0; offset < water.size (); ++offset) {
       m_levels[2 * offset] =
         elevation[offset].quantity_from_zero ().numerical_value_in (u::m);
       m_levels[2 * offset + 1] = amplitude[offset].numerical_value_in (one);

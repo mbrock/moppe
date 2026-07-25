@@ -1,20 +1,45 @@
 #include <moppe/game/water_presentation.hh>
 #include <moppe/map/surface.hh>
-#include <moppe/map/water_surface.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
 #include <array>
+#include <span>
+
+namespace {
+  // Water sheets normally come out of the watercourse painter. These tests
+  // want a lattice with hand-chosen values, so they lay one out directly in
+  // the renderer's interleaved order.
+  moppe::terrain::WaterSheets
+  water_sheets (moppe::terrain::TerrainDomain domain,
+                std::span<const float> level_and_amplitude,
+                std::span<const float> planar_flow) {
+    using namespace moppe;
+    terrain::WaterSheets sheets (std::move (domain));
+    for (std::size_t offset = 0; offset < sheets.size (); ++offset) {
+      auto site = sheets[sheets.index (offset)];
+      spatial::get<terrain::surface_elevation> (site) =
+        terrain::SurfaceElevation (level_and_amplitude[2 * offset] *
+                                   terrain::surface_elevation[u::m]);
+      spatial::get<terrain::wave_amplitude> (site) =
+        level_and_amplitude[2 * offset + 1] * terrain::wave_amplitude[one];
+      spatial::get<terrain::water_velocity> (site) =
+        Vec3 (planar_flow[2 * offset], 0.0f, planar_flow[2 * offset + 1]) *
+        terrain::water_velocity[u::m / u::s];
+    }
+    return sheets;
+  }
+}
 
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
-  map::Surface map (2, 2, Vec3 (20, 100, 20));
-  map.fill_elevation (
+  map::Surface ground (2, 2, Vec3 (20, 100, 20));
+  ground.fill_elevation (
     map::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]));
-  map.recompute_normals ();
-  map::Surface& ground = map;
+  ground.recompute_normals ();
 
   const std::array level_and_amplitude {
     10.0f, 0.20f, 20.0f, 0.30f, 30.0f, 0.40f, 40.0f, 0.50f,
@@ -22,21 +47,21 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   const std::array flow {
     1.0f, -2.0f, 2.0f, -3.0f, 3.0f, -4.0f, 4.0f, -5.0f,
   };
-  map::WaterSurface water (ground.domain (), level_and_amplitude, flow);
+  const terrain::WaterSheets water =
+    water_sheets (ground.domain (), level_and_amplitude, flow);
 
   const terrain::TerrainIndex first { 0, 0 };
   const auto water_elevation =
-    spatial::get<map::surface_elevation> (water.sections ()[first]);
+    spatial::get<terrain::surface_elevation> (water[first]);
   const auto ground_elevation = ground.elevation_at (position (Vec3 (0, 0, 0)));
   const auto depth = water_elevation - ground_elevation;
   MOPPE_CHECK_NEAR (depth.numerical_value_in (u::m), 5.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (spatial::get<map::wave_amplitude> (water.sections ()[first])
+  MOPPE_CHECK_NEAR (spatial::get<terrain::wave_amplitude> (water[first])
                       .numerical_value_in (one),
                     0.2f,
                     1e-6f);
-  const Vec3 velocity =
-    spatial::get<map::water_velocity> (water.sections ()[first])
-      .numerical_value_in (u::m / u::s);
+  const Vec3 velocity = spatial::get<terrain::water_velocity> (water[first])
+                          .numerical_value_in (u::m / u::s);
   MOPPE_CHECK_NEAR (velocity[0], 1.0f, 1e-6f);
   MOPPE_CHECK_NEAR (velocity[1], 0.0f, 1e-6f);
   MOPPE_CHECK_NEAR (velocity[2], -2.0f, 1e-6f);
@@ -51,7 +76,8 @@ MOPPE_TEST (water_presentation_packs_physical_bundle_sections) {
   const std::array flow {
     1.0f, -2.0f, 2.0f, -3.0f, 3.0f, -4.0f, 4.0f, -5.0f,
   };
-  const map::WaterSurface water (domain, level_and_amplitude, flow);
+  const terrain::WaterSheets water =
+    water_sheets (domain, level_and_amplitude, flow);
 
   game::WaterPresentation presentation;
   presentation.reset (10.0f * u::m,
