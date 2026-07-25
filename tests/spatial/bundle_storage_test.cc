@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <optional>
 #include <sstream>
+#include <string>
 #include <utility>
 
 using namespace moppe;
@@ -45,6 +46,13 @@ namespace {
   using StoredRingBundle =
     spatial::Bundle<StoredRing, StoredDisplacement, StoredDensity>;
   using StoredNarrowBundle = spatial::Bundle<StoredRing, StoredDisplacement>;
+
+  inline constexpr struct stored_duration
+      : quantity_spec<mp_units::isq::duration, mp_units::is_kind> {
+  } stored_duration;
+  using StoredDuration = quantity<stored_duration[u::s], float>;
+  using StoredWrongUnitsBundle =
+    spatial::Bundle<StoredRing, StoredDuration, StoredDensity>;
 }
 
 namespace moppe::spatial {
@@ -88,6 +96,25 @@ MOPPE_TEST (a_bundle_round_trips_every_column_over_its_own_domain) {
   MOPPE_CHECK_NEAR (density[1].numerical_value_in (one), 0.25f, 1e-6f);
 }
 
+MOPPE_TEST (a_bundle_file_describes_each_quantity_before_its_binary_data) {
+  std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
+  spatial::write_bundle (file, written_ring ());
+
+  std::string line;
+  std::getline (file, line);
+  MOPPE_CHECK (line == "MOPBNDL2");
+  std::getline (file, line);
+  MOPPE_CHECK (line == "columns=2");
+  std::getline (file, line);
+  MOPPE_CHECK (line == "quantity kind=quantity bytes=4 unit=[m] dimension=[L]");
+  std::getline (file, line);
+  MOPPE_CHECK (line == "quantity kind=quantity bytes=4 unit=[] dimension=[1]");
+  std::getline (file, line);
+  MOPPE_CHECK (line == "sites=3");
+  std::getline (file, line);
+  MOPPE_CHECK (line == "data");
+}
+
 MOPPE_TEST (loading_keeps_the_callers_bundle_when_the_domain_differs) {
   std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
   spatial::write_bundle (file, written_ring ());
@@ -107,6 +134,14 @@ MOPPE_TEST (a_file_from_another_column_shape_is_no_file_at_all) {
 
   StoredNarrowBundle narrow (StoredRing { 3 });
   MOPPE_CHECK (!spatial::load_bundle (file, narrow));
+}
+
+MOPPE_TEST (a_file_with_other_units_is_no_file_at_all) {
+  std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
+  spatial::write_bundle (file, written_ring ());
+
+  StoredWrongUnitsBundle wrong_units (StoredRing { 3 });
+  MOPPE_CHECK (!spatial::load_bundle (file, wrong_units));
 }
 
 MOPPE_TEST (an_empty_file_is_no_file_at_all) {
