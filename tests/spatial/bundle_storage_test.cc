@@ -10,6 +10,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 using namespace moppe;
@@ -44,6 +45,9 @@ namespace {
 
   using StoredDisplacement = quantity<stored_displacement[u::m], float>;
   using StoredDensity = quantity<stored_density[one], float>;
+  using StoredDisplacementSpec =
+    std::remove_cvref_t<decltype (stored_displacement)>;
+  using StoredDensitySpec = std::remove_cvref_t<decltype (stored_density)>;
   using StoredRingBundle =
     spatial::Bundle<StoredRing, StoredDisplacement, StoredDensity>;
   using StoredNarrowBundle = spatial::Bundle<StoredRing, StoredDisplacement>;
@@ -109,13 +113,13 @@ MOPPE_TEST (a_bundle_file_describes_each_quantity_before_its_binary_data) {
   std::getline (file, line);
   MOPPE_CHECK (
     line == std::format (
-              "quantity kind=quantity bytes=4 unit=[m] dimension=[L] type={}",
-              mp_units::detail::type_name<StoredDisplacement> ()));
+              "quantity kind=quantity bytes=4 unit=[m] dimension=[L] spec={}",
+              mp_units::detail::type_name<StoredDisplacementSpec> ()));
   std::getline (file, line);
   MOPPE_CHECK (
     line ==
-    std::format ("quantity kind=quantity bytes=4 unit=[] dimension=[1] type={}",
-                 mp_units::detail::type_name<StoredDensity> ()));
+    std::format ("quantity kind=quantity bytes=4 unit=[] dimension=[1] spec={}",
+                 mp_units::detail::type_name<StoredDensitySpec> ()));
   std::getline (file, line);
   MOPPE_CHECK (line == "sites=3");
   std::getline (file, line);
