@@ -59,34 +59,23 @@ under a change of unit; the representation strategy is outside this document.
 
 ## The terrain unit boundary
 
-The materialized terrain carries the physical scale needed to interpret a
-heightfield:
-
-- `TerrainGrid::spacing_x` and `spacing_y` are horizontal metres between
-  samples;
-- `TerrainGrid::height_scale` is metres per stored height unit;
-- stored height samples, flood surfaces, and sea level are currently
-  normalized height values in this subsystem;
-- physical elevation is `height * height_scale` metres;
-- one cell represents `spacing_x * spacing_y` square metres.
+`TerrainDomain::spacing_x` and `spacing_z` are horizontal metres between
+samples, so one lattice cell represents their product in square metres.
+Authoritative surface elevations are affine quantity points stored directly
+in metres. Flood surfaces, sea level, terrain evolution, and trail grading use
+that same physical vertical frame.
 
 For the default random world, `terrain::WorldRecipe::extent()` is 5,000 m by
 5,000 m and 320 m high. Its water datum is 50 m. A 2048-sample toroidal
 heightmap has 2048 periodic cells per side, so its sample spacing is
 approximately 2.441 m.
 
-This distinction matters. A drop of `0.01` in a normalized heightfield is
-3.2 m when the height scale is 320 m. A one-cell move is not one metre unless
-the grid spacing says so. Algorithms that use differences between samples
-without applying both scales are grid-space algorithms, not physical-space
-algorithms.
-
-`ScalarField` coordinates, noise frequencies, amplitudes, masks, and blend
-weights currently describe a procedural field in a normalized domain. They
-are intentionally scale-free until materialization. Frequency there means
-cycles across the chosen domain, not automatically cycles per metre. If a
-future geological process depends on wavelength, correlation length, or fault
-width, the model must relate that physical length to the sampling domain.
+A one-cell move is not one metre unless the domain spacing says so. The
+geological recipe's noise cycles and blend weights describe a procedural
+pattern over the complete finite lattice. If a future geological process
+depends on wavelength, correlation length, or fault width, it should express
+that physical length against `TerrainDomain` rather than introducing another
+sampling domain.
 
 ## Geometry and topography
 

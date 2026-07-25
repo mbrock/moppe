@@ -17,9 +17,6 @@ MOPPE_TEST (height_range_is_a_materialized_terrain_reading) {
   MOPPE_CHECK_NEAR (range.maximum, 7.0f, 0.0f);
   static_assert (mp_units::QuantityOf<decltype (terrain.elevation_at (0, 0)),
                                       mp_units::isq::length>);
-  static_assert (
-    mp_units::QuantityOf<decltype (terrain.relative_elevation_at (0, 0)),
-                         relative_elevation>);
   MOPPE_CHECK_NEAR (
     terrain.elevation_at (0, 0).numerical_value_in (mp_units::si::metre),
     50.0f,

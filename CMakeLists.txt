@@ -208,7 +208,6 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/uber.metal
   moppe/shaders/metal/post.metal
   moppe/shaders/metal/terrain.metal
-  moppe/shaders/metal/field.metal
   moppe/shaders/metal/orogeny.metal
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
@@ -219,7 +218,6 @@ set(MOPPE_METAL_SOURCES
 set(MOPPE_METAL_DEPS
   moppe/shaders/metal/common.h
   moppe/render/metal/shader_types.h
-  moppe/terrain/metal/field_shader_types.h
   moppe/terrain/metal/orogeny_shader_types.h
 )
 
@@ -265,9 +263,6 @@ else()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${MOPPE_METAL_SOURCES} ${MOPPE_METAL_DEPS})
   file(READ moppe/render/metal/shader_types.h MOPPE_METAL_SOURCE)
-  file(READ moppe/terrain/metal/field_shader_types.h
-    MOPPE_METAL_FIELD_TYPES)
-  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_FIELD_TYPES}\n")
   file(READ moppe/terrain/metal/orogeny_shader_types.h
     MOPPE_METAL_OROGENY_TYPES)
   string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_OROGENY_TYPES}\n")
@@ -279,9 +274,6 @@ else()
   foreach(src ${MOPPE_METAL_SOURCES})
     file(READ ${src} MOPPE_METAL_PART)
     string(REPLACE "#include \"common.h\"" ""
-      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
-    string(REPLACE
-      "#include \"../../terrain/metal/field_shader_types.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(REPLACE
       "#include \"../../terrain/metal/orogeny_shader_types.h\"" ""
@@ -325,12 +317,10 @@ if(EMSCRIPTEN)
   target_link_libraries(moppe_webgpu PUBLIC moppe_render)
 endif()
 
-# Runtime scalar-field expressions plus evaluator backends.  This stays
-# independent of game and platform code so tools and tests use the same DAG.
+# Finite terrain generation and analysis.
 add_library(moppe_terrain STATIC
-  moppe/terrain/field.cc
   moppe/terrain/noise.cc
-  moppe/terrain/cpu_evaluator.cc
+  moppe/terrain/raster.cc
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
   moppe/terrain/fractional_drainage.cc
@@ -348,8 +338,6 @@ add_library(moppe_terrain STATIC
   moppe/terrain/world_recipe.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-# The field DAG stays float-typed, but the recipe layer's phantom
-# quantity kinds (Field<QS>) come from mp-units.
 target_link_libraries(moppe_terrain PUBLIC moppe_spatial)
 if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
@@ -357,7 +345,6 @@ endif()
 
 if(APPLE AND NOT MOPPE_IOS)
   add_library(moppe_terrain_metal STATIC
-    moppe/terrain/metal/metal_evaluator.mm
     moppe/terrain/metal/metal_stream_power_evolution.mm
   )
   target_include_directories(moppe_terrain_metal
@@ -373,7 +360,6 @@ endif()
 # renderer-free Terrain Lab model all sit above the reusable terrain programs.
 add_library(moppe_world STATIC
   moppe/map/surface_geometry.cc
-  moppe/map/surface_domain.cc
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc
   moppe/map/surface_materials.cc
@@ -509,16 +495,12 @@ if(APPLE)
 endif()
 
 # Keep the entire portable test suite behind one executable and one unity
-# translation unit.  The macOS Metal evaluator test joins the same binary when
-# that backend is available; it does not need its own copy of test_main.cc.
+# translation unit.
 if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   add_executable(moppe-tests
     tests/test_main.cc
     tests/units_test.cc
     tests/spatial/bundle_test.cc
-    tests/terrain/discretization_test.cc
-    tests/terrain/field_test.cc
-    tests/terrain/cpu_evaluator_test.cc
     tests/terrain/geological_test.cc
     tests/terrain/program_test.cc
     tests/terrain/world_recipe_test.cc
@@ -553,7 +535,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   target_link_libraries(moppe-tests PRIVATE moppe_scene)
   if(TARGET moppe_terrain_metal)
     target_sources(moppe-tests PRIVATE
-      tests/terrain/metal_evaluator_test.cc
       tests/terrain/metal_stream_power_evolution_test.cc)
     target_link_libraries(moppe-tests PRIVATE moppe_terrain_metal)
     target_compile_definitions(moppe-tests PRIVATE

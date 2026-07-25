@@ -13,7 +13,6 @@
 
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
-#include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <algorithm>
@@ -348,12 +347,6 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
 
 namespace moppe {
   namespace platform {
-    std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator () {
-      // The game still targets iOS 15; Metal 4 becomes available at iOS 26.
-      // Keep the portable backend until the deployment policy changes.
-      return {};
-    }
-
     std::unique_ptr<terrain::StreamPowerEvolutionBackend>
     create_stream_power_evolution_backend () {
       return {};

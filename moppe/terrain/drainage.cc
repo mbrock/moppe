@@ -371,28 +371,25 @@ namespace moppe::terrain {
         for (std::size_t x = 0; x < width; ++x) {
           const std::size_t cell = index (x, y);
           receiver[cell] = static_cast<std::uint32_t> (cell);
-          const meters_t elevation = terrain.elevation_at (grid_point (
-            static_cast<std::ptrdiff_t> (x), static_cast<std::ptrdiff_t> (y)));
-          auto steepest = 0.0f * mp_units::one;
+          const float elevation = meters_value (terrain.elevation_at (x, y));
+          float steepest = 0.0f;
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
-            const meters_t neighbor_elevation = terrain.elevation_at (
-              grid_point (static_cast<std::ptrdiff_t> (nx),
-                          static_cast<std::ptrdiff_t> (ny)));
-            const meters_t distance =
+            const float neighbor_elevation =
+              meters_value (terrain.elevation_at (nx, ny));
+            const float distance =
               std::hypot (offset.x * source_grid.spacing_x_m (),
-                          offset.y * source_grid.spacing_y_m ()) *
-              mp_units::si::metre;
-            const auto candidate = (elevation - neighbor_elevation) / distance;
-            if (candidate > steepest * mp_units::one) {
+                          offset.y * source_grid.spacing_y_m ());
+            const float candidate = (elevation - neighbor_elevation) / distance;
+            if (candidate > steepest) {
               steepest = candidate;
               receiver[cell] = static_cast<std::uint32_t> (index (nx, ny));
             }
           }
-          slope[cell] = steepest.numerical_value_in (mp_units::one);
+          slope[cell] = steepest;
         }
     }
 
@@ -424,7 +421,7 @@ namespace moppe::terrain {
     }
     std::sort (sinks.begin (), sinks.end ());
 
-    const FieldSamplingGrid2D domain {
+    const RasterDomain domain {
       .width = width,
       .height = height,
       .max_x = source_grid.spacing_x_m () * static_cast<float> (width),
@@ -599,7 +596,7 @@ namespace moppe::terrain {
     for (const std::uint32_t cell : order)
       topological_order.push_back (CellIndex { cell });
 
-    const FieldSamplingGrid2D domain {
+    const RasterDomain domain {
       .width = width,
       .height = height,
       .max_x = grid.spacing_x_m () * static_cast<float> (width),

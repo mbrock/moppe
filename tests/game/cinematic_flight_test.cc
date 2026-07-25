@@ -14,7 +14,7 @@ namespace {
 
     map::Surface map { side, side, Vec3 (1600, 240, 1600) };
     terrain::TerrainGrid grid = map.terrain_view ().grid ();
-    terrain::FieldSamplingGrid2D domain { .width = side, .height = side };
+    terrain::RasterDomain domain { .width = side, .height = side };
     terrain::FloodField flood;
     terrain::LakeCensus census;
     terrain::DrainageGraph drainage;
@@ -240,8 +240,8 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   map.recompute_normals ();
 
   const terrain::TerrainGrid grid = map.terrain_view ().grid ();
-  const terrain::FieldSamplingGrid2D domain { .width = unique_side,
-                                              .height = unique_side };
+  const terrain::RasterDomain domain { .width = unique_side,
+                                       .height = unique_side };
   std::vector<terrain::CellIndex> receiver (count);
   for (std::uint32_t cell = 0; cell < count; ++cell)
     receiver[cell] = terrain::CellIndex (cell);

@@ -1510,12 +1510,10 @@ namespace moppe::terrain {
             shoulder_ramp (distance, base_radius, base_blend);
       }
 
-    const FieldSamplingGrid2D domain { .width =
-                                         static_cast<std::size_t> (width),
-                                       .height =
-                                         static_cast<std::size_t> (height),
-                                       .max_x = grid.spacing_x_m () * width,
-                                       .max_y = grid.spacing_y_m () * height };
+    const RasterDomain domain { .width = static_cast<std::size_t> (width),
+                                .height = static_cast<std::size_t> (height),
+                                .max_x = grid.spacing_x_m () * width,
+                                .max_y = grid.spacing_y_m () * height };
     return { .source_grid = grid,
              .plan = std::move (plan),
              .receiver = std::move (receiver),

@@ -9,7 +9,6 @@
 
 namespace moppe {
   namespace terrain {
-    class FieldEvaluator;
     class StreamPowerEvolutionBackend;
   }
   namespace platform {
@@ -134,10 +133,6 @@ namespace moppe {
 
     // Monotonic time in seconds; never wall-clock.
     double now ();
-
-    // Returns the platform's accelerated pointwise-field backend when one is
-    // available.  A null result deliberately selects the portable CPU backend.
-    std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator ();
 
     // Returns the platform's accelerated landscape-evolution backend when
     // available. A null result keeps the authoritative portable CPU path.

@@ -86,9 +86,6 @@ Deleted with the old layer:
 - raw height/normal/ledger pointers;
 - `Surface::refresh` and the copied geometry materialization barrier.
 
-The continuous-field DAG remains only as an initial continent/uplift producer.
-It does not own terrain and is not part of the runtime surface model.
-
 ## Stage: physical elevation (in progress)
 
 The authoritative geometry column, CPU reconstruction, hydrology, terrain
@@ -102,13 +99,32 @@ Compatibility methods named `relative_elevation` and the corresponding
 points move to typed bundles. They are migration scaffolding, not part of the
 intended model.
 
+## Stage: direct finite geology (done)
+
+The continent/uplift expression compiler was much more general than its live
+job. It has been replaced by `generate_geology`, which directly materializes
+typed continent-shape and uplift-weight columns over `TerrainDomain`.
+Generation retains the exact seeded periodic-noise arithmetic, deterministic
+parallel row evaluation, and loading progress, without an intermediate DAG or
+untyped raster.
+
+Deleted with the interchange:
+
+- `ScalarField`, its typed phantom wrapper, and the generic field algebra;
+- `CpuEvaluator` and the virtual `FieldEvaluator` boundary;
+- the Metal 4 function-stitching evaluator, shader ABI, and field shader;
+- `TerrainDiscretization` and its separate field-sampling grid;
+- tests for expression compilation and backends that production no longer
+  used.
+
+This pass removed 3,261 net lines. `TerrainDomain` is now the shared finite
+domain for the surface and geological bundles.
+
 ## Remaining stages
 
 1. **Finish physical elevation** — migrate fixtures and analysis APIs, delete
    relative-elevation access and vertical scaling, then let shaders consume
    metre-valued elevations directly.
-2. **One lattice value** — replace `TerrainGrid`, `TerrainDiscretization`, and
-   `FieldSamplingGrid2D` with the bundle domain plus explicit chart operations.
-3. **Direct finite geology** — replace the continent/uplift expression
-   compiler and its CPU/Metal evaluators with one typed finite generator over
-   that domain.
+2. **Finish one lattice value** — move remaining analysis results from
+   `TerrainGrid`/`TerrainView` adapters onto `TerrainDomain` and bundle
+   concepts.

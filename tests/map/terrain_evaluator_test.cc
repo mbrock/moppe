@@ -29,18 +29,6 @@ namespace {
   }
 }
 
-MOPPE_TEST (surface_materializes_an_arbitrary_scalar_field) {
-  using namespace moppe;
-  using namespace moppe::terrain;
-  map::Surface map (4, 4, Vec3 (1, 1, 1));
-
-  map.materialize (coordinate_x () + 2.0f * coordinate_y ());
-
-  MOPPE_CHECK_NEAR (map.relative_elevation_at (0, 0), 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (map.relative_elevation_at (2, 2), 1.5f, 1e-6f);
-  MOPPE_CHECK_NEAR (map.relative_elevation_at (3, 3), 2.25f, 1e-6f);
-}
-
 MOPPE_TEST (orogeny_evaluation_is_deterministic) {
   using namespace moppe;
   using namespace moppe::terrain;

@@ -143,7 +143,6 @@ namespace moppe {
       UiWindow m_readings_window;
       render::Renderer* m_renderer;
       map::Surface* m_map;
-      std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> m_evolution_backend;
       TerrainLabModel m_model;
       Terrain* m_terrain;

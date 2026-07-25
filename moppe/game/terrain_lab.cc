@@ -225,8 +225,6 @@ namespace moppe {
 
       m_renderer = &renderer;
       m_map = &map;
-      if (!m_source_evaluator)
-        m_source_evaluator = platform::create_field_evaluator ();
       if (!m_evolution_backend)
         m_evolution_backend =
           platform::create_stream_power_evolution_backend ();
@@ -240,10 +238,7 @@ namespace moppe {
                                       trail_influence.end ());
       m_saved_home_base_influence.assign (home_base_influence.begin (),
                                           home_base_influence.end ());
-      m_model.begin (map,
-                     lab_program,
-                     m_source_evaluator.get (),
-                     m_evolution_backend.get ());
+      m_model.begin (map, lab_program, m_evolution_backend.get ());
       m_selected_stage = -1;
       m_stage_scroll = 0;
       m_pointer_down = false;
