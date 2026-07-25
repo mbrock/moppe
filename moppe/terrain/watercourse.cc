@@ -45,10 +45,9 @@ namespace moppe::terrain {
                                   const WatercoursePaint& parameters) {
     MOPPE_PROFILE_ZONE ("paint_watercourses");
     const TerrainGrid& grid = flood.source_grid;
-    const int width = static_cast<int> (grid.unique_width ());
-    const int height = static_cast<int> (grid.unique_height ());
-    const std::size_t count = grid.unique_size ();
-    constexpr bool periodic = true;
+    const int width = static_cast<int> (grid.width);
+    const int height = static_cast<int> (grid.height);
+    const std::size_t count = grid.width * grid.height;
     if (census.body.size () != count || drainage.receiver.size () != count)
       throw std::invalid_argument (
         "watercourse painting inputs do not share a grid");
@@ -129,20 +128,14 @@ namespace moppe::terrain {
             static_cast<int> (std::ceil (radius / grid.spacing_y_m ())));
           for (int dy = -reach_y; dy <= reach_y; ++dy)
             for (int dx = -reach_x; dx <= reach_x; ++dx) {
-              int x = cx + dx;
-              int y = cy + dy;
-              if (periodic) {
-                x = (x % width + width) % width;
-                y = (y % height + height) % height;
-              } else if (x < 0 || x >= width || y < 0 || y >= height)
-                continue;
-              float delta_x = x * grid.spacing_x_m () - center.x_m;
-              float delta_z = y * grid.spacing_y_m () - center.z_m;
-              if (periodic) {
-                delta_x = std::remainder (delta_x, width * grid.spacing_x_m ());
-                delta_z =
-                  std::remainder (delta_z, height * grid.spacing_y_m ());
-              }
+              const int x = wrap_index (cx + dx, width);
+              const int y = wrap_index (cy + dy, height);
+              const float delta_x =
+                std::remainder (x * grid.spacing_x_m () - center.x_m,
+                                width * grid.spacing_x_m ());
+              const float delta_z =
+                std::remainder (y * grid.spacing_y_m () - center.z_m,
+                                height * grid.spacing_y_m ());
               const float distance = std::hypot (delta_x, delta_z);
               if (distance >= radius)
                 continue;
@@ -187,13 +180,8 @@ namespace moppe::terrain {
             for (int dx = -1; dx <= 1; ++dx) {
               if (dx == 0 && dy == 0)
                 continue;
-              int nx = x + dx;
-              int ny = y + dy;
-              if (periodic) {
-                nx = (nx % width + width) % width;
-                ny = (ny % height + height) % height;
-              } else if (nx < 0 || ny < 0 || nx >= width || ny >= height)
-                continue;
+              const int nx = wrap_index (x + dx, width);
+              const int ny = wrap_index (y + dy, height);
               const std::size_t neighbor =
                 static_cast<std::size_t> (ny) * width + nx;
               if (surface[neighbor] - terrain.at (nx, ny) > dry_margin)

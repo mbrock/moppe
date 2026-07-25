@@ -51,8 +51,8 @@ namespace moppe::terrain {
     float receiver_distance_m (std::size_t cell,
                                std::size_t receiver,
                                const TerrainGrid& grid) {
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       int dx =
         static_cast<int> (receiver % width) - static_cast<int> (cell % width);
       int dy =
@@ -95,8 +95,8 @@ namespace moppe::terrain {
     TrailAlignmentPoint nearest_image (TrailAlignmentPoint point,
                                        TrailAlignmentPoint reference,
                                        const TerrainGrid& grid) {
-      const float period_x = grid.unique_width () * grid.spacing_x_m ();
-      const float period_z = grid.unique_height () * grid.spacing_y_m ();
+      const float period_x = grid.width * grid.spacing_x_m ();
+      const float period_z = grid.height * grid.spacing_y_m ();
       point.x_m =
         reference.x_m + wrapped_delta (point.x_m - reference.x_m, period_x);
       point.z_m =
@@ -122,9 +122,9 @@ namespace moppe::terrain {
     AlignmentRaster rasterize_alignment (const TerrainGrid& grid,
                                          const TrailAlignment& alignment,
                                          float radius) {
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
-      const std::size_t count = grid.unique_size ();
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
+      const std::size_t count = grid.width * grid.height;
       const std::size_t no_segment = alignment.points.size ();
       AlignmentRaster result {
         .distance_m =
@@ -136,7 +136,6 @@ namespace moppe::terrain {
       if (alignment.points.size () < 2)
         return result;
 
-      constexpr bool periodic = true;
       const TrailAlignmentPoint closure = alignment_closure (alignment, grid);
       for (std::size_t segment = 0; segment < alignment.points.size ();
            ++segment) {
@@ -158,9 +157,6 @@ namespace moppe::terrain {
           std::ceil ((std::max (a.z_m, b.z_m) + radius) / grid.spacing_y_m ()));
         for (int unwrapped_y = min_y; unwrapped_y <= max_y; ++unwrapped_y)
           for (int unwrapped_x = min_x; unwrapped_x <= max_x; ++unwrapped_x) {
-            if (!periodic && (unwrapped_x < 0 || unwrapped_x >= width ||
-                              unwrapped_y < 0 || unwrapped_y >= height))
-              continue;
             const TrailAlignmentPoint point { unwrapped_x * grid.spacing_x_m (),
                                               unwrapped_y *
                                                 grid.spacing_y_m () };
@@ -171,10 +167,8 @@ namespace moppe::terrain {
             const float candidate = distance (point, nearest);
             if (candidate > radius)
               continue;
-            const int x =
-              periodic ? wrap_index (unwrapped_x, width) : unwrapped_x;
-            const int y =
-              periodic ? wrap_index (unwrapped_y, height) : unwrapped_y;
+            const int x = wrap_index (unwrapped_x, width);
+            const int y = wrap_index (unwrapped_y, height);
             const std::size_t cell = static_cast<std::size_t> (y) * width + x;
             if (candidate < result.distance_m[cell]) {
               result.distance_m[cell] = candidate;
@@ -194,8 +188,8 @@ namespace moppe::terrain {
     float sample_height_m (std::span<const float> heights,
                            const TerrainGrid& grid,
                            TrailAlignmentPoint point) {
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       float x = point.x_m / grid.spacing_x_m ();
       float y = point.z_m / grid.spacing_y_m ();
       x = wrap_coordinate (x, static_cast<float> (width));
@@ -235,18 +229,13 @@ namespace moppe::terrain {
       float spacing_x;
       float spacing_y;
       float height_scale;
-      bool periodic;
 
       int wrap_x (int x) const {
-        if (periodic)
-          return wrap_index (x, width);
-        return std::clamp (x, 0, width - 1);
+        return wrap_index (x, width);
       }
 
       int wrap_y (int y) const {
-        if (periodic)
-          return wrap_index (y, height);
-        return std::clamp (y, 0, height - 1);
+        return wrap_index (y, height);
       }
 
       std::size_t node (int x, int y) const {
@@ -289,18 +278,18 @@ namespace moppe::terrain {
 
       float delta_x (int from, int to) const {
         int delta = to - from;
-        if (periodic && delta > width / 2)
+        if (delta > width / 2)
           delta -= width;
-        if (periodic && delta < -width / 2)
+        if (delta < -width / 2)
           delta += width;
         return static_cast<float> (delta);
       }
 
       float delta_y (int from, int to) const {
         int delta = to - from;
-        if (periodic && delta > height / 2)
+        if (delta > height / 2)
           delta -= height;
-        if (periodic && delta < -height / 2)
+        if (delta < -height / 2)
           delta += height;
         return static_cast<float> (delta);
       }
@@ -334,13 +323,13 @@ namespace moppe::terrain {
         const int y0 = source_y (y (from));
         int dx = source_x (x (to)) - x0;
         int dy = source_y (y (to)) - y0;
-        if (periodic && dx > source_width / 2)
+        if (dx > source_width / 2)
           dx -= source_width;
-        if (periodic && dx < -source_width / 2)
+        if (dx < -source_width / 2)
           dx += source_width;
-        if (periodic && dy > source_height / 2)
+        if (dy > source_height / 2)
           dy -= source_height;
-        if (periodic && dy < -source_height / 2)
+        if (dy < -source_height / 2)
           dy += source_height;
         const int steps = std::max (std::abs (dx), std::abs (dy));
         float accumulated_rise = 0.0f;
@@ -350,12 +339,10 @@ namespace moppe::terrain {
         int previous_x = x0;
         int previous_y = y0;
         const auto source_x_at = [this] (int value) {
-          return periodic ? wrap_index (value, source_width)
-                          : std::clamp (value, 0, source_width - 1);
+          return wrap_index (value, source_width);
         };
         const auto source_y_at = [this] (int value) {
-          return periodic ? wrap_index (value, source_height)
-                          : std::clamp (value, 0, source_height - 1);
+          return wrap_index (value, source_height);
         };
         float previous_elevation =
           terrain.at (source_x_at (x0), source_y_at (y0)) * height_scale;
@@ -424,8 +411,8 @@ namespace moppe::terrain {
                                 const DrainageGraph& drainage,
                                 const FloodField& flood) {
       const TerrainGrid& source = terrain.grid ();
-      const int source_width = static_cast<int> (source.unique_width ());
-      const int source_height = static_cast<int> (source.unique_height ());
+      const int source_width = static_cast<int> (source.width);
+      const int source_height = static_cast<int> (source.height);
       constexpr float planning_spacing = 16.0f;
       const int width =
         std::clamp (static_cast<int> (std::round (
@@ -446,8 +433,7 @@ namespace moppe::terrain {
                .height = height,
                .spacing_x = source_width * source.spacing_x_m () / width,
                .spacing_y = source_height * source.spacing_y_m () / height,
-               .height_scale = source.height_scale_m (),
-               .periodic = true };
+               .height_scale = source.height_scale_m () };
     }
 
     TrailAlignment
@@ -456,8 +442,8 @@ namespace moppe::terrain {
       const TerrainGrid& source = planner.terrain.grid ();
       const float source_spacing_x = source.spacing_x_m ();
       const float source_spacing_z = source.spacing_y_m ();
-      const float period_x = source.unique_width () * source_spacing_x;
-      const float period_z = source.unique_height () * source_spacing_z;
+      const float period_x = source.width * source_spacing_x;
+      const float period_z = source.height * source_spacing_z;
       std::vector<TrailAlignmentPoint> raw;
       raw.reserve (coarse_circuit.size ());
       for (const std::size_t node : coarse_circuit) {
@@ -573,13 +559,13 @@ namespace moppe::terrain {
            ++node) {
         if (grid.wet (node))
           continue;
-        // The torus has no physical edge, but the home base establishes the
-        // coordinate chart used by the map. Keep its visible circuit away
-        // from that arbitrary cut so one loop reads as one loop in the Lab.
-        if (grid.periodic && (grid.x (node) < grid.width * 0.12f ||
-                              grid.x (node) > grid.width * 0.88f ||
-                              grid.y (node) < grid.height * 0.12f ||
-                              grid.y (node) > grid.height * 0.88f))
+        // Keep the visible circuit away from the arbitrary cut in the current
+        // Terrain Lab chart. A future home-centred chart can remove this
+        // presentation constraint.
+        if (grid.x (node) < grid.width * 0.12f ||
+            grid.x (node) > grid.width * 0.88f ||
+            grid.y (node) < grid.height * 0.12f ||
+            grid.y (node) > grid.height * 0.88f)
           continue;
         const float elevation = grid.elevation (node);
         const float above_sea = elevation - sea;
@@ -665,10 +651,10 @@ namespace moppe::terrain {
       for (std::size_t node = 0;
            node < static_cast<std::size_t> (grid.width) * grid.height;
            ++node) {
-        if (grid.periodic && (grid.x (node) < grid.width * 0.07f ||
-                              grid.x (node) > grid.width * 0.93f ||
-                              grid.y (node) < grid.height * 0.07f ||
-                              grid.y (node) > grid.height * 0.93f))
+        if (grid.x (node) < grid.width * 0.07f ||
+            grid.x (node) > grid.width * 0.93f ||
+            grid.y (node) < grid.height * 0.07f ||
+            grid.y (node) > grid.height * 0.93f)
           continue;
         const float distance = grid.distance (base, node);
         if (distance < 0.52f * desired || distance > 1.48f * desired)
@@ -911,14 +897,14 @@ namespace moppe::terrain {
             std::max (grid.catchment (next), 1.0f) / target_catchment));
           const float alpine =
             highland_ratio (profile.maximum_elevation, grid, parameters);
-          const int seam_distance =
+          const int chart_edge_distance =
             std::min ({ grid.x (next),
                         grid.width - 1 - grid.x (next),
                         grid.y (next),
                         grid.height - 1 - grid.y (next) });
           const float chart_edge =
-            grid.periodic && seam_distance < 4
-              ? static_cast<float> (4 - seam_distance) * 8.0f
+            chart_edge_distance < 4
+              ? static_cast<float> (4 - chart_edge_distance) * 8.0f
               : 0.0f;
           const float edge =
             run * (1.0f + 0.70f * grade_ratio * grade_ratio +
@@ -1088,13 +1074,8 @@ namespace moppe::terrain {
       std::vector<std::uint8_t> seen (
         static_cast<std::size_t> (grid.source_width) * grid.source_height, 0);
       const auto append_cell = [&circuit, &seen, &grid] (int x, int y) {
-        if (grid.periodic) {
-          x = wrap_index (x, grid.source_width);
-          y = wrap_index (y, grid.source_height);
-        } else {
-          x = std::clamp (x, 0, grid.source_width - 1);
-          y = std::clamp (y, 0, grid.source_height - 1);
-        }
+        x = wrap_index (x, grid.source_width);
+        y = wrap_index (y, grid.source_height);
         const std::size_t cell =
           static_cast<std::size_t> (y) * grid.source_width + x;
         if (!seen[cell]) {
@@ -1111,13 +1092,13 @@ namespace moppe::terrain {
         const int y0 = grid.source_y (grid.y (from));
         int dx = grid.source_x (grid.x (to)) - x0;
         int dy = grid.source_y (grid.y (to)) - y0;
-        if (grid.periodic && dx > grid.source_width / 2)
+        if (dx > grid.source_width / 2)
           dx -= grid.source_width;
-        if (grid.periodic && dx < -grid.source_width / 2)
+        if (dx < -grid.source_width / 2)
           dx += grid.source_width;
-        if (grid.periodic && dy > grid.source_height / 2)
+        if (dy > grid.source_height / 2)
           dy -= grid.source_height;
-        if (grid.periodic && dy < -grid.source_height / 2)
+        if (dy < -grid.source_height / 2)
           dy += grid.source_height;
         const int steps = std::max (std::abs (dx), std::abs (dy));
         for (int step = 0; step < steps; ++step) {
@@ -1133,8 +1114,8 @@ namespace moppe::terrain {
                                 const std::vector<CellIndex>& circuit) {
       if (circuit.size () < 2)
         return false;
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       for (std::size_t i = 0; i < circuit.size (); ++i) {
         const CellIndex from = circuit[i];
         const CellIndex to = circuit[(i + 1) % circuit.size ()];
@@ -1425,10 +1406,9 @@ namespace moppe::terrain {
     MOPPE_PROFILE_ZONE ("analyze_trail_network");
     parameters.validate ();
     const TerrainGrid& grid = terrain.grid ();
-    const int width = static_cast<int> (grid.unique_width ());
-    const int height = static_cast<int> (grid.unique_height ());
-    const std::size_t count = grid.unique_size ();
-    constexpr bool periodic = true;
+    const int width = static_cast<int> (grid.width);
+    const int height = static_cast<int> (grid.height);
+    const std::size_t count = grid.width * grid.height;
     if (drainage.width () != static_cast<std::size_t> (width) ||
         drainage.height () != static_cast<std::size_t> (height) ||
         flood.width () != static_cast<std::size_t> (width) ||
@@ -1520,13 +1500,8 @@ namespace moppe::terrain {
     const int base_y = static_cast<int> (home_base_cell.value / width);
     for (int dy = -base_reach_y; dy <= base_reach_y; ++dy)
       for (int dx = -base_reach_x; dx <= base_reach_x; ++dx) {
-        int x = base_x + dx;
-        int y = base_y + dy;
-        if (periodic) {
-          x = wrap_index (x, width);
-          y = wrap_index (y, height);
-        } else if (x < 0 || x >= width || y < 0 || y >= height)
-          continue;
+        const int x = wrap_index (base_x + dx, width);
+        const int y = wrap_index (base_y + dy, height);
         const float distance =
           std::hypot (dx * grid.spacing_x_m (), dy * grid.spacing_y_m ());
         const std::size_t cell = static_cast<std::size_t> (y) * width + x;
@@ -1565,41 +1540,6 @@ namespace moppe::terrain {
     return analyze_trail_network (terrain, parameters, drainage, flood);
   }
 
-  std::vector<float> expand_trail_influence (const TrailNetwork& network) {
-    const std::size_t width = network.source_grid.width;
-    const std::size_t height = network.source_grid.height;
-    const std::size_t unique_width = network.source_grid.unique_width ();
-    const std::size_t unique_height = network.source_grid.unique_height ();
-    if (network.influence.values ().size () != unique_width * unique_height)
-      throw std::invalid_argument (
-        "trail influence does not match its source grid");
-    std::vector<float> expanded (width * height);
-    for (std::size_t y = 0; y < height; ++y)
-      for (std::size_t x = 0; x < width; ++x)
-        expanded[y * width + x] =
-          network.influence
-            .values ()[(y % unique_height) * unique_width + x % unique_width];
-    return expanded;
-  }
-
-  std::vector<float> expand_home_base_influence (const TrailNetwork& network) {
-    const std::size_t width = network.source_grid.width;
-    const std::size_t height = network.source_grid.height;
-    const std::size_t unique_width = network.source_grid.unique_width ();
-    const std::size_t unique_height = network.source_grid.unique_height ();
-    if (network.home_base_influence.values ().size () !=
-        unique_width * unique_height)
-      throw std::invalid_argument (
-        "home base influence does not match its source grid");
-    std::vector<float> expanded (width * height);
-    for (std::size_t y = 0; y < height; ++y)
-      for (std::size_t x = 0; x < width; ++x)
-        expanded[y * width + x] =
-          network.home_base_influence
-            .values ()[(y % unique_height) * unique_width + x % unique_width];
-    return expanded;
-  }
-
   meters_f64_t trail_circuit_length (const TrailNetwork& network) {
     if (network.alignment.length > 0.0 * mp_units::si::metre)
       return network.alignment.length;
@@ -1619,9 +1559,9 @@ namespace moppe::terrain {
     MOPPE_PROFILE_ZONE ("form_trails");
     parameters.validate ();
     const TerrainGrid& grid = terrain.grid ();
-    const int width = static_cast<int> (grid.unique_width ());
-    const int height = static_cast<int> (grid.unique_height ());
-    const std::size_t count = grid.unique_size ();
+    const int width = static_cast<int> (grid.width);
+    const int height = static_cast<int> (grid.height);
+    const std::size_t count = grid.width * grid.height;
     const float height_scale = grid.height_scale_m ();
     const float cell_area = square_meters_value (grid.cell_area ());
 

@@ -426,13 +426,13 @@ namespace moppe::terrain {
       MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
       const TerrainGrid& grid = terrain.grid ();
       if (flood.source_grid != grid ||
-          census.body.size () != grid.unique_size ())
+          census.body.size () != grid.width * grid.height)
         throw std::invalid_argument (
           "fractional drainage inputs do not share one terrain lattice");
       const float persistence_value =
         persistence.numerical_value_in (mp_units::one);
       if ((!previous_tangent.empty () &&
-           previous_tangent.size () != grid.unique_size ()) ||
+           previous_tangent.size () != grid.width * grid.height) ||
           !std::isfinite (persistence_value) || persistence_value < 0.0f ||
           persistence_value >= 1.0f)
         throw std::invalid_argument (

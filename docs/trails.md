@@ -103,8 +103,7 @@ segments instead of pretending the maximum was achieved.
 Planning uses the materialized `TerrainView`, `DrainageGraph`, and
 `FloodField`. A planning grid samples the full heightmap at approximately
 16-metre spacing. It retains physical elevation, distance, local slope,
-catchment area, standing-water occupancy, and bounded-versus-toroidal
-topology.
+catchment area, and standing-water occupancy. Its indexing always wraps.
 
 Every coarse edge is inspected at full source resolution. Its profile records
 mean grade, maximum local grade, and the best grade that could remain after

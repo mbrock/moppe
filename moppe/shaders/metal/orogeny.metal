@@ -10,23 +10,17 @@ namespace {
     return radians < 0.0f ? radians + turn : radians;
   }
 
-  bool neighbour_index (uint cell,
+  uint neighbour_index (uint cell,
                         int columns,
                         int rows,
-                        constant MoppeOrogenyParameters& parameters,
-                        thread uint& result) {
+                        constant MoppeOrogenyParameters& parameters) {
     const int width = int (parameters.width);
     const int height = int (parameters.height);
     int x = int (cell % parameters.width) + columns;
     int y = int (cell / parameters.width) + rows;
-    if (parameters.periodic) {
-      x = (x % width + width) % width;
-      y = (y % height + height) % height;
-    } else if (x < 0 || y < 0 || x >= width || y >= height) {
-      return false;
-    }
-    result = uint (y) * parameters.width + uint (x);
-    return true;
+    x = (x % width + width) % width;
+    y = (y % height + height) % height;
+    return uint (y) * parameters.width + uint (x);
   }
 
   float route_score (float slope,
@@ -74,10 +68,8 @@ kernel void moppe_select_d_infinity_routes (
 
   for (uint i = 0; i < 8; ++i) {
     const MoppeOrogenyNeighbour geometry = stencil.neighbours[i];
-    uint receiver = 0;
-    if (!neighbour_index (
-          cell, geometry.columns, geometry.rows, parameters, receiver))
-      continue;
+    const uint receiver =
+      neighbour_index (cell, geometry.columns, geometry.rows, parameters);
     const float slope =
       (center_m - levels[receiver] * parameters.height_scale_m) /
       geometry.distance_m;
@@ -101,16 +93,10 @@ kernel void moppe_select_d_infinity_routes (
 
   for (uint i = 0; i < 8; ++i) {
     const MoppeOrogenyFacet geometry = stencil.facets[i];
-    uint cardinal = 0;
-    uint diagonal = 0;
-    if (!neighbour_index (cell,
-                          geometry.cardinal_x,
-                          geometry.cardinal_y,
-                          parameters,
-                          cardinal) ||
-        !neighbour_index (
-          cell, geometry.diagonal_x, geometry.diagonal_y, parameters, diagonal))
-      continue;
+    const uint cardinal = neighbour_index (
+      cell, geometry.cardinal_x, geometry.cardinal_y, parameters);
+    const uint diagonal = neighbour_index (
+      cell, geometry.diagonal_x, geometry.diagonal_y, parameters);
     const float cardinal_m = levels[cardinal] * parameters.height_scale_m;
     const float diagonal_m = levels[diagonal] * parameters.height_scale_m;
     const float s1 = (center_m - cardinal_m) / geometry.d1_m;

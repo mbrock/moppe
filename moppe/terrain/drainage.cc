@@ -38,8 +38,8 @@ namespace moppe::terrain {
     meters_t receiver_distance (std::uint32_t cell,
                                 std::uint32_t receiver,
                                 const TerrainGrid& grid) {
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       int dx =
         static_cast<int> (cell % width) - static_cast<int> (receiver % width);
       int dy =
@@ -188,9 +188,8 @@ namespace moppe::terrain {
                                  const DrainageGraph& drainage,
                                  const ChannelGeometry& channels) {
       const TerrainGrid& grid = drainage.source_grid;
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
-      constexpr bool periodic = true;
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       const float period_x = width * grid.spacing_x_m ();
       const float period_z = height * grid.spacing_y_m ();
       const auto water_cell = [&] (CellIndex cell) {
@@ -287,18 +286,12 @@ namespace moppe::terrain {
               const float diagonal_z =
                 static_cast<float> (diagonal / width) * grid.spacing_y_m ();
               x = cardinal_x +
-                  (periodic
-                     ? river_wrapped_delta (diagonal_x - cardinal_x, period_x)
-                     : diagonal_x - cardinal_x) *
-                    t;
+                  river_wrapped_delta (diagonal_x - cardinal_x, period_x) * t;
               z = cardinal_z +
-                  (periodic
-                     ? river_wrapped_delta (diagonal_z - cardinal_z, period_z)
-                     : diagonal_z - cardinal_z) *
-                    t;
+                  river_wrapped_delta (diagonal_z - cardinal_z, period_z) * t;
             }
           }
-          if (periodic && !raw.empty ()) {
+          if (!raw.empty ()) {
             x = raw.back ().x_m +
                 river_wrapped_delta (x - raw.back ().x_m, period_x);
             z = raw.back ().z_m +
@@ -367,10 +360,9 @@ namespace moppe::terrain {
       throw std::invalid_argument ("unsupported drainage routing");
 
     const TerrainGrid& source_grid = terrain.grid ();
-    const std::size_t width = source_grid.unique_width ();
-    const std::size_t height = source_grid.unique_height ();
+    const std::size_t width = source_grid.width;
+    const std::size_t height = source_grid.height;
     const std::size_t count = width * height;
-    constexpr bool periodic = true;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
     };
@@ -389,14 +381,8 @@ namespace moppe::terrain {
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
-            if (!periodic &&
-                (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-                 raw_y >= static_cast<int> (height)))
-              continue;
-            const std::size_t nx = periodic ? wrapped (raw_x, width)
-                                            : static_cast<std::size_t> (raw_x);
-            const std::size_t ny = periodic ? wrapped (raw_y, height)
-                                            : static_cast<std::size_t> (raw_y);
+            const std::size_t nx = wrapped (raw_x, width);
+            const std::size_t ny = wrapped (raw_y, height);
             const meters_t neighbor_elevation = terrain.elevation_at (
               grid_point (static_cast<std::ptrdiff_t> (nx),
                           static_cast<std::ptrdiff_t> (ny)));
@@ -466,8 +452,8 @@ namespace moppe::terrain {
       throw std::invalid_argument ("unsupported drainage routing");
 
     const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
     if (flood.width () != width || flood.height () != height ||
         flood.source_grid.spacing_x != grid.spacing_x ||
@@ -477,7 +463,6 @@ namespace moppe::terrain {
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
 
-    constexpr bool periodic = true;
     const std::span<const float> surface = flood.water_level.values ();
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
@@ -495,14 +480,8 @@ namespace moppe::terrain {
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
-            if (!periodic &&
-                (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-                 raw_y >= static_cast<int> (height)))
-              continue;
-            const std::size_t nx = periodic ? wrapped (raw_x, width)
-                                            : static_cast<std::size_t> (raw_x);
-            const std::size_t ny = periodic ? wrapped (raw_y, height)
-                                            : static_cast<std::size_t> (raw_y);
+            const std::size_t nx = wrapped (raw_x, width);
+            const std::size_t ny = wrapped (raw_y, height);
             const std::size_t next = index (nx, ny);
             const meters_t distance =
               std::hypot (offset.x * grid.spacing_x_m (),
@@ -540,14 +519,8 @@ namespace moppe::terrain {
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
-            if (!periodic &&
-                (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-                 raw_y >= static_cast<int> (height)))
-              continue;
-            const std::size_t nx = periodic ? wrapped (raw_x, width)
-                                            : static_cast<std::size_t> (raw_x);
-            const std::size_t ny = periodic ? wrapped (raw_y, height)
-                                            : static_cast<std::size_t> (raw_y);
+            const std::size_t nx = wrapped (raw_x, width);
+            const std::size_t ny = wrapped (raw_y, height);
             const std::uint32_t next =
               static_cast<std::uint32_t> (index (nx, ny));
             if (routed[next] || census.body[next] != body.id)
@@ -573,8 +546,8 @@ namespace moppe::terrain {
     WetDrainageRouting routing =
       route_wet_drainage (terrain, flood, census, parameters);
     const TerrainGrid& grid = routing.source_grid;
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
     std::vector<CellIndex>& receiver = routing.receiver;
 

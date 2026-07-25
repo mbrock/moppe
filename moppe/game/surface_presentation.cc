@@ -18,8 +18,8 @@ namespace moppe::game {
   void
   SurfacePresentation::refresh_paths (const terrain::TrailNetwork& network) {
     MOPPE_PROFILE_ZONE ("surface.materialize_trail_presentation");
-    reuse_path_payloads (terrain::expand_trail_influence (network),
-                         terrain::expand_home_base_influence (network));
+    reuse_path_payloads (network.influence.values (),
+                         network.home_base_influence.values ());
   }
 
   void

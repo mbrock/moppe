@@ -14,24 +14,22 @@ namespace moppe::map {
       throw std::invalid_argument ("Water surface needs a positive height "
                                    "scale");
     const SurfaceDomain& lattice = m_sections.domain ();
-    const std::size_t unique_width = sheets.surface.domain ().width;
-    const std::size_t unique_height = sheets.surface.domain ().height;
+    if (sheets.surface.domain ().width != lattice.width () ||
+        sheets.surface.domain ().height != lattice.height ())
+      throw std::invalid_argument (
+        "Water sheets do not share the surface lattice");
     const std::span<const float> levels = sheets.surface.values ();
     const float height_scale = meters_value (terrain_height_scale);
-    for (std::size_t row = 0; row < lattice.height (); ++row)
-      for (std::size_t column = 0; column < lattice.width (); ++column) {
-        const std::size_t offset = row * lattice.width () + column;
-        const std::size_t cell =
-          (row % unique_height) * unique_width + (column % unique_width);
-        auto site = m_sections[m_sections.index (offset)];
-        spatial::get<surface_elevation> (site) = SurfaceElevation (
-          levels[cell] * height_scale * surface_elevation[u::m]);
-        spatial::get<wave_amplitude> (site) =
-          sheets.amplitude[cell] * wave_amplitude[one];
-        spatial::get<water_velocity> (site) =
-          Vec3 (sheets.flow[2 * cell], 0.0f, sheets.flow[2 * cell + 1]) *
-          water_velocity[u::m / u::s];
-      }
+    for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
+      auto site = m_sections[m_sections.index (offset)];
+      spatial::get<surface_elevation> (site) = SurfaceElevation (
+        levels[offset] * height_scale * surface_elevation[u::m]);
+      spatial::get<wave_amplitude> (site) =
+        sheets.amplitude[offset] * wave_amplitude[one];
+      spatial::get<water_velocity> (site) =
+        Vec3 (sheets.flow[2 * offset], 0.0f, sheets.flow[2 * offset + 1]) *
+        water_velocity[u::m / u::s];
+    }
   }
 
   WaterSurface::WaterSurface (

@@ -197,9 +197,8 @@ This atlas describes the completed RFC-0001 slice. It does not claim that the
 Atelier proposals have replaced Moppe, that every run is bitwise reproducible,
 or that every renderer backend has visual feature parity.
 
-- The duplicated periodic heightmap seam and implicit elevation/chart origins
-  remain current-engine facts; a seam-free topology and registered frame
-  projections remain Atelier-earth work.
+- Implicit elevation and chart origins remain current-engine facts; registered
+  frame projections remain Atelier-earth work.
 - `GameState` makes fixed-world session replay practical, but world generation,
   renderer history, window state, and loading are not checkpoint state.
 - Metal is the full-fidelity native backend. WebGPU is the supported playable

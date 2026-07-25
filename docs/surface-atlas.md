@@ -13,7 +13,7 @@ For the wider ownership, state, presentation, and target map, start with the
 
 | Storey | Current object | Responsibility |
 | --- | --- | --- |
-| Combinatorial | `map::SurfaceDomain` | The finite vertex lattice, index/offset correspondence, horizontal spacing, boundary topology, and bilinear reconstruction stencil. |
+| Combinatorial | `map::SurfaceDomain` | The finite toroidal vertex lattice, index/offset correspondence, horizontal spacing, and bilinear reconstruction stencil. |
 | Intrinsic | `map::SurfaceAtlas`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in named ground groups and a distinct water bundle. `map::Surface` owns the ground's materialization barriers. |
 | Extrinsic | `game::SurfacePresentation`, `game::WaterPresentation` | Convert typed columns to plain scalar texture payloads and upload them through `render::Renderer`. These are the quantity-to-number bridges. |
 
@@ -28,11 +28,10 @@ crossed its barrier, while a present section can legitimately contain zeroes.
 
 | Domain | Sites | Boundary | Reconstruction | Defined in |
 | --- | --- | --- | --- | --- |
-| `SurfaceDomain` | Heightmap vertices, including Moppe's existing duplicated periodic seam | `terrain::Topology::Bounded` clamps; `terrain::Topology::Torus` wraps | Four-site bilinear stencil owned by the domain | `moppe/map/surface_domain.hh` |
+| `SurfaceDomain` | One site per heightmap sample | Always wraps over the full lattice extent | Four-site bilinear stencil owned by the domain | `moppe/map/surface_domain.hh` |
 
-The duplicated torus seam is an inherited storage fact of the current engine.
-Moving that seam entirely into presentation remains Atelier work; this refactor
-does not disguise the current heightmap as the proposal's seam-free topology.
+The domain stores no duplicated seam. Presentation repeats the world by
+translated images; it does not add lattice sites.
 
 ## Intrinsic sections
 

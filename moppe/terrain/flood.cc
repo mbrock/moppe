@@ -53,10 +53,9 @@ namespace moppe::terrain {
       throw std::invalid_argument ("standing-water sea level must be finite");
 
     const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
-    constexpr bool periodic = true;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
     };
@@ -94,14 +93,8 @@ namespace moppe::terrain {
           for (const FloodOffset offset : flood_neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
             const int raw_y = static_cast<int> (y) + offset.y;
-            if (!periodic &&
-                (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-                 raw_y >= static_cast<int> (height)))
-              continue;
-            const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                            : static_cast<std::size_t> (raw_x);
-            const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                            : static_cast<std::size_t> (raw_y);
+            const std::size_t nx = flood_wrapped (raw_x, width);
+            const std::size_t ny = flood_wrapped (raw_y, height);
             const std::uint32_t next =
               static_cast<std::uint32_t> (index (nx, ny));
             if (submerged_seen[next] || terrain.at (nx, ny) > sea_level)
@@ -135,14 +128,8 @@ namespace moppe::terrain {
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic &&
-              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-               raw_y >= static_cast<int> (height)))
-            continue;
-          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                          : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                          : static_cast<std::size_t> (raw_y);
+          const std::size_t nx = flood_wrapped (raw_x, width);
+          const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (index (nx, ny));
           if (!ocean_cell[next] || visited[next])
@@ -187,14 +174,8 @@ namespace moppe::terrain {
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic &&
-              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-               raw_y >= static_cast<int> (height)))
-            continue;
-          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                          : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                          : static_cast<std::size_t> (raw_y);
+          const std::size_t nx = flood_wrapped (raw_x, width);
+          const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (index (nx, ny));
           if (visited[next])
@@ -239,7 +220,6 @@ namespace moppe::terrain {
     const std::size_t width = flood.width ();
     const std::size_t height = flood.height ();
     const std::size_t count = width * height;
-    constexpr bool periodic = true;
     const std::span<const float> depth = flood.water_depth.values ();
     const std::span<const float> level = flood.water_level.values ();
     LakeCensus census { .body =
@@ -287,14 +267,8 @@ namespace moppe::terrain {
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic &&
-              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-               raw_y >= static_cast<int> (height)))
-            continue;
-          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                          : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                          : static_cast<std::size_t> (raw_y);
+          const std::size_t nx = flood_wrapped (raw_x, width);
+          const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
           if (depth[next] > wet_epsilon) {
@@ -373,14 +347,8 @@ namespace moppe::terrain {
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
-          if (!periodic &&
-              (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-               raw_y >= static_cast<int> (height)))
-            continue;
-          const std::size_t nx = periodic ? flood_wrapped (raw_x, width)
-                                          : static_cast<std::size_t> (raw_x);
-          const std::size_t ny = periodic ? flood_wrapped (raw_y, height)
-                                          : static_cast<std::size_t> (raw_y);
+          const std::size_t nx = flood_wrapped (raw_x, width);
+          const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
           if (shore_distance[next] < 0) {

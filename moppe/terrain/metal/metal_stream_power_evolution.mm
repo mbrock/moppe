@@ -156,7 +156,7 @@ namespace moppe::terrain::metal {
                  std::span<DrainageDirection> directions,
                  std::span<slope_t> slopes) {
       MOPPE_PROFILE_ZONE ("metal_orogeny.select_d_infinity_routes");
-      const std::size_t count = grid.unique_size ();
+      const std::size_t count = grid.width * grid.height;
       if (levels.size () != count || ocean.size () != count ||
           water_body.size () != count || routes.size () != count ||
           directions.size () != count || slopes.size () != count ||
@@ -194,10 +194,10 @@ namespace moppe::terrain::metal {
         active[cell] = !ocean[cell] && water_body[cell] == LakeCensus::dry;
       }
       const MoppeOrogenyParameters parameters {
-        .width = static_cast<std::uint32_t> (grid.unique_width ()),
-        .height = static_cast<std::uint32_t> (grid.unique_height ()),
-        .periodic = true,
+        .width = static_cast<std::uint32_t> (grid.width),
+        .height = static_cast<std::uint32_t> (grid.height),
         .has_previous_tangent = !previous_tangent.empty (),
+        .padding_uint = 0,
         .height_scale_m = 1.0f,
         .persistence = persistence.numerical_value_in (mp_units::one)
       };

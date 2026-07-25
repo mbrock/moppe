@@ -21,24 +21,19 @@ struct OceanVaryings {
 static float2 ocean_grid_sample_raw (float2 world_xz,
                                      constant MoppeOceanUniforms& u,
                                      texture2d<float, access::read> grid) {
-  const float sample_edge = u.shore.w - 2.0;
-  const float period = u.shore.w - 1.0;
+  const float period = u.shore.w;
   float gx = world_xz.x * u.shore.x;
   float gz = world_xz.y * u.shore.y;
-  if (u.params.z > 0.5) {
-    gx -= floor (gx / period) * period;
-    gz -= floor (gz / period) * period;
-  } else {
-    gx = clamp (gx, 0.0, sample_edge);
-    gz = clamp (gz, 0.0, sample_edge);
-  }
-  const uint2 i = uint2 ((uint)gx, (uint)gz);
-  const float fx = gx - (float)i.x;
-  const float fz = gz - (float)i.y;
-  const float2 s00 = grid.read (i).rg;
-  const float2 s10 = grid.read (i + uint2 (1, 0)).rg;
-  const float2 s01 = grid.read (i + uint2 (0, 1)).rg;
-  const float2 s11 = grid.read (i + uint2 (1, 1)).rg;
+  gx -= floor (gx / period) * period;
+  gz -= floor (gz / period) * period;
+  const uint2 i0 = uint2 ((uint)gx, (uint)gz);
+  const uint2 i1 = (i0 + uint2 (1)) % uint (period);
+  const float fx = gx - (float)i0.x;
+  const float fz = gz - (float)i0.y;
+  const float2 s00 = grid.read (i0).rg;
+  const float2 s10 = grid.read (uint2 (i1.x, i0.y)).rg;
+  const float2 s01 = grid.read (uint2 (i0.x, i1.y)).rg;
+  const float2 s11 = grid.read (i1).rg;
   return mix (mix (s00, s10, fx), mix (s01, s11, fx), fz);
 }
 
@@ -52,16 +47,12 @@ static float2 ocean_grid_sample (float2 world_xz,
   return sample;
 }
 
-// One exact lattice sample: the wet probe walks tile corners, and a
-// corner read must not smear across the duplicated periodic seam.
+// One exact lattice sample: the wet probe walks tile corners.
 static float2 ocean_grid_texel (int2 texel,
                                 constant MoppeOceanUniforms& u,
                                 texture2d<float, access::read> grid) {
-  const int period = int (u.shore.w) - 1;
-  if (u.params.z > 0.5)
-    texel = (texel % period + period) % period;
-  else
-    texel = clamp (texel, 0, period);
+  const int period = int (u.shore.w);
+  texel = (texel % period + period) % period;
   return grid.read (uint2 (texel)).rg;
 }
 

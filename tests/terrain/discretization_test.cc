@@ -104,7 +104,8 @@ MOPPE_TEST (toroidal_discretization_has_one_lattice) {
 
   MOPPE_CHECK (discretization.grid ().width == 6);
   MOPPE_CHECK (discretization.grid ().height == 4);
-  MOPPE_CHECK (discretization.grid ().unique_width () == 6);
-  MOPPE_CHECK (discretization.grid ().unique_height () == 4);
-  MOPPE_CHECK (discretization.grid ().unique_size () == 24);
+  MOPPE_CHECK (discretization.grid ().width == 6);
+  MOPPE_CHECK (discretization.grid ().height == 4);
+  MOPPE_CHECK (discretization.grid ().width * discretization.grid ().height ==
+               24);
 }

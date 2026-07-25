@@ -40,8 +40,8 @@ namespace moppe::map {
       meters_value (program.source.initial_land_relief) / height_scale_m;
     const float bathymetric_relief =
       meters_value (program.source.initial_bathymetric_relief) / height_scale_m;
-    for (int y = 0; y < m_target.unique_height (); ++y)
-      for (int x = 0; x < m_target.unique_width (); ++x) {
+    for (int y = 0; y < m_target.height (); ++y)
+      for (int x = 0; x < m_target.width (); ++x) {
         const float continent = m_target.get (x, y) - program.source.coastline;
         const float relief =
           continent < 0.0f ? bathymetric_relief : land_relief;
@@ -57,13 +57,11 @@ namespace moppe::map {
       terrain::materialize (uplift_evaluator,
                             fields.uplift,
                             m_target.discretization ().field_sampling_grid ());
-    m_relative_uplift.resize (
-      static_cast<std::size_t> (m_target.unique_width ()) *
-      m_target.unique_height ());
-    for (int y = 0; y < m_target.unique_height (); ++y)
-      for (int x = 0; x < m_target.unique_width (); ++x)
-        m_relative_uplift[static_cast<std::size_t> (y) *
-                            m_target.unique_width () +
+    m_relative_uplift.resize (static_cast<std::size_t> (m_target.width ()) *
+                              m_target.height ());
+    for (int y = 0; y < m_target.height (); ++y)
+      for (int x = 0; x < m_target.width (); ++x)
+        m_relative_uplift[static_cast<std::size_t> (y) * m_target.width () +
                           x] =
           uplift
             .values ()[static_cast<std::size_t> (y) * m_target.width () + x];
@@ -79,8 +77,7 @@ namespace moppe::map {
           std::get_if<terrain::OrogenyEvolution> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.orogeny_evolution");
       const std::size_t sample_count =
-        static_cast<std::size_t> (m_target.unique_width ()) *
-        m_target.unique_height ();
+        static_cast<std::size_t> (m_target.width ()) * m_target.height ();
       if (m_relative_uplift.size () != sample_count)
         throw std::logic_error (
           "orogeny evolution requires an uplift field materialized by begin");
@@ -94,8 +91,8 @@ namespace moppe::map {
       const terrain::StreamPowerProgress iteration_progress =
         [this, &transform] (
           int completed, int total, std::span<const float> heights) {
-          const std::size_t width = m_target.unique_width ();
-          const std::size_t height = m_target.unique_height ();
+          const std::size_t width = m_target.width ();
+          const std::size_t height = m_target.height ();
           for (std::size_t y = 0; y < height; ++y)
             for (std::size_t x = 0; x < width; ++x)
               m_target.set (static_cast<int> (x),
@@ -118,8 +115,8 @@ namespace moppe::map {
                                           orogeny->evolution,
                                           iteration_progress,
                                           m_channel_tangents);
-      const std::size_t width = m_target.unique_width ();
-      const std::size_t height = m_target.unique_height ();
+      const std::size_t width = m_target.width ();
+      const std::size_t height = m_target.height ();
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const float updated = result.heights[y * width + x];
@@ -132,8 +129,8 @@ namespace moppe::map {
       MOPPE_PROFILE_ZONE ("terrain.trail_formation");
       terrain::TrailFormationResult result =
         terrain::form_trails (m_target.terrain_view (), *trails);
-      const std::size_t width = m_target.unique_width ();
-      const std::size_t height = m_target.unique_height ();
+      const std::size_t width = m_target.width ();
+      const std::size_t height = m_target.height ();
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const float updated = result.heights[y * width + x];
@@ -198,8 +195,7 @@ namespace moppe::map {
                  checkpoint.deposited.end (),
                  m_target.raw_deposited ());
     const std::size_t unique =
-      static_cast<std::size_t> (m_target.unique_width ()) *
-      m_target.unique_height ();
+      static_cast<std::size_t> (m_target.width ()) * m_target.height ();
     if (checkpoint.channel_tangents.size () == unique)
       m_channel_tangents = checkpoint.channel_tangents;
     else

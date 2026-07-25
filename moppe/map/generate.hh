@@ -67,7 +67,7 @@ namespace moppe {
 
     class HeightMap {
     public:
-      // width x height unique periodic samples -- no duplicated seam.
+      // width x height periodic samples -- no duplicated seam.
       // The lattice period equals the world extent: spacing = size/width.
       HeightMap (int width, int height, const Vec3& size)
           : m_width (width), m_height (height),
@@ -90,10 +90,10 @@ namespace moppe {
       }
 
       float interpolated_height (float x, float y) const {
-        float gx = terrain::wrap_coordinate (
-          x / m_scale[0], static_cast<float> (unique_width ()));
-        float gy = terrain::wrap_coordinate (
-          y / m_scale[2], static_cast<float> (unique_height ()));
+        float gx = terrain::wrap_coordinate (x / m_scale[0],
+                                             static_cast<float> (width ()));
+        float gy = terrain::wrap_coordinate (y / m_scale[2],
+                                             static_cast<float> (height ()));
         const int xi = static_cast<int> (std::floor (gx));
         const int yi = static_cast<int> (std::floor (gy));
         const int xi1 = terrain::wrap_index (xi + 1, m_width);
@@ -108,10 +108,10 @@ namespace moppe {
       }
 
       Vec3 interpolated_normal (float x, float y) const {
-        float gx = terrain::wrap_coordinate (
-          x / m_scale[0], static_cast<float> (unique_width ()));
-        float gy = terrain::wrap_coordinate (
-          y / m_scale[2], static_cast<float> (unique_height ()));
+        float gx = terrain::wrap_coordinate (x / m_scale[0],
+                                             static_cast<float> (width ()));
+        float gy = terrain::wrap_coordinate (y / m_scale[2],
+                                             static_cast<float> (height ()));
         const int xi = static_cast<int> (std::floor (gx));
         const int yi = static_cast<int> (std::floor (gy));
         const int xi1 = terrain::wrap_index (xi + 1, m_width);
@@ -133,21 +133,11 @@ namespace moppe {
       inline int height () const {
         return m_height;
       }
-      // Synonyms retained from the two-lattice era; storage is unique now.
-      inline int unique_width () const {
-        return m_width;
-      }
-      inline int unique_height () const {
-        return m_height;
-      }
-
       inline Vec3 scale () const {
         return m_scale;
       }
       inline Vec3 size () const {
-        return Vec3 (m_scale[0] * unique_width (),
-                     m_scale[1],
-                     m_scale[2] * unique_height ());
+        return Vec3 (m_scale[0] * width (), m_scale[1], m_scale[2] * height ());
       }
 
       float min_value () const;

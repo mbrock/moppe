@@ -23,12 +23,11 @@ namespace moppe::terrain {
   struct WaterlineContour {
     // The wet body this stretch of shoreline belongs to.
     WaterBodyId body = no_water_body;
-    // Closed loops (island coasts, lake shores) repeat no point; the
-    // last segment implicitly returns to the front.  Open chains occur
-    // only on bounded maps where the water body meets the map edge.
+    // Closed loops (island coasts, lake shores) repeat no point; the last
+    // segment implicitly returns to the front. Open contours are retained
+    // defensively, although a complete torus waterline should close.
     bool closed = false;
-    // Interleaved (x, z) positions in world meters on the unique
-    // lattice's coordinates.
+    // Interleaved (x, z) positions in world metres.
     std::vector<float> points;
 
     std::size_t size () const noexcept {

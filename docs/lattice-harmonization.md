@@ -3,8 +3,8 @@
 The game is a couple dozen named fields on one lattice, plus a motorcycle.
 Three generations of representation never finished replacing each other:
 the 2008 `HeightMap` family (storage seam, raw floats, virtual `get`),
-the portable-terrain layer (`TerrainView`/`TerrainGrid`/`ScalarRaster`,
-unique lattice), and the typed bundles (`spatial::Bundle`, `SurfaceAtlas`).
+the portable-terrain layer (`TerrainView`/`TerrainGrid`/`ScalarRaster`),
+and the typed bundles (`spatial::Bundle`, `SurfaceAtlas`).
 Three grid types describe the same lattice.  This document is the plan for
 finishing the port.
 
@@ -28,14 +28,13 @@ Touch points, surveyed:
 - `terrain/topology.hh` — Topology enum deleted; carriers drop the field
   (`TerrainGrid`, `TerrainDiscretization`, recipes, `WorldParams`,
   `SurfaceDomain`, `HeightMap`).
-- `TerrainGrid.unique_width/height/size` — become synonyms of
-  width/height/size in this stage; a follow-up mechanical rename deletes
-  them across the analyses.
+- `TerrainGrid.unique_width/height/size` — deleted; there is only
+  width/height and their product.
 - `map/generate` — `HeightMap`: scale = size/width, `periodic ()` and
   `in_bounds` clamping deleted, interpolation wraps the +1 neighbor;
   `synchronize_periodic_edges` and the ledger twin deleted;
   `compute_normal_map` keeps only the wrapped branch, minus seam writes;
-  cache format unchanged in shape (dimensions now unique; build-id keying
+  cache format unchanged in shape (dimensions now seam-free; build-id keying
   invalidates old files).
 - `map/TerrainEvaluator` + `terrain/cpu_evaluator` + Metal evolution
   backend — align `field_sampling_grid` and evolution grids with
@@ -60,13 +59,18 @@ sampled unique cells at k/(storage-1), which equals the new k/N with
 the resolution dropped by one.  Web/WGSL is compile-only verified from
 this machine; run the web build before trusting the browser path.
 
-Next mechanical follow-up: rename the unique_width/height/size synonyms
-(22 files) to plain width/height/size and delete them.
+The deletion follow-up removed the remaining constant-periodic branches,
+identity seam expansions, and renderer topology uniforms. Analysis and surface
+lattices must now match instead of being silently tiled through modulo
+indexing. Terrain Lab still prefers routes away from its current chart cut;
+that is an explicit presentation constraint, not a second topology.
 
 ## Later stages
 
-1. **One domain type** — collapse `TerrainGrid`, `SurfaceDomain`,
-   `FieldSamplingGrid2D` into a single lattice description.
+1. **One lattice value** — share site count, indexing, and wrapping between
+   `TerrainGrid`, `SurfaceDomain`, and `FieldSamplingGrid2D`. Field-coordinate
+   bounds, physical spacing, and reconstruction remain explicit charts or
+   policies over that lattice rather than becoming one omnibus domain type.
 2. **Elevation joins the bundle** — retire `HeightMap`/`NormalMap`/
    `Array2D`; elevation and normals are typed fields; physics samples
    them like every other field.  The 2008 layer's obituary.

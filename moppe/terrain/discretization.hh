@@ -114,9 +114,7 @@ namespace moppe::terrain {
                             const FieldSamplingGrid2D&) = default;
   };
 
-  // One periodic lattice: width x height unique samples, no seam.  The
-  // unique_* accessors are synonyms retained from the two-lattice era; a
-  // later mechanical rename will retire them.
+  // One periodic lattice: width x height samples, no seam.
   struct TerrainGrid {
     std::size_t width;
     std::size_t height;
@@ -137,18 +135,6 @@ namespace moppe::terrain {
     }
     square_meters_t cell_area () const {
       return spacing_x * spacing_y;
-    }
-
-    std::size_t unique_width () const noexcept {
-      return width;
-    }
-
-    std::size_t unique_height () const noexcept {
-      return height;
-    }
-
-    std::size_t unique_size () const noexcept {
-      return unique_width () * unique_height ();
     }
 
     std::pair<std::size_t, std::size_t>

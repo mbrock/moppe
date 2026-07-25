@@ -71,10 +71,9 @@ heightfield:
 - one cell represents `spacing_x * spacing_y` square metres.
 
 For the default random world, `terrain::WorldRecipe::extent()` is 5,000 m by
-5,000 m and 320 m high. Its water datum is 50 m. A 2049-sample toroidal
-heightmap has
-2048 unique intervals per side, so its sample spacing is approximately
-2.441 m. The duplicated seam is storage for rendering, not extra land area.
+5,000 m and 320 m high. Its water datum is 50 m. A 2048-sample toroidal
+heightmap has 2048 periodic cells per side, so its sample spacing is
+approximately 2.441 m.
 
 This distinction matters. A drop of `0.01` in a normalized heightfield is
 3.2 m when the height scale is 320 m. A one-cell move is not one metre unless

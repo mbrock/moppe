@@ -31,9 +31,7 @@ namespace moppe::map {
   // water itself and therefore live in a distinct bundle.
   class WaterSurface {
   public:
-    // Painted water sheets arrive on the torus's unique lattice; this
-    // constructor expands them across the storage seam.  The span
-    // constructor below is the storage-grid primitive.
+    // Painted water sheets and the ground share one lattice.
     WaterSurface (SurfaceDomain domain,
                   const terrain::WaterSheets& sheets,
                   meters_t terrain_height_scale);

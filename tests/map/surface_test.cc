@@ -234,7 +234,7 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   }));
 }
 
-MOPPE_TEST (surface_reconstruction_matches_bounded_heightmap_interpolation) {
+MOPPE_TEST (surface_reconstruction_matches_heightmap_interpolation) {
   using namespace moppe;
   map::RandomHeightMap map (5, 5, Vec3 (50, 30, 50));
   for (int row = 0; row < map.height (); ++row)

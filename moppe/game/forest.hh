@@ -23,7 +23,6 @@ namespace moppe::game {
   struct ForestPlan {
     std::vector<ForestSite> sites;
     Vec3 period;
-    bool periodic = false;
   };
 
   // Convert the continuous canopy field into stable individuals on a
@@ -61,7 +60,6 @@ namespace moppe::game {
     std::size_t m_tree_count = 0;
     int m_chunks_x = 0;
     int m_chunks_z = 0;
-    bool m_periodic = false;
   };
 }
 

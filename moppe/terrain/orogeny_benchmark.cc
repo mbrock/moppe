@@ -153,10 +153,8 @@ int main (int argc, char** argv) {
 
     std::vector<float> reference_heights;
     if (backend) {
-      map::RandomHeightMap reference_map (resolution,
-                                          resolution,
-                                          Vec3 (11000.0f, 650.0f, 11000.0f),
-                                          Topology::Torus);
+      map::RandomHeightMap reference_map (
+        resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       map::TerrainEvaluator reference_evaluator (reference_map);
       reference_evaluator.begin (program);
       reference_evaluator.apply (program.transforms.front ());
@@ -167,7 +165,7 @@ int main (int argc, char** argv) {
                                 reference_map.raw_heights () + count);
     }
 
-    std::cout << "resolution,unique_cells,seed,routing,backend,steps,repeat,"
+    std::cout << "resolution,cells,seed,routing,backend,steps,repeat,"
                  "elapsed_ms,height_hash,final_mean_change_m,"
                  "final_max_change_m,reference_mean_difference_m,"
                  "reference_p99_difference_m,"
@@ -175,10 +173,8 @@ int main (int argc, char** argv) {
                  "reference_max_difference_m,"
                  "reference_cells_over_1m\n";
     for (int repeat = 0; repeat < repeats; ++repeat) {
-      map::RandomHeightMap map (resolution,
-                                resolution,
-                                Vec3 (11000.0f, 650.0f, 11000.0f),
-                                Topology::Torus);
+      map::RandomHeightMap map (
+        resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       map::TerrainEvaluator evaluator (map, nullptr, backend.get ());
       evaluator.begin (program);
       const auto start = std::chrono::steady_clock::now ();

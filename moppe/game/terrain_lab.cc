@@ -678,16 +678,14 @@ namespace moppe {
         value = std::fmod (value, size);
         return value < 0.0f ? value + size : value;
       };
-      const std::size_t grid_x =
-        static_cast<std::size_t> (
-          std::floor (wrap (point[0], period[0]) / scale[0])) %
-        static_cast<std::size_t> (m_map->unique_width ());
-      const std::size_t grid_y =
-        static_cast<std::size_t> (
-          std::floor (wrap (point[2], period[2]) / scale[2])) %
-        static_cast<std::size_t> (m_map->unique_height ());
+      const std::size_t grid_x = static_cast<std::size_t> (std::floor (
+                                   wrap (point[0], period[0]) / scale[0])) %
+                                 static_cast<std::size_t> (m_map->width ());
+      const std::size_t grid_y = static_cast<std::size_t> (std::floor (
+                                   wrap (point[2], period[2]) / scale[2])) %
+                                 static_cast<std::size_t> (m_map->height ());
       m_inspected_cell =
-        static_cast<std::uint32_t> (grid_y * m_map->unique_width () + grid_x);
+        static_cast<std::uint32_t> (grid_y * m_map->width () + grid_x);
       update_overlay ();
     }
 
@@ -744,19 +742,20 @@ namespace moppe {
       } else if (m_overlay == OverlayMode::StandingWater ||
                  m_overlay == OverlayMode::PermanentWater) {
         const terrain::FloodField& flood = standing_water ();
-        const std::size_t unique_width = flood.width ();
-        const std::size_t unique_height = flood.height ();
+        if (flood.width () != static_cast<std::size_t> (width) ||
+            flood.height () != static_cast<std::size_t> (height))
+          throw std::logic_error (
+            "standing-water overlay does not share the terrain lattice");
         const terrain::ScalarRaster permanent =
           m_overlay == OverlayMode::PermanentWater
             ? terrain::permanent_water_surface (flood, *m_lakes)
             : flood.water_level;
         const std::span<const float> level = permanent.values ();
         const std::span<const float> ground = flood.water_depth.values ();
-        std::vector<float> unique (level.size ());
-        for (std::size_t i = 0; i < unique.size (); ++i)
-          unique[i] = level[i] - (flood.water_level.values ()[i] - ground[i]);
+        for (std::size_t i = 0; i < values.size (); ++i)
+          values[i] = level[i] - (flood.water_level.values ()[i] - ground[i]);
         const float maximum =
-          *std::max_element (unique.begin (), unique.end ());
+          *std::max_element (values.begin (), values.end ());
         params.maximum = maximum > 0.0f ? maximum : 1.0f;
         params.ramp = render::TerrainOverlayRamp::Water;
         params.opacity = 0.88f;
@@ -764,12 +763,6 @@ namespace moppe {
           m_overlay == OverlayMode::PermanentWater
             ? "LAKES — permanent water census | " + m_census_status
             : "WATER — every standing depth w - z | " + m_flood_status;
-        for (int y = 0; y < height; ++y)
-          for (int x = 0; x < width; ++x)
-            values[static_cast<std::size_t> (y) * width + x] =
-              unique[(static_cast<std::size_t> (y) % unique_height) *
-                       unique_width +
-                     static_cast<std::size_t> (x) % unique_width];
       } else if (m_overlay == OverlayMode::Eroded ||
                  m_overlay == OverlayMode::Deposited) {
         // Lifetime sediment ledger; square-root scaling keeps the sparse
@@ -788,14 +781,15 @@ namespace moppe {
                              : "DEPOSITED — lifetime material settled";
       } else {
         const terrain::DrainageGraph& graph = drainage ();
-        const std::size_t unique_width = graph.width ();
-        const std::size_t unique_height = graph.height ();
-        std::vector<float> unique (unique_width * unique_height, 0.0f);
+        if (graph.width () != static_cast<std::size_t> (width) ||
+            graph.height () != static_cast<std::size_t> (height))
+          throw std::logic_error (
+            "drainage overlay does not share the terrain lattice");
         if (m_overlay == OverlayMode::Slope) {
           std::copy (graph.slope.values ().begin (),
                      graph.slope.values ().end (),
-                     unique.begin ());
-          params.maximum = *std::max_element (unique.begin (), unique.end ());
+                     values.begin ());
+          params.maximum = *std::max_element (values.begin (), values.end ());
           params.ramp = render::TerrainOverlayRamp::Heat;
           m_overlay_status =
             "SLOPE — physical rise / run | " + m_analysis_status;
@@ -805,17 +799,17 @@ namespace moppe {
             square_meters_value (graph.source_grid.cell_area ());
           float maximum = 0.0f;
           if (m_overlay == OverlayMode::Flow) {
-            for (std::size_t i = 0; i < unique.size (); ++i) {
-              unique[i] = std::log2 (std::max (
+            for (std::size_t i = 0; i < values.size (); ++i) {
+              values[i] = std::log2 (std::max (
                 1.0f, graph.contributing_area.values ()[i] / cell_area));
-              maximum = std::max (maximum, unique[i]);
+              maximum = std::max (maximum, values[i]);
             }
           } else {
             for (const terrain::RiverReach& reach : m_rivers->reaches)
               for (const std::uint32_t cell : reach.cells) {
-                unique[cell] = std::log2 (std::max (
+                values[cell] = std::log2 (std::max (
                   1.0f, graph.contributing_area.values ()[cell] / cell_area));
-                maximum = std::max (maximum, unique[cell]);
+                maximum = std::max (maximum, values[cell]);
               }
           }
           params.minimum = m_overlay == OverlayMode::Streams ? 6.0f : 0.0f;
@@ -828,26 +822,26 @@ namespace moppe {
                                 : "FLOW — logarithmic contributing area | ") +
                              m_analysis_status;
         } else if (m_overlay == OverlayMode::Basins) {
-          for (std::size_t i = 0; i < unique.size (); ++i)
-            unique[i] = static_cast<float> (graph.basin[i]);
+          for (std::size_t i = 0; i < values.size (); ++i)
+            values[i] = static_cast<float> (graph.basin[i]);
           params.ramp = render::TerrainOverlayRamp::Categorical;
           params.opacity = 0.40f;
           m_overlay_status =
             "BASINS — shared outlet catchments | " + m_analysis_status;
         } else if (m_overlay == OverlayMode::Sinks) {
           for (const std::uint32_t sink : graph.sinks) {
-            const int sx = static_cast<int> (sink % unique_width);
-            const int sy = static_cast<int> (sink / unique_width);
+            const int sx = static_cast<int> (sink % width);
+            const int sy = static_cast<int> (sink / width);
             for (int dy = -2; dy <= 2; ++dy)
               for (int dx = -2; dx <= 2; ++dx) {
                 const std::size_t x = static_cast<std::size_t> (
-                  (sx + dx + static_cast<int> (unique_width)) %
-                  static_cast<int> (unique_width));
+                  (sx + dx + static_cast<int> (width)) %
+                  static_cast<int> (width));
                 const std::size_t y = static_cast<std::size_t> (
-                  (sy + dy + static_cast<int> (unique_height)) %
-                  static_cast<int> (unique_height));
-                unique[y * unique_width + x] = std::max (
-                  unique[y * unique_width + x],
+                  (sy + dy + static_cast<int> (height)) %
+                  static_cast<int> (height));
+                values[y * width + x] = std::max (
+                  values[y * width + x],
                   1.0f - 0.18f * static_cast<float> (std::hypot (dx, dy)));
               }
           }
@@ -857,18 +851,18 @@ namespace moppe {
             "OUTLETS — terminal wet routes | " + m_analysis_status;
         } else if (m_overlay == OverlayMode::Waterfalls) {
           for (const terrain::Waterfall& waterfall : m_rivers->waterfalls) {
-            const int fx = static_cast<int> (waterfall.lip_cell % unique_width);
-            const int fy = static_cast<int> (waterfall.lip_cell / unique_width);
+            const int fx = static_cast<int> (waterfall.lip_cell % width);
+            const int fy = static_cast<int> (waterfall.lip_cell / width);
             for (int dy = -3; dy <= 3; ++dy)
               for (int dx = -3; dx <= 3; ++dx) {
                 const std::size_t x = static_cast<std::size_t> (
-                  (fx + dx + static_cast<int> (unique_width)) %
-                  static_cast<int> (unique_width));
+                  (fx + dx + static_cast<int> (width)) %
+                  static_cast<int> (width));
                 const std::size_t y = static_cast<std::size_t> (
-                  (fy + dy + static_cast<int> (unique_height)) %
-                  static_cast<int> (unique_height));
-                unique[y * unique_width + x] = std::max (
-                  unique[y * unique_width + x],
+                  (fy + dy + static_cast<int> (height)) %
+                  static_cast<int> (height));
+                values[y * width + x] = std::max (
+                  values[y * width + x],
                   1.0f - 0.14f * static_cast<float> (std::hypot (dx, dy)));
               }
           }
@@ -877,7 +871,7 @@ namespace moppe {
           m_overlay_status =
             "FALLS — clustered steep high-flow steps | " + m_analysis_status;
         } else {
-          if (!m_inspected_cell || *m_inspected_cell >= unique.size ()) {
+          if (!m_inspected_cell || *m_inspected_cell >= values.size ()) {
             m_renderer->clear_terrain_overlay ();
             m_overlay_status =
               "TRACE — click terrain to follow its receiver path";
@@ -886,24 +880,24 @@ namespace moppe {
           std::uint32_t cell = *m_inspected_cell;
           const std::uint32_t basin_id = graph.basin[cell];
           std::size_t catchment_cells = 0;
-          for (std::size_t i = 0; i < unique.size (); ++i)
+          for (std::size_t i = 0; i < values.size (); ++i)
             if (graph.basin[i] == basin_id) {
-              unique[i] = 0.16f;
+              values[i] = 0.16f;
               ++catchment_cells;
             }
           std::size_t steps = 0;
-          while (steps++ < unique.size ()) {
-            const int cx = static_cast<int> (cell % unique_width);
-            const int cy = static_cast<int> (cell / unique_width);
+          while (steps++ < values.size ()) {
+            const int cx = static_cast<int> (cell % width);
+            const int cy = static_cast<int> (cell / width);
             for (int dy = -2; dy <= 2; ++dy)
               for (int dx = -2; dx <= 2; ++dx) {
                 const std::size_t px = static_cast<std::size_t> (
-                  (cx + dx + static_cast<int> (unique_width)) %
-                  static_cast<int> (unique_width));
+                  (cx + dx + static_cast<int> (width)) %
+                  static_cast<int> (width));
                 const std::size_t py = static_cast<std::size_t> (
-                  (cy + dy + static_cast<int> (unique_height)) %
-                  static_cast<int> (unique_height));
-                unique[py * unique_width + px] = 1.0f;
+                  (cy + dy + static_cast<int> (height)) %
+                  static_cast<int> (height));
+                values[py * width + px] = 1.0f;
               }
             const std::uint32_t next = graph.receiver[cell];
             if (next == cell)
@@ -964,12 +958,6 @@ namespace moppe {
           }
           m_overlay_status = trace.str ();
         }
-        for (int y = 0; y < height; ++y)
-          for (int x = 0; x < width; ++x)
-            values[static_cast<std::size_t> (y) * width + x] =
-              unique[(static_cast<std::size_t> (y) % unique_height) *
-                       unique_width +
-                     static_cast<std::size_t> (x) % unique_width];
       }
       m_renderer->set_terrain_overlay (params, values);
     }

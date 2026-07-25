@@ -102,9 +102,8 @@ int main (int argc, char** argv) {
 
     std::array<DepthPopulation, category_count> populations;
     const float sea_level = sea_level_m / world_height_m;
-    const double cell_area_m2 =
-      world_width_m * world_width_m /
-      static_cast<double> ((resolution - 1) * (resolution - 1));
+    const double cell_area_m2 = world_width_m * world_width_m /
+                                static_cast<double> (resolution * resolution);
 
     std::cout << "seed,sea_bodies,lakes,ponds,puddles,sea_cells,lake_cells,"
                  "pond_cells,puddle_cells\n";
@@ -114,8 +113,7 @@ int main (int argc, char** argv) {
       map::RandomHeightMap map (
         resolution,
         resolution,
-        Vec3 (world_width_m, world_height_m, world_width_m),
-        Topology::Torus);
+        Vec3 (world_width_m, world_height_m, world_width_m));
       TerrainProgram program = make_world_program (seed, profile);
       program.source.sea_level = sea_level;
       program.source.coastline = coastline;

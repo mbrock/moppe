@@ -18,8 +18,8 @@ namespace moppe::terrain {
                                    const std::vector<float>& unique,
                                    std::vector<float>& expanded) {
       MOPPE_PROFILE_ZONE ("orogeny.expand_periodic_samples");
-      const std::size_t width = grid.unique_width ();
-      const std::size_t height = grid.unique_height ();
+      const std::size_t width = grid.width;
+      const std::size_t height = grid.height;
       expanded.resize (grid.width * grid.height);
       for (std::size_t y = 0; y < grid.height; ++y)
         for (std::size_t x = 0; x < grid.width; ++x)
@@ -30,8 +30,8 @@ namespace moppe::terrain {
     double edge_distance_m (std::uint32_t cell,
                             std::uint32_t receiver,
                             const TerrainGrid& grid) {
-      const int width = static_cast<int> (grid.unique_width ());
-      const int height = static_cast<int> (grid.unique_height ());
+      const int width = static_cast<int> (grid.width);
+      const int height = static_cast<int> (grid.height);
       int dx =
         static_cast<int> (cell % width) - static_cast<int> (receiver % width);
       int dy =
@@ -54,7 +54,7 @@ namespace moppe::terrain {
       const StreamPowerEvolution& parameters) {
       MOPPE_PROFILE_ZONE ("orogeny.validate");
       const TerrainGrid& grid = terrain.grid ();
-      const std::size_t count = grid.unique_width () * grid.unique_height ();
+      const std::size_t count = grid.width * grid.height;
       if (uplift_rate.size () != count)
         throw std::invalid_argument (
           "stream-power uplift field does not match terrain");
@@ -86,8 +86,7 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "invalid stream-power evolution parameters");
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const float height =
-          terrain.at (cell % grid.unique_width (), cell / grid.unique_width ());
+        const float height = terrain.at (cell % grid.width, cell / grid.width);
         const float uplift = meters_per_julian_year_value (uplift_rate[cell]);
         if (!std::isfinite (height) || !std::isfinite (uplift) || uplift < 0.0f)
           throw std::invalid_argument (
@@ -104,8 +103,8 @@ namespace moppe::terrain {
       MOPPE_PROFILE_ZONE ("orogeny.diffuse_step");
       if (duration_years == 0.0 || diffusivity_m2_per_year == 0.0)
         return 0;
-      const std::size_t width = grid.unique_width ();
-      const std::size_t height = grid.unique_height ();
+      const std::size_t width = grid.width;
+      const std::size_t height = grid.height;
       const double hx = grid.spacing_x_m ();
       const double hy = grid.spacing_y_m ();
       const double stable_dt = 1.0 / (2.0 * diffusivity_m2_per_year *
@@ -121,25 +120,19 @@ namespace moppe::terrain {
         static_cast<float> (diffusivity_m2_per_year * dt / (hx * hx));
       const float cy =
         static_cast<float> (diffusivity_m2_per_year * dt / (hy * hy));
-      constexpr bool periodic = true;
-      const auto neighbor =
-        [] (std::ptrdiff_t value, std::size_t extent, bool wrap) {
-          if (wrap) {
-            const std::ptrdiff_t n = static_cast<std::ptrdiff_t> (extent);
-            const std::ptrdiff_t result = value % n;
-            return static_cast<std::size_t> (result < 0 ? result + n : result);
-          }
-          return static_cast<std::size_t> (
-            std::clamp<std::ptrdiff_t> (value, 0, extent - 1));
-        };
+      const auto neighbor = [] (std::ptrdiff_t value, std::size_t extent) {
+        const std::ptrdiff_t n = static_cast<std::ptrdiff_t> (extent);
+        const std::ptrdiff_t result = value % n;
+        return static_cast<std::size_t> (result < 0 ? result + n : result);
+      };
 
       std::vector<float> next (heights.size ());
       for (int sweep = 0; sweep < sweeps; ++sweep) {
         for (std::size_t y = 0; y < height; ++y) {
           const std::size_t up =
-            neighbor (static_cast<std::ptrdiff_t> (y) - 1, height, periodic);
+            neighbor (static_cast<std::ptrdiff_t> (y) - 1, height);
           const std::size_t down =
-            neighbor (static_cast<std::ptrdiff_t> (y) + 1, height, periodic);
+            neighbor (static_cast<std::ptrdiff_t> (y) + 1, height);
           for (std::size_t x = 0; x < width; ++x) {
             const std::size_t cell = y * width + x;
             if (boundary[cell]) {
@@ -147,9 +140,9 @@ namespace moppe::terrain {
               continue;
             }
             const std::size_t left =
-              neighbor (static_cast<std::ptrdiff_t> (x) - 1, width, periodic);
+              neighbor (static_cast<std::ptrdiff_t> (x) - 1, width);
             const std::size_t right =
-              neighbor (static_cast<std::ptrdiff_t> (x) + 1, width, periodic);
+              neighbor (static_cast<std::ptrdiff_t> (x) + 1, width);
             const float center = heights[cell];
             next[cell] = center +
                          cx * (heights[y * width + left] +
@@ -184,8 +177,8 @@ namespace moppe::terrain {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (terrain, uplift_rate, parameters);
     const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
     if (!initial_channel_tangents.empty () &&
         initial_channel_tangents.size () != count)

@@ -56,15 +56,14 @@ namespace moppe::terrain {
   };
 
   struct StreamPowerEvolutionResult {
-    // Unique samples: periodic duplicated render seams are omitted.
+    // One value per lattice sample.
     std::vector<float> heights;
     std::vector<ChannelTangent> channel_tangents;
     StreamPowerEvolutionReport report;
   };
 
   // Called after each geological step. The height span contains the current
-  // unique samples (periodic render seams omitted) and remains valid only for
-  // the duration of the callback.
+  // lattice samples and remains valid only for the duration of the callback.
   using StreamPowerProgress =
     std::function<void (int, int, std::span<const float>)>;
 

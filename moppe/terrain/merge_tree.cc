@@ -42,10 +42,9 @@ namespace moppe::terrain {
 
   MergeTree build_merge_tree (const TerrainView& terrain) {
     const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
-    constexpr bool periodic = true;
 
     // Sort unique cells by (height, index): the same deterministic
     // order the drainage analyses use for tie-breaking.
@@ -87,14 +86,8 @@ namespace moppe::terrain {
       for (const MergeOffset offset : merge_neighbors) {
         const int raw_x = static_cast<int> (x) + offset.x;
         const int raw_y = static_cast<int> (y) + offset.y;
-        if (!periodic &&
-            (raw_x < 0 || raw_y < 0 || raw_x >= static_cast<int> (width) ||
-             raw_y >= static_cast<int> (height)))
-          continue;
-        const std::size_t nx = periodic ? merge_wrapped (raw_x, width)
-                                        : static_cast<std::size_t> (raw_x);
-        const std::size_t ny = periodic ? merge_wrapped (raw_y, height)
-                                        : static_cast<std::size_t> (raw_y);
+        const std::size_t nx = merge_wrapped (raw_x, width);
+        const std::size_t ny = merge_wrapped (raw_y, height);
         const std::uint32_t neighbor =
           static_cast<std::uint32_t> (ny * width + nx);
         if (rank[neighbor] > position)

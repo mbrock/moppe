@@ -53,7 +53,7 @@ namespace moppe {
       while ((int)m_stars.size () < count) {
         Star s;
         s.pos[0] = size[0] * u (rng);
-        s.pos[2] = size[2] * (m_periodic ? u (rng) : 0.03f + 0.94f * u (rng));
+        s.pos[2] = size[2] * u (rng);
 
         float ground = map.interpolated_height (s.pos[0], s.pos[2]);
         if (ground < meters_value (params.water_level) + 2)
@@ -80,10 +80,8 @@ namespace moppe {
           continue;
         }
         Vec3 delta = s.pos - vehicle_pos;
-        if (m_periodic) {
-          delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
-          delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
-        }
+        delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
+        delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
         const float distance = length (delta);
         if (distance < 22.0f && distance > 0.001f) {
           // Once noticed, a star spirals into the rider. Attraction ramps up
@@ -99,10 +97,8 @@ namespace moppe {
           s.pos += tangent * (orbit * dt);
           s.phase += dt * (180.0f + 540.0f * pull);
           delta = s.pos - vehicle_pos;
-          if (m_periodic) {
-            delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
-            delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
-          }
+          delta[0] = terrain::minimum_image_delta (delta[0], m_period[0]);
+          delta[2] = terrain::minimum_image_delta (delta[2], m_period[2]);
         }
         if (length2 (delta) < 3.0f * 3.0f) {
           s.respawn = 60.0f; // comes back later
@@ -151,12 +147,8 @@ namespace moppe {
           continue;
 
         Vec3 position = s.pos;
-        if (m_periodic) {
-          position[0] =
-            terrain::nearest_image (position[0], cam[0], m_period[0]);
-          position[2] =
-            terrain::nearest_image (position[2], cam[2], m_period[2]);
-        }
+        position[0] = terrain::nearest_image (position[0], cam[0], m_period[0]);
+        position[2] = terrain::nearest_image (position[2], cam[2], m_period[2]);
         const float dx = cam[0] - position[0], dz = cam[2] - position[2];
         if (dx * dx + dz * dz > 900.0f * 900.0f)
           continue;
