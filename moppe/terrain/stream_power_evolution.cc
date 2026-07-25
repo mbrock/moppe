@@ -162,7 +162,6 @@ namespace moppe::terrain {
         initial_channel_tangents.size () != count)
       throw std::invalid_argument (
         "initial channel tangents do not match terrain");
-    const double height_scale_m = grid.height_scale_m ();
     const double cell_area_m2 = square_meters_value (grid.cell_area ());
     const double duration_years = julian_years_value (parameters.duration);
     const double time_step_years = julian_years_value (parameters.time_step);
@@ -255,7 +254,7 @@ namespace moppe::terrain {
           if (!std::isfinite (weight))
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
-          const double old_height_m = current[cell] * height_scale_m;
+          const double old_height_m = current[cell];
           const double uplift_m =
             dt * meters_per_julian_year_value (uplift_rate[cell]);
           const double uplift_only_m = old_height_m + uplift_m;
@@ -264,7 +263,7 @@ namespace moppe::terrain {
           // Depression routing may cross a raw uphill bed edge. Incision is
           // not deposition: it may never raise a cell above uplift alone.
           const double evolved_m = std::min (solved_m, uplift_only_m);
-          next[cell] = static_cast<float> (evolved_m / height_scale_m);
+          next[cell] = static_cast<float> (evolved_m);
           tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
           incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
         };
@@ -283,17 +282,15 @@ namespace moppe::terrain {
              ++position) {
           const CellIndex cell = *position;
           const FractionalFlowRoute& route = drainage.domain ().route (cell);
-          double receiver_height_m = next[cell.value] * height_scale_m;
+          double receiver_height_m = next[cell.value];
           if (route.arc_count == 1) {
-            receiver_height_m =
-              next[route.arcs[0].receiver.value] * height_scale_m;
+            receiver_height_m = next[route.arcs[0].receiver.value];
           } else if (route.arc_count == 2) {
             const float interpolation =
               route.receiver_interpolation.numerical_value_in (mp_units::one);
             receiver_height_m = std::lerp (next[route.arcs[0].receiver.value],
                                            next[route.arcs[1].receiver.value],
-                                           interpolation) *
-                                height_scale_m;
+                                           interpolation);
           }
           const square_meters_t physical_area =
             area[cell.value].numerical_value_in (mp_units::si::metre *
@@ -326,8 +323,7 @@ namespace moppe::terrain {
         MOPPE_PROFILE_ZONE ("orogeny.measure_step_change");
         for (std::size_t cell = 0; cell < count; ++cell) {
           const double change_m =
-            std::fabs (static_cast<double> (next[cell] - current[cell])) *
-            height_scale_m;
+            std::fabs (static_cast<double> (next[cell] - current[cell]));
           total_step_change_m += change_m;
           maximum_step_change_m = std::max (maximum_step_change_m, change_m);
         }
@@ -354,7 +350,7 @@ namespace moppe::terrain {
     double maximum_absolute_change_m = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double change_m =
-        static_cast<double> (current[cell] - initial[cell]) * height_scale_m;
+        static_cast<double> (current[cell] - initial[cell]);
       if (change_m < 0.0)
         lowered_volume_m3 -= change_m * cell_area_m2;
       else

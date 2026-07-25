@@ -375,8 +375,7 @@ namespace moppe::terrain {
       : m_grid (grid) {
     if (grid.width < 2 || grid.height < 2 ||
         grid.spacing_x <= 0.0f * mp_units::si::metre ||
-        grid.spacing_y <= 0.0f * mp_units::si::metre ||
-        grid.height_scale <= 0.0f * mp_units::si::metre)
+        grid.spacing_y <= 0.0f * mp_units::si::metre)
       throw std::invalid_argument ("invalid terrain lattice domain");
   }
 
@@ -444,8 +443,7 @@ namespace moppe::terrain {
       auto& elevations = spatial::get<routing_surface_elevation> (surface);
       for (std::size_t offset = 0; offset < lattice.size (); ++offset)
         elevations[offset] = RoutingSurfaceElevation (
-          levels[offset] * grid.height_scale_m () *
-          routing_surface_elevation[mp_units::si::metre]);
+          levels[offset] * routing_surface_elevation[mp_units::si::metre]);
 
       // The wet receiver tree supplies flat lake routes and proven depression
       // spills, where continuous downhill direction is undefined. All strict

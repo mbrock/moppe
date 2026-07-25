@@ -185,7 +185,7 @@ namespace moppe::terrain::metal {
         // Match RoutingSurface's stored float rounding before the GPU sees
         // the elevation. Multiplying inside the shader can retain enough
         // precision to invent a slope across a CPU-flat edge.
-        gpu_levels[cell] = levels[cell] * grid.height_scale_m ();
+        gpu_levels[cell] = levels[cell];
         const Vec3 tangent =
           previous_tangent.empty ()
             ? Vec3 ()
@@ -198,8 +198,10 @@ namespace moppe::terrain::metal {
         .height = static_cast<std::uint32_t> (grid.height),
         .has_previous_tangent = !previous_tangent.empty (),
         .padding_uint = 0,
-        .height_scale_m = 1.0f,
-        .persistence = persistence.numerical_value_in (mp_units::one)
+        .persistence = persistence.numerical_value_in (mp_units::one),
+        .padding0 = 0.0f,
+        .padding1 = 0.0f,
+        .padding2 = 0.0f
       };
       const MoppeOrogenyStencil stencil = make_stencil (grid);
       std::memcpy (m_parameters.contents, &parameters, sizeof (parameters));

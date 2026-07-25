@@ -59,7 +59,7 @@ kernel void moppe_select_d_infinity_routes (
     return;
   }
 
-  const float center_m = levels[cell] * parameters.height_scale_m;
+  const float center_m = levels[cell];
   const MoppeOrogenyTangent tangent = tangents[cell];
   const float2 previous = parameters.has_previous_tangent
                             ? float2 (tangent.x, tangent.z)
@@ -70,9 +70,7 @@ kernel void moppe_select_d_infinity_routes (
     const MoppeOrogenyNeighbour geometry = stencil.neighbours[i];
     const uint receiver =
       neighbour_index (cell, geometry.columns, geometry.rows, parameters);
-    const float slope =
-      (center_m - levels[receiver] * parameters.height_scale_m) /
-      geometry.distance_m;
+    const float slope = (center_m - levels[receiver]) / geometry.distance_m;
     const float score = route_score (slope,
                                      float2 (geometry.unit_x, geometry.unit_z),
                                      previous,
@@ -97,8 +95,8 @@ kernel void moppe_select_d_infinity_routes (
       cell, geometry.cardinal_x, geometry.cardinal_y, parameters);
     const uint diagonal = neighbour_index (
       cell, geometry.diagonal_x, geometry.diagonal_y, parameters);
-    const float cardinal_m = levels[cardinal] * parameters.height_scale_m;
-    const float diagonal_m = levels[diagonal] * parameters.height_scale_m;
+    const float cardinal_m = levels[cardinal];
+    const float diagonal_m = levels[diagonal];
     const float s1 = (center_m - cardinal_m) / geometry.d1_m;
     const float s2 = (cardinal_m - diagonal_m) / geometry.d2_m;
     if (s1 <= 0.0f || s2 <= 0.0f)

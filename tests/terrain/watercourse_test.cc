@@ -15,7 +15,8 @@ namespace {
     for (int y = 0; y < 9; ++y)
       for (int x = 0; x < 9; ++x)
         heights[static_cast<std::size_t> (y) * 9 + x] =
-          y == 8 ? -0.1f : 0.6f - 0.06f * y + 0.03f * std::abs (x - 4);
+          100.0f *
+          (y == 8 ? -0.1f : 0.6f - 0.06f * y + 0.03f * std::abs (x - 4));
     return heights;
   }
 
@@ -23,8 +24,7 @@ namespace {
     return { .width = 9,
              .height = 9,
              .spacing_x = 5.0f * mp_units::si::metre,
-             .spacing_y = 5.0f * mp_units::si::metre,
-             .height_scale = 100.0f * mp_units::si::metre };
+             .spacing_y = 5.0f * mp_units::si::metre };
   }
 
   struct PaintedValley {
@@ -92,7 +92,7 @@ MOPPE_TEST (river_current_continues_through_the_mouth) {
 
 MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   // Two flooded terraces stepping down toward the global-minimum drain at
-  // the right: the upper basin fills to its 0.5 sill, the lower to its 0.3
+  // the right: the upper basin fills to its 5 m sill, the lower to its 3 m
   // sill. The dry sill between them must carry the LOWER body's level so
   // the upper plate ends at its own waterline instead of extending across
   // the sill and overhanging the drop.
@@ -103,14 +103,13 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   std::vector<float> heights (width * height);
   for (std::size_t y = 0; y < height; ++y)
     for (std::size_t x = 0; x < width; ++x)
-      heights[y * width + x] = y == 1 ? profile[x] : 0.9f;
+      heights[y * width + x] = 10.0f * (y == 1 ? profile[x] : 0.9f);
   const TerrainGrid grid { .width = width,
                            .height = height,
                            .spacing_x = 20.0f * mp_units::si::metre,
-                           .spacing_y = 20.0f * mp_units::si::metre,
-                           .height_scale = 10.0f * mp_units::si::metre };
+                           .spacing_y = 20.0f * mp_units::si::metre };
   const TerrainView terrain (grid, heights);
-  const FloodField flood = analyze_standing_water (terrain, -1.0f);
+  const FloodField flood = analyze_standing_water (terrain, -10.0f);
   const LakeCensus census = census_lakes (flood);
 
   // Both terraces must be real, sheet-rendered bodies for the sill to
@@ -122,8 +121,8 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   const std::size_t upper = 1 * width + 1;
   const std::size_t sill = 1 * width + 3;
   const std::size_t lower = 1 * width + 4;
-  MOPPE_CHECK_NEAR (flood.water_level.values ()[upper], 0.5f, 1e-5f);
-  MOPPE_CHECK_NEAR (flood.water_level.values ()[lower], 0.3f, 1e-5f);
+  MOPPE_CHECK_NEAR (flood.water_level.values ()[upper], 5.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (flood.water_level.values ()[lower], 3.0f, 1e-5f);
 
   const DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
   const RiverNetwork rivers = extract_river_network (
@@ -131,9 +130,9 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   const WaterSheets sheets =
     paint_watercourses (terrain, flood, census, drainage, rivers);
 
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[upper], 0.5f, 1e-5f);
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[lower], 0.3f, 1e-5f);
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[sill], 0.3f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheets.surface.values ()[upper], 5.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheets.surface.values ()[lower], 3.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheets.surface.values ()[sill], 3.0f, 1e-5f);
 }
 
 MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
@@ -150,12 +149,11 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
   std::vector<float> heights (width * height);
   for (std::size_t y = 0; y < height; ++y)
     for (std::size_t x = 0; x < width; ++x)
-      heights[y * width + x] = y == 1 ? profile[x] : 0.9f;
+      heights[y * width + x] = 100.0f * (y == 1 ? profile[x] : 0.9f);
   const TerrainGrid grid { .width = width,
                            .height = height,
                            .spacing_x = 20.0f * mp_units::si::metre,
-                           .spacing_y = 20.0f * mp_units::si::metre,
-                           .height_scale = 100.0f * mp_units::si::metre };
+                           .spacing_y = 20.0f * mp_units::si::metre };
   const TerrainView terrain (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);

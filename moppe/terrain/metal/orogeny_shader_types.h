@@ -26,10 +26,10 @@ struct MoppeOrogenyParameters {
   MoppeOrogenyUInt height;
   MoppeOrogenyUInt has_previous_tangent;
   MoppeOrogenyUInt padding_uint;
-  float height_scale_m;
   float persistence;
   float padding0;
   float padding1;
+  float padding2;
 };
 
 struct MoppeOrogenyTangent {

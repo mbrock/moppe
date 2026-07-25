@@ -17,7 +17,9 @@ namespace {
       for (int x = 0; x < 9; ++x) {
         const float bump = x == 4 && y == 4 ? 0.02f : 0.0f;
         heights[static_cast<std::size_t> (y) * 9 + x] =
-          y == 8 ? -0.1f : 0.65f - 0.005f * y + 0.03f * std::abs (x - 4) + bump;
+          100.0f * (y == 8
+                      ? -0.1f
+                      : 0.65f - 0.005f * y + 0.03f * std::abs (x - 4) + bump);
       }
     return heights;
   }
@@ -26,8 +28,7 @@ namespace {
     return { .width = 9,
              .height = 9,
              .spacing_x = 5.0f * mp_units::si::metre,
-             .spacing_y = 5.0f * mp_units::si::metre,
-             .height_scale = 100.0f * mp_units::si::metre };
+             .spacing_y = 5.0f * mp_units::si::metre };
   }
 
   TrailFormation test_parameters () {
@@ -47,16 +48,17 @@ namespace {
   }
 
   std::vector<float> moated_peak () {
-    std::vector<float> heights (17 * 17, 0.48f);
+    std::vector<float> heights (17 * 17, 0.48f * 20.0f);
     for (int y = 5; y <= 11; ++y)
       for (int x = 5; x <= 11; ++x) {
         const bool moat = x == 5 || x == 11 || y == 5 || y == 11;
         heights[static_cast<std::size_t> (y) * 17 + x] =
-          moat ? 0.10f
-               : 0.78f - 0.02f * std::max (std::abs (x - 8), std::abs (y - 8));
+          20.0f * (moat ? 0.10f
+                        : 0.78f - 0.02f * std::max (std::abs (x - 8),
+                                                    std::abs (y - 8)));
       }
     for (int y = 0; y < 5; ++y)
-      heights[static_cast<std::size_t> (y) * 17 + 5] = 0.10f;
+      heights[static_cast<std::size_t> (y) * 17 + 5] = 0.10f * 20.0f;
     return heights;
   }
 
@@ -64,22 +66,21 @@ namespace {
     return { .width = 17,
              .height = 17,
              .spacing_x = 24.0f * mp_units::si::metre,
-             .spacing_y = 24.0f * mp_units::si::metre,
-             .height_scale = 20.0f * mp_units::si::metre };
+             .spacing_y = 24.0f * mp_units::si::metre };
   }
 
   std::vector<float> alpine_temptation () {
     constexpr int side = 25;
-    std::vector<float> heights (side * side, 0.16f);
+    std::vector<float> heights (side * side, 0.16f * 100.0f);
     for (int y = 0; y < side; ++y)
       for (int x = 0; x < side; ++x) {
         const float radius = std::hypot (x - 12.0f, y - 11.0f);
         if (radius < 6.0f)
           heights[static_cast<std::size_t> (y) * side + x] =
-            0.76f - 0.07f * radius;
+            100.0f * (0.76f - 0.07f * radius);
       }
     for (int x = 0; x < side; ++x)
-      heights[24 * side + x] = -0.1f;
+      heights[24 * side + x] = -0.1f * 100.0f;
     return heights;
   }
 
@@ -87,8 +88,7 @@ namespace {
     return { .width = 25,
              .height = 25,
              .spacing_x = 100.0f * mp_units::si::metre,
-             .spacing_y = 100.0f * mp_units::si::metre,
-             .height_scale = 100.0f * mp_units::si::metre };
+             .spacing_y = 100.0f * mp_units::si::metre };
   }
 
   float sample_height_m (const std::vector<float>& heights,
@@ -107,7 +107,7 @@ namespace {
       heights[y0 * grid.width + x0], heights[y0 * grid.width + x1], x - x0);
     const float bottom = std::lerp (
       heights[y1 * grid.width + x0], heights[y1 * grid.width + x1], x - x0);
-    return std::lerp (top, bottom, y - y0) * grid.height_scale_m ();
+    return std::lerp (top, bottom, y - y0);
   }
 }
 
@@ -229,8 +229,7 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   MOPPE_CHECK (std::ranges::equal (first.network.influence.values (),
                                    second.network.influence.values ()));
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
-    const float change_m = (first.heights[cell] - original[cell]) *
-                           trail_valley_grid ().height_scale_m ();
+    const float change_m = first.heights[cell] - original[cell];
     MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);
     MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
@@ -254,8 +253,7 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   MOPPE_CHECK (drained.network.plan.circuit == level.network.plan.circuit);
   MOPPE_CHECK (drained.heights != level.heights);
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
-    const float change_m = (drained.heights[cell] - original[cell]) *
-                           trail_valley_grid ().height_scale_m ();
+    const float change_m = drained.heights[cell] - original[cell];
     MOPPE_CHECK (change_m >=
                  -meters_value (drained_parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <=
@@ -315,7 +313,7 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
 
 MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   TrailFormation parameters = test_parameters ();
-  parameters.sea_level = 0.2f;
+  parameters.sea_level = 4.0f;
   parameters.home_base_water_distance = 60.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 110.0f * mp_units::si::metre;
   const TrailFormationResult result =
@@ -342,7 +340,7 @@ MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
   float maximum_original_height = 0.0f;
   for (const CellIndex cell : result.network.cells)
     maximum_original_height =
-      std::max (maximum_original_height, original[cell.value] * 100.0f);
+      std::max (maximum_original_height, original[cell.value]);
   MOPPE_CHECK (maximum_original_height < 40.0f);
   MOPPE_CHECK (
     meters_value (result.report.maximum_centerline_height_above_sea) < 40.0f);

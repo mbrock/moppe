@@ -315,8 +315,7 @@ namespace moppe::terrain {
                              ? 1.0f
                              : 0.0f,
               .standing_water = terminating ? 1.0f : 0.0f,
-              .water_level_m =
-                flood.water_level.values ()[cell] * grid.height_scale_m (),
+              .water_level_m = flood.water_level.values ()[cell],
               .pooled = pooled ? 1.0f : 0.0f });
           if (!channels.empty ())
             knot_tangents.push_back (
@@ -446,8 +445,7 @@ namespace moppe::terrain {
     const std::size_t count = width * height;
     if (flood.width () != width || flood.height () != height ||
         flood.source_grid.spacing_x != grid.spacing_x ||
-        flood.source_grid.spacing_y != grid.spacing_y ||
-        flood.source_grid.height_scale != grid.height_scale)
+        flood.source_grid.spacing_y != grid.spacing_y)
       throw std::invalid_argument ("flood field does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
@@ -472,14 +470,11 @@ namespace moppe::terrain {
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
             const std::size_t next = index (nx, ny);
-            const meters_t distance =
-              std::hypot (offset.x * grid.spacing_x_m (),
-                          offset.y * grid.spacing_y_m ()) *
-              mp_units::si::metre;
-            const auto candidate =
-              (surface[cell] - surface[next]) * grid.height_scale / distance;
+            const float distance = std::hypot (offset.x * grid.spacing_x_m (),
+                                               offset.y * grid.spacing_y_m ());
+            const float candidate = (surface[cell] - surface[next]) / distance;
             if (candidate > steepest) {
-              steepest = candidate.numerical_value_in (mp_units::one);
+              steepest = candidate;
               receiver[cell] = static_cast<std::uint32_t> (next);
             }
           }

@@ -34,7 +34,7 @@ namespace moppe::terrain {
     }
 
     meters_t elevation_at (std::size_t x, std::size_t y) const {
-      return at (x, y) * m_grid.height_scale;
+      return at (x, y) * mp_units::si::metre;
     }
 
   private:
@@ -42,7 +42,6 @@ namespace moppe::terrain {
       if (m_grid.width < 2 || m_grid.height < 2 ||
           m_grid.spacing_x <= 0.0f * mp_units::si::metre ||
           m_grid.spacing_y <= 0.0f * mp_units::si::metre ||
-          m_grid.height_scale <= 0.0f * mp_units::si::metre ||
           sample_count != m_grid.width * m_grid.height)
         throw std::invalid_argument ("invalid materialized terrain view");
     }

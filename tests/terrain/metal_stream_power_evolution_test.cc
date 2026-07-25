@@ -20,8 +20,7 @@ namespace {
     return { .width = metal_test_width,
              .height = metal_test_height,
              .spacing_x = 20.0f * mp_units::si::metre,
-             .spacing_y = 30.0f * mp_units::si::metre,
-             .height_scale = 650.0f * mp_units::si::metre };
+             .spacing_y = 30.0f * mp_units::si::metre };
   }
 
   std::vector<float> test_heights () {
@@ -29,9 +28,9 @@ namespace {
     for (std::size_t y = 0; y < metal_test_height; ++y)
       for (std::size_t x = 0; x < metal_test_width; ++x)
         heights[y * metal_test_width + x] =
-          0.8f - 0.006f * static_cast<float> (x) -
-          0.004f * static_cast<float> (y) +
-          0.01f * std::sin (0.7f * static_cast<float> (x + y));
+          650.0f * (0.8f - 0.006f * static_cast<float> (x) -
+                    0.004f * static_cast<float> (y) +
+                    0.01f * std::sin (0.7f * static_cast<float> (x + y)));
     return heights;
   }
 
@@ -45,7 +44,7 @@ namespace {
 MOPPE_TEST (metal_d_infinity_routes_match_the_cpu_reference) {
   const std::vector<float> heights = test_heights ();
   const TerrainView terrain (test_grid (), heights);
-  const FloodField flood = analyze_standing_water (terrain, -1.0f);
+  const FloodField flood = analyze_standing_water (terrain, -650.0f);
   const LakeCensus census = census_lakes (flood);
   const CpuStreamPowerEvolutionBackend cpu;
   const metal::MetalStreamPowerEvolutionBackend metal (MOPPE_SHADER_ASSET_PATH);
@@ -102,7 +101,7 @@ MOPPE_TEST (metal_hybrid_evolution_tracks_the_cpu_reference) {
   const StreamPowerEvolution parameters {
     .duration = 100000.0f * mp_units::astronomy::Julian_year,
     .time_step = 50000.0f * mp_units::astronomy::Julian_year,
-    .sea_level = -1.0f
+    .sea_level = -650.0f
   };
   const CpuStreamPowerEvolutionBackend cpu;
   const metal::MetalStreamPowerEvolutionBackend metal (MOPPE_SHADER_ASSET_PATH);
@@ -112,7 +111,7 @@ MOPPE_TEST (metal_hybrid_evolution_tracks_the_cpu_reference) {
     evolve_stream_power (terrain, zero_uplift, parameters, metal);
 
   for (std::size_t cell = 0; cell < heights.size (); ++cell) {
-    MOPPE_CHECK_NEAR (actual.heights[cell], expected.heights[cell], 2e-5f);
+    MOPPE_CHECK_NEAR (actual.heights[cell], expected.heights[cell], 2e-2f);
     const Vec3 actual_tangent =
       actual.channel_tangents[cell].numerical_value_in (mp_units::one);
     const Vec3 expected_tangent =

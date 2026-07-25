@@ -22,8 +22,7 @@ namespace {
     return { .width = width,
              .height = height,
              .spacing_x = 2.0f * mp_units::si::metre,
-             .spacing_y = 3.0f * mp_units::si::metre,
-             .height_scale = 1.0f * mp_units::si::metre };
+             .spacing_y = 3.0f * mp_units::si::metre };
   }
 
   std::vector<float> descending_plane (float direction_radians,

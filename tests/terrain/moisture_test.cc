@@ -12,8 +12,7 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   const TerrainGrid grid { .width = 9,
                            .height = 9,
                            .spacing_x = 10.0f * mp_units::si::metre,
-                           .spacing_y = 10.0f * mp_units::si::metre,
-                           .height_scale = 100.0f * mp_units::si::metre };
+                           .spacing_y = 10.0f * mp_units::si::metre };
   const RasterDomain domain { .width = 9, .height = 9 };
   std::vector<WaterBodyId> body (count, LakeCensus::dry);
   body[40] = 0;

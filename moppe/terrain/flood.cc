@@ -226,7 +226,6 @@ namespace moppe::terrain {
                           std::vector<WaterBodyId> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
     const square_meters_t cell_area = flood.source_grid.cell_area ();
-    const meters_t height_scale = flood.source_grid.height_scale;
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (depth[origin] <= wet_epsilon ||
@@ -258,12 +257,11 @@ namespace moppe::terrain {
         members.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        const meters_t depth_m = depth[cell] * height_scale;
+        const meters_t depth_m = depth[cell] * mp_units::si::metre;
         ++body.cells;
         body.maximum_depth = std::max (body.maximum_depth, depth_m);
         body.volume += depth_m * cell_area;
-        surface_sum_m +=
-          static_cast<double> (level[cell]) * meters_value (height_scale);
+        surface_sum_m += static_cast<double> (level[cell]);
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
