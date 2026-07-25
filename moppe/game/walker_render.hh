@@ -7,10 +7,8 @@
 namespace moppe::game {
   // The walking figure reads the frozen presentation pose rather than the
   // mutable walker simulation object.
-  void render_walker (render::DrawList& draw,
-                      const WalkerPose& walker,
-                      float time,
-                      const Vec3& visual_scale = Vec3 (1, 1, 1));
+  void
+  render_walker (render::DrawList& draw, const WalkerPose& walker, float time);
 }
 
 #endif

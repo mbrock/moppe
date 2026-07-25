@@ -65,9 +65,7 @@ namespace moppe {
       position_t want_target =
         position + quantity_cast<isq::position_vector> (m_ahead);
       const float dist = meters_value (m_distance);
-      const Vec3 scaled_offset (d[0] * dist / m_horizontal_scale,
-                                d[1] * dist / m_vertical_scale,
-                                d[2] * dist / m_horizontal_scale);
+      const Vec3 scaled_offset = d * dist;
       const position_t want_position =
         position +
         quantity_cast<isq::position_vector> (displacement (scaled_offset));
@@ -102,9 +100,8 @@ namespace moppe {
       Vec3 offset = camera_position - subject_position;
       const float horiz =
         std::sqrt (offset[0] * offset[0] + offset[2] * offset[2]);
-      const float max_len =
-        meters_value (m_distance) / m_horizontal_scale +
-        0.06f * m_speed.numerical_value_in (u::m / u::s) * 1.0f;
+      const float max_len = meters_value (m_distance) +
+                            0.06f * m_speed.numerical_value_in (u::m / u::s);
       if (horiz > max_len) {
         const float s = max_len / horiz;
         camera_position[0] = subject_position[0] + offset[0] * s;
@@ -123,16 +120,15 @@ namespace moppe {
       Vec3& camera_velocity = velocity_value (m_position_velocity);
       // Keep the look point out of the slope as velocity look-ahead
       // carries it across rolling terrain.
-      const float target_floor = 0.35f / m_vertical_scale +
-                                 map.interpolated_height (target[0], target[2]);
+      const float target_floor =
+        0.35f + map.interpolated_height (target[0], target[2]);
       if (target[1] < target_floor) {
         target[1] = target_floor;
         if (target_velocity[1] < 0)
           target_velocity[1] = 0;
       }
 
-      float needed = 2.2f / m_vertical_scale +
-                     map.interpolated_height (camera[0], camera[2]);
+      float needed = 2.2f + map.interpolated_height (camera[0], camera[2]);
 
       // The sight line toward the bike must clear the terrain too;
       // twelve taps catch narrow ridges that the old four-tap check
@@ -141,7 +137,7 @@ namespace moppe {
         const float t = i / 12.0f;
         const float sx = camera[0] + (target[0] - camera[0]) * t;
         const float sz = camera[2] + (target[2] - camera[2]) * t;
-        const float clearance = (0.3f + 1.9f * (1 - t)) / m_vertical_scale;
+        const float clearance = 0.3f + 1.9f * (1 - t);
         const float g = clearance + map.interpolated_height (sx, sz);
 
         needed = max (needed, (g - target[1] * t) / (1 - t));

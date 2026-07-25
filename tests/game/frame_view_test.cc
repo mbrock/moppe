@@ -82,8 +82,6 @@ namespace {
       .selected_camera = camera_reading (fixture.running ()),
       .scene = game::FrameSceneMode::Gameplay,
       .aspect = 16.0f / 9.0f,
-      .landscape_scale_x = 1.0f,
-      .landscape_scale_y = 1.0f,
     };
   }
 
@@ -299,16 +297,13 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   MOPPE_CHECK (!flight.visibility.game_hud);
 }
 
-MOPPE_TEST (frame_view_carries_actor_visual_scale_and_sun_height) {
+MOPPE_TEST (frame_view_carries_sun_height) {
   FrameFixture fixture;
   fixture.graphics.sun_height = 0.75f;
   game::FrameViewInput input = gameplay_input (fixture);
-  input.landscape_scale_x = 2.5f;
-  input.landscape_scale_y = 4.0f;
 
   const game::FrameView view = game::compose_frame_view (input);
 
-  frame_view_check_vector (view.actors.visual_scale, Vec3 (0.4f, 0.25f, 0.4f));
   MOPPE_CHECK_NEAR (view.lighting.sun_height, 0.75f, 1e-6f);
   frame_view_check_vector (view.lighting.sun_direction,
                            game::sun_direction_for (0.75f));

@@ -291,7 +291,6 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
-  const game::GameSessionAdvanceContext context { world, map, obstacles };
   game::GameSession session (world, surface);
 
   mov::Vehicle::State airborne = session.bike ().state ();
@@ -305,7 +304,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
 
   game::InputFrame deploy;
   deploy.deploy_glider = true;
-  game::advance_game_session (context, session, deploy, seconds (1.0f / 60.0f));
+  game::advance_game_session (
+    world, map, obstacles, session, deploy, seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
   MOPPE_CHECK (session.glider ().bike_attached ());
@@ -317,7 +317,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
 
   game::InputFrame drop;
   drop.deploy_glider = true;
-  game::advance_game_session (context, session, drop, seconds (1.0f / 60.0f));
+  game::advance_game_session (
+    world, map, obstacles, session, drop, seconds (1.0f / 60.0f));
   const Vec3 dropped_position = session.bike ().position ();
 
   MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
@@ -325,8 +326,12 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   MOPPE_CHECK (!session.can_drop_bike ());
 
   for (int i = 0; i < 60; ++i)
-    game::advance_game_session (
-      context, session, game::InputFrame {}, seconds (1.0f / 60.0f));
+    game::advance_game_session (world,
+                                map,
+                                obstacles,
+                                session,
+                                game::InputFrame {},
+                                seconds (1.0f / 60.0f));
   MOPPE_CHECK (session.bike ().position ()[1] < dropped_position[1]);
   MOPPE_CHECK (length (session.glider ().position () -
                        session.bike ().position ()) > 2.0f);
@@ -485,7 +490,9 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   using namespace moppe;
 
   using AdvanceGameSession =
-    game::GameSessionAdvanceResult (*) (const game::GameSessionAdvanceContext&,
+    game::GameSessionAdvanceResult (*) (const game::WorldParams&,
+                                        const map::Surface&,
+                                        const std::vector<mov::Box>&,
                                         game::GameSession&,
                                         const game::InputFrame&,
                                         seconds_t);
@@ -502,7 +509,6 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
-  const game::GameSessionAdvanceContext context { world, map, obstacles };
 
   game::InputFrameAdapter recorder;
   recorder.key (platform::Key::D, true);
@@ -518,7 +524,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   game::GameSession live (world, surface);
   const game::GameSession::State checkpoint = live.state ();
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (context, live, frame, step);
+    game::advance_game_session (world, map, obstacles, live, frame, step);
   const game::GameSession::State live_state = live.state ();
 
   // This must be more than a checkpoint round trip: the recorded keyboard
@@ -532,7 +538,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   game::GameSession replay (world, surface);
   replay.restore (checkpoint);
   for (const game::InputFrame& frame : tape)
-    game::advance_game_session (context, replay, frame, step);
+    game::advance_game_session (world, map, obstacles, replay, frame, step);
   const game::GameSession::State replayed = replay.state ();
 
   MOPPE_CHECK (replayed.logic.m_mode == live_state.logic.m_mode);
