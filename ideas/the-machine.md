@@ -35,11 +35,20 @@ RO is usefully strict here. Plain `part of` is transitive and cheap. The
 relation that matters for an assembly is **has component** — "w has
 component p if w has part p and w can be *directly disassembled* into n
 parts of similar type." That is the bolt-apart relation, the one a parts
-diagram draws. Distinct again is **member of**, "a mereological relation
-between an item and a collection", which is what stars and trees have to
-their populations and no component ever has to its assembly. And the
-chassis earns a name of its own: **skeleton of**, "the maximal subdivision
-of material entities that provides structural support" for the whole.
+diagram draws, and — unlike parthood — it is deliberately *not*
+transitive: the motorcycle has the wheel as a component and the wheel has
+a spoke, but the spoke is not a component of the motorcycle. It names one
+immediate level of decomposition. Distinct again is **member of**, "a
+mereological relation between an item and a collection", which is what
+stars and trees have to their populations and no component ever has to its
+assembly.
+
+The chassis wants a name of this kind too. RO's **skeleton of** — "the
+maximal subdivision of material entities that provides structural support"
+— is exactly the right idea, but it is defined for anatomical
+subdivisions, so the honest move is a project relation *inspired* by it,
+say `load-bearing structure of`, rather than claiming a motorcycle has a
+biological skeleton.
 
 **What can move relative to what.** The chassis is connected to the fork
 through the steering head; the swingarm is connected to the chassis through
@@ -168,9 +177,13 @@ chassis and the swingarm; more precisely it is the connecting structure by
 which those two are **connected to** one another, and it is **attached to**
 both. RO's muscle relations name the asymmetry that matters mechanically:
 **has muscle origin** is the end that does not move when the element acts,
-**has muscle insertion** the end that does. The shock's origin is the
-chassis mount, its insertion the swingarm. Its **muscle antagonist**, in
-the same idiom, is the damper acting against the spring's return.
+**has muscle insertion** the end that does. Under mechanical names —
+`has fixed attachment`, `has driven attachment`, both subrelations of
+attachment — the shock's fixed end is the chassis mount and its driven end
+the swingarm. (RO also offers `has muscle antagonist` for opposed pairs,
+but the spring and damper are not antagonists: the spring stores and
+returns energy while the damper dissipates it, and they cooperate on the
+same degree of freedom.)
 
 It **has quality** stiffness k, damping coefficient c, and rest length L₀.
 It **has disposition** to resist compression, a disposition which
@@ -204,14 +217,24 @@ The motorcycle's topology says nothing about the ground. Contact is a
 relation between an embedded part of the machine and an embedded part of
 the world, and it changes constantly without the machine changing at all.
 
-RO has the right shape for it:
+The safe way to say it is as a process with two participants and a place:
 
-> **occurs across** — a process occurring in a region *spanning a barrier*.
+```
+rolling  occurs at        the contact interface
+rolling  has participant  tyre
+rolling  has participant  supporting surface
+```
 
-Rolling contact occurs across the tyre–ground interface. It is not a
-property of the tyre and not a property of the terrain; it is a process
-spanning the boundary between them. Around it: **adjacent to** ("x and y
-share a boundary"), and — for the wading walker and the drowned bike —
+Contact is not a property of the tyre and not a property of the terrain.
+(RO's `occurs across` — "a process occurring in a region spanning a
+barrier" — is tempting, but it is meant for transport *through* a barrier,
+like a membrane, which is not what a tyre does to the ground.)
+
+The boundary itself deserves Brentano's care, which Smith reconstructs in
+*Boundaries*: the tyre and the terrain do not share one identical
+boundary. Each has its own, and in contact the two **coincide**. That
+distinction is what lets contact begin and end without either body losing
+a part. For the wading walker and the drowned bike there is also
 **immersed in**, "wholly or substantially surrounded by a fluid substance."
 
 This gives the clean stack the current code half-implements:
@@ -335,13 +358,13 @@ From `ontology/ro-full.obo`, with RO's own senses:
 
 | relation | sense |
 | --- | --- |
-| `has component` | part, of similar type, directly disassemblable |
+| `has component` | part, of similar type, directly disassemblable; not transitive |
 | `member of` | item in a collection, not component in an assembly |
-| `skeleton of` | maximal structural support for a subdivision |
+| `skeleton of` | maximal structural support; anatomical — adapt, don't import |
 | `connected to`, `connects` | joined via a connecting structure |
 | `attached to` | force on one moves the other |
 | `biomechanically related to` | musculoskeletal system *or its analogs* |
-| `has muscle origin` / `insertion` | the end that stays / the end that moves |
+| `has muscle origin` / `insertion` | the end that stays / the end that moves; adapt as fixed/driven attachment |
 | `has quality` | actual, present characteristic |
 | `has disposition` | potential, realized only in process |
 | `has function` | the disposition the part exists for |
@@ -349,7 +372,7 @@ From `ontology/ro-full.obo`, with RO's own senses:
 | `realizable has basis in` | structural ground of a disposition |
 | `realizes` / `realized in` | process ↔ disposition |
 | `determined by` | part whose removal collapses the system |
-| `occurs across` | process spanning a barrier |
+| `occurs in` | process located in a material entity; transitive over `part of` |
 | `immersed in` | surrounded by a fluid substance |
 | `has participant`, `has input`, `has output` | process ↔ continuant |
 | `starts with`, `ends with`, `happens during` | Allen-style process composition |
@@ -358,7 +381,13 @@ From `ontology/ro-full.obo`, with RO's own senses:
 RO also ships composition laws worth imitating: `occurs in` is transitive
 over `part of`, and `has participant` holds over the chain `has part` +
 `has participant` — if the wheel participates in the rolling and the wheel
-is part of the bike, the bike participates too. Facts about wholes follow
-from facts about parts, which is what forward kinematics and contact
-aggregation do numerically. A relation vocabulary that carries its own
+is part of the bike, the bike participates too. These chains are one-way
+implications, and their order matters: R₁(x,y) ∧ R₂(y,z) ⟹ R(x,z) says
+nothing about the converse. A relation vocabulary that carries its own
 inference rules is doing more than naming.
+
+It is worth not overstating the analogy, though. A property chain derives
+another *proposition*; forward kinematics computes a *transformation*.
+Both walk paths through structured relations, and one vocabulary might
+organize both, but logical closure and numerical evaluation are not the
+same operation and should not be quietly identified.
