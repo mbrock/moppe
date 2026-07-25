@@ -28,14 +28,14 @@ build lean and preserve test/tool entry points.
 
 ## Evidence
 
-`moppe_spatial`, `moppe_terrain`, `moppe_world`, `moppe_simulation`,
-`moppe_scene`, and `moppe_app` now express the completed ownership direction.
-The world target owns concrete terrain and Terrain Lab model construction;
-simulation owns the mutable session; scene owns presentation; and the app owns
-the two platform-service callers. The separate test compilation found and
-fixed two unity-only test namespace leaks, so the suite also now compiles as
-ordinary translation units. `docs/refactoring-seams.md` records the graph and
-the deliberate Apple-common versus selected-platform boundary.
+The spatial, terrain, world, simulation, scene, and application source groups
+express the completed ownership direction. World owns concrete terrain and
+Terrain Lab model construction; simulation owns the mutable session; scene
+owns presentation; and application code owns the two platform-service
+callers. These were initially enforced as separate CMake targets. The later
+game-first build flattening retained the source ownership while removing those
+compile boundaries. `docs/refactoring-seams.md` records the current
+composition and the Apple-common versus selected-platform boundary.
 
 Validation on 2026-07-17:
 

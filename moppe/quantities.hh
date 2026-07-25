@@ -51,42 +51,51 @@ namespace moppe {
                          mp_units::astronomy::Julian_year,
                        float>;
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float meters_value (meters_t value) {
     return value.numerical_value_in (mp_units::si::metre);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline double meters_value (meters_f64_t value) {
     return value.numerical_value_in (mp_units::si::metre);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float square_meters_value (square_meters_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float cubic_meters_value (cubic_meters_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre *
                                      mp_units::si::metre);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline double cubic_meters_value (cubic_meters_f64_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre *
                                      mp_units::si::metre);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float meters_per_second_value (meters_per_second_t value) {
     return value.numerical_value_in (mp_units::si::metre /
                                      mp_units::si::second);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float julian_years_value (julian_years_t value) {
     return value.numerical_value_in (mp_units::astronomy::Julian_year);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float meters_per_julian_year_value (meters_per_julian_year_t value) {
     return value.numerical_value_in (mp_units::si::metre /
                                      mp_units::astronomy::Julian_year);
   }
 
+  [[deprecated ("migrate to typed unit quantities")]]
   inline float
   square_meters_per_julian_year_value (square_meters_per_julian_year_t value) {
     return value.numerical_value_in (mp_units::si::metre * mp_units::si::metre /

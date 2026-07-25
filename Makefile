@@ -1,14 +1,20 @@
 
 .PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks plan plan-graph phone profile testflight tracy tv \
+	complexity format hooks plan plan-graph phone profile test testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	web web-deploy web-serve xcode
 
-# Configure (if needed) and build everything for macOS.
+# Configure (if needed) and build only the macOS game.
 all:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
-	cmake --build build
+	cmake --build build --target moppe
+
+# Build and run the separately requested test program.
+test:
+	@[ -f build/build.ninja ] || cmake -B build -G Ninja
+	cmake --build build --target moppe-tests
+	ctest --test-dir build --output-on-failure
 
 # Build and open the standalone Metal graphics workshop.
 atelier:

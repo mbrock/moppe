@@ -125,67 +125,53 @@ The Metal facade owns drawable acquisition, command-buffer lifetime, capture,
 timing, and benchmark completion. See [Renderer and platform architecture]
 (renderer-design.md) for resource and pass detail.
 
-## Target graph
+## Build composition
 
-The source ownership above is reflected by these CMake targets. Arrows point
-from a consumer to the target it consumes. Dashed Apple edges exist only in
-Apple configurations; exactly one selected-platform edge is present per build.
+Source directories and namespaces express the ownership direction above.
+CMake deliberately does not mirror those concepts with internal static
+libraries: each terminal program compiles the source groups it needs directly,
+as one unity translation unit per source language. This keeps the conceptual
+map without repeatedly parsing the mp-units-heavy header graph at target
+boundaries.
 
 ```mermaid
 flowchart LR
-  spatial["moppe_spatial"] --> units["mp-units"]
-  terrain["moppe_terrain"] --> spatial
-  world["moppe_world"] --> terrain
-  simulation["moppe_simulation"] --> world
-  simulation --> render["moppe_render"]
-  scene["moppe_scene"] --> simulation
-  scene --> world
+  spatial["spatial headers"] --> units["mp-units"]
+  terrain["terrain sources"] --> spatial
+  world["map and generated-world sources"] --> terrain
+  simulation["simulation sources"] --> world
+  simulation --> render["render abstraction sources"]
+  scene["scene presentation sources"] --> simulation
   scene --> render
-  scene --> botany["atelier_botany"]
-  scene -.-> apple["moppe_apple"]
-  app["moppe_app"] --> scene
-  app -.-> mac["moppe_platform_mac"]
-  app -.-> ios["moppe_platform_ios"]
-  app -.-> web["moppe_platform_web"]
-  metal["moppe_metal"] --> render
-  webgpu["moppe_webgpu"] --> render
-  terrain_metal["moppe_terrain_metal"] --> terrain
-  mac --> metal
-  mac --> terrain_metal
-  mac --> apple
-  ios --> metal
-  ios --> apple
-  web --> webgpu
+  app["application sources"] --> scene
   desktop["moppe"] --> app
-  desktop --> mac
+  desktop --> mac["macOS and Metal sources"]
   phone["moppe-ios"] --> app
-  phone --> ios
+  phone --> ios["iOS and Metal sources"]
   browser["moppe-web"] --> app
-  browser --> web
+  browser --> web["web host and WebGPU sources"]
   tests["moppe-tests"] --> scene
   tools["terrain tools"] --> world
 ```
 
-`moppe_spatial` is deliberately header-only: its types expose mp-units
-vocabulary but need no translation unit. `moppe_terrain` keeps reusable finite
-terrain and hydrology algorithms free of world, scene, and platform code.
-`moppe_world` adds concrete map storage, direct construction, materialization,
-`GeneratedWorld`, and deterministic water-capture selection.
+The spatial headers expose mp-units vocabulary but need no translation unit.
+The terrain sources keep reusable finite terrain and hydrology algorithms free
+of world, scene, and platform code. The map and generated-world sources add
+concrete storage, direct construction, materialization, `GeneratedWorld`, and
+deterministic water-capture selection.
 
-`moppe_simulation` has a real dependency on `moppe_render`: session-owned
+Simulation has a real dependency on the render abstraction: session-owned
 Stars retain meshes and Stars/Dust expose their presentation operations. This
-is an explicit current constraint, not a claim that physics needs Metal.
-`moppe_scene` composes the completed-world and session readings, with
-Apple-common asset/glyph support where available, but has no OS event loop or
-renderer backend. `moppe_app` holds the host-service callers (`Terrain` and
-`WorldLoading`); terminal programs retain `game.cc` because
-it defines `main` and chooses the macOS, iOS, or browser host.
+is an explicit current constraint, not a claim that physics needs Metal. Scene
+sources compose the completed-world and session readings, with Apple-common
+asset/glyph support where available, but have no OS event loop or renderer
+backend. Application sources hold the host-service callers (`Terrain` and
+`WorldLoading`); terminal programs add `main.cc` and their selected host.
 
-The ordinary desktop game consumes the app/scene path; portable tests begin at
-the testable scene target and do not link a desktop event loop. Terrain
-command-line tools consume only `moppe_world`, so they do not pull in the
-desktop platform merely because unrelated presentation code was compiled into
-a broad archive.
+The ordinary desktop game is the default build. Tests are a separate,
+excluded-from-all executable that recompiles the engine and suite as its own
+unity unit without a desktop event loop. Terrain command-line tools compile
+only the terrain and world source groups they need.
 
 ## Current scope and deliberate gaps
 

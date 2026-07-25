@@ -73,11 +73,11 @@ erase the useful distinction before simulation even begins.
 
 ## The production embedding
 
-The intrinsic organism is built as the `atelier_botany` library. Both the
-Atelier and Moppe link that library, so changing topology, transport, growth,
-or thickening changes the organism in both clients. The Atelier remains the
-place for inspecting the complex in isolation; Moppe supplies a second
-extrinsic embedding in `moppe/game/tree_stand.*`.
+The intrinsic organism lives in `atelier/tree.*`. Both the Atelier and Moppe
+compile that source, so changing topology, transport, growth, or thickening
+changes the organism in both clients. The Atelier remains the place for
+inspecting the complex in isolation; Moppe supplies a second extrinsic
+embedding in `moppe/game/tree_stand.*`.
 
 The game first derives `tree_habitat` as another quantity in the surface
 bundle. Moisture, height above standing water, tree line, and surface normal
