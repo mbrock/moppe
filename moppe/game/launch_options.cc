@@ -5,18 +5,253 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <string_view>
 
 namespace moppe::game {
   namespace {
-    bool needs_value (const std::string& arg,
-                      int index,
-                      int argc,
-                      const char* what,
-                      std::string& error) {
-      if (index + 1 < argc)
-        return true;
-      error = arg + " requires " + what;
+    GraphicsBenchmarkConfig& benchmark_config (LaunchOptions& options) {
+      if (!options.benchmark)
+        options.benchmark = GraphicsBenchmarkConfig {};
+      return *options.benchmark;
+    }
+
+    int frame_count (const char* value) {
+      return std::max (1, std::atoi (value));
+    }
+
+    // A capture keeps its own window, since an automated run should never
+    // take over the display it was started from.
+    void capture_to (LaunchOptions& options, const char* path) {
+      options.screenshot_path = path;
+      options.config.fullscreen = false;
+    }
+
+    bool unknown (const char* what, const char* value, std::string& error) {
+      error = std::string ("unknown ") + what + ": " + value;
       return false;
+    }
+
+    // One recognized flag: how many values it consumes, what to say when they
+    // are missing, and what it means for the launch.  Keeping the arity beside
+    // the handler is what lets the parse loop bounds-check every flag once
+    // rather than every handler repeating the same test.
+    struct Flag {
+      std::string_view name;
+      int arity;
+      const char* expects;
+      bool (*apply) (LaunchOptions&, const char* const*, std::string&);
+    };
+
+    constexpr Flag flags[] = {
+      { "--fullscreen",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.config.fullscreen = true;
+          return true;
+        } },
+      { "--windowed",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.config.fullscreen = false;
+          return true;
+        } },
+      { "--graphics-quality",
+        1,
+        "low, balanced, or high",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          const std::string_view quality = values[0];
+          if (quality == "low")
+            options.graphics = low_graphics_settings ();
+          else if (quality == "balanced")
+            options.graphics = balanced_graphics_settings ();
+          else if (quality == "high")
+            options.graphics = high_graphics_settings ();
+          else
+            return unknown ("graphics quality", values[0], error);
+          return true;
+        } },
+      { "--graphics-enable",
+        1,
+        "a comma-separated feature list",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          return set_graphics_features (
+            options.graphics, values[0], true, error);
+        } },
+      { "--graphics-disable",
+        1,
+        "a comma-separated feature list",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          return set_graphics_features (
+            options.graphics, values[0], false, error);
+        } },
+      { "--graphics-benchmark",
+        1,
+        "a CSV path",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          benchmark_config (options).output_path = values[0];
+          options.config.fullscreen = false;
+          return true;
+        } },
+      { "--benchmark-frames",
+        1,
+        "a positive frame count",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          benchmark_config (options).measured_frames = frame_count (values[0]);
+          return true;
+        } },
+      { "--benchmark-settle",
+        1,
+        "a positive frame count",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          benchmark_config (options).settle_frames = frame_count (values[0]);
+          return true;
+        } },
+      { "--benchmark-prelude",
+        1,
+        "a positive frame count",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          benchmark_config (options).prelude_frames = frame_count (values[0]);
+          return true;
+        } },
+      { "--fast",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.generation_profile = terrain::TerrainGenerationProfile::Fast;
+          return true;
+        } },
+      { "--terrain-quality",
+        1,
+        "fast, play, or research",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          const std::string_view quality = values[0];
+          if (quality == "fast")
+            options.generation_profile =
+              terrain::TerrainGenerationProfile::Fast;
+          else if (quality == "play")
+            options.generation_profile =
+              terrain::TerrainGenerationProfile::Play;
+          else if (quality == "research")
+            options.generation_profile =
+              terrain::TerrainGenerationProfile::Research;
+          else
+            return unknown ("terrain quality", values[0], error);
+          return true;
+        } },
+      { "--terrain-lab",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.start_in_terrain_lab = true;
+          return true;
+        } },
+      { "--tree-demo",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.tree_demo = true;
+          return true;
+        } },
+      { "--tree-count",
+        1,
+        "an integer from 1 to 64",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          const int count = std::atoi (values[0]);
+          if (count < 1 || count > 64) {
+            error = "--tree-count must be between 1 and 64";
+            return false;
+          }
+          options.tree_count = static_cast<std::size_t> (count);
+          return true;
+        } },
+      { "--tree-screenshot",
+        1,
+        "a PNG path",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          options.tree_demo = true;
+          capture_to (options, values[0]);
+          return true;
+        } },
+      { "--terrain-lab-screenshot",
+        1,
+        "a PNG path",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          options.start_in_terrain_lab = true;
+          // The Lab capture inspects one world's shape, not its detail.
+          options.world.resolution = 1025;
+          capture_to (options, values[0]);
+          return true;
+        } },
+      { "--screenshot",
+        1,
+        "a PNG path",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          capture_to (options, values[0]);
+          return true;
+        } },
+      { "--water-screenshot",
+        2,
+        "a feature and PNG path",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          options.water_shot = parse_water_shot (values[0]);
+          if (!options.water_shot) {
+            error = "unknown water feature: " + std::string (values[0]) +
+                    " (use stream, river, confluence, mouth, waterfall, "
+                    "or lake)";
+            return false;
+          }
+          capture_to (options, values[1]);
+          return true;
+        } },
+      { "--seed",
+        1,
+        "an integer",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          options.seed = std::atoi (values[0]);
+          return true;
+        } },
+    };
+
+    const Flag* find_flag (std::string_view name) {
+      for (const Flag& flag : flags)
+        if (flag.name == name)
+          return &flag;
+      return nullptr;
+    }
+
+    // What the flags imply once they have all been seen.  Resolving these
+    // once here is what keeps every later reader of a launch from re-deriving
+    // them, and it is why the order flags arrive in does not matter.
+    bool resolve_launch_settings (LaunchOptions& options, std::string& error) {
+      if (options.benchmark && options.benchmark->output_path.empty ()) {
+        error = "--graphics-benchmark is required with benchmark options";
+        return false;
+      }
+      if (options.generation_profile == terrain::TerrainGenerationProfile::Fast)
+        options.world.resolution = 1025;
+      options.config.capture_frames = !options.screenshot_path.empty () ||
+                                      ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
+      // An automated run stays behind whatever the developer is looking at.
+      options.config.activate =
+        !options.config.capture_frames && !options.benchmark;
+      // A capture pins its own seed so repeated runs compare like with like.
+      if (!options.screenshot_path.empty () && options.seed < 0)
+        options.seed = 123;
+      return true;
     }
   }
 
@@ -25,140 +260,19 @@ namespace moppe::game {
                              LaunchOptions& options,
                              std::string& error) {
     for (int i = 1; i < argc; ++i) {
-      const std::string arg = argv[i];
-      if (arg == "--fullscreen") {
-        options.config.fullscreen = true;
-      } else if (arg == "--windowed") {
-        options.config.fullscreen = false;
-      } else if (arg == "--graphics-quality") {
-        if (!needs_value (arg, i, argc, "low, balanced, or high", error))
-          return false;
-        const std::string quality = argv[++i];
-        if (quality == "low")
-          options.graphics = low_graphics_settings ();
-        else if (quality == "balanced")
-          options.graphics = balanced_graphics_settings ();
-        else if (quality == "high")
-          options.graphics = high_graphics_settings ();
-        else {
-          error = "unknown graphics quality: " + quality;
-          return false;
-        }
-      } else if (arg == "--graphics-enable" || arg == "--graphics-disable") {
-        if (!needs_value (
-              arg, i, argc, "a comma-separated feature list", error))
-          return false;
-        const bool enabled = arg == "--graphics-enable";
-        if (!set_graphics_features (
-              options.graphics, argv[++i], enabled, error))
-          return false;
-      } else if (arg == "--graphics-benchmark") {
-        if (!needs_value (arg, i, argc, "a CSV path", error))
-          return false;
-        if (!options.benchmark)
-          options.benchmark = GraphicsBenchmarkConfig {};
-        options.benchmark->output_path = argv[++i];
-        options.config.fullscreen = false;
-      } else if (arg == "--benchmark-frames" || arg == "--benchmark-settle" ||
-                 arg == "--benchmark-prelude") {
-        if (!needs_value (arg, i, argc, "a positive frame count", error))
-          return false;
-        if (!options.benchmark)
-          options.benchmark = GraphicsBenchmarkConfig {};
-        const int value = std::max (1, std::atoi (argv[++i]));
-        if (arg == "--benchmark-frames")
-          options.benchmark->measured_frames = value;
-        else if (arg == "--benchmark-settle")
-          options.benchmark->settle_frames = value;
-        else
-          options.benchmark->prelude_frames = value;
-      } else if (arg == "--fast") {
-        options.generation_profile = terrain::TerrainGenerationProfile::Fast;
-      } else if (arg == "--terrain-quality") {
-        if (!needs_value (arg, i, argc, "fast, play, or research", error))
-          return false;
-        const std::string quality = argv[++i];
-        if (quality == "fast")
-          options.generation_profile = terrain::TerrainGenerationProfile::Fast;
-        else if (quality == "play")
-          options.generation_profile = terrain::TerrainGenerationProfile::Play;
-        else if (quality == "research")
-          options.generation_profile =
-            terrain::TerrainGenerationProfile::Research;
-        else {
-          error = "unknown terrain quality: " + quality;
-          return false;
-        }
-      } else if (arg == "--terrain-lab") {
-        options.start_in_terrain_lab = true;
-      } else if (arg == "--tree-demo") {
-        options.tree_demo = true;
-      } else if (arg == "--tree-count") {
-        if (!needs_value (arg, i, argc, "an integer from 1 to 64", error))
-          return false;
-        const int count = std::atoi (argv[++i]);
-        if (count < 1 || count > 64) {
-          error = "--tree-count must be between 1 and 64";
-          return false;
-        }
-        options.tree_count = static_cast<std::size_t> (count);
-      } else if (arg == "--tree-screenshot") {
-        if (!needs_value (arg, i, argc, "a PNG path", error))
-          return false;
-        options.tree_demo = true;
-        options.screenshot_path = argv[++i];
-        options.config.fullscreen = false;
-      } else if (arg == "--terrain-lab-screenshot") {
-        if (!needs_value (arg, i, argc, "a PNG path", error))
-          return false;
-        options.screenshot_path = argv[++i];
-        options.start_in_terrain_lab = true;
-        options.config.fullscreen = false;
-        options.world.resolution = 1025;
-      } else if (arg == "--screenshot") {
-        if (!needs_value (arg, i, argc, "a PNG path", error))
-          return false;
-        options.screenshot_path = argv[++i];
-        options.config.fullscreen = false;
-      } else if (arg == "--water-screenshot") {
-        if (i + 2 >= argc) {
-          error = "--water-screenshot requires a feature and PNG path";
-          return false;
-        }
-        const std::string feature = argv[++i];
-        options.water_shot = parse_water_shot (feature);
-        if (!options.water_shot) {
-          error = "unknown water feature: " + feature +
-                  " (use stream, river, confluence, mouth, waterfall, "
-                  "or lake)";
-          return false;
-        }
-        options.screenshot_path = argv[++i];
-        options.config.fullscreen = false;
-      } else if (arg == "--seed") {
-        if (!needs_value (arg, i, argc, "an integer", error))
-          return false;
-        options.seed = std::atoi (argv[++i]);
+      // An unrecognized argument is not an error: hosts append their own.
+      const Flag* flag = find_flag (argv[i]);
+      if (!flag)
+        continue;
+      if (i + flag->arity >= argc) {
+        error = std::string (argv[i]) + " requires " + flag->expects;
+        return false;
       }
+      if (!flag->apply (options, argv + i + 1, error))
+        return false;
+      i += flag->arity;
     }
-
-    if (options.benchmark && options.benchmark->output_path.empty ()) {
-      error = "--graphics-benchmark is required with benchmark options";
-      return false;
-    }
-
-    // Derived settings, resolved once here rather than re-tested by every
-    // reader of the command line.
-    if (options.generation_profile == terrain::TerrainGenerationProfile::Fast)
-      options.world.resolution = 1025;
-    options.config.capture_frames = !options.screenshot_path.empty () ||
-                                    ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
-    // An automated run stays behind whatever the developer is looking at.
-    options.config.activate =
-      !options.config.capture_frames && !options.benchmark;
-    if (!options.screenshot_path.empty () && options.seed < 0)
-      options.seed = 123;
-    return true;
+    return resolve_launch_settings (options, error);
   }
 
   void
