@@ -83,13 +83,15 @@ namespace moppe::spatial {
     std::string column_description () {
       constexpr std::string_view kind =
         mp_units::QuantityPoint<Value> ? "point" : "quantity";
+      using quantity_spec =
+        std::remove_cvref_t<decltype (Value::quantity_spec)>;
       return std::format (
-        "quantity kind={} bytes={} unit=[{:P}] dimension=[{:P}] type={}",
+        "quantity kind={} bytes={} unit=[{:P}] dimension=[{:P}] spec={}",
         kind,
         sizeof (Value),
         Value::unit,
         Value::dimension,
-        mp_units::detail::type_name<Value> ());
+        mp_units::detail::type_name<quantity_spec> ());
     }
 
     template <typename Value>
