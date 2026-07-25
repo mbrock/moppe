@@ -2,6 +2,7 @@
 
 #include <moppe/map/generate.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/river.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -140,6 +141,78 @@ namespace moppe::map {
     for (std::size_t offset = 0; offset < values.size (); ++offset)
       home_base[offset] =
         std::clamp (influence[offset], 0.0f, 1.0f) * home_base_influence[one];
+  }
+
+  namespace {
+    // Analyses live on the torus's unique lattice; surface sections carry
+    // the duplicated seam row and column.  Every unique-grid
+    // materialization crosses through this one expansion.
+    template <typename WriteCell>
+    void expand_unique_cells (const SurfaceDomain& domain,
+                              std::size_t unique_width,
+                              std::size_t unique_height,
+                              WriteCell&& write) {
+      for (std::size_t row = 0; row < domain.height (); ++row)
+        for (std::size_t column = 0; column < domain.width (); ++column)
+          write (row * domain.width () + column,
+                 (row % unique_height) * unique_width +
+                   (column % unique_width));
+    }
+  }
+
+  void Surface::materialize_moisture (const terrain::ScalarRaster& moisture) {
+    std::vector<float> expanded (atlas ().domain ().size ());
+    expand_unique_cells (atlas ().domain (),
+                         moisture.domain ().width,
+                         moisture.domain ().height,
+                         [&] (std::size_t offset, std::size_t cell) {
+                           expanded[offset] = moisture.values ()[cell];
+                         });
+    materialize_moisture (expanded);
+  }
+
+  void Surface::materialize_waterline_distance (
+    const terrain::ScalarRaster& distance) {
+    std::vector<float> expanded (atlas ().domain ().size ());
+    expand_unique_cells (atlas ().domain (),
+                         distance.domain ().width,
+                         distance.domain ().height,
+                         [&] (std::size_t offset, std::size_t cell) {
+                           expanded[offset] = distance.values ()[cell];
+                         });
+    materialize_waterline_distance (expanded);
+  }
+
+  void Surface::materialize_channel_flux (
+    const terrain::FractionalDrainage& channels) {
+    const auto& tangents = spatial::get<terrain::channel_tangent> (channels);
+    const auto& areas =
+      spatial::get<terrain::fractional_contributing_area> (channels);
+    const terrain::TerrainGrid& grid = channels.domain ().grid ();
+    // Activity compresses contributing area logarithmically onto 0..1:
+    // hillslope cells fade out and anything carrying river-scale drainage
+    // saturates.
+    const float floor_area_m2 = 4.0f * square_meters_value (grid.cell_area ());
+    const float channel_area_m2 =
+      square_meters_value (terrain::visible_river_minimum_area (grid));
+    const float activity_span =
+      std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
+    SurfaceChannelFluxSections& values =
+      mutable_atlas ().hydrology ().materialize_channel_flux ();
+    auto& column = spatial::get<channel_flux> (values);
+    expand_unique_cells (
+      atlas ().domain (),
+      grid.unique_width (),
+      grid.unique_height (),
+      [&] (std::size_t offset, std::size_t cell) {
+        const float area_m2 = areas[cell].numerical_value_in (u::m * u::m);
+        const float activity = std::clamp (
+          std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) / activity_span,
+          0.0f,
+          1.0f);
+        column[offset] = tangents[cell].numerical_value_in (one) * activity *
+                         channel_flux[one];
+      });
   }
 
   void Surface::materialize_channel_flux (std::span<const float> flux) {
