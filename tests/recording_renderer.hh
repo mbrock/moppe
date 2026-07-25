@@ -44,10 +44,12 @@ namespace moppe::test {
     void set_water_flow (std::span<const float> flow) override {
       water_flow.assign (flow.begin (), flow.end ());
     }
-    void set_terrain_paths (std::span<const float> trails,
-                            std::span<const float> home_base) override {
-      trail_influence.assign (trails.begin (), trails.end ());
-      home_base_influence.assign (home_base.begin (), home_base.end ());
+    void set_terrain_paths (const render::TexturePixels& pixels) override {
+      const auto lanes = render::decode_channels (pixels);
+      if (lanes.size () > 0)
+        trail_influence = lanes[0];
+      if (lanes.size () > 1)
+        home_base_influence = lanes[1];
     }
     bool begin_frame (const render::FrameParams&) override {
       return true;

@@ -387,9 +387,9 @@ namespace moppe::terrain {
             const std::size_t ny = wrapped (raw_y, height);
             const float neighbor_elevation =
               elevation_at (domain, elevations, nx, ny);
-            const float distance =
-              std::hypot (offset.x * domain.spacing_x_m (),
-                          offset.y * domain.spacing_z_m ());
+            const float distance = std::hypot (
+              offset.x * domain.spacing_x ().numerical_value_in (u::m),
+              offset.y * domain.spacing_z ().numerical_value_in (u::m));
             const float candidate = (elevation - neighbor_elevation) / distance;
             if (candidate > steepest) {
               steepest = candidate;

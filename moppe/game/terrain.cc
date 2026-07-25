@@ -48,9 +48,9 @@ namespace moppe {
                          const WorldParams& world,
                          const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
-      m_scale = Vec3 (surface.domain ().spacing_x_m (),
+      m_scale = Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
                       1.0f,
-                      surface.domain ().spacing_z_m ());
+                      surface.domain ().spacing_z ().numerical_value_in (u::m));
       m_extent = extent_value (world.map_size);
       m_period = Vec3 (m_extent[0], 0.0f, m_extent[2]);
       m_lod_scale = std::max (m_scale[0], m_scale[2]);

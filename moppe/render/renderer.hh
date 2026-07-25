@@ -5,6 +5,7 @@
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
+#include <moppe/render/texture_pixels.hh>
 #include <moppe/render/types.hh>
 #include <moppe/terrain/domain.hh>
 
@@ -209,45 +210,44 @@ namespace moppe {
       // Lifetime sediment ledger as interleaved (eroded, deposited)
       // pairs, width*height cells, both channels normalized to [0, 1].
       // Materials read it to place raw cuts and pale alluvium.
-      virtual void set_terrain_geology (std::span<const float> geology) {
+      virtual void set_terrain_geology (const TexturePixels& geology) {
         (void)geology;
       }
 
       // Horizontal distance to the nearest waterline per cell, in
       // meters, clamped to the extraction band.  The wet-soil band and
       // swash-zone detail hug the true shoreline curve through it.
-      virtual void set_terrain_shore (std::span<const float> distance) {
+      virtual void set_terrain_shore (const TexturePixels& distance) {
         (void)distance;
       }
 
       // Shoulder-blended trail membership in [0,1], following the terrain
       // grid. This is a material reading: the surface remains the geometric
       // authority, while the shader can make formed paths unambiguous.
-      virtual void
-      set_terrain_paths (std::span<const float> influence,
-                         std::span<const float> home_base_influence = {}) {
+      // Both lanes arrive as one two-channel source: trail membership and
+      // home-base influence are read together by the shader.
+      virtual void set_terrain_paths (const TexturePixels& influence) {
         (void)influence;
-        (void)home_base_influence;
       }
 
-      virtual void set_terrain_moisture (std::span<const float> moisture) {
+      virtual void set_terrain_moisture (const TexturePixels& moisture) {
         (void)moisture;
       }
 
       // Potential canopy cover in [0,1]. The terrain uses it as the filtered
       // forest representation after individual crown geometry becomes small.
-      virtual void set_terrain_forest (std::span<const float> cover) {
+      virtual void set_terrain_forest (const TexturePixels& cover) {
         (void)cover;
       }
 
       // Vertical component of the broad snow-support plane in [0,1].
-      virtual void set_terrain_snow_support (std::span<const float> support) {
+      virtual void set_terrain_snow_support (const TexturePixels& support) {
         (void)support;
       }
 
       // Concentrated-drainage flux per terrain sample: interleaved (x, z)
       // world-plane direction scaled by fluvial activity in [0,1].
-      virtual void set_terrain_channel_flux (std::span<const float> flux) {
+      virtual void set_terrain_channel_flux (const TexturePixels& flux) {
         (void)flux;
       }
 

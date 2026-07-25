@@ -622,15 +622,24 @@ namespace moppe {
       void set_ocean (const OceanSetup& setup,
                       std::span<const float> water_levels) override;
       void set_water_flow (std::span<const float> flow) override;
-      void set_terrain_moisture (std::span<const float> moisture) override;
-      void set_terrain_forest (std::span<const float> cover) override;
-      void set_terrain_snow_support (std::span<const float> support) override;
-      void set_terrain_channel_flux (std::span<const float> flux) override;
-      void set_terrain_geology (std::span<const float> geology) override;
-      void set_terrain_shore (std::span<const float> distance) override;
-      void
-      set_terrain_paths (std::span<const float> influence,
-                         std::span<const float> home_base_influence) override;
+      void set_terrain_moisture (const render::TexturePixels&) override;
+      void set_terrain_forest (const render::TexturePixels&) override;
+      void set_terrain_snow_support (const render::TexturePixels&) override;
+      void set_terrain_channel_flux (const render::TexturePixels&) override;
+      void set_terrain_geology (const render::TexturePixels&) override;
+      void set_terrain_shore (const render::TexturePixels&) override;
+      void set_terrain_paths (const render::TexturePixels&) override;
+
+      // Shared upload path for the terrain overlays.
+      bool upload_overlay (__strong id<MTLTexture>& texture,
+                           const render::TexturePixels& pixels,
+                           MTLPixelFormat format);
+      void blit_into (id<MTLTexture> texture,
+                      id<MTLBuffer> staging,
+                      int w,
+                      int h,
+                      int bytes_per_pixel,
+                      bool gen_mips);
 
       // frame
       bool begin_frame (const FrameParams& params) override;
@@ -1221,7 +1230,16 @@ namespace moppe {
         [m_device newBufferWithBytes:pixels
                               length:bytes
                              options:MTLResourceStorageModeShared];
+      blit_into (tex, staging, w, h, bpp, gen_mips);
+    }
 
+    void MetalRenderer::blit_into (id<MTLTexture> tex,
+                                   id<MTLBuffer> staging,
+                                   int w,
+                                   int h,
+                                   int bpp,
+                                   bool gen_mips) {
+      const size_t bytes = (size_t)w * h * bpp;
       id<MTLCommandBuffer> cmd = [m_queue commandBuffer];
       id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
       [blit copyFromBuffer:staging
@@ -1643,242 +1661,90 @@ namespace moppe {
         m_water_resources.water_flow, halves.data (), width, height, 4, false);
     }
 
-    void MetalRenderer::set_terrain_geology (std::span<const float> geology) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_geology");
-      const std::size_t expected =
-        2 * static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_geology =
-        expected != 0 && geology.size () == expected;
-      if (!m_terrain_resources.have_geology)
-        return;
+    // Every terrain overlay reaches the GPU the same way: check the source
+    // covers this lattice, make sure a texture of the right format exists,
+    // then let the source write its bytes straight into staging memory. There
+    // is no intermediate buffer, and the pixel format is decided here and
+    // nowhere else.
+    bool MetalRenderer::upload_overlay (__strong id<MTLTexture>& texture,
+                                        const render::TexturePixels& pixels,
+                                        MTLPixelFormat format) {
       const int width = m_terrain_resources.params.width;
       const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.geology ||
-          m_terrain_resources.geology.width !=
-            static_cast<NSUInteger> (width) ||
-          m_terrain_resources.geology.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
+      if (pixels.empty () || width <= 0 || height <= 0 ||
+          pixels.width () != static_cast<std::size_t> (width) ||
+          pixels.height () != static_cast<std::size_t> (height))
+        return false;
+      if (!texture || texture.width != static_cast<NSUInteger> (width) ||
+          texture.height != static_cast<NSUInteger> (height)) {
+        MTLTextureDescriptor* td =
+          [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                             width:width
+                                                            height:height
+                                                         mipmapped:NO];
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.geology = [m_device newTextureWithDescriptor:td];
+        texture = [m_device newTextureWithDescriptor:td];
       }
-      std::vector<__fp16> halves (geology.size ());
-      for (std::size_t i = 0; i < geology.size (); ++i)
-        halves[i] = static_cast<__fp16> (geology[i]);
-      upload_texture (
-        m_terrain_resources.geology, halves.data (), width, height, 4, false);
-    }
-
-    void MetalRenderer::set_terrain_shore (std::span<const float> distance) {
-      const std::size_t expected =
-        static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_shore = distance.size () == expected;
-      if (!m_terrain_resources.have_shore)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.shore ||
-          m_terrain_resources.shore.width != static_cast<NSUInteger> (width) ||
-          m_terrain_resources.shore.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.shore = [m_device newTextureWithDescriptor:td];
-      }
-      std::vector<__fp16> halves (distance.size ());
-      for (std::size_t i = 0; i < distance.size (); ++i)
-        halves[i] = static_cast<__fp16> (distance[i]);
-      upload_texture (
-        m_terrain_resources.shore, halves.data (), width, height, 2, false);
-    }
-
-    void MetalRenderer::set_terrain_paths (
-      std::span<const float> influence,
-      std::span<const float> home_base_influence) {
-      const std::size_t expected =
-        static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_paths =
-        expected != 0 && influence.size () == expected;
-      if (!m_terrain_resources.have_paths)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!home_base_influence.empty () &&
-          home_base_influence.size () != expected)
-        throw std::invalid_argument (
-          "home base influence does not match terrain");
-      if (!m_terrain_resources.paths ||
-          m_terrain_resources.paths.width != static_cast<NSUInteger> (width) ||
-          m_terrain_resources.paths.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.paths = [m_device newTextureWithDescriptor:td];
-      }
-      std::vector<__fp16> halves (2 * influence.size ());
-      for (std::size_t i = 0; i < influence.size (); ++i) {
-        halves[2 * i] = static_cast<__fp16> (influence[i]);
-        halves[2 * i + 1] = static_cast<__fp16> (
-          home_base_influence.empty () ? 0.0f : home_base_influence[i]);
-      }
-      upload_texture (
-        m_terrain_resources.paths, halves.data (), width, height, 4, false);
-    }
-
-    void MetalRenderer::set_terrain_moisture (std::span<const float> moisture) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_moisture");
-      const std::size_t expected =
-        static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_moisture =
-        expected != 0 && moisture.size () == expected;
-      if (!m_terrain_resources.have_moisture)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.moisture ||
-          m_terrain_resources.moisture.width !=
-            static_cast<NSUInteger> (width) ||
-          m_terrain_resources.moisture.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.moisture = [m_device newTextureWithDescriptor:td];
-      }
-      upload_texture (m_terrain_resources.moisture,
-                      moisture.data (),
-                      width,
-                      height,
-                      4,
-                      false);
-    }
-
-    void MetalRenderer::set_terrain_forest (std::span<const float> cover) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_forest");
-      const std::size_t expected =
-        static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_forest =
-        expected != 0 && cover.size () == expected;
-      if (!m_terrain_resources.have_forest)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.forest ||
-          m_terrain_resources.forest.width != static_cast<NSUInteger> (width) ||
-          m_terrain_resources.forest.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatR32Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.forest = [m_device newTextureWithDescriptor:td];
-      }
-      upload_texture (
-        m_terrain_resources.forest, cover.data (), width, height, 4, false);
+      id<MTLBuffer> staging =
+        [m_device newBufferWithLength:pixels.byte_size ()
+                              options:MTLResourceStorageModeShared];
+      pixels.write_into (static_cast<std::byte*> (staging.contents));
+      blit_into (texture,
+                 staging,
+                 width,
+                 height,
+                 static_cast<int> (render::bytes_per_pixel (pixels.format ())),
+                 false);
+      return true;
     }
 
     void
-    MetalRenderer::set_terrain_snow_support (std::span<const float> support) {
-      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_snow_support");
-      const std::size_t expected =
-        static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_snow_support =
-        expected != 0 && support.size () == expected;
-      if (!m_terrain_resources.have_snow_support)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.snow_support ||
-          m_terrain_resources.snow_support.width !=
-            static_cast<NSUInteger> (width) ||
-          m_terrain_resources.snow_support.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatR16Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.snow_support =
-          [m_device newTextureWithDescriptor:td];
-      }
-      std::vector<__fp16> halves (support.size ());
-      for (std::size_t i = 0; i < support.size (); ++i)
-        halves[i] = static_cast<__fp16> (support[i]);
-      upload_texture (m_terrain_resources.snow_support,
-                      halves.data (),
-                      width,
-                      height,
-                      sizeof (__fp16),
-                      false);
+    MetalRenderer::set_terrain_geology (const render::TexturePixels& geology) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_geology");
+      m_terrain_resources.have_geology = upload_overlay (
+        m_terrain_resources.geology, geology, MTLPixelFormatRG16Float);
     }
 
-    void MetalRenderer::set_terrain_channel_flux (std::span<const float> flux) {
+    void
+    MetalRenderer::set_terrain_shore (const render::TexturePixels& distance) {
+      m_terrain_resources.have_shore = upload_overlay (
+        m_terrain_resources.shore, distance, MTLPixelFormatR16Float);
+    }
+
+    void
+    MetalRenderer::set_terrain_paths (const render::TexturePixels& influence) {
+      m_terrain_resources.have_paths = upload_overlay (
+        m_terrain_resources.paths, influence, MTLPixelFormatRG16Float);
+    }
+
+    void MetalRenderer::set_terrain_moisture (
+      const render::TexturePixels& moisture) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_moisture");
+      m_terrain_resources.have_moisture = upload_overlay (
+        m_terrain_resources.moisture, moisture, MTLPixelFormatR32Float);
+    }
+
+    void
+    MetalRenderer::set_terrain_forest (const render::TexturePixels& cover) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_forest");
+      m_terrain_resources.have_forest = upload_overlay (
+        m_terrain_resources.forest, cover, MTLPixelFormatR32Float);
+    }
+
+    void MetalRenderer::set_terrain_snow_support (
+      const render::TexturePixels& support) {
+      MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_snow_support");
+      m_terrain_resources.have_snow_support = upload_overlay (
+        m_terrain_resources.snow_support, support, MTLPixelFormatR16Float);
+    }
+
+    // Direction times a [0,1] activity fits comfortably in half precision.
+    void MetalRenderer::set_terrain_channel_flux (
+      const render::TexturePixels& flux) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain_channel_flux");
-      // Interleaved (x, z) drainage flux per terrain sample; direction times
-      // a [0,1] activity fits comfortably in half precision.
-      const std::size_t expected =
-        2 * static_cast<std::size_t> (m_terrain_resources.params.width) *
-        m_terrain_resources.params.height;
-      m_terrain_resources.have_channel_flux =
-        expected != 0 && flux.size () == expected;
-      if (!m_terrain_resources.have_channel_flux)
-        return;
-      const int width = m_terrain_resources.params.width;
-      const int height = m_terrain_resources.params.height;
-      if (!m_terrain_resources.channel_flux ||
-          m_terrain_resources.channel_flux.width !=
-            static_cast<NSUInteger> (width) ||
-          m_terrain_resources.channel_flux.height !=
-            static_cast<NSUInteger> (height)) {
-        MTLTextureDescriptor* td = [MTLTextureDescriptor
-          texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Float
-                                       width:width
-                                      height:height
-                                   mipmapped:NO];
-        td.storageMode = MTLStorageModePrivate;
-        td.usage = MTLTextureUsageShaderRead;
-        m_terrain_resources.channel_flux =
-          [m_device newTextureWithDescriptor:td];
-      }
-      std::vector<__fp16> halves (flux.size ());
-      for (std::size_t i = 0; i < flux.size (); ++i)
-        halves[i] = static_cast<__fp16> (flux[i]);
-      upload_texture (m_terrain_resources.channel_flux,
-                      halves.data (),
-                      width,
-                      height,
-                      4,
-                      false);
+      m_terrain_resources.have_channel_flux = upload_overlay (
+        m_terrain_resources.channel_flux, flux, MTLPixelFormatRG16Float);
     }
 
     // -- targets -------------------------------------------------------

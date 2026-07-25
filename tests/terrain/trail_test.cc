@@ -121,10 +121,11 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.report.mean_centerline_grade >= 0.0);
   MOPPE_CHECK (result.report.maximum_centerline_grade >=
                result.report.mean_centerline_grade);
-  MOPPE_CHECK (meters_value (result.report.maximum_centerline_step) <=
-               std::hypot (trail_valley_grid ().spacing_x_m (),
-                           trail_valley_grid ().spacing_z_m ()) +
-                 1e-5f);
+  MOPPE_CHECK (
+    meters_value (result.report.maximum_centerline_step) <=
+    std::hypot (trail_valley_grid ().spacing_x ().numerical_value_in (u::m),
+                trail_valley_grid ().spacing_z ().numerical_value_in (u::m)) +
+      1e-5f);
   bool valley_changed = false;
   for (int y = 1; y < 8; ++y)
     for (int x = 3; x <= 5; ++x)

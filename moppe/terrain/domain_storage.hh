@@ -19,8 +19,8 @@ namespace moppe::spatial {
                        const terrain::TerrainDomain& domain) {
       detail::write_scalar (out, static_cast<std::uint32_t> (domain.width ()));
       detail::write_scalar (out, static_cast<std::uint32_t> (domain.height ()));
-      detail::write_scalar (out, domain.spacing_x_m ());
-      detail::write_scalar (out, domain.spacing_z_m ());
+      detail::write_scalar (out, domain.spacing_x ().numerical_value_in (u::m));
+      detail::write_scalar (out, domain.spacing_z ().numerical_value_in (u::m));
     }
 
     static std::optional<terrain::TerrainDomain> read (std::istream& in) {
