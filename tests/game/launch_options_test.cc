@@ -52,6 +52,8 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (
     parsed ({ "--terrain-quality", "research" }).generation_profile ==
     terrain::TerrainGenerationProfile::Research);
+  MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).generation_profile ==
+               terrain::TerrainGenerationProfile::Smoke);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {
@@ -104,6 +106,8 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
 MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
   MOPPE_CHECK (parsed ({ "--fast" }).world.resolution == 1024);
   MOPPE_CHECK (parsed ({ "--terrain-quality", "fast" }).world.resolution ==
+               1024);
+  MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).world.resolution ==
                1024);
   MOPPE_CHECK (parsed ({}).world.resolution != 1024);
 }

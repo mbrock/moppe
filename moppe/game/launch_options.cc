@@ -130,12 +130,15 @@ namespace moppe::game {
         } },
       { "--terrain-quality",
         1,
-        "fast, play, or research",
+        "smoke, fast, play, or research",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
           const std::string_view quality = values[0];
-          if (quality == "fast")
+          if (quality == "smoke")
+            options.generation_profile =
+              terrain::TerrainGenerationProfile::Smoke;
+          else if (quality == "fast")
             options.generation_profile =
               terrain::TerrainGenerationProfile::Fast;
           else if (quality == "play")
@@ -224,7 +227,9 @@ namespace moppe::game {
         error = "--graphics-benchmark is required with benchmark options";
         return false;
       }
-      if (options.generation_profile == terrain::TerrainGenerationProfile::Fast)
+      if (options.generation_profile ==
+            terrain::TerrainGenerationProfile::Smoke ||
+          options.generation_profile == terrain::TerrainGenerationProfile::Fast)
         options.world.resolution = 1024;
       options.config.capture_frames = !options.screenshot_path.empty () ||
                                       ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
