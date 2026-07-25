@@ -16,6 +16,9 @@ from collections import Counter, defaultdict, deque
 
 from clang import cindex
 
+from analysis_cache import cache_hit, repository_digest, write_manifest
+from analysis_unity import analysis_entries
+
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build-homebrew"
@@ -135,13 +138,11 @@ def parse_arguments(entry):
 
 def load_complexity(sources, refresh, jobs):
   report = BUILD / "complexity.csv"
-  stale = not report.exists()
-  if not stale:
-    stale = any(source.stat().st_mtime > report.stat().st_mtime
-                for source in sources)
-  if refresh or stale:
-    run([str(ROOT / "tools/complexity-report"), "--top", "0",
-         "--jobs", str(jobs)], cwd=ROOT)
+  command = [str(ROOT / "tools/complexity-report"), "--top", "0",
+             "--jobs", str(jobs)]
+  if refresh:
+    command.append("--refresh")
+  run(command, cwd=ROOT)
   values = {}
   with report.open(newline="") as input_file:
     for row in csv.DictReader(input_file):
@@ -161,7 +162,7 @@ def dispatch_kind(reference):
 
 def extract_translation_unit(index, entry, nodes, edges):
   source = pathlib.Path(entry["file"]).resolve()
-  source_name = relative(source)
+  source_names = set(entry["_moppe_sources"])
   arguments = parse_arguments(entry)
   translation_unit = index.parse(
       str(source), args=arguments, options=0)
@@ -175,7 +176,7 @@ def extract_translation_unit(index, entry, nodes, edges):
   def visit(cursor, caller=None):
     location = project_location(cursor)
     if cursor.kind != cindex.CursorKind.TRANSLATION_UNIT:
-      if not location or location[0] != source_name:
+      if not location or location[0] not in source_names:
         return
 
     active_caller = caller
@@ -231,6 +232,39 @@ def write_csv(path, rows, fields):
     writer = csv.DictWriter(output_file, fieldnames=fields)
     writer.writeheader()
     writer.writerows(rows)
+
+
+def read_graph(output):
+  with (output / "nodes.csv").open(newline="") as input_file:
+    nodes = {}
+    for row in csv.DictReader(input_file):
+      for field in ("line", "definition", "cyclomatic", "cognitive"):
+        row[field] = int(row[field])
+      nodes[row["id"]] = row
+  with (output / "edges.csv").open(newline="") as input_file:
+    edges = []
+    for row in csv.DictReader(input_file):
+      for field in ("line", "column"):
+        row[field] = int(row[field])
+      edges.append(row)
+  return nodes, edges
+
+
+def finish_output(output, nodes, edges, focus_pattern, depth):
+  print_summary(nodes, edges)
+  if focus_pattern:
+    focus = select_focus(nodes, focus_pattern)
+    dot_path = output / "focus.dot"
+    svg_path = output / "focus.svg"
+    write_dot(dot_path, nodes, edges, focus, depth)
+    if shutil.which("dot"):
+      run(["dot", "-Tsvg", str(dot_path), "-o", str(svg_path)])
+      print(f"\nFocused graph: {svg_path}")
+    else:
+      print(f"\nFocused graph: {dot_path}")
+  else:
+    (output / "focus.dot").unlink(missing_ok=True)
+    (output / "focus.svg").unlink(missing_ok=True)
 
 
 def select_focus(nodes, pattern):
@@ -379,31 +413,52 @@ def main():
   parser.add_argument("-j", "--jobs", type=int, default=4,
                       help="parallel Clang processes (default: 4)")
   parser.add_argument("--refresh-complexity", action="store_true")
+  parser.add_argument("--refresh", action="store_true",
+                      help="ignore matching cached graph data")
   args = parser.parse_args()
 
   library = os.environ.get("LIBCLANG_LIBRARY_FILE")
   if not library:
     raise SystemExit("LIBCLANG_LIBRARY_FILE is not set; use callgraph-report")
+  manifest_path = args.output / "input-manifest.json"
+  digest = repository_digest(ROOT, [
+      "tools/analysis_cache.py",
+      "tools/analysis_unity.py",
+      "tools/callgraph-report",
+      "tools/callgraph_report.py",
+      "tools/complexity-report",
+  ], {"analysis": "callgraph", "source_filter": args.source, "version": 3})
+  required = [
+      args.output / "nodes.csv",
+      args.output / "edges.csv",
+      args.output / "module-edges.csv",
+  ]
+  if (not args.refresh and not args.refresh_complexity
+      and cache_hit(manifest_path, digest, required)):
+    print("Call graph inputs are unchanged; reusing cached CSV data.",
+          file=sys.stderr)
+    nodes, edges = read_graph(args.output)
+    finish_output(args.output, nodes, edges, args.focus, args.depth)
+    return
+
   run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
 
   commands = json.loads((BUILD / "compile_commands.json").read_text())
-  entries = {}
-  for entry in commands:
-    source = pathlib.Path(entry["file"]).resolve()
-    try:
-      source.relative_to(ROOT / "moppe")
-    except ValueError:
-      continue
-    if source.suffix in (".cc", ".cpp", ".mm"):
-      entries[source] = entry
-  sources = sorted(entries)
+  entries = analysis_entries(commands, ROOT, BUILD)
   if args.source:
     source_pattern = re.compile(args.source)
-    sources = [source for source in sources
-               if source_pattern.search(relative(source))]
-    entries = {source: entries[source] for source in sources}
-  if not sources:
+    selected = []
+    for entry in entries:
+      matching = [source for source in entry["_moppe_sources"]
+                  if source_pattern.search(source)]
+      if matching:
+        selected.append({**entry, "_moppe_sources": matching})
+    entries = selected
+  if not entries:
     raise SystemExit("no source files matched")
+  sources = sorted({
+      ROOT / source for entry in entries for source in entry["_moppe_sources"]
+  })
   complexity = load_complexity(sources, args.refresh_complexity, args.jobs)
 
   nodes = {}
@@ -412,9 +467,10 @@ def main():
   pool = context.Pool(processes=args.jobs, maxtasksperchild=1)
   try:
     results = pool.imap_unordered(
-        extract_entry, (entries[source] for source in sources))
+        extract_entry, entries)
     for number, (source_nodes, source_edges) in enumerate(results, 1):
-      print(f"[{number:2}/{len(sources)}] translation units", file=sys.stderr)
+      print(f"[{number:2}/{len(entries)}] unity translation units",
+            file=sys.stderr)
       for node_id, node in source_nodes.items():
         previous = nodes.get(node_id)
         if not previous or node["definition"] > previous["definition"]:
@@ -438,21 +494,8 @@ def main():
             list(next(iter(nodes.values()))))
   write_csv(args.output / "edges.csv", edges, list(edges[0]))
   write_module_edges(args.output / "module-edges.csv", nodes, edges)
-  print_summary(nodes, edges)
-
-  if args.focus:
-    focus = select_focus(nodes, args.focus)
-    dot_path = args.output / "focus.dot"
-    svg_path = args.output / "focus.svg"
-    write_dot(dot_path, nodes, edges, focus, args.depth)
-    if shutil.which("dot"):
-      run(["dot", "-Tsvg", str(dot_path), "-o", str(svg_path)])
-      print(f"\nFocused graph: {svg_path}")
-    else:
-      print(f"\nFocused graph: {dot_path}")
-  else:
-    (args.output / "focus.dot").unlink(missing_ok=True)
-    (args.output / "focus.svg").unlink(missing_ok=True)
+  write_manifest(manifest_path, digest)
+  finish_output(args.output, nodes, edges, args.focus, args.depth)
 
 
 if __name__ == "__main__":

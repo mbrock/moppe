@@ -9,6 +9,8 @@ from collections import defaultdict
 
 import duckdb
 
+from analysis_cache import cache_hit, input_digest, write_manifest
+
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 GRAPH = ROOT / "build-homebrew/callgraph"
@@ -372,6 +374,8 @@ def main():
                       default=DEFAULT_OUTPUT)
   parser.add_argument("--entrypoint", action="append",
                       help="exact function name or regex; may be repeated")
+  parser.add_argument("--refresh", action="store_true",
+                      help="ignore a matching cached analysis")
   args = parser.parse_args()
   nodes_path = GRAPH / "nodes.csv"
   edges_path = GRAPH / "edges.csv"
@@ -379,6 +383,29 @@ def main():
     raise SystemExit("run tools/callgraph-report first")
   args.output.mkdir(parents=True, exist_ok=True)
   database = args.output / "callgraph.duckdb"
+  patterns = args.entrypoint or DEFAULT_ENTRYPOINTS
+  manifest_path = args.output / "input-manifest.json"
+  digest = input_digest(ROOT, [
+      nodes_path,
+      edges_path,
+      ROOT / "tools/analysis_cache.py",
+      ROOT / "tools/callgraph-analyze",
+      ROOT / "tools/callgraph_analyze.py",
+  ], {"analysis": "callgraph-analyze", "entrypoints": patterns, "version": 1})
+  required = [
+      database,
+      args.output / "summary.md",
+      args.output / "function-metrics.csv",
+      args.output / "entrypoint-exposure.csv",
+  ]
+  if not args.refresh and cache_hit(manifest_path, digest, required):
+    print("Call-graph analysis inputs are unchanged; reusing cached reports.",
+          file=sys.stderr)
+    connection = duckdb.connect(str(database), read_only=True)
+    print_results(connection, args.output)
+    connection.close()
+    return
+
   connection = duckdb.connect(str(database))
   connection.execute("SET threads = 1")
   load_onager(connection)
@@ -387,13 +414,13 @@ def main():
   nodes = [dict(zip(
       ("node_id", "name"), row)) for row in
       connection.execute("SELECT node_id, name FROM nodes").fetchall()]
-  patterns = args.entrypoint or DEFAULT_ENTRYPOINTS
   entrypoints = resolve_entrypoints(nodes, patterns)
   store_exposure(connection, entrypoints)
   export_reports(connection, args.output)
   write_summary(connection, args.output)
   print_results(connection, args.output)
   connection.close()
+  write_manifest(manifest_path, digest)
 
 
 if __name__ == "__main__":
