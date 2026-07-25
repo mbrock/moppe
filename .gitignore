@@ -10,4 +10,5 @@ terrain-lab.png
 *.xcworkspace/xcuserdata/
 moppe.xcworkspace/
 .cache/
+__pycache__/
 Untitled*
