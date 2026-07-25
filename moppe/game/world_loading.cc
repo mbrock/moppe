@@ -12,7 +12,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <deque>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -26,6 +25,15 @@ namespace moppe::game {
     int loading_preview_resolution (int terrain_resolution) {
       constexpr int maximum_preview_resolution = 513;
       return std::min (terrain_resolution, maximum_preview_resolution);
+    }
+
+    std::string grouped_number (int value) {
+      std::string result = std::to_string (value);
+      for (std::ptrdiff_t i = static_cast<std::ptrdiff_t> (result.size ()) - 3;
+           i > 0;
+           i -= 3)
+        result.insert (static_cast<std::size_t> (i), ",");
+      return result;
     }
 
     void append_cache_float (std::ostream& stream, float value) {
@@ -109,104 +117,22 @@ namespace moppe::game {
         output.write (reinterpret_cast<const char*> (snapshot.data ()),
                       static_cast<std::streamsize> (samples * sizeof (float)));
     }
-  }
 
-  LoadingStageText loading_stage_text (LoadingStage stage) {
-    switch (stage) {
-    case LoadingStage::Starting:
-      return { "Waking the world builder",
-               "Preparing terrain storage and compute",
-               0.02f };
-    case LoadingStage::LookingForCache:
-      return { "Looking for saved terrain",
-               "Checking this build, profile, and seed",
-               0.04f };
-    case LoadingStage::ReadingCache:
-      return { "Reading saved terrain",
-               "Reusing the finished heightfield",
-               0.10f };
-    case LoadingStage::BuildingContinents:
-      return { "Drawing the continents",
-               "Materializing the geological field",
-               0.06f };
-    case LoadingStage::EvolvingTerrain:
-      return { "Running geological time",
-               "Uplift and erosion are reshaping the land",
-               0.20f };
-    case LoadingStage::RefiningTerrain:
-      return { "Refining the terrain",
-               "Shaping coasts, channels, and the overland route",
-               0.68f };
-    case LoadingStage::SavingTerrain:
-      return { "Saving the terrain",
-               "Keeping this expensive result for the next launch",
-               0.69f };
-    case LoadingStage::RebuildingSurface:
-      return { "Calculating slopes",
-               "Rebuilding normals and the sampled surface",
-               0.72f };
-    case LoadingStage::FindingStandingWater:
-      return { "Filling seas and lakes",
-               "Finding the connected water surface",
-               0.75f };
-    case LoadingStage::CataloguingLakes:
-      return { "Cataloguing lakes",
-               "Measuring every separate body of water",
-               0.78f };
-    case LoadingStage::TracingDrainage:
-      return { "Tracing the drainage",
-               "Following every wet cell downhill",
-               0.81f };
-    case LoadingStage::ConnectingWaterways:
-      return { "Connecting the waterways",
-               "Joining lakes, outlets, and the sea",
-               0.84f };
-    case LoadingStage::ExtractingRivers:
-      return { "Extracting the rivers",
-               "Selecting the channels visible in the world",
-               0.87f };
-    case LoadingStage::AssemblingWorld:
-      return { "Assembling the world",
-               "Painting water, moisture, materials, and the opening route",
-               0.90f };
-    case LoadingStage::PreparingWater:
-      return { "Setting the water in motion",
-               "Building river ribbons and standing-water surfaces",
-               0.91f };
-    case LoadingStage::PreparingSurface:
-      return { "Painting the surface",
-               "Preparing moisture and geological materials",
-               0.925f };
-    case LoadingStage::PlacingStars:
-      return { "Placing the stars",
-               "Finding bright landmarks across the terrain",
-               0.94f };
-    case LoadingStage::GrowingForest:
-      return { "Growing the forest",
-               "Distributing the canopy across the landscape",
-               0.95f };
-    case LoadingStage::PlantingTrailside:
-      return { "Planting the trailside",
-               "Growing the first stand around the journey's beginning",
-               0.96f };
-    case LoadingStage::PlanningJourney:
-      return { "Planning the first journey",
-               "Choosing a route through the new landscape",
-               0.97f };
-    case LoadingStage::UploadingTerrain:
-      return { "Uploading the landscape",
-               "Moving the finished world onto the GPU",
-               0.98f };
-    case LoadingStage::CastingShadows:
-      return { "Casting the first shadows",
-               "Precomputing sunlight across the terrain",
-               0.99f };
-    case LoadingStage::Ready:
-      return { "The world is ready", "Setting out", 1.0f };
+    // The field evaluator reports row completion from several worker
+    // threads at once; only the furthest row should reach the status line.
+    bool advance_watermark (std::atomic<int>& watermark, int row) {
+      int observed = watermark.load ();
+      while (observed < row)
+        if (watermark.compare_exchange_weak (observed, row))
+          return true;
+      return false;
     }
-    return { "Building the world", "Working", 0.0f };
   }
 
+  // The state shared between the generation thread and the loading screen.
+  // The worker writes status text and the newest terrain snapshot; the main
+  // thread reads them once per frame.  There is no queue and no pacing: the
+  // preview always shows the latest terrain the worker has produced.
   class WorldLoadingState {
   public:
     WorldLoadingState (const WorldParams& initial_world,
@@ -222,41 +148,38 @@ namespace moppe::game {
     void reset (const WorldParams& world, const terrain::WorldRecipe& recipe) {
       preview_world = world;
       seed = recipe.seed ().value;
-      work_done = 0;
-      work_total = 1;
-      geological_years_done = 0;
-      geological_years_total = 0;
-      source_done = 0;
-      source_total = 1;
-      progress_display = 0.0f;
-      progress_target = 0.0f;
-      last_frame_time = 0.0f;
-      evolution_frames = 0;
-      evolution_frame_time = 0.0;
-      evolution_max_frame_time = 0.0f;
-      evolution_frames_over_20ms = 0;
-      benchmark_reported = false;
-      height_transition_ready_time = 0.0f;
-      capture_done = false;
       clock_start = platform::now ();
+      capture_done = false;
       terrain_visible = false;
       generation_complete = false;
       {
         const std::lock_guard<std::mutex> lock (mutex);
+        title.clear ();
+        detail.clear ();
+        progress = -1.0f;
         events.clear ();
-        height_queue.clear ();
-        last_published_heights.reset ();
+        latest.reset ();
+        consumed.reset ();
         completed_world.reset ();
       }
-      set_stage (LoadingStage::Starting);
+      report ("Waking the world builder",
+              "Preparing terrain storage and compute");
     }
 
-    void set_stage (LoadingStage value) {
-      stage = value;
-      const double elapsed = platform::now () - clock_start;
+    float elapsed () const {
+      return static_cast<float> (platform::now () - clock_start);
+    }
+
+    void report (std::string new_title,
+                 std::string new_detail,
+                 float new_progress = -1.0f) {
+      const double now = elapsed ();
       const std::lock_guard<std::mutex> lock (mutex);
-      if (events.empty () || events.back ().stage != value)
-        events.push_back ({ value, elapsed });
+      if (events.empty () || events.back ().title != new_title)
+        events.push_back ({ new_title, now });
+      title = std::move (new_title);
+      detail = std::move (new_detail);
+      progress = new_progress;
     }
 
     void publish_terrain (const map::RandomHeightMap& terrain) {
@@ -275,10 +198,8 @@ namespace moppe::game {
         }
       }
       const std::lock_guard<std::mutex> lock (mutex);
-      if (!last_published_heights || *last_published_heights != *heights) {
-        last_published_heights = heights;
-        height_queue.push_back (std::move (heights));
-      }
+      if (!latest || *latest != *heights)
+        latest = std::move (heights);
     }
 
     void publish_completed (std::unique_ptr<GeneratedWorld> world) {
@@ -292,32 +213,20 @@ namespace moppe::game {
     WorldParams preview_world;
     std::atomic<std::uint32_t> seed;
     map::RandomHeightMap preview_map;
-    std::mutex mutex;
-    std::vector<LoadingEvent> events;
-    std::deque<std::shared_ptr<const std::vector<float>>> height_queue;
-    std::shared_ptr<const std::vector<float>> last_published_heights;
-    std::unique_ptr<GeneratedWorld> completed_world;
-    std::atomic<int> work_done = 0;
-    std::atomic<int> work_total = 1;
-    std::atomic<int> geological_years_done = 0;
-    std::atomic<int> geological_years_total = 0;
-    std::atomic<int> source_done = 0;
-    std::atomic<int> source_total = 1;
-    float progress_display = 0.0f;
-    float progress_target = 0.0f;
-    float last_frame_time = 0.0f;
-    int evolution_frames = 0;
-    double evolution_frame_time = 0.0;
-    float evolution_max_frame_time = 0.0f;
-    int evolution_frames_over_20ms = 0;
-    bool benchmark_reported = false;
-    float height_transition_ready_time = 0.0f;
     double clock_start;
     bool capture_done = false;
     bool terrain_visible = false;
     std::atomic<bool> generation_complete = false;
     std::atomic<bool> in_flight = false;
-    std::atomic<LoadingStage> stage = LoadingStage::Starting;
+
+    std::mutex mutex;
+    std::string title;
+    std::string detail;
+    float progress = -1.0f;
+    std::vector<LoadingEvent> events;
+    std::shared_ptr<const std::vector<float>> latest;
+    std::shared_ptr<const std::vector<float>> consumed;
+    std::unique_ptr<GeneratedWorld> completed_world;
   };
 
   namespace {
@@ -337,100 +246,97 @@ namespace moppe::game {
       std::vector<std::vector<float>>& history = build.terrain_history ();
       std::optional<terrain::TrailNetwork> generated_trails;
       const terrain::WorldRecipe& recipe = completed->recipe ();
-      std::unique_ptr<terrain::FieldEvaluator> field_evaluator;
-      std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution_backend;
-      {
-        MOPPE_PROFILE_ZONE ("startup.create_field_evaluator");
-        field_evaluator = platform::create_field_evaluator ();
-        evolution_backend = platform::create_stream_power_evolution_backend ();
-      }
+      std::unique_ptr<terrain::FieldEvaluator> field_evaluator =
+        platform::create_field_evaluator ();
+      std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution_backend =
+        platform::create_stream_power_evolution_backend ();
+
       const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
       const std::string automatic_cache = terrain_cache_path (recipe);
       const char* cache =
         cache_override ? cache_override : automatic_cache.c_str ();
-      state.set_stage (LoadingStage::LookingForCache);
-      bool cache_loaded = false;
-      {
-        MOPPE_PROFILE_ZONE ("startup.try_load_terrain_cache");
-        cache_loaded = cache && terrain.try_load_cache (cache);
-      }
+      state.report ("Looking for saved terrain",
+                    "Checking this build, profile, and seed");
+      const bool cache_loaded = cache && terrain.try_load_cache (cache);
+
       if (cache_loaded) {
-        state.set_stage (LoadingStage::ReadingCache);
+        state.report ("Reading saved terrain",
+                      "Reusing the finished heightfield");
         const std::size_t count =
           static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-        {
-          MOPPE_PROFILE_ZONE ("startup.load_terrain_history");
-          load_terrain_history (cache, count, history);
-        }
+        load_terrain_history (cache, count, history);
         state.publish_terrain (terrain);
       } else {
-        state.set_stage (LoadingStage::BuildingContinents);
+        state.report ("Drawing the continents",
+                      "Materializing the geological field");
         map::TerrainEvaluator evaluator (
           terrain, field_evaluator.get (), evolution_backend.get ());
         history.clear ();
-        {
-          MOPPE_PROFILE_ZONE ("startup.evaluate_terrain_program");
-          evaluator.evaluate (
-            recipe.terrain_program (),
-            [&state, &history, &terrain] (
-              std::size_t, const terrain::TerrainTransform& transform) {
-              const std::size_t count =
-                static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-              history.emplace_back (terrain.raw_heights (),
-                                    terrain.raw_heights () + count);
-              state.publish_terrain (terrain);
-              if (std::holds_alternative<terrain::OrogenyEvolution> (transform))
-                state.set_stage (LoadingStage::RefiningTerrain);
-            },
-            [&state, &terrain] (std::size_t,
-                                const terrain::TerrainTransform& transform,
-                                int completed_steps,
-                                int total_steps) {
-              if (!std::holds_alternative<terrain::OrogenyEvolution> (
-                    transform))
-                return;
-              const auto& orogeny =
-                std::get<terrain::OrogenyEvolution> (transform);
-              state.set_stage (LoadingStage::EvolvingTerrain);
-              state.work_done = completed_steps;
-              state.work_total = total_steps;
-              const float duration =
-                julian_years_value (orogeny.evolution.duration);
-              const float step =
-                julian_years_value (orogeny.evolution.time_step);
-              state.geological_years_done = static_cast<int> (
-                std::lround (std::min (duration, completed_steps * step)));
-              state.geological_years_total =
-                static_cast<int> (std::lround (duration));
-              state.publish_terrain (terrain);
-            },
-            [&state] (std::size_t completed_rows, std::size_t total_rows) {
-              int observed = state.source_done.load ();
-              const int value = static_cast<int> (completed_rows);
-              while (
-                observed < value &&
-                !state.source_done.compare_exchange_weak (observed, value)) {}
-              state.source_total = static_cast<int> (total_rows);
-            });
-        }
+        std::atomic<int> row_watermark { 0 };
+        evaluator.evaluate (
+          recipe.terrain_program (),
+          // A transform finished: snapshot it for the history scrubber and
+          // show the newest terrain.
+          [&state, &history, &terrain] (
+            std::size_t, const terrain::TerrainTransform& transform) {
+            const std::size_t count =
+              static_cast<std::size_t> (terrain.width ()) * terrain.height ();
+            history.emplace_back (terrain.raw_heights (),
+                                  terrain.raw_heights () + count);
+            state.publish_terrain (terrain);
+            if (std::holds_alternative<terrain::OrogenyEvolution> (transform))
+              state.report ("Refining the terrain",
+                            "Shaping coasts, channels, and the overland "
+                            "route");
+          },
+          // Orogeny progress: geological time is the real measure here.
+          [&state] (std::size_t,
+                    const terrain::TerrainTransform& transform,
+                    int completed_steps,
+                    int total_steps) {
+            if (!std::holds_alternative<terrain::OrogenyEvolution> (transform))
+              return;
+            const auto& orogeny =
+              std::get<terrain::OrogenyEvolution> (transform);
+            const float duration =
+              julian_years_value (orogeny.evolution.duration);
+            const float step = julian_years_value (orogeny.evolution.time_step);
+            const int years_done = static_cast<int> (
+              std::lround (std::min (duration, completed_steps * step)));
+            const int years_total = static_cast<int> (std::lround (duration));
+            std::ostringstream detail;
+            detail << "Geological time  " << grouped_number (years_done)
+                   << " / " << grouped_number (years_total)
+                   << " years  /  step " << completed_steps << " of "
+                   << total_steps;
+            state.report ("Running geological time",
+                          detail.str (),
+                          static_cast<float> (completed_steps) /
+                            std::max (1, total_steps));
+          },
+          // Field rows complete out of order across evaluator threads.
+          [&state, &row_watermark] (std::size_t completed_rows,
+                                    std::size_t total_rows) {
+            if (!advance_watermark (row_watermark,
+                                    static_cast<int> (completed_rows)))
+              return;
+            std::ostringstream detail;
+            detail << "Field row " << completed_rows << " of " << total_rows;
+            state.report ("Drawing the continents",
+                          detail.str (),
+                          static_cast<float> (completed_rows) /
+                            std::max<std::size_t> (1, total_rows));
+          });
         generated_trails = evaluator.release_trail_network ();
         const std::size_t count =
           static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-        {
-          MOPPE_PROFILE_ZONE ("startup.snapshot_finished_terrain");
-          history.emplace_back (terrain.raw_heights (),
-                                terrain.raw_heights () + count);
-        }
+        history.emplace_back (terrain.raw_heights (),
+                              terrain.raw_heights () + count);
         if (cache) {
-          state.set_stage (LoadingStage::SavingTerrain);
-          {
-            MOPPE_PROFILE_ZONE ("startup.save_terrain_cache");
-            terrain.save_cache (cache);
-          }
-          {
-            MOPPE_PROFILE_ZONE ("startup.save_terrain_history");
-            save_terrain_history (cache, history);
-          }
+          state.report ("Saving the terrain",
+                        "Keeping this expensive result for the next launch");
+          terrain.save_cache (cache);
+          save_terrain_history (cache, history);
         }
       }
       if (history.empty ()) {
@@ -440,29 +346,33 @@ namespace moppe::game {
                               terrain.raw_heights () + count);
       }
       state.publish_terrain (terrain);
-      state.set_stage (LoadingStage::RebuildingSurface);
-      {
-        MOPPE_PROFILE_ZONE ("startup.recompute_terrain_normals");
-        build.rebuild_surface ();
-      }
+
+      state.report ("Calculating slopes",
+                    "Rebuilding normals and the sampled surface");
+      build.rebuild_surface ();
 
       build.analyze_hydrology ([&state] (GeneratedWorld::HydrologyStage stage) {
         switch (stage) {
         case GeneratedWorld::HydrologyStage::StandingWater:
-          state.set_stage (LoadingStage::FindingStandingWater);
+          state.report ("Filling seas and lakes",
+                        "Finding the connected water surface");
           break;
         case GeneratedWorld::HydrologyStage::Lakes:
-          state.set_stage (LoadingStage::CataloguingLakes);
+          state.report ("Cataloguing lakes",
+                        "Measuring every separate body of water");
           break;
         case GeneratedWorld::HydrologyStage::Drainage:
-          state.set_stage (LoadingStage::TracingDrainage);
+          state.report ("Tracing the drainage",
+                        "Following every wet cell downhill");
           break;
         case GeneratedWorld::HydrologyStage::Waterways:
-          state.set_stage (LoadingStage::ConnectingWaterways);
+          state.report ("Connecting the waterways",
+                        "Joining lakes, outlets, and the sea");
           break;
         case GeneratedWorld::HydrologyStage::Channels:
         case GeneratedWorld::HydrologyStage::Rivers:
-          state.set_stage (LoadingStage::ExtractingRivers);
+          state.report ("Extracting the rivers",
+                        "Selecting the channels visible in the world");
           break;
         }
       });
@@ -475,7 +385,9 @@ namespace moppe::game {
       std::cerr << "standing water: " << hydrology->lakes ().bodies.size ()
                 << " bodies, " << wet << " wet cells\n";
 
-      state.set_stage (LoadingStage::AssemblingWorld);
+      state.report ("Assembling the world",
+                    "Painting water, moisture, materials, and the opening "
+                    "route");
       build.materialize_analyses (std::move (generated_trails));
       state.publish_completed (std::move (completed));
     }
@@ -520,8 +432,9 @@ namespace moppe::game {
     platform::async (generate_world, finish_world, std::move (job));
   }
 
-  void WorldLoading::set_stage (LoadingStage stage) {
-    m_state->set_stage (stage);
+  void
+  WorldLoading::report (std::string title, std::string detail, float progress) {
+    m_state->report (std::move (title), std::move (detail), progress);
   }
 
   bool WorldLoading::generation_complete () const noexcept {
@@ -535,98 +448,34 @@ namespace moppe::game {
     return std::move (m_state->completed_world);
   }
 
-  WorldLoadingFrame WorldLoading::advance (double now,
-                                           float transition_seconds) {
+  LoadingStatus WorldLoading::status () {
     WorldLoadingState& state = *m_state;
-    const float elapsed = static_cast<float> (now - state.clock_start);
-    const LoadingStage stage = state.stage.load ();
-    const LoadingStageText text = loading_stage_text (stage);
-    float progress = text.progress;
-    float local_progress = -1.0f;
-    if (stage == LoadingStage::BuildingContinents) {
-      const float source =
-        static_cast<float> (state.source_done.load ()) /
-        std::max (1.0f, static_cast<float> (state.source_total.load ()));
-      local_progress = source;
-      progress = 0.06f + 0.13f * source;
-    } else if (stage == LoadingStage::EvolvingTerrain) {
-      const float erosion =
-        static_cast<float> (state.work_done.load ()) /
-        std::max (1.0f, static_cast<float> (state.work_total.load ()));
-      local_progress = erosion;
-      progress = 0.20f + 0.48f * erosion;
-    }
-    state.progress_target = std::max (state.progress_target, progress);
-    const float frame_dt =
-      std::clamp (elapsed - state.last_frame_time, 0.0f, 0.1f);
-    state.last_frame_time = elapsed;
-    if (stage == LoadingStage::EvolvingTerrain &&
-        ::getenv ("MOPPE_LOADING_BENCHMARK")) {
-      ++state.evolution_frames;
-      state.evolution_frame_time += frame_dt;
-      state.evolution_max_frame_time =
-        std::max (state.evolution_max_frame_time, frame_dt);
-      if (frame_dt > 0.020f)
-        ++state.evolution_frames_over_20ms;
-    } else if (::getenv ("MOPPE_LOADING_BENCHMARK") &&
-               state.evolution_frames > 0 && !state.benchmark_reported) {
-      const double elapsed_ms = 1000.0 * state.evolution_frame_time;
-      const double mean_ms = elapsed_ms / state.evolution_frames;
-      std::cerr << "loading benchmark: evolution_elapsed_ms=" << elapsed_ms
-                << " evolution_frames=" << state.evolution_frames
-                << " evolution_mean_ms=" << mean_ms << " evolution_max_ms="
-                << 1000.0 * state.evolution_max_frame_time
-                << " evolution_over_20ms=" << state.evolution_frames_over_20ms
-                << std::endl;
-      state.benchmark_reported = true;
-    }
-    const float progress_blend = 1.0f - std::exp (-5.0f * frame_dt);
-    state.progress_display +=
-      (state.progress_target - state.progress_display) * progress_blend;
-    if (state.progress_target - state.progress_display < 0.0005f)
-      state.progress_display = state.progress_target;
-
-    bool preview_changed = false;
-    bool preview_queue_empty = false;
-    std::vector<LoadingEvent> events;
-    {
-      const std::lock_guard<std::mutex> lock (state.mutex);
-      if (!state.height_queue.empty () &&
-          elapsed >= state.height_transition_ready_time) {
-        const auto heights = std::move (state.height_queue.front ());
-        state.height_queue.pop_front ();
-        std::copy (
-          heights->begin (), heights->end (), state.preview_map.raw_heights ());
-        preview_changed = true;
-      }
-      preview_queue_empty = state.height_queue.empty ();
-      events = state.events;
-    }
-    if (preview_changed) {
-      const bool transition = state.terrain_visible;
-      state.terrain_visible = true;
-      state.height_transition_ready_time =
-        transition ? elapsed + transition_seconds : elapsed;
-    }
-
+    const std::lock_guard<std::mutex> lock (state.mutex);
     return {
-      .stage = stage,
-      .elapsed = elapsed,
-      .progress = state.progress_display,
-      .local_progress = local_progress,
-      .preview_changed = preview_changed,
-      .preview_sequence_complete =
-        preview_queue_empty && elapsed >= state.height_transition_ready_time,
+      .title = state.title,
+      .detail = state.detail,
+      .progress = state.progress,
+      .elapsed = state.elapsed (),
       .terrain_visible = state.terrain_visible,
       .seed = state.seed.load (),
-      .work_done = state.work_done.load (),
-      .work_total = state.work_total.load (),
-      .geological_years_done = state.geological_years_done.load (),
-      .geological_years_total = state.geological_years_total.load (),
-      .source_done = state.source_done.load (),
-      .source_total = state.source_total.load (),
-      .events = std::move (events),
+      .events = state.events,
     };
+  }
+
+  bool WorldLoading::refresh_preview () {
+    WorldLoadingState& state = *m_state;
+    std::shared_ptr<const std::vector<float>> heights;
+    {
+      const std::lock_guard<std::mutex> lock (state.mutex);
+      if (state.latest == state.consumed)
+        return false;
+      heights = state.latest;
+      state.consumed = state.latest;
+    }
+    std::copy (
+      heights->begin (), heights->end (), state.preview_map.raw_heights ());
+    state.terrain_visible = true;
+    return true;
   }
 
   const WorldParams& WorldLoading::preview_world () const noexcept {
@@ -637,10 +486,13 @@ namespace moppe::game {
     return m_state->preview_map;
   }
 
-  bool WorldLoading::claim_loading_capture () noexcept {
-    if (m_state->capture_done || m_state->progress_display < 0.20f)
+  bool WorldLoading::claim_loading_capture (bool last_chance) noexcept {
+    WorldLoadingState& state = *m_state;
+    if (state.capture_done || !state.terrain_visible)
       return false;
-    m_state->capture_done = true;
+    if (!last_chance && state.elapsed () < 1.0f)
+      return false;
+    state.capture_done = true;
     return true;
   }
 }
