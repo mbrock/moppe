@@ -36,17 +36,23 @@ namespace moppe::game {
         surface.normal_at (position (Vec3 (x, 0, z))).numerical_value_in (one));
     }
 
-    float habitat_value (const map::Surface& surface, float x, float z) {
-      return surface.tree_habitat_at (position (Vec3 (x, 0, z)))
+    float
+    habitat_value (const map::SurfaceReadings& readings, float x, float z) {
+      return spatial::sample<map::tree_habitat> (readings,
+                                                 position (Vec3 (x, 0, z)))
         .numerical_value_in (one);
     }
 
-    float forest_cover_value (const map::Surface& surface, float x, float z) {
-      return surface.forest_cover_at (position (Vec3 (x, 0, z)))
+    float forest_cover_value (const map::SurfaceReadings& readings,
+                              float x,
+                              float z) {
+      return spatial::sample<map::forest_cover> (readings,
+                                                 position (Vec3 (x, 0, z)))
         .numerical_value_in (one);
     }
 
     TreeSite site_at (const map::Surface& surface,
+                      const map::SurfaceReadings& readings,
                       float x,
                       float z,
                       float scale,
@@ -56,7 +62,7 @@ namespace moppe::game {
                                                 : TreeCohort::canopy;
       return { .position = Vec3 (x, elevation_value (surface, x, z), z),
                .normal = normal_value (surface, x, z),
-               .habitat = habitat_value (surface, x, z),
+               .habitat = habitat_value (readings, x, z),
                .scale = scale,
                .seed = seed,
                .cohort = cohort };
@@ -290,16 +296,13 @@ namespace moppe::game {
     };
 
     std::vector<PatchCandidate>
-    choose_forest_patches (const map::Surface& surface,
+    choose_forest_patches (const map::SurfaceReadings& readings,
                            std::uint32_t seed,
                            std::size_t desired_count,
                            std::optional<Vec3> focus) {
-      const map::SurfaceReadings* readings = surface.readings ();
-      if (!readings)
-        return {};
-      const terrain::TerrainDomain& domain = readings->domain ();
-      const auto& cover = spatial::get<map::forest_cover> (*readings);
-      const auto& habitat = spatial::get<map::tree_habitat> (*readings);
+      const terrain::TerrainDomain& domain = readings.domain ();
+      const auto& cover = spatial::get<map::forest_cover> (readings);
+      const auto& habitat = spatial::get<map::tree_habitat> (readings);
       const std::size_t step = std::max<std::size_t> (
         1, std::min (domain.width (), domain.height ()) / 180);
       const float period_x = meters_value (domain.period_x ());
@@ -385,6 +388,7 @@ namespace moppe::game {
   }
 
   TreeGrove plan_tree_grove (const map::Surface& surface,
+                             const map::SurfaceReadings& readings,
                              std::uint32_t seed,
                              std::size_t desired_count,
                              std::optional<Vec3> focus) {
@@ -393,7 +397,7 @@ namespace moppe::game {
       return grove;
 
     const std::vector<PatchCandidate> patches =
-      choose_forest_patches (surface, seed, desired_count, focus);
+      choose_forest_patches (readings, seed, desired_count, focus);
     if (patches.empty ())
       return grove;
 
@@ -403,6 +407,7 @@ namespace moppe::game {
     recruits.reserve (std::max<std::size_t> (512, desired_count * 80));
     for (std::size_t patch = 0; patch < patches.size (); ++patch) {
       TreeSite elder = site_at (surface,
+                                readings,
                                 patches[patch].x,
                                 patches[patch].z,
                                 1.30f + 0.18f * unit (random),
@@ -419,8 +424,8 @@ namespace moppe::game {
       const float distance = 6.0f + 44.0f * std::pow (unit (random), 1.65f);
       const float x = patches[patch].x + std::sin (angle) * distance;
       const float z = patches[patch].z + std::cos (angle) * distance;
-      const float support = forest_cover_value (surface, x, z);
-      if (support < 0.08f || habitat_value (surface, x, z) < 0.34f)
+      const float support = forest_cover_value (readings, x, z);
+      if (support < 0.08f || habitat_value (readings, x, z) < 0.34f)
         continue;
       const float recruitment = unit (random);
       const float scale = recruitment < 0.34f   ? 0.38f + 0.26f * unit (random)
@@ -431,6 +436,7 @@ namespace moppe::game {
         continue;
       TreeSite site = site_at (
         surface,
+        readings,
         x,
         z,
         scale,
@@ -494,11 +500,12 @@ namespace moppe::game {
 
   void TreeStand::rebuild (render::Renderer& renderer,
                            const map::Surface& surface,
+                           const map::SurfaceReadings& readings,
                            std::uint32_t seed,
                            std::size_t desired_count,
                            std::optional<Vec3> focus) {
     MOPPE_PROFILE_ZONE ("TreeStand::rebuild");
-    m_grove = plan_tree_grove (surface, seed, desired_count, focus);
+    m_grove = plan_tree_grove (surface, readings, seed, desired_count, focus);
     m_mesh.reset ();
     if (m_grove.sites.empty ())
       return;

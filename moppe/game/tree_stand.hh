@@ -34,6 +34,7 @@ namespace moppe::game {
   // can be tested without a GPU.
   [[nodiscard]] TreeGrove
   plan_tree_grove (const map::Surface& surface,
+                   const map::SurfaceReadings& readings,
                    std::uint32_t seed,
                    std::size_t desired_count = 9,
                    std::optional<Vec3> focus = std::nullopt);
@@ -45,6 +46,7 @@ namespace moppe::game {
   public:
     void rebuild (render::Renderer& renderer,
                   const map::Surface& surface,
+                  const map::SurfaceReadings& readings,
                   std::uint32_t seed,
                   std::size_t desired_count = 9,
                   std::optional<Vec3> focus = std::nullopt);

@@ -13,9 +13,10 @@ namespace moppe::game {
     }
   }
 
-  void SurfacePresentation::refresh (const map::Surface& surface) {
+  void SurfacePresentation::refresh (const map::SurfaceGeometry& geometry,
+                                     const map::SurfaceReadings* readings) {
     MOPPE_PROFILE_ZONE ("surface.pack_presentation");
-    if (const map::SurfaceReadings* readings = surface.readings ()) {
+    if (readings) {
       m_trails = scalar_values<map::TrailInfluence> (
         spatial::get<map::trail_influence> (*readings));
       m_home_base = scalar_values<map::HomeBaseInfluence> (
@@ -55,7 +56,7 @@ namespace moppe::game {
       m_geology.clear ();
     }
     m_snow_support = scalar_values<map::SnowSupport> (
-      spatial::get<map::snow_support> (surface.geometry ()));
+      spatial::get<map::snow_support> (geometry));
   }
 
   void SurfacePresentation::upload (render::Renderer& renderer,

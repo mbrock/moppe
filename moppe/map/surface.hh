@@ -3,13 +3,12 @@
 
 #include <moppe/map/surface_sections.hh>
 
-#include <optional>
 #include <string>
 
 namespace moppe::map {
-  // The world's one finite surface store. Its mandatory geometry bundle owns
-  // elevation, normals, and material history; an optional readings bundle adds
-  // later analyses over the same domain.
+  // The world's finite ground geometry: elevation, normals, and the material
+  // history the world's erosion left behind. Readings analysed over the same
+  // domain are a separate bundle the completed world owns.
   class Surface {
   public:
     Surface (int width, int height, const Vec3& size);
@@ -47,7 +46,7 @@ namespace moppe::map {
     SurfaceElevation min_elevation () const;
     SurfaceElevation max_elevation () const;
 
-    void rebuild_geometry_readings ();
+    void rebuild_geometry ();
     void recompute_normals ();
     void reset_material_history ();
     void record_material_change (int column, int row, float delta);
@@ -58,23 +57,12 @@ namespace moppe::map {
     SurfaceElevation elevation_at (const position_t& position) const;
     SurfaceNormal normal_at (const position_t& position) const;
     SnowSupport snow_support_at (const position_t& position) const;
-    TreeHabitat tree_habitat_at (const position_t& position) const;
-    ForestCover forest_cover_at (const position_t& position) const;
-
-    // A world's readings arrive once, already complete, from the analyses in
-    // surface_readings.hh.
-    void set_readings (SurfaceReadings readings);
-
-    const SurfaceReadings* readings () const noexcept {
-      return m_readings ? &*m_readings : nullptr;
-    }
 
   private:
     std::size_t offset (int column, int row) const;
 
     meters_t m_vertical_extent;
     SurfaceGeometry m_geometry;
-    std::optional<SurfaceReadings> m_readings;
   };
 }
 

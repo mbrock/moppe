@@ -42,7 +42,8 @@ namespace moppe::game {
 
   void GeneratedWorld::rebuild_surface () {
     MOPPE_PROFILE_ZONE ("GeneratedWorld::rebuild_surface");
-    m_surface.rebuild_geometry_readings ();
+    m_readings.reset ();
+    m_surface.rebuild_geometry ();
   }
 
   void GeneratedWorld::analyze_hydrology (const HydrologyProgress& progress) {
@@ -85,6 +86,7 @@ namespace moppe::game {
   void GeneratedWorld::derive_surface_readings (
     std::optional<terrain::TrailNetwork> generated_trails) {
     MOPPE_PROFILE_ZONE ("GeneratedWorld::derive_surface_readings");
+    m_readings.reset ();
     m_water_surface.reset ();
     m_trails.reset ();
     if (!m_hydrology)
@@ -128,7 +130,7 @@ namespace moppe::game {
 
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
-    m_surface.set_readings (
+    m_readings.emplace (
       spatial::join (std::move (channels),
                      std::move (moisture),
                      terrain::waterline_proximity (waterline),

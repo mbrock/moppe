@@ -1,7 +1,7 @@
 #ifndef MOPPE_GAME_SURFACE_PRESENTATION_HH
 #define MOPPE_GAME_SURFACE_PRESENTATION_HH
 
-#include <moppe/map/surface.hh>
+#include <moppe/map/surface_readings.hh>
 #include <moppe/render/renderer.hh>
 
 #include <span>
@@ -13,7 +13,10 @@ namespace moppe::game {
   // here: this is the one place where quantities become GPU-facing numbers.
   class SurfacePresentation {
   public:
-    void refresh (const map::Surface& surface);
+    // Readings are absent until the world finishes; the lanes that depend on
+    // them stay empty until then.
+    void refresh (const map::SurfaceGeometry& geometry,
+                  const map::SurfaceReadings* readings);
     void upload (render::Renderer& renderer, bool include_forest) const;
 
     std::span<const float> trails () const noexcept {

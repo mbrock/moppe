@@ -53,8 +53,9 @@ namespace moppe::game {
         surface.normal_at (position (Vec3 (x, 0, z))).numerical_value_in (one));
     }
 
-    float cover_at (const map::Surface& surface, float x, float z) {
-      return surface.forest_cover_at (position (Vec3 (x, 0, z)))
+    float cover_at (const map::SurfaceReadings& readings, float x, float z) {
+      return spatial::sample<map::forest_cover> (readings,
+                                                 position (Vec3 (x, 0, z)))
         .numerical_value_in (one);
     }
 
@@ -205,6 +206,7 @@ namespace moppe::game {
   }
 
   ForestPlan plan_global_forest (const map::Surface& surface,
+                                 const map::SurfaceReadings& readings,
                                  std::uint32_t seed,
                                  float spacing) {
     if (spacing <= 0.0f)
@@ -233,7 +235,7 @@ namespace moppe::game {
         const float z =
           (static_cast<float> (row) + 0.12f + 0.76f * hash_lane (identity, 1)) *
           cell_z;
-        const float cover = cover_at (surface, x, z);
+        const float cover = cover_at (readings, x, z);
         const float population = smoothstep (0.08f, 0.62f, cover);
         if (cover < 0.06f || hash_lane (identity, 2) > population * 0.96f)
           continue;
@@ -256,9 +258,10 @@ namespace moppe::game {
 
   void ForestLandscape::rebuild (render::Renderer& renderer,
                                  const map::Surface& surface,
+                                 const map::SurfaceReadings& readings,
                                  std::uint32_t seed) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild");
-    const ForestPlan plan = plan_global_forest (surface, seed);
+    const ForestPlan plan = plan_global_forest (surface, readings, seed);
     m_period = plan.period;
     m_tree_count = plan.sites.size ();
     m_chunks_x = forest_chunks_per_side;
