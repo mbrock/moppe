@@ -56,6 +56,10 @@ bridge between them: concrete enough to start, honest about cost.
 - [RFC-014](rfc-014-merge-tree-hydrology.md) — The merge tree of the
   heightfield as the one hydrological structure: floods, lakes, spills,
   and sea-level queries as views of a single precomputation.
+- [RFC-015](rfc-015-graphs-as-domains.md) — Graphs as domains: typed
+  maps between domains, receiver forests carrying their topological
+  order, and discovered domains (bodies, reaches) as first-class
+  index sets with bundles over them.
 
 ## Suggested sequencing
 
