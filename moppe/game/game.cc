@@ -75,15 +75,6 @@ namespace moppe {
       return 450;
     }
 
-    static std::string grouped_number (int value) {
-      std::string result = std::to_string (value);
-      for (std::ptrdiff_t i = static_cast<std::ptrdiff_t> (result.size ()) - 3;
-           i > 0;
-           i -= 3)
-        result.insert (static_cast<std::size_t> (i), ",");
-      return result;
-    }
-
     class MoppeGame : public platform::Game {
     public:
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
@@ -114,7 +105,6 @@ namespace moppe {
       void setup (render::Renderer& r, int, int) override {
         MOPPE_PROFILE_ZONE ("MoppeGame::setup");
         m_renderer = &r;
-        m_loading.set_stage (LoadingStage::Starting);
 
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
@@ -662,9 +652,21 @@ namespace moppe {
         std::cerr << '\n';
       }
 
-      void complete_world_setup () {
-        MOPPE_PROFILE_ZONE ("startup.complete_world_setup");
-        m_setup_complete = true;
+      // The finished world arrived from the generation thread.  Everything
+      // left runs in one go: build the retained presentations, place the
+      // player, upload the terrain, and start playing.  The loading frame
+      // announcing this work has already been submitted, so the screen
+      // stays honest while it runs.
+      void finish_loading (render::Renderer& r,
+                           std::unique_ptr<GeneratedWorld> completed) {
+        MOPPE_PROFILE_ZONE ("MoppeGame::finish_loading");
+        activate_completed_world (std::move (completed));
+        prepare_world_water ();
+        prepare_world_surface ();
+        place_stars_and_player ();
+        grow_global_forest ();
+        plant_trailside ();
+        plan_opening_journey ();
         remember_seed (world (),
                        recipe ().generation_profile (),
                        static_cast<int> (recipe ().seed ().value));
@@ -672,38 +674,34 @@ namespace moppe {
             !m_automated_regeneration_done) {
           m_automated_regeneration_done = true;
           regenerate_world ();
+          return;
         }
-      }
+        r.clear_terrain_overlay ();
+        upload_world_terrain (r);
+        if (m_graphics.terrain_shadows)
+          cast_world_shadows (r);
+        m_ready = true;
+        MOPPE_PROFILE_PLOT ("startup.ready", 1);
 
-      void finish_setup_step () {
-        MOPPE_PROFILE_ZONE ("MoppeGame::finish_setup_step");
-        switch (m_loading_setup_stage++) {
-        case 0:
-          prepare_world_water ();
-          m_loading.set_stage (LoadingStage::PreparingSurface);
-          break;
-        case 1:
-          prepare_world_surface ();
-          m_loading.set_stage (LoadingStage::PlacingStars);
-          break;
-        case 2:
-          place_stars_and_player ();
-          m_loading.set_stage (LoadingStage::GrowingForest);
-          break;
-        case 3:
-          grow_global_forest ();
-          m_loading.set_stage (LoadingStage::PlantingTrailside);
-          break;
-        case 4:
-          plant_trailside ();
-          m_loading.set_stage (LoadingStage::PlanningJourney);
-          break;
-        case 5:
-          plan_opening_journey ();
-          break;
-        default:
-          complete_world_setup ();
-          break;
+        const bool automated =
+          !m_screenshot_path.empty () || m_benchmark.has_value () ||
+          m_water_shot.has_value () || m_tree_demo || ::getenv ("MOPPE_DEMO");
+        if (m_start_in_terrain_lab) {
+          m_terrain_lab.enter (r,
+                               generated_world ().terrain_for_terrain_lab (),
+                               m_terrain,
+                               world (),
+                               m_graphics,
+                               recipe (),
+                               m_surface_presentation.trails (),
+                               m_surface_presentation.home_base (),
+                               terrain_history (),
+                               sun_direction_for (m_graphics.sun_height));
+          m_start_in_terrain_lab = false;
+        } else if (!automated && !m_skip_cinematic_requested &&
+                   !m_cinematic_plan.empty ()) {
+          m_cinematic.start (m_cinematic_plan, map ());
+          m_live_input.clear ();
         }
       }
 
@@ -1236,75 +1234,19 @@ namespace moppe {
       void render_loading (render::Renderer& r) {
         const float width = static_cast<float> (r.width_pts ());
         const float height = static_cast<float> (r.height_pts ());
-        const double now = platform::now ();
-        if (std::unique_ptr<GeneratedWorld> completed =
-              m_loading.take_completed_world ())
-          activate_completed_world (std::move (completed));
 
-        const WorldLoadingFrame loading =
-          m_loading.advance (now, Terrain::loading_transition_handoff_seconds);
-        const float sky_time = loading.elapsed;
+        // Take the finished world now, but run the heavy finishing work
+        // after this frame is submitted, so the panel first shows what is
+        // about to happen.
+        std::unique_ptr<GeneratedWorld> completed =
+          m_loading.take_completed_world ();
+        if (completed)
+          m_loading.report ("Finishing the world",
+                            "Growing forests and planning the first journey");
 
-        if (m_loading.generation_complete () && !m_setup_complete &&
-            loading.preview_sequence_complete) {
-          if (!m_loading_finalize_announced) {
-            m_loading.set_stage (LoadingStage::PreparingWater);
-            m_loading_finalize_announced = true;
-          } else {
-            finish_setup_step ();
-          }
-        }
-
-        if (m_setup_complete) {
-          if (m_loading_activation_stage == 0) {
-            m_loading.set_stage (LoadingStage::UploadingTerrain);
-            m_loading_activation_stage = 1;
-          } else if (m_loading_activation_stage == 1) {
-            r.clear_terrain_overlay ();
-            upload_world_terrain (r);
-            if (m_graphics.terrain_shadows)
-              m_loading.set_stage (LoadingStage::CastingShadows);
-            else
-              m_loading.set_stage (LoadingStage::Ready);
-            m_loading_activation_stage = 2;
-          } else if (m_loading_activation_stage == 2) {
-            if (m_graphics.terrain_shadows)
-              cast_world_shadows (r);
-            m_loading.set_stage (LoadingStage::Ready);
-            m_loading_activation_stage = 3;
-          } else if (loading.progress >= 0.995f) {
-            m_ready = true;
-            MOPPE_PROFILE_PLOT ("startup.ready", 1);
-            const bool automated = !m_screenshot_path.empty () ||
-                                   m_benchmark.has_value () ||
-                                   m_water_shot.has_value () || m_tree_demo ||
-                                   ::getenv ("MOPPE_DEMO");
-            if (m_start_in_terrain_lab) {
-              m_terrain_lab.enter (
-                r,
-                generated_world ().terrain_for_terrain_lab (),
-                m_terrain,
-                world (),
-                m_graphics,
-                recipe (),
-                m_surface_presentation.trails (),
-                m_surface_presentation.home_base (),
-                terrain_history (),
-                sun_direction_for (m_graphics.sun_height));
-              m_start_in_terrain_lab = false;
-            } else if (!automated && !m_skip_cinematic_requested &&
-                       !m_cinematic_plan.empty ()) {
-              m_cinematic.start (m_cinematic_plan, map ());
-              m_live_input.clear ();
-            }
-            return;
-          }
-        }
-
-        const LoadingStage stage = loading.stage;
-        const LoadingStageText copy = loading_stage_text (stage);
-        const float local_progress = loading.local_progress;
-        if (loading.preview_changed) {
+        // The preview is simply the newest terrain the worker has produced,
+        // uploaded and drawn with the ordinary terrain shader.
+        if (m_loading.refresh_preview ()) {
           r.clear_terrain_overlay ();
           m_terrain.setup (r,
                            m_loading.preview_map (),
@@ -1316,6 +1258,8 @@ namespace moppe {
                            true);
         }
 
+        const LoadingStatus loading = m_loading.status ();
+        const float sky_time = loading.elapsed;
         const bool show_terrain = loading.terrain_visible;
         const Vec3& world_extent =
           extent_value (m_loading.preview_world ().map_size);
@@ -1360,8 +1304,12 @@ namespace moppe {
         fp.time = sky_time;
         fp.exposure_bias = 1.0f;
         fp.sun_visibility = 0.32f;
-        if (!r.begin_frame (fp))
+        if (!r.begin_frame (fp)) {
+          // The world must not be dropped just because no frame started.
+          if (completed)
+            finish_loading (r, std::move (completed));
           return;
+        }
 
         render::SkyParams sky;
         sky.time = sky_time;
@@ -1414,51 +1362,36 @@ namespace moppe {
 
           m_hud_dl.color (0.95f, 1.0f, 0.94f, 0.98f);
           m_loading_title_font->draw (
-            m_hud_dl, text_x, panel_y + 67.0f, copy.title);
+            m_hud_dl, text_x, panel_y + 67.0f, loading.title);
 
           m_hud_dl.color (0.78f, 0.88f, 0.79f, 0.94f);
-          m_loading_font->draw (m_hud_dl, text_x, panel_y + 94.0f, copy.detail);
+          m_loading_font->draw (
+            m_hud_dl, text_x, panel_y + 94.0f, loading.detail);
 
-          std::string status;
-          if (stage == LoadingStage::EvolvingTerrain &&
-              local_progress >= 0.0f) {
-            std::ostringstream stream;
-            stream << "Geological time  "
-                   << grouped_number (loading.geological_years_done) << " / "
-                   << grouped_number (loading.geological_years_total)
-                   << " years  /  step " << loading.work_done << " of "
-                   << loading.work_total;
-            status = stream.str ();
-          } else if (stage == LoadingStage::BuildingContinents &&
-                     local_progress >= 0.0f) {
-            std::ostringstream stream;
-            stream << "Field row " << loading.source_done << " of "
-                   << loading.source_total;
-            status = stream.str ();
-          }
-
+          // The rail fills only with a real measurement; stages that cannot
+          // measure themselves show their text and nothing else.
           const float rail_y = panel_y + 119.0f;
           m_hud_dl.color (0.28f, 0.38f, 0.31f, 0.82f);
           fill_rect (text_x, rail_y, content_width, 3.0f);
-          m_hud_dl.color (0.70f, 0.94f, 0.71f, 0.98f);
-          fill_rect (text_x,
-                     rail_y,
-                     content_width * std::clamp (loading.progress, 0.0f, 1.0f),
-                     3.0f);
-
-          std::ostringstream percent;
-          percent << static_cast<int> (std::lround (loading.progress * 100.0f))
-                  << '%';
-          m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.90f);
-          m_loading_meta_font->draw (
-            m_hud_dl,
-            text_x + content_width -
-              m_loading_meta_font->measure (percent.str ()),
-            panel_y + 143.0f,
-            percent.str ());
-          if (!status.empty ())
+          if (loading.progress >= 0.0f) {
+            m_hud_dl.color (0.70f, 0.94f, 0.71f, 0.98f);
+            fill_rect (text_x,
+                       rail_y,
+                       content_width *
+                         std::clamp (loading.progress, 0.0f, 1.0f),
+                       3.0f);
+            std::ostringstream percent;
+            percent << static_cast<int> (
+                         std::lround (loading.progress * 100.0f))
+                    << '%';
+            m_hud_dl.color (0.72f, 0.86f, 0.74f, 0.90f);
             m_loading_meta_font->draw (
-              m_hud_dl, text_x, panel_y + 143.0f, status);
+              m_hud_dl,
+              text_x + content_width -
+                m_loading_meta_font->measure (percent.str ()),
+              panel_y + 143.0f,
+              percent.str ());
+          }
 
           const std::size_t history_end =
             loading.events.empty () ? 0 : loading.events.size () - 1;
@@ -1469,7 +1402,7 @@ namespace moppe {
             const LoadingEvent& event = loading.events[i];
             std::ostringstream line;
             line << std::fixed << std::setprecision (1) << event.elapsed
-                 << "s  " << loading_stage_text (event.stage).title;
+                 << "s  " << event.title;
             m_hud_dl.color (0.64f, 0.75f, 0.65f, 0.76f);
             m_loading_meta_font->draw (m_hud_dl, text_x, line_y, line.str ());
             line_y += 20.0f;
@@ -1478,7 +1411,7 @@ namespace moppe {
 
         bool captured = false;
         if (const char* path = ::getenv ("MOPPE_LOADING_SCREENSHOT")) {
-          if (m_loading.claim_loading_capture ()) {
+          if (m_loading.claim_loading_capture (completed != nullptr)) {
             r.request_screenshot (path);
             captured = true;
           }
@@ -1487,6 +1420,11 @@ namespace moppe {
         r.end_frame ();
         if (captured)
           platform::request_quit ();
+
+        // The frame announcing the finish is on its way to the display;
+        // now do the finishing work.
+        if (completed)
+          finish_loading (r, std::move (completed));
       }
       void render_game_over (render::Renderer& r) {
         render::FrameParams fp;
@@ -1811,13 +1749,9 @@ namespace moppe {
         session ().clear_controls ();
         m_live_input.clear ();
         m_ready = false;
-        m_loading_finalize_announced = false;
-        m_loading_setup_stage = 0;
-        m_loading_activation_stage = 0;
         m_skip_cinematic_requested = false;
         m_cinematic.stop ();
         m_cinematic_plan = {};
-        m_setup_complete = false;
         m_river_surface.clear ();
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
@@ -1872,9 +1806,6 @@ namespace moppe {
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
       SurfacePresentation m_surface_presentation;
-      bool m_loading_finalize_announced = false;
-      int m_loading_setup_stage = 0;
-      int m_loading_activation_stage = 0;
       bool m_skip_cinematic_requested = false;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
@@ -1912,7 +1843,6 @@ namespace moppe {
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
       std::atomic<bool> m_ready;
-      std::atomic<bool> m_setup_complete = false;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
       std::optional<GraphicsBenchmarkReplay> m_benchmark_replay;
