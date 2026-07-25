@@ -249,28 +249,19 @@ namespace moppe {
 
       // The vehicle's model-to-world matrix, shared by render_vehicle's
       // matrix stack and the late flame pass so the two cannot drift.
-      Mat4 vehicle_frame (const VehiclePose& vehicle,
-                          const Vec3& visual_scale) {
+      Mat4 vehicle_frame (const VehiclePose& vehicle) {
         const Vec3& pos = vehicle.position;
         const Vec3 fwd = normalized (vehicle.render_orientation);
         const Vec3 right = normalized (cross (vehicle.render_normal, fwd));
         const Vec3 up = cross (fwd, right);
 
         // Follow the smoothed surface frame on the ground and the velocity
-        // arc in flight; lean into the corner.  Scale around the tire contact
-        // plane (bike wheel bottoms and car floors are both near y=-1 before
-        // the established 1.5x model enlargement), rather than the model
-        // origin, so world-feel experiments do not make a shrunken vehicle
-        // hover or an enlarged one sink into the ground.
-        const Vec3 contact_pivot (0, -1.5f, 0);
+        // arc in flight; lean into the corner.
         return Mat4::translation (
                  Vec3 (pos[0], pos[1] + vehicle.suspension, pos[2])) *
                Mat4::basis (right, up, fwd) *
                Mat4::rotation (vehicle.lean_radians * u::rad, Vec3 (0, 0, 1)) *
                Mat4::translation (Vec3 (0, 0.5f, 0)) *
-               Mat4::translation (contact_pivot) *
-               Mat4::scaling (visual_scale) *
-               Mat4::translation (contact_pivot * -1.0f) *
                Mat4::scaling (Vec3 (1.5f, 1.5f, 1.5f));
       }
     }
@@ -348,10 +339,9 @@ namespace moppe {
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
-                         float time,
-                         const Vec3& visual_scale) {
+                         float time) {
       dl.push ();
-      dl.mult (vehicle_frame (vehicle, visual_scale));
+      dl.mult (vehicle_frame (vehicle));
 
       if (vehicle.body_kind != 0) {
         render_car (dl, vehicle, time);
@@ -435,8 +425,7 @@ namespace moppe {
     // same reason the star halos draw last.
     void render_vehicle_flames (render::Renderer& r,
                                 const VehiclePose& vehicle,
-                                float time,
-                                const Vec3& visual_scale) {
+                                float time) {
       const bool bike = (vehicle.body_kind == 0);
       const float thrust = std::abs (vehicle.thrust);
       const bool exhaust = bike && thrust > 0.1f;
@@ -445,7 +434,7 @@ namespace moppe {
         return;
 
       const FlameMeshes& fm = flame_meshes (r);
-      const Mat4 frame = vehicle_frame (vehicle, visual_scale);
+      const Mat4 frame = vehicle_frame (vehicle);
       const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0);
 
       // Exhaust flame licking out of the muffler under load: an

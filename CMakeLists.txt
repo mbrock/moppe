@@ -407,7 +407,6 @@ add_library(moppe_scene STATIC
   moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
-  moppe/game/inspector_ui.cc
   moppe/game/forest.cc
   moppe/game/tree_stand.cc
 )
@@ -483,8 +482,8 @@ if(APPLE)
     "-framework CoreGraphics" "-framework AVFoundation"
     "-framework GameController")
 
-  # InspectorUi and the portable text path use Apple-common asset and glyph
-  # services, but the host event loop stays above the scene target.
+  # The portable text path uses Apple-common asset and glyph services, but
+  # the host event loop stays above the scene target.
   target_link_libraries(moppe_scene PUBLIC moppe_apple)
 endif()
 
@@ -513,7 +512,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
-    tests/game/inspector_ui_test.cc
     tests/game/generated_world_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc

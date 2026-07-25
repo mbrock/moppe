@@ -57,7 +57,6 @@ namespace moppe::game {
         visibility.actors && input.graphics.star_effects;
       visibility.game_hud = !cinematic && !water && !tree;
       visibility.cinematic_hud = cinematic;
-      visibility.terrain_topology_hint = input.graphics.terrain_topology;
       return visibility;
     }
   }
@@ -180,13 +179,10 @@ namespace moppe::game {
                                         -result.camera.view.m[6],
                                         -result.camera.view.m[10]);
 
-    const float scale = std::max (
-      1e-6f, std::max (input.landscape_scale_x, input.landscape_scale_y));
-    const float near = std::clamp (0.5f / scale, 0.02f, 0.5f);
     result.camera.projection =
       Mat4::perspective_reversed (result.camera.field_of_view * u::deg,
                                   std::max (0.01f, input.aspect),
-                                  near,
+                                  0.5f,
                                   9000.0f);
 
     result.lighting.fog_color = logic.m_fog;
@@ -231,9 +227,6 @@ namespace moppe::game {
       result.actors.glider = glider_pose (input.session.glider ());
     if (logic.m_mode == M_FOOT)
       result.actors.walker = walker_pose (input.session.walker ());
-    result.actors.visual_scale = Vec3 (1.0f / input.landscape_scale_x,
-                                       1.0f / input.landscape_scale_y,
-                                       1.0f / input.landscape_scale_x);
     result.actors.active_mode = logic.m_mode;
     result.actors.camera_mode = logic.m_cam_mode;
     result.actors.helmet_camera = logic.m_cam_mode == CAM_HELMET;

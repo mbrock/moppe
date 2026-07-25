@@ -9,19 +9,6 @@
 #include <vector>
 
 namespace moppe::game {
-  // The world-side values consumed by ordinary fixed-step simulation.  It is
-  // deliberately a small view rather than GeneratedWorld, so simulation has
-  // no loading, renderer, or platform dependency.  Landscape scale belongs
-  // here because it is a live presentation setting which persists across
-  // regenerated sessions rather than checkpoint state.
-  struct GameSessionAdvanceContext {
-    const WorldParams& world;
-    const map::Surface& surface;
-    const std::vector<mov::Box>& obstacles;
-    float landscape_scale_x = 1.0f;
-    float landscape_scale_y = 1.0f;
-  };
-
   // Observable application-side effects of an ordinary simulation step.
   // The application decides how to realize these, keeping platform services
   // outside the simulation seam.
@@ -123,7 +110,9 @@ namespace moppe::game {
   };
 
   GameSessionAdvanceResult
-  advance_game_session (const GameSessionAdvanceContext& context,
+  advance_game_session (const WorldParams& world,
+                        const map::Surface& surface,
+                        const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt);

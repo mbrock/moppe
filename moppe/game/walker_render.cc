@@ -6,10 +6,8 @@
 #include <cmath>
 
 namespace moppe::game {
-  void render_walker (render::DrawList& draw,
-                      const WalkerPose& walker,
-                      float time,
-                      const Vec3& visual_scale) {
+  void
+  render_walker (render::DrawList& draw, const WalkerPose& walker, float time) {
     draw.set_texture (nullptr);
 
     // The rider, dismounted: the same guy in the same gear, with knees and
@@ -24,7 +22,6 @@ namespace moppe::game {
       walker.position[0], walker.position[1] + bob, walker.position[2]);
     draw.rotate (
       std::atan2 (walker.heading[0], walker.heading[2]) * u::rad, 0, 1, 0);
-    draw.scale (visual_scale);
 
     // Legs: the thigh swings from the hip, the shin lags behind with a knee
     // bend that folds on the back-swing, and the boot rides along.

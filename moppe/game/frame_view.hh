@@ -60,7 +60,6 @@ namespace moppe::game {
     std::optional<VehiclePose> car;
     std::optional<GliderPose> glider;
     std::optional<WalkerPose> walker;
-    Vec3 visual_scale { 1, 1, 1 };
     Mode active_mode = M_BIKE;
     CamMode camera_mode = CAM_CHASE;
     bool helmet_camera = false;
@@ -117,7 +116,6 @@ namespace moppe::game {
     bool star_effects = true;
     bool game_hud = true;
     bool cinematic_hud = false;
-    bool terrain_topology_hint = false;
   };
 
   struct FrameCamera {
@@ -193,8 +191,6 @@ namespace moppe::game {
     FrameCameraReading selected_camera {};
     FrameSceneMode scene = FrameSceneMode::Gameplay;
     float aspect = 1.0f;
-    float landscape_scale_x = 1.0f;
-    float landscape_scale_y = 1.0f;
     float cinematic_motion_blur = 0.0f;
     float cinematic_elapsed = 0.0f;
     FrameBenchmarkTag benchmark {};

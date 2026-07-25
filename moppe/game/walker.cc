@@ -1,4 +1,3 @@
-#include <moppe/game/door.hh>
 #include <moppe/game/walker.hh>
 
 #include <algorithm>
@@ -81,11 +80,6 @@ namespace moppe {
         const float dz0 = position[2] - (b.z0 - r);
         const float dz1 = (b.z1 + r) - position[2];
         if (dx0 <= 0 || dx1 <= 0 || dz0 <= 0 || dz1 <= 0)
-          continue;
-
-        // every building has a door in the middle of its +z wall;
-        // people fit through, motorcycles do not
-        if (Door::in_doorway (b, position[0], position[2]))
           continue;
 
         const float px = std::min (dx0, dx1);

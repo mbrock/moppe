@@ -262,18 +262,20 @@ namespace moppe::game {
   }
 
   GameSessionAdvanceResult
-  advance_game_session (const GameSessionAdvanceContext& context,
+  advance_game_session (const WorldParams& world,
+                        const map::Surface& surface,
+                        const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
                         seconds_t dt) {
     const float elapsed = dt.numerical_value_in (u::s);
     GameLogicState& logic = session.logic ();
-    session.bike ().set_water_level (context.world.water_level);
-    session.car ().set_water_level (context.world.water_level);
-    session.bike ().set_obstacles (&context.obstacles);
-    session.car ().set_obstacles (&context.obstacles);
+    session.bike ().set_water_level (world.water_level);
+    session.car ().set_water_level (world.water_level);
+    session.bike ().set_obstacles (&obstacles);
+    session.car ().set_obstacles (&obstacles);
 
-    apply_input_frame (session, context.surface, input);
+    apply_input_frame (session, surface, input);
 
     if (!session.can_drop_bike ())
       session.bike ().update (dt);
@@ -287,8 +289,7 @@ namespace moppe::game {
         finish_glide (session);
     }
     if (logic.m_mode == M_FOOT)
-      session.walker ().update (
-        dt, context.surface, context.obstacles, context.world);
+      session.walker ().update (dt, surface, obstacles, world);
 
     const Vec3 vehicle_position = session.subject_position ();
     mov::Vehicle& vehicle = session.active_vehicle ();
@@ -304,7 +305,7 @@ namespace moppe::game {
     }
 
     const bool in_water =
-      vehicle_position[1] < meters_value (context.world.water_level) + 1.0f;
+      vehicle_position[1] < meters_value (world.water_level) + 1.0f;
     const bool driving = logic.m_mode == M_BIKE || logic.m_mode == M_CAR;
 
     // Long jumps become score events after three seconds. Keep the last
@@ -467,8 +468,8 @@ namespace moppe::game {
         result.say_ouchies = logic.m_lives == 5;
 
         // Respawn where you crashed, upright on the ground.
-        const float ground = context.surface.interpolated_height (
-          vehicle_position[0], vehicle_position[2]);
+        const float ground = surface.interpolated_height (vehicle_position[0],
+                                                          vehicle_position[2]);
         vehicle.reset (
           Vec3 (vehicle_position[0], ground + 1.2f, vehicle_position[2]));
         logic.m_health = 100.0f;
@@ -521,17 +522,14 @@ namespace moppe::game {
       // not rattle the eyeballs.
       Vec3 eye, look;
       if (logic.m_mode == M_FOOT) {
-        eye = session.walker ().position () +
-              Vec3 (0, 1.55f / context.landscape_scale_y, 0);
+        eye = session.walker ().position () + Vec3 (0, 1.55f, 0);
         look = session.walker ().heading ();
       } else if (logic.m_mode == M_GLIDER) {
-        eye = session.glider ().position () -
-              Vec3 (0, 0.75f / context.landscape_scale_y, 0);
+        eye = session.glider ().position () - Vec3 (0, 0.75f, 0);
         look = session.glider ().heading ();
       } else {
-        eye = vehicle.position () +
-              Vec3 (0, 0.95f / context.landscape_scale_y, 0) +
-              vehicle.orientation () * (0.4f / context.landscape_scale_x);
+        eye = vehicle.position () + Vec3 (0, 0.95f, 0) +
+              vehicle.orientation () * 0.4f;
         look = vehicle.orientation ();
       }
       logic.m_fp_eye =
@@ -539,13 +537,10 @@ namespace moppe::game {
         (eye - logic.m_fp_eye) * smoothing_alpha (25.0f / u::s, elapsed * u::s);
       session.camera ().place (logic.m_fp_eye, logic.m_fp_eye + look * 10.0f);
     } else {
-      session.camera ().set_landscape_scale (context.landscape_scale_x,
-                                             context.landscape_scale_y);
       const float flip = logic.m_cam_mode == CAM_FRONT ? -1.0f : 1.0f;
       if (logic.m_mode == M_FOOT)
         session.camera ().update (
-          moppe::position (session.walker ().position () +
-                           Vec3 (0, 1.0f / context.landscape_scale_y, 0)),
+          moppe::position (session.walker ().position () + Vec3 (0, 1.0f, 0)),
           session.walker ().heading () * flip,
           velocity (Vec3 ()),
           dt);
@@ -559,7 +554,7 @@ namespace moppe::game {
                                   vehicle.orientation () * flip,
                                   vehicle.physical_velocity (),
                                   dt);
-      session.camera ().limit (context.surface);
+      session.camera ().limit (surface);
     }
 
     // Speed widens the field of view a touch.

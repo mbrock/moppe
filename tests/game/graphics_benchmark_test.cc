@@ -82,7 +82,6 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
-  const game::GameSessionAdvanceContext context { world, map, obstacles };
   game::GameSession session (world, surface);
 
   std::optional<game::GameState> checkpoint;
@@ -117,8 +116,13 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
         ++measured_output_count;
     }
 
-    const game::GameSessionAdvanceResult result = advance_game_session (
-      context, session, frame->input, seconds (game::GRAPHICS_BENCHMARK_DT));
+    const game::GameSessionAdvanceResult result =
+      advance_game_session (world,
+                            map,
+                            obstacles,
+                            session,
+                            frame->input,
+                            seconds (game::GRAPHICS_BENCHMARK_DT));
     MOPPE_CHECK (!result.say_ouchies);
 
     switch (replay.finish_frame ()) {

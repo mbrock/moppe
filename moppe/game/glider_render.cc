@@ -17,21 +17,18 @@ namespace moppe::game {
       dl.vertex (c);
     }
 
-    Mat4 glider_frame (const GliderPose& glider, const Vec3& visual_scale) {
+    Mat4 glider_frame (const GliderPose& glider) {
       const Vec3 fwd = normalized (glider.heading);
       const Vec3 right = normalized (cross (Vec3 (0, 1, 0), fwd));
       const Vec3 up = cross (fwd, right);
       return Mat4::translation (glider.position) *
              Mat4::basis (right, up, fwd) *
-             Mat4::rotation (-glider.bank_radians * u::rad, Vec3 (0, 0, 1)) *
-             Mat4::scaling (visual_scale);
+             Mat4::rotation (-glider.bank_radians * u::rad, Vec3 (0, 0, 1));
     }
   }
 
-  void render_glider (render::DrawList& dl,
-                      const GliderPose& glider,
-                      float time,
-                      const Vec3& visual_scale) {
+  void
+  render_glider (render::DrawList& dl, const GliderPose& glider, float time) {
     const Vec3 nose (0, 0.18f, 1.8f);
     const Vec3 left (-4.6f, 0, -0.75f);
     const Vec3 right (4.6f, 0, -0.75f);
@@ -40,7 +37,7 @@ namespace moppe::game {
     const Vec3 hang (0, -1.15f, -0.22f);
 
     dl.push ();
-    dl.mult (glider_frame (glider, visual_scale));
+    dl.mult (glider_frame (glider));
 
     // A lightly faceted Rogallo wing.  The darker underside is explicitly
     // wound the other way so it remains visible with back-face culling.

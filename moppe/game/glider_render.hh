@@ -5,10 +5,8 @@
 #include <moppe/render/draw.hh>
 
 namespace moppe::game {
-  void render_glider (render::DrawList& dl,
-                      const GliderPose& glider,
-                      float time,
-                      const Vec3& visual_scale = Vec3 (1, 1, 1));
+  void
+  render_glider (render::DrawList& dl, const GliderPose& glider, float time);
 }
 
 #endif
