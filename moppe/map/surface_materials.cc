@@ -1,7 +1,6 @@
-#include <moppe/map/surface.hh>
+#include <moppe/map/surface_readings.hh>
 
 #include <algorithm>
-#include <stdexcept>
 #include <vector>
 
 namespace moppe::map {
@@ -24,13 +23,12 @@ namespace moppe::map {
     }
   }
 
-  void Surface::derive_geology_materials () {
-    const auto& eroded = spatial::get<eroded_surface_material> (geometry ());
-    const auto& deposited =
-      spatial::get<deposited_surface_material> (geometry ());
+  GeologyMaterials analyze_geology_materials (const SurfaceGeometry& geometry) {
+    const auto& eroded = spatial::get<eroded_surface_material> (geometry);
+    const auto& deposited = spatial::get<deposited_surface_material> (geometry);
     const float eroded_scale = robust_positive_scale (eroded);
     const float deposited_scale = robust_positive_scale (deposited);
-    SurfaceReadings& values = ensure_readings ();
+    GeologyMaterials values (geometry.domain ());
     auto& exposure = spatial::get<erosion_exposure> (values);
     auto& cover = spatial::get<deposition_cover> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset) {
@@ -47,5 +45,6 @@ namespace moppe::map {
                     1.0f) *
         deposition_cover[one];
     }
+    return values;
   }
 }

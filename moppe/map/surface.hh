@@ -2,12 +2,7 @@
 #define MOPPE_MAP_SURFACE_HH
 
 #include <moppe/map/surface_sections.hh>
-#include <moppe/terrain/fractional_drainage.hh>
-#include <moppe/terrain/moisture.hh>
-#include <moppe/terrain/trail.hh>
-#include <moppe/terrain/waterline.hh>
 
-#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -66,13 +61,9 @@ namespace moppe::map {
     TreeHabitat tree_habitat_at (const position_t& position) const;
     ForestCover forest_cover_at (const position_t& position) const;
 
-    void set_moisture (terrain::MoistureMap moisture);
-    void set_waterline_distance (terrain::WaterlineProximity distance);
-    void derive_channel_flux (const terrain::FractionalDrainage& channels);
-    void set_use (terrain::TrailUseMap use);
-    void derive_geology_materials ();
-    void derive_tree_habitat (meters_t water_level, meters_t tree_line);
-    void derive_forest_cover (std::uint32_t seed);
+    // A world's readings arrive once, already complete, from the analyses in
+    // surface_readings.hh.
+    void set_readings (SurfaceReadings readings);
 
     const SurfaceReadings* readings () const noexcept {
       return m_readings ? &*m_readings : nullptr;
@@ -80,7 +71,6 @@ namespace moppe::map {
 
   private:
     std::size_t offset (int column, int row) const;
-    SurfaceReadings& ensure_readings ();
 
     meters_t m_vertical_extent;
     SurfaceGeometry m_geometry;

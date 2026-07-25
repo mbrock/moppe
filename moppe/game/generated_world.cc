@@ -87,40 +87,54 @@ namespace moppe::game {
     MOPPE_PROFILE_ZONE ("GeneratedWorld::derive_surface_readings");
     m_water_surface.reset ();
     m_trails.reset ();
+    if (!m_hydrology)
+      throw std::logic_error ("Surface readings need the world's hydrology");
 
-    if (m_hydrology) {
-      const Hydrology& hydrology = *m_hydrology;
-      m_surface.derive_channel_flux (hydrology.channels ());
+    const Hydrology& hydrology = *m_hydrology;
+    const map::SurfaceGeometry& geometry = m_surface.geometry ();
 
-      terrain::WaterSheets sheets =
-        terrain::paint_watercourses (m_surface.geometry (),
-                                     hydrology.standing_water (),
-                                     hydrology.lakes (),
-                                     hydrology.drainage (),
-                                     hydrology.rivers ());
-      const terrain::Waterline waterline = terrain::extract_waterline (
-        m_surface.geometry (), sheets, hydrology.lakes ());
-      m_water_surface.emplace (std::move (sheets));
-      m_surface.set_waterline_distance (
-        terrain::waterline_proximity (waterline));
+    map::ChannelFluxMap channels =
+      map::analyze_channel_flux (geometry.domain (), hydrology.channels ());
 
-      m_surface.set_moisture (
-        terrain::analyze_moisture (hydrology.standing_water (),
+    terrain::WaterSheets sheets =
+      terrain::paint_watercourses (geometry,
+                                   hydrology.standing_water (),
                                    hydrology.lakes (),
-                                   hydrology.drainage ()));
-      m_surface.derive_tree_habitat (m_params.water_level,
-                                     m_params.water_level + 145.0f * u::m);
+                                   hydrology.drainage (),
+                                   hydrology.rivers ());
+    const terrain::Waterline waterline =
+      terrain::extract_waterline (geometry, sheets, hydrology.lakes ());
+    m_water_surface.emplace (std::move (sheets));
 
+    terrain::MoistureMap moisture = terrain::analyze_moisture (
+      hydrology.standing_water (), hydrology.lakes (), hydrology.drainage ());
+    map::TreeHabitatMap habitat =
+      map::analyze_tree_habitat (geometry,
+                                 moisture,
+                                 m_params.water_level,
+                                 m_params.water_level + 145.0f * u::m);
+
+    {
       MOPPE_PROFILE_ZONE ("world.derive_trails");
       if (generated_trails)
         m_trails = std::move (generated_trails);
       else
-        m_trails = terrain::analyze_trail_network (m_surface.geometry (),
+        m_trails = terrain::analyze_trail_network (geometry,
                                                    m_recipe.trail_formation ());
-      m_surface.set_use (m_trails->use);
-      m_surface.derive_forest_cover (m_recipe.seed ().value ^ 0x6f12ad37U);
     }
 
-    m_surface.derive_geology_materials ();
+    map::ForestCoverMap cover = map::analyze_forest_cover (
+      habitat, m_trails->use, m_recipe.seed ().value ^ 0x6f12ad37U);
+
+    // The join names the readings in the order the bundle declares them; a
+    // world is finished when every one of them is present.
+    m_surface.set_readings (
+      spatial::join (std::move (channels),
+                     std::move (moisture),
+                     terrain::waterline_proximity (waterline),
+                     map::analyze_geology_materials (geometry),
+                     std::move (habitat),
+                     std::move (cover),
+                     m_trails->use));
   }
 }

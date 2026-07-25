@@ -1,4 +1,4 @@
-#include <moppe/map/surface.hh>
+#include <moppe/map/surface_readings.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -55,20 +55,23 @@ namespace moppe::map {
     }
   }
 
-  void Surface::derive_tree_habitat (meters_t water_level, meters_t tree_line) {
-    if (!readings ())
-      throw std::logic_error ("Tree habitat needs derived surface readings");
+  TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
+                                       const terrain::MoistureMap& moisture,
+                                       meters_t water_level,
+                                       meters_t tree_line) {
+    if (moisture.domain () != geometry.domain ())
+      throw std::invalid_argument (
+        "Moisture does not share the surface domain");
     if (tree_line <= water_level + 20.0f * u::m)
       throw std::invalid_argument (
         "Tree line must leave a terrestrial habitat band");
 
     const float shore = meters_value (water_level);
     const float upper = meters_value (tree_line);
-    const auto& geometry = this->geometry ();
     const auto& elevation = spatial::get<terrain::surface_elevation> (geometry);
     const auto& normal = spatial::get<terrain::terrain_normal> (geometry);
-    SurfaceReadings& values = ensure_readings ();
-    const auto& moisture = spatial::get<surface_moisture> (values);
+    const auto& wetness_column = spatial::get<surface_moisture> (moisture);
+    TreeHabitatMap values (geometry.domain ());
     auto& habitat = spatial::get<tree_habitat> (values);
     for (std::size_t offset = 0; offset < geometry.size (); ++offset) {
       const float height = terrain::surface_elevation_value (elevation[offset]);
@@ -77,23 +80,27 @@ namespace moppe::map {
       const float below_tree_line =
         1.0f - smoothstep (upper - 35.0f, upper, height);
       const float stable_soil = smoothstep (0.72f, 0.96f, up);
-      const float wetness = moisture[offset].numerical_value_in (one);
+      const float wetness = wetness_column[offset].numerical_value_in (one);
       const float hydrated = smoothstep (0.10f, 0.42f, wetness);
       const float not_sodden = 1.0f - smoothstep (0.78f, 0.98f, wetness);
       const float water_response = 0.28f + 0.72f * hydrated * not_sodden;
       habitat[offset] = dry_ground * below_tree_line * stable_soil *
                         water_response * tree_habitat[one];
     }
+    return values;
   }
 
-  void Surface::derive_forest_cover (std::uint32_t seed) {
-    if (!readings ())
-      throw std::logic_error ("Forest cover needs derived surface readings");
-    SurfaceReadings& values = ensure_readings ();
-    const terrain::TerrainDomain& domain = values.domain ();
-    const auto& habitat = spatial::get<tree_habitat> (values);
-    const auto& trails = spatial::get<trail_influence> (values);
-    const auto& home_base = spatial::get<home_base_influence> (values);
+  ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
+                                       const terrain::TrailUseMap& use,
+                                       std::uint32_t seed) {
+    if (use.domain () != habitat.domain ())
+      throw std::invalid_argument (
+        "Trail use does not share the surface domain");
+    const terrain::TerrainDomain& domain = habitat.domain ();
+    const auto& habitat_column = spatial::get<tree_habitat> (habitat);
+    const auto& trails = spatial::get<trail_influence> (use);
+    const auto& home_base = spatial::get<home_base_influence> (use);
+    ForestCoverMap values (domain);
     auto& cover = spatial::get<forest_cover> (values);
     const float width = static_cast<float> (domain.width ());
     const float height = static_cast<float> (domain.height ());
@@ -109,7 +116,7 @@ namespace moppe::map {
       const float mosaic = 0.72f * broad + 0.28f * local;
       const float recruitment = smoothstep (0.44f, 0.61f, mosaic);
       const float support =
-        std::pow (habitat[offset].numerical_value_in (one), 1.15f);
+        std::pow (habitat_column[offset].numerical_value_in (one), 1.15f);
       const float route_clearance =
         1.0f - 0.96f * trails[offset].numerical_value_in (one);
       const float settled_clearance =
@@ -120,5 +127,6 @@ namespace moppe::map {
                     1.0f) *
         forest_cover[one];
     }
+    return values;
   }
 }
