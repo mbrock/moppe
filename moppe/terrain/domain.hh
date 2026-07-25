@@ -236,6 +236,18 @@ namespace moppe::terrain {
       return { .column = offset % m_width, .row = offset / m_width };
     }
 
+    // A step from one position to another across the torus. The wrap belongs
+    // to the domain, so a rule that wants a neighbour asks for one instead of
+    // recomputing the world's topology against the lattice dimensions.
+    TerrainIndex shifted (TerrainIndex index, int columns, int rows) const {
+      return { .column = static_cast<std::size_t> (
+                 wrap_index (static_cast<int> (index.column) + columns,
+                             static_cast<int> (m_width))),
+               .row = static_cast<std::size_t> (
+                 wrap_index (static_cast<int> (index.row) + rows,
+                             static_cast<int> (m_height))) };
+    }
+
     template <typename Visitor>
     void visit_interpolation_stencil (const position_t& position,
                                       Visitor&& visitor) const {

@@ -6,6 +6,7 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -38,6 +39,30 @@ namespace moppe::spatial {
                    index,
                    detail::NeighbourhoodProbe<typename Domain::index_type> {});
     };
+
+  // Every position in a domain, in storage order.
+  //
+  // This is how a whole-field rule says "for every site": it asks the domain
+  // what its positions are. Nothing downstream learns that the domain is a
+  // lattice, how wide it is, or how a position becomes a linear offset --
+  // which is the whole reason a bundle takes its domain as a parameter. Rules
+  // written this way work over any finite domain, and no caller reconstructs
+  // `row * width + column`.
+  //
+  // The view borrows the domain and stays valid as long as it does.
+  template <FiniteDomain Domain>
+  auto sites (const Domain& domain) {
+    return std::views::iota (std::size_t { 0 }, domain.size ()) |
+           std::views::transform ([domain = &domain] (std::size_t offset) {
+             return domain->index (offset);
+           });
+  }
+
+  template <typename BundleType>
+    requires FiniteDomain<typename std::remove_cvref_t<BundleType>::domain_type>
+  auto sites (const BundleType& bundle) {
+    return sites (bundle.domain ());
+  }
 
   // A focus is one bundle row together with its place in the domain. It is
   // the input to generic local operations, not part of Bundle's storage API.
@@ -81,6 +106,14 @@ namespace moppe::spatial {
   decltype (auto) get (const BundleFocus<BundleType>& focus) {
     using B = typename BundleFocus<BundleType>::bundle_type;
     return get<B::template spec_index<QS>> (focus);
+  }
+
+  // Visit every site of a bundle as a focus. The counterpart to
+  // visit_neighbourhood: that one is local, this one is the whole field.
+  template <typename BundleType, typename Operation>
+  void for_each_site (BundleType& bundle, Operation&& operation) {
+    for (const auto index : sites (bundle.domain ()))
+      std::invoke (operation, BundleFocus<BundleType> (bundle, index));
   }
 
   inline constexpr struct adjacent_neighbourhood_t {
@@ -189,8 +222,7 @@ namespace moppe::spatial {
     if (output.size () != input.size ())
       throw std::invalid_argument ("Cannot extend across unequal domains");
 
-    for (std::size_t offset = 0; offset < input.size (); ++offset) {
-      const auto index = input.index (offset);
+    for (const auto index : sites (input)) {
       auto values = std::invoke (rule, BundleFocus (input, index));
       static_assert (std::tuple_size_v<decltype (values)> ==
                      sizeof...(Outputs));

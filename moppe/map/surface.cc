@@ -1,6 +1,7 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/profile.hh>
+#include <moppe/spatial/bundle_operations.hh>
 #include <moppe/spatial/bundle_storage.hh>
 #include <moppe/terrain/domain_storage.hh>
 #include <moppe/terrain/river.hh>
@@ -17,19 +18,17 @@ namespace moppe::map {
   // ---- Geometry ----
 
   namespace {
+    // How far the broad support plane reaches, as a step across the lattice.
+    // This is the one place the metre radius meets the sample spacing.
     struct SnowSupportStencil {
-      int width;
-      int height;
       int dx;
       int dz;
     };
 
-    SnowSupportStencil snow_support_stencil (const SurfaceGeometry& geometry) {
+    SnowSupportStencil
+    snow_support_stencil (const terrain::TerrainDomain& domain) {
       constexpr meters_t support_radius = 24.0f * u::m;
-      const terrain::TerrainDomain& domain = geometry.domain ();
       return {
-        .width = static_cast<int> (domain.width ()),
-        .height = static_cast<int> (domain.height ()),
         .dx =
           std::max (1,
                     static_cast<int> (std::lround (
@@ -43,18 +42,11 @@ namespace moppe::map {
 
     Vec3 snow_support_normal (const SurfaceGeometry& geometry,
                               const SnowSupportStencil& stencil,
-                              int column,
-                              int row) {
-      column = terrain::wrap_index (column, stencil.width);
-      row = terrain::wrap_index (row, stencil.height);
-      const auto sample = [&] (int x, int z) {
-        const terrain::TerrainIndex index {
-          static_cast<std::size_t> (
-            terrain::wrap_index (column + x, stencil.width)),
-          static_cast<std::size_t> (
-            terrain::wrap_index (row + z, stencil.height))
-        };
-        return spatial::get<terrain::terrain_normal> (geometry[index])
+                              terrain::TerrainIndex site) {
+      const terrain::TerrainDomain& domain = geometry.domain ();
+      const auto sample = [&] (int dx, int dz) {
+        return spatial::get<terrain::terrain_normal> (
+                 geometry[domain.shifted (site, dx, dz)])
           .numerical_value_in (mp_units::one);
       };
       Vec3 support = sample (0, 0) * 4.0f;
@@ -69,68 +61,63 @@ namespace moppe::map {
 
     void populate_snow_support (SurfaceGeometry& geometry) {
       MOPPE_PROFILE_ZONE ("surface.populate_snow_support");
-      const SnowSupportStencil stencil = snow_support_stencil (geometry);
-      for (int row = 0; row < stencil.height; ++row)
-        for (int column = 0; column < stencil.width; ++column) {
-          const terrain::TerrainIndex index { static_cast<std::size_t> (column),
-                                              static_cast<std::size_t> (row) };
-          auto site = geometry[index];
-          spatial::get<snow_support> (site) =
-            std::clamp (snow_support_normal (geometry, stencil, column, row)[1],
-                        0.0f,
-                        1.0f) *
-            snow_support[one];
-        }
+      const SnowSupportStencil stencil =
+        snow_support_stencil (geometry.domain ());
+      spatial::for_each_site (geometry, [&] (const auto& site) {
+        spatial::get<snow_support> (site) =
+          std::clamp (snow_support_normal (geometry, stencil, site.index ())[1],
+                      0.0f,
+                      1.0f) *
+          snow_support[one];
+      });
     }
 
     void recompute_surface_normals (SurfaceGeometry& geometry) {
       MOPPE_PROFILE_ZONE ("map::recompute_normals");
       const terrain::TerrainDomain& domain = geometry.domain ();
-      const int width = static_cast<int> (domain.width ());
-      const int height = static_cast<int> (domain.height ());
-      const auto& elevations =
-        spatial::get<terrain::surface_elevation> (geometry);
-      auto& normals = spatial::get<terrain::terrain_normal> (geometry);
-      std::ranges::fill (
-        normals, Vec3 (0, 0, 0) * terrain::terrain_normal[mp_units::one]);
+      std::ranges::fill (spatial::get<terrain::terrain_normal> (geometry),
+                         Vec3 (0, 0, 0) *
+                           terrain::terrain_normal[mp_units::one]);
 
-      const auto point = [&] (int column, int row) {
-        const terrain::TerrainIndex index {
-          static_cast<std::size_t> (terrain::wrap_index (column, width)),
-          static_cast<std::size_t> (terrain::wrap_index (row, height))
-        };
+      // A cell corner, named as a step away from the site that owns the cell.
+      // The elevation comes from the wrapped position, but the coordinate does
+      // not wrap: a face spanning the seam has to stay continuous, or its
+      // normal would fold back on itself there.
+      const auto corner = [&] (terrain::TerrainIndex site, int dx, int dz) {
         return Vec3 (
-          domain.spacing_x_m () * column,
-          terrain::surface_elevation_value (elevations[domain.offset (index)]),
-          domain.spacing_z_m () * row);
+          domain.spacing_x_m () * (static_cast<int> (site.column) + dx),
+          terrain::surface_elevation_value (
+            spatial::get<terrain::surface_elevation> (
+              geometry[domain.shifted (site, dx, dz)])),
+          domain.spacing_z_m () * (static_cast<int> (site.row) + dz));
       };
-      const auto face = [&] (int x1, int y1, int x2, int y2, int x3, int y3) {
-        return normalized (cross (point (x2, y2) - point (x1, y1),
-                                  point (x3, y3) - point (x1, y1)));
-      };
-      const auto add = [&] (int column, int row, const Vec3& value) {
-        const terrain::TerrainIndex index {
-          static_cast<std::size_t> (terrain::wrap_index (column, width)),
-          static_cast<std::size_t> (terrain::wrap_index (row, height))
+      const auto add =
+        [&] (terrain::TerrainIndex site, int dx, int dz, const Vec3& value) {
+          SurfaceNormal& normal = spatial::get<terrain::terrain_normal> (
+            geometry[domain.shifted (site, dx, dz)]);
+          normal = (normal.numerical_value_in (mp_units::one) + value) *
+                   terrain::terrain_normal[mp_units::one];
         };
-        SurfaceNormal& normal = normals[domain.offset (index)];
-        normal = (normal.numerical_value_in (mp_units::one) + value) *
-                 terrain::terrain_normal[mp_units::one];
-      };
-      for (int row = 0; row < height; ++row)
-        for (int column = 0; column < width; ++column) {
-          const Vec3 left =
-            face (column, row, column, row + 1, column + 1, row + 1);
-          const Vec3 right =
-            face (column, row, column + 1, row + 1, column + 1, row);
-          add (column, row, left);
-          add (column, row + 1, left);
-          add (column + 1, row + 1, left);
-          add (column, row, right);
-          add (column + 1, row, right);
-          add (column + 1, row + 1, right);
-        }
-      for (SurfaceNormal& value : normals) {
+
+      // Each site owns the cell reaching one step further along both axes,
+      // split into two triangles whose face normals every touched corner
+      // accumulates.
+      for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+        const Vec3 origin = corner (site, 0, 0);
+        const Vec3 left = normalized (
+          cross (corner (site, 0, 1) - origin, corner (site, 1, 1) - origin));
+        const Vec3 right = normalized (
+          cross (corner (site, 1, 1) - origin, corner (site, 1, 0) - origin));
+        add (site, 0, 0, left);
+        add (site, 0, 1, left);
+        add (site, 1, 1, left);
+        add (site, 0, 0, right);
+        add (site, 1, 0, right);
+        add (site, 1, 1, right);
+      }
+
+      for (SurfaceNormal& value :
+           spatial::get<terrain::terrain_normal> (geometry)) {
         Vec3 normal = value.numerical_value_in (mp_units::one);
         normalize (normal);
         value = normal * terrain::terrain_normal[mp_units::one];
@@ -160,31 +147,30 @@ namespace moppe::map {
     }
 
     void record_material_change (SurfaceGeometry& surface,
-                                 std::size_t offset,
+                                 terrain::TerrainIndex site,
                                  float delta) {
-      auto& eroded = spatial::get<eroded_surface_material> (surface);
-      auto& deposited = spatial::get<deposited_surface_material> (surface);
-      if (delta < 0.0f)
-        eroded[offset] = (eroded[offset].numerical_value_in (one) - delta) *
-                         eroded_surface_material[one];
-      else
-        deposited[offset] =
-          (deposited[offset].numerical_value_in (one) + delta) *
-          deposited_surface_material[one];
+      const auto row = surface[site];
+      if (delta < 0.0f) {
+        auto& eroded = spatial::get<eroded_surface_material> (row);
+        eroded = (eroded.numerical_value_in (one) - delta) *
+                 eroded_surface_material[one];
+      } else {
+        auto& deposited = spatial::get<deposited_surface_material> (row);
+        deposited = (deposited.numerical_value_in (one) + delta) *
+                    deposited_surface_material[one];
+      }
     }
 
+    // The solver still answers in bare lattice samples, so this is where a
+    // linear buffer meets the surface. Asking the domain for each site's
+    // offset keeps that the only place the two orders have to agree.
     void set_elevations (SurfaceGeometry& surface,
                          std::span<const float> heights) {
-      const int width = static_cast<int> (surface.domain ().width ());
-      const int height = static_cast<int> (surface.domain ().height ());
-      for (int row = 0; row < height; ++row)
-        for (int column = 0; column < width; ++column)
-          spatial::get<terrain::surface_elevation> (
-            surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
-                                            static_cast<std::size_t> (row) }]) =
-            SurfaceElevation (
-              heights[static_cast<std::size_t> (row) * width + column] *
-              terrain::surface_elevation[u::m]);
+      const terrain::TerrainDomain& domain = surface.domain ();
+      for (const terrain::TerrainIndex site : spatial::sites (surface))
+        spatial::get<terrain::surface_elevation> (surface[site]) =
+          SurfaceElevation (heights[domain.offset (site)] *
+                            terrain::surface_elevation[u::m]);
     }
   }
 
@@ -196,22 +182,25 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("terrain.initialize");
     terrain::GeologicalSections geology =
       terrain::generate_geology (surface.domain (), seed, progress);
-    const auto& continent = spatial::get<terrain::continent_shape> (geology);
-    const auto& weights = spatial::get<terrain::uplift_weight> (geology);
-    auto& elevations = spatial::get<terrain::surface_elevation> (surface);
     const float sea_level_m = meters_value (water_datum);
 
     std::vector<meters_per_julian_year_t> uplift;
     uplift.reserve (geology.size ());
-    for (std::size_t offset = 0; offset < geology.size (); ++offset) {
-      const float land = continent[offset].numerical_value_in (one) - coastline;
+    for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+      const auto ground = geology[site];
+      const float land =
+        spatial::get<terrain::continent_shape> (ground).numerical_value_in (
+          one) -
+        coastline;
       const float relief =
         land < 0.0f ? initial_bathymetric_relief_m : initial_land_relief_m;
-      elevations[offset] = SurfaceElevation ((sea_level_m + relief * land) *
-                                             terrain::surface_elevation[u::m]);
-      uplift.push_back (weights[offset].numerical_value_in (one) *
-                        maximum_uplift_m_per_year * mp_units::si::metre /
-                        mp_units::astronomy::Julian_year);
+      spatial::get<terrain::surface_elevation> (surface[site]) =
+        SurfaceElevation ((sea_level_m + relief * land) *
+                          terrain::surface_elevation[u::m]);
+      uplift.push_back (
+        spatial::get<terrain::uplift_weight> (ground).numerical_value_in (one) *
+        maximum_uplift_m_per_year * mp_units::si::metre /
+        mp_units::astronomy::Julian_year);
     }
     reset_material_history (surface);
     return uplift;
@@ -239,24 +228,15 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("terrain.form_trails");
     terrain::TrailFormationResult result =
       terrain::form_trails (surface, parameters);
-    const int width = static_cast<int> (surface.domain ().width ());
-    const int height = static_cast<int> (surface.domain ().height ());
-    for (int row = 0; row < height; ++row)
-      for (int column = 0; column < width; ++column) {
-        const std::size_t offset =
-          static_cast<std::size_t> (row) * width + column;
-        const float previous = terrain::surface_elevation_value (
-          spatial::get<terrain::surface_elevation> (
-            surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
-                                            static_cast<std::size_t> (row) }]));
-        record_material_change (
-          surface, offset, result.heights[offset] - previous);
-        spatial::get<terrain::surface_elevation> (
-          surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
-                                          static_cast<std::size_t> (row) }]) =
-          SurfaceElevation (result.heights[offset] *
-                            terrain::surface_elevation[u::m]);
-      }
+    const terrain::TerrainDomain& domain = surface.domain ();
+    for (const terrain::TerrainIndex site : spatial::sites (surface)) {
+      const float formed = result.heights[domain.offset (site)];
+      auto& elevation =
+        spatial::get<terrain::surface_elevation> (surface[site]);
+      record_material_change (
+        surface, site, formed - terrain::surface_elevation_value (elevation));
+      elevation = SurfaceElevation (formed * terrain::surface_elevation[u::m]);
+    }
     return std::move (result.network);
   }
 
