@@ -439,12 +439,13 @@ if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_scene PUBLIC Tracy::TracyClient)
 endif()
 
-# The shared application layer is intentionally narrow: these two
+# The shared application layer is intentionally narrow: loading and the two
 # presentation systems make concrete platform service calls, while game.cc
 # stays on each terminal executable because it defines main.
 add_library(moppe_app STATIC
   moppe/game/terrain.cc
   moppe/game/terrain_lab.cc
+  moppe/game/world_loading.cc
 )
 target_include_directories(moppe_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moppe_app PUBLIC moppe_scene)

@@ -38,21 +38,24 @@ Only after that handoff does the main thread build renderer-facing river,
 water, ground, forest, and actor presentation. The active world is
 consequently never half-mutated by a loading worker.
 
-Generation is deliberately single-flight: running builds are never cancelled.
-Its job owns the requested recipe until the platform's main-thread completion
-callback has observed a published completed owner. The platform retains that
-job through the callback; its lifetime mutex keeps worker and callback game
-access behind the same shutdown boundary. `MoppeGame` takes that mutex before
-it clears the job's raw game pointer, so closing during generation waits for
-the worker and a queued callback simply does nothing. A failed build retains
-the existing clear failure behavior: it logs the generation error and exits
-rather than exposing an incomplete candidate. While it runs, the loading
-screen sees only copied, display-resolution height snapshots in its separate
-preview map; it neither borrows nor owns a candidate world's terrain state.
-Orogeny publishes one such snapshot after every geological interval, and the
-loading preview keeps those snapshots in a short ordered sequence. Each GPU
-morph finishes before the next snapshot begins, so a newer erosion step never
-replaces the destination of an in-flight transition.
+`WorldLoading` owns generation as a deliberately single-flight operation:
+running builds are never cancelled. Its job owns the requested recipe and
+shares only the loader's internal state, never a raw pointer back to
+`MoppeGame`. The platform retains that state through its main-thread
+completion callback, so closing the application cannot leave the worker with
+an application borrow. A failed build retains the existing clear failure
+behavior: it logs the generation error and exits rather than exposing an
+incomplete candidate.
+
+While generation runs, `WorldLoading` publishes copied, display-resolution
+height snapshots into its separate preview map; the loading screen neither
+borrows nor owns a candidate world's terrain state. Orogeny publishes one
+such snapshot after every geological interval, and the loading preview keeps
+those snapshots in a short ordered sequence. Each GPU morph finishes before
+the next snapshot begins, so a newer erosion step never replaces the
+destination of an in-flight transition. Once the platform callback marks the
+candidate complete, `MoppeGame` polls and transfers the completed owner on the
+main thread before beginning renderer-facing activation.
 
 Ordinary gameplay receives const readings. `Builder` is the explicit capability
 used by the loading worker to evaluate terrain, record history, rebuild the surface,
