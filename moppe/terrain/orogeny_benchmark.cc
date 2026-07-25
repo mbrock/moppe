@@ -38,20 +38,6 @@ namespace {
     return value;
   }
 
-  moppe::terrain::StreamPowerRouting parse_routing (std::string_view text) {
-    using moppe::terrain::StreamPowerRouting;
-    if (text == "d8")
-      return StreamPowerRouting::D8;
-    if (text == "d-infinity" || text == "dinf")
-      return StreamPowerRouting::DInfinity;
-    throw std::invalid_argument ("routing must be d8 or d-infinity");
-  }
-
-  const char* routing_id (moppe::terrain::StreamPowerRouting routing) {
-    using moppe::terrain::StreamPowerRouting;
-    return routing == StreamPowerRouting::D8 ? "d8" : "d-infinity";
-  }
-
   std::uint64_t height_hash (const moppe::map::Surface& map) {
     // FNV-1a over the exact float representation makes benchmark output a
     // cheap numerical-regression ledger as well as a timing record.
@@ -122,16 +108,15 @@ int main (int argc, char** argv) {
   using namespace moppe::terrain;
 
   try {
-    if (argc < 5 || argc > 7)
+    if (argc < 4 || argc > 6)
       throw std::invalid_argument (
-        "usage: terrain-orogeny-benchmark SIZE SEED STEPS ROUTING "
+        "usage: terrain-orogeny-benchmark SIZE SEED STEPS "
         "[REPEATS] [cpu|metal]");
     const int resolution = parse_positive_int (argv[1], "size");
     const int seed = parse_non_negative_int (argv[2], "seed");
     const int steps = parse_positive_int (argv[3], "steps");
-    const StreamPowerRouting routing = parse_routing (argv[4]);
-    const int repeats = argc >= 6 ? parse_positive_int (argv[5], "repeats") : 1;
-    const std::string_view backend_id = argc == 7 ? argv[6] : "cpu";
+    const int repeats = argc >= 5 ? parse_positive_int (argv[4], "repeats") : 1;
+    const std::string_view backend_id = argc == 6 ? argv[5] : "cpu";
     if (resolution < 3)
       throw std::invalid_argument ("size must be at least three");
 
@@ -140,7 +125,6 @@ int main (int argc, char** argv) {
     auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
     orogeny.evolution.duration =
       static_cast<float> (steps) * orogeny.evolution.time_step;
-    orogeny.evolution.routing = routing;
 
     std::unique_ptr<StreamPowerEvolutionBackend> backend;
     if (backend_id == "metal") {
@@ -164,7 +148,7 @@ int main (int argc, char** argv) {
       reference_heights = reference_map.relative_elevations ();
     }
 
-    std::cout << "resolution,cells,seed,routing,backend,steps,repeat,"
+    std::cout << "resolution,cells,seed,backend,steps,repeat,"
                  "elapsed_ms,height_hash,final_mean_change_m,"
                  "final_max_change_m,reference_mean_difference_m,"
                  "reference_p99_difference_m,"
@@ -192,10 +176,10 @@ int main (int argc, char** argv) {
       std::cout << resolution << ','
                 << static_cast<std::size_t> (resolution - 1) *
                      static_cast<std::size_t> (resolution - 1)
-                << ',' << seed << ',' << routing_id (routing) << ','
-                << backend_id << ',' << steps << ',' << repeat << ','
-                << std::fixed << std::setprecision (3) << elapsed_ms << ","
-                << std::hex << height_hash (map) << std::dec << ','
+                << ',' << seed << ',' << backend_id << ',' << steps << ','
+                << repeat << ',' << std::fixed << std::setprecision (3)
+                << elapsed_ms << "," << std::hex << height_hash (map)
+                << std::dec << ','
                 << meters_value (report.final_step_mean_change) << ','
                 << meters_value (report.final_step_maximum_change) << ','
                 << difference.mean_m << ',' << difference.p99_m << ','

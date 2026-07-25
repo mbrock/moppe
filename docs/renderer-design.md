@@ -233,7 +233,7 @@ occludes the expensive cloud shader.
 
 Running rivers are explicit meshes built from `RiverAlignment`, a dense
 continuous trajectory attached to every topological reach.  Drainage cells
-remain the routing authority; a damped cubic Hermite reading removes D8
+remain the routing authority; a damped cubic Hermite reading removes receiver
 corners, interpolates area, slope, waterfall, and mouth state, and assigns an
 arc coordinate that is continuous through confluences.  Width and depth are
 physical functions of contributing area.  Seven vertices across each section

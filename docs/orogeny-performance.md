@@ -14,10 +14,10 @@ tools/orogeny-benchmark /tmp/orogeny.csv --skip-build
 ```
 
 The default matrix covers 257, 513, and 1025 samples per side; seeds 123 and
-731; 4 and 20 geological steps; D8 and D-infinity routing; and three repeats.
-On macOS, add `--backend cpu,metal` to compare the conventional Metal compute
-prototype with the CPU reference. Metal rows include mean, p99, p99.9, maximum,
-and cells-over-1-metre height error against an untimed CPU result.
+731; 4 and 20 geological steps; fractional D-infinity routing; and three
+repeats. On macOS, add `--backend cpu,metal` to compare the conventional Metal
+compute prototype with the CPU reference. Metal rows include mean, p99, p99.9,
+maximum, and cells-over-1-metre height error against an untimed CPU result.
 Use smaller development sweeps when iterating, for example:
 
 ```sh
@@ -30,10 +30,11 @@ hosts. A final-height hash change is not automatically a regression, but it
 requires an explicit terrain-quality and determinism review rather than being
 accepted as a performance-only change.
 
-## Initial CPU baseline
+## Historical routing comparison
 
 The baseline below was captured from a RelWithDebInfo build on 2026-07-18 with
-seed 123. It is a directional local baseline, not a cross-machine target.
+seed 123. It predates the removal of the D8 evolution mode and remains only as
+a historical record of the decision to standardize on D-infinity.
 
 | Unique grid | Steps | D8 | D-infinity |
 |---:|---:|---:|---:|
@@ -49,13 +50,13 @@ A time sample of the 1024², 20-step D-infinity case attributed approximately
 census, and 4% to the downstream incision solve. The proportions are useful
 for ordering work; the CSV matrix remains the acceptance measurement.
 
-## Exact CPU checkpoint
+## Historical exact CPU checkpoint
 
-The first optimization stage precomputes the D-infinity stencil geometry,
-uses a lean wet-routing result, reuses the drainage graph's topological order,
-and retains per-step workspace. Final float hashes stayed identical to the
-initial baseline. The table is the median across seeds 123 and 731 and three
-repeats per seed:
+The first optimization stage precomputed the D-infinity stencil geometry,
+used a lean wet-routing result, reused the drainage graph's topological order,
+and retained per-step workspace. Final float hashes stayed identical to the
+initial baseline. This historical table is the median across seeds 123 and
+731 and three repeats per seed:
 
 | Unique grid | Steps | D8 | D-infinity |
 |---:|---:|---:|---:|

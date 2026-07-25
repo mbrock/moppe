@@ -1,7 +1,6 @@
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <moppe/profile.hh>
-#include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 
@@ -25,27 +24,6 @@ namespace moppe::terrain {
         for (std::size_t x = 0; x < grid.width; ++x)
           expanded[y * grid.width + x] =
             unique[(y % height) * width + x % width];
-    }
-
-    double edge_distance_m (std::uint32_t cell,
-                            std::uint32_t receiver,
-                            const TerrainGrid& grid) {
-      const int width = static_cast<int> (grid.width);
-      const int height = static_cast<int> (grid.height);
-      int dx =
-        static_cast<int> (cell % width) - static_cast<int> (receiver % width);
-      int dy =
-        static_cast<int> (cell / width) - static_cast<int> (receiver / width);
-      if (dx > width / 2)
-        dx -= width;
-      if (dx < -width / 2)
-        dx += width;
-      if (dy > height / 2)
-        dy -= height;
-      if (dy < -height / 2)
-        dy += height;
-      return std::hypot (static_cast<double> (dx) * grid.spacing_x_m (),
-                         static_cast<double> (dy) * grid.spacing_y_m ());
     }
 
     void validate_stream_power_evolution (
@@ -197,8 +175,7 @@ namespace moppe::terrain {
         initial[y * width + x] = terrain.at (x, y);
     std::vector<float> current = initial;
     std::vector<ChannelTangent> channel_memory;
-    if (parameters.routing == StreamPowerRouting::DInfinity &&
-        !initial_channel_tangents.empty ()) {
+    if (!initial_channel_tangents.empty ()) {
       channel_memory.assign (initial_channel_tangents.begin (),
                              initial_channel_tangents.end ());
       for (const ChannelTangent value : channel_memory) {
@@ -292,69 +269,45 @@ namespace moppe::terrain {
           incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
         };
 
-        if (parameters.routing == StreamPowerRouting::D8) {
-          const DrainageGraph drainage =
-            analyze_wet_drainage (routed_terrain, flood, census);
-          for (auto position = drainage.topological_order.rbegin ();
-               position != drainage.topological_order.rend ();
-               ++position) {
-            const std::uint32_t cell = position->value;
-            const std::uint32_t receiver = drainage.receiver[cell];
-            const square_meters_t contributing_area =
-              std::max (square_meters_value (grid.cell_area ()),
-                        square_meters_value (drainage.contributing_area.sample (
-                          cell % width, cell / width))) *
-              mp_units::si::metre * mp_units::si::metre;
-            solve (cell,
-                   flood.ocean[cell] || receiver == cell,
-                   contributing_area,
-                   receiver == cell ? 1.0f * mp_units::si::metre
-                                    : static_cast<float> (edge_distance_m (
-                                        cell, receiver, grid)) *
-                                        mp_units::si::metre,
-                   next[receiver] * height_scale_m);
+        const FractionalDrainage drainage =
+          backend.route_fractional (routed_terrain,
+                                    flood,
+                                    census,
+                                    channel_memory,
+                                    parameters.channel_persistence);
+        channel_memory = spatial::get<channel_tangent> (drainage);
+        const auto& area =
+          spatial::get<fractional_contributing_area> (drainage);
+        const auto order = drainage.domain ().topological_order ();
+        for (auto position = order.rbegin (); position != order.rend ();
+             ++position) {
+          const CellIndex cell = *position;
+          const FractionalFlowRoute& route = drainage.domain ().route (cell);
+          double receiver_height_m = next[cell.value] * height_scale_m;
+          if (route.arc_count == 1) {
+            receiver_height_m =
+              next[route.arcs[0].receiver.value] * height_scale_m;
+          } else if (route.arc_count == 2) {
+            const float interpolation =
+              route.receiver_interpolation.numerical_value_in (mp_units::one);
+            receiver_height_m = std::lerp (next[route.arcs[0].receiver.value],
+                                           next[route.arcs[1].receiver.value],
+                                           interpolation) *
+                                height_scale_m;
           }
-        } else {
-          const FractionalDrainage drainage =
-            backend.route_fractional (routed_terrain,
-                                      flood,
-                                      census,
-                                      channel_memory,
-                                      parameters.channel_persistence);
-          channel_memory = spatial::get<channel_tangent> (drainage);
-          const auto& area =
-            spatial::get<fractional_contributing_area> (drainage);
-          const auto order = drainage.domain ().topological_order ();
-          for (auto position = order.rbegin (); position != order.rend ();
-               ++position) {
-            const CellIndex cell = *position;
-            const FractionalFlowRoute& route = drainage.domain ().route (cell);
-            double receiver_height_m = next[cell.value] * height_scale_m;
-            if (route.arc_count == 1) {
-              receiver_height_m =
-                next[route.arcs[0].receiver.value] * height_scale_m;
-            } else if (route.arc_count == 2) {
-              const float interpolation =
-                route.receiver_interpolation.numerical_value_in (mp_units::one);
-              receiver_height_m = std::lerp (next[route.arcs[0].receiver.value],
-                                             next[route.arcs[1].receiver.value],
-                                             interpolation) *
-                                  height_scale_m;
-            }
-            const square_meters_t physical_area =
-              area[cell.value].numerical_value_in (mp_units::si::metre *
-                                                   mp_units::si::metre) *
-              mp_units::si::metre * mp_units::si::metre;
-            const square_meters_t contributing_area =
-              std::max (square_meters_value (grid.cell_area ()),
-                        square_meters_value (physical_area)) *
-              mp_units::si::metre * mp_units::si::metre;
-            solve (cell.value,
-                   flood.ocean[cell.value] || route.empty (),
-                   contributing_area,
-                   route.empty () ? 1.0f * mp_units::si::metre : route.run,
-                   receiver_height_m);
-          }
+          const square_meters_t physical_area =
+            area[cell.value].numerical_value_in (mp_units::si::metre *
+                                                 mp_units::si::metre) *
+            mp_units::si::metre * mp_units::si::metre;
+          const square_meters_t contributing_area =
+            std::max (square_meters_value (grid.cell_area ()),
+                      square_meters_value (physical_area)) *
+            mp_units::si::metre * mp_units::si::metre;
+          solve (cell.value,
+                 flood.ocean[cell.value] || route.empty (),
+                 contributing_area,
+                 route.empty () ? 1.0f * mp_units::si::metre : route.run,
+                 receiver_height_m);
         }
       }
       int step_sweeps = 0;

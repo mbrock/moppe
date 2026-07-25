@@ -10,8 +10,6 @@
 #include <vector>
 
 namespace moppe::terrain {
-  enum class StreamPowerRouting { D8, DInfinity };
-
   // Backward-Euler landscape evolution for the n=1 stream-power equation.
   // Incision velocity is calibrated at a reference drainage area, keeping
   // every parameter dimensionally stable while the area exponent remains an
@@ -28,7 +26,6 @@ namespace moppe::terrain {
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
     float sea_level = 50.0f / 650.0f;
-    StreamPowerRouting routing = StreamPowerRouting::DInfinity;
     // How strongly the prior geological step's channel tangent favours an
     // aligned, still-downhill D-infinity route. Zero recovers memoryless
     // routing; values must remain below one.

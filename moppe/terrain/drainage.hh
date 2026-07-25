@@ -21,15 +21,9 @@ namespace moppe::terrain {
   struct FloodField;
   struct LakeCensus;
 
-  enum class DrainageRouting { D8 };
-
-  struct DrainageParameters {
-    DrainageRouting routing = DrainageRouting::D8;
-  };
-
-  // Receiver selection shared by full D8 drainage and D-infinity's fallback
-  // across lakes and proven depression spills. It deliberately omits the
-  // downstream products that fractional drainage recomputes for its own DAG.
+  // One receiver per cell across lakes and proven depression spills. This
+  // supplies routes where continuous downhill drainage is undefined and
+  // deliberately omits products that fractional drainage computes itself.
   struct WetDrainageRouting {
     TerrainGrid source_grid;
     std::vector<CellIndex> receiver;
@@ -79,11 +73,11 @@ namespace moppe::terrain {
     std::vector<WaterBodyFlow> bodies;
   };
 
-  // A dense, unwrapped plan-view trajectory derived from a D8 reach. The
-  // drainage cells remain the topological authority; this continuous reading
-  // is shared by rendering, flow painting, and future traversal. Distance is
-  // local to the reach, while flow_distance_m is globally continuous through
-  // confluences and reaches zero at the final mouth.
+  // A dense, unwrapped plan-view trajectory derived from a receiver chain.
+  // The drainage cells remain the topological authority; this continuous
+  // reading is shared by rendering, flow painting, and future traversal.
+  // Distance is local to the reach, while flow_distance_m is globally
+  // continuous through confluences and reaches zero at the final mouth.
   struct RiverAlignmentPoint {
     float x_m = 0.0f;
     float z_m = 0.0f;
@@ -153,18 +147,13 @@ namespace moppe::terrain {
     std::vector<std::uint8_t> body_traversed;
   };
 
-  DrainageGraph analyze_drainage (const TerrainView& terrain,
-                                  const DrainageParameters& parameters = {});
-  WetDrainageRouting
-  route_wet_drainage (const TerrainView& terrain,
-                      const FloodField& flood,
-                      const LakeCensus& census,
-                      const DrainageParameters& parameters = {});
-  DrainageGraph
-  analyze_wet_drainage (const TerrainView& terrain,
-                        const FloodField& flood,
-                        const LakeCensus& census,
-                        const DrainageParameters& parameters = {});
+  DrainageGraph analyze_drainage (const TerrainView& terrain);
+  WetDrainageRouting route_wet_drainage (const TerrainView& terrain,
+                                         const FloodField& flood,
+                                         const LakeCensus& census);
+  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
+                                      const FloodField& flood,
+                                      const LakeCensus& census);
   WaterNetwork analyze_water_network (const FloodField& flood,
                                       const LakeCensus& census,
                                       const DrainageGraph& drainage);
