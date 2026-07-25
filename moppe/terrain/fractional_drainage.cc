@@ -16,9 +16,11 @@
 
 namespace moppe::terrain {
   namespace {
-    inline constexpr struct routing_surface_elevation
-        : quantity_spec<mp_units::isq::height, mp_units::is_kind> {
-    } routing_surface_elevation;
+    // Local to the routing pass, so it stays out of the registry in
+    // moppe/quantities.hh: nothing outside this file stores one.
+    QUANTITY_SPEC (routing_surface_elevation,
+                   mp_units::isq::height,
+                   mp_units::is_kind);
     using RoutingSurfaceElevation = mp_units::quantity_point<
       routing_surface_elevation[mp_units::si::metre],
       mp_units::default_point_origin (

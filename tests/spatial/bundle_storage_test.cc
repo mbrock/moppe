@@ -34,12 +34,8 @@ namespace {
     friend bool operator== (const StoredRing&, const StoredRing&) = default;
   };
 
-  inline constexpr struct stored_displacement
-      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
-  } stored_displacement;
-  inline constexpr struct stored_density
-      : quantity_spec<mp_units::dimensionless> {
-  } stored_density;
+  QUANTITY_SPEC (stored_displacement, mp_units::isq::length, mp_units::is_kind);
+  QUANTITY_SPEC (stored_density, mp_units::dimensionless);
 
   using StoredDisplacement = quantity<stored_displacement[u::m], float>;
   using StoredDensity = quantity<stored_density[one], float>;
@@ -47,17 +43,14 @@ namespace {
     spatial::Bundle<StoredRing, StoredDisplacement, StoredDensity>;
   using StoredNarrowBundle = spatial::Bundle<StoredRing, StoredDisplacement>;
 
-  inline constexpr struct stored_direction
-      : quantity_spec<mp_units::dimensionless,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } stored_direction;
+  QUANTITY_SPEC (stored_direction,
+                 mp_units::dimensionless,
+                 mp_units::quantity_tensor_order::vector,
+                 mp_units::is_kind);
   using StoredDirection = quantity<stored_direction[one], Vec3>;
   using StoredVectorBundle = spatial::Bundle<StoredRing, StoredDirection>;
 
-  inline constexpr struct stored_duration
-      : quantity_spec<mp_units::isq::duration, mp_units::is_kind> {
-  } stored_duration;
+  QUANTITY_SPEC (stored_duration, mp_units::isq::duration, mp_units::is_kind);
   using StoredDuration = quantity<stored_duration[u::s], float>;
   using StoredWrongUnitsBundle =
     spatial::Bundle<StoredRing, StoredDuration, StoredDensity>;

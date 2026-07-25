@@ -59,6 +59,13 @@
     `MOPPE_IOS_CONFIGURATION`, and `MOPPE_IOS_BUILD_DIR`.
 
 ## Architecture (see docs/renderer-design.md)
+- `moppe/quantities.hh` is the registry of every quantity specification, in
+  namespace sections. Declare new ones there with the `QUANTITY_SPEC` macro,
+  never by hand-writing the struct: mp-units switches between a CRTP and a
+  deducing-this formulation per toolchain and only the macro writes both. The
+  concrete `quantity`/`quantity_point` aliases built on a spec stay with the
+  code that owns the concept, since those need units and vectors the registry
+  has no dependency on.
 - `moppe/render/` — portable renderer API (DrawList immediate mode,
   MeshBuilder-baked meshes, game-shaped Renderer interface); no GL/Metal
   types in headers. `moppe/render/metal/` and `moppe/render/webgpu/` own the

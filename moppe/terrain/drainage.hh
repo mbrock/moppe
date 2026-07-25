@@ -10,15 +10,7 @@
 #include <vector>
 
 namespace moppe::terrain {
-  QUANTITY_SPEC (terrain_slope,
-                 mp_units::dimensionless,
-                 mp_units::non_negative);
-
   using slope_t = mp_units::quantity<terrain_slope[mp_units::one], float>;
-
-  inline constexpr struct contributing_area
-      : quantity_spec<mp_units::isq::area, mp_units::non_negative> {
-  } contributing_area;
   using ContributingArea = quantity<contributing_area[u::m * u::m], float>;
   using DrainageReadings =
     spatial::Bundle<TerrainDomain, slope_t, ContributingArea>;

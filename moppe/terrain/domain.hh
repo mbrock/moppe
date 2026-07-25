@@ -84,21 +84,6 @@ namespace moppe::terrain {
     std::numeric_limits<std::uint32_t>::max ()
   };
 
-  // Numbers of entities are quantities of dimension one.  Distinct kinds
-  // preserve their algebra while preventing unrelated counts from mixing.
-  inline constexpr struct cell_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } cell_count;
-  inline constexpr struct reach_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } reach_count;
-  inline constexpr struct iteration_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } iteration_count;
-  inline constexpr struct separation_cell_count
-      : mp_units::quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } separation_cell_count;
-
   using CellCount = mp_units::quantity<cell_count[mp_units::one], std::size_t>;
   using ReachCount =
     mp_units::quantity<reach_count[mp_units::one], std::size_t>;
@@ -135,12 +120,9 @@ namespace moppe::terrain {
   }
 
   // ---- Cell quantities ----
-
-  // A point in the world's vertical reference frame. Terrain storage uses
-  // metres directly; differences between elevations are ordinary lengths.
-  inline constexpr struct surface_elevation
-      : quantity_spec<mp_units::isq::height, mp_units::is_kind> {
-  } surface_elevation;
+  //
+  // The specs these measure are declared in moppe/quantities.hh; here they
+  // become the concrete units and representations a terrain cell stores.
 
   using SurfaceElevation =
     quantity_point<surface_elevation[u::m],
@@ -155,43 +137,7 @@ namespace moppe::terrain {
     return value.quantity_from_zero ().numerical_value_in (u::m);
   }
 
-  inline constexpr struct terrain_normal
-      : quantity_spec<mp_units::dimensionless,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } terrain_normal;
-
   using TerrainNormal = mp_units::quantity<terrain_normal[mp_units::one], Vec3>;
-
-  inline constexpr struct surface_moisture
-      : quantity_spec<mp_units::dimensionless> {
-  } surface_moisture;
-
-  inline constexpr struct waterline_distance
-      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
-  } waterline_distance;
-
-  inline constexpr struct standing_water_depth
-      : quantity_spec<mp_units::isq::length, mp_units::non_negative> {
-  } standing_water_depth;
-
-  inline constexpr struct wave_amplitude
-      : quantity_spec<mp_units::dimensionless> {
-  } wave_amplitude;
-
-  inline constexpr struct water_velocity
-      : quantity_spec<mp_units::isq::speed,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } water_velocity;
-
-  inline constexpr struct trail_influence
-      : quantity_spec<mp_units::dimensionless> {
-  } trail_influence;
-
-  inline constexpr struct home_base_influence
-      : quantity_spec<mp_units::dimensionless> {
-  } home_base_influence;
 
   using SurfaceMoisture = quantity<surface_moisture[one], float>;
   using WaterlineDistance = quantity<waterline_distance[u::m], float>;

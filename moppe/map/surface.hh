@@ -26,57 +26,16 @@ namespace moppe::map {
   // The world's ground geometry is the SurfaceGeometry bundle itself:
   // elevation, normals, and the material history the world's erosion left
   // behind, over one terrain domain. Readings analysed over the same domain
-  // live in a separate bundle the completed world owns.
-
-  using terrain::surface_elevation;
-  using terrain::SurfaceElevation;
-
-  // The upward component of a broad local support plane. Snow responds to
-  // this material-scale reading rather than the detailed lighting normal.
-  inline constexpr struct snow_support
-      : quantity_spec<mp_units::dimensionless> {
-  } snow_support;
-
-  inline constexpr struct eroded_surface_material
-      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } eroded_surface_material;
-
-  inline constexpr struct deposited_surface_material
-      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } deposited_surface_material;
-
-  // Planar channel direction scaled by log-compressed fluvial activity.
-  inline constexpr struct channel_flux
-      : quantity_spec<mp_units::dimensionless,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } channel_flux;
-
-  using terrain::surface_moisture;
-  using terrain::waterline_distance;
-
-  // Normalized exposure of material removed during the world's history.
-  inline constexpr struct erosion_exposure
-      : quantity_spec<mp_units::dimensionless> {
-  } erosion_exposure;
-
-  // Normalized cover of material deposited during the world's history.
-  inline constexpr struct deposition_cover
-      : quantity_spec<mp_units::dimensionless> {
-  } deposition_cover;
-
-  // Ecological support from drainage moisture, slope, shore, and tree line.
-  inline constexpr struct tree_habitat
-      : quantity_spec<mp_units::dimensionless> {
-  } tree_habitat;
-
-  // Actual canopy recruitment after habitat, routes, and settlement.
-  inline constexpr struct forest_cover
-      : quantity_spec<mp_units::dimensionless> {
-  } forest_cover;
+  // live in a separate bundle the completed world owns. The specs these
+  // measure are declared in moppe/quantities.hh; here they become the
+  // concrete columns a surface stores.
 
   using terrain::home_base_influence;
+  using terrain::surface_elevation;
+  using terrain::surface_moisture;
+  using terrain::SurfaceElevation;
   using terrain::trail_influence;
+  using terrain::waterline_distance;
 
   using SurfaceNormal = terrain::TerrainNormal;
   using SnowSupport = quantity<snow_support[one], float>;

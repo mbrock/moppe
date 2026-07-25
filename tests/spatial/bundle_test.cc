@@ -52,14 +52,10 @@ namespace {
     friend bool operator== (const SizedRing&, const SizedRing&) = default;
   };
 
-  inline constexpr struct test_displacement
-      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
-  } test_displacement;
+  QUANTITY_SPEC (test_displacement, mp_units::isq::length, mp_units::is_kind);
   inline constexpr auto test_velocity =
     test_displacement / mp_units::isq::duration;
-  inline constexpr struct test_density
-      : quantity_spec<mp_units::dimensionless> {
-  } test_density;
+  QUANTITY_SPEC (test_density, mp_units::dimensionless);
 
   using TestDisplacement = quantity<test_displacement[u::m], float>;
   using TestVelocity = quantity<test_velocity[u::m / u::s], float>;
