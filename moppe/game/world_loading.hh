@@ -24,7 +24,6 @@ namespace moppe::game {
     std::string detail;
     float progress = -1.0f;
     float elapsed = 0.0f;
-    bool terrain_visible = false;
     std::uint32_t seed = 0;
     std::vector<LoadingEvent> events;
   };
@@ -32,13 +31,12 @@ namespace moppe::game {
   class WorldLoadingState;
 
   // Owns one single-flight world build on a background thread.  The worker
-  // reports what it is doing and publishes terrain snapshots; the main
-  // thread reads status, refreshes the preview heightmap, and takes the
+  // reports what it is doing; the main thread reads status and takes the
   // finished world.  The worker never borrows the application object that
   // requested the build.
   class WorldLoading {
   public:
-    WorldLoading (const WorldParams& world, const terrain::WorldRecipe& recipe);
+    explicit WorldLoading (const terrain::WorldRecipe& recipe);
 
     WorldLoading (const WorldLoading&) = delete;
     WorldLoading& operator= (const WorldLoading&) = delete;
@@ -54,17 +52,9 @@ namespace moppe::game {
 
     LoadingStatus status ();
 
-    // Copies the newest published terrain into the preview map.  True when
-    // the preview changed and should be re-uploaded.
-    bool refresh_preview ();
-
-    const WorldParams& preview_world () const noexcept;
-    const map::RandomHeightMap& preview_map () const noexcept;
-
     // Claims the one development loading capture.  The renderer's first
-    // frames are still settling, so an ordinary claim waits until the
-    // preview has been on screen for a moment; the final loading frame is
-    // the last chance to fire regardless.
+    // frames are still settling, so an ordinary claim waits a moment; the
+    // final loading frame is the last chance to fire regardless.
     bool claim_loading_capture (bool last_chance) noexcept;
 
   private:

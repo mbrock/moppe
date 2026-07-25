@@ -63,29 +63,6 @@ namespace moppe::game {
     bind_world_params (m_params, m_recipe);
   }
 
-  GeneratedWorld::Builder GeneratedWorld::build () noexcept {
-    return Builder (*this);
-  }
-
-  void GeneratedWorld::reset (terrain::WorldRecipe recipe) {
-    const Vec3& current_extent = extent_value (m_params.map_size);
-    const Vec3& replacement_extent = extent_value (recipe.extent ());
-    if (recipe.resolution () != m_terrain.width () ||
-        recipe.topology () != m_params.terrain_topology ||
-        replacement_extent != current_extent)
-      throw std::invalid_argument (
-        "a generated world reset must preserve its terrain storage layout");
-
-    m_recipe = std::move (recipe);
-    bind_world_params (m_params, m_recipe);
-    m_terrain.reset_sediment_ledger ();
-    m_surface = map::Surface ();
-    m_terrain_history.clear ();
-    m_hydrology.reset ();
-    m_water_surface.reset ();
-    m_trails.reset ();
-  }
-
   void GeneratedWorld::rebuild_surface () {
     MOPPE_PROFILE_ZONE ("GeneratedWorld::rebuild_surface");
     m_terrain.recompute_normals ();
@@ -243,33 +220,12 @@ namespace moppe::game {
         });
       if (stage != program.transforms.end ()) {
         MOPPE_PROFILE_ZONE ("world.materialize_trails");
-        const std::size_t stage_index = static_cast<std::size_t> (
-          std::distance (program.transforms.begin (), stage));
         if (generated_trails)
           m_trails = std::move (generated_trails);
-        else {
-          const terrain::TerrainView trail_source =
-            stage_index < m_terrain_history.size ()
-              ? terrain::TerrainView (m_terrain.terrain_view ().grid (),
-                                      m_terrain_history[stage_index])
-              : m_terrain.terrain_view ();
+        else
           m_trails = terrain::analyze_trail_network (
-            trail_source, std::get<terrain::TrailFormation> (*stage));
-          if (stage_index + 1 < m_terrain_history.size ()) {
-            const std::vector<float>& before = m_terrain_history[stage_index];
-            const std::vector<float>& after =
-              m_terrain_history[stage_index + 1];
-            const std::size_t storage_width = m_terrain.width ();
-            const float height_scale = m_terrain.scale ()[1];
-            for (std::size_t y = 0; y < m_terrain.unique_height (); ++y)
-              for (std::size_t x = 0; x < m_terrain.unique_width (); ++x) {
-                const std::size_t source = y * storage_width + x;
-                const std::size_t cell = y * m_terrain.unique_width () + x;
-                m_trails->earthwork_delta_m[cell] =
-                  (after[source] - before[source]) * height_scale;
-              }
-          }
-        }
+            m_terrain.terrain_view (),
+            std::get<terrain::TrailFormation> (*stage));
         m_surface.materialize_trail_influence (
           terrain::expand_trail_influence (*m_trails));
         m_surface.materialize_home_base_influence (
@@ -284,32 +240,5 @@ namespace moppe::game {
     m_surface.derive_geology_materials (
       std::span (m_terrain.raw_eroded (), count),
       std::span (m_terrain.raw_deposited (), count));
-  }
-
-  map::RandomHeightMap& GeneratedWorld::Builder::terrain () noexcept {
-    return m_world.m_terrain;
-  }
-
-  std::vector<std::vector<float>>&
-  GeneratedWorld::Builder::terrain_history () noexcept {
-    return m_world.m_terrain_history;
-  }
-
-  void GeneratedWorld::Builder::reset (terrain::WorldRecipe recipe) {
-    m_world.reset (std::move (recipe));
-  }
-
-  void GeneratedWorld::Builder::rebuild_surface () {
-    m_world.rebuild_surface ();
-  }
-
-  void GeneratedWorld::Builder::analyze_hydrology (
-    const HydrologyProgress& progress) {
-    m_world.analyze_hydrology (progress);
-  }
-
-  void GeneratedWorld::Builder::materialize_analyses (
-    std::optional<terrain::TrailNetwork> generated_trails) {
-    m_world.materialize_analyses (std::move (generated_trails));
   }
 }

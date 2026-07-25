@@ -9,10 +9,10 @@ readings. Gameplay does not own parallel copies of any of these artifacts.
 
 | Artifact | Valid after |
 | --- | --- |
-| `RandomHeightMap` and terrain history | terrain evaluation or cache load |
-| `Surface` and its `SurfaceAtlas` geometry | `Builder::rebuild_surface()` |
-| `Hydrology` | `Builder::analyze_hydrology()` |
-| `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `Builder::materialize_analyses()` |
+| `RandomHeightMap` | terrain evaluation or cache load |
+| `Surface` and its `SurfaceAtlas` geometry | `rebuild_surface()` |
+| `Hydrology` | `analyze_hydrology()` |
+| `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `materialize_analyses()` |
 
 `Hydrology` is one named, complete value: standing water, lake census, wet
 drainage, fractional channel drainage, water-body flow, and river network are
@@ -47,22 +47,18 @@ an application borrow. A failed build retains the existing clear failure
 behavior: it logs the generation error and exits rather than exposing an
 incomplete candidate.
 
-While generation runs, `WorldLoading` publishes copied, display-resolution
-height snapshots into its separate preview map; the loading screen neither
-borrows nor owns a candidate world's terrain state. Orogeny publishes one
-such snapshot after every geological interval, and the loading preview keeps
-those snapshots in a short ordered sequence. Each GPU morph finishes before
-the next snapshot begins, so a newer erosion step never replaces the
-destination of an in-flight transition. Once the platform callback marks the
-candidate complete, `MoppeGame` polls and transfers the completed owner on the
-main thread before beginning renderer-facing activation.
+While generation runs, `WorldLoading` shares only status text with the
+loading screen; the screen neither borrows nor owns a candidate world's
+terrain state. Once the platform callback marks the candidate complete,
+`MoppeGame` polls and transfers the completed owner on the main thread
+before beginning renderer-facing activation.
 
-Ordinary gameplay receives const readings. `Builder` is the explicit capability
-used by the loading worker to evaluate terrain, record history, rebuild the surface,
-analyze hydrology, and materialize the derived atlas and water surface.
-Terrain Lab has one deliberately named mutable borrow,
-`terrain_for_terrain_lab()`: its model restores the source map when the Lab
-leaves, so it does not make a permanently edited world implicit.
+Ordinary gameplay receives const readings. The loading worker calls the
+three build steps (`rebuild_surface`, `analyze_hydrology`,
+`materialize_analyses`) in order after evaluating the terrain, through the
+mutable `terrain()` overload. Terrain Lab uses the same mutable borrow and
+restores the source map when the Lab leaves, so it does not make a
+permanently edited world implicit.
 
 ## Checks
 

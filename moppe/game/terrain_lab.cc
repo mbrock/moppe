@@ -194,11 +194,10 @@ namespace moppe {
           m_readings_window (
             { 548.0f, 14.0f, readings_width, readings_height }),
           m_renderer (0), m_map (0), m_terrain (0), m_world (0),
-          m_world_recipe (0), m_graphics (0), m_history (nullptr),
-          m_history_index (0), m_history_age (0.0f), m_history_playing (false),
-          m_active (false), m_overlay (OverlayMode::None),
-          m_selected_stage (-1), m_stage_scroll (0), m_pointer_x (0),
-          m_pointer_y (0), m_pointer_down (false), m_camera_drag (false),
+          m_world_recipe (0), m_graphics (0), m_active (false),
+          m_overlay (OverlayMode::None), m_selected_stage (-1),
+          m_stage_scroll (0), m_pointer_x (0), m_pointer_y (0),
+          m_pointer_down (false), m_camera_drag (false),
           m_camera_drag_distance (0.0f), m_pan_drag (false), m_build_ui (false),
           m_friendly_preset (-1), m_ui_width (960), m_ui_height (640),
           m_parameter_rebuild_pending (false), m_parameter_rebuild_stage (-1),
@@ -220,7 +219,6 @@ namespace moppe {
                             const terrain::WorldRecipe& recipe,
                             std::span<const float> trail_influence,
                             std::span<const float> home_base_influence,
-                            const std::vector<std::vector<float>>& history,
                             const Vec3& sun_dir) {
       if (m_active)
         return;
@@ -242,10 +240,6 @@ namespace moppe {
                                       trail_influence.end ());
       m_saved_home_base_influence.assign (home_base_influence.begin (),
                                           home_base_influence.end ());
-      m_history = &history;
-      m_history_index = history.empty () ? 0 : history.size () - 1;
-      m_history_age = 0.0f;
-      m_history_playing = false;
       m_model.begin (map,
                      lab_program,
                      m_source_evaluator.get (),
@@ -352,7 +346,6 @@ namespace moppe {
       m_parameter_rebuild_pending = false;
       m_active = false;
       m_model.leave ();
-      m_history = nullptr;
       m_map = 0;
       m_terrain = 0;
       m_world = 0;
@@ -1289,17 +1282,6 @@ namespace moppe {
       if (m_parameter_rebuild_pending && m_parameter_rebuild_delay <= 0.0f)
         run_pending_parameter_rebuild ();
 
-      if (m_history_playing && m_history && m_history->size () > 1) {
-        m_history_age += dt;
-        if (m_history_age >= 0.85f) {
-          m_history_age = 0.0f;
-          const std::size_t next = m_history_index + 1;
-          if (next < m_history->size ())
-            show_history_snapshot (next);
-          else
-            m_history_playing = false;
-        }
-      }
       const float orbit =
         (m_orbit_right ? 1.0f : 0.0f) - (m_orbit_left ? 1.0f : 0.0f);
       const float tilt =
@@ -1340,20 +1322,6 @@ namespace moppe {
         return;
 
       switch (key) {
-      case Key::Space:
-        if (m_history && m_history->size () > 1) {
-          if (m_history_index + 1 >= m_history->size ())
-            show_history_snapshot (0);
-          m_history_playing = !m_history_playing;
-          m_history_age = 0.0f;
-        }
-        break;
-      case Key::Tab:
-        if (m_history && !m_history->empty ()) {
-          m_history_playing = false;
-          show_history_snapshot ((m_history_index + 1) % m_history->size ());
-        }
-        break;
       case Key::One:
         set_overlay (OverlayMode::None);
         break;
@@ -1379,40 +1347,6 @@ namespace moppe {
       default:
         break;
       }
-    }
-
-    std::string TerrainLab::history_snapshot_name (std::size_t index) const {
-      if (index == 0)
-        return "MATERIALIZED FIELD";
-      if (index <= program ().transforms.size ()) {
-        const std::string_view id =
-          terrain::terrain_transform_id (program ().transforms[index - 1]);
-        std::string name (id);
-        std::transform (name.begin (), name.end (), name.begin (), [] (char c) {
-          return static_cast<char> (
-            std::toupper (static_cast<unsigned char> (c)));
-        });
-        return name;
-      }
-      return "FINAL TERRAIN";
-    }
-
-    void TerrainLab::show_history_snapshot (std::size_t index) {
-      if (!m_history || !m_map || index >= m_history->size ())
-        return;
-      const std::vector<float>& heights = (*m_history)[index];
-      const std::size_t count =
-        static_cast<std::size_t> (m_map->width ()) * m_map->height ();
-      if (heights.size () != count)
-        return;
-      std::copy (heights.begin (), heights.end (), m_map->raw_heights ());
-      m_map->synchronize_periodic_edges ();
-      m_history_index = index;
-      m_history_age = 0.0f;
-      m_selected_stage = index == 0 ? -1 : static_cast<int> (index - 1);
-      m_model.set_map_pristine (index + 1 == m_history->size ());
-      invalidate_analysis ();
-      refresh ();
     }
 
     void TerrainLab::pointer_move (float x, float y, float dx, float dy) {
@@ -1680,18 +1614,10 @@ namespace moppe {
       m_ui.paragraph (dl, content.x, panel.y + 606.0f, primary, true);
       m_ui.caption (dl, content.x, panel.y + 628.0f, secondary);
 
-      if (panel.height > 680.0f && m_history && !m_history->empty ()) {
-        std::ostringstream playback;
-        playback << (m_history_playing ? "PLAYING " : "PAUSED ")
-                 << (m_history_index + 1) << '/' << m_history->size () << "  "
-                 << history_snapshot_name (m_history_index);
-        m_ui.caption (
-          dl, content.x, panel.y + panel.height - 39.0f, playback.str ());
-      }
       m_ui.caption (dl,
                     content.x,
                     panel.y + panel.height - 17.0f,
-                    "DRAG ORBIT   WHEEL ZOOM   SPACE PLAY   T BACK");
+                    "DRAG ORBIT   WHEEL ZOOM   T BACK");
       m_ui.end_window (dl);
       m_ui.end (dl);
     }

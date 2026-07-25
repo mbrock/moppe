@@ -107,9 +107,9 @@ path. It can be enabled in the macOS game and Terrain Lab with
 
 ## Loading-screen result
 
-`MOPPE_LOADING_BENCHMARK=1` reports frame pacing while the orogeny transform
-runs. A forced-cache-miss, research-profile run at 1025 samples on the same M2
-gave:
+A historical `MOPPE_LOADING_BENCHMARK=1` run (the hook and the loading-screen
+terrain preview were later removed) with a forced cache miss at research
+profile, 1025 samples, on the same M2 gave:
 
 | Backend | Evolution window | Frames | Mean frame | Frames > 20 ms |
 |---|---:|---:|---:|---:|

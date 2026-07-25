@@ -193,9 +193,8 @@ namespace moppe {
       set (x, y, heights[(size_t)y * m_width + x]);
       synchronize_periodic_edges ();
 
-      // Sediment ledger: a tagged section after the heights (and before
-      // the loading-history section game code appends).  A cache without
-      // the tag leaves the ledger zeroed.
+      // Sediment ledger: a tagged section after the heights.  A cache
+      // without the tag leaves the ledger zeroed.
       reset_sediment_ledger ();
       char ledger_magic[4] = { 0, 0, 0, 0 };
       f.read (ledger_magic, 4);
@@ -229,63 +228,6 @@ namespace moppe {
                m_eroded.size () * sizeof (float));
       f.write ((const char*)m_deposited.data (),
                m_deposited.size () * sizeof (float));
-    }
-
-    static const char height_history_magic[4] = { 'H', 'S', 'T', '1' };
-
-    bool RandomHeightMap::try_load_cached_history (
-      const std::string& path, std::vector<std::vector<float>>& history) const {
-      const std::size_t samples = (std::size_t)m_width * m_height;
-      std::ifstream f (path.c_str (), std::ios::binary);
-      if (!f)
-        return false;
-      // Skip the header and heights, then the sediment ledger if present.
-      f.seekg (12 + (std::streamoff)(samples * sizeof (float)));
-      char section[4] = { 0, 0, 0, 0 };
-      f.read (section, 4);
-      if (f && std::memcmp (section, sediment_ledger_magic, 4) == 0)
-        f.seekg ((std::streamoff)(2 * samples * sizeof (float)), std::ios::cur);
-      else
-        f.seekg (-(std::streamoff)sizeof (section), std::ios::cur);
-      char magic[4] = { 0, 0, 0, 0 };
-      uint32_t snapshot_count = 0;
-      uint64_t sample_count = 0;
-      f.read (magic, 4);
-      f.read ((char*)&snapshot_count, sizeof (snapshot_count));
-      f.read ((char*)&sample_count, sizeof (sample_count));
-      if (!f || std::memcmp (magic, height_history_magic, 4) != 0 ||
-          sample_count != samples || snapshot_count > 64)
-        return false;
-      std::vector<std::vector<float>> loaded (snapshot_count,
-                                              std::vector<float> (samples));
-      for (std::vector<float>& snapshot : loaded)
-        f.read ((char*)snapshot.data (),
-                (std::streamsize)(samples * sizeof (float)));
-      if (!f)
-        return false;
-      history = std::move (loaded);
-      return true;
-    }
-
-    void RandomHeightMap::append_cached_history (
-      const std::string& path,
-      const std::vector<std::vector<float>>& history) const {
-      const uint64_t samples = (uint64_t)m_width * m_height;
-      if (history.empty () ||
-          std::any_of (history.begin (),
-                       history.end (),
-                       [samples] (const std::vector<float>& snapshot) {
-                         return snapshot.size () != samples;
-                       }))
-        return;
-      std::ofstream f (path.c_str (), std::ios::binary | std::ios::app);
-      const uint32_t snapshot_count = (uint32_t)history.size ();
-      f.write (height_history_magic, 4);
-      f.write ((const char*)&snapshot_count, sizeof (snapshot_count));
-      f.write ((const char*)&samples, sizeof (samples));
-      for (const std::vector<float>& snapshot : history)
-        f.write ((const char*)snapshot.data (),
-                 (std::streamsize)(samples * sizeof (float)));
     }
 
     void compute_normal_map (const HeightMap& height_map,

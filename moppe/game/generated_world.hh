@@ -13,13 +13,14 @@
 
 #include <functional>
 #include <optional>
-#include <vector>
 
 namespace moppe::game {
   // A stable home for a generated world's durable, renderer-free artifacts.
-  // Gameplay receives only const readings.  Construction has an explicit
-  // Builder capability, and Terrain Lab is the one named mutable borrower:
-  // it restores the map before returning control to ordinary gameplay.
+  // The loading worker constructs one by calling the three build steps in
+  // order (rebuild_surface, analyze_hydrology, materialize_analyses) after
+  // evaluating the terrain.  Gameplay reads it through const references;
+  // the mutable terrain () overload exists for the builder and for Terrain
+  // Lab, which restores the map before returning control to gameplay.
   class GeneratedWorld {
   public:
     enum class HydrologyStage {
@@ -77,8 +78,6 @@ namespace moppe::game {
       terrain::RiverNetwork m_rivers;
     };
 
-    class Builder;
-
     GeneratedWorld (WorldParams params, terrain::WorldRecipe recipe);
     GeneratedWorld (const GeneratedWorld&) = delete;
     GeneratedWorld& operator= (const GeneratedWorld&) = delete;
@@ -97,12 +96,12 @@ namespace moppe::game {
       return m_terrain;
     }
 
-    const map::Surface& surface () const noexcept {
-      return m_surface;
+    map::RandomHeightMap& terrain () noexcept {
+      return m_terrain;
     }
 
-    const std::vector<std::vector<float>>& terrain_history () const noexcept {
-      return m_terrain_history;
+    const map::Surface& surface () const noexcept {
+      return m_surface;
     }
 
     const std::optional<Hydrology>& hydrology () const noexcept {
@@ -117,53 +116,20 @@ namespace moppe::game {
       return m_trails;
     }
 
-    // Terrain Lab's begin/leave transaction is the only ordinary runtime
-    // mutation of a completed world's height field.
-    map::RandomHeightMap& terrain_for_terrain_lab () noexcept {
-      return m_terrain;
-    }
-
-    Builder build () noexcept;
-
-  private:
-    friend class Builder;
-
-    void reset (terrain::WorldRecipe recipe);
-    void rebuild_surface ();
-    void analyze_hydrology (const HydrologyProgress& progress);
-    void materialize_analyses (
-      std::optional<terrain::TrailNetwork> generated_trails);
-
-    WorldParams m_params;
-    terrain::WorldRecipe m_recipe;
-    map::RandomHeightMap m_terrain;
-    map::Surface m_surface;
-    std::vector<std::vector<float>> m_terrain_history;
-    std::optional<Hydrology> m_hydrology;
-    std::optional<map::WaterSurface> m_water_surface;
-    std::optional<terrain::TrailNetwork> m_trails;
-  };
-
-  // Builder is a short-lived construction capability.  It is intentionally
-  // the sole mutable route for generation and completion; the public world
-  // surface remains a read-only value to gameplay consumers.
-  class GeneratedWorld::Builder {
-  public:
-    map::RandomHeightMap& terrain () noexcept;
-    std::vector<std::vector<float>>& terrain_history () noexcept;
-
-    void reset (terrain::WorldRecipe recipe);
+    // The three build steps, in the order the loading worker runs them.
     void rebuild_surface ();
     void analyze_hydrology (const HydrologyProgress& progress = {});
     void materialize_analyses (
       std::optional<terrain::TrailNetwork> generated_trails = {});
 
   private:
-    friend class GeneratedWorld;
-
-    explicit Builder (GeneratedWorld& world) : m_world (world) {}
-
-    GeneratedWorld& m_world;
+    WorldParams m_params;
+    terrain::WorldRecipe m_recipe;
+    map::RandomHeightMap m_terrain;
+    map::Surface m_surface;
+    std::optional<Hydrology> m_hydrology;
+    std::optional<map::WaterSurface> m_water_surface;
+    std::optional<terrain::TrailNetwork> m_trails;
   };
 }
 

@@ -16,8 +16,6 @@ namespace moppe {
     // Replaces gfx::TerrainRenderer + gfx::ShadowMap.
     class Terrain {
     public:
-      static constexpr float loading_transition_seconds = 0.55f;
-
       // Uploads heights/normals and the splat textures; call again
       // after the heightmap changes (e.g. city baking).  Takes the
       // concrete map type: raw_heights()/raw_normals() live there.
@@ -28,8 +26,7 @@ namespace moppe {
         const GraphicsSettings& graphics,
         render::TerrainProjection projection = render::TerrainProjection::Plane,
         bool repeat_periodically = true,
-        bool interactive_preview = false,
-        bool loading_preview = false);
+        bool interactive_preview = false);
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
