@@ -43,13 +43,15 @@ namespace moppe::game {
     }
 
     float elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
-      return map::elevation_at (surface, position (Vec3 (x, 0, z)))
+      return spatial::sample<terrain::surface_elevation> (
+               surface, moppe::position (Vec3 (x, 0, z)))
         .quantity_from_zero ()
         .numerical_value_in (u::m);
     }
 
     Vec3 normal_at (const map::SurfaceGeometry& surface, float x, float z) {
-      return normalized (map::normal_at (surface, position (Vec3 (x, 0, z)))
+      return normalized (spatial::sample<terrain::terrain_normal> (
+                           surface, moppe::position (Vec3 (x, 0, z)))
                            .numerical_value_in (one));
     }
 

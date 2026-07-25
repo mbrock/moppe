@@ -12,15 +12,23 @@
 namespace {
   bool maps_match (const moppe::map::SurfaceGeometry& left,
                    const moppe::map::SurfaceGeometry& right) {
-    if (map::width (left) != map::width (right) ||
-        map::height (left) != map::height (right))
+    if (static_cast<int> (left.domain ().width ()) !=
+          static_cast<int> (right.domain ().width ()) ||
+        static_cast<int> (left.domain ().height ()) !=
+          static_cast<int> (right.domain ().height ()))
       return false;
-    for (int y = 0; y < map::height (left); ++y)
-      for (int x = 0; x < map::width (left); ++x)
+    for (int y = 0; y < static_cast<int> (left.domain ().height ()); ++y)
+      for (int x = 0; x < static_cast<int> (left.domain ().width ()); ++x)
         if (std::bit_cast<std::uint32_t> (terrain::surface_elevation_value (
-              map::elevation_at (left, x, y))) !=
+              spatial::get<terrain::surface_elevation> (
+                left[terrain::TerrainIndex {
+                  static_cast<std::size_t> (x),
+                  static_cast<std::size_t> (y) }]))) !=
             std::bit_cast<std::uint32_t> (terrain::surface_elevation_value (
-              map::elevation_at (right, x, y))))
+              spatial::get<terrain::surface_elevation> (
+                right[terrain::TerrainIndex {
+                  static_cast<std::size_t> (x),
+                  static_cast<std::size_t> (y) }]))))
           return false;
     return true;
   }
@@ -40,9 +48,10 @@ MOPPE_TEST (terrain_generation_is_deterministic) {
   StreamPowerEvolution evolution;
   evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
   evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::SurfaceGeometry first = map::make_surface (33, 33, Vec3 (640, 650, 640));
-  map::SurfaceGeometry second =
-    map::make_surface (33, 33, Vec3 (640, 650, 640));
+  map::SurfaceGeometry first = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
+  map::SurfaceGeometry second = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
 
   generate (first, Seed { 77 }, evolution);
   generate (second, Seed { 77 }, evolution);
@@ -53,26 +62,36 @@ MOPPE_TEST (terrain_generation_is_deterministic) {
 MOPPE_TEST (generated_terrain_wraps_continuously) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::SurfaceGeometry surface =
-    map::make_surface (32, 32, Vec3 (5000, 650, 3000));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    32, 32, spatial_extent_in_metres (Vec3 (5000, 0, 3000))));
   StreamPowerEvolution evolution;
   evolution.duration = 100000.0f * mp_units::astronomy::Julian_year;
   evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
 
   generate (surface, Seed { 123 }, evolution);
-  map::recompute_normals (surface);
+  map::rebuild_geometry (surface);
 
   // The lattice is seamless: sampling one period apart reads the same
   // ground in both axes.
-  const Vec3 period = map::world_period (surface);
+  const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
+                            0.0f,
+                            meters_value (surface.domain ().period_z ()));
   for (const float t : { 3.7f, 611.2f, 2499.9f }) {
     MOPPE_CHECK_NEAR (
-      map::interpolated_height (surface, t, t * 0.4f),
-      map::interpolated_height (surface, t + period[0], t * 0.4f),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (t, 0.0f, t * 0.4f)))),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (t + period[0], 0.0f, t * 0.4f)))),
       1e-3f);
     MOPPE_CHECK_NEAR (
-      map::interpolated_height (surface, t, t * 0.4f),
-      map::interpolated_height (surface, t, t * 0.4f + period[2]),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (t, 0.0f, t * 0.4f)))),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (t, 0.0f, t * 0.4f + period[2])))),
       1e-3f);
   }
 }
@@ -83,8 +102,8 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
   StreamPowerEvolution evolution;
   evolution.duration = 200000.0f * mp_units::astronomy::Julian_year;
   evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
-  map::SurfaceGeometry surface =
-    map::make_surface (33, 33, Vec3 (640, 650, 640));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
   std::vector<int> completed;
   std::vector<std::vector<float>> snapshots;
 
@@ -115,15 +134,18 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
 MOPPE_TEST (seeded_geology_separates_land_and_bathymetric_relief) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::SurfaceGeometry surface =
-    map::make_surface (33, 33, Vec3 (640, 650, 640));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
 
   map::initialize_terrain (surface, Seed { 731 }, 50.0f * u::m);
 
-  const float minimum = surface_elevation_value (map::min_elevation (surface));
-  const float maximum = surface_elevation_value (map::max_elevation (surface));
-  MOPPE_CHECK (minimum < 50.0f);
-  MOPPE_CHECK (maximum > 50.0f);
-  MOPPE_CHECK (maximum - 50.0f <= 20.0f + 1e-5f);
-  MOPPE_CHECK (50.0f - minimum <= 240.0f + 1e-5f);
+  const auto& elevations = spatial::get<terrain::surface_elevation> (surface);
+  const auto [minimum, maximum] =
+    std::ranges::minmax (elevations, {}, surface_elevation_value);
+  const float minimum_m = surface_elevation_value (minimum);
+  const float maximum_m = surface_elevation_value (maximum);
+  MOPPE_CHECK (minimum_m < 50.0f);
+  MOPPE_CHECK (maximum_m > 50.0f);
+  MOPPE_CHECK (maximum_m - 50.0f <= 20.0f + 1e-5f);
+  MOPPE_CHECK (50.0f - minimum_m <= 240.0f + 1e-5f);
 }

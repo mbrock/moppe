@@ -91,7 +91,8 @@ MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
 MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
   for (const int seed : { 7, 123, 4041 }) {
     map::SurfaceGeometry surface =
-      map::make_surface (65, 65, Vec3 (100, 20, 100));
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        65, 65, spatial_extent_in_metres (Vec3 (100, 0, 100))));
     map::initialize_terrain (
       surface, Seed { static_cast<std::uint32_t> (seed) }, 50.0f * u::m);
     const auto& terrain = surface;
@@ -101,8 +102,8 @@ MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
 }
 
 MOPPE_TEST (merge_tree_construction_is_deterministic) {
-  map::SurfaceGeometry surface =
-    map::make_surface (65, 65, Vec3 (100, 20, 100));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (100, 0, 100))));
   map::initialize_terrain (surface, Seed { 9 }, 50.0f * u::m);
   const auto& terrain = surface;
   const MergeTree first = build_merge_tree (terrain);

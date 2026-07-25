@@ -13,7 +13,9 @@ namespace moppe {
                            const map::SurfaceGeometry& surface,
                            const Vec3& pos,
                            float radius) {
-      const float gy = map::interpolated_height (surface, pos[0], pos[2]);
+      const float gy = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (pos[0], 0.0f, pos[2]))));
       const float h = pos[1] - gy;
       if (h > 30.0f || h < -2.0f)
         return; // too high to matter (or underground somehow)
@@ -23,7 +25,9 @@ namespace moppe {
 
       // Tangent frame from the interpolated ground normal, so the
       // disc lies flat on slopes
-      Vec3 n = map::interpolated_normal (surface, pos[0], pos[2]);
+      Vec3 n = spatial::sample<terrain::terrain_normal> (
+                 surface, moppe::position (Vec3 (pos[0], 0.0f, pos[2])))
+                 .numerical_value_in (mp_units::one);
       Vec3 t1 = cross (n, Vec3 (1, 0, 0));
       if (length2 (t1) < 0.01f)
         t1 = cross (n, Vec3 (0, 0, 1));

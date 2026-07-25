@@ -27,15 +27,14 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
                0.0001f * mp_units::si::metre * mp_units::si::metre /
                  mp_units::astronomy::Julian_year);
 
-  map::SurfaceGeometry surface =
-    map::make_surface (recipe.resolution (),
-                       recipe.resolution (),
-                       extent_value (recipe.extent ()));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    recipe.resolution (), recipe.resolution (), recipe.extent ()));
   const auto uplift =
     map::initialize_terrain (surface, recipe.seed (), recipe.water_datum ());
   map::evolve_terrain (surface, uplift, recipe.evolution ());
-  MOPPE_CHECK (std::isfinite (
-    surface_elevation_value (map::elevation_at (surface, 0, 0))));
+  MOPPE_CHECK (std::isfinite (surface_elevation_value (
+    spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+      static_cast<std::size_t> (0), static_cast<std::size_t> (0) }]))));
 }
 
 MOPPE_TEST (smoke_world_recipe_runs_one_geological_step) {

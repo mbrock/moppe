@@ -23,12 +23,17 @@ namespace moppe::game {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map::sample_spacing (surface);
+      const Vec3 scale = Vec3 (surface.domain ().spacing_x_m (),
+                               1.0f,
+                               surface.domain ().spacing_z_m ());
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y = water ? flood.water_level_m (cell)
                             : terrain::surface_elevation_value (
-                                map::elevation_at (surface, x, z));
+                                spatial::get<terrain::surface_elevation> (
+                                  surface[terrain::TerrainIndex {
+                                    static_cast<std::size_t> (x),
+                                    static_cast<std::size_t> (z) }]));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
@@ -46,9 +51,13 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = capture_minimum_image_delta (dx, width);
       dz = capture_minimum_image_delta (dz, height);
-      Vec3 result (dx * map::sample_spacing (surface)[0],
+      Vec3 result (dx * Vec3 (surface.domain ().spacing_x_m (),
+                              1.0f,
+                              surface.domain ().spacing_z_m ())[0],
                    0.0f,
-                   dz * map::sample_spacing (surface)[2]);
+                   dz * Vec3 (surface.domain ().spacing_x_m (),
+                              1.0f,
+                              surface.domain ().spacing_z_m ())[2]);
       if (length2 (result) < 1e-6f)
         result = Vec3 (0, 0, 1);
       return normalized (result);
@@ -61,11 +70,14 @@ namespace moppe::game {
       for (int step = 1; step < 10; ++step) {
         const float t = static_cast<float> (step) / 10.0f;
         const Vec3 point = eye * (1.0f - t) + target * t;
-        if (!map::in_bounds (point[0], point[2]))
+        if (!(std::isfinite (point[0]) && std::isfinite (point[2])))
           continue;
         obstruction = std::max (
           obstruction,
-          map::interpolated_height (surface, point[0], point[2]) - point[1]);
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface, moppe::position (Vec3 (point[0], 0.0f, point[2])))) -
+            point[1]);
       }
       return obstruction;
     }
@@ -329,14 +341,21 @@ namespace moppe::game {
     }
     target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
     Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
-    eye[1] = std::max (
-      eye[1], map::interpolated_height (surface, eye[0], eye[2]) + 4.0f);
+    eye[1] =
+      std::max (eye[1],
+                terrain::surface_elevation_value (
+                  spatial::sample<terrain::surface_elevation> (
+                    surface, moppe::position (Vec3 (eye[0], 0.0f, eye[2])))) +
+                  4.0f);
     if (shot == WaterShot::Waterfall) {
       Vec3 opposite =
         target - flow * back - side * sideways + Vec3 (0, height, 0);
       opposite[1] = std::max (
         opposite[1],
-        map::interpolated_height (surface, opposite[0], opposite[2]) + 4.0f);
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (opposite[0], 0.0f, opposite[2])))) +
+          4.0f);
       if (camera_obstruction (opposite, target, surface) <
           camera_obstruction (eye, target, surface))
         eye = opposite;

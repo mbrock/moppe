@@ -199,14 +199,20 @@ namespace moppe {
         const std::size_t width = grid.width ();
         const float x = (cell.value % width) * meters_value (grid.spacing_x ());
         const float z = (cell.value / width) * meters_value (grid.spacing_z ());
-        return Vec3 (x, map::interpolated_height (surface (), x, z), z);
+        return Vec3 (x,
+                     terrain::surface_elevation_value (
+                       spatial::sample<terrain::surface_elevation> (
+                         surface (), moppe::position (Vec3 (x, 0.0f, z)))),
+                     z);
       }
 
       Vec3 trail_alignment_position (
         const terrain::TrailAlignmentPoint& point) const {
         return Vec3 (
           point.x_m,
-          map::interpolated_height (surface (), point.x_m, point.z_m),
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface (), moppe::position (Vec3 (point.x_m, 0.0f, point.z_m)))),
           point.z_m);
       }
 
@@ -439,10 +445,13 @@ namespace moppe {
           trail_cell_position (trail_network ().plan.home_base);
         m_spawn_position =
           m_home_base_position - trail_direction_from_home () * 8.0f;
-        m_spawn_position[1] = map::interpolated_height (surface (),
-                                                        m_spawn_position[0],
-                                                        m_spawn_position[2]) +
-                              1.2f;
+        m_spawn_position[1] =
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface (),
+              moppe::position (
+                Vec3 (m_spawn_position[0], 0.0f, m_spawn_position[2])))) +
+          1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
       }
@@ -1397,7 +1406,7 @@ namespace moppe {
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
-          map::elevation_at (
+          spatial::sample<terrain::surface_elevation> (
             surface (),
             position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
             .quantity_from_zero ()

@@ -48,14 +48,16 @@ namespace moppe {
                          const WorldParams& world,
                          const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
-      m_scale = map::sample_spacing (surface);
+      m_scale = Vec3 (surface.domain ().spacing_x_m (),
+                      1.0f,
+                      surface.domain ().spacing_z_m ());
       m_extent = extent_value (world.map_size);
       m_period = Vec3 (m_extent[0], 0.0f, m_extent[2]);
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
 
       render::TerrainParams params;
-      params.width = map::width (surface);
-      params.height = map::height (surface);
+      params.width = static_cast<int> (surface.domain ().width ());
+      params.height = static_cast<int> (surface.domain ().height ());
       params.scale = m_scale;
       params.sea_level = meters_value (world.water_level);
       params.tex_scale = 0.5f / m_scale[0];
@@ -84,7 +86,8 @@ namespace moppe {
 
       // Chunk bounding spheres from the actual height range.
       MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
-      const int chunks_per_side = map::width (surface) / CHUNK;
+      const int chunks_per_side =
+        static_cast<int> (surface.domain ().width ()) / CHUNK;
       m_chunks.clear ();
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
       for (int cz = 0; cz < chunks_per_side; ++cz)
@@ -92,11 +95,13 @@ namespace moppe {
           float ymin = 1e9f, ymax = -1e9f;
           for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
             for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-              const float h =
-                terrain::surface_elevation_value (map::elevation_at (
-                  surface,
-                  terrain::wrap_index (x, map::width (surface)),
-                  terrain::wrap_index (z, map::height (surface))));
+              const float h = terrain::surface_elevation_value (
+                spatial::get<terrain::surface_elevation> (
+                  surface[terrain::TerrainIndex {
+                    static_cast<std::size_t> (terrain::wrap_index (
+                      x, static_cast<int> (surface.domain ().width ()))),
+                    static_cast<std::size_t> (terrain::wrap_index (
+                      z, static_cast<int> (surface.domain ().height ()))) }]));
               ymin = std::min (ymin, h);
               ymax = std::max (ymax, h);
             }

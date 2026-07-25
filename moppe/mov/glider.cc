@@ -72,12 +72,14 @@ namespace moppe::mov {
 
   rate_of_climb_t Glider::ridge_lift () const {
     const Vec3& p = position_value (m_position);
-    const float ground = map::elevation_at (m_surface, m_position)
-                           .quantity_from_zero ()
-                           .numerical_value_in (u::m);
+    const float ground =
+      spatial::sample<terrain::surface_elevation> (m_surface, m_position)
+        .quantity_from_zero ()
+        .numerical_value_in (u::m);
     const float agl = std::max (0.0f, p[1] - ground);
     const Vec3 n = normalized (
-      map::normal_at (m_surface, m_position).numerical_value_in (one));
+      spatial::sample<terrain::terrain_normal> (m_surface, m_position)
+        .numerical_value_in (one));
 
     // -n.xz is the uphill gradient direction.  Wind into that gradient
     // rises; the useful band fades above the terrain instead of becoming an
@@ -144,9 +146,10 @@ namespace moppe::mov {
     bound ();
 
     Vec3& p = position_value (m_position);
-    const float ground = map::elevation_at (m_surface, m_position)
-                           .quantity_from_zero ()
-                           .numerical_value_in (u::m);
+    const float ground =
+      spatial::sample<terrain::surface_elevation> (m_surface, m_position)
+        .quantity_from_zero ()
+        .numerical_value_in (u::m);
     const float landing_clearance = m_bike_attached ? 3.4f : 0.75f;
     if (p[1] <= ground + landing_clearance) {
       p[1] = ground + landing_clearance;

@@ -72,15 +72,15 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
        ++frame)
     check_input (replay.replay_tape ()[frame], game::benchmark_input (frame));
 
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
-  world.resolution = map::width (surface);
+  world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);

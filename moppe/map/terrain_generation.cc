@@ -2,6 +2,7 @@
 
 #include <moppe/profile.hh>
 
+#include <algorithm>
 #include <utility>
 
 namespace moppe::map {
@@ -11,19 +12,39 @@ namespace moppe::map {
     constexpr float initial_bathymetric_relief_m = 240.0f;
     constexpr float maximum_uplift_m_per_year = 0.001f;
 
+    void reset_material_history (SurfaceGeometry& surface) {
+      std::ranges::fill (spatial::get<eroded_surface_material> (surface),
+                         0.0f * eroded_surface_material[one]);
+      std::ranges::fill (spatial::get<deposited_surface_material> (surface),
+                         0.0f * deposited_surface_material[one]);
+    }
+
+    void record_material_change (SurfaceGeometry& surface,
+                                 std::size_t offset,
+                                 float delta) {
+      auto& eroded = spatial::get<eroded_surface_material> (surface);
+      auto& deposited = spatial::get<deposited_surface_material> (surface);
+      if (delta < 0.0f)
+        eroded[offset] = (eroded[offset].numerical_value_in (one) - delta) *
+                         eroded_surface_material[one];
+      else
+        deposited[offset] =
+          (deposited[offset].numerical_value_in (one) + delta) *
+          deposited_surface_material[one];
+    }
+
     void set_elevations (SurfaceGeometry& surface,
                          std::span<const float> heights) {
-      const int width = map::width (surface);
-      const int height = map::height (surface);
+      const int width = static_cast<int> (surface.domain ().width ());
+      const int height = static_cast<int> (surface.domain ().height ());
       for (int row = 0; row < height; ++row)
         for (int column = 0; column < width; ++column)
-          map::set_elevation (
-            surface,
-            column,
-            row,
+          spatial::get<terrain::surface_elevation> (
+            surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
+                                            static_cast<std::size_t> (row) }]) =
             SurfaceElevation (
               heights[static_cast<std::size_t> (row) * width + column] *
-              terrain::surface_elevation[u::m]));
+              terrain::surface_elevation[u::m]);
     }
   }
 
@@ -52,7 +73,7 @@ namespace moppe::map {
                         maximum_uplift_m_per_year * mp_units::si::metre /
                         mp_units::astronomy::Julian_year);
     }
-    map::reset_material_history (surface);
+    reset_material_history (surface);
     return uplift;
   }
 
@@ -78,22 +99,23 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("terrain.form_trails");
     terrain::TrailFormationResult result =
       terrain::form_trails (surface, parameters);
-    const int width = map::width (surface);
-    const int height = map::height (surface);
+    const int width = static_cast<int> (surface.domain ().width ());
+    const int height = static_cast<int> (surface.domain ().height ());
     for (int row = 0; row < height; ++row)
       for (int column = 0; column < width; ++column) {
         const std::size_t offset =
           static_cast<std::size_t> (row) * width + column;
         const float previous = terrain::surface_elevation_value (
-          map::elevation_at (surface, column, row));
-        map::record_material_change (
-          surface, column, row, result.heights[offset] - previous);
-        map::set_elevation (
-          surface,
-          column,
-          row,
+          spatial::get<terrain::surface_elevation> (
+            surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
+                                            static_cast<std::size_t> (row) }]));
+        record_material_change (
+          surface, offset, result.heights[offset] - previous);
+        spatial::get<terrain::surface_elevation> (
+          surface[terrain::TerrainIndex { static_cast<std::size_t> (column),
+                                          static_cast<std::size_t> (row) }]) =
           SurfaceElevation (result.heights[offset] *
-                            terrain::surface_elevation[u::m]));
+                            terrain::surface_elevation[u::m]);
       }
     return std::move (result.network);
   }

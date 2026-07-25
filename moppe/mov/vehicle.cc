@@ -125,7 +125,9 @@ namespace moppe {
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
         const Vec3& p = position_value (m_position);
-        Vec3 n = map::interpolated_normal (m_map, p[0], p[2]);
+        Vec3 n = spatial::sample<terrain::terrain_normal> (
+                   m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))
+                   .numerical_value_in (mp_units::one);
 
         // Keep the heading tangent to the ground; the heading itself
         // is steered explicitly, and grip drags the velocity along,
@@ -186,14 +188,19 @@ namespace moppe {
       for (float t = step; t <= horizon; t += step) {
         Vec3 sample = position + velocity * t;
         sample[1] -= 0.5f * gravity * t * t;
-        if (!map::in_bounds (sample[0], sample[2]))
+        if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
           return false;
         const float surface =
-          map::interpolated_height (m_map, sample[0], sample[2]) + radius;
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              m_map, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))) +
+          radius;
         if (sample[1] > surface)
           continue;
 
-        up = map::interpolated_normal (m_map, sample[0], sample[2]);
+        up = spatial::sample<terrain::terrain_normal> (
+               m_map, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))
+               .numerical_value_in (mp_units::one);
         if (length2 (up) < 0.000001f)
           return false;
         normalize (up);
@@ -224,7 +231,9 @@ namespace moppe {
 
       const Box* found = 0;
       const Vec3& p = position_value (m_position);
-      float best = map::interpolated_height (m_map, p[0], p[2]);
+      float best = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          m_map, moppe::position (Vec3 (p[0], 0.0f, p[2]))));
 
       for (size_t i = 0; i < m_obstacles->size (); ++i) {
         const Box& b = (*m_obstacles)[i];

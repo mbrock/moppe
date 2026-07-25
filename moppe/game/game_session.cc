@@ -232,8 +232,9 @@ namespace moppe::game {
     if (m_logic.m_mode != M_BIKE || !m_bike.airborne ())
       return false;
     const Vec3 position = m_bike.position ();
-    const float ground =
-      map::interpolated_height (terrain, position[0], position[2]);
+    const float ground = terrain::surface_elevation_value (
+      spatial::sample<terrain::surface_elevation> (
+        terrain, moppe::position (Vec3 (position[0], 0.0f, position[2]))));
     return position[1] - ground > 3.0f;
   }
 
@@ -471,8 +472,11 @@ namespace moppe::game {
         result.say_ouchies = logic.m_lives == 5;
 
         // Respawn where you crashed, upright on the ground.
-        const float ground = map::interpolated_height (
-          surface, vehicle_position[0], vehicle_position[2]);
+        const float ground = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface,
+            moppe::position (
+              Vec3 (vehicle_position[0], 0.0f, vehicle_position[2]))));
         vehicle.reset (
           Vec3 (vehicle_position[0], ground + 1.2f, vehicle_position[2]));
         logic.m_health = 100.0f;

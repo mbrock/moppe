@@ -17,15 +17,14 @@ namespace {
   }
 
   void fill_test_terrain (moppe::map::SurfaceGeometry& surface) {
-    for (int y = 0; y < map::height (surface); ++y)
-      for (int x = 0; x < map::width (surface); ++x)
-        map::set_elevation (
-          surface,
-          x,
-          y,
+    for (int y = 0; y < static_cast<int> (surface.domain ().height ()); ++y)
+      for (int x = 0; x < static_cast<int> (surface.domain ().width ()); ++x)
+        spatial::get<terrain::surface_elevation> (
+          surface[terrain::TerrainIndex { static_cast<std::size_t> (x),
+                                          static_cast<std::size_t> (y) }]) =
           moppe::terrain::surface_elevation_point (
             (0.25f + 0.01f * static_cast<float> ((x + y) % 7)) * 650.0f *
-            mp_units::si::metre));
+            mp_units::si::metre);
   }
 
   // The build order the loading worker runs: evolve a surface, analyze its
@@ -36,9 +35,8 @@ namespace {
                     const moppe::game::HydrologyProgress& progress = {}) {
     using namespace moppe;
     map::SurfaceGeometry surface =
-      map::make_surface (recipe.resolution (),
-                         recipe.resolution (),
-                         extent_value (recipe.extent ()));
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        recipe.resolution (), recipe.resolution (), recipe.extent ()));
     fill_test_terrain (surface);
     map::rebuild_geometry (surface);
 

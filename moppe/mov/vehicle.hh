@@ -249,7 +249,9 @@ namespace moppe {
         if (roof_under ())
           return Vec3 (0, 1, 0);
         const Vec3& p = position_value (m_position);
-        return map::interpolated_normal (m_map, p[0], p[2]);
+        return spatial::sample<terrain::terrain_normal> (
+                 m_map, moppe::position (Vec3 (p[0], 0.0f, p[2])))
+          .numerical_value_in (mp_units::one);
       }
 
       float ground_height () const {
@@ -257,7 +259,9 @@ namespace moppe {
         if (roof)
           return roof->top;
         const Vec3& p = position_value (m_position);
-        return map::interpolated_height (m_map, p[0], p[2]);
+        return terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            m_map, moppe::position (Vec3 (p[0], 0.0f, p[2]))));
       }
 
     private:

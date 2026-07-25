@@ -34,7 +34,9 @@ namespace moppe::game {
     Vec3 unwrap_near (Vec3 point,
                       const Vec3& reference,
                       const map::SurfaceGeometry& surface) {
-      const Vec3 size = map::world_period (surface);
+      const Vec3 size = Vec3 (meters_value (surface.domain ().period_x ()),
+                              0.0f,
+                              meters_value (surface.domain ().period_z ()));
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
           point[axis] -= size[axis];
@@ -46,10 +48,14 @@ namespace moppe::game {
 
     float
     flight_height_sample (const map::SurfaceGeometry& surface, int x, int z) {
-      x = terrain::wrap_index (x, map::width (surface));
-      z = terrain::wrap_index (z, map::height (surface));
+      x =
+        terrain::wrap_index (x, static_cast<int> (surface.domain ().width ()));
+      z =
+        terrain::wrap_index (z, static_cast<int> (surface.domain ().height ()));
       return terrain::surface_elevation_value (
-        map::elevation_at (surface, x, z));
+        spatial::get<terrain::surface_elevation> (
+          surface[terrain::TerrainIndex { static_cast<std::size_t> (x),
+                                          static_cast<std::size_t> (z) }]));
     }
 
     Vec3 flight_cell_position (terrain::CellIndex cell,
@@ -60,12 +66,17 @@ namespace moppe::game {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map::sample_spacing (surface);
+      const Vec3 scale = Vec3 (surface.domain ().spacing_x_m (),
+                               1.0f,
+                               surface.domain ().spacing_z_m ());
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y = wet ? flood.water_level_m (cell)
                           : terrain::surface_elevation_value (
-                              map::elevation_at (surface, x, z));
+                              spatial::get<terrain::surface_elevation> (
+                                surface[terrain::TerrainIndex {
+                                  static_cast<std::size_t> (x),
+                                  static_cast<std::size_t> (z) }]));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
@@ -83,9 +94,13 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = flight_minimum_image_delta (dx, width);
       dz = flight_minimum_image_delta (dz, height);
-      Vec3 direction (dx * map::sample_spacing (surface)[0],
+      Vec3 direction (dx * Vec3 (surface.domain ().spacing_x_m (),
+                                 1.0f,
+                                 surface.domain ().spacing_z_m ())[0],
                       0,
-                      dz * map::sample_spacing (surface)[2]);
+                      dz * Vec3 (surface.domain ().spacing_x_m (),
+                                 1.0f,
+                                 surface.domain ().spacing_z_m ())[2]);
       if (length2 (direction) < 1e-5f)
         direction = Vec3 (0, 0, 1);
       return normalized (direction);
@@ -160,8 +175,8 @@ namespace moppe::game {
 
     FeatureCandidate choose_peak (const map::SurfaceGeometry& surface) {
       FeatureCandidate best;
-      const int width = map::width (surface);
-      const int height = map::height (surface);
+      const int width = static_cast<int> (surface.domain ().width ());
+      const int height = static_cast<int> (surface.domain ().height ());
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 64);
       for (int z = 0; z < height; z += stride)
@@ -192,8 +207,8 @@ namespace moppe::game {
 
     FeatureCandidate choose_saddle (const map::SurfaceGeometry& surface) {
       FeatureCandidate best;
-      const int width = map::width (surface);
-      const int height = map::height (surface);
+      const int width = static_cast<int> (surface.domain ().width ());
+      const int height = static_cast<int> (surface.domain ().height ());
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 80);
       for (int z = 0; z < height; z += stride)
@@ -232,10 +247,12 @@ namespace moppe::game {
       // values describe the shape of each beat; the global scale keeps every
       // beat carrying decisive forward energy.
       constexpr float flight_speed_scale = 1.55f;
-      position[1] =
-        std::max (position[1],
-                  map::interpolated_height (surface, position[0], position[2]) +
-                    clearance);
+      position[1] = std::max (
+        position[1],
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (position[0], 0.0f, position[2])))) +
+          clearance);
       plan.waypoints.push_back ({ .position = position,
                                   .subject = subject,
                                   .cruise_speed = speed * flight_speed_scale,
@@ -257,16 +274,22 @@ namespace moppe::game {
         const float t = static_cast<float> (i) / steps;
         Vec3 point = start + delta * t;
         point[1] =
-          map::interpolated_height (surface, point[0], point[2]) + 150.0f;
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface, moppe::position (Vec3 (point[0], 0.0f, point[2])))) +
+          150.0f;
         add_waypoint (plan, surface, point, subject, 130.0f, 230.0f, 58.0f);
       }
     }
 
     Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
                                    const map::SurfaceGeometry& surface) {
-      return Vec3 (point.x_m,
-                   map::interpolated_height (surface, point.x_m, point.z_m),
-                   point.z_m);
+      return Vec3 (
+        point.x_m,
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (point.x_m, 0.0f, point.z_m)))),
+        point.z_m);
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
@@ -305,7 +328,10 @@ namespace moppe::game {
                    side * (establishing ? 105.0f : 42.0f);
         eye[1] = ground[1] + (establishing ? 150.0f : 76.0f);
         subject[1] =
-          map::interpolated_height (surface, subject[0], subject[2]) + 3.0f;
+          terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              surface, moppe::position (Vec3 (subject[0], 0.0f, subject[2])))) +
+          3.0f;
         add_waypoint (plan,
                       surface,
                       eye,
@@ -412,7 +438,11 @@ namespace moppe::game {
           eye[1] = ground[1] + (i == 0 ? 52.0f : 22.0f);
           Vec3 subject = ground + flow * 85.0f;
           subject[1] =
-            map::interpolated_height (surface, subject[0], subject[2]) + 3.0f;
+            terrain::surface_elevation_value (
+              spatial::sample<terrain::surface_elevation> (
+                surface,
+                moppe::position (Vec3 (subject[0], 0.0f, subject[2])))) +
+            3.0f;
           add_waypoint (plan, surface, eye, subject, 18.0f, 118.0f, 69.0f);
           previous = ground;
         }
@@ -463,7 +493,10 @@ namespace moppe::game {
       pass[1] = subject[1] + 28.0f;
       Vec3 beyond = subject + saddle.direction * 150.0f;
       beyond[1] =
-        map::interpolated_height (surface, beyond[0], beyond[2]) + 12.0f;
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (beyond[0], 0.0f, beyond[2])))) +
+        12.0f;
       add_waypoint (plan, surface, pass, beyond, 20.0f, 145.0f, 72.0f);
       Vec3 exit = subject + saddle.direction * 240.0f;
       exit[1] = subject[1] + 70.0f;
@@ -478,7 +511,12 @@ namespace moppe::game {
         subject =
           unwrap_near (subject, plan.waypoints.back ().position, surface);
       const float radius =
-        std::clamp (map::world_period (surface)[0] * 0.055f, 160.0f, 330.0f);
+        std::clamp (Vec3 (meters_value (surface.domain ().period_x ()),
+                          0.0f,
+                          meters_value (surface.domain ().period_z ()))[0] *
+                      0.055f,
+                    160.0f,
+                    330.0f);
       Vec3 incoming (1, 0, 0);
       if (!plan.waypoints.empty ()) {
         incoming = subject - plan.waypoints.back ().position;
@@ -635,8 +673,9 @@ namespace moppe::game {
         const Vec3 point = curve_position (segment, t);
         if (!m_arc_samples.empty ())
           distance += length (point - previous);
-        const float ground =
-          map::interpolated_height (surface, point[0], point[2]);
+        const float ground = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (point[0], 0.0f, point[2]))));
         m_arc_samples.push_back (
           { .distance = distance,
             .segment = segment,
@@ -876,7 +915,11 @@ namespace moppe::game {
     const Vec3 previous_position = m_position;
     m_position = current.position + m_manual_offset;
     const float floor =
-      map::interpolated_height (surface, m_position[0], m_position[2]) + 18.0f;
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface,
+          moppe::position (Vec3 (m_position[0], 0.0f, m_position[2])))) +
+      18.0f;
     m_position[1] = std::max (m_position[1], floor);
     m_velocity = (m_position - previous_position) / dt;
 
