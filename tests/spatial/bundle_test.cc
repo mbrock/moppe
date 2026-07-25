@@ -4,7 +4,10 @@
 
 #include <tests/test.hh>
 
+#include <concepts>
 #include <cstddef>
+#include <stdexcept>
+#include <utility>
 
 using namespace moppe;
 
@@ -29,14 +32,38 @@ namespace {
     }
   };
 
+  // A ring whose site count belongs to its identity, so two of them can
+  // describe different domains.
+  struct SizedRing {
+    using index_type = std::size_t;
+
+    std::size_t sites = 3;
+
+    std::size_t size () const {
+      return sites;
+    }
+    std::size_t offset (index_type index) const {
+      return index;
+    }
+    index_type index (std::size_t offset) const {
+      return offset;
+    }
+
+    friend bool operator== (const SizedRing&, const SizedRing&) = default;
+  };
+
   inline constexpr struct test_displacement
       : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
   } test_displacement;
   inline constexpr auto test_velocity =
     test_displacement / mp_units::isq::duration;
+  inline constexpr struct test_density
+      : quantity_spec<mp_units::dimensionless> {
+  } test_density;
 
   using TestDisplacement = quantity<test_displacement[u::m], float>;
   using TestVelocity = quantity<test_velocity[u::m / u::s], float>;
+  using TestDensity = quantity<test_density[one], float>;
   using TestBundle =
     spatial::Bundle<ThreeSiteRing, TestDisplacement, TestVelocity>;
 }
@@ -77,4 +104,47 @@ MOPPE_TEST (bundle_extend_applies_a_typed_rule_at_every_focus) {
   MOPPE_CHECK_NEAR (result[0].numerical_value_in (u::m), 5.5f, 1e-6f);
   MOPPE_CHECK_NEAR (result[1].numerical_value_in (u::m), 7.75f, 1e-6f);
   MOPPE_CHECK_NEAR (result[2].numerical_value_in (u::m), 1.75f, 1e-6f);
+}
+
+MOPPE_TEST (joining_bundles_carries_every_column_over_one_domain) {
+  spatial::Bundle<SizedRing, TestDisplacement> displacement (SizedRing {});
+  spatial::Bundle<SizedRing, TestVelocity> velocity (SizedRing {});
+  spatial::Bundle<SizedRing, TestDensity> density (SizedRing {});
+  spatial::get<test_displacement> (displacement)[1] =
+    2.0f * test_displacement[u::m];
+  spatial::get<test_velocity> (velocity)[1] = 3.0f * test_velocity[u::m / u::s];
+  spatial::get<test_density> (density)[1] = 4.0f * test_density[one];
+
+  const auto joined = spatial::join (
+    std::move (displacement), std::move (velocity), std::move (density));
+
+  static_assert (
+    std::same_as<
+      std::remove_const_t<decltype (joined)>,
+      spatial::Bundle<SizedRing, TestDisplacement, TestVelocity, TestDensity>>);
+  MOPPE_CHECK (joined.size () == 3);
+  const auto row = joined[1];
+  MOPPE_CHECK_NEAR (
+    spatial::get<test_displacement> (row).numerical_value_in (u::m),
+    2.0f,
+    1e-6f);
+  MOPPE_CHECK_NEAR (
+    spatial::get<test_velocity> (row).numerical_value_in (u::m / u::s),
+    3.0f,
+    1e-6f);
+  MOPPE_CHECK_NEAR (
+    spatial::get<test_density> (row).numerical_value_in (one), 4.0f, 1e-6f);
+}
+
+MOPPE_TEST (joining_bundles_refuses_domains_that_disagree) {
+  spatial::Bundle<SizedRing, TestDisplacement> displacement (SizedRing { 3 });
+  spatial::Bundle<SizedRing, TestVelocity> velocity (SizedRing { 4 });
+
+  bool refused = false;
+  try {
+    spatial::join (std::move (displacement), std::move (velocity));
+  } catch (const std::invalid_argument&) {
+    refused = true;
+  }
+  MOPPE_CHECK (refused);
 }
