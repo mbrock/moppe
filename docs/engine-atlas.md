@@ -44,7 +44,7 @@ concrete presenters in game-shaped order.
 | Completed world | Heightmap, surface, materialized analyses, water surface, and trails | Mutable player state, GPU resources, or an event loop | `moppe/map/`, `moppe/game/generated_world.*` |
 | Simulation | Mutable rider, vehicle, glider, walker, camera, stars, dust, and checkpoint state | Loading, `GeneratedWorld` ownership, and platform effects | `moppe/mov/`, `moppe/game/game_session.*` |
 | Frame and scene presentation | Immutable frame readings and focused terrain, water, actor, effect, and HUD presenters | Simulation mutation or an OS event loop | `moppe/game/frame_view.*`, game presentation files |
-| Application and platform | Loading/activation, input adaptation, mode selection, host services, and terminal `main` | Portable terrain and simulation laws | `moppe/game/game.cc`, `moppe/game/terrain.*`, `moppe/game/terrain_lab.*`, `moppe/platform/` |
+| Application and platform | Loading/activation, input adaptation, mode selection, host services, and terminal `main` | Portable terrain and simulation laws | `moppe/game/world_loading.*`, `moppe/game/game.cc`, `moppe/game/terrain.*`, `moppe/game/terrain_lab.*`, `moppe/platform/` |
 | Renderer and backend | Game-shaped draw/resource API, Metal resources, passes, command submission, and capture/timing lifecycle | Terrain policy, session state, or a generic render graph | `moppe/render/`, `moppe/render/metal/`, `moppe/shaders/metal/` |
 
 `moppe/game/` is intentionally not one architectural layer. Its source files
@@ -181,9 +181,9 @@ Stars retain meshes and Stars/Dust expose their presentation operations. This
 is an explicit current constraint, not a claim that physics needs Metal.
 `moppe_scene` composes the completed-world and session readings, with
 Apple-common asset/glyph support where available, but has no OS event loop or
-renderer backend. `moppe_app` holds the two host-service callers (`Terrain`
-and `TerrainLab`); terminal programs retain `game.cc` because it defines
-`main` and chooses the macOS, iOS, or browser host.
+renderer backend. `moppe_app` holds the host-service callers (`Terrain`,
+`TerrainLab`, and `WorldLoading`); terminal programs retain `game.cc` because
+it defines `main` and chooses the macOS, iOS, or browser host.
 
 The ordinary desktop game consumes the app/scene path; portable tests begin at
 the testable scene target and do not link a desktop event loop. Terrain
