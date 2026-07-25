@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <optional>
+#include <tuple>
 
 namespace moppe::game {
   // A stable home for a generated world's durable, renderer-free artifacts.
@@ -31,43 +32,13 @@ namespace moppe::game {
 
     using HydrologyProgress = std::function<void (HydrologyStage)>;
 
-    class Hydrology {
-    public:
-      const terrain::FloodField& standing_water () const noexcept {
-        return m_standing_water;
-      }
-
-      const terrain::LakeCensus& lakes () const noexcept {
-        return m_lakes;
-      }
-
-      const terrain::DrainageGraph& drainage () const noexcept {
-        return m_drainage;
-      }
-
-      const terrain::FractionalDrainage& channels () const noexcept {
-        return m_channels;
-      }
-
-      const terrain::RiverNetwork& rivers () const noexcept {
-        return m_rivers;
-      }
-
-    private:
-      friend class GeneratedWorld;
-
-      Hydrology (terrain::FloodField standing_water,
-                 terrain::LakeCensus lakes,
-                 terrain::DrainageGraph drainage,
-                 terrain::FractionalDrainage channels,
-                 terrain::RiverNetwork rivers);
-
-      terrain::FloodField m_standing_water;
-      terrain::LakeCensus m_lakes;
-      terrain::DrainageGraph m_drainage;
-      terrain::FractionalDrainage m_channels;
-      terrain::RiverNetwork m_rivers;
-    };
+    // What analyzing a world's water leaves behind, in the order the stages
+    // derive it: each stage reads the results before it.
+    using Hydrology = std::tuple<terrain::FloodField,
+                                 terrain::LakeCensus,
+                                 terrain::DrainageGraph,
+                                 terrain::FractionalDrainage,
+                                 terrain::RiverNetwork>;
 
     GeneratedWorld (WorldParams params, terrain::WorldRecipe recipe);
     GeneratedWorld (const GeneratedWorld&) = delete;

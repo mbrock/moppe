@@ -60,10 +60,12 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.surface ().domain ().width () == 17);
   MOPPE_CHECK (stages.size () == 5);
   MOPPE_CHECK (world.hydrology ().has_value ());
-  MOPPE_CHECK (world.hydrology ()->standing_water ().width () == 17);
-  MOPPE_CHECK (world.hydrology ()->lakes ().body.size () == 17 * 17);
-  MOPPE_CHECK (world.hydrology ()->drainage ().receiver.size () == 17 * 17);
-  MOPPE_CHECK (world.hydrology ()->channels ().domain ().size () == 17 * 17);
+  const auto& [standing_water, lakes, drainage, channels, rivers] =
+    *world.hydrology ();
+  MOPPE_CHECK (standing_water.width () == 17);
+  MOPPE_CHECK (lakes.body.size () == 17 * 17);
+  MOPPE_CHECK (drainage.receiver.size () == 17 * 17);
+  MOPPE_CHECK (channels.domain ().size () == 17 * 17);
   MOPPE_CHECK (world.water_surface ().has_value ());
   MOPPE_CHECK (world.readings ().has_value ());
   MOPPE_CHECK (world.trails ().has_value ());

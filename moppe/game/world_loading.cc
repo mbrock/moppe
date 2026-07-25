@@ -207,11 +207,13 @@ namespace moppe::game {
     }
 
     void log_standing_water (const GeneratedWorld::Hydrology& hydrology) {
+      const terrain::LakeCensus& census =
+        std::get<terrain::LakeCensus> (hydrology);
       std::size_t wet = 0;
-      for (const terrain::WaterBody& body : hydrology.lakes ().bodies)
+      for (const terrain::WaterBody& body : census.bodies)
         wet += terrain::count_value (body.cells);
-      std::cerr << "standing water: " << hydrology.lakes ().bodies.size ()
-                << " bodies, " << wet << " wet cells\n";
+      std::cerr << "standing water: " << census.bodies.size () << " bodies, "
+                << wet << " wet cells\n";
     }
 
     struct GenerationJob {

@@ -174,24 +174,26 @@ namespace moppe {
         return value ? &*value : nullptr;
       }
 
-      const terrain::FloodField* standing_water () const noexcept {
+      template <typename Artifact>
+      const Artifact* hydrology_artifact () const noexcept {
         const auto* value = hydrology ();
-        return value ? &value->standing_water () : nullptr;
+        return value ? &std::get<Artifact> (*value) : nullptr;
+      }
+
+      const terrain::FloodField* standing_water () const noexcept {
+        return hydrology_artifact<terrain::FloodField> ();
       }
 
       const terrain::LakeCensus* lake_census () const noexcept {
-        const auto* value = hydrology ();
-        return value ? &value->lakes () : nullptr;
+        return hydrology_artifact<terrain::LakeCensus> ();
       }
 
       const terrain::DrainageGraph* drainage () const noexcept {
-        const auto* value = hydrology ();
-        return value ? &value->drainage () : nullptr;
+        return hydrology_artifact<terrain::DrainageGraph> ();
       }
 
       const terrain::RiverNetwork* rivers () const noexcept {
-        const auto* value = hydrology ();
-        return value ? &value->rivers () : nullptr;
+        return hydrology_artifact<terrain::RiverNetwork> ();
       }
 
       const terrain::TrailNetwork* trail_network () const noexcept {
