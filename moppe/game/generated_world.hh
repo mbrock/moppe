@@ -3,7 +3,6 @@
 
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
-#include <moppe/map/surface_readings.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/trail.hh>

@@ -2,7 +2,6 @@
 #include <moppe/terrain/merge_tree.hh>
 
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_generation.hh>
 
 #include <tests/test.hh>
 

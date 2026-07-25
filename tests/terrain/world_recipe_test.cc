@@ -1,5 +1,4 @@
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_generation.hh>
 #include <moppe/terrain/world_recipe.hh>
 
 #include <tests/test.hh>

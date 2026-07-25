@@ -2,7 +2,6 @@
 #define MOPPE_TESTS_SURFACE_FIXTURE_HH
 
 #include <moppe/map/surface.hh>
-#include <moppe/map/surface_readings.hh>
 #include <moppe/terrain/waterline.hh>
 
 #include <cstdint>

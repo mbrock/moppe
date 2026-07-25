@@ -124,7 +124,7 @@ domain for the surface and geological bundles.
 
 The terrain had one legal program: geology, orogeny, then trails. That order
 is now the source code in `world_loading.cc`, implemented by three direct free
-operations in `map/terrain_generation.*`. `WorldRecipe` contains the physical
+operations in `map/surface.*`. `WorldRecipe` contains the physical
 world identity plus the stream-power and trail algorithm values; it no longer
 contains a vector of variant stages.
 

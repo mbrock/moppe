@@ -10,8 +10,7 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
-#include <moppe/map/surface_cache.hh>
-#include <moppe/map/terrain_generation.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/terrain/river.hh>
 
 #include <algorithm>

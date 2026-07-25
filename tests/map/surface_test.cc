@@ -1,7 +1,6 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
-#include <moppe/map/surface_readings.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/surface_fixture.hh>
