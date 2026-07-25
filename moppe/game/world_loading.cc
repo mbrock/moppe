@@ -52,7 +52,7 @@ namespace moppe::game {
            << recipe.resolution () << '-' << recipe.seed ().value << std::hex
            << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
            << bits (extent[2]) << "-water-"
-           << bits (meters_value (recipe.water_datum ())) << ".map";
+           << bits (meters_value (recipe.water_datum ())) << ".arrows";
       return platform::cache_path (name.str ());
     }
   }

@@ -24,5 +24,6 @@ fi
 git ls-files -z -- \
   '*.c' '*.cc' '*.cpp' '*.cxx' \
   '*.h' '*.hh' '*.hpp' '*.hxx' \
-  '*.m' '*.mm' '*.metal' |
+  '*.m' '*.mm' '*.metal' \
+  ':(exclude)third_party/**' |
   xargs -0 clang-format "$mode" --Werror

@@ -33,7 +33,7 @@ if(MOPPE_MOBILE_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
   endif()
 endif()
 
-project(moppe LANGUAGES CXX)
+project(moppe LANGUAGES C CXX)
 
 # Keep editor tooling in sync with the normal Ninja and Makefile builds.
 # Multi-config generators such as Xcode do not support this output.
@@ -45,6 +45,9 @@ include(FetchContent)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
 add_compile_options(-Wall)
 
 # A Moppe web build keeps world generation off the browser UI thread. Every
@@ -96,6 +99,17 @@ FetchContent_Declare(mp-units
   SOURCE_SUBDIR src
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 FetchContent_MakeAvailable(mp-units)
+
+# nanoarrow is vendored as its upstream amalgamation so bundle storage is
+# available offline and uses the same implementation on every platform.
+add_library(nanoarrow STATIC
+  third_party/nanoarrow/nanoarrow.c
+  third_party/nanoarrow/nanoarrow_ipc.c
+  third_party/nanoarrow/flatcc.c)
+add_library(nanoarrow::nanoarrow ALIAS nanoarrow)
+target_include_directories(nanoarrow SYSTEM PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
+set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
 
 # The Atelier's combinatorial and intrinsic botany is a small portable
 # library. Both the workshop renderer and the game provide their own
@@ -297,7 +311,9 @@ endif()
 # Bundle and the quantity vocabulary expose mp-units values to their users.
 add_library(moppe_spatial INTERFACE)
 target_include_directories(moppe_spatial INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_spatial INTERFACE mp-units::mp-units)
+target_link_libraries(moppe_spatial INTERFACE
+  mp-units::mp-units
+  nanoarrow::nanoarrow)
 
 add_library(moppe_render STATIC
   moppe/render/draw.cc
