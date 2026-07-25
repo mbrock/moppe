@@ -33,7 +33,7 @@ namespace moppe::game {
 
     Vec3
     unwrap_near (Vec3 point, const Vec3& reference, const map::Surface& map) {
-      const Vec3 size = map.world_extent ();
+      const Vec3 size = map.world_period ();
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
           point[axis] -= size[axis];
@@ -461,7 +461,7 @@ namespace moppe::game {
       if (!plan.waypoints.empty ())
         subject = unwrap_near (subject, plan.waypoints.back ().position, map);
       const float radius =
-        std::clamp (map.world_extent ()[0] * 0.055f, 160.0f, 330.0f);
+        std::clamp (map.world_period ()[0] * 0.055f, 160.0f, 330.0f);
       Vec3 incoming (1, 0, 0);
       if (!plan.waypoints.empty ()) {
         incoming = subject - plan.waypoints.back ().position;

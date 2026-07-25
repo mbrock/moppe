@@ -25,9 +25,9 @@ namespace moppe::map {
                  meters_value (m_geometry.domain ().spacing_z ()));
   }
 
-  Vec3 Surface::world_extent () const noexcept {
+  Vec3 Surface::world_period () const noexcept {
     return Vec3 (meters_value (m_geometry.domain ().period_x ()),
-                 meters_value (m_vertical_extent),
+                 0.0f,
                  meters_value (m_geometry.domain ().period_z ()));
   }
 
@@ -64,60 +64,21 @@ namespace moppe::map {
                  spacing[2] * row);
   }
 
-  Vec3 Surface::triangle_normal (
-    int x1, int y1, int x2, int y2, int x3, int y3) const {
-    return normalized (cross (vertex (x2, y2) - vertex (x1, y1),
-                              vertex (x3, y3) - vertex (x1, y1)));
-  }
-
-  Vec3 Surface::center () const {
-    return vertex (width () / 2, height () / 2);
-  }
-
   bool Surface::in_bounds (float x, float z) const {
     return std::isfinite (x) && std::isfinite (z);
   }
 
+  // Both reconstructions are the bundle's own interpolation over the terrain
+  // domain, which wraps; these only unwrap the quantity for callers that
+  // work in plain metres.
   float Surface::interpolated_height (float x, float z) const {
-    const Vec3 spacing = sample_spacing ();
-    const float gx =
-      terrain::wrap_coordinate (x / spacing[0], static_cast<float> (width ()));
-    const float gz =
-      terrain::wrap_coordinate (z / spacing[2], static_cast<float> (height ()));
-    const int x0 = static_cast<int> (std::floor (gx));
-    const int z0 = static_cast<int> (std::floor (gz));
-    const int x1 = terrain::wrap_index (x0 + 1, width ());
-    const int z1 = terrain::wrap_index (z0 + 1, height ());
-    const float tx = gx - x0;
-    const float tz = gz - z0;
-    const float a = linear_interpolate (
-      terrain::surface_elevation_value (elevation_at (x0, z0)),
-      terrain::surface_elevation_value (elevation_at (x1, z0)),
-      tx);
-    const float b = linear_interpolate (
-      terrain::surface_elevation_value (elevation_at (x0, z1)),
-      terrain::surface_elevation_value (elevation_at (x1, z1)),
-      tx);
-    return linear_interpolate (a, b, tz);
+    return terrain::surface_elevation_value (
+      elevation_at (position (Vec3 (x, 0.0f, z))));
   }
 
   Vec3 Surface::interpolated_normal (float x, float z) const {
-    const Vec3 spacing = sample_spacing ();
-    const float gx =
-      terrain::wrap_coordinate (x / spacing[0], static_cast<float> (width ()));
-    const float gz =
-      terrain::wrap_coordinate (z / spacing[2], static_cast<float> (height ()));
-    const int x0 = static_cast<int> (std::floor (gx));
-    const int z0 = static_cast<int> (std::floor (gz));
-    const int x1 = terrain::wrap_index (x0 + 1, width ());
-    const int z1 = terrain::wrap_index (z0 + 1, height ());
-    const float tx = gx - x0;
-    const float tz = gz - z0;
-    const Vec3 a =
-      linear_vector_interpolate (normal_at (x0, z0), normal_at (x1, z0), tx);
-    const Vec3 b =
-      linear_vector_interpolate (normal_at (x0, z1), normal_at (x1, z1), tx);
-    return linear_vector_interpolate (a, b, tz);
+    return normal_at (position (Vec3 (x, 0.0f, z)))
+      .numerical_value_in (mp_units::one);
   }
 
   SurfaceElevation Surface::min_elevation () const {

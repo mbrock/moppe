@@ -313,7 +313,7 @@ namespace moppe::game {
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
                                 const map::Surface& map) {
-      const Vec3 period = map.world_extent ();
+      const Vec3 period = map.world_period ();
       point.position[0] =
         reference.position[0] +
         std::remainder (point.position[0] - reference.position[0], period[0]);
@@ -440,7 +440,7 @@ namespace moppe::game {
                               const map::Surface& map,
                               const terrain::RiverNetwork& rivers) {
     m_mesh = renderer.create_mesh (build_river_ribbons (map, rivers));
-    m_period = map.world_extent ();
+    m_period = map.world_period ();
   }
 
   void RiverSurface::clear () {

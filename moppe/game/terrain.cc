@@ -49,7 +49,8 @@ namespace moppe {
                          const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
       m_scale = map.sample_spacing ();
-      m_period = map.world_extent ();
+      m_extent = extent_value (world.map_size);
+      m_period = Vec3 (m_extent[0], 0.0f, m_extent[2]);
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
 
       render::TerrainParams params;
@@ -114,13 +115,10 @@ namespace moppe {
         }
     }
 
-    void Terrain::render_shadow (render::Renderer& r,
-                                 const map::Surface& map,
-                                 const Vec3& sun_dir) {
+    void Terrain::render_shadow (render::Renderer& r, const Vec3& sun_dir) {
       MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
-      const Vec3 bounds = map.world_extent ();
-      const Vec3 center (bounds[0] / 2, bounds[1] / 2, bounds[2] / 2);
-      const float radius = length (bounds) / 2;
+      const Vec3 center (m_extent[0] / 2, m_extent[1] / 2, m_extent[2] / 2);
+      const float radius = length (m_extent) / 2;
 
       // Ortho box big enough for the whole scene: the light sits
       // radius*3.5 out toward the sun, so the scene spans roughly

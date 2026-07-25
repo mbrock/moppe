@@ -72,8 +72,7 @@ namespace moppe::map {
   }
 
   Surface::Surface (int width, int height, const Vec3& size)
-      : m_vertical_extent (size[1] * u::m),
-        m_geometry (terrain::TerrainDomain (
+      : m_geometry (terrain::TerrainDomain (
           static_cast<std::size_t> (width),
           static_cast<std::size_t> (height),
           size[0] / static_cast<float> (width) * u::m,
@@ -91,9 +90,7 @@ namespace moppe::map {
   }
 
   SurfaceElevation Surface::elevation_at (const position_t& position) const {
-    const Vec3 point = position_value (position);
-    return SurfaceElevation (interpolated_height (point[0], point[2]) *
-                             surface_elevation[u::m]);
+    return spatial::sample<terrain::surface_elevation> (geometry (), position);
   }
 
   SurfaceNormal Surface::normal_at (const position_t& position) const {

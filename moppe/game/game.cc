@@ -576,8 +576,7 @@ namespace moppe {
 
       void cast_world_shadows (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
-        m_terrain.render_shadow (
-          r, surface (), sun_direction_for (m_graphics.sun_height));
+        m_terrain.render_shadow (r, sun_direction_for (m_graphics.sun_height));
       }
 
       // -- simulation --------------------------------------------------
