@@ -136,10 +136,11 @@ namespace moppe::map {
   // ---- Generation ----
 
   namespace {
-    constexpr float coastline = 0.4f;
+    constexpr auto coastline = 0.4f * terrain::continent_shape[one];
     constexpr meters_t initial_land_relief = 20.0f * u::m;
     constexpr meters_t initial_bathymetric_relief = 240.0f * u::m;
-    constexpr float maximum_uplift_m_per_year = 0.001f;
+    constexpr auto maximum_uplift_m_per_year =
+      0.001f * u::m / mp_units::astronomy::Julian_year;
 
     void reset_material_history (SurfaceGeometry& surface) {
       std::ranges::fill (spatial::get<eroded_surface_material> (surface),
@@ -188,18 +189,14 @@ namespace moppe::map {
     uplift.reserve (geology.size ());
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
       const auto ground = geology[site];
-      const float land =
-        spatial::get<terrain::continent_shape> (ground).numerical_value_in (
-          one) -
-        coastline;
+      const auto land =
+        spatial::get<terrain::continent_shape> (ground) - coastline;
       const meters_t relief =
         land < 0.0f ? initial_bathymetric_relief : initial_land_relief;
       spatial::get<terrain::surface_elevation> (surface[site]) =
         terrain::surface_elevation_point (water_datum + relief * land);
-      uplift.push_back (
-        spatial::get<terrain::uplift_weight> (ground).numerical_value_in (one) *
-        maximum_uplift_m_per_year * mp_units::si::metre /
-        mp_units::astronomy::Julian_year);
+      uplift.push_back (spatial::get<terrain::uplift_weight> (ground) *
+                        maximum_uplift_m_per_year);
     }
     reset_material_history (surface);
     return uplift;
@@ -340,28 +337,36 @@ namespace moppe::map {
       throw std::invalid_argument (
         "Tree line must leave a terrestrial habitat band");
 
-    const float shore = meters_value (water_level);
-    const float upper = meters_value (tree_line);
+    // The habitat bands are elevations, so state them as such: the shore and
+    // the tree line are points in the same frame the ground is stored in.
+    constexpr auto metres = terrain::surface_elevation[u::m];
+    const SurfaceElevation shore =
+      terrain::surface_elevation_point (water_level);
+    const SurfaceElevation tree_top =
+      terrain::surface_elevation_point (tree_line);
     TreeHabitatMap values (geometry.domain ());
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const auto ground = geometry[site];
-      const float height = terrain::surface_elevation_value (
-        spatial::get<terrain::surface_elevation> (ground));
+      const SurfaceElevation height =
+        spatial::get<terrain::surface_elevation> (ground);
       const float up =
         spatial::get<terrain::terrain_normal> (ground).numerical_value_in (
           one)[1];
-      const float dry_ground = smoothstep (shore + 3.0f, shore + 18.0f, height);
-      const float below_tree_line =
-        1.0f - smoothstep (upper - 35.0f, upper, height);
+      const proportion_t dry_ground =
+        band (shore + 3.0f * metres, shore + 18.0f * metres, height);
+      const proportion_t below_tree_line =
+        1.0f * proportion[one] -
+        band (tree_top - 35.0f * metres, tree_top, height);
       const float stable_soil = smoothstep (0.72f, 0.96f, up);
       const float wetness = spatial::get<surface_moisture> (moisture[site])
                               .numerical_value_in (one);
       const float hydrated = smoothstep (0.10f, 0.42f, wetness);
       const float not_sodden = 1.0f - smoothstep (0.78f, 0.98f, wetness);
       const float water_response = 0.28f + 0.72f * hydrated * not_sodden;
-      spatial::get<tree_habitat> (values[site]) = dry_ground * below_tree_line *
-                                                  stable_soil * water_response *
-                                                  tree_habitat[one];
+      spatial::get<tree_habitat> (values[site]) =
+        dry_ground.numerical_value_in (one) *
+        below_tree_line.numerical_value_in (one) * stable_soil *
+        water_response * tree_habitat[one];
     }
     return values;
   }

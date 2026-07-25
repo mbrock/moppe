@@ -218,8 +218,8 @@ namespace moppe::terrain {
 
   // ---- Geology ----
 
-  QUANTITY_SPEC (continent_shape, mp_units::dimensionless, mp_units::is_kind);
-  QUANTITY_SPEC (uplift_weight, mp_units::dimensionless, mp_units::is_kind);
+  QUANTITY_SPEC (continent_shape, mp_units::dimensionless);
+  QUANTITY_SPEC (uplift_weight, mp_units::dimensionless);
 
   // ---- Human use ----
 
