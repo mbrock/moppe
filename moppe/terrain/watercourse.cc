@@ -37,14 +37,19 @@ namespace moppe::terrain {
     }
   }
 
-  WaterSheets paint_watercourses (const TerrainView& terrain,
-                                  const FloodField& flood,
-                                  const LakeCensus& census,
-                                  const DrainageGraph& drainage,
-                                  const RiverNetwork& rivers,
-                                  const WatercoursePaint& parameters) {
+  WaterSheets
+  detail::paint_watercourses (const TerrainDomain& terrain_domain,
+                              std::span<const SurfaceElevation> elevations,
+                              const FloodField& flood,
+                              const LakeCensus& census,
+                              const DrainageGraph& drainage,
+                              const RiverNetwork& rivers,
+                              const WatercoursePaint& parameters) {
     MOPPE_PROFILE_ZONE ("paint_watercourses");
     const TerrainDomain& grid = flood.domain;
+    if (terrain_domain != grid)
+      throw std::invalid_argument (
+        "watercourse terrain does not match hydrology");
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
@@ -142,7 +147,8 @@ namespace moppe::terrain {
               if (distance >= radius)
                 continue;
               const std::size_t cell = static_cast<std::size_t> (y) * width + x;
-              if (surface[cell] - terrain.at (x, y) <= 1e-6f)
+              if (surface[cell] - elevation_at (grid, elevations, x, y) <=
+                  1e-6f)
                 continue;
               const float weight =
                 (1.0f - distance / radius) * center.standing_water;
@@ -174,7 +180,7 @@ namespace moppe::terrain {
       for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x) {
           const std::size_t cell = static_cast<std::size_t> (y) * width + x;
-          const float ground = terrain.at (x, y);
+          const float ground = elevation_at (grid, elevations, x, y);
           if (surface[cell] - ground > dry_margin)
             continue;
           float lowest_wet = std::numeric_limits<float>::infinity ();
@@ -186,7 +192,8 @@ namespace moppe::terrain {
               const int ny = wrap_index (y + dy, height);
               const std::size_t neighbor =
                 static_cast<std::size_t> (ny) * width + nx;
-              if (surface[neighbor] - terrain.at (nx, ny) > dry_margin)
+              if (surface[neighbor] - elevation_at (grid, elevations, nx, ny) >
+                  dry_margin)
                 lowest_wet = std::min (lowest_wet, surface[neighbor]);
             }
           if (std::isfinite (lowest_wet))

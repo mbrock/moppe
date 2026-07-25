@@ -1,8 +1,8 @@
 #ifndef MOPPE_TERRAIN_FLOOD_HH
 #define MOPPE_TERRAIN_FLOOD_HH
 
+#include <moppe/terrain/elevation_map.hh>
 #include <moppe/terrain/raster.hh>
-#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
@@ -87,8 +87,18 @@ namespace moppe::terrain {
   bool water_body_terminates_rivers (const WaterBody& body,
                                      const WaterPermanence& permanence = {});
 
-  FloodField analyze_standing_water (const TerrainView& terrain,
-                                     float sea_level);
+  namespace detail {
+    FloodField
+    analyze_standing_water (const TerrainDomain& domain,
+                            std::span<const SurfaceElevation> elevations,
+                            float sea_level);
+  }
+
+  template <TerrainElevations Terrain>
+  FloodField analyze_standing_water (const Terrain& terrain, float sea_level) {
+    return detail::analyze_standing_water (
+      terrain.domain (), elevations (terrain), sea_level);
+  }
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);
   ScalarRaster permanent_water_surface (const FloodField& flood,
                                         const LakeCensus& census,

@@ -4,7 +4,6 @@
 #include <moppe/map/surface_atlas.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 #include <moppe/terrain/raster.hh>
-#include <moppe/terrain/terrain_view.hh>
 
 #include <cstdint>
 #include <span>
@@ -59,8 +58,6 @@ namespace moppe::map {
     void recompute_normals ();
     void reset_material_history ();
     void record_material_change (int column, int row, float delta);
-
-    terrain::TerrainView terrain_view () const;
 
     bool try_load_cache (const std::string& path);
     void save_cache (const std::string& path) const;

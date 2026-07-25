@@ -27,7 +27,8 @@ namespace {
 }
 
 MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
-  const TerrainView terrain (profile_grid (), profile_heights);
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
   const auto uplift = uniform_uplift (profile_heights.size (), 0.001f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain, uplift, { .duration = 0.0f * mp_units::astronomy::Julian_year });
@@ -41,7 +42,8 @@ MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
 }
 
 MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
-  const TerrainView terrain (profile_grid (), profile_heights);
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
   auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
   uplift[4] = 0.002f * mp_units::si::metre / mp_units::astronomy::Julian_year;
   uplift[9] = uplift[4];
@@ -63,7 +65,7 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
 
 MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
   constexpr std::array heights { -20.0f, -10.0f, 20.0f, 30.0f };
-  const TerrainView terrain (
+  const ElevationMap terrain = make_elevation_map (
     TerrainDomain (
       2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
     heights);
@@ -85,7 +87,7 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
 
 MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
   constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
-  const TerrainView terrain (
+  const ElevationMap terrain = make_elevation_map (
     TerrainDomain (
       2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
     heights);
@@ -109,7 +111,7 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
 
 MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
   constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
-  const TerrainView terrain (
+  const ElevationMap terrain = make_elevation_map (
     TerrainDomain (
       2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
     heights);
@@ -137,7 +139,8 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
 }
 
 MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
-  const TerrainView terrain (profile_grid (), profile_heights);
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
   const auto uplift = uniform_uplift (profile_heights.size (), 0.0f);
   constexpr float exponent = 0.4f;
   const auto evolve = [&] (float reference_area_m2,
@@ -168,7 +171,7 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
 MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
   constexpr std::array basin { 0.0f, 30.0f, 10.0f, 40.0f, 50.0f,
                                0.0f, 30.0f, 10.0f, 40.0f, 50.0f };
-  const TerrainView terrain (profile_grid (), basin);
+  const ElevationMap terrain = make_elevation_map (profile_grid (), basin);
   const auto uplift = uniform_uplift (basin.size (), 0.0f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
@@ -182,7 +185,8 @@ MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
 }
 
 MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
-  const TerrainView terrain (profile_grid (), profile_heights);
+  const ElevationMap terrain =
+    make_elevation_map (profile_grid (), profile_heights);
   const auto uplift = uniform_uplift (profile_heights.size (), 0.0005f);
   const StreamPowerEvolution parameters {
     .duration = 50000.0f * mp_units::astronomy::Julian_year,
@@ -208,7 +212,7 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
   std::array<float, 25> heights;
   heights.fill (0.2f);
   heights[12] = 1.0f;
-  const TerrainView terrain (
+  const ElevationMap terrain = make_elevation_map (
     TerrainDomain (
       5, 5, 1.0f * mp_units::si::metre, 1.0f * mp_units::si::metre),
     heights);

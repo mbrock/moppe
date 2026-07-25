@@ -111,7 +111,7 @@ namespace {
 MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   const std::vector<float> original = bumpy_valley ();
   const TrailFormationResult result = form_trails (
-    TerrainView (trail_valley_grid (), original), test_parameters ());
+    make_elevation_map (trail_valley_grid (), original), test_parameters ());
 
   MOPPE_CHECK (result.heights.size () == original.size ());
   MOPPE_CHECK (result.report.centerline_cells > cell_count (0));
@@ -141,7 +141,7 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
 MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
   const std::vector<float> original = bumpy_valley ();
   const TrailFormationResult result = form_trails (
-    TerrainView (trail_valley_grid (), original), test_parameters ());
+    make_elevation_map (trail_valley_grid (), original), test_parameters ());
   const TrailNetwork& network = result.network;
 
   MOPPE_CHECK (!network.cells.empty ());
@@ -207,7 +207,8 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
 
 MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   const std::vector<float> original = bumpy_valley ();
-  const TerrainView terrain (trail_valley_grid (), original);
+  const ElevationMap terrain =
+    make_elevation_map (trail_valley_grid (), original);
   const TrailFormation parameters = test_parameters ();
   const TrailFormationResult first = form_trails (terrain, parameters);
   const TrailFormationResult second = form_trails (terrain, parameters);
@@ -241,9 +242,9 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   drained_parameters.crossfall = 0.08f * terrain_slope[mp_units::one];
 
   const TrailFormationResult level = form_trails (
-    TerrainView (trail_valley_grid (), original), level_parameters);
+    make_elevation_map (trail_valley_grid (), original), level_parameters);
   const TrailFormationResult drained = form_trails (
-    TerrainView (trail_valley_grid (), original), drained_parameters);
+    make_elevation_map (trail_valley_grid (), original), drained_parameters);
 
   // Crossfall changes only the constructed section, not the planned route.
   MOPPE_CHECK (drained.network.alignment == level.network.alignment);
@@ -315,8 +316,8 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   parameters.sea_level = 4.0f;
   parameters.home_base_water_distance = 60.0f * mp_units::si::metre;
   parameters.desired_circuit_radius = 110.0f * mp_units::si::metre;
-  const TrailFormationResult result =
-    form_trails (TerrainView (moated_peak_grid (), moated_peak ()), parameters);
+  const TrailFormationResult result = form_trails (
+    make_elevation_map (moated_peak_grid (), moated_peak ()), parameters);
 
   MOPPE_CHECK (result.network.components.size () == 1);
   MOPPE_CHECK (result.network.cells.size () >= 4);
@@ -333,8 +334,8 @@ MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
   parameters.desired_circuit_radius = 700.0f * mp_units::si::metre;
   parameters.highland_preference_height_above_sea = 20.0f * mp_units::si::metre;
   parameters.alpine_avoidance_height_above_sea = 40.0f * mp_units::si::metre;
-  const TrailFormationResult result =
-    form_trails (TerrainView (alpine_temptation_grid (), original), parameters);
+  const TrailFormationResult result = form_trails (
+    make_elevation_map (alpine_temptation_grid (), original), parameters);
 
   float maximum_original_height = 0.0f;
   for (const CellIndex cell : result.network.cells)

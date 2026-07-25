@@ -46,13 +46,14 @@ namespace moppe::terrain {
     };
   }
 
-  FloodField analyze_standing_water (const TerrainView& terrain,
-                                     float sea_level) {
+  FloodField
+  detail::analyze_standing_water (const TerrainDomain& grid,
+                                  std::span<const SurfaceElevation> elevations,
+                                  float sea_level) {
     MOPPE_PROFILE_ZONE ("analyze_standing_water");
     if (!std::isfinite (sea_level))
       throw std::invalid_argument ("standing-water sea level must be finite");
 
-    const TerrainDomain& grid = terrain.domain ();
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
@@ -79,7 +80,8 @@ namespace moppe::terrain {
       MOPPE_PROFILE_ZONE ("flood.find_ocean_components");
       for (std::uint32_t origin = 0; origin < count; ++origin) {
         if (submerged_seen[origin] ||
-            terrain.at (origin % width, origin / width) > sea_level)
+            elevation_at (grid, elevations, origin % width, origin / width) >
+              sea_level)
           continue;
         component.clear ();
         submerged_seen[origin] = 1;
@@ -97,7 +99,8 @@ namespace moppe::terrain {
             const std::size_t ny = flood_wrapped (raw_y, height);
             const std::uint32_t next =
               static_cast<std::uint32_t> (index (nx, ny));
-            if (submerged_seen[next] || terrain.at (nx, ny) > sea_level)
+            if (submerged_seen[next] ||
+                elevation_at (grid, elevations, nx, ny) > sea_level)
               continue;
             submerged_seen[next] = 1;
             sea_frontier.push (next);
@@ -149,9 +152,10 @@ namespace moppe::terrain {
     if (outlets.empty ()) {
       MOPPE_PROFILE_ZONE ("flood.seed_endorheic_minimum");
       std::uint32_t minimum_cell = 0;
-      float minimum = terrain.at (0, 0);
+      float minimum = elevation_at (grid, elevations, 0, 0);
       for (std::uint32_t cell = 1; cell < count; ++cell) {
-        const float value = terrain.at (cell % width, cell / width);
+        const float value =
+          elevation_at (grid, elevations, cell % width, cell / width);
         if (value < minimum) {
           minimum = value;
           minimum_cell = cell;
@@ -181,7 +185,8 @@ namespace moppe::terrain {
           if (visited[next])
             continue;
           visited[next] = 1;
-          water[next] = std::max (terrain.at (nx, ny), current.level);
+          water[next] =
+            std::max (elevation_at (grid, elevations, nx, ny), current.level);
           receiver[next] = current.index;
           frontier.push ({ water[next], next });
         }
@@ -193,7 +198,8 @@ namespace moppe::terrain {
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const std::size_t cell = index (x, y);
-          depth[cell] = std::max (0.0f, water[cell] - terrain.at (x, y));
+          depth[cell] = std::max (
+            0.0f, water[cell] - elevation_at (grid, elevations, x, y));
         }
     }
 

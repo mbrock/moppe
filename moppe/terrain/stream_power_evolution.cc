@@ -13,25 +13,12 @@
 
 namespace moppe::terrain {
   namespace {
-    void expand_evolution_samples (const TerrainDomain& grid,
-                                   const std::vector<float>& unique,
-                                   std::vector<float>& expanded) {
-      MOPPE_PROFILE_ZONE ("orogeny.expand_periodic_samples");
-      const std::size_t width = grid.width ();
-      const std::size_t height = grid.height ();
-      expanded.resize (grid.width () * grid.height ());
-      for (std::size_t y = 0; y < grid.height (); ++y)
-        for (std::size_t x = 0; x < grid.width (); ++x)
-          expanded[y * grid.width () + x] =
-            unique[(y % height) * width + x % width];
-    }
-
     void validate_stream_power_evolution (
-      const TerrainView& terrain,
+      const TerrainDomain& grid,
+      std::span<const SurfaceElevation> elevations,
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters) {
       MOPPE_PROFILE_ZONE ("orogeny.validate");
-      const TerrainDomain& grid = terrain.domain ();
       const std::size_t count = grid.width () * grid.height ();
       if (uplift_rate.size () != count)
         throw std::invalid_argument (
@@ -64,8 +51,8 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "invalid stream-power evolution parameters");
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const float height =
-          terrain.at (cell % grid.width (), cell / grid.width ());
+        const float height = elevation_at (
+          grid, elevations, cell % grid.width (), cell / grid.width ());
         const float uplift = meters_per_julian_year_value (uplift_rate[cell]);
         if (!std::isfinite (height) || !std::isfinite (uplift) || uplift < 0.0f)
           throw std::invalid_argument (
@@ -137,25 +124,24 @@ namespace moppe::terrain {
   }
 
   FractionalDrainage CpuStreamPowerEvolutionBackend::route_fractional (
-    const TerrainView& terrain,
     const FloodField& flood,
     const LakeCensus& census,
     std::span<const ChannelTangent> previous_tangent,
     ChannelPersistence persistence) const {
     return analyze_fractional_drainage (
-      terrain, flood, census, previous_tangent, persistence);
+      flood, census, previous_tangent, persistence);
   }
 
-  StreamPowerEvolutionResult evolve_stream_power (
-    const TerrainView& terrain,
+  StreamPowerEvolutionResult detail::evolve_stream_power (
+    const TerrainDomain& grid,
+    std::span<const SurfaceElevation> elevations,
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
     const StreamPowerEvolutionBackend& backend,
     const StreamPowerProgress& progress,
     std::span<const ChannelTangent> initial_channel_tangents) {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
-    validate_stream_power_evolution (terrain, uplift_rate, parameters);
-    const TerrainDomain& grid = terrain.domain ();
+    validate_stream_power_evolution (grid, elevations, uplift_rate, parameters);
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
@@ -172,7 +158,7 @@ namespace moppe::terrain {
     std::vector<float> initial (count);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x)
-        initial[y * width + x] = terrain.at (x, y);
+        initial[y * width + x] = elevation_at (grid, elevations, x, y);
     std::vector<float> current = initial;
     std::vector<ChannelTangent> channel_memory;
     if (!initial_channel_tangents.empty ()) {
@@ -206,7 +192,6 @@ namespace moppe::terrain {
     int diffusion_sweeps = 0;
     double tectonic_uplift_volume_m3 = 0.0;
     double incised_volume_m3 = 0.0;
-    std::vector<float> expanded (grid.width () * grid.height ());
     std::vector<float> next (count);
     std::vector<std::uint8_t> boundary (count);
 
@@ -214,8 +199,7 @@ namespace moppe::terrain {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
       const double elapsed = static_cast<double> (step) * time_step_years;
       const double dt = std::min (time_step_years, duration_years - elapsed);
-      expand_evolution_samples (grid, current, expanded);
-      const TerrainView routed_terrain (grid, expanded);
+      const ElevationMap routed_terrain = make_elevation_map (grid, current);
       const FloodField flood =
         analyze_standing_water (routed_terrain, parameters.sea_level);
       const LakeCensus census = census_lakes (flood);
@@ -269,12 +253,8 @@ namespace moppe::terrain {
           incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
         };
 
-        const FractionalDrainage drainage =
-          backend.route_fractional (routed_terrain,
-                                    flood,
-                                    census,
-                                    channel_memory,
-                                    parameters.channel_persistence);
+        const FractionalDrainage drainage = backend.route_fractional (
+          flood, census, channel_memory, parameters.channel_persistence);
         channel_memory = spatial::get<channel_tangent> (drainage);
         const auto& area =
           spatial::get<fractional_contributing_area> (drainage);
@@ -373,14 +353,16 @@ namespace moppe::terrain {
              .report = report };
   }
 
-  StreamPowerEvolutionResult evolve_stream_power (
-    const TerrainView& terrain,
+  StreamPowerEvolutionResult detail::evolve_stream_power (
+    const TerrainDomain& domain,
+    std::span<const SurfaceElevation> elevations,
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
     const StreamPowerProgress& progress,
     std::span<const ChannelTangent> initial_channel_tangents) {
     static const CpuStreamPowerEvolutionBackend backend;
-    return evolve_stream_power (terrain,
+    return evolve_stream_power (domain,
+                                elevations,
                                 uplift_rate,
                                 parameters,
                                 backend,

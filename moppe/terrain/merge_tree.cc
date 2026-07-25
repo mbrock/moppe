@@ -40,8 +40,9 @@ namespace moppe::terrain {
     }
   }
 
-  MergeTree build_merge_tree (const TerrainView& terrain) {
-    const TerrainDomain& grid = terrain.domain ();
+  MergeTree
+  detail::build_merge_tree (const TerrainDomain& grid,
+                            std::span<const SurfaceElevation> elevations) {
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
@@ -50,15 +51,14 @@ namespace moppe::terrain {
     // order the drainage analyses use for tie-breaking.
     std::vector<std::uint32_t> order (count);
     std::iota (order.begin (), order.end (), 0u);
-    std::sort (order.begin (),
-               order.end (),
-               [&terrain, width] (std::uint32_t a, std::uint32_t b) {
-                 const float za = terrain.at (a % width, a / width);
-                 const float zb = terrain.at (b % width, b / width);
-                 if (za != zb)
-                   return za < zb;
-                 return a < b;
-               });
+    std::sort (
+      order.begin (), order.end (), [&] (std::uint32_t a, std::uint32_t b) {
+        const float za = elevation_at (grid, elevations, a % width, a / width);
+        const float zb = elevation_at (grid, elevations, b % width, b / width);
+        if (za != zb)
+          return za < zb;
+        return a < b;
+      });
 
     // Rank of each cell in the sweep; a neighbor is "already flooded"
     // exactly when its rank is smaller.
@@ -79,7 +79,7 @@ namespace moppe::terrain {
       const std::uint32_t cell = order[position];
       const std::size_t x = cell % width;
       const std::size_t y = cell / width;
-      const float z = terrain.at (x, y);
+      const float z = elevation_at (grid, elevations, x, y);
 
       std::size_t joined_count = 0;
       for (const MergeOffset offset : merge_neighbors) {
@@ -138,14 +138,19 @@ namespace moppe::terrain {
     return tree;
   }
 
-  MergeTreeFlood flood_from_merge_tree (const MergeTree& tree,
-                                        const TerrainView& terrain,
-                                        float sea_level) {
+  MergeTreeFlood
+  detail::flood_from_merge_tree (const MergeTree& tree,
+                                 const TerrainDomain& domain,
+                                 std::span<const SurfaceElevation> elevations,
+                                 float sea_level) {
     if (!std::isfinite (sea_level))
       throw std::invalid_argument ("merge-tree sea level must be finite");
     const std::size_t width = tree.width ();
     const std::size_t height = tree.height ();
     const std::size_t count = width * height;
+    if (domain != tree.domain)
+      throw std::invalid_argument (
+        "merge tree and elevations do not share one domain");
     const std::size_t node_count = tree.nodes.size ();
     constexpr std::uint32_t no_node = MergeTreeNode::no_node;
 
@@ -172,7 +177,8 @@ namespace moppe::terrain {
       node_count, std::numeric_limits<std::uint32_t>::max ());
     bool any_submerged = false;
     for (std::uint32_t cell = 0; cell < count; ++cell) {
-      if (terrain.at (cell % width, cell / width) > sea_level)
+      if (elevation_at (domain, elevations, cell % width, cell / width) >
+          sea_level)
         continue;
       any_submerged = true;
       const std::uint32_t component = alive[tree.cell_node[cell]];
@@ -197,9 +203,10 @@ namespace moppe::terrain {
       // All-land world: root the surface at the deterministic global
       // minimum (first cell in (height, index) order).
       std::uint32_t minimum_cell = 0;
-      float minimum = terrain.at (0, 0);
+      float minimum = elevation_at (domain, elevations, 0, 0);
       for (std::uint32_t cell = 1; cell < count; ++cell) {
-        const float z = terrain.at (cell % width, cell / width);
+        const float z =
+          elevation_at (domain, elevations, cell % width, cell / width);
         if (z < minimum) {
           minimum = z;
           minimum_cell = cell;
@@ -232,7 +239,8 @@ namespace moppe::terrain {
     std::vector<float> water (count);
     std::vector<std::uint8_t> ocean (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell) {
-      const float z = terrain.at (cell % width, cell / width);
+      const float z =
+        elevation_at (domain, elevations, cell % width, cell / width);
       const std::uint32_t node = tree.cell_node[cell];
       const float join_height = marked[node] ? z : join[node];
       water[cell] = std::max (join_height, base_level);
@@ -240,7 +248,7 @@ namespace moppe::terrain {
     }
 
     const TerrainDomain& grid = tree.domain;
-    const RasterDomain domain {
+    const RasterDomain raster_domain {
       .width = width,
       .height = height,
       .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
@@ -248,7 +256,7 @@ namespace moppe::terrain {
     };
     return { .has_ocean = any_submerged,
              .root_cell = root_cell,
-             .water_level = ScalarRaster (domain, std::move (water)),
+             .water_level = ScalarRaster (raster_domain, std::move (water)),
              .ocean = std::move (ocean) };
   }
 }

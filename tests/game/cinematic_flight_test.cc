@@ -13,7 +13,7 @@ namespace {
     static constexpr std::size_t count = side * side;
 
     map::Surface map { side, side, Vec3 (1600, 240, 1600) };
-    terrain::TerrainDomain grid = map.terrain_view ().domain ();
+    terrain::TerrainDomain grid = map.atlas ().geometry ().domain ();
     terrain::RasterDomain domain { .width = side, .height = side };
     terrain::FloodField flood;
     terrain::LakeCensus census;
@@ -239,7 +239,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     }
   map.recompute_normals ();
 
-  const terrain::TerrainDomain grid = map.terrain_view ().domain ();
+  const terrain::TerrainDomain grid = map.atlas ().geometry ().domain ();
   const terrain::RasterDomain domain { .width = unique_side,
                                        .height = unique_side };
   std::vector<terrain::CellIndex> receiver (count);

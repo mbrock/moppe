@@ -476,8 +476,8 @@ namespace moppe {
         const auto start = std::chrono::steady_clock::now ();
         const float sea_level = meters_value (m_world->water_level) /
                                 extent_value (m_world->map_size)[1];
-        m_flood =
-          terrain::analyze_standing_water (m_map->terrain_view (), sea_level);
+        m_flood = terrain::analyze_standing_water (m_map->atlas ().geometry (),
+                                                   sea_level);
         m_lakes = terrain::census_lakes (*m_flood);
         const double milliseconds = std::chrono::duration<double, std::milli> (
                                       std::chrono::steady_clock::now () - start)
@@ -526,12 +526,12 @@ namespace moppe {
         throw std::logic_error ("drainage requested without terrain");
       if (!m_drainage) {
         const auto start = std::chrono::steady_clock::now ();
-        m_drainage = terrain::analyze_wet_drainage (
-          m_map->terrain_view (), standing_water (), *m_lakes);
+        m_drainage =
+          terrain::analyze_wet_drainage (standing_water (), *m_lakes);
         m_water_network =
           terrain::analyze_water_network (*m_flood, *m_lakes, *m_drainage);
-        m_channel_drainage = terrain::analyze_fractional_drainage (
-          m_map->terrain_view (), *m_flood, *m_lakes);
+        m_channel_drainage =
+          terrain::analyze_fractional_drainage (*m_flood, *m_lakes);
         m_rivers = terrain::extract_river_network (
           *m_flood,
           *m_lakes,

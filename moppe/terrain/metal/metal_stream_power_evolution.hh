@@ -28,8 +28,7 @@ namespace moppe::terrain::metal {
     operator= (const MetalStreamPowerEvolutionBackend&) = delete;
 
     FractionalDrainage
-    route_fractional (const TerrainView& terrain,
-                      const FloodField& flood,
+    route_fractional (const FloodField& flood,
                       const LakeCensus& census,
                       std::span<const ChannelTangent> previous_tangent,
                       ChannelPersistence persistence) const override;

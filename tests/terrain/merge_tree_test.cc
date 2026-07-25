@@ -19,7 +19,7 @@ namespace {
   // The oracle: the merge-tree flood must reproduce the priority
   // flood's minimax surface bit-for-bit, its ocean component, and its
   // deterministic fallbacks.
-  void check_matches_priority_flood (const TerrainView& terrain,
+  void check_matches_priority_flood (const TerrainElevations auto& terrain,
                                      float sea_level) {
     const FloodField oracle = analyze_standing_water (terrain, sea_level);
     const MergeTree tree = build_merge_tree (terrain);
@@ -44,7 +44,8 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
                              0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
                              3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
-  const TerrainView terrain (TerrainDomain (5, 5), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (5, 5), heights);
   check_matches_priority_flood (terrain, 0.0f);
 
   const MergeTree tree = build_merge_tree (terrain);
@@ -57,7 +58,8 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
 
 MOPPE_TEST (merge_tree_flood_matches_an_all_land_torus) {
   const std::array heights { 5.f, 4.f, 7.f, 3.f };
-  const TerrainView terrain (TerrainDomain (2, 2), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (2, 2), heights);
   check_matches_priority_flood (terrain, -1.0f);
 
   const MergeTree tree = build_merge_tree (terrain);
@@ -72,7 +74,8 @@ MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
   const std::array heights {
     -3.f, -3.f, -3.f, -3.f, 5.f, -3.f, -3.f, -3.f, -3.f
   };
-  const TerrainView terrain (TerrainDomain (3, 3), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (3, 3), heights);
   check_matches_priority_flood (terrain, 0.0f);
 }
 
@@ -80,7 +83,7 @@ MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
   for (const int seed : { 7, 123, 4041 }) {
     map::Surface map (65, 65, Vec3 (100, 20, 100));
     map::TerrainEvaluator (map).begin (make_orogeny_program (seed));
-    const TerrainView terrain = map.terrain_view ();
+    const auto& terrain = map.atlas ().geometry ();
     for (const float sea_level : { 0.05f, 50.0f / 650.0f, 0.3f, 0.95f })
       check_matches_priority_flood (terrain, sea_level);
   }
@@ -89,7 +92,7 @@ MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
 MOPPE_TEST (merge_tree_construction_is_deterministic) {
   map::Surface map (65, 65, Vec3 (100, 20, 100));
   map::TerrainEvaluator (map).begin (make_orogeny_program (9));
-  const TerrainView terrain = map.terrain_view ();
+  const auto& terrain = map.atlas ().geometry ();
   const MergeTree first = build_merge_tree (terrain);
   const MergeTree second = build_merge_tree (terrain);
   MOPPE_CHECK (first.nodes.size () == second.nodes.size ());

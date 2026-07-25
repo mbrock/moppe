@@ -4,7 +4,6 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
-#include <moppe/terrain/terrain_view.hh>
 
 #include <mp-units/systems/angular.h>
 
@@ -235,14 +234,12 @@ namespace moppe::terrain {
   };
 
   FractionalDrainage analyze_fractional_drainage (
-    const TerrainView& terrain,
     const FloodField& flood,
     const LakeCensus& census,
     std::span<const ChannelTangent> previous_tangent = {},
     ChannelPersistence persistence = 0.0f * channel_persistence[mp_units::one]);
   FractionalDrainage
-  analyze_fractional_drainage (const TerrainView& terrain,
-                               const FloodField& flood,
+  analyze_fractional_drainage (const FloodField& flood,
                                const LakeCensus& census,
                                std::span<const ChannelTangent> previous_tangent,
                                ChannelPersistence persistence,

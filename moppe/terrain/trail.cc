@@ -225,7 +225,8 @@ namespace moppe::terrain {
         float maximum_elevation;
       };
 
-      const TerrainView& terrain;
+      const TerrainDomain& domain;
+      std::span<const SurfaceElevation> elevations;
       const DrainageGraph& drainage;
       const FloodField& flood;
       int source_width;
@@ -269,7 +270,8 @@ namespace moppe::terrain {
       }
 
       float elevation (std::size_t node) const {
-        return terrain.at (source_x (x (node)), source_y (y (node)));
+        return elevation_at (
+          domain, elevations, source_x (x (node)), source_y (y (node)));
       }
 
       bool wet (std::size_t node) const {
@@ -349,18 +351,21 @@ namespace moppe::terrain {
           return wrap_index (value, source_height);
         };
         float previous_elevation =
-          terrain.at (source_x_at (x0), source_y_at (y0));
+          elevation_at (domain, elevations, source_x_at (x0), source_y_at (y0));
         float maximum_elevation = previous_elevation;
         for (int step = 1; step <= steps; ++step) {
           const float t = static_cast<float> (step) / steps;
           int current_x = x0 + static_cast<int> (std::round (dx * t));
           int current_y = y0 + static_cast<int> (std::round (dy * t));
           const float current_elevation =
-            terrain.at (source_x_at (current_x), source_y_at (current_y));
+            elevation_at (domain,
+                          elevations,
+                          source_x_at (current_x),
+                          source_y_at (current_y));
           maximum_elevation = std::max (maximum_elevation, current_elevation);
-          const float run = std::hypot (
-            (current_x - previous_x) * terrain.domain ().spacing_x_m (),
-            (current_y - previous_y) * terrain.domain ().spacing_z_m ());
+          const float run =
+            std::hypot ((current_x - previous_x) * domain.spacing_x_m (),
+                        (current_y - previous_y) * domain.spacing_z_m ());
           if (run > 0.0f) {
             const float rise =
               std::fabs (current_elevation - previous_elevation);
@@ -411,10 +416,11 @@ namespace moppe::terrain {
              std::max (avoidance - preferred, 1.0f);
     }
 
-    PlanningGrid planning_grid (const TerrainView& terrain,
+    PlanningGrid planning_grid (const TerrainDomain& domain,
+                                std::span<const SurfaceElevation> elevations,
                                 const DrainageGraph& drainage,
                                 const FloodField& flood) {
-      const TerrainDomain& source = terrain.domain ();
+      const TerrainDomain& source = domain;
       const int source_width = static_cast<int> (source.width ());
       const int source_height = static_cast<int> (source.height ());
       constexpr float planning_spacing = 16.0f;
@@ -428,7 +434,8 @@ namespace moppe::terrain {
                                       planning_spacing)),
         std::min (8, source_height),
         source_height);
-      return { .terrain = terrain,
+      return { .domain = domain,
+               .elevations = elevations,
                .drainage = drainage,
                .flood = flood,
                .source_width = source_width,
@@ -442,7 +449,7 @@ namespace moppe::terrain {
     TrailAlignment
     make_alignment (const PlanningGrid& planner,
                     const std::vector<std::size_t>& coarse_circuit) {
-      const TerrainDomain& source = planner.terrain.domain ();
+      const TerrainDomain& source = planner.domain;
       const float source_spacing_x = source.spacing_x_m ();
       const float source_spacing_z = source.spacing_z_m ();
       const float period_x = source.width () * source_spacing_x;
@@ -1402,13 +1409,14 @@ namespace moppe::terrain {
     return false;
   }
 
-  TrailNetwork analyze_trail_network (const TerrainView& terrain,
-                                      const TrailFormation& parameters,
-                                      const DrainageGraph& drainage,
-                                      const FloodField& flood) {
+  TrailNetwork
+  detail::analyze_trail_network (const TerrainDomain& grid,
+                                 std::span<const SurfaceElevation> elevations,
+                                 const TrailFormation& parameters,
+                                 const DrainageGraph& drainage,
+                                 const FloodField& flood) {
     MOPPE_PROFILE_ZONE ("analyze_trail_network");
     parameters.validate ();
-    const TerrainDomain& grid = terrain.domain ();
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
@@ -1419,7 +1427,8 @@ namespace moppe::terrain {
       throw std::invalid_argument (
         "trail network readings do not match terrain");
 
-    const PlanningGrid planner = planning_grid (terrain, drainage, flood);
+    const PlanningGrid planner =
+      planning_grid (grid, elevations, drainage, flood);
     std::optional<CoarseCircuitPlan> chosen;
     std::vector<CellIndex> chosen_cells;
     for (const HomeBaseSite site : choose_home_bases (planner, parameters)) {
@@ -1536,12 +1545,15 @@ namespace moppe::terrain {
                ScalarRaster (domain, std::move (home_base_influence)) };
   }
 
-  TrailNetwork analyze_trail_network (const TerrainView& terrain,
-                                      const TrailFormation& parameters) {
-    const DrainageGraph drainage = analyze_drainage (terrain);
+  TrailNetwork
+  detail::analyze_trail_network (const TerrainDomain& domain,
+                                 std::span<const SurfaceElevation> elevations,
+                                 const TrailFormation& parameters) {
+    const DrainageGraph drainage = analyze_drainage (domain, elevations);
     const FloodField flood =
-      analyze_standing_water (terrain, parameters.sea_level);
-    return analyze_trail_network (terrain, parameters, drainage, flood);
+      analyze_standing_water (domain, elevations, parameters.sea_level);
+    return analyze_trail_network (
+      domain, elevations, parameters, drainage, flood);
   }
 
   meters_f64_t trail_circuit_length (const TrailNetwork& network) {
@@ -1557,11 +1569,12 @@ namespace moppe::terrain {
     return length;
   }
 
-  TrailFormationResult form_trails (const TerrainView& terrain,
-                                    const TrailFormation& parameters) {
+  TrailFormationResult
+  detail::form_trails (const TerrainDomain& grid,
+                       std::span<const SurfaceElevation> elevations,
+                       const TrailFormation& parameters) {
     MOPPE_PROFILE_ZONE ("form_trails");
     parameters.validate ();
-    const TerrainDomain& grid = terrain.domain ();
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
@@ -1570,13 +1583,14 @@ namespace moppe::terrain {
     std::vector<float> original (count);
     for (int y = 0; y < height; ++y)
       for (int x = 0; x < width; ++x)
-        original[static_cast<std::size_t> (y) * width + x] = terrain.at (x, y);
+        original[static_cast<std::size_t> (y) * width + x] =
+          elevation_at (grid, elevations, x, y);
 
-    const DrainageGraph drainage = analyze_drainage (terrain);
+    const DrainageGraph drainage = analyze_drainage (grid, elevations);
     const FloodField flood =
-      analyze_standing_water (terrain, parameters.sea_level);
+      analyze_standing_water (grid, elevations, parameters.sea_level);
     TrailNetwork network =
-      analyze_trail_network (terrain, parameters, drainage, flood);
+      analyze_trail_network (grid, elevations, parameters, drainage, flood);
 
     // Solve the vertical profile along arc-length samples of the continuous
     // alignment. Horizontal intent and longitudinal grade are deliberately

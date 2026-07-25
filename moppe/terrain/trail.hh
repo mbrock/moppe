@@ -2,7 +2,6 @@
 #define MOPPE_TERRAIN_TRAIL_HH
 
 #include <moppe/terrain/drainage.hh>
-#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
@@ -141,17 +140,47 @@ namespace moppe::terrain {
     TrailFormationReport report;
   };
 
-  TrailNetwork analyze_trail_network (const TerrainView& terrain,
-                                      const TrailFormation& parameters,
-                                      const DrainageGraph& drainage,
-                                      const FloodField& flood);
-  TrailNetwork analyze_trail_network (const TerrainView& terrain,
-                                      const TrailFormation& parameters = {});
-
   meters_f64_t trail_circuit_length (const TrailNetwork& network);
 
-  TrailFormationResult form_trails (const TerrainView& terrain,
-                                    const TrailFormation& parameters = {});
+  namespace detail {
+    TrailNetwork
+    analyze_trail_network (const TerrainDomain& domain,
+                           std::span<const SurfaceElevation> elevations,
+                           const TrailFormation& parameters,
+                           const DrainageGraph& drainage,
+                           const FloodField& flood);
+    TrailNetwork
+    analyze_trail_network (const TerrainDomain& domain,
+                           std::span<const SurfaceElevation> elevations,
+                           const TrailFormation& parameters);
+    TrailFormationResult
+    form_trails (const TerrainDomain& domain,
+                 std::span<const SurfaceElevation> elevations,
+                 const TrailFormation& parameters);
+  }
+
+  template <TerrainElevations Terrain>
+  TrailNetwork analyze_trail_network (const Terrain& terrain,
+                                      const TrailFormation& parameters,
+                                      const DrainageGraph& drainage,
+                                      const FloodField& flood) {
+    return detail::analyze_trail_network (
+      terrain.domain (), elevations (terrain), parameters, drainage, flood);
+  }
+
+  template <TerrainElevations Terrain>
+  TrailNetwork analyze_trail_network (const Terrain& terrain,
+                                      const TrailFormation& parameters = {}) {
+    return detail::analyze_trail_network (
+      terrain.domain (), elevations (terrain), parameters);
+  }
+
+  template <TerrainElevations Terrain>
+  TrailFormationResult form_trails (const Terrain& terrain,
+                                    const TrailFormation& parameters = {}) {
+    return detail::form_trails (
+      terrain.domain (), elevations (terrain), parameters);
+  }
 }
 
 #endif
