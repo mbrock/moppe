@@ -36,10 +36,10 @@ namespace {
 
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
-  map::Surface ground (2, 2, Vec3 (20, 100, 20));
-  ground.fill_elevation (
-    map::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]));
-  ground.recompute_normals ();
+  map::SurfaceGeometry ground = map::make_surface (2, 2, Vec3 (20, 100, 20));
+  map::fill_elevation (
+    ground, map::SurfaceElevation (5.0f * terrain::surface_elevation[u::m]));
+  map::recompute_normals (ground);
 
   const std::array level_and_amplitude {
     10.0f, 0.20f, 20.0f, 0.30f, 30.0f, 0.40f, 40.0f, 0.50f,
@@ -53,7 +53,8 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   const terrain::TerrainIndex first { 0, 0 };
   const auto water_elevation =
     spatial::get<terrain::surface_elevation> (water[first]);
-  const auto ground_elevation = ground.elevation_at (position (Vec3 (0, 0, 0)));
+  const auto ground_elevation =
+    map::elevation_at (ground, position (Vec3 (0, 0, 0)));
   const auto depth = water_elevation - ground_elevation;
   MOPPE_CHECK_NEAR (depth.numerical_value_in (u::m), 5.0f, 1e-6f);
   MOPPE_CHECK_NEAR (spatial::get<terrain::wave_amplitude> (water[first])

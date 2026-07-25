@@ -33,7 +33,7 @@ namespace moppe::game {
   // habitat test. This remains renderer-independent so the population process
   // can be tested without a GPU.
   [[nodiscard]] TreeGrove
-  plan_tree_grove (const map::Surface& surface,
+  plan_tree_grove (const map::SurfaceGeometry& surface,
                    const map::SurfaceReadings& readings,
                    std::uint32_t seed,
                    std::size_t desired_count = 9,
@@ -45,7 +45,7 @@ namespace moppe::game {
   class TreeStand {
   public:
     void rebuild (render::Renderer& renderer,
-                  const map::Surface& surface,
+                  const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed,
                   std::size_t desired_count = 9,

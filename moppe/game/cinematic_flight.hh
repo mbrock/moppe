@@ -55,7 +55,7 @@ namespace moppe::game {
   // playback, an editor camera, or a player-steerable aircraft can all use the
   // same landscape interpretation without inheriting the opening cinematic.
   CinematicFlightPlan
-  plan_cinematic_flight (const map::Surface& map,
+  plan_cinematic_flight (const map::SurfaceGeometry& surface,
                          const terrain::FloodField& flood,
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
@@ -77,10 +77,11 @@ namespace moppe::game {
   // supply continuous motion without stopping at any individual landmark.
   class CinematicFlight {
   public:
-    void start (const CinematicFlightPlan& plan, const map::Surface& map);
+    void start (const CinematicFlightPlan& plan,
+                const map::SurfaceGeometry& surface);
     void stop () noexcept;
     void tick (float dt,
-               const map::Surface& map,
+               const map::SurfaceGeometry& surface,
                const CinematicFlightControls& controls = {});
 
     bool active () const noexcept {
@@ -125,7 +126,7 @@ namespace moppe::game {
 
     Vec3 curve_position (std::size_t segment, float t) const;
     RouteState route_state (float distance) const;
-    void build_flight_ribbon (const map::Surface& map);
+    void build_flight_ribbon (const map::SurfaceGeometry& surface);
 
     std::vector<CinematicFlightWaypoint> m_waypoints;
     std::vector<ArcSample> m_arc_samples;

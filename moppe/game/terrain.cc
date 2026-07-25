@@ -44,18 +44,18 @@ namespace moppe {
     }
 
     void Terrain::setup (render::Renderer& r,
-                         const map::Surface& map,
+                         const map::SurfaceGeometry& surface,
                          const WorldParams& world,
                          const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
-      m_scale = map.sample_spacing ();
+      m_scale = map::sample_spacing (surface);
       m_extent = extent_value (world.map_size);
       m_period = Vec3 (m_extent[0], 0.0f, m_extent[2]);
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
 
       render::TerrainParams params;
-      params.width = map.width ();
-      params.height = map.height ();
+      params.width = map::width (surface);
+      params.height = map::height (surface);
       params.scale = m_scale;
       params.sea_level = meters_value (world.water_level);
       params.tex_scale = 0.5f / m_scale[0];
@@ -67,10 +67,9 @@ namespace moppe {
       params.channel_flux_detail = graphics.channel_flux_detail;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
-        r.set_terrain (
-          params,
-          spatial::get<terrain::surface_elevation> (map.geometry ()),
-          spatial::get<terrain::terrain_normal> (map.geometry ()));
+        r.set_terrain (params,
+                       spatial::get<terrain::surface_elevation> (surface),
+                       spatial::get<terrain::terrain_normal> (surface));
       }
 
       if (!m_textures_loaded) {
@@ -85,7 +84,7 @@ namespace moppe {
 
       // Chunk bounding spheres from the actual height range.
       MOPPE_PROFILE_NAMED_ZONE (build_chunks, "terrain.build_chunk_bounds");
-      const int chunks_per_side = map.width () / CHUNK;
+      const int chunks_per_side = map::width (surface) / CHUNK;
       m_chunks.clear ();
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
       for (int cz = 0; cz < chunks_per_side; ++cz)
@@ -93,9 +92,11 @@ namespace moppe {
           float ymin = 1e9f, ymax = -1e9f;
           for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
             for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-              const float h = terrain::surface_elevation_value (
-                map.elevation_at (terrain::wrap_index (x, map.width ()),
-                                  terrain::wrap_index (z, map.height ())));
+              const float h =
+                terrain::surface_elevation_value (map::elevation_at (
+                  surface,
+                  terrain::wrap_index (x, map::width (surface)),
+                  terrain::wrap_index (z, map::height (surface))));
               ymin = std::min (ymin, h);
               ymax = std::max (ymax, h);
             }

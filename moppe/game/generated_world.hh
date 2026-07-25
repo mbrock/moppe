@@ -56,7 +56,7 @@ namespace moppe::game {
   public:
     GeneratedWorld (WorldParams params,
                     terrain::WorldRecipe recipe,
-                    map::Surface surface,
+                    map::SurfaceGeometry surface,
                     Hydrology hydrology,
                     terrain::WaterSheets water,
                     terrain::TrailNetwork trails,
@@ -74,7 +74,7 @@ namespace moppe::game {
       return m_recipe;
     }
 
-    const map::Surface& surface () const noexcept {
+    const map::SurfaceGeometry& surface () const noexcept {
       return m_surface;
     }
 
@@ -97,7 +97,7 @@ namespace moppe::game {
   private:
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
-    map::Surface m_surface;
+    map::SurfaceGeometry m_surface;
     Hydrology m_hydrology;
     terrain::WaterSheets m_water_surface;
     terrain::TrailNetwork m_trails;

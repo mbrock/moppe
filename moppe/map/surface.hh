@@ -3,68 +3,55 @@
 
 #include <moppe/map/surface_sections.hh>
 
-#include <string>
+// The world's finite ground geometry is the SurfaceGeometry bundle itself:
+// elevation, normals, and the material history the world's erosion left
+// behind, over one terrain domain. These are the operations the game and the
+// generator perform on it. Readings analysed over the same domain live in a
+// separate bundle the completed world owns.
 
 namespace moppe::map {
-  // The world's finite ground geometry: elevation, normals, and the material
-  // history the world's erosion left behind. Readings analysed over the same
-  // domain are a separate bundle the completed world owns.
-  class Surface {
-  public:
-    Surface (int width, int height, const Vec3& size);
-    // A lattice this large is never copied by accident, but a finished one
-    // does move into the world that owns it.
-    Surface (const Surface&) = delete;
-    Surface& operator= (const Surface&) = delete;
-    Surface (Surface&&) = default;
-    Surface& operator= (Surface&&) = default;
+  SurfaceGeometry make_surface (int width, int height, const Vec3& size);
 
-    int width () const noexcept;
-    int height () const noexcept;
-    Vec3 sample_spacing () const noexcept;
-    // The lattice repeats horizontally and has no vertical bound of its own;
-    // a world's full extent belongs to its parameters.
-    Vec3 world_period () const noexcept;
-    const terrain::TerrainDomain& domain () const noexcept {
-      return m_geometry.domain ();
-    }
+  int width (const SurfaceGeometry& geometry) noexcept;
+  int height (const SurfaceGeometry& geometry) noexcept;
+  Vec3 sample_spacing (const SurfaceGeometry& geometry) noexcept;
+  // The lattice repeats horizontally and has no vertical bound of its own;
+  // a world's full extent belongs to its parameters.
+  Vec3 world_period (const SurfaceGeometry& geometry) noexcept;
 
-    SurfaceElevation elevation_at (int column, int row) const;
-    void set_elevation (int column, int row, SurfaceElevation value);
-    void fill_elevation (SurfaceElevation value);
-    Vec3 normal_at (int column, int row) const;
+  SurfaceElevation
+  elevation_at (const SurfaceGeometry& geometry, int column, int row);
+  void set_elevation (SurfaceGeometry& geometry,
+                      int column,
+                      int row,
+                      SurfaceElevation value);
+  void fill_elevation (SurfaceGeometry& geometry, SurfaceElevation value);
+  Vec3 normal_at (const SurfaceGeometry& geometry, int column, int row);
+  Vec3 vertex (const SurfaceGeometry& geometry, int column, int row);
+  SurfaceElevation min_elevation (const SurfaceGeometry& geometry);
+  SurfaceElevation max_elevation (const SurfaceGeometry& geometry);
 
-    const SurfaceGeometry& geometry () const noexcept {
-      return m_geometry;
-    }
-    SurfaceGeometry& geometry () noexcept {
-      return m_geometry;
-    }
+  // The world wraps, so every finite point names a place on it.
+  bool in_bounds (float x, float z);
 
-    Vec3 vertex (int column, int row) const;
-    bool in_bounds (float x, float z) const;
-    float interpolated_height (float x, float z) const;
-    Vec3 interpolated_normal (float x, float z) const;
-    SurfaceElevation min_elevation () const;
-    SurfaceElevation max_elevation () const;
+  SurfaceElevation elevation_at (const SurfaceGeometry& geometry,
+                                 const position_t& position);
+  SurfaceNormal normal_at (const SurfaceGeometry& geometry,
+                           const position_t& position);
+  SnowSupport snow_support_at (const SurfaceGeometry& geometry,
+                               const position_t& position);
+  float interpolated_height (const SurfaceGeometry& geometry, float x, float z);
+  Vec3 interpolated_normal (const SurfaceGeometry& geometry, float x, float z);
 
-    void rebuild_geometry ();
-    void recompute_normals ();
-    void reset_material_history ();
-    void record_material_change (int column, int row, float delta);
-
-    bool try_load_cache (const std::string& path);
-    void save_cache (const std::string& path) const;
-
-    SurfaceElevation elevation_at (const position_t& position) const;
-    SurfaceNormal normal_at (const position_t& position) const;
-    SnowSupport snow_support_at (const position_t& position) const;
-
-  private:
-    std::size_t offset (int column, int row) const;
-
-    SurfaceGeometry m_geometry;
-  };
+  // Normals and the broad snow support plane follow from elevation; rebuild
+  // them whenever the heightfield changes.
+  void rebuild_geometry (SurfaceGeometry& geometry);
+  void recompute_normals (SurfaceGeometry& geometry);
+  void reset_material_history (SurfaceGeometry& geometry);
+  void record_material_change (SurfaceGeometry& geometry,
+                               int column,
+                               int row,
+                               float delta);
 }
 
 #endif

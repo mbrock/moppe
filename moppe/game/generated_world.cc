@@ -93,7 +93,7 @@ namespace moppe::game {
 
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe,
-                                  map::Surface surface,
+                                  map::SurfaceGeometry surface,
                                   Hydrology hydrology,
                                   terrain::WaterSheets water,
                                   terrain::TrailNetwork trails,

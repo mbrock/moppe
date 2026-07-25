@@ -42,15 +42,15 @@ namespace moppe::game {
       return t * t * (3.0f - 2.0f * t);
     }
 
-    float elevation_at (const map::Surface& surface, float x, float z) {
-      return surface.elevation_at (position (Vec3 (x, 0, z)))
+    float elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
+      return map::elevation_at (surface, position (Vec3 (x, 0, z)))
         .quantity_from_zero ()
         .numerical_value_in (u::m);
     }
 
-    Vec3 normal_at (const map::Surface& surface, float x, float z) {
-      return normalized (
-        surface.normal_at (position (Vec3 (x, 0, z))).numerical_value_in (one));
+    Vec3 normal_at (const map::SurfaceGeometry& surface, float x, float z) {
+      return normalized (map::normal_at (surface, position (Vec3 (x, 0, z)))
+                           .numerical_value_in (one));
     }
 
     float cover_at (const map::SurfaceReadings& readings, float x, float z) {
@@ -205,7 +205,7 @@ namespace moppe::game {
     }
   }
 
-  ForestPlan plan_global_forest (const map::Surface& surface,
+  ForestPlan plan_global_forest (const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
                                  std::uint32_t seed,
                                  float spacing) {
@@ -257,7 +257,7 @@ namespace moppe::game {
   }
 
   void ForestLandscape::rebuild (render::Renderer& renderer,
-                                 const map::Surface& surface,
+                                 const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
                                  std::uint32_t seed) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild");

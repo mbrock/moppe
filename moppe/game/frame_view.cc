@@ -154,7 +154,7 @@ namespace moppe::game {
     if (input.scene == FrameSceneMode::Gameplay && logic.m_shake > 0.005f) {
       const Vec3& camera = result.camera.position;
       const float ground =
-        input.surface.interpolated_height (camera[0], camera[2]);
+        map::interpolated_height (input.surface, camera[0], camera[2]);
       const float clearance = camera[1] - ground;
       const float room =
         std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
@@ -289,7 +289,7 @@ namespace moppe::game {
 
   float sun_visibility_target (const FrameView& view,
                                const WorldParams& world,
-                               const map::Surface& surface) {
+                               const map::SurfaceGeometry& surface) {
     const Vec3& camera = view.camera.position;
     float visibility = 1.0f;
     if (camera[1] < meters_value (world.water_level))
@@ -298,9 +298,10 @@ namespace moppe::game {
       for (int i = 1; i <= 40; ++i) {
         const float distance = 90.0f * i;
         const Vec3 sample = camera + view.lighting.sun_direction * distance;
-        if (!surface.in_bounds (sample[0], sample[2]))
+        if (!map::in_bounds (sample[0], sample[2]))
           break;
-        if (surface.interpolated_height (sample[0], sample[2]) > sample[1]) {
+        if (map::interpolated_height (surface, sample[0], sample[2]) >
+            sample[1]) {
           visibility = 0.0f;
           break;
         }

@@ -159,7 +159,7 @@ namespace moppe {
         return m_params;
       }
 
-      const map::Surface& surface () const noexcept {
+      const map::SurfaceGeometry& surface () const noexcept {
         return generated_world ().surface ();
       }
 
@@ -199,14 +199,15 @@ namespace moppe {
         const std::size_t width = grid.width ();
         const float x = (cell.value % width) * meters_value (grid.spacing_x ());
         const float z = (cell.value / width) * meters_value (grid.spacing_z ());
-        return Vec3 (x, surface ().interpolated_height (x, z), z);
+        return Vec3 (x, map::interpolated_height (surface (), x, z), z);
       }
 
       Vec3 trail_alignment_position (
         const terrain::TrailAlignmentPoint& point) const {
-        return Vec3 (point.x_m,
-                     surface ().interpolated_height (point.x_m, point.z_m),
-                     point.z_m);
+        return Vec3 (
+          point.x_m,
+          map::interpolated_height (surface (), point.x_m, point.z_m),
+          point.z_m);
       }
 
       Vec3 trail_direction_from_home () const {
@@ -408,8 +409,7 @@ namespace moppe {
 
       void prepare_world_surface () {
         MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
-        m_surface_presentation.refresh (surface ().geometry (),
-                                        surface_readings ());
+        m_surface_presentation.refresh (surface (), surface_readings ());
         session ().bike ().set_water_level (world ().water_level);
         session ().car ().set_water_level (world ().water_level);
         session ().bike ().set_obstacles (&m_obstacles);
@@ -439,8 +439,9 @@ namespace moppe {
           trail_cell_position (trail_network ().plan.home_base);
         m_spawn_position =
           m_home_base_position - trail_direction_from_home () * 8.0f;
-        m_spawn_position[1] = surface ().interpolated_height (
-                                m_spawn_position[0], m_spawn_position[2]) +
+        m_spawn_position[1] = map::interpolated_height (surface (),
+                                                        m_spawn_position[0],
+                                                        m_spawn_position[2]) +
                               1.2f;
         session ().bike ().reset (m_spawn_position);
         session ().bike ().set_heading (trail_direction_from_home ());
@@ -1396,9 +1397,9 @@ namespace moppe {
         // Back to the start, but ON the ground rather than 600 m
         // over it.
         const float ground =
-          surface ()
-            .elevation_at (
-              position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
+          map::elevation_at (
+            surface (),
+            position (Vec3 (m_spawn_position[0], 0, m_spawn_position[2])))
             .quantity_from_zero ()
             .numerical_value_in (u::m);
         session ().bike ().reset (

@@ -37,7 +37,7 @@ namespace moppe {
       }
     }
 
-    void Stars::generate (const map::Surface& map,
+    void Stars::generate (const map::SurfaceGeometry& surface,
                           const WorldParams& params,
                           int count) {
       MOPPE_PROFILE_ZONE ("Stars::generate");
@@ -45,7 +45,7 @@ namespace moppe {
         throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
-      const Vec3 size = map.world_period ();
+      const Vec3 size = map::world_period (surface);
       m_period = size;
       m_collected = 0;
 
@@ -55,7 +55,7 @@ namespace moppe {
         s.pos[0] = size[0] * u (rng);
         s.pos[2] = size[2] * u (rng);
 
-        float ground = map.interpolated_height (s.pos[0], s.pos[2]);
+        float ground = map::interpolated_height (surface, s.pos[0], s.pos[2]);
         if (ground < meters_value (params.water_level) + 2)
           continue; // land only
 

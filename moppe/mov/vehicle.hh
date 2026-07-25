@@ -55,7 +55,7 @@ namespace moppe {
       // instead of shoving at 3 g all the way to the horizon.
       Vehicle (position_t position,
                degrees_t orientation,
-               const Surface& map,
+               const SurfaceGeometry& surface,
                newtons_t max_thrust,
                watts_t power,
                kilograms_t mass);
@@ -249,7 +249,7 @@ namespace moppe {
         if (roof_under ())
           return Vec3 (0, 1, 0);
         const Vec3& p = position_value (m_position);
-        return m_map.interpolated_normal (p[0], p[2]);
+        return map::interpolated_normal (m_map, p[0], p[2]);
       }
 
       float ground_height () const {
@@ -257,7 +257,7 @@ namespace moppe {
         if (roof)
           return roof->top;
         const Vec3& p = position_value (m_position);
-        return m_map.interpolated_height (p[0], p[2]);
+        return map::interpolated_height (m_map, p[0], p[2]);
       }
 
     private:
@@ -275,7 +275,7 @@ namespace moppe {
       float m_wheel_spin;     // visual wheel roll angle (radians)
       bool m_boost_flight;    // landing softened after using the jets
 
-      const Surface& m_map;
+      const SurfaceGeometry& m_map;
 
       const newtons_t m_max_thrust;
       const watts_t m_power;

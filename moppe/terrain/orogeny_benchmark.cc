@@ -37,14 +37,15 @@ namespace {
     return value;
   }
 
-  std::uint64_t height_hash (const moppe::map::Surface& map) {
+  std::uint64_t height_hash (const moppe::map::SurfaceGeometry& surface) {
     // FNV-1a over the exact float representation makes benchmark output a
     // cheap numerical-regression ledger as well as a timing record.
     std::uint64_t hash = 14695981039346656037ull;
     const std::size_t count =
-      static_cast<std::size_t> (map.width ()) * map.height ();
+      static_cast<std::size_t> (surface.width ()) * surface.height ();
     const auto& elevations =
-      moppe::spatial::get<moppe::terrain::surface_elevation> (map.geometry ());
+      moppe::spatial::get<moppe::terrain::surface_elevation> (
+        surface.geometry ());
     for (std::size_t cell = 0; cell < count; ++cell) {
       std::uint32_t bits = std::bit_cast<std::uint32_t> (
         moppe::terrain::surface_elevation_value (elevations[cell]));
@@ -66,10 +67,10 @@ namespace {
   };
 
   HeightDifference
-  height_difference (const moppe::map::Surface& map,
+  height_difference (const moppe::map::SurfaceGeometry& surface,
                      std::span<const moppe::map::SurfaceElevation> reference) {
     const std::size_t count =
-      static_cast<std::size_t> (map.width ()) * map.height ();
+      static_cast<std::size_t> (surface.width ()) * surface.height ();
     if (reference.size () != count)
       throw std::logic_error ("reference surface size changed");
     double total = 0.0;
@@ -78,7 +79,8 @@ namespace {
     std::vector<double> differences;
     differences.reserve (count);
     const auto& elevations =
-      moppe::spatial::get<moppe::terrain::surface_elevation> (map.geometry ());
+      moppe::spatial::get<moppe::terrain::surface_elevation> (
+        surface.geometry ());
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double difference = std::fabs (
         (elevations[cell] - reference[cell]).numerical_value_in (moppe::u::m));
@@ -139,7 +141,7 @@ int main (int argc, char** argv) {
 
     std::vector<map::SurfaceElevation> reference_heights;
     if (backend) {
-      map::Surface reference_map (
+      map::SurfaceGeometry reference_map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       const auto uplift =
         map::initialize_terrain (reference_map, terrain_seed, 50.0f * u::m);
@@ -157,26 +159,27 @@ int main (int argc, char** argv) {
                  "reference_max_difference_m,"
                  "reference_cells_over_1m\n";
     for (int repeat = 0; repeat < repeats; ++repeat) {
-      map::Surface map (
+      map::SurfaceGeometry surface (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       const auto uplift =
-        map::initialize_terrain (map, terrain_seed, 50.0f * u::m);
+        map::initialize_terrain (surface, terrain_seed, 50.0f * u::m);
       const auto start = std::chrono::steady_clock::now ();
       const StreamPowerEvolutionReport report =
-        map::evolve_terrain (map, uplift, evolution, backend.get ());
+        map::evolve_terrain (surface, uplift, evolution, backend.get ());
       const auto stop = std::chrono::steady_clock::now ();
       const double elapsed_ms =
         std::chrono::duration<double, std::milli> (stop - start).count ();
       const HeightDifference difference =
-        reference_heights.empty () ? HeightDifference {}
-                                   : height_difference (map, reference_heights);
+        reference_heights.empty ()
+          ? HeightDifference {}
+          : height_difference (surface, reference_heights);
 
       std::cout << resolution << ','
                 << static_cast<std::size_t> (resolution) *
                      static_cast<std::size_t> (resolution)
                 << ',' << seed << ',' << backend_id << ',' << steps << ','
                 << repeat << ',' << std::fixed << std::setprecision (3)
-                << elapsed_ms << "," << std::hex << height_hash (map)
+                << elapsed_ms << "," << std::hex << height_hash (surface)
                 << std::dec << ','
                 << meters_value (report.final_step_mean_change) << ','
                 << meters_value (report.final_step_maximum_change) << ','

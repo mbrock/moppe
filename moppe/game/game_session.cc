@@ -56,7 +56,8 @@ namespace moppe::game {
       }
     }
 
-    void deploy_glider (GameSession& session, const map::Surface& terrain) {
+    void deploy_glider (GameSession& session,
+                        const map::SurfaceGeometry& terrain) {
       if (!session.can_deploy_glider (terrain))
         return;
       const Vec3 position = session.bike ().position ();
@@ -78,7 +79,7 @@ namespace moppe::game {
     }
 
     void use_glider_control (GameSession& session,
-                             const map::Surface& terrain) {
+                             const map::SurfaceGeometry& terrain) {
       if (session.logic ().m_mode == M_GLIDER) {
         session.glider ().drop_bike ();
         return;
@@ -155,7 +156,7 @@ namespace moppe::game {
     }
 
     void apply_input_frame (GameSession& session,
-                            const map::Surface& terrain,
+                            const map::SurfaceGeometry& terrain,
                             const InputFrame& input) {
       set_turn (session, input_value (input.turn));
       set_go (session, input_value (input.drive));
@@ -179,7 +180,7 @@ namespace moppe::game {
   }
 
   GameSession::GameSession (const WorldParams& world,
-                            const map::Surface& surface)
+                            const map::SurfaceGeometry& surface)
       : m_bike (world.spawn_position (),
                 45 * u::deg,
                 surface,
@@ -226,11 +227,13 @@ namespace moppe::game {
     return length (active_vehicle ().velocity ()) * 3.6f;
   }
 
-  bool GameSession::can_deploy_glider (const map::Surface& terrain) const {
+  bool
+  GameSession::can_deploy_glider (const map::SurfaceGeometry& terrain) const {
     if (m_logic.m_mode != M_BIKE || !m_bike.airborne ())
       return false;
     const Vec3 position = m_bike.position ();
-    const float ground = terrain.interpolated_height (position[0], position[2]);
+    const float ground =
+      map::interpolated_height (terrain, position[0], position[2]);
     return position[1] - ground > 3.0f;
   }
 
@@ -263,7 +266,7 @@ namespace moppe::game {
 
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
-                        const map::Surface& surface,
+                        const map::SurfaceGeometry& surface,
                         const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,
@@ -468,8 +471,8 @@ namespace moppe::game {
         result.say_ouchies = logic.m_lives == 5;
 
         // Respawn where you crashed, upright on the ground.
-        const float ground = surface.interpolated_height (vehicle_position[0],
-                                                          vehicle_position[2]);
+        const float ground = map::interpolated_height (
+          surface, vehicle_position[0], vehicle_position[2]);
         vehicle.reset (
           Vec3 (vehicle_position[0], ground + 1.2f, vehicle_position[2]));
         logic.m_health = 100.0f;

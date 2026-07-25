@@ -27,7 +27,7 @@ namespace moppe {
     }
 
     void Walker::update (seconds_t dt,
-                         const map::Surface& map,
+                         const map::SurfaceGeometry& surface,
                          const std::vector<mov::Box>& boxes,
                          const WorldParams& world) {
       const float turn = scalar_value (m_turn);
@@ -49,7 +49,7 @@ namespace moppe {
 
       // ground is the terrain, or a roof once we're up on one
       Vec3& position = position_value (m_pos);
-      float g = map.interpolated_height (position[0], position[2]);
+      float g = map::interpolated_height (surface, position[0], position[2]);
       for (size_t i = 0; i < boxes.size (); ++i) {
         const mov::Box& b = boxes[i];
         if (position[0] > b.x0 && position[0] < b.x1 && position[2] > b.z0 &&

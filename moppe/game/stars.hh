@@ -33,8 +33,9 @@ namespace moppe {
 
       Stars ();
 
-      void
-      generate (const map::Surface& map, const WorldParams& params, int count);
+      void generate (const map::SurfaceGeometry& surface,
+                     const WorldParams& params,
+                     int count);
 
       // Checks pickups; returns how many were grabbed this tick
       int update (const Vec3& vehicle_pos, float time, float dt);
