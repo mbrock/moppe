@@ -140,7 +140,7 @@ namespace moppe::game {
     std::optional<terrain::TrailNetwork>
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
-                    map::RandomHeightMap& terrain) {
+                    map::Surface& terrain) {
       std::unique_ptr<terrain::FieldEvaluator> field_evaluator =
         platform::create_field_evaluator ();
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
@@ -237,15 +237,14 @@ namespace moppe::game {
       terrain::WorldRecipe recipe;
     };
 
-    // The whole build, in order.  Terrain comes from the cache or is
-    // evolved fresh; then the surface, the water analysis, and the final
-    // assembly, each announcing itself as it starts.
+    // The whole build, in order. The surface comes from the cache or is
+    // evolved fresh; then water analysis and final assembly follow.
     void build_world (GenerationJob& job) {
       MOPPE_PROFILE_ZONE ("WorldLoading::build_world");
       WorldLoadingState& state = *job.state;
       auto completed =
         std::make_unique<GeneratedWorld> (job.params, job.recipe);
-      map::RandomHeightMap& terrain = completed->terrain ();
+      map::Surface& surface = completed->surface ();
       const terrain::WorldRecipe& recipe = completed->recipe ();
       std::optional<terrain::TrailNetwork> trails;
 
@@ -255,20 +254,20 @@ namespace moppe::game {
 
       state.report ("Looking for saved terrain",
                     "Checking this build, profile, and seed");
-      if (terrain.try_load_cache (cache)) {
+      if (surface.try_load_cache (cache)) {
         state.report ("Reading saved terrain",
                       "Reusing the finished heightfield");
       } else {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
-        trails = evolve_terrain (state, recipe, terrain);
+        trails = evolve_terrain (state, recipe, surface);
         state.report ("Saving the terrain",
                       "Keeping this expensive result for the next launch");
-        terrain.save_cache (cache);
+        surface.save_cache (cache);
       }
 
       state.report ("Calculating slopes",
-                    "Rebuilding normals and the sampled surface");
+                    "Rebuilding normals and broad surface readings");
       completed->rebuild_surface ();
 
       completed->analyze_hydrology (

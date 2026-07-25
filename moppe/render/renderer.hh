@@ -6,6 +6,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/types.hh>
+#include <moppe/terrain/terrain_quantities.hh>
 
 #include <cstdint>
 #include <span>
@@ -37,7 +38,7 @@ namespace moppe {
       float exposure_bias = 1.0f;
       float time = 0.0f;
       // How much of the sun the camera can actually see (0..1); the
-      // game raymarches the heightmap and folds in cloud cover.
+      // game raymarches the terrain and folds in cloud cover.
       // Drives the present pass's lens flare.
       float sun_visibility = 0.0f;
       float scene_scale = 1.0f;
@@ -185,9 +186,10 @@ namespace moppe {
       virtual MeshPtr create_mesh (const DrawList& recorded) = 0;
 
       // -- world setup -------------------------------------------------
-      virtual void set_terrain (const TerrainParams& params,
-                                const float* heights,
-                                const Vec3* normals) = 0;
+      virtual void
+      set_terrain (const TerrainParams& params,
+                   std::span<const terrain::RelativeTerrainElevation> heights,
+                   std::span<const terrain::TerrainNormal> normals) = 0;
       // Hot development control: changes only terrain shading state, leaving
       // height/normal textures and chunk geometry intact.
       virtual void set_terrain_topology_overlay (bool enabled) = 0;
@@ -230,7 +232,7 @@ namespace moppe {
       }
 
       // Shoulder-blended trail membership in [0,1], following the terrain
-      // grid. This is a material reading: the heightmap remains the geometric
+      // grid. This is a material reading: the surface remains the geometric
       // authority, while the shader can make formed paths unambiguous.
       virtual void
       set_terrain_paths (std::span<const float> influence,

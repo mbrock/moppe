@@ -123,7 +123,7 @@ namespace moppe::terrain {
     TrailAlignment alignment;
     meters_t formed_width = 0.0f * mp_units::si::metre;
     // Physical metres relative to the terrain entering TrailFormation.
-    // The renderer and physics still consume the composed heightmap, while
+    // The renderer and physics still consume the typed surface geometry, while
     // this retained construction layer remains inspectable and reversible.
     std::vector<float> earthwork_delta_m;
     ScalarRaster influence;

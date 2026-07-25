@@ -1,4 +1,3 @@
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
@@ -32,14 +31,14 @@ namespace {
 
 MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   using namespace moppe;
-  map::RandomHeightMap map (4, 4, Vec3 (40, 20, 40));
+  map::Surface map (4, 4, Vec3 (40, 20, 40));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.raw_heights ()[row * map.width () + column] =
-        0.05f * static_cast<float> (row * map.width () + column);
-  map.recompute_normals ();
+      map.set_relative_elevation (
+        column, row, 0.05f * static_cast<float> (row * map.width () + column));
+  map.rebuild_geometry_readings ();
 
-  map::Surface surface (map);
+  map::Surface& surface = map;
   const map::SurfaceAtlas& atlas = surface.atlas ();
   const auto& geometry = atlas.geometry ();
   static_assert (spatial::FiniteDomain<map::SurfaceDomain>);
@@ -49,18 +48,20 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
                                            map::surface_elevation>);
   static_assert (
     mp_units::QuantityOf<decltype (surface.normal_at (position (Vec3 ()))),
-                         map::surface_normal>);
+                         terrain::terrain_normal>);
   static_assert (mp_units::QuantityOf<decltype (surface.snow_support_at (
                                         position (Vec3 ()))),
                                       map::snow_support>);
 
   const map::SurfaceIndex index { 2, 1 };
-  const auto elevation = spatial::get<map::surface_elevation> (geometry[index]);
-  const auto normal = spatial::get<map::surface_normal> (geometry[index]);
+  const auto elevation =
+    spatial::get<terrain::relative_terrain_elevation> (geometry[index]);
+  const auto normal = spatial::get<terrain::terrain_normal> (geometry[index]);
   const auto snow_support = spatial::get<map::snow_support> (geometry[index]);
-  MOPPE_CHECK_NEAR (
-    elevation_value (elevation), map.get (2, 1) * map.scale ()[1], 1e-6f);
-  check_surface_vector (normal_value (normal), map.normal (2, 1));
+  MOPPE_CHECK_NEAR (elevation.numerical_value_in (one),
+                    map.relative_elevation_at (2, 1),
+                    1e-6f);
+  check_surface_vector (normal_value (normal), map.normal_at (2, 1));
   MOPPE_CHECK (snow_support >= 0.0f * map::snow_support[one]);
   MOPPE_CHECK (snow_support <= 1.0f * map::snow_support[one]);
   MOPPE_CHECK (!atlas.hydrology ().channel_flux ());
@@ -75,15 +76,14 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
 
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
   using namespace moppe;
-  map::RandomHeightMap map (9, 9, Vec3 (90, 80, 90));
+  map::Surface map (9, 9, Vec3 (90, 80, 90));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.raw_heights ()[row * map.width () + column] =
-        column < 4 ? 0.2f : 0.8f;
-  map.recompute_normals ();
-  map::Surface surface (map);
+      map.set_relative_elevation (column, row, column < 4 ? 0.2f : 0.8f);
+  map.rebuild_geometry_readings ();
+  map::Surface& surface = map;
 
-  const float detailed_up = map.normal (4, 4)[1];
+  const float detailed_up = map.normal_at (4, 4)[1];
   const float supported_up =
     surface.snow_support_at (position (Vec3 (40, 0, 40)))
       .numerical_value_in (one);
@@ -97,10 +97,10 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
 
 MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
@@ -117,10 +117,10 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
 
 MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
@@ -135,10 +135,10 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
 
 MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   static_assert (mp_units::QuantityOf<decltype (surface.channel_flux_at (
                                         position (Vec3 ()))),
@@ -174,10 +174,10 @@ MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
 
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   using namespace moppe;
-  map::RandomHeightMap map (5, 5, Vec3 (50, 200, 50));
-  std::fill (map.raw_heights (), map.raw_heights () + 25, 0.40f);
+  map::Surface map (5, 5, Vec3 (50, 200, 50));
+  map.fill_relative_elevation (0.40f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   std::vector<float> moisture (25, 0.48f);
   surface.materialize_moisture (moisture);
@@ -195,10 +195,10 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
 
 MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   using namespace moppe;
-  map::RandomHeightMap map (65, 65, Vec3 (320, 180, 320));
-  std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
+  map::Surface map (65, 65, Vec3 (320, 180, 320));
+  map.fill_relative_elevation (0.42f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0x12345678U);
@@ -234,15 +234,15 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   }));
 }
 
-MOPPE_TEST (surface_reconstruction_matches_heightmap_interpolation) {
+MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
   using namespace moppe;
-  map::RandomHeightMap map (5, 5, Vec3 (50, 30, 50));
+  map::Surface map (5, 5, Vec3 (50, 30, 50));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.raw_heights ()[row * map.width () + column] =
-        0.03f * column * column + 0.02f * row;
-  map.recompute_normals ();
-  map::Surface surface (map);
+      map.set_relative_elevation (
+        column, row, 0.03f * column * column + 0.02f * row);
+  map.rebuild_geometry_readings ();
+  map::Surface& surface = map;
 
   const std::array points { Vec3 (0, 0, 0),
                             Vec3 (4.25f, 0, 7.75f),
@@ -261,13 +261,13 @@ MOPPE_TEST (surface_reconstruction_matches_heightmap_interpolation) {
 
 MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   using namespace moppe;
-  map::RandomHeightMap map (5, 5, Vec3 (40, 20, 40));
+  map::Surface map (5, 5, Vec3 (40, 20, 40));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.raw_heights ()[row * map.width () + column] =
-        0.04f * static_cast<float> (row + 2 * column);
-  map.recompute_normals ();
-  map::Surface surface (map);
+      map.set_relative_elevation (
+        column, row, 0.04f * static_cast<float> (row + 2 * column));
+  map.rebuild_geometry_readings ();
+  map::Surface& surface = map;
 
   // Sampling one period apart reads the same surface.
   const Vec3 period = map.size ();
@@ -284,28 +284,26 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   }
 }
 
-MOPPE_TEST (surface_refresh_is_an_explicit_materialization_barrier) {
+MOPPE_TEST (surface_geometry_is_authoritative_without_a_refresh_barrier) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   const position_t p = position (Vec3 (5, 0, 5));
   const float before = elevation_value (surface.elevation_at (p));
 
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.7f);
-  map.recompute_normals ();
-  MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)), before, 1e-6f);
-  surface.refresh (map);
+  map.fill_relative_elevation (0.7f);
+  MOPPE_CHECK (before != elevation_value (surface.elevation_at (p)));
   MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)), 7.0f, 1e-6f);
 }
 
 MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
   MOPPE_CHECK (!surface.atlas ().use ().trails ());
 
@@ -334,7 +332,7 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (presentation.snow_support ().size () == 9);
   MOPPE_CHECK (presentation.forest ().empty ());
 
-  surface.refresh (map);
+  surface.rebuild_geometry_readings ();
   MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
   MOPPE_CHECK (!surface.atlas ().use ().trails ());
 }
@@ -371,10 +369,10 @@ MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   using namespace moppe;
-  map::RandomHeightMap map (3, 3, Vec3 (30, 10, 30));
-  std::fill (map.raw_heights (), map.raw_heights () + 9, 0.2f);
+  map::Surface map (3, 3, Vec3 (30, 10, 30));
+  map.fill_relative_elevation (0.2f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   std::vector<float> moisture (9, 0.4f);
   std::vector<float> distance (9, 8.0f);
@@ -389,7 +387,13 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
 
   surface.materialize_moisture (moisture);
   surface.materialize_waterline_distance (distance);
-  surface.derive_geology_materials (eroded, deposited);
+  for (std::size_t cell = 0; cell < eroded.size (); ++cell) {
+    const int column = static_cast<int> (cell % 3);
+    const int row = static_cast<int> (cell / 3);
+    surface.record_material_change (column, row, -eroded[cell]);
+    surface.record_material_change (column, row, deposited[cell]);
+  }
+  surface.derive_geology_materials ();
 
   static_assert (
     mp_units::QuantityOf<map::SurfaceMoisture, map::surface_moisture>);

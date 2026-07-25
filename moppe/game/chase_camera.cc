@@ -116,7 +116,7 @@ namespace moppe {
       }
     }
 
-    void ChaseCamera::limit (const map::HeightMap& map) {
+    void ChaseCamera::limit (const map::Surface& map) {
       Vec3& target = position_value (m_target);
       Vec3& camera = position_value (m_position);
       Vec3& target_velocity = velocity_value (m_target_velocity);

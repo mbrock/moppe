@@ -20,10 +20,11 @@ namespace {
         make_orogeny_program (seed.value, TerrainGenerationProfile::Fast));
   }
 
-  void fill_test_terrain (moppe::map::RandomHeightMap& map) {
+  void fill_test_terrain (moppe::map::Surface& map) {
     for (int y = 0; y < map.height (); ++y)
       for (int x = 0; x < map.width (); ++x)
-        map.set (x, y, 0.25f + 0.01f * static_cast<float> ((x + y) % 7));
+        map.set_relative_elevation (
+          x, y, 0.25f + 0.01f * static_cast<float> ((x + y) % 7));
   }
 }
 
@@ -40,7 +41,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   const WorldRecipe recipe = world_without_trails (extent, 17, Seed { 42 });
 
   game::GeneratedWorld world (params, recipe);
-  fill_test_terrain (world.terrain ());
+  fill_test_terrain (world.surface ());
   world.rebuild_surface ();
 
   std::vector<game::GeneratedWorld::HydrologyStage> stages;

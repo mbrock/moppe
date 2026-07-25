@@ -1,6 +1,5 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/graphics_benchmark.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
@@ -73,19 +72,17 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
        ++frame)
     check_input (replay.replay_tape ()[frame], game::benchmark_input (frame));
 
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (map.size ());
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
   const game::GameSessionAdvanceContext context { world, map, obstacles };
-  game::GameSession session (world, map, surface);
+  game::GameSession session (world, surface);
 
   std::optional<game::GameState> checkpoint;
   std::vector<game::GameState> epoch_ends;

@@ -15,8 +15,8 @@ turns them into renderer lanes.
 
 | Contract | Characterization owner |
 | --- | --- |
-| Continuous elevation and normal reads agree with the authoritative heightmap, including across the torus boundary. | `surface_reconstruction_matches_heightmap_interpolation` and `surface_reconstruction_wraps_the_torus` in `tests/map/surface_test.cc` |
-| Mutating the heightmap does not change surface reads until `Surface::refresh`; refresh clears dependent materialized sections. | `surface_refresh_is_an_explicit_materialization_barrier` and `surface_presentation_is_the_numeric_bridge_for_typed_sections` in `tests/map/surface_test.cc` |
+| Continuous elevation and normal reads reconstruct the authoritative geometry bundle, including across the torus boundary. | `surface_reconstruction_matches_authoritative_geometry` and `surface_reconstruction_wraps_the_torus` in `tests/map/surface_test.cc` |
+| Mutating the elevation column changes surface reads immediately; rebuilding geometry readings clears dependent materialized sections. | `surface_geometry_is_authoritative_without_a_refresh_barrier` and `surface_presentation_is_the_numeric_bridge_for_typed_sections` in `tests/map/surface_test.cc` |
 | Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation; a Terrain Lab rebuild uses that same path bridge. | The focused materialization tests, including `surface_presentation_materializes_preview_trails_at_the_bridge`, in `tests/map/surface_test.cc` |
 | Ground and water use the same domain while retaining distinct section bundles; water datum normalization and ocean setup happen only in `WaterPresentation`. | `tests/map/water_surface_test.cc` |
 
@@ -124,7 +124,7 @@ flowchart LR
 `moppe_spatial` is intentionally an interface target: its finite-section
 headers expose mp-units vocabulary but do not own a translation unit.
 `moppe_terrain` owns reusable fields, transforms, and hydrology algorithms;
-`moppe_world` adds a concrete heightmap, surface materialization,
+`moppe_world` adds the authoritative surface bundle,
 `GeneratedWorld`, the renderer-free Terrain Lab model, and inspection-camera
 selection. `moppe_simulation` owns `GameSession` and its movers. Its explicit
 dependency on `moppe_render` is currently real: session-owned Stars retain

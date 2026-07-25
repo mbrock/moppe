@@ -10,8 +10,8 @@
 
 namespace moppe::game {
   // The CPU-side state of one Terrain Lab session.  It owns replayable
-  // checkpoints and the original map snapshot; the renderer and its UI only
-  // observe this state and decide how to present it.
+  // checkpoints and the original geometry snapshot; the renderer and its UI
+  // only observe this state and decide how to present it.
   struct TerrainLabEvaluationProgress {
     enum class Phase { Idle, Materializing, Applying };
 
@@ -39,7 +39,7 @@ namespace moppe::game {
     // Borrow the map for a Lab session.  A caller may supply any field
     // evaluator, including none for a portable CPU-only session.
     void begin (
-      map::RandomHeightMap& map,
+      map::Surface& map,
       const terrain::TerrainProgram& program,
       const terrain::FieldEvaluator* source_evaluator = nullptr,
       const terrain::StreamPowerEvolutionBackend* evolution_backend = nullptr);
@@ -52,8 +52,8 @@ namespace moppe::game {
       return m_map_pristine;
     }
 
-    map::RandomHeightMap& map ();
-    const map::RandomHeightMap& map () const;
+    map::Surface& map ();
+    const map::Surface& map () const;
 
     terrain::TerrainProgram& program ();
     const terrain::TerrainProgram& program () const;
@@ -88,7 +88,7 @@ namespace moppe::game {
     void reset_progress (TerrainLabEvaluationProgress::Phase phase);
     void apply_from (std::size_t first_stage);
 
-    map::RandomHeightMap* m_map = nullptr;
+    map::Surface* m_map = nullptr;
     std::unique_ptr<map::TerrainEvaluator> m_evaluator;
     terrain::TerrainProgram m_program =
       terrain::make_world_program (0, terrain::TerrainGenerationProfile::Fast);

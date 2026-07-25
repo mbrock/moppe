@@ -1,5 +1,5 @@
 #include <moppe/game/forest.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
 
@@ -8,10 +8,10 @@
 
 MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   using namespace moppe;
-  map::RandomHeightMap map (129, 129, Vec3 (640, 180, 640));
-  std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
+  map::Surface map (129, 129, Vec3 (640, 180, 640));
+  map.fill_relative_elevation (0.42f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   surface.materialize_moisture (std::vector<float> (129 * 129, 0.48f));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0xdecafbadU);
@@ -34,10 +34,10 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
 
 MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
   using namespace moppe;
-  map::RandomHeightMap map (65, 65, Vec3 (320, 180, 320));
-  std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
+  map::Surface map (65, 65, Vec3 (320, 180, 320));
+  map.fill_relative_elevation (0.42f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));

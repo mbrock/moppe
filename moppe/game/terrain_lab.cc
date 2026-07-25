@@ -212,7 +212,7 @@ namespace moppe {
     }
 
     void TerrainLab::enter (render::Renderer& renderer,
-                            map::RandomHeightMap& map,
+                            map::Surface& map,
                             Terrain& terrain,
                             const WorldParams& world,
                             const GraphicsSettings& graphics,
@@ -707,7 +707,9 @@ namespace moppe {
       };
 
       if (m_overlay == OverlayMode::Height) {
-        std::copy_n (m_map->raw_heights (), count, values.begin ());
+        const auto& elevations = m_map->relative_elevations ();
+        for (std::size_t i = 0; i < count; ++i)
+          values[i] = elevations[i].numerical_value_in (mp_units::one);
         const auto [minimum, maximum] =
           std::minmax_element (values.begin (), values.end ());
         params.minimum = *minimum;
@@ -723,16 +725,16 @@ namespace moppe {
           m_overlay_status = "DELTA — select a pipeline stage";
           return;
         }
-        const std::vector<float>& before =
-          checkpoints[static_cast<std::size_t> (m_selected_stage)].heights;
-        const float* after =
+        const auto& before =
+          checkpoints[static_cast<std::size_t> (m_selected_stage)].elevations;
+        const auto& after =
           m_selected_stage + 1 < static_cast<int> (checkpoints.size ())
             ? checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
-                .heights.data ()
-            : m_map->raw_heights ();
+                .elevations
+            : m_map->relative_elevations ();
         float magnitude = 0.0f;
         for (std::size_t i = 0; i < count; ++i) {
-          values[i] = after[i] - before[i];
+          values[i] = (after[i] - before[i]).numerical_value_in (mp_units::one);
           magnitude = std::max (magnitude, std::fabs (values[i]));
         }
         params.minimum = -magnitude;
@@ -767,11 +769,14 @@ namespace moppe {
                  m_overlay == OverlayMode::Deposited) {
         // Lifetime sediment ledger; square-root scaling keeps the sparse
         // heavy-tailed cut/fill pattern legible under the heat ramp.
-        const float* ledger = m_overlay == OverlayMode::Eroded
-                                ? m_map->raw_eroded ()
-                                : m_map->raw_deposited ();
-        for (std::size_t i = 0; i < count; ++i)
-          values[i] = std::sqrt (std::max (0.0f, ledger[i]));
+        for (std::size_t i = 0; i < count; ++i) {
+          const float ledger =
+            m_overlay == OverlayMode::Eroded
+              ? m_map->eroded_material ()[i].numerical_value_in (mp_units::one)
+              : m_map->deposited_material ()[i].numerical_value_in (
+                  mp_units::one);
+          values[i] = std::sqrt (std::max (0.0f, ledger));
+        }
         const float maximum =
           *std::max_element (values.begin (), values.end ());
         params.maximum = maximum > 0.0f ? maximum : 1.0f;

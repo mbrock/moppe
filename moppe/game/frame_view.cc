@@ -167,7 +167,7 @@ namespace moppe::game {
     if (input.scene == FrameSceneMode::Gameplay && logic.m_shake > 0.005f) {
       const Vec3& camera = result.camera.position;
       const float ground =
-        input.terrain.interpolated_height (camera[0], camera[2]);
+        input.surface.interpolated_height (camera[0], camera[2]);
       const float clearance = camera[1] - ground;
       const float room =
         std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
@@ -283,7 +283,7 @@ namespace moppe::game {
     hud.landed_age_s = logic.m_landed_age;
     hud.on_foot = logic.m_mode == M_FOOT;
     hud.gliding = logic.m_mode == M_GLIDER;
-    hud.can_deploy_glider = input.session.can_deploy_glider (input.terrain);
+    hud.can_deploy_glider = input.session.can_deploy_glider (input.surface);
     hud.can_drop_bike = input.session.can_drop_bike ();
     hud.frame_time_s = logic.m_frame_time;
     hud.subject_position = input.session.subject_position ();
@@ -317,7 +317,7 @@ namespace moppe::game {
 
   float sun_visibility_target (const FrameView& view,
                                const WorldParams& world,
-                               const map::HeightMap& terrain) {
+                               const map::Surface& surface) {
     const Vec3& camera = view.camera.position;
     float visibility = 1.0f;
     if (camera[1] < meters_value (world.water_level))
@@ -326,9 +326,9 @@ namespace moppe::game {
       for (int i = 1; i <= 40; ++i) {
         const float distance = 90.0f * i;
         const Vec3 sample = camera + view.lighting.sun_direction * distance;
-        if (!terrain.in_bounds (sample[0], sample[2]))
+        if (!surface.in_bounds (sample[0], sample[2]))
           break;
-        if (terrain.interpolated_height (sample[0], sample[2]) > sample[1]) {
+        if (surface.interpolated_height (sample[0], sample[2]) > sample[1]) {
           visibility = 0.0f;
           break;
         }

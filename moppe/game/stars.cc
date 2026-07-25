@@ -37,7 +37,7 @@ namespace moppe {
       }
     }
 
-    void Stars::generate (const map::HeightMap& map,
+    void Stars::generate (const map::Surface& map,
                           const WorldParams& params,
                           int count) {
       MOPPE_PROFILE_ZONE ("Stars::generate");

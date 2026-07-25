@@ -2,15 +2,16 @@
 
 `game::GeneratedWorld` is the stable, renderer-free owner of one completed
 world. It binds the immutable physical description (`WorldRecipe` and its
-normalized `WorldParams`) to the authoritative height field and its materialized
-readings. Gameplay does not own parallel copies of any of these artifacts.
+normalized `WorldParams`) to one authoritative typed surface and its
+materialized readings. Gameplay does not own parallel copies of these
+artifacts.
 
 ## What it owns
 
 | Artifact | Valid after |
 | --- | --- |
-| `RandomHeightMap` | terrain evaluation or cache load |
-| `Surface` and its `SurfaceAtlas` geometry | `rebuild_surface()` |
+| `Surface` and its mandatory `SurfaceAtlas` geometry | construction |
+| Geometry normals and snow support | `rebuild_surface()` |
 | `Hydrology` | `analyze_hydrology()` |
 | `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `materialize_analyses()` |
 
@@ -24,15 +25,15 @@ trail stage.
 
 ## Mutability and lifetime
 
-`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles
-and glider, plus Terrain Lab, borrow its terrain or surface. `MoppeGame`
+`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles,
+glider, and Terrain Lab borrow its one surface. `MoppeGame`
 therefore keeps the active world behind an owning `unique_ptr`: a worker builds
 a fresh completed world, and the main thread transfers that owner exactly once
 at `activate_completed_world()`.
 
 At activation, Terrain Lab first restores and releases its raw borrows. The
 outgoing session and world remain alive while the completed owner becomes
-active and a fresh session binds its new terrain and surface. The retired
+active and a fresh session binds its new surface. The retired
 session then releases its old borrows before the retired world is destroyed.
 Only after that handoff does the main thread build renderer-facing river,
 water, ground, forest, and actor presentation. The active world is
@@ -56,9 +57,9 @@ before beginning renderer-facing activation.
 Ordinary gameplay receives const readings. The loading worker calls the
 three build steps (`rebuild_surface`, `analyze_hydrology`,
 `materialize_analyses`) in order after evaluating the terrain, through the
-mutable `terrain()` overload. Terrain Lab uses the same mutable borrow and
-restores the source map when the Lab leaves, so it does not make a
-permanently edited world implicit.
+mutable `surface()` overload. Terrain Lab uses the same mutable surface and
+restores its typed geometry checkpoint when the Lab leaves, so it does not
+make a permanently edited world implicit.
 
 ## Checks
 

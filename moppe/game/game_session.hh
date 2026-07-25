@@ -4,7 +4,6 @@
 #include <moppe/game/game_state.hh>
 #include <moppe/game/input_frame.hh>
 #include <moppe/game/world.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
 #include <vector>
@@ -17,7 +16,7 @@ namespace moppe::game {
   // regenerated sessions rather than checkpoint state.
   struct GameSessionAdvanceContext {
     const WorldParams& world;
-    const map::HeightMap& terrain;
+    const map::Surface& surface;
     const std::vector<mov::Box>& obstacles;
     float landscape_scale_x = 1.0f;
     float landscape_scale_y = 1.0f;
@@ -31,16 +30,14 @@ namespace moppe::game {
   };
 
   // The mutable state of one playable session on a completed world.  The
-  // world retains the map and surface; vehicles and the glider borrow them
-  // for their physical readings.  A checkpoint is therefore meaningful only
-  // on the same completed world.
+  // world retains the surface; vehicles and the glider borrow it for their
+  // physical readings. A checkpoint is therefore meaningful only on the same
+  // completed world.
   class GameSession {
   public:
     using State = GameState;
 
-    GameSession (const WorldParams& world,
-                 const map::RandomHeightMap& terrain,
-                 const map::Surface& surface);
+    GameSession (const WorldParams& world, const map::Surface& surface);
     GameSession (const GameSession&) = delete;
     GameSession& operator= (const GameSession&) = delete;
     GameSession (GameSession&&) = delete;
@@ -107,7 +104,7 @@ namespace moppe::game {
     Vec3 subject_position () const;
     Vec3 subject_heading () const;
     float subject_speed_kmh () const;
-    bool can_deploy_glider (const map::HeightMap& terrain) const;
+    bool can_deploy_glider (const map::Surface& terrain) const;
     bool can_drop_bike () const;
     void clear_controls ();
 

@@ -2,7 +2,7 @@
 #define MOPPE_GAME_WATER_CAPTURE_HH
 
 #include <moppe/gfx/math.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
 
@@ -26,7 +26,7 @@ namespace moppe::game {
 
   std::optional<WaterInspection>
   choose_water_inspection (WaterShot shot,
-                           const map::HeightMap& map,
+                           const map::Surface& map,
                            const terrain::FloodField& flood,
                            const terrain::LakeCensus& census,
                            const terrain::DrainageGraph& drainage,

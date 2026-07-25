@@ -302,12 +302,13 @@ subtle background tint identifies changes in geometric LOD. The dense
 quarter-cell mesh fades before becoming sub-pixel, while its source samples
 remain visible for comparison.
 
-Physics keeps its authoritative CPU copy (HeightMap::interpolated_height/
-normal, ~10 samples/frame). Rendering and physics share the exact grid
+Physics samples the authoritative typed surface bundle
+(`Surface::interpolated_height`/`interpolated_normal`, ~10 samples/frame).
+Rendering and physics share the exact grid
 samples; the reconstructed near surface is bounded to each source cell's
 corner range but can differ between samples from physics's bilinear surface.
-It morphs back before the native LOD. Terrain generation bakes into the CPU
-heightmap and just re-uploads.
+It morphs back before the native LOD. Terrain generation writes the bundle's
+elevation column and the renderer uploads that same typed storage.
 
 The splat/shadow/haze fragment shader ports 1:1 from shaders/test.frag with
 explicit uniforms (sun dir, fog color/scale, heightScale, seaLevel, texScale,
@@ -326,9 +327,9 @@ including nearby ground viewed almost parallel to its surface. These are
 shading effects only and do not alter collision geometry.
 
 The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
-and runs in a compute kernel.  Terrain Lab currently reads the result back to
-the authoritative CPU heightmap before normalization, erosion, and texture
-upload.  Interactive previews derive normals from the height texture, reuse
+and runs in a compute kernel. Terrain Lab writes the result into the
+authoritative typed elevation column before erosion and texture upload.
+Interactive previews derive normals from the height texture, reuse
 terrain GPU resources, and morph old and new height textures over 120 ms.
 They restore exact CPU normals when leaving the lab.
 The next renderer boundary is to keep pointwise results GPU-resident through

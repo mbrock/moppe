@@ -1,5 +1,4 @@
 #include <moppe/game/water_presentation.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/map/water_surface.hh>
 
@@ -11,10 +10,10 @@
 
 MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   using namespace moppe;
-  map::RandomHeightMap map (2, 2, Vec3 (20, 100, 20));
-  std::fill (map.raw_heights (), map.raw_heights () + 4, 0.05f);
+  map::Surface map (2, 2, Vec3 (20, 100, 20));
+  map.fill_relative_elevation (0.05f);
   map.recompute_normals ();
-  map::Surface ground (map);
+  map::Surface& ground = map;
 
   const std::array level_and_amplitude {
     0.10f, 0.20f, 0.20f, 0.30f, 0.30f, 0.40f, 0.40f, 0.50f,
@@ -28,8 +27,7 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   const map::SurfaceIndex first { 0, 0 };
   const auto water_elevation =
     spatial::get<map::surface_elevation> (water.sections ()[first]);
-  const auto ground_elevation =
-    spatial::get<map::surface_elevation> (ground.atlas ().geometry ()[first]);
+  const auto ground_elevation = ground.elevation_at (position (Vec3 (0, 0, 0)));
   const auto depth = water_elevation - ground_elevation;
   MOPPE_CHECK_NEAR (depth.numerical_value_in (u::m), 5.0f, 1e-6f);
   MOPPE_CHECK_NEAR (spatial::get<map::wave_amplitude> (water.sections ()[first])

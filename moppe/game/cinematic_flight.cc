@@ -32,7 +32,7 @@ namespace moppe::game {
     }
 
     Vec3
-    unwrap_near (Vec3 point, const Vec3& reference, const map::HeightMap& map) {
+    unwrap_near (Vec3 point, const Vec3& reference, const map::Surface& map) {
       const Vec3 size = map.size ();
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
@@ -43,14 +43,14 @@ namespace moppe::game {
       return point;
     }
 
-    float flight_height_sample (const map::HeightMap& map, int x, int z) {
+    float flight_height_sample (const map::Surface& map, int x, int z) {
       x = terrain::wrap_index (x, map.width ());
       z = terrain::wrap_index (z, map.height ());
-      return map.get (x, z) * map.scale ()[1];
+      return map.relative_elevation_at (x, z) * map.scale ()[1];
     }
 
     Vec3 flight_cell_position (terrain::CellIndex cell,
-                               const map::HeightMap& map,
+                               const map::Surface& map,
                                const terrain::FloodField& flood,
                                const terrain::LakeCensus& census,
                                const terrain::DrainageGraph& drainage) {
@@ -61,13 +61,13 @@ namespace moppe::game {
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y = wet ? flood.water_level.values ()[cell] * scale[1]
-                          : map.get (x, z) * scale[1];
+                          : map.relative_elevation_at (x, z) * scale[1];
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
     Vec3 flight_cell_direction (terrain::CellIndex from,
                                 terrain::CellIndex to,
-                                const map::HeightMap& map,
+                                const map::Surface& map,
                                 const terrain::DrainageGraph& drainage) {
       const int width = static_cast<int> (drainage.width ());
       const int height = static_cast<int> (drainage.height ());
@@ -152,7 +152,7 @@ namespace moppe::game {
       return best;
     }
 
-    FeatureCandidate choose_peak (const map::HeightMap& map) {
+    FeatureCandidate choose_peak (const map::Surface& map) {
       FeatureCandidate best;
       const int width = map.width ();
       const int height = map.height ();
@@ -183,7 +183,7 @@ namespace moppe::game {
       return best;
     }
 
-    FeatureCandidate choose_saddle (const map::HeightMap& map) {
+    FeatureCandidate choose_saddle (const map::Surface& map) {
       FeatureCandidate best;
       const int width = map.width ();
       const int height = map.height ();
@@ -215,7 +215,7 @@ namespace moppe::game {
     }
 
     void add_waypoint (CinematicFlightPlan& plan,
-                       const map::HeightMap& map,
+                       const map::Surface& map,
                        Vec3 position,
                        Vec3 subject,
                        float clearance,
@@ -235,7 +235,7 @@ namespace moppe::game {
     }
 
     void add_transit (CinematicFlightPlan& plan,
-                      const map::HeightMap& map,
+                      const map::Surface& map,
                       Vec3 destination,
                       const Vec3& subject) {
       if (plan.waypoints.empty ())
@@ -254,13 +254,13 @@ namespace moppe::game {
     }
 
     Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
-                                   const map::HeightMap& map) {
+                                   const map::Surface& map) {
       return Vec3 (
         point.x_m, map.interpolated_height (point.x_m, point.z_m), point.z_m);
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
-                           const map::HeightMap& map,
+                           const map::Surface& map,
                            const terrain::TrailNetwork& trail) {
       const auto& alignment = trail.alignment.points;
       if (alignment.size () < 8 || trail.plan.home_base == no_cell)
@@ -346,7 +346,7 @@ namespace moppe::game {
   }
 
   CinematicFlightPlan
-  plan_cinematic_flight (const map::HeightMap& map,
+  plan_cinematic_flight (const map::Surface& map,
                          const terrain::FloodField& flood,
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
@@ -596,7 +596,7 @@ namespace moppe::game {
     };
   }
 
-  void CinematicFlight::build_flight_ribbon (const map::HeightMap& map) {
+  void CinematicFlight::build_flight_ribbon (const map::Surface& map) {
     m_arc_samples.clear ();
     if (m_waypoints.size () < 2)
       return;
@@ -741,7 +741,7 @@ namespace moppe::game {
   }
 
   void CinematicFlight::start (const CinematicFlightPlan& plan,
-                               const map::HeightMap& map) {
+                               const map::Surface& map) {
     m_waypoints = plan.waypoints;
     for (int pass = 0; pass < 4 && m_waypoints.size () >= 2; ++pass) {
       std::vector<CinematicFlightWaypoint> rounded;
@@ -800,7 +800,7 @@ namespace moppe::game {
   }
 
   void CinematicFlight::tick (float dt,
-                              const map::HeightMap& map,
+                              const map::Surface& map,
                               const CinematicFlightControls& controls) {
     if (!m_active)
       return;

@@ -22,10 +22,6 @@ namespace moppe::game {
       params.water_level = recipe.water_datum ();
     }
 
-    std::size_t storage_count (const map::RandomHeightMap& terrain) {
-      return static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-    }
-
   }
 
   GeneratedWorld::Hydrology::Hydrology (terrain::FloodField standing_water,
@@ -42,7 +38,7 @@ namespace moppe::game {
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe)
       : m_params (params), m_recipe (std::move (recipe)),
-        m_terrain (m_recipe.resolution (),
+        m_surface (m_recipe.resolution (),
                    m_recipe.resolution (),
                    extent_value (m_recipe.extent ())) {
     bind_world_params (m_params, m_recipe);
@@ -50,10 +46,7 @@ namespace moppe::game {
 
   void GeneratedWorld::rebuild_surface () {
     MOPPE_PROFILE_ZONE ("GeneratedWorld::rebuild_surface");
-    m_terrain.recompute_normals ();
-    // Assignment deliberately preserves the Surface subobject's address:
-    // Glider and Terrain Lab borrow that stable world member across a reset.
-    m_surface = map::Surface (m_terrain);
+    m_surface.rebuild_geometry_readings ();
   }
 
   void GeneratedWorld::analyze_hydrology (const HydrologyProgress& progress) {
@@ -65,14 +58,14 @@ namespace moppe::game {
 
     report (HydrologyStage::StandingWater);
     terrain::FloodField standing_water = terrain::analyze_standing_water (
-      m_terrain.terrain_view (), m_recipe.normalized_water_datum ());
+      m_surface.terrain_view (), m_recipe.normalized_water_datum ());
 
     report (HydrologyStage::Lakes);
     terrain::LakeCensus lakes = terrain::census_lakes (standing_water);
 
     report (HydrologyStage::Drainage);
     terrain::DrainageGraph drainage = terrain::analyze_wet_drainage (
-      m_terrain.terrain_view (), standing_water, lakes);
+      m_surface.terrain_view (), standing_water, lakes);
 
     report (HydrologyStage::Waterways);
     terrain::WaterNetwork waterways =
@@ -81,7 +74,7 @@ namespace moppe::game {
     report (HydrologyStage::Channels);
     terrain::FractionalDrainage channels =
       terrain::analyze_fractional_drainage (
-        m_terrain.terrain_view (), standing_water, lakes);
+        m_surface.terrain_view (), standing_water, lakes);
 
     report (HydrologyStage::Rivers);
     terrain::RiverNetwork rivers = terrain::extract_river_network (
@@ -110,16 +103,16 @@ namespace moppe::game {
       m_surface.materialize_channel_flux (hydrology.channels ());
 
       const terrain::WaterSheets sheets =
-        terrain::paint_watercourses (m_terrain.terrain_view (),
+        terrain::paint_watercourses (m_surface.terrain_view (),
                                      hydrology.standing_water (),
                                      hydrology.lakes (),
                                      hydrology.drainage (),
                                      hydrology.rivers ());
       m_water_surface.emplace (
-        m_surface.atlas ().domain (), sheets, m_terrain.scale ()[1] * u::m);
+        m_surface.atlas ().domain (), sheets, m_surface.scale ()[1] * u::m);
 
       const terrain::Waterline waterline = terrain::extract_waterline (
-        m_terrain.terrain_view (), sheets.surface, hydrology.lakes ());
+        m_surface.terrain_view (), sheets.surface, hydrology.lakes ());
       m_surface.materialize_waterline_distance (
         terrain::waterline_proximity (waterline));
 
@@ -143,7 +136,7 @@ namespace moppe::game {
           m_trails = std::move (generated_trails);
         else
           m_trails = terrain::analyze_trail_network (
-            m_terrain.terrain_view (),
+            m_surface.terrain_view (),
             std::get<terrain::TrailFormation> (*stage));
         m_surface.materialize_trail_influence (m_trails->influence.values ());
         m_surface.materialize_home_base_influence (
@@ -154,9 +147,6 @@ namespace moppe::game {
     if (m_surface.atlas ().ecology ().tree_habitat ())
       m_surface.derive_forest_cover (m_recipe.seed ().value ^ 0x6f12ad37U);
 
-    const std::size_t count = storage_count (m_terrain);
-    m_surface.derive_geology_materials (
-      std::span (m_terrain.raw_eroded (), count),
-      std::span (m_terrain.raw_deposited (), count));
+    m_surface.derive_geology_materials ();
   }
 }

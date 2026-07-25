@@ -372,7 +372,7 @@ endif()
 # Concrete completed-world storage, its finite surface sections, and the
 # renderer-free Terrain Lab model all sit above the reusable terrain programs.
 add_library(moppe_world STATIC
-  moppe/map/generate.cc
+  moppe/map/surface_geometry.cc
   moppe/map/surface_domain.cc
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc

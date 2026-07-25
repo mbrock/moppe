@@ -11,7 +11,7 @@ namespace moppe {
     // flags), now passed explicitly.
     struct WorldParams {
       spatial_extent_t map_size;
-      int resolution;          // heightmap samples per side
+      int resolution;          // terrain samples per side
       meters_t water_level;    // sea level above the model zero datum
       attenuation_t fog_scale; // atmospheric attenuation per metre
       WorldParams ()

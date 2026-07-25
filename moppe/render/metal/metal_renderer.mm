@@ -611,9 +611,10 @@ namespace moppe {
       MeshPtr create_mesh (const DrawList& recorded) override;
 
       // world setup
-      void set_terrain (const TerrainParams& params,
-                        const float* heights,
-                        const Vec3* normals) override;
+      void
+      set_terrain (const TerrainParams& params,
+                   std::span<const terrain::RelativeTerrainElevation> heights,
+                   std::span<const terrain::TerrainNormal> normals) override;
       void set_terrain_topology_overlay (bool enabled) override;
       void set_terrain_textures (TexturePtr grass,
                                  TexturePtr dirt,
@@ -1312,11 +1313,16 @@ namespace moppe {
 
     // -- world setup ---------------------------------------------------
 
-    void MetalRenderer::set_terrain (const TerrainParams& params,
-                                     const float* heights,
-                                     const Vec3* normals) {
+    void MetalRenderer::set_terrain (
+      const TerrainParams& params,
+      std::span<const terrain::RelativeTerrainElevation> heights,
+      std::span<const terrain::TerrainNormal> normals) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain");
       const int w = params.width, h = params.height;
+      const std::size_t sample_count = static_cast<std::size_t> (w) * h;
+      if (w < 2 || h < 2 || heights.size () != sample_count ||
+          (!normals.empty () && normals.size () != sample_count))
+        throw std::invalid_argument ("invalid Metal terrain raster");
       const bool transition =
         params.derive_normals && m_terrain_resources.have_terrain &&
         m_terrain_resources.heights &&
@@ -1359,7 +1365,8 @@ namespace moppe {
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.heights = [m_device newTextureWithDescriptor:td];
       }
-      upload_texture (m_terrain_resources.heights, heights, w, h, 4, false);
+      upload_texture (
+        m_terrain_resources.heights, heights.data (), w, h, 4, false);
       if (transition && !continue_transition) {
         m_terrain_resources.height_transition_start = m_frame.params.time;
         m_terrain_resources.height_transition_active = true;
@@ -1371,7 +1378,9 @@ namespace moppe {
       if (!params.derive_normals) {
         std::vector<int16_t> packed ((size_t)w * h * 2);
         for (size_t i = 0; i < (size_t)w * h; ++i) {
-          const Vec3& n = normals[i];
+          const Vec3 n = normals.empty ()
+                           ? Vec3 (0.0f, 1.0f, 0.0f)
+                           : normals[i].numerical_value_in (mp_units::one);
           float x = n[0], z = n[2];
           if (x < -1)
             x = -1;

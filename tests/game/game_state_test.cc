@@ -1,7 +1,6 @@
 #include <moppe/game/game_session.hh>
 #include <moppe/game/game_state.hh>
 #include <moppe/game/input_frame_adapter.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
@@ -38,10 +37,10 @@ namespace {
 
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   using namespace moppe;
-  map::RandomHeightMap map (9, 9, Vec3 (100, 20, 100));
+  map::Surface map (9, 9, Vec3 (100, 20, 100));
   for (int y = 0; y < map.height (); ++y)
     for (int x = 0; x < map.width (); ++x)
-      map.set (x, y, 0.05f * static_cast<float> (x + y));
+      map.set_relative_elevation (x, y, 0.05f * static_cast<float> (x + y));
   map.recompute_normals ();
   mov::Vehicle vehicle (position (Vec3 (20, 0, 20)),
                         15 * u::deg,
@@ -106,10 +105,10 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 
 MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (160, 80, 160));
+  map::Surface map (17, 17, Vec3 (160, 80, 160));
   for (int z = 0; z < map.height (); ++z)
     for (int x = 0; x < map.width (); ++x)
-      map.raw_heights ()[z * map.width () + x] = 0.10f + 0.02f * x;
+      map.set_relative_elevation (x, z, 0.10f + 0.02f * x);
   map.recompute_normals ();
 
   mov::Vehicle vehicle (position (Vec3 (50, 0, 50)),
@@ -171,12 +170,10 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
 
 MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   const auto ratio =
     mov::Glider::glide_ratio_at (16.0f * airspeed[u::m / u::s]);
@@ -209,12 +206,10 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
 
 MOPPE_TEST (glider_state_restores_the_flight_computer) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.35f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.35f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   mov::Glider glider (surface);
   glider.launch (position (Vec3 (40, 70, 40)),
@@ -248,12 +243,10 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
 
 MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
 
   mov::Glider loaded (surface);
   loaded.launch (position (Vec3 (80, 100, 80)),
@@ -278,19 +271,17 @@ MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
 
 MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (map.size ());
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
   const game::GameSessionAdvanceContext context { world, map, obstacles };
-  game::GameSession session (world, map, surface);
+  game::GameSession session (world, surface);
 
   mov::Vehicle::State airborne = session.bike ().state ();
   airborne.position = position (Vec3 (80, 40, 80));
@@ -332,10 +323,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
 
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (100, 20, 100));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (100, 20, 100));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (map.size ());
@@ -403,12 +392,10 @@ MOPPE_TEST (game_state_is_an_independent_value) {
 
 MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   using namespace moppe;
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (map.size ());
   world.water_level = 0 * u::m;
@@ -418,7 +405,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   static_assert (!std::is_move_constructible_v<game::GameSession>);
   static_assert (!std::is_move_assignable_v<game::GameSession>);
 
-  game::GameSession session (world, map, surface);
+  game::GameSession session (world, surface);
   session.logic ().m_total_time = 12.5;
   session.logic ().m_score = 400;
   session.bike ().set_thrust (0.8f);
@@ -450,7 +437,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   // A checkpoint is a value, not a view into this particular live session.
   // The replacement session is prepared against the same world before its
   // mutable state is restored.
-  game::GameSession replacement (world, map, surface);
+  game::GameSession replacement (world, surface);
   replacement.stars ().generate (map, world, 4);
   replacement.restore (saved);
   const game::GameSession::State replayed = replacement.state ();
@@ -492,12 +479,10 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 
-  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
-  std::fill (map.raw_heights (),
-             map.raw_heights () + map.width () * map.height (),
-             0.5f);
+  map::Surface map (17, 17, Vec3 (200, 20, 200));
+  map.fill_relative_elevation (0.5f);
   map.recompute_normals ();
-  map::Surface surface (map);
+  map::Surface& surface = map;
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (map.size ());
   world.resolution = map.width ();
@@ -516,7 +501,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
     tape.push_back (recorder.take_frame ());
 
   const seconds_t step = seconds (1.0f / 60.0f);
-  game::GameSession live (world, map, surface);
+  game::GameSession live (world, surface);
   const game::GameSession::State checkpoint = live.state ();
   for (const game::InputFrame& frame : tape)
     game::advance_game_session (context, live, frame, step);
@@ -530,7 +515,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   MOPPE_CHECK (live_state.logic.m_cam_mode == game::CAM_FRONT);
   MOPPE_CHECK (live_state.logic.m_odometer > checkpoint.logic.m_odometer);
 
-  game::GameSession replay (world, map, surface);
+  game::GameSession replay (world, surface);
   replay.restore (checkpoint);
   for (const game::InputFrame& frame : tape)
     game::advance_game_session (context, replay, frame, step);

@@ -9,7 +9,7 @@
 #include <moppe/game/terrain_lab_model.hh>
 #include <moppe/game/world.hh>
 #include <moppe/gfx/mat4.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
@@ -25,7 +25,7 @@
 
 namespace moppe {
   namespace game {
-    // Interactive, renderer-backed workbench for heightmap generators and
+    // Interactive, renderer-backed workbench for terrain generators and
     // transforms.  It temporarily borrows the game's map but snapshots and
     // restores it so experiments cannot alter the playable world.
     class TerrainLab {
@@ -36,7 +36,7 @@ namespace moppe {
 
       void load (render::Renderer& renderer);
       void enter (render::Renderer& renderer,
-                  map::RandomHeightMap& map,
+                  map::Surface& map,
                   Terrain& terrain,
                   const WorldParams& world,
                   const GraphicsSettings& graphics,
@@ -142,7 +142,7 @@ namespace moppe {
       UiWindow m_build_window;
       UiWindow m_readings_window;
       render::Renderer* m_renderer;
-      map::RandomHeightMap* m_map;
+      map::Surface* m_map;
       std::unique_ptr<terrain::FieldEvaluator> m_source_evaluator;
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> m_evolution_backend;
       TerrainLabModel m_model;

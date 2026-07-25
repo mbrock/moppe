@@ -3,7 +3,7 @@
 
 #include <moppe/gfx/mat4.hh>
 #include <moppe/gfx/math.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 namespace moppe {
   namespace game {
@@ -32,7 +32,7 @@ namespace moppe {
                    const Vec3& orientation,
                    velocity_t velocity,
                    seconds_t dt);
-      void limit (const map::HeightMap& map);
+      void limit (const map::Surface& map);
 
       void set_landscape_scale (float horizontal, float vertical) {
         m_horizontal_scale = horizontal;

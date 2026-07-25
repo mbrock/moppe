@@ -59,7 +59,7 @@ namespace moppe::game {
     }
 
     std::vector<SurfacePoint>
-    make_surface_points (const map::HeightMap& map,
+    make_surface_points (const map::Surface& map,
                          const terrain::RiverAlignment& alignment,
                          bool fade_source) {
       std::vector<SurfacePoint> result;
@@ -258,7 +258,7 @@ namespace moppe::game {
       return result;
     }
 
-    RibbonRow make_row (const map::HeightMap& map,
+    RibbonRow make_row (const map::Surface& map,
                         const std::vector<SurfacePoint>& points,
                         std::size_t point) {
       const SurfacePoint& center = points[point];
@@ -311,7 +311,7 @@ namespace moppe::game {
 
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
-                                const map::HeightMap& map) {
+                                const map::Surface& map) {
       const Vec3 period = map.size ();
       point.position[0] =
         reference.position[0] +
@@ -330,7 +330,7 @@ namespace moppe::game {
     }
   }
 
-  render::DrawList build_river_ribbons (const map::HeightMap& map,
+  render::DrawList build_river_ribbons (const map::Surface& map,
                                         const terrain::RiverNetwork& rivers) {
     render::DrawList draw;
     render::DrawState state;
@@ -436,7 +436,7 @@ namespace moppe::game {
   }
 
   void RiverSurface::rebuild (render::Renderer& renderer,
-                              const map::HeightMap& map,
+                              const map::Surface& map,
                               const terrain::RiverNetwork& rivers) {
     m_mesh = renderer.create_mesh (build_river_ribbons (map, rivers));
     m_period = map.size ();

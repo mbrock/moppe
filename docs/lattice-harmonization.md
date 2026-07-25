@@ -1,12 +1,10 @@
 # Lattice harmonization
 
 The game is a couple dozen named fields on one lattice, plus a motorcycle.
-Three generations of representation never finished replacing each other:
-the 2008 `HeightMap` family (storage seam, raw floats, virtual `get`),
-the portable-terrain layer (`TerrainView`/`TerrainGrid`/`ScalarRaster`),
-and the typed bundles (`spatial::Bundle`, `SurfaceAtlas`).
-Three grid types describe the same lattice.  This document is the plan for
-finishing the port.
+The seamless-torus and authoritative-surface passes removed the two largest
+historical splits: duplicated seam storage and the 2008 height-map hierarchy.
+This document records what landed and the smaller harmonization work that
+remains.
 
 ## Decisions
 
@@ -27,10 +25,10 @@ Touch points, surveyed:
 
 - `terrain/topology.hh` — Topology enum deleted; carriers drop the field
   (`TerrainGrid`, `TerrainDiscretization`, recipes, `WorldParams`,
-  `SurfaceDomain`, `HeightMap`).
+  `SurfaceDomain`).
 - `TerrainGrid.unique_width/height/size` — deleted; there is only
   width/height and their product.
-- `map/generate` — `HeightMap`: scale = size/width, `periodic ()` and
+- The former `map/generate` storage: scale = size/width; `periodic ()` and
   `in_bounds` clamping deleted, interpolation wraps the +1 neighbor;
   `synchronize_periodic_edges` and the ledger twin deleted;
   `compute_normal_map` keeps only the wrapped branch, minus seam writes;
@@ -65,12 +63,36 @@ lattices must now match instead of being silently tiled through modulo
 indexing. Terrain Lab still prefers routes away from its current chart cut;
 that is an explicit presentation constraint, not a second topology.
 
-## Later stages
+## Stage: authoritative surface bundle (done)
+
+`SurfaceAtlas::geometry()` is the one finite terrain store. Its mandatory
+typed columns are relative elevation, normal, removed material, deposited
+material, and broad snow support. `GeneratedWorld` owns one `Surface`; there
+is no preceding height map and no geometry refresh copy.
+
+Generation, Terrain Lab checkpoints, physics, hydrology, and rendering all
+read or mutate those columns. `TerrainView` is a borrowed analysis adapter,
+not another allocation. The renderer accepts typed elevation and normal spans
+directly; compile-time layout checks guarantee their representations are the
+native float and `Vec3` payloads expected by the GPU upload boundary.
+
+Deleted with the old layer:
+
+- `HeightMap`, `NormalComputingHeightMap`, `RandomHeightMap`, `NormalMap`, and
+  `Array2D`;
+- `moppe/map/generate.hh` and `generate.cc`;
+- raw height/normal/ledger pointers;
+- `Surface::refresh` and the copied geometry materialization barrier.
+
+The continuous-field DAG remains only as an initial continent/uplift producer.
+It does not own terrain and is not part of the runtime surface model.
+
+## Remaining stages
 
 1. **One lattice value** — share site count, indexing, and wrapping between
    `TerrainGrid`, `SurfaceDomain`, and `FieldSamplingGrid2D`. Field-coordinate
    bounds, physical spacing, and reconstruction remain explicit charts or
    policies over that lattice rather than becoming one omnibus domain type.
-2. **Elevation joins the bundle** — retire `HeightMap`/`NormalMap`/
-   `Array2D`; elevation and normals are typed fields; physics samples
-   them like every other field.  The 2008 layer's obituary.
+2. **Reassess continuous fields** — replace the continent/uplift expression
+   compiler with direct finite typed generation if its CPU/Metal source
+   interchange is no longer worth maintaining.

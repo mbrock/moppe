@@ -1,5 +1,5 @@
 #include <moppe/game/terrain_lab_model.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/program.hh>
 #include <moppe/terrain/topology.hh>
@@ -12,32 +12,34 @@
 #include <vector>
 
 namespace {
-  bool model_maps_match (const moppe::map::RandomHeightMap& left,
-                         const moppe::map::RandomHeightMap& right) {
+  bool model_maps_match (const moppe::map::Surface& left,
+                         const moppe::map::Surface& right) {
     if (left.width () != right.width () || left.height () != right.height ())
       return false;
     for (int y = 0; y < left.height (); ++y)
       for (int x = 0; x < left.width (); ++x)
-        if (std::bit_cast<std::uint32_t> (left.get (x, y)) !=
-            std::bit_cast<std::uint32_t> (right.get (x, y)))
+        if (std::bit_cast<std::uint32_t> (left.relative_elevation_at (x, y)) !=
+            std::bit_cast<std::uint32_t> (right.relative_elevation_at (x, y)))
           return false;
     return true;
   }
 
-  std::vector<float> heights_of (const moppe::map::RandomHeightMap& map) {
-    const std::size_t count =
-      static_cast<std::size_t> (map.width ()) * map.height ();
-    return { map.raw_heights (), map.raw_heights () + count };
+  std::vector<float> heights_of (const moppe::map::Surface& map) {
+    std::vector<float> values;
+    values.reserve (map.relative_elevations ().size ());
+    for (const auto elevation : map.relative_elevations ())
+      values.push_back (elevation.numerical_value_in (mp_units::one));
+    return values;
   }
 }
 
 MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640));
+  map::Surface map (33, 33, Vec3 (640, 650, 640));
   for (int y = 0; y < map.height (); ++y)
     for (int x = 0; x < map.width (); ++x)
-      map.set (x, y, static_cast<float> (x + y) / 64.0f);
+      map.set_relative_elevation (x, y, static_cast<float> (x + y) / 64.0f);
   const std::vector<float> original = heights_of (map);
   TerrainProgram program =
     make_orogeny_program (42, TerrainGenerationProfile::Fast);
@@ -72,7 +74,7 @@ MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
     0.0012f * mp_units::si::metre / mp_units::astronomy::Julian_year;
   model.rerun_program_from (0);
 
-  map::RandomHeightMap reference (33, 33, Vec3 (640, 650, 640));
+  map::Surface reference (33, 33, Vec3 (640, 650, 640));
   map::TerrainEvaluator (reference).evaluate (model.program ());
   MOPPE_CHECK (model_maps_match (map, reference));
 

@@ -1835,10 +1835,15 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     return mesh;
   }
 
-  void WebGpuRenderer::set_terrain (const TerrainParams& params,
-                                    const float* heights,
-                                    const Vec3* normals) {
-    if (params.width < 2 || params.height < 2 || !heights)
+  void WebGpuRenderer::set_terrain (
+    const TerrainParams& params,
+    std::span<const terrain::RelativeTerrainElevation> heights,
+    std::span<const terrain::TerrainNormal> normals) {
+    const std::size_t sample_count =
+      static_cast<std::size_t> (params.width) * params.height;
+    if (params.width < 2 || params.height < 2 ||
+        heights.size () != sample_count ||
+        (!normals.empty () && normals.size () != sample_count))
       throw std::invalid_argument ("invalid WebGPU terrain raster");
     m_state->terrain_params = params;
 
@@ -1865,7 +1870,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       1,
     };
     m_state->queue.WriteTexture (&height_destination,
-                                 heights,
+                                 heights.data (),
                                  params.width * params.height * sizeof (float),
                                  &height_layout,
                                  &extent);
@@ -1875,7 +1880,9 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     for (std::size_t i = 0;
          i < static_cast<std::size_t> (params.width) * params.height;
          ++i) {
-      const Vec3 normal = normals ? normals[i] : Vec3 (0.0f, 1.0f, 0.0f);
+      const Vec3 normal = normals.empty ()
+                            ? Vec3 (0.0f, 1.0f, 0.0f)
+                            : normals[i].numerical_value_in (mp_units::one);
       for (int component = 0; component < 3; ++component) {
         const float value = std::clamp (normal[component], -1.0f, 1.0f);
         packed_normals[i * 4 + component] =

@@ -2,7 +2,6 @@
 #define MOPPE_GAME_GENERATED_WORLD_HH
 
 #include <moppe/game/world.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/map/water_surface.hh>
 #include <moppe/terrain/flood.hh>
@@ -18,9 +17,7 @@ namespace moppe::game {
   // A stable home for a generated world's durable, renderer-free artifacts.
   // The loading worker constructs one by calling the three build steps in
   // order (rebuild_surface, analyze_hydrology, materialize_analyses) after
-  // evaluating the terrain.  Gameplay reads it through const references;
-  // the mutable terrain () overload exists for the builder and for Terrain
-  // Lab, which restores the map before returning control to gameplay.
+  // evaluating the terrain. Geometry and analyses share one SurfaceAtlas.
   class GeneratedWorld {
   public:
     enum class HydrologyStage {
@@ -92,15 +89,11 @@ namespace moppe::game {
       return m_recipe;
     }
 
-    const map::RandomHeightMap& terrain () const noexcept {
-      return m_terrain;
-    }
-
-    map::RandomHeightMap& terrain () noexcept {
-      return m_terrain;
-    }
-
     const map::Surface& surface () const noexcept {
+      return m_surface;
+    }
+
+    map::Surface& surface () noexcept {
       return m_surface;
     }
 
@@ -125,7 +118,6 @@ namespace moppe::game {
   private:
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
-    map::RandomHeightMap m_terrain;
     map::Surface m_surface;
     std::optional<Hydrology> m_hydrology;
     std::optional<map::WaterSurface> m_water_surface;

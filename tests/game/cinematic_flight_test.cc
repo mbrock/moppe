@@ -12,7 +12,7 @@ namespace {
     static constexpr int side = 17;
     static constexpr std::size_t count = side * side;
 
-    map::RandomHeightMap map { side, side, Vec3 (1600, 240, 1600) };
+    map::Surface map { side, side, Vec3 (1600, 240, 1600) };
     terrain::TerrainGrid grid = map.terrain_view ().grid ();
     terrain::FieldSamplingGrid2D domain { .width = side, .height = side };
     terrain::FloodField flood;
@@ -55,7 +55,7 @@ namespace {
             std::max (0.0f, 1.0f - std::hypot (x - 12.0f, z - 5.0f) / 7.0f);
           const float saddle =
             0.06f * std::abs (z - 11.0f) - 0.025f * std::abs (x - 7.0f);
-          map.set (x, z, 0.16f + 0.55f * peak + saddle);
+          map.set_relative_elevation (x, z, 0.16f + 0.55f * peak + saddle);
           const std::size_t cell = z * side + x;
           const std::size_t next = z + 1 < side ? cell + side : cell;
           flood.spill_receiver[cell] = next;
@@ -228,14 +228,14 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   constexpr int storage_side = 17;
   constexpr int unique_side = storage_side - 1;
   constexpr std::size_t count = unique_side * unique_side;
-  map::RandomHeightMap map (storage_side, storage_side, Vec3 (1600, 240, 1600));
+  map::Surface map (storage_side, storage_side, Vec3 (1600, 240, 1600));
   for (int z = 0; z < storage_side; ++z)
     for (int x = 0; x < storage_side; ++x) {
       const float dx =
         std::min (x % unique_side, unique_side - x % unique_side);
       const float dz =
         std::min (z % unique_side, unique_side - z % unique_side);
-      map.set (x, z, 0.2f + 0.02f * (dx + dz));
+      map.set_relative_elevation (x, z, 0.2f + 0.02f * (dx + dz));
     }
   map.recompute_normals ();
 

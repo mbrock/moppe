@@ -2,7 +2,7 @@
 #define MOPPE_GAME_STARS_HH
 
 #include <moppe/game/world.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
@@ -33,9 +33,8 @@ namespace moppe {
 
       Stars ();
 
-      void generate (const map::HeightMap& map,
-                     const WorldParams& params,
-                     int count);
+      void
+      generate (const map::Surface& map, const WorldParams& params, int count);
 
       // Checks pickups; returns how many were grabbed this tick
       int update (const Vec3& vehicle_pos, float time, float dt);
