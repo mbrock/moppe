@@ -28,9 +28,11 @@ namespace moppe::game {
   // Convert the continuous canopy field into stable individuals on a
   // jittered grid. Positions and identities depend only on world seed and
   // lattice cell, so revisiting an area never produces a different forest.
-  [[nodiscard]] ForestPlan plan_global_forest (const map::Surface& surface,
-                                               std::uint32_t seed,
-                                               float spacing = 12.0f);
+  [[nodiscard]] ForestPlan
+  plan_global_forest (const map::Surface& surface,
+                      const map::SurfaceReadings& readings,
+                      std::uint32_t seed,
+                      float spacing = 12.0f);
 
   // Terrain-scale presentation of the population. Each retained mesh owns a
   // cullable world chunk of deliberately cheap trunks and crown volumes; the
@@ -39,6 +41,7 @@ namespace moppe::game {
   public:
     void rebuild (render::Renderer& renderer,
                   const map::Surface& surface,
+                  const map::SurfaceReadings& readings,
                   std::uint32_t seed);
     void draw (render::Renderer& renderer,
                const Vec3& camera,

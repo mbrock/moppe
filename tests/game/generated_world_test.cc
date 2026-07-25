@@ -65,7 +65,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.hydrology ()->drainage ().receiver.size () == 17 * 17);
   MOPPE_CHECK (world.hydrology ()->channels ().domain ().size () == 17 * 17);
   MOPPE_CHECK (world.water_surface ().has_value ());
-  MOPPE_CHECK (world.surface ().readings ());
+  MOPPE_CHECK (world.readings ().has_value ());
   MOPPE_CHECK (world.trails ().has_value ());
 }
 

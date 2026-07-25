@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
-#include <utility>
 
 namespace moppe::map {
   namespace {
@@ -70,12 +69,6 @@ namespace moppe::map {
         }
     }
 
-    const SurfaceReadings& require_readings (const SurfaceReadings* readings,
-                                             const char* message) {
-      if (!readings)
-        throw std::logic_error (message);
-      return *readings;
-    }
   }
 
   Surface::Surface (int width, int height, const Vec3& size)
@@ -91,18 +84,10 @@ namespace moppe::map {
     reset_material_history ();
   }
 
-  void Surface::rebuild_geometry_readings () {
-    MOPPE_PROFILE_ZONE ("Surface::rebuild_geometry_readings");
+  void Surface::rebuild_geometry () {
+    MOPPE_PROFILE_ZONE ("Surface::rebuild_geometry");
     recompute_normals ();
-    m_readings.reset ();
     populate_snow_support (m_geometry, *this);
-  }
-
-  void Surface::set_readings (SurfaceReadings readings) {
-    if (readings.domain () != domain ())
-      throw std::invalid_argument (
-        "surface readings do not share the terrain domain");
-    m_readings.emplace (std::move (readings));
   }
 
   SurfaceElevation Surface::elevation_at (const position_t& position) const {
@@ -117,18 +102,6 @@ namespace moppe::map {
 
   SnowSupport Surface::snow_support_at (const position_t& position) const {
     return spatial::sample<snow_support> (geometry (), position);
-  }
-
-  TreeHabitat Surface::tree_habitat_at (const position_t& position) const {
-    return spatial::sample<tree_habitat> (
-      require_readings (readings (), "Surface readings have not been derived"),
-      position);
-  }
-
-  ForestCover Surface::forest_cover_at (const position_t& position) const {
-    return spatial::sample<forest_cover> (
-      require_readings (readings (), "Surface readings have not been derived"),
-      position);
   }
 
 }

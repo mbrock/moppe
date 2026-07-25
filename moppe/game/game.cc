@@ -164,6 +164,11 @@ namespace moppe {
         return generated_world ().surface ();
       }
 
+      const map::SurfaceReadings* surface_readings () const noexcept {
+        const auto& value = generated_world ().readings ();
+        return value ? &*value : nullptr;
+      }
+
       const GeneratedWorld::Hydrology* hydrology () const noexcept {
         const auto& value = generated_world ().hydrology ();
         return value ? &*value : nullptr;
@@ -513,7 +518,8 @@ namespace moppe {
 
       void prepare_world_surface () {
         MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
-        m_surface_presentation.refresh (surface ());
+        m_surface_presentation.refresh (surface ().geometry (),
+                                        surface_readings ());
         session ().bike ().set_water_level (world ().water_level);
         session ().car ().set_water_level (world ().water_level);
         session ().bike ().set_obstacles (&m_obstacles);
@@ -560,8 +566,12 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_tree_demo || m_water_inspection)
           return;
-        m_forest.rebuild (
-          *m_renderer, surface (), recipe ().seed ().value ^ 0xa34c91e5U);
+        if (!surface_readings ())
+          return;
+        m_forest.rebuild (*m_renderer,
+                          surface (),
+                          *surface_readings (),
+                          recipe ().seed ().value ^ 0xa34c91e5U);
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives\n";
       }
@@ -569,9 +579,15 @@ namespace moppe {
       void plant_trailside () {
         MOPPE_PROFILE_ZONE ("startup.plant_trailside");
         render::Renderer& r = *m_renderer;
+        const map::SurfaceReadings* readings = surface_readings ();
+        if (!readings)
+          return;
         if (m_tree_demo) {
-          m_tree_stand.rebuild (
-            r, surface (), recipe ().seed ().value ^ 0x4f1bbcdcU, m_tree_count);
+          m_tree_stand.rebuild (r,
+                                surface (),
+                                *readings,
+                                recipe ().seed ().value ^ 0x4f1bbcdcU,
+                                m_tree_count);
           if (m_tree_stand.empty ())
             throw std::runtime_error (
               "the generated surface has no viable tree habitat");
@@ -590,6 +606,7 @@ namespace moppe {
         constexpr std::size_t forest_size = 32;
         m_tree_stand.rebuild (r,
                               surface (),
+                              *readings,
                               recipe ().seed ().value ^ 0x4f1bbcdcU,
                               forest_size,
                               m_home_base_position);

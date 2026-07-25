@@ -42,7 +42,7 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
         moppe::terrain::surface_elevation_point (
           (0.05f * static_cast<float> (row * map.width () + column)) * 20.0f *
           mp_units::si::metre));
-  map.rebuild_geometry_readings ();
+  map.rebuild_geometry ();
 
   map::Surface& surface = map;
   const auto& geometry = surface.geometry ();
@@ -70,7 +70,6 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   check_surface_vector (normal_value (normal), map.normal_at (2, 1));
   MOPPE_CHECK (snow_support >= 0.0f * map::snow_support[one]);
   MOPPE_CHECK (snow_support <= 1.0f * map::snow_support[one]);
-  MOPPE_CHECK (!surface.readings ());
 }
 
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
@@ -83,7 +82,7 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
         row,
         moppe::terrain::surface_elevation_point ((column < 4 ? 0.2f : 0.8f) *
                                                  80.0f * mp_units::si::metre));
-  map.rebuild_geometry_readings ();
+  map.rebuild_geometry ();
   map::Surface& surface = map;
 
   const float detailed_up = map.normal_at (4, 4)[1];
@@ -111,15 +110,13 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   const std::array trail {
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
   };
-  surface.set_readings (test::complete_readings (
+  const map::SurfaceReadings use = test::complete_readings (
     surface,
-    { .use = test::trail_use_map (surface.domain (), trail, influence) }));
-  const map::SurfaceReadings* use = surface.readings ();
-  MOPPE_CHECK (use);
+    { .use = test::trail_use_map (surface.domain (), trail, influence) });
   MOPPE_CHECK (spatial::sample<map::home_base_influence> (
-                 *use, position (Vec3 (10, 0, 10))) ==
+                 use, position (Vec3 (10, 0, 10))) ==
                1.0f * map::home_base_influence[one]);
-  MOPPE_CHECK (spatial::get<map::home_base_influence> (*use)[0] ==
+  MOPPE_CHECK (spatial::get<map::home_base_influence> (use)[0] ==
                0.0f * map::home_base_influence[one]);
 }
 
@@ -136,10 +133,9 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   const std::array home {
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
   };
-  surface.set_readings (test::complete_readings (
+  const map::SurfaceReadings use = test::complete_readings (
     surface,
-    { .use = test::trail_use_map (surface.domain (), influence, home) }));
-  const map::SurfaceReadings& use = *surface.readings ();
+    { .use = test::trail_use_map (surface.domain (), influence, home) });
   MOPPE_CHECK (
     spatial::sample<map::trail_influence> (use, position (Vec3 (10, 0, 10))) ==
     1.0f * map::trail_influence[one]);
@@ -159,16 +155,16 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   map::Surface& surface = map;
 
   std::vector<float> moisture (25, 0.48f);
-  surface.set_readings (test::complete_readings (
-    surface, { .moisture = test::moisture_map (surface.domain (), moisture) }));
   const position_t center = position (Vec3 (20, 0, 20));
-  MOPPE_CHECK (surface.tree_habitat_at (center) >
+  const map::SurfaceReadings drained = test::complete_readings (
+    surface, { .moisture = test::moisture_map (surface.domain (), moisture) });
+  MOPPE_CHECK (spatial::sample<map::tree_habitat> (drained, center) >
                0.8f * map::tree_habitat[one]);
 
   std::fill (moisture.begin (), moisture.end (), 1.0f);
-  surface.set_readings (test::complete_readings (
-    surface, { .moisture = test::moisture_map (surface.domain (), moisture) }));
-  MOPPE_CHECK (surface.tree_habitat_at (center) <
+  const map::SurfaceReadings sodden = test::complete_readings (
+    surface, { .moisture = test::moisture_map (surface.domain (), moisture) });
+  MOPPE_CHECK (spatial::sample<map::tree_habitat> (sodden, center) <
                0.4f * map::tree_habitat[one]);
 }
 
@@ -222,7 +218,7 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
                          moppe::terrain::surface_elevation_point (
                            (0.03f * column * column + 0.02f * row) * 30.0f *
                            mp_units::si::metre));
-  map.rebuild_geometry_readings ();
+  map.rebuild_geometry ();
   map::Surface& surface = map;
 
   const std::array points { Vec3 (0, 0, 0),
@@ -250,7 +246,7 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
                          moppe::terrain::surface_elevation_point (
                            (0.04f * static_cast<float> (row + 2 * column)) *
                            20.0f * mp_units::si::metre));
-  map.rebuild_geometry_readings ();
+  map.rebuild_geometry ();
   map::Surface& surface = map;
 
   // Sampling one period apart reads the same surface.
@@ -291,18 +287,16 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
     (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  MOPPE_CHECK (!surface.readings ());
 
   std::vector<float> trail (9, 0.0f);
   std::vector<float> home (9, 0.0f);
   trail[4] = 0.75f;
   home[4] = 0.25f;
-  surface.set_readings (test::complete_readings (
-    surface, { .use = test::trail_use_map (surface.domain (), trail, home) }));
-  MOPPE_CHECK (surface.readings ());
+  const map::SurfaceReadings readings = test::complete_readings (
+    surface, { .use = test::trail_use_map (surface.domain (), trail, home) });
 
   game::SurfacePresentation presentation;
-  presentation.refresh (surface);
+  presentation.refresh (surface.geometry (), &readings);
 
   MOPPE_CHECK (presentation.trails ().size () == surface.domain ().size ());
   MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
@@ -311,8 +305,10 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (presentation.snow_support ().size () == 9);
   MOPPE_CHECK (presentation.forest ().size () == 9);
 
-  surface.rebuild_geometry_readings ();
-  MOPPE_CHECK (!surface.readings ());
+  // A world still being generated has geometry but no readings yet.
+  presentation.refresh (surface.geometry (), nullptr);
+  MOPPE_CHECK (presentation.trails ().empty ());
+  MOPPE_CHECK (presentation.snow_support ().size () == 9);
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
@@ -340,37 +336,35 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
     surface.record_material_change (column, row, -eroded[cell]);
     surface.record_material_change (column, row, deposited[cell]);
   }
-  surface.set_readings (test::complete_readings (
+  const map::SurfaceReadings values = test::complete_readings (
     surface,
     { .moisture = test::moisture_map (surface.domain (), moisture),
-      .waterline = test::waterline_map (surface.domain (), distance) }));
+      .waterline = test::waterline_map (surface.domain (), distance) });
 
   static_assert (
     mp_units::QuantityOf<map::SurfaceMoisture, map::surface_moisture>);
   static_assert (
     mp_units::QuantityOf<map::WaterlineDistance, map::waterline_distance>);
-  const map::SurfaceReadings* readings = surface.readings ();
-  MOPPE_CHECK (readings);
-  MOPPE_CHECK (spatial::get<map::surface_moisture> (*readings)[4] ==
+  MOPPE_CHECK (spatial::get<map::surface_moisture> (values)[4] ==
                1.0f * map::surface_moisture[one]);
-  MOPPE_CHECK (spatial::get<map::waterline_distance> (*readings)[4] ==
+  MOPPE_CHECK (spatial::get<map::waterline_distance> (values)[4] ==
                2.5f * map::waterline_distance[u::m]);
   const position_t center = position (Vec3 (10, 0, 10));
-  MOPPE_CHECK (spatial::sample<map::surface_moisture> (*readings, center) ==
+  MOPPE_CHECK (spatial::sample<map::surface_moisture> (values, center) ==
                1.0f * map::surface_moisture[one]);
-  MOPPE_CHECK (spatial::sample<map::waterline_distance> (*readings, center) ==
+  MOPPE_CHECK (spatial::sample<map::waterline_distance> (values, center) ==
                2.5f * map::waterline_distance[u::m]);
   MOPPE_CHECK_NEAR (
-    spatial::get<map::erosion_exposure> (*readings)[4].numerical_value_in (one),
+    spatial::get<map::erosion_exposure> (values)[4].numerical_value_in (one),
     0.5f,
     1e-6f);
   MOPPE_CHECK_NEAR (
-    spatial::get<map::deposition_cover> (*readings)[4].numerical_value_in (one),
+    spatial::get<map::deposition_cover> (values)[4].numerical_value_in (one),
     0.5f,
     1e-6f);
 
   game::SurfacePresentation presentation;
-  presentation.refresh (surface);
+  presentation.refresh (surface.geometry (), &values);
   MOPPE_CHECK_NEAR (presentation.moisture ()[4], 1.0f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.waterline_distance ()[4], 2.5f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.geology ()[8], 0.5f, 1e-6f);

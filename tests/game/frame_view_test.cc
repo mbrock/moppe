@@ -39,7 +39,7 @@ namespace {
     FrameFixture () {
       map.fill_elevation (moppe::terrain::surface_elevation_point (
         (0.25f) * 40.0f * mp_units::si::metre));
-      map.rebuild_geometry_readings ();
+      map.rebuild_geometry ();
       world.map_size = spatial_extent_in_metres (map.world_extent ());
       world.resolution = map.width ();
       world.water_level = 4.0f * u::m;

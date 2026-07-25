@@ -14,15 +14,15 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_readings (test::complete_readings (
+  const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
-      .seed = 0xdecafbadU }));
+      .seed = 0xdecafbadU });
 
   const game::ForestPlan first =
-    game::plan_global_forest (surface, 0xa511e9b3U);
+    game::plan_global_forest (surface, readings, 0xa511e9b3U);
   const game::ForestPlan second =
-    game::plan_global_forest (surface, 0xa511e9b3U);
+    game::plan_global_forest (surface, readings, 0xa511e9b3U);
   MOPPE_CHECK (first.sites.size () > 100);
   MOPPE_CHECK (first.sites.size () == second.sites.size ());
   for (std::size_t index = 0; index < first.sites.size (); ++index) {
@@ -42,11 +42,12 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_readings (test::complete_readings (
+  const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
       .use = test::uniform_use (surface.domain (), 0.0f, 1.0f),
-      .seed = 0xfeed1234U }));
+      .seed = 0xfeed1234U });
 
-  MOPPE_CHECK (game::plan_global_forest (surface, 0x31415926U).sites.empty ());
+  MOPPE_CHECK (
+    game::plan_global_forest (surface, readings, 0x31415926U).sites.empty ());
 }
