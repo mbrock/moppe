@@ -1,9 +1,39 @@
 #include <moppe/map/water_surface.hh>
 
+#include <moppe/terrain/watercourse.hh>
+
 #include <stdexcept>
 #include <utility>
 
 namespace moppe::map {
+  WaterSurface::WaterSurface (SurfaceDomain domain,
+                              const terrain::WaterSheets& sheets,
+                              meters_t terrain_height_scale)
+      : m_sections (std::move (domain)) {
+    if (terrain_height_scale <= 0.0f * u::m)
+      throw std::invalid_argument ("Water surface needs a positive height "
+                                   "scale");
+    const SurfaceDomain& lattice = m_sections.domain ();
+    const std::size_t unique_width = sheets.surface.domain ().width;
+    const std::size_t unique_height = sheets.surface.domain ().height;
+    const std::span<const float> levels = sheets.surface.values ();
+    const float height_scale = meters_value (terrain_height_scale);
+    for (std::size_t row = 0; row < lattice.height (); ++row)
+      for (std::size_t column = 0; column < lattice.width (); ++column) {
+        const std::size_t offset = row * lattice.width () + column;
+        const std::size_t cell =
+          (row % unique_height) * unique_width + (column % unique_width);
+        auto site = m_sections[m_sections.index (offset)];
+        spatial::get<surface_elevation> (site) = SurfaceElevation (
+          levels[cell] * height_scale * surface_elevation[u::m]);
+        spatial::get<wave_amplitude> (site) =
+          sheets.amplitude[cell] * wave_amplitude[one];
+        spatial::get<water_velocity> (site) =
+          Vec3 (sheets.flow[2 * cell], 0.0f, sheets.flow[2 * cell + 1]) *
+          water_velocity[u::m / u::s];
+      }
+  }
+
   WaterSurface::WaterSurface (
     SurfaceDomain domain,
     std::span<const float> normalized_level_and_amplitude,

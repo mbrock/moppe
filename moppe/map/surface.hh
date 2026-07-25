@@ -2,6 +2,8 @@
 #define MOPPE_MAP_SURFACE_HH
 
 #include <moppe/map/surface_atlas.hh>
+#include <moppe/terrain/evaluator.hh>
+#include <moppe/terrain/fractional_drainage.hh>
 
 #include <cstdint>
 #include <optional>
@@ -32,6 +34,13 @@ namespace moppe::map {
     ForestCover forest_cover_at (const position_t& position) const;
     TrailInfluence trail_influence_at (const position_t& position) const;
     HomeBaseInfluence home_base_influence_at (const position_t& position) const;
+
+    // Analyses arrive typed on the torus's unique lattice; these overloads
+    // expand them across the storage seam and write the typed sections.
+    // The span overloads below are the storage-grid primitives.
+    void materialize_moisture (const terrain::ScalarRaster& moisture);
+    void materialize_waterline_distance (const terrain::ScalarRaster& distance);
+    void materialize_channel_flux (const terrain::FractionalDrainage& channels);
 
     void materialize_moisture (std::span<const float> moisture);
     void materialize_waterline_distance (std::span<const float> distance);

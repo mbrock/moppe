@@ -5,6 +5,10 @@
 
 #include <span>
 
+namespace moppe::terrain {
+  struct WaterSheets;
+}
+
 namespace moppe::map {
   inline constexpr struct wave_amplitude
       : quantity_spec<mp_units::dimensionless> {
@@ -27,6 +31,13 @@ namespace moppe::map {
   // water itself and therefore live in a distinct bundle.
   class WaterSurface {
   public:
+    // Painted water sheets arrive on the torus's unique lattice; this
+    // constructor expands them across the storage seam.  The span
+    // constructor below is the storage-grid primitive.
+    WaterSurface (SurfaceDomain domain,
+                  const terrain::WaterSheets& sheets,
+                  meters_t terrain_height_scale);
+
     WaterSurface (SurfaceDomain domain,
                   std::span<const float> normalized_level_and_amplitude,
                   std::span<const float> planar_flow,

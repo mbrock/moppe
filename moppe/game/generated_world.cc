@@ -27,19 +27,6 @@ namespace moppe::game {
       return static_cast<std::size_t> (terrain.width ()) * terrain.height ();
     }
 
-    std::vector<float> expand_scalar (const map::RandomHeightMap& terrain,
-                                      std::span<const float> unique_values,
-                                      std::size_t unique_width,
-                                      std::size_t unique_height) {
-      std::vector<float> expanded (storage_count (terrain));
-      for (int y = 0; y < terrain.height (); ++y)
-        for (int x = 0; x < terrain.width (); ++x)
-          expanded[static_cast<std::size_t> (y) * terrain.width () + x] =
-            unique_values[(static_cast<std::size_t> (y) % unique_height) *
-                            unique_width +
-                          static_cast<std::size_t> (x) % unique_width];
-      return expanded;
-    }
   }
 
   GeneratedWorld::Hydrology::Hydrology (terrain::FloodField standing_water,
@@ -122,94 +109,28 @@ namespace moppe::game {
 
     if (m_hydrology) {
       const Hydrology& hydrology = *m_hydrology;
-      const terrain::FractionalDrainage& channels = hydrology.channels ();
-      {
-        MOPPE_PROFILE_ZONE ("world.materialize_channel_flux");
-        const auto& tangents =
-          spatial::get<terrain::channel_tangent> (channels);
-        const auto& areas =
-          spatial::get<terrain::fractional_contributing_area> (channels);
-        const terrain::TerrainGrid& grid = channels.domain ().grid ();
-        const float floor_area_m2 =
-          4.0f * square_meters_value (grid.cell_area ());
-        const float channel_area_m2 =
-          square_meters_value (terrain::visible_river_minimum_area (grid));
-        const float activity_span =
-          std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
-        const std::size_t unique_width = grid.unique_width ();
-        const std::size_t unique_height = grid.unique_height ();
-        std::vector<float> flux (2 * storage_count (m_terrain));
-        for (int y = 0; y < m_terrain.height (); ++y)
-          for (int x = 0; x < m_terrain.width (); ++x) {
-            const std::size_t cell =
-              (static_cast<std::size_t> (y) % unique_height) * unique_width +
-              static_cast<std::size_t> (x) % unique_width;
-            const float area_m2 = areas[cell].numerical_value_in (u::m * u::m);
-            const float activity =
-              std::clamp (std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) /
-                            activity_span,
-                          0.0f,
-                          1.0f);
-            const Vec3 tangent = tangents[cell].numerical_value_in (one);
-            const std::size_t out =
-              2 * (static_cast<std::size_t> (y) * m_terrain.width () + x);
-            flux[out] = tangent[0] * activity;
-            flux[out + 1] = tangent[2] * activity;
-          }
-        m_surface.materialize_channel_flux (flux);
-      }
+      m_surface.materialize_channel_flux (hydrology.channels ());
 
-      const terrain::WaterSheets sheets = [&] {
-        MOPPE_PROFILE_ZONE ("world.paint_watercourses");
-        return terrain::paint_watercourses (m_terrain.terrain_view (),
-                                            hydrology.standing_water (),
-                                            hydrology.lakes (),
-                                            hydrology.drainage (),
-                                            hydrology.rivers ());
-      }();
-      const std::size_t unique_width = hydrology.standing_water ().width ();
-      const std::size_t unique_height = hydrology.standing_water ().height ();
-      std::vector<float> water_levels (2 * storage_count (m_terrain));
-      std::vector<float> water_flow (water_levels.size ());
-      const std::span<const float> levels = sheets.surface.values ();
-      for (int y = 0; y < m_terrain.height (); ++y)
-        for (int x = 0; x < m_terrain.width (); ++x) {
-          const std::size_t cell =
-            (static_cast<std::size_t> (y) % unique_height) * unique_width +
-            static_cast<std::size_t> (x) % unique_width;
-          const std::size_t out =
-            2 * (static_cast<std::size_t> (y) * m_terrain.width () + x);
-          water_levels[out] = levels[cell];
-          water_levels[out + 1] = sheets.amplitude[cell];
-          water_flow[out] = sheets.flow[2 * cell];
-          water_flow[out + 1] = sheets.flow[2 * cell + 1];
-        }
-      m_water_surface.emplace (m_surface.atlas ().domain (),
-                               water_levels,
-                               water_flow,
-                               m_terrain.scale ()[1] * u::m);
-
-      {
-        MOPPE_PROFILE_ZONE ("world.materialize_waterline");
-        const terrain::Waterline waterline = terrain::extract_waterline (
-          m_terrain.terrain_view (), sheets.surface, hydrology.lakes ());
-        const terrain::ScalarRaster proximity =
-          terrain::waterline_proximity (waterline);
-        m_surface.materialize_waterline_distance (expand_scalar (
-          m_terrain, proximity.values (), unique_width, unique_height));
-      }
-
-      {
-        MOPPE_PROFILE_ZONE ("world.materialize_moisture");
-        const terrain::ScalarRaster moisture =
-          terrain::analyze_moisture (hydrology.standing_water (),
+      const terrain::WaterSheets sheets =
+        terrain::paint_watercourses (m_terrain.terrain_view (),
+                                     hydrology.standing_water (),
                                      hydrology.lakes (),
-                                     hydrology.drainage ());
-        m_surface.materialize_moisture (expand_scalar (
-          m_terrain, moisture.values (), unique_width, unique_height));
-        m_surface.derive_tree_habitat (m_params.water_level,
-                                       m_params.water_level + 145.0f * u::m);
-      }
+                                     hydrology.drainage (),
+                                     hydrology.rivers ());
+      m_water_surface.emplace (
+        m_surface.atlas ().domain (), sheets, m_terrain.scale ()[1] * u::m);
+
+      const terrain::Waterline waterline = terrain::extract_waterline (
+        m_terrain.terrain_view (), sheets.surface, hydrology.lakes ());
+      m_surface.materialize_waterline_distance (
+        terrain::waterline_proximity (waterline));
+
+      m_surface.materialize_moisture (
+        terrain::analyze_moisture (hydrology.standing_water (),
+                                   hydrology.lakes (),
+                                   hydrology.drainage ()));
+      m_surface.derive_tree_habitat (m_params.water_level,
+                                     m_params.water_level + 145.0f * u::m);
 
       const terrain::TerrainProgram& program = m_recipe.terrain_program ();
       const auto stage = std::find_if (
