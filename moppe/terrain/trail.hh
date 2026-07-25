@@ -148,10 +148,6 @@ namespace moppe::terrain {
   TrailNetwork analyze_trail_network (const TerrainView& terrain,
                                       const TrailFormation& parameters = {});
 
-  // Expand unique torus samples to the duplicated render seam carried by the
-  // source grid. Bounded grids are returned unchanged.
-  std::vector<float> expand_trail_influence (const TrailNetwork& network);
-  std::vector<float> expand_home_base_influence (const TrailNetwork& network);
   meters_f64_t trail_circuit_length (const TrailNetwork& network);
 
   TrailFormationResult form_trails (const TerrainView& terrain,

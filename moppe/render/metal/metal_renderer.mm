@@ -2258,7 +2258,6 @@ namespace moppe {
       u.params2.z = terrain.params.torus_minor_radius;
       u.params2.w = terrain.params.torus_height_scale;
       u.params3.x = terrain.params.derive_normals ? 1.0f : 0.0f;
-      u.params3.y = terrain.params.periodic ? 1.0f : 0.0f;
       float height_blend = 1.0f;
       if (terrain.height_transition_active && terrain.previous_heights) {
         const float elapsed =
@@ -2511,7 +2510,6 @@ namespace moppe {
       u.fog_color = f4lin (params.fog_color, params.fog_scale);
       u.params.x = params.time;
       u.params.y = water_resources.ocean_level;
-      u.params.z = terrain.params.periodic ? 1.0f : 0.0f;
       u.params.w = water_resources.have_water_levels ? 1.0f : 0.0f;
       u.world_offset.x = params.world_offset[0];
       u.world_offset.z = params.world_offset[2];

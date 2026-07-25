@@ -211,7 +211,6 @@ namespace moppe::game {
       throw std::invalid_argument ("Forest spacing must be positive");
     const map::SurfaceDomain& domain = surface.atlas ().domain ();
     ForestPlan plan;
-    plan.periodic = true;
     const float width =
       meters_value (domain.spacing_x ()) * static_cast<float> (domain.width ());
     const float depth = meters_value (domain.spacing_z ()) *
@@ -261,7 +260,6 @@ namespace moppe::game {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild");
     const ForestPlan plan = plan_global_forest (surface, seed);
     m_period = plan.period;
-    m_periodic = plan.periodic;
     m_tree_count = plan.sites.size ();
     m_chunks_x = forest_chunks_per_side;
     m_chunks_z = forest_chunks_per_side;
@@ -307,22 +305,14 @@ namespace moppe::game {
       return;
     for (const Chunk& chunk : m_chunks) {
       const float reach = forest_geometry_reach + chunk.radius;
-      const int minimum_x =
-        m_periodic ? static_cast<int> (std::ceil (
-                       (camera[0] - reach - chunk.center[0]) / m_period[0]))
-                   : 0;
-      const int maximum_x =
-        m_periodic ? static_cast<int> (std::floor (
-                       (camera[0] + reach - chunk.center[0]) / m_period[0]))
-                   : 0;
-      const int minimum_z =
-        m_periodic ? static_cast<int> (std::ceil (
-                       (camera[2] - reach - chunk.center[2]) / m_period[2]))
-                   : 0;
-      const int maximum_z =
-        m_periodic ? static_cast<int> (std::floor (
-                       (camera[2] + reach - chunk.center[2]) / m_period[2]))
-                   : 0;
+      const int minimum_x = static_cast<int> (
+        std::ceil ((camera[0] - reach - chunk.center[0]) / m_period[0]));
+      const int maximum_x = static_cast<int> (
+        std::floor ((camera[0] + reach - chunk.center[0]) / m_period[0]));
+      const int minimum_z = static_cast<int> (
+        std::ceil ((camera[2] - reach - chunk.center[2]) / m_period[2]));
+      const int maximum_z = static_cast<int> (
+        std::floor ((camera[2] + reach - chunk.center[2]) / m_period[2]));
       for (int tile_z = minimum_z; tile_z <= maximum_z; ++tile_z)
         for (int tile_x = minimum_x; tile_x <= maximum_x; ++tile_x) {
           const Vec3 offset (tile_x * m_period[0], 0, tile_z * m_period[2]);

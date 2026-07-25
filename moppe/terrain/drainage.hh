@@ -49,11 +49,11 @@ namespace moppe::terrain {
     std::vector<CellIndex> topological_order;
 
     std::size_t width () const noexcept {
-      return source_grid.unique_width ();
+      return source_grid.width;
     }
 
     std::size_t height () const noexcept {
-      return source_grid.unique_height ();
+      return source_grid.height;
     }
   };
 

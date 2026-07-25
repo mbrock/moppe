@@ -181,7 +181,7 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
     MOPPE_CHECK (influence <= 1.0f);
   }
 
-  const std::size_t width = network.source_grid.unique_width ();
+  const std::size_t width = network.source_grid.width;
   const float home_x =
     (network.plan.home_base.value % width) * network.source_grid.spacing_x_m ();
   const float home_z =

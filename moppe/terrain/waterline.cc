@@ -32,14 +32,13 @@ namespace moppe::terrain {
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
       throw std::invalid_argument ("waterline epsilon must be non-negative");
     const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
     if (surface.values ().size () != count)
       throw std::invalid_argument ("water surface does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
-    constexpr bool periodic = true;
     const std::span<const float> level = surface.values ();
 
     // Signed wetness at each lattice node; positive is wet.  The
@@ -57,9 +56,6 @@ namespace moppe::terrain {
     const auto sheet = [&] (std::size_t x, std::size_t y) {
       return level[y * width + x];
     };
-
-    const std::size_t cells_x = periodic ? width : width - 1;
-    const std::size_t cells_y = periodic ? height : height - 1;
 
     std::unordered_map<std::uint64_t, WaterlineCrossing> crossings;
     std::vector<std::pair<std::uint64_t, std::uint64_t>> segments;
@@ -108,10 +104,10 @@ namespace moppe::terrain {
       return key;
     };
 
-    for (std::size_t y = 0; y < cells_y; ++y) {
-      const std::size_t y1 = periodic ? (y + 1) % height : y + 1;
-      for (std::size_t x = 0; x < cells_x; ++x) {
-        const std::size_t x1 = periodic ? (x + 1) % width : x + 1;
+    for (std::size_t y = 0; y < height; ++y) {
+      const std::size_t y1 = (y + 1) % height;
+      for (std::size_t x = 0; x < width; ++x) {
+        const std::size_t x1 = (x + 1) % width;
         const float f00 = field (x, y);
         const float f10 = field (x1, y);
         const float f01 = field (x, y1);
@@ -224,8 +220,8 @@ namespace moppe::terrain {
       body_of.try_emplace (b, segment_body[i]);
     }
 
-    // Deterministic chains: sorted starting keys, open chains (degree
-    // one, bounded maps only) claimed before loops.
+    // Deterministic chains: sorted starting keys, open chains claimed before
+    // loops.
     std::vector<std::uint64_t> keys;
     keys.reserve (crossings.size ());
     for (const auto& [key, crossing] : crossings)
@@ -274,10 +270,9 @@ namespace moppe::terrain {
     if (!std::isfinite (band_m) || band_m <= 0.0f)
       throw std::invalid_argument ("waterline band must be positive");
     const TerrainGrid& grid = waterline.source_grid;
-    const std::size_t width = grid.unique_width ();
-    const std::size_t height = grid.unique_height ();
+    const std::size_t width = grid.width;
+    const std::size_t height = grid.height;
     const std::size_t count = width * height;
-    constexpr bool periodic = true;
     const float spacing_x = grid.spacing_x_m ();
     const float spacing_y = grid.spacing_y_m ();
     const float world_x = spacing_x * static_cast<float> (width);
@@ -293,12 +288,8 @@ namespace moppe::terrain {
     std::vector<ShoreSegment> shore;
     std::unordered_map<std::uint64_t, std::vector<std::uint32_t>> buckets;
     const auto bucket_key = [&] (int x, int y) -> std::uint64_t {
-      if (periodic) {
-        x = (x % static_cast<int> (width) + static_cast<int> (width)) %
-            static_cast<int> (width);
-        y = (y % static_cast<int> (height) + static_cast<int> (height)) %
-            static_cast<int> (height);
-      }
+      x = wrap_index (x, static_cast<int> (width));
+      y = wrap_index (y, static_cast<int> (height));
       return static_cast<std::uint64_t> (y) * width +
              static_cast<std::uint64_t> (x);
     };
@@ -313,16 +304,14 @@ namespace moppe::terrain {
                                contour.points[2 * j + 1] };
         // A closed contour's return stretch may cross the torus seam;
         // minimum-image its far end next to the near one.
-        if (periodic) {
-          if (segment.bx - segment.ax > 0.5f * world_x)
-            segment.bx -= world_x;
-          if (segment.ax - segment.bx > 0.5f * world_x)
-            segment.bx += world_x;
-          if (segment.by - segment.ay > 0.5f * world_y)
-            segment.by -= world_y;
-          if (segment.ay - segment.by > 0.5f * world_y)
-            segment.by += world_y;
-        }
+        if (segment.bx - segment.ax > 0.5f * world_x)
+          segment.bx -= world_x;
+        if (segment.ax - segment.bx > 0.5f * world_x)
+          segment.bx += world_x;
+        if (segment.by - segment.ay > 0.5f * world_y)
+          segment.by -= world_y;
+        if (segment.ay - segment.by > 0.5f * world_y)
+          segment.by += world_y;
         const std::uint32_t index = static_cast<std::uint32_t> (shore.size ());
         shore.push_back (segment);
         buckets[bucket_key (static_cast<int> (std::floor (
@@ -344,17 +333,15 @@ namespace moppe::terrain {
                                              const ShoreSegment& segment) {
       float ax = segment.ax, ay = segment.ay;
       float bx = segment.bx, by = segment.by;
-      if (periodic) {
-        // Bring the segment into the node's minimum image.
-        const float mid_x = 0.5f * (ax + bx);
-        const float mid_y = 0.5f * (ay + by);
-        const float shift_x = std::round ((px - mid_x) / world_x) * world_x;
-        const float shift_y = std::round ((py - mid_y) / world_y) * world_y;
-        ax += shift_x;
-        bx += shift_x;
-        ay += shift_y;
-        by += shift_y;
-      }
+      // Bring the segment into the node's minimum image.
+      const float mid_x = 0.5f * (ax + bx);
+      const float mid_y = 0.5f * (ay + by);
+      const float shift_x = std::round ((px - mid_x) / world_x) * world_x;
+      const float shift_y = std::round ((py - mid_y) / world_y) * world_y;
+      ax += shift_x;
+      bx += shift_x;
+      ay += shift_y;
+      by += shift_y;
       const float dx = bx - ax, dy = by - ay;
       const float length2 = dx * dx + dy * dy;
       const float t =
@@ -373,16 +360,8 @@ namespace moppe::terrain {
       const int by = static_cast<int> (key / width);
       for (int dy = -reach_y; dy <= reach_y; ++dy)
         for (int dx = -reach_x; dx <= reach_x; ++dx) {
-          int nx = bx + dx;
-          int ny = by + dy;
-          if (periodic) {
-            nx = (nx % static_cast<int> (width) + static_cast<int> (width)) %
-                 static_cast<int> (width);
-            ny = (ny % static_cast<int> (height) + static_cast<int> (height)) %
-                 static_cast<int> (height);
-          } else if (nx < 0 || ny < 0 || nx >= static_cast<int> (width) ||
-                     ny >= static_cast<int> (height))
-            continue;
+          const int nx = wrap_index (bx + dx, static_cast<int> (width));
+          const int ny = wrap_index (by + dy, static_cast<int> (height));
           const std::size_t node = static_cast<std::size_t> (ny) * width + nx;
           const float px = static_cast<float> (nx) * spacing_x;
           const float py = static_cast<float> (ny) * spacing_y;

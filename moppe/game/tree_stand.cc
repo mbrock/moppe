@@ -304,15 +304,13 @@ namespace moppe::game {
       const map::SurfaceDomain& domain = atlas.domain ();
       const auto& cover = spatial::get<map::forest_cover> (*forest);
       const auto& habitat = spatial::get<map::tree_habitat> (*habitats);
-      const std::size_t margin = std::max<std::size_t> (
-        3, std::min (domain.width (), domain.height ()) / 20);
       const std::size_t step = std::max<std::size_t> (
         1, std::min (domain.width (), domain.height ()) / 180);
+      const float period_x = meters_value (domain.period_x ());
+      const float period_z = meters_value (domain.period_z ());
       std::vector<PatchCandidate> candidates;
-      for (std::size_t row = margin; row + margin < domain.height ();
-           row += step)
-        for (std::size_t column = margin; column + margin < domain.width ();
-             column += step) {
+      for (std::size_t row = 0; row < domain.height (); row += step)
+        for (std::size_t column = 0; column < domain.width (); column += step) {
           const map::SurfaceIndex index { column, row };
           const std::size_t offset = domain.offset (index);
           const float support = cover[offset].numerical_value_in (one);
@@ -327,8 +325,10 @@ namespace moppe::game {
             seed ^ static_cast<std::uint32_t> (offset * 2654435761ULL));
           float score = support + 0.06f * variation;
           if (focus) {
-            const float dx = x - (*focus)[0];
-            const float dz = z - (*focus)[2];
+            const float dx =
+              terrain::minimum_image_delta (x - (*focus)[0], period_x);
+            const float dz =
+              terrain::minimum_image_delta (z - (*focus)[2], period_z);
             const float distance = std::sqrt (dx * dx + dz * dz);
             if (distance < 55.0f)
               continue;
@@ -343,8 +343,12 @@ namespace moppe::game {
       std::vector<PatchCandidate> patches;
       constexpr float patch_separation = 82.0f;
       constexpr float forest_diameter = 260.0f;
-      for (const PatchCandidate& candidate : candidates) {
+      for (PatchCandidate candidate : candidates) {
         if (!patches.empty ()) {
+          candidate.x =
+            terrain::nearest_image (candidate.x, patches.front ().x, period_x);
+          candidate.z =
+            terrain::nearest_image (candidate.z, patches.front ().z, period_z);
           const float dx = candidate.x - patches.front ().x;
           const float dz = candidate.z - patches.front ().z;
           if (dx * dx + dz * dz > forest_diameter * forest_diameter)
@@ -413,17 +417,12 @@ namespace moppe::game {
 
     const std::size_t recruitment_count =
       std::max<std::size_t> (512, desired_count * 80);
-    const map::SurfaceDomain& domain = surface.atlas ().domain ();
-    const float maximum_x = meters_value (domain.maximum_interpolated_x ());
-    const float maximum_z = meters_value (domain.maximum_interpolated_z ());
     for (std::size_t attempt = 0; attempt < recruitment_count; ++attempt) {
       const std::size_t patch = attempt % patches.size ();
       const float angle = 2.0f * std::numbers::pi_v<float> * unit (random);
       const float distance = 6.0f + 44.0f * std::pow (unit (random), 1.65f);
       const float x = patches[patch].x + std::sin (angle) * distance;
       const float z = patches[patch].z + std::cos (angle) * distance;
-      if (x < 2.0f || z < 2.0f || x > maximum_x - 2.0f || z > maximum_z - 2.0f)
-        continue;
       const float support = forest_cover_value (surface, x, z);
       if (support < 0.08f || habitat_value (surface, x, z) < 0.34f)
         continue;
@@ -489,8 +488,6 @@ namespace moppe::game {
     const float camera_distance =
       portrait ? 24.0f : std::max (72.0f, 1.15f * radius + 48.0f);
     Vec3 eye = center + toward_camera * camera_distance;
-    eye[0] = std::clamp (eye[0], 1.0f, maximum_x - 1.0f);
-    eye[2] = std::clamp (eye[2], 1.0f, maximum_z - 1.0f);
     eye[1] = std::max (elevation_value (surface, eye[0], eye[2]) +
                          (portrait ? 4.0f : 8.0f),
                        center[1] + (portrait ? 6.0f : 12.0f));

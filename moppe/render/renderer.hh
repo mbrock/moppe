@@ -59,7 +59,7 @@ namespace moppe {
     // arrays the CPU-side physics samples, so sim and render cannot
     // diverge.
     struct TerrainParams {
-      int width; // grid samples (2049)
+      int width; // grid samples
       int height;
       Vec3 scale;           // grid step x/z, height scale y
       float height_scale;   // world meters at height 1.0
@@ -73,7 +73,6 @@ namespace moppe {
       // Development overlay showing the actual terrain triangles. Useful for
       // inspecting the dense reconstructed near field and ordinary LODs.
       bool topology_overlay = false;
-      bool periodic = false;
       TerrainProjection projection = TerrainProjection::Plane;
       float torus_major_radius = 0.0f;
       float torus_minor_radius = 0.0f;

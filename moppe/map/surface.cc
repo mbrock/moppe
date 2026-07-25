@@ -18,18 +18,11 @@ namespace moppe::map {
                             scale[2] * u::m);
     }
 
-    int surface_coordinate (int coordinate, int extent, bool periodic) {
-      if (periodic)
-        return terrain::wrap_index (coordinate, extent);
-      return std::clamp (coordinate, 0, extent - 1);
-    }
-
     struct SnowSupportStencil {
       int width;
       int height;
       int dx;
       int dz;
-      bool periodic;
     };
 
     SnowSupportStencil snow_support_stencil (const HeightMap& map) {
@@ -44,7 +37,6 @@ namespace moppe::map {
         .dz = std::max (1,
                         static_cast<int> (std::lround (
                           meters_value (support_radius) / spacing[2]))),
-        .periodic = true,
       };
     }
 
@@ -52,12 +44,11 @@ namespace moppe::map {
                               const SnowSupportStencil& stencil,
                               int column,
                               int row) {
-      column = surface_coordinate (column, stencil.width, stencil.periodic);
-      row = surface_coordinate (row, stencil.height, stencil.periodic);
+      column = terrain::wrap_index (column, stencil.width);
+      row = terrain::wrap_index (row, stencil.height);
       const auto sample = [&] (int x, int z) {
-        return map.normal (
-          surface_coordinate (column + x, stencil.width, stencil.periodic),
-          surface_coordinate (row + z, stencil.height, stencil.periodic));
+        return map.normal (terrain::wrap_index (column + x, stencil.width),
+                           terrain::wrap_index (row + z, stencil.height));
       };
       Vec3 support = sample (0, 0) * 4.0f;
       support += (sample (-stencil.dx, 0) + sample (stencil.dx, 0) +
@@ -140,44 +131,23 @@ namespace moppe::map {
         std::clamp (influence[offset], 0.0f, 1.0f) * home_base_influence[one];
   }
 
-  namespace {
-    // Analyses live on the torus's unique lattice; surface sections carry
-    // the duplicated seam row and column.  Every unique-grid
-    // materialization crosses through this one expansion.
-    template <typename WriteCell>
-    void expand_unique_cells (const SurfaceDomain& domain,
-                              std::size_t unique_width,
-                              std::size_t unique_height,
-                              WriteCell&& write) {
-      for (std::size_t row = 0; row < domain.height (); ++row)
-        for (std::size_t column = 0; column < domain.width (); ++column)
-          write (row * domain.width () + column,
-                 (row % unique_height) * unique_width +
-                   (column % unique_width));
-    }
-  }
-
   void Surface::materialize_moisture (const terrain::ScalarRaster& moisture) {
-    std::vector<float> expanded (atlas ().domain ().size ());
-    expand_unique_cells (atlas ().domain (),
-                         moisture.domain ().width,
-                         moisture.domain ().height,
-                         [&] (std::size_t offset, std::size_t cell) {
-                           expanded[offset] = moisture.values ()[cell];
-                         });
-    materialize_moisture (expanded);
+    const SurfaceDomain& domain = atlas ().domain ();
+    if (moisture.domain ().width != domain.width () ||
+        moisture.domain ().height != domain.height ())
+      throw std::invalid_argument (
+        "Moisture analysis does not share the surface lattice");
+    materialize_moisture (moisture.values ());
   }
 
   void Surface::materialize_waterline_distance (
     const terrain::ScalarRaster& distance) {
-    std::vector<float> expanded (atlas ().domain ().size ());
-    expand_unique_cells (atlas ().domain (),
-                         distance.domain ().width,
-                         distance.domain ().height,
-                         [&] (std::size_t offset, std::size_t cell) {
-                           expanded[offset] = distance.values ()[cell];
-                         });
-    materialize_waterline_distance (expanded);
+    const SurfaceDomain& domain = atlas ().domain ();
+    if (distance.domain ().width != domain.width () ||
+        distance.domain ().height != domain.height ())
+      throw std::invalid_argument (
+        "Waterline analysis does not share the surface lattice");
+    materialize_waterline_distance (distance.values ());
   }
 
   void Surface::materialize_channel_flux (
@@ -186,6 +156,10 @@ namespace moppe::map {
     const auto& areas =
       spatial::get<terrain::fractional_contributing_area> (channels);
     const terrain::TerrainGrid& grid = channels.domain ().grid ();
+    const SurfaceDomain& domain = atlas ().domain ();
+    if (grid.width != domain.width () || grid.height != domain.height ())
+      throw std::invalid_argument (
+        "Channel analysis does not share the surface lattice");
     // Activity compresses contributing area logarithmically onto 0..1:
     // hillslope cells fade out and anything carrying river-scale drainage
     // saturates.
@@ -197,19 +171,15 @@ namespace moppe::map {
     SurfaceChannelFluxSections& values =
       mutable_atlas ().hydrology ().materialize_channel_flux ();
     auto& column = spatial::get<channel_flux> (values);
-    expand_unique_cells (
-      atlas ().domain (),
-      grid.unique_width (),
-      grid.unique_height (),
-      [&] (std::size_t offset, std::size_t cell) {
-        const float area_m2 = areas[cell].numerical_value_in (u::m * u::m);
-        const float activity = std::clamp (
-          std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) / activity_span,
-          0.0f,
-          1.0f);
-        column[offset] = tangents[cell].numerical_value_in (one) * activity *
-                         channel_flux[one];
-      });
+    for (std::size_t offset = 0; offset < domain.size (); ++offset) {
+      const float area_m2 = areas[offset].numerical_value_in (u::m * u::m);
+      const float activity = std::clamp (
+        std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) / activity_span,
+        0.0f,
+        1.0f);
+      column[offset] = tangents[offset].numerical_value_in (one) * activity *
+                       channel_flux[one];
+    }
   }
 
   void Surface::materialize_channel_flux (std::span<const float> flux) {

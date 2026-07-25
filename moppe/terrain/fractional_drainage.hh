@@ -32,13 +32,13 @@ namespace moppe::terrain {
       return m_grid;
     }
     std::size_t width () const noexcept {
-      return m_grid.unique_width ();
+      return m_grid.width;
     }
     std::size_t height () const noexcept {
-      return m_grid.unique_height ();
+      return m_grid.height;
     }
     std::size_t size () const noexcept {
-      return m_grid.unique_size ();
+      return m_grid.width * m_grid.height;
     }
 
     std::size_t offset (CellIndex index) const;

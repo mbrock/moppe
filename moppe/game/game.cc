@@ -314,7 +314,7 @@ namespace moppe {
         if (!trail_network () || cell == terrain::no_cell)
           return {};
         const terrain::TerrainGrid& grid = trail_network ()->source_grid;
-        const std::size_t width = grid.unique_width ();
+        const std::size_t width = grid.width;
         const float x = (cell.value % width) * grid.spacing_x_m ();
         const float z = (cell.value / width) * grid.spacing_y_m ();
         return Vec3 (x, map ().interpolated_height (x, z), z);
@@ -382,8 +382,8 @@ namespace moppe {
         const auto& alignment = trail_network ()->alignment.points;
         if (alignment.size () < 2)
           return;
-        const float period_x = grid.unique_width () * grid.spacing_x_m ();
-        const float period_z = grid.unique_height () * grid.spacing_y_m ();
+        const float period_x = grid.width * grid.spacing_x_m ();
+        const float period_z = grid.height * grid.spacing_y_m ();
         const float home_x = alignment.front ().x_m;
         const float home_z = alignment.front ().z_m;
         const auto wrap_delta = [] (float delta, float period) {

@@ -40,11 +40,11 @@ namespace moppe::map {
     std::size_t height () const noexcept {
       return m_height;
     }
-    meters_t maximum_interpolated_x () const noexcept {
-      return static_cast<float> (m_width - 2) * m_spacing_x;
+    meters_t period_x () const noexcept {
+      return static_cast<float> (m_width) * m_spacing_x;
     }
-    meters_t maximum_interpolated_z () const noexcept {
-      return static_cast<float> (m_height - 2) * m_spacing_z;
+    meters_t period_z () const noexcept {
+      return static_cast<float> (m_height) * m_spacing_z;
     }
     meters_t spacing_x () const noexcept {
       return m_spacing_x;

@@ -35,9 +35,8 @@ namespace moppe::map {
     TrailInfluence trail_influence_at (const position_t& position) const;
     HomeBaseInfluence home_base_influence_at (const position_t& position) const;
 
-    // Analyses arrive typed on the torus's unique lattice; these overloads
-    // expand them across the storage seam and write the typed sections.
-    // The span overloads below are the storage-grid primitives.
+    // Analyses arrive on the same lattice and write their typed sections.
+    // A mismatched lattice is an error rather than an implicit resampling.
     void materialize_moisture (const terrain::ScalarRaster& moisture);
     void materialize_waterline_distance (const terrain::ScalarRaster& distance);
     void materialize_channel_flux (const terrain::FractionalDrainage& channels);

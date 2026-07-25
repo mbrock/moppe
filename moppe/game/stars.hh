@@ -66,7 +66,6 @@ namespace moppe {
       int m_collected;
       Vec3 m_last_pos;
       Vec3 m_period;
-      bool m_periodic = false;
     };
   }
 }

@@ -145,10 +145,9 @@ namespace moppe::game {
           m_trails = terrain::analyze_trail_network (
             m_terrain.terrain_view (),
             std::get<terrain::TrailFormation> (*stage));
-        m_surface.materialize_trail_influence (
-          terrain::expand_trail_influence (*m_trails));
+        m_surface.materialize_trail_influence (m_trails->influence.values ());
         m_surface.materialize_home_base_influence (
-          terrain::expand_home_base_influence (*m_trails));
+          m_trails->home_base_influence.values ());
       }
     }
 

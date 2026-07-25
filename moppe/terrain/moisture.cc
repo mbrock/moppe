@@ -15,10 +15,9 @@ namespace moppe::terrain {
                                  const MoistureParameters& parameters) {
     MOPPE_PROFILE_ZONE ("analyze_moisture");
     const TerrainGrid& grid = flood.source_grid;
-    const int width = static_cast<int> (grid.unique_width ());
-    const int height = static_cast<int> (grid.unique_height ());
-    const std::size_t count = grid.unique_size ();
-    constexpr bool periodic = true;
+    const int width = static_cast<int> (grid.width);
+    const int height = static_cast<int> (grid.height);
+    const std::size_t count = grid.width * grid.height;
     const float spacing = 0.5f * (grid.spacing_x_m () + grid.spacing_y_m ());
 
     // Multi-source BFS distance (in grid steps) from every standing-water
@@ -46,13 +45,8 @@ namespace moppe::terrain {
           for (int dx = -1; dx <= 1; ++dx) {
             if (dx == 0 && dy == 0)
               continue;
-            int nx = x + dx;
-            int ny = y + dy;
-            if (periodic) {
-              nx = (nx + width) % width;
-              ny = (ny + height) % height;
-            } else if (nx < 0 || nx >= width || ny < 0 || ny >= height)
-              continue;
+            const int nx = wrap_index (x + dx, width);
+            const int ny = wrap_index (y + dy, height);
             const std::uint32_t neighbor =
               static_cast<std::uint32_t> (ny) * width + nx;
             if (steps[neighbor] <= next)

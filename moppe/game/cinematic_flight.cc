@@ -154,8 +154,8 @@ namespace moppe::game {
 
     FeatureCandidate choose_peak (const map::HeightMap& map) {
       FeatureCandidate best;
-      const int width = map.unique_width ();
-      const int height = map.unique_height ();
+      const int width = map.width ();
+      const int height = map.height ();
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 64);
       for (int z = 0; z < height; z += stride)
@@ -185,8 +185,8 @@ namespace moppe::game {
 
     FeatureCandidate choose_saddle (const map::HeightMap& map) {
       FeatureCandidate best;
-      const int width = map.unique_width ();
-      const int height = map.unique_height ();
+      const int width = map.width ();
+      const int height = map.height ();
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 80);
       for (int z = 0; z < height; z += stride)

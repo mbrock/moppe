@@ -211,9 +211,9 @@ runtime data flow.
 
 `TerrainView` is a borrowed description of concrete relative-elevation
 samples. Its `TerrainGrid` carries horizontal spacing and vertical scale as
-length quantities, plus bounded-versus-torus topology; these are deliberately
-absent from the normalized sampling `Domain2D` used by pointwise field
-evaluation. `relative_elevation_at` reads the scale-free sample, while
+length quantities. These are deliberately absent from the normalized sampling
+domain used by pointwise field evaluation. `relative_elevation_at` reads the
+scale-free sample, while
 `elevation_at` performs the explicit calibration into metres.
 `RandomHeightMap::terrain_view` is the shared bridge used by transforms,
 tools, and the Lab.

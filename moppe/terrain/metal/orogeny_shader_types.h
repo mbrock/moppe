@@ -24,8 +24,8 @@ typedef std::int32_t MoppeOrogenyInt;
 struct MoppeOrogenyParameters {
   MoppeOrogenyUInt width;
   MoppeOrogenyUInt height;
-  MoppeOrogenyUInt periodic;
   MoppeOrogenyUInt has_previous_tangent;
+  MoppeOrogenyUInt padding_uint;
   float height_scale_m;
   float persistence;
   float padding0;

@@ -106,13 +106,13 @@ namespace moppe::map {
     SurfaceForestSections& values =
       atlas.ecology ().materialize_forest_cover ();
     auto& cover = spatial::get<forest_cover> (values);
-    const float unique_width = static_cast<float> (domain.width ());
-    const float unique_height = static_cast<float> (domain.height ());
+    const float width = static_cast<float> (domain.width ());
+    const float height = static_cast<float> (domain.height ());
 
     for (std::size_t offset = 0; offset < domain.size (); ++offset) {
       const SurfaceIndex index = domain.index (offset);
-      const float u = static_cast<float> (index.column) / unique_width;
-      const float v = static_cast<float> (index.row) / unique_height;
+      const float u = static_cast<float> (index.column) / width;
+      const float v = static_cast<float> (index.row) / height;
       const float broad =
         periodic_noise (u * 7.0f, v * 7.0f, 7, 7, seed ^ 0x4b1d9e37U);
       const float local =

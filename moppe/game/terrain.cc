@@ -80,7 +80,6 @@ namespace moppe {
         graphics.snow_support_filter && !interactive_preview;
       params.channel_flux_detail =
         graphics.channel_flux_detail && !interactive_preview;
-      params.periodic = true;
       params.projection = projection;
       const float shortest_period = std::min (m_period[0], m_period[2]);
       params.torus_major_radius = 0.34f * shortest_period;
