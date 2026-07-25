@@ -28,15 +28,15 @@ namespace moppe::map {
     SnowSupportStencil
     snow_support_stencil (const terrain::TerrainDomain& domain) {
       constexpr meters_t support_radius = 24.0f * u::m;
+      const auto cells = [] (meters_t radius, meters_t spacing) {
+        return std::max (
+          1,
+          static_cast<int> (std::lround (
+            (radius / spacing).numerical_value_in (mp_units::one))));
+      };
       return {
-        .dx = std::max (1,
-                        static_cast<int> (std::lround (
-                          meters_value (support_radius) /
-                          domain.spacing_x ().numerical_value_in (u::m)))),
-        .dz = std::max (1,
-                        static_cast<int> (std::lround (
-                          meters_value (support_radius) /
-                          domain.spacing_z ().numerical_value_in (u::m)))),
+        .dx = cells (support_radius, domain.spacing_x ()),
+        .dz = cells (support_radius, domain.spacing_z ()),
       };
     }
 
@@ -136,8 +136,8 @@ namespace moppe::map {
 
   namespace {
     constexpr float coastline = 0.4f;
-    constexpr float initial_land_relief_m = 20.0f;
-    constexpr float initial_bathymetric_relief_m = 240.0f;
+    constexpr meters_t initial_land_relief = 20.0f * u::m;
+    constexpr meters_t initial_bathymetric_relief = 240.0f * u::m;
     constexpr float maximum_uplift_m_per_year = 0.001f;
 
     void reset_material_history (SurfaceGeometry& surface) {
@@ -183,8 +183,6 @@ namespace moppe::map {
     MOPPE_PROFILE_ZONE ("terrain.initialize");
     terrain::GeologicalSections geology =
       terrain::generate_geology (surface.domain (), seed, progress);
-    const float sea_level_m = meters_value (water_datum);
-
     std::vector<meters_per_julian_year_t> uplift;
     uplift.reserve (geology.size ());
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
@@ -193,11 +191,10 @@ namespace moppe::map {
         spatial::get<terrain::continent_shape> (ground).numerical_value_in (
           one) -
         coastline;
-      const float relief =
-        land < 0.0f ? initial_bathymetric_relief_m : initial_land_relief_m;
+      const meters_t relief =
+        land < 0.0f ? initial_bathymetric_relief : initial_land_relief;
       spatial::get<terrain::surface_elevation> (surface[site]) =
-        SurfaceElevation ((sea_level_m + relief * land) *
-                          terrain::surface_elevation[u::m]);
+        terrain::surface_elevation_point (water_datum + relief * land);
       uplift.push_back (
         spatial::get<terrain::uplift_weight> (ground).numerical_value_in (one) *
         maximum_uplift_m_per_year * mp_units::si::metre /
@@ -257,11 +254,12 @@ namespace moppe::map {
     // Activity compresses contributing area logarithmically onto 0..1:
     // hillslope cells fade out and anything carrying river-scale drainage
     // saturates.
-    const float floor_area_m2 = 4.0f * square_meters_value (grid.cell_area ());
-    const float channel_area_m2 =
-      square_meters_value (terrain::visible_river_minimum_area (grid));
-    const float activity_span =
-      std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
+    const square_meters_t floor_area = 4.0f * grid.cell_area ();
+    const auto reach = [&] (auto area) {
+      return (area / floor_area).numerical_value_in (mp_units::one);
+    };
+    const float activity_span = std::log (
+      std::max (reach (terrain::visible_river_minimum_area (grid)), 1.001f));
 
     // Still an offset walk: the drainage is a bundle over TerrainCellDomain
     // and the flux is one over TerrainDomain, so the two are related only by
@@ -270,9 +268,8 @@ namespace moppe::map {
     ChannelFluxMap flux (domain);
     auto& column = spatial::get<channel_flux> (flux);
     for (std::size_t offset = 0; offset < domain.size (); ++offset) {
-      const float area_m2 = areas[offset].numerical_value_in (u::m * u::m);
       const float activity = std::clamp (
-        std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) / activity_span,
+        std::log (std::max (reach (areas[offset]), 1e-6f)) / activity_span,
         0.0f,
         1.0f);
       column[offset] = tangents[offset].numerical_value_in (one) * activity *
