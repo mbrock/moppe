@@ -20,6 +20,45 @@ tomorrow. It is an attempt to say precisely what a motorcycle is, so that
 if we ever build it properly we know what we are building.
 
 
+## What makes it one thing
+
+Before asking what a motorcycle is made of, it is worth asking why it is a
+single thing at all, rather than a heap of parts that happen to be near
+each other. Barry Smith's classification of material entities gives three
+criteria of **causal unity**, and machinery has its own. A cell is unified
+by a physical covering; a lump of iron by the forces between its atoms;
+and third:
+
+> Causal unity via **engineered assembly of components**. Here the material
+> parts are combined together via mechanical assemblies joined for example
+> through screws or other fasteners. The assemblies often involve parts
+> which are reciprocally engineered to fit together, as in the case of
+> dovetail joints, balls and bearings, nuts and bolts.
+
+And then the sentence that says what a mechanism is:
+
+> The parts of an automobile, **including the moving parts**, constitute an
+> object because of their **relative rigidity**: while these parts may move
+> with respect to each other, a given gear cannot move e.g. 10 ft. while
+> the other parts do not.
+
+Parts may move relative to one another, but only within bounds. That is
+precisely what a joint's coordinate range expresses — which means joints
+are not merely what *permits* motion in a machine but what *bounds* it,
+and the bounding is what holds the object together as an object. A
+mechanism is a thing whose parts are free in exactly the ways its joints
+allow and no further.
+
+Two consequences worth carrying. First, this kind of unity "can be
+interrupted for a time, as when a watch is disassembled for repair, and
+then recreated in its original state" — a bike in pieces on the workshop
+floor is still that bike, which is not true of a cell or a lump of iron.
+Second, being a part does not stop something being a thing in its own
+right: a spark plug installed in an engine remains an object, it merely
+ceases to be *maximal*, because plugs in general can stand alone. So the
+bodies below are genuine particulars, not slices we cut out of a blob.
+
+
 ## Two structures, not one
 
 The first thing to notice is that "the parts of a motorcycle" names two
@@ -252,6 +291,23 @@ The grip model, the ground normal query, and the wall collision each live
 at exactly one of those levels, and today they are interleaved in a single
 update because there is no vocabulary that keeps them apart.
 
+Contact also explains why a solver's notion of a system is not the same as
+a machine. Smith calls an entity **maximal** under a unity criterion when
+it is not a proper part of anything larger unified the same way — an
+armoured vehicle is maximal, a piece of its armour falls short, and two
+vehicles side by side exceed it. A mechanism is maximal in exactly that
+sense under engineered assembly, and this is a fact about the machine, not
+a decision of ours.
+
+A solver's coupled group is something else. Two bikes in collision are
+solved together, but nothing has bolted them together; the tether under a
+glider makes a temporary compound that dissolves when it is released. Such
+a group is maximal under a much weaker unity — *currently coupled by
+constraints* — which is a criterion we adopt for computing rather than one
+the world supplies. Machines are objects; coupled groups are fiat systems
+that come and go as contacts do. `ideas/computed-together.md` follows what
+that distinction costs to maintain.
+
 
 ## Motion is a process
 
@@ -391,3 +447,13 @@ another *proposition*; forward kinematics computes a *transformation*.
 Both walk paths through structured relations, and one vocabulary might
 organize both, but logical closure and numerical evaluation are not the
 same operation and should not be quietly identified.
+
+The categories used above come from Barry Smith's *On Classifying Material
+Entities in Basic Formal Ontology* (2012), which sorts material things
+into **objects** — unified by covering, by internal forces, or by
+engineered assembly — **object aggregates**, being pluralities of objects
+with membership that may change while the aggregate stays the same
+individual, and **fiat object parts**, which are proper parts of an object
+that are not themselves objects. The bike and its wheels are objects; a
+star field or a forest is an aggregate; a mountain, a lake, or "the front
+end" is a fiat part.
