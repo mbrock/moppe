@@ -8,10 +8,9 @@ ownership and target shape.
 
 ## Surface
 
-`map::Surface` is the materialized ground reading over one `SurfaceDomain`.
-Its `SurfaceAtlas` owns geometry plus named optional hydrology, geology,
-ecology, and use sections; `game::SurfacePresentation` is the only bridge that
-turns them into renderer lanes.
+`map::Surface` owns `SurfaceGeometry` and the derived `SurfaceReadings` over
+one `terrain::TerrainDomain`; `game::SurfacePresentation` is the only bridge
+that turns them into renderer lanes.
 
 | Contract | Characterization owner |
 | --- | --- |

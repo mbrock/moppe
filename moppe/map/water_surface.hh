@@ -2,39 +2,25 @@
 #define MOPPE_MAP_WATER_SURFACE_HH
 
 #include <moppe/map/surface_sections.hh>
+#include <moppe/terrain/watercourse.hh>
 
 #include <span>
 
-namespace moppe::terrain {
-  struct WaterSheets;
-}
-
 namespace moppe::map {
-  inline constexpr struct wave_amplitude
-      : quantity_spec<mp_units::dimensionless> {
-  } wave_amplitude;
-
-  inline constexpr struct water_velocity
-      : quantity_spec<mp_units::isq::speed,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } water_velocity;
-
-  using WaveAmplitude = quantity<wave_amplitude[one], float>;
-  using WaterVelocity = quantity<water_velocity[u::m / u::s], Vec3>;
-
-  using WaterSurfaceSections = spatial::
-    Bundle<SurfaceDomain, SurfaceElevation, WaveAmplitude, WaterVelocity>;
+  using terrain::water_velocity;
+  using terrain::WaterVelocity;
+  using terrain::wave_amplitude;
+  using terrain::WaveAmplitude;
+  using WaterSurfaceSections = terrain::WaterSheets;
 
   // Standing and running water sampled over the terrain lattice. Elevation
   // shares the ground's affine frame; amplitude and velocity describe the
   // water itself and therefore live in a distinct bundle.
   class WaterSurface {
   public:
-    // Painted water sheets and the ground share one lattice.
-    WaterSurface (SurfaceDomain domain, const terrain::WaterSheets& sheets);
+    explicit WaterSurface (WaterSurfaceSections sections);
 
-    WaterSurface (SurfaceDomain domain,
+    WaterSurface (terrain::TerrainDomain domain,
                   std::span<const float> level_and_amplitude,
                   std::span<const float> planar_flow);
 

@@ -294,16 +294,12 @@ namespace moppe::game {
                            std::uint32_t seed,
                            std::size_t desired_count,
                            std::optional<Vec3> focus) {
-      const map::SurfaceAtlas& atlas = surface.atlas ();
-      const map::SurfaceForestSections* forest =
-        atlas.ecology ().forest_cover ();
-      const map::SurfaceHabitatSections* habitats =
-        atlas.ecology ().tree_habitat ();
-      if (!forest || !habitats)
+      const map::SurfaceReadings* readings = surface.readings ();
+      if (!readings)
         return {};
-      const map::SurfaceDomain& domain = atlas.domain ();
-      const auto& cover = spatial::get<map::forest_cover> (*forest);
-      const auto& habitat = spatial::get<map::tree_habitat> (*habitats);
+      const terrain::TerrainDomain& domain = readings->domain ();
+      const auto& cover = spatial::get<map::forest_cover> (*readings);
+      const auto& habitat = spatial::get<map::tree_habitat> (*readings);
       const std::size_t step = std::max<std::size_t> (
         1, std::min (domain.width (), domain.height ()) / 180);
       const float period_x = meters_value (domain.period_x ());
@@ -311,7 +307,7 @@ namespace moppe::game {
       std::vector<PatchCandidate> candidates;
       for (std::size_t row = 0; row < domain.height (); row += step)
         for (std::size_t column = 0; column < domain.width (); column += step) {
-          const map::SurfaceIndex index { column, row };
+          const terrain::TerrainIndex index { column, row };
           const std::size_t offset = domain.offset (index);
           const float support = cover[offset].numerical_value_in (one);
           const float habitability = habitat[offset].numerical_value_in (one);

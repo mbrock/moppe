@@ -24,7 +24,7 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   };
   map::WaterSurface water (ground.domain (), level_and_amplitude, flow);
 
-  const map::SurfaceIndex first { 0, 0 };
+  const terrain::TerrainIndex first { 0, 0 };
   const auto water_elevation =
     spatial::get<map::surface_elevation> (water.sections ()[first]);
   const auto ground_elevation = ground.elevation_at (position (Vec3 (0, 0, 0)));
@@ -44,7 +44,7 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
 
 MOPPE_TEST (water_presentation_packs_physical_bundle_sections) {
   using namespace moppe;
-  const map::SurfaceDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
+  const terrain::TerrainDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
   const std::array level_and_amplitude {
     10.0f, 0.20f, 20.0f, 0.30f, 30.0f, 0.40f, 40.0f, 0.50f,
   };

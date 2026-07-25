@@ -23,8 +23,8 @@ remains.
 Touch points, surveyed:
 
 - `terrain/topology.hh` — Topology enum deleted; carriers drop the field
-  (`TerrainGrid`, `TerrainDiscretization`, recipes, `WorldParams`,
-  `SurfaceDomain`).
+  (`TerrainGrid`, `TerrainDiscretization`, recipes, `WorldParams`, and the
+  former `SurfaceDomain`).
 - `TerrainGrid.unique_width/height/size` — deleted; there is only
   width/height and their product.
 - The former `map/generate` storage: scale = size/width; `periodic ()` and
@@ -64,7 +64,7 @@ planning constraint, not a second topology.
 
 ## Stage: authoritative surface bundle (done)
 
-`SurfaceAtlas::geometry()` is the one finite terrain store. Its mandatory
+`Surface::geometry()` is the one finite terrain store. Its mandatory
 typed columns are elevation in metres, normal, removed material, deposited
 material, and broad snow support. Elevation is an affine quantity point with
 the native representation of a `float`; it is neither boxed nor normalized.
@@ -166,13 +166,17 @@ checks only their length, loops over them again, and invents the missing
 semantics during a copy.
 
 Trail and home-base influence are one `TrailUseMap`, because they are produced
-and become valid together. The atlas likewise stores one optional use bundle
-instead of coordinating two independent optionals. The renderer bridge is
-still the deliberate place where typed quantities become homogeneous float
-texture lanes.
+and become valid together. The renderer bridge remains the deliberate place
+where typed quantities become homogeneous float texture lanes.
 
-`ScalarRaster` remains only inside established hydrology products whose
-algorithms still operate numerically on water sheets, slope, and contributing
-area. It is no longer the interchange format for optional surface readings.
-If those products are migrated later, each should become a named finite
-product; this pass deliberately does not recreate a generic field framework.
+## Stage: typed hydrology and consolidated surface readings (done)
+
+The compatibility `ScalarRaster`, typed `Raster`, and `RasterDomain` are
+deleted. Flood level and depth, classic drainage slope and contributing area,
+and painted water sheets are named typed bundles over `TerrainDomain`.
+
+`SurfaceDomain` and `SurfaceAtlas` are also deleted. `Surface` owns mandatory
+geometry plus one derived `SurfaceReadings` bundle. The latter replaces seven
+optional section bundles and their repeated domain copies. Generic
+neighbourhood operations, including the Atelier Laplacian, remain available in
+`spatial/bundle_operations.hh` without enlarging the core storage header.

@@ -42,6 +42,20 @@ namespace moppe::terrain {
       : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
   } waterline_distance;
 
+  inline constexpr struct standing_water_depth
+      : quantity_spec<mp_units::isq::length, mp_units::non_negative> {
+  } standing_water_depth;
+
+  inline constexpr struct wave_amplitude
+      : quantity_spec<mp_units::dimensionless> {
+  } wave_amplitude;
+
+  inline constexpr struct water_velocity
+      : quantity_spec<mp_units::isq::speed,
+                      mp_units::quantity_tensor_order::vector,
+                      mp_units::is_kind> {
+  } water_velocity;
+
   inline constexpr struct trail_influence
       : quantity_spec<mp_units::dimensionless> {
   } trail_influence;
@@ -52,6 +66,9 @@ namespace moppe::terrain {
 
   using SurfaceMoisture = quantity<surface_moisture[one], float>;
   using WaterlineDistance = quantity<waterline_distance[u::m], float>;
+  using StandingWaterDepth = quantity<standing_water_depth[u::m], float>;
+  using WaveAmplitude = quantity<wave_amplitude[one], float>;
+  using WaterVelocity = quantity<water_velocity[u::m / u::s], Vec3>;
   using TrailInfluence = quantity<trail_influence[one], float>;
   using HomeBaseInfluence = quantity<home_base_influence[one], float>;
 

@@ -10,10 +10,10 @@ artifacts.
 
 | Artifact | Valid after |
 | --- | --- |
-| `Surface` and its mandatory `SurfaceAtlas` geometry | construction |
+| `Surface` and its mandatory `SurfaceGeometry` | construction |
 | Geometry normals and snow support | `rebuild_surface()` |
 | `Hydrology` | `analyze_hydrology()` |
-| `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `derive_surface_readings()` |
+| `WaterSurface`, `SurfaceReadings`, and trail network | `derive_surface_readings()` |
 
 `Hydrology` is one named, complete value: standing water, lake census, wet
 drainage, fractional channel drainage, water-body flow, and river network are
@@ -62,9 +62,9 @@ mutable `surface()` overload.
 ## Checks
 
 `tests/game/generated_world_test.cc` verifies the named completed artifacts,
-their materialized atlas groups, and that a non-movable world transfers by its
-owner rather than a value move. The deterministic water-capture tool exercises
-the runtime construction path:
+their materialized geometry and readings, and that a non-movable world
+transfers by its owner rather than a value move. The deterministic
+water-capture tool exercises the runtime construction path:
 
 ```sh
 tools/capture-water /tmp/river.png river

@@ -10,6 +10,20 @@
 using namespace moppe::terrain;
 
 namespace {
+  float sheet_level_m (const WaterSheets& sheets, std::size_t cell) {
+    return surface_elevation_value (
+      spatial::get<surface_elevation> (sheets)[cell]);
+  }
+
+  float sheet_wave (const WaterSheets& sheets, std::size_t cell) {
+    return spatial::get<wave_amplitude> (sheets)[cell].numerical_value_in (one);
+  }
+
+  Vec3 sheet_velocity (const WaterSheets& sheets, std::size_t cell) {
+    return spatial::get<water_velocity> (sheets)[cell].numerical_value_in (
+      u::m / u::s);
+  }
+
   std::vector<float> valley_to_sea () {
     std::vector<float> heights (9 * 9);
     for (int y = 0; y < 9; ++y)
@@ -56,11 +70,10 @@ MOPPE_TEST (running_rivers_do_not_mutate_the_standing_water_lattice) {
   MOPPE_CHECK (!valley.rivers.reaches.empty ());
 
   const std::size_t dry_trunk = 4 * 9 + 4;
-  MOPPE_CHECK (valley.flood.water_depth.values ()[dry_trunk] == 0.0f);
-  MOPPE_CHECK_NEAR (valley.sheets.surface.values ()[dry_trunk],
-                    valley.heights[dry_trunk],
-                    1e-6f);
-  MOPPE_CHECK_NEAR (valley.sheets.amplitude[dry_trunk], 0.0f, 0.0f);
+  MOPPE_CHECK (valley.flood.water_depth_m (dry_trunk) == 0.0f);
+  MOPPE_CHECK_NEAR (
+    sheet_level_m (valley.sheets, dry_trunk), valley.heights[dry_trunk], 1e-6f);
+  MOPPE_CHECK_NEAR (sheet_wave (valley.sheets, dry_trunk), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (standing_water_keeps_its_level_and_wave_character) {
@@ -68,10 +81,10 @@ MOPPE_TEST (standing_water_keeps_its_level_and_wave_character) {
   const std::size_t sea = 8 * 9 + 1;
 
   MOPPE_CHECK (valley.flood.ocean[sea]);
-  MOPPE_CHECK_NEAR (valley.sheets.surface.values ()[sea],
-                    valley.flood.water_level.values ()[sea],
+  MOPPE_CHECK_NEAR (sheet_level_m (valley.sheets, sea),
+                    valley.flood.water_level_m (sea),
                     1e-6f);
-  MOPPE_CHECK_NEAR (valley.sheets.amplitude[sea], 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (sheet_wave (valley.sheets, sea), 1.0f, 0.0f);
 }
 
 MOPPE_TEST (river_current_continues_through_the_mouth) {
@@ -80,8 +93,9 @@ MOPPE_TEST (river_current_continues_through_the_mouth) {
   for (std::size_t cell = 0; cell < valley.flood.ocean.size (); ++cell) {
     if (!valley.flood.ocean[cell])
       continue;
-    const float x = valley.sheets.flow[2 * cell];
-    const float z = valley.sheets.flow[2 * cell + 1];
+    const Vec3 velocity = sheet_velocity (valley.sheets, cell);
+    const float x = velocity[0];
+    const float z = velocity[2];
     found_ocean_current = found_ocean_current || std::hypot (x, z) > 0.1f;
   }
   MOPPE_CHECK (found_ocean_current);
@@ -116,8 +130,8 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   const std::size_t upper = 1 * width + 1;
   const std::size_t sill = 1 * width + 3;
   const std::size_t lower = 1 * width + 4;
-  MOPPE_CHECK_NEAR (flood.water_level.values ()[upper], 5.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (flood.water_level.values ()[lower], 3.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (flood.water_level_m (upper), 5.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (flood.water_level_m (lower), 3.0f, 1e-5f);
 
   const DrainageGraph drainage = analyze_wet_drainage (flood, census);
   const RiverNetwork rivers = extract_river_network (
@@ -125,9 +139,9 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   const WaterSheets sheets =
     paint_watercourses (terrain, flood, census, drainage, rivers);
 
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[upper], 5.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[lower], 3.0f, 1e-5f);
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[sill], 3.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, upper), 5.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, lower), 3.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, sill), 3.0f, 1e-5f);
 }
 
 MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
@@ -189,10 +203,10 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
     paint_watercourses (terrain, flood, census, drainage, rivers);
   const std::size_t pond_cell = 1 * width + 6;
   MOPPE_CHECK_NEAR (
-    sheets.surface.values ()[pond_cell], heights[pond_cell], 1e-4f);
-  MOPPE_CHECK_NEAR (sheets.amplitude[pond_cell], 0.0f, 0.0f);
+    sheet_level_m (sheets, pond_cell), heights[pond_cell], 1e-4f);
+  MOPPE_CHECK_NEAR (sheet_wave (sheets, pond_cell), 0.0f, 0.0f);
   const std::size_t sea_cell = 1 * width + 12;
-  MOPPE_CHECK_NEAR (sheets.surface.values ()[sea_cell], 0.0f, 1e-5f);
+  MOPPE_CHECK_NEAR (sheet_level_m (sheets, sea_cell), 0.0f, 1e-5f);
 }
 
 MOPPE_TEST (dry_ridges_remain_still) {
@@ -201,7 +215,8 @@ MOPPE_TEST (dry_ridges_remain_still) {
   // probe an interior ridge cell instead.
   const std::size_t ridge = 3 * 9;
   MOPPE_CHECK_NEAR (
-    valley.sheets.surface.values ()[ridge], valley.heights[ridge], 1e-6f);
-  MOPPE_CHECK_NEAR (valley.sheets.flow[2 * ridge], 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (valley.sheets.flow[2 * ridge + 1], 0.0f, 0.0f);
+    sheet_level_m (valley.sheets, ridge), valley.heights[ridge], 1e-6f);
+  const Vec3 velocity = sheet_velocity (valley.sheets, ridge);
+  MOPPE_CHECK_NEAR (velocity[0], 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (velocity[2], 0.0f, 0.0f);
 }

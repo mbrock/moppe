@@ -61,7 +61,7 @@ namespace moppe::game {
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y =
-        wet ? flood.water_level.values ()[cell]
+        wet ? flood.water_level_m (cell)
             : terrain::surface_elevation_value (map.elevation_at (x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
@@ -147,8 +147,8 @@ namespace moppe::game {
       float deepest = -1.0f;
       for (std::uint32_t cell = 0; cell < census.body.size (); ++cell)
         if (census.body[cell] == body->id &&
-            flood.water_depth.values ()[cell] > deepest) {
-          deepest = flood.water_depth.values ()[cell];
+            flood.water_depth_m (cell) > deepest) {
+          deepest = flood.water_depth_m (cell);
           best.cell = terrain::CellIndex (cell);
         }
       return best;

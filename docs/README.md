@@ -8,7 +8,7 @@
 - `game-state.md` — session checkpoint, frame reading, and replay boundary.
 - `renderer-design.md` — Metal/backend implementation detail and retained
   port-design record.
-- `surface-atlas.md` — current surface domains, typed sections, and renderer
+- `surface-storage.md` — current surface bundles, typed readings, and renderer
   presentation bridge.
 - `refactoring-seams.md` — characterization contracts for surface,
   replay, completed-world loading, and target ownership.

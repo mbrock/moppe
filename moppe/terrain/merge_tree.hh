@@ -2,7 +2,6 @@
 #define MOPPE_TERRAIN_MERGE_TREE_HH
 
 #include <moppe/terrain/elevation_map.hh>
-#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
@@ -50,7 +49,7 @@ namespace moppe::terrain {
   };
 
   // The minimax water surface at sea level: reproduces
-  // analyze_standing_water's water_level raster (bit-exactly), the
+  // analyze_standing_water's water-level column (bit-exactly), the
   // ocean component, and the deterministic endorheic fallback, as a
   // pair of O(n) passes over the precomputed tree.
   struct MergeTreeFlood {
@@ -59,7 +58,7 @@ namespace moppe::terrain {
     // largest below-sea component, or the global minimum on an
     // all-land world.
     CellIndex root_cell;
-    ScalarRaster water_level;
+    ElevationMap water_level;
     std::vector<std::uint8_t> ocean;
   };
 

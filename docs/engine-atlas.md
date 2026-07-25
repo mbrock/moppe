@@ -60,22 +60,19 @@ forms trails on `map::Surface`, then analyzes hydrology and derives later
 surface readings. Once active, ordinary gameplay receives const views of the
 completed world.
 
-`map::SurfaceDomain` is the one finite lattice for the ground. It owns the
-topology, site correspondence, spacing, and reconstruction stencil. Its
-`SurfaceAtlas` groups typed 0-cochains by the named materialization boundary:
+`terrain::TerrainDomain` is the one finite lattice for the ground. It owns the
+topology, site correspondence, spacing, and reconstruction stencil.
+`map::Surface` owns two typed bundles:
 
-| Group | Typed sections | Valid when |
+| Bundle | Typed sections | Valid when |
 | --- | --- | --- |
-| Geometry | `surface_elevation`, `terrain_normal`, removed/deposited material, `snow_support` | Elevation/history exist at construction; normals/support after `rebuild_geometry_readings()` |
-| Hydrology | `channel_flux`, `surface_moisture`, `waterline_distance` | World hydrology/materialization |
-| Geology | `erosion_exposure`, `deposition_cover` | Geological materialization |
-| Ecology | `tree_habitat`, `forest_cover` | Ecological materialization |
-| Use | `trail_influence`, `home_base_influence` | Completed trail-use analysis |
+| `SurfaceGeometry` | `surface_elevation`, `terrain_normal`, removed/deposited material, `snow_support` | Elevation/history exist at construction; normals/support after `rebuild_geometry_readings()` |
+| `SurfaceReadings` | channel flux, moisture, waterline, geology, ecology, trail, and home-base columns | Derived before completed-world handoff |
 
-Geometry is authoritative and always present. Later groups are individually
-optional: absence means the corresponding world-building barrier has not run,
-while a present all-zero section is a real reading. `map::WaterSurface` uses
-the same domain but a distinct water bundle: `surface_elevation`,
+Geometry is authoritative and always present. Derived readings occupy one
+optional bundle during focused construction and are complete in an active
+world. `map::WaterSurface` uses the same domain but a distinct water bundle:
+`surface_elevation`,
 `wave_amplitude`, and `water_velocity`. It is not a ground-atlas group merely
 because both surfaces have matching texture dimensions.
 
@@ -85,7 +82,7 @@ census, drainage, fractional channels, waterways, and the river network.
 `WaterSurface` and `TrailNetwork` use optional storage to express their
 construction boundary and to support focused tests. Ordinary completed worlds
 build both. The detailed vocabulary, validity rules, and quantity-to-texture
-mappings live in [Surface atlas](surface-atlas.md).
+mappings live in [Surface storage](surface-storage.md).
 
 ## State, lifetime, and handoff
 
@@ -208,7 +205,7 @@ or that every renderer backend has visual feature parity.
 
 ## Detailed maps
 
-- [Surface atlas](surface-atlas.md) — domains, all typed sections, validity,
+- [Surface storage](surface-storage.md) — domains, typed readings, validity,
   and presentation lanes.
 - [Terrain generation and analysis](terrain-expressions.md) — direct finite
   construction and typed analysis products.

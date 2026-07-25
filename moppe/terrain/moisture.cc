@@ -14,7 +14,7 @@ namespace moppe::terrain {
                                 const DrainageGraph& drainage,
                                 const MoistureParameters& parameters) {
     MOPPE_PROFILE_ZONE ("analyze_moisture");
-    const TerrainDomain& grid = flood.domain;
+    const TerrainDomain& grid = flood.domain ();
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
@@ -68,7 +68,8 @@ namespace moppe::terrain {
                                  : steps[cell] * spacing;
         const float near_water =
           std::exp (-distance / parameters.water_reach_m);
-        const float area = drainage.contributing_area.values ()[cell];
+        const float area =
+          drainage.contributing_area_at (cell).numerical_value_in (u::m * u::m);
         const float damp =
           std::clamp (std::log2 (std::max (area / cell_area, 1.0f)) /
                         parameters.drainage_span_log2,

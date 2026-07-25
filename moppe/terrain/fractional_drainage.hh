@@ -18,14 +18,14 @@ namespace moppe::terrain {
   struct FloodField;
   struct LakeCensus;
 
-  // The unique samples of a materialized terrain. Unlike SurfaceDomain, this
-  // domain omits the duplicated rendering seam and exposes the intrinsic
-  // neighbourhood used by geological analyses.
-  class TerrainLatticeDomain {
+  // A CellIndex view of TerrainDomain for topology algorithms. It does not
+  // describe a second lattice: it retains the same dimensions and spacing
+  // while exposing dense cell identifiers and their wrapped neighbourhood.
+  class TerrainCellDomain {
   public:
     using index_type = CellIndex;
 
-    explicit TerrainLatticeDomain (TerrainDomain domain);
+    explicit TerrainCellDomain (TerrainDomain domain);
 
     const TerrainDomain& terrain_domain () const noexcept {
       return m_domain;
@@ -168,11 +168,11 @@ namespace moppe::terrain {
   public:
     using index_type = CellIndex;
 
-    FractionalFlowDomain (TerrainLatticeDomain lattice,
+    FractionalFlowDomain (TerrainCellDomain lattice,
                           std::vector<FractionalFlowRoute> routes,
                           std::vector<CellIndex> topological_order);
 
-    const TerrainLatticeDomain& lattice () const noexcept {
+    const TerrainCellDomain& lattice () const noexcept {
       return m_lattice;
     }
     const TerrainDomain& terrain_domain () const noexcept {
@@ -202,7 +202,7 @@ namespace moppe::terrain {
     }
 
   private:
-    TerrainLatticeDomain m_lattice;
+    TerrainCellDomain m_lattice;
     std::vector<FractionalFlowRoute> m_routes;
     std::vector<CellIndex> m_topological_order;
   };

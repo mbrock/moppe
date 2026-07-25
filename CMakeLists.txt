@@ -320,7 +320,6 @@ endif()
 # Finite terrain generation and analysis.
 add_library(moppe_terrain STATIC
   moppe/terrain/noise.cc
-  moppe/terrain/raster.cc
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
   moppe/terrain/fractional_drainage.cc

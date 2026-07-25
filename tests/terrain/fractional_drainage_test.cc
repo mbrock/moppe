@@ -44,7 +44,7 @@ namespace {
 }
 
 MOPPE_TEST (terrain_lattice_domain_is_the_periodic_lattice) {
-  const TerrainLatticeDomain domain (TerrainDomain (3, 3));
+  const TerrainCellDomain domain (TerrainDomain (3, 3));
 
   MOPPE_CHECK (domain.width () == 3);
   MOPPE_CHECK (domain.height () == 3);

@@ -128,7 +128,7 @@ int main (int argc, char** argv) {
         ++bodies[category];
         ++populations[category].bodies;
       }
-      const std::span<const float> depths = flood.water_depth.values ();
+      const std::span<const StandingWaterDepth> depths = flood.water_depths ();
       for (std::size_t cell = 0; cell < depths.size (); ++cell) {
         const WaterBodyId body = census.body[cell];
         if (body == LakeCensus::dry)
@@ -136,7 +136,8 @@ int main (int argc, char** argv) {
         const std::size_t category =
           category_index (census.bodies[body].classification);
         ++cells[category];
-        populations[category].depths_m.push_back (depths[cell]);
+        populations[category].depths_m.push_back (
+          depths[cell].numerical_value_in (u::m));
       }
       std::cout << seed;
       for (const std::size_t value : bodies)

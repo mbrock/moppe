@@ -23,14 +23,13 @@ MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
   MOPPE_CHECK (graph.sinks[0] == 4);
   for (std::uint32_t cell = 0; cell < 9; ++cell)
     MOPPE_CHECK (graph.receiver[cell] == 4);
-  MOPPE_CHECK_NEAR (graph.contributing_area.sample (1, 1).numerical_value_in (
+  MOPPE_CHECK_NEAR (graph.contributing_area_at (4).numerical_value_in (
                       mp_units::si::metre * mp_units::si::metre),
                     36.0f,
                     0.0f);
-  MOPPE_CHECK_NEAR (
-    graph.slope.sample (0, 0).numerical_value_in (mp_units::one),
-    30.0f / std::sqrt (8.0f),
-    1e-6f);
+  MOPPE_CHECK_NEAR (graph.slope_at (0).numerical_value_in (mp_units::one),
+                    30.0f / std::sqrt (8.0f),
+                    1e-6f);
 }
 
 MOPPE_TEST (periodic_drainage_crosses_the_wrap) {
@@ -116,7 +115,10 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
     ++steps;
   }
   MOPPE_CHECK (steps < heights.size ());
-  MOPPE_CHECK_NEAR (wet.contributing_area.values ()[cell], 25.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    wet.contributing_area_at (cell).numerical_value_in (u::m * u::m),
+    25.0f,
+    0.0f);
 }
 
 MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
@@ -137,10 +139,13 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   for (std::size_t i = 0; i < wet.topological_order.size (); ++i)
     position[wet.topological_order[i]] = i;
   for (std::size_t cell = 0; cell < heights.size (); ++cell) {
-    MOPPE_CHECK_NEAR (routing.slope[cell], wet.slope.values ()[cell], 0.0f);
-    MOPPE_CHECK_NEAR (wet.contributing_area.values ()[cell],
-                      dry.contributing_area.values ()[cell],
+    MOPPE_CHECK_NEAR (routing.slope[cell],
+                      wet.slope_at (cell).numerical_value_in (mp_units::one),
                       0.0f);
+    MOPPE_CHECK_NEAR (
+      wet.contributing_area_at (cell).numerical_value_in (u::m * u::m),
+      dry.contributing_area_at (cell).numerical_value_in (u::m * u::m),
+      0.0f);
     if (wet.receiver[cell] != cell)
       MOPPE_CHECK (position[cell] < position[wet.receiver[cell]]);
   }
@@ -180,10 +185,11 @@ MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   MOPPE_CHECK (rivers_a.waterfall_by_cell == rivers_b.waterfall_by_cell);
   MOPPE_CHECK (rivers_a.reaches.size () == rivers_b.reaches.size ());
   MOPPE_CHECK (rivers_a.waterfalls.size () == rivers_b.waterfalls.size ());
-  for (std::size_t i = 0; i < graph_a.contributing_area.values ().size (); ++i)
-    MOPPE_CHECK_NEAR (graph_a.contributing_area.values ()[i],
-                      graph_b.contributing_area.values ()[i],
-                      0.0f);
+  for (std::size_t i = 0; i < graph_a.contributing_areas ().size (); ++i)
+    MOPPE_CHECK_NEAR (
+      graph_a.contributing_area_at (i).numerical_value_in (u::m * u::m),
+      graph_b.contributing_area_at (i).numerical_value_in (u::m * u::m),
+      0.0f);
   for (std::size_t i = 0; i < network_a.bodies.size (); ++i) {
     const WaterBodyFlow& a = network_a.bodies[i];
     const WaterBodyFlow& b = network_b.bodies[i];
@@ -322,51 +328,26 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   constexpr std::size_t count = 12;
   const TerrainDomain grid (
     6, 2, 2.0f * mp_units::si::metre, 2.0f * mp_units::si::metre);
-  const RasterDomain domain { .width = 6, .height = 2 };
   const std::vector<CellIndex> receiver {
     1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11
   };
-  const FloodField flood {
-    .domain = grid,
-    .sea_level = 0.0f,
-    .has_ocean = false,
-    .water_level = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
-    .water_depth = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
-    .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = receiver,
-    .outlets = { 5, 6, 7, 8, 9, 10, 11 }
-  };
+  const std::vector<float> levels (count, 0.0f);
+  const std::vector<float> depths (count, 0.0f);
+  const std::array<float, count> slopes { 0.1f, 0.6f, 1.2f, 0.1f, 0.8f, 0.0f,
+                                          0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+  const std::array<float, count> areas { 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f,
+                                         1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f };
+  const FloodField flood { .surface = make_flood_surface (grid, levels, depths),
+                           .sea_level = 0.0f,
+                           .has_ocean = false,
+                           .ocean = std::vector<std::uint8_t> (count, 0),
+                           .spill_receiver = receiver,
+                           .outlets = { 5, 6, 7, 8, 9, 10, 11 } };
   const LakeCensus census { .body = std::vector<WaterBodyId> (
                               count, LakeCensus::dry) };
-  const DrainageGraph drainage { .domain = grid,
+  const DrainageGraph drainage { .readings =
+                                   make_drainage_readings (grid, slopes, areas),
                                  .receiver = receiver,
-                                 .slope = SlopeRaster (ScalarRaster (domain,
-                                                                     { 0.1f,
-                                                                       0.6f,
-                                                                       1.2f,
-                                                                       0.1f,
-                                                                       0.8f,
-                                                                       0.0f,
-                                                                       0.0f,
-                                                                       0.0f,
-                                                                       0.0f,
-                                                                       0.0f,
-                                                                       0.0f,
-                                                                       0.0f })),
-                                 .contributing_area = ContributingAreaRaster (
-                                   ScalarRaster (domain,
-                                                 { 1.0f,
-                                                   2.0f,
-                                                   3.0f,
-                                                   4.0f,
-                                                   5.0f,
-                                                   6.0f,
-                                                   1.0f,
-                                                   1.0f,
-                                                   1.0f,
-                                                   1.0f,
-                                                   1.0f,
-                                                   1.0f })),
                                  .basin = std::vector<CellIndex> (count, 5),
                                  .sinks = { 5, 6, 7, 8, 9, 10, 11 } };
 

@@ -56,23 +56,19 @@ namespace moppe::map {
   }
 
   void Surface::derive_tree_habitat (meters_t water_level, meters_t tree_line) {
-    SurfaceAtlas& atlas = mutable_atlas ();
-    const SurfaceMoistureSections* moisture_sections =
-      atlas.hydrology ().moisture ();
-    if (!moisture_sections)
-      throw std::logic_error (
-        "Tree habitat needs a materialized moisture section");
+    if (!readings ())
+      throw std::logic_error ("Tree habitat needs derived surface readings");
     if (tree_line <= water_level + 20.0f * u::m)
       throw std::invalid_argument (
         "Tree line must leave a terrestrial habitat band");
 
     const float shore = meters_value (water_level);
     const float upper = meters_value (tree_line);
-    const auto& geometry = atlas.geometry ();
+    const auto& geometry = this->geometry ();
     const auto& elevation = spatial::get<terrain::surface_elevation> (geometry);
     const auto& normal = spatial::get<terrain::terrain_normal> (geometry);
-    const auto& moisture = spatial::get<surface_moisture> (*moisture_sections);
-    SurfaceHabitatSections values (atlas.domain ());
+    SurfaceReadings& values = ensure_readings ();
+    const auto& moisture = spatial::get<surface_moisture> (values);
     auto& habitat = spatial::get<tree_habitat> (values);
     for (std::size_t offset = 0; offset < geometry.size (); ++offset) {
       const float height = terrain::surface_elevation_value (elevation[offset]);
@@ -88,26 +84,22 @@ namespace moppe::map {
       habitat[offset] = dry_ground * below_tree_line * stable_soil *
                         water_response * tree_habitat[one];
     }
-    atlas.ecology ().set_tree_habitat (std::move (values));
   }
 
   void Surface::derive_forest_cover (std::uint32_t seed) {
-    SurfaceAtlas& atlas = mutable_atlas ();
-    const SurfaceHabitatSections* habitat_sections =
-      atlas.ecology ().tree_habitat ();
-    if (!habitat_sections)
-      throw std::logic_error (
-        "Forest cover needs a materialized tree habitat section");
-    const SurfaceUseSections* use_sections = atlas.use ().readings ();
-    const SurfaceDomain& domain = atlas.domain ();
-    const auto& habitat = spatial::get<tree_habitat> (*habitat_sections);
-    SurfaceForestSections values (domain);
+    if (!readings ())
+      throw std::logic_error ("Forest cover needs derived surface readings");
+    SurfaceReadings& values = ensure_readings ();
+    const terrain::TerrainDomain& domain = values.domain ();
+    const auto& habitat = spatial::get<tree_habitat> (values);
+    const auto& trails = spatial::get<trail_influence> (values);
+    const auto& home_base = spatial::get<home_base_influence> (values);
     auto& cover = spatial::get<forest_cover> (values);
     const float width = static_cast<float> (domain.width ());
     const float height = static_cast<float> (domain.height ());
 
     for (std::size_t offset = 0; offset < domain.size (); ++offset) {
-      const SurfaceIndex index = domain.index (offset);
+      const terrain::TerrainIndex index = domain.index (offset);
       const float u = static_cast<float> (index.column) / width;
       const float v = static_cast<float> (index.row) / height;
       const float broad =
@@ -119,21 +111,14 @@ namespace moppe::map {
       const float support =
         std::pow (habitat[offset].numerical_value_in (one), 1.15f);
       const float route_clearance =
-        use_sections
-          ? 1.0f - 0.96f * spatial::get<trail_influence> (*use_sections)[offset]
-                             .numerical_value_in (one)
-          : 1.0f;
+        1.0f - 0.96f * trails[offset].numerical_value_in (one);
       const float settled_clearance =
-        use_sections
-          ? 1.0f - spatial::get<home_base_influence> (*use_sections)[offset]
-                     .numerical_value_in (one)
-          : 1.0f;
+        1.0f - home_base[offset].numerical_value_in (one);
       cover[offset] =
         std::clamp (support * recruitment * route_clearance * settled_clearance,
                     0.0f,
                     1.0f) *
         forest_cover[one];
     }
-    atlas.ecology ().set_forest_cover (std::move (values));
   }
 }

@@ -8,38 +8,45 @@
 using namespace moppe;
 
 namespace {
+  terrain::FloodSurface constant_flood_surface (terrain::TerrainDomain domain,
+                                                std::size_t count,
+                                                float level,
+                                                float depth) {
+    const std::vector<float> levels (count, level);
+    const std::vector<float> depths (count, depth);
+    return terrain::make_flood_surface (std::move (domain), levels, depths);
+  }
+
+  terrain::DrainageReadings constant_drainage_readings (
+    terrain::TerrainDomain domain, std::size_t count, float slope, float area) {
+    const std::vector<float> slopes (count, slope);
+    const std::vector<float> areas (count, area);
+    return terrain::make_drainage_readings (std::move (domain), slopes, areas);
+  }
+
   struct FlightFixture {
     static constexpr int side = 17;
     static constexpr std::size_t count = side * side;
 
     map::Surface map { side, side, Vec3 (1600, 240, 1600) };
     terrain::TerrainDomain grid = map.domain ();
-    terrain::RasterDomain domain { .width = side, .height = side };
     terrain::FloodField flood;
     terrain::LakeCensus census;
     terrain::DrainageGraph drainage;
     terrain::RiverNetwork rivers;
 
     FlightFixture ()
-        : flood { .domain = grid,
+        : flood { .surface = constant_flood_surface (grid, count, 0.1f, 0.0f),
                   .sea_level = 0.1f,
                   .has_ocean = false,
-                  .water_level = terrain::ScalarRaster (
-                    domain, std::vector<float> (count, 0.1f)),
-                  .water_depth = terrain::ScalarRaster (
-                    domain, std::vector<float> (count, 0.0f)),
                   .ocean = std::vector<std::uint8_t> (count, 0),
                   .spill_receiver = std::vector<terrain::CellIndex> (count),
                   .outlets = {} },
           census { .body = std::vector<terrain::WaterBodyId> (
                      count, terrain::LakeCensus::dry) },
-          drainage { .domain = grid,
+          drainage { .readings = constant_drainage_readings (
+                       grid, count, 0.05f, 10000.0f),
                      .receiver = std::vector<terrain::CellIndex> (count),
-                     .slope = terrain::SlopeRaster (terrain::ScalarRaster (
-                       domain, std::vector<float> (count, 0.05f))),
-                     .contributing_area =
-                       terrain::ContributingAreaRaster (terrain::ScalarRaster (
-                         domain, std::vector<float> (count, 10000.0f))),
                      .basin =
                        std::vector<terrain::CellIndex> (count, count - 1),
                      .sinks = { count - 1 } },
@@ -232,16 +239,13 @@ MOPPE_TEST (cinematic_flight_reads_landscape_into_distinct_places) {
 }
 
 MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
-  constexpr int storage_side = 17;
-  constexpr int unique_side = storage_side - 1;
-  constexpr std::size_t count = unique_side * unique_side;
-  map::Surface map (storage_side, storage_side, Vec3 (1600, 240, 1600));
-  for (int z = 0; z < storage_side; ++z)
-    for (int x = 0; x < storage_side; ++x) {
-      const float dx =
-        std::min (x % unique_side, unique_side - x % unique_side);
-      const float dz =
-        std::min (z % unique_side, unique_side - z % unique_side);
+  constexpr int side = 17;
+  constexpr std::size_t count = side * side;
+  map::Surface map (side, side, Vec3 (1600, 240, 1600));
+  for (int z = 0; z < side; ++z)
+    for (int x = 0; x < side; ++x) {
+      const float dx = std::min (x % side, side - x % side);
+      const float dz = std::min (z % side, side - z % side);
       map.set_elevation (
         x,
         z,
@@ -251,19 +255,13 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   map.recompute_normals ();
 
   const terrain::TerrainDomain grid = map.domain ();
-  const terrain::RasterDomain domain { .width = unique_side,
-                                       .height = unique_side };
   std::vector<terrain::CellIndex> receiver (count);
   for (std::uint32_t cell = 0; cell < count; ++cell)
     receiver[cell] = terrain::CellIndex (cell);
   const terrain::FloodField flood {
-    .domain = grid,
+    .surface = constant_flood_surface (grid, count, 0.0f, 0.0f),
     .sea_level = 0.0f,
     .has_ocean = false,
-    .water_level =
-      terrain::ScalarRaster (domain, std::vector<float> (count, 0.0f)),
-    .water_depth =
-      terrain::ScalarRaster (domain, std::vector<float> (count, 0.0f)),
     .ocean = std::vector<std::uint8_t> (count, 0),
     .spill_receiver = receiver,
     .outlets = { terrain::CellIndex (0) }
@@ -271,12 +269,8 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   const terrain::LakeCensus census { .body = std::vector<terrain::WaterBodyId> (
                                        count, terrain::LakeCensus::dry) };
   const terrain::DrainageGraph drainage {
-    .domain = grid,
+    .readings = constant_drainage_readings (grid, count, 0.0f, 10000.0f),
     .receiver = receiver,
-    .slope = terrain::SlopeRaster (
-      terrain::ScalarRaster (domain, std::vector<float> (count, 0.0f))),
-    .contributing_area = terrain::ContributingAreaRaster (
-      terrain::ScalarRaster (domain, std::vector<float> (count, 10000.0f))),
     .basin = std::vector<terrain::CellIndex> (count, 0),
     .sinks = { terrain::CellIndex (0) }
   };

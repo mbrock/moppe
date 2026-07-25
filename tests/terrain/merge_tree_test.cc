@@ -28,12 +28,13 @@ namespace {
     MOPPE_CHECK (flood.has_ocean == oracle.has_ocean);
     MOPPE_CHECK (oracle.outlets.size () == 1);
     MOPPE_CHECK (flood.root_cell == oracle.outlets.front ());
-    const std::span<const float> expected = oracle.water_level.values ();
-    const std::span<const float> actual = flood.water_level.values ();
+    const auto expected = oracle.water_levels ();
+    const auto& actual = spatial::get<surface_elevation> (flood.water_level);
     MOPPE_CHECK (expected.size () == actual.size ());
     for (std::size_t i = 0; i < expected.size (); ++i) {
-      MOPPE_CHECK (std::bit_cast<std::uint32_t> (expected[i]) ==
-                   std::bit_cast<std::uint32_t> (actual[i]));
+      MOPPE_CHECK (
+        std::bit_cast<std::uint32_t> (surface_elevation_value (expected[i])) ==
+        std::bit_cast<std::uint32_t> (surface_elevation_value (actual[i])));
       MOPPE_CHECK (flood.ocean[i] == oracle.ocean[i]);
     }
   }
@@ -50,7 +51,11 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
   const MergeTree tree = build_merge_tree (terrain);
   const MergeTreeFlood flood = flood_from_merge_tree (tree, terrain, 0.0f);
   // The enclosed pit at (2,2) fills to its spill saddle.
-  MOPPE_CHECK_NEAR (flood.water_level.at (2, 2), 2.0f, 0.0f);
+  const auto& levels = spatial::get<surface_elevation> (flood.water_level);
+  MOPPE_CHECK_NEAR (surface_elevation_value (
+                      levels[flood.water_level.domain ().offset ({ 2, 2 })]),
+                    2.0f,
+                    0.0f);
   // Two leaves (outer plain, inner pit) joined by one saddle.
   MOPPE_CHECK (tree.nodes.size () == 3);
 }

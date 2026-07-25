@@ -19,10 +19,9 @@ materialization backend.
 An NxN domain is N periodic cells. It stores no duplicated seam. CPU
 neighbours and GPU texel reads wrap at N.
 
-`map::SurfaceDomain` is an alias for this type. Terrain generation, surface
-geometry, flood, drainage, merge trees, trails, waterlines, and water surfaces
-therefore exchange the same domain value rather than translating between
-grid descriptions.
+Terrain generation, surface geometry, flood, drainage, merge trees, trails,
+waterlines, and water surfaces exchange this domain directly rather than
+translating between grid descriptions.
 
 ## Typed finite bundles
 
@@ -47,22 +46,17 @@ same concept without copying or creating a view.
 
 ## Authoritative surface
 
-`SurfaceAtlas::geometry()` is the mandatory ground bundle. It contains:
+`Surface::geometry()` is the mandatory ground bundle. It contains:
 
 - surface elevation;
 - terrain normal;
 - eroded and deposited material history;
 - broad snow support.
 
-Named optional atlas groups add hydrology, geology, ecology, and land-use
-sections only when their analyses exist. Absence is represented by absence,
-not by an all-zero column.
-
-`map::Surface` owns the atlas and the finite-world operations that genuinely
-need it: interpolation, geometry rebuilding, cache I/O, material-history
-updates, and orchestration of derived sections. It exposes the domain and
-geometry bundle directly, rather than duplicating one getter per column or
-publishing a mutable atlas.
+One optional `SurfaceReadings` bundle holds the later hydrology, geology,
+ecology, and land-use columns. Completed-world construction fills it before
+handoff. `map::Surface` also owns interpolation, geometry rebuilding, cache
+I/O, material-history updates, and derivation of those readings.
 
 Ground and water use separate bundles over the same domain.
 `WaterSurfaceSections` reuses the ground elevation specification and affine

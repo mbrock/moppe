@@ -17,10 +17,11 @@ namespace {
     return census;
   }
 
-  ScalarRaster
-  raster (std::size_t width, std::size_t height, std::vector<float> values) {
-    return ScalarRaster ({ .width = width, .height = height },
-                         std::move (values));
+  ElevationMap elevation_map (std::size_t width,
+                              std::size_t height,
+                              std::vector<float> values) {
+    return make_elevation_map (TerrainDomain (width, height),
+                               std::move (values));
   }
 }
 
@@ -32,8 +33,8 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
   const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
   const ElevationMap terrain = make_elevation_map (
     TerrainDomain (3, 3, 2.0f * mp_units::si::metre), ground);
-  const ScalarRaster surface =
-    raster (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
+  const ElevationMap surface =
+    elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   const Waterline waterline = extract_waterline (
     terrain, surface, uniform_census (9, WaterBodyId { 4 }), 0.0f);
 
@@ -68,7 +69,7 @@ MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
   LakeCensus census { .body = std::vector<WaterBodyId> (25, LakeCensus::dry) };
   census.body[2 * 5 + 2] = WaterBodyId { 7 };
   const Waterline waterline =
-    extract_waterline (terrain, raster (5, 5, level), census, 0.0f);
+    extract_waterline (terrain, elevation_map (5, 5, level), census, 0.0f);
 
   MOPPE_CHECK (waterline.contours.size () == 1);
   const WaterlineContour& contour = waterline.contours.front ();
@@ -97,7 +98,7 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
     make_elevation_map (TerrainDomain (unique, unique), ground);
   const Waterline waterline =
     extract_waterline (terrain,
-                       raster (unique, unique, level),
+                       elevation_map (unique, unique, level),
                        uniform_census (unique * unique, WaterBodyId { 0 }),
                        0.0f);
 
@@ -117,9 +118,8 @@ MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
   const std::array ground { 0.f, 4.f, 8.f, 0.f, 4.f, 8.f, 0.f, 4.f, 8.f };
   const ElevationMap terrain = make_elevation_map (
     TerrainDomain (3, 3, 2.0f * mp_units::si::metre), ground);
-  const ScalarRaster surface =
-    ScalarRaster ({ .width = 3, .height = 3 },
-                  { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
+  const ElevationMap surface =
+    elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   LakeCensus census { .body = std::vector<WaterBodyId> (9, WaterBodyId { 0 }) };
   const Waterline waterline =
     extract_waterline (terrain, surface, census, 0.0f);
@@ -149,9 +149,9 @@ MOPPE_TEST (waterline_extraction_is_deterministic) {
     make_elevation_map (TerrainDomain (7, 7), ground);
   const LakeCensus census = uniform_census (49, WaterBodyId { 1 });
   const Waterline first =
-    extract_waterline (terrain, raster (7, 7, level), census);
+    extract_waterline (terrain, elevation_map (7, 7, level), census);
   const Waterline second =
-    extract_waterline (terrain, raster (7, 7, level), census);
+    extract_waterline (terrain, elevation_map (7, 7, level), census);
 
   MOPPE_CHECK (first.contours.size () == second.contours.size ());
   MOPPE_CHECK (!first.contours.empty ());

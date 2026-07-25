@@ -7,6 +7,20 @@
 
 using namespace moppe::terrain;
 
+namespace {
+  float water_level_at (const FloodField& flood,
+                        std::size_t column,
+                        std::size_t row) {
+    return flood.water_level_m (flood.domain ().offset ({ column, row }));
+  }
+
+  float water_depth_at (const FloodField& flood,
+                        std::size_t column,
+                        std::size_t row) {
+    return flood.water_depth_m (flood.domain ().offset ({ column, row }));
+  }
+}
+
 MOPPE_TEST (priority_flood_fills_a_basin_to_its_lowest_spill) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
                              0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
@@ -15,9 +29,9 @@ MOPPE_TEST (priority_flood_fills_a_basin_to_its_lowest_spill) {
     make_elevation_map (TerrainDomain (5, 5), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
-  MOPPE_CHECK_NEAR (flood.water_level.at (2, 2), 2.0f, 0.0f);
-  MOPPE_CHECK_NEAR (flood.water_depth.at (2, 2), 1.0f, 0.0f);
-  MOPPE_CHECK_NEAR (flood.water_depth.at (2, 1), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 2.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_depth_at (flood, 2, 2), 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_depth_at (flood, 2, 1), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
@@ -26,9 +40,9 @@ MOPPE_TEST (standing_sea_uses_the_global_water_plane) {
     make_elevation_map (TerrainDomain (2, 2), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
 
-  MOPPE_CHECK_NEAR (flood.water_level.at (0, 0), 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (flood.water_depth.at (0, 0), 2.0f, 0.0f);
-  MOPPE_CHECK_NEAR (flood.water_depth.at (1, 0), 1.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_level_at (flood, 0, 0), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_depth_at (flood, 0, 0), 2.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_depth_at (flood, 1, 0), 1.0f, 0.0f);
   MOPPE_CHECK (flood.has_ocean);
   MOPPE_CHECK (flood.outlets.size () == 1);
   MOPPE_CHECK (flood.outlets[0] == 0);
@@ -45,7 +59,7 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (flood.outlets.size () == 1);
-  MOPPE_CHECK_NEAR (flood.water_level.at (2, 2), 3.0f, 0.0f);
+  MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 3.0f, 0.0f);
   MOPPE_CHECK (census.bodies.size () == 2);
   MOPPE_CHECK (census.bodies[0].ocean_connected);
   MOPPE_CHECK (!census.bodies[1].ocean_connected);
@@ -87,8 +101,7 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
     std::size_t steps = 0;
     while (flood.spill_receiver[cell] != cell && steps < count) {
       const std::uint32_t next = flood.spill_receiver[cell];
-      MOPPE_CHECK (flood.water_level.values ()[next] <=
-                   flood.water_level.values ()[cell]);
+      MOPPE_CHECK (flood.water_level_m (next) <= flood.water_level_m (cell));
       cell = next;
       ++steps;
     }
@@ -126,13 +139,9 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
   const std::vector<float> level (9, 1.0f);
   const std::vector<float> depth { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                    0.0f, 0.0f, 0.0f, 0.0f };
-  const FloodField flood { .domain = grid,
+  const FloodField flood { .surface = make_flood_surface (grid, level, depth),
                            .sea_level = 0.0f,
                            .has_ocean = false,
-                           .water_level =
-                             ScalarRaster ({ .width = 3, .height = 3 }, level),
-                           .water_depth =
-                             ScalarRaster ({ .width = 3, .height = 3 }, depth),
                            .ocean = std::vector<std::uint8_t> (9, 0),
                            .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 },
                            .outlets = { 8 } };
@@ -159,17 +168,13 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
     for (std::size_t x = 3; x <= 9; ++x)
       depth[y * width + x] = 3.0f;
   std::vector<CellIndex> receiver (count, CellIndex { 0 });
-  const FloodField flood {
-    .domain = grid,
-    .sea_level = 0.0f,
-    .has_ocean = false,
-    .water_level = ScalarRaster ({ .width = width, .height = height },
-                                 std::vector<float> (count, 10.0f)),
-    .water_depth = ScalarRaster ({ .width = width, .height = height }, depth),
-    .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = std::move (receiver),
-    .outlets = { 0 }
-  };
+  const std::vector<float> level (count, 10.0f);
+  const FloodField flood { .surface = make_flood_surface (grid, level, depth),
+                           .sea_level = 0.0f,
+                           .has_ocean = false,
+                           .ocean = std::vector<std::uint8_t> (count, 0),
+                           .spill_receiver = std::move (receiver),
+                           .outlets = { 0 } };
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK (census.bodies.size () == 2);
@@ -189,13 +194,20 @@ MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
     make_elevation_map (TerrainDomain (2, 2), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
-  const ScalarRaster permanent = permanent_water_surface (
+  const ElevationMap permanent = permanent_water_surface (
     flood,
     census,
     { .minimum_area = 1000000.0f * mp_units::si::metre * mp_units::si::metre });
 
   MOPPE_CHECK (census.bodies.size () == 1);
   MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Sea);
-  MOPPE_CHECK_NEAR (permanent.at (0, 0), 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (permanent.at (1, 0), 0.0f, 0.0f);
+  const auto& levels = spatial::get<surface_elevation> (permanent);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (levels[permanent.domain ().offset ({ 0, 0 })]),
+    0.0f,
+    0.0f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (levels[permanent.domain ().offset ({ 1, 0 })]),
+    0.0f,
+    0.0f);
 }

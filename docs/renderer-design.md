@@ -122,9 +122,9 @@ the Metal implementation without treating one directory as one layer:
 
 | Location | Current responsibility |
 | --- | --- |
-| `moppe/spatial/` | Header-only finite typed bundles and quantity vocabulary. |
+| `moppe/spatial/` | Header-only finite typed bundles, sampling, and optional local operations. |
 | `moppe/terrain/` | Direct finite geology, programs, recipes, and terrain/hydrology algorithms. |
-| `moppe/map/` | Concrete map storage, surface domain/atlas materialization, and evaluator bridges. |
+| `moppe/map/` | Concrete surface geometry, derived readings, water storage, and evaluator bridges over the terrain domain. |
 | `moppe/mov/` | Vehicle and glider simulation. |
 | `moppe/game/` | World owner/model, session, frame snapshot, focused presentation, and host composition; its files span several engine domains. |
 | `moppe/render/` | Portable game-shaped renderer API, `DrawList`, text, and Metal/WebGPU backends. |

@@ -24,23 +24,12 @@ namespace moppe::terrain {
     WaterPermanence permanence = {};
   };
 
-  struct WaterSheets {
-    // Normalized surface level per unique cell.  Dry cells hold the
-    // ground height -- except beside water, where they hold the
-    // neighboring body's level (kept a hair below ground): the
-    // bilinear water-minus-ground difference then crosses zero at the
-    // true sub-cell waterline instead of quantizing onto the lattice.
-    ScalarRaster surface;
-    // Wave amplitude factor per unique cell: the sea keeps its full
-    // swell, lakes barely stir, rivers carry no swell at all — their
-    // motion lives in the flow sheet instead.
-    std::vector<float> amplitude;
-    // Interleaved (x, z) flow in meters per second per unique cell;
-    // zero where the water stands still.  River stamps overlapping at
-    // a confluence average by weight, which is the whole junction
-    // treatment: two currents blending into one.
-    std::vector<float> flow;
-  };
+  // The painted water sheet over the terrain lattice. Dry cells hold ground
+  // elevation, except beside water where the neighboring level is kept just
+  // below ground so bilinear reconstruction crosses the true waterline.
+  // Velocity is zero for standing water; overlapping mouth currents blend.
+  using WaterSheets = spatial::
+    Bundle<TerrainDomain, SurfaceElevation, WaveAmplitude, WaterVelocity>;
 
   namespace detail {
     WaterSheets

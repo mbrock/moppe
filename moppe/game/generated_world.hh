@@ -17,7 +17,7 @@ namespace moppe::game {
   // A stable home for a generated world's durable, renderer-free artifacts.
   // The loading worker constructs one by calling the three build steps in
   // order (rebuild_surface, analyze_hydrology, derive_surface_readings) after
-  // evaluating the terrain. Geometry and analyses share one SurfaceAtlas.
+  // evaluating the terrain. Geometry and derived readings share one domain.
   class GeneratedWorld {
   public:
     enum class HydrologyStage {

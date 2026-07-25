@@ -1,4 +1,4 @@
-#include <moppe/spatial/bundle.hh>
+#include <moppe/spatial/bundle_operations.hh>
 
 #include <moppe/gfx/math.hh>
 
