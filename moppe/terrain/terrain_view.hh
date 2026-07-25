@@ -2,7 +2,7 @@
 #define MOPPE_TERRAIN_TERRAIN_VIEW_HH
 
 #include <moppe/quantities.hh>
-#include <moppe/terrain/discretization.hh>
+#include <moppe/terrain/terrain_grid.hh>
 #include <moppe/terrain/terrain_quantities.hh>
 
 #include <cstddef>
@@ -10,8 +10,7 @@
 #include <stdexcept>
 
 namespace moppe::terrain {
-  // A borrowed, materialized terrain. Unlike FieldSamplingGrid2D, this carries
-  // the physical scale and topology needed by neighborhood and global analyses.
+  // A borrowed, materialized terrain used by the remaining analysis APIs.
   class TerrainView {
   public:
     TerrainView (TerrainGrid grid, std::span<const float> heights)
@@ -34,25 +33,8 @@ namespace moppe::terrain {
       return at_offset (y * m_grid.width + x);
     }
 
-    float at (GridPointIndex index) const {
-      const auto [x, y] = m_grid.coordinates (index);
-      return at_offset (y * m_grid.width + x);
-    }
-
-    auto relative_elevation_at (std::size_t x, std::size_t y) const {
-      return at (x, y) * relative_elevation[mp_units::one];
-    }
-
-    auto relative_elevation_at (GridPointIndex index) const {
-      return at (index) * relative_elevation[mp_units::one];
-    }
-
     meters_t elevation_at (std::size_t x, std::size_t y) const {
       return at (x, y) * m_grid.height_scale;
-    }
-
-    meters_t elevation_at (GridPointIndex index) const {
-      return at (index) * m_grid.height_scale;
     }
 
   private:

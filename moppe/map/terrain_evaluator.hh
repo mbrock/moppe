@@ -35,7 +35,6 @@ namespace moppe::map {
 
     explicit TerrainEvaluator (
       Surface& target,
-      const terrain::FieldEvaluator* source_evaluator = nullptr,
       const terrain::StreamPowerEvolutionBackend* evolution_backend = nullptr);
 
     void begin (const terrain::TerrainProgram& program,
@@ -65,9 +64,8 @@ namespace moppe::map {
 
   private:
     Surface& m_target;
-    const terrain::FieldEvaluator* m_source_evaluator;
     const terrain::StreamPowerEvolutionBackend* m_evolution_backend;
-    std::vector<float> m_relative_uplift;
+    std::vector<terrain::UpliftWeight> m_uplift;
     std::vector<terrain::ChannelTangent> m_channel_tangents;
     std::optional<terrain::TrailNetwork> m_trail_network;
     IterationProgress m_iteration_progress;

@@ -1,95 +1,85 @@
-#include <moppe/terrain/cpu_evaluator.hh>
 #include <moppe/terrain/geological.hh>
 
 #include <tests/test.hh>
 
-#include <array>
+#include <algorithm>
 #include <bit>
 #include <concepts>
 #include <cstdint>
 #include <stdexcept>
-#include <variant>
 
+using namespace moppe;
 using namespace moppe::terrain;
 
 namespace {
-  std::uint64_t raster_hash (const ScalarRaster& raster) {
+  template <typename Quantity>
+  std::uint64_t column_hash (const std::vector<Quantity>& column) {
     std::uint64_t hash = 1469598103934665603ull;
-    for (float value : raster.values ()) {
-      const std::uint32_t bits = std::bit_cast<std::uint32_t> (value);
+    for (const Quantity value : column) {
+      std::uint32_t bits =
+        std::bit_cast<std::uint32_t> (value.numerical_value_in (one));
       for (int byte = 0; byte < 4; ++byte) {
-        hash ^= (bits >> (byte * 8)) & 0xff;
+        hash ^= bits & 0xffu;
         hash *= 1099511628211ull;
+        bits >>= 8;
       }
     }
     return hash;
   }
+
+  TerrainDomain test_domain (std::size_t side) {
+    return TerrainDomain (side, side, 10.0f * u::m, 10.0f * u::m);
+  }
 }
 
-MOPPE_TEST (periodic_geological_recipe_has_stable_output) {
-  constexpr std::array golden {
-    0x7fa9c60de2c8b12aull, 0x7743e0bc60467f8bull, 0x69a3a0627f5528a7ull,
-    0xc218106e05b58a8cull, 0xd687407b2012cf60ull, 0x6c5c1eca10eb410eull,
-    0xd3ac77c0ce2e1f46ull,
-  };
-  const GeologicalFields geological =
-    make_geological_fields (make_geological_recipe (123));
-  const std::array fields {
-    geological.combined.untyped (),      geological.continent.untyped (),
-    geological.plains.untyped (),        geological.mountains.untyped (),
-    geological.mountain_mask.untyped (), geological.warp_x.untyped (),
-    geological.warp_y.untyped ()
-  };
-  const FieldSamplingGrid2D domain { .width = 65, .height = 65 };
+MOPPE_TEST (geology_is_a_typed_finite_bundle) {
+  static_assert (spatial::BundleContains<continent_shape, GeologicalSections>);
+  static_assert (spatial::BundleContains<uplift_weight, GeologicalSections>);
 
-  for (std::size_t i = 0; i < fields.size (); ++i)
-    MOPPE_CHECK (raster_hash (normalize (
-                   CpuEvaluator ().evaluate (fields[i], domain))) == golden[i]);
+  const GeologicalSections geology =
+    generate_geology (test_domain (17), make_geological_recipe (123));
+  MOPPE_CHECK (geology.size () == 17 * 17);
+  MOPPE_CHECK (std::ranges::all_of (
+    spatial::get<uplift_weight> (geology), [] (UpliftWeight value) {
+      const float weight = value.numerical_value_in (one);
+      return weight >= 0.0f && weight <= 1.0f;
+    }));
 }
 
-MOPPE_TEST (geological_fields_share_warp_subexpressions) {
-  GeologicalRecipe recipe;
-  recipe.seeds = { .base = Seed { 1 },
-                   .ridge = Seed { 2 },
-                   .warp = Seed { 3 } };
-  const GeologicalFields fields = make_geological_fields (recipe);
-  static_assert (std::same_as<decltype (fields.warp_x), NoiseField>);
-  static_assert (
-    std::same_as<decltype (fields.combined), RelativeElevationField>);
-  static_assert (std::same_as<decltype (fields.uplift), RelativeUpliftField>);
-  const auto& warped_x =
-    std::get<expression::MultiplyAdd> (fields.warped_x.node ()->operation);
-  const auto& warped_y =
-    std::get<expression::MultiplyAdd> (fields.warped_y.node ()->operation);
+MOPPE_TEST (periodic_geology_is_bit_deterministic) {
+  const GeologicalRecipe recipe = make_geological_recipe (123);
+  const GeologicalSections first = generate_geology (test_domain (65), recipe);
+  const GeologicalSections second = generate_geology (test_domain (65), recipe);
 
-  MOPPE_CHECK (warped_x.multiplicand == fields.warp_x.node ());
-  MOPPE_CHECK (warped_y.multiplicand == fields.warp_y.node ());
-  // 55: the warp amplitude constant is a single shared node feeding
-  // both warped coordinates (it was duplicated before the typed
-  // recipe hoisted it).
-  MOPPE_CHECK (unique_node_count (fields.combined.untyped ()) == 55);
+  const std::uint64_t continent_hash =
+    column_hash (spatial::get<continent_shape> (first));
+  const std::uint64_t uplift_hash =
+    column_hash (spatial::get<uplift_weight> (first));
+  MOPPE_CHECK (continent_hash == 9660056523240721466ull);
+  MOPPE_CHECK (uplift_hash == 3395522322764541502ull);
+  MOPPE_CHECK (continent_hash ==
+               column_hash (spatial::get<continent_shape> (second)));
+  MOPPE_CHECK (column_hash (spatial::get<uplift_weight> (first)) ==
+               column_hash (spatial::get<uplift_weight> (second)));
 }
 
 MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
-  GeologicalRecipe recipe = make_geological_recipe (123);
+  GeologicalRecipe changed_recipe = make_geological_recipe (123);
   const GeologicalSeeds seeds = derive_geological_seeds (123);
 
-  MOPPE_CHECK (recipe.seeds.base == seeds.base);
-  MOPPE_CHECK (recipe.seeds.ridge == seeds.ridge);
-  MOPPE_CHECK (recipe.seeds.warp == seeds.warp);
-  MOPPE_CHECK_NEAR (recipe.warp.amplitude, 0.15f, 1e-6f);
-  MOPPE_CHECK (recipe.mountains.cycles == 4);
+  MOPPE_CHECK (changed_recipe.seeds.base == seeds.base);
+  MOPPE_CHECK (changed_recipe.seeds.ridge == seeds.ridge);
+  MOPPE_CHECK (changed_recipe.seeds.warp == seeds.warp);
+  MOPPE_CHECK_NEAR (changed_recipe.warp.amplitude, 0.15f, 1e-6f);
+  MOPPE_CHECK (changed_recipe.mountains.cycles == 4);
 
-  recipe.mountains.cycles = 8;
-  const RelativeElevationRaster changed =
-    materialize (CpuEvaluator (),
-                 make_geological_fields (recipe).mountains,
-                 { .width = 17, .height = 17 });
-  const RelativeElevationRaster original = materialize (
-    CpuEvaluator (),
-    make_geological_fields (make_geological_recipe (123)).mountains,
-    { .width = 17, .height = 17 });
-  MOPPE_CHECK (changed.sample (8, 8) != original.sample (8, 8));
+  changed_recipe.mountains.cycles = 8;
+  const GeologicalSections changed =
+    generate_geology (test_domain (17), changed_recipe);
+  const GeologicalSections original =
+    generate_geology (test_domain (17), make_geological_recipe (123));
+  MOPPE_CHECK (spatial::get<uplift_weight> (changed) !=
+               spatial::get<uplift_weight> (original));
 }
 
 MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
@@ -97,34 +87,22 @@ MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
   recipe.blend.mask_high = recipe.blend.mask_low;
   bool threw = false;
   try {
-    (void)make_geological_fields (recipe);
+    (void)generate_geology (test_domain (17), recipe);
   } catch (const std::invalid_argument&) {
     threw = true;
   }
   MOPPE_CHECK (threw);
 }
 
-MOPPE_TEST (every_geological_layer_is_periodic) {
-  const GeologicalFields geological =
-    make_geological_fields (make_geological_recipe (123));
-  const std::array fields {
-    geological.combined.untyped (),      geological.continent.untyped (),
-    geological.plains.untyped (),        geological.mountains.untyped (),
-    geological.mountain_mask.untyped (), geological.warp_x.untyped (),
-    geological.warp_y.untyped ()
-  };
-
-  for (const ScalarField& field : fields) {
-    const ScalarRaster raster =
-      CpuEvaluator ().evaluate (field, { .width = 65, .height = 65 });
-    const ScalarRaster shifted = CpuEvaluator ().evaluate (field,
-                                                           { .width = 65,
-                                                             .height = 65,
-                                                             .min_x = 1.0f,
-                                                             .max_x = 2.0f,
-                                                             .min_y = 1.0f,
-                                                             .max_y = 2.0f });
-    for (std::size_t i = 0; i < 65 * 65; ++i)
-      MOPPE_CHECK_NEAR (raster.values ()[i], shifted.values ()[i], 1e-4f);
-  }
+MOPPE_TEST (geology_reports_completed_rows) {
+  std::size_t completed = 0;
+  std::size_t total = 0;
+  (void)generate_geology (test_domain (17),
+                          make_geological_recipe (123),
+                          [&] (std::size_t rows, std::size_t row_count) {
+                            completed = std::max (completed, rows);
+                            total = row_count;
+                          });
+  MOPPE_CHECK (completed == 17);
+  MOPPE_CHECK (total == 17);
 }

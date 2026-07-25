@@ -7,8 +7,6 @@
 #include <moppe/platform/apple/game_controller.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
-#include <moppe/terrain/evaluator.hh>
-#include <moppe/terrain/metal/metal_evaluator.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <iostream>
@@ -120,21 +118,6 @@ static __weak UIWindow* g_window = nil;
 // ------------------------------------------------------------------
 
 namespace moppe::platform {
-  std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator () {
-    if (@available (tvOS 26.0, *)) {
-      try {
-        auto evaluator = std::make_unique<terrain::metal::MetalEvaluator> (
-          asset_path ("moppe.metallib"));
-        std::cerr << "moppe: Metal 4 field evaluator enabled" << std::endl;
-        return evaluator;
-      } catch (const std::exception& error) {
-        std::cerr << "moppe: Metal field evaluator unavailable: "
-                  << error.what () << std::endl;
-      }
-    }
-    return {};
-  }
-
   std::unique_ptr<terrain::StreamPowerEvolutionBackend>
   create_stream_power_evolution_backend () {
     // The portable backend remains faster when world generation and loading

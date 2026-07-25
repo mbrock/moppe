@@ -1,10 +1,13 @@
 #ifndef MOPPE_TERRAIN_GEOLOGICAL_HH
 #define MOPPE_TERRAIN_GEOLOGICAL_HH
 
-#include <moppe/terrain/field.hh>
+#include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
+#include <functional>
+
 namespace moppe::terrain {
   struct GeologicalSeeds {
     Seed base;
@@ -57,26 +60,26 @@ namespace moppe::terrain {
     GeologicalBlendParameters blend {};
   };
 
-  // The recipe's layers carry their kinds: the warp noises are pure
-  // numbers, the warped sampling positions are domain coordinates,
-  // and every relief/mask layer is a dimensionless sample.
-  struct GeologicalFields {
-    NoiseField warp_x;
-    NoiseField warp_y;
-    CoordinateField warped_x;
-    CoordinateField warped_y;
-    RelativeElevationField continent;
-    RelativeElevationField plains;
-    RelativeElevationField mountains;
-    ProportionField mountain_mask;
-    RelativeElevationField combined;
-    RelativeUpliftField uplift;
-  };
+  inline constexpr struct continent_shape
+      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } continent_shape;
+  inline constexpr struct uplift_weight
+      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } uplift_weight;
+
+  using ContinentShape = quantity<continent_shape[one], float>;
+  using UpliftWeight = quantity<uplift_weight[one], float>;
+  using GeologicalSections =
+    spatial::Bundle<TerrainDomain, ContinentShape, UpliftWeight>;
+  using GeologicalProgress =
+    std::function<void (std::size_t completed_rows, std::size_t total_rows)>;
 
   GeologicalSeeds derive_geological_seeds (std::uint32_t root_seed);
   GeologicalRecipe make_geological_recipe (std::uint32_t root_seed);
   void validate_geological_recipe (const GeologicalRecipe& recipe);
-  GeologicalFields make_geological_fields (const GeologicalRecipe& recipe);
+  GeologicalSections generate_geology (TerrainDomain domain,
+                                       const GeologicalRecipe& recipe,
+                                       const GeologicalProgress& progress = {});
 }
 
 #endif

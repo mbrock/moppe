@@ -36,12 +36,10 @@ namespace moppe::game {
     TerrainLabModel& operator= (TerrainLabModel&&) = delete;
     ~TerrainLabModel ();
 
-    // Borrow the map for a Lab session.  A caller may supply any field
-    // evaluator, including none for a portable CPU-only session.
+    // Borrow the map for a Lab session.
     void begin (
       map::Surface& map,
       const terrain::TerrainProgram& program,
-      const terrain::FieldEvaluator* source_evaluator = nullptr,
       const terrain::StreamPowerEvolutionBackend* evolution_backend = nullptr);
     void leave ();
 

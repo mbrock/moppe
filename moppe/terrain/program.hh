@@ -43,8 +43,8 @@ namespace moppe::terrain {
     variant<std::monostate, StreamPowerEvolutionReport, TrailFormationReport>;
 
   // A source is a value in its own right, rather than an implicit prelude to
-  // the transform list.  The geological source retains its recipe so tools
-  // can edit meaningful parameters and expand it into a ScalarField on demand.
+  // the transform list. The geological source retains the editable recipe
+  // used to generate finite continent and uplift sections.
   struct GeologicalSource {
     GeologicalRecipe recipe;
     // Orogeny begins from a continent-shaped seed with separate emergent and

@@ -1,7 +1,7 @@
 #ifndef MOPPE_TERRAIN_MERGE_TREE_HH
 #define MOPPE_TERRAIN_MERGE_TREE_HH
 
-#include <moppe/terrain/evaluator.hh>
+#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 

@@ -8,7 +8,6 @@
 #include <moppe/platform/apple/game_controller.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
-#include <moppe/terrain/metal/metal_evaluator.hh>
 #include <moppe/terrain/metal/metal_stream_power_evolution.hh>
 
 #include <algorithm>
@@ -445,17 +444,6 @@ static void log_runtime_parameters (MoppeView* view) {
 namespace moppe {
   namespace platform {
     static __weak NSWindow* active_window = nil;
-
-    std::unique_ptr<terrain::FieldEvaluator> create_field_evaluator () {
-      try {
-        return std::make_unique<terrain::metal::MetalEvaluator> (
-          asset_path (MOPPE_SHADER_NAME));
-      } catch (const std::exception& error) {
-        std::cerr << "moppe: Metal field evaluator unavailable: "
-                  << error.what () << std::endl;
-        return {};
-      }
-    }
 
     std::unique_ptr<terrain::StreamPowerEvolutionBackend>
     create_stream_power_evolution_backend () {

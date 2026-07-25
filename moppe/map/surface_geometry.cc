@@ -1,7 +1,6 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/profile.hh>
-#include <moppe/terrain/cpu_evaluator.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -229,20 +228,13 @@ namespace moppe::map {
     }
   }
 
-  terrain::TerrainDiscretization Surface::discretization () const {
-    const auto width = m_atlas.domain ().width ();
-    const auto height = m_atlas.domain ().height ();
-    return terrain::TerrainDiscretization (
-      { .width = width, .height = height },
-      { .width = width,
-        .height = height,
-        .spacing_x = m_atlas.domain ().spacing_x (),
-        .spacing_y = m_atlas.domain ().spacing_z (),
-        .height_scale = 1.0f * u::m });
-  }
-
   terrain::TerrainView Surface::terrain_view () const {
-    return terrain::TerrainView (discretization ().grid (), elevations ());
+    return terrain::TerrainView ({ .width = m_atlas.domain ().width (),
+                                   .height = m_atlas.domain ().height (),
+                                   .spacing_x = m_atlas.domain ().spacing_x (),
+                                   .spacing_y = m_atlas.domain ().spacing_z (),
+                                   .height_scale = 1.0f * u::m },
+                                 elevations ());
   }
 
   void Surface::reset_material_history () {
@@ -263,23 +255,6 @@ namespace moppe::map {
         (deposited_material ()[cell].numerical_value_in (mp_units::one) +
          delta) *
         deposited_surface_material[mp_units::one];
-  }
-
-  void Surface::materialize (const terrain::ScalarField& field) {
-    static const terrain::CpuEvaluator evaluator;
-    materialize (field, evaluator);
-  }
-
-  void Surface::materialize (const terrain::ScalarField& field,
-                             const terrain::FieldEvaluator& evaluator) {
-    const terrain::ScalarRaster raster =
-      evaluator.evaluate (field, discretization ().field_sampling_grid ());
-    auto& elevation_column = elevations ();
-    for (std::size_t cell = 0; cell < elevation_column.size (); ++cell)
-      elevation_column[cell] = SurfaceElevation (
-        raster.values ()[cell] * meters_value (m_height_scale) *
-        terrain::surface_elevation[u::m]);
-    reset_material_history ();
   }
 
   namespace {

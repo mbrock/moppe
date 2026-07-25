@@ -1,4 +1,13 @@
-# Terrain expressions, recipes, and pipelines
+# Terrain generation, recipes, and pipelines
+
+> **Transition note (July 2026):** the runtime `ScalarField` DAG, CPU
+> evaluator, and Metal function-stitching backend described in the historical
+> sections below have been deleted. The live source path is now
+> `GeologicalRecipe -> generate_geology(TerrainDomain) -> GeologicalSections`,
+> a direct finite typed bundle containing continent shape and uplift weight.
+> The hydrology, trail, and pipeline descriptions later in this document
+> remain current; the field-specific history is being condensed as the
+> lattice-harmonization pass finishes.
 
 Moppe's portable terrain subsystem separates six kinds of value:
 

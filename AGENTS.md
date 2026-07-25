@@ -75,8 +75,8 @@
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
-- `moppe/terrain/` is the portable runtime field-expression DAG, recipe and
-  pipeline values, evaluator backends, and artifact writers; see
+- `moppe/terrain/` owns direct finite geological generation, recipe and
+  pipeline values, terrain evolution, and hydrology analyses; see
   `docs/terrain-expressions.md`.
 - `moppe/spatial/` contains finite typed quantity bundles and generic local or
   interpolated sampling operations. `moppe/map/surface*` materializes typed

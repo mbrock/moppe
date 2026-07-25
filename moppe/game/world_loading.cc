@@ -124,8 +124,8 @@ namespace moppe::game {
   // -- the build ---------------------------------------------------------
 
   namespace {
-    // The field evaluator reports row completion from several worker
-    // threads at once; only the furthest row should reach the status line.
+    // Geology reports row completion from several worker threads at once;
+    // only the furthest row should reach the status line.
     bool advance_watermark (std::atomic<int>& watermark, int row) {
       int observed = watermark.load ();
       while (observed < row)
@@ -134,19 +134,16 @@ namespace moppe::game {
       return false;
     }
 
-    // Materializes the recipe's terrain program, narrating the two long
-    // phases with real measurements: field rows while the continents
-    // materialize, then geological time while orogeny runs.
+    // Evaluates the recipe's terrain program, narrating the two long phases
+    // with real measurements: rows while geology is generated, then
+    // geological time while orogeny runs.
     std::optional<terrain::TrailNetwork>
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
                     map::Surface& terrain) {
-      std::unique_ptr<terrain::FieldEvaluator> field_evaluator =
-        platform::create_field_evaluator ();
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
         platform::create_stream_power_evolution_backend ();
-      map::TerrainEvaluator evaluator (
-        terrain, field_evaluator.get (), evolution.get ());
+      map::TerrainEvaluator evaluator (terrain, evolution.get ());
 
       const auto after_transform =
         [&state] (std::size_t, const terrain::TerrainTransform& transform) {
@@ -186,7 +183,7 @@ namespace moppe::game {
                                 static_cast<int> (completed_rows)))
           return;
         std::ostringstream detail;
-        detail << "Field row " << completed_rows << " of " << total_rows;
+        detail << "Geology row " << completed_rows << " of " << total_rows;
         state.report ("Drawing the continents",
                       detail.str (),
                       static_cast<float> (completed_rows) /

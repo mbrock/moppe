@@ -154,7 +154,7 @@ int main (int argc, char** argv) {
     for (int repeat = 0; repeat < repeats; ++repeat) {
       map::Surface map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
-      map::TerrainEvaluator evaluator (map, nullptr, backend.get ());
+      map::TerrainEvaluator evaluator (map, backend.get ());
       evaluator.begin (program);
       const auto start = std::chrono::steady_clock::now ();
       const TerrainTransformReport transform_report =

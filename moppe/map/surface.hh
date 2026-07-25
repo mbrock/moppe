@@ -2,8 +2,8 @@
 #define MOPPE_MAP_SURFACE_HH
 
 #include <moppe/map/surface_atlas.hh>
-#include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/fractional_drainage.hh>
+#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/terrain_view.hh>
 
 #include <cstdint>
@@ -61,11 +61,7 @@ namespace moppe::map {
     void record_material_change (int column, int row, float delta);
 
     terrain::TerrainView terrain_view () const;
-    terrain::TerrainDiscretization discretization () const;
 
-    void materialize (const terrain::ScalarField& field);
-    void materialize (const terrain::ScalarField& field,
-                      const terrain::FieldEvaluator& evaluator);
     bool try_load_cache (const std::string& path);
     void save_cache (const std::string& path) const;
 

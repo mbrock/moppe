@@ -1,8 +1,8 @@
 #ifndef MOPPE_TERRAIN_WATERLINE_HH
 #define MOPPE_TERRAIN_WATERLINE_HH
 
-#include <moppe/terrain/evaluator.hh>
 #include <moppe/terrain/flood.hh>
+#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 

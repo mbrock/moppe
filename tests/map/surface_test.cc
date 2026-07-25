@@ -339,7 +339,7 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
 
 MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
   using namespace moppe;
-  const terrain::FieldSamplingGrid2D domain { .width = 2, .height = 2 };
+  const terrain::RasterDomain domain { .width = 2, .height = 2 };
   const terrain::TrailNetwork network {
     .source_grid = { .width = 2,
                      .height = 2,

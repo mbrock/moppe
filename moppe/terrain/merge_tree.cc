@@ -241,7 +241,7 @@ namespace moppe::terrain {
     }
 
     const TerrainGrid& grid = tree.source_grid;
-    const FieldSamplingGrid2D domain {
+    const RasterDomain domain {
       .width = width,
       .height = height,
       .max_x = grid.spacing_x_m () * static_cast<float> (width),
