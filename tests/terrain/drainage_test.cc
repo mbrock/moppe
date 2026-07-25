@@ -13,11 +13,10 @@ using namespace moppe::terrain;
 MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
   const std::array heights { 30.0f, 20.0f, 30.0f, 20.0f, 0.0f,
                              20.0f, 30.0f, 20.0f, 30.0f };
-  const TerrainView terrain ({ .width = 3,
-                               .height = 3,
-                               .spacing_x = 2.0f * mp_units::si::metre,
-                               .spacing_y = 2.0f * mp_units::si::metre },
-                             heights);
+  const TerrainView terrain (
+    TerrainDomain (
+      3, 3, 2.0f * mp_units::si::metre, 2.0f * mp_units::si::metre),
+    heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
   MOPPE_CHECK (graph.sinks.size () == 1);
@@ -38,7 +37,7 @@ MOPPE_TEST (periodic_drainage_crosses_the_wrap) {
   // Cell (0,0) reaches the low point at (2,0) by crossing the wrap.
   const std::array heights { 2.0f, 3.0f, 0.0f, 4.0f, 4.0f,
                              4.0f, 4.0f, 4.0f, 4.0f };
-  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
+  const TerrainView terrain (TerrainDomain (3, 3), heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
   MOPPE_CHECK (graph.width () == 3);
@@ -51,7 +50,7 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 4.f, 2.f, 3.f,
                              0.f, 0.f, 5.f, 1.f, 4.f, 0.f, 0.f, 6.f, 5.f,
                              5.f, 0.f, 0.f, 6.f, 6.f, 6.f, 0.f };
-  const TerrainView terrain ({ .width = 5, .height = 5 }, heights);
+  const TerrainView terrain (TerrainDomain (5, 5), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
@@ -120,7 +119,7 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
 
 MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   const std::array heights { 5.f, 4.f, 3.f, 4.f, 2.f, 1.f, 3.f, 1.f, 0.f };
-  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
+  const TerrainView terrain (TerrainDomain (3, 3), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
@@ -147,7 +146,7 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
 
 MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
-  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
+  const TerrainView terrain (TerrainDomain (3, 3), heights);
   const FloodField flood_a = analyze_standing_water (terrain, 0.0f);
   const FloodField flood_b = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census_a = census_lakes (flood_a);
@@ -252,7 +251,7 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
     for (std::size_t x = 0; x < width; ++x)
       heights[y * width + x] =
         30.0f - static_cast<float> (x) - 0.4f * static_cast<float> (y);
-  const TerrainView terrain ({ .width = width, .height = height }, heights);
+  const TerrainView terrain (TerrainDomain (width, height), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
@@ -319,16 +318,14 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
 
 MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   constexpr std::size_t count = 12;
-  const TerrainGrid grid { .width = 6,
-                           .height = 2,
-                           .spacing_x = 2.0f * mp_units::si::metre,
-                           .spacing_y = 2.0f * mp_units::si::metre };
+  const TerrainDomain grid (
+    6, 2, 2.0f * mp_units::si::metre, 2.0f * mp_units::si::metre);
   const RasterDomain domain { .width = 6, .height = 2 };
   const std::vector<CellIndex> receiver {
     1, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11
   };
   const FloodField flood {
-    .source_grid = grid,
+    .domain = grid,
     .sea_level = 0.0f,
     .has_ocean = false,
     .water_level = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
@@ -339,7 +336,7 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
   };
   const LakeCensus census { .body = std::vector<WaterBodyId> (
                               count, LakeCensus::dry) };
-  const DrainageGraph drainage { .source_grid = grid,
+  const DrainageGraph drainage { .domain = grid,
                                  .receiver = receiver,
                                  .slope = SlopeRaster (ScalarRaster (domain,
                                                                      { 0.1f,

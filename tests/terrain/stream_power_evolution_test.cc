@@ -14,11 +14,8 @@ namespace {
   constexpr std::array profile_heights { 0.0f, 10.0f, 20.0f, 30.0f, 40.0f,
                                          0.0f, 10.0f, 20.0f, 30.0f, 40.0f };
 
-  TerrainGrid profile_grid () {
-    return { .width = 5,
-             .height = 2,
-             .spacing_x = 10.0f * mp_units::si::metre,
-             .spacing_y = 10.0f * mp_units::si::metre };
+  TerrainDomain profile_grid () {
+    return { 5, 2, 10.0f * u::m, 10.0f * u::m };
   }
 
   std::vector<meters_per_julian_year_t> uniform_uplift (std::size_t count,
@@ -66,11 +63,10 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
 
 MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
   constexpr std::array heights { -20.0f, -10.0f, 20.0f, 30.0f };
-  const TerrainView terrain ({ .width = 2,
-                               .height = 2,
-                               .spacing_x = 10.0f * mp_units::si::metre,
-                               .spacing_y = 10.0f * mp_units::si::metre },
-                             heights);
+  const TerrainView terrain (
+    TerrainDomain (
+      2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
+    heights);
   const auto uplift = uniform_uplift (heights.size (), 0.001f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
@@ -89,11 +85,10 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
 
 MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
   constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
-  const TerrainView terrain ({ .width = 2,
-                               .height = 2,
-                               .spacing_x = 10.0f * mp_units::si::metre,
-                               .spacing_y = 10.0f * mp_units::si::metre },
-                             heights);
+  const TerrainView terrain (
+    TerrainDomain (
+      2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
+    heights);
   const auto uplift = uniform_uplift (heights.size (), 0.0f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,
@@ -114,11 +109,10 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
 
 MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
   constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
-  const TerrainView terrain ({ .width = 2,
-                               .height = 2,
-                               .spacing_x = 10.0f * mp_units::si::metre,
-                               .spacing_y = 10.0f * mp_units::si::metre },
-                             heights);
+  const TerrainView terrain (
+    TerrainDomain (
+      2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
+    heights);
   const auto uplift = uniform_uplift (heights.size (), 0.0f);
   constexpr float duration_years = 1000.0f;
   constexpr float legacy_k = 2e-5f;
@@ -214,11 +208,10 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
   std::array<float, 25> heights;
   heights.fill (0.2f);
   heights[12] = 1.0f;
-  const TerrainView terrain ({ .width = 5,
-                               .height = 5,
-                               .spacing_x = 1.0f * mp_units::si::metre,
-                               .spacing_y = 1.0f * mp_units::si::metre },
-                             heights);
+  const TerrainView terrain (
+    TerrainDomain (
+      5, 5, 1.0f * mp_units::si::metre, 1.0f * mp_units::si::metre),
+    heights);
   const auto uplift = uniform_uplift (heights.size (), 0.0f);
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain,

@@ -114,7 +114,7 @@ namespace moppe::terrain {
   // The graph is connected by construction: following receiver once per
   // circuit cell returns to home base.
   struct TrailNetwork {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     TrailPlan plan;
     std::vector<CellIndex> receiver;
     std::vector<TrailComponentId> component_by_cell;

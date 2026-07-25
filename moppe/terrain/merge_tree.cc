@@ -41,9 +41,9 @@ namespace moppe::terrain {
   }
 
   MergeTree build_merge_tree (const TerrainView& terrain) {
-    const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = terrain.domain ();
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
 
     // Sort unique cells by (height, index): the same deterministic
@@ -66,8 +66,7 @@ namespace moppe::terrain {
     for (std::uint32_t position = 0; position < count; ++position)
       rank[order[position]] = position;
 
-    MergeTree tree;
-    tree.source_grid = grid;
+    MergeTree tree { .domain = grid };
     tree.cell_node.assign (count, MergeTreeNode::no_node);
     tree.nodes.reserve (count / 16);
 
@@ -240,12 +239,12 @@ namespace moppe::terrain {
       ocean[cell] = any_submerged && join_height <= sea_level ? 1 : 0;
     }
 
-    const TerrainGrid& grid = tree.source_grid;
+    const TerrainDomain& grid = tree.domain;
     const RasterDomain domain {
       .width = width,
       .height = height,
-      .max_x = grid.spacing_x_m () * static_cast<float> (width),
-      .max_y = grid.spacing_y_m () * static_cast<float> (height)
+      .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
+      .max_y = meters_value (grid.spacing_z ()) * static_cast<float> (height)
     };
     return { .has_ocean = any_submerged,
              .root_cell = root_cell,

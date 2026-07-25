@@ -241,18 +241,18 @@ namespace moppe {
         const auto standing_depth = [this, &world_extent] (float x, float z) {
           if (!standing_water ())
             return 0.0f;
-          const terrain::TerrainGrid& grid = standing_water ()->source_grid;
+          const terrain::TerrainDomain& grid = standing_water ()->domain;
           const auto wrap = [] (float value, float period) {
             value = std::fmod (value, period);
             return value < 0.0f ? value + period : value;
           };
           const std::size_t gx =
             static_cast<std::size_t> (wrap (x, world_extent[0]) /
-                                      grid.spacing_x_m ()) %
+                                      meters_value (grid.spacing_x ())) %
             standing_water ()->width ();
           const std::size_t gz =
             static_cast<std::size_t> (wrap (z, world_extent[2]) /
-                                      grid.spacing_y_m ()) %
+                                      meters_value (grid.spacing_z ())) %
             standing_water ()->height ();
           return standing_water ()->water_depth.at (gx, gz) * world_extent[1];
         };
@@ -308,10 +308,10 @@ namespace moppe {
       Vec3 trail_cell_position (terrain::CellIndex cell) const {
         if (!trail_network () || cell == terrain::no_cell)
           return {};
-        const terrain::TerrainGrid& grid = trail_network ()->source_grid;
-        const std::size_t width = grid.width;
-        const float x = (cell.value % width) * grid.spacing_x_m ();
-        const float z = (cell.value / width) * grid.spacing_y_m ();
+        const terrain::TerrainDomain& grid = trail_network ()->domain;
+        const std::size_t width = grid.width ();
+        const float x = (cell.value % width) * meters_value (grid.spacing_x ());
+        const float z = (cell.value / width) * meters_value (grid.spacing_z ());
         return Vec3 (x, surface ().interpolated_height (x, z), z);
       }
 
@@ -373,12 +373,13 @@ namespace moppe {
                            Vec3 heading) const {
         if (!trail_network () || width_pts < 480 || height_pts < 360)
           return;
-        const terrain::TerrainGrid& grid = trail_network ()->source_grid;
+        const terrain::TerrainDomain& grid = trail_network ()->domain;
         const auto& alignment = trail_network ()->alignment.points;
         if (alignment.size () < 2)
           return;
-        const float period_x = grid.width * grid.spacing_x_m ();
-        const float period_z = grid.height * grid.spacing_y_m ();
+        const float period_x = grid.width () * meters_value (grid.spacing_x ());
+        const float period_z =
+          grid.height () * meters_value (grid.spacing_z ());
         const float home_x = alignment.front ().x_m;
         const float home_z = alignment.front ().z_m;
         const auto wrap_delta = [] (float delta, float period) {

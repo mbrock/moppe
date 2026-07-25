@@ -26,7 +26,7 @@ namespace moppe::terrain {
   // supplies routes where continuous downhill drainage is undefined and
   // deliberately omits products that fractional drainage computes itself.
   struct WetDrainageRouting {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     std::vector<CellIndex> receiver;
     std::vector<float> slope;
   };
@@ -35,7 +35,7 @@ namespace moppe::terrain {
   // wet drainage may also follow acyclic equal-surface routes through water.
   // Rasters contain unique torus samples without the duplicated render seam.
   struct DrainageGraph {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     std::vector<CellIndex> receiver;
     SlopeRaster slope;
     ContributingAreaRaster contributing_area;
@@ -44,11 +44,11 @@ namespace moppe::terrain {
     std::vector<CellIndex> topological_order;
 
     std::size_t width () const noexcept {
-      return source_grid.width;
+      return domain.width ();
     }
 
     std::size_t height () const noexcept {
-      return source_grid.height;
+      return domain.height ();
     }
   };
 

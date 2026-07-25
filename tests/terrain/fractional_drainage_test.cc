@@ -18,23 +18,21 @@ namespace {
   constexpr std::size_t width = 9;
   constexpr std::size_t height = 9;
 
-  TerrainGrid plane_grid () {
-    return { .width = width,
-             .height = height,
-             .spacing_x = 2.0f * mp_units::si::metre,
-             .spacing_y = 3.0f * mp_units::si::metre };
+  TerrainDomain plane_grid () {
+    return { width, height, 2.0f * u::m, 3.0f * u::m };
   }
 
   std::vector<float> descending_plane (float direction_radians,
                                        float gradient = 0.2f) {
-    const TerrainGrid grid = plane_grid ();
+    const TerrainDomain grid = plane_grid ();
     const float gradient_x = gradient * std::cos (direction_radians);
     const float gradient_y = gradient * std::sin (direction_radians);
     std::vector<float> heights (width * height);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x)
-        heights[y * width + x] = 100.0f - gradient_x * x * grid.spacing_x_m () -
-                                 gradient_y * y * grid.spacing_y_m ();
+        heights[y * width + x] =
+          100.0f - gradient_x * x * meters_value (grid.spacing_x ()) -
+          gradient_y * y * meters_value (grid.spacing_z ());
     return heights;
   }
 
@@ -46,7 +44,7 @@ namespace {
 }
 
 MOPPE_TEST (terrain_lattice_domain_is_the_periodic_lattice) {
-  const TerrainLatticeDomain domain ({ .width = 3, .height = 3 });
+  const TerrainLatticeDomain domain (TerrainDomain (3, 3));
 
   MOPPE_CHECK (domain.width () == 3);
   MOPPE_CHECK (domain.height () == 3);
@@ -94,7 +92,7 @@ MOPPE_TEST (d_infinity_keeps_geometric_interpolation_distinct_from_flow_split) {
   const float interpolation =
     route.receiver_interpolation.numerical_value_in (mp_units::one);
   const float facet_extent =
-    std::atan2 (plane_grid ().spacing_y_m (), plane_grid ().spacing_x_m ());
+    std::atan2 (plane_grid ().spacing_z_m (), plane_grid ().spacing_x_m ());
   MOPPE_CHECK_NEAR (angular_split, direction / facet_extent, 2e-5f);
   MOPPE_CHECK_NEAR (interpolation, 2.0f / 9.0f, 2e-5f);
   MOPPE_CHECK (std::fabs (angular_split - interpolation) > 0.05f);
@@ -159,7 +157,7 @@ MOPPE_TEST (fractional_accumulation_materializes_an_area_weighted_tangent) {
 }
 
 MOPPE_TEST (channel_memory_can_select_an_aligned_downhill_route) {
-  TerrainGrid grid = plane_grid ();
+  TerrainDomain grid = plane_grid ();
   std::vector<float> heights (width * height, 20.0f);
   constexpr std::size_t center_x = 4;
   constexpr std::size_t center_y = 4;

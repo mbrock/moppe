@@ -24,11 +24,8 @@ namespace {
     return heights;
   }
 
-  TerrainGrid trail_valley_grid () {
-    return { .width = 9,
-             .height = 9,
-             .spacing_x = 5.0f * mp_units::si::metre,
-             .spacing_y = 5.0f * mp_units::si::metre };
+  TerrainDomain trail_valley_grid () {
+    return { 9, 9, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre };
   }
 
   TrailFormation test_parameters () {
@@ -62,11 +59,8 @@ namespace {
     return heights;
   }
 
-  TerrainGrid moated_peak_grid () {
-    return { .width = 17,
-             .height = 17,
-             .spacing_x = 24.0f * mp_units::si::metre,
-             .spacing_y = 24.0f * mp_units::si::metre };
+  TerrainDomain moated_peak_grid () {
+    return { 17, 17, 24.0f * mp_units::si::metre, 24.0f * mp_units::si::metre };
   }
 
   std::vector<float> alpine_temptation () {
@@ -84,29 +78,32 @@ namespace {
     return heights;
   }
 
-  TerrainGrid alpine_temptation_grid () {
-    return { .width = 25,
-             .height = 25,
-             .spacing_x = 100.0f * mp_units::si::metre,
-             .spacing_y = 100.0f * mp_units::si::metre };
+  TerrainDomain alpine_temptation_grid () {
+    return {
+      25, 25, 100.0f * mp_units::si::metre, 100.0f * mp_units::si::metre
+    };
   }
 
   float sample_height_m (const std::vector<float>& heights,
-                         const TerrainGrid& grid,
+                         const TerrainDomain& grid,
                          float x_m,
                          float z_m) {
-    const float x = std::clamp (
-      x_m / grid.spacing_x_m (), 0.0f, static_cast<float> (grid.width - 1));
-    const float y = std::clamp (
-      z_m / grid.spacing_y_m (), 0.0f, static_cast<float> (grid.height - 1));
+    const float x = std::clamp (x_m / meters_value (grid.spacing_x ()),
+                                0.0f,
+                                static_cast<float> (grid.width () - 1));
+    const float y = std::clamp (z_m / meters_value (grid.spacing_z ()),
+                                0.0f,
+                                static_cast<float> (grid.height () - 1));
     const int x0 = static_cast<int> (std::floor (x));
     const int y0 = static_cast<int> (std::floor (y));
-    const int x1 = std::min (x0 + 1, static_cast<int> (grid.width - 1));
-    const int y1 = std::min (y0 + 1, static_cast<int> (grid.height - 1));
-    const float top = std::lerp (
-      heights[y0 * grid.width + x0], heights[y0 * grid.width + x1], x - x0);
-    const float bottom = std::lerp (
-      heights[y1 * grid.width + x0], heights[y1 * grid.width + x1], x - x0);
+    const int x1 = std::min (x0 + 1, static_cast<int> (grid.width () - 1));
+    const int y1 = std::min (y0 + 1, static_cast<int> (grid.height () - 1));
+    const float top = std::lerp (heights[y0 * grid.width () + x0],
+                                 heights[y0 * grid.width () + x1],
+                                 x - x0);
+    const float bottom = std::lerp (heights[y1 * grid.width () + x0],
+                                    heights[y1 * grid.width () + x1],
+                                    x - x0);
     return std::lerp (top, bottom, y - y0);
   }
 }
@@ -127,7 +124,7 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
                result.report.mean_centerline_grade);
   MOPPE_CHECK (meters_value (result.report.maximum_centerline_step) <=
                std::hypot (trail_valley_grid ().spacing_x_m (),
-                           trail_valley_grid ().spacing_y_m ()) +
+                           trail_valley_grid ().spacing_z_m ()) +
                  1e-5f);
   bool valley_changed = false;
   for (int y = 1; y < 8; ++y)
@@ -181,11 +178,11 @@ MOPPE_TEST (trail_network_retains_connected_graph_and_material_footprint) {
     MOPPE_CHECK (influence <= 1.0f);
   }
 
-  const std::size_t width = network.source_grid.width;
-  const float home_x =
-    (network.plan.home_base.value % width) * network.source_grid.spacing_x_m ();
-  const float home_z =
-    (network.plan.home_base.value / width) * network.source_grid.spacing_y_m ();
+  const std::size_t width = network.domain.width ();
+  const float home_x = (network.plan.home_base.value % width) *
+                       meters_value (network.domain.spacing_x ());
+  const float home_z = (network.plan.home_base.value / width) *
+                       meters_value (network.domain.spacing_z ());
   MOPPE_CHECK_NEAR (network.alignment.points.front ().x_m, home_x, 1e-5f);
   MOPPE_CHECK_NEAR (network.alignment.points.front ().z_m, home_z, 1e-5f);
 
@@ -260,9 +257,11 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
                  meters_value (drained_parameters.maximum_fill) + 1e-5f);
   }
 
-  const TerrainGrid grid = trail_valley_grid ();
-  const float maximum_x = (grid.width - 1) * grid.spacing_x_m ();
-  const float maximum_z = (grid.height - 1) * grid.spacing_y_m ();
+  const TerrainDomain grid = trail_valley_grid ();
+  const float maximum_x =
+    (grid.width () - 1) * meters_value (grid.spacing_x ());
+  const float maximum_z =
+    (grid.height () - 1) * meters_value (grid.spacing_z ());
   bool observed_downhill_fall = false;
   for (std::size_t segment = 0;
        segment + 1 < drained.network.alignment.points.size ();

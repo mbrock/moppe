@@ -20,11 +20,8 @@ namespace {
     return heights;
   }
 
-  TerrainGrid valley_grid () {
-    return { .width = 9,
-             .height = 9,
-             .spacing_x = 5.0f * mp_units::si::metre,
-             .spacing_y = 5.0f * mp_units::si::metre };
+  TerrainDomain valley_grid () {
+    return { 9, 9, 5.0f * mp_units::si::metre, 5.0f * mp_units::si::metre };
   }
 
   struct PaintedValley {
@@ -104,10 +101,8 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   for (std::size_t y = 0; y < height; ++y)
     for (std::size_t x = 0; x < width; ++x)
       heights[y * width + x] = 10.0f * (y == 1 ? profile[x] : 0.9f);
-  const TerrainGrid grid { .width = width,
-                           .height = height,
-                           .spacing_x = 20.0f * mp_units::si::metre,
-                           .spacing_y = 20.0f * mp_units::si::metre };
+  const TerrainDomain grid (
+    width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
   const TerrainView terrain (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, -10.0f);
   const LakeCensus census = census_lakes (flood);
@@ -150,10 +145,8 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
   for (std::size_t y = 0; y < height; ++y)
     for (std::size_t x = 0; x < width; ++x)
       heights[y * width + x] = 100.0f * (y == 1 ? profile[x] : 0.9f);
-  const TerrainGrid grid { .width = width,
-                           .height = height,
-                           .spacing_x = 20.0f * mp_units::si::metre,
-                           .spacing_y = 20.0f * mp_units::si::metre };
+  const TerrainDomain grid (
+    width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
   const TerrainView terrain (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);

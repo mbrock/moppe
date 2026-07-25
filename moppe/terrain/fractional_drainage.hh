@@ -26,19 +26,19 @@ namespace moppe::terrain {
   public:
     using index_type = CellIndex;
 
-    explicit TerrainLatticeDomain (TerrainGrid grid);
+    explicit TerrainLatticeDomain (TerrainDomain domain);
 
-    const TerrainGrid& grid () const noexcept {
-      return m_grid;
+    const TerrainDomain& terrain_domain () const noexcept {
+      return m_domain;
     }
     std::size_t width () const noexcept {
-      return m_grid.width;
+      return m_domain.width ();
     }
     std::size_t height () const noexcept {
-      return m_grid.height;
+      return m_domain.height ();
     }
     std::size_t size () const noexcept {
-      return m_grid.width * m_grid.height;
+      return m_domain.size ();
     }
 
     std::size_t offset (CellIndex index) const;
@@ -90,7 +90,7 @@ namespace moppe::terrain {
     }
 
   private:
-    TerrainGrid m_grid;
+    TerrainDomain m_domain;
   };
 
   inline constexpr struct flow_fraction
@@ -176,8 +176,8 @@ namespace moppe::terrain {
     const TerrainLatticeDomain& lattice () const noexcept {
       return m_lattice;
     }
-    const TerrainGrid& grid () const noexcept {
-      return m_lattice.grid ();
+    const TerrainDomain& terrain_domain () const noexcept {
+      return m_lattice.terrain_domain ();
     }
     std::size_t size () const noexcept {
       return m_lattice.size ();
@@ -223,7 +223,7 @@ namespace moppe::terrain {
     virtual ~FractionalRouteBackend () = default;
 
     virtual void
-    select_dry_routes (const TerrainGrid& grid,
+    select_dry_routes (const TerrainDomain& domain,
                        std::span<const float> routing_surface_levels,
                        std::span<const ChannelTangent> previous_tangent,
                        ChannelPersistence persistence,

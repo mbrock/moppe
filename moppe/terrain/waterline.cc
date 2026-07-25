@@ -31,9 +31,9 @@ namespace moppe::terrain {
                                float wet_epsilon) {
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
       throw std::invalid_argument ("waterline epsilon must be non-negative");
-    const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = terrain.domain ();
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
     if (surface.values ().size () != count)
       throw std::invalid_argument ("water surface does not match terrain");
@@ -228,9 +228,9 @@ namespace moppe::terrain {
       keys.push_back (key);
     std::sort (keys.begin (), keys.end ());
 
-    Waterline waterline { .source_grid = grid };
-    const float spacing_x = grid.spacing_x_m ();
-    const float spacing_y = grid.spacing_y_m ();
+    Waterline waterline { .domain = grid };
+    const float spacing_x = meters_value (grid.spacing_x ());
+    const float spacing_y = meters_value (grid.spacing_z ());
 
     const auto walk = [&] (std::uint64_t start, bool closed) {
       WaterlineContour contour { .closed = closed };
@@ -269,12 +269,12 @@ namespace moppe::terrain {
   ScalarRaster waterline_proximity (const Waterline& waterline, float band_m) {
     if (!std::isfinite (band_m) || band_m <= 0.0f)
       throw std::invalid_argument ("waterline band must be positive");
-    const TerrainGrid& grid = waterline.source_grid;
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = waterline.domain;
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    const float spacing_x = grid.spacing_x_m ();
-    const float spacing_y = grid.spacing_y_m ();
+    const float spacing_x = meters_value (grid.spacing_x ());
+    const float spacing_y = meters_value (grid.spacing_z ());
     const float world_x = spacing_x * static_cast<float> (width);
     const float world_y = spacing_y * static_cast<float> (height);
 

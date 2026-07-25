@@ -537,7 +537,7 @@ namespace moppe {
           *m_lakes,
           *m_drainage,
           *m_channel_drainage,
-          terrain::visible_river_minimum_area (m_drainage->source_grid));
+          terrain::visible_river_minimum_area (m_drainage->domain));
         m_river_surface.rebuild (*m_renderer, *m_map, *m_rivers);
         const double milliseconds = std::chrono::duration<double, std::milli> (
                                       std::chrono::steady_clock::now () - start)
@@ -796,7 +796,7 @@ namespace moppe {
         } else if (m_overlay == OverlayMode::Flow ||
                    m_overlay == OverlayMode::Streams) {
           const float cell_area =
-            square_meters_value (graph.source_grid.cell_area ());
+            square_meters_value (graph.domain.cell_area ());
           float maximum = 0.0f;
           if (m_overlay == OverlayMode::Flow) {
             for (std::size_t i = 0; i < values.size (); ++i) {

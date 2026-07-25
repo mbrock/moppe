@@ -44,10 +44,8 @@ namespace {
 }
 
 MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
-  const terrain::TerrainGrid grid { .width = 9,
-                                    .height = 9,
-                                    .spacing_x = 2.0f * mp_units::si::metre,
-                                    .spacing_y = 3.0f * mp_units::si::metre };
+  const terrain::TerrainDomain grid (
+    9, 9, 2.0f * mp_units::si::metre, 3.0f * mp_units::si::metre);
 
   MOPPE_CHECK_NEAR (
     square_meters_value (terrain::visible_river_minimum_area (grid)),

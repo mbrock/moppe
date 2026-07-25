@@ -9,15 +9,13 @@ using namespace moppe::terrain;
 MOPPE_TEST (moisture_decays_away_from_standing_water) {
   // A 9x9 plain with one pond cell in the center.
   const std::size_t count = 81;
-  const TerrainGrid grid { .width = 9,
-                           .height = 9,
-                           .spacing_x = 10.0f * mp_units::si::metre,
-                           .spacing_y = 10.0f * mp_units::si::metre };
+  const TerrainDomain grid (
+    9, 9, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre);
   const RasterDomain domain { .width = 9, .height = 9 };
   std::vector<WaterBodyId> body (count, LakeCensus::dry);
   body[40] = 0;
   const FloodField flood {
-    .source_grid = grid,
+    .domain = grid,
     .sea_level = -1.0f,
     .has_ocean = false,
     .water_level = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
@@ -28,7 +26,7 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   };
   const LakeCensus census { .body = std::move (body) };
   const DrainageGraph drainage {
-    .source_grid = grid,
+    .domain = grid,
     .receiver = std::vector<CellIndex> (count, 40),
     .slope =
       SlopeRaster (ScalarRaster (domain, std::vector<float> (count, 0.01f))),

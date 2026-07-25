@@ -15,7 +15,7 @@ namespace moppe::terrain {
   // to the largest connected below-sea component (or the global-minimum
   // fallback when the world has no ocean).
   struct FloodField {
-    TerrainGrid source_grid;
+    TerrainDomain domain;
     float sea_level;
     bool has_ocean;
     ScalarRaster water_level;
@@ -25,11 +25,11 @@ namespace moppe::terrain {
     std::vector<CellIndex> outlets;
 
     std::size_t width () const noexcept {
-      return source_grid.width;
+      return domain.width ();
     }
 
     std::size_t height () const noexcept {
-      return source_grid.height;
+      return domain.height ();
     }
   };
 

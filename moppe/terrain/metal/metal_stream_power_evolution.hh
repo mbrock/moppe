@@ -35,7 +35,7 @@ namespace moppe::terrain::metal {
                       ChannelPersistence persistence) const override;
 
   private:
-    void select_dry_routes (const TerrainGrid& grid,
+    void select_dry_routes (const TerrainDomain& grid,
                             std::span<const float> routing_surface_levels,
                             std::span<const ChannelTangent> previous_tangent,
                             ChannelPersistence persistence,

@@ -13,16 +13,16 @@
 
 namespace moppe::terrain {
   namespace {
-    void expand_evolution_samples (const TerrainGrid& grid,
+    void expand_evolution_samples (const TerrainDomain& grid,
                                    const std::vector<float>& unique,
                                    std::vector<float>& expanded) {
       MOPPE_PROFILE_ZONE ("orogeny.expand_periodic_samples");
-      const std::size_t width = grid.width;
-      const std::size_t height = grid.height;
-      expanded.resize (grid.width * grid.height);
-      for (std::size_t y = 0; y < grid.height; ++y)
-        for (std::size_t x = 0; x < grid.width; ++x)
-          expanded[y * grid.width + x] =
+      const std::size_t width = grid.width ();
+      const std::size_t height = grid.height ();
+      expanded.resize (grid.width () * grid.height ());
+      for (std::size_t y = 0; y < grid.height (); ++y)
+        for (std::size_t x = 0; x < grid.width (); ++x)
+          expanded[y * grid.width () + x] =
             unique[(y % height) * width + x % width];
     }
 
@@ -31,8 +31,8 @@ namespace moppe::terrain {
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters) {
       MOPPE_PROFILE_ZONE ("orogeny.validate");
-      const TerrainGrid& grid = terrain.grid ();
-      const std::size_t count = grid.width * grid.height;
+      const TerrainDomain& grid = terrain.domain ();
+      const std::size_t count = grid.width () * grid.height ();
       if (uplift_rate.size () != count)
         throw std::invalid_argument (
           "stream-power uplift field does not match terrain");
@@ -64,7 +64,8 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "invalid stream-power evolution parameters");
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const float height = terrain.at (cell % grid.width, cell / grid.width);
+        const float height =
+          terrain.at (cell % grid.width (), cell / grid.width ());
         const float uplift = meters_per_julian_year_value (uplift_rate[cell]);
         if (!std::isfinite (height) || !std::isfinite (uplift) || uplift < 0.0f)
           throw std::invalid_argument (
@@ -75,16 +76,16 @@ namespace moppe::terrain {
 
     int diffuse_evolution_step (std::vector<float>& heights,
                                 const std::vector<std::uint8_t>& boundary,
-                                const TerrainGrid& grid,
+                                const TerrainDomain& grid,
                                 double duration_years,
                                 double diffusivity_m2_per_year) {
       MOPPE_PROFILE_ZONE ("orogeny.diffuse_step");
       if (duration_years == 0.0 || diffusivity_m2_per_year == 0.0)
         return 0;
-      const std::size_t width = grid.width;
-      const std::size_t height = grid.height;
-      const double hx = grid.spacing_x_m ();
-      const double hy = grid.spacing_y_m ();
+      const std::size_t width = grid.width ();
+      const std::size_t height = grid.height ();
+      const double hx = meters_value (grid.spacing_x ());
+      const double hy = meters_value (grid.spacing_z ());
       const double stable_dt = 1.0 / (2.0 * diffusivity_m2_per_year *
                                       (1.0 / (hx * hx) + 1.0 / (hy * hy)));
       const double requested = std::ceil (duration_years / stable_dt);
@@ -154,9 +155,9 @@ namespace moppe::terrain {
     std::span<const ChannelTangent> initial_channel_tangents) {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (terrain, uplift_rate, parameters);
-    const TerrainGrid& grid = terrain.grid ();
-    const std::size_t width = grid.width;
-    const std::size_t height = grid.height;
+    const TerrainDomain& grid = terrain.domain ();
+    const std::size_t width = grid.width ();
+    const std::size_t height = grid.height ();
     const std::size_t count = width * height;
     if (!initial_channel_tangents.empty () &&
         initial_channel_tangents.size () != count)
@@ -205,7 +206,7 @@ namespace moppe::terrain {
     int diffusion_sweeps = 0;
     double tectonic_uplift_volume_m3 = 0.0;
     double incised_volume_m3 = 0.0;
-    std::vector<float> expanded (grid.width * grid.height);
+    std::vector<float> expanded (grid.width () * grid.height ());
     std::vector<float> next (count);
     std::vector<std::uint8_t> boundary (count);
 

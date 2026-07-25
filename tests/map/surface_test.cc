@@ -341,10 +341,7 @@ MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
   using namespace moppe;
   const terrain::RasterDomain domain { .width = 2, .height = 2 };
   const terrain::TrailNetwork network {
-    .source_grid = { .width = 2,
-                     .height = 2,
-                     .spacing_x = 10.0f * u::m,
-                     .spacing_y = 10.0f * u::m },
+    .domain = terrain::TerrainDomain (2, 2, 10.0f * u::m, 10.0f * u::m),
     .influence = terrain::ScalarRaster (domain, { 0.10f, 0.20f, 0.30f, 0.40f }),
     .home_base_influence =
       terrain::ScalarRaster (domain, { 0.90f, 0.80f, 0.70f, 0.60f }),
