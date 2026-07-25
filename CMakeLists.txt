@@ -412,6 +412,7 @@ endif()
 # distinct from the renderer API and its platform-specific backends.
 add_library(moppe_scene STATIC
   moppe/game/graphics_settings.cc
+  moppe/game/launch_options.cc
   moppe/game/frame_view.cc
   moppe/gfx/tga.cc
   moppe/game/surface_presentation.cc
@@ -439,10 +440,13 @@ if(MOPPE_ENABLE_TRACY)
   target_link_libraries(moppe_scene PUBLIC Tracy::TracyClient)
 endif()
 
-# The shared application layer is intentionally narrow: loading and the two
-# presentation systems make concrete platform service calls, while game.cc
-# stays on each terminal executable because it defines main.
+# The shared application layer makes concrete platform service calls: loading,
+# the two presentation systems, seed memory, and the game shell itself.  Only
+# main.cc stays on each terminal executable, since a host's own graphics
+# defaults are all that varies between them.
 add_library(moppe_app STATIC
+  moppe/game/game.cc
+  moppe/game/seed_memory.cc
   moppe/game/terrain.cc
   moppe/game/terrain_lab.cc
   moppe/game/world_loading.cc
@@ -533,6 +537,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/graphics_benchmark_test.cc
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
+    tests/game/launch_options_test.cc
     tests/game/inspector_ui_test.cc
     tests/game/generated_world_test.cc
     tests/game/terrain_lab_model_test.cc
@@ -595,7 +600,7 @@ if(APPLE AND MOPPE_IOS)
   target_link_libraries(moppe_app PUBLIC moppe_platform_ios)
 
   add_executable(moppe-ios MACOSX_BUNDLE
-    moppe/game/game.cc
+    moppe/game/main.cc
     ${MOPPE_IOS_ASSETS}
   )
   target_link_libraries(moppe-ios PRIVATE moppe_app moppe_platform_ios)
@@ -642,7 +647,7 @@ if(APPLE AND MOPPE_TVOS)
   target_link_libraries(moppe_app PUBLIC moppe_platform_tvos)
 
   add_executable(moppe-tvos MACOSX_BUNDLE
-    moppe/game/game.cc
+    moppe/game/main.cc
   )
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
@@ -699,7 +704,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   # The game, as a proper .app bundle with the assets inside.
   # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
   # and MOPPE_ASSETS=<repo> overrides asset resolution for dev.)
-  add_executable(moppe MACOSX_BUNDLE moppe/game/game.cc)
+  add_executable(moppe MACOSX_BUNDLE moppe/game/main.cc)
   target_link_libraries(moppe PRIVATE moppe_app moppe_platform_mac)
   set_target_properties(moppe PROPERTIES
     XCODE_GENERATE_SCHEME TRUE
@@ -768,7 +773,7 @@ if(EMSCRIPTEN)
   target_link_libraries(moppe-web-testbed PRIVATE moppe_platform_web)
   moppe_configure_web_executable(moppe-web-testbed)
 
-  add_executable(moppe-web moppe/game/game.cc)
+  add_executable(moppe-web moppe/game/main.cc)
   target_link_libraries(moppe-web PRIVATE moppe_app moppe_platform_web)
   moppe_configure_web_executable(moppe-web)
 endif()

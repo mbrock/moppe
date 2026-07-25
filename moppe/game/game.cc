@@ -1,7 +1,9 @@
-// The game: the port of main.cc's MoppeGLUT application class onto
+// The game: the port of the original MoppeGLUT application class onto
 // the platform/render abstractions.  World generation runs on a
 // background thread behind a loading screen; the frame follows the
-// exact pass order of the GL build's render_scene().
+// exact pass order of the GL build's render_scene().  The command line
+// that configures a launch is resolved before this file is reached; see
+// launch_options.hh and main.cc.
 
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
@@ -22,7 +24,10 @@
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/inspector_ui.hh>
+#include <moppe/game/launch_options.hh>
+#include <moppe/game/moppe_game.hh>
 #include <moppe/game/river_surface.hh>
+#include <moppe/game/seed_memory.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
@@ -52,9 +57,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
-#include <ctime>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -66,13 +69,6 @@
 
 namespace moppe {
   namespace game {
-    struct GraphicsBenchmarkConfig {
-      std::string output_path;
-      int prelude_frames = 480;
-      int settle_frames = 30;
-      int measured_frames = 120;
-    };
-
     static int cinematic_capture_frame_limit () {
       if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_FRAMES"))
         return std::max (1, ::atoi (value));
@@ -88,73 +84,23 @@ namespace moppe {
       return result;
     }
 
-    static std::string
-    last_seed_path (const WorldParams& world,
-                    terrain::TerrainGenerationProfile profile) {
-      std::ostringstream name;
-      name << "last-seed-" << platform::executable_build_id () << '-'
-           << terrain::profile_id (profile) << '-' << world.resolution
-           << ".txt";
-      return platform::cache_path (name.str ());
-    }
-
-    static void remember_seed (const WorldParams& world,
-                               terrain::TerrainGenerationProfile profile,
-                               int seed) {
-      std::ofstream output (last_seed_path (world, profile));
-      if (output)
-        output << seed << '\n';
-    }
-
-    static int remembered_seed (const WorldParams& world,
-                                terrain::TerrainGenerationProfile profile) {
-      std::ifstream input (last_seed_path (world, profile));
-      int seed = -1;
-      if (input >> seed && seed >= 0)
-        return seed;
-      return static_cast<int> (::time (0));
-    }
-
-    static void prune_obsolete_terrain_caches () {
-      const std::string build_id = platform::executable_build_id ();
-      std::error_code error;
-      const std::filesystem::path root (platform::cache_path (""));
-      for (const std::filesystem::directory_entry& entry :
-           std::filesystem::directory_iterator (root, error)) {
-        if (error || !entry.is_regular_file ())
-          continue;
-        const std::string name = entry.path ().filename ().string ();
-        const bool terrain_file =
-          name.starts_with ("terrain-") || name.starts_with ("last-seed-");
-        if (terrain_file && name.find (build_id) == std::string::npos)
-          std::filesystem::remove (entry.path (), error);
-      }
-    }
-
     class MoppeGame : public platform::Game {
     public:
-      MoppeGame (const WorldParams& world,
-                 terrain::WorldRecipe recipe,
-                 const GraphicsSettings& graphics,
-                 bool start_in_terrain_lab,
-                 bool tree_demo,
-                 std::size_t tree_count,
-                 std::string screenshot_path,
-                 std::optional<WaterShot> water_shot,
-                 std::optional<GraphicsBenchmarkConfig> benchmark)
-          : m_generated_world (
-              std::make_unique<GeneratedWorld> (world, std::move (recipe))),
+      MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
+          : m_generated_world (std::make_unique<GeneratedWorld> (
+              options.world, std::move (recipe))),
             m_session (std::make_unique<GameSession> (
               this->world (), this->map (), this->surface ())),
-            m_loading (this->world (), this->recipe ()), m_graphics (graphics),
-            m_spawn_position (
-              position_value (this->world ().spawn_position ())),
-            m_renderer (0), m_start_in_terrain_lab (start_in_terrain_lab),
-            m_tree_demo (tree_demo), m_tree_count (tree_count),
-            m_screenshot_path (std::move (screenshot_path)),
-            m_water_shot (water_shot), m_screenshot_frames (0), m_ready (false),
-            m_benchmark (std::move (benchmark)),
-            m_benchmark_baseline (graphics) {
+            m_loading (this->world (), this->recipe ()),
+            m_graphics (options.graphics), m_spawn_position (position_value (
+                                             this->world ().spawn_position ())),
+            m_renderer (0),
+            m_start_in_terrain_lab (options.start_in_terrain_lab),
+            m_tree_demo (options.tree_demo), m_tree_count (options.tree_count),
+            m_screenshot_path (options.screenshot_path),
+            m_water_shot (options.water_shot), m_screenshot_frames (0),
+            m_ready (false), m_benchmark (options.benchmark),
+            m_benchmark_baseline (options.graphics) {
         if (m_benchmark)
           m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
             m_benchmark->prelude_frames,
@@ -1980,229 +1926,11 @@ namespace moppe {
       render::DrawList m_world_dl;
       render::DrawList m_hud_dl;
     };
-  }
-}
 
-int main (int argc, char** argv) {
-  using namespace moppe;
-  if (::getenv ("MOPPE_TRACY_WAIT"))
-    MOPPE_PROFILE_WAIT ();
-  MOPPE_PROFILE_THREAD ("Main");
-  MOPPE_PROFILE_ZONE ("main");
-
-  game::WorldParams world;
-#ifdef MOPPE_DEFAULT_APPLE_TV_GRAPHICS
-  game::GraphicsSettings graphics = game::apple_tv_graphics_settings ();
-#else
-  game::GraphicsSettings graphics = game::high_graphics_settings ();
-#endif
-  platform::Config config;
-  bool start_in_terrain_lab = false;
-  bool tree_demo = false;
-  std::size_t tree_count = 9;
-  std::string screenshot_path;
-  std::optional<game::WaterShot> water_shot;
-  int seed = -1;
-  terrain::TerrainGenerationProfile generation_profile =
-    terrain::TerrainGenerationProfile::Play;
-  std::optional<game::GraphicsBenchmarkConfig> graphics_benchmark;
-  config.title = "Moppe";
-
-  for (int i = 1; i < argc; ++i) {
-    const std::string arg = argv[i];
-    if (arg == "--fullscreen") {
-      config.fullscreen = true;
-    } else if (arg == "--windowed") {
-      config.fullscreen = false;
-    } else if (arg == "--graphics-quality") {
-      if (i + 1 >= argc) {
-        std::cerr << "--graphics-quality requires low, balanced, or high\n";
-        return -1;
-      }
-      const std::string quality = argv[++i];
-      if (quality == "low")
-        graphics = game::low_graphics_settings ();
-      else if (quality == "balanced")
-        graphics = game::balanced_graphics_settings ();
-      else if (quality == "high")
-        graphics = game::high_graphics_settings ();
-      else {
-        std::cerr << "unknown graphics quality: " << quality << '\n';
-        return -1;
-      }
-    } else if (arg == "--graphics-enable" || arg == "--graphics-disable") {
-      if (i + 1 >= argc) {
-        std::cerr << arg << " requires a comma-separated feature list\n";
-        return -1;
-      }
-      std::string error;
-      const bool enabled = arg == "--graphics-enable";
-      if (!game::set_graphics_features (graphics, argv[++i], enabled, error)) {
-        std::cerr << error << '\n';
-        return -1;
-      }
-    } else if (arg == "--graphics-benchmark") {
-      if (i + 1 >= argc) {
-        std::cerr << "--graphics-benchmark requires a CSV path\n";
-        return -1;
-      }
-      graphics_benchmark = game::GraphicsBenchmarkConfig {};
-      graphics_benchmark->output_path = argv[++i];
-      config.fullscreen = false;
-    } else if (arg == "--benchmark-frames" || arg == "--benchmark-settle" ||
-               arg == "--benchmark-prelude") {
-      if (i + 1 >= argc) {
-        std::cerr << arg << " requires a positive frame count\n";
-        return -1;
-      }
-      if (!graphics_benchmark)
-        graphics_benchmark = game::GraphicsBenchmarkConfig {};
-      const int value = std::max (1, std::atoi (argv[++i]));
-      if (arg == "--benchmark-frames")
-        graphics_benchmark->measured_frames = value;
-      else if (arg == "--benchmark-settle")
-        graphics_benchmark->settle_frames = value;
-      else
-        graphics_benchmark->prelude_frames = value;
-    } else if (arg == "--fast") {
-      generation_profile = terrain::TerrainGenerationProfile::Fast;
-    } else if (arg == "--terrain-quality") {
-      if (i + 1 >= argc) {
-        std::cerr << "--terrain-quality requires fast, play, or research\n";
-        return -1;
-      }
-      const std::string quality = argv[++i];
-      if (quality == "fast")
-        generation_profile = terrain::TerrainGenerationProfile::Fast;
-      else if (quality == "play")
-        generation_profile = terrain::TerrainGenerationProfile::Play;
-      else if (quality == "research")
-        generation_profile = terrain::TerrainGenerationProfile::Research;
-      else {
-        std::cerr << "unknown terrain quality: " << quality << '\n';
-        return -1;
-      }
-    } else if (arg == "--terrain-lab") {
-      start_in_terrain_lab = true;
-    } else if (arg == "--tree-demo") {
-      tree_demo = true;
-    } else if (arg == "--tree-count") {
-      if (i + 1 >= argc) {
-        std::cerr << "--tree-count requires an integer from 1 to 64\n";
-        return -1;
-      }
-      const int count = std::atoi (argv[++i]);
-      if (count < 1 || count > 64) {
-        std::cerr << "--tree-count must be between 1 and 64\n";
-        return -1;
-      }
-      tree_count = static_cast<std::size_t> (count);
-    } else if (arg == "--tree-screenshot") {
-      if (i + 1 >= argc) {
-        std::cerr << "--tree-screenshot requires a PNG path\n";
-        return -1;
-      }
-      tree_demo = true;
-      screenshot_path = argv[++i];
-      config.fullscreen = false;
-    } else if (arg == "--terrain-lab-screenshot") {
-      if (i + 1 >= argc) {
-        std::cerr << "--terrain-lab-screenshot requires a PNG path\n";
-        return -1;
-      }
-      screenshot_path = argv[++i];
-      start_in_terrain_lab = true;
-      config.fullscreen = false;
-      world.resolution = 1025;
-    } else if (arg == "--screenshot") {
-      if (i + 1 >= argc) {
-        std::cerr << "--screenshot requires a PNG path\n";
-        return -1;
-      }
-      screenshot_path = argv[++i];
-      config.fullscreen = false;
-    } else if (arg == "--water-screenshot") {
-      if (i + 2 >= argc) {
-        std::cerr << "--water-screenshot requires a feature and PNG path\n";
-        return -1;
-      }
-      const std::string feature = argv[++i];
-      water_shot = game::parse_water_shot (feature);
-      if (!water_shot) {
-        std::cerr << "unknown water feature: " << feature
-                  << " (use stream, river, confluence, mouth, waterfall, "
-                     "or lake)\n";
-        return -1;
-      }
-      screenshot_path = argv[++i];
-      config.fullscreen = false;
-    } else if (arg == "--seed") {
-      if (i + 1 >= argc) {
-        std::cerr << "--seed requires an integer\n";
-        return -1;
-      }
-      seed = std::atoi (argv[++i]);
+    std::unique_ptr<platform::Game>
+    make_moppe_game (const LaunchOptions& options,
+                     terrain::WorldRecipe recipe) {
+      return std::make_unique<MoppeGame> (options, std::move (recipe));
     }
-  }
-  std::string graphics_error;
-  if (!game::apply_graphics_environment (graphics, graphics_error)) {
-    std::cerr << graphics_error << '\n';
-    return -1;
-  }
-  game::print_graphics_settings (std::cerr, graphics);
-  if (graphics_benchmark) {
-    if (graphics_benchmark->output_path.empty ()) {
-      std::cerr << "--graphics-benchmark is required with benchmark options\n";
-      return -1;
-    }
-    const int expected = graphics_benchmark->measured_frames *
-                         (1 << game::graphics_benchmark_dimension_count ());
-    ::setenv (
-      "MOPPE_BENCHMARK_OUTPUT", graphics_benchmark->output_path.c_str (), 1);
-    const std::string expected_text = std::to_string (expected);
-    ::setenv ("MOPPE_BENCHMARK_EXPECTED", expected_text.c_str (), 1);
-    std::string feature_names;
-    for (const game::GraphicsFeature* feature : game::graphics_features)
-      if (game::graphics_benchmark_includes (*feature)) {
-        if (!feature_names.empty ())
-          feature_names += ',';
-        feature_names += feature->name;
-      }
-    ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
-  }
-  if (generation_profile == terrain::TerrainGenerationProfile::Fast)
-    world.resolution = 1025;
-  config.capture_frames =
-    !screenshot_path.empty () || ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
-  config.activate = !config.capture_frames && !graphics_benchmark;
-  if (!screenshot_path.empty () && seed < 0)
-    seed = 123;
-  game::prune_obsolete_terrain_caches ();
-  if (seed < 0)
-    seed = game::remembered_seed (world, generation_profile);
-
-  const terrain::Seed world_seed { static_cast<std::uint32_t> (seed) };
-  terrain::WorldRecipe recipe = terrain::make_world_recipe (world.map_size,
-                                                            world.resolution,
-                                                            world.topology (),
-                                                            world_seed,
-                                                            world.water_level,
-                                                            generation_profile);
-
-  game::MoppeGame game (world,
-                        std::move (recipe),
-                        graphics,
-                        start_in_terrain_lab,
-                        tree_demo,
-                        tree_count,
-                        std::move (screenshot_path),
-                        water_shot,
-                        graphics_benchmark);
-
-  try {
-    return platform::run (game, config);
-  } catch (const std::exception& e) {
-    std::cerr << "\nError: " << e.what () << "\n";
-    return -1;
   }
 }

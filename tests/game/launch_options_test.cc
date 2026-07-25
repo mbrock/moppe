@@ -1,0 +1,156 @@
+#include <moppe/game/graphics_benchmark.hh>
+#include <moppe/game/launch_options.hh>
+
+#include <tests/test.hh>
+
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+using namespace moppe;
+
+namespace {
+  // The parser reads argv; a test spells its command line as strings and
+  // lends their storage for the call.
+  bool parse (std::vector<std::string> arguments,
+              game::LaunchOptions& options,
+              std::string& error) {
+    arguments.insert (arguments.begin (), "moppe");
+    std::vector<char*> argv;
+    for (std::string& argument : arguments)
+      argv.push_back (argument.data ());
+    return game::parse_launch_options (
+      static_cast<int> (argv.size ()), argv.data (), options, error);
+  }
+
+  game::LaunchOptions parsed (std::vector<std::string> arguments) {
+    game::LaunchOptions options;
+    std::string error;
+    MOPPE_CHECK (parse (std::move (arguments), options, error));
+    return options;
+  }
+}
+
+MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
+  const game::LaunchOptions options = parsed ({});
+  MOPPE_CHECK (options.generation_profile ==
+               terrain::TerrainGenerationProfile::Play);
+  MOPPE_CHECK (options.config.activate);
+  MOPPE_CHECK (!options.config.capture_frames);
+  MOPPE_CHECK (options.screenshot_path.empty ());
+  MOPPE_CHECK (!options.benchmark.has_value ());
+  MOPPE_CHECK (!options.start_in_terrain_lab);
+  // Unresolved: main recalls the last played seed for an ordinary launch.
+  MOPPE_CHECK (options.seed < 0);
+}
+
+MOPPE_TEST (launch_quality_flags_select_settings) {
+  MOPPE_CHECK (!parsed ({ "--graphics-quality", "low" }).graphics.bloom);
+  MOPPE_CHECK (parsed ({ "--graphics-quality", "high" }).graphics.bloom);
+  MOPPE_CHECK (
+    parsed ({ "--graphics-quality", "high", "--graphics-disable", "bloom" })
+      .graphics.bloom == false);
+  MOPPE_CHECK (
+    parsed ({ "--terrain-quality", "research" }).generation_profile ==
+    terrain::TerrainGenerationProfile::Research);
+}
+
+MOPPE_TEST (launch_rejects_malformed_command_lines) {
+  // A rejected command line leaves its options half-written, so each case
+  // starts from a fresh launch rather than the wreckage of the last.
+  const auto rejects = [] (std::vector<std::string> arguments) {
+    game::LaunchOptions options;
+    std::string error;
+    return !parse (std::move (arguments), options, error) && !error.empty ();
+  };
+  MOPPE_CHECK (rejects ({ "--graphics-quality" }));
+  MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
+  MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
+  MOPPE_CHECK (rejects ({ "--tree-count", "0" }));
+  MOPPE_CHECK (rejects ({ "--tree-count", "65" }));
+  MOPPE_CHECK (rejects ({ "--water-screenshot", "canyon", "/tmp/a.png" }));
+  MOPPE_CHECK (rejects ({ "--water-screenshot", "mouth" }));
+  MOPPE_CHECK (rejects ({ "--screenshot" }));
+  MOPPE_CHECK (rejects ({ "--seed" }));
+  MOPPE_CHECK (rejects ({ "--graphics-enable", "not-a-feature" }));
+  // Benchmark pacing without a destination has nowhere to write.
+  MOPPE_CHECK (rejects ({ "--benchmark-frames", "10" }));
+  // An unrecognized argument is not an error; it is simply not a setting.
+  MOPPE_CHECK (!rejects ({ "--not-a-flag" }));
+}
+
+MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
+  const game::LaunchOptions shot = parsed ({ "--screenshot", "/tmp/shot.png" });
+  MOPPE_CHECK (shot.screenshot_path == "/tmp/shot.png");
+  MOPPE_CHECK (!shot.config.fullscreen);
+  MOPPE_CHECK (shot.config.capture_frames);
+  MOPPE_CHECK (!shot.config.activate);
+  MOPPE_CHECK (shot.seed == 123);
+
+  // An explicit seed still wins over the capture default.
+  MOPPE_CHECK (
+    parsed ({ "--screenshot", "/tmp/shot.png", "--seed", "7" }).seed == 7);
+
+  const game::LaunchOptions water =
+    parsed ({ "--water-screenshot", "mouth", "/tmp/mouth.png" });
+  MOPPE_CHECK (water.water_shot == game::WaterShot::Mouth);
+  MOPPE_CHECK (water.screenshot_path == "/tmp/mouth.png");
+
+  const game::LaunchOptions trees =
+    parsed ({ "--tree-screenshot", "/tmp/trees.png", "--tree-count", "12" });
+  MOPPE_CHECK (trees.tree_demo);
+  MOPPE_CHECK (trees.tree_count == 12);
+}
+
+MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
+  // A fast world and the Terrain Lab capture both drop to the coarse grid.
+  MOPPE_CHECK (parsed ({ "--fast" }).world.resolution == 1025);
+  MOPPE_CHECK (parsed ({ "--terrain-quality", "fast" }).world.resolution ==
+               1025);
+  const game::LaunchOptions lab =
+    parsed ({ "--terrain-lab-screenshot", "/tmp/lab.png" });
+  MOPPE_CHECK (lab.start_in_terrain_lab);
+  MOPPE_CHECK (lab.world.resolution == 1025);
+  MOPPE_CHECK (parsed ({}).world.resolution != 1025);
+}
+
+MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
+  const game::LaunchOptions options = parsed ({ "--benchmark-frames",
+                                                "24",
+                                                "--graphics-benchmark",
+                                                "/tmp/gpu.csv",
+                                                "--benchmark-settle",
+                                                "5" });
+  MOPPE_CHECK (options.benchmark.has_value ());
+  MOPPE_CHECK (options.benchmark->output_path == "/tmp/gpu.csv");
+  MOPPE_CHECK (options.benchmark->measured_frames == 24);
+  MOPPE_CHECK (options.benchmark->settle_frames == 5);
+  MOPPE_CHECK (options.benchmark->prelude_frames == 480);
+  MOPPE_CHECK (!options.config.fullscreen);
+  MOPPE_CHECK (!options.config.activate);
+}
+
+MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
+  game::LaunchOptions options = parsed ({ "--terrain-quality", "fast" });
+  options.seed = 4321;
+  const terrain::WorldRecipe recipe = game::make_launch_recipe (options);
+  MOPPE_CHECK (recipe.seed ().value == 4321u);
+  MOPPE_CHECK (recipe.generation_profile () ==
+               terrain::TerrainGenerationProfile::Fast);
+  MOPPE_CHECK (recipe.resolution () == options.world.resolution);
+}
+
+MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {
+  game::GraphicsBenchmarkConfig benchmark;
+  benchmark.output_path = "/tmp/gpu.csv";
+  benchmark.measured_frames = 2;
+  game::publish_benchmark_environment (benchmark);
+  MOPPE_CHECK (std::string (::getenv ("MOPPE_BENCHMARK_OUTPUT")) ==
+               "/tmp/gpu.csv");
+  const int expected = benchmark.measured_frames *
+                       (1 << game::graphics_benchmark_dimension_count ());
+  MOPPE_CHECK (std::atoi (::getenv ("MOPPE_BENCHMARK_EXPECTED")) == expected);
+  MOPPE_CHECK (
+    std::string (::getenv ("MOPPE_BENCHMARK_FEATURES")).find ("bloom") !=
+    std::string::npos);
+}
