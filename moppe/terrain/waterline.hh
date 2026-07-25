@@ -2,9 +2,8 @@
 #define MOPPE_TERRAIN_WATERLINE_HH
 
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/terrain_quantities.hh>
-#include <moppe/terrain/types.hh>
 
 #include <vector>
 

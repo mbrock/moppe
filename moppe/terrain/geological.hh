@@ -3,7 +3,6 @@
 
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/domain.hh>
-#include <moppe/terrain/types.hh>
 
 #include <functional>
 

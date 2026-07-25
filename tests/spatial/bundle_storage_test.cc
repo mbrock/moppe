@@ -1,7 +1,7 @@
 #include <moppe/spatial/bundle_storage.hh>
 
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/domain_storage.hh>
-#include <moppe/terrain/terrain_quantities.hh>
 
 #include <tests/test.hh>
 
