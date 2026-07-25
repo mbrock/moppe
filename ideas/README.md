@@ -27,6 +27,10 @@ committed roadmap.
 - `watersheds-of-execution.md` treats a program as a landscape of possible
   paths, sampled execution as traffic through its catchments, and complexity
   analysis as a kind of computational hydrology.
+- `the-machine.md` characterizes the motorcycle as an articulated mechanism
+  in the Atelier tree's three storeys — kinematic topology, intrinsic
+  qualities and dispositions, embedding — using the ontological and
+  Relation Ontology vocabulary.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
