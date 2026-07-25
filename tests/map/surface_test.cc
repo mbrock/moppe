@@ -9,10 +9,25 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <stdexcept>
 #include <type_traits>
 
 namespace {
+  // The 0..1 readings derive from moppe::proportion, so each widens to a
+  // proportion_t without a cast while remaining distinct from its siblings.
+  // mp-units enforces no bound on a plain quantity: non_negative is consulted
+  // only when building a quantity_point origin, so the range itself is still
+  // the computing code's responsibility.
+  static_assert (
+    std::convertible_to<moppe::map::TreeHabitat, moppe::proportion_t>);
+  static_assert (
+    std::convertible_to<moppe::map::ForestCover, moppe::proportion_t>);
+  static_assert (
+    std::convertible_to<moppe::terrain::SurfaceMoisture, moppe::proportion_t>);
+  static_assert (
+    !std::convertible_to<moppe::map::TreeHabitat, moppe::map::ForestCover>);
+
   float elevation_value (const moppe::map::SurfaceElevation& elevation) {
     return elevation.quantity_from_zero ().numerical_value_in (moppe::u::m);
   }

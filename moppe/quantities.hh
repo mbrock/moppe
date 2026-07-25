@@ -158,12 +158,12 @@ namespace moppe::terrain {
 
   // ---- Water ----
 
-  QUANTITY_SPEC (surface_moisture, mp_units::dimensionless);
+  QUANTITY_SPEC (surface_moisture, proportion);
   QUANTITY_SPEC (waterline_distance, mp_units::isq::length, mp_units::is_kind);
   QUANTITY_SPEC (standing_water_depth,
                  mp_units::isq::length,
                  mp_units::non_negative);
-  QUANTITY_SPEC (wave_amplitude, mp_units::dimensionless);
+  QUANTITY_SPEC (wave_amplitude, proportion);
   QUANTITY_SPEC (water_velocity,
                  mp_units::isq::speed,
                  mp_units::quantity_tensor_order::vector,
@@ -214,8 +214,8 @@ namespace moppe::terrain {
 
   // ---- Human use ----
 
-  QUANTITY_SPEC (trail_influence, mp_units::dimensionless);
-  QUANTITY_SPEC (home_base_influence, mp_units::dimensionless);
+  QUANTITY_SPEC (trail_influence, proportion);
+  QUANTITY_SPEC (home_base_influence, proportion);
 }
 
 namespace moppe::map {
@@ -223,7 +223,7 @@ namespace moppe::map {
 
   // The upward component of a broad local support plane. Snow responds to
   // this material-scale reading rather than the detailed lighting normal.
-  QUANTITY_SPEC (snow_support, mp_units::dimensionless);
+  QUANTITY_SPEC (snow_support, proportion);
 
   QUANTITY_SPEC (eroded_surface_material,
                  mp_units::dimensionless,
@@ -241,16 +241,16 @@ namespace moppe::map {
                  mp_units::is_kind);
 
   // Normalized exposure of material removed during the world's history.
-  QUANTITY_SPEC (erosion_exposure, mp_units::dimensionless);
+  QUANTITY_SPEC (erosion_exposure, proportion);
 
   // Normalized cover of material deposited during the world's history.
-  QUANTITY_SPEC (deposition_cover, mp_units::dimensionless);
+  QUANTITY_SPEC (deposition_cover, proportion);
 
   // Ecological support from drainage moisture, slope, shore, and tree line.
-  QUANTITY_SPEC (tree_habitat, mp_units::dimensionless);
+  QUANTITY_SPEC (tree_habitat, proportion);
 
   // Actual canopy recruitment after habitat, routes, and settlement.
-  QUANTITY_SPEC (forest_cover, mp_units::dimensionless);
+  QUANTITY_SPEC (forest_cover, proportion);
 }
 
 #endif
