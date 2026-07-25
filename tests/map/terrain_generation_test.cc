@@ -1,5 +1,5 @@
 #include <moppe/map/surface.hh>
-#include <moppe/terrain/topology.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <tests/test.hh>
 

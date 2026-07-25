@@ -1,9 +1,8 @@
 #ifndef MOPPE_TERRAIN_STREAM_POWER_EVOLUTION_HH
 #define MOPPE_TERRAIN_STREAM_POWER_EVOLUTION_HH
 
-#include <moppe/terrain/elevation_map.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/fractional_drainage.hh>
-#include <moppe/terrain/types.hh>
 
 #include <functional>
 #include <span>

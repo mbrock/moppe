@@ -6,7 +6,7 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/types.hh>
-#include <moppe/terrain/terrain_quantities.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <cstdint>
 #include <span>

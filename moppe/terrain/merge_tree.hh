@@ -1,8 +1,7 @@
 #ifndef MOPPE_TERRAIN_MERGE_TREE_HH
 #define MOPPE_TERRAIN_MERGE_TREE_HH
 
-#include <moppe/terrain/elevation_map.hh>
-#include <moppe/terrain/types.hh>
+#include <moppe/terrain/domain.hh>
 
 #include <cstdint>
 #include <vector>

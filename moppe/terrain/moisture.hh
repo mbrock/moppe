@@ -2,9 +2,9 @@
 #define MOPPE_TERRAIN_MOISTURE_HH
 
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/terrain_quantities.hh>
 
 namespace moppe::terrain {
   using MoistureMap = spatial::Bundle<TerrainDomain, SurfaceMoisture>;

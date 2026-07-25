@@ -7,7 +7,6 @@
 #include <moppe/terrain/geological.hh>
 #include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/stream_power_evolution.hh>
-#include <moppe/terrain/terrain_quantities.hh>
 #include <moppe/terrain/trail.hh>
 
 #include <cstdint>
