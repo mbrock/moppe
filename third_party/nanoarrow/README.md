@@ -18,11 +18,13 @@ python3 ci/scripts/bundle.py \
 Moppe compiles:
 
 - `nanoarrow.c` and `nanoarrow.h`: the core Arrow C Data implementation.
+- `nanoarrow.hpp`: C++ resource wrappers and view helpers for the core API.
 - `nanoarrow_ipc.c` and `nanoarrow_ipc.h`: Arrow IPC stream encoding and
   decoding.
+- `nanoarrow_ipc.hpp`: C++ resource wrappers for the IPC API.
 - `flatcc.c` and `flatcc/*.h`: the FlatCC runtime required by the IPC
   extension.
 
-The C++ convenience headers emitted by the bundler are intentionally omitted;
-Moppe uses the stable C API directly. Apache and FlatCC license notices are
-included alongside the sources.
+Moppe uses the C API for serialization operations and the C++ helpers for
+resource ownership. Apache and FlatCC license notices are included alongside
+the sources.

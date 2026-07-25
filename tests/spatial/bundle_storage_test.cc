@@ -122,11 +122,11 @@ MOPPE_TEST (a_bundle_file_is_an_arrow_stream_with_quantity_metadata) {
   ArrowErrorInit (&error);
   spatial::detail::UniqueSchema schema;
   MOPPE_CHECK (ArrowArrayStreamGetSchema (
-                 &stream.value, &schema.value, &error) == NANOARROW_OK);
-  MOPPE_CHECK (std::string_view (schema.value.format) == "+s");
-  MOPPE_CHECK (schema.value.n_children == 2);
+                 stream.get (), schema.get (), &error) == NANOARROW_OK);
+  MOPPE_CHECK (std::string_view (schema->format) == "+s");
+  MOPPE_CHECK (schema->n_children == 2);
 
-  const ArrowSchema& displacement = *schema.value.children[0];
+  const ArrowSchema& displacement = *schema->children[0];
   MOPPE_CHECK (std::string_view (displacement.name) ==
                spatial::detail::quantity_spec_name<StoredDisplacement> ());
   MOPPE_CHECK (std::string_view (displacement.format) == "f");
@@ -138,16 +138,15 @@ MOPPE_TEST (a_bundle_file_is_an_arrow_stream_with_quantity_metadata) {
                  displacement, spatial::detail::kind_key) == "quantity");
 
   spatial::detail::UniqueArray batch;
-  MOPPE_CHECK (ArrowArrayStreamGetNext (&stream.value, &batch.value, &error) ==
+  MOPPE_CHECK (ArrowArrayStreamGetNext (stream.get (), batch.get (), &error) ==
                NANOARROW_OK);
   spatial::detail::UniqueArrayView view;
   MOPPE_CHECK (ArrowArrayViewInitFromSchema (
-                 &view.value, &schema.value, &error) == NANOARROW_OK);
-  view.initialized = true;
-  MOPPE_CHECK (ArrowArrayViewSetArray (&view.value, &batch.value, &error) ==
+                 view.get (), schema.get (), &error) == NANOARROW_OK);
+  MOPPE_CHECK (ArrowArrayViewSetArray (view.get (), batch.get (), &error) ==
                NANOARROW_OK);
   MOPPE_CHECK_NEAR (
-    ArrowArrayViewGetDoubleUnsafe (view.value.children[0], 2), 5.0, 1e-6);
+    ArrowArrayViewGetDoubleUnsafe (view->children[0], 2), 5.0, 1e-6);
 }
 
 MOPPE_TEST (a_vector_quantity_is_an_arrow_fixed_size_list) {

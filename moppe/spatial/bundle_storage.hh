@@ -3,8 +3,7 @@
 
 #include <moppe/spatial/bundle.hh>
 
-#include <nanoarrow.h>
-#include <nanoarrow_ipc.h>
+#include <nanoarrow_ipc.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -76,82 +75,14 @@ namespace moppe::spatial {
       return static_cast<bool> (in);
     }
 
-    struct UniqueSchema {
-      ArrowSchema value {};
-
-      ~UniqueSchema () {
-        if (value.release)
-          value.release (&value);
-      }
-    };
-
-    struct UniqueArray {
-      ArrowArray value {};
-
-      ~UniqueArray () {
-        if (value.release)
-          value.release (&value);
-      }
-    };
-
-    struct UniqueArrayView {
-      ArrowArrayView value {};
-      bool initialized = false;
-
-      ~UniqueArrayView () {
-        if (initialized)
-          ArrowArrayViewReset (&value);
-      }
-    };
-
-    struct UniqueBuffer {
-      ArrowBuffer value {};
-
-      UniqueBuffer () {
-        ArrowBufferInit (&value);
-      }
-
-      ~UniqueBuffer () {
-        ArrowBufferReset (&value);
-      }
-    };
-
-    struct UniqueInputStream {
-      ArrowIpcInputStream value {};
-
-      ~UniqueInputStream () {
-        if (value.release)
-          value.release (&value);
-      }
-    };
-
-    struct UniqueOutputStream {
-      ArrowIpcOutputStream value {};
-
-      ~UniqueOutputStream () {
-        if (value.release)
-          value.release (&value);
-      }
-    };
-
-    struct UniqueArrayStream {
-      ArrowArrayStream value {};
-
-      ~UniqueArrayStream () {
-        if (value.release)
-          value.release (&value);
-      }
-    };
-
-    struct UniqueWriter {
-      ArrowIpcWriter value {};
-      bool initialized = false;
-
-      ~UniqueWriter () {
-        if (initialized)
-          ArrowIpcWriterReset (&value);
-      }
-    };
+    using nanoarrow::UniqueArray;
+    using nanoarrow::UniqueArrayStream;
+    using nanoarrow::UniqueArrayView;
+    using nanoarrow::UniqueBuffer;
+    using nanoarrow::UniqueSchema;
+    using nanoarrow::ipc::UniqueInputStream;
+    using nanoarrow::ipc::UniqueOutputStream;
+    using nanoarrow::ipc::UniqueWriter;
 
     inline ArrowStringView arrow_string_view (std::string_view value) {
       return { value.data (), static_cast<std::int64_t> (value.size ()) };
@@ -170,16 +101,16 @@ namespace moppe::spatial {
       const std::vector<std::pair<std::string_view, std::string_view>>&
         entries) {
       UniqueBuffer metadata;
-      if (ArrowMetadataBuilderInit (&metadata.value, nullptr) != NANOARROW_OK)
+      if (ArrowMetadataBuilderInit (metadata.get (), nullptr) != NANOARROW_OK)
         return false;
       for (const auto& [key, value] : entries)
-        if (ArrowMetadataBuilderAppend (&metadata.value,
+        if (ArrowMetadataBuilderAppend (metadata.get (),
                                         arrow_string_view (key),
                                         arrow_string_view (value)) !=
             NANOARROW_OK)
           return false;
       return ArrowSchemaSetMetadata (
-               &schema, reinterpret_cast<const char*> (metadata.value.data)) ==
+               &schema, reinterpret_cast<const char*> (metadata->data)) ==
              NANOARROW_OK;
     }
 
@@ -462,9 +393,9 @@ namespace moppe::spatial {
     template <typename Value>
     bool column_schema_matches (const ArrowSchema& actual) {
       UniqueSchema expected;
-      ArrowSchemaInit (&expected.value);
-      if (!configure_column_schema<Value> (expected.value) ||
-          !schema_shape_matches (actual, expected.value))
+      ArrowSchemaInit (expected.get ());
+      if (!configure_column_schema<Value> (*expected.get ()) ||
+          !schema_shape_matches (actual, *expected.get ()))
         return false;
 
       const std::string kind = quantity_kind<Value> ();
@@ -547,16 +478,16 @@ namespace moppe::spatial {
         return false;
 
       UniqueBuffer input;
-      if (ArrowBufferAppend (&input.value, bytes.data (), bytes.size ()) !=
+      if (ArrowBufferAppend (input.get (), bytes.data (), bytes.size ()) !=
           NANOARROW_OK)
         return false;
 
       UniqueInputStream ipc_input;
-      if (ArrowIpcInputStreamInitBuffer (&ipc_input.value, &input.value) !=
+      if (ArrowIpcInputStreamInitBuffer (ipc_input.get (), input.get ()) !=
           NANOARROW_OK)
         return false;
       if (ArrowIpcArrayStreamReaderInit (
-            &stream.value, &ipc_input.value, nullptr) != NANOARROW_OK)
+            stream.get (), ipc_input.get (), nullptr) != NANOARROW_OK)
         return false;
       return true;
     }
@@ -567,7 +498,7 @@ namespace moppe::spatial {
   void write_bundle (std::ostream& out,
                      const Bundle<Domain, Quantities...>& bundle) {
     detail::UniqueSchema schema;
-    if (!detail::configure_bundle_schema (schema.value, bundle)) {
+    if (!detail::configure_bundle_schema (*schema.get (), bundle)) {
       out.setstate (std::ios::failbit);
       return;
     }
@@ -575,21 +506,20 @@ namespace moppe::spatial {
     ArrowError error;
     ArrowErrorInit (&error);
     detail::UniqueArray array;
-    if (ArrowArrayInitFromSchema (&array.value, &schema.value, &error) !=
+    if (ArrowArrayInitFromSchema (array.get (), schema.get (), &error) !=
           NANOARROW_OK ||
-        !detail::build_bundle_array (array.value, bundle, error)) {
+        !detail::build_bundle_array (*array.get (), bundle, error)) {
       out.setstate (std::ios::failbit);
       return;
     }
 
     detail::UniqueArrayView array_view;
     if (ArrowArrayViewInitFromSchema (
-          &array_view.value, &schema.value, &error) != NANOARROW_OK) {
+          array_view.get (), schema.get (), &error) != NANOARROW_OK) {
       out.setstate (std::ios::failbit);
       return;
     }
-    array_view.initialized = true;
-    if (ArrowArrayViewSetArray (&array_view.value, &array.value, &error) !=
+    if (ArrowArrayViewSetArray (array_view.get (), array.get (), &error) !=
         NANOARROW_OK) {
       out.setstate (std::ios::failbit);
       return;
@@ -598,25 +528,24 @@ namespace moppe::spatial {
     detail::UniqueBuffer encoded;
     detail::UniqueOutputStream output;
     detail::UniqueWriter writer;
-    if (ArrowIpcOutputStreamInitBuffer (&output.value, &encoded.value) !=
+    if (ArrowIpcOutputStreamInitBuffer (output.get (), encoded.get ()) !=
           NANOARROW_OK ||
-        ArrowIpcWriterInit (&writer.value, &output.value) != NANOARROW_OK) {
+        ArrowIpcWriterInit (writer.get (), output.get ()) != NANOARROW_OK) {
       out.setstate (std::ios::failbit);
       return;
     }
-    writer.initialized = true;
-    if (ArrowIpcWriterWriteSchema (&writer.value, &schema.value, &error) !=
+    if (ArrowIpcWriterWriteSchema (writer.get (), schema.get (), &error) !=
           NANOARROW_OK ||
         ArrowIpcWriterWriteArrayView (
-          &writer.value, &array_view.value, &error) != NANOARROW_OK ||
-        ArrowIpcWriterWriteArrayView (&writer.value, nullptr, &error) !=
+          writer.get (), array_view.get (), &error) != NANOARROW_OK ||
+        ArrowIpcWriterWriteArrayView (writer.get (), nullptr, &error) !=
           NANOARROW_OK) {
       out.setstate (std::ios::failbit);
       return;
     }
 
-    out.write (reinterpret_cast<const char*> (encoded.value.data),
-               static_cast<std::streamsize> (encoded.value.size_bytes));
+    out.write (reinterpret_cast<const char*> (encoded->data),
+               static_cast<std::streamsize> (encoded->size_bytes));
   }
 
   template <typename BundleType>
@@ -635,56 +564,56 @@ namespace moppe::spatial {
       ArrowError error;
       ArrowErrorInit (&error);
       detail::UniqueSchema schema;
-      if (ArrowArrayStreamGetSchema (&stream.value, &schema.value, &error) !=
+      if (ArrowArrayStreamGetSchema (stream.get (), schema.get (), &error) !=
             NANOARROW_OK ||
-          schema.value.n_children != sizeof...(Quantities))
+          schema->n_children != sizeof...(Quantities))
         return std::nullopt;
 
       const bool columns_match =
         [&]<std::size_t... Column> (std::index_sequence<Column...>) {
           return (detail::column_schema_matches<Quantities> (
-                    *schema.value.children[Column]) &&
+                    *schema->children[Column]) &&
                   ...);
         }(std::index_sequence_for<Quantities...> {});
       if (!columns_match)
         return std::nullopt;
 
-      std::optional<Domain> domain = detail::read_domain<Domain> (schema.value);
+      std::optional<Domain> domain =
+        detail::read_domain<Domain> (*schema.get ());
       if (!domain)
         return std::nullopt;
 
       detail::UniqueArray array;
-      if (ArrowArrayStreamGetNext (&stream.value, &array.value, &error) !=
+      if (ArrowArrayStreamGetNext (stream.get (), array.get (), &error) !=
             NANOARROW_OK ||
-          !array.value.release ||
-          array.value.length != static_cast<std::int64_t> (domain->size ()))
+          !array->release ||
+          array->length != static_cast<std::int64_t> (domain->size ()))
         return std::nullopt;
 
       detail::UniqueArray end;
-      if (ArrowArrayStreamGetNext (&stream.value, &end.value, &error) !=
+      if (ArrowArrayStreamGetNext (stream.get (), end.get (), &error) !=
             NANOARROW_OK ||
-          end.value.release)
+          end->release)
         return std::nullopt;
 
       detail::UniqueArrayView view;
-      if (ArrowArrayViewInitFromSchema (&view.value, &schema.value, &error) !=
+      if (ArrowArrayViewInitFromSchema (view.get (), schema.get (), &error) !=
           NANOARROW_OK)
         return std::nullopt;
-      view.initialized = true;
-      if (ArrowArrayViewSetArray (&view.value, &array.value, &error) !=
+      if (ArrowArrayViewSetArray (view.get (), array.get (), &error) !=
             NANOARROW_OK ||
-          ArrowArrayViewValidate (&view.value,
+          ArrowArrayViewValidate (view.get (),
                                   NANOARROW_VALIDATION_LEVEL_FULL,
                                   &error) != NANOARROW_OK)
         return std::nullopt;
 
       bundle_type bundle (std::move (*domain));
-      for (std::int64_t row = 0; row < array.value.length; ++row) {
+      for (std::int64_t row = 0; row < array->length; ++row) {
         bool values_read = true;
         [&]<std::size_t... Column> (std::index_sequence<Column...>) {
           values_read =
             (detail::read_value (
-               *view.value.children[Column],
+               *view->children[Column],
                row,
                get<Column> (bundle)[static_cast<std::size_t> (row)]) &&
              ...);
