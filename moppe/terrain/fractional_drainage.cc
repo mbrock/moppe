@@ -447,9 +447,9 @@ namespace moppe::terrain {
           levels[offset] * grid.height_scale_m () *
           routing_surface_elevation[mp_units::si::metre]);
 
-      // The established wet graph remains the authority for flat lake routes
-      // and proven depression spills. D-infinity replaces only strict dry-land
-      // descent inside this Orogeny-specific reading.
+      // The wet receiver tree supplies flat lake routes and proven depression
+      // spills, where continuous downhill direction is undefined. All strict
+      // dry-land descent uses D-infinity.
       const WetDrainageRouting wet =
         route_wet_drainage (terrain, flood, census);
       std::vector<FractionalFlowRoute> routes (lattice.size ());

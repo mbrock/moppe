@@ -61,9 +61,9 @@ namespace moppe::terrain {
       return std::remainder (delta, period);
     }
 
-    // Optional per-cell channel readings from a D-infinity analysis. The D8
-    // graph keeps topological authority over reaches; these columns refine
-    // only the continuous geometry derived from it.
+    // Optional per-cell channel readings from a D-infinity analysis. The
+    // receiver graph keeps topological authority over reaches; these columns
+    // refine only the continuous geometry derived from it.
     struct ChannelGeometry {
       std::span<const FractionalContributingArea> area;
       std::span<const ChannelTangent> tangent;
@@ -300,7 +300,7 @@ namespace moppe::terrain {
           const bool terminating = terminating_water_cell (cell);
           const bool pooled = !terminating && water_cell (cell);
           // Fractional contributing area varies smoothly along a reach where
-          // the all-or-nothing D8 accumulation steps, so widths derived from
+          // the all-or-nothing receiver accumulation steps, so widths from
           // it taper instead of popping between cells.
           const float area_m2 =
             channels.empty () ? drainage.contributing_area.values ()[cell]
@@ -353,12 +353,8 @@ namespace moppe::terrain {
     }
   }
 
-  DrainageGraph analyze_drainage (const TerrainView& terrain,
-                                  const DrainageParameters& parameters) {
+  DrainageGraph analyze_drainage (const TerrainView& terrain) {
     MOPPE_PROFILE_ZONE ("analyze_drainage");
-    if (parameters.routing != DrainageRouting::D8)
-      throw std::invalid_argument ("unsupported drainage routing");
-
     const TerrainGrid& source_grid = terrain.grid ();
     const std::size_t width = source_grid.width;
     const std::size_t height = source_grid.height;
@@ -445,12 +441,8 @@ namespace moppe::terrain {
 
   WetDrainageRouting route_wet_drainage (const TerrainView& terrain,
                                          const FloodField& flood,
-                                         const LakeCensus& census,
-                                         const DrainageParameters& parameters) {
+                                         const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("route_wet_drainage");
-    if (parameters.routing != DrainageRouting::D8)
-      throw std::invalid_argument ("unsupported drainage routing");
-
     const TerrainGrid& grid = terrain.grid ();
     const std::size_t width = grid.width;
     const std::size_t height = grid.height;
@@ -540,11 +532,9 @@ namespace moppe::terrain {
 
   DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
                                       const FloodField& flood,
-                                      const LakeCensus& census,
-                                      const DrainageParameters& parameters) {
+                                      const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("analyze_wet_drainage");
-    WetDrainageRouting routing =
-      route_wet_drainage (terrain, flood, census, parameters);
+    WetDrainageRouting routing = route_wet_drainage (terrain, flood, census);
     const TerrainGrid& grid = routing.source_grid;
     const std::size_t width = grid.width;
     const std::size_t height = grid.height;
@@ -860,7 +850,7 @@ namespace moppe::terrain {
     if (channels.domain ().grid () != drainage.source_grid)
       throw std::invalid_argument (
         "channel geometry does not share the drainage lattice");
-    // Rebuild only the continuous geometry: the D8 reach topology above
+    // Rebuild only the continuous geometry: the receiver topology above
     // stays authoritative while the D-infinity columns supply smooth widths
     // and carved-valley knot tangents.
     build_river_alignments (

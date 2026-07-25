@@ -226,12 +226,12 @@ TerrainView -> DrainageGraph
                  |-> basin / sink identity
 ```
 
-The periodic D8 analysis works on the unique torus samples, omitting the
-duplicated rendering seam. Each cell stores one `uint32_t` receiver rather
-than an adjacency matrix. Receivers in the dry reference reading must be
-strictly lower; a cell with no lower neighbor points to itself and is an
-explicit sink. Sorting cells by height then gives deterministic upstream-area
-accumulation and basin assignment without graph cycles.
+The periodic single-receiver analysis works on the unique torus samples,
+omitting the duplicated rendering seam. Each cell stores one `uint32_t`
+receiver rather than an adjacency matrix. Receivers in the dry reference
+reading must be strictly lower; a cell with no lower neighbor points to itself
+and is an explicit sink. Sorting cells by height then gives deterministic
+upstream-area accumulation and basin assignment without graph cycles.
 
 Standing water is a second structured reading over the same samples:
 
@@ -245,22 +245,25 @@ TerrainView + sea level -> FloodField
 
 On a torus there is no exterior boundary to identify the ocean. The largest
 connected component at or below sea level is therefore the explicit global
-ocean, with scan order breaking equal-size ties. A deterministic D8 priority
-flood begins across that component and propagates the lowest possible spill
-elevation over the unique torus. Enclosed terrain below nominal sea level is
-allowed to rise to its own spill instead of becoming a false ocean. An
-all-land torus uses its global minimum as an explicit endorheic fallback.
-Every spill-receiver chain is acyclic and reaches the chosen root.
+ocean, with scan order breaking equal-size ties. A deterministic
+eight-neighbor priority flood begins across that component and propagates the
+lowest possible spill elevation over the unique torus. Enclosed terrain below
+nominal sea level is allowed to rise to its own spill instead of becoming a
+false ocean. An all-land torus uses its global minimum as an explicit
+endorheic fallback. Every spill-receiver chain is acyclic and reaches the
+chosen root.
 
 The lake census labels connected wet bodies and records physical area,
 maximum and mean depth, volume, surface level, ocean connectivity, and the
 route-proven pair of last wet cell and first dry spill cell. The wet drainage
-interpretation chooses strict downhill D8 routes on the filled surface, gives
-each inland body one deterministic tree leading to its spill, and uses a
+interpretation chooses one strict downhill receiver on the filled surface,
+gives each inland body one deterministic tree leading to its spill, and uses a
 general topological pass to carry the full upstream area across equal-height
-water. A `WaterNetwork` then records every dry-to-water inlet edge and its
-accumulated catchment area, plus each inland body's outflow area and downstream
-cell. These remain readings and do not mutate terrain. In random-world
+water. This graph represents water-body and reach topology; it is not an
+alternative landscape-evolution routing mode. A `WaterNetwork` then records
+every dry-to-water inlet edge and its accumulated catchment area, plus each
+inland body's outflow area and downstream cell. These remain readings and do
+not mutate terrain. In random-world
 gameplay, the
 same `FloodField::water_level` raster drives the animated water grid: vertices
 sample the local lake elevation, dry fragments are discarded, and wave
@@ -287,11 +290,12 @@ discarded because a heightfield step is still a continuous slope: the quad
 intersected terrain and visually disconnected the river.
 
 Every reach owns a dense, unwrapped `RiverAlignment`. A damped cubic Hermite
-curve preserves routed endpoints while removing D8 corners; samples carry
-area, slope, waterfall, standing-water blend, and water level. Local arc
-length serves geometric consumers, while a negative distance-to-final-mouth
-coordinate is continuous through confluences and drives flow animation. The
-alignment is a reading: it cannot alter routing or move an inlet or spill.
+curve preserves routed endpoints while removing receiver-chain corners;
+samples carry area, slope, waterfall, standing-water blend, and water level.
+Local arc length serves geometric consumers, while a negative
+distance-to-final-mouth coordinate is continuous through confluences and
+drives flow animation. The alignment is a reading: it cannot alter routing or
+move an inlet or spill.
 
 Every transform also reports two enum-valued semantic properties.  These are
 descriptions for tools and evaluators, not a class hierarchy:
@@ -490,7 +494,8 @@ two-receiver route and deterministic topological order, and is materialized as
 a `Bundle` of typed direction, slope, contributing area, channel tangent, and
 area-weighted tangent-flux columns. Dry strict descent uses D-infinity
 triangular facets. Lake flats, depression spills, and ocean identity continue
-to come from the established wet D8 graph. This makes fractional accumulation
+to come from the single-receiver wet graph because those regions have no
+unique continuous downhill direction. This makes fractional accumulation
 conservative and acyclic without changing the graph used by lakes, rivers,
 waterfalls, rendering, or the final `SurfaceAtlas`.
 
@@ -521,12 +526,12 @@ incision. Ocean cells and receiver roots retain their bed elevation rather
 than snapping terrain to the water surface, and an uphill depression route
 cannot raise a cell above uplift alone.
 
-The fixed-seed 513-square stress comparison shows a narrower result than
-"fractional routing removes the grid." D-infinity softens several hard
-herringbone steps and changes individual channel paths, but visible combing
-remains because incision is still materialized at lattice samples and the
-surface is still reconstructed bilinearly. The `d8` comparison mode remains
-available while that later raster-to-surface boundary is investigated.
+The fixed-seed 513-square stress comparison showed a narrower result than
+"fractional routing removes the grid." D-infinity softened several hard
+herringbone steps and changed individual channel paths, but visible combing
+remained because incision is still materialized at lattice samples and the
+surface is still reconstructed bilinearly. Stream-power evolution now has one
+routing model: fractional D-infinity.
 
 The calibrated maximum uplift is 1 mm/year, with `v_ref = 2e-5 m/year` at
 `A_ref = 1 m²`, `m = 0.4`, `D = 1e-4 m²/year`, and a 50,000-year step. Fast,

@@ -106,8 +106,7 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       .reference_incision_rate =
         0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = 0.0f,
-      .sea_level = 0.0f,
-      .routing = StreamPowerRouting::D8 });
+      .sea_level = 0.0f });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
   MOPPE_CHECK_NEAR (result.heights[0], 0.0f, 0.0f);
@@ -138,8 +137,7 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
       .reference_incision_rate =
         legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = exponent,
-      .sea_level = 0.0f,
-      .routing = StreamPowerRouting::D8 });
+      .sea_level = 0.0f });
   const float legacy_weight =
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
   const float expected = 1.0f / (1.0f + legacy_weight);
@@ -165,8 +163,7 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
         .reference_area =
           reference_area_m2 * mp_units::si::metre * mp_units::si::metre,
         .area_exponent = exponent,
-        .sea_level = 0.0f,
-        .routing = StreamPowerRouting::D8 });
+        .sea_level = 0.0f });
   };
   const StreamPowerEvolutionResult one_square_meter = evolve (1.0f, 2e-5f);
   const StreamPowerEvolutionResult one_hundred_square_meters =

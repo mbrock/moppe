@@ -249,9 +249,9 @@ namespace moppe::terrain {
                                const FractionalRouteBackend& backend);
 
   // River extraction refined by a D-infinity reading of the same terrain.
-  // The D8 graph keeps topological authority over reaches and waterfalls;
-  // the fractional columns contribute smoothly varying contributing areas
-  // and carved-valley knot tangents to the continuous alignments.
+  // The single-receiver water graph keeps topological authority over reaches
+  // and waterfalls; the fractional columns contribute smoothly varying
+  // contributing areas and carved-valley knot tangents to the alignments.
   RiverNetwork
   extract_river_network (const FloodField& flood,
                          const LakeCensus& census,
