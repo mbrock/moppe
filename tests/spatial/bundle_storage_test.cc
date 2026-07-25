@@ -6,6 +6,7 @@
 #include <tests/test.hh>
 
 #include <cstddef>
+#include <format>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -106,9 +107,15 @@ MOPPE_TEST (a_bundle_file_describes_each_quantity_before_its_binary_data) {
   std::getline (file, line);
   MOPPE_CHECK (line == "columns=2");
   std::getline (file, line);
-  MOPPE_CHECK (line == "quantity kind=quantity bytes=4 unit=[m] dimension=[L]");
+  MOPPE_CHECK (
+    line == std::format (
+              "quantity kind=quantity bytes=4 unit=[m] dimension=[L] type={}",
+              mp_units::detail::type_name<StoredDisplacement> ()));
   std::getline (file, line);
-  MOPPE_CHECK (line == "quantity kind=quantity bytes=4 unit=[] dimension=[1]");
+  MOPPE_CHECK (
+    line ==
+    std::format ("quantity kind=quantity bytes=4 unit=[] dimension=[1] type={}",
+                 mp_units::detail::type_name<StoredDensity> ()));
   std::getline (file, line);
   MOPPE_CHECK (line == "sites=3");
   std::getline (file, line);
