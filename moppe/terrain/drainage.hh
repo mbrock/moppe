@@ -1,8 +1,8 @@
 #ifndef MOPPE_TERRAIN_DRAINAGE_HH
 #define MOPPE_TERRAIN_DRAINAGE_HH
 
+#include <moppe/terrain/elevation_map.hh>
 #include <moppe/terrain/raster.hh>
-#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
@@ -148,12 +148,20 @@ namespace moppe::terrain {
     std::vector<std::uint8_t> body_traversed;
   };
 
-  DrainageGraph analyze_drainage (const TerrainView& terrain);
-  WetDrainageRouting route_wet_drainage (const TerrainView& terrain,
-                                         const FloodField& flood,
+  namespace detail {
+    DrainageGraph
+    analyze_drainage (const TerrainDomain& domain,
+                      std::span<const SurfaceElevation> elevations);
+  }
+
+  template <TerrainElevations Terrain>
+  DrainageGraph analyze_drainage (const Terrain& terrain) {
+    return detail::analyze_drainage (terrain.domain (), elevations (terrain));
+  }
+
+  WetDrainageRouting route_wet_drainage (const FloodField& flood,
                                          const LakeCensus& census);
-  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
-                                      const FloodField& flood,
+  DrainageGraph analyze_wet_drainage (const FloodField& flood,
                                       const LakeCensus& census);
   WaterNetwork analyze_water_network (const FloodField& flood,
                                       const LakeCensus& census,

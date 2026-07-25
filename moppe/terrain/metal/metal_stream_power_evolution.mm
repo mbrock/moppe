@@ -320,13 +320,12 @@ namespace moppe::terrain::metal {
     MetalStreamPowerEvolutionBackend&&) noexcept = default;
 
   FractionalDrainage MetalStreamPowerEvolutionBackend::route_fractional (
-    const TerrainView& terrain,
     const FloodField& flood,
     const LakeCensus& census,
     std::span<const ChannelTangent> previous_tangent,
     ChannelPersistence persistence) const {
     return analyze_fractional_drainage (
-      terrain, flood, census, previous_tangent, persistence, *this);
+      flood, census, previous_tangent, persistence, *this);
   }
 
   void MetalStreamPowerEvolutionBackend::select_dry_routes (

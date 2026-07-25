@@ -58,14 +58,14 @@ namespace moppe::game {
 
     report (HydrologyStage::StandingWater);
     terrain::FloodField standing_water = terrain::analyze_standing_water (
-      m_surface.terrain_view (), meters_value (m_recipe.water_datum ()));
+      m_surface.atlas ().geometry (), meters_value (m_recipe.water_datum ()));
 
     report (HydrologyStage::Lakes);
     terrain::LakeCensus lakes = terrain::census_lakes (standing_water);
 
     report (HydrologyStage::Drainage);
-    terrain::DrainageGraph drainage = terrain::analyze_wet_drainage (
-      m_surface.terrain_view (), standing_water, lakes);
+    terrain::DrainageGraph drainage =
+      terrain::analyze_wet_drainage (standing_water, lakes);
 
     report (HydrologyStage::Waterways);
     terrain::WaterNetwork waterways =
@@ -73,8 +73,7 @@ namespace moppe::game {
 
     report (HydrologyStage::Channels);
     terrain::FractionalDrainage channels =
-      terrain::analyze_fractional_drainage (
-        m_surface.terrain_view (), standing_water, lakes);
+      terrain::analyze_fractional_drainage (standing_water, lakes);
 
     report (HydrologyStage::Rivers);
     terrain::RiverNetwork rivers = terrain::extract_river_network (
@@ -103,7 +102,7 @@ namespace moppe::game {
       m_surface.materialize_channel_flux (hydrology.channels ());
 
       const terrain::WaterSheets sheets =
-        terrain::paint_watercourses (m_surface.terrain_view (),
+        terrain::paint_watercourses (m_surface.atlas ().geometry (),
                                      hydrology.standing_water (),
                                      hydrology.lakes (),
                                      hydrology.drainage (),
@@ -111,7 +110,7 @@ namespace moppe::game {
       m_water_surface.emplace (m_surface.atlas ().domain (), sheets);
 
       const terrain::Waterline waterline = terrain::extract_waterline (
-        m_surface.terrain_view (), sheets.surface, hydrology.lakes ());
+        m_surface.atlas ().geometry (), sheets.surface, hydrology.lakes ());
       m_surface.materialize_waterline_distance (
         terrain::waterline_proximity (waterline));
 
@@ -135,7 +134,7 @@ namespace moppe::game {
           m_trails = std::move (generated_trails);
         else
           m_trails = terrain::analyze_trail_network (
-            m_surface.terrain_view (),
+            m_surface.atlas ().geometry (),
             std::get<terrain::TrailFormation> (*stage));
         m_surface.materialize_trail_influence (m_trails->influence.values ());
         m_surface.materialize_home_base_influence (

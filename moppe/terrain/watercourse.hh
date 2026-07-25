@@ -3,7 +3,6 @@
 
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/terrain_view.hh>
 
 #include <vector>
 
@@ -43,12 +42,32 @@ namespace moppe::terrain {
     std::vector<float> flow;
   };
 
-  WaterSheets paint_watercourses (const TerrainView& terrain,
+  namespace detail {
+    WaterSheets
+    paint_watercourses (const TerrainDomain& domain,
+                        std::span<const SurfaceElevation> elevations,
+                        const FloodField& flood,
+                        const LakeCensus& census,
+                        const DrainageGraph& drainage,
+                        const RiverNetwork& rivers,
+                        const WatercoursePaint& parameters);
+  }
+
+  template <TerrainElevations Terrain>
+  WaterSheets paint_watercourses (const Terrain& terrain,
                                   const FloodField& flood,
                                   const LakeCensus& census,
                                   const DrainageGraph& drainage,
                                   const RiverNetwork& rivers,
-                                  const WatercoursePaint& parameters = {});
+                                  const WatercoursePaint& parameters = {}) {
+    return detail::paint_watercourses (terrain.domain (),
+                                       elevations (terrain),
+                                       flood,
+                                       census,
+                                       drainage,
+                                       rivers,
+                                       parameters);
+  }
 }
 
 #endif

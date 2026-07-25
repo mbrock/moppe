@@ -1,8 +1,8 @@
 #ifndef MOPPE_TERRAIN_MERGE_TREE_HH
 #define MOPPE_TERRAIN_MERGE_TREE_HH
 
+#include <moppe/terrain/elevation_map.hh>
 #include <moppe/terrain/raster.hh>
-#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
@@ -49,8 +49,6 @@ namespace moppe::terrain {
     }
   };
 
-  MergeTree build_merge_tree (const TerrainView& terrain);
-
   // The minimax water surface at sea level: reproduces
   // analyze_standing_water's water_level raster (bit-exactly), the
   // ocean component, and the deterministic endorheic fallback, as a
@@ -65,9 +63,28 @@ namespace moppe::terrain {
     std::vector<std::uint8_t> ocean;
   };
 
+  namespace detail {
+    MergeTree build_merge_tree (const TerrainDomain& domain,
+                                std::span<const SurfaceElevation> elevations);
+    MergeTreeFlood
+    flood_from_merge_tree (const MergeTree& tree,
+                           const TerrainDomain& domain,
+                           std::span<const SurfaceElevation> elevations,
+                           float sea_level);
+  }
+
+  template <TerrainElevations Terrain>
+  MergeTree build_merge_tree (const Terrain& terrain) {
+    return detail::build_merge_tree (terrain.domain (), elevations (terrain));
+  }
+
+  template <TerrainElevations Terrain>
   MergeTreeFlood flood_from_merge_tree (const MergeTree& tree,
-                                        const TerrainView& terrain,
-                                        float sea_level);
+                                        const Terrain& terrain,
+                                        float sea_level) {
+    return detail::flood_from_merge_tree (
+      tree, terrain.domain (), elevations (terrain), sea_level);
+  }
 }
 
 #endif

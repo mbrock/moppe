@@ -3,7 +3,6 @@
 
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/terrain_view.hh>
 
 namespace moppe::terrain {
   // How wet the ground is for material rendering, in

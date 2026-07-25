@@ -417,14 +417,13 @@ namespace moppe::terrain {
 
   namespace {
     FractionalDrainage analyze_fractional_drainage_impl (
-      const TerrainView& terrain,
       const FloodField& flood,
       const LakeCensus& census,
       std::span<const ChannelTangent> previous_tangent,
       ChannelPersistence persistence,
       const FractionalRouteBackend* backend) {
       MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
-      const TerrainDomain& grid = terrain.domain ();
+      const TerrainDomain& grid = flood.domain;
       if (flood.domain != grid ||
           census.body.size () != grid.width () * grid.height ())
         throw std::invalid_argument (
@@ -449,8 +448,7 @@ namespace moppe::terrain {
       // The wet receiver tree supplies flat lake routes and proven depression
       // spills, where continuous downhill direction is undefined. All strict
       // dry-land descent uses D-infinity.
-      const WetDrainageRouting wet =
-        route_wet_drainage (terrain, flood, census);
+      const WetDrainageRouting wet = route_wet_drainage (flood, census);
       std::vector<FractionalFlowRoute> routes (lattice.size ());
       std::vector<DrainageDirection> directions (
         lattice.size (), 0.0f * drainage_direction[mp_units::angular::radian]);
@@ -530,23 +528,21 @@ namespace moppe::terrain {
   }
 
   FractionalDrainage
-  analyze_fractional_drainage (const TerrainView& terrain,
-                               const FloodField& flood,
+  analyze_fractional_drainage (const FloodField& flood,
                                const LakeCensus& census,
                                std::span<const ChannelTangent> previous_tangent,
                                ChannelPersistence persistence) {
     return analyze_fractional_drainage_impl (
-      terrain, flood, census, previous_tangent, persistence, nullptr);
+      flood, census, previous_tangent, persistence, nullptr);
   }
 
   FractionalDrainage
-  analyze_fractional_drainage (const TerrainView& terrain,
-                               const FloodField& flood,
+  analyze_fractional_drainage (const FloodField& flood,
                                const LakeCensus& census,
                                std::span<const ChannelTangent> previous_tangent,
                                ChannelPersistence persistence,
                                const FractionalRouteBackend& backend) {
     return analyze_fractional_drainage_impl (
-      terrain, flood, census, previous_tangent, persistence, &backend);
+      flood, census, previous_tangent, persistence, &backend);
   }
 }

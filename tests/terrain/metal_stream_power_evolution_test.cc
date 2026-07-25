@@ -40,15 +40,15 @@ namespace {
 
 MOPPE_TEST (metal_d_infinity_routes_match_the_cpu_reference) {
   const std::vector<float> heights = test_heights ();
-  const TerrainView terrain (test_grid (), heights);
+  const ElevationMap terrain = make_elevation_map (test_grid (), heights);
   const FloodField flood = analyze_standing_water (terrain, -650.0f);
   const LakeCensus census = census_lakes (flood);
   const CpuStreamPowerEvolutionBackend cpu;
   const metal::MetalStreamPowerEvolutionBackend metal (MOPPE_SHADER_ASSET_PATH);
   const FractionalDrainage expected =
-    cpu.route_fractional (terrain, flood, census, {}, {});
+    cpu.route_fractional (flood, census, {}, {});
   const FractionalDrainage actual =
-    metal.route_fractional (terrain, flood, census, {}, {});
+    metal.route_fractional (flood, census, {}, {});
 
   const auto& expected_direction = spatial::get<drainage_direction> (expected);
   const auto& actual_direction = spatial::get<drainage_direction> (actual);
@@ -91,7 +91,7 @@ MOPPE_TEST (metal_d_infinity_routes_match_the_cpu_reference) {
 
 MOPPE_TEST (metal_hybrid_evolution_tracks_the_cpu_reference) {
   const std::vector<float> heights = test_heights ();
-  const TerrainView terrain (test_grid (), heights);
+  const ElevationMap terrain = make_elevation_map (test_grid (), heights);
   const auto zero_uplift = std::vector<meters_per_julian_year_t> (
     heights.size (),
     0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year);

@@ -35,10 +35,10 @@ namespace {
 
   PaintedValley paint_valley () {
     std::vector<float> heights = valley_to_sea ();
-    const TerrainView terrain (valley_grid (), heights);
+    const ElevationMap terrain = make_elevation_map (valley_grid (), heights);
     FloodField flood = analyze_standing_water (terrain, 0.0f);
     LakeCensus census = census_lakes (flood);
-    DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
+    DrainageGraph drainage = analyze_wet_drainage (flood, census);
     RiverNetwork rivers = extract_river_network (flood,
                                                  census,
                                                  drainage,
@@ -103,7 +103,7 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
       heights[y * width + x] = 10.0f * (y == 1 ? profile[x] : 0.9f);
   const TerrainDomain grid (
     width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
-  const TerrainView terrain (grid, heights);
+  const ElevationMap terrain = make_elevation_map (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, -10.0f);
   const LakeCensus census = census_lakes (flood);
 
@@ -119,7 +119,7 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   MOPPE_CHECK_NEAR (flood.water_level.values ()[upper], 5.0f, 1e-5f);
   MOPPE_CHECK_NEAR (flood.water_level.values ()[lower], 3.0f, 1e-5f);
 
-  const DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
   const RiverNetwork rivers = extract_river_network (
     flood, census, drainage, 1e9f * mp_units::si::metre * mp_units::si::metre);
   const WaterSheets sheets =
@@ -147,7 +147,7 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
       heights[y * width + x] = 100.0f * (y == 1 ? profile[x] : 0.9f);
   const TerrainDomain grid (
     width, height, 20.0f * mp_units::si::metre, 20.0f * mp_units::si::metre);
-  const TerrainView terrain (grid, heights);
+  const ElevationMap terrain = make_elevation_map (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
@@ -158,7 +158,7 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
   MOPPE_CHECK (pond.channel_like);
   MOPPE_CHECK (!water_body_terminates_rivers (pond));
 
-  const DrainageGraph drainage = analyze_wet_drainage (terrain, flood, census);
+  const DrainageGraph drainage = analyze_wet_drainage (flood, census);
   const RiverNetwork rivers =
     extract_river_network (flood,
                            census,

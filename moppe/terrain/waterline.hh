@@ -3,7 +3,6 @@
 
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/raster.hh>
-#include <moppe/terrain/terrain_view.hh>
 #include <moppe/terrain/types.hh>
 
 #include <vector>
@@ -44,10 +43,22 @@ namespace moppe::terrain {
   // ground height in dry cells, water level in wet ones, in the same
   // normalized units as the terrain samples.  wet_epsilon matches the
   // census convention: a cell is wet where surface - ground exceeds it.
-  Waterline extract_waterline (const TerrainView& terrain,
+  namespace detail {
+    Waterline extract_waterline (const TerrainDomain& domain,
+                                 std::span<const SurfaceElevation> elevations,
+                                 const ScalarRaster& surface,
+                                 const LakeCensus& census,
+                                 float wet_epsilon);
+  }
+
+  template <TerrainElevations Terrain>
+  Waterline extract_waterline (const Terrain& terrain,
                                const ScalarRaster& surface,
                                const LakeCensus& census,
-                               float wet_epsilon = 1e-7f);
+                               float wet_epsilon = 1e-7f) {
+    return detail::extract_waterline (
+      terrain.domain (), elevations (terrain), surface, census, wet_epsilon);
+  }
 
   // Horizontal distance in meters from every lattice node to the
   // nearest waterline segment, exact within the band and clamped to

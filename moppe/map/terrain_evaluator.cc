@@ -84,13 +84,13 @@ namespace moppe::map {
         };
       terrain::StreamPowerEvolutionResult result =
         m_evolution_backend
-          ? terrain::evolve_stream_power (m_target.terrain_view (),
+          ? terrain::evolve_stream_power (m_target.atlas ().geometry (),
                                           uplift,
                                           orogeny->evolution,
                                           *m_evolution_backend,
                                           iteration_progress,
                                           m_channel_tangents)
-          : terrain::evolve_stream_power (m_target.terrain_view (),
+          : terrain::evolve_stream_power (m_target.atlas ().geometry (),
                                           uplift,
                                           orogeny->evolution,
                                           iteration_progress,
@@ -111,7 +111,7 @@ namespace moppe::map {
                  std::get_if<terrain::TrailFormation> (&transform)) {
       MOPPE_PROFILE_ZONE ("terrain.trail_formation");
       terrain::TrailFormationResult result =
-        terrain::form_trails (m_target.terrain_view (), *trails);
+        terrain::form_trails (m_target.atlas ().geometry (), *trails);
       const std::size_t width = m_target.width ();
       const std::size_t height = m_target.height ();
       for (std::size_t y = 0; y < height; ++y)

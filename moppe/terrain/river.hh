@@ -1,8 +1,6 @@
 #ifndef MOPPE_TERRAIN_RIVER_HH
 #define MOPPE_TERRAIN_RIVER_HH
 
-#include <moppe/terrain/terrain_view.hh>
-
 namespace moppe::terrain {
   // Hydraulic geometry for the visible water surface. Orogeny owns the
   // valley shape; these laws only decide how much of its drainage axis reads

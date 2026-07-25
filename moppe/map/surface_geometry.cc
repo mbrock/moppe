@@ -228,10 +228,6 @@ namespace moppe::map {
     }
   }
 
-  terrain::TerrainView Surface::terrain_view () const {
-    return terrain::TerrainView (m_atlas.domain (), elevations ());
-  }
-
   void Surface::reset_material_history () {
     std::ranges::fill (eroded_material (),
                        0.0f * eroded_surface_material[mp_units::one]);

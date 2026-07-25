@@ -25,13 +25,14 @@ namespace moppe::terrain {
     };
   }
 
-  Waterline extract_waterline (const TerrainView& terrain,
-                               const ScalarRaster& surface,
-                               const LakeCensus& census,
-                               float wet_epsilon) {
+  Waterline
+  detail::extract_waterline (const TerrainDomain& grid,
+                             std::span<const SurfaceElevation> elevations,
+                             const ScalarRaster& surface,
+                             const LakeCensus& census,
+                             float wet_epsilon) {
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
       throw std::invalid_argument ("waterline epsilon must be non-negative");
-    const TerrainDomain& grid = terrain.domain ();
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
@@ -48,10 +49,10 @@ namespace moppe::terrain {
     // side's level across the edge below.
     const auto field = [&] (std::size_t x, std::size_t y) {
       const std::size_t node = y * width + x;
-      return level[node] - terrain.at (x, y) - wet_epsilon;
+      return level[node] - elevation_at (grid, elevations, x, y) - wet_epsilon;
     };
     const auto ground = [&] (std::size_t x, std::size_t y) {
-      return terrain.at (x, y);
+      return elevation_at (grid, elevations, x, y);
     };
     const auto sheet = [&] (std::size_t x, std::size_t y) {
       return level[y * width + x];

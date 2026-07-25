@@ -37,9 +37,9 @@ namespace {
   }
 
   FractionalDrainage analyze_plane (std::span<const float> heights) {
-    const TerrainView terrain (plane_grid (), heights);
+    const ElevationMap terrain = make_elevation_map (plane_grid (), heights);
     const FloodField flood = analyze_standing_water (terrain, -1000.0f);
-    return analyze_fractional_drainage (terrain, flood, census_lakes (flood));
+    return analyze_fractional_drainage (flood, census_lakes (flood));
   }
 }
 
@@ -169,17 +169,17 @@ MOPPE_TEST (channel_memory_can_select_an_aligned_downhill_route) {
     heights[y * width + center_x] =
       10.0f - 0.9f * static_cast<float> (center_y - y);
 
-  const TerrainView terrain (grid, heights);
+  const ElevationMap terrain = make_elevation_map (grid, heights);
   const FloodField flood = analyze_standing_water (terrain, -1000.0f);
   const LakeCensus census = census_lakes (flood);
   const FractionalDrainage memoryless =
-    analyze_fractional_drainage (terrain, flood, census);
+    analyze_fractional_drainage (flood, census);
   std::vector<ChannelTangent> memory (width * height,
                                       Vec3 () * channel_tangent[mp_units::one]);
   memory[center.value] =
     Vec3 (0.0f, 0.0f, -1.0f) * channel_tangent[mp_units::one];
   const FractionalDrainage persistent = analyze_fractional_drainage (
-    terrain, flood, census, memory, 0.9f * channel_persistence[mp_units::one]);
+    flood, census, memory, 0.9f * channel_persistence[mp_units::one]);
 
   MOPPE_CHECK (memoryless.domain ().route (center).arcs[0].receiver ==
                CellIndex { center.value + 1 });

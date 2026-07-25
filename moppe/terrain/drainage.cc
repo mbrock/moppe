@@ -356,9 +356,10 @@ namespace moppe::terrain {
     }
   }
 
-  DrainageGraph analyze_drainage (const TerrainView& terrain) {
+  DrainageGraph
+  detail::analyze_drainage (const TerrainDomain& domain,
+                            std::span<const SurfaceElevation> elevations) {
     MOPPE_PROFILE_ZONE ("analyze_drainage");
-    const TerrainDomain& domain = terrain.domain ();
     const std::size_t width = domain.width ();
     const std::size_t height = domain.height ();
     const std::size_t count = width * height;
@@ -374,7 +375,7 @@ namespace moppe::terrain {
         for (std::size_t x = 0; x < width; ++x) {
           const std::size_t cell = index (x, y);
           receiver[cell] = static_cast<std::uint32_t> (cell);
-          const float elevation = meters_value (terrain.elevation_at (x, y));
+          const float elevation = elevation_at (domain, elevations, x, y);
           float steepest = 0.0f;
           for (const Offset offset : neighbors) {
             const int raw_x = static_cast<int> (x) + offset.x;
@@ -382,7 +383,7 @@ namespace moppe::terrain {
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
             const float neighbor_elevation =
-              meters_value (terrain.elevation_at (nx, ny));
+              elevation_at (domain, elevations, nx, ny);
             const float distance =
               std::hypot (offset.x * domain.spacing_x_m (),
                           offset.y * domain.spacing_z_m ());
@@ -402,7 +403,8 @@ namespace moppe::terrain {
       order.begin (), order.end (), [&] (std::uint32_t a, std::uint32_t b) {
         const std::size_t ax = a % width, ay = a / width;
         const std::size_t bx = b % width, by = b / width;
-        return terrain.at (ax, ay) > terrain.at (bx, by);
+        return elevation_at (domain, elevations, ax, ay) >
+               elevation_at (domain, elevations, bx, by);
       });
 
     const float cell_area = square_meters_value (domain.cell_area ());
@@ -440,11 +442,10 @@ namespace moppe::terrain {
              .sinks = std::move (sinks) };
   }
 
-  WetDrainageRouting route_wet_drainage (const TerrainView& terrain,
-                                         const FloodField& flood,
+  WetDrainageRouting route_wet_drainage (const FloodField& flood,
                                          const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("route_wet_drainage");
-    const TerrainDomain& grid = terrain.domain ();
+    const TerrainDomain& grid = flood.domain;
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
@@ -526,11 +527,10 @@ namespace moppe::terrain {
              .slope = std::move (slope) };
   }
 
-  DrainageGraph analyze_wet_drainage (const TerrainView& terrain,
-                                      const FloodField& flood,
+  DrainageGraph analyze_wet_drainage (const FloodField& flood,
                                       const LakeCensus& census) {
     MOPPE_PROFILE_ZONE ("analyze_wet_drainage");
-    WetDrainageRouting routing = route_wet_drainage (terrain, flood, census);
+    WetDrainageRouting routing = route_wet_drainage (flood, census);
     const TerrainDomain& grid = routing.domain;
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();

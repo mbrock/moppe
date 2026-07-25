@@ -13,7 +13,7 @@ using namespace moppe::terrain;
 MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
   const std::array heights { 30.0f, 20.0f, 30.0f, 20.0f, 0.0f,
                              20.0f, 30.0f, 20.0f, 30.0f };
-  const TerrainView terrain (
+  const ElevationMap terrain = make_elevation_map (
     TerrainDomain (
       3, 3, 2.0f * mp_units::si::metre, 2.0f * mp_units::si::metre),
     heights);
@@ -37,7 +37,8 @@ MOPPE_TEST (periodic_drainage_crosses_the_wrap) {
   // Cell (0,0) reaches the low point at (2,0) by crossing the wrap.
   const std::array heights { 2.0f, 3.0f, 0.0f, 4.0f, 4.0f,
                              4.0f, 4.0f, 4.0f, 4.0f };
-  const TerrainView terrain (TerrainDomain (3, 3), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (3, 3), heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 
   MOPPE_CHECK (graph.width () == 3);
@@ -50,11 +51,12 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 4.f, 2.f, 3.f,
                              0.f, 0.f, 5.f, 1.f, 4.f, 0.f, 0.f, 6.f, 5.f,
                              5.f, 0.f, 0.f, 6.f, 6.f, 6.f, 0.f };
-  const TerrainView terrain (TerrainDomain (5, 5), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (5, 5), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
-  const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
+  const DrainageGraph wet = analyze_wet_drainage (flood, census);
 
   MOPPE_CHECK (dry.receiver[12] == 12);
   MOPPE_CHECK (wet.receiver[12] != 12);
@@ -119,13 +121,13 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
 
 MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
   const std::array heights { 5.f, 4.f, 3.f, 4.f, 2.f, 1.f, 3.f, 1.f, 0.f };
-  const TerrainView terrain (TerrainDomain (3, 3), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (3, 3), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
   const DrainageGraph dry = analyze_drainage (terrain);
-  const WetDrainageRouting routing =
-    route_wet_drainage (terrain, flood, census);
-  const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
+  const WetDrainageRouting routing = route_wet_drainage (flood, census);
+  const DrainageGraph wet = analyze_wet_drainage (flood, census);
 
   MOPPE_CHECK (routing.receiver == wet.receiver);
   MOPPE_CHECK (wet.receiver == dry.receiver);
@@ -146,15 +148,14 @@ MOPPE_TEST (wet_drainage_preserves_steepest_descent_on_dry_ground) {
 
 MOPPE_TEST (wet_drainage_and_body_flow_are_deterministic) {
   const std::array heights { 0.f, 4.f, 3.f, 2.f, 1.f, 5.f, 3.f, 2.f, 4.f };
-  const TerrainView terrain (TerrainDomain (3, 3), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (3, 3), heights);
   const FloodField flood_a = analyze_standing_water (terrain, 0.0f);
   const FloodField flood_b = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census_a = census_lakes (flood_a);
   const LakeCensus census_b = census_lakes (flood_b);
-  const DrainageGraph graph_a =
-    analyze_wet_drainage (terrain, flood_a, census_a);
-  const DrainageGraph graph_b =
-    analyze_wet_drainage (terrain, flood_b, census_b);
+  const DrainageGraph graph_a = analyze_wet_drainage (flood_a, census_a);
+  const DrainageGraph graph_b = analyze_wet_drainage (flood_b, census_b);
   const WaterNetwork network_a =
     analyze_water_network (flood_a, census_a, graph_a);
   const WaterNetwork network_b =
@@ -251,12 +252,13 @@ MOPPE_TEST (channel_refined_extraction_keeps_topology_and_bends_geometry) {
     for (std::size_t x = 0; x < width; ++x)
       heights[y * width + x] =
         30.0f - static_cast<float> (x) - 0.4f * static_cast<float> (y);
-  const TerrainView terrain (TerrainDomain (width, height), heights);
+  const ElevationMap terrain =
+    make_elevation_map (TerrainDomain (width, height), heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
-  const DrainageGraph wet = analyze_wet_drainage (terrain, flood, census);
+  const DrainageGraph wet = analyze_wet_drainage (flood, census);
   const FractionalDrainage channels =
-    analyze_fractional_drainage (terrain, flood, census);
+    analyze_fractional_drainage (flood, census);
   const auto minimum_area = 0.5f * mp_units::si::metre * mp_units::si::metre;
   const RiverNetwork base =
     extract_river_network (flood, census, wet, minimum_area);
