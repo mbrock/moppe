@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 using namespace moppe;
 
@@ -143,4 +144,33 @@ MOPPE_TEST (joining_bundles_refuses_domains_that_disagree) {
     refused = true;
   }
   MOPPE_CHECK (refused);
+}
+
+MOPPE_TEST (sites_enumerate_a_domain_that_is_not_a_lattice) {
+  const SizedRing ring { .sites = 4 };
+  std::vector<std::size_t> visited;
+  for (const std::size_t site : spatial::sites (ring))
+    visited.push_back (site);
+
+  MOPPE_CHECK (visited == (std::vector<std::size_t> { 0, 1, 2, 3 }));
+}
+
+MOPPE_TEST (for_each_site_rewrites_one_bundle_in_place) {
+  using DensityBundle = spatial::Bundle<SizedRing, TestDensity>;
+  DensityBundle bundle (SizedRing { .sites = 3 });
+  auto& density = spatial::get<test_density> (bundle);
+  density[0] = 1.0f * test_density[one];
+  density[1] = 2.0f * test_density[one];
+  density[2] = 3.0f * test_density[one];
+
+  // extend_into cannot express this: it reads one bundle and writes another.
+  spatial::for_each_site (bundle, [] (const auto& site) {
+    spatial::get<test_density> (site) =
+      (spatial::get<test_density> (site).numerical_value_in (one) * 2.0f) *
+      test_density[one];
+  });
+
+  MOPPE_CHECK_NEAR (density[0].numerical_value_in (one), 2.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (density[1].numerical_value_in (one), 4.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (density[2].numerical_value_in (one), 6.0f, 1e-6f);
 }

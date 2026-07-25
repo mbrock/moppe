@@ -506,6 +506,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/units_test.cc
     tests/spatial/bundle_test.cc
     tests/spatial/bundle_storage_test.cc
+    tests/terrain/domain_test.cc
     tests/terrain/geological_test.cc
     tests/terrain/world_recipe_test.cc
     tests/terrain/readings_test.cc
