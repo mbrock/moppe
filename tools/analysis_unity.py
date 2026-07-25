@@ -16,20 +16,25 @@ def command_arguments(entry):
   return shlex.split(entry["command"])
 
 
-def original_sources(entry, root, build):
+def original_sources(entry, root, build, source_roots):
   source = pathlib.Path(entry["file"]).resolve()
+  roots = tuple(root / path for path in source_roots)
+
+  def selected(candidate):
+    return (
+        candidate.suffix in SOURCE_SUFFIXES
+        and any(candidate.is_relative_to(path) for path in roots))
+
   if "/Unity/" in source.as_posix() and source.is_relative_to(build):
     sources = []
     for line in source.read_text().splitlines():
       match = INCLUDE_RE.match(line)
       if match:
         included = pathlib.Path(match.group(1)).resolve()
-        if (included.suffix in SOURCE_SUFFIXES
-            and included.is_relative_to(root / "moppe")):
+        if selected(included):
           sources.append(included)
     return sources
-  if (source.suffix in SOURCE_SUFFIXES
-      and source.is_relative_to(root / "moppe")):
+  if selected(source):
     return [source]
   return []
 
@@ -57,18 +62,19 @@ def compile_environment(entry, objective_cpp_define):
   return tuple(result)
 
 
-def analysis_entries(commands, root, build):
+def analysis_entries(commands, root, build, source_roots=("moppe",),
+                     output_name="analysis-unity"):
   objective_cpp_define = next((
       argument for entry in commands for argument in command_arguments(entry)
       if argument.startswith("-DMOPPE_SHADER_NAME=")), None)
   groups = {}
   for entry in commands:
-    sources = original_sources(entry, root, build)
+    sources = original_sources(entry, root, build, source_roots)
     if sources:
       environment = compile_environment(entry, objective_cpp_define)
       groups.setdefault(environment, set()).update(sources)
 
-  output = build / "analysis-unity"
+  output = build / output_name
   output.mkdir(parents=True, exist_ok=True)
   entries = []
   for number, (environment, sources) in enumerate(sorted(groups.items()), 1):

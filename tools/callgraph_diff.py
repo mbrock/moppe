@@ -30,10 +30,12 @@ TOOL_FILES = [
     "tools/complexity-report",
 ]
 ANALYSIS_TOOL_FILES = [path for path in TOOL_FILES if path != ".gitignore"]
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 CACHE_TABLES = [
     "nodes", "edges", "edge_ids", "pagerank", "betweenness",
     "components", "communities", "entrypoint_exposure",
+    "function_references", "reference_ids", "liveness_edges",
+    "liveness_roots", "reachable", "dead_function_candidates",
 ]
 SOURCE_SUFFIXES = {
     ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx",
