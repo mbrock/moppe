@@ -121,7 +121,10 @@ namespace moppe {
       // Keep the look point out of the slope as velocity look-ahead
       // carries it across rolling terrain.
       const float target_floor =
-        0.35f + map::interpolated_height (surface, target[0], target[2]);
+        0.35f +
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (target[0], 0.0f, target[2]))));
       if (target[1] < target_floor) {
         target[1] = target_floor;
         if (target_velocity[1] < 0)
@@ -129,7 +132,10 @@ namespace moppe {
       }
 
       float needed =
-        2.2f + map::interpolated_height (surface, camera[0], camera[2]);
+        2.2f +
+        terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (camera[0], 0.0f, camera[2]))));
 
       // The sight line toward the bike must clear the terrain too;
       // twelve taps catch narrow ridges that the old four-tap check
@@ -139,7 +145,10 @@ namespace moppe {
         const float sx = camera[0] + (target[0] - camera[0]) * t;
         const float sz = camera[2] + (target[2] - camera[2]) * t;
         const float clearance = 0.3f + 1.9f * (1 - t);
-        const float g = clearance + map::interpolated_height (surface, sx, sz);
+        const float g =
+          clearance + terrain::surface_elevation_value (
+                        spatial::sample<terrain::surface_elevation> (
+                          surface, moppe::position (Vec3 (sx, 0.0f, sz))));
 
         needed = max (needed, (g - target[1] * t) / (1 - t));
       }

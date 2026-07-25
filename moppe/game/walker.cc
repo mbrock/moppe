@@ -49,7 +49,9 @@ namespace moppe {
 
       // ground is the terrain, or a roof once we're up on one
       Vec3& position = position_value (m_pos);
-      float g = map::interpolated_height (surface, position[0], position[2]);
+      float g = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (position[0], 0.0f, position[2]))));
       for (size_t i = 0; i < boxes.size (); ++i) {
         const mov::Box& b = boxes[i];
         if (position[0] > b.x0 && position[0] < b.x1 && position[2] > b.z0 &&

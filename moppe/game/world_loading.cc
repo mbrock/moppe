@@ -231,9 +231,8 @@ namespace moppe::game {
       WorldLoadingState& state = *job.state;
       const terrain::WorldRecipe& recipe = job.recipe;
       map::SurfaceGeometry surface =
-        map::make_surface (recipe.resolution (),
-                           recipe.resolution (),
-                           extent_value (recipe.extent ()));
+        map::SurfaceGeometry (terrain::TerrainDomain (
+          recipe.resolution (), recipe.resolution (), recipe.extent ()));
       std::optional<terrain::TrailNetwork> evolved_trails;
 
       const char* cache_override = ::getenv ("MOPPE_MAPCACHE");

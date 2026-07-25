@@ -32,18 +32,19 @@ namespace {
 
   struct FrameFixture {
     map::SurfaceGeometry surface =
-      map::make_surface (17, 17, Vec3 (160, 40, 160));
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        17, 17, spatial_extent_in_metres (Vec3 (160, 0, 160))));
     game::WorldParams world;
     std::unique_ptr<game::GameSession> session;
     game::GraphicsSettings graphics = game::high_graphics_settings ();
 
     FrameFixture () {
-      map::fill_elevation (surface,
-                           moppe::terrain::surface_elevation_point (
-                             (0.25f) * 40.0f * mp_units::si::metre));
+      std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                         moppe::terrain::surface_elevation_point (
+                           (0.25f) * 40.0f * mp_units::si::metre));
       map::rebuild_geometry (surface);
       world.map_size = spatial_extent_in_metres (Vec3 (160, 40, 160));
-      world.resolution = map::width (surface);
+      world.resolution = static_cast<int> (surface.domain ().width ());
       world.water_level = 4.0f * u::m;
       world.fog_scale = 0.0004f / u::m;
       session = std::make_unique<game::GameSession> (world, surface);
@@ -332,13 +333,13 @@ MOPPE_TEST (
                     1e-6f);
 
   FrameFixture ridge;
-  for (int z = 0; z < map::height (ridge.surface); ++z)
+  for (int z = 0; z < static_cast<int> (ridge.surface.domain ().height ()); ++z)
     for (int x = 10; x <= 11; ++x)
-      map::set_elevation (ridge.surface,
-                          x,
-                          z,
-                          moppe::terrain::surface_elevation_point (
-                            (4.0f) * 40.0f * mp_units::si::metre));
+      spatial::get<terrain::surface_elevation> (
+        ridge.surface[terrain::TerrainIndex { static_cast<std::size_t> (x),
+                                              static_cast<std::size_t> (z) }]) =
+        moppe::terrain::surface_elevation_point ((4.0f) * 40.0f *
+                                                 mp_units::si::metre);
   MOPPE_CHECK_NEAR (
     game::sun_visibility_target (view, ridge.world, ridge.surface),
     0.0f,

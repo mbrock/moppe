@@ -9,12 +9,12 @@
 
 MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (65, 65, Vec3 (320, 180, 320));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.42f) * 180.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.42f) * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
@@ -26,9 +26,10 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   for (const game::TreeSite& site : grove.sites) {
     const position_t at =
       position (Vec3 (site.position[0], 0, site.position[2]));
-    const float elevation = map::elevation_at (surface, at)
-                              .quantity_from_zero ()
-                              .numerical_value_in (u::m);
+    const float elevation =
+      spatial::sample<terrain::surface_elevation> (surface, at)
+        .quantity_from_zero ()
+        .numerical_value_in (u::m);
     MOPPE_CHECK_NEAR (site.position[1], elevation, 1e-4f);
     MOPPE_CHECK (site.habitat >= 0.34f);
     MOPPE_CHECK (site.normal[1] > 0.99f);
@@ -37,12 +38,12 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
 
 MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (65, 65, Vec3 (320, 180, 320));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.42f) * 180.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.42f) * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
@@ -66,12 +67,12 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
 
 MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (129, 129, Vec3 (640, 180, 640));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.42f) * 180.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (640, 0, 640))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.42f) * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
@@ -97,12 +98,12 @@ MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
 
 MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (33, 33, Vec3 (160, 180, 160));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.42f) * 180.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    33, 33, spatial_extent_in_metres (Vec3 (160, 0, 160))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.42f) * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 1.0f),

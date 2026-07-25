@@ -34,31 +34,36 @@ namespace {
 
 MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (4, 4, Vec3 (40, 20, 40));
-  for (int row = 0; row < map::height (surface); ++row)
-    for (int column = 0; column < map::width (surface); ++column)
-      map::set_elevation (
-        surface,
-        column,
-        row,
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (4, 4, spatial_extent_in_metres (Vec3 (40, 0, 40))));
+  for (int row = 0; row < static_cast<int> (surface.domain ().height ()); ++row)
+    for (int column = 0; column < static_cast<int> (surface.domain ().width ());
+         ++column)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (column), static_cast<std::size_t> (row) }]) =
         moppe::terrain::surface_elevation_point (
-          (0.05f * static_cast<float> (row * map::width (surface) + column)) *
-          20.0f * mp_units::si::metre));
+          (0.05f *
+           static_cast<float> (
+             row * static_cast<int> (surface.domain ().width ()) + column)) *
+          20.0f * mp_units::si::metre);
   map::rebuild_geometry (surface);
 
   const auto& geometry = surface;
   static_assert (spatial::FiniteDomain<terrain::TerrainDomain>);
   static_assert (
     spatial::InterpolationDomain<terrain::TerrainDomain, position_t>);
-  static_assert (mp_units::QuantityPointOf<decltype (map::elevation_at (
-                                             surface, position (Vec3 ()))),
-                                           map::surface_elevation>);
-  static_assert (mp_units::QuantityOf<decltype (map::normal_at (
-                                        surface, position (Vec3 ()))),
-                                      terrain::terrain_normal>);
-  static_assert (mp_units::QuantityOf<decltype (map::snow_support_at (
-                                        surface, position (Vec3 ()))),
-                                      map::snow_support>);
+  static_assert (mp_units::QuantityPointOf<
+                 decltype (spatial::sample<terrain::surface_elevation> (
+                   surface, position (Vec3 ()))),
+                 map::surface_elevation>);
+  static_assert (
+    mp_units::QuantityOf<decltype (spatial::sample<terrain::terrain_normal> (
+                           surface, position (Vec3 ()))),
+                         terrain::terrain_normal>);
+  static_assert (
+    mp_units::QuantityOf<decltype (spatial::sample<map::snow_support> (
+                           surface, position (Vec3 ()))),
+                         map::snow_support>);
 
   const terrain::TerrainIndex index { 2, 1 };
   const auto elevation =
@@ -67,34 +72,41 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   const auto snow_support = spatial::get<map::snow_support> (geometry[index]);
   MOPPE_CHECK_NEAR (
     terrain::surface_elevation_value (elevation),
-    terrain::surface_elevation_value (map::elevation_at (surface, 2, 1)),
+    terrain::surface_elevation_value (
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (2), static_cast<std::size_t> (1) }])),
     1e-6f);
-  check_surface_vector (normal_value (normal), map::normal_at (surface, 2, 1));
+  check_surface_vector (
+    normal_value (normal),
+    spatial::get<terrain::terrain_normal> (surface[{ 2, 1 }])
+      .numerical_value_in (one));
   MOPPE_CHECK (snow_support >= 0.0f * map::snow_support[one]);
   MOPPE_CHECK (snow_support <= 1.0f * map::snow_support[one]);
 }
 
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (90, 80, 90));
-  for (int row = 0; row < map::height (surface); ++row)
-    for (int column = 0; column < map::width (surface); ++column)
-      map::set_elevation (
-        surface,
-        column,
-        row,
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (9, 9, spatial_extent_in_metres (Vec3 (90, 0, 90))));
+  for (int row = 0; row < static_cast<int> (surface.domain ().height ()); ++row)
+    for (int column = 0; column < static_cast<int> (surface.domain ().width ());
+         ++column)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (column), static_cast<std::size_t> (row) }]) =
         moppe::terrain::surface_elevation_point ((column < 4 ? 0.2f : 0.8f) *
-                                                 80.0f * mp_units::si::metre));
+                                                 80.0f * mp_units::si::metre);
   map::rebuild_geometry (surface);
 
-  const float detailed_up = map::normal_at (surface, 4, 4)[1];
+  const float detailed_up =
+    spatial::get<terrain::terrain_normal> (surface[{ 4, 4 }])
+      .numerical_value_in (one)[1];
   const float supported_up =
-    map::snow_support_at (surface, position (Vec3 (40, 0, 40)))
+    spatial::sample<map::snow_support> (surface, position (Vec3 (40, 0, 40)))
       .numerical_value_in (one);
   // Column 8 borders the low side across the wrap; probe the flat
   // interior instead.
   const float flat_up =
-    map::snow_support_at (surface, position (Vec3 (60, 0, 40)))
+    spatial::sample<map::snow_support> (surface, position (Vec3 (60, 0, 40)))
       .numerical_value_in (one);
   MOPPE_CHECK (supported_up > detailed_up + 0.05f);
   MOPPE_CHECK (flat_up > 0.99f);
@@ -102,11 +114,12 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
 
 MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (3, 3, Vec3 (30, 10, 30));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.2f) * 10.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.2f) * 10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
@@ -125,11 +138,12 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
 
 MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (3, 3, Vec3 (30, 10, 30));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.2f) * 10.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.2f) * 10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
@@ -151,11 +165,12 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
 
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (5, 5, Vec3 (50, 200, 50));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.40f) * 200.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (5, 5, spatial_extent_in_metres (Vec3 (50, 0, 50))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.40f) * 200.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   std::vector<float> moisture (25, 0.48f);
   const position_t center = position (Vec3 (20, 0, 20));
@@ -173,12 +188,12 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
 
 MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (65, 65, Vec3 (320, 180, 320));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.42f) * 180.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    65, 65, spatial_extent_in_metres (Vec3 (320, 0, 320))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.42f) * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const terrain::TerrainDomain& domain = surface.domain ();
   const map::TreeHabitatMap habitat =
     map::analyze_tree_habitat (surface,
@@ -215,30 +230,34 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
 
 MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (5, 5, Vec3 (50, 30, 50));
-  for (int row = 0; row < map::height (surface); ++row)
-    for (int column = 0; column < map::width (surface); ++column)
-      map::set_elevation (surface,
-                          column,
-                          row,
-                          moppe::terrain::surface_elevation_point (
-                            (0.03f * column * column + 0.02f * row) * 30.0f *
-                            mp_units::si::metre));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (5, 5, spatial_extent_in_metres (Vec3 (50, 0, 50))));
+  for (int row = 0; row < static_cast<int> (surface.domain ().height ()); ++row)
+    for (int column = 0; column < static_cast<int> (surface.domain ().width ());
+         ++column)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (column), static_cast<std::size_t> (row) }]) =
+        moppe::terrain::surface_elevation_point (
+          (0.03f * column * column + 0.02f * row) * 30.0f *
+          mp_units::si::metre);
   map::rebuild_geometry (surface);
 
   // Reconstruction is the domain's own bilinear stencil. State the expected
   // rule here independently, over the authoritative lattice.
-  const Vec3 spacing = map::sample_spacing (surface);
+  const Vec3 spacing = Vec3 (
+    surface.domain ().spacing_x_m (), 1.0f, surface.domain ().spacing_z_m ());
   const auto expected_height = [&] (float x, float z) {
     const float gx = x / spacing[0];
     const float gz = z / spacing[2];
     const int x0 = static_cast<int> (std::floor (gx));
     const int z0 = static_cast<int> (std::floor (gz));
     const auto corner = [&] (int column, int row) {
-      return elevation_value (
-        map::elevation_at (surface,
-                           terrain::wrap_index (column, map::width (surface)),
-                           terrain::wrap_index (row, map::height (surface))));
+      return elevation_value (spatial::get<terrain::surface_elevation> (
+        surface[terrain::TerrainIndex {
+          static_cast<std::size_t> (terrain::wrap_index (
+            column, static_cast<int> (surface.domain ().width ()))),
+          static_cast<std::size_t> (terrain::wrap_index (
+            row, static_cast<int> (surface.domain ().height ()))) }]));
     };
     const float tx = gx - x0;
     const float tz = gz - z0;
@@ -254,73 +273,98 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
                             Vec3 (29.9f, 0, 29.9f) };
   for (const Vec3& point : points) {
     const position_t p = position (point);
-    MOPPE_CHECK_NEAR (elevation_value (map::elevation_at (surface, p)),
-                      expected_height (point[0], point[2]),
-                      1e-5f);
+    MOPPE_CHECK_NEAR (
+      elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, p)),
+      expected_height (point[0], point[2]),
+      1e-5f);
     // The plain-metre reconstructions are the same sample, unwrapped.
-    MOPPE_CHECK_NEAR (elevation_value (map::elevation_at (surface, p)),
-                      map::interpolated_height (surface, point[0], point[2]),
-                      1e-6f);
+    MOPPE_CHECK_NEAR (
+      elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, p)),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (point[0], 0.0f, point[2])))),
+      1e-6f);
     check_surface_vector (
-      normal_value (map::normal_at (surface, p)),
-      map::interpolated_normal (surface, point[0], point[2]),
+      normal_value (spatial::sample<terrain::terrain_normal> (surface, p)),
+      spatial::sample<terrain::terrain_normal> (
+        surface, moppe::position (Vec3 (point[0], 0.0f, point[2])))
+        .numerical_value_in (mp_units::one),
       1e-6f);
   }
 }
 
 MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (5, 5, Vec3 (40, 20, 40));
-  for (int row = 0; row < map::height (surface); ++row)
-    for (int column = 0; column < map::width (surface); ++column)
-      map::set_elevation (surface,
-                          column,
-                          row,
-                          moppe::terrain::surface_elevation_point (
-                            (0.04f * static_cast<float> (row + 2 * column)) *
-                            20.0f * mp_units::si::metre));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (5, 5, spatial_extent_in_metres (Vec3 (40, 0, 40))));
+  for (int row = 0; row < static_cast<int> (surface.domain ().height ()); ++row)
+    for (int column = 0; column < static_cast<int> (surface.domain ().width ());
+         ++column)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (column), static_cast<std::size_t> (row) }]) =
+        moppe::terrain::surface_elevation_point (
+          (0.04f * static_cast<float> (row + 2 * column)) * 20.0f *
+          mp_units::si::metre);
   map::rebuild_geometry (surface);
 
   // Sampling one period apart reads the same surface.
-  const Vec3 period = map::world_period (surface);
+  const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
+                            0.0f,
+                            meters_value (surface.domain ().period_z ()));
   for (const Vec3& point : { Vec3 (3.25f, 0, 7.5f), Vec3 (39.25f, 0, 37.5f) }) {
     const position_t p = position (point);
     const position_t wrapped =
       position (point + Vec3 (period[0], 0.0f, period[2]));
-    MOPPE_CHECK_NEAR (elevation_value (map::elevation_at (surface, p)),
-                      elevation_value (map::elevation_at (surface, wrapped)),
-                      1e-5f);
-    MOPPE_CHECK_NEAR (elevation_value (map::elevation_at (surface, p)),
-                      map::interpolated_height (surface, point[0], point[2]),
-                      1e-5f);
+    MOPPE_CHECK_NEAR (
+      elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, p)),
+      elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, wrapped)),
+      1e-5f);
+    MOPPE_CHECK_NEAR (
+      elevation_value (
+        spatial::sample<terrain::surface_elevation> (surface, p)),
+      terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          surface, moppe::position (Vec3 (point[0], 0.0f, point[2])))),
+      1e-5f);
   }
 }
 
 MOPPE_TEST (surface_geometry_is_authoritative_without_a_refresh_barrier) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (3, 3, Vec3 (30, 10, 30));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.2f) * 10.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.2f) * 10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   const position_t p = position (Vec3 (5, 0, 5));
-  const float before = elevation_value (map::elevation_at (surface, p));
+  const float before =
+    elevation_value (spatial::sample<terrain::surface_elevation> (surface, p));
 
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.7f) * 10.0f * mp_units::si::metre));
-  MOPPE_CHECK (before != elevation_value (map::elevation_at (surface, p)));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.7f) * 10.0f * mp_units::si::metre));
+  MOPPE_CHECK (
+    before !=
+    elevation_value (spatial::sample<terrain::surface_elevation> (surface, p)));
   MOPPE_CHECK_NEAR (
-    elevation_value (map::elevation_at (surface, p)), 7.0f, 1e-6f);
+    elevation_value (spatial::sample<terrain::surface_elevation> (surface, p)),
+    7.0f,
+    1e-6f);
 }
 
 MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (3, 3, Vec3 (30, 10, 30));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.2f) * 10.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.2f) * 10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   std::vector<float> trail (9, 0.0f);
   std::vector<float> home (9, 0.0f);
@@ -342,11 +386,12 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (3, 3, Vec3 (30, 10, 30));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.2f) * 10.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (30, 0, 30))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.2f) * 10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   std::vector<float> moisture (9, 0.4f);
   std::vector<float> distance (9, 8.0f);
@@ -360,10 +405,11 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   deposited[5] = 6.0f;
 
   for (std::size_t cell = 0; cell < eroded.size (); ++cell) {
-    const int column = static_cast<int> (cell % 3);
-    const int row = static_cast<int> (cell / 3);
-    map::record_material_change (surface, column, row, -eroded[cell]);
-    map::record_material_change (surface, column, row, deposited[cell]);
+    const terrain::TerrainIndex index { cell % 3, cell / 3 };
+    spatial::get<map::eroded_surface_material> (surface[index]) =
+      eroded[cell] * map::eroded_surface_material[mp_units::one];
+    spatial::get<map::deposited_surface_material> (surface[index]) =
+      deposited[cell] * map::deposited_surface_material[mp_units::one];
   }
   const map::SurfaceReadings values = test::complete_readings (
     surface,

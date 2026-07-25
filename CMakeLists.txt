@@ -371,7 +371,6 @@ endif()
 
 # Concrete completed-world storage and its finite surface sections.
 add_library(moppe_world STATIC
-  moppe/map/surface_geometry.cc
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc
   moppe/map/surface_materials.cc

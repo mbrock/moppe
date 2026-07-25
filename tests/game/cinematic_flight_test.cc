@@ -29,7 +29,8 @@ namespace {
     static constexpr std::size_t count = side * side;
 
     map::SurfaceGeometry surface =
-      map::make_surface (side, side, Vec3 (1600, 240, 1600));
+      map::SurfaceGeometry (terrain::TerrainDomain (
+        side, side, spatial_extent_in_metres (Vec3 (1600, 0, 1600))));
     terrain::TerrainDomain grid = surface.domain ();
     terrain::FloodField flood;
     terrain::LakeCensus census;
@@ -55,18 +56,17 @@ namespace {
             std::max (0.0f, 1.0f - std::hypot (x - 12.0f, z - 5.0f) / 7.0f);
           const float saddle =
             0.06f * std::abs (z - 11.0f) - 0.025f * std::abs (x - 7.0f);
-          map::set_elevation (
-            surface,
-            x,
-            z,
+          spatial::get<terrain::surface_elevation> (
+            surface[terrain::TerrainIndex { static_cast<std::size_t> (x),
+                                            static_cast<std::size_t> (z) }]) =
             moppe::terrain::surface_elevation_point (
-              (0.16f + 0.55f * peak + saddle) * 240.0f * mp_units::si::metre));
+              (0.16f + 0.55f * peak + saddle) * 240.0f * mp_units::si::metre);
           const std::size_t cell = z * side + x;
           const std::size_t next = z + 1 < side ? cell + side : cell;
           flood.spill_receiver[cell] = next;
           drainage.receiver[cell] = next;
         }
-      map::recompute_normals (surface);
+      map::rebuild_geometry (surface);
 
       std::vector<terrain::CellIndex> cells;
       for (int z = 1; z < 15; ++z)
@@ -171,10 +171,13 @@ MOPPE_TEST (cinematic_flight_opens_with_a_fast_trail_reveal) {
   MOPPE_CHECK (game::cinematic_landmark_name (
                  game::CinematicLandmarkKind::Trail) == "trail");
   const Vec3 opening_eye = plan.waypoints.front ().position;
-  MOPPE_CHECK (opening_eye[1] >= map::interpolated_height (fixture.surface,
-                                                           opening_eye[0],
-                                                           opening_eye[2]) +
-                                   104.9f);
+  MOPPE_CHECK (
+    opening_eye[1] >=
+    terrain::surface_elevation_value (
+      spatial::sample<terrain::surface_elevation> (
+        fixture.surface,
+        moppe::position (Vec3 (opening_eye[0], 0.0f, opening_eye[2])))) +
+      104.9f);
 
   game::CinematicFlight flight;
   flight.start (plan, fixture.surface);
@@ -209,29 +212,29 @@ MOPPE_TEST (cinematic_flight_reads_landscape_into_distinct_places) {
   MOPPE_CHECK (has (game::CinematicLandmarkKind::Arrival));
   for (const game::CinematicFlightWaypoint& waypoint : plan.waypoints)
     MOPPE_CHECK (waypoint.position[1] >=
-                 map::interpolated_height (fixture.surface,
-                                           waypoint.position[0],
-                                           waypoint.position[2]) +
+                 terrain::surface_elevation_value (
+                   spatial::sample<terrain::surface_elevation> (
+                     fixture.surface,
+                     moppe::position (Vec3 (
+                       waypoint.position[0], 0.0f, waypoint.position[2])))) +
                    8.9f);
 }
 
 MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   constexpr int side = 17;
   constexpr std::size_t count = side * side;
-  map::SurfaceGeometry surface =
-    map::make_surface (side, side, Vec3 (1600, 240, 1600));
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    side, side, spatial_extent_in_metres (Vec3 (1600, 0, 1600))));
   for (int z = 0; z < side; ++z)
     for (int x = 0; x < side; ++x) {
       const float dx = std::min (x % side, side - x % side);
       const float dz = std::min (z % side, side - z % side);
-      map::set_elevation (
-        surface,
-        x,
-        z,
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (x), static_cast<std::size_t> (z) }]) =
         moppe::terrain::surface_elevation_point ((0.2f + 0.02f * (dx + dz)) *
-                                                 240.0f * mp_units::si::metre));
+                                                 240.0f * mp_units::si::metre);
     }
-  map::recompute_normals (surface);
+  map::rebuild_geometry (surface);
 
   const terrain::TerrainDomain grid = surface.domain ();
   std::vector<terrain::CellIndex> receiver (count);
@@ -304,7 +307,10 @@ MOPPE_TEST (cinematic_drone_stays_clear_and_accepts_live_trim) {
     peak_speed = std::max (peak_speed, flight.speed ());
     MOPPE_CHECK (std::abs (flight.bank ()) <= 0.301f);
     MOPPE_CHECK (
-      p[1] >= map::interpolated_height (fixture.surface, p[0], p[2]) + 17.9f);
+      p[1] >= terrain::surface_elevation_value (
+                spatial::sample<terrain::surface_elevation> (
+                  fixture.surface, moppe::position (Vec3 (p[0], 0.0f, p[2])))) +
+                17.9f);
     MOPPE_CHECK (std::isfinite (flight.forward ()[0]));
     MOPPE_CHECK (flight.motion_blur () >= 0.08f);
     MOPPE_CHECK (flight.motion_blur () <= 0.72f);

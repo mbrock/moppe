@@ -37,16 +37,15 @@ namespace {
 
 MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   using namespace moppe;
-  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (100, 20, 100));
-  for (int y = 0; y < map::height (surface); ++y)
-    for (int x = 0; x < map::width (surface); ++x)
-      map::set_elevation (
-        surface,
-        x,
-        y,
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    9, 9, spatial_extent_in_metres (Vec3 (100, 0, 100))));
+  for (int y = 0; y < static_cast<int> (surface.domain ().height ()); ++y)
+    for (int x = 0; x < static_cast<int> (surface.domain ().width ()); ++x)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (x), static_cast<std::size_t> (y) }]) =
         moppe::terrain::surface_elevation_point (
-          (0.05f * static_cast<float> (x + y)) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+          (0.05f * static_cast<float> (x + y)) * 20.0f * mp_units::si::metre);
+  map::rebuild_geometry (surface);
   mov::Vehicle vehicle (position (Vec3 (20, 0, 20)),
                         15 * u::deg,
                         surface,
@@ -110,16 +109,15 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
 
 MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (160, 80, 160));
-  for (int z = 0; z < map::height (surface); ++z)
-    for (int x = 0; x < map::width (surface); ++x)
-      map::set_elevation (surface,
-                          x,
-                          z,
-                          moppe::terrain::surface_elevation_point (
-                            (0.10f + 0.02f * x) * 80.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (160, 0, 160))));
+  for (int z = 0; z < static_cast<int> (surface.domain ().height ()); ++z)
+    for (int x = 0; x < static_cast<int> (surface.domain ().width ()); ++x)
+      spatial::get<terrain::surface_elevation> (surface[terrain::TerrainIndex {
+        static_cast<std::size_t> (x), static_cast<std::size_t> (z) }]) =
+        moppe::terrain::surface_elevation_point ((0.10f + 0.02f * x) * 80.0f *
+                                                 mp_units::si::metre);
+  map::rebuild_geometry (surface);
 
   mov::Vehicle vehicle (position (Vec3 (50, 0, 50)),
                         90 * u::deg,
@@ -180,12 +178,12 @@ MOPPE_TEST (camera_and_walker_state_round_trip) {
 
 MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   const auto ratio =
     mov::Glider::glide_ratio_at (16.0f * airspeed[u::m / u::s]);
@@ -218,12 +216,12 @@ MOPPE_TEST (glider_polar_and_flight_use_soaring_quantities) {
 
 MOPPE_TEST (glider_state_restores_the_flight_computer) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.35f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.35f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   mov::Glider glider (surface);
   glider.launch (position (Vec3 (40, 70, 40)),
@@ -257,12 +255,12 @@ MOPPE_TEST (glider_state_restores_the_flight_computer) {
 
 MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
 
   mov::Glider loaded (surface);
   loaded.launch (position (Vec3 (80, 100, 80)),
@@ -287,15 +285,15 @@ MOPPE_TEST (dropping_bike_reduces_glider_wing_loading) {
 
 MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
-  world.resolution = map::width (surface);
+  world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);
@@ -346,12 +344,12 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
 
 MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (100, 20, 100));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (100, 0, 100))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (100, 20, 100));
   world.water_level = 0 * u::m;
@@ -418,12 +416,12 @@ MOPPE_TEST (game_state_is_an_independent_value) {
 
 MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   using namespace moppe;
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.water_level = 0 * u::m;
@@ -509,15 +507,15 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   static_assert (
     std::is_same_v<decltype (&game::advance_game_session), AdvanceGameSession>);
 
-  map::SurfaceGeometry surface =
-    map::make_surface (17, 17, Vec3 (200, 20, 200));
-  map::fill_elevation (surface,
-                       moppe::terrain::surface_elevation_point (
-                         (0.5f) * 20.0f * mp_units::si::metre));
-  map::recompute_normals (surface);
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (200, 0, 200))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       (0.5f) * 20.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
   game::WorldParams world;
   world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
-  world.resolution = map::width (surface);
+  world.resolution = static_cast<int> (surface.domain ().width ());
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
 

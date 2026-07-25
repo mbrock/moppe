@@ -102,17 +102,22 @@ namespace moppe::game {
         const float width_m = meters_value (terrain::river_width (area));
         const float fill_depth =
           0.72f * meters_value (terrain::river_depth (area));
-        const float center_ground =
-          map::interpolated_height (land, center.x_m, center.z_m);
+        const float center_ground = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            land, moppe::position (Vec3 (center.x_m, 0.0f, center.z_m))));
         const float bank_distance = 0.5f * width_m + 0.75f;
-        const float left_bank =
-          map::interpolated_height (land,
-                                    center.x_m - across[0] * bank_distance,
-                                    center.z_m - across[2] * bank_distance);
-        const float right_bank =
-          map::interpolated_height (land,
-                                    center.x_m + across[0] * bank_distance,
-                                    center.z_m + across[2] * bank_distance);
+        const float left_bank = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            land,
+            moppe::position (Vec3 (center.x_m - across[0] * bank_distance,
+                                   0.0f,
+                                   center.z_m - across[2] * bank_distance))));
+        const float right_bank = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            land,
+            moppe::position (Vec3 (center.x_m + across[0] * bank_distance,
+                                   0.0f,
+                                   center.z_m + across[2] * bank_distance))));
         const float bank_limit = std::min (left_bank, right_bank) - 0.08f;
         const float running_surface =
           std::max (center_ground + 0.035f,
@@ -127,10 +132,13 @@ namespace moppe::game {
         // the terrain it actually spans; the outer rows still intersect the
         // banks naturally and feather the visible waterline.
         for (const float cross : { -0.54f, 0.0f, 0.54f }) {
-          const float ground = map::interpolated_height (
-            land,
-            center.x_m + across[0] * cross * 0.5f * width_m,
-            center.z_m + across[2] * cross * 0.5f * width_m);
+          const float ground = terrain::surface_elevation_value (
+            spatial::sample<terrain::surface_elevation> (
+              land,
+              moppe::position (
+                Vec3 (center.x_m + across[0] * cross * 0.5f * width_m,
+                      0.0f,
+                      center.z_m + across[2] * cross * 0.5f * width_m))));
           surface = std::max (surface, ground + 0.045f);
         }
         // Ribbon-owned pools: a flooded channel stretch holds its flood
@@ -145,17 +153,25 @@ namespace moppe::game {
           // The route can hug one bank of the pool, so the far waterline may
           // sit up to a full flooded width away: probe past twice the
           // channel-classification inradius.
-          const float spacing = std::max (map::sample_spacing (land)[0],
-                                          map::sample_spacing (land)[2]);
+          const float spacing =
+            std::max (Vec3 (land.domain ().spacing_x_m (),
+                            1.0f,
+                            land.domain ().spacing_z_m ())[0],
+                      Vec3 (land.domain ().spacing_x_m (),
+                            1.0f,
+                            land.domain ().spacing_z_m ())[2]);
           const float max_probe = std::max (7.0f * spacing, half_left_m);
           const float probe_step = std::max (0.5f, 0.25f * spacing);
           const auto waterline = [&] (float direction) {
             float distance = probe_step;
             while (distance < max_probe &&
-                   map::interpolated_height (
-                     land,
-                     center.x_m + direction * across[0] * distance,
-                     center.z_m + direction * across[2] * distance) <
+                   terrain::surface_elevation_value (
+                     spatial::sample<terrain::surface_elevation> (
+                       land,
+                       moppe::position (Vec3 (
+                         center.x_m + direction * across[0] * distance,
+                         0.0f,
+                         center.z_m + direction * across[2] * distance)))) <
                      surface + 0.02f)
               distance += probe_step;
             return distance + 0.5f;
@@ -296,8 +312,9 @@ namespace moppe::game {
                                    : center.half_right_m;
         Vec3 position =
           center.position + across * (cross_positions[cross] * half_width);
-        const float ground =
-          map::interpolated_height (surface, position[0], position[2]);
+        const float ground = terrain::surface_elevation_value (
+          spatial::sample<terrain::surface_elevation> (
+            surface, moppe::position (Vec3 (position[0], 0.0f, position[2]))));
         const float depth =
           std::clamp ((position[1] - ground) / depth_span_m *
                         (1.0f - thalweg_shift * cross_positions[cross]),
@@ -318,7 +335,9 @@ namespace moppe::game {
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
                                 const map::SurfaceGeometry& surface) {
-      const Vec3 period = map::world_period (surface);
+      const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
+                                0.0f,
+                                meters_value (surface.domain ().period_z ()));
       point.position[0] =
         reference.position[0] +
         std::remainder (point.position[0] - reference.position[0], period[0]);
@@ -446,7 +465,9 @@ namespace moppe::game {
                               const map::SurfaceGeometry& surface,
                               const terrain::RiverNetwork& rivers) {
     m_mesh = renderer.create_mesh (build_river_ribbons (surface, rivers));
-    m_period = map::world_period (surface);
+    m_period = Vec3 (meters_value (surface.domain ().period_x ()),
+                     0.0f,
+                     meters_value (surface.domain ().period_z ()));
   }
 
   void RiverSurface::clear () {

@@ -34,6 +34,15 @@ namespace moppe::terrain {
         throw std::invalid_argument ("invalid terrain domain");
     }
 
+    TerrainDomain (std::size_t width,
+                   std::size_t height,
+                   const spatial_extent_t& extent)
+        : TerrainDomain (
+            width,
+            height,
+            extent_value (extent)[0] / static_cast<float> (width) * u::m,
+            extent_value (extent)[2] / static_cast<float> (height) * u::m) {}
+
     friend bool operator== (const TerrainDomain&,
                             const TerrainDomain&) = default;
 

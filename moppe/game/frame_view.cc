@@ -153,8 +153,9 @@ namespace moppe::game {
     // are explicitly stable reference views.
     if (input.scene == FrameSceneMode::Gameplay && logic.m_shake > 0.005f) {
       const Vec3& camera = result.camera.position;
-      const float ground =
-        map::interpolated_height (input.surface, camera[0], camera[2]);
+      const float ground = terrain::surface_elevation_value (
+        spatial::sample<terrain::surface_elevation> (
+          input.surface, moppe::position (Vec3 (camera[0], 0.0f, camera[2]))));
       const float clearance = camera[1] - ground;
       const float room =
         std::min (1.0f, std::max (0.0f, (clearance - 2.0f) / 8.0f));
@@ -298,9 +299,11 @@ namespace moppe::game {
       for (int i = 1; i <= 40; ++i) {
         const float distance = 90.0f * i;
         const Vec3 sample = camera + view.lighting.sun_direction * distance;
-        if (!map::in_bounds (sample[0], sample[2]))
+        if (!(std::isfinite (sample[0]) && std::isfinite (sample[2])))
           break;
-        if (map::interpolated_height (surface, sample[0], sample[2]) >
+        if (terrain::surface_elevation_value (
+              spatial::sample<terrain::surface_elevation> (
+                surface, moppe::position (Vec3 (sample[0], 0.0f, sample[2])))) >
             sample[1]) {
           visibility = 0.0f;
           break;
