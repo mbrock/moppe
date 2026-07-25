@@ -84,56 +84,42 @@ are read-only.
 mutation, frozen mover poses, shake behavior, cinematic selection,
 HUD and overlay snapshots, and flare-sightline readings.
 
-## Target graph
+## Build composition
 
-The CMake graph follows the established ownership direction rather than source
-directory names alone. Arrows point from a target to the target it consumes:
+The established ownership direction is expressed by source directories,
+namespaces, and includes rather than a matching graph of static libraries.
+CMake composes those source groups directly into each terminal executable and
+uses one unity translation unit per language:
 
 ```mermaid
 flowchart LR
-  spatial["moppe_spatial"] --> units["mp-units"]
-  terrain["moppe_terrain"] --> spatial
-  world["moppe_world"] --> terrain
-  simulation["moppe_simulation"] --> world
-  simulation --> render["moppe_render"]
-  scene["moppe_scene"] --> simulation
-  scene --> world
+  spatial["spatial headers"] --> units["mp-units"]
+  terrain["terrain sources"] --> spatial
+  world["world sources"] --> terrain
+  simulation["simulation sources"] --> world
+  simulation --> render["render sources"]
+  scene["scene sources"] --> simulation
   scene --> render
-  scene -.-> apple["moppe_apple"]
-  app["moppe_app"] --> scene
-  app -.-> mac["moppe_platform_mac"]
-  app -.-> ios["moppe_platform_ios"]
-  metal["moppe_metal"] --> render
-  terrain_metal["moppe_terrain_metal"] --> terrain
-  mac --> metal
-  mac --> terrain_metal
-  mac --> apple
-  ios --> metal
-  ios --> apple
+  app["application sources"] --> scene
   desktop["moppe"] --> app
-  desktop --> mac
+  desktop --> mac["macOS and Metal sources"]
   phone["moppe-ios"] --> app
-  phone --> ios
+  phone --> ios["iOS and Metal sources"]
 ```
 
-`moppe_spatial` is intentionally an interface target: its finite-section
-headers expose mp-units vocabulary but do not own a translation unit.
-`moppe_terrain` owns reusable finite terrain and hydrology algorithms;
-`moppe_world` adds the authoritative surface bundle, direct construction,
-`GeneratedWorld`, and water-capture selection. `moppe_simulation` owns
-`GameSession` and its movers. Its explicit
-dependency on `moppe_render` is currently real: session-owned Stars retain
-meshes and both Stars and Dust expose their presentation operations.
+Spatial headers expose mp-units vocabulary but do not own a translation unit.
+Terrain owns reusable finite algorithms; world sources add the authoritative
+surface bundle, direct construction, `GeneratedWorld`, and water-capture
+selection. Simulation owns `GameSession` and its movers. Its dependency on the
+render abstraction is currently real: session-owned Stars retain meshes and
+both Stars and Dust expose their presentation operations.
 
-`moppe_scene` composes `FrameView` and its focused world, actor, water,
-effect, and overlay presentation. It may use Apple-common asset and glyph
-services, but does not own an OS event loop or Metal backend. `moppe_app`
-holds the host-service caller `Terrain`; terminal apps
-retain `game.cc` because it defines `main` and chooses the macOS or iOS host.
-Only the selected platform edge is present in any given build configuration.
-Terrain-only command-line tools depend on `moppe_world`, so they no longer
-pull the desktop platform merely because a unity archive contained unrelated
-scene code.
+Scene sources compose `FrameView` and its focused world, actor, water, effect,
+and overlay presentation. They may use Apple-common asset and glyph services,
+but do not own an OS event loop or Metal backend. Application sources hold the
+host-service caller `Terrain`; terminal apps add `main.cc` and exactly one
+selected platform implementation. Terrain-only command-line tools compile
+only the terrain and world source groups.
 
 ## Metal frame encoding
 

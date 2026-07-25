@@ -11,11 +11,12 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
   set(MOPPE_MOBILE_APPLE TRUE)
 endif()
 
-# Ninja and Makefiles otherwise default to an unoptimized build. Keep symbols
-# for useful crash reports while making the normal desktop build representative
-# of real gameplay performance.
+# The normal build is an edit build: do no optimization, and keep only the line
+# tables needed to turn a crash address into a source location. Optimized
+# gameplay, profiling, and distribution builds select RelWithDebInfo or Release
+# explicitly.
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+  set(CMAKE_BUILD_TYPE Debug CACHE STRING
     "Build type (Debug, Release, RelWithDebInfo, or MinSizeRel)" FORCE)
   set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
     Debug Release RelWithDebInfo MinSizeRel)
@@ -49,6 +50,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 add_compile_options(-Wall)
+if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
+  add_compile_options($<$<CONFIG:Debug>:-gline-tables-only>)
+endif()
 
 # A Moppe web build keeps world generation off the browser UI thread. Every
 # object in a shared-memory WebAssembly executable must be compiled with the
@@ -111,17 +115,6 @@ target_include_directories(nanoarrow SYSTEM PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/third_party/nanoarrow)
 set_target_properties(nanoarrow PROPERTIES UNITY_BUILD OFF)
 
-# The Atelier's combinatorial and intrinsic botany is a small portable
-# library. Both the workshop renderer and the game provide their own
-# extrinsic embeddings of the same organism.
-add_library(atelier_botany STATIC
-  atelier/tree.cc
-  atelier/tree.hh
-  atelier/space.hh
-)
-target_include_directories(atelier_botany PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(atelier_botany PUBLIC mp-units::mp-units)
-
 if(MOPPE_ENABLE_TRACY)
   set(TRACY_ENABLE ON CACHE BOOL "Enable Tracy profiling" FORCE)
   set(TRACY_ON_DEMAND ON CACHE BOOL "Record only with a connected viewer"
@@ -174,6 +167,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     atelier/space.hh
     atelier/surface.hh
     atelier/tabulate.hh
+    atelier/tree.cc
     atelier/tree.hh
     atelier/tree_embedding.cc
     atelier/tree_embedding.hh
@@ -188,7 +182,6 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_options(atelier PRIVATE -mmacosx-version-min=26.0)
   target_link_libraries(atelier PRIVATE
-    atelier_botany
     mp-units::mp-units
     "-framework Cocoa"
     "-framework ImageIO"
@@ -305,36 +298,19 @@ add_custom_target(moppe_shaders DEPENDS ${MOPPE_SHADER_ASSET})
 endif()
 
 # ---------------------------------------------------------------
-# Portable core: rendering abstraction + game-independent code.
+# Source composition.
+#
+# Directories and namespaces describe ownership. They are deliberately not
+# mirrored by static libraries: every terminal program compiles the source it
+# needs as one unity translation unit per language. This avoids repeatedly
+# parsing the mp-units-heavy header graph at artificial library boundaries.
 
-# `moppe/spatial` is header-only, but it is a real dependency boundary:
-# Bundle and the quantity vocabulary expose mp-units values to their users.
-add_library(moppe_spatial INTERFACE)
-target_include_directories(moppe_spatial INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_spatial INTERFACE
-  mp-units::mp-units
-  nanoarrow::nanoarrow)
-
-add_library(moppe_render STATIC
+set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
   moppe/render/text.cc
 )
-target_include_directories(moppe_render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_render PUBLIC mp-units::mp-units)
 
-if(EMSCRIPTEN)
-  add_library(moppe_webgpu STATIC
-    moppe/render/webgpu/webgpu_renderer.cc
-    moppe/render/webgpu/webgpu_renderer.hh
-  )
-  target_include_directories(moppe_webgpu PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_webgpu PUBLIC --use-port=emdawnwebgpu)
-  target_link_options(moppe_webgpu PUBLIC --use-port=emdawnwebgpu)
-  target_link_libraries(moppe_webgpu PUBLIC moppe_render)
-endif()
-
-# Finite terrain generation and analysis.
-add_library(moppe_terrain STATIC
+set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/noise.cc
   moppe/terrain/readings.cc
   moppe/terrain/drainage.cc
@@ -350,41 +326,14 @@ add_library(moppe_terrain STATIC
   moppe/terrain/geological.cc
   moppe/terrain/world_recipe.cc
 )
-target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_terrain PUBLIC moppe_spatial)
-if(MOPPE_ENABLE_TRACY)
-  target_link_libraries(moppe_terrain PUBLIC Tracy::TracyClient)
-endif()
 
-if(APPLE AND NOT MOPPE_IOS)
-  add_library(moppe_terrain_metal STATIC
-    moppe/terrain/metal/metal_stream_power_evolution.mm
-  )
-  target_include_directories(moppe_terrain_metal
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_terrain_metal PRIVATE -fobjc-arc)
-  target_link_libraries(moppe_terrain_metal PUBLIC moppe_terrain
-    "-framework Metal" "-framework Foundation")
-  add_dependencies(moppe_terrain_metal moppe_shaders)
-
-endif()
-
-# Concrete completed-world storage and its finite surface sections.
-add_library(moppe_world STATIC
+set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
   moppe/game/water_capture.cc
 )
-target_include_directories(moppe_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_world PUBLIC moppe_terrain)
-if(MOPPE_ENABLE_TRACY)
-  target_link_libraries(moppe_world PUBLIC Tracy::TracyClient)
-endif()
 
-# Mutable gameplay state is deliberately separate from completed-world
-# construction. Stars and Dust remain here because GameSession owns them;
-# their retained meshes make the current simulation-to-render edge real.
-add_library(moppe_simulation STATIC
+set(MOPPE_SIMULATION_SOURCES
   moppe/mov/glider.cc
   moppe/mov/vehicle.cc
   moppe/game/chase_camera.cc
@@ -393,16 +342,8 @@ add_library(moppe_simulation STATIC
   moppe/game/dust.cc
   moppe/game/walker.cc
 )
-target_include_directories(moppe_simulation
-  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_simulation PUBLIC moppe_world moppe_render)
-if(MOPPE_ENABLE_TRACY)
-  target_link_libraries(moppe_simulation PUBLIC Tracy::TracyClient)
-endif()
 
-# Presentation reads completed worlds and sessions through FrameView. This is
-# distinct from the renderer API and its platform-specific backends.
-add_library(moppe_scene STATIC
+set(MOPPE_SCENE_SOURCES
   moppe/game/graphics_settings.cc
   moppe/game/launch_options.cc
   moppe/game/frame_view.cc
@@ -421,38 +362,83 @@ add_library(moppe_scene STATIC
   moppe/game/forest.cc
   moppe/game/tree_stand.cc
 )
-target_include_directories(moppe_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_scene PUBLIC
-  moppe_simulation
-  moppe_world
-  moppe_render
-  atelier_botany)
-if(MOPPE_ENABLE_TRACY)
-  target_link_libraries(moppe_scene PUBLIC Tracy::TracyClient)
-endif()
 
-# The shared application layer makes concrete platform service calls: loading,
-# terrain presentation, seed memory, and the game shell itself.  Only
-# main.cc stays on each terminal executable, since a host's own graphics
-# defaults are all that varies between them.
-add_library(moppe_app STATIC
+set(MOPPE_ENGINE_SOURCES
+  atelier/tree.cc
+  ${MOPPE_RENDER_SOURCES}
+  ${MOPPE_TERRAIN_SOURCES}
+  ${MOPPE_WORLD_SOURCES}
+  ${MOPPE_SIMULATION_SOURCES}
+  ${MOPPE_SCENE_SOURCES}
+)
+
+set(MOPPE_APPLICATION_SOURCES
   moppe/game/game.cc
   moppe/game/seed_memory.cc
   moppe/game/terrain.cc
   moppe/game/world_loading.cc
 )
-target_include_directories(moppe_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moppe_app PUBLIC moppe_scene)
+
+set(MOPPE_APPLE_COMMON_SOURCES
+  moppe/platform/apple/apple_common.mm
+  moppe/platform/apple/game_controller.mm
+)
+
+set(MOPPE_METAL_RENDER_SOURCES
+  moppe/render/metal/metal_renderer.mm
+)
+
+set(MOPPE_METAL_TERRAIN_SOURCES
+  moppe/terrain/metal/metal_stream_power_evolution.mm
+)
+
+set(MOPPE_WEBGPU_SOURCES
+  moppe/render/webgpu/webgpu_renderer.cc
+  moppe/render/webgpu/webgpu_renderer.hh
+)
+
+function(moppe_configure_code_target target)
+  target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(${target} PRIVATE
+    mp-units::mp-units
+    nanoarrow::nanoarrow)
+  if(MOPPE_ENABLE_TRACY)
+    target_link_libraries(${target} PRIVATE Tracy::TracyClient)
+  endif()
+endfunction()
+
+function(moppe_configure_apple_target target)
+  target_compile_options(${target} PRIVATE
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+  target_link_libraries(${target} PRIVATE
+    "-framework Foundation"
+    "-framework CoreText"
+    "-framework CoreGraphics"
+    "-framework AVFoundation"
+    "-framework GameController")
+endfunction()
+
+function(moppe_configure_metal_target target)
+  target_link_libraries(${target} PRIVATE
+    "-framework Metal"
+    "-framework MetalKit"
+    "-framework QuartzCore"
+    "-framework ImageIO")
+  add_dependencies(${target} moppe_shaders)
+endfunction()
 
 # Developer tools for inspecting and iterating on terrain generation.
 if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
   add_executable(terrain-orogeny-benchmark EXCLUDE_FROM_ALL
     moppe/terrain/orogeny_benchmark.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
   )
-  target_link_libraries(terrain-orogeny-benchmark PRIVATE moppe_world)
-  if(TARGET moppe_terrain_metal)
-    target_link_libraries(terrain-orogeny-benchmark
-      PRIVATE moppe_terrain_metal)
+  moppe_configure_code_target(terrain-orogeny-benchmark)
+  if(APPLE AND NOT MOPPE_IOS)
+    target_sources(terrain-orogeny-benchmark PRIVATE
+      ${MOPPE_METAL_TERRAIN_SOURCES})
+    moppe_configure_metal_target(terrain-orogeny-benchmark)
     target_compile_definitions(terrain-orogeny-benchmark PRIVATE
       MOPPE_OROGENY_METAL_BACKEND=1
       MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
@@ -460,48 +446,18 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
 
   add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
     moppe/terrain/water_depth_experiment.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
   )
-  target_link_libraries(terrain-water-depth-experiment PRIVATE moppe_world)
+  moppe_configure_code_target(terrain-water-depth-experiment)
 endif()
 
-# ---------------------------------------------------------------
-# Apple: Metal backend + platform layers.
-
-if(APPLE)
-  add_library(moppe_metal STATIC
-    moppe/render/metal/metal_renderer.mm
-  )
-  target_include_directories(moppe_metal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_metal PRIVATE -fobjc-arc)
-  target_link_libraries(moppe_metal PUBLIC moppe_render
-    "-framework Metal" "-framework MetalKit" "-framework QuartzCore"
-    "-framework ImageIO")
-  if(MOPPE_ENABLE_TRACY)
-    target_link_libraries(moppe_metal PUBLIC Tracy::TracyClient)
-  endif()
-  add_dependencies(moppe_metal moppe_shaders)
-
-  add_library(moppe_apple STATIC
-    moppe/platform/apple/apple_common.mm
-    moppe/platform/apple/game_controller.mm
-  )
-  target_include_directories(moppe_apple PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_apple PRIVATE -fobjc-arc)
-  target_link_libraries(moppe_apple PUBLIC
-    mp-units::mp-units
-    "-framework Foundation" "-framework CoreText"
-    "-framework CoreGraphics" "-framework AVFoundation"
-    "-framework GameController")
-
-  # The portable text path uses Apple-common asset and glyph services, but
-  # the host event loop stays above the scene target.
-  target_link_libraries(moppe_scene PUBLIC moppe_apple)
-endif()
-
-# Keep the entire portable test suite behind one executable and one unity
-# translation unit.
+# Tests are configured for IDEs and CTest, but excluded from the default build.
+# Asking for moppe-tests compiles the engine and suite together as one unity
+# translation unit per language.
 if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
-  add_executable(moppe-tests
+  add_executable(moppe-tests EXCLUDE_FROM_ALL
+    ${MOPPE_ENGINE_SOURCES}
     tests/test_main.cc
     tests/units_test.cc
     tests/spatial/bundle_test.cc
@@ -535,15 +491,16 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
   )
-  target_link_libraries(moppe-tests PRIVATE moppe_scene)
-  if(TARGET moppe_terrain_metal)
+  moppe_configure_code_target(moppe-tests)
+  if(APPLE)
     target_sources(moppe-tests PRIVATE
+      ${MOPPE_APPLE_COMMON_SOURCES}
+      ${MOPPE_METAL_TERRAIN_SOURCES}
       tests/terrain/metal_stream_power_evolution_test.cc)
-    target_link_libraries(moppe-tests PRIVATE moppe_terrain_metal)
+    moppe_configure_apple_target(moppe-tests)
+    moppe_configure_metal_target(moppe-tests)
     target_compile_definitions(moppe-tests PRIVATE
       MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
-  endif()
-  if(APPLE)
     target_sources(moppe-tests PRIVATE
       atelier/embedding.cc
       atelier/hex_sheet.cc
@@ -552,17 +509,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
       tests/atelier/embedding_test.cc
       tests/atelier/hex_sheet_test.cc
       tests/atelier/tree_test.cc)
-    set_source_files_properties(
-      atelier/embedding.cc
-      atelier/hex_sheet.cc
-      atelier/tree_embedding.cc
-      PROPERTIES
-      SKIP_UNITY_BUILD_INCLUSION ON)
-    # The testable scene reaches the shared Apple asset and glyph services,
-    # but no longer inherits the desktop event-loop target from a broad
-    # unity-built game archive.
-    target_link_libraries(moppe-tests PRIVATE moppe_apple)
-    target_link_libraries(moppe-tests PRIVATE atelier_botany)
   endif()
   add_test(NAME moppe-tests COMMAND moppe-tests)
 endif()
@@ -573,21 +519,19 @@ if(APPLE AND MOPPE_IOS)
   set_source_files_properties(${MOPPE_IOS_ASSETS} PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources)
 
-  add_library(moppe_platform_ios STATIC
-    moppe/platform/ios/main_ios.mm
-  )
-  target_include_directories(moppe_platform_ios
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_platform_ios PRIVATE -fobjc-arc)
-  target_link_libraries(moppe_platform_ios PUBLIC
-    moppe_metal moppe_apple "-framework UIKit")
-  target_link_libraries(moppe_app PUBLIC moppe_platform_ios)
-
   add_executable(moppe-ios MACOSX_BUNDLE
     moppe/game/main.cc
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    ${MOPPE_APPLE_COMMON_SOURCES}
+    ${MOPPE_METAL_RENDER_SOURCES}
+    moppe/platform/ios/main_ios.mm
     ${MOPPE_IOS_ASSETS}
   )
-  target_link_libraries(moppe-ios PRIVATE moppe_app moppe_platform_ios)
+  moppe_configure_code_target(moppe-ios)
+  moppe_configure_apple_target(moppe-ios)
+  moppe_configure_metal_target(moppe-ios)
+  target_link_libraries(moppe-ios PRIVATE "-framework UIKit")
   set_target_properties(moppe-ios PROPERTIES
     OUTPUT_NAME "Moppe"
     XCODE_GENERATE_SCHEME TRUE
@@ -620,22 +564,21 @@ if(APPLE AND MOPPE_IOS)
 endif()
 
 if(APPLE AND MOPPE_TVOS)
-  add_library(moppe_platform_tvos STATIC
-    moppe/platform/tvos/main_tvos.mm
-  )
-  target_include_directories(moppe_platform_tvos
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_platform_tvos PRIVATE -fobjc-arc)
-  target_link_libraries(moppe_platform_tvos PUBLIC
-    moppe_metal moppe_terrain_metal moppe_apple "-framework UIKit")
-  target_link_libraries(moppe_app PUBLIC moppe_platform_tvos)
-
   add_executable(moppe-tvos MACOSX_BUNDLE
     moppe/game/main.cc
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    ${MOPPE_APPLE_COMMON_SOURCES}
+    ${MOPPE_METAL_RENDER_SOURCES}
+    ${MOPPE_METAL_TERRAIN_SOURCES}
+    moppe/platform/tvos/main_tvos.mm
   )
+  moppe_configure_code_target(moppe-tvos)
+  moppe_configure_apple_target(moppe-tvos)
+  moppe_configure_metal_target(moppe-tvos)
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
-  target_link_libraries(moppe-tvos PRIVATE moppe_app moppe_platform_tvos)
+  target_link_libraries(moppe-tvos PRIVATE "-framework UIKit")
   set_target_properties(moppe-tvos PROPERTIES
     OUTPUT_NAME "Moppe"
     XCODE_GENERATE_SCHEME TRUE
@@ -667,29 +610,41 @@ if(APPLE AND MOPPE_TVOS)
 endif()
 
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)
-  add_library(moppe_platform_mac STATIC
-    moppe/platform/mac/main_mac.mm
-  )
-  target_include_directories(moppe_platform_mac
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_platform_mac PRIVATE -fobjc-arc)
-  target_compile_definitions(moppe_platform_mac PRIVATE
-    MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
-  target_link_libraries(moppe_platform_mac PUBLIC
-    moppe_metal moppe_apple moppe_terrain_metal "-framework AppKit")
-  target_link_libraries(moppe_app PUBLIC moppe_platform_mac)
-
   if(MOPPE_BUILD_DEVELOPER_TOOLS)
     # Renderer testbed: spinning solids + HUD shapes, no game.
-    add_executable(moppe-testbed EXCLUDE_FROM_ALL moppe/game/testbed.cc)
-    target_link_libraries(moppe-testbed PRIVATE moppe_platform_mac)
+    add_executable(moppe-testbed EXCLUDE_FROM_ALL
+      moppe/game/testbed.cc
+      ${MOPPE_RENDER_SOURCES}
+      ${MOPPE_TERRAIN_SOURCES}
+      ${MOPPE_APPLE_COMMON_SOURCES}
+      ${MOPPE_METAL_RENDER_SOURCES}
+      ${MOPPE_METAL_TERRAIN_SOURCES}
+      moppe/platform/mac/main_mac.mm)
+    moppe_configure_code_target(moppe-testbed)
+    moppe_configure_apple_target(moppe-testbed)
+    moppe_configure_metal_target(moppe-testbed)
+    target_compile_definitions(moppe-testbed PRIVATE
+      MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
+    target_link_libraries(moppe-testbed PRIVATE "-framework AppKit")
   endif()
 
   # The game, as a proper .app bundle with the assets inside.
   # (Still runnable from a shell: build/moppe.app/Contents/MacOS/moppe,
   # and MOPPE_ASSETS=<repo> overrides asset resolution for dev.)
-  add_executable(moppe MACOSX_BUNDLE moppe/game/main.cc)
-  target_link_libraries(moppe PRIVATE moppe_app moppe_platform_mac)
+  add_executable(moppe MACOSX_BUNDLE
+    moppe/game/main.cc
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    ${MOPPE_APPLE_COMMON_SOURCES}
+    ${MOPPE_METAL_RENDER_SOURCES}
+    ${MOPPE_METAL_TERRAIN_SOURCES}
+    moppe/platform/mac/main_mac.mm)
+  moppe_configure_code_target(moppe)
+  moppe_configure_apple_target(moppe)
+  moppe_configure_metal_target(moppe)
+  target_compile_definitions(moppe PRIVATE
+    MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
+  target_link_libraries(moppe PRIVATE "-framework AppKit")
   set_target_properties(moppe PROPERTIES
     XCODE_GENERATE_SCHEME TRUE
     XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -722,27 +677,20 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
 endif()
 
 if(EMSCRIPTEN)
-  add_library(moppe_platform_web STATIC
-    moppe/platform/web/main_web.cc
-  )
-  target_include_directories(moppe_platform_web
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-  target_compile_options(moppe_platform_web PUBLIC
-    -pthread
-    --use-port=emdawnwebgpu)
-  target_link_options(moppe_platform_web PUBLIC
-    -pthread
-    --use-port=emdawnwebgpu
-    -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency
-    -sALLOW_MEMORY_GROWTH=1
-    -sINITIAL_MEMORY=268435456
-    -sDISABLE_EXCEPTION_CATCHING=0)
-  target_link_libraries(moppe_platform_web PUBLIC
-    moppe_webgpu
-    moppe_terrain)
-  target_link_libraries(moppe_app PUBLIC moppe_platform_web)
+  function(moppe_configure_web_target target)
+    moppe_configure_code_target(${target})
+    target_compile_options(${target} PRIVATE
+      --use-port=emdawnwebgpu)
+    target_link_options(${target} PRIVATE
+      --use-port=emdawnwebgpu
+      -sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency
+      -sALLOW_MEMORY_GROWTH=1
+      -sINITIAL_MEMORY=268435456
+      -sDISABLE_EXCEPTION_CATCHING=0)
+  endfunction()
 
   function(moppe_configure_web_executable target)
+    moppe_configure_web_target(${target})
     set_target_properties(${target} PROPERTIES
       SUFFIX ".html"
       LINK_DEPENDS
@@ -753,18 +701,26 @@ if(EMSCRIPTEN)
       -sASSERTIONS=1)
   endfunction()
 
-  add_executable(moppe-web-testbed moppe/game/testbed.cc)
-  target_link_libraries(moppe-web-testbed PRIVATE moppe_platform_web)
+  add_executable(moppe-web-testbed
+    moppe/game/testbed.cc
+    ${MOPPE_RENDER_SOURCES}
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WEBGPU_SOURCES}
+    moppe/platform/web/main_web.cc)
   moppe_configure_web_executable(moppe-web-testbed)
 
-  add_executable(moppe-web moppe/game/main.cc)
-  target_link_libraries(moppe-web PRIVATE moppe_app moppe_platform_web)
+  add_executable(moppe-web
+    moppe/game/main.cc
+    ${MOPPE_ENGINE_SOURCES}
+    ${MOPPE_APPLICATION_SOURCES}
+    ${MOPPE_WEBGPU_SOURCES}
+    moppe/platform/web/main_web.cc)
   moppe_configure_web_executable(moppe-web)
 endif()
 
-# CMake's Xcode generator normally presents the project target-by-target,
-# which is useful for building but awkward for browsing. Add one read-only
-# source tree and tuck implementation targets into a collapsed folder.
+# CMake's Xcode generator normally presents sources target-by-target, which is
+# useful for building but awkward for browsing. Add one read-only source tree
+# and tuck the shader plumbing into a collapsed folder.
 if(CMAKE_GENERATOR STREQUAL "Xcode")
   set_property(GLOBAL PROPERTY USE_FOLDERS ON)
   file(GLOB_RECURSE MOPPE_XCODE_SOURCES CONFIGURE_DEPENDS
@@ -781,19 +737,8 @@ if(CMAKE_GENERATOR STREQUAL "Xcode")
     FILES ${MOPPE_XCODE_SOURCES})
 
   foreach(target
-      moppe_apple
-      moppe_app
       moppe_bundle_shaders
-      moppe_metal
-      moppe_platform_mac
-      moppe_render
-      moppe_scene
-      moppe_shaders
-      moppe_simulation
-      moppe_spatial
-      moppe_terrain
-      moppe_terrain_metal
-      moppe_world)
+      moppe_shaders)
     if(TARGET ${target})
       set_target_properties(${target} PROPERTIES FOLDER "Build Internals")
     endif()

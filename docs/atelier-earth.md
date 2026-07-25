@@ -185,8 +185,8 @@ Learning, not carrying:
 
 And the merge posture: when an atelier organ (the ground, a future
 hydrology) becomes clearly better than its moppe counterpart, moppe may
-adopt it as a library — the same way it links `atelier_botany` today.
-No flag day, no rewrite-in-place.
+adopt its source directly, as it already does for `atelier/tree.*`. No flag
+day, no rewrite-in-place.
 
 ## The second work: the hexagonal commons
 

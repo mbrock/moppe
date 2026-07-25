@@ -90,20 +90,20 @@ namespace atelier {
                cell.lineage };
     }
 
-    Real unit_hash (std::uint32_t bits) {
+    Real sheet_unit_hash (std::uint32_t bits) {
       return Real (mix_bits (bits) & 0x00ffffffU) / Real (0x01000000U);
     }
 
     Real signed_noise (const HexSite& site) {
       const std::size_t base = base_offset (site.base);
-      return 2.0f * unit_hash (static_cast<std::uint32_t> (131 * base +
-                                                           17 * site.lineage)) -
+      return 2.0f * sheet_unit_hash (static_cast<std::uint32_t> (
+                      131 * base + 17 * site.lineage)) -
              1.0f;
     }
 
     Real material_seed (const HexSite& site) {
       const std::size_t base = base_offset (site.base);
-      return unit_hash (
+      return sheet_unit_hash (
         static_cast<std::uint32_t> (131 * base + 17 * site.lineage + 0x51edU));
     }
 
