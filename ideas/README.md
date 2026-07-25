@@ -27,6 +27,9 @@ committed roadmap.
 - `watersheds-of-execution.md` treats a program as a landscape of possible
   paths, sampled execution as traffic through its catchments, and complexity
   analysis as a kind of computational hydrology.
+- `surrounded.md` looks at the other half of where the player is: niches
+  as tenant, medium, and retainer; what a place affords a given kind of
+  tenant; and being en route rather than anywhere.
 - `computed-together.md` collects the partitions and orderings an
   interacting world needs — components, colourings, topological order,
   iteration — and why terrain and machinery get different ones.
