@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate per-function C++ complexity metrics from a non-unity build."""
+"""Generate per-function C++ complexity metrics from a unity analysis build."""
 
 import argparse
 import concurrent.futures
@@ -12,6 +12,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+
+from analysis_cache import cache_hit, repository_digest
+from analysis_unity import analysis_entries
 
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -48,22 +51,23 @@ def relative(path):
 def configure_analysis_build():
   run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
   cache = (BUILD / "CMakeCache.txt").read_text()
-  if ("MOPPE_UNITY_BUILD:BOOL=OFF" not in cache or
+  if ("MOPPE_UNITY_BUILD:BOOL=ON" not in cache or
       "BUILD_TESTING:BOOL=OFF" not in cache):
     raise SystemExit(
-        "homebrew-llvm must be a non-unity, source-only analysis build; "
+        "homebrew-llvm must be a unity, source-only analysis build; "
         "remove build-homebrew and configure again")
 
 
-def write_metadata(output, sources):
+def write_metadata(output, sources, translation_units):
   metadata = {
       "build_directory": relative(BUILD),
       "configure_preset": "homebrew-llvm",
-      "unity_build": False,
+      "unity_build": True,
       "build_testing": False,
       "source_roots": [relative(root) for root in SOURCE_ROOTS],
       "source_suffixes": list(SOURCE_SUFFIXES),
       "source_count": len(sources),
+      "analysis_translation_unit_count": len(translation_units),
   }
   destination = output.with_name("complexity-metadata.json")
   destination.write_text(json.dumps(metadata, indent=2) + "\n")
@@ -74,6 +78,46 @@ def percentile(values, fraction):
   if not values:
     return 0
   return sorted(values)[round((len(values) - 1) * fraction)]
+
+
+def read_rows(path):
+  with path.open(newline="") as input_file:
+    return [{
+        **row,
+        **{field: int(row[field]) for field in (
+            "line", "nloc", "cyclomatic", "cognitive", "tokens",
+            "parameters", "length")},
+    } for row in csv.DictReader(input_file)]
+
+
+def print_report(rows, output, metadata, top, cached=False):
+  state = "Reused" if cached else "Wrote"
+  print(f"\n{state} {len(rows)} functions in {output}")
+  print("Analyzed moppe/ sources through the unity homebrew-llvm preset")
+  print(f"Build configuration: {BUILD}")
+  print(f"Source metadata: {metadata}")
+  print("\nTop functions")
+  print(f"{'cog':>4} {'cyc':>4} {'nloc':>5}  location  function")
+  ranked = sorted(
+      rows, key=lambda row: (row["cognitive"], row["cyclomatic"]),
+      reverse=True)
+  for row in ranked[:top]:
+    location = f'{row["file"]}:{row["line"]}'
+    print(f'{row["cognitive"]:4} {row["cyclomatic"]:4} '
+          f'{row["nloc"]:5}  {location}  {row["function"]}')
+
+  print("\nModules")
+  print(f"{'functions':>9} {'nloc':>6} {'cog p90':>7} "
+        f"{'cog max':>7}  module")
+  modules = {}
+  for row in rows:
+    modules.setdefault(row["module"], []).append(row)
+  for module, items in sorted(
+      modules.items(), key=lambda pair: -sum(x["nloc"] for x in pair[1])):
+    cognitive_values = [item["cognitive"] for item in items]
+    print(f'{len(items):9} {sum(x["nloc"] for x in items):6} '
+          f'{percentile(cognitive_values, 0.9):7} '
+          f'{max(cognitive_values, default=0):7}  {module}')
 
 
 def main():
@@ -88,7 +132,23 @@ def main():
   parser.add_argument(
       "-j", "--jobs", type=int, default=8,
       help="parallel clang-tidy jobs (default: 8)")
+  parser.add_argument(
+      "--refresh", action="store_true",
+      help="ignore a matching cached report")
   args = parser.parse_args()
+
+  metadata_path = args.output.with_name("complexity-metadata.json")
+  digest = repository_digest(ROOT, [
+      "tools/analysis_cache.py",
+      "tools/analysis_unity.py",
+      "tools/complexity-report",
+  ], {"analysis": "complexity", "version": 3})
+  if (not args.refresh
+      and cache_hit(metadata_path, digest, [args.output])):
+    print_report(
+        read_rows(args.output), args.output, metadata_path, args.top,
+        cached=True)
+    return
 
   if not shutil.which("brew"):
     raise SystemExit("Homebrew is required")
@@ -102,13 +162,13 @@ def main():
 
   configure_analysis_build()
   commands = json.loads((BUILD / "compile_commands.json").read_text())
+  entries = analysis_entries(commands, ROOT, BUILD)
+  translation_units = [pathlib.Path(entry["file"]) for entry in entries]
   sources = sorted({
-      pathlib.Path(entry["file"]).resolve()
-      for entry in commands
-      if any(pathlib.Path(entry["file"]).resolve().is_relative_to(root)
-             for root in SOURCE_ROOTS)
-      and pathlib.Path(entry["file"]).suffix in SOURCE_SUFFIXES
+      ROOT / source for entry in entries for source in entry["_moppe_sources"]
   })
+  if not translation_units or not sources:
+    raise SystemExit("homebrew-llvm did not generate analyzable unity sources")
 
   with tempfile.TemporaryDirectory(prefix="moppe-complexity-") as tmp:
     tmp = pathlib.Path(tmp)
@@ -119,13 +179,15 @@ def main():
     ], cwd=ROOT)
 
     tidy_command = [
-        str(clang_tidy), "-p", str(BUILD),
+        str(clang_tidy), "-p", str(BUILD / "analysis-unity"),
         "-checks=-*,readability-function-cognitive-complexity",
+        f"-header-filter=^{re.escape(str(ROOT / 'moppe'))}/.*",
         "-config={CheckOptions: {readability-function-cognitive-complexity."
         "Threshold: 0, readability-function-cognitive-complexity."
         "DescribeBasicIncrements: false}}"
     ]
-    print(f"+ clang-tidy {len(sources)} original source files", file=sys.stderr)
+    print(f"+ clang-tidy {len(translation_units)} unity translation units "
+          f"covering {len(sources)} original source files", file=sys.stderr)
 
     def analyze(source):
       return subprocess.run(
@@ -133,7 +195,7 @@ def main():
           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-      tidy_results = list(pool.map(analyze, sources))
+      tidy_results = list(pool.map(analyze, translation_units))
     tidy_output = "\n".join(result.stdout for result in tidy_results)
     errors = [line for line in tidy_output.splitlines() if "error:" in line]
     if errors:
@@ -175,33 +237,11 @@ def main():
     writer.writeheader()
     writer.writerows(rows)
 
-  metadata = write_metadata(args.output, sources)
-  print(f"\nWrote {len(rows)} functions to {args.output}")
-  print("Analyzed moppe/ sources with the non-unity homebrew-llvm preset")
-  print(f"Build configuration: {BUILD}")
-  print(f"Source metadata: {metadata}")
-  print("\nTop functions")
-  print(f"{'cog':>4} {'cyc':>4} {'nloc':>5}  location  function")
-  ranked = sorted(
-      rows, key=lambda row: (row["cognitive"], row["cyclomatic"]),
-      reverse=True)
-  for row in ranked[:args.top]:
-    location = f'{row["file"]}:{row["line"]}'
-    print(f'{row["cognitive"]:4} {row["cyclomatic"]:4} '
-          f'{row["nloc"]:5}  {location}  {row["function"]}')
-
-  print("\nModules")
-  print(f"{'functions':>9} {'nloc':>6} {'cog p90':>7} "
-        f"{'cog max':>7}  module")
-  modules = {}
-  for row in rows:
-    modules.setdefault(row["module"], []).append(row)
-  for module, items in sorted(
-      modules.items(), key=lambda pair: -sum(x["nloc"] for x in pair[1])):
-    cognitive_values = [item["cognitive"] for item in items]
-    print(f'{len(items):9} {sum(x["nloc"] for x in items):6} '
-          f'{percentile(cognitive_values, 0.9):7} '
-          f'{max(cognitive_values, default=0):7}  {module}')
+  metadata = write_metadata(args.output, sources, translation_units)
+  metadata_values = json.loads(metadata.read_text())
+  metadata_values["input_digest"] = digest
+  metadata.write_text(json.dumps(metadata_values, indent=2) + "\n")
+  print_report(rows, args.output, metadata, args.top)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,8 @@ TOOL_FILES = [
     ".gitignore",
     "CMakePresets.json",
     "cmake/toolchains/homebrew-llvm.cmake",
+    "tools/analysis_cache.py",
+    "tools/analysis_unity.py",
     "tools/callgraph-analyze",
     "tools/callgraph-report",
     "tools/callgraph_analyze.py",
