@@ -1,11 +1,11 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/profile.hh>
-#include <moppe/terrain/river.hh>
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace moppe::map {
   namespace {
@@ -98,67 +98,11 @@ namespace moppe::map {
     populate_snow_support (m_geometry, *this);
   }
 
-  SurfaceReadings& Surface::ensure_readings () {
-    if (!m_readings)
-      m_readings.emplace (domain ());
-    return *m_readings;
-  }
-
-  void Surface::set_use (terrain::TrailUseMap use) {
-    if (use.domain () != domain ())
+  void Surface::set_readings (SurfaceReadings readings) {
+    if (readings.domain () != domain ())
       throw std::invalid_argument (
-        "surface use does not share the terrain domain");
-    SurfaceReadings& target = ensure_readings ();
-    spatial::get<trail_influence> (target) =
-      std::move (spatial::get<trail_influence> (use));
-    spatial::get<home_base_influence> (target) =
-      std::move (spatial::get<home_base_influence> (use));
-  }
-
-  void Surface::set_moisture (terrain::MoistureMap moisture) {
-    if (moisture.domain () != domain ())
-      throw std::invalid_argument (
-        "surface moisture does not share the terrain domain");
-    spatial::get<surface_moisture> (ensure_readings ()) =
-      std::move (spatial::get<surface_moisture> (moisture));
-  }
-
-  void Surface::set_waterline_distance (terrain::WaterlineProximity distance) {
-    if (distance.domain () != domain ())
-      throw std::invalid_argument (
-        "surface waterline does not share the terrain domain");
-    spatial::get<waterline_distance> (ensure_readings ()) =
-      std::move (spatial::get<waterline_distance> (distance));
-  }
-
-  void
-  Surface::derive_channel_flux (const terrain::FractionalDrainage& channels) {
-    const auto& tangents = spatial::get<terrain::channel_tangent> (channels);
-    const auto& areas =
-      spatial::get<terrain::fractional_contributing_area> (channels);
-    const terrain::TerrainDomain& grid = channels.domain ().terrain_domain ();
-    const terrain::TerrainDomain& domain = this->domain ();
-    if (grid.width () != domain.width () || grid.height () != domain.height ())
-      throw std::invalid_argument (
-        "Channel analysis does not share the surface lattice");
-    // Activity compresses contributing area logarithmically onto 0..1:
-    // hillslope cells fade out and anything carrying river-scale drainage
-    // saturates.
-    const float floor_area_m2 = 4.0f * square_meters_value (grid.cell_area ());
-    const float channel_area_m2 =
-      square_meters_value (terrain::visible_river_minimum_area (grid));
-    const float activity_span =
-      std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
-    auto& column = spatial::get<channel_flux> (ensure_readings ());
-    for (std::size_t offset = 0; offset < domain.size (); ++offset) {
-      const float area_m2 = areas[offset].numerical_value_in (u::m * u::m);
-      const float activity = std::clamp (
-        std::log (std::max (area_m2 / floor_area_m2, 1e-6f)) / activity_span,
-        0.0f,
-        1.0f);
-      column[offset] = tangents[offset].numerical_value_in (one) * activity *
-                       channel_flux[one];
-    }
+        "surface readings do not share the terrain domain");
+    m_readings.emplace (std::move (readings));
   }
 
   SurfaceElevation Surface::elevation_at (const position_t& position) const {

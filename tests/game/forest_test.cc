@@ -1,36 +1,11 @@
 #include <moppe/game/forest.hh>
 #include <moppe/map/surface.hh>
-#include <moppe/terrain/moisture.hh>
-#include <moppe/terrain/trail.hh>
 
+#include <tests/surface_fixture.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
 #include <vector>
-
-namespace {
-  moppe::terrain::MoistureMap
-  forest_moisture (const moppe::map::Surface& surface, float value) {
-    const auto& domain = surface.domain ();
-    return moppe::terrain::MoistureMap (
-      domain,
-      std::vector<moppe::terrain::SurfaceMoisture> (
-        domain.size (),
-        value * moppe::terrain::surface_moisture[mp_units::one]));
-  }
-
-  moppe::terrain::TrailUseMap
-  forest_home_base (const moppe::map::Surface& surface, float value) {
-    const auto& domain = surface.domain ();
-    return moppe::terrain::TrailUseMap (
-      domain,
-      std::vector<moppe::terrain::TrailInfluence> (
-        domain.size (), 0.0f * moppe::terrain::trail_influence[mp_units::one]),
-      std::vector<moppe::terrain::HomeBaseInfluence> (
-        domain.size (),
-        value * moppe::terrain::home_base_influence[mp_units::one]));
-  }
-}
 
 MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   using namespace moppe;
@@ -39,9 +14,10 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (forest_moisture (surface, 0.48f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (0xdecafbadU);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .seed = 0xdecafbadU }));
 
   const game::ForestPlan first =
     game::plan_global_forest (surface, 0xa511e9b3U);
@@ -66,10 +42,11 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (forest_moisture (surface, 0.48f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.set_use (forest_home_base (surface, 1.0f));
-  surface.derive_forest_cover (0xfeed1234U);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .use = test::uniform_use (surface.domain (), 0.0f, 1.0f),
+      .seed = 0xfeed1234U }));
 
   MOPPE_CHECK (game::plan_global_forest (surface, 0x31415926U).sites.empty ());
 }

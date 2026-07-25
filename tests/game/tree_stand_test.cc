@@ -1,23 +1,11 @@
 #include <moppe/game/tree_stand.hh>
 #include <moppe/map/surface.hh>
-#include <moppe/terrain/moisture.hh>
 
+#include <tests/surface_fixture.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
 #include <vector>
-
-namespace {
-  moppe::terrain::MoistureMap
-  tree_stand_moisture (const moppe::map::Surface& surface, float value) {
-    const auto& domain = surface.domain ();
-    return moppe::terrain::MoistureMap (
-      domain,
-      std::vector<moppe::terrain::SurfaceMoisture> (
-        domain.size (),
-        value * moppe::terrain::surface_moisture[mp_units::one]));
-  }
-}
 
 MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   using namespace moppe;
@@ -26,9 +14,10 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (tree_stand_moisture (surface, 0.48f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (1234);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .seed = 1234 }));
 
   const game::TreeGrove grove = game::plan_tree_grove (surface, 1234, 9);
   MOPPE_CHECK (grove.sites.size () == 9);
@@ -50,9 +39,10 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (tree_stand_moisture (surface, 0.48f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (4567);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .seed = 4567 }));
 
   const game::TreeGrove first = game::plan_tree_grove (surface, 4567, 7);
   const game::TreeGrove second = game::plan_tree_grove (surface, 4567, 7);
@@ -75,9 +65,10 @@ MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (tree_stand_moisture (surface, 0.48f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (6789);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .seed = 6789 }));
 
   const game::TreeGrove forest =
     game::plan_tree_grove (surface, 6789, 24, Vec3 (320, 0, 320));
@@ -104,9 +95,10 @@ MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.set_moisture (tree_stand_moisture (surface, 1.0f));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (8910);
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 1.0f),
+      .seed = 8910 }));
 
   MOPPE_CHECK (game::plan_tree_grove (surface, 8910, 4).sites.empty ());
 }

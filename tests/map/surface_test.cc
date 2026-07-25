@@ -1,11 +1,10 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
-#include <moppe/terrain/moisture.hh>
-#include <moppe/terrain/trail.hh>
-#include <moppe/terrain/waterline.hh>
+#include <moppe/map/surface_readings.hh>
 
 #include <tests/recording_renderer.hh>
+#include <tests/surface_fixture.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
@@ -30,45 +29,6 @@ namespace {
     MOPPE_CHECK_NEAR (actual[2], expected[2], tolerance);
   }
 
-  moppe::terrain::MoistureMap
-  moisture_map (const moppe::terrain::TerrainDomain& domain,
-                std::span<const float> samples) {
-    std::vector<moppe::terrain::SurfaceMoisture> values;
-    values.reserve (samples.size ());
-    for (float sample : samples)
-      values.push_back (sample *
-                        moppe::terrain::surface_moisture[mp_units::one]);
-    return moppe::terrain::MoistureMap (domain, std::move (values));
-  }
-
-  moppe::terrain::WaterlineProximity
-  waterline_map (const moppe::terrain::TerrainDomain& domain,
-                 std::span<const float> samples) {
-    std::vector<moppe::terrain::WaterlineDistance> values;
-    values.reserve (samples.size ());
-    for (float sample : samples)
-      values.push_back (sample *
-                        moppe::terrain::waterline_distance[moppe::u::m]);
-    return moppe::terrain::WaterlineProximity (domain, std::move (values));
-  }
-
-  moppe::terrain::TrailUseMap
-  trail_use_map (const moppe::terrain::TerrainDomain& domain,
-                 std::span<const float> trails,
-                 std::span<const float> home_base) {
-    std::vector<moppe::terrain::TrailInfluence> trail_values;
-    std::vector<moppe::terrain::HomeBaseInfluence> home_values;
-    trail_values.reserve (trails.size ());
-    home_values.reserve (home_base.size ());
-    for (float value : trails)
-      trail_values.push_back (value *
-                              moppe::terrain::trail_influence[mp_units::one]);
-    for (float value : home_base)
-      home_values.push_back (
-        value * moppe::terrain::home_base_influence[mp_units::one]);
-    return moppe::terrain::TrailUseMap (
-      domain, std::move (trail_values), std::move (home_values));
-  }
 }
 
 MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
@@ -151,7 +111,9 @@ MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   const std::array trail {
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
   };
-  surface.set_use (trail_use_map (surface.domain (), trail, influence));
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .use = test::trail_use_map (surface.domain (), trail, influence) }));
   const map::SurfaceReadings* use = surface.readings ();
   MOPPE_CHECK (use);
   MOPPE_CHECK (spatial::sample<map::home_base_influence> (
@@ -174,7 +136,9 @@ MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   const std::array home {
     0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
   };
-  surface.set_use (trail_use_map (surface.domain (), influence, home));
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .use = test::trail_use_map (surface.domain (), influence, home) }));
   const map::SurfaceReadings& use = *surface.readings ();
   MOPPE_CHECK (
     spatial::sample<map::trail_influence> (use, position (Vec3 (10, 0, 10))) ==
@@ -195,15 +159,15 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   map::Surface& surface = map;
 
   std::vector<float> moisture (25, 0.48f);
-  surface.set_moisture (moisture_map (surface.domain (), moisture));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
+  surface.set_readings (test::complete_readings (
+    surface, { .moisture = test::moisture_map (surface.domain (), moisture) }));
   const position_t center = position (Vec3 (20, 0, 20));
   MOPPE_CHECK (surface.tree_habitat_at (center) >
                0.8f * map::tree_habitat[one]);
 
   std::fill (moisture.begin (), moisture.end (), 1.0f);
-  surface.set_moisture (moisture_map (surface.domain (), moisture));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
+  surface.set_readings (test::complete_readings (
+    surface, { .moisture = test::moisture_map (surface.domain (), moisture) }));
   MOPPE_CHECK (surface.tree_habitat_at (center) <
                0.4f * map::tree_habitat[one]);
 }
@@ -214,15 +178,18 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   map.fill_elevation (moppe::terrain::surface_elevation_point (
     (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
-  map::Surface& surface = map;
-  const std::vector<float> moisture (65 * 65, 0.48f);
-  surface.set_moisture (moisture_map (surface.domain (), moisture));
-  surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
-  surface.derive_forest_cover (0x12345678U);
+  const terrain::TerrainDomain& domain = map.domain ();
+  const map::TreeHabitatMap habitat =
+    map::analyze_tree_habitat (map.geometry (),
+                               test::uniform_moisture (domain, 0.48f),
+                               50.0f * u::m,
+                               160.0f * u::m);
+  const terrain::TrailUseMap untravelled =
+    test::uniform_use (domain, 0.0f, 0.0f);
 
-  const map::SurfaceReadings* first_sections = surface.readings ();
-  MOPPE_CHECK (first_sections);
-  const auto& first = spatial::get<map::forest_cover> (*first_sections);
+  const map::ForestCoverMap covered =
+    map::analyze_forest_cover (habitat, untravelled, 0x12345678U);
+  const auto& first = spatial::get<map::forest_cover> (covered);
   std::vector<float> values;
   values.reserve (first.size ());
   for (const map::ForestCover value : first)
@@ -230,21 +197,16 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   MOPPE_CHECK (*std::ranges::max_element (values) > 0.65f);
   MOPPE_CHECK (*std::ranges::min_element (values) < 0.05f);
 
-  surface.derive_forest_cover (0x12345678U);
-  const map::SurfaceReadings* repeated_sections = surface.readings ();
-  MOPPE_CHECK (repeated_sections);
-  const auto& repeated = spatial::get<map::forest_cover> (*repeated_sections);
+  const map::ForestCoverMap again =
+    map::analyze_forest_cover (habitat, untravelled, 0x12345678U);
+  const auto& repeated = spatial::get<map::forest_cover> (again);
   for (std::size_t offset = 0; offset < values.size (); ++offset)
     MOPPE_CHECK_NEAR (
       values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
 
-  const std::vector<float> no_trail (65 * 65, 0.0f);
-  const std::vector<float> home_base (65 * 65, 1.0f);
-  surface.set_use (trail_use_map (surface.domain (), no_trail, home_base));
-  surface.derive_forest_cover (0x12345678U);
-  const map::SurfaceReadings* cleared_sections = surface.readings ();
-  MOPPE_CHECK (cleared_sections);
-  const auto& cleared = spatial::get<map::forest_cover> (*cleared_sections);
+  const map::ForestCoverMap settled = map::analyze_forest_cover (
+    habitat, test::uniform_use (domain, 0.0f, 1.0f), 0x12345678U);
+  const auto& cleared = spatial::get<map::forest_cover> (settled);
   MOPPE_CHECK (std::ranges::all_of (cleared, [] (map::ForestCover value) {
     return value == 0.0f * map::forest_cover[one];
   }));
@@ -335,7 +297,8 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   std::vector<float> home (9, 0.0f);
   trail[4] = 0.75f;
   home[4] = 0.25f;
-  surface.set_use (trail_use_map (surface.domain (), trail, home));
+  surface.set_readings (test::complete_readings (
+    surface, { .use = test::trail_use_map (surface.domain (), trail, home) }));
   MOPPE_CHECK (surface.readings ());
 
   game::SurfacePresentation presentation;
@@ -371,15 +334,16 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   deposited[4] = 3.0f;
   deposited[5] = 6.0f;
 
-  surface.set_moisture (moisture_map (surface.domain (), moisture));
-  surface.set_waterline_distance (waterline_map (surface.domain (), distance));
   for (std::size_t cell = 0; cell < eroded.size (); ++cell) {
     const int column = static_cast<int> (cell % 3);
     const int row = static_cast<int> (cell / 3);
     surface.record_material_change (column, row, -eroded[cell]);
     surface.record_material_change (column, row, deposited[cell]);
   }
-  surface.derive_geology_materials ();
+  surface.set_readings (test::complete_readings (
+    surface,
+    { .moisture = test::moisture_map (surface.domain (), moisture),
+      .waterline = test::waterline_map (surface.domain (), distance) }));
 
   static_assert (
     mp_units::QuantityOf<map::SurfaceMoisture, map::surface_moisture>);
