@@ -326,15 +326,10 @@ micro-normal, pebble, and snow-specular frequencies as they become subpixel,
 including nearby ground viewed almost parallel to its surface. These are
 shading effects only and do not alter collision geometry.
 
-The pointwise terrain algebra now lowers to a Metal 4 function-stitching graph
-and runs in a compute kernel. Terrain Lab writes the result into the
-authoritative typed elevation column before erosion and texture upload.
-Interactive previews derive normals from the height texture, reuse
-terrain GPU resources, and morph old and new height textures over 120 ms.
-They restore exact CPU normals when leaving the lab.
-The next renderer boundary is to keep pointwise results GPU-resident through
-global normalization and rendering. Orogeny remains a separate iterative
-problem rather than part of the pointwise graph.
+Terrain generation writes directly into the authoritative typed elevation
+column before texture upload. The renderer receives physical metre-valued
+elevations and normals from the completed surface; it does not execute a
+terrain expression graph or own an interactive generation preview.
 
 ## Other shader ports
 
@@ -372,12 +367,8 @@ problem rather than part of the pointwise graph.
 
 The gameplay technique is one ortho depth render of the terrain from the fixed
 sun, 4096² Depth16, hardware PCF via compare sampler, and a 5-tap weighted
-kernel with slope-scaled bias in the terrain shader. The Terrain Lab uses an
-explicit preview quality: 1024² at source stride 2. Lab shadow maps are
-double-buffered and their visibility results crossfade on the same 120 ms
-clock as heightfield transitions, so a lowering mountain never receives the
-stale shadow of its old geometry. `MOPPE_PROFILE_SHADOW=1` prints the GPU time
-for the pass.
+kernel with slope-scaled bias in the terrain shader.
+`MOPPE_PROFILE_SHADOW=1` prints the GPU time for the pass.
 
 On macOS the Metal performance HUD is disabled by default; set
 `MOPPE_METAL_HUD=1` when its frame rate, GPU time, and resource-memory readouts

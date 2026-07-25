@@ -1,6 +1,5 @@
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_evaluator.hh>
-#include <moppe/terrain/program.hh>
+#include <moppe/map/terrain_generation.hh>
 #ifdef MOPPE_OROGENY_METAL_BACKEND
 #include <moppe/terrain/metal/metal_stream_power_evolution.hh>
 #endif
@@ -119,11 +118,12 @@ int main (int argc, char** argv) {
     if (resolution < 3)
       throw std::invalid_argument ("size must be at least three");
 
-    TerrainProgram program = make_orogeny_program (
-      static_cast<std::uint32_t> (seed), TerrainGenerationProfile::Research);
-    auto& orogeny = std::get<OrogenyEvolution> (program.transforms.front ());
-    orogeny.evolution.duration =
-      static_cast<float> (steps) * orogeny.evolution.time_step;
+    StreamPowerEvolution evolution;
+    evolution.diffusivity = 0.0001f * mp_units::si::metre *
+                            mp_units::si::metre /
+                            mp_units::astronomy::Julian_year;
+    evolution.duration = static_cast<float> (steps) * evolution.time_step;
+    const Seed terrain_seed { static_cast<std::uint32_t> (seed) };
 
     std::unique_ptr<StreamPowerEvolutionBackend> backend;
     if (backend_id == "metal") {
@@ -141,9 +141,9 @@ int main (int argc, char** argv) {
     if (backend) {
       map::Surface reference_map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
-      map::TerrainEvaluator reference_evaluator (reference_map);
-      reference_evaluator.begin (program);
-      reference_evaluator.apply (program.transforms.front ());
+      const auto uplift =
+        map::initialize_terrain (reference_map, terrain_seed, 50.0f * u::m);
+      map::evolve_terrain (reference_map, uplift, evolution);
       reference_heights =
         moppe::spatial::get<moppe::terrain::surface_elevation> (
           reference_map.geometry ());
@@ -159,16 +159,14 @@ int main (int argc, char** argv) {
     for (int repeat = 0; repeat < repeats; ++repeat) {
       map::Surface map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
-      map::TerrainEvaluator evaluator (map, backend.get ());
-      evaluator.begin (program);
+      const auto uplift =
+        map::initialize_terrain (map, terrain_seed, 50.0f * u::m);
       const auto start = std::chrono::steady_clock::now ();
-      const TerrainTransformReport transform_report =
-        evaluator.apply (program.transforms.front ());
+      const StreamPowerEvolutionReport report =
+        map::evolve_terrain (map, uplift, evolution, backend.get ());
       const auto stop = std::chrono::steady_clock::now ();
       const double elapsed_ms =
         std::chrono::duration<double, std::milli> (stop - start).count ();
-      const auto& report =
-        std::get<StreamPowerEvolutionReport> (transform_report);
       const HeightDifference difference =
         reference_heights.empty () ? HeightDifference {}
                                    : height_difference (map, reference_heights);

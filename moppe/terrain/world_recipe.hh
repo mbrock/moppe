@@ -3,12 +3,17 @@
 
 #include <moppe/gfx/math.hh>
 #include <moppe/quantities.hh>
-#include <moppe/terrain/program.hh>
+#include <moppe/terrain/stream_power_evolution.hh>
+#include <moppe/terrain/trail.hh>
+
+#include <string_view>
 
 namespace moppe::terrain {
-  // The complete immutable input to terrain construction.  It binds the
-  // physical world to the normalized terrain program, so every consumer sees
-  // the same extent, water datum, seed, and generation profile.
+  enum class TerrainGenerationProfile { Fast, Play, Research };
+
+  std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
+
+  // The complete immutable input to construction of one physical world.
   class WorldRecipe {
   public:
     const spatial_extent_t& extent () const noexcept {
@@ -31,13 +36,13 @@ namespace moppe::terrain {
       return m_generation_profile;
     }
 
-    const TerrainProgram& terrain_program () const noexcept {
-      return m_terrain_program;
+    const StreamPowerEvolution& evolution () const noexcept {
+      return m_evolution;
     }
 
-    // Program editors make a new recipe for an altered program rather than
-    // mutating the value that described the generated world.
-    WorldRecipe with_terrain_program (TerrainProgram program) const;
+    const TrailFormation& trail_formation () const noexcept {
+      return m_trail_formation;
+    }
 
   private:
     friend WorldRecipe
@@ -50,18 +55,17 @@ namespace moppe::terrain {
                  int resolution,
                  Seed seed,
                  meters_t water_datum,
-                 TerrainGenerationProfile generation_profile,
-                 TerrainProgram terrain_program);
+                 TerrainGenerationProfile generation_profile);
 
     spatial_extent_t m_extent;
     int m_resolution;
     Seed m_seed;
     meters_t m_water_datum;
     TerrainGenerationProfile m_generation_profile;
-    TerrainProgram m_terrain_program;
+    StreamPowerEvolution m_evolution;
+    TrailFormation m_trail_formation;
   };
 
-  // Build the canonical orogeny-and-trails program for a physical world.
   WorldRecipe make_world_recipe (spatial_extent_t extent,
                                  int resolution,
                                  Seed seed,

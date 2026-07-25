@@ -333,8 +333,6 @@ add_library(moppe_terrain STATIC
   moppe/terrain/moisture.cc
   moppe/terrain/watercourse.cc
   moppe/terrain/geological.cc
-  moppe/terrain/editor.cc
-  moppe/terrain/program.cc
   moppe/terrain/world_recipe.cc
 )
 target_include_directories(moppe_terrain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -356,17 +354,15 @@ if(APPLE AND NOT MOPPE_IOS)
 
 endif()
 
-# Concrete completed-world storage, its finite surface sections, and the
-# renderer-free Terrain Lab model all sit above the reusable terrain programs.
+# Concrete completed-world storage and its finite surface sections.
 add_library(moppe_world STATIC
   moppe/map/surface_geometry.cc
   moppe/map/surface.cc
   moppe/map/surface_ecology.cc
   moppe/map/surface_materials.cc
   moppe/map/water_surface.cc
-  moppe/map/terrain_evaluator.cc
+  moppe/map/terrain_generation.cc
   moppe/game/generated_world.cc
-  moppe/game/terrain_lab_model.cc
   moppe/game/water_capture.cc
 )
 target_include_directories(moppe_world PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -427,14 +423,13 @@ if(MOPPE_ENABLE_TRACY)
 endif()
 
 # The shared application layer makes concrete platform service calls: loading,
-# the two presentation systems, seed memory, and the game shell itself.  Only
+# terrain presentation, seed memory, and the game shell itself.  Only
 # main.cc stays on each terminal executable, since a host's own graphics
 # defaults are all that varies between them.
 add_library(moppe_app STATIC
   moppe/game/game.cc
   moppe/game/seed_memory.cc
   moppe/game/terrain.cc
-  moppe/game/terrain_lab.cc
   moppe/game/world_loading.cc
 )
 target_include_directories(moppe_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -502,7 +497,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/units_test.cc
     tests/spatial/bundle_test.cc
     tests/terrain/geological_test.cc
-    tests/terrain/program_test.cc
     tests/terrain/world_recipe_test.cc
     tests/terrain/readings_test.cc
     tests/terrain/drainage_test.cc
@@ -522,7 +516,6 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/launch_options_test.cc
     tests/game/inspector_ui_test.cc
     tests/game/generated_world_test.cc
-    tests/game/terrain_lab_model_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc
     tests/game/forest_test.cc
@@ -530,7 +523,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/cinematic_flight_test.cc
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc
-    tests/map/terrain_evaluator_test.cc
+    tests/map/terrain_generation_test.cc
   )
   target_link_libraries(moppe-tests PRIVATE moppe_scene)
   if(TARGET moppe_terrain_metal)

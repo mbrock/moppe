@@ -18,12 +18,10 @@
     and reduce wing loading; otherwise touching down folds the wing and
     continues on the bike. On iOS, the mount/dismount corner deploys the wing
     while airborne and drops the attached bike while gliding.
-  - Modes: `--terrain-lab`, `--fullscreen`, `--windowed`,
+  - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
-  - Fast deterministic UI capture: `make terrain-lab-shot` (writes
-    `terrain-lab.png`), or `tools/capture-terrain-lab /tmp/lab.png`.
   - Deterministic opening-cinematic video:
     `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
@@ -75,8 +73,8 @@
   `docs/game-state.md` for the checkpoint boundary and remaining systems.
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
-- `moppe/terrain/` owns direct finite geological generation, recipe and
-  pipeline values, terrain evolution, and hydrology analyses; see
+- `moppe/terrain/` owns finite terrain algorithms and typed analysis values;
+  direct world construction lives in `moppe/map/terrain_generation.*`; see
   `docs/terrain-expressions.md`.
 - `moppe/spatial/` contains finite typed quantity bundles and generic local or
   interpolated sampling operations. `moppe/map/surface*` materializes typed

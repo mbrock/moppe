@@ -1,13 +1,11 @@
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_evaluator.hh>
+#include <moppe/map/terrain_generation.hh>
 #include <moppe/terrain/world_recipe.hh>
 
 #include <tests/test.hh>
 
 #include <cmath>
-#include <variant>
-
-MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
+MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   using namespace moppe;
   using namespace moppe::terrain;
 
@@ -21,25 +19,20 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
   MOPPE_CHECK (recipe.resolution () == 33);
   MOPPE_CHECK (recipe.seed () == Seed { 77 });
   MOPPE_CHECK (recipe.generation_profile () == TerrainGenerationProfile::Fast);
-  const TerrainProgram& program = recipe.terrain_program ();
-  MOPPE_CHECK (program.seed == recipe.seed ());
-  MOPPE_CHECK_NEAR (program.source.sea_level, 50.0f, 0.0f);
-  const auto& orogeny =
-    std::get<OrogenyEvolution> (program.transforms.front ());
-  const auto& trails = std::get<TrailFormation> (program.transforms.back ());
-  MOPPE_CHECK_NEAR (orogeny.evolution.sea_level, 50.0f, 0.0f);
-  MOPPE_CHECK_NEAR (trails.sea_level, 50.0f, 0.0f);
-
-  TerrainProgram edited_program = program;
-  edited_program.source.sea_level = 0.25f;
-  const WorldRecipe edited = recipe.with_terrain_program (edited_program);
-  MOPPE_CHECK_NEAR (recipe.terrain_program ().source.sea_level, 50.0f, 0.0f);
-  MOPPE_CHECK_NEAR (edited.terrain_program ().source.sea_level, 0.25f, 0.0f);
+  MOPPE_CHECK_NEAR (recipe.evolution ().sea_level, 50.0f, 0.0f);
+  MOPPE_CHECK_NEAR (recipe.trail_formation ().sea_level, 50.0f, 0.0f);
+  MOPPE_CHECK (recipe.evolution ().duration ==
+               750000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (recipe.evolution ().diffusivity ==
+               0.0001f * mp_units::si::metre * mp_units::si::metre /
+                 mp_units::astronomy::Julian_year);
 
   map::Surface map (recipe.resolution (),
                     recipe.resolution (),
                     extent_value (recipe.extent ()));
-  map::TerrainEvaluator (map).evaluate (recipe.terrain_program ());
+  const auto uplift =
+    map::initialize_terrain (map, recipe.seed (), recipe.water_datum ());
+  map::evolve_terrain (map, uplift, recipe.evolution ());
   MOPPE_CHECK (
     std::isfinite (surface_elevation_value (map.elevation_at (0, 0))));
 }

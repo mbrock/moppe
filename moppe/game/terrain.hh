@@ -19,14 +19,10 @@ namespace moppe {
       // Uploads heights/normals and the splat textures; call again
       // after the surface changes (e.g. city baking).  Takes the
       // Surface owns the typed elevation and normal columns uploaded here.
-      void setup (
-        render::Renderer& r,
-        const map::Surface& map,
-        const WorldParams& world,
-        const GraphicsSettings& graphics,
-        render::TerrainProjection projection = render::TerrainProjection::Plane,
-        bool repeat_periodically = true,
-        bool interactive_preview = false);
+      void setup (render::Renderer& r,
+                  const map::Surface& map,
+                  const WorldParams& world,
+                  const GraphicsSettings& graphics);
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
@@ -54,8 +50,6 @@ namespace moppe {
       Vec3 m_scale;
       Vec3 m_period;
       float m_lod_scale = 1;
-      bool m_repeat_periodically = true;
-      render::TerrainProjection m_projection = render::TerrainProjection::Plane;
       render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
       bool m_textures_loaded = false;
     };

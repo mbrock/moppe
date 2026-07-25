@@ -12,7 +12,7 @@
   presentation bridge.
 - `refactoring-seams.md` — characterization contracts for surface,
   replay, completed-world loading, and target ownership.
-- `terrain-expressions.md` — terrain program and evaluator design.
+- `terrain-expressions.md` — direct terrain generation and analysis design.
 - `trails.md` — leisure-circuit planning, grading, materials, and consumers.
 - `units.md` — scientific quantities, unit conventions, and simulation scale.
 - `working-practices.md` — development and verification practices.

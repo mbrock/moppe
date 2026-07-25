@@ -31,7 +31,6 @@
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
-#include <moppe/game/terrain_lab.hh>
 #include <moppe/game/tree_stand.hh>
 #include <moppe/game/vehicle_render.hh>
 #include <moppe/game/walker_render.hh>
@@ -84,9 +83,8 @@ namespace moppe {
             m_loading (this->recipe ()), m_graphics (options.graphics),
             m_spawn_position (
               position_value (this->world ().spawn_position ())),
-            m_renderer (0),
-            m_start_in_terrain_lab (options.start_in_terrain_lab),
-            m_tree_demo (options.tree_demo), m_tree_count (options.tree_count),
+            m_renderer (0), m_tree_demo (options.tree_demo),
+            m_tree_count (options.tree_count),
             m_screenshot_path (options.screenshot_path),
             m_water_shot (options.water_shot), m_screenshot_frames (0),
             m_ready (false), m_benchmark (options.benchmark),
@@ -114,10 +112,6 @@ namespace moppe {
         {
           MOPPE_PROFILE_ZONE ("startup.load_game_ui");
           m_game_ui.load (r);
-        }
-        {
-          MOPPE_PROFILE_ZONE ("startup.load_terrain_lab");
-          m_terrain_lab.load (r);
         }
         {
           MOPPE_PROFILE_ZONE ("startup.load_loading_font");
@@ -497,11 +491,6 @@ namespace moppe {
         if (!completed)
           throw std::logic_error ("no completed world to activate");
 
-        // The Lab stores raw borrows into the live world.  Let it restore and
-        // release them before the outgoing owner is allowed to retire.
-        if (m_terrain_lab.active ())
-          m_terrain_lab.leave ();
-
         // Keep the outgoing session and world alive until the new session has
         // bound to the completed world. The session owns every direct
         // terrain/surface borrower, so it must retire before its old world.
@@ -677,19 +666,8 @@ namespace moppe {
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
           m_water_shot.has_value () || m_tree_demo || ::getenv ("MOPPE_DEMO");
-        if (m_start_in_terrain_lab) {
-          m_terrain_lab.enter (r,
-                               generated_world ().surface (),
-                               m_terrain,
-                               world (),
-                               m_graphics,
-                               recipe (),
-                               m_surface_presentation.trails (),
-                               m_surface_presentation.home_base (),
-                               sun_direction_for (m_graphics.sun_height));
-          m_start_in_terrain_lab = false;
-        } else if (!automated && !m_skip_cinematic_requested &&
-                   !m_cinematic_plan.empty ()) {
+        if (!automated && !m_skip_cinematic_requested &&
+            !m_cinematic_plan.empty ()) {
           m_cinematic.start (m_cinematic_plan, surface ());
           m_live_input.clear ();
         }
@@ -763,9 +741,7 @@ namespace moppe {
         logic ().m_total_time += dt;
         const float total_time = logic ().m_total_time;
 
-        // Weather remains part of the world while actors are paused.  This
-        // also initializes the shared horizon color when the game starts
-        // directly in Terrain Lab.
+        // Weather remains part of the world while actors are paused.
         float cloudiness =
           std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
           0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
@@ -795,15 +771,6 @@ namespace moppe {
             update_frame_flare ();
             return;
           }
-        }
-
-        // Terrain inspection pauses actors and vehicle physics, but keeps the
-        // visual clock, weather, and fog alive so sky and water remain a
-        // useful frame of reference around the terrain.
-        if (m_terrain_lab.active ()) {
-          m_terrain_lab.tick (dt);
-          update_frame_flare ();
-          return;
         }
 
         // The botanical demo is a stationary observatory. Weather and the
@@ -913,11 +880,7 @@ namespace moppe {
           render::SkyParams sky;
           sky.time = frame.lighting.time;
           sky.sun_height = frame.lighting.sun_height;
-          // A world-shaping overview should keep the game world's moving sky,
-          // without letting a passing front hide the land being edited.
-          sky.cloudiness = visibility.terrain_lab
-                             ? std::min (frame.lighting.cloudiness, 0.35f)
-                             : frame.lighting.cloudiness;
+          sky.cloudiness = frame.lighting.cloudiness;
           sky.sun_dir = frame.lighting.sun_direction;
           sky.fog_color = frame.lighting.fog_color;
           r.draw_sky (sky);
@@ -951,9 +914,7 @@ namespace moppe {
         if (!visibility.actors)
           return;
 
-        // The world draw list, in the GL build's draw order. Terrain Lab
-        // deliberately hides every placed object so generator differences are
-        // not confused with stale actor positions.
+        // The world draw list, in the GL build's draw order.
         m_world_dl.clear ();
         const FrameActors& actors = frame.actors;
 
@@ -1033,9 +994,7 @@ namespace moppe {
         // Standing water writes depth first. Rivers then shade only their
         // visible surface, rather than paying for fragments hidden beneath a
         // lake or the sea, and retain a clean current layer through mouths.
-        if (visibility.terrain_lab_rivers)
-          m_terrain_lab.render_rivers (r, camera);
-        else if (visibility.river_ribbons)
+        if (visibility.river_ribbons)
           m_river_surface.draw (r, camera);
       }
 
@@ -1064,9 +1023,7 @@ namespace moppe {
           r.width_pts () - (int)(safe_insets.left + safe_insets.right);
         const int hud_height =
           r.height_pts () - (int)(safe_insets.top + safe_insets.bottom);
-        if (visibility.terrain_lab_hud) {
-          m_terrain_lab.draw (m_hud_dl, hud_width, hud_height);
-        } else if (visibility.cinematic_hud) {
+        if (visibility.cinematic_hud) {
           if (m_loading_font && m_loading_font->ok ()) {
             const std::string prompt = "SPACE TO RIDE";
             m_hud_dl.color (
@@ -1095,10 +1052,6 @@ namespace moppe {
             m_game_ui_window.constrain (hud_width, hud_height);
             const UiRect horizontal { 20, 58, 320, 64 };
             const UiRect vertical { 20, 132, 320, 64 };
-            const float local_pointer_x =
-              m_game_ui_window.local_x (m_pointer_x);
-            const float local_pointer_y =
-              m_game_ui_window.local_y (m_pointer_y);
             std::ostringstream horizontal_label;
             horizontal_label << "LANDSCAPE WIDTH  " << std::fixed
                              << std::setprecision (2) << m_landscape_scale_x
@@ -1109,24 +1062,20 @@ namespace moppe {
                            << 'x';
             m_game_ui.begin (m_hud_dl);
             m_game_ui.begin_window (m_hud_dl, m_game_ui_window, "WORLD FEEL");
-            m_game_ui.friendly_slider (
-              m_hud_dl,
-              horizontal,
-              horizontal_label.str (),
-              "SMALLER",
-              "LARGER",
-              landscape_scale_normalized (m_landscape_scale_x),
-              horizontal.contains (local_pointer_x, local_pointer_y),
-              m_game_ui_dragging_axis == 1);
-            m_game_ui.friendly_slider (
-              m_hud_dl,
-              vertical,
-              vertical_label.str (),
-              "LOWER",
-              "TALLER",
-              landscape_scale_normalized (m_landscape_scale_y),
-              vertical.contains (local_pointer_x, local_pointer_y),
-              m_game_ui_dragging_axis == 2);
+            m_game_ui.slider (m_hud_dl,
+                              horizontal,
+                              horizontal_label.str (),
+                              "SMALLER",
+                              "LARGER",
+                              landscape_scale_normalized (m_landscape_scale_x),
+                              m_game_ui_dragging_axis == 1);
+            m_game_ui.slider (m_hud_dl,
+                              vertical,
+                              vertical_label.str (),
+                              "LOWER",
+                              "TALLER",
+                              landscape_scale_normalized (m_landscape_scale_y),
+                              m_game_ui_dragging_axis == 2);
             m_game_ui.end_window (m_hud_dl);
             m_game_ui.end (m_hud_dl);
           }
@@ -1388,7 +1337,7 @@ namespace moppe {
       // -- input -------------------------------------------------------
 
       void controls (const platform::ControlState& state) override {
-        if (logic ().m_game_over || m_terrain_lab.active ())
+        if (logic ().m_game_over)
           return;
         m_live_input.controls (state);
       }
@@ -1401,8 +1350,6 @@ namespace moppe {
             x, y, m_renderer->width_pts (), m_renderer->height_pts ());
         } else if (m_game_ui_dragging_axis) {
           set_landscape_scale_from_pointer (x, m_game_ui_dragging_axis);
-        } else if (m_terrain_lab.active ()) {
-          m_terrain_lab.pointer_move (x, y, dx, dy);
         }
       }
 
@@ -1429,13 +1376,12 @@ namespace moppe {
           }
           return;
         }
-        if (m_terrain_lab.active ())
-          m_terrain_lab.pointer_button (button, down, x, y);
       }
 
       void pointer_scroll (float x, float y, float delta) override {
-        if (m_terrain_lab.active ())
-          m_terrain_lab.pointer_scroll (x, y, delta);
+        (void)x;
+        (void)y;
+        (void)delta;
       }
 
       void key (platform::Key k, bool down) override {
@@ -1475,29 +1421,6 @@ namespace moppe {
           return;
         }
 
-        if (m_terrain_lab.active ()) {
-          if (k == Key::T && down)
-            m_terrain_lab.leave ();
-          else
-            m_terrain_lab.key (k, down);
-          return;
-        }
-
-        if (k == Key::T && down && m_ready) {
-          session ().clear_controls ();
-          m_live_input.clear ();
-          m_terrain_lab.enter (*m_renderer,
-                               generated_world ().surface (),
-                               m_terrain,
-                               world (),
-                               m_graphics,
-                               recipe (),
-                               m_surface_presentation.trails (),
-                               m_surface_presentation.home_base (),
-                               sun_direction_for (m_graphics.sun_height));
-          return;
-        }
-
         if (k == Key::M && down && m_ready) {
           m_game_ui_open = !m_game_ui_open;
           m_game_ui_dragging_axis = 0;
@@ -1533,7 +1456,6 @@ namespace moppe {
         FrameSceneMode scene = FrameSceneMode::Gameplay;
         FrameCameraReading camera;
         const bool cinematic = m_cinematic.active ();
-        const bool terrain_lab = m_terrain_lab.active ();
 
         if (cinematic) {
           scene = FrameSceneMode::Cinematic;
@@ -1542,14 +1464,6 @@ namespace moppe {
             .forward = m_cinematic.forward (),
             .view = m_cinematic.view_matrix (),
             .field_of_view = m_cinematic.field_of_view (),
-          };
-        } else if (terrain_lab) {
-          scene = FrameSceneMode::TerrainLab;
-          camera = {
-            .position = m_terrain_lab.position (),
-            .forward = m_terrain_lab.forward (),
-            .view = m_terrain_lab.view_matrix (),
-            .field_of_view = 70.0f,
           };
         } else {
           if (m_water_inspection)
@@ -1579,11 +1493,6 @@ namespace moppe {
           .graphics = m_graphics,
           .selected_camera = camera,
           .scene = scene,
-          .terrain_lab_fog = terrain_lab
-                               ? m_terrain_lab.scene_fog (world ().fog_scale)
-                               : world ().fog_scale,
-          .terrain_lab_torus = terrain_lab && m_terrain_lab.torus_view (),
-          .terrain_lab_pristine = !terrain_lab || m_terrain_lab.map_pristine (),
           .aspect = aspect,
           .landscape_scale_x = m_landscape_scale_x,
           .landscape_scale_y = m_landscape_scale_y,
@@ -1757,7 +1666,6 @@ namespace moppe {
       RiverSurface m_river_surface;
       Terrain m_terrain;
       WaterPresentation m_water_presentation;
-      TerrainLab m_terrain_lab;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;
       BlobShadow m_blob;
@@ -1777,7 +1685,6 @@ namespace moppe {
       std::unique_ptr<render::FontAtlas> m_loading_meta_font;
 
       render::Renderer* m_renderer;
-      bool m_start_in_terrain_lab;
       bool m_tree_demo;
       std::size_t m_tree_count;
       bool m_automated_regeneration_done = false;

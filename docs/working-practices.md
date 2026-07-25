@@ -53,11 +53,10 @@ parameters toward the world column.
 
 ## Observation is sacred and separate
 
-Readings color the surface; geometry stays terrain. Analysis passes
-never mutate. Every important derived structure earns an overlay in
-the Terrain Lab (Field Algebra Tycoon) so the human evaluator can
-*see* it, and a scalar or census in the readings panel so trends are
-watchable. Ledgers are permanent instruments, not debug prints:
+Readings remain distinct from the surface geometry. Analysis passes never
+mutate their input. Important derived structures should be inspectable through
+focused captures, tests, or lightweight built-in instrumentation. Ledgers are
+permanent instruments, not debug prints:
 eroded/deposited/lost, death causes (water cutoff, flat, boundary,
 capped), sink counts, lake censuses. A number on screen with a history
 is worth ten

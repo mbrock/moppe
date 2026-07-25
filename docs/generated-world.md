@@ -19,20 +19,20 @@ artifacts.
 drainage, fractional channel drainage, water-body flow, and river network are
 constructed together. A normal completed world therefore cannot expose, for
 example, rivers without the flood and drainage readings they depend on.
-`WaterSurface` and the trail network remain optional because a Terrain Lab
-preview may intentionally omit hydrology and the terrain program may omit a
-trail stage.
+`WaterSurface` and the trail network use optional storage to express their
+construction boundary and to support focused tests, but ordinary completed
+worlds build both.
 
 ## Mutability and lifetime
 
-`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles,
-glider, and Terrain Lab borrow its one surface. `MoppeGame`
+`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles
+and glider borrow its one surface. `MoppeGame`
 therefore keeps the active world behind an owning `unique_ptr`: a worker builds
 a fresh completed world, and the main thread transfers that owner exactly once
 at `activate_completed_world()`.
 
-At activation, Terrain Lab first restores and releases its raw borrows. The
-outgoing session and world remain alive while the completed owner becomes
+At activation, the outgoing session and world remain alive while the completed
+owner becomes
 active and a fresh session binds its new surface. The retired
 session then releases its old borrows before the retired world is destroyed.
 Only after that handoff does the main thread build renderer-facing river,
@@ -57,18 +57,15 @@ before beginning renderer-facing activation.
 Ordinary gameplay receives const readings. The loading worker calls the
 three build steps (`rebuild_surface`, `analyze_hydrology`,
 `derive_surface_readings`) in order after evaluating the terrain, through the
-mutable `surface()` overload. Terrain Lab uses the same mutable surface and
-restores its typed geometry checkpoint when the Lab leaves, so it does not
-make a permanently edited world implicit.
+mutable `surface()` overload.
 
 ## Checks
 
 `tests/game/generated_world_test.cc` verifies the named completed artifacts,
 their materialized atlas groups, and that a non-movable world transfers by its
-owner rather than a value move. The deterministic Terrain Lab and water-capture
-tools exercise the two runtime consumers:
+owner rather than a value move. The deterministic water-capture tool exercises
+the runtime construction path:
 
 ```sh
-tools/capture-terrain-lab /tmp/terrain-lab.png
 tools/capture-water /tmp/river.png river
 ```

@@ -4,7 +4,6 @@
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
 #include <moppe/terrain/terrain_quantities.hh>
-#include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstddef>
@@ -49,13 +48,6 @@ namespace moppe::terrain {
     meters_t alpine_avoidance_height_above_sea = 285.0f * mp_units::si::metre;
 
     void validate () const;
-    TransformDescription description () const noexcept;
-    std::string detail () const;
-    std::size_t property_count () const noexcept;
-    TransformProperty property (std::size_t index) const;
-    float normalized_property (std::size_t index) const;
-    bool set_normalized_property (std::size_t index, float value);
-    bool adjust_natural_property (std::size_t index, int direction);
   };
 
   struct TrailFormationReport {

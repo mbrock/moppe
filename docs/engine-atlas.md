@@ -14,7 +14,7 @@ diagram for CMake:
 
 ```mermaid
 flowchart LR
-  recipe["WorldRecipe + TerrainProgram"] --> build["GeneratedWorld build steps"]
+  recipe["WorldRecipe"] --> build["direct world construction"]
   build --> world["GeneratedWorld"]
   world --> session["GameSession"]
   world --> view["FrameView"]
@@ -40,11 +40,11 @@ concrete presenters in game-shaped order.
 | Domain | Owns | Does not own | Main locations |
 | --- | --- | --- | --- |
 | Quantity and finite-section vocabulary | `spatial::Bundle`, typed domains, and mp-units-facing section types | A terrain map, a world, or a rendering policy | `moppe/spatial/`, `moppe/quantities.hh` |
-| Terrain programs | Field DAGs, terrain sources, transforms, recipes, and portable evaluators | A completed map, scene, platform, or renderer | `moppe/terrain/` |
+| Terrain algorithms | Geology, evolution, trails, hydrology, and their typed products | A completed map, scene, platform, or renderer | `moppe/terrain/` |
 | Completed world | Heightmap, surface, materialized analyses, water surface, and trails | Mutable player state, GPU resources, or an event loop | `moppe/map/`, `moppe/game/generated_world.*` |
 | Simulation | Mutable rider, vehicle, glider, walker, camera, stars, dust, and checkpoint state | Loading, `GeneratedWorld` ownership, and platform effects | `moppe/mov/`, `moppe/game/game_session.*` |
 | Frame and scene presentation | Immutable frame readings and focused terrain, water, actor, effect, and HUD presenters | Simulation mutation or an OS event loop | `moppe/game/frame_view.*`, game presentation files |
-| Application and platform | Loading/activation, input adaptation, mode selection, host services, and terminal `main` | Portable terrain and simulation laws | `moppe/game/world_loading.*`, `moppe/game/game.cc`, `moppe/game/terrain.*`, `moppe/game/terrain_lab.*`, `moppe/platform/` |
+| Application and platform | Loading/activation, input adaptation, mode selection, host services, and terminal `main` | Portable terrain and simulation laws | `moppe/game/world_loading.*`, `moppe/game/game.cc`, `moppe/game/terrain.*`, `moppe/platform/` |
 | Renderer and backend | Game-shaped draw/resource API, Metal resources, passes, command submission, and capture/timing lifecycle | Terrain policy, session state, or a generic render graph | `moppe/render/`, `moppe/render/metal/`, `moppe/shaders/metal/` |
 
 `moppe/game/` is intentionally not one architectural layer. Its source files
@@ -54,11 +54,11 @@ division executable.
 
 ## World and intrinsic readings
 
-`terrain::WorldRecipe` binds a terrain program to physical world parameters
-and water datum. `GeneratedWorld`'s build steps are the
-capability that evaluates the map, rebuilds `map::Surface`, analyzes hydrology,
-and derives later surface readings. Once active, ordinary gameplay receives
-const views of the completed world.
+`terrain::WorldRecipe` binds seed and algorithm values to physical world
+parameters and water datum. World loading directly initializes, evolves, and
+forms trails on `map::Surface`, then analyzes hydrology and derives later
+surface readings. Once active, ordinary gameplay receives const views of the
+completed world.
 
 `map::SurfaceDomain` is the one finite lattice for the ground. It owns the
 topology, site correspondence, spacing, and reconstruction stencil. Its
@@ -82,10 +82,10 @@ because both surfaces have matching texture dimensions.
 `GeneratedWorld::Hydrology` is similarly a complete analytical value rather
 than a collection of app-level optionals. It contains standing water, lake
 census, drainage, fractional channels, waterways, and the river network.
-`WaterSurface` and `TrailNetwork` remain optional completed-world artifacts:
-a Terrain Lab preview may intentionally omit hydrology, and a terrain program
-may omit trail formation. The detailed vocabulary, validity rules, and
-quantity-to-texture mappings live in [Surface atlas](surface-atlas.md).
+`WaterSurface` and `TrailNetwork` use optional storage to express their
+construction boundary and to support focused tests. Ordinary completed worlds
+build both. The detailed vocabulary, validity rules, and quantity-to-texture
+mappings live in [Surface atlas](surface-atlas.md).
 
 ## State, lifetime, and handoff
 
@@ -98,7 +98,6 @@ quantity-to-texture mappings live in [Surface atlas](surface-atlas.md).
 | `GameSession` | Mutable run against one completed world's terrain and surface borrows | A replacement world or loading lifecycle |
 | `GameState` | Copyable snapshot of mutable session systems, portable only between sessions on the same world | Terrain, water, renderer history, window state, and asynchronous loading |
 | `FrameView` | Immutable per-frame snapshot of selected camera, lighting, graphics, poses, HUD, overlays, and visibility | Renderer/platform types and later simulation mutation |
-| Terrain Lab transaction | Named mutable terrain borrow that restores the game's map on exit | An implicit permanent edit to the active world |
 
 The ordinary playable step is
 `advance_game_session(context, session, input, seconds_t)`. Its context lends
@@ -171,18 +170,18 @@ flowchart LR
 ```
 
 `moppe_spatial` is deliberately header-only: its types expose mp-units
-vocabulary but need no translation unit. `moppe_terrain` keeps reusable field
-and hydrology algorithms free of world, scene, and platform code.
-`moppe_world` adds concrete map storage, materialization, `GeneratedWorld`,
-the renderer-free Terrain Lab model, and deterministic water-capture selection.
+vocabulary but need no translation unit. `moppe_terrain` keeps reusable finite
+terrain and hydrology algorithms free of world, scene, and platform code.
+`moppe_world` adds concrete map storage, direct construction, materialization,
+`GeneratedWorld`, and deterministic water-capture selection.
 
 `moppe_simulation` has a real dependency on `moppe_render`: session-owned
 Stars retain meshes and Stars/Dust expose their presentation operations. This
 is an explicit current constraint, not a claim that physics needs Metal.
 `moppe_scene` composes the completed-world and session readings, with
 Apple-common asset/glyph support where available, but has no OS event loop or
-renderer backend. `moppe_app` holds the host-service callers (`Terrain`,
-`TerrainLab`, and `WorldLoading`); terminal programs retain `game.cc` because
+renderer backend. `moppe_app` holds the host-service callers (`Terrain` and
+`WorldLoading`); terminal programs retain `game.cc` because
 it defines `main` and chooses the macOS, iOS, or browser host.
 
 The ordinary desktop game consumes the app/scene path; portable tests begin at
@@ -211,8 +210,8 @@ or that every renderer backend has visual feature parity.
 
 - [Surface atlas](surface-atlas.md) — domains, all typed sections, validity,
   and presentation lanes.
-- [Terrain expressions](terrain-expressions.md) — field/program/recipe and
-  evaluator design.
+- [Terrain generation and analysis](terrain-expressions.md) — direct finite
+  construction and typed analysis products.
 - [Generated worlds](generated-world.md) — construction capability and
   activation lifetime.
 - [Game state and replay](game-state.md) — session checkpoint and benchmark

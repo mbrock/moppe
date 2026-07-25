@@ -14,8 +14,7 @@ remains.
   A 2048-resolution torus stores 2048x2048 samples; spacing = extent/2048.
   Wrap is owned by the sampling boundary: CPU interpolation wraps indices,
   GPU shaders wrap texel fetches with period = texture size.
-- Default resolutions become powers of two: 2048 (play/research), 1024
-  (fast, lab captures).
+- Default resolutions become powers of two: 2048 (play/research), 1024 (fast).
 - Test fixtures convert once, to the final semantics: an NxN map is N
   periodic cells, spacing = size/N.
 
@@ -34,8 +33,8 @@ Touch points, surveyed:
   `compute_normal_map` keeps only the wrapped branch, minus seam writes;
   cache format unchanged in shape (dimensions now seam-free; build-id keying
   invalidates old files).
-- `map/TerrainEvaluator` + `terrain/cpu_evaluator` + Metal evolution
-  backend — align `field_sampling_grid` and evolution grids with
+- The former `map/TerrainEvaluator`, `terrain/cpu_evaluator`, and Metal
+  evolution backend — align field sampling and evolution grids with
   storage == unique (check orogeny.metal for width assumptions).
 - `map/surface.cc` — `expand_unique_cells` becomes identity and dies with
   the span primitives it fed; `surface_coordinate` always wraps.
@@ -48,7 +47,7 @@ Touch points, surveyed:
 - `game.cc` — `world.toroidal ()` always true (ocean offset
   unconditional); `WorldParams.terrain_topology` deleted; default
   resolution 2048, fast 1024.
-- Terrain Lab / water capture / tests — fixture conversions and
+- The former Terrain Lab, water capture, and tests — fixture conversions and
   re-derived expectations (surface stencil boundary tests now wrap).
 
 Landed in "The world is a seamless torus": 67 files, net -347 lines.
@@ -60,8 +59,8 @@ this machine; run the web build before trusting the browser path.
 The deletion follow-up removed the remaining constant-periodic branches,
 identity seam expansions, and renderer topology uniforms. Analysis and surface
 lattices must now match instead of being silently tiled through modulo
-indexing. Terrain Lab still prefers routes away from its current chart cut;
-that is an explicit presentation constraint, not a second topology.
+indexing. Trail routing retains explicit chart-cut avoidance; that is a route
+planning constraint, not a second topology.
 
 ## Stage: authoritative surface bundle (done)
 
@@ -72,8 +71,8 @@ the native representation of a `float`; it is neither boxed nor normalized.
 `GeneratedWorld` owns one `Surface`; there is no preceding height map and no
 geometry refresh copy.
 
-Generation, Terrain Lab checkpoints, physics, hydrology, and rendering all
-read or mutate those columns. Analysis entry points accept any
+Generation, physics, hydrology, and rendering all read or mutate those
+columns. Analysis entry points accept any
 `TerrainDomain` bundle containing `surface_elevation`; there is no borrowed
 terrain adapter. The renderer accepts the typed elevation and normal columns
 directly. Compile-time layout checks guarantee their representations are the
@@ -120,6 +119,28 @@ Deleted with the interchange:
 
 This pass removed 3,026 net lines. `TerrainDomain` is now the shared finite
 domain for the surface and geological bundles.
+
+## Stage: literal world construction (done)
+
+The terrain had one legal program: geology, orogeny, then trails. That order
+is now the source code in `world_loading.cc`, implemented by three direct free
+operations in `map/terrain_generation.*`. `WorldRecipe` contains the physical
+world identity plus the stream-power and trail algorithm values; it no longer
+contains a vector of variant stages.
+
+Deleted with the false programming model:
+
+- `TerrainProgram`, `TerrainTransform`, and `OrogenyEvolution`;
+- transform descriptions, property metadata, normalized editor controls, and
+  their adapters;
+- the stateful `TerrainEvaluator`, its checkpoints, replay ledger, and channel
+  memory handoff;
+- public nested geology-parameter structs whose only consumer was the editor.
+
+Terrain Lab was the sole reason to retain a second mutable execution path
+through generation and presentation. It and its launch/capture modes were
+removed rather than preserved as a dormant framework. Stream-power evolution,
+trail formation, water capture, benchmarks, and the ordinary game remain.
 
 ## Stage: one lattice value (done)
 

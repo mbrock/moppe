@@ -76,38 +76,40 @@ bound.
 
 ## Direct geology
 
-`GeologicalRecipe` is a copyable collection of seeded periodic-noise
-parameters. `generate_geology(domain, recipe)` directly fills a
+`generate_geology(domain, seed)` directly fills a
 `GeologicalSections` bundle containing:
 
 - `continent_shape`;
 - `uplift_weight`.
 
-The implementation preserves the historical seeded permutation, fused
-arithmetic, periodicity, deterministic row evaluation, and progress reporting.
-It does not build an expression DAG, compile a register program, or dispatch a
-generic evaluator.
+The noise composition is the generator, not a public graph-shaped parameter
+object. Its constants live beside the arithmetic they control. The
+implementation preserves seeded periodicity, deterministic row evaluation,
+and progress reporting without an expression DAG or generic evaluator.
 
 The deleted expression system included `ScalarField`, typed phantom fields,
 `CpuEvaluator`, the Metal function-stitching backend, and
 `TerrainDiscretization`. Its only production job was this fixed geology
 recipe, so direct finite generation is both smaller and more honest.
 
-## Programs and transforms
+## Direct world construction
 
-`TerrainProgram` contains a geological source followed by an ordered list of
-the two transformations the game uses:
+The game has one terrain sequence, spelled literally in world loading:
 
-- `OrogenyEvolution`;
-- `TrailFormation`.
+```text
+initialize_terrain(surface, seed, water datum)
+  -> evolve_terrain(surface, uplift, evolution parameters)
+  -> form_terrain_trails(surface, trail parameters)
+```
 
-`map::TerrainEvaluator` writes geology into the authoritative geometry bundle,
-applies transforms in order, reports progress, and creates exact resumable
-checkpoints of elevation, material history, and channel memory.
+These are free operations in `map/terrain_generation.*`, not methods on a
+stateful evaluator. There is no transform variant, legal-order validator,
+checkpoint ledger, editor schema, or second execution model.
 
-`WorldRecipe` binds that program to physical world extent, resolution, water
-datum, root seed, and generation profile. Game generation and Terrain Lab use
-the same recipe and evaluator.
+`WorldRecipe` binds physical extent, resolution, water datum, root seed, and
+generation profile. It carries the two algorithm values that genuinely vary:
+`StreamPowerEvolution` and `TrailFormation`. The profile selects evolution
+duration; it does not construct a runtime program.
 
 Stream-power evolution is a numerical kernel over physical metre floats.
 Each step publishes its current values as an `ElevationMap` when invoking

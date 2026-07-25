@@ -37,7 +37,7 @@ MOPPE_TEST (geology_is_a_typed_finite_bundle) {
   static_assert (spatial::BundleContains<uplift_weight, GeologicalSections>);
 
   const GeologicalSections geology =
-    generate_geology (test_domain (17), make_geological_recipe (123));
+    generate_geology (test_domain (17), Seed { 123 });
   MOPPE_CHECK (geology.size () == 17 * 17);
   MOPPE_CHECK (std::ranges::all_of (
     spatial::get<uplift_weight> (geology), [] (UpliftWeight value) {
@@ -47,9 +47,10 @@ MOPPE_TEST (geology_is_a_typed_finite_bundle) {
 }
 
 MOPPE_TEST (periodic_geology_is_bit_deterministic) {
-  const GeologicalRecipe recipe = make_geological_recipe (123);
-  const GeologicalSections first = generate_geology (test_domain (65), recipe);
-  const GeologicalSections second = generate_geology (test_domain (65), recipe);
+  const GeologicalSections first =
+    generate_geology (test_domain (65), Seed { 123 });
+  const GeologicalSections second =
+    generate_geology (test_domain (65), Seed { 123 });
 
   const std::uint64_t continent_hash =
     column_hash (spatial::get<continent_shape> (first));
@@ -63,42 +64,11 @@ MOPPE_TEST (periodic_geology_is_bit_deterministic) {
                column_hash (spatial::get<uplift_weight> (second)));
 }
 
-MOPPE_TEST (geological_recipe_parameters_are_first_class_values) {
-  GeologicalRecipe changed_recipe = make_geological_recipe (123);
-  const GeologicalSeeds seeds = derive_geological_seeds (123);
-
-  MOPPE_CHECK (changed_recipe.seeds.base == seeds.base);
-  MOPPE_CHECK (changed_recipe.seeds.ridge == seeds.ridge);
-  MOPPE_CHECK (changed_recipe.seeds.warp == seeds.warp);
-  MOPPE_CHECK_NEAR (changed_recipe.warp.amplitude, 0.15f, 1e-6f);
-  MOPPE_CHECK (changed_recipe.mountains.cycles == 4);
-
-  changed_recipe.mountains.cycles = 8;
-  const GeologicalSections changed =
-    generate_geology (test_domain (17), changed_recipe);
-  const GeologicalSections original =
-    generate_geology (test_domain (17), make_geological_recipe (123));
-  MOPPE_CHECK (spatial::get<uplift_weight> (changed) !=
-               spatial::get<uplift_weight> (original));
-}
-
-MOPPE_TEST (geological_recipe_validation_rejects_bad_mask_edges) {
-  GeologicalRecipe recipe = make_geological_recipe (123);
-  recipe.blend.mask_high = recipe.blend.mask_low;
-  bool threw = false;
-  try {
-    (void)generate_geology (test_domain (17), recipe);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  MOPPE_CHECK (threw);
-}
-
 MOPPE_TEST (geology_reports_completed_rows) {
   std::size_t completed = 0;
   std::size_t total = 0;
   (void)generate_geology (test_domain (17),
-                          make_geological_recipe (123),
+                          Seed { 123 },
                           [&] (std::size_t rows, std::size_t row_count) {
                             completed = std::max (completed, rows);
                             total = row_count;
