@@ -23,7 +23,7 @@ namespace moppe {
 
     Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
-                      const Surface& map,
+                      const SurfaceGeometry& surface,
                       newtons_t max_thrust,
                       watts_t power,
                       kilograms_t mass)
@@ -32,8 +32,8 @@ namespace moppe {
           m_thrust_orientation (m_heading), m_yaw (), m_yaw_target (),
           m_lean (0), m_render_heading (m_heading), m_render_normal (0, 1, 0),
           m_susp (0), m_susp_v (0), m_wheel_spin (0), m_boost_flight (false),
-          m_map (map), m_max_thrust (max_thrust), m_power (power), m_thrust (0),
-          m_mass (mass), m_boost_input (0), m_boost_drive (0),
+          m_map (surface), m_max_thrust (max_thrust), m_power (power),
+          m_thrust (0), m_mass (mass), m_boost_input (0), m_boost_drive (0),
           m_boost_level (0), m_boost_charge (1),
           m_boost_recharge_delay (seconds (0)), m_water_level (-1000 * u::m),
           m_airborne_time (seconds (0)), m_impact (0 * u::m / u::s),
@@ -125,7 +125,7 @@ namespace moppe {
     void Vehicle::calculate_orientation () {
       if (is_grounded ()) {
         const Vec3& p = position_value (m_position);
-        Vec3 n = m_map.interpolated_normal (p[0], p[2]);
+        Vec3 n = map::interpolated_normal (m_map, p[0], p[2]);
 
         // Keep the heading tangent to the ground; the heading itself
         // is steered explicitly, and grip drags the velocity along,
@@ -186,14 +186,14 @@ namespace moppe {
       for (float t = step; t <= horizon; t += step) {
         Vec3 sample = position + velocity * t;
         sample[1] -= 0.5f * gravity * t * t;
-        if (!m_map.in_bounds (sample[0], sample[2]))
+        if (!map::in_bounds (sample[0], sample[2]))
           return false;
         const float surface =
-          m_map.interpolated_height (sample[0], sample[2]) + radius;
+          map::interpolated_height (m_map, sample[0], sample[2]) + radius;
         if (sample[1] > surface)
           continue;
 
-        up = m_map.interpolated_normal (sample[0], sample[2]);
+        up = map::interpolated_normal (m_map, sample[0], sample[2]);
         if (length2 (up) < 0.000001f)
           return false;
         normalize (up);
@@ -224,7 +224,7 @@ namespace moppe {
 
       const Box* found = 0;
       const Vec3& p = position_value (m_position);
-      float best = m_map.interpolated_height (p[0], p[2]);
+      float best = map::interpolated_height (m_map, p[0], p[2]);
 
       for (size_t i = 0; i < m_obstacles->size (); ++i) {
         const Box& b = (*m_obstacles)[i];

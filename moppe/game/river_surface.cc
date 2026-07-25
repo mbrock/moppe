@@ -59,7 +59,7 @@ namespace moppe::game {
     }
 
     std::vector<SurfacePoint>
-    make_surface_points (const map::Surface& map,
+    make_surface_points (const map::SurfaceGeometry& land,
                          const terrain::RiverAlignment& alignment,
                          bool fade_source) {
       std::vector<SurfacePoint> result;
@@ -103,14 +103,16 @@ namespace moppe::game {
         const float fill_depth =
           0.72f * meters_value (terrain::river_depth (area));
         const float center_ground =
-          map.interpolated_height (center.x_m, center.z_m);
+          map::interpolated_height (land, center.x_m, center.z_m);
         const float bank_distance = 0.5f * width_m + 0.75f;
         const float left_bank =
-          map.interpolated_height (center.x_m - across[0] * bank_distance,
-                                   center.z_m - across[2] * bank_distance);
+          map::interpolated_height (land,
+                                    center.x_m - across[0] * bank_distance,
+                                    center.z_m - across[2] * bank_distance);
         const float right_bank =
-          map.interpolated_height (center.x_m + across[0] * bank_distance,
-                                   center.z_m + across[2] * bank_distance);
+          map::interpolated_height (land,
+                                    center.x_m + across[0] * bank_distance,
+                                    center.z_m + across[2] * bank_distance);
         const float bank_limit = std::min (left_bank, right_bank) - 0.08f;
         const float running_surface =
           std::max (center_ground + 0.035f,
@@ -125,7 +127,8 @@ namespace moppe::game {
         // the terrain it actually spans; the outer rows still intersect the
         // banks naturally and feather the visible waterline.
         for (const float cross : { -0.54f, 0.0f, 0.54f }) {
-          const float ground = map.interpolated_height (
+          const float ground = map::interpolated_height (
+            land,
             center.x_m + across[0] * cross * 0.5f * width_m,
             center.z_m + across[2] * cross * 0.5f * width_m);
           surface = std::max (surface, ground + 0.045f);
@@ -142,14 +145,15 @@ namespace moppe::game {
           // The route can hug one bank of the pool, so the far waterline may
           // sit up to a full flooded width away: probe past twice the
           // channel-classification inradius.
-          const float spacing =
-            std::max (map.sample_spacing ()[0], map.sample_spacing ()[2]);
+          const float spacing = std::max (map::sample_spacing (land)[0],
+                                          map::sample_spacing (land)[2]);
           const float max_probe = std::max (7.0f * spacing, half_left_m);
           const float probe_step = std::max (0.5f, 0.25f * spacing);
           const auto waterline = [&] (float direction) {
             float distance = probe_step;
             while (distance < max_probe &&
-                   map.interpolated_height (
+                   map::interpolated_height (
+                     land,
                      center.x_m + direction * across[0] * distance,
                      center.z_m + direction * across[2] * distance) <
                      surface + 0.02f)
@@ -259,7 +263,7 @@ namespace moppe::game {
       return result;
     }
 
-    RibbonRow make_row (const map::Surface& map,
+    RibbonRow make_row (const map::SurfaceGeometry& surface,
                         const std::vector<SurfacePoint>& points,
                         std::size_t point) {
       const SurfacePoint& center = points[point];
@@ -292,7 +296,8 @@ namespace moppe::game {
                                    : center.half_right_m;
         Vec3 position =
           center.position + across * (cross_positions[cross] * half_width);
-        const float ground = map.interpolated_height (position[0], position[2]);
+        const float ground =
+          map::interpolated_height (surface, position[0], position[2]);
         const float depth =
           std::clamp ((position[1] - ground) / depth_span_m *
                         (1.0f - thalweg_shift * cross_positions[cross]),
@@ -312,8 +317,8 @@ namespace moppe::game {
 
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
-                                const map::Surface& map) {
-      const Vec3 period = map.world_period ();
+                                const map::SurfaceGeometry& surface) {
+      const Vec3 period = map::world_period (surface);
       point.position[0] =
         reference.position[0] +
         std::remainder (point.position[0] - reference.position[0], period[0]);
@@ -331,7 +336,7 @@ namespace moppe::game {
     }
   }
 
-  render::DrawList build_river_ribbons (const map::Surface& map,
+  render::DrawList build_river_ribbons (const map::SurfaceGeometry& surface,
                                         const terrain::RiverNetwork& rivers) {
     render::DrawList draw;
     render::DrawState state;
@@ -357,7 +362,7 @@ namespace moppe::game {
       const bool fade_source =
         upstream_reaches[reach.id].empty () && !begins_in_standing_water;
       reach_points[reach.id] = river_surface_detail::make_surface_points (
-        map, reach.alignment, fade_source);
+        surface, reach.alignment, fade_source);
     }
 
     // Every tributary now terminates on the downstream reach's exact first
@@ -383,7 +388,7 @@ namespace moppe::game {
         auto& points = reach_points[upstream];
         points.back ().position[1] = junction_height;
         auto shared =
-          river_surface_detail::nearest_image (start, points.back (), map);
+          river_surface_detail::nearest_image (start, points.back (), surface);
         shared.opacity = std::min (shared.opacity, points.back ().opacity);
         const float transition_m = std::max (4.0f, shared.width_m);
         const float junction_flow_m = points.back ().flow_distance_m;
@@ -421,7 +426,8 @@ namespace moppe::game {
       std::vector<river_surface_detail::RibbonRow> rows;
       rows.reserve (points.size ());
       for (std::size_t point = 0; point < points.size (); ++point)
-        rows.push_back (river_surface_detail::make_row (map, points, point));
+        rows.push_back (
+          river_surface_detail::make_row (surface, points, point));
       for (std::size_t row = 0; row + 1 < rows.size (); ++row)
         for (std::size_t cross = 0; cross + 1 < rows[row].size (); ++cross) {
           river_surface_detail::emit (draw, rows[row][cross]);
@@ -437,10 +443,10 @@ namespace moppe::game {
   }
 
   void RiverSurface::rebuild (render::Renderer& renderer,
-                              const map::Surface& map,
+                              const map::SurfaceGeometry& surface,
                               const terrain::RiverNetwork& rivers) {
-    m_mesh = renderer.create_mesh (build_river_ribbons (map, rivers));
-    m_period = map.world_period ();
+    m_mesh = renderer.create_mesh (build_river_ribbons (surface, rivers));
+    m_period = map::world_period (surface);
   }
 
   void RiverSurface::clear () {

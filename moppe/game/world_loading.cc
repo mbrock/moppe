@@ -10,6 +10,7 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
+#include <moppe/map/surface_cache.hh>
 #include <moppe/map/terrain_generation.hh>
 #include <moppe/terrain/river.hh>
 
@@ -138,7 +139,7 @@ namespace moppe::game {
     std::optional<terrain::TrailNetwork>
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
-                    map::Surface& terrain) {
+                    map::SurfaceGeometry& terrain) {
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
         platform::create_stream_power_evolution_backend ();
 
@@ -229,9 +230,10 @@ namespace moppe::game {
       MOPPE_PROFILE_ZONE ("WorldLoading::build_world");
       WorldLoadingState& state = *job.state;
       const terrain::WorldRecipe& recipe = job.recipe;
-      map::Surface surface (recipe.resolution (),
-                            recipe.resolution (),
-                            extent_value (recipe.extent ()));
+      map::SurfaceGeometry surface =
+        map::make_surface (recipe.resolution (),
+                           recipe.resolution (),
+                           extent_value (recipe.extent ()));
       std::optional<terrain::TrailNetwork> evolved_trails;
 
       const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
@@ -240,7 +242,7 @@ namespace moppe::game {
 
       state.report ("Looking for saved terrain",
                     "Checking this build, profile, and seed");
-      if (surface.try_load_cache (cache)) {
+      if (map::try_load_cache (surface, cache)) {
         state.report ("Reading saved terrain",
                       "Reusing the finished heightfield");
       } else {
@@ -249,15 +251,15 @@ namespace moppe::game {
         evolved_trails = evolve_terrain (state, recipe, surface);
         state.report ("Saving the terrain",
                       "Keeping this expensive result for the next launch");
-        surface.save_cache (cache);
+        map::save_cache (surface, cache);
       }
 
       state.report ("Calculating slopes",
                     "Rebuilding normals and broad surface readings");
-      surface.rebuild_geometry ();
+      map::rebuild_geometry (surface);
 
-      Hydrology hydrology = analyze_hydrology (
-        surface.geometry (), recipe, [&state] (HydrologyStage stage) {
+      Hydrology hydrology =
+        analyze_hydrology (surface, recipe, [&state] (HydrologyStage stage) {
           const auto [title, detail] = hydrology_report (stage);
           state.report (title, detail);
         });
@@ -267,11 +269,11 @@ namespace moppe::game {
                     "Painting water, moisture, materials, and the opening "
                     "route");
       terrain::TrailNetwork trails =
-        evolved_trails ? std::move (*evolved_trails)
-                       : terrain::analyze_trail_network (
-                           surface.geometry (), recipe.trail_formation ());
+        evolved_trails
+          ? std::move (*evolved_trails)
+          : terrain::analyze_trail_network (surface, recipe.trail_formation ());
       auto [water, readings] =
-        analyze_surface (surface.geometry (), recipe, hydrology, trails.use);
+        analyze_surface (surface, recipe, hydrology, trails.use);
 
       state.publish_completed (
         std::make_unique<GeneratedWorld> (job.params,

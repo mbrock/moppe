@@ -25,15 +25,16 @@ namespace moppe::game {
              static_cast<float> (0x01000000U);
     }
 
-    float elevation_value (const map::Surface& surface, float x, float z) {
-      return surface.elevation_at (position (Vec3 (x, 0, z)))
+    float
+    elevation_value (const map::SurfaceGeometry& surface, float x, float z) {
+      return map::elevation_at (surface, position (Vec3 (x, 0, z)))
         .quantity_from_zero ()
         .numerical_value_in (u::m);
     }
 
-    Vec3 normal_value (const map::Surface& surface, float x, float z) {
-      return normalized (
-        surface.normal_at (position (Vec3 (x, 0, z))).numerical_value_in (one));
+    Vec3 normal_value (const map::SurfaceGeometry& surface, float x, float z) {
+      return normalized (map::normal_at (surface, position (Vec3 (x, 0, z)))
+                           .numerical_value_in (one));
     }
 
     float
@@ -51,7 +52,7 @@ namespace moppe::game {
         .numerical_value_in (one);
     }
 
-    TreeSite site_at (const map::Surface& surface,
+    TreeSite site_at (const map::SurfaceGeometry& surface,
                       const map::SurfaceReadings& readings,
                       float x,
                       float z,
@@ -387,7 +388,7 @@ namespace moppe::game {
     }
   }
 
-  TreeGrove plan_tree_grove (const map::Surface& surface,
+  TreeGrove plan_tree_grove (const map::SurfaceGeometry& surface,
                              const map::SurfaceReadings& readings,
                              std::uint32_t seed,
                              std::size_t desired_count,
@@ -499,7 +500,7 @@ namespace moppe::game {
   }
 
   void TreeStand::rebuild (render::Renderer& renderer,
-                           const map::Surface& surface,
+                           const map::SurfaceGeometry& surface,
                            const map::SurfaceReadings& readings,
                            std::uint32_t seed,
                            std::size_t desired_count,

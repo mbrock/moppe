@@ -90,19 +90,21 @@ MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
 
 MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
   for (const int seed : { 7, 123, 4041 }) {
-    map::Surface map (65, 65, Vec3 (100, 20, 100));
+    map::SurfaceGeometry surface =
+      map::make_surface (65, 65, Vec3 (100, 20, 100));
     map::initialize_terrain (
-      map, Seed { static_cast<std::uint32_t> (seed) }, 50.0f * u::m);
-    const auto& terrain = map.geometry ();
+      surface, Seed { static_cast<std::uint32_t> (seed) }, 50.0f * u::m);
+    const auto& terrain = surface;
     for (const float sea_level : { 0.05f, 50.0f / 650.0f, 0.3f, 0.95f })
       check_matches_priority_flood (terrain, sea_level);
   }
 }
 
 MOPPE_TEST (merge_tree_construction_is_deterministic) {
-  map::Surface map (65, 65, Vec3 (100, 20, 100));
-  map::initialize_terrain (map, Seed { 9 }, 50.0f * u::m);
-  const auto& terrain = map.geometry ();
+  map::SurfaceGeometry surface =
+    map::make_surface (65, 65, Vec3 (100, 20, 100));
+  map::initialize_terrain (surface, Seed { 9 }, 50.0f * u::m);
+  const auto& terrain = surface;
   const MergeTree first = build_merge_tree (terrain);
   const MergeTree second = build_merge_tree (terrain);
   MOPPE_CHECK (first.nodes.size () == second.nodes.size ());

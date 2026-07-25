@@ -16,10 +16,11 @@ namespace {
       extent, resolution, seed, 50.0f * u::m, TerrainGenerationProfile::Fast);
   }
 
-  void fill_test_terrain (moppe::map::Surface& map) {
-    for (int y = 0; y < map.height (); ++y)
-      for (int x = 0; x < map.width (); ++x)
-        map.set_elevation (
+  void fill_test_terrain (moppe::map::SurfaceGeometry& surface) {
+    for (int y = 0; y < map::height (surface); ++y)
+      for (int x = 0; x < map::width (surface); ++x)
+        map::set_elevation (
+          surface,
           x,
           y,
           moppe::terrain::surface_elevation_point (
@@ -34,20 +35,21 @@ namespace {
                     const moppe::game::WorldParams& params,
                     const moppe::game::HydrologyProgress& progress = {}) {
     using namespace moppe;
-    map::Surface surface (recipe.resolution (),
-                          recipe.resolution (),
-                          extent_value (recipe.extent ()));
+    map::SurfaceGeometry surface =
+      map::make_surface (recipe.resolution (),
+                         recipe.resolution (),
+                         extent_value (recipe.extent ()));
     fill_test_terrain (surface);
-    surface.rebuild_geometry ();
+    map::rebuild_geometry (surface);
 
     game::Hydrology hydrology =
-      game::analyze_hydrology (surface.geometry (), recipe, progress);
+      game::analyze_hydrology (surface, recipe, progress);
     terrain::TrailNetwork trails {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
-    auto [water, readings] = game::analyze_surface (
-      surface.geometry (), recipe, hydrology, trails.use);
+    auto [water, readings] =
+      game::analyze_surface (surface, recipe, hydrology, trails.use);
     return std::make_unique<game::GeneratedWorld> (params,
                                                    recipe,
                                                    std::move (surface),

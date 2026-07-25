@@ -52,7 +52,7 @@ namespace moppe {
       void jump ();
 
       void update (seconds_t dt,
-                   const map::Surface& map,
+                   const map::SurfaceGeometry& surface,
                    const std::vector<mov::Box>& boxes,
                    const WorldParams& world);
 

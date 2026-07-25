@@ -20,7 +20,7 @@ namespace moppe {
       // after the surface changes (e.g. city baking).  Takes the
       // Surface owns the typed elevation and normal columns uploaded here.
       void setup (render::Renderer& r,
-                  const map::Surface& map,
+                  const map::SurfaceGeometry& surface,
                   const WorldParams& world,
                   const GraphicsSettings& graphics);
 

@@ -32,7 +32,7 @@ namespace moppe {
                    const Vec3& orientation,
                    velocity_t velocity,
                    seconds_t dt);
-      void limit (const map::Surface& map);
+      void limit (const map::SurfaceGeometry& surface);
 
       State state () const {
         return { m_position,

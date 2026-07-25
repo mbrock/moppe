@@ -16,7 +16,7 @@ namespace moppe {
       void load (render::Renderer& r);
 
       void draw (render::DrawList& dl,
-                 const map::Surface& map,
+                 const map::SurfaceGeometry& surface,
                  const Vec3& pos,
                  float radius);
 

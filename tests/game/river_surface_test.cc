@@ -54,14 +54,15 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
 }
 
 MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
   terrain::RiverNetwork rivers;
   terrain::RiverReach reach = reach_with_alignment ();
   // A transient or ribbon-owned upstream body does not supply a visible
@@ -70,7 +71,7 @@ MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
   reach.upstream_body = 17;
   rivers.reaches.push_back (std::move (reach));
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
 
   MOPPE_CHECK (draw.runs ().size () == 1);
   MOPPE_CHECK (draw.vertices ().size () == 108);
@@ -104,18 +105,19 @@ MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {
 }
 
 MOPPE_TEST (headwater_ribbons_emerge_from_a_point) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
   terrain::RiverNetwork rivers;
   rivers.reaches.push_back (reach_with_alignment ());
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
 
   float source_min_x = std::numeric_limits<float>::infinity ();
   float source_max_x = -std::numeric_limits<float>::infinity ();
@@ -136,14 +138,15 @@ MOPPE_TEST (headwater_ribbons_emerge_from_a_point) {
 }
 
 MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
 
   terrain::RiverReach tributary = reach_with_alignment ();
   tributary.id = 0;
@@ -158,7 +161,7 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
   terrain::RiverNetwork rivers;
   rivers.reaches = { tributary, trunk };
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
 
   int junction_vertices = 0;
   for (const render::Vertex& vertex : draw.vertices ())
@@ -168,14 +171,15 @@ MOPPE_TEST (river_flow_coordinates_join_continuously_at_confluences) {
 }
 
 MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
 
   terrain::RiverReach tributary = reach_with_alignment ();
   tributary.id = 0;
@@ -190,7 +194,7 @@ MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
   terrain::RiverNetwork rivers;
   rivers.reaches = { tributary, trunk };
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
   const auto& vertices = draw.vertices ();
   for (std::size_t triangle = 0; triangle < vertices.size (); triangle += 3)
     for (int edge = 0; edge < 3; ++edge) {
@@ -201,14 +205,15 @@ MOPPE_TEST (periodic_river_junctions_use_the_nearest_image) {
 }
 
 MOPPE_TEST (confluences_share_one_downstream_cross_section) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
 
   terrain::RiverReach left = reach_with_alignment ();
   left.id = 0;
@@ -228,7 +233,7 @@ MOPPE_TEST (confluences_share_one_downstream_cross_section) {
   terrain::RiverNetwork rivers;
   rivers.reaches = { left, right, trunk };
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
 
   std::vector<std::pair<int, int>> junction_positions;
   for (const render::Vertex& vertex : draw.vertices ())
@@ -244,20 +249,21 @@ MOPPE_TEST (confluences_share_one_downstream_cross_section) {
 }
 
 MOPPE_TEST (river_ribbons_encode_rapids_depth_and_waterfalls) {
-  map::Surface map (9, 9, Vec3 (80, 20, 80));
-  for (int z = 0; z < map.height (); ++z)
-    for (int x = 0; x < map.width (); ++x)
-      map.set_elevation (x,
-                         z,
-                         moppe::terrain::surface_elevation_point (
-                           (0.3f) * 20.0f * mp_units::si::metre));
-  map.recompute_normals ();
+  map::SurfaceGeometry surface = map::make_surface (9, 9, Vec3 (80, 20, 80));
+  for (int z = 0; z < map::height (surface); ++z)
+    for (int x = 0; x < map::width (surface); ++x)
+      map::set_elevation (surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (0.3f) * 20.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
   terrain::RiverReach reach = reach_with_alignment ();
   reach.alignment.points[1].waterfall = 1.0f;
   terrain::RiverNetwork rivers;
   rivers.reaches.push_back (std::move (reach));
 
-  const render::DrawList draw = game::build_river_ribbons (map, rivers);
+  const render::DrawList draw = game::build_river_ribbons (surface, rivers);
 
   bool rapid = false;
   bool depth = false;

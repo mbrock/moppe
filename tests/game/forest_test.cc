@@ -9,11 +9,12 @@
 
 MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   using namespace moppe;
-  map::Surface map (129, 129, Vec3 (640, 180, 640));
-  map.fill_elevation (moppe::terrain::surface_elevation_point (
-    (0.42f) * 180.0f * mp_units::si::metre));
-  map.recompute_normals ();
-  map::Surface& surface = map;
+  map::SurfaceGeometry surface =
+    map::make_surface (129, 129, Vec3 (640, 180, 640));
+  map::fill_elevation (surface,
+                       moppe::terrain::surface_elevation_point (
+                         (0.42f) * 180.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
@@ -37,11 +38,12 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
 
 MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
   using namespace moppe;
-  map::Surface map (65, 65, Vec3 (320, 180, 320));
-  map.fill_elevation (moppe::terrain::surface_elevation_point (
-    (0.42f) * 180.0f * mp_units::si::metre));
-  map.recompute_normals ();
-  map::Surface& surface = map;
+  map::SurfaceGeometry surface =
+    map::make_surface (65, 65, Vec3 (320, 180, 320));
+  map::fill_elevation (surface,
+                       moppe::terrain::surface_elevation_point (
+                         (0.42f) * 180.0f * mp_units::si::metre));
+  map::recompute_normals (surface);
   const map::SurfaceReadings readings = test::complete_readings (
     surface,
     { .moisture = test::uniform_moisture (surface.domain (), 0.48f),

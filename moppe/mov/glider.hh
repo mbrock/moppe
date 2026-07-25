@@ -30,7 +30,7 @@ namespace moppe::mov {
       bool landed {};
     };
 
-    explicit Glider (const map::Surface& surface);
+    explicit Glider (const map::SurfaceGeometry& surface);
 
     void launch (position_t position,
                  velocity_t inherited_velocity,
@@ -97,7 +97,7 @@ namespace moppe::mov {
     rate_of_climb_t ridge_lift () const;
     void bound ();
 
-    const map::Surface& m_surface;
+    const map::SurfaceGeometry& m_surface;
     position_t m_position {};
     velocity_t m_velocity {};
     Vec3 m_heading { 0, 0, 1 };

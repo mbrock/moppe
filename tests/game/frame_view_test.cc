@@ -31,20 +31,22 @@ namespace {
   }
 
   struct FrameFixture {
-    map::Surface map { 17, 17, Vec3 (160, 40, 160) };
+    map::SurfaceGeometry surface =
+      map::make_surface (17, 17, Vec3 (160, 40, 160));
     game::WorldParams world;
     std::unique_ptr<game::GameSession> session;
     game::GraphicsSettings graphics = game::high_graphics_settings ();
 
     FrameFixture () {
-      map.fill_elevation (moppe::terrain::surface_elevation_point (
-        (0.25f) * 40.0f * mp_units::si::metre));
-      map.rebuild_geometry ();
+      map::fill_elevation (surface,
+                           moppe::terrain::surface_elevation_point (
+                             (0.25f) * 40.0f * mp_units::si::metre));
+      map::rebuild_geometry (surface);
       world.map_size = spatial_extent_in_metres (Vec3 (160, 40, 160));
-      world.resolution = map.width ();
+      world.resolution = map::width (surface);
       world.water_level = 4.0f * u::m;
       world.fog_scale = 0.0004f / u::m;
-      session = std::make_unique<game::GameSession> (world, map);
+      session = std::make_unique<game::GameSession> (world, surface);
       session->bike ().reset (Vec3 (48, 11.2f, 48));
       session->bike ().set_heading (Vec3 (0, 0, 1));
       session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
@@ -76,7 +78,7 @@ namespace {
   game::FrameViewInput gameplay_input (const FrameFixture& fixture) {
     return {
       .world = fixture.world,
-      .surface = fixture.map,
+      .surface = fixture.surface,
       .session = fixture.running (),
       .graphics = fixture.graphics,
       .selected_camera = camera_reading (fixture.running ()),
@@ -316,32 +318,37 @@ MOPPE_TEST (
   FrameFixture clear;
   const game::FrameView view = clear_sun_view ();
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (view, clear.world, clear.map), 1.0f, 1e-6f);
+    game::sun_visibility_target (view, clear.world, clear.surface),
+    1.0f,
+    1e-6f);
 
   FrameFixture underwater;
   game::FrameView submerged = clear_sun_view ();
   submerged.camera.position[1] =
     meters_value (underwater.world.water_level) - 0.1f;
-  MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (submerged, underwater.world, underwater.map),
-    0.0f,
-    1e-6f);
+  MOPPE_CHECK_NEAR (game::sun_visibility_target (
+                      submerged, underwater.world, underwater.surface),
+                    0.0f,
+                    1e-6f);
 
   FrameFixture ridge;
-  for (int z = 0; z < ridge.map.height (); ++z)
+  for (int z = 0; z < map::height (ridge.surface); ++z)
     for (int x = 10; x <= 11; ++x)
-      ridge.map.set_elevation (x,
-                               z,
-                               moppe::terrain::surface_elevation_point (
-                                 (4.0f) * 40.0f * mp_units::si::metre));
+      map::set_elevation (ridge.surface,
+                          x,
+                          z,
+                          moppe::terrain::surface_elevation_point (
+                            (4.0f) * 40.0f * mp_units::si::metre));
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (view, ridge.world, ridge.map), 0.0f, 1e-6f);
+    game::sun_visibility_target (view, ridge.world, ridge.surface),
+    0.0f,
+    1e-6f);
 
   FrameFixture cloudy;
   game::FrameView overcast = clear_sun_view ();
   overcast.lighting.cloudiness = 0.4f;
   MOPPE_CHECK_NEAR (
-    game::sun_visibility_target (overcast, cloudy.world, cloudy.map),
+    game::sun_visibility_target (overcast, cloudy.world, cloudy.surface),
     0.74f,
     1e-6f);
 }

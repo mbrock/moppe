@@ -29,7 +29,7 @@ namespace moppe::game {
   // jittered grid. Positions and identities depend only on world seed and
   // lattice cell, so revisiting an area never produces a different forest.
   [[nodiscard]] ForestPlan
-  plan_global_forest (const map::Surface& surface,
+  plan_global_forest (const map::SurfaceGeometry& surface,
                       const map::SurfaceReadings& readings,
                       std::uint32_t seed,
                       float spacing = 12.0f);
@@ -40,7 +40,7 @@ namespace moppe::game {
   class ForestLandscape {
   public:
     void rebuild (render::Renderer& renderer,
-                  const map::Surface& surface,
+                  const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed);
     void draw (render::Renderer& renderer,

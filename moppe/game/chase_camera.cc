@@ -113,7 +113,7 @@ namespace moppe {
       }
     }
 
-    void ChaseCamera::limit (const map::Surface& map) {
+    void ChaseCamera::limit (const map::SurfaceGeometry& surface) {
       Vec3& target = position_value (m_target);
       Vec3& camera = position_value (m_position);
       Vec3& target_velocity = velocity_value (m_target_velocity);
@@ -121,14 +121,15 @@ namespace moppe {
       // Keep the look point out of the slope as velocity look-ahead
       // carries it across rolling terrain.
       const float target_floor =
-        0.35f + map.interpolated_height (target[0], target[2]);
+        0.35f + map::interpolated_height (surface, target[0], target[2]);
       if (target[1] < target_floor) {
         target[1] = target_floor;
         if (target_velocity[1] < 0)
           target_velocity[1] = 0;
       }
 
-      float needed = 2.2f + map.interpolated_height (camera[0], camera[2]);
+      float needed =
+        2.2f + map::interpolated_height (surface, camera[0], camera[2]);
 
       // The sight line toward the bike must clear the terrain too;
       // twelve taps catch narrow ridges that the old four-tap check
@@ -138,7 +139,7 @@ namespace moppe {
         const float sx = camera[0] + (target[0] - camera[0]) * t;
         const float sz = camera[2] + (target[2] - camera[2]) * t;
         const float clearance = 0.3f + 1.9f * (1 - t);
-        const float g = clearance + map.interpolated_height (sx, sz);
+        const float g = clearance + map::interpolated_height (surface, sx, sz);
 
         needed = max (needed, (g - target[1] * t) / (1 - t));
       }

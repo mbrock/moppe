@@ -31,9 +31,10 @@ namespace moppe::game {
       return delta;
     }
 
-    Vec3
-    unwrap_near (Vec3 point, const Vec3& reference, const map::Surface& map) {
-      const Vec3 size = map.world_period ();
+    Vec3 unwrap_near (Vec3 point,
+                      const Vec3& reference,
+                      const map::SurfaceGeometry& surface) {
+      const Vec3 size = map::world_period (surface);
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
           point[axis] -= size[axis];
@@ -43,32 +44,34 @@ namespace moppe::game {
       return point;
     }
 
-    float flight_height_sample (const map::Surface& map, int x, int z) {
-      x = terrain::wrap_index (x, map.width ());
-      z = terrain::wrap_index (z, map.height ());
-      return terrain::surface_elevation_value (map.elevation_at (x, z));
+    float
+    flight_height_sample (const map::SurfaceGeometry& surface, int x, int z) {
+      x = terrain::wrap_index (x, map::width (surface));
+      z = terrain::wrap_index (z, map::height (surface));
+      return terrain::surface_elevation_value (
+        map::elevation_at (surface, x, z));
     }
 
     Vec3 flight_cell_position (terrain::CellIndex cell,
-                               const map::Surface& map,
+                               const map::SurfaceGeometry& surface,
                                const terrain::FloodField& flood,
                                const terrain::LakeCensus& census,
                                const terrain::DrainageGraph& drainage) {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map.sample_spacing ();
+      const Vec3 scale = map::sample_spacing (surface);
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-      const float y =
-        wet ? flood.water_level_m (cell)
-            : terrain::surface_elevation_value (map.elevation_at (x, z));
+      const float y = wet ? flood.water_level_m (cell)
+                          : terrain::surface_elevation_value (
+                              map::elevation_at (surface, x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
     Vec3 flight_cell_direction (terrain::CellIndex from,
                                 terrain::CellIndex to,
-                                const map::Surface& map,
+                                const map::SurfaceGeometry& surface,
                                 const terrain::DrainageGraph& drainage) {
       const int width = static_cast<int> (drainage.width ());
       const int height = static_cast<int> (drainage.height ());
@@ -80,8 +83,9 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = flight_minimum_image_delta (dx, width);
       dz = flight_minimum_image_delta (dz, height);
-      Vec3 direction (
-        dx * map.sample_spacing ()[0], 0, dz * map.sample_spacing ()[2]);
+      Vec3 direction (dx * map::sample_spacing (surface)[0],
+                      0,
+                      dz * map::sample_spacing (surface)[2]);
       if (length2 (direction) < 1e-5f)
         direction = Vec3 (0, 0, 1);
       return normalized (direction);
@@ -154,22 +158,23 @@ namespace moppe::game {
       return best;
     }
 
-    FeatureCandidate choose_peak (const map::Surface& map) {
+    FeatureCandidate choose_peak (const map::SurfaceGeometry& surface) {
       FeatureCandidate best;
-      const int width = map.width ();
-      const int height = map.height ();
+      const int width = map::width (surface);
+      const int height = map::height (surface);
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 64);
       for (int z = 0; z < height; z += stride)
         for (int x = 0; x < width; x += stride) {
-          const float center = flight_height_sample (map, x, z);
+          const float center = flight_height_sample (surface, x, z);
           float ring_high = -std::numeric_limits<float>::infinity ();
           float ring_low = std::numeric_limits<float>::infinity ();
           for (int dz : { -radius, 0, radius })
             for (int dx : { -radius, 0, radius }) {
               if (dx == 0 && dz == 0)
                 continue;
-              const float sample = flight_height_sample (map, x + dx, z + dz);
+              const float sample =
+                flight_height_sample (surface, x + dx, z + dz);
               ring_high = std::max (ring_high, sample);
               ring_low = std::min (ring_low, sample);
             }
@@ -185,19 +190,19 @@ namespace moppe::game {
       return best;
     }
 
-    FeatureCandidate choose_saddle (const map::Surface& map) {
+    FeatureCandidate choose_saddle (const map::SurfaceGeometry& surface) {
       FeatureCandidate best;
-      const int width = map.width ();
-      const int height = map.height ();
+      const int width = map::width (surface);
+      const int height = map::height (surface);
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 80);
       for (int z = 0; z < height; z += stride)
         for (int x = 0; x < width; x += stride) {
-          const float c = flight_height_sample (map, x, z);
-          const float n = flight_height_sample (map, x, z - radius);
-          const float s = flight_height_sample (map, x, z + radius);
-          const float e = flight_height_sample (map, x + radius, z);
-          const float w = flight_height_sample (map, x - radius, z);
+          const float c = flight_height_sample (surface, x, z);
+          const float n = flight_height_sample (surface, x, z - radius);
+          const float s = flight_height_sample (surface, x, z + radius);
+          const float e = flight_height_sample (surface, x + radius, z);
+          const float w = flight_height_sample (surface, x - radius, z);
           const float across_x =
             std::min (n - c, s - c) + std::min (c - e, c - w);
           const float across_z =
@@ -217,7 +222,7 @@ namespace moppe::game {
     }
 
     void add_waypoint (CinematicFlightPlan& plan,
-                       const map::Surface& map,
+                       const map::SurfaceGeometry& surface,
                        Vec3 position,
                        Vec3 subject,
                        float clearance,
@@ -227,9 +232,10 @@ namespace moppe::game {
       // values describe the shape of each beat; the global scale keeps every
       // beat carrying decisive forward energy.
       constexpr float flight_speed_scale = 1.55f;
-      position[1] = std::max (
-        position[1],
-        map.interpolated_height (position[0], position[2]) + clearance);
+      position[1] =
+        std::max (position[1],
+                  map::interpolated_height (surface, position[0], position[2]) +
+                    clearance);
       plan.waypoints.push_back ({ .position = position,
                                   .subject = subject,
                                   .cruise_speed = speed * flight_speed_scale,
@@ -237,32 +243,34 @@ namespace moppe::game {
     }
 
     void add_transit (CinematicFlightPlan& plan,
-                      const map::Surface& map,
+                      const map::SurfaceGeometry& surface,
                       Vec3 destination,
                       const Vec3& subject) {
       if (plan.waypoints.empty ())
         return;
       const Vec3 start = plan.waypoints.back ().position;
-      destination = unwrap_near (destination, start, map);
+      destination = unwrap_near (destination, start, surface);
       const Vec3 delta = destination - start;
       const float horizontal = std::hypot (delta[0], delta[2]);
       const int steps = std::max (1, static_cast<int> (horizontal / 650.0f));
       for (int i = 1; i < steps; ++i) {
         const float t = static_cast<float> (i) / steps;
         Vec3 point = start + delta * t;
-        point[1] = map.interpolated_height (point[0], point[2]) + 150.0f;
-        add_waypoint (plan, map, point, subject, 130.0f, 230.0f, 58.0f);
+        point[1] =
+          map::interpolated_height (surface, point[0], point[2]) + 150.0f;
+        add_waypoint (plan, surface, point, subject, 130.0f, 230.0f, 58.0f);
       }
     }
 
     Vec3 trail_alignment_position (const terrain::TrailAlignmentPoint& point,
-                                   const map::Surface& map) {
-      return Vec3 (
-        point.x_m, map.interpolated_height (point.x_m, point.z_m), point.z_m);
+                                   const map::SurfaceGeometry& surface) {
+      return Vec3 (point.x_m,
+                   map::interpolated_height (surface, point.x_m, point.z_m),
+                   point.z_m);
     }
 
     void add_trail_reveal (CinematicFlightPlan& plan,
-                           const map::Surface& map,
+                           const map::SurfaceGeometry& surface,
                            const terrain::TrailNetwork& trail) {
       const auto& alignment = trail.alignment.points;
       if (alignment.size () < 8 || trail.plan.home_base == no_cell)
@@ -274,15 +282,17 @@ namespace moppe::game {
       constexpr std::size_t samples = 3;
       const std::size_t look_ahead =
         std::max<std::size_t> (1, alignment.size () / 8);
-      Vec3 previous_ground = trail_alignment_position (alignment.front (), map);
+      Vec3 previous_ground =
+        trail_alignment_position (alignment.front (), surface);
       for (std::size_t sample = 0; sample < samples; ++sample) {
         const std::size_t index = sample * alignment.size () / 4;
         const std::size_t ahead_index =
           (index + look_ahead) % alignment.size ();
-        Vec3 ground = trail_alignment_position (alignment[index], map);
-        ground = unwrap_near (ground, previous_ground, map);
-        Vec3 subject = trail_alignment_position (alignment[ahead_index], map);
-        subject = unwrap_near (subject, ground, map);
+        Vec3 ground = trail_alignment_position (alignment[index], surface);
+        ground = unwrap_near (ground, previous_ground, surface);
+        Vec3 subject =
+          trail_alignment_position (alignment[ahead_index], surface);
+        subject = unwrap_near (subject, ground, surface);
         Vec3 forward = subject - ground;
         forward[1] = 0.0f;
         if (length2 (forward) < 1e-5f)
@@ -294,9 +304,10 @@ namespace moppe::game {
         Vec3 eye = ground - forward * (establishing ? 120.0f : 48.0f) +
                    side * (establishing ? 105.0f : 42.0f);
         eye[1] = ground[1] + (establishing ? 150.0f : 76.0f);
-        subject[1] = map.interpolated_height (subject[0], subject[2]) + 3.0f;
+        subject[1] =
+          map::interpolated_height (surface, subject[0], subject[2]) + 3.0f;
         add_waypoint (plan,
-                      map,
+                      surface,
                       eye,
                       subject,
                       establishing ? 105.0f : 55.0f,
@@ -305,7 +316,7 @@ namespace moppe::game {
         previous_ground = ground;
       }
 
-      const Vec3 home = trail_alignment_position (alignment.front (), map);
+      const Vec3 home = trail_alignment_position (alignment.front (), surface);
       plan.landmarks.push_back (
         { .kind = CinematicLandmarkKind::Trail,
           .cell = trail.plan.home_base,
@@ -348,7 +359,7 @@ namespace moppe::game {
   }
 
   CinematicFlightPlan
-  plan_cinematic_flight (const map::Surface& map,
+  plan_cinematic_flight (const map::SurfaceGeometry& surface,
                          const terrain::FloodField& flood,
                          const terrain::LakeCensus& census,
                          const terrain::DrainageGraph& drainage,
@@ -363,12 +374,12 @@ namespace moppe::game {
     const FeatureCandidate valley = choose_valley (drainage, rivers);
     const FeatureCandidate waterfall = choose_flight_waterfall (rivers);
     const FeatureCandidate lake = choose_flight_lake (flood, census);
-    const FeatureCandidate saddle = choose_saddle (map);
-    const FeatureCandidate peak = choose_peak (map);
+    const FeatureCandidate saddle = choose_saddle (surface);
+    const FeatureCandidate peak = choose_peak (surface);
     const FeatureCandidate water = waterfall.cell != no_cell ? waterfall : lake;
 
     if (trail)
-      add_trail_reveal (plan, map, *trail);
+      add_trail_reveal (plan, surface, *trail);
 
     if (valley.cell != no_cell) {
       const terrain::RiverReach* reach = valley_reach (valley.cell, rivers);
@@ -384,49 +395,52 @@ namespace moppe::game {
           last_index = water_index > 1 ? water_index - 1 : water_index;
         }
         Vec3 previous = flight_cell_position (
-          reach->cells.front (), map, flood, census, drainage);
+          reach->cells.front (), surface, flood, census, drainage);
         const std::size_t samples = std::min<std::size_t> (6, last_index + 1);
         for (std::size_t i = 0; i < samples; ++i) {
           const std::size_t index =
             i * last_index / std::max<std::size_t> (1, samples - 1);
           const terrain::CellIndex cell = reach->cells[index];
           Vec3 ground =
-            flight_cell_position (cell, map, flood, census, drainage);
-          ground = unwrap_near (ground, previous, map);
+            flight_cell_position (cell, surface, flood, census, drainage);
+          ground = unwrap_near (ground, previous, surface);
           const terrain::CellIndex next = drainage.receiver[cell];
-          const Vec3 flow = flight_cell_direction (cell, next, map, drainage);
+          const Vec3 flow =
+            flight_cell_direction (cell, next, surface, drainage);
           const Vec3 side (-flow[2], 0, flow[0]);
           Vec3 eye = ground - flow * (i == 0 ? 95.0f : 28.0f) + side * 8.0f;
           eye[1] = ground[1] + (i == 0 ? 52.0f : 22.0f);
           Vec3 subject = ground + flow * 85.0f;
-          subject[1] = map.interpolated_height (subject[0], subject[2]) + 3.0f;
-          add_waypoint (plan, map, eye, subject, 18.0f, 118.0f, 69.0f);
+          subject[1] =
+            map::interpolated_height (surface, subject[0], subject[2]) + 3.0f;
+          add_waypoint (plan, surface, eye, subject, 18.0f, 118.0f, 69.0f);
           previous = ground;
         }
         const Vec3 position =
-          flight_cell_position (valley.cell, map, flood, census, drainage);
+          flight_cell_position (valley.cell, surface, flood, census, drainage);
         record_landmark (plan, CinematicLandmarkKind::Valley, valley, position);
       }
     }
 
     if (water.cell != no_cell) {
       Vec3 subject =
-        flight_cell_position (water.cell, map, flood, census, drainage);
+        flight_cell_position (water.cell, surface, flood, census, drainage);
       if (!plan.waypoints.empty ())
-        subject = unwrap_near (subject, plan.waypoints.back ().position, map);
+        subject =
+          unwrap_near (subject, plan.waypoints.back ().position, surface);
       Vec3 flow = flight_cell_direction (
-        water.cell, drainage.receiver[water.cell], map, drainage);
+        water.cell, drainage.receiver[water.cell], surface, drainage);
       const Vec3 side (-flow[2], 0, flow[0]);
       Vec3 approach = subject - flow * 190.0f + side * 75.0f;
       approach[1] = subject[1] + (waterfall.cell != no_cell ? 100.0f : 125.0f);
-      add_transit (plan, map, approach, subject);
-      add_waypoint (plan, map, approach, subject, 65.0f, 165.0f, 61.0f);
+      add_transit (plan, surface, approach, subject);
+      add_waypoint (plan, surface, approach, subject, 65.0f, 165.0f, 61.0f);
       Vec3 close = subject - flow * 35.0f + side * 28.0f;
       close[1] = subject[1] + (waterfall.cell != no_cell ? 32.0f : 58.0f);
-      add_waypoint (plan, map, close, subject, 24.0f, 110.0f, 55.0f);
+      add_waypoint (plan, surface, close, subject, 24.0f, 110.0f, 55.0f);
       Vec3 exit = subject + flow * 170.0f - side * 55.0f;
       exit[1] = subject[1] + 85.0f;
-      add_waypoint (plan, map, exit, subject, 55.0f, 175.0f, 61.0f);
+      add_waypoint (plan, surface, exit, subject, 55.0f, 175.0f, 61.0f);
       record_landmark (plan,
                        waterfall.cell != no_cell
                          ? CinematicLandmarkKind::Waterfall
@@ -437,31 +451,34 @@ namespace moppe::game {
 
     if (saddle.cell != no_cell) {
       Vec3 subject =
-        flight_cell_position (saddle.cell, map, flood, census, drainage);
+        flight_cell_position (saddle.cell, surface, flood, census, drainage);
       if (!plan.waypoints.empty ())
-        subject = unwrap_near (subject, plan.waypoints.back ().position, map);
+        subject =
+          unwrap_near (subject, plan.waypoints.back ().position, surface);
       Vec3 entry = subject - saddle.direction * 260.0f;
       entry[1] = subject[1] + 90.0f;
-      add_transit (plan, map, entry, subject);
-      add_waypoint (plan, map, entry, subject, 60.0f, 180.0f, 63.0f);
+      add_transit (plan, surface, entry, subject);
+      add_waypoint (plan, surface, entry, subject, 60.0f, 180.0f, 63.0f);
       Vec3 pass = subject - saddle.direction * 20.0f;
       pass[1] = subject[1] + 28.0f;
       Vec3 beyond = subject + saddle.direction * 150.0f;
-      beyond[1] = map.interpolated_height (beyond[0], beyond[2]) + 12.0f;
-      add_waypoint (plan, map, pass, beyond, 20.0f, 145.0f, 72.0f);
+      beyond[1] =
+        map::interpolated_height (surface, beyond[0], beyond[2]) + 12.0f;
+      add_waypoint (plan, surface, pass, beyond, 20.0f, 145.0f, 72.0f);
       Vec3 exit = subject + saddle.direction * 240.0f;
       exit[1] = subject[1] + 70.0f;
-      add_waypoint (plan, map, exit, beyond, 45.0f, 190.0f, 65.0f);
+      add_waypoint (plan, surface, exit, beyond, 45.0f, 190.0f, 65.0f);
       record_landmark (plan, CinematicLandmarkKind::Saddle, saddle, subject);
     }
 
     if (peak.cell != no_cell) {
       Vec3 subject =
-        flight_cell_position (peak.cell, map, flood, census, drainage);
+        flight_cell_position (peak.cell, surface, flood, census, drainage);
       if (!plan.waypoints.empty ())
-        subject = unwrap_near (subject, plan.waypoints.back ().position, map);
+        subject =
+          unwrap_near (subject, plan.waypoints.back ().position, surface);
       const float radius =
-        std::clamp (map.world_period ()[0] * 0.055f, 160.0f, 330.0f);
+        std::clamp (map::world_period (surface)[0] * 0.055f, 160.0f, 330.0f);
       Vec3 incoming (1, 0, 0);
       if (!plan.waypoints.empty ()) {
         incoming = subject - plan.waypoints.back ().position;
@@ -471,7 +488,7 @@ namespace moppe::game {
         else
           normalize (incoming);
       }
-      Vec3 unwrapped_arrival = unwrap_near (arrival, subject, map);
+      Vec3 unwrapped_arrival = unwrap_near (arrival, subject, surface);
       Vec3 outgoing = unwrapped_arrival - subject;
       outgoing[1] = 0.0f;
       if (length2 (outgoing) < 1e-5f)
@@ -487,7 +504,7 @@ namespace moppe::game {
       const Vec3 radial = Vec3 (incoming[2], 0, -incoming[0]) * turn_sign;
       Vec3 first = subject + radial * radius;
       first[1] += radius * 0.36f;
-      add_transit (plan, map, first, subject);
+      add_transit (plan, surface, first, subject);
       for (int i = 0; i < 5; ++i) {
         const float progress = static_cast<float> (i) / 4.0f;
         const float angle = orbit_angle * progress;
@@ -495,7 +512,7 @@ namespace moppe::game {
                    incoming * (std::sin (angle) * radius);
         eye[1] += radius * (0.36f + 0.12f * progress);
         Vec3 look = subject + Vec3 (0, radius * 0.08f, 0);
-        add_waypoint (plan, map, eye, look, 70.0f, 125.0f, 53.0f);
+        add_waypoint (plan, surface, eye, look, 70.0f, 125.0f, 53.0f);
       }
       record_landmark (plan, CinematicLandmarkKind::Peak, peak, subject);
     }
@@ -503,12 +520,12 @@ namespace moppe::game {
     Vec3 final_subject = arrival;
     if (!plan.waypoints.empty ())
       final_subject =
-        unwrap_near (final_subject, plan.waypoints.back ().position, map);
+        unwrap_near (final_subject, plan.waypoints.back ().position, surface);
     Vec3 reveal = final_subject + Vec3 (-150.0f, 95.0f, -150.0f);
-    add_transit (plan, map, reveal, final_subject);
-    add_waypoint (plan, map, reveal, final_subject, 70.0f, 170.0f, 60.0f);
+    add_transit (plan, surface, reveal, final_subject);
+    add_waypoint (plan, surface, reveal, final_subject, 70.0f, 170.0f, 60.0f);
     Vec3 final_eye = final_subject + Vec3 (-28.0f, 15.0f, -28.0f);
-    add_waypoint (plan, map, final_eye, final_subject, 9.0f, 75.0f, 68.0f);
+    add_waypoint (plan, surface, final_eye, final_subject, 9.0f, 75.0f, 68.0f);
     plan.landmarks.push_back ({ .kind = CinematicLandmarkKind::Arrival,
                                 .cell = no_cell,
                                 .score = 0.0f,
@@ -599,7 +616,8 @@ namespace moppe::game {
     };
   }
 
-  void CinematicFlight::build_flight_ribbon (const map::Surface& map) {
+  void
+  CinematicFlight::build_flight_ribbon (const map::SurfaceGeometry& surface) {
     m_arc_samples.clear ();
     if (m_waypoints.size () < 2)
       return;
@@ -617,7 +635,8 @@ namespace moppe::game {
         const Vec3 point = curve_position (segment, t);
         if (!m_arc_samples.empty ())
           distance += length (point - previous);
-        const float ground = map.interpolated_height (point[0], point[2]);
+        const float ground =
+          map::interpolated_height (surface, point[0], point[2]);
         m_arc_samples.push_back (
           { .distance = distance,
             .segment = segment,
@@ -744,7 +763,7 @@ namespace moppe::game {
   }
 
   void CinematicFlight::start (const CinematicFlightPlan& plan,
-                               const map::Surface& map) {
+                               const map::SurfaceGeometry& surface) {
     m_waypoints = plan.waypoints;
     for (int pass = 0; pass < 4 && m_waypoints.size () >= 2; ++pass) {
       std::vector<CinematicFlightWaypoint> rounded;
@@ -770,7 +789,7 @@ namespace moppe::game {
       rounded.push_back (m_waypoints.back ());
       m_waypoints = std::move (rounded);
     }
-    build_flight_ribbon (map);
+    build_flight_ribbon (surface);
     m_elapsed = 0.0f;
     m_final_hold = 0.0f;
     m_route_distance = 0.0f;
@@ -803,7 +822,7 @@ namespace moppe::game {
   }
 
   void CinematicFlight::tick (float dt,
-                              const map::Surface& map,
+                              const map::SurfaceGeometry& surface,
                               const CinematicFlightControls& controls) {
     if (!m_active)
       return;
@@ -857,7 +876,7 @@ namespace moppe::game {
     const Vec3 previous_position = m_position;
     m_position = current.position + m_manual_offset;
     const float floor =
-      map.interpolated_height (m_position[0], m_position[2]) + 18.0f;
+      map::interpolated_height (surface, m_position[0], m_position[2]) + 18.0f;
     m_position[1] = std::max (m_position[1], floor);
     m_velocity = (m_position - previous_position) / dt;
 

@@ -16,25 +16,25 @@ namespace moppe::game {
     }
 
     Vec3 cell_position (std::uint32_t cell,
-                        const map::Surface& map,
+                        const map::SurfaceGeometry& surface,
                         const terrain::FloodField& flood,
                         const terrain::LakeCensus& census,
                         const terrain::DrainageGraph& drainage) {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map.sample_spacing ();
+      const Vec3 scale = map::sample_spacing (surface);
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-      const float y =
-        water ? flood.water_level_m (cell)
-              : terrain::surface_elevation_value (map.elevation_at (x, z));
+      const float y = water ? flood.water_level_m (cell)
+                            : terrain::surface_elevation_value (
+                                map::elevation_at (surface, x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 
     Vec3 cell_direction (std::uint32_t from,
                          std::uint32_t to,
-                         const map::Surface& map,
+                         const map::SurfaceGeometry& surface,
                          const terrain::DrainageGraph& drainage) {
       const int width = static_cast<int> (drainage.width ());
       const int height = static_cast<int> (drainage.height ());
@@ -46,8 +46,9 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = capture_minimum_image_delta (dx, width);
       dz = capture_minimum_image_delta (dz, height);
-      Vec3 result (
-        dx * map.sample_spacing ()[0], 0.0f, dz * map.sample_spacing ()[2]);
+      Vec3 result (dx * map::sample_spacing (surface)[0],
+                   0.0f,
+                   dz * map::sample_spacing (surface)[2]);
       if (length2 (result) < 1e-6f)
         result = Vec3 (0, 0, 1);
       return normalized (result);
@@ -55,15 +56,16 @@ namespace moppe::game {
 
     float camera_obstruction (const Vec3& eye,
                               const Vec3& target,
-                              const map::Surface& map) {
+                              const map::SurfaceGeometry& surface) {
       float obstruction = 0.0f;
       for (int step = 1; step < 10; ++step) {
         const float t = static_cast<float> (step) / 10.0f;
         const Vec3 point = eye * (1.0f - t) + target * t;
-        if (!map.in_bounds (point[0], point[2]))
+        if (!map::in_bounds (point[0], point[2]))
           continue;
         obstruction = std::max (
-          obstruction, map.interpolated_height (point[0], point[2]) - point[1]);
+          obstruction,
+          map::interpolated_height (surface, point[0], point[2]) - point[1]);
       }
       return obstruction;
     }
@@ -260,7 +262,7 @@ namespace moppe::game {
 
   std::optional<WaterInspection>
   choose_water_inspection (WaterShot shot,
-                           const map::Surface& map,
+                           const map::SurfaceGeometry& surface,
                            const terrain::FloodField& flood,
                            const terrain::LakeCensus& census,
                            const terrain::DrainageGraph& drainage,
@@ -292,12 +294,12 @@ namespace moppe::game {
     Vec3 flow =
       best.to != terrain::RiverReach::no_id &&
           best.to != terrain::WaterBody::no_cell && best.to != best.cell
-        ? cell_direction (best.cell, best.to, map, drainage)
+        ? cell_direction (best.cell, best.to, surface, drainage)
       : best.from != terrain::RiverReach::no_id && best.from != best.cell
-        ? cell_direction (best.from, best.cell, map, drainage)
+        ? cell_direction (best.from, best.cell, surface, drainage)
         : Vec3 (0, 0, 1);
     const Vec3 side (-flow[2], 0, flow[0]);
-    Vec3 target = cell_position (best.cell, map, flood, census, drainage);
+    Vec3 target = cell_position (best.cell, surface, flood, census, drainage);
     float back = 30.0f;
     float sideways = 22.0f;
     float height = 16.0f;
@@ -311,7 +313,8 @@ namespace moppe::game {
       height = 12.0f;
     } else if (shot == WaterShot::Waterfall) {
       target =
-        (target + cell_position (best.to, map, flood, census, drainage)) * 0.5f;
+        (target + cell_position (best.to, surface, flood, census, drainage)) *
+        0.5f;
       back = -18.0f;
       sideways = 24.0f;
       height = 14.0f;
@@ -326,14 +329,16 @@ namespace moppe::game {
     }
     target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
     Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
-    eye[1] = std::max (eye[1], map.interpolated_height (eye[0], eye[2]) + 4.0f);
+    eye[1] = std::max (
+      eye[1], map::interpolated_height (surface, eye[0], eye[2]) + 4.0f);
     if (shot == WaterShot::Waterfall) {
       Vec3 opposite =
         target - flow * back - side * sideways + Vec3 (0, height, 0);
       opposite[1] = std::max (
-        opposite[1], map.interpolated_height (opposite[0], opposite[2]) + 4.0f);
-      if (camera_obstruction (opposite, target, map) <
-          camera_obstruction (eye, target, map))
+        opposite[1],
+        map::interpolated_height (surface, opposite[0], opposite[2]) + 4.0f);
+      if (camera_obstruction (opposite, target, surface) <
+          camera_obstruction (eye, target, surface))
         eye = opposite;
     }
     return WaterInspection { .kind = shot,

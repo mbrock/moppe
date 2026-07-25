@@ -104,9 +104,10 @@ int main (int argc, char** argv) {
     for (int offset = 0; offset < seed_count; ++offset) {
       const std::uint32_t seed =
         first_seed + static_cast<std::uint32_t> (offset);
-      map::Surface map (resolution,
-                        resolution,
-                        Vec3 (world_width_m, world_height_m, world_width_m));
+      map::SurfaceGeometry surface (
+        resolution,
+        resolution,
+        Vec3 (world_width_m, world_height_m, world_width_m));
       const WorldRecipe recipe =
         make_world_recipe (spatial_extent_in_metres (Vec3 (
                              world_width_m, world_height_m, world_width_m)),
@@ -114,12 +115,12 @@ int main (int argc, char** argv) {
                            Seed { seed },
                            sea_level_m * u::m,
                            profile);
-      const auto uplift =
-        map::initialize_terrain (map, recipe.seed (), recipe.water_datum ());
-      map::evolve_terrain (map, uplift, recipe.evolution ());
+      const auto uplift = map::initialize_terrain (
+        surface, recipe.seed (), recipe.water_datum ());
+      map::evolve_terrain (surface, uplift, recipe.evolution ());
 
       const FloodField flood =
-        analyze_standing_water (map.geometry (), sea_level);
+        analyze_standing_water (surface.geometry (), sea_level);
       const LakeCensus census = census_lakes (flood);
       std::array<std::size_t, category_count> bodies {};
       std::array<std::size_t, category_count> cells {};

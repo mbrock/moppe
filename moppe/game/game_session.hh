@@ -24,7 +24,7 @@ namespace moppe::game {
   public:
     using State = GameState;
 
-    GameSession (const WorldParams& world, const map::Surface& surface);
+    GameSession (const WorldParams& world, const map::SurfaceGeometry& surface);
     GameSession (const GameSession&) = delete;
     GameSession& operator= (const GameSession&) = delete;
     GameSession (GameSession&&) = delete;
@@ -91,7 +91,7 @@ namespace moppe::game {
     Vec3 subject_position () const;
     Vec3 subject_heading () const;
     float subject_speed_kmh () const;
-    bool can_deploy_glider (const map::Surface& terrain) const;
+    bool can_deploy_glider (const map::SurfaceGeometry& terrain) const;
     bool can_drop_bike () const;
     void clear_controls ();
 
@@ -111,7 +111,7 @@ namespace moppe::game {
 
   GameSessionAdvanceResult
   advance_game_session (const WorldParams& world,
-                        const map::Surface& surface,
+                        const map::SurfaceGeometry& surface,
                         const std::vector<mov::Box>& obstacles,
                         GameSession& session,
                         const InputFrame& input,

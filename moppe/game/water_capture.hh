@@ -26,7 +26,7 @@ namespace moppe::game {
 
   std::optional<WaterInspection>
   choose_water_inspection (WaterShot shot,
-                           const map::Surface& map,
+                           const map::SurfaceGeometry& surface,
                            const terrain::FloodField& flood,
                            const terrain::LakeCensus& census,
                            const terrain::DrainageGraph& drainage,

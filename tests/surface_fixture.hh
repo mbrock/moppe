@@ -80,8 +80,9 @@ namespace moppe::test {
     std::uint32_t seed = 0xdecafbadU;
   };
 
-  inline map::SurfaceReadings complete_readings (const map::Surface& surface,
-                                                 ReadingsRecipe recipe = {}) {
+  inline map::SurfaceReadings
+  complete_readings (const map::SurfaceGeometry& surface,
+                     ReadingsRecipe recipe = {}) {
     const terrain::TerrainDomain& domain = surface.domain ();
     terrain::MoistureMap moisture = recipe.moisture
                                       ? std::move (*recipe.moisture)
@@ -89,7 +90,7 @@ namespace moppe::test {
     terrain::TrailUseMap use =
       recipe.use ? std::move (*recipe.use) : uniform_use (domain, 0.0f, 0.0f);
     map::TreeHabitatMap habitat = map::analyze_tree_habitat (
-      surface.geometry (), moisture, recipe.water_level, recipe.tree_line);
+      surface, moisture, recipe.water_level, recipe.tree_line);
     map::ForestCoverMap cover =
       map::analyze_forest_cover (habitat, use, recipe.seed);
 
@@ -98,7 +99,7 @@ namespace moppe::test {
                           recipe.waterline
                             ? std::move (*recipe.waterline)
                             : terrain::WaterlineProximity (domain),
-                          map::analyze_geology_materials (surface.geometry ()),
+                          map::analyze_geology_materials (surface),
                           std::move (habitat),
                           std::move (cover),
                           std::move (use));
