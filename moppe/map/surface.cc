@@ -1,3 +1,4 @@
+#include <moppe/gfx/signal.hh>
 #include <moppe/map/surface.hh>
 
 #include <moppe/profile.hh>
@@ -326,54 +327,7 @@ namespace moppe::map {
     return values;
   }
 
-  namespace {
-    float smoothstep (float edge0, float edge1, float value) {
-      const float t =
-        std::clamp ((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
-    }
-
-    std::uint32_t
-    forest_hash (std::uint32_t x, std::uint32_t z, std::uint32_t seed) {
-      std::uint32_t value = seed ^ (x * 0x9e3779b9U) ^ (z * 0x85ebca6bU);
-      value ^= value >> 16;
-      value *= 0x7feb352dU;
-      value ^= value >> 15;
-      value *= 0x846ca68bU;
-      value ^= value >> 16;
-      return value;
-    }
-
-    float
-    forest_hash_value (std::uint32_t x, std::uint32_t z, std::uint32_t seed) {
-      return static_cast<float> (forest_hash (x, z, seed) & 0x00ffffffU) /
-             static_cast<float> (0x01000000U);
-    }
-
-    float periodic_noise (float x,
-                          float z,
-                          std::uint32_t period_x,
-                          std::uint32_t period_z,
-                          std::uint32_t seed) {
-      const float xf = std::floor (x);
-      const float zf = std::floor (z);
-      const auto wrap = [] (std::int64_t value, std::uint32_t period) {
-        const std::int64_t p = static_cast<std::int64_t> (period);
-        return static_cast<std::uint32_t> ((value % p + p) % p);
-      };
-      const std::uint32_t x0 = wrap (static_cast<std::int64_t> (xf), period_x);
-      const std::uint32_t z0 = wrap (static_cast<std::int64_t> (zf), period_z);
-      const std::uint32_t x1 = (x0 + 1) % period_x;
-      const std::uint32_t z1 = (z0 + 1) % period_z;
-      const float tx = smoothstep (0.0f, 1.0f, x - xf);
-      const float tz = smoothstep (0.0f, 1.0f, z - zf);
-      const float a = forest_hash_value (x0, z0, seed);
-      const float b = forest_hash_value (x1, z0, seed);
-      const float c = forest_hash_value (x0, z1, seed);
-      const float d = forest_hash_value (x1, z1, seed);
-      return std::lerp (std::lerp (a, b, tx), std::lerp (c, d, tx), tz);
-    }
-  }
+  namespace {}
 
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
@@ -428,12 +382,16 @@ namespace moppe::map {
     for (const terrain::TerrainIndex site : spatial::sites (habitat)) {
       const float u = static_cast<float> (site.column) / lap_x;
       const float v = static_cast<float> (site.row) / lap_z;
-      const float broad =
+      // Two octaves of the same periodic field; the mosaic stays a noise
+      // signal until the recruitment threshold reads it as a proportion.
+      const noise_signal_t broad =
         periodic_noise (u * 7.0f, v * 7.0f, 7, 7, seed ^ 0x4b1d9e37U);
-      const float local =
+      const noise_signal_t local =
         periodic_noise (u * 23.0f, v * 23.0f, 23, 23, seed ^ 0x91e10da5U);
-      const float mosaic = 0.72f * broad + 0.28f * local;
-      const float recruitment = smoothstep (0.44f, 0.61f, mosaic);
+      const noise_signal_t mosaic = 0.72f * broad + 0.28f * local;
+      const float recruitment =
+        band (0.44f * noise_signal[one], 0.61f * noise_signal[one], mosaic)
+          .numerical_value_in (one);
       const float support = std::pow (
         spatial::get<tree_habitat> (habitat[site]).numerical_value_in (one),
         1.15f);

@@ -1,3 +1,4 @@
+#include <moppe/gfx/signal.hh>
 #include <moppe/terrain/geological.hh>
 
 #include <moppe/terrain/noise.hh>
@@ -136,12 +137,6 @@ namespace moppe::terrain {
 
       PerlinPermutation m_permutation;
     };
-
-    float smoothstep (float edge0, float edge1, float value) {
-      float amount = (value - edge0) / (edge1 - edge0);
-      amount = std::clamp (amount, 0.0f, 1.0f);
-      return amount * amount * (3.0f - 2.0f * amount);
-    }
 
     constexpr NoiseShape warp_shape { 3, 4, 2, 0.5f };
     constexpr NoiseShape continent_noise_shape { 3, 4, 2, 0.5f };
