@@ -318,16 +318,11 @@ namespace moppe {
         // Shadow maps are published with the completed terrain and remain
         // available to terrain, water, and immediate scene geometry.
         id<MTLTexture> shadow_map = nil;
-        id<MTLTexture> previous_shadow_map = nil;
         Mat4 light_biased;
         bool have_shadow = false;
 
-        id<MTLTexture> heights = nil, previous_heights = nil;
+        id<MTLTexture> heights = nil;
         id<MTLTexture> normals = nil;
-        float height_transition_start = 0.0f;
-        bool height_transition_active = false;
-        uint64_t height_transition_generation = 0;
-        uint64_t shadow_transition_generation = 0;
         id<MTLBuffer> indices[TERRAIN_LOD_COUNT] {};
         uint32_t index_count[TERRAIN_LOD_COUNT] {};
         TerrainParams params;
@@ -1321,36 +1316,8 @@ namespace moppe {
       const int w = params.width, h = params.height;
       const std::size_t sample_count = static_cast<std::size_t> (w) * h;
       if (w < 2 || h < 2 || heights.size () != sample_count ||
-          (!normals.empty () && normals.size () != sample_count) ||
-          params.scale[1] != 1.0f)
+          normals.size () != sample_count || params.scale[1] != 1.0f)
         throw std::invalid_argument ("invalid Metal terrain raster");
-      const bool transition =
-        params.derive_normals && m_terrain_resources.have_terrain &&
-        m_terrain_resources.heights &&
-        m_terrain_resources.heights.width == (NSUInteger)w &&
-        m_terrain_resources.heights.height == (NSUInteger)h;
-      if (m_terrain_resources.height_transition_active) {
-        const float elapsed = std::max (
-          0.0f,
-          m_frame.params.time - m_terrain_resources.height_transition_start);
-        const float duration = std::max (
-          0.001f, m_terrain_resources.params.height_transition_duration);
-        if (elapsed >= duration)
-          m_terrain_resources.height_transition_active = false;
-      }
-      const bool continue_transition =
-        transition && m_terrain_resources.height_transition_active &&
-        m_terrain_resources.previous_heights;
-      if (transition && !continue_transition)
-        ++m_terrain_resources.height_transition_generation;
-
-      if (transition && !continue_transition) {
-        id<MTLTexture> old_heights = m_terrain_resources.heights;
-        m_terrain_resources.heights = m_terrain_resources.previous_heights;
-        m_terrain_resources.previous_heights = old_heights;
-      } else if (!transition) {
-        m_terrain_resources.previous_heights = nil;
-      }
       m_terrain_resources.params = params;
 
       // Heights: R32Float, read() access only.
@@ -1372,58 +1339,29 @@ namespace moppe {
                       h,
                       sizeof (float),
                       false);
-      if (transition && !continue_transition) {
-        m_terrain_resources.height_transition_start = m_frame.params.time;
-        m_terrain_resources.height_transition_active = true;
-      } else if (!transition) {
-        m_terrain_resources.height_transition_active = false;
-      }
-
       // Normals: RG16Snorm xz, y reconstructed in the shader.
-      if (!params.derive_normals) {
-        std::vector<int16_t> packed ((size_t)w * h * 2);
-        for (size_t i = 0; i < (size_t)w * h; ++i) {
-          const Vec3 n = normals.empty ()
-                           ? Vec3 (0.0f, 1.0f, 0.0f)
-                           : normals[i].numerical_value_in (mp_units::one);
-          float x = n[0], z = n[2];
-          if (x < -1)
-            x = -1;
-          if (x > 1)
-            x = 1;
-          if (z < -1)
-            z = -1;
-          if (z > 1)
-            z = 1;
-          packed[i * 2 + 0] = (int16_t)(x * 32767.0f);
-          packed[i * 2 + 1] = (int16_t)(z * 32767.0f);
-        }
-        if (!m_terrain_resources.normals ||
-            m_terrain_resources.normals.width != (NSUInteger)w ||
-            m_terrain_resources.normals.height != (NSUInteger)h) {
-          MTLTextureDescriptor* td = [MTLTextureDescriptor
-            texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Snorm
-                                         width:w
-                                        height:h
-                                     mipmapped:NO];
-          td.storageMode = MTLStorageModePrivate;
-          td.usage = MTLTextureUsageShaderRead;
-          m_terrain_resources.normals = [m_device newTextureWithDescriptor:td];
-        }
-        upload_texture (
-          m_terrain_resources.normals, packed.data (), w, h, 4, false);
-      } else if (!m_terrain_resources.normals) {
-        const int16_t up[2] = { 0, 0 };
+      std::vector<int16_t> packed ((size_t)w * h * 2);
+      for (size_t i = 0; i < (size_t)w * h; ++i) {
+        const Vec3 n = normals[i].numerical_value_in (mp_units::one);
+        const float x = std::clamp (n[0], -1.0f, 1.0f);
+        const float z = std::clamp (n[2], -1.0f, 1.0f);
+        packed[i * 2 + 0] = (int16_t)(x * 32767.0f);
+        packed[i * 2 + 1] = (int16_t)(z * 32767.0f);
+      }
+      if (!m_terrain_resources.normals ||
+          m_terrain_resources.normals.width != (NSUInteger)w ||
+          m_terrain_resources.normals.height != (NSUInteger)h) {
         MTLTextureDescriptor* td = [MTLTextureDescriptor
           texture2DDescriptorWithPixelFormat:MTLPixelFormatRG16Snorm
-                                       width:1
-                                      height:1
+                                       width:w
+                                      height:h
                                    mipmapped:NO];
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.normals = [m_device newTextureWithDescriptor:td];
-        upload_texture (m_terrain_resources.normals, up, 1, 1, 4, false);
       }
+      upload_texture (
+        m_terrain_resources.normals, packed.data (), w, h, 4, false);
 
       // Shared chunk-local index templates.  The finest inserts one
       // virtual vertex between source samples; progressively coarser
@@ -1508,20 +1446,7 @@ namespace moppe {
       if (!m_pipelines.terrain_shadow || !m_terrain_resources.have_terrain)
         return;
 
-      const int shadow_size =
-        std::max (256, m_terrain_resources.params.shadow_resolution);
-      const bool new_shadow_transition =
-        m_terrain_resources.params.derive_normals &&
-        m_terrain_resources.shadow_transition_generation !=
-          m_terrain_resources.height_transition_generation;
-      if (new_shadow_transition && m_terrain_resources.shadow_map) {
-        id<MTLTexture> old_shadow = m_terrain_resources.shadow_map;
-        m_terrain_resources.shadow_map =
-          m_terrain_resources.previous_shadow_map;
-        m_terrain_resources.previous_shadow_map = old_shadow;
-      } else if (!m_terrain_resources.params.derive_normals) {
-        m_terrain_resources.previous_shadow_map = nil;
-      }
+      constexpr int shadow_size = 4096;
 
       if (!m_terrain_resources.shadow_map ||
           m_terrain_resources.shadow_map.width != (NSUInteger)shadow_size ||
@@ -1578,8 +1503,7 @@ namespace moppe {
       [enc setVertexTexture:m_terrain_resources.heights
                     atIndex:MOPPE_TEX_HEIGHTS];
 
-      const int requested_step =
-        std::max (1, m_terrain_resources.params.shadow_sample_step);
+      constexpr int requested_step = 1;
       int shadow_lod = TERRAIN_NATIVE_LOD;
       while (shadow_lod + 1 < TERRAIN_LOD_COUNT &&
              TERRAIN_LOD_STEP[shadow_lod] < requested_step)
@@ -1614,8 +1538,6 @@ namespace moppe {
                   << shadow_step << ", " << gpu_ms << " ms GPU\n";
       }
       m_terrain_resources.have_shadow = true;
-      m_terrain_resources.shadow_transition_generation =
-        m_terrain_resources.height_transition_generation;
     }
 
     void MetalRenderer::set_ocean (const OceanSetup& setup,
@@ -2267,26 +2189,6 @@ namespace moppe {
       u.params1.z = terrain.have_shadow ? terrain.params.shadow_strength : 0;
       u.params1.w = terrain.shadow_map ? 1.0f / (float)terrain.shadow_map.width
                                        : 1.0f / 4096.0f;
-      u.params2.x = static_cast<float> (terrain.params.projection);
-      u.params2.y = terrain.params.torus_major_radius;
-      u.params2.z = terrain.params.torus_minor_radius;
-      u.params2.w = terrain.params.torus_height_scale;
-      u.params3.x = terrain.params.derive_normals ? 1.0f : 0.0f;
-      float height_blend = 1.0f;
-      if (terrain.height_transition_active && terrain.previous_heights) {
-        const float elapsed =
-          std::max (0.0f, frame.params.time - terrain.height_transition_start);
-        const float duration =
-          std::max (0.001f, terrain.params.height_transition_duration);
-        const float t = std::min (1.0f, elapsed / duration);
-        height_blend = t * t * (3.0f - 2.0f * t);
-        if (t >= 1.0f)
-          terrain.height_transition_active = false;
-      }
-      u.params3.z = height_blend;
-      u.params3.w = terrain.previous_shadow_map
-                      ? 1.0f / (float)terrain.previous_shadow_map.width
-                      : u.params1.w;
       if (terrain.have_overlay) {
         u.params4.x = 1.0f + static_cast<float> (terrain.overlay_params.ramp);
         u.params4.y = terrain.overlay_params.minimum;
@@ -2297,14 +2199,7 @@ namespace moppe {
       u.params5.y = water.have_water_levels ? 1.0f : 0.0f;
       u.params5.z = terrain.have_moisture ? 1.0f : 0.0f;
       u.params5.w = terrain.have_geology ? 1.0f : 0.0f;
-      // Fragment-rate normals need the gameplay normal texture to be
-      // authoritative: the Lab preview derives normals from heights, and
-      // Cover View rotates normals into the torus frame per vertex.
-      u.params6.x =
-        (terrain.params.fragment_normals && !terrain.params.derive_normals &&
-         terrain.params.projection == TerrainProjection::Plane)
-          ? 1.0f
-          : 0.0f;
+      u.params6.x = terrain.params.fragment_normals ? 1.0f : 0.0f;
       u.params6.y = terrain.have_shore ? 1.0f : 0.0f;
       u.params6.z = terrain.have_paths ? 1.0f : 0.0f;
       u.params6.w = terrain.have_forest ? 1.0f : 0.0f;
@@ -2321,9 +2216,6 @@ namespace moppe {
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setVertexTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
       [enc setVertexTexture:terrain.normals atIndex:MOPPE_TEX_NORMALS];
-      [enc setVertexTexture:(terrain.previous_heights ? terrain.previous_heights
-                                                      : terrain.heights)
-                    atIndex:MOPPE_TEX_PREVIOUS_HEIGHTS];
 
       MetalTexture* grass = (MetalTexture*)terrain.grass.get ();
       MetalTexture* dirt = (MetalTexture*)terrain.dirt.get ();
@@ -2341,11 +2233,6 @@ namespace moppe {
         [enc setFragmentTexture:snow->texture atIndex:MOPPE_TEX_SNOW];
       if (terrain.shadow_map)
         [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
-      if (terrain.shadow_map)
-        [enc setFragmentTexture:(terrain.previous_shadow_map
-                                   ? terrain.previous_shadow_map
-                                   : terrain.shadow_map)
-                        atIndex:MOPPE_TEX_PREVIOUS_SHADOW];
       if (terrain.overlay)
         [enc setFragmentTexture:terrain.overlay
                         atIndex:MOPPE_TEX_TERRAIN_OVERLAY];
@@ -2729,7 +2616,7 @@ namespace moppe {
       id<MTLBuffer> buf = frame.stream[frame.slot];
       if (!buf || buf.length < needed) {
         // Native-resolution HUD text plus transient world-space effects can
-        // legitimately exceed 1 MiB in Terrain Lab. Avoid replacing the shared
+        // legitimately exceed 1 MiB. Avoid replacing the shared
         // per-frame buffer between the scene and HUD encoders in the common
         // case; growth remains available for genuinely larger frames.
         size_t cap = buf ? buf.length : (4 << 20);

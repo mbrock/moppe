@@ -38,8 +38,8 @@ expose `GeneratedWorld`, loading, platform, or renderer types. The operation
 applies the `InputFrame`, advances actors and effects, updates score,
 camera, and FOV, and reports the small set of application-side effects it
 cannot realize itself. `MoppeGame::tick` selects live or recorded input,
-continues the global clock and weather through paused cinematic, Terrain Lab,
-and tree-demo modes, then delegates ordinary play through that operation.
+continues the global clock and weather through paused cinematic and tree-demo
+modes, then delegates ordinary play through that operation.
 
 A completed-world handoff retires the old session before its old generated
 world, then constructs a fresh session against the new world. In particular,

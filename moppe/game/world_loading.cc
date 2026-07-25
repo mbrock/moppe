@@ -10,7 +10,7 @@
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
-#include <moppe/map/terrain_evaluator.hh>
+#include <moppe/map/terrain_generation.hh>
 #include <moppe/terrain/river.hh>
 
 #include <algorithm>
@@ -24,7 +24,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <utility>
-#include <variant>
 
 namespace moppe::game {
   namespace {
@@ -134,35 +133,20 @@ namespace moppe::game {
       return false;
     }
 
-    // Evaluates the recipe's terrain program, narrating the two long phases
-    // with real measurements: rows while geology is generated, then
-    // geological time while orogeny runs.
+    // Build the surface in its one real order: geology, erosion, then trails.
     std::optional<terrain::TrailNetwork>
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
                     map::Surface& terrain) {
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
         platform::create_stream_power_evolution_backend ();
-      map::TerrainEvaluator evaluator (terrain, evolution.get ());
-
-      const auto after_transform =
-        [&state] (std::size_t, const terrain::TerrainTransform& transform) {
-          if (std::holds_alternative<terrain::OrogenyEvolution> (transform))
-            state.report ("Refining the terrain",
-                          "Shaping coasts, channels, and the overland route");
-        };
 
       const auto report_geological_time =
-        [&state] (std::size_t,
-                  const terrain::TerrainTransform& transform,
-                  int completed_steps,
-                  int total_steps) {
-          if (!std::holds_alternative<terrain::OrogenyEvolution> (transform))
-            return;
-          const auto& orogeny = std::get<terrain::OrogenyEvolution> (transform);
+        [&state, &recipe] (
+          int completed_steps, int total_steps, std::span<const float>) {
           const float duration =
-            julian_years_value (orogeny.evolution.duration);
-          const float step = julian_years_value (orogeny.evolution.time_step);
+            julian_years_value (recipe.evolution ().duration);
+          const float step = julian_years_value (recipe.evolution ().time_step);
           const int years_done = static_cast<int> (
             std::lround (std::min (duration, completed_steps * step)));
           const int years_total = static_cast<int> (std::lround (duration));
@@ -190,11 +174,16 @@ namespace moppe::game {
                         std::max<std::size_t> (1, total_rows));
       };
 
-      evaluator.evaluate (recipe.terrain_program (),
-                          after_transform,
-                          report_geological_time,
-                          report_field_rows);
-      return evaluator.release_trail_network ();
+      std::vector<meters_per_julian_year_t> uplift = map::initialize_terrain (
+        terrain, recipe.seed (), recipe.water_datum (), report_field_rows);
+      map::evolve_terrain (terrain,
+                           uplift,
+                           recipe.evolution (),
+                           evolution.get (),
+                           report_geological_time);
+      state.report ("Refining the terrain",
+                    "Shaping coasts, channels, and the overland route");
+      return map::form_terrain_trails (terrain, recipe.trail_formation ());
     }
 
     std::pair<const char*, const char*>

@@ -5,12 +5,10 @@
 #include <moppe/terrain/river.hh>
 #include <moppe/terrain/waterline.hh>
 
-#include <algorithm>
 #include <cmath>
 #include <span>
 #include <stdexcept>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace moppe::game {
@@ -121,22 +119,13 @@ namespace moppe::game {
       m_surface.derive_tree_habitat (m_params.water_level,
                                      m_params.water_level + 145.0f * u::m);
 
-      const terrain::TerrainProgram& program = m_recipe.terrain_program ();
-      const auto stage = std::find_if (
-        program.transforms.begin (),
-        program.transforms.end (),
-        [] (const terrain::TerrainTransform& transform) {
-          return std::holds_alternative<terrain::TrailFormation> (transform);
-        });
-      if (stage != program.transforms.end ()) {
-        MOPPE_PROFILE_ZONE ("world.derive_trails");
-        if (generated_trails)
-          m_trails = std::move (generated_trails);
-        else
-          m_trails = terrain::analyze_trail_network (
-            m_surface.geometry (), std::get<terrain::TrailFormation> (*stage));
-        m_surface.set_use (m_trails->use);
-      }
+      MOPPE_PROFILE_ZONE ("world.derive_trails");
+      if (generated_trails)
+        m_trails = std::move (generated_trails);
+      else
+        m_trails = terrain::analyze_trail_network (m_surface.geometry (),
+                                                   m_recipe.trail_formation ());
+      m_surface.set_use (m_trails->use);
     }
 
     if (m_surface.atlas ().ecology ().tree_habitat ())

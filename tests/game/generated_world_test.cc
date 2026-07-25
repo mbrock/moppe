@@ -7,17 +7,13 @@
 #include <vector>
 
 namespace {
-  moppe::terrain::WorldRecipe world_without_trails (
-    moppe::spatial_extent_t extent, int resolution, moppe::terrain::Seed seed) {
+  moppe::terrain::WorldRecipe test_world_recipe (moppe::spatial_extent_t extent,
+                                                 int resolution,
+                                                 moppe::terrain::Seed seed) {
     using namespace moppe;
     using namespace moppe::terrain;
-    return make_world_recipe (extent,
-                              resolution,
-                              seed,
-                              50.0f * u::m,
-                              TerrainGenerationProfile::Fast)
-      .with_terrain_program (
-        make_orogeny_program (seed.value, TerrainGenerationProfile::Fast));
+    return make_world_recipe (
+      extent, resolution, seed, 50.0f * u::m, TerrainGenerationProfile::Fast);
   }
 
   void fill_test_terrain (moppe::map::Surface& map) {
@@ -42,7 +38,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   params.map_size = extent;
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
-  const WorldRecipe recipe = world_without_trails (extent, 17, Seed { 42 });
+  const WorldRecipe recipe = test_world_recipe (extent, 17, Seed { 42 });
 
   game::GeneratedWorld world (params, recipe);
   fill_test_terrain (world.surface ());
@@ -53,7 +49,11 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
     [&stages] (game::GeneratedWorld::HydrologyStage stage) {
       stages.push_back (stage);
     });
-  world.derive_surface_readings ();
+  TrailNetwork trails {
+    .domain = world.surface ().domain (),
+    .use = TrailUseMap (world.surface ().domain ()),
+  };
+  world.derive_surface_readings (std::move (trails));
 
   MOPPE_CHECK (world.recipe ().seed () == Seed { 42 });
   MOPPE_CHECK (world.params ().water_level == 50.0f * u::m);
@@ -71,7 +71,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.surface ().atlas ().hydrology ().moisture ());
   MOPPE_CHECK (world.surface ().atlas ().hydrology ().waterline ());
   MOPPE_CHECK (world.surface ().atlas ().geology ().materials ());
-  MOPPE_CHECK (!world.trails ().has_value ());
+  MOPPE_CHECK (world.trails ().has_value ());
 }
 
 MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
@@ -88,7 +88,7 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
   auto completed = std::make_unique<game::GeneratedWorld> (
-    params, world_without_trails (extent, 17, Seed { 72 }));
+    params, test_world_recipe (extent, 17, Seed { 72 }));
   const game::GeneratedWorld* address = completed.get ();
 
   std::unique_ptr<game::GeneratedWorld> active = std::move (completed);

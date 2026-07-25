@@ -28,7 +28,7 @@ trap cleanup EXIT INT TERM
 
 MOPPE_SCREENSHOT_FRAMES=$frames MOPPE_RENDERSCALE=${MOPPE_RENDERSCALE:-0.5} \
   "$root/build-tracy/moppe.app/Contents/MacOS/moppe" \
-  --terrain-lab-screenshot "$shot" --seed "$seed" &
+  --screenshot "$shot" --seed "$seed" &
 game_pid=$!
 
 tracy-capture -o "$output" -f -s "$seconds"

@@ -1,7 +1,7 @@
 
 .PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks plan plan-graph phone profile terrain-lab-shot testflight tracy tv \
+	complexity format hooks plan plan-graph phone profile testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	web web-deploy web-serve xcode
 
@@ -112,9 +112,6 @@ web-deploy:
 	./tools/deploy-web
 
 # Build the canonical terrain with the Fast profile, capture the Lab, and exit.
-terrain-lab-shot:
-	./tools/capture-terrain-lab
-
 # Build a deterministic grove from surface habitat and capture it in-game.
 tree-shot:
 	./tools/capture-trees

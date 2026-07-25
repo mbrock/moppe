@@ -32,7 +32,6 @@ namespace moppe::game {
     platform::Config config { .title = "Moppe" };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
-    bool start_in_terrain_lab = false;
     bool tree_demo = false;
     std::size_t tree_count = 9;
     std::string screenshot_path;

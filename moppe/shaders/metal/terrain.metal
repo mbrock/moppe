@@ -121,41 +121,6 @@ terrain_normal_bilinear (float2 grid, texture2d<float, access::read> normals) {
   return mix (n0, n1, f.y);
 }
 
-static inline float
-terrain_preview_height (float2 grid,
-                        constant MoppeTerrainUniforms& u,
-                        texture2d<float, access::read> heights,
-                        texture2d<float, access::read> previous_heights) {
-  const float2 size (heights.get_width (), heights.get_height ());
-  grid -= floor (grid / size) * size;
-  const float current = terrain_height_bilinear (grid, heights);
-  if (u.params3.z >= 1.0)
-    return current;
-  const float previous = terrain_height_bilinear (grid, previous_heights);
-  return mix (previous, current, u.params3.z);
-}
-
-// Terrain Lab changes heightfields far more often than gameplay.  Deriving
-// preview normals at visible vertices avoids rebuilding and uploading a
-// four-million-entry CPU normal map after every parameter click.
-static inline float3
-terrain_preview_normal (float2 grid,
-                        constant MoppeTerrainUniforms& u,
-                        texture2d<float, access::read> heights,
-                        texture2d<float, access::read> previous_heights) {
-  const float left = terrain_preview_height (
-    grid - float2 (1.0, 0.0), u, heights, previous_heights);
-  const float right = terrain_preview_height (
-    grid + float2 (1.0, 0.0), u, heights, previous_heights);
-  const float back = terrain_preview_height (
-    grid - float2 (0.0, 1.0), u, heights, previous_heights);
-  const float front = terrain_preview_height (
-    grid + float2 (0.0, 1.0), u, heights, previous_heights);
-  const float3 tangent_x (2.0 * u.params0.x, (right - left) * u.params0.y, 0.0);
-  const float3 tangent_z (0.0, (front - back) * u.params0.y, 2.0 * u.params0.z);
-  return normalize (cross (tangent_z, tangent_x));
-}
-
 // Height on the actual triangle surface produced by a coarser grid.
 // The strip topology uses the bottom-left to top-right diagonal.
 static inline float terrain_height_on_lattice (
@@ -225,17 +190,11 @@ vertex TerrainVaryings terrain_vertex (
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   constant MoppeChunkUniforms& chunk [[buffer (MOPPE_BUF_CHUNK)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
-  texture2d<float, access::read> normals [[texture (MOPPE_TEX_NORMALS)]],
-  texture2d<float, access::read> previous_heights
-  [[texture (MOPPE_TEX_PREVIOUS_HEIGHTS)]]) {
+  texture2d<float, access::read> normals [[texture (MOPPE_TEX_NORMALS)]]) {
   const float2 grid = terrain_grid_pos (index, chunk);
   float h;
   float3 normal;
-  const bool derive_normal = u.params3.x > 0.5;
-  if (derive_normal) {
-    h = terrain_preview_height (grid, u, heights, previous_heights);
-    normal = terrain_preview_normal (grid, u, heights, previous_heights);
-  } else if (chunk.step < 1.0) {
+  if (chunk.step < 1.0) {
     const float3 smooth = terrain_height_smooth (grid, u, heights);
     h = smooth.x;
     const float3 tangent_x (u.params0.x, smooth.y * u.params0.y, 0.0);
@@ -254,43 +213,14 @@ vertex TerrainVaryings terrain_vertex (
     if (morph > 0.0) {
       float parent_h =
         terrain_height_on_lattice (grid, chunk.parent_step, heights);
-      if (derive_normal && u.params3.z < 1.0) {
-        const float previous_parent_h =
-          terrain_height_on_lattice (grid, chunk.parent_step, previous_heights);
-        parent_h = mix (previous_parent_h, parent_h, u.params3.z);
-      }
       h = mix (h, parent_h, morph);
-      if (!derive_normal) {
-        const float3 parent_n =
-          terrain_normal_on_lattice (grid, chunk.parent_step, normals);
-        normal = mix (normal, parent_n, morph);
-      }
+      const float3 parent_n =
+        terrain_normal_on_lattice (grid, chunk.parent_step, normals);
+      normal = mix (normal, parent_n, morph);
     }
   }
 
-  float3 world;
-  if (u.params2.x > 0.5) {
-    constexpr float tau = 6.28318530718;
-    const float theta = tau * grid.x / heights.get_width ();
-    const float phi = tau * grid.y / heights.get_height ();
-    const float ct = cos (theta), st = sin (theta);
-    const float cp = cos (phi), sp = sin (phi);
-    const float tube_radius = u.params2.z + u.params0.y * h * u.params2.w;
-    const float ring_radius = u.params2.y + tube_radius * cp;
-    const float2 center (u.params0.x * heights.get_width () * 0.5,
-                         u.params0.z * heights.get_height () * 0.5);
-    world = float3 (center.x + ring_radius * ct,
-                    tube_radius * sp,
-                    center.y + ring_radius * st);
-
-    const float3 tangent_u (-st, 0.0, ct);
-    const float3 outward (ct * cp, sp, st * cp);
-    const float3 tangent_v (-ct * sp, cp, -st * sp);
-    normal = normalize (normal.x * tangent_u + normal.y * outward +
-                        normal.z * tangent_v);
-  } else {
-    world = float3 (world_xz.x, u.params0.y * h, world_xz.y);
-  }
+  const float3 world (world_xz.x, u.params0.y * h, world_xz.y);
 
   TerrainVaryings out;
   out.position = u.view_proj * float4 (world, 1.0);
@@ -315,7 +245,7 @@ vertex TerrainVaryings terrain_vertex (
 
   const float3 canonical_world (canonical_xz.x, world.y, canonical_xz.y);
   out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
-  out.uv = (u.params2.x > 0.5 ? canonical_xz : world.xz) * u.params0.w;
+  out.uv = world.xz * u.params0.w;
   out.field_uv = grid / float2 (heights.get_width (), heights.get_height ());
   out.grid_coord = grid;
   out.mesh_coord =
@@ -500,36 +430,35 @@ static inline float4 terrain_overlay_color (float value,
   return float4 (terrain_heat_palette (t), opacity);
 }
 
-fragment float4 terrain_fragment (
-  TerrainVaryings in [[stage_in]],
-  constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-  texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
-  texture2d<float> dirt [[texture (MOPPE_TEX_DIRT)]],
-  texture2d<float> snow [[texture (MOPPE_TEX_SNOW)]],
-  texture2d<float> rock [[texture (MOPPE_TEX_ROCK)]],
-  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
-  depth2d<float> previous_shadow_map [[texture (MOPPE_TEX_PREVIOUS_SHADOW)]],
-  texture2d<float, access::read> terrain_overlay
-  [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
-  texture2d<float, access::read> terrain_moisture
-  [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-  texture2d<float, access::read> terrain_water
-  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
-  texture2d<float, access::read> terrain_geology
-  [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
-  texture2d<float, access::read> normals
-  [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-  texture2d<float, access::read> terrain_shore
-  [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
-  texture2d<float, access::read> terrain_paths
-  [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
-  texture2d<float, access::read> terrain_forest
-  [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-  texture2d<float, access::read> terrain_snow_support
-  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
-  texture2d<float, access::read> terrain_channel_flux
-  [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
-  sampler smp [[sampler (0)]]) {
+fragment float4
+terrain_fragment (TerrainVaryings in [[stage_in]],
+                  constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+                  texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
+                  texture2d<float> dirt [[texture (MOPPE_TEX_DIRT)]],
+                  texture2d<float> snow [[texture (MOPPE_TEX_SNOW)]],
+                  texture2d<float> rock [[texture (MOPPE_TEX_ROCK)]],
+                  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
+                  texture2d<float, access::read> terrain_overlay
+                  [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
+                  texture2d<float, access::read> terrain_moisture
+                  [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
+                  texture2d<float, access::read> terrain_water
+                  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+                  texture2d<float, access::read> terrain_geology
+                  [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
+                  texture2d<float, access::read> normals
+                  [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
+                  texture2d<float, access::read> terrain_shore
+                  [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
+                  texture2d<float, access::read> terrain_paths
+                  [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+                  texture2d<float, access::read> terrain_forest
+                  [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
+                  texture2d<float, access::read> terrain_snow_support
+                  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+                  texture2d<float, access::read> terrain_channel_flux
+                  [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
+                  sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
@@ -869,19 +798,8 @@ fragment float4 terrain_fragment (
     normalize (n - float3 (rill_across.x, 0.0, rill_across.y) * rill_strength);
 
   // Per-pixel Lambert with real cast shadows.
-  const float current_shadow = terrain_shadow_factor (
+  const float shadow = terrain_shadow_factor (
     in.shadow_coord, in.fog, n, l, u.params1.z, u.params1.w, shadow_map);
-  float shadow = current_shadow;
-  if (u.params3.x > 0.5 && u.params3.z < 1.0) {
-    const float previous_shadow = terrain_shadow_factor (in.shadow_coord,
-                                                         in.fog,
-                                                         n,
-                                                         l,
-                                                         u.params1.z,
-                                                         u.params3.w,
-                                                         previous_shadow_map);
-    shadow = mix (previous_shadow, current_shadow, u.params3.z);
-  }
   // 0.9 is the old GL terrain material diffuse.
   const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
   float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb +

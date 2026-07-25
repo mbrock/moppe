@@ -46,15 +46,10 @@ namespace moppe {
     void Terrain::setup (render::Renderer& r,
                          const map::Surface& map,
                          const WorldParams& world,
-                         const GraphicsSettings& graphics,
-                         render::TerrainProjection projection,
-                         bool repeat_periodically,
-                         bool interactive_preview) {
+                         const GraphicsSettings& graphics) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
       m_scale = map.sample_spacing ();
       m_period = map.world_extent ();
-      m_repeat_periodically = repeat_periodically;
-      m_projection = projection;
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
 
       render::TerrainParams params;
@@ -63,26 +58,12 @@ namespace moppe {
       params.scale = m_scale;
       params.sea_level = meters_value (world.water_level);
       params.tex_scale = 0.5f / m_scale[0];
-      params.shadow_strength = projection == render::TerrainProjection::Torus ||
-                                   !graphics.terrain_shadows
-                                 ? 0.0f
-                                 : 0.85f;
-      params.shadow_resolution = interactive_preview ? 1024 : 4096;
-      params.shadow_sample_step = interactive_preview ? 2 : 1;
-      params.height_transition_duration = 0.12f;
+      params.shadow_strength = graphics.terrain_shadows ? 0.85f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);
       params.topology_overlay = graphics.terrain_topology;
       params.fragment_normals = graphics.terrain_fragment_normals;
-      params.snow_support_filter =
-        graphics.snow_support_filter && !interactive_preview;
-      params.channel_flux_detail =
-        graphics.channel_flux_detail && !interactive_preview;
-      params.projection = projection;
-      const float shortest_period = std::min (m_period[0], m_period[2]);
-      params.torus_major_radius = 0.34f * shortest_period;
-      params.torus_minor_radius = 0.10f * shortest_period;
-      params.torus_height_scale = 0.45f;
-      params.derive_normals = interactive_preview;
+      params.snow_support_filter = graphics.snow_support_filter;
+      params.channel_flux_detail = graphics.channel_flux_detail;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
         r.set_terrain (
@@ -108,19 +89,15 @@ namespace moppe {
       m_chunks.reserve ((size_t)chunks_per_side * chunks_per_side);
       for (int cz = 0; cz < chunks_per_side; ++cz)
         for (int cx = 0; cx < chunks_per_side; ++cx) {
-          float ymin = -1.0f, ymax = 2.0f;
-          if (!interactive_preview) {
-            ymin = 1e9f;
-            ymax = -1e9f;
-            for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
-              for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-                const float h = terrain::surface_elevation_value (
-                  map.elevation_at (terrain::wrap_index (x, map.width ()),
-                                    terrain::wrap_index (z, map.height ())));
-                ymin = std::min (ymin, h);
-                ymax = std::max (ymax, h);
-              }
-          }
+          float ymin = 1e9f, ymax = -1e9f;
+          for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
+            for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
+              const float h = terrain::surface_elevation_value (
+                map.elevation_at (terrain::wrap_index (x, map.width ()),
+                                  terrain::wrap_index (z, map.height ())));
+              ymin = std::min (ymin, h);
+              ymax = std::max (ymax, h);
+            }
 
           Chunk c;
           c.x0 = cx * CHUNK;
@@ -141,8 +118,6 @@ namespace moppe {
                                  const map::Surface& map,
                                  const Vec3& sun_dir) {
       MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
-      if (m_projection == render::TerrainProjection::Torus)
-        return;
       const Vec3 bounds = map.world_extent ();
       const Vec3 center (bounds[0] / 2, bounds[1] / 2, bounds[2] / 2);
       const float radius = length (bounds) / 2;
@@ -163,44 +138,19 @@ namespace moppe {
                           float max_dist) {
       m_draws.clear ();
 
-      if (m_projection == render::TerrainProjection::Torus) {
-        m_draws.reserve (m_chunks.size ());
-        for (const Chunk& chunk : m_chunks) {
-          render::ChunkDraw draw;
-          draw.x0 = static_cast<uint16_t> (chunk.x0);
-          draw.z0 = static_cast<uint16_t> (chunk.z0);
-          draw.lod = render::TerrainLod::Stride2;
-          draw.morph_start = 0.0f;
-          draw.morph_end = 0.0f;
-          m_draws.push_back (draw);
-        }
-        if (!m_draws.empty ())
-          r.draw_terrain (m_draws.data (), static_cast<int> (m_draws.size ()));
-        return;
-      }
-
       const float half_width = 0.5f * CHUNK * m_scale[0];
       const float half_depth = 0.5f * CHUNK * m_scale[2];
       for (size_t i = 0; i < m_chunks.size (); ++i) {
         const Chunk& c = m_chunks[i];
         const float reach = max_dist + c.radius;
-        const bool repeat = m_repeat_periodically;
-        const int min_tile_x =
-          repeat ? static_cast<int> (
-                     std::ceil ((cam[0] - reach - c.center[0]) / m_period[0]))
-                 : 0;
-        const int max_tile_x =
-          repeat ? static_cast<int> (
-                     std::floor ((cam[0] + reach - c.center[0]) / m_period[0]))
-                 : 0;
-        const int min_tile_z =
-          repeat ? static_cast<int> (
-                     std::ceil ((cam[2] - reach - c.center[2]) / m_period[2]))
-                 : 0;
-        const int max_tile_z =
-          repeat ? static_cast<int> (
-                     std::floor ((cam[2] + reach - c.center[2]) / m_period[2]))
-                 : 0;
+        const int min_tile_x = static_cast<int> (
+          std::ceil ((cam[0] - reach - c.center[0]) / m_period[0]));
+        const int max_tile_x = static_cast<int> (
+          std::floor ((cam[0] + reach - c.center[0]) / m_period[0]));
+        const int min_tile_z = static_cast<int> (
+          std::ceil ((cam[2] - reach - c.center[2]) / m_period[2]));
+        const int max_tile_z = static_cast<int> (
+          std::floor ((cam[2] + reach - c.center[2]) / m_period[2]));
 
         for (int tile_z = min_tile_z; tile_z <= max_tile_z; ++tile_z)
           for (int tile_x = min_tile_x; tile_x <= max_tile_x; ++tile_x) {

@@ -148,13 +148,6 @@ namespace moppe::game {
             return unknown ("terrain quality", values[0], error);
           return true;
         } },
-      { "--terrain-lab",
-        0,
-        "",
-        [] (LaunchOptions& options, const char* const*, std::string&) {
-          options.start_in_terrain_lab = true;
-          return true;
-        } },
       { "--tree-demo",
         0,
         "",
@@ -181,16 +174,6 @@ namespace moppe::game {
         "a PNG path",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           options.tree_demo = true;
-          capture_to (options, values[0]);
-          return true;
-        } },
-      { "--terrain-lab-screenshot",
-        1,
-        "a PNG path",
-        [] (LaunchOptions& options, const char* const* values, std::string&) {
-          options.start_in_terrain_lab = true;
-          // The Lab capture inspects one world's shape, not its detail.
-          options.world.resolution = 1024;
           capture_to (options, values[0]);
           return true;
         } },

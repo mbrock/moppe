@@ -22,7 +22,7 @@ heightmap.
 
 ## Place in world generation
 
-The default world program runs trail formation after geological evolution:
+World construction runs trail formation after geological evolution:
 
 ```text
 geological source
@@ -35,8 +35,8 @@ geological source
   -> trail/home-base surface fields and renderer texture
 ```
 
-`TrailFormation` is a `TerrainTransform`, so the game, Terrain Lab, and tests
-execute the same operation. The main implementation is
+`TrailFormation` is the typed input to the direct `form_terrain_trails`
+operation. The main implementation is
 in [`trail.cc`](../moppe/terrain/trail.cc), with its public values and result
 types in [`trail.hh`](../moppe/terrain/trail.hh).
 
@@ -293,7 +293,6 @@ After generation, the game uses the trail system in several places:
 - The opening drone cinematic begins with a high oblique trail reveal, sweeps
   across the first half of the circuit, and then continues to the valley,
   waterfall or lake, saddle, peak, and arrival beats.
-- Terrain Lab can edit trail parameters and inspect the formation report.
 
 The relevant runtime code is in
 [`game.cc`](../moppe/game/game.cc), while the flyover planner lives in
@@ -308,7 +307,6 @@ home base, scenic focus, and cinematic landmark order during startup.
 Useful interactive and deterministic checks are:
 
 ```sh
-./build/moppe.app/Contents/MacOS/moppe --terrain-lab
 tools/capture-cinematic /tmp/cinematic.mp4 18
 ctest --test-dir build --output-on-failure
 ```

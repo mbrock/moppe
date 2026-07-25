@@ -103,8 +103,8 @@ over seeds 123 and 731. The affected-cell percentage uses unique cells.
 | 1024² | 20 | 0.009 m | 0.109 m | 1.541 m | 37.390 m | 1,609 (0.15%) |
 
 The prototype is therefore not bitwise deterministic with the portable CPU
-path. It can be enabled in the macOS game and Terrain Lab with
-`MOPPE_METAL_OROGENY=1`; CPU remains the default and the only iOS path.
+path. It can be enabled in the macOS game with `MOPPE_METAL_OROGENY=1`; CPU
+remains the default and the only iOS path.
 
 ## Loading-screen result
 

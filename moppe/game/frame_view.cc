@@ -33,41 +33,30 @@ namespace moppe::game {
 
     FrameVisibility visibility_for (const FrameViewInput& input,
                                     const FrameView& view) {
-      const bool terrain_lab = input.scene == FrameSceneMode::TerrainLab;
       const bool cinematic = input.scene == FrameSceneMode::Cinematic;
       const bool water = input.scene == FrameSceneMode::WaterInspection;
       const bool tree = input.scene == FrameSceneMode::TreeDemo;
 
       FrameVisibility visibility;
-      visibility.terrain_lab = terrain_lab;
       visibility.cinematic = cinematic;
       visibility.water_inspection = water;
       visibility.tree_demo = tree;
-      visibility.terrain_lab_torus = terrain_lab && input.terrain_lab_torus;
-      visibility.terrain_lab_pristine = input.terrain_lab_pristine;
-      visibility.sky_before_terrain = terrain_lab && !input.terrain_lab_torus;
-      visibility.sky_after_terrain = !terrain_lab;
-      visibility.forest = !terrain_lab && !water && !tree;
-      visibility.tree_stand = !terrain_lab && !water;
-      visibility.actors = !terrain_lab && !water && !tree;
-      visibility.ocean =
-        input.graphics.ocean && (!terrain_lab || (!input.terrain_lab_torus &&
-                                                  input.terrain_lab_pristine));
-      visibility.terrain_lab_rivers = terrain_lab;
-      visibility.river_ribbons = !terrain_lab && input.graphics.river_ribbons;
-      visibility.dust = !terrain_lab && input.graphics.particles;
+      visibility.forest = !water && !tree;
+      visibility.tree_stand = !water;
+      visibility.actors = !water && !tree;
+      visibility.ocean = input.graphics.ocean;
+      visibility.river_ribbons = input.graphics.river_ribbons;
+      visibility.dust = input.graphics.particles;
       visibility.underwater =
-        !terrain_lab &&
         view.camera.position[1] < meters_value (input.world.water_level);
-      visibility.motion_blur = !terrain_lab && input.graphics.motion_blur &&
-                               view.motion_blur_amount > 0.01f;
+      visibility.motion_blur =
+        input.graphics.motion_blur && view.motion_blur_amount > 0.01f;
       visibility.vehicle_effects =
         visibility.actors && input.graphics.vehicle_effects;
       visibility.star_effects =
         visibility.actors && input.graphics.star_effects;
-      visibility.game_hud = !terrain_lab && !cinematic && !water && !tree;
+      visibility.game_hud = !cinematic && !water && !tree;
       visibility.cinematic_hud = cinematic;
-      visibility.terrain_lab_hud = terrain_lab;
       visibility.terrain_topology_hint = input.graphics.terrain_topology;
       return visibility;
     }
@@ -144,7 +133,6 @@ namespace moppe::game {
 
   FrameView compose_frame_view (const FrameViewInput& input) {
     const GameLogicState& logic = input.session.logic ();
-    const bool terrain_lab = input.scene == FrameSceneMode::TerrainLab;
     const bool cinematic = input.scene == FrameSceneMode::Cinematic;
     const bool water = input.scene == FrameSceneMode::WaterInspection;
     const bool tree = input.scene == FrameSceneMode::TreeDemo;
@@ -156,9 +144,9 @@ namespace moppe::game {
     result.camera.position = input.selected_camera.position;
     result.camera.forward = input.selected_camera.forward;
     result.camera.field_of_view =
-      cinematic                      ? input.selected_camera.field_of_view
-      : terrain_lab || water || tree ? 70.0f
-                                     : 100.0f + 9.0f * logic.m_fov_k;
+      cinematic       ? input.selected_camera.field_of_view
+      : water || tree ? 70.0f
+                      : 100.0f + 9.0f * logic.m_fov_k;
     result.camera.view = input.selected_camera.view;
 
     // Hard landings rotate only the reading of the riding camera.  The camera
@@ -199,14 +187,11 @@ namespace moppe::game {
       Mat4::perspective_reversed (result.camera.field_of_view * u::deg,
                                   std::max (0.01f, input.aspect),
                                   near,
-                                  terrain_lab ? 30000.0f : 9000.0f);
+                                  9000.0f);
 
     result.lighting.fog_color = logic.m_fog;
-    result.lighting.clear_color = terrain_lab && input.terrain_lab_torus
-                                    ? DisplayColor (0.012f, 0.016f, 0.022f)
-                                    : logic.m_fog;
-    result.lighting.fog_scale =
-      terrain_lab ? input.terrain_lab_fog : input.world.fog_scale;
+    result.lighting.clear_color = logic.m_fog;
+    result.lighting.fog_scale = input.world.fog_scale;
     result.lighting.sun_direction =
       sun_direction_for (input.graphics.sun_height);
     sun_light_colors_for (input.graphics.sun_height,
@@ -217,14 +202,10 @@ namespace moppe::game {
     result.lighting.ambient =
       scale_display (DisplayColor (0.39f, 0.43f, 0.49f),
                      0.35f + 0.65f * daylight_for (input.graphics.sun_height));
-    if (terrain_lab) {
-      result.lighting.ambient = scale_display (result.lighting.ambient, 1.15f);
-      result.lighting.exposure_bias = 0.88f;
-    }
     result.lighting.time = static_cast<float> (logic.m_total_time);
     result.lighting.sun_height = input.graphics.sun_height;
     result.lighting.cloudiness = logic.m_cloudiness;
-    result.lighting.sun_visibility = terrain_lab ? 0.0f : logic.m_flare;
+    result.lighting.sun_visibility = logic.m_flare;
 
     result.environment.fog_color = result.lighting.fog_color;
     result.environment.fog_scale = result.lighting.fog_scale;
@@ -293,7 +274,7 @@ namespace moppe::game {
 
     if (cinematic)
       result.motion_blur_amount = input.cinematic_motion_blur;
-    else if (!terrain_lab) {
+    else {
       const float kmh = input.session.subject_speed_kmh ();
       result.motion_blur_amount =
         std::clamp ((kmh - 90.0f) / 160.0f, 0.0f, 1.0f);
@@ -307,10 +288,8 @@ namespace moppe::game {
     }
 
     const float fog = attenuation_value (input.world.fog_scale);
-    result.terrain_distance = terrain_lab ? 30000.0f
-                              : fog > 0.0f
-                                ? 3.0f / fog
-                                : std::numeric_limits<float>::infinity ();
+    result.terrain_distance =
+      fog > 0.0f ? 3.0f / fog : std::numeric_limits<float>::infinity ();
     result.visibility = visibility_for (input, result);
     return result;
   }

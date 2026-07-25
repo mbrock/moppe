@@ -60,38 +60,6 @@ namespace moppe {
       bool m_dragging;
     };
 
-    enum class UiFlowDirection { Row, Column };
-
-    // A deliberately small retained-layout primitive for immediate-mode
-    // tools.  Callers describe rows, columns and grids instead of scattering
-    // fixed coordinates through their drawing and hit-testing code.
-    class UiFlow {
-    public:
-      UiFlow (const UiRect& bounds,
-              UiFlowDirection direction,
-              float gap = 0.0f);
-
-      UiRect take (float extent);
-      UiRect rest () const;
-
-    private:
-      UiRect m_remaining;
-      UiFlowDirection m_direction;
-      float m_gap;
-    };
-
-    UiRect ui_inset (const UiRect& bounds, float amount);
-    UiRect ui_grid_cell (const UiRect& bounds,
-                         int columns,
-                         int index,
-                         float row_height,
-                         float gap);
-
-    UiRect parameter_control_rect (const UiRect& bounds);
-    UiRect counter_minus_rect (const UiRect& bounds);
-    UiRect counter_plus_rect (const UiRect& bounds);
-    UiRect friendly_slider_rail_rect (const UiRect& bounds);
-
     // Small immediate-mode inspector skin built on the renderer's existing
     // DrawList and FontAtlas.  It intentionally owns no widget state: tools
     // keep their values and call these drawing helpers every frame.
@@ -109,104 +77,25 @@ namespace moppe {
                          const std::string& title) const;
       void end_window (render::DrawList& dl) const;
 
-      void panel (render::DrawList& dl,
-                  float x,
-                  float y,
-                  float width,
-                  float height,
-                  const std::string& title) const;
-      void label (render::DrawList& dl,
-                  float x,
-                  float y,
-                  const std::string& text,
-                  bool bright = false) const;
       void key_hint (render::DrawList& dl,
                      float x,
                      float y,
                      const std::string& key,
                      const std::string& description) const;
-      void section_header (render::DrawList& dl,
-                           const UiRect& bounds,
-                           const std::string& title) const;
-      void button (render::DrawList& dl,
+      void slider (render::DrawList& dl,
                    const UiRect& bounds,
-                   const std::string& text,
-                   bool hot,
-                   bool pressed,
-                   bool selected = false) const;
-      void pipeline_row (render::DrawList& dl,
-                         const UiRect& bounds,
-                         const std::string& index,
-                         const std::string& name,
-                         const std::string& detail,
-                         bool hot,
-                         bool pressed,
-                         bool selected) const;
-      void counter (render::DrawList& dl,
-                    const UiRect& bounds,
-                    const std::string& label,
-                    const std::string& value,
-                    bool minus_hot,
-                    bool plus_hot,
-                    bool pressed) const;
-
-      // Shared translucent instrument skin.  Terrain Lab uses the same
-      // vocabulary and drawing primitives at every disclosure level.
-      void surface (render::DrawList& dl, const UiRect& bounds) const;
-      void heading (render::DrawList& dl,
-                    float x,
-                    float y,
-                    const std::string& text) const;
-      void paragraph (render::DrawList& dl,
-                      float x,
-                      float y,
-                      const std::string& text,
-                      bool bright = false) const;
-      void caption (render::DrawList& dl,
-                    float x,
-                    float y,
-                    const std::string& text) const;
-      void friendly_section (render::DrawList& dl,
-                             const UiRect& bounds,
-                             const std::string& title) const;
-      void friendly_button (render::DrawList& dl,
-                            const UiRect& bounds,
-                            const std::string& title,
-                            const std::string& detail,
-                            bool hot,
-                            bool pressed,
-                            bool selected = false,
-                            bool featured = false,
-                            int icon = -1) const;
-      void friendly_slider (render::DrawList& dl,
-                            const UiRect& bounds,
-                            const std::string& title,
-                            const std::string& low,
-                            const std::string& high,
-                            float normalized,
-                            bool hot,
-                            bool active) const;
-      void friendly_tool_cursor (render::DrawList& dl,
-                                 float x,
-                                 float y,
-                                 int icon) const;
+                   const std::string& title,
+                   const std::string& low,
+                   const std::string& high,
+                   float normalized,
+                   bool active) const;
 
     private:
       std::unique_ptr<render::FontAtlas> m_body;
       std::unique_ptr<render::FontAtlas> m_title;
       std::unique_ptr<render::FontAtlas> m_key;
-      std::unique_ptr<render::FontAtlas> m_display;
-      std::unique_ptr<render::FontAtlas> m_friendly_body;
-      std::unique_ptr<render::FontAtlas> m_friendly_label;
-      render::TexturePtr m_friendly_icons;
 
-      void friendly_icon (render::DrawList& dl,
-                          const UiRect& bounds,
-                          int icon,
-                          float alpha = 1.0f,
-                          float red = 0.82f,
-                          float green = 0.94f,
-                          float blue = 1.0f) const;
+      void surface (render::DrawList& dl, const UiRect& bounds) const;
     };
   }
 }

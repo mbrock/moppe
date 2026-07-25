@@ -12,13 +12,7 @@
 namespace moppe::game {
   // The one selected presentation mode for a finished world frame. These are
   // deliberately concrete application modes, not a generic scene hierarchy.
-  enum class FrameSceneMode {
-    Gameplay,
-    Cinematic,
-    TerrainLab,
-    WaterInspection,
-    TreeDemo
-  };
+  enum class FrameSceneMode { Gameplay, Cinematic, WaterInspection, TreeDemo };
 
   // A camera has already been selected by the application before composing a
   // frame.  Keeping its view matrix here preserves cinematics' banked camera
@@ -106,19 +100,15 @@ namespace moppe::game {
   // Their values are plain frame data, so a later presenter need not query
   // mutable application mode while encoding commands.
   struct FrameVisibility {
-    bool terrain_lab = false;
     bool cinematic = false;
     bool water_inspection = false;
     bool tree_demo = false;
-    bool terrain_lab_torus = false;
-    bool terrain_lab_pristine = true;
     bool sky_before_terrain = false;
     bool sky_after_terrain = true;
     bool forest = true;
     bool tree_stand = true;
     bool actors = true;
     bool ocean = true;
-    bool terrain_lab_rivers = false;
     bool river_ribbons = true;
     bool dust = true;
     bool underwater = false;
@@ -127,7 +117,6 @@ namespace moppe::game {
     bool star_effects = true;
     bool game_hud = true;
     bool cinematic_hud = false;
-    bool terrain_lab_hud = false;
     bool terrain_topology_hint = false;
   };
 
@@ -203,11 +192,6 @@ namespace moppe::game {
     const GraphicsSettings& graphics;
     FrameCameraReading selected_camera {};
     FrameSceneMode scene = FrameSceneMode::Gameplay;
-    // Terrain Lab supplies its own inspection fog and view controls. All
-    // other modes use the finished world's normal atmosphere.
-    attenuation_t terrain_lab_fog = 0.0f / u::m;
-    bool terrain_lab_torus = false;
-    bool terrain_lab_pristine = true;
     float aspect = 1.0f;
     float landscape_scale_x = 1.0f;
     float landscape_scale_y = 1.0f;

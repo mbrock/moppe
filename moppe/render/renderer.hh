@@ -14,8 +14,6 @@
 
 namespace moppe {
   namespace render {
-    enum class TerrainProjection : uint8_t { Plane, Torus };
-
     // Per-frame environment.  The view matrix already includes the
     // camera-shake rotation; the right/up/forward basis is derived
     // from it and replaces the old GL_MODELVIEW_MATRIX readback for
@@ -66,18 +64,10 @@ namespace moppe {
       float sea_level; // world metres
       float tex_scale; // texture repeats per world metre
       float shadow_strength;
-      int shadow_resolution = 4096;
-      int shadow_sample_step = 1;
-      float height_transition_duration = 0.12f;
       float fog_scale;
       // Development overlay showing the actual terrain triangles. Useful for
       // inspecting the dense reconstructed near field and ordinary LODs.
       bool topology_overlay = false;
-      TerrainProjection projection = TerrainProjection::Plane;
-      float torus_major_radius = 0.0f;
-      float torus_minor_radius = 0.0f;
-      float torus_height_scale = 0.0f;
-      bool derive_normals = false;
       // Light Native and coarser LODs from the full-resolution normal
       // texture at fragment rate, decoupling shading detail from
       // geometric LOD.

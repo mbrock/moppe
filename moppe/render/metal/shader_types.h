@@ -33,7 +33,6 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_SNOW 2
 #define MOPPE_TEX_SHADOW 3
 #define MOPPE_TEX_ROCK 4
-#define MOPPE_TEX_PREVIOUS_SHADOW 5
 #define MOPPE_TEX_TERRAIN_OVERLAY 6
 #define MOPPE_TEX_TERRAIN_MOISTURE 7
 #define MOPPE_TEX_TERRAIN_WATER 8
@@ -45,11 +44,10 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_TERRAIN_SNOW_SUPPORT 14
 #define MOPPE_TEX_TERRAIN_CHANNEL_FLUX 15
 #define MOPPE_TEX_SCENE 0
-#define MOPPE_TEX_BLOOM 1            /* post passes */
-#define MOPPE_TEX_HEIGHTS 0          /* vertex stage */
-#define MOPPE_TEX_NORMALS 1          /* vertex stage */
-#define MOPPE_TEX_PREVIOUS_HEIGHTS 2 /* Terrain Lab transition */
-#define MOPPE_TEX_WATER_LEVELS 3     /* ocean vertex stage */
+#define MOPPE_TEX_BLOOM 1        /* post passes */
+#define MOPPE_TEX_HEIGHTS 0      /* vertex stage */
+#define MOPPE_TEX_NORMALS 1      /* vertex stage */
+#define MOPPE_TEX_WATER_LEVELS 3 /* ocean vertex stage */
 #define MOPPE_TEX_WATER_LEVELS_FRAGMENT 1
 #define MOPPE_TEX_WATER_FLOW_FRAGMENT 2
 #define MOPPE_TEX_WATER_GEOLOGY_FRAGMENT 4
@@ -87,9 +85,8 @@ struct MoppeTerrainUniforms {
     params0; // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale
   MoppeFloat4 params1; // x=height_scale_norm, y=sea_level, z=shadow_strength,
                        // w=shadow_texel
-  MoppeFloat4 params2; // x=projection, y=torus R, z=torus r, w=height scale
-  MoppeFloat4 params3; // x=derive normals, z=height blend,
-                       // w=previous shadow texel
+  MoppeFloat4 params2; // reserved
+  MoppeFloat4 params3; // reserved
   MoppeFloat4 params4; // x=overlay ramp + 1, y=min, z=max, w=opacity
   MoppeFloat4 params5; // x=topology opacity, y=water, z=moisture,
                        // w=geology

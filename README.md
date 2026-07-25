@@ -1,6 +1,6 @@
 # Moppe
 
-**A motorcycle game and a laboratory for generated worlds.**
+**A motorcycle game in generated worlds.**
 
 ![A forested generated landscape beside a lake](screenshots/forest-and-lake.png)
 
@@ -11,8 +11,7 @@ lakes, and trails that arise from the land instead of being scattered on top
 of it.
 
 Moppe is an active experimental project, not a packaged release. The current
-game and its Terrain Lab run on a custom Metal renderer across macOS, iOS, and
-tvOS.
+game runs on a custom Metal renderer across macOS, iOS, and tvOS.
 
 ## Generated landscapes
 
@@ -33,9 +32,9 @@ tvOS.
        alt="A broad panorama of layered generated ridges">
 </p>
 
-Every world begins with a seed and a `TerrainProgram`: a geological source
-followed by an explicit sequence of transformations. The same terrain model
-feeds the game, Terrain Lab, tests, and command-line tools.
+Every world begins with a seed and a `WorldRecipe`. Construction follows one
+direct sequence: seeded geology, stream-power evolution, trail formation, and
+named hydrology and ecology analyses.
 
 The current engine includes:
 
@@ -45,8 +44,6 @@ The current engine includes:
 - motorcycle physics, a deployable hang glider, atmosphere, water, shadows,
   and post-processing;
 - keyboard, touch, and game-controller input;
-- Terrain Lab, an interactive instrument panel for editing and inspecting the
-  world-generation pipeline; and
 - a portable game-shaped rendering API with Metal backends for Apple devices.
 
 ## Build and run
@@ -71,9 +68,6 @@ Useful ways to start it include:
 # Revisit a particular generated world.
 ./build/moppe.app/Contents/MacOS/moppe --windowed --seed 123
 
-# Open the world-generation workbench.
-./build/moppe.app/Contents/MacOS/moppe --terrain-lab
-
 # Select a supported graphics preset.
 ./build/moppe.app/Contents/MacOS/moppe --graphics-quality balanced
 ```
@@ -95,8 +89,8 @@ The first configuration fetches pinned source dependencies. CMake also emits
   domains, ownership boundaries, and target graph.
 - [Generated worlds](docs/generated-world.md) explains construction and
   activation of a completed world.
-- [Terrain expressions](docs/terrain-expressions.md) describes the runtime
-  field language, recipes, and evaluator backends.
+- [Terrain generation and analysis](docs/terrain-expressions.md) describes
+  the direct finite generation path and its typed products.
 - [Planning](planning/README.md) contains accepted RFCs and dependency-shaped
   work items.
 - [Ideas](ideas/README.md) holds the longer-range design writing behind the

@@ -19,7 +19,6 @@ DEFAULT_ENTRYPOINTS = [
     "moppe::game::MoppeGame::tick",
     "moppe::game::MoppeGame::render",
     "moppe::game::build_world",
-    "moppe::game::TerrainLab::tick",
     "moppe::render::MetalRenderer::end_frame",
 ]
 

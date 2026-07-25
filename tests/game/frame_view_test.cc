@@ -269,7 +269,7 @@ MOPPE_TEST (frame_view_applies_shake_to_the_reading_not_the_camera_body) {
                            shaken.camera.frame_forward);
 }
 
-MOPPE_TEST (frame_view_selects_cinematic_and_terrain_lab_rules) {
+MOPPE_TEST (frame_view_selects_cinematic_rules) {
   FrameFixture fixture;
   game::GameSession& session = fixture.running ();
   session.logic ().m_shake = 0.2f;
@@ -297,40 +297,6 @@ MOPPE_TEST (frame_view_selects_cinematic_and_terrain_lab_rules) {
   MOPPE_CHECK (flight.visibility.sky_after_terrain);
   MOPPE_CHECK (flight.visibility.cinematic_hud);
   MOPPE_CHECK (!flight.visibility.game_hud);
-
-  game::FrameViewInput lab = gameplay_input (fixture);
-  lab.selected_camera = {
-    .position = Vec3 (80, 150, 80),
-    .forward = Vec3 (0, -1, 0),
-    .view =
-      Mat4::look_at (Vec3 (80, 150, 80), Vec3 (80, 10, 80), Vec3 (0, 0, 1)),
-    .field_of_view = 35.0f,
-  };
-  lab.scene = game::FrameSceneMode::TerrainLab;
-  lab.terrain_lab_fog = 0.0f / u::m;
-  lab.terrain_lab_torus = true;
-  lab.terrain_lab_pristine = false;
-  const game::FrameView inspection = game::compose_frame_view (lab);
-
-  MOPPE_CHECK (inspection.scene == game::FrameSceneMode::TerrainLab);
-  MOPPE_CHECK_NEAR (inspection.camera.field_of_view, 70.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (inspection.terrain_distance, 30000.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (
-    attenuation_value (inspection.lighting.fog_scale), 0.0f, 1e-6f);
-  frame_view_check_color (inspection.lighting.clear_color,
-                          DisplayColor (0.012f, 0.016f, 0.022f));
-  MOPPE_CHECK_NEAR (inspection.lighting.exposure_bias, 0.88f, 1e-6f);
-  MOPPE_CHECK_NEAR (inspection.lighting.sun_visibility, 0.0f, 1e-6f);
-  MOPPE_CHECK (inspection.visibility.terrain_lab);
-  MOPPE_CHECK (inspection.visibility.terrain_lab_torus);
-  MOPPE_CHECK (!inspection.visibility.sky_before_terrain);
-  MOPPE_CHECK (!inspection.visibility.sky_after_terrain);
-  MOPPE_CHECK (!inspection.visibility.ocean);
-  MOPPE_CHECK (inspection.visibility.terrain_lab_rivers);
-  MOPPE_CHECK (!inspection.visibility.actors);
-  MOPPE_CHECK (!inspection.visibility.dust);
-  MOPPE_CHECK (!inspection.visibility.motion_blur);
-  MOPPE_CHECK (inspection.visibility.terrain_lab_hud);
 }
 
 MOPPE_TEST (frame_view_carries_actor_visual_scale_and_sun_height) {

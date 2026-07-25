@@ -17,24 +17,20 @@ turns them into renderer lanes.
 | --- | --- |
 | Continuous elevation and normal reads reconstruct the authoritative geometry bundle, including across the torus boundary. | `surface_reconstruction_matches_authoritative_geometry` and `surface_reconstruction_wraps_the_torus` in `tests/map/surface_test.cc` |
 | Mutating the elevation column changes surface reads immediately; rebuilding geometry readings clears dependent materialized sections. | `surface_geometry_is_authoritative_without_a_refresh_barrier` and `surface_presentation_is_the_numeric_bridge_for_typed_sections` in `tests/map/surface_test.cc` |
-| Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation; a Terrain Lab rebuild uses that same path bridge. | The focused materialization tests, including `surface_presentation_materializes_preview_trails_at_the_bridge`, in `tests/map/surface_test.cc` |
+| Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation. | The focused materialization tests in `tests/map/surface_test.cc` |
 | Ground and water use the same domain while retaining distinct section bundles; water datum normalization and ocean setup happen only in `WaterPresentation`. | `tests/map/water_surface_test.cc` |
 
 The completed finite-section and presentation work changed the concrete bundle
 and grouping mechanism without changing these sampling, refresh, and ownership
 contracts. The numeric presentation bridge remains the named boundary.
 
-## Terrain replay
+## Terrain construction
 
-`map::TerrainEvaluator::checkpoint()` is the generation replay seam. A
-checkpoint restores the evaluator's mutable channel-memory state, then the
-remaining program suffix must produce the same completed height field.
-
-`orogeny_channel_memory_survives_a_checkpoint` and
-`checkpoint_resume_matches_complete_replay` in
-`tests/map/terrain_evaluator_test.cc` own this contract. Recipe and transform
-editing now expose those values more directly while preserving the
-checkpoint/resume result.
+World construction has one direct order: initialize seeded geology, evolve
+the physical surface, then form trails. The deterministic, periodic, progress,
+and physical-relief contracts live in
+`tests/map/terrain_generation_test.cc`. There is no terrain replay or mutable
+program-editing boundary.
 
 ## Running-game replay
 
@@ -65,8 +61,8 @@ the schedule through `advance_game_session` against one completed world.
 ## Frame presentation
 
 `game::FrameView` is the immutable presentation reading of a finished world
-frame. `MoppeGame` selects the active cinematic, Terrain Lab, inspection, or
-chase camera, then composes camera, lighting, weather, graphics choices,
+frame. `MoppeGame` selects the active cinematic, inspection, or chase camera,
+then composes camera, lighting, weather, graphics choices,
 mode-specific visibility, benchmark coordinates, mover poses, HUD values, and
 cinematic overlay readings before encoding renderer parameters. It is not a
 scene graph and owns no renderer or platform type.
@@ -86,7 +82,7 @@ presentation resources. The temporal lens-flare accumulator updates in
 are read-only.
 
 `tests/game/frame_view_test.cc` owns the pure-composition contract: no session
-mutation, frozen mover poses, shake behavior, cinematic/Terrain Lab selection,
+mutation, frozen mover poses, shake behavior, cinematic selection,
 HUD and overlay snapshots, and flare-sightline readings.
 
 ## Target graph
@@ -123,17 +119,17 @@ flowchart LR
 
 `moppe_spatial` is intentionally an interface target: its finite-section
 headers expose mp-units vocabulary but do not own a translation unit.
-`moppe_terrain` owns reusable fields, transforms, and hydrology algorithms;
-`moppe_world` adds the authoritative surface bundle,
-`GeneratedWorld`, the renderer-free Terrain Lab model, and inspection-camera
-selection. `moppe_simulation` owns `GameSession` and its movers. Its explicit
+`moppe_terrain` owns reusable finite terrain and hydrology algorithms;
+`moppe_world` adds the authoritative surface bundle, direct construction,
+`GeneratedWorld`, and water-capture selection. `moppe_simulation` owns
+`GameSession` and its movers. Its explicit
 dependency on `moppe_render` is currently real: session-owned Stars retain
 meshes and both Stars and Dust expose their presentation operations.
 
 `moppe_scene` composes `FrameView` and its focused world, actor, water,
 effect, and overlay presentation. It may use Apple-common asset and glyph
 services, but does not own an OS event loop or Metal backend. `moppe_app`
-holds the two host-service callers (`Terrain` and `TerrainLab`); terminal apps
+holds the host-service caller `Terrain`; terminal apps
 retain `game.cc` because it defines `main` and chooses the macOS or iOS host.
 Only the selected platform edge is present in any given build configuration.
 Terrain-only command-line tools depend on `moppe_world`, so they no longer

@@ -1931,8 +1931,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     if (!m_state->device || !m_state->have_terrain ||
         !m_state->terrain_shadow_pipeline || m_state->frame_open)
       return;
-    const int shadow_size =
-      std::max (256, m_state->terrain_params.shadow_resolution);
+    constexpr int shadow_size = 4096;
     if (shadow_size != m_state->terrain_shadow_size)
       m_state->create_terrain_shadow_texture (shadow_size);
 
@@ -1980,7 +1979,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     pass.SetBindGroup (0, frame_group);
 
     int lod = static_cast<int> (TerrainLod::Native);
-    const int requested_step = std::max (1, terrain.shadow_sample_step);
+    constexpr int requested_step = 1;
     while (lod + 1 < terrain_lod_count &&
            terrain_lod_steps[lod] < requested_step)
       ++lod;

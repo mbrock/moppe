@@ -362,32 +362,6 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (!surface.atlas ().use ().readings ());
 }
 
-MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
-  using namespace moppe;
-  const terrain::TerrainDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
-  const std::array trails { 0.10f, 0.20f, 0.30f, 0.40f };
-  const std::array home_base { 0.90f, 0.80f, 0.70f, 0.60f };
-  const terrain::TrailNetwork network {
-    .domain = domain,
-    .use = trail_use_map (domain, trails, home_base),
-  };
-
-  game::SurfacePresentation presentation;
-  presentation.refresh_paths (network);
-
-  const std::array expected_trails { 0.10f, 0.20f, 0.30f, 0.40f };
-  const std::array expected_home_base { 0.90f, 0.80f, 0.70f, 0.60f };
-  MOPPE_CHECK (std::ranges::equal (presentation.trails (), expected_trails));
-  MOPPE_CHECK (
-    std::ranges::equal (presentation.home_base (), expected_home_base));
-
-  test::RecordingRenderer renderer;
-  presentation.upload_paths (renderer);
-  MOPPE_CHECK (std::ranges::equal (renderer.trail_influence, expected_trails));
-  MOPPE_CHECK (
-    std::ranges::equal (renderer.home_base_influence, expected_home_base));
-}
-
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));

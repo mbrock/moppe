@@ -62,10 +62,8 @@ the appropriate named atlas view, such as
 ## Presentation mappings
 
 `game::SurfacePresentation` is deliberately mechanical. It performs no
-terrain or ecology policy. The Terrain Lab uses its narrow path-payload route
-too: a rebuilt `TrailNetwork` becomes the same terrain-path texture lanes only
-at this bridge, while a pristine Lab view reuses its already materialized
-payload.
+terrain or ecology policy. It reads completed typed sections and packs the
+renderer texture lanes at this one bridge.
 
 | Intrinsic section | Renderer payload |
 | --- | --- |

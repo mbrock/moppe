@@ -1,7 +1,7 @@
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_evaluator.hh>
+#include <moppe/map/terrain_generation.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/program.hh>
+#include <moppe/terrain/world_recipe.hh>
 
 #include <algorithm>
 #include <array>
@@ -90,18 +90,12 @@ int main (int argc, char** argv) {
       static_cast<std::uint32_t> (argc > 3 ? std::stoul (argv[3]) : 123);
     const TerrainGenerationProfile profile =
       parse_profile (argc > 4 ? argv[4] : "fast");
-    const float coastline = argc > 5 ? std::stof (argv[5]) : 0.4f;
-    const float bathymetric_relief_m = argc > 6 ? std::stof (argv[6]) : 240.0f;
     if (resolution < 2 || seed_count < 1)
       throw std::invalid_argument (
         "resolution must be at least 2 and seed count must be positive");
-    if (!std::isfinite (coastline) || !std::isfinite (bathymetric_relief_m) ||
-        bathymetric_relief_m < 0.0f)
-      throw std::invalid_argument (
-        "coastline and non-negative bathymetric relief must be finite");
 
     std::array<DepthPopulation, category_count> populations;
-    const float sea_level = sea_level_m / world_height_m;
+    const float sea_level = sea_level_m;
     const double cell_area_m2 = world_width_m * world_width_m /
                                 static_cast<double> (resolution * resolution);
 
@@ -113,15 +107,16 @@ int main (int argc, char** argv) {
       map::Surface map (resolution,
                         resolution,
                         Vec3 (world_width_m, world_height_m, world_width_m));
-      TerrainProgram program = make_world_program (seed, profile);
-      program.source.sea_level = sea_level;
-      program.source.coastline = coastline;
-      program.source.initial_bathymetric_relief =
-        bathymetric_relief_m * mp_units::si::metre;
-      for (TerrainTransform& transform : program.transforms)
-        if (auto* orogeny = std::get_if<OrogenyEvolution> (&transform))
-          orogeny->evolution.sea_level = sea_level;
-      map::TerrainEvaluator (map).evaluate (program);
+      const WorldRecipe recipe =
+        make_world_recipe (spatial_extent_in_metres (Vec3 (
+                             world_width_m, world_height_m, world_width_m)),
+                           resolution,
+                           Seed { seed },
+                           sea_level_m * u::m,
+                           profile);
+      const auto uplift =
+        map::initialize_terrain (map, recipe.seed (), recipe.water_datum ());
+      map::evolve_terrain (map, uplift, recipe.evolution ());
 
       const FloodField flood =
         analyze_standing_water (map.geometry (), sea_level);
@@ -141,8 +136,7 @@ int main (int argc, char** argv) {
         const std::size_t category =
           category_index (census.bodies[body].classification);
         ++cells[category];
-        populations[category].depths_m.push_back (depths[cell] *
-                                                  world_height_m);
+        populations[category].depths_m.push_back (depths[cell]);
       }
       std::cout << seed;
       for (const std::size_t value : bodies)
