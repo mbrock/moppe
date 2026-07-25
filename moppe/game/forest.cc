@@ -1,4 +1,5 @@
 #include <moppe/game/forest.hh>
+#include <moppe/gfx/signal.hh>
 
 #include <moppe/profile.hh>
 #include <moppe/render/draw.hh>
@@ -34,12 +35,6 @@ namespace moppe::game {
 
     float hash_lane (std::uint32_t value, std::uint32_t lane) {
       return hash_unit (forest_hash (value, lane, 0x517cc1b7U));
-    }
-
-    float smoothstep (float edge0, float edge1, float value) {
-      const float t =
-        std::clamp ((value - edge0) / (edge1 - edge0), 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
     }
 
     float elevation_at (const map::SurfaceGeometry& surface, float x, float z) {

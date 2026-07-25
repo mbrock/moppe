@@ -1,4 +1,5 @@
 #include <moppe/game/river_surface.hh>
+#include <moppe/gfx/signal.hh>
 
 #include <moppe/terrain/river.hh>
 
@@ -48,11 +49,6 @@ namespace moppe::game {
     };
 
     using RibbonRow = std::array<RibbonVertex, cross_positions.size ()>;
-
-    float smoothstep (float low, float high, float value) {
-      const float t = std::clamp ((value - low) / (high - low), 0.0f, 1.0f);
-      return t * t * (3.0f - 2.0f * t);
-    }
 
     float rapid_signal (float slope) {
       return std::clamp ((slope - 0.035f) / 0.24f, 0.0f, 1.0f);
@@ -412,8 +408,8 @@ namespace moppe::game {
         for (auto& point : points) {
           const float remaining_m =
             std::max (0.0f, junction_flow_m - point.flow_distance_m);
-          const float influence = 1.0f - river_surface_detail::smoothstep (
-                                           0.0f, transition_m, remaining_m);
+          const float influence =
+            1.0f - smoothstep (0.0f, transition_m, remaining_m);
           const Vec3 tangent =
             point.tangent * (1.0f - influence) + shared.tangent * influence;
           if (length2 (tangent) > 1e-6f)
