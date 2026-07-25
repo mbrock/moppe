@@ -9,10 +9,10 @@
 #include <vector>
 
 namespace moppe::terrain {
-  ScalarRaster analyze_moisture (const FloodField& flood,
-                                 const LakeCensus& census,
-                                 const DrainageGraph& drainage,
-                                 const MoistureParameters& parameters) {
+  MoistureMap analyze_moisture (const FloodField& flood,
+                                const LakeCensus& census,
+                                const DrainageGraph& drainage,
+                                const MoistureParameters& parameters) {
     MOPPE_PROFILE_ZONE ("analyze_moisture");
     const TerrainDomain& grid = flood.domain;
     const int width = static_cast<int> (grid.width ());
@@ -59,7 +59,7 @@ namespace moppe::terrain {
     }
 
     const float cell_area = square_meters_value (grid.cell_area ());
-    std::vector<float> moisture (count);
+    std::vector<SurfaceMoisture> moisture (count);
     {
       MOPPE_PROFILE_ZONE ("moisture.combine_water_and_drainage");
       for (std::size_t cell = 0; cell < count; ++cell) {
@@ -78,11 +78,10 @@ namespace moppe::terrain {
           std::clamp ((1.0f - parameters.drainage_weight) * near_water +
                         parameters.drainage_weight * damp,
                       0.0f,
-                      1.0f);
+                      1.0f) *
+          surface_moisture[one];
       }
     }
-    return ScalarRaster ({ .width = static_cast<std::size_t> (width),
-                           .height = static_cast<std::size_t> (height) },
-                         std::move (moisture));
+    return MoistureMap (grid, std::move (moisture));
   }
 }

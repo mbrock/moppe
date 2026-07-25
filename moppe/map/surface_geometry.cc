@@ -19,15 +19,15 @@ namespace moppe::map {
     return static_cast<int> (m_atlas.domain ().height ());
   }
 
-  Vec3 Surface::scale () const noexcept {
+  Vec3 Surface::sample_spacing () const noexcept {
     return Vec3 (meters_value (m_atlas.domain ().spacing_x ()),
-                 meters_value (m_height_scale),
+                 1.0f,
                  meters_value (m_atlas.domain ().spacing_z ()));
   }
 
-  Vec3 Surface::size () const noexcept {
+  Vec3 Surface::world_extent () const noexcept {
     return Vec3 (meters_value (m_atlas.domain ().period_x ()),
-                 meters_value (m_height_scale),
+                 meters_value (m_vertical_extent),
                  meters_value (m_atlas.domain ().period_z ()));
   }
 
@@ -36,72 +36,29 @@ namespace moppe::map {
       { static_cast<std::size_t> (column), static_cast<std::size_t> (row) });
   }
 
-  const std::vector<SurfaceElevation>& Surface::elevations () const noexcept {
-    return spatial::get<terrain::surface_elevation> (m_atlas.geometry ());
-  }
-
-  std::vector<SurfaceElevation>& Surface::elevations () noexcept {
-    return spatial::get<terrain::surface_elevation> (m_atlas.geometry ());
-  }
-
-  const std::vector<SurfaceNormal>& Surface::normals () const noexcept {
-    return spatial::get<terrain::terrain_normal> (m_atlas.geometry ());
-  }
-
-  const std::vector<ErodedSurfaceMaterial>&
-  Surface::eroded_material () const noexcept {
-    return spatial::get<eroded_surface_material> (m_atlas.geometry ());
-  }
-
-  std::vector<ErodedSurfaceMaterial>& Surface::eroded_material () noexcept {
-    return spatial::get<eroded_surface_material> (m_atlas.geometry ());
-  }
-
-  const std::vector<DepositedSurfaceMaterial>&
-  Surface::deposited_material () const noexcept {
-    return spatial::get<deposited_surface_material> (m_atlas.geometry ());
-  }
-
-  std::vector<DepositedSurfaceMaterial>&
-  Surface::deposited_material () noexcept {
-    return spatial::get<deposited_surface_material> (m_atlas.geometry ());
-  }
-
-  float Surface::relative_elevation_at (int column, int row) const {
-    return terrain::surface_elevation_value (elevation_at (column, row)) /
-           meters_value (m_height_scale);
-  }
-
-  void Surface::set_relative_elevation (int column, int row, float value) {
-    set_elevation (column,
-                   row,
-                   SurfaceElevation (value * meters_value (m_height_scale) *
-                                     terrain::surface_elevation[u::m]));
-  }
-
-  void Surface::fill_relative_elevation (float value) {
-    fill_elevation (SurfaceElevation (value * meters_value (m_height_scale) *
-                                      terrain::surface_elevation[u::m]));
-  }
-
   SurfaceElevation Surface::elevation_at (int column, int row) const {
-    return elevations ()[offset (column, row)];
+    return spatial::get<terrain::surface_elevation> (
+      geometry ())[offset (column, row)];
   }
 
   void Surface::set_elevation (int column, int row, SurfaceElevation value) {
-    elevations ()[offset (column, row)] = value;
+    spatial::get<terrain::surface_elevation> (
+      geometry ())[offset (column, row)] = value;
   }
 
   void Surface::fill_elevation (SurfaceElevation value) {
-    std::ranges::fill (elevations (), value);
+    std::ranges::fill (spatial::get<terrain::surface_elevation> (geometry ()),
+                       value);
   }
 
   Vec3 Surface::normal_at (int column, int row) const {
-    return normals ()[offset (column, row)].numerical_value_in (mp_units::one);
+    return spatial::get<terrain::terrain_normal> (
+             geometry ())[offset (column, row)]
+      .numerical_value_in (mp_units::one);
   }
 
   Vec3 Surface::vertex (int column, int row) const {
-    const Vec3 spacing = scale ();
+    const Vec3 spacing = sample_spacing ();
     return Vec3 (spacing[0] * column,
                  terrain::surface_elevation_value (elevation_at (column, row)),
                  spacing[2] * row);
@@ -122,7 +79,7 @@ namespace moppe::map {
   }
 
   float Surface::interpolated_height (float x, float z) const {
-    const Vec3 spacing = scale ();
+    const Vec3 spacing = sample_spacing ();
     const float gx =
       terrain::wrap_coordinate (x / spacing[0], static_cast<float> (width ()));
     const float gz =
@@ -145,7 +102,7 @@ namespace moppe::map {
   }
 
   Vec3 Surface::interpolated_normal (float x, float z) const {
-    const Vec3 spacing = scale ();
+    const Vec3 spacing = sample_spacing ();
     const float gx =
       terrain::wrap_coordinate (x / spacing[0], static_cast<float> (width ()));
     const float gz =
@@ -165,22 +122,16 @@ namespace moppe::map {
 
   SurfaceElevation Surface::min_elevation () const {
     return *std::ranges::min_element (
-      elevations (), {}, terrain::surface_elevation_value);
+      spatial::get<terrain::surface_elevation> (geometry ()),
+      {},
+      terrain::surface_elevation_value);
   }
 
   SurfaceElevation Surface::max_elevation () const {
     return *std::ranges::max_element (
-      elevations (), {}, terrain::surface_elevation_value);
-  }
-
-  float Surface::min_relative_elevation () const {
-    return terrain::surface_elevation_value (min_elevation ()) /
-           meters_value (m_height_scale);
-  }
-
-  float Surface::max_relative_elevation () const {
-    return terrain::surface_elevation_value (max_elevation ()) /
-           meters_value (m_height_scale);
+      spatial::get<terrain::surface_elevation> (geometry ()),
+      {},
+      terrain::surface_elevation_value);
   }
 
   void Surface::recompute_normals () {
@@ -189,7 +140,7 @@ namespace moppe::map {
       spatial::get<terrain::terrain_normal> (m_atlas.geometry ());
     std::ranges::fill (normal_column,
                        Vec3 (0, 0, 0) * terrain::terrain_normal[mp_units::one]);
-    const Vec3 spacing = scale ();
+    const Vec3 spacing = sample_spacing ();
     const auto point = [&] (int column, int row) {
       return Vec3 (spacing[0] * column,
                    terrain::surface_elevation_value (
@@ -229,22 +180,22 @@ namespace moppe::map {
   }
 
   void Surface::reset_material_history () {
-    std::ranges::fill (eroded_material (),
+    std::ranges::fill (spatial::get<eroded_surface_material> (geometry ()),
                        0.0f * eroded_surface_material[mp_units::one]);
-    std::ranges::fill (deposited_material (),
+    std::ranges::fill (spatial::get<deposited_surface_material> (geometry ()),
                        0.0f * deposited_surface_material[mp_units::one]);
   }
 
   void Surface::record_material_change (int column, int row, float delta) {
     const std::size_t cell = offset (column, row);
+    auto& eroded = spatial::get<eroded_surface_material> (geometry ());
+    auto& deposited = spatial::get<deposited_surface_material> (geometry ());
     if (delta < 0.0f)
-      eroded_material ()[cell] =
-        (eroded_material ()[cell].numerical_value_in (mp_units::one) - delta) *
-        eroded_surface_material[mp_units::one];
+      eroded[cell] = (eroded[cell].numerical_value_in (mp_units::one) - delta) *
+                     eroded_surface_material[mp_units::one];
     else
-      deposited_material ()[cell] =
-        (deposited_material ()[cell].numerical_value_in (mp_units::one) +
-         delta) *
+      deposited[cell] =
+        (deposited[cell].numerical_value_in (mp_units::one) + delta) *
         deposited_surface_material[mp_units::one];
   }
 
@@ -257,6 +208,7 @@ namespace moppe::map {
     std::ifstream file (path, std::ios::binary);
     if (!file)
       return false;
+    auto& elevation = spatial::get<terrain::surface_elevation> (geometry ());
     char magic[4] {};
     std::int32_t stored_width = 0;
     std::int32_t stored_height = 0;
@@ -273,7 +225,7 @@ namespace moppe::map {
     if (!file)
       return false;
     for (std::size_t cell = 0; cell < values.size (); ++cell)
-      elevations ()[cell] =
+      elevation[cell] =
         SurfaceElevation (values[cell] * terrain::surface_elevation[u::m]);
 
     reset_material_history ();
@@ -292,13 +244,18 @@ namespace moppe::map {
         static_cast<std::streamsize> (deposited.size () * sizeof (float)));
       if (!have_eroded || !file)
         reset_material_history ();
-      else
+      else {
+        auto& eroded_column =
+          spatial::get<eroded_surface_material> (geometry ());
+        auto& deposited_column =
+          spatial::get<deposited_surface_material> (geometry ());
         for (std::size_t cell = 0; cell < values.size (); ++cell) {
-          eroded_material ()[cell] =
+          eroded_column[cell] =
             eroded[cell] * eroded_surface_material[mp_units::one];
-          deposited_material ()[cell] =
+          deposited_column[cell] =
             deposited[cell] * deposited_surface_material[mp_units::one];
         }
+      }
     }
     return true;
   }
@@ -312,16 +269,19 @@ namespace moppe::map {
     file.write (surface_magic, 4);
     file.write (reinterpret_cast<const char*> (&stored_width), 4);
     file.write (reinterpret_cast<const char*> (&stored_height), 4);
-    for (SurfaceElevation value : elevations ()) {
+    for (SurfaceElevation value :
+         spatial::get<terrain::surface_elevation> (geometry ())) {
       const float scalar = terrain::surface_elevation_value (value);
       file.write (reinterpret_cast<const char*> (&scalar), sizeof (scalar));
     }
     file.write (material_magic, 4);
-    for (ErodedSurfaceMaterial value : eroded_material ()) {
+    for (ErodedSurfaceMaterial value :
+         spatial::get<eroded_surface_material> (geometry ())) {
       const float scalar = value.numerical_value_in (mp_units::one);
       file.write (reinterpret_cast<const char*> (&scalar), sizeof (scalar));
     }
-    for (DepositedSurfaceMaterial value : deposited_material ()) {
+    for (DepositedSurfaceMaterial value :
+         spatial::get<deposited_surface_material> (geometry ())) {
       const float scalar = value.numerical_value_in (mp_units::one);
       file.write (reinterpret_cast<const char*> (&scalar), sizeof (scalar));
     }

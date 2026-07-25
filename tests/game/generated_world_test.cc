@@ -23,8 +23,12 @@ namespace {
   void fill_test_terrain (moppe::map::Surface& map) {
     for (int y = 0; y < map.height (); ++y)
       for (int x = 0; x < map.width (); ++x)
-        map.set_relative_elevation (
-          x, y, 0.25f + 0.01f * static_cast<float> ((x + y) % 7));
+        map.set_elevation (
+          x,
+          y,
+          moppe::terrain::surface_elevation_point (
+            (0.25f + 0.01f * static_cast<float> ((x + y) % 7)) * 650.0f *
+            mp_units::si::metre));
   }
 }
 
@@ -49,11 +53,11 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
     [&stages] (game::GeneratedWorld::HydrologyStage stage) {
       stages.push_back (stage);
     });
-  world.materialize_analyses ();
+  world.derive_surface_readings ();
 
   MOPPE_CHECK (world.recipe ().seed () == Seed { 42 });
   MOPPE_CHECK (world.params ().water_level == 50.0f * u::m);
-  MOPPE_CHECK (world.surface ().atlas ().geometry ().domain ().width () == 17);
+  MOPPE_CHECK (world.surface ().domain ().width () == 17);
   MOPPE_CHECK (stages.size () == 6);
   MOPPE_CHECK (world.hydrology ().has_value ());
   MOPPE_CHECK (world.hydrology ()->standing_water ().width () == 17);

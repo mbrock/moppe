@@ -8,16 +8,15 @@
 #include <vector>
 
 namespace moppe::game {
-  // Presentation of the water bundle and the coarse ocean mesh. The bundle
-  // stays physical; normalized height and interleaved lanes are produced only
-  // for the renderer contract.
+  // Presentation of the water bundle and the coarse ocean mesh. Elevation
+  // stays in metres; only heterogeneous sections are packed into renderer
+  // lanes.
   class WaterPresentation {
   public:
     // The renderer's ocean setup is built here so that world assembly retains
     // its physical datum and extent until the presentation boundary.
     void reset (meters_t water_datum, const spatial_extent_t& world_extent);
-    void refresh (const map::WaterSurface& water,
-                  meters_t terrain_height_scale);
+    void refresh (const map::WaterSurface& water);
     void upload (render::Renderer& renderer) const;
 
     std::span<const float> levels () const noexcept {

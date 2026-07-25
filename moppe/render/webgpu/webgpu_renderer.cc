@@ -1844,7 +1844,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     if (params.width < 2 || params.height < 2 ||
         heights.size () != sample_count ||
         (!normals.empty () && normals.size () != sample_count) ||
-        params.height_scale <= 0.0f)
+        params.scale[1] != 1.0f)
       throw std::invalid_argument ("invalid WebGPU terrain raster");
     m_state->terrain_params = params;
 
@@ -1870,17 +1870,10 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       static_cast<uint32_t> (params.height),
       1,
     };
-    // The renderer still consumes normalized texture lanes. Keep that
-    // conversion at this presentation boundary while terrain storage and
-    // simulation use physical elevations.
-    std::vector<float> presented_heights (sample_count);
-    for (std::size_t offset = 0; offset < sample_count; ++offset)
-      presented_heights[offset] =
-        terrain::surface_elevation_value (heights[offset]) /
-        params.height_scale;
     m_state->queue.WriteTexture (&height_destination,
-                                 presented_heights.data (),
-                                 presented_heights.size () * sizeof (float),
+                                 heights.data (),
+                                 heights.size () *
+                                   sizeof (terrain::SurfaceElevation),
                                  &height_layout,
                                  &extent);
 
@@ -2124,9 +2117,9 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       .terrain_scale = { terrain.scale[0],
                          terrain.scale[1],
                          terrain.scale[2],
-                         terrain.sea_level_norm },
+                         terrain.sea_level },
       .material_params = { terrain.tex_scale,
-                           terrain.height_scale,
+                           1.0f,
                            terrain.fragment_normals ? 1.0f : 0.0f,
                            terrain.topology_overlay ? 1.0f : 0.0f },
       .shadow_params = { m_state->have_terrain_shadow ? terrain.shadow_strength

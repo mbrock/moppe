@@ -2,7 +2,7 @@
 
 `game::GeneratedWorld` is the stable, renderer-free owner of one completed
 world. It binds the immutable physical description (`WorldRecipe` and its
-normalized `WorldParams`) to one authoritative typed surface and its
+`WorldParams`) to one authoritative typed surface and its
 materialized readings. Gameplay does not own parallel copies of these
 artifacts.
 
@@ -13,7 +13,7 @@ artifacts.
 | `Surface` and its mandatory `SurfaceAtlas` geometry | construction |
 | Geometry normals and snow support | `rebuild_surface()` |
 | `Hydrology` | `analyze_hydrology()` |
-| `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `materialize_analyses()` |
+| `WaterSurface`, ground hydrology, ecology, geology, and trail sections | `derive_surface_readings()` |
 
 `Hydrology` is one named, complete value: standing water, lake census, wet
 drainage, fractional channel drainage, water-body flow, and river network are
@@ -56,7 +56,7 @@ before beginning renderer-facing activation.
 
 Ordinary gameplay receives const readings. The loading worker calls the
 three build steps (`rebuild_surface`, `analyze_hydrology`,
-`materialize_analyses`) in order after evaluating the terrain, through the
+`derive_surface_readings`) in order after evaluating the terrain, through the
 mutable `surface()` overload. Terrain Lab uses the same mutable surface and
 restores its typed geometry checkpoint when the Lab leaves, so it does not
 make a permanently edited world implicit.

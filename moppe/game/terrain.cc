@@ -51,8 +51,8 @@ namespace moppe {
                          bool repeat_periodically,
                          bool interactive_preview) {
       MOPPE_PROFILE_ZONE ("Terrain::setup");
-      m_scale = map.scale ();
-      m_period = map.size ();
+      m_scale = map.sample_spacing ();
+      m_period = map.world_extent ();
       m_repeat_periodically = repeat_periodically;
       m_projection = projection;
       m_lod_scale = std::max (m_scale[0], m_scale[2]);
@@ -61,10 +61,7 @@ namespace moppe {
       params.width = map.width ();
       params.height = map.height ();
       params.scale = m_scale;
-      const Vec3& world_extent = extent_value (world.map_size);
-      params.height_scale = world_extent[1];
-      params.sea_level_norm =
-        meters_value (world.water_level) / world_extent[1];
+      params.sea_level = meters_value (world.water_level);
       params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = projection == render::TerrainProjection::Torus ||
                                    !graphics.terrain_shadows
@@ -88,7 +85,10 @@ namespace moppe {
       params.derive_normals = interactive_preview;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
-        r.set_terrain (params, map.elevations (), map.normals ());
+        r.set_terrain (
+          params,
+          spatial::get<terrain::surface_elevation> (map.geometry ()),
+          spatial::get<terrain::terrain_normal> (map.geometry ()));
       }
 
       if (!m_textures_loaded) {
@@ -143,7 +143,7 @@ namespace moppe {
       MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
       if (m_projection == render::TerrainProjection::Torus)
         return;
-      const Vec3 bounds = map.size ();
+      const Vec3 bounds = map.world_extent ();
       const Vec3 center (bounds[0] / 2, bounds[1] / 2, bounds[2] / 2);
       const float radius = length (bounds) / 2;
 

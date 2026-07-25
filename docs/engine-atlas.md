@@ -57,7 +57,7 @@ division executable.
 `terrain::WorldRecipe` binds a terrain program to physical world parameters
 and water datum. `GeneratedWorld`'s build steps are the
 capability that evaluates the map, rebuilds `map::Surface`, analyzes hydrology,
-and materializes derived readings. Once active, ordinary gameplay receives
+and derives later surface readings. Once active, ordinary gameplay receives
 const views of the completed world.
 
 `map::SurfaceDomain` is the one finite lattice for the ground. It owns the
@@ -66,11 +66,11 @@ topology, site correspondence, spacing, and reconstruction stencil. Its
 
 | Group | Typed sections | Valid when |
 | --- | --- | --- |
-| Geometry | `relative_terrain_elevation`, `terrain_normal`, removed/deposited material, `snow_support` | Elevation/history exist at construction; normals/support after `rebuild_geometry_readings()` |
+| Geometry | `surface_elevation`, `terrain_normal`, removed/deposited material, `snow_support` | Elevation/history exist at construction; normals/support after `rebuild_geometry_readings()` |
 | Hydrology | `channel_flux`, `surface_moisture`, `waterline_distance` | World hydrology/materialization |
 | Geology | `erosion_exposure`, `deposition_cover` | Geological materialization |
 | Ecology | `tree_habitat`, `forest_cover` | Ecological materialization |
-| Use | `trail_influence`, `home_base_influence` | Trail and home-base materialization |
+| Use | `trail_influence`, `home_base_influence` | Completed trail-use analysis |
 
 Geometry is authoritative and always present. Later groups are individually
 optional: absence means the corresponding world-building barrier has not run,

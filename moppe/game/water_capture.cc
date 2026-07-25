@@ -23,7 +23,7 @@ namespace moppe::game {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = map.scale ();
+      const Vec3 scale = map.sample_spacing ();
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y =
@@ -46,7 +46,8 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = capture_minimum_image_delta (dx, width);
       dz = capture_minimum_image_delta (dz, height);
-      Vec3 result (dx * map.scale ()[0], 0.0f, dz * map.scale ()[2]);
+      Vec3 result (
+        dx * map.sample_spacing ()[0], 0.0f, dz * map.sample_spacing ()[2]);
       if (length2 (result) < 1e-6f)
         result = Vec3 (0, 0, 1);
       return normalized (result);

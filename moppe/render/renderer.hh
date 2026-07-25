@@ -62,10 +62,9 @@ namespace moppe {
     struct TerrainParams {
       int width; // grid samples
       int height;
-      Vec3 scale;           // grid step x/z, height scale y
-      float height_scale;   // world meters at height 1.0
-      float sea_level_norm; // sea level / height_scale
-      float tex_scale;      // texture repeats per world meter
+      Vec3 scale;      // grid step x/z; y is one metre per height unit
+      float sea_level; // world metres
+      float tex_scale; // texture repeats per world metre
       float shadow_strength;
       int shadow_resolution = 4096;
       int shadow_sample_step = 1;

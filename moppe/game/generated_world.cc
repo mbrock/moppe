@@ -58,7 +58,7 @@ namespace moppe::game {
 
     report (HydrologyStage::StandingWater);
     terrain::FloodField standing_water = terrain::analyze_standing_water (
-      m_surface.atlas ().geometry (), meters_value (m_recipe.water_datum ()));
+      m_surface.geometry (), meters_value (m_recipe.water_datum ()));
 
     report (HydrologyStage::Lakes);
     terrain::LakeCensus lakes = terrain::census_lakes (standing_water);
@@ -91,30 +91,30 @@ namespace moppe::game {
                                     std::move (rivers)));
   }
 
-  void GeneratedWorld::materialize_analyses (
+  void GeneratedWorld::derive_surface_readings (
     std::optional<terrain::TrailNetwork> generated_trails) {
-    MOPPE_PROFILE_ZONE ("GeneratedWorld::materialize_analyses");
+    MOPPE_PROFILE_ZONE ("GeneratedWorld::derive_surface_readings");
     m_water_surface.reset ();
     m_trails.reset ();
 
     if (m_hydrology) {
       const Hydrology& hydrology = *m_hydrology;
-      m_surface.materialize_channel_flux (hydrology.channels ());
+      m_surface.derive_channel_flux (hydrology.channels ());
 
       const terrain::WaterSheets sheets =
-        terrain::paint_watercourses (m_surface.atlas ().geometry (),
+        terrain::paint_watercourses (m_surface.geometry (),
                                      hydrology.standing_water (),
                                      hydrology.lakes (),
                                      hydrology.drainage (),
                                      hydrology.rivers ());
-      m_water_surface.emplace (m_surface.atlas ().domain (), sheets);
+      m_water_surface.emplace (m_surface.domain (), sheets);
 
       const terrain::Waterline waterline = terrain::extract_waterline (
-        m_surface.atlas ().geometry (), sheets.surface, hydrology.lakes ());
-      m_surface.materialize_waterline_distance (
+        m_surface.geometry (), sheets.surface, hydrology.lakes ());
+      m_surface.set_waterline_distance (
         terrain::waterline_proximity (waterline));
 
-      m_surface.materialize_moisture (
+      m_surface.set_moisture (
         terrain::analyze_moisture (hydrology.standing_water (),
                                    hydrology.lakes (),
                                    hydrology.drainage ()));
@@ -129,16 +129,13 @@ namespace moppe::game {
           return std::holds_alternative<terrain::TrailFormation> (transform);
         });
       if (stage != program.transforms.end ()) {
-        MOPPE_PROFILE_ZONE ("world.materialize_trails");
+        MOPPE_PROFILE_ZONE ("world.derive_trails");
         if (generated_trails)
           m_trails = std::move (generated_trails);
         else
           m_trails = terrain::analyze_trail_network (
-            m_surface.atlas ().geometry (),
-            std::get<terrain::TrailFormation> (*stage));
-        m_surface.materialize_trail_influence (m_trails->influence.values ());
-        m_surface.materialize_home_base_influence (
-          m_trails->home_base_influence.values ());
+            m_surface.geometry (), std::get<terrain::TrailFormation> (*stage));
+        m_surface.set_use (m_trails->use);
       }
     }
 

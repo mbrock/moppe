@@ -267,8 +267,10 @@ namespace moppe::terrain {
     return waterline;
   }
 
-  ScalarRaster waterline_proximity (const Waterline& waterline, float band_m) {
-    if (!std::isfinite (band_m) || band_m <= 0.0f)
+  WaterlineProximity waterline_proximity (const Waterline& waterline,
+                                          meters_t band) {
+    const float band_m = meters_value (band);
+    if (!std::isfinite (band_m) || band <= 0.0f * u::m)
       throw std::invalid_argument ("waterline band must be positive");
     const TerrainDomain& grid = waterline.domain;
     const std::size_t width = grid.width ();
@@ -279,7 +281,8 @@ namespace moppe::terrain {
     const float world_x = spacing_x * static_cast<float> (width);
     const float world_y = spacing_y * static_cast<float> (height);
 
-    std::vector<float> distance (count, band_m);
+    std::vector<WaterlineDistance> distance (count,
+                                             band_m * waterline_distance[u::m]);
 
     // Bucket segments by lattice cell so each node only inspects its
     // neighborhood; a marching-squares segment spans at most two cells.
@@ -323,8 +326,7 @@ namespace moppe::terrain {
       }
     }
     if (shore.empty ())
-      return ScalarRaster ({ .width = width, .height = height },
-                           std::move (distance));
+      return WaterlineProximity (grid, std::move (distance));
 
     const int reach_x = static_cast<int> (std::ceil (band_m / spacing_x)) + 1;
     const int reach_y = static_cast<int> (std::ceil (band_m / spacing_y)) + 1;
@@ -366,14 +368,14 @@ namespace moppe::terrain {
           const std::size_t node = static_cast<std::size_t> (ny) * width + nx;
           const float px = static_cast<float> (nx) * spacing_x;
           const float py = static_cast<float> (ny) * spacing_y;
-          float& best = distance[node];
+          WaterlineDistance& best = distance[node];
           for (const std::uint32_t segment : segment_indices)
-            best =
-              std::min (best, point_segment_distance (px, py, shore[segment]));
+            best = std::min (best,
+                             point_segment_distance (px, py, shore[segment]) *
+                               waterline_distance[u::m]);
         }
     }
 
-    return ScalarRaster ({ .width = width, .height = height },
-                         std::move (distance));
+    return WaterlineProximity (grid, std::move (distance));
   }
 }

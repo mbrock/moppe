@@ -20,12 +20,8 @@ namespace moppe::game {
     m_flow.clear ();
   }
 
-  void WaterPresentation::refresh (const map::WaterSurface& water,
-                                   meters_t terrain_height_scale) {
-    MOPPE_PROFILE_ZONE ("water.materialize_presentation");
-    if (terrain_height_scale <= 0.0f * u::m)
-      throw std::invalid_argument (
-        "Water presentation needs a positive terrain height scale");
+  void WaterPresentation::refresh (const map::WaterSurface& water) {
+    MOPPE_PROFILE_ZONE ("water.pack_presentation");
     const auto& elevation =
       spatial::get<map::surface_elevation> (water.sections ());
     const auto& amplitude =
@@ -36,8 +32,7 @@ namespace moppe::game {
     m_flow.resize (2 * water.sections ().size ());
     for (std::size_t offset = 0; offset < water.sections ().size (); ++offset) {
       m_levels[2 * offset] =
-        elevation[offset].quantity_from_zero ().numerical_value_in (u::m) /
-        meters_value (terrain_height_scale);
+        elevation[offset].quantity_from_zero ().numerical_value_in (u::m);
       m_levels[2 * offset + 1] = amplitude[offset].numerical_value_in (one);
       const Vec3 flow = velocity[offset].numerical_value_in (u::m / u::s);
       m_flow[2 * offset] = flow[0];

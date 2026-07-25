@@ -279,7 +279,7 @@ namespace moppe::game {
       state.report ("Assembling the world",
                     "Painting water, moisture, materials, and the opening "
                     "route");
-      completed->materialize_analyses (std::move (trails));
+      completed->derive_surface_readings (std::move (trails));
       state.publish_completed (std::move (completed));
     }
 

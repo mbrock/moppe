@@ -1,7 +1,9 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
+#include <moppe/terrain/moisture.hh>
 #include <moppe/terrain/trail.hh>
+#include <moppe/terrain/waterline.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/test.hh>
@@ -27,6 +29,46 @@ namespace {
     MOPPE_CHECK_NEAR (actual[1], expected[1], tolerance);
     MOPPE_CHECK_NEAR (actual[2], expected[2], tolerance);
   }
+
+  moppe::terrain::MoistureMap
+  moisture_map (const moppe::map::SurfaceDomain& domain,
+                std::span<const float> samples) {
+    std::vector<moppe::terrain::SurfaceMoisture> values;
+    values.reserve (samples.size ());
+    for (float sample : samples)
+      values.push_back (sample *
+                        moppe::terrain::surface_moisture[mp_units::one]);
+    return moppe::terrain::MoistureMap (domain, std::move (values));
+  }
+
+  moppe::terrain::WaterlineProximity
+  waterline_map (const moppe::map::SurfaceDomain& domain,
+                 std::span<const float> samples) {
+    std::vector<moppe::terrain::WaterlineDistance> values;
+    values.reserve (samples.size ());
+    for (float sample : samples)
+      values.push_back (sample *
+                        moppe::terrain::waterline_distance[moppe::u::m]);
+    return moppe::terrain::WaterlineProximity (domain, std::move (values));
+  }
+
+  moppe::terrain::TrailUseMap
+  trail_use_map (const moppe::map::SurfaceDomain& domain,
+                 std::span<const float> trails,
+                 std::span<const float> home_base) {
+    std::vector<moppe::terrain::TrailInfluence> trail_values;
+    std::vector<moppe::terrain::HomeBaseInfluence> home_values;
+    trail_values.reserve (trails.size ());
+    home_values.reserve (home_base.size ());
+    for (float value : trails)
+      trail_values.push_back (value *
+                              moppe::terrain::trail_influence[mp_units::one]);
+    for (float value : home_base)
+      home_values.push_back (
+        value * moppe::terrain::home_base_influence[mp_units::one]);
+    return moppe::terrain::TrailUseMap (
+      domain, std::move (trail_values), std::move (home_values));
+  }
 }
 
 MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
@@ -34,8 +76,12 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   map::Surface map (4, 4, Vec3 (40, 20, 40));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.set_relative_elevation (
-        column, row, 0.05f * static_cast<float> (row * map.width () + column));
+      map.set_elevation (
+        column,
+        row,
+        moppe::terrain::surface_elevation_point (
+          (0.05f * static_cast<float> (row * map.width () + column)) * 20.0f *
+          mp_units::si::metre));
   map.rebuild_geometry_readings ();
 
   map::Surface& surface = map;
@@ -70,8 +116,7 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
   MOPPE_CHECK (!atlas.geology ().materials ());
   MOPPE_CHECK (!atlas.ecology ().tree_habitat ());
   MOPPE_CHECK (!atlas.ecology ().forest_cover ());
-  MOPPE_CHECK (!atlas.use ().trails ());
-  MOPPE_CHECK (!atlas.use ().home_base ());
+  MOPPE_CHECK (!atlas.use ().readings ());
 }
 
 MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
@@ -79,7 +124,11 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
   map::Surface map (9, 9, Vec3 (90, 80, 90));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.set_relative_elevation (column, row, column < 4 ? 0.2f : 0.8f);
+      map.set_elevation (
+        column,
+        row,
+        moppe::terrain::surface_elevation_point ((column < 4 ? 0.2f : 0.8f) *
+                                                 80.0f * mp_units::si::metre));
   map.rebuild_geometry_readings ();
   map::Surface& surface = map;
 
@@ -98,96 +147,68 @@ MOPPE_TEST (snow_support_reads_a_broader_slope_than_the_lighting_normal) {
 MOPPE_TEST (home_base_is_a_distinct_materialized_surface_site) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
-  surface.materialize_home_base_influence (influence);
-  MOPPE_CHECK (surface.home_base_influence_at (position (Vec3 (10, 0, 10))) ==
+  const std::array trail {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+  };
+  surface.set_use (trail_use_map (surface.domain (), trail, influence));
+  const map::SurfaceUseSections* use = surface.atlas ().use ().readings ();
+  MOPPE_CHECK (use);
+  MOPPE_CHECK (spatial::sample<map::home_base_influence> (
+                 *use, position (Vec3 (10, 0, 10))) ==
                1.0f * map::home_base_influence[one]);
-  const map::SurfaceHomeBaseSections* home_base =
-    surface.atlas ().use ().home_base ();
-  MOPPE_CHECK (home_base);
-  MOPPE_CHECK (spatial::get<map::home_base_influence> (*home_base)[0] ==
+  MOPPE_CHECK (spatial::get<map::home_base_influence> (*use)[0] ==
                0.0f * map::home_base_influence[one]);
-  MOPPE_CHECK (!surface.atlas ().use ().trails ());
 }
 
 MOPPE_TEST (trail_influence_is_a_materialized_surface_mask) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
 
   const std::array influence { 0.0f, 0.0f, 0.0f, 0.0f, 1.0f,
                                0.0f, 0.0f, 0.0f, 0.0f };
-  surface.materialize_trail_influence (influence);
-  MOPPE_CHECK (surface.trail_influence_at (position (Vec3 (10, 0, 10))) ==
-               1.0f * map::trail_influence[one]);
-  MOPPE_CHECK_NEAR (surface.trail_influence_at (position (Vec3 (5, 0, 10)))
-                      .numerical_value_in (one),
-                    0.5f,
-                    1e-6f);
-}
-
-MOPPE_TEST (channel_flux_is_a_materialized_planar_vector_field) {
-  using namespace moppe;
-  map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
-  map.recompute_normals ();
-  map::Surface& surface = map;
-
-  static_assert (mp_units::QuantityOf<decltype (surface.channel_flux_at (
-                                        position (Vec3 ()))),
-                                      map::channel_flux>);
-
-  // One planar vector per sample; the center carries a strong eastward flux
-  // whose magnitude must clamp to one, everything else is still.
-  std::vector<float> flux (2 * 9, 0.0f);
-  flux[2 * 4] = 3.0f;
-  flux[2 * 4 + 1] = 0.0f;
-  surface.materialize_channel_flux (flux);
-
-  const Vec3 center = surface.channel_flux_at (position (Vec3 (10, 0, 10)))
-                        .numerical_value_in (one);
-  MOPPE_CHECK_NEAR (center[0], 1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (center[1], 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (center[2], 0.0f, 1e-6f);
-
-  // Interpolation is componentwise toward the still neighbour.
-  const Vec3 halfway = surface.channel_flux_at (position (Vec3 (5, 0, 10)))
-                         .numerical_value_in (one);
-  MOPPE_CHECK_NEAR (halfway[0], 0.5f, 1e-6f);
-
-  const std::array<float, 3> wrong_size { 0.0f, 0.0f, 0.0f };
-  bool rejected = false;
-  try {
-    surface.materialize_channel_flux (wrong_size);
-  } catch (const std::invalid_argument&) {
-    rejected = true;
-  }
-  MOPPE_CHECK (rejected);
+  const std::array home {
+    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+  };
+  surface.set_use (trail_use_map (surface.domain (), influence, home));
+  const map::SurfaceUseSections& use = *surface.atlas ().use ().readings ();
+  MOPPE_CHECK (
+    spatial::sample<map::trail_influence> (use, position (Vec3 (10, 0, 10))) ==
+    1.0f * map::trail_influence[one]);
+  MOPPE_CHECK_NEAR (
+    spatial::sample<map::trail_influence> (use, position (Vec3 (5, 0, 10)))
+      .numerical_value_in (one),
+    0.5f,
+    1e-6f);
 }
 
 MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
   using namespace moppe;
   map::Surface map (5, 5, Vec3 (50, 200, 50));
-  map.fill_relative_elevation (0.40f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.40f) * 200.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
 
   std::vector<float> moisture (25, 0.48f);
-  surface.materialize_moisture (moisture);
+  surface.set_moisture (moisture_map (surface.domain (), moisture));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   const position_t center = position (Vec3 (20, 0, 20));
   MOPPE_CHECK (surface.tree_habitat_at (center) >
                0.8f * map::tree_habitat[one]);
 
   std::fill (moisture.begin (), moisture.end (), 1.0f);
-  surface.materialize_moisture (moisture);
+  surface.set_moisture (moisture_map (surface.domain (), moisture));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   MOPPE_CHECK (surface.tree_habitat_at (center) <
                0.4f * map::tree_habitat[one]);
@@ -196,10 +217,12 @@ MOPPE_TEST (tree_habitat_is_a_materialized_surface_reading) {
 MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
   using namespace moppe;
   map::Surface map (65, 65, Vec3 (320, 180, 320));
-  map.fill_relative_elevation (0.42f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.42f) * 180.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
-  surface.materialize_moisture (std::vector<float> (65 * 65, 0.48f));
+  const std::vector<float> moisture (65 * 65, 0.48f);
+  surface.set_moisture (moisture_map (surface.domain (), moisture));
   surface.derive_tree_habitat (50.0f * u::m, 160.0f * u::m);
   surface.derive_forest_cover (0x12345678U);
 
@@ -223,7 +246,9 @@ MOPPE_TEST (forest_cover_is_patchy_deterministic_and_respects_clearings) {
     MOPPE_CHECK_NEAR (
       values[offset], repeated[offset].numerical_value_in (one), 1e-7f);
 
-  surface.materialize_home_base_influence (std::vector<float> (65 * 65, 1.0f));
+  const std::vector<float> no_trail (65 * 65, 0.0f);
+  const std::vector<float> home_base (65 * 65, 1.0f);
+  surface.set_use (trail_use_map (surface.domain (), no_trail, home_base));
   surface.derive_forest_cover (0x12345678U);
   const map::SurfaceForestSections* cleared_sections =
     surface.atlas ().ecology ().forest_cover ();
@@ -239,8 +264,11 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
   map::Surface map (5, 5, Vec3 (50, 30, 50));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.set_relative_elevation (
-        column, row, 0.03f * column * column + 0.02f * row);
+      map.set_elevation (column,
+                         row,
+                         moppe::terrain::surface_elevation_point (
+                           (0.03f * column * column + 0.02f * row) * 30.0f *
+                           mp_units::si::metre));
   map.rebuild_geometry_readings ();
   map::Surface& surface = map;
 
@@ -264,13 +292,16 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   map::Surface map (5, 5, Vec3 (40, 20, 40));
   for (int row = 0; row < map.height (); ++row)
     for (int column = 0; column < map.width (); ++column)
-      map.set_relative_elevation (
-        column, row, 0.04f * static_cast<float> (row + 2 * column));
+      map.set_elevation (column,
+                         row,
+                         moppe::terrain::surface_elevation_point (
+                           (0.04f * static_cast<float> (row + 2 * column)) *
+                           20.0f * mp_units::si::metre));
   map.rebuild_geometry_readings ();
   map::Surface& surface = map;
 
   // Sampling one period apart reads the same surface.
-  const Vec3 period = map.size ();
+  const Vec3 period = map.world_extent ();
   for (const Vec3& point : { Vec3 (3.25f, 0, 7.5f), Vec3 (39.25f, 0, 37.5f) }) {
     const position_t p = position (point);
     const position_t wrapped =
@@ -287,13 +318,15 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
 MOPPE_TEST (surface_geometry_is_authoritative_without_a_refresh_barrier) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
   const position_t p = position (Vec3 (5, 0, 5));
   const float before = elevation_value (surface.elevation_at (p));
 
-  map.fill_relative_elevation (0.7f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.7f) * 10.0f * mp_units::si::metre));
   MOPPE_CHECK (before != elevation_value (surface.elevation_at (p)));
   MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)), 7.0f, 1e-6f);
 }
@@ -301,50 +334,42 @@ MOPPE_TEST (surface_geometry_is_authoritative_without_a_refresh_barrier) {
 MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
   MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
-  MOPPE_CHECK (!surface.atlas ().use ().trails ());
+  MOPPE_CHECK (!surface.atlas ().use ().readings ());
 
   std::vector<float> trail (9, 0.0f);
   std::vector<float> home (9, 0.0f);
-  std::vector<float> flux (18, 0.0f);
   trail[4] = 0.75f;
   home[4] = 0.25f;
-  flux[8] = 0.6f;
-  flux[9] = -0.8f;
-  surface.materialize_trail_influence (trail);
-  surface.materialize_home_base_influence (home);
-  surface.materialize_channel_flux (flux);
-  MOPPE_CHECK (surface.atlas ().hydrology ().channel_flux ());
-  MOPPE_CHECK (surface.atlas ().use ().trails ());
+  surface.set_use (trail_use_map (surface.domain (), trail, home));
+  MOPPE_CHECK (surface.atlas ().use ().readings ());
 
   game::SurfacePresentation presentation;
   presentation.refresh (surface);
 
-  MOPPE_CHECK (presentation.trails ().size () ==
-               surface.atlas ().domain ().size ());
+  MOPPE_CHECK (presentation.trails ().size () == surface.domain ().size ());
   MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.home_base ()[4], 0.25f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.channel_flux ()[8], 0.6f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.channel_flux ()[9], -0.8f, 1e-6f);
+  MOPPE_CHECK (presentation.channel_flux ().empty ());
   MOPPE_CHECK (presentation.snow_support ().size () == 9);
   MOPPE_CHECK (presentation.forest ().empty ());
 
   surface.rebuild_geometry_readings ();
-  MOPPE_CHECK (!surface.atlas ().hydrology ().channel_flux ());
-  MOPPE_CHECK (!surface.atlas ().use ().trails ());
+  MOPPE_CHECK (!surface.atlas ().use ().readings ());
 }
 
 MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
   using namespace moppe;
-  const terrain::RasterDomain domain { .width = 2, .height = 2 };
+  const terrain::TerrainDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
+  const std::array trails { 0.10f, 0.20f, 0.30f, 0.40f };
+  const std::array home_base { 0.90f, 0.80f, 0.70f, 0.60f };
   const terrain::TrailNetwork network {
-    .domain = terrain::TerrainDomain (2, 2, 10.0f * u::m, 10.0f * u::m),
-    .influence = terrain::ScalarRaster (domain, { 0.10f, 0.20f, 0.30f, 0.40f }),
-    .home_base_influence =
-      terrain::ScalarRaster (domain, { 0.90f, 0.80f, 0.70f, 0.60f }),
+    .domain = domain,
+    .use = trail_use_map (domain, trails, home_base),
   };
 
   game::SurfacePresentation presentation;
@@ -366,7 +391,8 @@ MOPPE_TEST (surface_presentation_materializes_preview_trails_at_the_bridge) {
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   using namespace moppe;
   map::Surface map (3, 3, Vec3 (30, 10, 30));
-  map.fill_relative_elevation (0.2f);
+  map.fill_elevation (moppe::terrain::surface_elevation_point (
+    (0.2f) * 10.0f * mp_units::si::metre));
   map.recompute_normals ();
   map::Surface& surface = map;
 
@@ -374,15 +400,15 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   std::vector<float> distance (9, 8.0f);
   std::vector<float> eroded (9, 0.0f);
   std::vector<float> deposited (9, 0.0f);
-  moisture[4] = 1.4f;
+  moisture[4] = 1.0f;
   distance[4] = 2.5f;
   eroded[4] = 2.0f;
   eroded[5] = 4.0f;
   deposited[4] = 3.0f;
   deposited[5] = 6.0f;
 
-  surface.materialize_moisture (moisture);
-  surface.materialize_waterline_distance (distance);
+  surface.set_moisture (moisture_map (surface.domain (), moisture));
+  surface.set_waterline_distance (waterline_map (surface.domain (), distance));
   for (std::size_t cell = 0; cell < eroded.size (); ++cell) {
     const int column = static_cast<int> (cell % 3);
     const int row = static_cast<int> (cell / 3);
@@ -409,10 +435,12 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   MOPPE_CHECK (spatial::get<map::waterline_distance> (*waterline_sections)[4] ==
                2.5f * map::waterline_distance[u::m]);
   const position_t center = position (Vec3 (10, 0, 10));
-  MOPPE_CHECK (surface.moisture_at (center) ==
-               1.0f * map::surface_moisture[one]);
-  MOPPE_CHECK (surface.waterline_distance_at (center) ==
-               2.5f * map::waterline_distance[u::m]);
+  MOPPE_CHECK (
+    spatial::sample<map::surface_moisture> (*moisture_sections, center) ==
+    1.0f * map::surface_moisture[one]);
+  MOPPE_CHECK (
+    spatial::sample<map::waterline_distance> (*waterline_sections, center) ==
+    2.5f * map::waterline_distance[u::m]);
   MOPPE_CHECK_NEAR (spatial::get<map::erosion_exposure> (*geology_sections)[4]
                       .numerical_value_in (one),
                     0.5f,

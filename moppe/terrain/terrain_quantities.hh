@@ -18,6 +18,10 @@ namespace moppe::terrain {
                    default_point_origin (surface_elevation[u::m]),
                    float>;
 
+  inline SurfaceElevation surface_elevation_point (meters_t value) {
+    return SurfaceElevation (meters_value (value) * surface_elevation[u::m]);
+  }
+
   inline float surface_elevation_value (SurfaceElevation value) {
     return value.quantity_from_zero ().numerical_value_in (u::m);
   }
@@ -29,6 +33,27 @@ namespace moppe::terrain {
   } terrain_normal;
 
   using TerrainNormal = mp_units::quantity<terrain_normal[mp_units::one], Vec3>;
+
+  inline constexpr struct surface_moisture
+      : quantity_spec<mp_units::dimensionless> {
+  } surface_moisture;
+
+  inline constexpr struct waterline_distance
+      : quantity_spec<mp_units::isq::length, mp_units::is_kind> {
+  } waterline_distance;
+
+  inline constexpr struct trail_influence
+      : quantity_spec<mp_units::dimensionless> {
+  } trail_influence;
+
+  inline constexpr struct home_base_influence
+      : quantity_spec<mp_units::dimensionless> {
+  } home_base_influence;
+
+  using SurfaceMoisture = quantity<surface_moisture[one], float>;
+  using WaterlineDistance = quantity<waterline_distance[u::m], float>;
+  using TrailInfluence = quantity<trail_influence[one], float>;
+  using HomeBaseInfluence = quantity<home_base_influence[one], float>;
 
   static_assert (sizeof (SurfaceElevation) == sizeof (float));
   static_assert (alignof (SurfaceElevation) == alignof (float));

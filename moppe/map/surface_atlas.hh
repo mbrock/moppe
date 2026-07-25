@@ -4,6 +4,7 @@
 #include <moppe/map/surface_sections.hh>
 
 #include <optional>
+#include <stdexcept>
 #include <utility>
 
 namespace moppe::map {
@@ -29,22 +30,19 @@ namespace moppe::map {
         return m_waterline ? &*m_waterline : nullptr;
       }
 
-      SurfaceChannelFluxSections& materialize_channel_flux () {
-        if (!m_channel_flux)
-          m_channel_flux.emplace (m_domain);
-        return *m_channel_flux;
+      void set_channel_flux (SurfaceChannelFluxSections sections) {
+        require_domain (sections.domain ());
+        m_channel_flux = std::move (sections);
       }
 
-      SurfaceMoistureSections& materialize_moisture () {
-        if (!m_moisture)
-          m_moisture.emplace (m_domain);
-        return *m_moisture;
+      void set_moisture (SurfaceMoistureSections sections) {
+        require_domain (sections.domain ());
+        m_moisture = std::move (sections);
       }
 
-      SurfaceWaterlineSections& materialize_waterline () {
-        if (!m_waterline)
-          m_waterline.emplace (m_domain);
-        return *m_waterline;
+      void set_waterline (SurfaceWaterlineSections sections) {
+        require_domain (sections.domain ());
+        m_waterline = std::move (sections);
       }
 
       void clear () noexcept {
@@ -54,6 +52,12 @@ namespace moppe::map {
       }
 
     private:
+      void require_domain (const SurfaceDomain& domain) const {
+        if (domain != m_domain)
+          throw std::invalid_argument (
+            "surface reading does not share the atlas domain");
+      }
+
       SurfaceDomain m_domain;
       std::optional<SurfaceChannelFluxSections> m_channel_flux;
       std::optional<SurfaceMoistureSections> m_moisture;
@@ -68,10 +72,11 @@ namespace moppe::map {
         return m_materials ? &*m_materials : nullptr;
       }
 
-      SurfaceGeologySections& materialize_materials () {
-        if (!m_materials)
-          m_materials.emplace (m_domain);
-        return *m_materials;
+      void set_materials (SurfaceGeologySections sections) {
+        if (sections.domain () != m_domain)
+          throw std::invalid_argument (
+            "surface geology does not share the atlas domain");
+        m_materials = std::move (sections);
       }
 
       void clear () noexcept {
@@ -95,16 +100,18 @@ namespace moppe::map {
         return m_forest_cover ? &*m_forest_cover : nullptr;
       }
 
-      SurfaceHabitatSections& materialize_tree_habitat () {
-        if (!m_tree_habitat)
-          m_tree_habitat.emplace (m_domain);
-        return *m_tree_habitat;
+      void set_tree_habitat (SurfaceHabitatSections sections) {
+        if (sections.domain () != m_domain)
+          throw std::invalid_argument (
+            "surface habitat does not share the atlas domain");
+        m_tree_habitat = std::move (sections);
       }
 
-      SurfaceForestSections& materialize_forest_cover () {
-        if (!m_forest_cover)
-          m_forest_cover.emplace (m_domain);
-        return *m_forest_cover;
+      void set_forest_cover (SurfaceForestSections sections) {
+        if (sections.domain () != m_domain)
+          throw std::invalid_argument (
+            "surface forest does not share the atlas domain");
+        m_forest_cover = std::move (sections);
       }
 
       void clear () noexcept {
@@ -122,35 +129,24 @@ namespace moppe::map {
     public:
       explicit Use (SurfaceDomain domain) : m_domain (std::move (domain)) {}
 
-      const SurfaceTrailSections* trails () const noexcept {
-        return m_trails ? &*m_trails : nullptr;
+      const SurfaceUseSections* readings () const noexcept {
+        return m_readings ? &*m_readings : nullptr;
       }
 
-      const SurfaceHomeBaseSections* home_base () const noexcept {
-        return m_home_base ? &*m_home_base : nullptr;
-      }
-
-      SurfaceTrailSections& materialize_trails () {
-        if (!m_trails)
-          m_trails.emplace (m_domain);
-        return *m_trails;
-      }
-
-      SurfaceHomeBaseSections& materialize_home_base () {
-        if (!m_home_base)
-          m_home_base.emplace (m_domain);
-        return *m_home_base;
+      void set (SurfaceUseSections readings) {
+        if (readings.domain () != m_domain)
+          throw std::invalid_argument (
+            "surface use does not share the atlas domain");
+        m_readings = std::move (readings);
       }
 
       void clear () noexcept {
-        m_trails.reset ();
-        m_home_base.reset ();
+        m_readings.reset ();
       }
 
     private:
       SurfaceDomain m_domain;
-      std::optional<SurfaceTrailSections> m_trails;
-      std::optional<SurfaceHomeBaseSections> m_home_base;
+      std::optional<SurfaceUseSections> m_readings;
     };
 
     explicit SurfaceAtlas (SurfaceDomain domain)

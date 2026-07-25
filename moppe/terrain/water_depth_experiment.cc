@@ -124,7 +124,7 @@ int main (int argc, char** argv) {
       map::TerrainEvaluator (map).evaluate (program);
 
       const FloodField flood =
-        analyze_standing_water (map.atlas ().geometry (), sea_level);
+        analyze_standing_water (map.geometry (), sea_level);
       const LakeCensus census = census_lakes (flood);
       std::array<std::size_t, category_count> bodies {};
       std::array<std::size_t, category_count> cells {};

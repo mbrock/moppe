@@ -142,7 +142,8 @@ namespace moppe::game {
           // The route can hug one bank of the pool, so the far waterline may
           // sit up to a full flooded width away: probe past twice the
           // channel-classification inradius.
-          const float spacing = std::max (map.scale ()[0], map.scale ()[2]);
+          const float spacing =
+            std::max (map.sample_spacing ()[0], map.sample_spacing ()[2]);
           const float max_probe = std::max (7.0f * spacing, half_left_m);
           const float probe_step = std::max (0.5f, 0.25f * spacing);
           const auto waterline = [&] (float direction) {
@@ -312,7 +313,7 @@ namespace moppe::game {
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
                                 const map::Surface& map) {
-      const Vec3 period = map.size ();
+      const Vec3 period = map.world_extent ();
       point.position[0] =
         reference.position[0] +
         std::remainder (point.position[0] - reference.position[0], period[0]);
@@ -439,7 +440,7 @@ namespace moppe::game {
                               const map::Surface& map,
                               const terrain::RiverNetwork& rivers) {
     m_mesh = renderer.create_mesh (build_river_ribbons (map, rivers));
-    m_period = map.size ();
+    m_period = map.world_extent ();
   }
 
   void RiverSurface::clear () {

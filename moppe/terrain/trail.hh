@@ -1,7 +1,9 @@
 #ifndef MOPPE_TERRAIN_TRAIL_HH
 #define MOPPE_TERRAIN_TRAIL_HH
 
+#include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/drainage.hh>
+#include <moppe/terrain/terrain_quantities.hh>
 #include <moppe/terrain/transform.hh>
 #include <moppe/terrain/types.hh>
 
@@ -109,6 +111,9 @@ namespace moppe::terrain {
                             const TrailAlignment&) = default;
   };
 
+  using TrailUseMap =
+    spatial::Bundle<TerrainDomain, TrailInfluence, HomeBaseInfluence>;
+
   // The plan's one directed cycle, plus its two physical surface readings.
   // The graph is connected by construction: following receiver once per
   // circuit cell returns to home base.
@@ -125,8 +130,7 @@ namespace moppe::terrain {
     // The renderer and physics still consume the typed surface geometry, while
     // this retained construction layer remains inspectable and reversible.
     std::vector<float> earthwork_delta_m;
-    ScalarRaster influence;
-    ScalarRaster home_base_influence;
+    TrailUseMap use;
 
     bool contains (CellIndex cell) const noexcept {
       return cell.value < component_by_cell.size () &&

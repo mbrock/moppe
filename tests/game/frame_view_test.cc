@@ -37,9 +37,10 @@ namespace {
     game::GraphicsSettings graphics = game::high_graphics_settings ();
 
     FrameFixture () {
-      map.fill_relative_elevation (0.25f);
+      map.fill_elevation (moppe::terrain::surface_elevation_point (
+        (0.25f) * 40.0f * mp_units::si::metre));
       map.rebuild_geometry_readings ();
-      world.map_size = spatial_extent_in_metres (map.size ());
+      world.map_size = spatial_extent_in_metres (map.world_extent ());
       world.resolution = map.width ();
       world.water_level = 4.0f * u::m;
       world.fog_scale = 0.0004f / u::m;
@@ -368,7 +369,10 @@ MOPPE_TEST (
   FrameFixture ridge;
   for (int z = 0; z < ridge.map.height (); ++z)
     for (int x = 10; x <= 11; ++x)
-      ridge.map.set_relative_elevation (x, z, 4.0f);
+      ridge.map.set_elevation (x,
+                               z,
+                               moppe::terrain::surface_elevation_point (
+                                 (4.0f) * 40.0f * mp_units::si::metre));
   MOPPE_CHECK_NEAR (
     game::sun_visibility_target (view, ridge.world, ridge.map), 0.0f, 1e-6f);
 

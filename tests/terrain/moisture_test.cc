@@ -36,13 +36,17 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
     .sinks = { 40 }
   };
 
-  const ScalarRaster moisture = analyze_moisture (flood, census, drainage);
+  const MoistureMap moisture = analyze_moisture (flood, census, drainage);
+  const auto& values = spatial::get<surface_moisture> (moisture);
+  const auto at = [&] (std::size_t x, std::size_t y) {
+    return values[grid.offset ({ x, y })].numerical_value_in (mp_units::one);
+  };
 
-  MOPPE_CHECK (moisture.at (4, 4) > 0.7f);
-  MOPPE_CHECK (moisture.at (5, 4) > moisture.at (8, 4));
-  MOPPE_CHECK (moisture.at (0, 0) < moisture.at (3, 3));
+  MOPPE_CHECK (at (4, 4) > 0.7f);
+  MOPPE_CHECK (at (5, 4) > at (8, 4));
+  MOPPE_CHECK (at (0, 0) < at (3, 3));
   for (std::size_t i = 0; i < count; ++i) {
-    MOPPE_CHECK (moisture.values ()[i] >= 0.0f);
-    MOPPE_CHECK (moisture.values ()[i] <= 1.0f);
+    MOPPE_CHECK (values[i] >= 0.0f * surface_moisture[mp_units::one]);
+    MOPPE_CHECK (values[i] <= 1.0f * surface_moisture[mp_units::one]);
   }
 }
