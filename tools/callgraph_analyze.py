@@ -18,7 +18,7 @@ DEFAULT_OUTPUT = GRAPH / "analysis"
 DEFAULT_ENTRYPOINTS = [
     "moppe::game::MoppeGame::tick",
     "moppe::game::MoppeGame::render",
-    "moppe::game::generate_world_inner",
+    "moppe::game::build_world",
     "moppe::game::TerrainLab::tick",
     "moppe::render::MetalRenderer::end_frame",
 ]

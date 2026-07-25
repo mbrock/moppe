@@ -49,7 +49,7 @@ namespace moppe::game {
     // thread; the application may also report its own finishing steps.
     void report (std::string title, std::string detail, float progress = -1.0f);
 
-    bool generation_complete () const noexcept;
+    // Non-null exactly once per build, after the worker has finished.
     std::unique_ptr<GeneratedWorld> take_completed_world ();
 
     LoadingStatus status ();

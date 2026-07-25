@@ -284,6 +284,17 @@ namespace moppe {
       bool try_load_cache (const std::string& path);
       void save_cache (const std::string& path) const;
 
+      // A cache file may also carry the sequence of height snapshots taken
+      // after each generation transform (the Terrain Lab history scrubber
+      // replays them).  These live here because this module owns the cache
+      // file's byte layout; callers never see offsets or section tags.
+      bool
+      try_load_cached_history (const std::string& path,
+                               std::vector<std::vector<float>>& history) const;
+      void append_cached_history (
+        const std::string& path,
+        const std::vector<std::vector<float>>& history) const;
+
     private:
       void synchronize_periodic_ledger_edges ();
 
