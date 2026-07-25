@@ -7,13 +7,6 @@
 #include <functional>
 
 namespace moppe::terrain {
-  inline constexpr struct continent_shape
-      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } continent_shape;
-  inline constexpr struct uplift_weight
-      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
-  } uplift_weight;
-
   using ContinentShape = quantity<continent_shape[one], float>;
   using UpliftWeight = quantity<uplift_weight[one], float>;
   using GeologicalSections =

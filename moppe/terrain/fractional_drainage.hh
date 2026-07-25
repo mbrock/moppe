@@ -92,40 +92,6 @@ namespace moppe::terrain {
     TerrainDomain m_domain;
   };
 
-  inline constexpr struct flow_fraction
-      : quantity_spec<mp_units::dimensionless, non_negative> {
-  } flow_fraction;
-  inline constexpr struct facet_coordinate
-      : quantity_spec<mp_units::dimensionless, non_negative> {
-  } facet_coordinate;
-  inline constexpr struct drainage_direction
-      : quantity_spec<mp_units::angular::angle, mp_units::is_kind> {
-  } drainage_direction;
-  inline constexpr struct fractional_contributing_area
-      : quantity_spec<mp_units::isq::area, non_negative> {
-  } fractional_contributing_area;
-  // A horizontal, unit-length representative of the directed flow carried by
-  // a lattice sample. Unlike drainage_direction, this can be averaged across
-  // incoming arcs without an angular wrap discontinuity.
-  inline constexpr struct channel_tangent
-      : quantity_spec<mp_units::dimensionless,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } channel_tangent;
-  // Contributing area carried in the channel-tangent direction. The arcs in
-  // FractionalFlowDomain are the edge-like transport object; this cell-aligned
-  // vector is their continuous summary for accumulation and later sampling.
-  inline constexpr struct channel_area_flux
-      : quantity_spec<mp_units::isq::area,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } channel_area_flux;
-  inline constexpr struct channel_persistence
-      : quantity_spec<mp_units::dimensionless,
-                      non_negative,
-                      mp_units::is_kind> {
-  } channel_persistence;
-
   using FlowFraction = mp_units::quantity<flow_fraction[mp_units::one], float>;
   using FacetCoordinate =
     mp_units::quantity<facet_coordinate[mp_units::one], float>;
