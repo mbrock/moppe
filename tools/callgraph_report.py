@@ -23,6 +23,7 @@ from analysis_unity import analysis_entries
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build-homebrew"
 DEFAULT_OUTPUT = BUILD / "callgraph"
+SOURCE_ROOTS = (ROOT / "moppe", ROOT / "atelier")
 FUNCTION_KINDS = {
     cindex.CursorKind.FUNCTION_DECL,
     cindex.CursorKind.CXX_METHOD,
@@ -30,12 +31,19 @@ FUNCTION_KINDS = {
     cindex.CursorKind.DESTRUCTOR,
     cindex.CursorKind.CONVERSION_FUNCTION,
     cindex.CursorKind.FUNCTION_TEMPLATE,
+    cindex.CursorKind.OBJC_CLASS_METHOD_DECL,
+    cindex.CursorKind.OBJC_INSTANCE_METHOD_DECL,
 }
 CALL_KINDS = {
     cindex.CursorKind.CALL_EXPR,
     cindex.CursorKind.CXX_NEW_EXPR,
     cindex.CursorKind.CXX_DELETE_EXPR,
     cindex.CursorKind.OBJC_MESSAGE_EXPR,
+}
+REFERENCE_KINDS = {
+    cindex.CursorKind.DECL_REF_EXPR,
+    cindex.CursorKind.MEMBER_REF_EXPR,
+    cindex.CursorKind.OVERLOADED_DECL_REF,
 }
 
 
@@ -59,9 +67,7 @@ def project_location(cursor):
   if not location or not location.file:
     return None
   path = pathlib.Path(location.file.name).resolve()
-  try:
-    path.relative_to(ROOT / "moppe")
-  except ValueError:
+  if not any(path.is_relative_to(root) for root in SOURCE_ROOTS):
     return None
   return relative(path), location.line, location.column
 
@@ -84,12 +90,18 @@ def cursor_id(cursor):
   if usr:
     return usr
   if location:
-    return f"location:{location[0]}:{location[1]}:{qualified_name(cursor)}"
+    name = qualified_name(cursor)
+    signature = cursor.type.spelling
+    if cursor.linkage == cindex.LinkageKind.INTERNAL:
+      return f"signature:{location[0]}:{name}:{signature}"
+    return f"signature:{name}:{signature}"
   return ""
 
 
 def module_for(filename):
   parts = pathlib.PurePosixPath(filename).parts
+  if parts and parts[0] == "atelier":
+    return "atelier"
   return "/".join(parts[:2]) if len(parts) >= 2 else "external"
 
 
@@ -101,6 +113,10 @@ def node_for(cursor):
   if not node_id:
     return None
   filename, line, _ = location
+  linkage = cursor.linkage
+  is_virtual = (
+      cursor.kind == cindex.CursorKind.CXX_METHOD
+      and cursor.is_virtual_method())
   return {
       "id": node_id,
       "name": qualified_name(cursor),
@@ -109,6 +125,8 @@ def node_for(cursor):
       "file": filename,
       "line": line,
       "definition": int(cursor.is_definition()),
+      "linkage": linkage.name.lower() if linkage else "invalid",
+      "virtual": int(is_virtual),
       "cyclomatic": 0,
       "cognitive": 0,
   }
@@ -160,9 +178,31 @@ def dispatch_kind(reference):
   return "direct"
 
 
-def extract_translation_unit(index, entry, nodes, edges):
+def unresolved_call_name(cursor):
+  tokens = [token.spelling for token in cursor.get_tokens()]
+  try:
+    opening = tokens.index("(")
+  except ValueError:
+    opening = len(tokens)
+  prefix = tokens[:opening]
+  if prefix and prefix[-1] == ">":
+    depth = 0
+    for index in range(len(prefix) - 1, -1, -1):
+      if prefix[index] == ">":
+        depth += 1
+      elif prefix[index] == "<":
+        depth -= 1
+        if depth == 0:
+          prefix = prefix[:index]
+          break
+  for token in reversed(prefix):
+    if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", token):
+      return token
+  return cursor.displayname
+
+
+def extract_translation_unit(index, entry, nodes, edges, references):
   source = pathlib.Path(entry["file"]).resolve()
-  source_names = set(entry["_moppe_sources"])
   arguments = parse_arguments(entry)
   translation_unit = index.parse(
       str(source), args=arguments, options=0)
@@ -176,7 +216,7 @@ def extract_translation_unit(index, entry, nodes, edges):
   def visit(cursor, caller=None):
     location = project_location(cursor)
     if cursor.kind != cindex.CursorKind.TRANSLATION_UNIT:
-      if not location or location[0] not in source_names:
+      if not location:
         return
 
     active_caller = caller
@@ -200,7 +240,10 @@ def extract_translation_unit(index, entry, nodes, edges):
           "caller_id": caller,
           "callee_id": callee["id"] if callee else "",
           "caller": nodes[caller]["name"],
-          "callee": callee["name"] if callee else cursor.displayname,
+          "callee": (
+              callee["name"] if callee
+              else (cursor.displayname if reference
+                    else unresolved_call_name(cursor))),
           "file": filename,
           "line": line,
           "column": column,
@@ -208,6 +251,27 @@ def extract_translation_unit(index, entry, nodes, edges):
           "resolution": ("project" if callee else
                          "external" if reference else "unresolved"),
       })
+
+    if cursor.kind in REFERENCE_KINDS:
+      reference = cursor.referenced
+      referenced = (
+          node_for(reference)
+          if reference and reference.kind in FUNCTION_KINDS else None)
+      if referenced:
+        previous = nodes.get(referenced["id"])
+        if (not previous
+            or referenced["definition"] > previous["definition"]):
+          nodes[referenced["id"]] = referenced
+        filename, line, column = location
+        references.append({
+            "caller_id": caller or "",
+            "referenced_id": referenced["id"],
+            "caller": nodes[caller]["name"] if caller else "",
+            "referenced": referenced["name"],
+            "file": filename,
+            "line": line,
+            "column": column,
+        })
 
     for child in cursor.get_children():
       visit(child, active_caller)
@@ -222,9 +286,10 @@ def extract_entry(entry):
   cindex.Config.set_library_file(os.environ["LIBCLANG_LIBRARY_FILE"])
   nodes = {}
   edges = []
+  references = []
   index = cindex.Index.create()
-  extract_translation_unit(index, entry, nodes, edges)
-  return nodes, edges
+  extract_translation_unit(index, entry, nodes, edges, references)
+  return nodes, edges, references
 
 
 def write_csv(path, rows, fields):
@@ -247,7 +312,13 @@ def read_graph(output):
       for field in ("line", "column"):
         row[field] = int(row[field])
       edges.append(row)
-  return nodes, edges
+  with (output / "references.csv").open(newline="") as input_file:
+    references = []
+    for row in csv.DictReader(input_file):
+      for field in ("line", "column"):
+        row[field] = int(row[field])
+      references.append(row)
+  return nodes, edges, references
 
 
 def finish_output(output, nodes, edges, focus_pattern, depth):
@@ -427,24 +498,28 @@ def main():
       "tools/callgraph-report",
       "tools/callgraph_report.py",
       "tools/complexity-report",
-  ], {"analysis": "callgraph", "source_filter": args.source, "version": 3})
+  ], {"analysis": "callgraph", "source_filter": args.source, "version": 9})
   required = [
       args.output / "nodes.csv",
       args.output / "edges.csv",
+      args.output / "references.csv",
       args.output / "module-edges.csv",
   ]
   if (not args.refresh and not args.refresh_complexity
       and cache_hit(manifest_path, digest, required)):
     print("Call graph inputs are unchanged; reusing cached CSV data.",
           file=sys.stderr)
-    nodes, edges = read_graph(args.output)
+    nodes, edges, _ = read_graph(args.output)
     finish_output(args.output, nodes, edges, args.focus, args.depth)
     return
 
   run(["cmake", "--preset", "homebrew-llvm"], cwd=ROOT)
 
   commands = json.loads((BUILD / "compile_commands.json").read_text())
-  entries = analysis_entries(commands, ROOT, BUILD)
+  entries = analysis_entries(
+      commands, ROOT, BUILD,
+      source_roots=("moppe", "atelier"),
+      output_name="callgraph-unity")
   if args.source:
     source_pattern = re.compile(args.source)
     selected = []
@@ -463,12 +538,14 @@ def main():
 
   nodes = {}
   edges = []
+  references = []
   context = multiprocessing.get_context("spawn")
   pool = context.Pool(processes=args.jobs, maxtasksperchild=1)
   try:
     results = pool.imap_unordered(
         extract_entry, entries)
-    for number, (source_nodes, source_edges) in enumerate(results, 1):
+    for number, (source_nodes, source_edges,
+                 source_references) in enumerate(results, 1):
       print(f"[{number:2}/{len(entries)}] unity translation units",
             file=sys.stderr)
       for node_id, node in source_nodes.items():
@@ -476,6 +553,7 @@ def main():
         if not previous or node["definition"] > previous["definition"]:
           nodes[node_id] = node
       edges.extend(source_edges)
+      references.extend(source_references)
   finally:
     pool.close()
     pool.join()
@@ -488,11 +566,20 @@ def main():
       tuple(edge[field] for field in edge_fields) for edge in edges}]
   edges = sorted(edges, key=lambda edge: (
       edge["caller"], edge["file"], edge["line"], edge["column"]))
+  reference_fields = list(references[0])
+  references = [dict(zip(reference_fields, values)) for values in {
+      tuple(reference[field] for field in reference_fields)
+      for reference in references}]
+  references = sorted(references, key=lambda reference: (
+      reference["caller"], reference["file"], reference["line"],
+      reference["column"]))
   args.output.mkdir(parents=True, exist_ok=True)
   write_csv(args.output / "nodes.csv", sorted(nodes.values(),
             key=lambda node: (node["file"], node["line"], node["name"])),
             list(next(iter(nodes.values()))))
   write_csv(args.output / "edges.csv", edges, list(edges[0]))
+  write_csv(
+      args.output / "references.csv", references, list(references[0]))
   write_module_edges(args.output / "module-edges.csv", nodes, edges)
   write_manifest(manifest_path, digest)
   finish_output(args.output, nodes, edges, args.focus, args.depth)

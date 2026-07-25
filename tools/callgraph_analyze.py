@@ -86,10 +86,12 @@ def export_csv(connection, query, path):
       f"COPY ({query}) TO '{sql_path(path)}' (HEADER, DELIMITER ',')")
 
 
-def materialize_graph(connection, nodes_path, edges_path):
+def materialize_graph(connection, nodes_path, edges_path, references_path):
   connection.execute("DROP TABLE IF EXISTS nodes")
   connection.execute("DROP TABLE IF EXISTS edges")
   connection.execute("DROP TABLE IF EXISTS edge_ids")
+  connection.execute("DROP TABLE IF EXISTS function_references")
+  connection.execute("DROP TABLE IF EXISTS reference_ids")
   connection.execute(f"""
     CREATE TABLE nodes AS
     SELECT row_number() OVER (ORDER BY id)::BIGINT AS node_id, *
@@ -98,6 +100,11 @@ def materialize_graph(connection, nodes_path, edges_path):
   connection.execute(f"""
     CREATE TABLE edges AS
     SELECT * FROM read_csv_auto('{sql_path(edges_path)}')
+  """)
+  connection.execute(f"""
+    CREATE TABLE function_references AS
+    SELECT * FROM read_csv_auto('{sql_path(references_path)}',
+                                all_varchar=true)
   """)
   connection.execute("""
     CREATE TABLE edge_ids AS
@@ -108,6 +115,121 @@ def materialize_graph(connection, nodes_path, edges_path):
     JOIN nodes callee ON callee.id = edges.callee_id
     WHERE edges.resolution = 'project'
     ORDER BY src, dst
+  """)
+  connection.execute("""
+    CREATE TABLE reference_ids AS
+    SELECT DISTINCT caller.node_id::BIGINT AS src,
+                    referenced.node_id::BIGINT AS dst
+    FROM function_references
+    JOIN nodes caller ON caller.id = function_references.caller_id
+    JOIN nodes referenced
+      ON referenced.id = function_references.referenced_id
+    ORDER BY src, dst
+  """)
+
+
+def store_liveness(connection, entrypoints):
+  connection.execute("DROP TABLE IF EXISTS liveness_edges")
+  connection.execute("""
+    CREATE TABLE liveness_edges AS
+    SELECT src, dst FROM edge_ids
+    UNION
+    SELECT src, dst FROM reference_ids
+    UNION
+    SELECT caller.node_id, callee.node_id
+    FROM edges unresolved
+    JOIN nodes caller ON caller.id = unresolved.caller_id
+    JOIN nodes callee
+      ON regexp_extract(callee.name, '([^:]+)$', 1) = unresolved.callee
+    WHERE unresolved.resolution = 'unresolved'
+      AND coalesce(unresolved.callee, '') != ''
+    UNION
+    SELECT specialization.node_id, template.node_id
+    FROM nodes specialization
+    JOIN nodes template USING (name, file, line)
+    WHERE specialization.node_id != template.node_id
+  """)
+  connection.execute("DROP TABLE IF EXISTS liveness_roots")
+  connection.execute("""
+    CREATE TABLE liveness_roots (
+      node_id BIGINT PRIMARY KEY,
+      reason VARCHAR
+    )
+  """)
+  connection.executemany(
+      "INSERT OR IGNORE INTO liveness_roots VALUES (?, 'entrypoint')",
+      [(entrypoint["node_id"],) for entrypoint in entrypoints])
+  connection.execute("""
+    INSERT OR IGNORE INTO liveness_roots
+    SELECT node_id, 'program entrypoint'
+    FROM nodes
+    WHERE name = 'main' AND definition = 1
+  """)
+  connection.execute("""
+    INSERT OR IGNORE INTO liveness_roots
+    SELECT node_id, 'implicit C++ runtime boundary'
+    FROM nodes
+    WHERE definition = 1
+      AND (
+        kind IN ('constructor', 'destructor', 'conversion_function')
+        OR name LIKE '%::operator()'
+      )
+  """)
+  connection.execute("""
+    INSERT OR IGNORE INTO liveness_roots
+    SELECT node_id, 'virtual dispatch boundary'
+    FROM nodes
+    WHERE virtual = 1 AND definition = 1
+  """)
+  connection.execute("""
+    INSERT OR IGNORE INTO liveness_roots
+    SELECT node_id, 'Objective-C runtime boundary'
+    FROM nodes
+    WHERE kind IN (
+      'objc_class_method_decl', 'objc_instance_method_decl'
+    ) AND definition = 1
+  """)
+  connection.execute("""
+    INSERT OR IGNORE INTO liveness_roots
+    SELECT referenced.node_id, 'global function reference'
+    FROM function_references r
+    JOIN nodes referenced ON referenced.id = r.referenced_id
+    WHERE coalesce(r.caller_id, '') = ''
+      AND referenced.definition = 1
+  """)
+  connection.execute("DROP TABLE IF EXISTS reachable")
+  connection.execute("""
+    CREATE TABLE reachable AS
+    WITH RECURSIVE walk(node_id) AS (
+      SELECT node_id FROM liveness_roots
+      UNION
+      SELECT edge.dst
+      FROM walk
+      JOIN liveness_edges edge ON edge.src = walk.node_id
+    )
+    SELECT node_id FROM walk
+  """)
+  connection.execute("DROP TABLE IF EXISTS dead_function_candidates")
+  connection.execute("""
+    CREATE TABLE dead_function_candidates AS
+    WITH incoming_calls AS (
+      SELECT dst AS node_id, count(*) AS callers
+      FROM edge_ids GROUP BY dst
+    ), incoming_references AS (
+      SELECT dst AS node_id, count(*) AS referencers
+      FROM reference_ids GROUP BY dst
+    )
+    SELECT n.*,
+           coalesce(c.callers, 0) AS incoming_callers,
+           coalesce(r.referencers, 0) AS incoming_referencers,
+           CASE WHEN n.linkage = 'internal'
+                THEN 'strong' ELSE 'review' END AS confidence
+    FROM nodes n
+    LEFT JOIN reachable live USING (node_id)
+    LEFT JOIN incoming_calls c USING (node_id)
+    LEFT JOIN incoming_references r USING (node_id)
+    WHERE n.definition = 1 AND live.node_id IS NULL
+    ORDER BY confidence, n.cognitive DESC, n.file, n.line, n.name
   """)
 
 
@@ -230,6 +352,13 @@ def export_reports(connection, output):
     GROUP BY entrypoint
     ORDER BY downstream_cognitive DESC
   """, output / "entrypoint-summary.csv")
+  export_csv(connection, """
+    SELECT confidence, name, kind, linkage, module, file, line,
+           cognitive, cyclomatic, incoming_callers, incoming_referencers
+    FROM dead_function_candidates
+    ORDER BY CASE confidence WHEN 'strong' THEN 0 ELSE 1 END,
+             cognitive DESC, file, line, name
+  """, output / "dead-functions.csv")
 
 
 def print_results(connection, output):
@@ -265,6 +394,24 @@ def print_results(connection, output):
     """, [entrypoint]).fetchall()
     for name, contribution in contributors:
       print(f"           {contribution:8.4f}  {name}")
+
+  strong, review = connection.execute("""
+    SELECT count(*) FILTER (confidence = 'strong'),
+           count(*) FILTER (confidence = 'review')
+    FROM dead_function_candidates
+  """).fetchone()
+  print("\nPossible dead functions")
+  print(f"  {strong} internally linked candidates; {review} require review")
+  rows = connection.execute("""
+    SELECT name, file, line
+    FROM dead_function_candidates
+    WHERE confidence = 'strong'
+    ORDER BY cognitive DESC, file, line, name
+    LIMIT 15
+  """).fetchall()
+  for name, filename, line in rows:
+    print(f"  {filename}:{line}  {name}")
+  print(f"  Full report: {output / 'dead-functions.csv'}")
 
 
 def markdown_name(value):
@@ -364,6 +511,38 @@ def write_summary(connection, output):
       f"| {community} | {functions} | {cognitive} | {rank:.6f} | "
       f"{markdown_name(leaders)} |"
       for community, functions, cognitive, rank, leaders in rows)
+  strong, review = connection.execute("""
+    SELECT count(*) FILTER (confidence = 'strong'),
+           count(*) FILTER (confidence = 'review')
+    FROM dead_function_candidates
+  """).fetchone()
+  lines.extend([
+      "",
+      "## Possible dead functions",
+      "",
+      f"The directed liveness walk found {strong} internally linked "
+      f"definitions as strong candidates and {review} externally linked "
+      "definitions requiring review. It starts at program and configured "
+      "entrypoints, virtual methods, Objective-C runtime methods, and global "
+      "function references; it follows both calls and function-value "
+      "references. Strong means unreachable in this macOS Moppe and Atelier "
+      "configuration; tests and other build configurations may still use a "
+      "candidate. This is a deletion shortlist rather than proof.",
+      "",
+      "| Confidence | Function | File | Line | Cognitive |",
+      "|---|---|---|---:|---:|",
+  ])
+  rows = connection.execute("""
+    SELECT confidence, name, file, line, cognitive
+    FROM dead_function_candidates
+    ORDER BY CASE confidence WHEN 'strong' THEN 0 ELSE 1 END,
+             cognitive DESC, file, line, name
+    LIMIT 40
+  """).fetchall()
+  lines.extend(
+      f"| {confidence} | {markdown_name(name)} | {filename} | {line} | "
+      f"{cognitive} |"
+      for confidence, name, filename, line, cognitive in rows)
   (output / "summary.md").write_text("\n".join(lines) + "\n")
 
 
@@ -378,7 +557,9 @@ def main():
   args = parser.parse_args()
   nodes_path = GRAPH / "nodes.csv"
   edges_path = GRAPH / "edges.csv"
-  if not nodes_path.exists() or not edges_path.exists():
+  references_path = GRAPH / "references.csv"
+  if (not nodes_path.exists() or not edges_path.exists()
+      or not references_path.exists()):
     raise SystemExit("run tools/callgraph-report first")
   args.output.mkdir(parents=True, exist_ok=True)
   database = args.output / "callgraph.duckdb"
@@ -390,12 +571,13 @@ def main():
       ROOT / "tools/analysis_cache.py",
       ROOT / "tools/callgraph-analyze",
       ROOT / "tools/callgraph_analyze.py",
-  ], {"analysis": "callgraph-analyze", "entrypoints": patterns, "version": 1})
+  ], {"analysis": "callgraph-analyze", "entrypoints": patterns, "version": 4})
   required = [
       database,
       args.output / "summary.md",
       args.output / "function-metrics.csv",
       args.output / "entrypoint-exposure.csv",
+      args.output / "dead-functions.csv",
   ]
   if not args.refresh and cache_hit(manifest_path, digest, required):
     print("Call-graph analysis inputs are unchanged; reusing cached reports.",
@@ -408,12 +590,13 @@ def main():
   connection = duckdb.connect(str(database))
   connection.execute("SET threads = 1")
   load_onager(connection)
-  materialize_graph(connection, nodes_path, edges_path)
+  materialize_graph(connection, nodes_path, edges_path, references_path)
   run_onager(connection)
   nodes = [dict(zip(
       ("node_id", "name"), row)) for row in
       connection.execute("SELECT node_id, name FROM nodes").fetchall()]
   entrypoints = resolve_entrypoints(nodes, patterns)
+  store_liveness(connection, entrypoints)
   store_exposure(connection, entrypoints)
   export_reports(connection, args.output)
   write_summary(connection, args.output)
