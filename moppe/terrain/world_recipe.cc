@@ -3,6 +3,8 @@
 namespace moppe::terrain {
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept {
     switch (profile) {
+    case TerrainGenerationProfile::Smoke:
+      return "smoke";
     case TerrainGenerationProfile::Fast:
       return "fast";
     case TerrainGenerationProfile::Play:
@@ -21,7 +23,8 @@ namespace moppe::terrain {
       : m_extent (extent), m_resolution (resolution), m_seed (seed),
         m_water_datum (water_datum), m_generation_profile (generation_profile) {
     const float duration =
-      generation_profile == TerrainGenerationProfile::Fast       ? 750000.0f
+      generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
+      : generation_profile == TerrainGenerationProfile::Fast     ? 750000.0f
       : generation_profile == TerrainGenerationProfile::Play     ? 1500000.0f
       : generation_profile == TerrainGenerationProfile::Research ? 2000000.0f
                                                                  : 1500000.0f;

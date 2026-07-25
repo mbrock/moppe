@@ -9,7 +9,7 @@
 #include <string_view>
 
 namespace moppe::terrain {
-  enum class TerrainGenerationProfile { Fast, Play, Research };
+  enum class TerrainGenerationProfile { Smoke, Fast, Play, Research };
 
   std::string_view profile_id (TerrainGenerationProfile profile) noexcept;
 

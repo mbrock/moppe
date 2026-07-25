@@ -103,7 +103,9 @@ checkpoint ledger, editor schema, or second execution model.
 `WorldRecipe` binds physical extent, resolution, water datum, root seed, and
 generation profile. It carries the two algorithm values that genuinely vary:
 `StreamPowerEvolution` and `TrailFormation`. The profile selects evolution
-duration; it does not construct a runtime program.
+duration; it does not construct a runtime program. The `smoke` profile runs
+one 50,000-year erosion step so instrumented smoke and coverage sessions still
+exercise evolution without simulating the full `fast` profile.
 
 Stream-power evolution is a numerical kernel over physical metre floats.
 Each step publishes its current values as an `ElevationMap` when invoking

@@ -36,3 +36,18 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   MOPPE_CHECK (
     std::isfinite (surface_elevation_value (map.elevation_at (0, 0))));
 }
+
+MOPPE_TEST (smoke_world_recipe_runs_one_geological_step) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Smoke);
+
+  MOPPE_CHECK (profile_id (recipe.generation_profile ()) == "smoke");
+  MOPPE_CHECK (recipe.evolution ().duration == recipe.evolution ().time_step);
+}
