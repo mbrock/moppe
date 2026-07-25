@@ -153,13 +153,11 @@ namespace moppe::game {
           // The route can hug one bank of the pool, so the far waterline may
           // sit up to a full flooded width away: probe past twice the
           // channel-classification inradius.
-          const float spacing =
-            std::max (Vec3 (land.domain ().spacing_x_m (),
-                            1.0f,
-                            land.domain ().spacing_z_m ())[0],
-                      Vec3 (land.domain ().spacing_x_m (),
-                            1.0f,
-                            land.domain ().spacing_z_m ())[2]);
+          const Vec3 step =
+            Vec3 (land.domain ().spacing_x ().numerical_value_in (u::m),
+                  1.0f,
+                  land.domain ().spacing_z ().numerical_value_in (u::m));
+          const float spacing = std::max (step[0], step[2]);
           const float max_probe = std::max (7.0f * spacing, half_left_m);
           const float probe_step = std::max (0.5f, 0.25f * spacing);
           const auto waterline = [&] (float direction) {

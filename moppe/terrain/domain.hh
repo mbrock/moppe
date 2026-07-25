@@ -129,8 +129,12 @@ namespace moppe::terrain {
                    default_point_origin (surface_elevation[u::m]),
                    float>;
 
+  // A plain length becomes a point in the world's vertical frame. The two are
+  // different kinds, so mp-units will not carry one into the other on its own
+  // and the numeric step here is the conversion itself, not a shortcut.
   inline SurfaceElevation surface_elevation_point (meters_t value) {
-    return SurfaceElevation (meters_value (value) * surface_elevation[u::m]);
+    return SurfaceElevation (value.numerical_value_in (u::m) *
+                             surface_elevation[u::m]);
   }
 
   inline float surface_elevation_value (SurfaceElevation value) {
@@ -214,12 +218,6 @@ namespace moppe::terrain {
     meters_t spacing_z () const noexcept {
       return m_spacing_z;
     }
-    float spacing_x_m () const noexcept {
-      return meters_value (m_spacing_x);
-    }
-    float spacing_z_m () const noexcept {
-      return meters_value (m_spacing_z);
-    }
     square_meters_t cell_area () const noexcept {
       return m_spacing_x * m_spacing_z;
     }
@@ -251,11 +249,16 @@ namespace moppe::terrain {
     template <typename Visitor>
     void visit_interpolation_stencil (const position_t& position,
                                       Visitor&& visitor) const {
-      const float x = wrap_coordinate (position_value (position)[0] /
-                                         meters_value (m_spacing_x),
+      // A position divided by a spacing is a count of cells: both are
+      // lengths, so the ratio carries no unit and the lattice coordinate
+      // falls out of the quantity algebra rather than out of a raw division.
+      const Vec3 where = position_value (position);
+      const auto cells = [] (meters_t along, meters_t spacing) {
+        return (along / spacing).numerical_value_in (mp_units::one);
+      };
+      const float x = wrap_coordinate (cells (where[0] * u::m, m_spacing_x),
                                        static_cast<float> (m_width));
-      const float z = wrap_coordinate (position_value (position)[2] /
-                                         meters_value (m_spacing_z),
+      const float z = wrap_coordinate (cells (where[2] * u::m, m_spacing_z),
                                        static_cast<float> (m_height));
 
       const std::size_t x0 = static_cast<std::size_t> (std::floor (x));

@@ -325,8 +325,10 @@ namespace moppe::terrain {
                           source_y_at (current_y));
           maximum_elevation = std::max (maximum_elevation, current_elevation);
           const float run =
-            std::hypot ((current_x - previous_x) * domain.spacing_x_m (),
-                        (current_y - previous_y) * domain.spacing_z_m ());
+            std::hypot ((current_x - previous_x) *
+                          domain.spacing_x ().numerical_value_in (u::m),
+                        (current_y - previous_y) *
+                          domain.spacing_z ().numerical_value_in (u::m));
           if (run > 0.0f) {
             const float rise =
               std::fabs (current_elevation - previous_elevation);
@@ -385,34 +387,42 @@ namespace moppe::terrain {
       const int source_width = static_cast<int> (source.width ());
       const int source_height = static_cast<int> (source.height ());
       constexpr float planning_spacing = 16.0f;
-      const int width =
-        std::clamp (static_cast<int> (std::round (
-                      source_width * source.spacing_x_m () / planning_spacing)),
-                    std::min (8, source_width),
-                    source_width);
+      const int width = std::clamp (
+        static_cast<int> (std::round (
+          source_width * source.spacing_x ().numerical_value_in (u::m) /
+          planning_spacing)),
+        std::min (8, source_width),
+        source_width);
       const int height = std::clamp (
-        static_cast<int> (std::round (source_height * source.spacing_z_m () /
-                                      planning_spacing)),
+        static_cast<int> (std::round (
+          source_height * source.spacing_z ().numerical_value_in (u::m) /
+          planning_spacing)),
         std::min (8, source_height),
         source_height);
-      return { .domain = domain,
-               .elevations = elevations,
-               .drainage = drainage,
-               .flood = flood,
-               .source_width = source_width,
-               .source_height = source_height,
-               .width = width,
-               .height = height,
-               .spacing_x = source_width * source.spacing_x_m () / width,
-               .spacing_y = source_height * source.spacing_z_m () / height };
+      return {
+        .domain = domain,
+        .elevations = elevations,
+        .drainage = drainage,
+        .flood = flood,
+        .source_width = source_width,
+        .source_height = source_height,
+        .width = width,
+        .height = height,
+        .spacing_x =
+          source_width * source.spacing_x ().numerical_value_in (u::m) / width,
+        .spacing_y =
+          source_height * source.spacing_z ().numerical_value_in (u::m) / height
+      };
     }
 
     TrailAlignment
     make_alignment (const PlanningGrid& planner,
                     const std::vector<std::size_t>& coarse_circuit) {
       const TerrainDomain& source = planner.domain;
-      const float source_spacing_x = source.spacing_x_m ();
-      const float source_spacing_z = source.spacing_z_m ();
+      const float source_spacing_x =
+        source.spacing_x ().numerical_value_in (u::m);
+      const float source_spacing_z =
+        source.spacing_z ().numerical_value_in (u::m);
       const float period_x = source.width () * source_spacing_x;
       const float period_z = source.height () * source_spacing_z;
       std::vector<TrailAlignmentPoint> raw;

@@ -66,9 +66,10 @@ namespace moppe::game {
       const std::size_t width = drainage.width ();
       const int x = static_cast<int> (cell % width);
       const int z = static_cast<int> (cell / width);
-      const Vec3 scale = Vec3 (surface.domain ().spacing_x_m (),
-                               1.0f,
-                               surface.domain ().spacing_z_m ());
+      const Vec3 scale =
+        Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
+              1.0f,
+              surface.domain ().spacing_z ().numerical_value_in (u::m));
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y = wet ? flood.water_level_m (cell)
@@ -94,13 +95,11 @@ namespace moppe::game {
       int dz = to_z - from_z;
       dx = flight_minimum_image_delta (dx, width);
       dz = flight_minimum_image_delta (dz, height);
-      Vec3 direction (dx * Vec3 (surface.domain ().spacing_x_m (),
-                                 1.0f,
-                                 surface.domain ().spacing_z_m ())[0],
-                      0,
-                      dz * Vec3 (surface.domain ().spacing_x_m (),
-                                 1.0f,
-                                 surface.domain ().spacing_z_m ())[2]);
+      const Vec3 step =
+        Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
+              1.0f,
+              surface.domain ().spacing_z ().numerical_value_in (u::m));
+      Vec3 direction (dx * step[0], 0, dz * step[2]);
       if (length2 (direction) < 1e-5f)
         direction = Vec3 (0, 0, 1);
       return normalized (direction);

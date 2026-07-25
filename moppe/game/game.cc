@@ -415,7 +415,6 @@ namespace moppe {
 
       void prepare_world_surface () {
         MOPPE_PROFILE_ZONE ("startup.prepare_world_surface");
-        m_surface_presentation.refresh (surface (), surface_readings ());
         session ().bike ().set_water_level (world ().water_level);
         session ().car ().set_water_level (world ().water_level);
         session ().bike ().set_obstacles (&m_obstacles);
@@ -581,7 +580,8 @@ namespace moppe {
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
         m_water_presentation.upload (r);
-        m_surface_presentation.upload (r, !m_water_shot);
+        upload_surface_readings (
+          r, surface (), surface_readings (), !m_water_shot);
       }
 
       void cast_world_shadows (render::Renderer& r) {
@@ -1434,7 +1434,6 @@ namespace moppe {
       GraphicsSettings m_graphics;
       Vec3 m_spawn_position;
       Vec3 m_home_base_position;
-      SurfacePresentation m_surface_presentation;
       bool m_skip_cinematic_requested = false;
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;

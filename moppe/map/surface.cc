@@ -29,14 +29,14 @@ namespace moppe::map {
     snow_support_stencil (const terrain::TerrainDomain& domain) {
       constexpr meters_t support_radius = 24.0f * u::m;
       return {
-        .dx =
-          std::max (1,
-                    static_cast<int> (std::lround (
-                      meters_value (support_radius) / domain.spacing_x_m ()))),
-        .dz =
-          std::max (1,
-                    static_cast<int> (std::lround (
-                      meters_value (support_radius) / domain.spacing_z_m ()))),
+        .dx = std::max (1,
+                        static_cast<int> (std::lround (
+                          meters_value (support_radius) /
+                          domain.spacing_x ().numerical_value_in (u::m)))),
+        .dz = std::max (1,
+                        static_cast<int> (std::lround (
+                          meters_value (support_radius) /
+                          domain.spacing_z ().numerical_value_in (u::m)))),
       };
     }
 
@@ -84,12 +84,13 @@ namespace moppe::map {
       // not wrap: a face spanning the seam has to stay continuous, or its
       // normal would fold back on itself there.
       const auto corner = [&] (terrain::TerrainIndex site, int dx, int dz) {
-        return Vec3 (
-          domain.spacing_x_m () * (static_cast<int> (site.column) + dx),
-          terrain::surface_elevation_value (
-            spatial::get<terrain::surface_elevation> (
-              geometry[domain.shifted (site, dx, dz)])),
-          domain.spacing_z_m () * (static_cast<int> (site.row) + dz));
+        return Vec3 (domain.spacing_x ().numerical_value_in (u::m) *
+                       (static_cast<int> (site.column) + dx),
+                     terrain::surface_elevation_value (
+                       spatial::get<terrain::surface_elevation> (
+                         geometry[domain.shifted (site, dx, dz)])),
+                     domain.spacing_z ().numerical_value_in (u::m) *
+                       (static_cast<int> (site.row) + dz));
       };
       const auto add =
         [&] (terrain::TerrainIndex site, int dx, int dz, const Vec3& value) {

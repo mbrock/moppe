@@ -92,7 +92,8 @@ MOPPE_TEST (d_infinity_keeps_geometric_interpolation_distinct_from_flow_split) {
   const float interpolation =
     route.receiver_interpolation.numerical_value_in (mp_units::one);
   const float facet_extent =
-    std::atan2 (plane_grid ().spacing_z_m (), plane_grid ().spacing_x_m ());
+    std::atan2 (plane_grid ().spacing_z ().numerical_value_in (u::m),
+                plane_grid ().spacing_x ().numerical_value_in (u::m));
   MOPPE_CHECK_NEAR (angular_split, direction / facet_extent, 2e-5f);
   MOPPE_CHECK_NEAR (interpolation, 2.0f / 9.0f, 2e-5f);
   MOPPE_CHECK (std::fabs (angular_split - interpolation) > 0.05f);

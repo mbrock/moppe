@@ -1,6 +1,7 @@
 #include <moppe/map/surface.hh>
 
 #include <moppe/game/surface_presentation.hh>
+#include <moppe/render/texture_pixels.hh>
 
 #include <tests/recording_renderer.hh>
 #include <tests/surface_fixture.hh>
@@ -258,8 +259,10 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
 
   // Reconstruction is the domain's own bilinear stencil. State the expected
   // rule here independently, over the authoritative lattice.
-  const Vec3 spacing = Vec3 (
-    surface.domain ().spacing_x_m (), 1.0f, surface.domain ().spacing_z_m ());
+  const Vec3 spacing =
+    Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
+          1.0f,
+          surface.domain ().spacing_z ().numerical_value_in (u::m));
   const auto expected_height = [&] (float x, float z) {
     const float gx = x / spacing[0];
     const float gz = z / spacing[2];
@@ -387,15 +390,29 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   const map::SurfaceReadings readings = test::complete_readings (
     surface, { .use = test::trail_use_map (surface.domain (), trail, home) });
 
-  game::SurfacePresentation presentation;
-  presentation.refresh (surface, readings);
+  // The bridge is the pixels a source writes, so read those back rather than
+  // an intermediate buffer: there no longer is one.
+  const auto paths = render::decode_channels (
+    render::texture_pixels<map::trail_influence, map::home_base_influence> (
+      readings, render::PixelFormat::rg16f));
+  MOPPE_CHECK (paths.size () == 2);
+  MOPPE_CHECK (paths[0].size () == surface.domain ().size ());
+  MOPPE_CHECK_NEAR (paths[0][4], 0.75f, 1e-3f);
+  MOPPE_CHECK_NEAR (paths[1][4], 0.25f, 1e-3f);
 
-  MOPPE_CHECK (presentation.trails ().size () == surface.domain ().size ());
-  MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.home_base ()[4], 0.25f, 1e-6f);
-  MOPPE_CHECK (presentation.channel_flux ().size () == 18);
-  MOPPE_CHECK (presentation.snow_support ().size () == 9);
-  MOPPE_CHECK (presentation.forest ().size () == 9);
+  const auto flux =
+    render::decode_channels (render::planar_texture_pixels<map::channel_flux> (
+      readings, render::PixelFormat::rg16f));
+  MOPPE_CHECK (flux.size () == 2);
+  MOPPE_CHECK (flux[0].size () == 9);
+
+  const auto snow =
+    render::decode_channels (render::texture_pixels<map::snow_support> (
+      surface, render::PixelFormat::r16f));
+  MOPPE_CHECK (snow[0].size () == 9);
+
+  // An overlay that is switched off writes nothing at all.
+  MOPPE_CHECK (render::TexturePixels ().empty ());
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
@@ -452,10 +469,21 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
     0.5f,
     1e-6f);
 
-  game::SurfacePresentation presentation;
-  presentation.refresh (surface, values);
-  MOPPE_CHECK_NEAR (presentation.moisture ()[4], 1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.waterline_distance ()[4], 2.5f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.geology ()[8], 0.5f, 1e-6f);
-  MOPPE_CHECK_NEAR (presentation.geology ()[9], 0.5f, 1e-6f);
+  const auto wetness_pixels =
+    render::decode_channels (render::texture_pixels<map::surface_moisture> (
+      values, render::PixelFormat::r32f));
+  MOPPE_CHECK_NEAR (wetness_pixels[0][4], 1.0f, 1e-6f);
+
+  // Shore distance is metres, and it reaches the GPU as half precision.
+  const auto shore =
+    render::decode_channels (render::texture_pixels<map::waterline_distance> (
+      values, render::PixelFormat::r16f));
+  MOPPE_CHECK_NEAR (shore[0][4], 2.5f, 1e-3f);
+
+  // Geology is two readings sharing one two-channel texture.
+  const auto geology = render::decode_channels (
+    render::texture_pixels<map::erosion_exposure, map::deposition_cover> (
+      values, render::PixelFormat::rg16f));
+  MOPPE_CHECK_NEAR (geology[0][4], 0.5f, 1e-3f);
+  MOPPE_CHECK_NEAR (geology[1][4], 0.5f, 1e-3f);
 }
