@@ -51,7 +51,7 @@ MOPPE_TEST (metal_stitching_accepts_minimal_graphs) {
 
   const ScalarRaster x = evaluator.evaluate (coordinate_x (), domain);
   MOPPE_CHECK_NEAR (x.at (0, 2), 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (x.at (6, 2), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (x.at (6, 2), 6.0f / 7.0f, 1e-6f);
   const ScalarRaster value = evaluator.evaluate (constant (0.375f), domain);
   for (float sample : value.values ())
     MOPPE_CHECK_NEAR (sample, 0.375f, 1e-6f);
@@ -103,8 +103,4 @@ MOPPE_TEST (metal_stitching_materializes_the_geological_recipe) {
   const ScalarRaster gpu = evaluator.evaluate (field, domain);
 
   check_rasters_near (cpu, gpu, 5e-5f);
-  for (std::size_t y = 0; y < domain.height; ++y)
-    MOPPE_CHECK_NEAR (gpu.at (0, y), gpu.at (domain.width - 1, y), 2e-6f);
-  for (std::size_t x = 0; x < domain.width; ++x)
-    MOPPE_CHECK_NEAR (gpu.at (x, 0), gpu.at (x, domain.height - 1), 2e-6f);
 }

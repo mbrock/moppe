@@ -114,13 +114,15 @@ namespace moppe::terrain {
                             const FieldSamplingGrid2D&) = default;
   };
 
+  // One periodic lattice: width x height unique samples, no seam.  The
+  // unique_* accessors are synonyms retained from the two-lattice era; a
+  // later mechanical rename will retire them.
   struct TerrainGrid {
     std::size_t width;
     std::size_t height;
     meters_t spacing_x = 1.0f * mp_units::si::metre;
     meters_t spacing_y = 1.0f * mp_units::si::metre;
     meters_t height_scale = 1.0f * mp_units::si::metre;
-    Topology topology = Topology::Bounded;
 
     friend bool operator== (const TerrainGrid&, const TerrainGrid&) = default;
 
@@ -138,11 +140,11 @@ namespace moppe::terrain {
     }
 
     std::size_t unique_width () const noexcept {
-      return topology == Topology::Torus ? width - 1 : width;
+      return width;
     }
 
     std::size_t unique_height () const noexcept {
-      return topology == Topology::Torus ? height - 1 : height;
+      return height;
     }
 
     std::size_t unique_size () const noexcept {
@@ -205,10 +207,6 @@ namespace moppe::terrain {
           grid.spacing_y <= 0.0f * mp_units::si::metre ||
           grid.height_scale <= 0.0f * mp_units::si::metre)
         throw std::invalid_argument ("invalid terrain discretization");
-      if (grid.topology == Topology::Torus &&
-          (grid.width < 3 || grid.height < 3))
-        throw std::invalid_argument (
-          "periodic terrain needs a duplicated seam");
     }
 
     const FieldSamplingGrid2D& field_sampling_grid () const noexcept {
@@ -221,14 +219,14 @@ namespace moppe::terrain {
 
     FieldCoordinate2D field_position (GridPointIndex index) const {
       const auto [x, y] = coordinates (index);
-      const float u = std::lerp (m_field_sampling_grid.min_x,
-                                 m_field_sampling_grid.max_x,
-                                 static_cast<float> (x) /
-                                   static_cast<float> (m_grid.width - 1));
-      const float v = std::lerp (m_field_sampling_grid.min_y,
-                                 m_field_sampling_grid.max_y,
-                                 static_cast<float> (y) /
-                                   static_cast<float> (m_grid.height - 1));
+      const float u =
+        std::lerp (m_field_sampling_grid.min_x,
+                   m_field_sampling_grid.max_x,
+                   static_cast<float> (x) / static_cast<float> (m_grid.width));
+      const float v =
+        std::lerp (m_field_sampling_grid.min_y,
+                   m_field_sampling_grid.max_y,
+                   static_cast<float> (y) / static_cast<float> (m_grid.height));
       return { .u = field_coordinate (u), .v = field_coordinate (v) };
     }
 

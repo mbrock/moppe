@@ -32,9 +32,7 @@ namespace {
   }
 
   struct FrameFixture {
-    map::RandomHeightMap map {
-      17, 17, Vec3 (160, 40, 160), terrain::Topology::Bounded
-    };
+    map::RandomHeightMap map { 17, 17, Vec3 (160, 40, 160) };
     game::WorldParams world;
     map::Surface surface;
     std::unique_ptr<game::GameSession> session;
@@ -50,7 +48,6 @@ namespace {
       world.resolution = map.width ();
       world.water_level = 4.0f * u::m;
       world.fog_scale = 0.0004f / u::m;
-      world.terrain_topology = terrain::Topology::Bounded;
       session = std::make_unique<game::GameSession> (world, map, surface);
       session->bike ().reset (Vec3 (48, 11.2f, 48));
       session->bike ().set_heading (Vec3 (0, 0, 1));

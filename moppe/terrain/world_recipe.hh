@@ -4,12 +4,11 @@
 #include <moppe/gfx/math.hh>
 #include <moppe/quantities.hh>
 #include <moppe/terrain/program.hh>
-#include <moppe/terrain/topology.hh>
 
 namespace moppe::terrain {
   // The complete immutable input to terrain construction.  It binds the
   // physical world to the normalized terrain program, so every consumer sees
-  // the same extent, water datum, topology, seed, and generation profile.
+  // the same extent, water datum, seed, and generation profile.
   class WorldRecipe {
   public:
     const spatial_extent_t& extent () const noexcept {
@@ -18,10 +17,6 @@ namespace moppe::terrain {
 
     int resolution () const noexcept {
       return m_resolution;
-    }
-
-    Topology topology () const noexcept {
-      return m_topology;
     }
 
     Seed seed () const noexcept {
@@ -50,13 +45,11 @@ namespace moppe::terrain {
     friend WorldRecipe
     make_world_recipe (spatial_extent_t extent,
                        int resolution,
-                       Topology topology,
                        Seed seed,
                        meters_t water_datum,
                        TerrainGenerationProfile generation_profile);
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
-                 Topology topology,
                  Seed seed,
                  meters_t water_datum,
                  TerrainGenerationProfile generation_profile,
@@ -64,7 +57,6 @@ namespace moppe::terrain {
 
     spatial_extent_t m_extent;
     int m_resolution;
-    Topology m_topology;
     Seed m_seed;
     meters_t m_water_datum;
     TerrainGenerationProfile m_generation_profile;
@@ -74,7 +66,6 @@ namespace moppe::terrain {
   // Build the canonical orogeny-and-trails program for a physical world.
   WorldRecipe make_world_recipe (spatial_extent_t extent,
                                  int resolution,
-                                 Topology topology,
                                  Seed seed,
                                  meters_t water_datum,
                                  TerrainGenerationProfile generation_profile);

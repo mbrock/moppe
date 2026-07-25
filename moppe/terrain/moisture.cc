@@ -18,7 +18,7 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const float spacing = 0.5f * (grid.spacing_x_m () + grid.spacing_y_m ());
 
     // Multi-source BFS distance (in grid steps) from every standing-water

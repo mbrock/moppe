@@ -206,7 +206,9 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
 
 MOPPE_TEST (dry_ridges_remain_still) {
   const PaintedValley valley = paint_valley ();
-  const std::size_t ridge = 0;
+  // Row 0 borders the sea across the wrap and receives shore treatment;
+  // probe an interior ridge cell instead.
+  const std::size_t ridge = 3 * 9;
   MOPPE_CHECK_NEAR (
     valley.sheets.surface.values ()[ridge], valley.heights[ridge], 1e-6f);
   MOPPE_CHECK_NEAR (valley.sheets.flow[2 * ridge], 0.0f, 0.0f);

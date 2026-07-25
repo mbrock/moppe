@@ -10,8 +10,8 @@
 using namespace moppe::terrain;
 
 MOPPE_TEST (coordinates_cover_the_requested_domain) {
-  const FieldSamplingGrid2D domain { .width = 3,
-                                     .height = 3,
+  const FieldSamplingGrid2D domain { .width = 4,
+                                     .height = 4,
                                      .min_x = -1.0f,
                                      .max_x = 1.0f,
                                      .min_y = 10.0f,
@@ -20,16 +20,18 @@ MOPPE_TEST (coordinates_cover_the_requested_domain) {
   const ScalarRaster x = evaluator.evaluate (coordinate_x (), domain);
   const ScalarRaster y = evaluator.evaluate (coordinate_y (), domain);
 
+  // Sample k of N sits at k/N of the period; max_x is the first sample's
+  // periodic image and is never emitted as a duplicate row.
   MOPPE_CHECK_NEAR (x.at (0, 0), -1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (x.at (1, 1), 0.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (x.at (2, 2), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (x.at (2, 2), 0.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (x.at (3, 3), 0.5f, 1e-6f);
   MOPPE_CHECK_NEAR (y.at (0, 0), 10.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (y.at (1, 1), 15.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (y.at (2, 2), 20.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (y.at (2, 2), 15.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (y.at (3, 3), 17.5f, 1e-6f);
 }
 
 MOPPE_TEST (cpu_evaluator_composes_arithmetic_and_sine) {
-  const FieldSamplingGrid2D domain { .width = 5, .height = 2 };
+  const FieldSamplingGrid2D domain { .width = 4, .height = 2 };
   const ScalarField wave =
     sin (2.0f * std::numbers::pi_v<float> * coordinate_x ());
   const ScalarRaster raster = CpuEvaluator ().evaluate (wave, domain);
@@ -38,17 +40,16 @@ MOPPE_TEST (cpu_evaluator_composes_arithmetic_and_sine) {
   MOPPE_CHECK_NEAR (raster.at (1, 0), 1.0f, 1e-6f);
   MOPPE_CHECK_NEAR (raster.at (2, 0), 0.0f, 1e-5f);
   MOPPE_CHECK_NEAR (raster.at (3, 0), -1.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (raster.at (4, 0), 0.0f, 1e-5f);
 }
 
 MOPPE_TEST (large_cpu_evaluation_preserves_field_values) {
-  const FieldSamplingGrid2D domain { .width = 257, .height = 257 };
+  const FieldSamplingGrid2D domain { .width = 256, .height = 256 };
   const ScalarField field = coordinate_x () + 2.0f * coordinate_y ();
   const ScalarRaster raster = CpuEvaluator ().evaluate (field, domain);
 
   MOPPE_CHECK_NEAR (raster.at (0, 0), 0.0f, 1e-6f);
   MOPPE_CHECK_NEAR (raster.at (128, 128), 1.5f, 1e-6f);
-  MOPPE_CHECK_NEAR (raster.at (256, 256), 3.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (raster.at (192, 192), 2.25f, 1e-6f);
 }
 
 MOPPE_TEST (cpu_evaluator_reports_materialization_progress) {
@@ -109,10 +110,17 @@ MOPPE_TEST (periodic_fractal_noise_matches_on_both_seams) {
   const ScalarField field = periodic_fbm_noise (
     Seed { 42 }, x * 3.0f + 0.37f, y * 3.0f - 0.21f, 3, 3, 4, 2, 0.5f);
   const ScalarRaster raster =
-    CpuEvaluator ().evaluate (field, { .width = 33, .height = 29 });
+    CpuEvaluator ().evaluate (field, { .width = 32, .height = 28 });
+  const ScalarRaster shifted = CpuEvaluator ().evaluate (field,
+                                                         { .width = 32,
+                                                           .height = 28,
+                                                           .min_x = 1.0f,
+                                                           .max_x = 2.0f,
+                                                           .min_y = 1.0f,
+                                                           .max_y = 2.0f });
 
   for (std::size_t row = 0; row < raster.domain ().height; ++row)
-    MOPPE_CHECK_NEAR (raster.at (0, row), raster.at (32, row), 1e-6f);
-  for (std::size_t column = 0; column < raster.domain ().width; ++column)
-    MOPPE_CHECK_NEAR (raster.at (column, 0), raster.at (column, 28), 1e-6f);
+    for (std::size_t column = 0; column < raster.domain ().width; ++column)
+      MOPPE_CHECK_NEAR (
+        raster.at (column, row), shifted.at (column, row), 1e-6f);
 }

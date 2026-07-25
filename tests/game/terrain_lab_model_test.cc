@@ -34,11 +34,10 @@ namespace {
 MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
   using namespace moppe;
   using namespace moppe::terrain;
-  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap map (33, 33, Vec3 (640, 650, 640));
   for (int y = 0; y < map.height (); ++y)
     for (int x = 0; x < map.width (); ++x)
       map.set (x, y, static_cast<float> (x + y) / 64.0f);
-  map.synchronize_periodic_edges ();
   const std::vector<float> original = heights_of (map);
   TerrainProgram program =
     make_orogeny_program (42, TerrainGenerationProfile::Fast);
@@ -73,8 +72,7 @@ MOPPE_TEST (terrain_lab_model_replays_a_program_without_a_renderer) {
     0.0012f * mp_units::si::metre / mp_units::astronomy::Julian_year;
   model.rerun_program_from (0);
 
-  map::RandomHeightMap reference (
-    33, 33, Vec3 (640, 650, 640), Topology::Torus);
+  map::RandomHeightMap reference (33, 33, Vec3 (640, 650, 640));
   map::TerrainEvaluator (reference).evaluate (model.program ());
   MOPPE_CHECK (model_maps_match (map, reference));
 

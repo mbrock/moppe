@@ -21,10 +21,6 @@ namespace moppe::terrain {
           grid.height_scale <= 0.0f * mp_units::si::metre ||
           heights.size () != grid.width * grid.height)
         throw std::invalid_argument ("invalid materialized terrain view");
-      if (grid.topology == Topology::Torus &&
-          (grid.width < 3 || grid.height < 3))
-        throw std::invalid_argument (
-          "periodic terrain needs a duplicated seam");
     }
 
     const TerrainGrid& grid () const noexcept {

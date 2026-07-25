@@ -44,16 +44,14 @@ namespace moppe::terrain {
         static_cast<int> (cell % width) - static_cast<int> (receiver % width);
       int dy =
         static_cast<int> (cell / width) - static_cast<int> (receiver / width);
-      if (grid.topology == Topology::Torus) {
-        if (dx > width / 2)
-          dx -= width;
-        if (dx < -width / 2)
-          dx += width;
-        if (dy > height / 2)
-          dy -= height;
-        if (dy < -height / 2)
-          dy += height;
-      }
+      if (dx > width / 2)
+        dx -= width;
+      if (dx < -width / 2)
+        dx += width;
+      if (dy > height / 2)
+        dy -= height;
+      if (dy < -height / 2)
+        dy += height;
       return std::hypot (static_cast<float> (dx) * grid.spacing_x_m (),
                          static_cast<float> (dy) * grid.spacing_y_m ()) *
              mp_units::si::metre;
@@ -192,7 +190,7 @@ namespace moppe::terrain {
       const TerrainGrid& grid = drainage.source_grid;
       const int width = static_cast<int> (grid.unique_width ());
       const int height = static_cast<int> (grid.unique_height ());
-      const bool periodic = grid.topology == Topology::Torus;
+      constexpr bool periodic = true;
       const float period_x = width * grid.spacing_x_m ();
       const float period_z = height * grid.spacing_y_m ();
       const auto water_cell = [&] (CellIndex cell) {
@@ -372,7 +370,7 @@ namespace moppe::terrain {
     const std::size_t width = source_grid.unique_width ();
     const std::size_t height = source_grid.unique_height ();
     const std::size_t count = width * height;
-    const bool periodic = source_grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
     };
@@ -472,7 +470,6 @@ namespace moppe::terrain {
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
     if (flood.width () != width || flood.height () != height ||
-        flood.source_grid.topology != grid.topology ||
         flood.source_grid.spacing_x != grid.spacing_x ||
         flood.source_grid.spacing_y != grid.spacing_y ||
         flood.source_grid.height_scale != grid.height_scale)
@@ -480,7 +477,7 @@ namespace moppe::terrain {
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
 
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const std::span<const float> surface = flood.water_level.values ();
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;

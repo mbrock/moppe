@@ -73,8 +73,7 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
        ++frame)
     check_input (replay.replay_tape ()[frame], game::benchmark_input (frame));
 
-  map::RandomHeightMap map (
-    17, 17, Vec3 (200, 20, 200), terrain::Topology::Torus);
+  map::RandomHeightMap map (17, 17, Vec3 (200, 20, 200));
   std::fill (map.raw_heights (),
              map.raw_heights () + map.width () * map.height (),
              0.5f);
@@ -84,7 +83,6 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
   world.map_size = spatial_extent_in_metres (map.size ());
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
-  world.terrain_topology = terrain::Topology::Torus;
   std::vector<mov::Box> obstacles;
   const game::GameSessionAdvanceContext context { world, map, obstacles };
   game::GameSession session (world, map, surface);

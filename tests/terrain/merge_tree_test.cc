@@ -56,31 +56,29 @@ MOPPE_TEST (merge_tree_flood_matches_a_basin_and_its_spill) {
 }
 
 MOPPE_TEST (merge_tree_flood_matches_an_all_land_torus) {
-  const std::array heights { 5.f, 4.f, 6.f, 7.f, 3.f, 8.f, 6.f, 9.f, 7.f };
-  const TerrainView terrain (
-    { .width = 3, .height = 3, .topology = Topology::Torus }, heights);
+  const std::array heights { 5.f, 4.f, 7.f, 3.f };
+  const TerrainView terrain ({ .width = 2, .height = 2 }, heights);
   check_matches_priority_flood (terrain, -1.0f);
 
   const MergeTree tree = build_merge_tree (terrain);
   const MergeTreeFlood flood = flood_from_merge_tree (tree, terrain, -1.0f);
   MOPPE_CHECK (!flood.has_ocean);
-  // The endorheic fallback roots at the deterministic global minimum
-  // of the unique 2x2 torus samples (the stored 3x3 duplicates the
-  // seam): height 3 at unique cell 3.
+  // The endorheic fallback roots at the deterministic global minimum:
+  // height 3 at cell 3.
   MOPPE_CHECK (flood.root_cell == 3u);
 }
 
 MOPPE_TEST (merge_tree_flood_matches_a_nearly_all_ocean_world) {
-  const std::array heights { -3.f, -3.f, -3.f, -3.f, -3.f, 5.f,  -3.f, -3.f,
-                             -3.f, -3.f, -3.f, -3.f, -3.f, -3.f, -3.f, -3.f };
-  const TerrainView terrain (
-    { .width = 4, .height = 4, .topology = Topology::Torus }, heights);
+  const std::array heights {
+    -3.f, -3.f, -3.f, -3.f, 5.f, -3.f, -3.f, -3.f, -3.f
+  };
+  const TerrainView terrain ({ .width = 3, .height = 3 }, heights);
   check_matches_priority_flood (terrain, 0.0f);
 }
 
 MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
   for (const int seed : { 7, 123, 4041 }) {
-    map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), Topology::Torus);
+    map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100));
     map::TerrainEvaluator (map).begin (make_orogeny_program (seed));
     const TerrainView terrain = map.terrain_view ();
     for (const float sea_level : { 0.05f, 50.0f / 650.0f, 0.3f, 0.95f })
@@ -89,7 +87,7 @@ MOPPE_TEST (merge_tree_flood_matches_generated_worlds_at_many_levels) {
 }
 
 MOPPE_TEST (merge_tree_construction_is_deterministic) {
-  map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100), Topology::Torus);
+  map::RandomHeightMap map (65, 65, Vec3 (100, 20, 100));
   map::TerrainEvaluator (map).begin (make_orogeny_program (9));
   const TerrainView terrain = map.terrain_view ();
   const MergeTree first = build_merge_tree (terrain);

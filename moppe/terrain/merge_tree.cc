@@ -45,7 +45,7 @@ namespace moppe::terrain {
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
 
     // Sort unique cells by (height, index): the same deterministic
     // order the drainage analyses use for tie-breaking.

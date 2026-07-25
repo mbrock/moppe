@@ -34,14 +34,9 @@ terrain_cubic (float p0, float p1, float p2, float p3, float t) {
                  (3.0 * a * t + 2.0 * b) * t + c);
 }
 
-static inline uint2
-terrain_sample_position (int2 p, uint2 limit, bool periodic) {
-  if (periodic) {
-    const int2 period = int2 (limit);
-    p = (p % period + period) % period;
-  } else {
-    p = clamp (p, int2 (0), int2 (limit));
-  }
+static inline uint2 terrain_sample_position (int2 p, uint2 size) {
+  const int2 period = int2 (size);
+  p = (p % period + period) % period;
   return uint2 (p);
 }
 
@@ -50,12 +45,8 @@ static inline float3
 terrain_height_smooth (float2 grid,
                        constant MoppeTerrainUniforms& u,
                        texture2d<float, access::read> heights) {
-  const uint2 limit (heights.get_width () - 1, heights.get_height () - 1);
-  const bool periodic = u.params3.y > 0.5;
-  if (periodic)
-    grid -= floor (grid / float2 (limit)) * float2 (limit);
-  else
-    grid = clamp (grid, float2 (0.0), float2 (limit));
+  const uint2 size (heights.get_width (), heights.get_height ());
+  grid -= floor (grid / float2 (size)) * float2 (size);
 
   const int2 cell = int2 (floor (grid));
   const float2 f = fract (grid);
@@ -64,10 +55,10 @@ terrain_height_smooth (float2 grid,
   for (int j = 0; j < 4; ++j) {
     float p[4];
     for (int i = 0; i < 4; ++i)
-      p[i] = heights
-               .read (terrain_sample_position (
-                 cell + int2 (i - 1, j - 1), limit, periodic))
-               .r;
+      p[i] =
+        heights
+          .read (terrain_sample_position (cell + int2 (i - 1, j - 1), size))
+          .r;
     const float2 value = terrain_cubic (p[0], p[1], p[2], p[3], f.x);
     row[j] = value.x;
     dx[j] = value.y;
@@ -75,16 +66,13 @@ terrain_height_smooth (float2 grid,
   const float2 y = terrain_cubic (row[0], row[1], row[2], row[3], f.y);
   const float x = terrain_cubic (dx[0], dx[1], dx[2], dx[3], f.y).x;
 
-  const float h00 =
-    heights.read (terrain_sample_position (cell, limit, periodic)).r;
+  const float h00 = heights.read (terrain_sample_position (cell, size)).r;
   const float h10 =
-    heights.read (terrain_sample_position (cell + int2 (1, 0), limit, periodic))
-      .r;
+    heights.read (terrain_sample_position (cell + int2 (1, 0), size)).r;
   const float h01 =
-    heights.read (terrain_sample_position (cell + int2 (0, 1), limit, periodic))
-      .r;
+    heights.read (terrain_sample_position (cell + int2 (0, 1), size)).r;
   const float h11 =
-    heights.read (terrain_sample_position (cell + int2 (1), limit, periodic)).r;
+    heights.read (terrain_sample_position (cell + int2 (1), size)).r;
   const float lo = min (min (h00, h10), min (h01, h11));
   const float hi = max (max (h00, h10), max (h01, h11));
   if (y.x < lo || y.x > hi) {
@@ -98,10 +86,10 @@ terrain_height_smooth (float2 grid,
 
 static inline float
 terrain_height_bilinear (float2 grid, texture2d<float, access::read> heights) {
-  const uint2 limit (heights.get_width () - 1, heights.get_height () - 1);
-  grid = clamp (grid, float2 (0.0), float2 (limit));
-  const uint2 p00 = uint2 (floor (grid));
-  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const uint2 size (heights.get_width (), heights.get_height ());
+  grid -= floor (grid / float2 (size)) * float2 (size);
+  const uint2 p00 = uint2 (floor (grid)) % size;
+  const uint2 p11 = (p00 + uint2 (1)) % size;
   const float2 f = fract (grid);
   const float h0 =
     mix (heights.read (p00).r, heights.read (uint2 (p11.x, p00.y)).r, f.x);
@@ -119,10 +107,10 @@ terrain_read_normal (uint2 p, texture2d<float, access::read> normals) {
 
 static inline float3
 terrain_normal_bilinear (float2 grid, texture2d<float, access::read> normals) {
-  const uint2 limit (normals.get_width () - 1, normals.get_height () - 1);
-  grid = clamp (grid, float2 (0.0), float2 (limit));
-  const uint2 p00 = uint2 (floor (grid));
-  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const uint2 size (normals.get_width (), normals.get_height ());
+  grid -= floor (grid / float2 (size)) * float2 (size);
+  const uint2 p00 = uint2 (floor (grid)) % size;
+  const uint2 p11 = (p00 + uint2 (1)) % size;
   const float2 f = fract (grid);
   const float3 n0 = mix (terrain_read_normal (p00, normals),
                          terrain_read_normal (uint2 (p11.x, p00.y), normals),
@@ -138,12 +126,8 @@ terrain_preview_height (float2 grid,
                         constant MoppeTerrainUniforms& u,
                         texture2d<float, access::read> heights,
                         texture2d<float, access::read> previous_heights) {
-  const float2 limit (heights.get_width () - 1, heights.get_height () - 1);
-  if (u.params3.y > 0.5) {
-    grid -= floor (grid / limit) * limit;
-  } else {
-    grid = clamp (grid, float2 (0.0), limit);
-  }
+  const float2 size (heights.get_width (), heights.get_height ());
+  grid -= floor (grid / size) * size;
   const float current = terrain_height_bilinear (grid, heights);
   if (u.params3.z >= 1.0)
     return current;
@@ -176,18 +160,19 @@ terrain_preview_normal (float2 grid,
 // The strip topology uses the bottom-left to top-right diagonal.
 static inline float terrain_height_on_lattice (
   float2 grid, float step, texture2d<float, access::read> heights) {
-  const float2 limit (heights.get_width () - 1, heights.get_height () - 1);
-  const float2 cell = min (floor (grid / step) * step, limit - step);
+  const uint2 size (heights.get_width (), heights.get_height ());
+  grid -= floor (grid / float2 (size)) * float2 (size);
+  const float2 cell = floor (grid / step) * step;
   const float2 f = clamp ((grid - cell) / step, 0.0, 1.0);
-  const uint stride = (uint)step;
-  const uint2 p00 = uint2 (cell);
-  const uint2 p10 = p00 + uint2 (stride, 0);
-  const uint2 p01 = p00 + uint2 (0, stride);
-  const uint2 p11 = p00 + uint2 (stride);
-  const float h00 = heights.read (p00).r;
-  const float h10 = heights.read (p10).r;
-  const float h01 = heights.read (p01).r;
-  const float h11 = heights.read (p11).r;
+  const int stride = (int)step;
+  const int2 c = int2 (cell);
+  const float h00 = heights.read (terrain_sample_position (c, size)).r;
+  const float h10 =
+    heights.read (terrain_sample_position (c + int2 (stride, 0), size)).r;
+  const float h01 =
+    heights.read (terrain_sample_position (c + int2 (0, stride), size)).r;
+  const float h11 =
+    heights.read (terrain_sample_position (c + int2 (stride), size)).r;
   if (f.x + f.y <= 1.0)
     return h00 + f.x * (h10 - h00) + f.y * (h01 - h00);
   return h11 + (1.0 - f.y) * (h10 - h11) + (1.0 - f.x) * (h01 - h11);
@@ -195,15 +180,20 @@ static inline float terrain_height_on_lattice (
 
 static inline float3 terrain_normal_on_lattice (
   float2 grid, float step, texture2d<float, access::read> normals) {
-  const float2 limit (normals.get_width () - 1, normals.get_height () - 1);
-  const float2 cell = min (floor (grid / step) * step, limit - step);
+  const uint2 size (normals.get_width (), normals.get_height ());
+  grid -= floor (grid / float2 (size)) * float2 (size);
+  const float2 cell = floor (grid / step) * step;
   const float2 f = clamp ((grid - cell) / step, 0.0, 1.0);
-  const uint stride = (uint)step;
-  const uint2 p00 = uint2 (cell);
-  const float3 n00 = terrain_read_normal (p00, normals);
-  const float3 n10 = terrain_read_normal (p00 + uint2 (stride, 0), normals);
-  const float3 n01 = terrain_read_normal (p00 + uint2 (0, stride), normals);
-  const float3 n11 = terrain_read_normal (p00 + uint2 (stride), normals);
+  const int stride = (int)step;
+  const int2 c = int2 (cell);
+  const float3 n00 =
+    terrain_read_normal (terrain_sample_position (c, size), normals);
+  const float3 n10 = terrain_read_normal (
+    terrain_sample_position (c + int2 (stride, 0), size), normals);
+  const float3 n01 = terrain_read_normal (
+    terrain_sample_position (c + int2 (0, stride), size), normals);
+  const float3 n11 = terrain_read_normal (
+    terrain_sample_position (c + int2 (stride), size), normals);
   if (f.x + f.y <= 1.0)
     return n00 + f.x * (n10 - n00) + f.y * (n01 - n00);
   return n11 + (1.0 - f.y) * (n10 - n11) + (1.0 - f.x) * (n01 - n11);
@@ -281,14 +271,14 @@ vertex TerrainVaryings terrain_vertex (
   float3 world;
   if (u.params2.x > 0.5) {
     constexpr float tau = 6.28318530718;
-    const float theta = tau * grid.x / (heights.get_width () - 1);
-    const float phi = tau * grid.y / (heights.get_height () - 1);
+    const float theta = tau * grid.x / heights.get_width ();
+    const float phi = tau * grid.y / heights.get_height ();
     const float ct = cos (theta), st = sin (theta);
     const float cp = cos (phi), sp = sin (phi);
     const float tube_radius = u.params2.z + u.params0.y * h * u.params2.w;
     const float ring_radius = u.params2.y + tube_radius * cp;
-    const float2 center (u.params0.x * (heights.get_width () - 1) * 0.5,
-                         u.params0.z * (heights.get_height () - 1) * 0.5);
+    const float2 center (u.params0.x * heights.get_width () * 0.5,
+                         u.params0.z * heights.get_height () * 0.5);
     world = float3 (center.x + ring_radius * ct,
                     tube_radius * sp,
                     center.y + ring_radius * st);
@@ -326,8 +316,7 @@ vertex TerrainVaryings terrain_vertex (
   const float3 canonical_world (canonical_xz.x, world.y, canonical_xz.y);
   out.shadow_coord = u.light_matrix * float4 (canonical_world, 1.0);
   out.uv = (u.params2.x > 0.5 ? canonical_xz : world.xz) * u.params0.w;
-  out.field_uv =
-    grid / float2 (heights.get_width () - 1, heights.get_height () - 1);
+  out.field_uv = grid / float2 (heights.get_width (), heights.get_height ());
   out.grid_coord = grid;
   out.mesh_coord =
     (grid - float2 (chunk.origin_x, chunk.origin_z)) / chunk.step;
@@ -417,10 +406,10 @@ static inline float3 terrain_layer_triplanar (texture2d<float> tex,
 
 static inline float4
 terrain_field_sample (float2 uv, texture2d<float, access::read> field) {
-  const uint2 limit (field.get_width () - 1, field.get_height () - 1);
-  const float2 grid = clamp (uv, 0.0, 1.0) * float2 (limit);
-  const uint2 p00 = uint2 (floor (grid));
-  const uint2 p11 = min (p00 + uint2 (1), limit);
+  const uint2 size (field.get_width (), field.get_height ());
+  const float2 grid = fract (uv) * float2 (size);
+  const uint2 p00 = uint2 (floor (grid)) % size;
+  const uint2 p11 = (p00 + uint2 (1)) % size;
   const float2 f = fract (grid);
   const float4 a =
     mix (field.read (p00), field.read (uint2 (p11.x, p00.y)), f.x);
@@ -822,12 +811,11 @@ fragment float4 terrain_fragment (
                mix (texel, float3 (wet_luma), 0.20) * float3 (0.52, 0.58, 0.60),
                wetness * 0.58);
   if (u.params4.x > 0.5) {
-    const uint2 overlay_limit (terrain_overlay.get_width () - 1,
-                               terrain_overlay.get_height () - 1);
+    const uint2 overlay_size (terrain_overlay.get_width (),
+                              terrain_overlay.get_height ());
     const uint2 overlay_position =
-      uint2 (clamp (round (in.field_uv * float2 (overlay_limit)),
-                    float2 (0.0),
-                    float2 (overlay_limit)));
+      uint2 (round (fract (in.field_uv) * float2 (overlay_size))) %
+      overlay_size;
     const float overlay_value = terrain_overlay.read (overlay_position).r;
     const float4 overlay = terrain_overlay_color (overlay_value, u);
     texel = mix (texel, overlay.rgb, overlay.a);

@@ -23,22 +23,24 @@ namespace {
 
 MOPPE_TEST (terrain_discretization_connects_field_and_physical_positions) {
   const TerrainDiscretization discretization (
-    { .width = 5,
-      .height = 3,
+    { .width = 4,
+      .height = 4,
       .min_x = -1.0f,
       .max_x = 1.0f,
       .min_y = 2.0f,
       .max_y = 6.0f },
-    { .width = 5,
-      .height = 3,
+    { .width = 4,
+      .height = 4,
       .spacing_x = 10.0f * mp_units::si::metre,
       .spacing_y = 20.0f * mp_units::si::metre,
       .height_scale = 500.0f * mp_units::si::metre });
 
+  // Sample k of N sits at k/N of the field period: the last sample stops
+  // short of the periodic image of the first.
   const GridPointIndex point = grid_point (2, 1);
   const FieldCoordinate2D coordinate = discretization.field_position (point);
   MOPPE_CHECK (coordinate.u == field_coordinate (0.0f));
-  MOPPE_CHECK (coordinate.v == field_coordinate (4.0f));
+  MOPPE_CHECK (coordinate.v == field_coordinate (3.0f));
 
   const HorizontalPosition2D physical =
     discretization.physical_position (point);
@@ -61,8 +63,8 @@ MOPPE_TEST (terrain_discretization_rejects_unrelated_lattice_extents) {
 
 MOPPE_TEST (terrain_raster_retains_the_discretization_that_sampled_it) {
   const TerrainDiscretization discretization (
-    { .width = 3, .height = 2 },
-    { .width = 3,
+    { .width = 4, .height = 2 },
+    { .width = 4,
       .height = 2,
       .spacing_x = 4.0f * mp_units::si::metre,
       .spacing_y = 7.0f * mp_units::si::metre });
@@ -73,8 +75,8 @@ MOPPE_TEST (terrain_raster_retains_the_discretization_that_sampled_it) {
     materialize (CpuEvaluator (), field, discretization);
 
   const GridPointIndex point = grid_point (2, 1);
-  MOPPE_CHECK (raster.sample (point) == relative_elevation (3.0f));
-  MOPPE_CHECK (raster.field_position (point).u == field_coordinate (1.0f));
+  MOPPE_CHECK (raster.sample (point) == relative_elevation (1.5f));
+  MOPPE_CHECK (raster.field_position (point).u == field_coordinate (0.5f));
   MOPPE_CHECK (raster.physical_position (point).x ==
                8.0f * mp_units::si::metre);
   MOPPE_CHECK (raster.physical_position (point).z ==
@@ -96,14 +98,13 @@ MOPPE_TEST (grid_points_flatten_to_affine_storage_indices) {
   MOPPE_CHECK (point.row - one_row == row_index (1));
 }
 
-MOPPE_TEST (toroidal_discretization_distinguishes_storage_and_unique_points) {
-  const TerrainDiscretization discretization (
-    { .width = 6, .height = 4 },
-    { .width = 6, .height = 4, .topology = Topology::Torus });
+MOPPE_TEST (toroidal_discretization_has_one_lattice) {
+  const TerrainDiscretization discretization ({ .width = 6, .height = 4 },
+                                              { .width = 6, .height = 4 });
 
   MOPPE_CHECK (discretization.grid ().width == 6);
   MOPPE_CHECK (discretization.grid ().height == 4);
-  MOPPE_CHECK (discretization.grid ().unique_width () == 5);
-  MOPPE_CHECK (discretization.grid ().unique_height () == 3);
-  MOPPE_CHECK (discretization.grid ().unique_size () == 15);
+  MOPPE_CHECK (discretization.grid ().unique_width () == 6);
+  MOPPE_CHECK (discretization.grid ().unique_height () == 4);
+  MOPPE_CHECK (discretization.grid ().unique_size () == 24);
 }

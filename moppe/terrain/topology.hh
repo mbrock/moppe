@@ -4,8 +4,8 @@
 #include <cmath>
 
 namespace moppe::terrain {
-  enum class Topology { Bounded, Torus };
-
+  // The world is a torus.  These are the wrap operations every lattice
+  // consumer shares; the period is always the full lattice extent.
   inline int wrap_index (int value, int period) {
     const int remainder = value % period;
     return remainder < 0 ? remainder + period : remainder;

@@ -228,10 +228,7 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
   constexpr int storage_side = 17;
   constexpr int unique_side = storage_side - 1;
   constexpr std::size_t count = unique_side * unique_side;
-  map::RandomHeightMap map (storage_side,
-                            storage_side,
-                            Vec3 (1600, 240, 1600),
-                            terrain::Topology::Torus);
+  map::RandomHeightMap map (storage_side, storage_side, Vec3 (1600, 240, 1600));
   for (int z = 0; z < storage_side; ++z)
     for (int x = 0; x < storage_side; ++x) {
       const float dx =

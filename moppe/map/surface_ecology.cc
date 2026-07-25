@@ -106,12 +106,8 @@ namespace moppe::map {
     SurfaceForestSections& values =
       atlas.ecology ().materialize_forest_cover ();
     auto& cover = spatial::get<forest_cover> (values);
-    const float unique_width = static_cast<float> (
-      domain.topology () == terrain::Topology::Torus ? domain.width () - 1
-                                                     : domain.width ());
-    const float unique_height = static_cast<float> (
-      domain.topology () == terrain::Topology::Torus ? domain.height () - 1
-                                                     : domain.height ());
+    const float unique_width = static_cast<float> (domain.width ());
+    const float unique_height = static_cast<float> (domain.height ());
 
     for (std::size_t offset = 0; offset < domain.size (); ++offset) {
       const SurfaceIndex index = domain.index (offset);

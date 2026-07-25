@@ -8,8 +8,7 @@
 
 MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    65, 65, Vec3 (320, 180, 320), terrain::Topology::Bounded);
+  map::RandomHeightMap map (65, 65, Vec3 (320, 180, 320));
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -32,8 +31,7 @@ MOPPE_TEST (tree_grove_is_selected_from_materialized_surface_habitat) {
 
 MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    65, 65, Vec3 (320, 180, 320), terrain::Topology::Bounded);
+  map::RandomHeightMap map (65, 65, Vec3 (320, 180, 320));
   std::fill (map.raw_heights (), map.raw_heights () + 65 * 65, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -57,8 +55,7 @@ MOPPE_TEST (tree_grove_plan_is_reproducible_but_organisms_are_unique) {
 
 MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    129, 129, Vec3 (640, 180, 640), terrain::Topology::Bounded);
+  map::RandomHeightMap map (129, 129, Vec3 (640, 180, 640));
   std::fill (map.raw_heights (), map.raw_heights () + 129 * 129, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);
@@ -86,8 +83,7 @@ MOPPE_TEST (forest_recruitment_keeps_canopy_young_trees_and_saplings) {
 
 MOPPE_TEST (tree_grove_refuses_a_surface_without_viable_habitat) {
   using namespace moppe;
-  map::RandomHeightMap map (
-    33, 33, Vec3 (160, 180, 160), terrain::Topology::Bounded);
+  map::RandomHeightMap map (33, 33, Vec3 (160, 180, 160));
   std::fill (map.raw_heights (), map.raw_heights () + 33 * 33, 0.42f);
   map.recompute_normals ();
   map::Surface surface (map);

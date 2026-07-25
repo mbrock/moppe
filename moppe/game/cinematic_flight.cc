@@ -33,8 +33,6 @@ namespace moppe::game {
 
     Vec3
     unwrap_near (Vec3 point, const Vec3& reference, const map::HeightMap& map) {
-      if (!map.periodic ())
-        return point;
       const Vec3 size = map.size ();
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
@@ -46,15 +44,8 @@ namespace moppe::game {
     }
 
     float flight_height_sample (const map::HeightMap& map, int x, int z) {
-      if (map.periodic ()) {
-        const int width = map.unique_width ();
-        const int height = map.unique_height ();
-        x = ((x % width) + width) % width;
-        z = ((z % height) + height) % height;
-      } else {
-        x = std::clamp (x, 0, map.unique_width () - 1);
-        z = std::clamp (z, 0, map.unique_height () - 1);
-      }
+      x = terrain::wrap_index (x, map.width ());
+      z = terrain::wrap_index (z, map.height ());
       return map.get (x, z) * map.scale ()[1];
     }
 
@@ -86,10 +77,8 @@ namespace moppe::game {
       const int to_z = static_cast<int> (to / drainage.width ());
       int dx = to_x - from_x;
       int dz = to_z - from_z;
-      if (map.periodic ()) {
-        dx = flight_minimum_image_delta (dx, width);
-        dz = flight_minimum_image_delta (dz, height);
-      }
+      dx = flight_minimum_image_delta (dx, width);
+      dz = flight_minimum_image_delta (dz, height);
       Vec3 direction (dx * map.scale ()[0], 0, dz * map.scale ()[2]);
       if (length2 (direction) < 1e-5f)
         direction = Vec3 (0, 0, 1);
@@ -169,9 +158,8 @@ namespace moppe::game {
       const int height = map.unique_height ();
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 64);
-      const int margin = map.periodic () ? 0 : radius;
-      for (int z = margin; z < height - margin; z += stride)
-        for (int x = margin; x < width - margin; x += stride) {
+      for (int z = 0; z < height; z += stride)
+        for (int x = 0; x < width; x += stride) {
           const float center = flight_height_sample (map, x, z);
           float ring_high = -std::numeric_limits<float>::infinity ();
           float ring_low = std::numeric_limits<float>::infinity ();
@@ -201,9 +189,8 @@ namespace moppe::game {
       const int height = map.unique_height ();
       const int stride = std::max (2, width / 96);
       const int radius = std::max (3, width / 80);
-      const int margin = map.periodic () ? 0 : radius;
-      for (int z = margin; z < height - margin; z += stride)
-        for (int x = margin; x < width - margin; x += stride) {
+      for (int z = 0; z < height; z += stride)
+        for (int x = 0; x < width; x += stride) {
           const float c = flight_height_sample (map, x, z);
           const float n = flight_height_sample (map, x, z - radius);
           const float s = flight_height_sample (map, x, z + radius);

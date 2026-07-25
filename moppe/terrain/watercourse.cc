@@ -48,7 +48,7 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.unique_width ());
     const int height = static_cast<int> (grid.unique_height ());
     const std::size_t count = grid.unique_size ();
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     if (census.body.size () != count || drainage.receiver.size () != count)
       throw std::invalid_argument (
         "watercourse painting inputs do not share a grid");

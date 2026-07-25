@@ -20,7 +20,6 @@ namespace moppe::game {
       params.map_size = recipe.extent ();
       params.resolution = recipe.resolution ();
       params.water_level = recipe.water_datum ();
-      params.terrain_topology = recipe.topology ();
     }
 
     std::size_t storage_count (const map::RandomHeightMap& terrain) {
@@ -45,8 +44,7 @@ namespace moppe::game {
       : m_params (params), m_recipe (std::move (recipe)),
         m_terrain (m_recipe.resolution (),
                    m_recipe.resolution (),
-                   extent_value (m_recipe.extent ()),
-                   m_recipe.topology ()) {
+                   extent_value (m_recipe.extent ())) {
     bind_world_params (m_params, m_recipe);
   }
 

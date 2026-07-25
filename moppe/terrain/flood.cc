@@ -56,7 +56,7 @@ namespace moppe::terrain {
     const std::size_t width = grid.unique_width ();
     const std::size_t height = grid.unique_height ();
     const std::size_t count = width * height;
-    const bool periodic = grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const auto index = [width] (std::size_t x, std::size_t y) {
       return y * width + x;
     };
@@ -239,7 +239,7 @@ namespace moppe::terrain {
     const std::size_t width = flood.width ();
     const std::size_t height = flood.height ();
     const std::size_t count = width * height;
-    const bool periodic = flood.source_grid.topology == Topology::Torus;
+    constexpr bool periodic = true;
     const std::span<const float> depth = flood.water_depth.values ();
     const std::span<const float> level = flood.water_level.values ();
     LakeCensus census { .body =
