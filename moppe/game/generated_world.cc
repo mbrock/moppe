@@ -22,15 +22,6 @@ namespace moppe::game {
 
   }
 
-  GeneratedWorld::Hydrology::Hydrology (terrain::FloodField standing_water,
-                                        terrain::LakeCensus lakes,
-                                        terrain::DrainageGraph drainage,
-                                        terrain::FractionalDrainage channels,
-                                        terrain::RiverNetwork rivers)
-      : m_standing_water (std::move (standing_water)),
-        m_lakes (std::move (lakes)), m_drainage (std::move (drainage)),
-        m_channels (std::move (channels)), m_rivers (std::move (rivers)) {}
-
   GeneratedWorld::GeneratedWorld (WorldParams params,
                                   terrain::WorldRecipe recipe)
       : m_params (params), m_recipe (std::move (recipe)),
@@ -76,11 +67,11 @@ namespace moppe::game {
       channels,
       terrain::visible_river_minimum_area (drainage.domain ()));
 
-    m_hydrology.emplace (Hydrology (std::move (standing_water),
-                                    std::move (lakes),
-                                    std::move (drainage),
-                                    std::move (channels),
-                                    std::move (rivers)));
+    m_hydrology.emplace (std::move (standing_water),
+                         std::move (lakes),
+                         std::move (drainage),
+                         std::move (channels),
+                         std::move (rivers));
   }
 
   void GeneratedWorld::derive_surface_readings (
@@ -92,24 +83,21 @@ namespace moppe::game {
     if (!m_hydrology)
       throw std::logic_error ("Surface readings need the world's hydrology");
 
-    const Hydrology& hydrology = *m_hydrology;
+    const auto& [standing_water, lakes, drainage, channels, rivers] =
+      *m_hydrology;
     const map::SurfaceGeometry& geometry = m_surface.geometry ();
 
-    map::ChannelFluxMap channels =
-      map::analyze_channel_flux (geometry.domain (), hydrology.channels ());
+    map::ChannelFluxMap channel_flux =
+      map::analyze_channel_flux (geometry.domain (), channels);
 
-    terrain::WaterSheets sheets =
-      terrain::paint_watercourses (geometry,
-                                   hydrology.standing_water (),
-                                   hydrology.lakes (),
-                                   hydrology.drainage (),
-                                   hydrology.rivers ());
+    terrain::WaterSheets sheets = terrain::paint_watercourses (
+      geometry, standing_water, lakes, drainage, rivers);
     const terrain::Waterline waterline =
-      terrain::extract_waterline (geometry, sheets, hydrology.lakes ());
+      terrain::extract_waterline (geometry, sheets, lakes);
     m_water_surface.emplace (std::move (sheets));
 
-    terrain::MoistureMap moisture = terrain::analyze_moisture (
-      hydrology.standing_water (), hydrology.lakes (), hydrology.drainage ());
+    terrain::MoistureMap moisture =
+      terrain::analyze_moisture (standing_water, lakes, drainage);
     map::TreeHabitatMap habitat =
       map::analyze_tree_habitat (geometry,
                                  moisture,
@@ -131,7 +119,7 @@ namespace moppe::game {
     // The join names the readings in the order the bundle declares them; a
     // world is finished when every one of them is present.
     m_readings.emplace (
-      spatial::join (std::move (channels),
+      spatial::join (std::move (channel_flux),
                      std::move (moisture),
                      terrain::waterline_proximity (waterline),
                      map::analyze_geology_materials (geometry),
