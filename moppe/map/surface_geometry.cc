@@ -229,12 +229,12 @@ namespace moppe::map {
   }
 
   terrain::TerrainView Surface::terrain_view () const {
-    return terrain::TerrainView ({ .width = m_atlas.domain ().width (),
-                                   .height = m_atlas.domain ().height (),
-                                   .spacing_x = m_atlas.domain ().spacing_x (),
-                                   .spacing_y = m_atlas.domain ().spacing_z (),
-                                   .height_scale = 1.0f * u::m },
-                                 elevations ());
+    return terrain::TerrainView (
+      { .width = m_atlas.domain ().width (),
+        .height = m_atlas.domain ().height (),
+        .spacing_x = m_atlas.domain ().spacing_x (),
+        .spacing_y = m_atlas.domain ().spacing_z () },
+      elevations ());
   }
 
   void Surface::reset_material_history () {

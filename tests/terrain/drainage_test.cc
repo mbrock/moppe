@@ -11,13 +11,12 @@
 using namespace moppe::terrain;
 
 MOPPE_TEST (d8_drainage_routes_to_the_steepest_lower_neighbor) {
-  const std::array heights { 3.0f, 2.0f, 3.0f, 2.0f, 0.0f,
-                             2.0f, 3.0f, 2.0f, 3.0f };
+  const std::array heights { 30.0f, 20.0f, 30.0f, 20.0f, 0.0f,
+                             20.0f, 30.0f, 20.0f, 30.0f };
   const TerrainView terrain ({ .width = 3,
                                .height = 3,
                                .spacing_x = 2.0f * mp_units::si::metre,
-                               .spacing_y = 2.0f * mp_units::si::metre,
-                               .height_scale = 10.0f * mp_units::si::metre },
+                               .spacing_y = 2.0f * mp_units::si::metre },
                              heights);
   const DrainageGraph graph = analyze_drainage (terrain);
 

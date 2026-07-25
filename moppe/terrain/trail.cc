@@ -208,7 +208,7 @@ namespace moppe::terrain {
         std::lerp (heights[static_cast<std::size_t> (y1) * width + x0],
                    heights[static_cast<std::size_t> (y1) * width + x1],
                    tx);
-      return std::lerp (h0, h1, ty) * grid.height_scale_m ();
+      return std::lerp (h0, h1, ty);
     }
 
     struct PlanningGrid {
@@ -228,7 +228,6 @@ namespace moppe::terrain {
       int height;
       float spacing_x;
       float spacing_y;
-      float height_scale;
 
       int wrap_x (int x) const {
         return wrap_index (x, width);
@@ -264,8 +263,7 @@ namespace moppe::terrain {
       }
 
       float elevation (std::size_t node) const {
-        return terrain.at (source_x (x (node)), source_y (y (node))) *
-               height_scale;
+        return terrain.at (source_x (x (node)), source_y (y (node)));
       }
 
       bool wet (std::size_t node) const {
@@ -345,15 +343,14 @@ namespace moppe::terrain {
           return wrap_index (value, source_height);
         };
         float previous_elevation =
-          terrain.at (source_x_at (x0), source_y_at (y0)) * height_scale;
+          terrain.at (source_x_at (x0), source_y_at (y0));
         float maximum_elevation = previous_elevation;
         for (int step = 1; step <= steps; ++step) {
           const float t = static_cast<float> (step) / steps;
           int current_x = x0 + static_cast<int> (std::round (dx * t));
           int current_y = y0 + static_cast<int> (std::round (dy * t));
           const float current_elevation =
-            terrain.at (source_x_at (current_x), source_y_at (current_y)) *
-            height_scale;
+            terrain.at (source_x_at (current_x), source_y_at (current_y));
           maximum_elevation = std::max (maximum_elevation, current_elevation);
           const float run = std::hypot (
             (current_x - previous_x) * terrain.grid ().spacing_x_m (),
@@ -383,7 +380,8 @@ namespace moppe::terrain {
 
     float sea_elevation (const PlanningGrid& grid,
                          const TrailFormation& parameters) {
-      return parameters.sea_level * grid.height_scale;
+      (void)grid;
+      return parameters.sea_level;
     }
 
     float preferred_route_elevation (const PlanningGrid& grid,
@@ -432,8 +430,7 @@ namespace moppe::terrain {
                .width = width,
                .height = height,
                .spacing_x = source_width * source.spacing_x_m () / width,
-               .spacing_y = source_height * source.spacing_y_m () / height,
-               .height_scale = source.height_scale_m () };
+               .spacing_y = source_height * source.spacing_y_m () / height };
     }
 
     TrailAlignment
@@ -1560,7 +1557,6 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.width);
     const int height = static_cast<int> (grid.height);
     const std::size_t count = grid.width * grid.height;
-    const float height_scale = grid.height_scale_m ();
     const float cell_area = square_meters_value (grid.cell_area ());
 
     std::vector<float> original (count);
@@ -1695,7 +1691,7 @@ namespace moppe::terrain {
       if (formation_raster.segment[cell] >= alignment_count ||
           flood.water_depth.values ()[cell] > 1e-7f)
         continue;
-      const float original_m = original[cell] * height_scale;
+      const float original_m = original[cell];
       const std::size_t segment = formation_raster.segment[cell];
       const std::size_t next = (segment + 1) % alignment_count;
       const float centerline_m = std::lerp (
@@ -1715,7 +1711,7 @@ namespace moppe::terrain {
       const double change = shaped_m - original_m;
       if (std::fabs (change) <= 1e-6)
         continue;
-      shaped[cell] = shaped_m / height_scale;
+      shaped[cell] = shaped_m;
       earthwork_delta_m[cell] = static_cast<float> (change);
       ++report.shaped_cells;
       absolute_change += std::fabs (change);
@@ -1737,7 +1733,7 @@ namespace moppe::terrain {
     double grade_distance = 0.0;
     double accumulated_rise = 0.0;
     double maximum_height_above_sea = 0.0;
-    const double sea_m = parameters.sea_level * height_scale;
+    const double sea_m = parameters.sea_level;
     for (std::size_t point = 0; point < alignment_count; ++point) {
       const std::size_t next = (point + 1) % alignment_count;
       const TrailAlignmentPoint next_position =

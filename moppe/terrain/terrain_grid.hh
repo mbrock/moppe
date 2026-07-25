@@ -14,7 +14,6 @@ namespace moppe::terrain {
     std::size_t height;
     meters_t spacing_x = 1.0f * mp_units::si::metre;
     meters_t spacing_y = 1.0f * mp_units::si::metre;
-    meters_t height_scale = 1.0f * mp_units::si::metre;
 
     friend bool operator== (const TerrainGrid&, const TerrainGrid&) = default;
 
@@ -23,9 +22,6 @@ namespace moppe::terrain {
     }
     float spacing_y_m () const {
       return meters_value (spacing_y);
-    }
-    float height_scale_m () const {
-      return meters_value (height_scale);
     }
     square_meters_t cell_area () const {
       return spacing_x * spacing_y;

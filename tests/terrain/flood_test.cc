@@ -91,14 +91,12 @@ MOPPE_TEST (every_spill_receiver_path_reaches_an_outlet) {
 }
 
 MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
-  const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
-                             0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
-                             3.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f };
-  const TerrainView terrain ({ .width = 5,
-                               .height = 5,
-                               .spacing_x = 2.0f * mp_units::si::metre,
-                               .height_scale = 10.0f * mp_units::si::metre },
-                             heights);
+  const std::array heights { 0.f,  0.f, 0.f,  0.f,  0.f,  0.f, 30.f, 20.f, 30.f,
+                             0.f,  0.f, 30.f, 10.f, 30.f, 0.f, 0.f,  30.f, 30.f,
+                             30.f, 0.f, 0.f,  0.f,  0.f,  0.f, 0.f };
+  const TerrainView terrain (
+    { .width = 5, .height = 5, .spacing_x = 2.0f * mp_units::si::metre },
+    heights);
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
@@ -150,21 +148,20 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   const TerrainGrid grid { .width = width,
                            .height = height,
                            .spacing_x = 20.0f * mp_units::si::metre,
-                           .spacing_y = 20.0f * mp_units::si::metre,
-                           .height_scale = 10.0f * mp_units::si::metre };
+                           .spacing_y = 20.0f * mp_units::si::metre };
   std::vector<float> depth (count, 0.0f);
   for (std::size_t x = 2; x <= 9; ++x)
-    depth[2 * width + x] = 0.3f;
+    depth[2 * width + x] = 3.0f;
   for (std::size_t y = 5; y <= 11; ++y)
     for (std::size_t x = 3; x <= 9; ++x)
-      depth[y * width + x] = 0.3f;
+      depth[y * width + x] = 3.0f;
   std::vector<CellIndex> receiver (count, CellIndex { 0 });
   const FloodField flood {
     .source_grid = grid,
     .sea_level = 0.0f,
     .has_ocean = false,
     .water_level = ScalarRaster ({ .width = width, .height = height },
-                                 std::vector<float> (count, 1.0f)),
+                                 std::vector<float> (count, 10.0f)),
     .water_depth = ScalarRaster ({ .width = width, .height = height }, depth),
     .ocean = std::vector<std::uint8_t> (count, 0),
     .spill_receiver = std::move (receiver),
