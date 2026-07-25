@@ -262,6 +262,10 @@ namespace moppe::map {
     const float activity_span =
       std::log (std::max (channel_area_m2 / floor_area_m2, 1.001f));
 
+    // Still an offset walk: the drainage is a bundle over TerrainCellDomain
+    // and the flux is one over TerrainDomain, so the two are related only by
+    // sharing a storage order. Saying this in positions needs a way to map one
+    // domain's sites onto another's, which the spatial layer does not have.
     ChannelFluxMap flux (domain);
     auto& column = spatial::get<channel_flux> (flux);
     for (std::size_t offset = 0; offset < domain.size (); ++offset) {
@@ -301,20 +305,24 @@ namespace moppe::map {
     const float eroded_scale = robust_positive_scale (eroded);
     const float deposited_scale = robust_positive_scale (deposited);
     GeologyMaterials values (geometry.domain ());
-    auto& exposure = spatial::get<erosion_exposure> (values);
-    auto& cover = spatial::get<deposition_cover> (values);
-    for (std::size_t offset = 0; offset < values.size (); ++offset) {
-      exposure[offset] =
-        std::clamp (eroded[offset].numerical_value_in (mp_units::one) /
-                      eroded_scale,
-                    0.0f,
-                    1.0f) *
+    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      const auto ground = geometry[site];
+      const auto reading = values[site];
+      spatial::get<erosion_exposure> (reading) =
+        std::clamp (
+          spatial::get<eroded_surface_material> (ground).numerical_value_in (
+            mp_units::one) /
+            eroded_scale,
+          0.0f,
+          1.0f) *
         erosion_exposure[one];
-      cover[offset] =
-        std::clamp (deposited[offset].numerical_value_in (mp_units::one) /
-                      deposited_scale,
-                    0.0f,
-                    1.0f) *
+      spatial::get<deposition_cover> (reading) =
+        std::clamp (
+          spatial::get<deposited_surface_material> (ground).numerical_value_in (
+            mp_units::one) /
+            deposited_scale,
+          0.0f,
+          1.0f) *
         deposition_cover[one];
     }
     return values;
@@ -382,24 +390,26 @@ namespace moppe::map {
 
     const float shore = meters_value (water_level);
     const float upper = meters_value (tree_line);
-    const auto& elevation = spatial::get<terrain::surface_elevation> (geometry);
-    const auto& normal = spatial::get<terrain::terrain_normal> (geometry);
-    const auto& wetness_column = spatial::get<surface_moisture> (moisture);
     TreeHabitatMap values (geometry.domain ());
-    auto& habitat = spatial::get<tree_habitat> (values);
-    for (std::size_t offset = 0; offset < geometry.size (); ++offset) {
-      const float height = terrain::surface_elevation_value (elevation[offset]);
-      const float up = normal[offset].numerical_value_in (one)[1];
+    for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
+      const auto ground = geometry[site];
+      const float height = terrain::surface_elevation_value (
+        spatial::get<terrain::surface_elevation> (ground));
+      const float up =
+        spatial::get<terrain::terrain_normal> (ground).numerical_value_in (
+          one)[1];
       const float dry_ground = smoothstep (shore + 3.0f, shore + 18.0f, height);
       const float below_tree_line =
         1.0f - smoothstep (upper - 35.0f, upper, height);
       const float stable_soil = smoothstep (0.72f, 0.96f, up);
-      const float wetness = wetness_column[offset].numerical_value_in (one);
+      const float wetness = spatial::get<surface_moisture> (moisture[site])
+                              .numerical_value_in (one);
       const float hydrated = smoothstep (0.10f, 0.42f, wetness);
       const float not_sodden = 1.0f - smoothstep (0.78f, 0.98f, wetness);
       const float water_response = 0.28f + 0.72f * hydrated * not_sodden;
-      habitat[offset] = dry_ground * below_tree_line * stable_soil *
-                        water_response * tree_habitat[one];
+      spatial::get<tree_habitat> (values[site]) = dry_ground * below_tree_line *
+                                                  stable_soil * water_response *
+                                                  tree_habitat[one];
     }
     return values;
   }
@@ -411,31 +421,33 @@ namespace moppe::map {
       throw std::invalid_argument (
         "Trail use does not share the surface domain");
     const terrain::TerrainDomain& domain = habitat.domain ();
-    const auto& habitat_column = spatial::get<tree_habitat> (habitat);
-    const auto& trails = spatial::get<trail_influence> (use);
-    const auto& home_base = spatial::get<home_base_influence> (use);
     ForestCoverMap values (domain);
-    auto& cover = spatial::get<forest_cover> (values);
-    const float width = static_cast<float> (domain.width ());
-    const float height = static_cast<float> (domain.height ());
+    // The mosaic is a periodic field over the torus, so a site's place is
+    // needed as a fraction of the lap rather than as a storage position.
+    const float lap_x = static_cast<float> (domain.width ());
+    const float lap_z = static_cast<float> (domain.height ());
 
-    for (std::size_t offset = 0; offset < domain.size (); ++offset) {
-      const terrain::TerrainIndex index = domain.index (offset);
-      const float u = static_cast<float> (index.column) / width;
-      const float v = static_cast<float> (index.row) / height;
+    for (const terrain::TerrainIndex site : spatial::sites (habitat)) {
+      const float u = static_cast<float> (site.column) / lap_x;
+      const float v = static_cast<float> (site.row) / lap_z;
       const float broad =
         periodic_noise (u * 7.0f, v * 7.0f, 7, 7, seed ^ 0x4b1d9e37U);
       const float local =
         periodic_noise (u * 23.0f, v * 23.0f, 23, 23, seed ^ 0x91e10da5U);
       const float mosaic = 0.72f * broad + 0.28f * local;
       const float recruitment = smoothstep (0.44f, 0.61f, mosaic);
-      const float support =
-        std::pow (habitat_column[offset].numerical_value_in (one), 1.15f);
+      const float support = std::pow (
+        spatial::get<tree_habitat> (habitat[site]).numerical_value_in (one),
+        1.15f);
+      const auto trodden = use[site];
       const float route_clearance =
-        1.0f - 0.96f * trails[offset].numerical_value_in (one);
+        1.0f -
+        0.96f *
+          spatial::get<trail_influence> (trodden).numerical_value_in (one);
       const float settled_clearance =
-        1.0f - home_base[offset].numerical_value_in (one);
-      cover[offset] =
+        1.0f -
+        spatial::get<home_base_influence> (trodden).numerical_value_in (one);
+      spatial::get<forest_cover> (values[site]) =
         std::clamp (support * recruitment * route_clearance * settled_clearance,
                     0.0f,
                     1.0f) *
