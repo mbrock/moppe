@@ -64,6 +64,12 @@ namespace moppe::spatial {
     inline constexpr std::string_view spec_key = "moppe.quantity.spec";
     inline constexpr std::string_view storage_key = "moppe.quantity.storage";
 
+    using Metadata = std::vector<std::pair<std::string, std::string>>;
+
+    // ---- Raw bytes, for domains describing their own identity -------------
+    // A DomainStorage specialization writes whatever fields make up that
+    // domain; these are the primitives it does it with.
+
     template <typename Scalar>
     void write_scalar (std::ostream& out, Scalar value) {
       out.write (reinterpret_cast<const char*> (&value), sizeof (value));
@@ -75,6 +81,8 @@ namespace moppe::spatial {
       return static_cast<bool> (in);
     }
 
+    // ---- Speaking nanoarrow -----------------------------------------------
+
     using nanoarrow::UniqueArray;
     using nanoarrow::UniqueArrayStream;
     using nanoarrow::UniqueArrayView;
@@ -83,6 +91,10 @@ namespace moppe::spatial {
     using nanoarrow::ipc::UniqueInputStream;
     using nanoarrow::ipc::UniqueOutputStream;
     using nanoarrow::ipc::UniqueWriter;
+
+    inline bool ok (ArrowErrorCode status) {
+      return status == NANOARROW_OK;
+    }
 
     inline ArrowStringView arrow_string_view (std::string_view value) {
       return { value.data (), static_cast<std::int64_t> (value.size ()) };
@@ -96,22 +108,17 @@ namespace moppe::spatial {
       return result;
     }
 
-    inline bool set_metadata (
-      ArrowSchema& schema,
-      const std::vector<std::pair<std::string_view, std::string_view>>&
-        entries) {
+    inline bool set_metadata (ArrowSchema& schema, const Metadata& entries) {
       UniqueBuffer metadata;
-      if (ArrowMetadataBuilderInit (metadata.get (), nullptr) != NANOARROW_OK)
+      if (!ok (ArrowMetadataBuilderInit (metadata.get (), nullptr)))
         return false;
       for (const auto& [key, value] : entries)
-        if (ArrowMetadataBuilderAppend (metadata.get (),
-                                        arrow_string_view (key),
-                                        arrow_string_view (value)) !=
-            NANOARROW_OK)
+        if (!ok (ArrowMetadataBuilderAppend (metadata.get (),
+                                             arrow_string_view (key),
+                                             arrow_string_view (value))))
           return false;
-      return ArrowSchemaSetMetadata (
-               &schema, reinterpret_cast<const char*> (metadata->data)) ==
-             NANOARROW_OK;
+      return ok (ArrowSchemaSetMetadata (
+        &schema, reinterpret_cast<const char*> (metadata->data)));
     }
 
     inline std::optional<std::string_view>
@@ -120,12 +127,59 @@ namespace moppe::spatial {
           !ArrowMetadataHasKey (schema.metadata, arrow_string_view (key)))
         return std::nullopt;
       ArrowStringView value {};
-      if (ArrowMetadataGetValue (
-            schema.metadata, arrow_string_view (key), &value) != NANOARROW_OK)
+      if (!ok (ArrowMetadataGetValue (
+            schema.metadata, arrow_string_view (key), &value)))
         return std::nullopt;
       return std::string_view (value.data,
                                static_cast<std::size_t> (value.size_bytes));
     }
+
+    inline bool metadata_matches (const ArrowSchema& schema,
+                                  const Metadata& expected) {
+      for (const auto& [key, value] : expected)
+        if (metadata_value (schema, key) != value)
+          return false;
+      return true;
+    }
+
+    // ---- Quantities and their representations -----------------------------
+
+    template <typename Value>
+    using value_rep = typename Value::rep;
+
+    template <typename Value>
+    constexpr const value_rep<Value>& representation (const Value& value) {
+      if constexpr (mp_units::QuantityPoint<Value>)
+        return value.quantity_ref_from (Value::point_origin)
+          .numerical_value_ref_in (Value::unit);
+      else
+        return value.numerical_value_ref_in (Value::unit);
+    }
+
+    template <typename Value>
+    Value value_from_representation (value_rep<Value> representation) {
+      if constexpr (mp_units::QuantityPoint<Value>) {
+        typename Value::quantity_type quantity (std::move (representation),
+                                                Value::reference);
+        return Value (std::move (quantity), Value::point_origin);
+      } else {
+        return Value (std::move (representation), Value::reference);
+      }
+    }
+
+    template <typename Value>
+    std::string quantity_spec_name () {
+      using quantity_spec =
+        std::remove_cvref_t<decltype (Value::quantity_spec)>;
+      return std::string (mp_units::detail::type_name<quantity_spec> ());
+    }
+
+    template <typename Value>
+    std::string quantity_kind () {
+      return mp_units::QuantityPoint<Value> ? "point" : "quantity";
+    }
+
+    // ---- Arrow's numeric leaves -------------------------------------------
 
     template <typename Rep>
     concept ArrowScalar =
@@ -165,98 +219,190 @@ namespace moppe::spatial {
         return NANOARROW_TYPE_UINT64;
     }
 
-    template <typename Value>
-    using value_rep = typename Value::rep;
-
-    template <typename Value>
-    constexpr const value_rep<Value>& representation (const Value& value) {
-      if constexpr (mp_units::QuantityPoint<Value>)
-        return value.quantity_ref_from (Value::point_origin)
-          .numerical_value_ref_in (Value::unit);
+    template <ArrowScalar Scalar>
+    bool append_scalar (ArrowArray& array, Scalar value) {
+      if constexpr (std::same_as<Scalar, float> || std::same_as<Scalar, double>)
+        return ok (ArrowArrayAppendDouble (&array, value));
+      else if constexpr (std::is_signed_v<Scalar>)
+        return ok (ArrowArrayAppendInt (&array, value));
       else
-        return value.numerical_value_ref_in (Value::unit);
+        return ok (ArrowArrayAppendUInt (&array, value));
     }
 
-    template <typename Value>
-    Value value_from_representation (value_rep<Value> representation) {
-      if constexpr (mp_units::QuantityPoint<Value>) {
-        typename Value::quantity_type quantity (std::move (representation),
-                                                Value::reference);
-        return Value (std::move (quantity), Value::point_origin);
-      } else {
-        return Value (std::move (representation), Value::reference);
-      }
-    }
-
-    template <typename Value>
-    std::string quantity_spec_name () {
-      using quantity_spec =
-        std::remove_cvref_t<decltype (Value::quantity_spec)>;
-      return std::string (mp_units::detail::type_name<quantity_spec> ());
-    }
-
-    template <typename Value>
-    std::string quantity_kind () {
-      return mp_units::QuantityPoint<Value> ? "point" : "quantity";
-    }
-
-    template <typename Value>
-    std::string storage_name () {
-      using Rep = value_rep<Value>;
-      if constexpr (ArrowScalar<Rep>)
-        return "scalar";
-      else if constexpr (ArrowVector<Rep>)
-        return std::format ("vector[{}]",
-                            static_cast<std::size_t> (Rep::extent));
+    template <ArrowScalar Scalar>
+    Scalar scalar_at (const ArrowArrayView& view, std::int64_t index) {
+      if constexpr (std::same_as<Scalar, float> || std::same_as<Scalar, double>)
+        return static_cast<Scalar> (
+          ArrowArrayViewGetDoubleUnsafe (&view, index));
+      else if constexpr (std::is_signed_v<Scalar>)
+        return static_cast<Scalar> (ArrowArrayViewGetIntUnsafe (&view, index));
       else
+        return static_cast<Scalar> (ArrowArrayViewGetUIntUnsafe (&view, index));
+    }
+
+    // ---- One column, one encoding -----------------------------------------
+    // How a quantity's representation becomes an Arrow column: each encoding
+    // names itself, describes its own field, and carries values in both
+    // directions. A representation Arrow has no better shape for travels as
+    // its own bytes, which is what the primary template does.
+
+    template <typename Value, typename Rep = value_rep<Value>>
+    struct ColumnEncoding {
+      static std::string name () {
         return std::format ("opaque[{}]", sizeof (Value));
+      }
+
+      static bool configure (ArrowSchema& schema) {
+        return ok (ArrowSchemaSetTypeFixedSize (
+          &schema,
+          NANOARROW_TYPE_FIXED_SIZE_BINARY,
+          static_cast<std::int32_t> (sizeof (Value))));
+      }
+
+      static bool append (ArrowArray& array, const Value& value) {
+        return ok (ArrowArrayAppendBytes (
+          &array, arrow_buffer_view (&value, sizeof (Value))));
+      }
+
+      static bool
+      read (const ArrowArrayView& view, std::int64_t row, Value& value) {
+        const ArrowBufferView bytes = ArrowArrayViewGetBytesUnsafe (&view, row);
+        if (bytes.size_bytes != sizeof (Value))
+          return false;
+        std::memcpy (&value, bytes.data.data, sizeof (Value));
+        return true;
+      }
+    };
+
+    template <typename Value, ArrowScalar Rep>
+    struct ColumnEncoding<Value, Rep> {
+      static std::string name () {
+        return "scalar";
+      }
+
+      static bool configure (ArrowSchema& schema) {
+        return ok (ArrowSchemaSetType (&schema, arrow_scalar_type<Rep> ()));
+      }
+
+      static bool append (ArrowArray& array, const Value& value) {
+        return append_scalar (array, representation (value));
+      }
+
+      static bool
+      read (const ArrowArrayView& view, std::int64_t row, Value& value) {
+        value = value_from_representation<Value> (scalar_at<Rep> (view, row));
+        return true;
+      }
+    };
+
+    template <typename Value, ArrowVector Rep>
+    struct ColumnEncoding<Value, Rep> {
+      using Component = typename Rep::value_type;
+      static constexpr std::size_t extent = Rep::extent;
+
+      static std::string name () {
+        return std::format ("vector[{}]", extent);
+      }
+
+      static bool configure (ArrowSchema& schema) {
+        return ok (ArrowSchemaSetTypeFixedSize (
+                 &schema,
+                 NANOARROW_TYPE_FIXED_SIZE_LIST,
+                 static_cast<std::int32_t> (extent))) &&
+               ok (ArrowSchemaSetType (schema.children[0],
+                                       arrow_scalar_type<Component> ()));
+      }
+
+      static bool append (ArrowArray& array, const Value& value) {
+        const Rep& components = representation (value);
+        for (std::size_t component = 0; component < extent; ++component)
+          if (!append_scalar (*array.children[0], components[component]))
+            return false;
+        return ok (ArrowArrayFinishElement (&array));
+      }
+
+      static bool
+      read (const ArrowArrayView& view, std::int64_t row, Value& value) {
+        Rep components {};
+        for (std::size_t component = 0; component < extent; ++component) {
+          const std::int64_t index = row * static_cast<std::int64_t> (extent) +
+                                     static_cast<std::int64_t> (component);
+          if (ArrowArrayViewIsNull (view.children[0], index))
+            return false;
+          components[component] =
+            scalar_at<Component> (*view.children[0], index);
+        }
+        value = value_from_representation<Value> (std::move (components));
+        return true;
+      }
+    };
+
+    template <typename Value>
+    Metadata column_metadata () {
+      return { { std::string (kind_key), quantity_kind<Value> () },
+               { std::string (unit_key), std::format ("{:P}", Value::unit) },
+               { std::string (dimension_key),
+                 std::format ("{:P}", Value::dimension) },
+               { std::string (spec_key), quantity_spec_name<Value> () },
+               { std::string (storage_key), ColumnEncoding<Value>::name () } };
     }
 
     template <typename Value>
     bool configure_column_schema (ArrowSchema& schema) {
-      using Rep = value_rep<Value>;
-      ArrowErrorCode status = NANOARROW_OK;
-      if constexpr (ArrowScalar<Rep>) {
-        status = ArrowSchemaSetType (&schema, arrow_scalar_type<Rep> ());
-      } else if constexpr (ArrowVector<Rep>) {
-        status =
-          ArrowSchemaSetTypeFixedSize (&schema,
-                                       NANOARROW_TYPE_FIXED_SIZE_LIST,
-                                       static_cast<std::int32_t> (Rep::extent));
-        if (status == NANOARROW_OK)
-          status = ArrowSchemaSetType (
-            schema.children[0], arrow_scalar_type<typename Rep::value_type> ());
-      } else {
-        status = ArrowSchemaSetTypeFixedSize (
-          &schema,
-          NANOARROW_TYPE_FIXED_SIZE_BINARY,
-          static_cast<std::int32_t> (sizeof (Value)));
-      }
-      if (status != NANOARROW_OK)
-        return false;
-
       const std::string spec = quantity_spec_name<Value> ();
-      if (ArrowSchemaSetName (&schema, spec.c_str ()) != NANOARROW_OK)
+      return ColumnEncoding<Value>::configure (schema) &&
+             ok (ArrowSchemaSetName (&schema, spec.c_str ())) &&
+             set_metadata (schema, column_metadata<Value> ());
+    }
+
+    inline bool schema_shape_matches (const ArrowSchema& actual,
+                                      const ArrowSchema& expected) {
+      if (!actual.format || !expected.format ||
+          std::string_view (actual.format) != expected.format ||
+          actual.flags != expected.flags ||
+          actual.n_children != expected.n_children)
         return false;
-
-      const std::string kind = quantity_kind<Value> ();
-      const std::string unit = std::format ("{:P}", Value::unit);
-      const std::string dimension = std::format ("{:P}", Value::dimension);
-      const std::string storage = storage_name<Value> ();
-      return set_metadata (schema,
-                           { { kind_key, kind },
-                             { unit_key, unit },
-                             { dimension_key, dimension },
-                             { spec_key, spec },
-                             { storage_key, storage } });
+      if ((actual.name || expected.name) &&
+          (!actual.name || !expected.name ||
+           std::string_view (actual.name) != expected.name))
+        return false;
+      for (std::int64_t child = 0; child < actual.n_children; ++child)
+        if (!schema_shape_matches (*actual.children[child],
+                                   *expected.children[child]))
+          return false;
+      return true;
     }
 
-    template <typename Domain>
-    std::string domain_description (const Domain& domain) {
-      std::ostringstream out (std::ios::binary);
-      DomainStorage<Domain>::write (out, domain);
-      return std::move (out).str ();
+    // A stored column belongs to this quantity when it has the field this
+    // quantity would write, down to its units.
+    template <typename Value>
+    bool column_schema_matches (const ArrowSchema& actual) {
+      UniqueSchema expected;
+      ArrowSchemaInit (expected.get ());
+      return configure_column_schema<Value> (*expected.get ()) &&
+             schema_shape_matches (actual, *expected.get ()) &&
+             metadata_matches (actual, column_metadata<Value> ());
     }
+
+    template <typename Value>
+    bool
+    read_value (const ArrowArrayView& view, std::int64_t row, Value& value) {
+      return !ArrowArrayViewIsNull (&view, row) &&
+             ColumnEncoding<Value>::read (view, row, value);
+    }
+
+    // Fold a check over the columns of a bundle, handing each one its value
+    // type and position. Stops at the first column that says no.
+    template <typename... Values, typename Check>
+    bool every_column (Check&& check) {
+      return [&]<std::size_t... Column> (std::index_sequence<Column...>) {
+        return (check.template operator()<Values, Column> () && ...);
+      }(std::index_sequence_for<Values...> {});
+    }
+
+    // ---- Domain identity ---------------------------------------------------
+    // The domain writes opaque bytes only it can interpret; hex keeps schema
+    // metadata printable for generic Arrow tooling.
 
     inline std::string hex_encode (std::string_view bytes) {
       constexpr std::string_view digits = "0123456789abcdef";
@@ -298,157 +444,19 @@ namespace moppe::spatial {
       return std::string (mp_units::detail::type_name<Domain> ());
     }
 
-    template <typename Domain, typename... Quantities>
-    bool configure_bundle_schema (ArrowSchema& schema,
-                                  const Bundle<Domain, Quantities...>& bundle) {
-      ArrowSchemaInit (&schema);
-      if (ArrowSchemaSetTypeStruct (
-            &schema, static_cast<std::int64_t> (sizeof...(Quantities))) !=
-          NANOARROW_OK)
-        return false;
-
-      bool columns_configured = true;
-      [&]<std::size_t... Column> (std::index_sequence<Column...>) {
-        columns_configured =
-          (configure_column_schema<Quantities> (*schema.children[Column]) &&
-           ...);
-      }(std::index_sequence_for<Quantities...> {});
-      if (!columns_configured)
-        return false;
-
-      const std::string domain =
-        hex_encode (domain_description (bundle.domain ()));
-      const std::string domain_type = domain_type_name<Domain> ();
-      return set_metadata (schema,
-                           { { version_key, bundle_version },
-                             { domain_type_key, domain_type },
-                             { domain_key, domain } });
+    template <typename Domain>
+    std::string domain_description (const Domain& domain) {
+      std::ostringstream out (std::ios::binary);
+      DomainStorage<Domain>::write (out, domain);
+      return std::move (out).str ();
     }
 
-    template <ArrowScalar Scalar>
-    bool append_scalar (ArrowArray& array, Scalar value) {
-      if constexpr (std::same_as<Scalar, float> || std::same_as<Scalar, double>)
-        return ArrowArrayAppendDouble (&array, value) == NANOARROW_OK;
-      else if constexpr (std::is_signed_v<Scalar>)
-        return ArrowArrayAppendInt (&array, value) == NANOARROW_OK;
-      else
-        return ArrowArrayAppendUInt (&array, value) == NANOARROW_OK;
-    }
-
-    template <typename Value>
-    bool append_value (ArrowArray& array, const Value& value) {
-      using Rep = value_rep<Value>;
-      if constexpr (ArrowScalar<Rep>) {
-        return append_scalar (array, representation (value));
-      } else if constexpr (ArrowVector<Rep>) {
-        const Rep& vector = representation (value);
-        for (std::size_t component = 0; component < Rep::extent; ++component)
-          if (!append_scalar (*array.children[0], vector[component]))
-            return false;
-        return ArrowArrayFinishElement (&array) == NANOARROW_OK;
-      } else {
-        return ArrowArrayAppendBytes (
-                 &array, arrow_buffer_view (&value, sizeof (Value))) ==
-               NANOARROW_OK;
-      }
-    }
-
-    template <typename Domain, typename... Quantities>
-    bool build_bundle_array (ArrowArray& array,
-                             const Bundle<Domain, Quantities...>& bundle,
-                             ArrowError& error) {
-      for (std::size_t row = 0; row < bundle.size (); ++row) {
-        bool values_appended = true;
-        [&]<std::size_t... Column> (std::index_sequence<Column...>) {
-          values_appended = (append_value (*array.children[Column],
-                                           get<Column> (bundle)[row]) &&
-                             ...);
-        }(std::index_sequence_for<Quantities...> {});
-        if (!values_appended ||
-            ArrowArrayFinishElement (&array) != NANOARROW_OK)
-          return false;
-      }
-      return ArrowArrayFinishBuilding (
-               &array, NANOARROW_VALIDATION_LEVEL_FULL, &error) == NANOARROW_OK;
-    }
-
-    inline bool schema_shape_matches (const ArrowSchema& actual,
-                                      const ArrowSchema& expected) {
-      if (!actual.format || !expected.format ||
-          std::string_view (actual.format) != expected.format ||
-          actual.flags != expected.flags ||
-          actual.n_children != expected.n_children)
-        return false;
-      if ((actual.name || expected.name) &&
-          (!actual.name || !expected.name ||
-           std::string_view (actual.name) != expected.name))
-        return false;
-      for (std::int64_t child = 0; child < actual.n_children; ++child)
-        if (!schema_shape_matches (*actual.children[child],
-                                   *expected.children[child]))
-          return false;
-      return true;
-    }
-
-    template <typename Value>
-    bool column_schema_matches (const ArrowSchema& actual) {
-      UniqueSchema expected;
-      ArrowSchemaInit (expected.get ());
-      if (!configure_column_schema<Value> (*expected.get ()) ||
-          !schema_shape_matches (actual, *expected.get ()))
-        return false;
-
-      const std::string kind = quantity_kind<Value> ();
-      const std::string unit = std::format ("{:P}", Value::unit);
-      const std::string dimension = std::format ("{:P}", Value::dimension);
-      const std::string spec = quantity_spec_name<Value> ();
-      const std::string storage = storage_name<Value> ();
-      return metadata_value (actual, kind_key) == kind &&
-             metadata_value (actual, unit_key) == unit &&
-             metadata_value (actual, dimension_key) == dimension &&
-             metadata_value (actual, spec_key) == spec &&
-             metadata_value (actual, storage_key) == storage;
-    }
-
-    template <ArrowScalar Scalar>
-    Scalar read_scalar (const ArrowArrayView& view, std::int64_t index) {
-      if constexpr (std::same_as<Scalar, float> || std::same_as<Scalar, double>)
-        return static_cast<Scalar> (
-          ArrowArrayViewGetDoubleUnsafe (&view, index));
-      else if constexpr (std::is_signed_v<Scalar>)
-        return static_cast<Scalar> (ArrowArrayViewGetIntUnsafe (&view, index));
-      else
-        return static_cast<Scalar> (ArrowArrayViewGetUIntUnsafe (&view, index));
-    }
-
-    template <typename Value>
-    bool
-    read_value (const ArrowArrayView& view, std::int64_t row, Value& value) {
-      if (ArrowArrayViewIsNull (&view, row))
-        return false;
-
-      using Rep = value_rep<Value>;
-      if constexpr (ArrowScalar<Rep>) {
-        value = value_from_representation<Value> (read_scalar<Rep> (view, row));
-      } else if constexpr (ArrowVector<Rep>) {
-        Rep representation {};
-        for (std::size_t component = 0; component < Rep::extent; ++component) {
-          const std::int64_t index =
-            row * static_cast<std::int64_t> (Rep::extent) +
-            static_cast<std::int64_t> (component);
-          if (ArrowArrayViewIsNull (view.children[0], index))
-            return false;
-          representation[component] =
-            read_scalar<typename Rep::value_type> (*view.children[0], index);
-        }
-        value = value_from_representation<Value> (std::move (representation));
-      } else {
-        const ArrowBufferView bytes = ArrowArrayViewGetBytesUnsafe (&view, row);
-        if (bytes.size_bytes != sizeof (Value))
-          return false;
-        std::memcpy (&value, bytes.data.data, sizeof (Value));
-      }
-      return true;
+    template <typename Domain>
+    Metadata bundle_metadata (const Domain& domain) {
+      return { { std::string (version_key), std::string (bundle_version) },
+               { std::string (domain_type_key), domain_type_name<Domain> () },
+               { std::string (domain_key),
+                 hex_encode (domain_description (domain)) } };
     }
 
     template <typename Domain>
@@ -464,11 +472,79 @@ namespace moppe::spatial {
       const std::optional decoded = hex_decode (*description);
       if (!decoded)
         return std::nullopt;
+
       std::istringstream in (*decoded, std::ios::in | std::ios::binary);
       std::optional<Domain> domain = DomainStorage<Domain>::read (in);
       if (!domain || in.peek () != std::char_traits<char>::eof ())
         return std::nullopt;
       return domain;
+    }
+
+    // ---- One bundle, one record batch --------------------------------------
+
+    template <typename Domain, typename... Quantities>
+    bool configure_bundle_schema (ArrowSchema& schema,
+                                  const Bundle<Domain, Quantities...>& bundle) {
+      ArrowSchemaInit (&schema);
+      return ok (ArrowSchemaSetTypeStruct (
+               &schema, static_cast<std::int64_t> (sizeof...(Quantities)))) &&
+             every_column<Quantities...> (
+               [&]<typename Value, std::size_t Column> () {
+                 return configure_column_schema<Value> (
+                   *schema.children[Column]);
+               }) &&
+             set_metadata (schema, bundle_metadata (bundle.domain ()));
+    }
+
+    template <typename Domain, typename... Quantities>
+    bool build_bundle_array (ArrowArray& array,
+                             const Bundle<Domain, Quantities...>& bundle,
+                             ArrowError& error) {
+      for (std::size_t row = 0; row < bundle.size (); ++row) {
+        const bool appended = every_column<Quantities...> (
+          [&]<typename Value, std::size_t Column> () {
+            return ColumnEncoding<Value>::append (*array.children[Column],
+                                                  get<Column> (bundle)[row]);
+          });
+        if (!appended || !ok (ArrowArrayFinishElement (&array)))
+          return false;
+      }
+      return ok (ArrowArrayFinishBuilding (
+        &array, NANOARROW_VALIDATION_LEVEL_FULL, &error));
+    }
+
+    // The IPC writer borrows the encoded buffer, which therefore belongs to
+    // the caller and outlives this call.
+    template <typename Domain, typename... Quantities>
+    bool encode_bundle (UniqueBuffer& encoded,
+                        const Bundle<Domain, Quantities...>& bundle) {
+      ArrowError error;
+      ArrowErrorInit (&error);
+
+      UniqueSchema schema;
+      UniqueArray array;
+      UniqueArrayView view;
+      if (!configure_bundle_schema (*schema.get (), bundle) ||
+          !ok (
+            ArrowArrayInitFromSchema (array.get (), schema.get (), &error)) ||
+          !build_bundle_array (*array.get (), bundle, error) ||
+          !ok (ArrowArrayViewInitFromSchema (
+            view.get (), schema.get (), &error)) ||
+          !ok (ArrowArrayViewSetArray (view.get (), array.get (), &error)))
+        return false;
+
+      UniqueOutputStream output;
+      UniqueWriter writer;
+      if (!ok (
+            ArrowIpcOutputStreamInitBuffer (output.get (), encoded.get ())) ||
+          !ok (ArrowIpcWriterInit (writer.get (), output.get ())))
+        return false;
+
+      return ok (ArrowIpcWriterWriteSchema (
+               writer.get (), schema.get (), &error)) &&
+             ok (ArrowIpcWriterWriteArrayView (
+               writer.get (), view.get (), &error)) &&
+             ok (ArrowIpcWriterWriteArrayView (writer.get (), nullptr, &error));
     }
 
     inline bool read_ipc_stream (std::istream& in, UniqueArrayStream& stream) {
@@ -478,18 +554,38 @@ namespace moppe::spatial {
         return false;
 
       UniqueBuffer input;
-      if (ArrowBufferAppend (input.get (), bytes.data (), bytes.size ()) !=
-          NANOARROW_OK)
+      if (!ok (ArrowBufferAppend (input.get (), bytes.data (), bytes.size ())))
         return false;
 
       UniqueInputStream ipc_input;
-      if (ArrowIpcInputStreamInitBuffer (ipc_input.get (), input.get ()) !=
-          NANOARROW_OK)
+      return ok (ArrowIpcInputStreamInitBuffer (ipc_input.get (),
+                                                input.get ())) &&
+             ok (ArrowIpcArrayStreamReaderInit (
+               stream.get (), ipc_input.get (), nullptr));
+    }
+
+    // A bundle is exactly one record batch, so a second one means this file
+    // is telling some other story.
+    inline bool read_only_batch (ArrowArrayStream& stream,
+                                 UniqueArray& array,
+                                 ArrowError& error) {
+      if (!ok (ArrowArrayStreamGetNext (&stream, array.get (), &error)) ||
+          !array->release)
         return false;
-      if (ArrowIpcArrayStreamReaderInit (
-            stream.get (), ipc_input.get (), nullptr) != NANOARROW_OK)
-        return false;
-      return true;
+
+      UniqueArray end;
+      return ok (ArrowArrayStreamGetNext (&stream, end.get (), &error)) &&
+             !end->release;
+    }
+
+    inline bool view_batch (UniqueArrayView& view,
+                            ArrowSchema& schema,
+                            ArrowArray& array,
+                            ArrowError& error) {
+      return ok (ArrowArrayViewInitFromSchema (view.get (), &schema, &error)) &&
+             ok (ArrowArrayViewSetArray (view.get (), &array, &error)) &&
+             ok (ArrowArrayViewValidate (
+               view.get (), NANOARROW_VALIDATION_LEVEL_FULL, &error));
     }
   }
 
@@ -497,53 +593,11 @@ namespace moppe::spatial {
     requires StorableDomain<Domain> && (StorableValue<Quantities> && ...)
   void write_bundle (std::ostream& out,
                      const Bundle<Domain, Quantities...>& bundle) {
-    detail::UniqueSchema schema;
-    if (!detail::configure_bundle_schema (*schema.get (), bundle)) {
-      out.setstate (std::ios::failbit);
-      return;
-    }
-
-    ArrowError error;
-    ArrowErrorInit (&error);
-    detail::UniqueArray array;
-    if (ArrowArrayInitFromSchema (array.get (), schema.get (), &error) !=
-          NANOARROW_OK ||
-        !detail::build_bundle_array (*array.get (), bundle, error)) {
-      out.setstate (std::ios::failbit);
-      return;
-    }
-
-    detail::UniqueArrayView array_view;
-    if (ArrowArrayViewInitFromSchema (
-          array_view.get (), schema.get (), &error) != NANOARROW_OK) {
-      out.setstate (std::ios::failbit);
-      return;
-    }
-    if (ArrowArrayViewSetArray (array_view.get (), array.get (), &error) !=
-        NANOARROW_OK) {
-      out.setstate (std::ios::failbit);
-      return;
-    }
-
     detail::UniqueBuffer encoded;
-    detail::UniqueOutputStream output;
-    detail::UniqueWriter writer;
-    if (ArrowIpcOutputStreamInitBuffer (output.get (), encoded.get ()) !=
-          NANOARROW_OK ||
-        ArrowIpcWriterInit (writer.get (), output.get ()) != NANOARROW_OK) {
+    if (!detail::encode_bundle (encoded, bundle)) {
       out.setstate (std::ios::failbit);
       return;
     }
-    if (ArrowIpcWriterWriteSchema (writer.get (), schema.get (), &error) !=
-          NANOARROW_OK ||
-        ArrowIpcWriterWriteArrayView (
-          writer.get (), array_view.get (), &error) != NANOARROW_OK ||
-        ArrowIpcWriterWriteArrayView (writer.get (), nullptr, &error) !=
-          NANOARROW_OK) {
-      out.setstate (std::ios::failbit);
-      return;
-    }
-
     out.write (reinterpret_cast<const char*> (encoded->data),
                static_cast<std::streamsize> (encoded->size_bytes));
   }
@@ -564,18 +618,9 @@ namespace moppe::spatial {
       ArrowError error;
       ArrowErrorInit (&error);
       detail::UniqueSchema schema;
-      if (ArrowArrayStreamGetSchema (stream.get (), schema.get (), &error) !=
-            NANOARROW_OK ||
-          schema->n_children != sizeof...(Quantities))
-        return std::nullopt;
-
-      const bool columns_match =
-        [&]<std::size_t... Column> (std::index_sequence<Column...>) {
-          return (detail::column_schema_matches<Quantities> (
-                    *schema->children[Column]) &&
-                  ...);
-        }(std::index_sequence_for<Quantities...> {});
-      if (!columns_match)
+      if (!detail::ok (
+            ArrowArrayStreamGetSchema (stream.get (), schema.get (), &error)) ||
+          !columns_match (*schema.get ()))
         return std::nullopt;
 
       std::optional<Domain> domain =
@@ -584,44 +629,41 @@ namespace moppe::spatial {
         return std::nullopt;
 
       detail::UniqueArray array;
-      if (ArrowArrayStreamGetNext (stream.get (), array.get (), &error) !=
-            NANOARROW_OK ||
-          !array->release ||
-          array->length != static_cast<std::int64_t> (domain->size ()))
-        return std::nullopt;
-
-      detail::UniqueArray end;
-      if (ArrowArrayStreamGetNext (stream.get (), end.get (), &error) !=
-            NANOARROW_OK ||
-          end->release)
-        return std::nullopt;
-
       detail::UniqueArrayView view;
-      if (ArrowArrayViewInitFromSchema (view.get (), schema.get (), &error) !=
-          NANOARROW_OK)
-        return std::nullopt;
-      if (ArrowArrayViewSetArray (view.get (), array.get (), &error) !=
-            NANOARROW_OK ||
-          ArrowArrayViewValidate (view.get (),
-                                  NANOARROW_VALIDATION_LEVEL_FULL,
-                                  &error) != NANOARROW_OK)
+      if (!detail::read_only_batch (*stream.get (), array, error) ||
+          array->length != static_cast<std::int64_t> (domain->size ()) ||
+          !detail::view_batch (view, *schema.get (), *array.get (), error))
         return std::nullopt;
 
       bundle_type bundle (std::move (*domain));
-      for (std::int64_t row = 0; row < array->length; ++row) {
-        bool values_read = true;
-        [&]<std::size_t... Column> (std::index_sequence<Column...>) {
-          values_read =
-            (detail::read_value (
-               *view->children[Column],
-               row,
-               get<Column> (bundle)[static_cast<std::size_t> (row)]) &&
-             ...);
-        }(std::index_sequence_for<Quantities...> {});
-        if (!values_read)
-          return std::nullopt;
-      }
+      if (!fill_rows (bundle, *view.get ()))
+        return std::nullopt;
       return bundle;
+    }
+
+  private:
+    static bool columns_match (const ArrowSchema& schema) {
+      return schema.n_children ==
+               static_cast<std::int64_t> (sizeof...(Quantities)) &&
+             detail::every_column<Quantities...> (
+               [&]<typename Value, std::size_t Column> () {
+                 return detail::column_schema_matches<Value> (
+                   *schema.children[Column]);
+               });
+    }
+
+    static bool fill_rows (bundle_type& bundle, const ArrowArrayView& view) {
+      for (std::size_t row = 0; row < bundle.size (); ++row) {
+        const bool values_read = detail::every_column<Quantities...> (
+          [&]<typename Value, std::size_t Column> () {
+            return detail::read_value (*view.children[Column],
+                                       static_cast<std::int64_t> (row),
+                                       get<Column> (bundle)[row]);
+          });
+        if (!values_read)
+          return false;
+      }
+      return true;
     }
   };
 
