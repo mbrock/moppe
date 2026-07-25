@@ -26,6 +26,36 @@ namespace {
             (0.25f + 0.01f * static_cast<float> ((x + y) % 7)) * 650.0f *
             mp_units::si::metre));
   }
+
+  // The build order the loading worker runs: evolve a surface, analyze its
+  // water, then assemble the world from finished parts.
+  std::unique_ptr<moppe::game::GeneratedWorld>
+  build_test_world (const moppe::terrain::WorldRecipe& recipe,
+                    const moppe::game::WorldParams& params,
+                    const moppe::game::HydrologyProgress& progress = {}) {
+    using namespace moppe;
+    map::Surface surface (recipe.resolution (),
+                          recipe.resolution (),
+                          extent_value (recipe.extent ()));
+    fill_test_terrain (surface);
+    surface.rebuild_geometry ();
+
+    game::Hydrology hydrology =
+      game::analyze_hydrology (surface.geometry (), recipe, progress);
+    terrain::TrailNetwork trails {
+      .domain = surface.domain (),
+      .use = terrain::TrailUseMap (surface.domain ()),
+    };
+    auto [water, readings] = game::analyze_surface (
+      surface.geometry (), recipe, hydrology, trails.use);
+    return std::make_unique<game::GeneratedWorld> (params,
+                                                   recipe,
+                                                   std::move (surface),
+                                                   std::move (hydrology),
+                                                   std::move (water),
+                                                   std::move (trails),
+                                                   std::move (readings));
+  }
 }
 
 MOPPE_TEST (generated_world_owns_a_complete_named_world) {
@@ -40,35 +70,25 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   params.water_level = 50.0f * u::m;
   const WorldRecipe recipe = test_world_recipe (extent, 17, Seed { 42 });
 
-  game::GeneratedWorld world (params, recipe);
-  fill_test_terrain (world.surface ());
-  world.rebuild_surface ();
-
-  std::vector<game::GeneratedWorld::HydrologyStage> stages;
-  world.analyze_hydrology (
-    [&stages] (game::GeneratedWorld::HydrologyStage stage) {
+  std::vector<game::HydrologyStage> stages;
+  const std::unique_ptr<game::GeneratedWorld> world =
+    build_test_world (recipe, params, [&stages] (game::HydrologyStage stage) {
       stages.push_back (stage);
     });
-  TrailNetwork trails {
-    .domain = world.surface ().domain (),
-    .use = TrailUseMap (world.surface ().domain ()),
-  };
-  world.derive_surface_readings (std::move (trails));
 
-  MOPPE_CHECK (world.recipe ().seed () == Seed { 42 });
-  MOPPE_CHECK (world.params ().water_level == 50.0f * u::m);
-  MOPPE_CHECK (world.surface ().domain ().width () == 17);
+  MOPPE_CHECK (world->recipe ().seed () == Seed { 42 });
+  MOPPE_CHECK (world->params ().water_level == 50.0f * u::m);
+  MOPPE_CHECK (world->surface ().domain ().width () == 17);
   MOPPE_CHECK (stages.size () == 5);
-  MOPPE_CHECK (world.hydrology ().has_value ());
   const auto& [standing_water, lakes, drainage, channels, rivers] =
-    *world.hydrology ();
+    world->hydrology ();
   MOPPE_CHECK (standing_water.width () == 17);
   MOPPE_CHECK (lakes.body.size () == 17 * 17);
   MOPPE_CHECK (drainage.receiver.size () == 17 * 17);
   MOPPE_CHECK (channels.domain ().size () == 17 * 17);
-  MOPPE_CHECK (world.water_surface ().has_value ());
-  MOPPE_CHECK (world.readings ().has_value ());
-  MOPPE_CHECK (world.trails ().has_value ());
+  MOPPE_CHECK (world->water_surface ().size () == 17 * 17);
+  MOPPE_CHECK (world->readings ().size () == 17 * 17);
+  MOPPE_CHECK (world->trails ().domain == world->surface ().domain ());
 }
 
 MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
@@ -84,8 +104,8 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   params.map_size = extent;
   params.resolution = 17;
   params.water_level = 50.0f * u::m;
-  auto completed = std::make_unique<game::GeneratedWorld> (
-    params, test_world_recipe (extent, 17, Seed { 72 }));
+  auto completed =
+    build_test_world (test_world_recipe (extent, 17, Seed { 72 }), params);
   const game::GeneratedWorld* address = completed.get ();
 
   std::unique_ptr<game::GeneratedWorld> active = std::move (completed);

@@ -75,13 +75,10 @@ namespace moppe {
     class MoppeGame : public platform::Game {
     public:
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
-          : m_generated_world (std::make_unique<GeneratedWorld> (
-              options.world, std::move (recipe))),
-            m_session (
-              std::make_unique<GameSession> (this->world (), this->surface ())),
-            m_loading (this->recipe ()), m_graphics (options.graphics),
-            m_spawn_position (
-              position_value (this->world ().spawn_position ())),
+          : m_params (bind_world_params (options.world, recipe)),
+            m_recipe (std::move (recipe)), m_loading (this->recipe ()),
+            m_graphics (options.graphics), m_spawn_position (position_value (
+                                             this->world ().spawn_position ())),
             m_renderer (0), m_tree_demo (options.tree_demo),
             m_tree_count (options.tree_count),
             m_screenshot_path (options.screenshot_path),
@@ -152,160 +149,53 @@ namespace moppe {
         return *m_generated_world;
       }
 
+      // The recipe and its bound parameters are known before the world is
+      // generated; the loading screen runs on them alone.
       const terrain::WorldRecipe& recipe () const noexcept {
-        return generated_world ().recipe ();
+        return m_recipe;
       }
 
       const WorldParams& world () const noexcept {
-        return generated_world ().params ();
+        return m_params;
       }
 
       const map::Surface& surface () const noexcept {
         return generated_world ().surface ();
       }
 
-      const map::SurfaceReadings* surface_readings () const noexcept {
-        const auto& value = generated_world ().readings ();
-        return value ? &*value : nullptr;
-      }
-
-      const GeneratedWorld::Hydrology* hydrology () const noexcept {
-        const auto& value = generated_world ().hydrology ();
-        return value ? &*value : nullptr;
+      const map::SurfaceReadings& surface_readings () const noexcept {
+        return generated_world ().readings ();
       }
 
       template <typename Artifact>
-      const Artifact* hydrology_artifact () const noexcept {
-        const auto* value = hydrology ();
-        return value ? &std::get<Artifact> (*value) : nullptr;
+      const Artifact& hydrology_artifact () const noexcept {
+        return std::get<Artifact> (generated_world ().hydrology ());
       }
 
-      const terrain::FloodField* standing_water () const noexcept {
+      const terrain::FloodField& standing_water () const noexcept {
         return hydrology_artifact<terrain::FloodField> ();
       }
 
-      const terrain::LakeCensus* lake_census () const noexcept {
+      const terrain::LakeCensus& lake_census () const noexcept {
         return hydrology_artifact<terrain::LakeCensus> ();
       }
 
-      const terrain::DrainageGraph* drainage () const noexcept {
+      const terrain::DrainageGraph& drainage () const noexcept {
         return hydrology_artifact<terrain::DrainageGraph> ();
       }
 
-      const terrain::RiverNetwork* rivers () const noexcept {
+      const terrain::RiverNetwork& rivers () const noexcept {
         return hydrology_artifact<terrain::RiverNetwork> ();
       }
 
-      const terrain::TrailNetwork* trail_network () const noexcept {
-        const auto& value = generated_world ().trails ();
-        return value ? &*value : nullptr;
-      }
-
-      Vec3 choose_landscape_spawn () {
-        MOPPE_PROFILE_ZONE ("startup.choose_landscape_spawn");
-        // The generated landscape has no authored start.  Sample the
-        // finished terrain for a dry, grassy, locally flat patch rather
-        // than trusting the old fixed coordinate near the map corner.
-        const Vec3& world_extent = extent_value (world ().map_size);
-        const float margin_x = 0.08f * world_extent[0];
-        const float margin_z = 0.08f * world_extent[2];
-        const float patch = 20.0f; // metres
-        const float min_ground = meters_value (world ().water_level) + 25.0f;
-        const float max_ground = 0.32f * world_extent[1];
-        const auto elevation_at = [this] (float x, float z) {
-          return surface ()
-            .elevation_at (position (Vec3 (x, 0, z)))
-            .quantity_from_zero ()
-            .numerical_value_in (u::m);
-        };
-        const auto normal_at = [this] (float x, float z) {
-          return surface ()
-            .normal_at (position (Vec3 (x, 0, z)))
-            .numerical_value_in (one);
-        };
-
-        std::uniform_real_distribution<float> random_x (
-          margin_x, world_extent[0] - margin_x);
-        std::uniform_real_distribution<float> random_z (
-          margin_z, world_extent[2] - margin_z);
-
-        Vec3 chosen;
-        Vec3 fallback;
-        int good_count = 0;
-        float fallback_score = -1000000.0f;
-
-        const auto standing_depth = [this, &world_extent] (float x, float z) {
-          if (!standing_water ())
-            return 0.0f;
-          const terrain::TerrainDomain& grid = standing_water ()->domain ();
-          const auto wrap = [] (float value, float period) {
-            value = std::fmod (value, period);
-            return value < 0.0f ? value + period : value;
-          };
-          const std::size_t gx =
-            static_cast<std::size_t> (wrap (x, world_extent[0]) /
-                                      meters_value (grid.spacing_x ())) %
-            standing_water ()->width ();
-          const std::size_t gz =
-            static_cast<std::size_t> (wrap (z, world_extent[2]) /
-                                      meters_value (grid.spacing_z ())) %
-            standing_water ()->height ();
-          return standing_water ()->water_depth_m (grid.offset (
-            { static_cast<std::size_t> (gx), static_cast<std::size_t> (gz) }));
-        };
-
-        for (int i = 0; i < 6000; ++i) {
-          const float x = random_x (logic ().m_fx_rng);
-          const float z = random_z (logic ().m_fx_rng);
-          const float h = elevation_at (x, z);
-          const float hx0 = elevation_at (x - patch, z);
-          const float hx1 = elevation_at (x + patch, z);
-          const float hz0 = elevation_at (x, z - patch);
-          const float hz1 = elevation_at (x, z + patch);
-          const float low =
-            std::min (h, std::min (std::min (hx0, hx1), std::min (hz0, hz1)));
-          const float high =
-            std::max (h, std::max (std::max (hx0, hx1), std::max (hz0, hz1)));
-          const float relief = high - low;
-          const float up = normal_at (x, z)[1];
-          const float lake_depth = std::max ({ standing_depth (x, z),
-                                               standing_depth (x - patch, z),
-                                               standing_depth (x + patch, z),
-                                               standing_depth (x, z - patch),
-                                               standing_depth (x, z + patch) });
-
-          // Always retain the best fallback.  The large shore penalty makes
-          // even an unusual generated map prefer dry ground over a flat seabed.
-          const float shore_penalty = std::max (0.0f, min_ground - low) * 2.0f;
-          const float alpine_penalty = std::max (0.0f, h - max_ground) * 0.03f;
-          const float score = up * 20.0f - relief * 0.2f - shore_penalty -
-                              alpine_penalty -
-                              (lake_depth > 0.1f ? 10000.0f : 0.0f);
-          if (score > fallback_score) {
-            fallback_score = score;
-            fallback = Vec3 (x, h + 1.2f, z);
-          }
-
-          if (lake_depth > 0.1f || low < min_ground || high > max_ground ||
-              up < 0.94f || relief > 3.5f)
-            continue;
-
-          // Reservoir sampling chooses uniformly among all suitable sites,
-          // so different generated worlds do not always start at the first
-          // acceptable patch encountered.
-          ++good_count;
-          std::uniform_int_distribution<int> keep (1, good_count);
-          if (keep (logic ().m_fx_rng) == 1)
-            chosen = Vec3 (x, h + 1.2f, z);
-        }
-
-        return good_count > 0 ? chosen : fallback;
+      const terrain::TrailNetwork& trail_network () const noexcept {
+        return generated_world ().trails ();
       }
 
       Vec3 trail_cell_position (terrain::CellIndex cell) const {
-        if (!trail_network () || cell == terrain::no_cell)
+        if (cell == terrain::no_cell)
           return {};
-        const terrain::TerrainDomain& grid = trail_network ()->domain;
+        const terrain::TerrainDomain& grid = trail_network ().domain;
         const std::size_t width = grid.width ();
         const float x = (cell.value % width) * meters_value (grid.spacing_x ());
         const float z = (cell.value / width) * meters_value (grid.spacing_z ());
@@ -320,19 +210,17 @@ namespace moppe {
       }
 
       Vec3 trail_direction_from_home () const {
-        if (!trail_network () || trail_network ()->alignment.points.size () < 2)
+        if (trail_network ().alignment.points.size () < 2)
           return Vec3 (0, 0, 1);
         Vec3 direction =
-          trail_alignment_position (trail_network ()->alignment.points[1]) -
-          trail_alignment_position (trail_network ()->alignment.points[0]);
+          trail_alignment_position (trail_network ().alignment.points[1]) -
+          trail_alignment_position (trail_network ().alignment.points[0]);
         direction[1] = 0.0f;
         return length2 (direction) > 1e-5f ? normalized (direction)
                                            : Vec3 (0, 0, 1);
       }
 
       void draw_home_base_marker (render::DrawList& dl) const {
-        if (!trail_network ())
-          return;
         const Vec3 base = m_home_base_position;
         render::DrawState marker_state;
         marker_state.cull = false;
@@ -368,10 +256,10 @@ namespace moppe {
                            int height_pts,
                            const Vec3& subject,
                            Vec3 heading) const {
-        if (!trail_network () || width_pts < 480 || height_pts < 360)
+        if (width_pts < 480 || height_pts < 360)
           return;
-        const terrain::TerrainDomain& grid = trail_network ()->domain;
-        const auto& alignment = trail_network ()->alignment.points;
+        const terrain::TerrainDomain& grid = trail_network ().domain;
+        const auto& alignment = trail_network ().alignment.points;
         if (alignment.size () < 2)
           return;
         const float period_x = grid.width () * meters_value (grid.spacing_x ());
@@ -501,6 +389,8 @@ namespace moppe {
           std::move (m_generated_world);
         std::unique_ptr<GameSession> retired_session = std::move (m_session);
         m_generated_world = std::move (completed);
+        m_params = m_generated_world->params ();
+        m_recipe = m_generated_world->recipe ();
         m_session = std::make_unique<GameSession> (world (), surface ());
         retired_session.reset ();
         retired_world.reset ();
@@ -511,11 +401,9 @@ namespace moppe {
         render::Renderer& r = *m_renderer;
         // Running rivers are continuous ribbon meshes. The water sheets retain
         // standing bodies and carry each mouth's current into them.
-        if (rivers ())
-          m_river_surface.rebuild (r, surface (), *rivers ());
+        m_river_surface.rebuild (r, surface (), rivers ());
         m_water_presentation.reset (world ().water_level, world ().map_size);
-        if (const auto& water = generated_world ().water_surface ())
-          m_water_presentation.refresh (*water);
+        m_water_presentation.refresh (generated_world ().water_surface ());
       }
 
       void prepare_world_surface () {
@@ -530,10 +418,10 @@ namespace moppe {
         if (m_water_shot) {
           m_water_inspection = choose_water_inspection (*m_water_shot,
                                                         surface (),
-                                                        *standing_water (),
-                                                        *lake_census (),
-                                                        *drainage (),
-                                                        *rivers ());
+                                                        standing_water (),
+                                                        lake_census (),
+                                                        drainage (),
+                                                        rivers ());
           if (!m_water_inspection)
             throw std::runtime_error (
               "no " + std::string (water_shot_name (*m_water_shot)) +
@@ -547,32 +435,24 @@ namespace moppe {
       void place_stars_and_player () {
         MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
         session ().stars ().generate (surface (), world (), 80);
-        if (trail_network ()) {
-          m_home_base_position =
-            trail_cell_position (trail_network ()->plan.home_base);
-          m_spawn_position =
-            m_home_base_position - trail_direction_from_home () * 8.0f;
-          m_spawn_position[1] = surface ().interpolated_height (
-                                  m_spawn_position[0], m_spawn_position[2]) +
-                                1.2f;
-        } else {
-          m_spawn_position = choose_landscape_spawn ();
-          m_home_base_position = m_spawn_position - Vec3 (0, 1.2f, 0);
-        }
+        m_home_base_position =
+          trail_cell_position (trail_network ().plan.home_base);
+        m_spawn_position =
+          m_home_base_position - trail_direction_from_home () * 8.0f;
+        m_spawn_position[1] = surface ().interpolated_height (
+                                m_spawn_position[0], m_spawn_position[2]) +
+                              1.2f;
         session ().bike ().reset (m_spawn_position);
-        session ().bike ().set_heading (
-          trail_network () ? trail_direction_from_home () : Vec3 (0, 0, 1));
+        session ().bike ().set_heading (trail_direction_from_home ());
       }
 
       void grow_global_forest () {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_tree_demo || m_water_inspection)
           return;
-        if (!surface_readings ())
-          return;
         m_forest.rebuild (*m_renderer,
                           surface (),
-                          *surface_readings (),
+                          surface_readings (),
                           recipe ().seed ().value ^ 0xa34c91e5U);
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives\n";
@@ -581,13 +461,11 @@ namespace moppe {
       void plant_trailside () {
         MOPPE_PROFILE_ZONE ("startup.plant_trailside");
         render::Renderer& r = *m_renderer;
-        const map::SurfaceReadings* readings = surface_readings ();
-        if (!readings)
-          return;
+        const map::SurfaceReadings& readings = surface_readings ();
         if (m_tree_demo) {
           m_tree_stand.rebuild (r,
                                 surface (),
-                                *readings,
+                                readings,
                                 recipe ().seed ().value ^ 0x4f1bbcdcU,
                                 m_tree_count);
           if (m_tree_stand.empty ())
@@ -608,7 +486,7 @@ namespace moppe {
         constexpr std::size_t forest_size = 32;
         m_tree_stand.rebuild (r,
                               surface (),
-                              *readings,
+                              readings,
                               recipe ().seed ().value ^ 0x4f1bbcdcU,
                               forest_size,
                               m_home_base_position);
@@ -626,14 +504,13 @@ namespace moppe {
 
       void plan_opening_journey () {
         MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
-        if (standing_water () && lake_census () && drainage () && rivers ())
-          m_cinematic_plan = plan_cinematic_flight (surface (),
-                                                    *standing_water (),
-                                                    *lake_census (),
-                                                    *drainage (),
-                                                    *rivers (),
-                                                    m_spawn_position,
-                                                    trail_network ());
+        m_cinematic_plan = plan_cinematic_flight (surface (),
+                                                  standing_water (),
+                                                  lake_census (),
+                                                  drainage (),
+                                                  rivers (),
+                                                  m_spawn_position,
+                                                  &trail_network ());
         if (m_cinematic_plan.empty ())
           return;
         std::cerr << "cinematic flight: " << m_cinematic_plan.waypoints.size ()
@@ -745,8 +622,10 @@ namespace moppe {
           MOPPE_PROFILE_PLOT ("benchmark.measured",
                               m_benchmark_render_frame->measured);
         }
+        if (!m_ready)
+          return;
         logic ().m_frame_time = dt;
-        if (!m_ready || logic ().m_game_over)
+        if (logic ().m_game_over)
           return;
 
         InputFrame input = m_live_input.take_frame ();
@@ -1284,7 +1163,7 @@ namespace moppe {
       // -- input -------------------------------------------------------
 
       void controls (const platform::ControlState& state) override {
-        if (logic ().m_game_over)
+        if (!m_ready || logic ().m_game_over)
           return;
         m_live_input.controls (state);
       }
@@ -1502,6 +1381,8 @@ namespace moppe {
         logic ().m_car_exists = false;
         logic ().m_game_over = false;
         logic ().m_health = 100.0f;
+        m_params = bind_world_params (m_params, next_recipe);
+        m_recipe = next_recipe;
         m_loading.start (world (), std::move (next_recipe));
       }
 
@@ -1530,9 +1411,12 @@ namespace moppe {
         logic ().m_game_over = false;
       }
 
-      // The active owner changes only in activate_completed_world().  All
-      // gameplay reads go through the accessors above, so no stale reference
-      // aliases survive a handoff.
+      WorldParams m_params;
+      terrain::WorldRecipe m_recipe;
+      // Absent until the loading worker finishes the first world. The active
+      // owner changes only in activate_completed_world(); all gameplay reads
+      // go through the accessors above, so no stale reference aliases survive
+      // a handoff.
       std::unique_ptr<GeneratedWorld> m_generated_world;
       // Declared after its world so session-held terrain and surface borrows
       // release first during normal teardown.

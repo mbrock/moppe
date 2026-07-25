@@ -13,10 +13,8 @@ namespace moppe::game {
   // here: this is the one place where quantities become GPU-facing numbers.
   class SurfacePresentation {
   public:
-    // Readings are absent until the world finishes; the lanes that depend on
-    // them stay empty until then.
     void refresh (const map::SurfaceGeometry& geometry,
-                  const map::SurfaceReadings* readings);
+                  const map::SurfaceReadings& readings);
     void upload (render::Renderer& renderer, bool include_forest) const;
 
     std::span<const float> trails () const noexcept {

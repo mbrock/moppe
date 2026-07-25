@@ -296,7 +296,7 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
     surface, { .use = test::trail_use_map (surface.domain (), trail, home) });
 
   game::SurfacePresentation presentation;
-  presentation.refresh (surface.geometry (), &readings);
+  presentation.refresh (surface.geometry (), readings);
 
   MOPPE_CHECK (presentation.trails ().size () == surface.domain ().size ());
   MOPPE_CHECK_NEAR (presentation.trails ()[4], 0.75f, 1e-6f);
@@ -304,11 +304,6 @@ MOPPE_TEST (surface_presentation_is_the_numeric_bridge_for_typed_sections) {
   MOPPE_CHECK (presentation.channel_flux ().size () == 18);
   MOPPE_CHECK (presentation.snow_support ().size () == 9);
   MOPPE_CHECK (presentation.forest ().size () == 9);
-
-  // A world still being generated has geometry but no readings yet.
-  presentation.refresh (surface.geometry (), nullptr);
-  MOPPE_CHECK (presentation.trails ().empty ());
-  MOPPE_CHECK (presentation.snow_support ().size () == 9);
 }
 
 MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
@@ -364,7 +359,7 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
     1e-6f);
 
   game::SurfacePresentation presentation;
-  presentation.refresh (surface.geometry (), &values);
+  presentation.refresh (surface.geometry (), values);
   MOPPE_CHECK_NEAR (presentation.moisture ()[4], 1.0f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.waterline_distance ()[4], 2.5f, 1e-6f);
   MOPPE_CHECK_NEAR (presentation.geology ()[8], 0.5f, 1e-6f);

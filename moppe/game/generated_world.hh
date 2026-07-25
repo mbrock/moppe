@@ -11,36 +11,56 @@
 #include <moppe/terrain/world_recipe.hh>
 
 #include <functional>
-#include <optional>
 #include <tuple>
 
 namespace moppe::game {
-  // A stable home for a generated world's durable, renderer-free artifacts.
-  // The loading worker constructs one by calling the three build steps in
-  // order (rebuild_surface, analyze_hydrology, derive_surface_readings) after
-  // evaluating the terrain. Each step's result stays absent until it runs;
-  // every one of them shares the surface geometry's domain.
+  enum class HydrologyStage {
+    StandingWater,
+    Lakes,
+    Drainage,
+    Channels,
+    Rivers,
+  };
+
+  using HydrologyProgress = std::function<void (HydrologyStage)>;
+
+  // What analyzing a world's water leaves behind, in the order the stages
+  // derive it: each stage reads the results before it.
+  using Hydrology = std::tuple<terrain::FloodField,
+                               terrain::LakeCensus,
+                               terrain::DrainageGraph,
+                               terrain::FractionalDrainage,
+                               terrain::RiverNetwork>;
+
+  // The recipe is authoritative for a world's extent, resolution, and datum,
+  // both before it is generated and after.
+  WorldParams bind_world_params (WorldParams params,
+                                 const terrain::WorldRecipe& recipe);
+
+  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
+                               const terrain::WorldRecipe& recipe,
+                               const HydrologyProgress& progress = {});
+
+  // Painted water and the readings over the ground arrive together: the
+  // waterline the readings measure against comes from the sheets.
+  std::tuple<terrain::WaterSheets, map::SurfaceReadings>
+  analyze_surface (const map::SurfaceGeometry& geometry,
+                   const terrain::WorldRecipe& recipe,
+                   const Hydrology& hydrology,
+                   const terrain::TrailUseMap& use);
+
+  // A generated world's durable, renderer-free artifacts. It is assembled
+  // from finished parts, so holding one means the world is complete; the
+  // build itself lives in world_loading.
   class GeneratedWorld {
   public:
-    enum class HydrologyStage {
-      StandingWater,
-      Lakes,
-      Drainage,
-      Channels,
-      Rivers,
-    };
-
-    using HydrologyProgress = std::function<void (HydrologyStage)>;
-
-    // What analyzing a world's water leaves behind, in the order the stages
-    // derive it: each stage reads the results before it.
-    using Hydrology = std::tuple<terrain::FloodField,
-                                 terrain::LakeCensus,
-                                 terrain::DrainageGraph,
-                                 terrain::FractionalDrainage,
-                                 terrain::RiverNetwork>;
-
-    GeneratedWorld (WorldParams params, terrain::WorldRecipe recipe);
+    GeneratedWorld (WorldParams params,
+                    terrain::WorldRecipe recipe,
+                    map::Surface surface,
+                    Hydrology hydrology,
+                    terrain::WaterSheets water,
+                    terrain::TrailNetwork trails,
+                    map::SurfaceReadings readings);
     GeneratedWorld (const GeneratedWorld&) = delete;
     GeneratedWorld& operator= (const GeneratedWorld&) = delete;
     GeneratedWorld (GeneratedWorld&&) = delete;
@@ -58,40 +78,30 @@ namespace moppe::game {
       return m_surface;
     }
 
-    map::Surface& surface () noexcept {
-      return m_surface;
-    }
-
-    const std::optional<Hydrology>& hydrology () const noexcept {
+    const Hydrology& hydrology () const noexcept {
       return m_hydrology;
     }
 
-    const std::optional<map::SurfaceReadings>& readings () const noexcept {
+    const map::SurfaceReadings& readings () const noexcept {
       return m_readings;
     }
 
-    const std::optional<terrain::WaterSheets>& water_surface () const noexcept {
+    const terrain::WaterSheets& water_surface () const noexcept {
       return m_water_surface;
     }
 
-    const std::optional<terrain::TrailNetwork>& trails () const noexcept {
+    const terrain::TrailNetwork& trails () const noexcept {
       return m_trails;
     }
-
-    // The three build steps, in the order the loading worker runs them.
-    void rebuild_surface ();
-    void analyze_hydrology (const HydrologyProgress& progress = {});
-    void derive_surface_readings (
-      std::optional<terrain::TrailNetwork> generated_trails = {});
 
   private:
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
     map::Surface m_surface;
-    std::optional<map::SurfaceReadings> m_readings;
-    std::optional<Hydrology> m_hydrology;
-    std::optional<terrain::WaterSheets> m_water_surface;
-    std::optional<terrain::TrailNetwork> m_trails;
+    Hydrology m_hydrology;
+    terrain::WaterSheets m_water_surface;
+    terrain::TrailNetwork m_trails;
+    map::SurfaceReadings m_readings;
   };
 }
 

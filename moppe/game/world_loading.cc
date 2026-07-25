@@ -19,6 +19,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -187,8 +188,8 @@ namespace moppe::game {
     }
 
     std::pair<const char*, const char*>
-    hydrology_report (GeneratedWorld::HydrologyStage stage) {
-      using Stage = GeneratedWorld::HydrologyStage;
+    hydrology_report (HydrologyStage stage) {
+      using Stage = HydrologyStage;
       switch (stage) {
       case Stage::StandingWater:
         return { "Filling seas and lakes",
@@ -206,7 +207,7 @@ namespace moppe::game {
       return { "Analyzing the water", "" };
     }
 
-    void log_standing_water (const GeneratedWorld::Hydrology& hydrology) {
+    void log_standing_water (const Hydrology& hydrology) {
       const terrain::LakeCensus& census =
         std::get<terrain::LakeCensus> (hydrology);
       std::size_t wet = 0;
@@ -227,11 +228,11 @@ namespace moppe::game {
     void build_world (GenerationJob& job) {
       MOPPE_PROFILE_ZONE ("WorldLoading::build_world");
       WorldLoadingState& state = *job.state;
-      auto completed =
-        std::make_unique<GeneratedWorld> (job.params, job.recipe);
-      map::Surface& surface = completed->surface ();
-      const terrain::WorldRecipe& recipe = completed->recipe ();
-      std::optional<terrain::TrailNetwork> trails;
+      const terrain::WorldRecipe& recipe = job.recipe;
+      map::Surface surface (recipe.resolution (),
+                            recipe.resolution (),
+                            extent_value (recipe.extent ()));
+      std::optional<terrain::TrailNetwork> evolved_trails;
 
       const char* cache_override = ::getenv ("MOPPE_MAPCACHE");
       const std::string cache =
@@ -245,7 +246,7 @@ namespace moppe::game {
       } else {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
-        trails = evolve_terrain (state, recipe, surface);
+        evolved_trails = evolve_terrain (state, recipe, surface);
         state.report ("Saving the terrain",
                       "Keeping this expensive result for the next launch");
         surface.save_cache (cache);
@@ -253,22 +254,33 @@ namespace moppe::game {
 
       state.report ("Calculating slopes",
                     "Rebuilding normals and broad surface readings");
-      completed->rebuild_surface ();
+      surface.rebuild_geometry ();
 
-      completed->analyze_hydrology (
-        [&state] (GeneratedWorld::HydrologyStage stage) {
+      Hydrology hydrology = analyze_hydrology (
+        surface.geometry (), recipe, [&state] (HydrologyStage stage) {
           const auto [title, detail] = hydrology_report (stage);
           state.report (title, detail);
         });
-      if (!completed->hydrology ())
-        throw std::logic_error ("completed world has no hydrology");
-      log_standing_water (*completed->hydrology ());
+      log_standing_water (hydrology);
 
       state.report ("Assembling the world",
                     "Painting water, moisture, materials, and the opening "
                     "route");
-      completed->derive_surface_readings (std::move (trails));
-      state.publish_completed (std::move (completed));
+      terrain::TrailNetwork trails =
+        evolved_trails ? std::move (*evolved_trails)
+                       : terrain::analyze_trail_network (
+                           surface.geometry (), recipe.trail_formation ());
+      auto [water, readings] =
+        analyze_surface (surface.geometry (), recipe, hydrology, trails.use);
+
+      state.publish_completed (
+        std::make_unique<GeneratedWorld> (job.params,
+                                          recipe,
+                                          std::move (surface),
+                                          std::move (hydrology),
+                                          std::move (water),
+                                          std::move (trails),
+                                          std::move (readings)));
     }
 
     // -- thread plumbing -------------------------------------------------
