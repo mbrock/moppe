@@ -198,7 +198,7 @@ namespace moppe::game {
 
   struct FrameViewInput {
     const WorldParams& world;
-    const map::HeightMap& terrain;
+    const map::Surface& surface;
     const GameSession& session;
     const GraphicsSettings& graphics;
     FrameCameraReading selected_camera {};
@@ -234,7 +234,7 @@ namespace moppe::game {
   // composing or rendering a FrameView cannot advance simulation state.
   float sun_visibility_target (const FrameView& view,
                                const WorldParams& world,
-                               const map::HeightMap& terrain);
+                               const map::Surface& surface);
 }
 
 #endif

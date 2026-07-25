@@ -15,7 +15,7 @@ namespace moppe {
       const int CHUNK = 128;
       const int LOD_COUNT = (int)render::TerrainLod::Count;
 
-      // Distances are expressed in source heightmap cells and scaled to
+      // Distances are expressed in source terrain cells and scaled to
       // world units at setup.  Each end is also the point where the finer
       // level has completely morphed onto its parent surface.
       const float LOD_MORPH_START[LOD_COUNT - 1] = {
@@ -44,7 +44,7 @@ namespace moppe {
     }
 
     void Terrain::setup (render::Renderer& r,
-                         const map::RandomHeightMap& map,
+                         const map::Surface& map,
                          const WorldParams& world,
                          const GraphicsSettings& graphics,
                          render::TerrainProjection projection,
@@ -88,7 +88,7 @@ namespace moppe {
       params.derive_normals = interactive_preview;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
-        r.set_terrain (params, map.raw_heights (), map.raw_normals ());
+        r.set_terrain (params, map.relative_elevations (), map.normals ());
       }
 
       if (!m_textures_loaded) {
@@ -114,9 +114,9 @@ namespace moppe {
             ymax = -1e9f;
             for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
               for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-                const float h =
-                  map.get (terrain::wrap_index (x, map.width ()),
-                           terrain::wrap_index (z, map.height ()));
+                const float h = map.relative_elevation_at (
+                  terrain::wrap_index (x, map.width ()),
+                  terrain::wrap_index (z, map.height ()));
                 ymin = std::min (ymin, h);
                 ymax = std::max (ymax, h);
               }
@@ -140,7 +140,7 @@ namespace moppe {
     }
 
     void Terrain::render_shadow (render::Renderer& r,
-                                 const map::HeightMap& map,
+                                 const map::Surface& map,
                                  const Vec3& sun_dir) {
       MOPPE_PROFILE_ZONE ("Terrain::render_shadow");
       if (m_projection == render::TerrainProjection::Torus)

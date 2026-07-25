@@ -2,7 +2,7 @@
 #define MOPPE_GAME_WALKER_HH
 
 #include <moppe/game/world.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/mov/vehicle.hh>
 
 #include <vector>
@@ -52,7 +52,7 @@ namespace moppe {
       void jump ();
 
       void update (seconds_t dt,
-                   const map::HeightMap& map,
+                   const map::Surface& map,
                    const std::vector<mov::Box>& boxes,
                    const WorldParams& world);
 

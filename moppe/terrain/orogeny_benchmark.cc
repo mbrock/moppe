@@ -1,4 +1,4 @@
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/program.hh>
 #ifdef MOPPE_OROGENY_METAL_BACKEND
@@ -52,15 +52,15 @@ namespace {
     return routing == StreamPowerRouting::D8 ? "d8" : "d-infinity";
   }
 
-  std::uint64_t height_hash (const moppe::map::RandomHeightMap& map) {
+  std::uint64_t height_hash (const moppe::map::Surface& map) {
     // FNV-1a over the exact float representation makes benchmark output a
     // cheap numerical-regression ledger as well as a timing record.
     std::uint64_t hash = 14695981039346656037ull;
     const std::size_t count =
       static_cast<std::size_t> (map.width ()) * map.height ();
     for (std::size_t cell = 0; cell < count; ++cell) {
-      std::uint32_t bits =
-        std::bit_cast<std::uint32_t> (map.raw_heights ()[cell]);
+      std::uint32_t bits = std::bit_cast<std::uint32_t> (
+        map.relative_elevations ()[cell].numerical_value_in (moppe::one));
       for (int byte = 0; byte < 4; ++byte) {
         hash ^= bits & 0xffu;
         hash *= 1099511628211ull;
@@ -78,13 +78,14 @@ namespace {
     std::size_t cells_over_one_meter;
   };
 
-  HeightDifference height_difference (const moppe::map::RandomHeightMap& map,
-                                      std::span<const float> reference,
-                                      float height_scale_m) {
+  HeightDifference height_difference (
+    const moppe::map::Surface& map,
+    std::span<const moppe::map::RelativeSurfaceElevation> reference,
+    float height_scale_m) {
     const std::size_t count =
       static_cast<std::size_t> (map.width ()) * map.height ();
     if (reference.size () != count)
-      throw std::logic_error ("reference heightmap size changed");
+      throw std::logic_error ("reference surface size changed");
     double total = 0.0;
     double maximum = 0.0;
     std::size_t cells_over_one_meter = 0;
@@ -92,8 +93,10 @@ namespace {
     differences.reserve (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double difference =
-        std::fabs (static_cast<double> (map.raw_heights ()[cell]) -
-                   reference[cell]) *
+        std::fabs (
+          static_cast<double> (
+            map.relative_elevations ()[cell].numerical_value_in (moppe::one)) -
+          reference[cell].numerical_value_in (moppe::one)) *
         height_scale_m;
       total += difference;
       maximum = std::max (maximum, difference);
@@ -151,18 +154,14 @@ int main (int argc, char** argv) {
       throw std::invalid_argument ("backend must be cpu or metal");
     }
 
-    std::vector<float> reference_heights;
+    std::vector<map::RelativeSurfaceElevation> reference_heights;
     if (backend) {
-      map::RandomHeightMap reference_map (
+      map::Surface reference_map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       map::TerrainEvaluator reference_evaluator (reference_map);
       reference_evaluator.begin (program);
       reference_evaluator.apply (program.transforms.front ());
-      const std::size_t count =
-        static_cast<std::size_t> (reference_map.width ()) *
-        reference_map.height ();
-      reference_heights.assign (reference_map.raw_heights (),
-                                reference_map.raw_heights () + count);
+      reference_heights = reference_map.relative_elevations ();
     }
 
     std::cout << "resolution,cells,seed,routing,backend,steps,repeat,"
@@ -173,7 +172,7 @@ int main (int argc, char** argv) {
                  "reference_max_difference_m,"
                  "reference_cells_over_1m\n";
     for (int repeat = 0; repeat < repeats; ++repeat) {
-      map::RandomHeightMap map (
+      map::Surface map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       map::TerrainEvaluator evaluator (map, nullptr, backend.get ());
       evaluator.begin (program);

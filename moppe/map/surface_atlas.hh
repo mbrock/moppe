@@ -7,9 +7,9 @@
 #include <utility>
 
 namespace moppe::map {
-  // The ground's finite intrinsic store. Geometry exists after refresh;
-  // later analysis groups keep their own optional typed sections instead of
-  // leaving zero-filled columns plus a parallel availability ledger.
+  // The ground's finite intrinsic store. Geometry exists for the atlas's
+  // whole lifetime; later analysis groups keep optional typed sections
+  // instead of zero-filled columns plus an availability ledger.
   class SurfaceAtlas {
   public:
     class Hydrology {

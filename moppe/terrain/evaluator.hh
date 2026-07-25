@@ -121,7 +121,7 @@ namespace moppe::terrain {
   };
 
   // A materialization barrier: remaps the sampled minimum and maximum to
-  // zero and one.  Constant rasters become zero, matching HeightMap's
+  // zero and one.  Constant rasters become zero, matching Surface's
   // existing normalization semantics.
   ScalarRaster normalize (const ScalarRaster& raster);
 

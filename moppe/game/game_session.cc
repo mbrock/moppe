@@ -56,7 +56,7 @@ namespace moppe::game {
       }
     }
 
-    void deploy_glider (GameSession& session, const map::HeightMap& terrain) {
+    void deploy_glider (GameSession& session, const map::Surface& terrain) {
       if (!session.can_deploy_glider (terrain))
         return;
       const Vec3 position = session.bike ().position ();
@@ -78,7 +78,7 @@ namespace moppe::game {
     }
 
     void use_glider_control (GameSession& session,
-                             const map::HeightMap& terrain) {
+                             const map::Surface& terrain) {
       if (session.logic ().m_mode == M_GLIDER) {
         session.glider ().drop_bike ();
         return;
@@ -155,7 +155,7 @@ namespace moppe::game {
     }
 
     void apply_input_frame (GameSession& session,
-                            const map::HeightMap& terrain,
+                            const map::Surface& terrain,
                             const InputFrame& input) {
       set_turn (session, input_value (input.turn));
       set_go (session, input_value (input.drive));
@@ -179,17 +179,16 @@ namespace moppe::game {
   }
 
   GameSession::GameSession (const WorldParams& world,
-                            const map::RandomHeightMap& terrain,
                             const map::Surface& surface)
       : m_bike (world.spawn_position (),
                 45 * u::deg,
-                terrain,
+                surface,
                 2600 * u::N,
                 30 * u::kW,
                 150 * u::kg),
         m_car (world.spawn_position (),
                45 * u::deg,
-               terrain,
+               surface,
                14 * u::kN,
                100 * u::kW,
                900 * u::kg),
@@ -227,7 +226,7 @@ namespace moppe::game {
     return length (active_vehicle ().velocity ()) * 3.6f;
   }
 
-  bool GameSession::can_deploy_glider (const map::HeightMap& terrain) const {
+  bool GameSession::can_deploy_glider (const map::Surface& terrain) const {
     if (m_logic.m_mode != M_BIKE || !m_bike.airborne ())
       return false;
     const Vec3 position = m_bike.position ();
@@ -274,7 +273,7 @@ namespace moppe::game {
     session.bike ().set_obstacles (&context.obstacles);
     session.car ().set_obstacles (&context.obstacles);
 
-    apply_input_frame (session, context.terrain, input);
+    apply_input_frame (session, context.surface, input);
 
     if (!session.can_drop_bike ())
       session.bike ().update (dt);
@@ -289,7 +288,7 @@ namespace moppe::game {
     }
     if (logic.m_mode == M_FOOT)
       session.walker ().update (
-        dt, context.terrain, context.obstacles, context.world);
+        dt, context.surface, context.obstacles, context.world);
 
     const Vec3 vehicle_position = session.subject_position ();
     mov::Vehicle& vehicle = session.active_vehicle ();
@@ -468,7 +467,7 @@ namespace moppe::game {
         result.say_ouchies = logic.m_lives == 5;
 
         // Respawn where you crashed, upright on the ground.
-        const float ground = context.terrain.interpolated_height (
+        const float ground = context.surface.interpolated_height (
           vehicle_position[0], vehicle_position[2]);
         vehicle.reset (
           Vec3 (vehicle_position[0], ground + 1.2f, vehicle_position[2]));
@@ -560,7 +559,7 @@ namespace moppe::game {
                                   vehicle.orientation () * flip,
                                   vehicle.physical_velocity (),
                                   dt);
-      session.camera ().limit (context.terrain);
+      session.camera ().limit (context.surface);
     }
 
     // Speed widens the field of view a touch.

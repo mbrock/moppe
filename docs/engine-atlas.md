@@ -66,13 +66,13 @@ topology, site correspondence, spacing, and reconstruction stencil. Its
 
 | Group | Typed sections | Valid when |
 | --- | --- | --- |
-| Geometry | `surface_elevation`, `surface_normal`, `snow_support` | `Surface::refresh()` |
+| Geometry | `relative_terrain_elevation`, `terrain_normal`, removed/deposited material, `snow_support` | Elevation/history exist at construction; normals/support after `rebuild_geometry_readings()` |
 | Hydrology | `channel_flux`, `surface_moisture`, `waterline_distance` | World hydrology/materialization |
 | Geology | `erosion_exposure`, `deposition_cover` | Geological materialization |
 | Ecology | `tree_habitat`, `forest_cover` | Ecological materialization |
 | Use | `trail_influence`, `home_base_influence` | Trail and home-base materialization |
 
-Geometry is always present after refresh. Later groups are individually
+Geometry is authoritative and always present. Later groups are individually
 optional: absence means the corresponding world-building barrier has not run,
 while a present all-zero section is a real reading. `map::WaterSurface` uses
 the same domain but a distinct water bundle: `surface_elevation`,

@@ -1,5 +1,4 @@
 #include <moppe/game/frame_view.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 
 #include <tests/test.hh>
@@ -32,23 +31,19 @@ namespace {
   }
 
   struct FrameFixture {
-    map::RandomHeightMap map { 17, 17, Vec3 (160, 40, 160) };
+    map::Surface map { 17, 17, Vec3 (160, 40, 160) };
     game::WorldParams world;
-    map::Surface surface;
     std::unique_ptr<game::GameSession> session;
     game::GraphicsSettings graphics = game::high_graphics_settings ();
 
     FrameFixture () {
-      std::fill (map.raw_heights (),
-                 map.raw_heights () + map.width () * map.height (),
-                 0.25f);
-      map.recompute_normals ();
-      surface.refresh (map);
+      map.fill_relative_elevation (0.25f);
+      map.rebuild_geometry_readings ();
       world.map_size = spatial_extent_in_metres (map.size ());
       world.resolution = map.width ();
       world.water_level = 4.0f * u::m;
       world.fog_scale = 0.0004f / u::m;
-      session = std::make_unique<game::GameSession> (world, map, surface);
+      session = std::make_unique<game::GameSession> (world, map);
       session->bike ().reset (Vec3 (48, 11.2f, 48));
       session->bike ().set_heading (Vec3 (0, 0, 1));
       session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
@@ -80,7 +75,7 @@ namespace {
   game::FrameViewInput gameplay_input (const FrameFixture& fixture) {
     return {
       .world = fixture.world,
-      .terrain = fixture.map,
+      .surface = fixture.map,
       .session = fixture.running (),
       .graphics = fixture.graphics,
       .selected_camera = camera_reading (fixture.running ()),
@@ -373,7 +368,7 @@ MOPPE_TEST (
   FrameFixture ridge;
   for (int z = 0; z < ridge.map.height (); ++z)
     for (int x = 10; x <= 11; ++x)
-      ridge.map.raw_heights ()[z * ridge.map.width () + x] = 4.0f;
+      ridge.map.set_relative_elevation (x, z, 4.0f);
   MOPPE_CHECK_NEAR (
     game::sun_visibility_target (view, ridge.world, ridge.map), 0.0f, 1e-6f);
 

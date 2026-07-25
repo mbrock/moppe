@@ -28,7 +28,7 @@ namespace moppe {
     }
 
     void Walker::update (seconds_t dt,
-                         const map::HeightMap& map,
+                         const map::Surface& map,
                          const std::vector<mov::Box>& boxes,
                          const WorldParams& world) {
       const float turn = scalar_value (m_turn);

@@ -1,4 +1,4 @@
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/program.hh>
@@ -110,10 +110,9 @@ int main (int argc, char** argv) {
     for (int offset = 0; offset < seed_count; ++offset) {
       const std::uint32_t seed =
         first_seed + static_cast<std::uint32_t> (offset);
-      map::RandomHeightMap map (
-        resolution,
-        resolution,
-        Vec3 (world_width_m, world_height_m, world_width_m));
+      map::Surface map (resolution,
+                        resolution,
+                        Vec3 (world_width_m, world_height_m, world_width_m));
       TerrainProgram program = make_world_program (seed, profile);
       program.source.sea_level = sea_level;
       program.source.coastline = coastline;

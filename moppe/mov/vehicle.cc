@@ -23,7 +23,7 @@ namespace moppe {
 
     Vehicle::Vehicle (position_t position,
                       degrees_t orientation,
-                      const HeightMap& map,
+                      const Surface& map,
                       newtons_t max_thrust,
                       watts_t power,
                       kilograms_t mass)

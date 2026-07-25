@@ -3,7 +3,7 @@
 
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/world.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/render/renderer.hh>
 
 #include <vector>
@@ -17,11 +17,11 @@ namespace moppe {
     class Terrain {
     public:
       // Uploads heights/normals and the splat textures; call again
-      // after the heightmap changes (e.g. city baking).  Takes the
-      // concrete map type: raw_heights()/raw_normals() live there.
+      // after the surface changes (e.g. city baking).  Takes the
+      // Surface owns the typed elevation and normal columns uploaded here.
       void setup (
         render::Renderer& r,
-        const map::RandomHeightMap& map,
+        const map::Surface& map,
         const WorldParams& world,
         const GraphicsSettings& graphics,
         render::TerrainProjection projection = render::TerrainProjection::Plane,
@@ -31,7 +31,7 @@ namespace moppe {
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
       void render_shadow (render::Renderer& r,
-                          const map::HeightMap& map,
+                          const map::Surface& map,
                           const Vec3& sun_dir);
 
       // Emits culled chunk draws: distance cull against max_dist plus

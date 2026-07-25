@@ -84,13 +84,10 @@ depth. Wave amplitude and planar water velocity remain properties of water.
 Only `game::WaterPresentation` converts elevation back to the renderer's
 normalized height and packs velocity into numeric x/z lanes.
 
-The current heightmap remains authoritative. World generation explicitly
-refreshes the surface materialization after recomputing normals, and spawn
-selection plus glider terrain queries consume the continuous typed view.
-Elevation and normal temporarily duplicate the heightmap columns so the
-abstraction can be verified without rewriting generation kernels; a later
-consolidation can make bundle
-storage authoritative or introduce borrowed/chunked columns.
+The mandatory `SurfaceAtlas::geometry()` bundle is authoritative. Generation
+writes its relative-elevation column, normal reconstruction writes its normal
+column, and spawn selection plus glider terrain queries sample the same
+surface. There is no preceding heightmap or copied geometry refresh.
 
 Every backend implements the `FieldEvaluator` materialization boundary.
 `CpuEvaluator` lowers unique nodes to a topologically ordered register program
@@ -122,8 +119,8 @@ outside the field algebra and gives later backends an equally plain boundary.
 Terrain Lab requests the accelerated evaluator lazily from the platform and
 injects it into `map::TerrainEvaluator`.  macOS 26 uses Metal 4; unsupported
 platforms return no accelerator and retain the CPU implementation.  The
-current checkpoint reads the result back into the authoritative CPU heightmap
-so all existing transforms and physics remain unchanged.
+current checkpoint writes the result into the authoritative typed elevation
+column, which subsequent transforms and physics share.
 
 ## Geological recipes
 
@@ -161,11 +158,10 @@ limited to the two stages used to build a world:
 - `OrogenyEvolution`
 - `TrailFormation`
 
-`map::TerrainEvaluator` materializes the source and applies those transforms
-to concrete height storage. It owns program order, progress reporting, and
-exact resumable checkpoints. `RandomHeightMap` no
-longer interprets programs; it stores samples and provides the concrete
-shaping kernels that the evaluator invokes.
+`map::TerrainEvaluator` materializes the source into the surface geometry
+bundle and applies those transforms to its elevation and material-history
+columns. It owns program order, progress reporting, and exact typed resumable
+checkpoints.
 
 `WorldRecipe` is the immutable construction input around that program. It
 travels with the physical extent, sample resolution, topology, root seed,
@@ -215,7 +211,7 @@ length quantities. These are deliberately absent from the normalized sampling
 domain used by pointwise field evaluation. `relative_elevation_at` reads the
 scale-free sample, while
 `elevation_at` performs the explicit calibration into metres.
-`RandomHeightMap::terrain_view` is the shared bridge used by transforms,
+`Surface::terrain_view` is the borrowed, non-copying bridge used by transforms,
 tools, and the Lab.
 
 A reading consumes that materialized view without changing it. The first
@@ -422,7 +418,7 @@ so a stage
 edit only replays the affected suffix.  The final output already lives in the
 working map and is not copied into redundant history.  The lab does not
 maintain a parallel shadow representation of the recipe itself.  Leaving the
-lab restores the exact playable heightmap snapshot.
+  lab restores the exact playable typed geometry snapshot.
 
 Canonical orogeny and trail parameters are stepped once per click because both
 stages require global evaluation. Each

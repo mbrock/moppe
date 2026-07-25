@@ -1,4 +1,4 @@
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/map/terrain_evaluator.hh>
 #include <moppe/terrain/world_recipe.hh>
 
@@ -42,9 +42,9 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
                     0.0f);
   MOPPE_CHECK_NEAR (edited.terrain_program ().source.sea_level, 0.25f, 0.0f);
 
-  map::RandomHeightMap map (recipe.resolution (),
-                            recipe.resolution (),
-                            extent_value (recipe.extent ()));
+  map::Surface map (recipe.resolution (),
+                    recipe.resolution (),
+                    extent_value (recipe.extent ()));
   map::TerrainEvaluator (map).evaluate (recipe.terrain_program ());
-  MOPPE_CHECK (std::isfinite (map.get (0, 0)));
+  MOPPE_CHECK (std::isfinite (map.relative_elevation_at (0, 0)));
 }

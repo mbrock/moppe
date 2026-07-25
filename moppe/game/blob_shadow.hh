@@ -1,7 +1,7 @@
 #ifndef MOPPE_GAME_BLOB_SHADOW_HH
 #define MOPPE_GAME_BLOB_SHADOW_HH
 
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/render/draw.hh>
 #include <moppe/render/renderer.hh>
 
@@ -16,7 +16,7 @@ namespace moppe {
       void load (render::Renderer& r);
 
       void draw (render::DrawList& dl,
-                 const map::HeightMap& map,
+                 const map::Surface& map,
                  const Vec3& pos,
                  float radius);
 

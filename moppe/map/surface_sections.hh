@@ -3,23 +3,26 @@
 
 #include <moppe/map/surface_domain.hh>
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/terrain_quantities.hh>
 
 namespace moppe::map {
   inline constexpr struct surface_elevation
       : quantity_spec<mp_units::isq::height, mp_units::is_kind> {
   } surface_elevation;
 
-  inline constexpr struct surface_normal
-      : quantity_spec<mp_units::dimensionless,
-                      mp_units::quantity_tensor_order::vector,
-                      mp_units::is_kind> {
-  } surface_normal;
-
   // The upward component of a broad local support plane. Snow responds to
   // this material-scale reading rather than the detailed lighting normal.
   inline constexpr struct snow_support
       : quantity_spec<mp_units::dimensionless> {
   } snow_support;
+
+  inline constexpr struct eroded_surface_material
+      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } eroded_surface_material;
+
+  inline constexpr struct deposited_surface_material
+      : quantity_spec<mp_units::dimensionless, mp_units::is_kind> {
+  } deposited_surface_material;
 
   // Planar channel direction scaled by log-compressed fluvial activity.
   inline constexpr struct channel_flux
@@ -72,8 +75,12 @@ namespace moppe::map {
     quantity_point<surface_elevation[u::m],
                    default_point_origin (surface_elevation[u::m]),
                    float>;
-  using SurfaceNormal = quantity<surface_normal[one], Vec3>;
+  using RelativeSurfaceElevation = terrain::RelativeTerrainElevation;
+  using SurfaceNormal = terrain::TerrainNormal;
   using SnowSupport = quantity<snow_support[one], float>;
+  using ErodedSurfaceMaterial = quantity<eroded_surface_material[one], float>;
+  using DepositedSurfaceMaterial =
+    quantity<deposited_surface_material[one], float>;
   using ChannelFlux = quantity<channel_flux[one], Vec3>;
   using SurfaceMoisture = quantity<surface_moisture[one], float>;
   using WaterlineDistance = quantity<waterline_distance[u::m], float>;
@@ -87,8 +94,12 @@ namespace moppe::map {
   // Each named materialization group is a typed collection of 0-cochains over
   // the same SurfaceDomain. SurfaceAtlas makes a group's presence explicit,
   // so an unavailable reading cannot be mistaken for an ordinary zero.
-  using SurfaceGeometrySections = spatial::
-    Bundle<SurfaceDomain, SurfaceElevation, SurfaceNormal, SnowSupport>;
+  using SurfaceGeometrySections = spatial::Bundle<SurfaceDomain,
+                                                  RelativeSurfaceElevation,
+                                                  SurfaceNormal,
+                                                  ErodedSurfaceMaterial,
+                                                  DepositedSurfaceMaterial,
+                                                  SnowSupport>;
   using SurfaceChannelFluxSections =
     spatial::Bundle<SurfaceDomain, ChannelFlux>;
   using SurfaceMoistureSections =

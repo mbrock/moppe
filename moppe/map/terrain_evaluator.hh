@@ -1,7 +1,7 @@
 #ifndef MOPPE_MAP_TERRAIN_EVALUATOR_HH
 #define MOPPE_MAP_TERRAIN_EVALUATOR_HH
 
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/terrain/program.hh>
 
 #include <cstddef>
@@ -16,15 +16,15 @@ namespace moppe::map {
   // terrain, change ledgers, and lagged channel tangent makes a resumed
   // program equivalent to evaluating the same prefix again.
   struct TerrainCheckpoint {
-    std::vector<float> heights;
-    std::vector<float> eroded;
-    std::vector<float> deposited;
+    std::vector<RelativeSurfaceElevation> elevations;
+    std::vector<ErodedSurfaceMaterial> eroded;
+    std::vector<DepositedSurfaceMaterial> deposited;
     std::vector<terrain::ChannelTangent> channel_tangents;
   };
 
-  // Interprets terrain-language values against concrete heightmap storage.
-  // RandomHeightMap owns samples and shaping kernels; this class owns program
-  // order, progress, and resumable history.
+  // Interprets terrain-language values against the authoritative surface
+  // geometry bundle. This class owns program order, progress, and resumable
+  // history.
   class TerrainEvaluator {
   public:
     using Progress =
@@ -34,7 +34,7 @@ namespace moppe::map {
     using SourceProgress = std::function<void (std::size_t, std::size_t)>;
 
     explicit TerrainEvaluator (
-      RandomHeightMap& target,
+      Surface& target,
       const terrain::FieldEvaluator* source_evaluator = nullptr,
       const terrain::StreamPowerEvolutionBackend* evolution_backend = nullptr);
 
@@ -64,7 +64,7 @@ namespace moppe::map {
     }
 
   private:
-    RandomHeightMap& m_target;
+    Surface& m_target;
     const terrain::FieldEvaluator* m_source_evaluator;
     const terrain::StreamPowerEvolutionBackend* m_evolution_backend;
     std::vector<float> m_relative_uplift;

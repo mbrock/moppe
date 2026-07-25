@@ -10,7 +10,7 @@ namespace moppe {
     }
 
     void BlobShadow::draw (render::DrawList& dl,
-                           const map::HeightMap& map,
+                           const map::Surface& map,
                            const Vec3& pos,
                            float radius) {
       const float gy = map.interpolated_height (pos[0], pos[2]);

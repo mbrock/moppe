@@ -10,7 +10,7 @@
 
 namespace moppe::map {
   TerrainEvaluator::TerrainEvaluator (
-    RandomHeightMap& target,
+    Surface& target,
     const terrain::FieldEvaluator* source_evaluator,
     const terrain::StreamPowerEvolutionBackend* evolution_backend)
       : m_target (target), m_source_evaluator (source_evaluator),
@@ -42,10 +42,12 @@ namespace moppe::map {
       meters_value (program.source.initial_bathymetric_relief) / height_scale_m;
     for (int y = 0; y < m_target.height (); ++y)
       for (int x = 0; x < m_target.width (); ++x) {
-        const float continent = m_target.get (x, y) - program.source.coastline;
+        const float continent =
+          m_target.relative_elevation_at (x, y) - program.source.coastline;
         const float relief =
           continent < 0.0f ? bathymetric_relief : land_relief;
-        m_target.set (x, y, program.source.sea_level + relief * continent);
+        m_target.set_relative_elevation (
+          x, y, program.source.sea_level + relief * continent);
       }
 
     m_relative_uplift.clear ();
@@ -95,9 +97,9 @@ namespace moppe::map {
           const std::size_t height = m_target.height ();
           for (std::size_t y = 0; y < height; ++y)
             for (std::size_t x = 0; x < width; ++x)
-              m_target.set (static_cast<int> (x),
-                            static_cast<int> (y),
-                            heights[y * width + x]);
+              m_target.set_relative_elevation (static_cast<int> (x),
+                                               static_cast<int> (y),
+                                               heights[y * width + x]);
           if (m_iteration_progress)
             m_iteration_progress (
               m_transform_index, transform, completed, total);
@@ -120,7 +122,8 @@ namespace moppe::map {
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const float updated = result.heights[y * width + x];
-          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+          m_target.set_relative_elevation (
+            static_cast<int> (x), static_cast<int> (y), updated);
         }
       report = result.report;
       m_channel_tangents = std::move (result.channel_tangents);
@@ -137,9 +140,10 @@ namespace moppe::map {
           m_target.record_material_change (
             static_cast<int> (x),
             static_cast<int> (y),
-            updated -
-              m_target.get (static_cast<int> (x), static_cast<int> (y)));
-          m_target.set (static_cast<int> (x), static_cast<int> (y), updated);
+            updated - m_target.relative_elevation_at (static_cast<int> (x),
+                                                      static_cast<int> (y)));
+          m_target.set_relative_elevation (
+            static_cast<int> (x), static_cast<int> (y), updated);
         }
       report = result.report;
       m_trail_network = std::move (result.network);
@@ -164,36 +168,24 @@ namespace moppe::map {
   }
 
   TerrainCheckpoint TerrainEvaluator::checkpoint () const {
-    const std::size_t count =
-      static_cast<std::size_t> (m_target.width ()) * m_target.height ();
-    return { .heights = std::vector<float> (m_target.raw_heights (),
-                                            m_target.raw_heights () + count),
-             .eroded = std::vector<float> (m_target.raw_eroded (),
-                                           m_target.raw_eroded () + count),
-             .deposited = std::vector<float> (
-               m_target.raw_deposited (), m_target.raw_deposited () + count),
+    return { .elevations = m_target.relative_elevations (),
+             .eroded = m_target.eroded_material (),
+             .deposited = m_target.deposited_material (),
              .channel_tangents = m_channel_tangents };
   }
 
   void TerrainEvaluator::restore (const TerrainCheckpoint& checkpoint) {
     const std::size_t expected =
       static_cast<std::size_t> (m_target.width ()) * m_target.height ();
-    if (checkpoint.heights.size () != expected)
+    if (checkpoint.elevations.size () != expected)
       throw std::invalid_argument (
         "terrain checkpoint dimensions do not match target");
-    std::copy (checkpoint.heights.begin (),
-               checkpoint.heights.end (),
-               m_target.raw_heights ());
-    // Checkpoints predating the sediment ledger restore it as empty.
-    m_target.reset_sediment_ledger ();
+    m_target.relative_elevations () = checkpoint.elevations;
+    m_target.reset_material_history ();
     if (checkpoint.eroded.size () == expected)
-      std::copy (checkpoint.eroded.begin (),
-                 checkpoint.eroded.end (),
-                 m_target.raw_eroded ());
+      m_target.eroded_material () = checkpoint.eroded;
     if (checkpoint.deposited.size () == expected)
-      std::copy (checkpoint.deposited.begin (),
-                 checkpoint.deposited.end (),
-                 m_target.raw_deposited ());
+      m_target.deposited_material () = checkpoint.deposited;
     const std::size_t unique =
       static_cast<std::size_t> (m_target.width ()) * m_target.height ();
     if (checkpoint.channel_tangents.size () == unique)

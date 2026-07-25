@@ -4,7 +4,7 @@
 
 #include <moppe/color.hh>
 #include <moppe/gfx/math.hh>
-#include <moppe/map/generate.hh>
+#include <moppe/map/surface.hh>
 
 #include <algorithm>
 #include <vector>
@@ -55,7 +55,7 @@ namespace moppe {
       // instead of shoving at 3 g all the way to the horizon.
       Vehicle (position_t position,
                degrees_t orientation,
-               const HeightMap& map,
+               const Surface& map,
                newtons_t max_thrust,
                watts_t power,
                kilograms_t mass);
@@ -275,7 +275,7 @@ namespace moppe {
       float m_wheel_spin;     // visual wheel roll angle (radians)
       bool m_boost_flight;    // landing softened after using the jets
 
-      const HeightMap& m_map;
+      const Surface& m_map;
 
       const newtons_t m_max_thrust;
       const watts_t m_power;

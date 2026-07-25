@@ -39,7 +39,6 @@
 #include <moppe/game/water_presentation.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_loading.hh>
-#include <moppe/map/generate.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/mov/glider.hh>
 #include <moppe/mov/vehicle.hh>
@@ -80,8 +79,8 @@ namespace moppe {
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
           : m_generated_world (std::make_unique<GeneratedWorld> (
               options.world, std::move (recipe))),
-            m_session (std::make_unique<GameSession> (
-              this->world (), this->map (), this->surface ())),
+            m_session (
+              std::make_unique<GameSession> (this->world (), this->surface ())),
             m_loading (this->recipe ()), m_graphics (options.graphics),
             m_spawn_position (
               position_value (this->world ().spawn_position ())),
@@ -170,10 +169,6 @@ namespace moppe {
 
       const WorldParams& world () const noexcept {
         return generated_world ().params ();
-      }
-
-      const map::RandomHeightMap& map () const noexcept {
-        return generated_world ().terrain ();
       }
 
       const map::Surface& surface () const noexcept {
@@ -317,13 +312,13 @@ namespace moppe {
         const std::size_t width = grid.width;
         const float x = (cell.value % width) * grid.spacing_x_m ();
         const float z = (cell.value / width) * grid.spacing_y_m ();
-        return Vec3 (x, map ().interpolated_height (x, z), z);
+        return Vec3 (x, surface ().interpolated_height (x, z), z);
       }
 
       Vec3 trail_alignment_position (
         const terrain::TrailAlignmentPoint& point) const {
         return Vec3 (point.x_m,
-                     map ().interpolated_height (point.x_m, point.z_m),
+                     surface ().interpolated_height (point.x_m, point.z_m),
                      point.z_m);
       }
 
@@ -513,8 +508,7 @@ namespace moppe {
           std::move (m_generated_world);
         std::unique_ptr<GameSession> retired_session = std::move (m_session);
         m_generated_world = std::move (completed);
-        m_session =
-          std::make_unique<GameSession> (world (), map (), surface ());
+        m_session = std::make_unique<GameSession> (world (), surface ());
         retired_session.reset ();
         retired_world.reset ();
       }
@@ -525,10 +519,10 @@ namespace moppe {
         // Running rivers are continuous ribbon meshes. The water sheets retain
         // standing bodies and carry each mouth's current into them.
         if (rivers ())
-          m_river_surface.rebuild (r, map (), *rivers ());
+          m_river_surface.rebuild (r, surface (), *rivers ());
         m_water_presentation.reset (world ().water_level, world ().map_size);
         if (const auto& water = generated_world ().water_surface ())
-          m_water_presentation.refresh (*water, map ().scale ()[1] * u::m);
+          m_water_presentation.refresh (*water, surface ().scale ()[1] * u::m);
       }
 
       void prepare_world_surface () {
@@ -541,7 +535,7 @@ namespace moppe {
 
         if (m_water_shot) {
           m_water_inspection = choose_water_inspection (*m_water_shot,
-                                                        map (),
+                                                        surface (),
                                                         *standing_water (),
                                                         *lake_census (),
                                                         *drainage (),
@@ -558,13 +552,13 @@ namespace moppe {
 
       void place_stars_and_player () {
         MOPPE_PROFILE_ZONE ("startup.place_stars_and_player");
-        session ().stars ().generate (map (), world (), 80);
+        session ().stars ().generate (surface (), world (), 80);
         if (trail_network ()) {
           m_home_base_position =
             trail_cell_position (trail_network ()->plan.home_base);
           m_spawn_position =
             m_home_base_position - trail_direction_from_home () * 8.0f;
-          m_spawn_position[1] = map ().interpolated_height (
+          m_spawn_position[1] = surface ().interpolated_height (
                                   m_spawn_position[0], m_spawn_position[2]) +
                                 1.2f;
         } else {
@@ -628,7 +622,7 @@ namespace moppe {
       void plan_opening_journey () {
         MOPPE_PROFILE_ZONE ("startup.plan_cinematic_flight");
         if (standing_water () && lake_census () && drainage () && rivers ())
-          m_cinematic_plan = plan_cinematic_flight (map (),
+          m_cinematic_plan = plan_cinematic_flight (surface (),
                                                     *standing_water (),
                                                     *lake_census (),
                                                     *drainage (),
@@ -684,7 +678,7 @@ namespace moppe {
           m_water_shot.has_value () || m_tree_demo || ::getenv ("MOPPE_DEMO");
         if (m_start_in_terrain_lab) {
           m_terrain_lab.enter (r,
-                               generated_world ().terrain (),
+                               generated_world ().surface (),
                                m_terrain,
                                world (),
                                m_graphics,
@@ -695,14 +689,14 @@ namespace moppe {
           m_start_in_terrain_lab = false;
         } else if (!automated && !m_skip_cinematic_requested &&
                    !m_cinematic_plan.empty ()) {
-          m_cinematic.start (m_cinematic_plan, map ());
+          m_cinematic.start (m_cinematic_plan, surface ());
           m_live_input.clear ();
         }
       }
 
       void upload_world_terrain (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.upload_world_terrain");
-        m_terrain.setup (r, map (), world (), m_graphics);
+        m_terrain.setup (r, surface (), world (), m_graphics);
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
         m_water_presentation.upload (r);
@@ -712,7 +706,7 @@ namespace moppe {
       void cast_world_shadows (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
         m_terrain.render_shadow (
-          r, map (), sun_direction_for (m_graphics.sun_height));
+          r, surface (), sun_direction_for (m_graphics.sun_height));
       }
 
       // -- simulation --------------------------------------------------
@@ -794,7 +788,7 @@ namespace moppe {
               .lift = input_value (input.boost),
               .pace = input_value (input.drive),
             };
-            m_cinematic.tick (dt, map (), controls);
+            m_cinematic.tick (dt, surface (), controls);
             if (!m_cinematic.active ())
               leave_cinematic ();
             update_frame_flare ();
@@ -804,7 +798,7 @@ namespace moppe {
 
         // Terrain inspection pauses actors and vehicle physics, but keeps the
         // visual clock, weather, and fog alive so sky and water remain a
-        // useful frame of reference around the heightmap.
+        // useful frame of reference around the terrain.
         if (m_terrain_lab.active ()) {
           m_terrain_lab.tick (dt);
           update_frame_flare ();
@@ -834,7 +828,7 @@ namespace moppe {
 
         const GameSessionAdvanceContext advance_context {
           world (),
-          map (),
+          surface (),
           m_obstacles,
           m_landscape_scale_x,
           m_landscape_scale_y,
@@ -847,7 +841,7 @@ namespace moppe {
         if (m_water_inspection) {
           session ().camera ().place (m_water_inspection->eye,
                                       m_water_inspection->target);
-          session ().camera ().limit (map ());
+          session ().camera ().limit (surface ());
         }
 
         if (m_benchmark)
@@ -964,16 +958,16 @@ namespace moppe {
 
         // Soft blob shadows under the movers.
         draw_home_base_marker (m_world_dl);
-        m_blob.draw (m_world_dl, map (), actors.bike.position, 2.2f);
+        m_blob.draw (m_world_dl, surface (), actors.bike.position, 2.2f);
         if (actors.car)
-          m_blob.draw (m_world_dl, map (), actors.car->position, 2.9f);
+          m_blob.draw (m_world_dl, surface (), actors.car->position, 2.9f);
         if (actors.walker)
           m_blob.draw (m_world_dl,
-                       map (),
+                       surface (),
                        actors.walker->position + Vec3 (0, 0.5f, 0),
                        0.8f);
         if (actors.glider)
-          m_blob.draw (m_world_dl, map (), actors.glider->position, 3.4f);
+          m_blob.draw (m_world_dl, surface (), actors.glider->position, 3.4f);
 
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
@@ -1492,7 +1486,7 @@ namespace moppe {
           session ().clear_controls ();
           m_live_input.clear ();
           m_terrain_lab.enter (*m_renderer,
-                               generated_world ().terrain (),
+                               generated_world ().surface (),
                                m_terrain,
                                world (),
                                m_graphics,
@@ -1579,7 +1573,7 @@ namespace moppe {
 
         return {
           .world = world (),
-          .terrain = map (),
+          .surface = surface (),
           .session = session (),
           .graphics = m_graphics,
           .selected_camera = camera,
@@ -1601,7 +1595,8 @@ namespace moppe {
 
       void update_frame_flare () {
         const FrameView frame = compose_frame_view (frame_view_input (1.0f));
-        const float target = sun_visibility_target (frame, world (), map ());
+        const float target =
+          sun_visibility_target (frame, world (), surface ());
         logic ().m_flare += (target - logic ().m_flare) * 0.12f;
       }
 
@@ -1691,7 +1686,7 @@ namespace moppe {
           normalize (heading);
         const Vec3 eye = subject - heading * 6.2f + Vec3 (0, 2.5f, 0);
         session ().camera ().place (eye, subject + heading * 2.0f);
-        session ().camera ().limit (map ());
+        session ().camera ().limit (surface ());
       }
 
       void regenerate_world () {

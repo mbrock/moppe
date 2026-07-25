@@ -7,7 +7,7 @@ namespace moppe::game {
   TerrainLabModel::~TerrainLabModel () = default;
 
   void TerrainLabModel::begin (
-    map::RandomHeightMap& map,
+    map::Surface& map,
     const terrain::TerrainProgram& program,
     const terrain::FieldEvaluator* source_evaluator,
     const terrain::StreamPowerEvolutionBackend* evolution_backend) {
@@ -40,12 +40,12 @@ namespace moppe::game {
     reset_progress (TerrainLabEvaluationProgress::Phase::Idle);
   }
 
-  map::RandomHeightMap& TerrainLabModel::map () {
+  map::Surface& TerrainLabModel::map () {
     require_active ();
     return *m_map;
   }
 
-  const map::RandomHeightMap& TerrainLabModel::map () const {
+  const map::Surface& TerrainLabModel::map () const {
     require_active ();
     return *m_map;
   }

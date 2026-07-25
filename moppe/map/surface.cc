@@ -1,6 +1,5 @@
 #include <moppe/map/surface.hh>
 
-#include <moppe/map/generate.hh>
 #include <moppe/profile.hh>
 #include <moppe/terrain/river.hh>
 
@@ -10,14 +9,6 @@
 
 namespace moppe::map {
   namespace {
-    SurfaceDomain domain_for (const HeightMap& map) {
-      const Vec3 scale = map.scale ();
-      return SurfaceDomain (static_cast<std::size_t> (map.width ()),
-                            static_cast<std::size_t> (map.height ()),
-                            scale[0] * u::m,
-                            scale[2] * u::m);
-    }
-
     struct SnowSupportStencil {
       int width;
       int height;
@@ -25,12 +16,12 @@ namespace moppe::map {
       int dz;
     };
 
-    SnowSupportStencil snow_support_stencil (const HeightMap& map) {
+    SnowSupportStencil snow_support_stencil (const Surface& surface) {
       constexpr meters_t support_radius = 24.0f * u::m;
-      const Vec3 spacing = map.scale ();
+      const Vec3 spacing = surface.scale ();
       return {
-        .width = map.width (),
-        .height = map.height (),
+        .width = surface.width (),
+        .height = surface.height (),
         .dx = std::max (1,
                         static_cast<int> (std::lround (
                           meters_value (support_radius) / spacing[0]))),
@@ -40,15 +31,16 @@ namespace moppe::map {
       };
     }
 
-    Vec3 snow_support_normal (const HeightMap& map,
+    Vec3 snow_support_normal (const Surface& surface,
                               const SnowSupportStencil& stencil,
                               int column,
                               int row) {
       column = terrain::wrap_index (column, stencil.width);
       row = terrain::wrap_index (row, stencil.height);
       const auto sample = [&] (int x, int z) {
-        return map.normal (terrain::wrap_index (column + x, stencil.width),
-                           terrain::wrap_index (row + z, stencil.height));
+        return surface.normal_at (
+          terrain::wrap_index (column + x, stencil.width),
+          terrain::wrap_index (row + z, stencil.height));
       };
       Vec3 support = sample (0, 0) * 4.0f;
       support += (sample (-stencil.dx, 0) + sample (stencil.dx, 0) +
@@ -60,23 +52,18 @@ namespace moppe::map {
       return normalized (support);
     }
 
-    void populate_geometry (SurfaceGeometrySections& sections,
-                            const HeightMap& map) {
-      MOPPE_PROFILE_ZONE ("surface.populate_geometry");
-      const float vertical_scale = map.scale ()[1];
-      const SnowSupportStencil support_stencil = snow_support_stencil (map);
-      for (int row = 0; row < map.height (); ++row)
-        for (int column = 0; column < map.width (); ++column) {
+    void populate_snow_support (SurfaceGeometrySections& sections,
+                                const Surface& surface) {
+      MOPPE_PROFILE_ZONE ("surface.populate_snow_support");
+      const SnowSupportStencil support_stencil = snow_support_stencil (surface);
+      for (int row = 0; row < surface.height (); ++row)
+        for (int column = 0; column < surface.width (); ++column) {
           const SurfaceIndex index { static_cast<std::size_t> (column),
                                      static_cast<std::size_t> (row) };
           auto site = sections[index];
-          spatial::get<surface_elevation> (site) = SurfaceElevation (
-            map.get (column, row) * vertical_scale * surface_elevation[u::m]);
-          spatial::get<surface_normal> (site) =
-            map.normal (column, row) * surface_normal[one];
           spatial::get<snow_support> (site) =
             std::clamp (
-              snow_support_normal (map, support_stencil, column, row)[1],
+              snow_support_normal (surface, support_stencil, column, row)[1],
               0.0f,
               1.0f) *
             snow_support[one];
@@ -92,18 +79,23 @@ namespace moppe::map {
     }
   }
 
-  Surface::Surface (const HeightMap& map) {
-    refresh (map);
+  Surface::Surface (int width, int height, const Vec3& size)
+      : m_height_scale (size[1] * u::m),
+        m_atlas (SurfaceDomain (static_cast<std::size_t> (width),
+                                static_cast<std::size_t> (height),
+                                size[0] / static_cast<float> (width) * u::m,
+                                size[2] / static_cast<float> (height) * u::m)) {
+    if (width < 2 || height < 2 || size[0] <= 0.0f || size[1] <= 0.0f ||
+        size[2] <= 0.0f)
+      throw std::invalid_argument ("Surface dimensions must be positive");
+    reset_material_history ();
   }
 
-  void Surface::refresh (const HeightMap& map) {
-    MOPPE_PROFILE_ZONE ("Surface::refresh");
-    const SurfaceDomain domain = domain_for (map);
-    if (!m_atlas || m_atlas->domain () != domain)
-      m_atlas.emplace (domain);
-    else
-      m_atlas->clear_derived ();
-    populate_geometry (m_atlas->geometry (), map);
+  void Surface::rebuild_geometry_readings () {
+    MOPPE_PROFILE_ZONE ("Surface::rebuild_geometry_readings");
+    recompute_normals ();
+    m_atlas.clear_derived ();
+    populate_snow_support (m_atlas.geometry (), *this);
   }
 
   void Surface::materialize_trail_influence (std::span<const float> influence) {
@@ -200,11 +192,14 @@ namespace moppe::map {
   }
 
   SurfaceElevation Surface::elevation_at (const position_t& position) const {
-    return spatial::sample<surface_elevation> (atlas ().geometry (), position);
+    const Vec3 point = position_value (position);
+    return SurfaceElevation (interpolated_height (point[0], point[2]) *
+                             surface_elevation[u::m]);
   }
 
   SurfaceNormal Surface::normal_at (const position_t& position) const {
-    return spatial::sample<surface_normal> (atlas ().geometry (), position);
+    return spatial::sample<terrain::terrain_normal> (atlas ().geometry (),
+                                                     position);
   }
 
   SnowSupport Surface::snow_support_at (const position_t& position) const {
@@ -279,15 +274,4 @@ namespace moppe::map {
       position);
   }
 
-  const SurfaceAtlas& Surface::atlas () const {
-    if (!m_atlas)
-      throw std::logic_error ("Surface has not been materialized");
-    return *m_atlas;
-  }
-
-  SurfaceAtlas& Surface::mutable_atlas () {
-    if (!m_atlas)
-      throw std::logic_error ("Surface has not been materialized");
-    return *m_atlas;
-  }
 }

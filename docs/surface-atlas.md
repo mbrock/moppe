@@ -14,13 +14,12 @@ For the wider ownership, state, presentation, and target map, start with the
 | Storey | Current object | Responsibility |
 | --- | --- | --- |
 | Combinatorial | `map::SurfaceDomain` | The finite toroidal vertex lattice, index/offset correspondence, horizontal spacing, and bilinear reconstruction stencil. |
-| Intrinsic | `map::SurfaceAtlas`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in named ground groups and a distinct water bundle. `map::Surface` owns the ground's materialization barriers. |
+| Intrinsic | `map::SurfaceAtlas`, `map::WaterSurfaceSections` | Typed 0-cochains sharing the lattice but kept in named ground groups and a distinct water bundle. `map::Surface` owns the authoritative ground geometry and its later analyses. |
 | Extrinsic | `game::SurfacePresentation`, `game::WaterPresentation` | Convert typed columns to plain scalar texture payloads and upload them through `render::Renderer`. These are the quantity-to-number bridges. |
 
-The authoritative `RandomHeightMap` and the terrain-generation pipeline still
-precede these storeys. `Surface::refresh` is the explicit point where their
-finished geometry becomes intrinsic section data. Hydrology, geology, ecology,
-and use add readings at later, named barriers. They do not mutate the domain.
+Terrain generation writes the mandatory geometry bundle directly. Hydrology,
+geology, ecology, and use add readings at later, named barriers. They do not
+mutate the domain.
 `Surface::atlas()` exposes those views: a null section pointer means it has not
 crossed its barrier, while a present section can legitimately contain zeroes.
 
@@ -28,7 +27,7 @@ crossed its barrier, while a present section can legitimately contain zeroes.
 
 | Domain | Sites | Boundary | Reconstruction | Defined in |
 | --- | --- | --- | --- | --- |
-| `SurfaceDomain` | One site per heightmap sample | Always wraps over the full lattice extent | Four-site bilinear stencil owned by the domain | `moppe/map/surface_domain.hh` |
+| `SurfaceDomain` | One site per terrain sample | Always wraps over the full lattice extent | Four-site bilinear stencil owned by the domain | `moppe/map/surface_domain.hh` |
 
 The domain stores no duplicated seam. Presentation repeats the world by
 translated images; it does not add lattice sites.
@@ -36,15 +35,16 @@ translated images; it does not add lattice sites.
 ## Intrinsic sections
 
 All current sections are vertex 0-cochains over the atlas's one
-`SurfaceDomain`. `geometry()` is always present after `Surface::refresh()`.
+`SurfaceDomain`. `geometry()` exists for the whole lifetime of `Surface`.
 The other views expose individual optional sections so their existing barriers
 remain visible without a parallel Boolean availability ledger.
 
 | Group and section | Value | Meaning | Becomes valid |
 | --- | --- | --- | --- |
-| `geometry`: `surface_elevation` | elevation point in metres | Height in the current default elevation frame | `Surface::refresh` |
-| `geometry`: `surface_normal` | dimensionless vector | Detailed lighting and contact normal | `Surface::refresh` |
-| `geometry`: `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `Surface::refresh` |
+| `geometry`: `relative_terrain_elevation` | semantic dimensionless scalar | Authoritative elevation relative to the world's vertical scale | terrain evaluation or cache load |
+| `geometry`: `terrain_normal` | dimensionless vector | Detailed lighting and contact normal | `rebuild_geometry_readings` |
+| `geometry`: `eroded_surface_material`, `deposited_surface_material` | semantic dimensionless scalars | Lifetime cut/fill history in terrain storage units | terrain evolution |
+| `geometry`: `snow_support` | dimensionless scalar | Up component of the broad support plane used by snow | `rebuild_geometry_readings` |
 | `hydrology`: `channel_flux` | dimensionless planar vector | Channel tangent scaled by visible fluvial activity | drainage analysis in world setup |
 | `hydrology`: `surface_moisture` | dimensionless scalar | Ground wetness synthesized from standing water and drainage | moisture analysis in world setup |
 | `hydrology`: `waterline_distance` | length in metres | Horizontal distance to the extracted wet/dry curve | waterline analysis in world setup |
@@ -55,7 +55,7 @@ remain visible without a parallel Boolean availability ledger.
 | `use`: `home_base_influence` | dimensionless scalar | Membership in the inhabited clearing | trail analysis in world setup |
 
 `moppe/map/surface_sections.hh` is the ontology page in code. Geometry
-materialization lives in `surface.cc`; ecological rules live in
+storage and reconstruction live in `surface_geometry.cc`; ecological rules live in
 `surface_ecology.cc`. Consumers sample quantities from `map::Surface` or read
 the appropriate named atlas view, such as
 `surface.atlas().ecology().forest_cover()`.
