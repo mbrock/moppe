@@ -26,9 +26,7 @@ namespace moppe {
 
       // Renders the one-time shadow map.  sun_dir points toward the
       // sun, world space.
-      void render_shadow (render::Renderer& r,
-                          const map::Surface& map,
-                          const Vec3& sun_dir);
+      void render_shadow (render::Renderer& r, const Vec3& sun_dir);
 
       // Emits culled chunk draws: distance cull against max_dist plus
       // a conservative behind-camera test.  Five nested LODs run from
@@ -49,6 +47,7 @@ namespace moppe {
       std::vector<render::ChunkDraw> m_draws;
       Vec3 m_scale;
       Vec3 m_period;
+      Vec3 m_extent;
       float m_lod_scale = 1;
       render::TexturePtr m_grass, m_dirt, m_rock, m_snow;
       bool m_textures_loaded = false;

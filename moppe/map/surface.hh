@@ -22,7 +22,9 @@ namespace moppe::map {
     int width () const noexcept;
     int height () const noexcept;
     Vec3 sample_spacing () const noexcept;
-    Vec3 world_extent () const noexcept;
+    // The lattice repeats horizontally and has no vertical bound of its own;
+    // a world's full extent belongs to its parameters.
+    Vec3 world_period () const noexcept;
     const terrain::TerrainDomain& domain () const noexcept {
       return m_geometry.domain ();
     }
@@ -40,8 +42,6 @@ namespace moppe::map {
     }
 
     Vec3 vertex (int column, int row) const;
-    Vec3 triangle_normal (int x1, int y1, int x2, int y2, int x3, int y3) const;
-    Vec3 center () const;
     bool in_bounds (float x, float z) const;
     float interpolated_height (float x, float z) const;
     Vec3 interpolated_normal (float x, float z) const;
@@ -63,7 +63,6 @@ namespace moppe::map {
   private:
     std::size_t offset (int column, int row) const;
 
-    meters_t m_vertical_extent;
     SurfaceGeometry m_geometry;
   };
 }

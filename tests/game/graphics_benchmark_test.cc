@@ -78,7 +78,7 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
   map.recompute_normals ();
   map::Surface& surface = map;
   game::WorldParams world;
-  world.map_size = spatial_extent_in_metres (map.world_extent ());
+  world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;

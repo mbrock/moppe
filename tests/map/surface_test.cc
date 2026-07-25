@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <stdexcept>
 #include <type_traits>
 
@@ -221,6 +222,27 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
   map.rebuild_geometry ();
   map::Surface& surface = map;
 
+  // Reconstruction is the domain's own bilinear stencil. State the expected
+  // rule here independently, over the authoritative lattice.
+  const Vec3 spacing = map.sample_spacing ();
+  const auto expected_height = [&] (float x, float z) {
+    const float gx = x / spacing[0];
+    const float gz = z / spacing[2];
+    const int x0 = static_cast<int> (std::floor (gx));
+    const int z0 = static_cast<int> (std::floor (gz));
+    const auto corner = [&] (int column, int row) {
+      return elevation_value (
+        map.elevation_at (terrain::wrap_index (column, map.width ()),
+                          terrain::wrap_index (row, map.height ())));
+    };
+    const float tx = gx - x0;
+    const float tz = gz - z0;
+    return std::lerp (
+      std::lerp (corner (x0, z0), corner (x0 + 1, z0), tx),
+      std::lerp (corner (x0, z0 + 1), corner (x0 + 1, z0 + 1), tx),
+      tz);
+  };
+
   const std::array points { Vec3 (0, 0, 0),
                             Vec3 (4.25f, 0, 7.75f),
                             Vec3 (16.4f, 0, 21.8f),
@@ -228,11 +250,15 @@ MOPPE_TEST (surface_reconstruction_matches_authoritative_geometry) {
   for (const Vec3& point : points) {
     const position_t p = position (point);
     MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)),
-                      map.interpolated_height (point[0], point[2]),
+                      expected_height (point[0], point[2]),
                       1e-5f);
+    // The plain-metre reconstructions are the same sample, unwrapped.
+    MOPPE_CHECK_NEAR (elevation_value (surface.elevation_at (p)),
+                      map.interpolated_height (point[0], point[2]),
+                      1e-6f);
     check_surface_vector (normal_value (surface.normal_at (p)),
                           map.interpolated_normal (point[0], point[2]),
-                          1e-5f);
+                          1e-6f);
   }
 }
 
@@ -250,7 +276,7 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   map::Surface& surface = map;
 
   // Sampling one period apart reads the same surface.
-  const Vec3 period = map.world_extent ();
+  const Vec3 period = map.world_period ();
   for (const Vec3& point : { Vec3 (3.25f, 0, 7.5f), Vec3 (39.25f, 0, 37.5f) }) {
     const position_t p = position (point);
     const position_t wrapped =

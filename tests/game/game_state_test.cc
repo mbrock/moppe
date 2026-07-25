@@ -287,7 +287,7 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   map.recompute_normals ();
   map::Surface& surface = map;
   game::WorldParams world;
-  world.map_size = spatial_extent_in_metres (map.world_extent ());
+  world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;
@@ -344,7 +344,7 @@ MOPPE_TEST (star_state_restores_attraction_and_respawn_state) {
     (0.5f) * 20.0f * mp_units::si::metre));
   map.recompute_normals ();
   game::WorldParams world;
-  world.map_size = spatial_extent_in_metres (map.world_extent ());
+  world.map_size = spatial_extent_in_metres (Vec3 (100, 20, 100));
   world.water_level = 0 * u::m;
   game::Stars stars;
   stars.generate (map, world, 8);
@@ -415,7 +415,7 @@ MOPPE_TEST (game_session_restores_a_same_world_checkpoint) {
   map.recompute_normals ();
   map::Surface& surface = map;
   game::WorldParams world;
-  world.map_size = spatial_extent_in_metres (map.world_extent ());
+  world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.water_level = 0 * u::m;
 
   static_assert (!std::is_copy_constructible_v<game::GameSession>);
@@ -505,7 +505,7 @@ MOPPE_TEST (game_session_advance_replays_an_input_tape_on_the_same_world) {
   map.recompute_normals ();
   map::Surface& surface = map;
   game::WorldParams world;
-  world.map_size = spatial_extent_in_metres (map.world_extent ());
+  world.map_size = spatial_extent_in_metres (Vec3 (200, 20, 200));
   world.resolution = map.width ();
   world.water_level = 0 * u::m;
   std::vector<mov::Box> obstacles;

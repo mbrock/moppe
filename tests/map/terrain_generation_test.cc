@@ -61,7 +61,7 @@ MOPPE_TEST (generated_terrain_wraps_continuously) {
 
   // The lattice is seamless: sampling one period apart reads the same
   // ground in both axes.
-  const Vec3 period = map.world_extent ();
+  const Vec3 period = map.world_period ();
   for (const float t : { 3.7f, 611.2f, 2499.9f }) {
     MOPPE_CHECK_NEAR (map.interpolated_height (t, t * 0.4f),
                       map.interpolated_height (t + period[0], t * 0.4f),
