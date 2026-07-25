@@ -613,7 +613,7 @@ namespace moppe {
       // world setup
       void
       set_terrain (const TerrainParams& params,
-                   std::span<const terrain::RelativeTerrainElevation> heights,
+                   std::span<const terrain::SurfaceElevation> heights,
                    std::span<const terrain::TerrainNormal> normals) override;
       void set_terrain_topology_overlay (bool enabled) override;
       void set_terrain_textures (TexturePtr grass,
@@ -1315,13 +1315,14 @@ namespace moppe {
 
     void MetalRenderer::set_terrain (
       const TerrainParams& params,
-      std::span<const terrain::RelativeTerrainElevation> heights,
+      std::span<const terrain::SurfaceElevation> heights,
       std::span<const terrain::TerrainNormal> normals) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_terrain");
       const int w = params.width, h = params.height;
       const std::size_t sample_count = static_cast<std::size_t> (w) * h;
       if (w < 2 || h < 2 || heights.size () != sample_count ||
-          (!normals.empty () && normals.size () != sample_count))
+          (!normals.empty () && normals.size () != sample_count) ||
+          params.height_scale <= 0.0f)
         throw std::invalid_argument ("invalid Metal terrain raster");
       const bool transition =
         params.derive_normals && m_terrain_resources.have_terrain &&
@@ -1365,8 +1366,20 @@ namespace moppe {
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.heights = [m_device newTextureWithDescriptor:td];
       }
-      upload_texture (
-        m_terrain_resources.heights, heights.data (), w, h, 4, false);
+      // The renderer still consumes normalized texture lanes. Keep that
+      // conversion at this presentation boundary while terrain storage and
+      // simulation use physical elevations.
+      std::vector<float> presented_heights (sample_count);
+      for (std::size_t offset = 0; offset < sample_count; ++offset)
+        presented_heights[offset] =
+          terrain::surface_elevation_value (heights[offset]) /
+          params.height_scale;
+      upload_texture (m_terrain_resources.heights,
+                      presented_heights.data (),
+                      w,
+                      h,
+                      sizeof (float),
+                      false);
       if (transition && !continue_transition) {
         m_terrain_resources.height_transition_start = m_frame.params.time;
         m_terrain_resources.height_transition_active = true;

@@ -6,9 +6,8 @@
 #include <moppe/terrain/terrain_quantities.hh>
 
 namespace moppe::map {
-  inline constexpr struct surface_elevation
-      : quantity_spec<mp_units::isq::height, mp_units::is_kind> {
-  } surface_elevation;
+  using terrain::surface_elevation;
+  using terrain::SurfaceElevation;
 
   // The upward component of a broad local support plane. Snow responds to
   // this material-scale reading rather than the detailed lighting normal.
@@ -71,11 +70,6 @@ namespace moppe::map {
       : quantity_spec<mp_units::dimensionless> {
   } home_base_influence;
 
-  using SurfaceElevation =
-    quantity_point<surface_elevation[u::m],
-                   default_point_origin (surface_elevation[u::m]),
-                   float>;
-  using RelativeSurfaceElevation = terrain::RelativeTerrainElevation;
   using SurfaceNormal = terrain::TerrainNormal;
   using SnowSupport = quantity<snow_support[one], float>;
   using ErodedSurfaceMaterial = quantity<eroded_surface_material[one], float>;
@@ -95,7 +89,7 @@ namespace moppe::map {
   // the same SurfaceDomain. SurfaceAtlas makes a group's presence explicit,
   // so an unavailable reading cannot be mistaken for an ordinary zero.
   using SurfaceGeometrySections = spatial::Bundle<SurfaceDomain,
-                                                  RelativeSurfaceElevation,
+                                                  SurfaceElevation,
                                                   SurfaceNormal,
                                                   ErodedSurfaceMaterial,
                                                   DepositedSurfaceMaterial,

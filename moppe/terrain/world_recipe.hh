@@ -27,8 +27,6 @@ namespace moppe::terrain {
       return m_water_datum;
     }
 
-    float normalized_water_datum () const noexcept;
-
     TerrainGenerationProfile generation_profile () const noexcept {
       return m_generation_profile;
     }

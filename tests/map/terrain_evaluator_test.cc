@@ -151,9 +151,9 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
       MOPPE_CHECK (total == 4);
       completed.push_back (done);
       std::vector<float> snapshot;
-      snapshot.reserve (map.relative_elevations ().size ());
-      for (const auto elevation : map.relative_elevations ())
-        snapshot.push_back (elevation.numerical_value_in (one));
+      snapshot.reserve (map.elevations ().size ());
+      for (const auto elevation : map.elevations ())
+        snapshot.push_back (surface_elevation_value (elevation));
       snapshots.push_back (std::move (snapshot));
     });
 
@@ -161,9 +161,9 @@ MOPPE_TEST (orogeny_reports_each_geological_step) {
   MOPPE_CHECK (snapshots.size () == 4);
   MOPPE_CHECK (snapshots.front () != snapshots.back ());
   std::vector<float> final;
-  final.reserve (map.relative_elevations ().size ());
-  for (const auto elevation : map.relative_elevations ())
-    final.push_back (elevation.numerical_value_in (one));
+  final.reserve (map.elevations ().size ());
+  for (const auto elevation : map.elevations ())
+    final.push_back (surface_elevation_value (elevation));
   MOPPE_CHECK (snapshots.back () == final);
 }
 
@@ -175,14 +175,14 @@ MOPPE_TEST (orogeny_seed_separates_land_and_bathymetric_relief) {
 
   map::TerrainEvaluator (map).begin (program);
 
-  const float land_relief =
-    meters_value (program.source.initial_land_relief) / 650.0f;
+  const float minimum = surface_elevation_value (map.min_elevation ());
+  const float maximum = surface_elevation_value (map.max_elevation ());
+  const float land_relief = meters_value (program.source.initial_land_relief);
   const float bathymetric_relief =
-    meters_value (program.source.initial_bathymetric_relief) / 650.0f;
-  MOPPE_CHECK (map.min_relative_elevation () < program.source.sea_level);
-  MOPPE_CHECK (map.max_relative_elevation () > program.source.sea_level);
-  MOPPE_CHECK (map.max_relative_elevation () - program.source.sea_level <=
-               land_relief + 1e-6f);
-  MOPPE_CHECK (program.source.sea_level - map.min_relative_elevation () <=
-               bathymetric_relief + 1e-6f);
+    meters_value (program.source.initial_bathymetric_relief);
+  MOPPE_CHECK (minimum < program.source.sea_level);
+  MOPPE_CHECK (maximum > program.source.sea_level);
+  MOPPE_CHECK (maximum - program.source.sea_level <= land_relief + 1e-5f);
+  MOPPE_CHECK (program.source.sea_level - minimum <=
+               bathymetric_relief + 1e-5f);
 }

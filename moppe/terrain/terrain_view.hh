@@ -19,8 +19,7 @@ namespace moppe::terrain {
       validate (heights.size ());
     }
 
-    TerrainView (TerrainGrid grid,
-                 std::span<const RelativeTerrainElevation> heights)
+    TerrainView (TerrainGrid grid, std::span<const SurfaceElevation> heights)
         : m_grid (grid), m_typed_heights (heights) {
       validate (heights.size ());
     }
@@ -69,12 +68,12 @@ namespace moppe::terrain {
     float at_offset (std::size_t offset) const {
       return m_typed_heights.empty ()
                ? m_untyped_heights[offset]
-               : m_typed_heights[offset].numerical_value_in (mp_units::one);
+               : surface_elevation_value (m_typed_heights[offset]);
     }
 
     TerrainGrid m_grid;
     std::span<const float> m_untyped_heights;
-    std::span<const RelativeTerrainElevation> m_typed_heights;
+    std::span<const SurfaceElevation> m_typed_heights;
   };
 }
 

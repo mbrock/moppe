@@ -29,26 +29,33 @@ namespace moppe::map {
     const terrain::CpuEvaluator cpu_evaluator (source_progress);
     const terrain::FieldEvaluator& evaluator =
       m_source_evaluator ? *m_source_evaluator : cpu_evaluator;
-    {
+    const terrain::ScalarRaster continent = [&] {
       MOPPE_PROFILE_ZONE ("terrain.materialize_height_source");
-      m_target.materialize (fields.continent.untyped (), evaluator);
-    }
+      return evaluator.evaluate (
+        fields.continent.untyped (),
+        m_target.discretization ().field_sampling_grid ());
+    }();
 
     MOPPE_PROFILE_ZONE ("terrain.shape_initial_orogeny_relief");
-    const float height_scale_m = m_target.scale ()[1];
-    const float land_relief =
-      meters_value (program.source.initial_land_relief) / height_scale_m;
+    const float land_relief = meters_value (program.source.initial_land_relief);
     const float bathymetric_relief =
-      meters_value (program.source.initial_bathymetric_relief) / height_scale_m;
+      meters_value (program.source.initial_bathymetric_relief);
     for (int y = 0; y < m_target.height (); ++y)
       for (int x = 0; x < m_target.width (); ++x) {
-        const float continent =
-          m_target.relative_elevation_at (x, y) - program.source.coastline;
+        const std::size_t offset =
+          static_cast<std::size_t> (y) * m_target.width () + x;
+        const float continent_value =
+          continent.values ()[offset] - program.source.coastline;
         const float relief =
-          continent < 0.0f ? bathymetric_relief : land_relief;
-        m_target.set_relative_elevation (
-          x, y, program.source.sea_level + relief * continent);
+          continent_value < 0.0f ? bathymetric_relief : land_relief;
+        m_target.set_elevation (
+          x,
+          y,
+          SurfaceElevation (
+            (program.source.sea_level + relief * continent_value) *
+            terrain::surface_elevation[u::m]));
       }
+    m_target.reset_material_history ();
 
     m_relative_uplift.clear ();
     MOPPE_PROFILE_ZONE ("terrain.materialize_uplift_field");
@@ -97,9 +104,11 @@ namespace moppe::map {
           const std::size_t height = m_target.height ();
           for (std::size_t y = 0; y < height; ++y)
             for (std::size_t x = 0; x < width; ++x)
-              m_target.set_relative_elevation (static_cast<int> (x),
-                                               static_cast<int> (y),
-                                               heights[y * width + x]);
+              m_target.set_elevation (
+                static_cast<int> (x),
+                static_cast<int> (y),
+                SurfaceElevation (heights[y * width + x] *
+                                  terrain::surface_elevation[u::m]));
           if (m_iteration_progress)
             m_iteration_progress (
               m_transform_index, transform, completed, total);
@@ -122,8 +131,10 @@ namespace moppe::map {
       for (std::size_t y = 0; y < height; ++y)
         for (std::size_t x = 0; x < width; ++x) {
           const float updated = result.heights[y * width + x];
-          m_target.set_relative_elevation (
-            static_cast<int> (x), static_cast<int> (y), updated);
+          m_target.set_elevation (
+            static_cast<int> (x),
+            static_cast<int> (y),
+            SurfaceElevation (updated * terrain::surface_elevation[u::m]));
         }
       report = result.report;
       m_channel_tangents = std::move (result.channel_tangents);
@@ -140,10 +151,12 @@ namespace moppe::map {
           m_target.record_material_change (
             static_cast<int> (x),
             static_cast<int> (y),
-            updated - m_target.relative_elevation_at (static_cast<int> (x),
-                                                      static_cast<int> (y)));
-          m_target.set_relative_elevation (
-            static_cast<int> (x), static_cast<int> (y), updated);
+            updated - terrain::surface_elevation_value (m_target.elevation_at (
+                        static_cast<int> (x), static_cast<int> (y))));
+          m_target.set_elevation (
+            static_cast<int> (x),
+            static_cast<int> (y),
+            SurfaceElevation (updated * terrain::surface_elevation[u::m]));
         }
       report = result.report;
       m_trail_network = std::move (result.network);
@@ -168,7 +181,7 @@ namespace moppe::map {
   }
 
   TerrainCheckpoint TerrainEvaluator::checkpoint () const {
-    return { .elevations = m_target.relative_elevations (),
+    return { .elevations = m_target.elevations (),
              .eroded = m_target.eroded_material (),
              .deposited = m_target.deposited_material (),
              .channel_tangents = m_channel_tangents };
@@ -180,7 +193,7 @@ namespace moppe::map {
     if (checkpoint.elevations.size () != expected)
       throw std::invalid_argument (
         "terrain checkpoint dimensions do not match target");
-    m_target.relative_elevations () = checkpoint.elevations;
+    m_target.elevations () = checkpoint.elevations;
     m_target.reset_material_history ();
     if (checkpoint.eroded.size () == expected)
       m_target.eroded_material () = checkpoint.eroded;

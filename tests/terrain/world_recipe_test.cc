@@ -21,25 +21,19 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_its_program) {
   MOPPE_CHECK (recipe.resolution () == 33);
   MOPPE_CHECK (recipe.seed () == Seed { 77 });
   MOPPE_CHECK (recipe.generation_profile () == TerrainGenerationProfile::Fast);
-  MOPPE_CHECK_NEAR (recipe.normalized_water_datum (), 50.0f / 320.0f, 0.0f);
-
   const TerrainProgram& program = recipe.terrain_program ();
   MOPPE_CHECK (program.seed == recipe.seed ());
-  MOPPE_CHECK_NEAR (
-    program.source.sea_level, recipe.normalized_water_datum (), 0.0f);
+  MOPPE_CHECK_NEAR (program.source.sea_level, 50.0f, 0.0f);
   const auto& orogeny =
     std::get<OrogenyEvolution> (program.transforms.front ());
   const auto& trails = std::get<TrailFormation> (program.transforms.back ());
-  MOPPE_CHECK_NEAR (
-    orogeny.evolution.sea_level, recipe.normalized_water_datum (), 0.0f);
-  MOPPE_CHECK_NEAR (trails.sea_level, recipe.normalized_water_datum (), 0.0f);
+  MOPPE_CHECK_NEAR (orogeny.evolution.sea_level, 50.0f, 0.0f);
+  MOPPE_CHECK_NEAR (trails.sea_level, 50.0f, 0.0f);
 
   TerrainProgram edited_program = program;
   edited_program.source.sea_level = 0.25f;
   const WorldRecipe edited = recipe.with_terrain_program (edited_program);
-  MOPPE_CHECK_NEAR (recipe.terrain_program ().source.sea_level,
-                    recipe.normalized_water_datum (),
-                    0.0f);
+  MOPPE_CHECK_NEAR (recipe.terrain_program ().source.sea_level, 50.0f, 0.0f);
   MOPPE_CHECK_NEAR (edited.terrain_program ().source.sea_level, 0.25f, 0.0f);
 
   map::Surface map (recipe.resolution (),

@@ -46,7 +46,7 @@ namespace {
       static_cast<std::size_t> (map.width ()) * map.height ();
     for (std::size_t cell = 0; cell < count; ++cell) {
       std::uint32_t bits = std::bit_cast<std::uint32_t> (
-        map.relative_elevations ()[cell].numerical_value_in (moppe::one));
+        moppe::terrain::surface_elevation_value (map.elevations ()[cell]));
       for (int byte = 0; byte < 4; ++byte) {
         hash ^= bits & 0xffu;
         hash *= 1099511628211ull;
@@ -64,10 +64,9 @@ namespace {
     std::size_t cells_over_one_meter;
   };
 
-  HeightDifference height_difference (
-    const moppe::map::Surface& map,
-    std::span<const moppe::map::RelativeSurfaceElevation> reference,
-    float height_scale_m) {
+  HeightDifference
+  height_difference (const moppe::map::Surface& map,
+                     std::span<const moppe::map::SurfaceElevation> reference) {
     const std::size_t count =
       static_cast<std::size_t> (map.width ()) * map.height ();
     if (reference.size () != count)
@@ -79,11 +78,8 @@ namespace {
     differences.reserve (count);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const double difference =
-        std::fabs (
-          static_cast<double> (
-            map.relative_elevations ()[cell].numerical_value_in (moppe::one)) -
-          reference[cell].numerical_value_in (moppe::one)) *
-        height_scale_m;
+        std::fabs ((map.elevations ()[cell] - reference[cell])
+                     .numerical_value_in (moppe::u::m));
       total += difference;
       maximum = std::max (maximum, difference);
       cells_over_one_meter += difference > 1.0;
@@ -138,14 +134,14 @@ int main (int argc, char** argv) {
       throw std::invalid_argument ("backend must be cpu or metal");
     }
 
-    std::vector<map::RelativeSurfaceElevation> reference_heights;
+    std::vector<map::SurfaceElevation> reference_heights;
     if (backend) {
       map::Surface reference_map (
         resolution, resolution, Vec3 (11000.0f, 650.0f, 11000.0f));
       map::TerrainEvaluator reference_evaluator (reference_map);
       reference_evaluator.begin (program);
       reference_evaluator.apply (program.transforms.front ());
-      reference_heights = reference_map.relative_elevations ();
+      reference_heights = reference_map.elevations ();
     }
 
     std::cout << "resolution,cells,seed,backend,steps,repeat,"
@@ -169,9 +165,8 @@ int main (int argc, char** argv) {
       const auto& report =
         std::get<StreamPowerEvolutionReport> (transform_report);
       const HeightDifference difference =
-        reference_heights.empty ()
-          ? HeightDifference {}
-          : height_difference (map, reference_heights, map.scale ()[1]);
+        reference_heights.empty () ? HeightDifference {}
+                                   : height_difference (map, reference_heights);
 
       std::cout << resolution << ','
                 << static_cast<std::size_t> (resolution - 1) *

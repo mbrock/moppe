@@ -7,23 +7,18 @@
 
 namespace moppe::map {
   WaterSurface::WaterSurface (SurfaceDomain domain,
-                              const terrain::WaterSheets& sheets,
-                              meters_t terrain_height_scale)
+                              const terrain::WaterSheets& sheets)
       : m_sections (std::move (domain)) {
-    if (terrain_height_scale <= 0.0f * u::m)
-      throw std::invalid_argument ("Water surface needs a positive height "
-                                   "scale");
     const SurfaceDomain& lattice = m_sections.domain ();
     if (sheets.surface.domain ().width != lattice.width () ||
         sheets.surface.domain ().height != lattice.height ())
       throw std::invalid_argument (
         "Water sheets do not share the surface lattice");
     const std::span<const float> levels = sheets.surface.values ();
-    const float height_scale = meters_value (terrain_height_scale);
     for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
       auto site = m_sections[m_sections.index (offset)];
-      spatial::get<surface_elevation> (site) = SurfaceElevation (
-        levels[offset] * height_scale * surface_elevation[u::m]);
+      spatial::get<surface_elevation> (site) =
+        SurfaceElevation (levels[offset] * surface_elevation[u::m]);
       spatial::get<wave_amplitude> (site) =
         sheets.amplitude[offset] * wave_amplitude[one];
       spatial::get<water_velocity> (site) =

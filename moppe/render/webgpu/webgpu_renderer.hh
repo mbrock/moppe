@@ -24,10 +24,9 @@ namespace moppe::render {
                                const void* pixels) override;
     MeshPtr create_mesh (const DrawList& recorded) override;
 
-    void
-    set_terrain (const TerrainParams& params,
-                 std::span<const terrain::RelativeTerrainElevation> heights,
-                 std::span<const terrain::TerrainNormal> normals) override;
+    void set_terrain (const TerrainParams& params,
+                      std::span<const terrain::SurfaceElevation> heights,
+                      std::span<const terrain::TerrainNormal> normals) override;
     void set_terrain_topology_overlay (bool enabled) override;
     void set_terrain_textures (TexturePtr grass,
                                TexturePtr dirt,

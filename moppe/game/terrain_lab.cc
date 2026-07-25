@@ -707,15 +707,15 @@ namespace moppe {
       };
 
       if (m_overlay == OverlayMode::Height) {
-        const auto& elevations = m_map->relative_elevations ();
+        const auto& elevations = m_map->elevations ();
         for (std::size_t i = 0; i < count; ++i)
-          values[i] = elevations[i].numerical_value_in (mp_units::one);
+          values[i] = terrain::surface_elevation_value (elevations[i]);
         const auto [minimum, maximum] =
           std::minmax_element (values.begin (), values.end ());
         params.minimum = *minimum;
         params.maximum = *maximum;
         params.ramp = render::TerrainOverlayRamp::Heat;
-        m_overlay_status = "HEIGHT — normalized elevation";
+        m_overlay_status = "HEIGHT — metres";
       } else if (m_overlay == OverlayMode::HeightDelta) {
         const std::vector<map::TerrainCheckpoint>& checkpoints =
           m_model.checkpoints ();
@@ -731,10 +731,10 @@ namespace moppe {
           m_selected_stage + 1 < static_cast<int> (checkpoints.size ())
             ? checkpoints[static_cast<std::size_t> (m_selected_stage + 1)]
                 .elevations
-            : m_map->relative_elevations ();
+            : m_map->elevations ();
         float magnitude = 0.0f;
         for (std::size_t i = 0; i < count; ++i) {
-          values[i] = (after[i] - before[i]).numerical_value_in (mp_units::one);
+          values[i] = (after[i] - before[i]).numerical_value_in (u::m);
           magnitude = std::max (magnitude, std::fabs (values[i]));
         }
         params.minimum = -magnitude;

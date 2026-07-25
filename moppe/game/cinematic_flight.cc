@@ -46,7 +46,7 @@ namespace moppe::game {
     float flight_height_sample (const map::Surface& map, int x, int z) {
       x = terrain::wrap_index (x, map.width ());
       z = terrain::wrap_index (z, map.height ());
-      return map.relative_elevation_at (x, z) * map.scale ()[1];
+      return terrain::surface_elevation_value (map.elevation_at (x, z));
     }
 
     Vec3 flight_cell_position (terrain::CellIndex cell,
@@ -60,8 +60,9 @@ namespace moppe::game {
       const Vec3 scale = map.scale ();
       const bool wet =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-      const float y = wet ? flood.water_level.values ()[cell] * scale[1]
-                          : map.relative_elevation_at (x, z) * scale[1];
+      const float y =
+        wet ? flood.water_level.values ()[cell]
+            : terrain::surface_elevation_value (map.elevation_at (x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 

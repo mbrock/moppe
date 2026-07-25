@@ -6,18 +6,14 @@
 
 namespace moppe::terrain {
   namespace {
-    float normalized_water_datum_for (spatial_extent_t extent,
-                                      meters_t water_datum) {
-      return meters_value (water_datum) / extent_value (extent)[1];
-    }
-
-    void set_program_water_datum (TerrainProgram& program, float datum) {
-      program.source.sea_level = datum;
+    void set_program_water_datum (TerrainProgram& program, meters_t datum) {
+      const float elevation_m = meters_value (datum);
+      program.source.sea_level = elevation_m;
       for (TerrainTransform& transform : program.transforms)
         if (auto* orogeny = std::get_if<OrogenyEvolution> (&transform))
-          orogeny->evolution.sea_level = datum;
+          orogeny->evolution.sea_level = elevation_m;
         else if (auto* trails = std::get_if<TrailFormation> (&transform))
-          trails->sea_level = datum;
+          trails->sea_level = elevation_m;
     }
   }
 
@@ -35,10 +31,6 @@ namespace moppe::terrain {
         "world recipe program seed must match the world seed");
   }
 
-  float WorldRecipe::normalized_water_datum () const noexcept {
-    return normalized_water_datum_for (m_extent, m_water_datum);
-  }
-
   WorldRecipe WorldRecipe::with_terrain_program (TerrainProgram program) const {
     return { m_extent,      m_resolution,         m_seed,
              m_water_datum, m_generation_profile, std::move (program) };
@@ -51,8 +43,7 @@ namespace moppe::terrain {
                                  TerrainGenerationProfile generation_profile) {
     TerrainProgram program =
       make_world_program (seed.value, generation_profile);
-    set_program_water_datum (program,
-                             normalized_water_datum_for (extent, water_datum));
+    set_program_water_datum (program, water_datum);
     return { extent,      resolution,         seed,
              water_datum, generation_profile, std::move (program) };
   }

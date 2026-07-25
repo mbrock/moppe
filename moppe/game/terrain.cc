@@ -88,7 +88,7 @@ namespace moppe {
       params.derive_normals = interactive_preview;
       {
         MOPPE_PROFILE_ZONE ("terrain.upload_height_and_normals");
-        r.set_terrain (params, map.relative_elevations (), map.normals ());
+        r.set_terrain (params, map.elevations (), map.normals ());
       }
 
       if (!m_textures_loaded) {
@@ -114,15 +114,13 @@ namespace moppe {
             ymax = -1e9f;
             for (int z = cz * CHUNK; z <= (cz + 1) * CHUNK; ++z)
               for (int x = cx * CHUNK; x <= (cx + 1) * CHUNK; ++x) {
-                const float h = map.relative_elevation_at (
-                  terrain::wrap_index (x, map.width ()),
-                  terrain::wrap_index (z, map.height ()));
+                const float h = terrain::surface_elevation_value (
+                  map.elevation_at (terrain::wrap_index (x, map.width ()),
+                                    terrain::wrap_index (z, map.height ())));
                 ymin = std::min (ymin, h);
                 ymax = std::max (ymax, h);
               }
           }
-          ymin *= m_scale[1];
-          ymax *= m_scale[1];
 
           Chunk c;
           c.x0 = cx * CHUNK;

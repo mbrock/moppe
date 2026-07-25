@@ -25,7 +25,7 @@ namespace moppe::test {
       return {};
     }
     void set_terrain (const render::TerrainParams&,
-                      std::span<const terrain::RelativeTerrainElevation>,
+                      std::span<const terrain::SurfaceElevation>,
                       std::span<const terrain::TerrainNormal>) override {}
     void set_terrain_topology_overlay (bool) override {}
     void set_terrain_textures (render::TexturePtr,
