@@ -82,9 +82,9 @@ namespace moppe {
               options.world, std::move (recipe))),
             m_session (std::make_unique<GameSession> (
               this->world (), this->map (), this->surface ())),
-            m_loading (this->world (), this->recipe ()),
-            m_graphics (options.graphics), m_spawn_position (position_value (
-                                             this->world ().spawn_position ())),
+            m_loading (this->recipe ()), m_graphics (options.graphics),
+            m_spawn_position (
+              position_value (this->world ().spawn_position ())),
             m_renderer (0),
             m_start_in_terrain_lab (options.start_in_terrain_lab),
             m_tree_demo (options.tree_demo), m_tree_count (options.tree_count),
@@ -178,10 +178,6 @@ namespace moppe {
 
       const map::Surface& surface () const noexcept {
         return generated_world ().surface ();
-      }
-
-      const std::vector<std::vector<float>>& terrain_history () const noexcept {
-        return generated_world ().terrain_history ();
       }
 
       const GeneratedWorld::Hydrology* hydrology () const noexcept {
@@ -688,14 +684,13 @@ namespace moppe {
           m_water_shot.has_value () || m_tree_demo || ::getenv ("MOPPE_DEMO");
         if (m_start_in_terrain_lab) {
           m_terrain_lab.enter (r,
-                               generated_world ().terrain_for_terrain_lab (),
+                               generated_world ().terrain (),
                                m_terrain,
                                world (),
                                m_graphics,
                                recipe (),
                                m_surface_presentation.trails (),
                                m_surface_presentation.home_base (),
-                               terrain_history (),
                                sun_direction_for (m_graphics.sun_height));
           m_start_in_terrain_lab = false;
         } else if (!automated && !m_skip_cinematic_requested &&
@@ -1244,64 +1239,24 @@ namespace moppe {
           m_loading.report ("Finishing the world",
                             "Growing forests and planning the first journey");
 
-        // The preview is simply the newest terrain the worker has produced,
-        // uploaded and drawn with the ordinary terrain shader.
-        if (m_loading.refresh_preview ()) {
-          r.clear_terrain_overlay ();
-          m_terrain.setup (r,
-                           m_loading.preview_map (),
-                           m_loading.preview_world (),
-                           m_graphics,
-                           render::TerrainProjection::Plane,
-                           true,
-                           true,
-                           true);
-        }
-
         const LoadingStatus loading = m_loading.status ();
-        const float sky_time = loading.elapsed;
-        const bool show_terrain = loading.terrain_visible;
-        const Vec3& world_extent =
-          extent_value (m_loading.preview_world ().map_size);
-        Vec3 eye (0.0f, 34.0f, 0.0f);
-        Vec3 target (0.0f, 27.0f, -100.0f);
-        if (show_terrain) {
-          const float orbit = -0.65f + sky_time * 0.025f;
-          const float center_x = world_extent[0] * 0.5f;
-          const float center_z = world_extent[2] * 0.5f;
-          target = Vec3 (
-            center_x,
-            m_loading.preview_map ().interpolated_height (center_x, center_z) +
-              world_extent[1] * 0.07f,
-            center_z);
-          eye = target + Vec3 (std::sin (orbit) * world_extent[0] * 0.48f,
-                               world_extent[1] * 0.34f,
-                               std::cos (orbit) * world_extent[2] * 0.48f);
-        }
-        const Vec3 forward = normalized (target - eye);
 
+        // A fixed camera watching the sky is the whole scene; the panel
+        // below carries the actual information.
+        const Vec3 eye (0.0f, 34.0f, 0.0f);
+        const Vec3 target (0.0f, 27.0f, -100.0f);
         render::FrameParams fp;
         fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
         fp.proj = Mat4::perspective_reversed (
-          (show_terrain ? 50.0f : 64.0f) * u::deg,
-          width / std::max (1.0f, height),
-          0.5f,
-          std::max (9000.0f, world_extent[0] * 2.0f));
+          64.0f * u::deg, width / std::max (1.0f, height), 0.5f, 9000.0f);
         fp.camera_pos = eye;
         constexpr float loading_sun_height = 0.70f;
-        const Vec3 horizon_forward =
-          normalized (Vec3 (forward[0], 0.0f, forward[2]));
-        const Vec3 horizon_side (-horizon_forward[2], 0.0f, horizon_forward[0]);
         fp.clear_color = horizon_color_for (loading_sun_height);
-        fp.sun_dir = normalized (horizon_side * 0.82f + Vec3 (0, 1, 0) * 0.58f);
+        fp.sun_dir = normalized (Vec3 (0.82f, 0.58f, 0.0f));
         sun_light_colors_for (
           loading_sun_height, fp.sun_diffuse, fp.sun_specular);
         fp.ambient = DisplayColor (0.58f, 0.55f, 0.48f);
-        fp.fog_scale =
-          show_terrain
-            ? attenuation_value (m_loading.preview_world ().fog_scale * 0.035f)
-            : 0.0f;
-        fp.time = sky_time;
+        fp.time = loading.elapsed;
         fp.exposure_bias = 1.0f;
         fp.sun_visibility = 0.32f;
         if (!r.begin_frame (fp)) {
@@ -1312,14 +1267,12 @@ namespace moppe {
         }
 
         render::SkyParams sky;
-        sky.time = sky_time;
+        sky.time = loading.elapsed;
         sky.sun_height = loading_sun_height;
         sky.cloudiness = 0.14f;
         sky.sun_dir = fp.sun_dir;
         sky.fog_color = fp.clear_color;
         r.draw_sky (sky);
-        if (show_terrain)
-          m_terrain.render (r, eye, forward, world_extent[0] * 1.8f);
 
         m_hud_dl.clear ();
         render::DrawState state;
@@ -1542,14 +1495,13 @@ namespace moppe {
           session ().clear_controls ();
           m_live_input.clear ();
           m_terrain_lab.enter (*m_renderer,
-                               generated_world ().terrain_for_terrain_lab (),
+                               generated_world ().terrain (),
                                m_terrain,
                                world (),
                                m_graphics,
                                recipe (),
                                m_surface_presentation.trails (),
                                m_surface_presentation.home_base (),
-                               terrain_history (),
                                sun_direction_for (m_graphics.sun_height));
           return;
         }

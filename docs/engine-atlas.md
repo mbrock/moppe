@@ -14,7 +14,7 @@ diagram for CMake:
 
 ```mermaid
 flowchart LR
-  recipe["WorldRecipe + TerrainProgram"] --> build["GeneratedWorld::Builder"]
+  recipe["WorldRecipe + TerrainProgram"] --> build["GeneratedWorld build steps"]
   build --> world["GeneratedWorld"]
   world --> session["GameSession"]
   world --> view["FrameView"]
@@ -55,7 +55,7 @@ division executable.
 ## World and intrinsic readings
 
 `terrain::WorldRecipe` binds a terrain program to physical world parameters
-and water datum. `GeneratedWorld::Builder` is the short-lived mutable
+and water datum. `GeneratedWorld`'s build steps are the
 capability that evaluates the map, rebuilds `map::Surface`, analyzes hydrology,
 and materializes derived readings. Once active, ordinary gameplay receives
 const views of the completed world.
@@ -93,7 +93,7 @@ quantity-to-texture mappings live in [Surface atlas](surface-atlas.md).
 | --- | --- | --- |
 | `WorldRecipe` and `WorldParams` | Immutable construction description for a world | Live player progress and renderer history |
 | `GeneratedWorld` | Non-copyable, non-movable owner of completed terrain and analyses | Platform, session, and GPU ownership |
-| Loading candidate | Worker builds a fresh world; the loading preview sees copied height snapshots only | Mutation of the active world/session |
+| Loading candidate | Worker builds a fresh world; the loading screen sees status text only | Mutation of the active world/session |
 | Activation | Main thread transfers the completed owner once, retires the old session before its old world, then creates a fresh session | A half-built visible world |
 | `GameSession` | Mutable run against one completed world's terrain and surface borrows | A replacement world or loading lifecycle |
 | `GameState` | Copyable snapshot of mutable session systems, portable only between sessions on the same world | Terrain, water, renderer history, window state, and asynchronous loading |

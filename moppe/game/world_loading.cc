@@ -1,9 +1,9 @@
 // Builds one world on a background thread while the loading screen shows
 // honest progress.  The two threads share a narrow channel: the worker
-// writes status text and its newest terrain snapshot, the main thread
-// reads them once per frame.  The build itself is the linear story in
-// build_world (); everything before it is the channel it narrates into,
-// and everything after it is thread plumbing and the main-thread facade.
+// reports what it is doing, the main thread reads the status once per
+// frame.  The build itself is the linear story in build_world ();
+// everything before it is the channel it narrates into, and everything
+// after it is thread plumbing and the main-thread facade.
 
 #include <moppe/game/world_loading.hh>
 
@@ -28,12 +28,6 @@
 
 namespace moppe::game {
   namespace {
-    // The preview never needs more vertices than the screen has pixels for.
-    int loading_preview_resolution (int terrain_resolution) {
-      constexpr int maximum_preview_resolution = 513;
-      return std::min (terrain_resolution, maximum_preview_resolution);
-    }
-
     std::string grouped_number (int value) {
       std::string result = std::to_string (value);
       for (std::ptrdiff_t i = static_cast<std::ptrdiff_t> (result.size ()) - 3;
@@ -68,15 +62,8 @@ namespace moppe::game {
 
   class WorldLoadingState {
   public:
-    WorldLoadingState (const WorldParams& initial_world,
-                       const terrain::WorldRecipe& initial_recipe)
-        : preview_world (initial_world), seed (initial_recipe.seed ().value),
-          preview_map (
-            loading_preview_resolution (initial_recipe.resolution ()),
-            loading_preview_resolution (initial_recipe.resolution ()),
-            extent_value (initial_recipe.extent ()),
-            initial_recipe.topology ()),
-          clock_start (platform::now ()) {}
+    explicit WorldLoadingState (const terrain::WorldRecipe& initial_recipe)
+        : seed (initial_recipe.seed ().value), clock_start (platform::now ()) {}
 
     // Everything the mutex guards, resettable in one assignment.
     struct Shared {
@@ -84,17 +71,13 @@ namespace moppe::game {
       std::string detail;
       float progress = -1.0f;
       std::vector<LoadingEvent> events;
-      std::shared_ptr<const std::vector<float>> latest;
-      std::shared_ptr<const std::vector<float>> consumed;
       std::unique_ptr<GeneratedWorld> completed_world;
     };
 
-    void reset (const WorldParams& world, const terrain::WorldRecipe& recipe) {
-      preview_world = world;
+    void reset (const terrain::WorldRecipe& recipe) {
       seed = recipe.seed ().value;
       clock_start = platform::now ();
       capture_done = false;
-      terrain_visible = false;
       generation_complete = false;
       {
         const std::lock_guard<std::mutex> lock (mutex);
@@ -119,13 +102,6 @@ namespace moppe::game {
       shared.progress = progress;
     }
 
-    void publish_terrain (const map::RandomHeightMap& terrain) {
-      auto heights = downsample_for_preview (terrain);
-      const std::lock_guard<std::mutex> lock (mutex);
-      if (!shared.latest || *shared.latest != *heights)
-        shared.latest = std::move (heights);
-    }
-
     void publish_completed (std::unique_ptr<GeneratedWorld> world) {
       const std::lock_guard<std::mutex> lock (mutex);
       if (shared.completed_world)
@@ -135,52 +111,21 @@ namespace moppe::game {
     }
 
     // Written at reset, read from both threads.
-    WorldParams preview_world;
     std::atomic<std::uint32_t> seed;
     double clock_start;
     std::atomic<bool> generation_complete = false;
     std::atomic<bool> in_flight = false;
 
-    // Main-thread only: the materialized preview and its bookkeeping.
-    map::RandomHeightMap preview_map;
+    // Main-thread only.
     bool capture_done = false;
-    bool terrain_visible = false;
 
     std::mutex mutex;
     Shared shared;
-
-  private:
-    std::shared_ptr<std::vector<float>>
-    downsample_for_preview (const map::RandomHeightMap& terrain) const {
-      const int width = preview_map.width ();
-      const int height = preview_map.height ();
-      auto heights = std::make_shared<std::vector<float>> (
-        static_cast<std::size_t> (width) * height);
-      for (int y = 0; y < height; ++y) {
-        const int source_y =
-          y * (terrain.height () - 1) / std::max (1, height - 1);
-        for (int x = 0; x < width; ++x) {
-          const int source_x =
-            x * (terrain.width () - 1) / std::max (1, width - 1);
-          (*heights)[static_cast<std::size_t> (y) * width + x] =
-            terrain.get (source_x, source_y);
-        }
-      }
-      return heights;
-    }
   };
 
   // -- the build ---------------------------------------------------------
 
   namespace {
-    void snapshot_history (const map::RandomHeightMap& terrain,
-                           std::vector<std::vector<float>>& history) {
-      const std::size_t count =
-        static_cast<std::size_t> (terrain.width ()) * terrain.height ();
-      history.emplace_back (terrain.raw_heights (),
-                            terrain.raw_heights () + count);
-    }
-
     // The field evaluator reports row completion from several worker
     // threads at once; only the furthest row should reach the status line.
     bool advance_watermark (std::atomic<int>& watermark, int row) {
@@ -193,36 +138,30 @@ namespace moppe::game {
 
     // Materializes the recipe's terrain program, narrating the two long
     // phases with real measurements: field rows while the continents
-    // materialize, then geological time while orogeny runs.  Every
-    // finished transform is snapshotted for the Terrain Lab scrubber and
-    // published to the preview.
+    // materialize, then geological time while orogeny runs.
     std::optional<terrain::TrailNetwork>
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
-                    map::RandomHeightMap& terrain,
-                    std::vector<std::vector<float>>& history) {
+                    map::RandomHeightMap& terrain) {
       std::unique_ptr<terrain::FieldEvaluator> field_evaluator =
         platform::create_field_evaluator ();
       std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
         platform::create_stream_power_evolution_backend ();
       map::TerrainEvaluator evaluator (
         terrain, field_evaluator.get (), evolution.get ());
-      history.clear ();
 
       const auto after_transform =
-        [&] (std::size_t, const terrain::TerrainTransform& transform) {
-          snapshot_history (terrain, history);
-          state.publish_terrain (terrain);
+        [&state] (std::size_t, const terrain::TerrainTransform& transform) {
           if (std::holds_alternative<terrain::OrogenyEvolution> (transform))
             state.report ("Refining the terrain",
                           "Shaping coasts, channels, and the overland route");
         };
 
       const auto report_geological_time =
-        [&] (std::size_t,
-             const terrain::TerrainTransform& transform,
-             int completed_steps,
-             int total_steps) {
+        [&state] (std::size_t,
+                  const terrain::TerrainTransform& transform,
+                  int completed_steps,
+                  int total_steps) {
           if (!std::holds_alternative<terrain::OrogenyEvolution> (transform))
             return;
           const auto& orogeny = std::get<terrain::OrogenyEvolution> (transform);
@@ -240,7 +179,6 @@ namespace moppe::game {
                         detail.str (),
                         static_cast<float> (completed_steps) /
                           std::max (1, total_steps));
-          state.publish_terrain (terrain);
         };
 
       std::atomic<int> row_watermark { 0 };
@@ -261,7 +199,6 @@ namespace moppe::game {
                           after_transform,
                           report_geological_time,
                           report_field_rows);
-      snapshot_history (terrain, history);
       return evaluator.release_trail_network ();
     }
 
@@ -310,9 +247,7 @@ namespace moppe::game {
       WorldLoadingState& state = *job.state;
       auto completed =
         std::make_unique<GeneratedWorld> (job.params, job.recipe);
-      GeneratedWorld::Builder build = completed->build ();
-      map::RandomHeightMap& terrain = build.terrain ();
-      std::vector<std::vector<float>>& history = build.terrain_history ();
+      map::RandomHeightMap& terrain = completed->terrain ();
       const terrain::WorldRecipe& recipe = completed->recipe ();
       std::optional<terrain::TrailNetwork> trails;
 
@@ -325,28 +260,24 @@ namespace moppe::game {
       if (terrain.try_load_cache (cache)) {
         state.report ("Reading saved terrain",
                       "Reusing the finished heightfield");
-        terrain.try_load_cached_history (cache, history);
       } else {
         state.report ("Drawing the continents",
                       "Materializing the geological field");
-        trails = evolve_terrain (state, recipe, terrain, history);
+        trails = evolve_terrain (state, recipe, terrain);
         state.report ("Saving the terrain",
                       "Keeping this expensive result for the next launch");
         terrain.save_cache (cache);
-        terrain.append_cached_history (cache, history);
       }
-      if (history.empty ())
-        snapshot_history (terrain, history);
-      state.publish_terrain (terrain);
 
       state.report ("Calculating slopes",
                     "Rebuilding normals and the sampled surface");
-      build.rebuild_surface ();
+      completed->rebuild_surface ();
 
-      build.analyze_hydrology ([&state] (GeneratedWorld::HydrologyStage stage) {
-        const auto [title, detail] = hydrology_report (stage);
-        state.report (title, detail);
-      });
+      completed->analyze_hydrology (
+        [&state] (GeneratedWorld::HydrologyStage stage) {
+          const auto [title, detail] = hydrology_report (stage);
+          state.report (title, detail);
+        });
       if (!completed->hydrology ())
         throw std::logic_error ("completed world has no hydrology");
       log_standing_water (*completed->hydrology ());
@@ -354,7 +285,7 @@ namespace moppe::game {
       state.report ("Assembling the world",
                     "Painting water, moisture, materials, and the opening "
                     "route");
-      build.materialize_analyses (std::move (trails));
+      completed->materialize_analyses (std::move (trails));
       state.publish_completed (std::move (completed));
     }
 
@@ -380,9 +311,8 @@ namespace moppe::game {
 
   // -- the main-thread facade --------------------------------------------
 
-  WorldLoading::WorldLoading (const WorldParams& world,
-                              const terrain::WorldRecipe& recipe)
-      : m_state (std::make_shared<WorldLoadingState> (world, recipe)) {}
+  WorldLoading::WorldLoading (const terrain::WorldRecipe& recipe)
+      : m_state (std::make_shared<WorldLoadingState> (recipe)) {}
 
   void WorldLoading::start (const WorldParams& world,
                             terrain::WorldRecipe recipe) {
@@ -395,7 +325,7 @@ namespace moppe::game {
         throw std::logic_error ("a completed world has not activated");
       }
     }
-    m_state->reset (world, recipe);
+    m_state->reset (recipe);
     auto job = std::make_shared<GenerationJob> (
       GenerationJob { m_state, world, std::move (recipe) });
     platform::async (
@@ -422,39 +352,14 @@ namespace moppe::game {
       .detail = state.shared.detail,
       .progress = state.shared.progress,
       .elapsed = state.elapsed (),
-      .terrain_visible = state.terrain_visible,
       .seed = state.seed.load (),
       .events = state.shared.events,
     };
   }
 
-  bool WorldLoading::refresh_preview () {
-    WorldLoadingState& state = *m_state;
-    std::shared_ptr<const std::vector<float>> heights;
-    {
-      const std::lock_guard<std::mutex> lock (state.mutex);
-      if (state.shared.latest == state.shared.consumed)
-        return false;
-      heights = state.shared.latest;
-      state.shared.consumed = state.shared.latest;
-    }
-    std::copy (
-      heights->begin (), heights->end (), state.preview_map.raw_heights ());
-    state.terrain_visible = true;
-    return true;
-  }
-
-  const WorldParams& WorldLoading::preview_world () const noexcept {
-    return m_state->preview_world;
-  }
-
-  const map::RandomHeightMap& WorldLoading::preview_map () const noexcept {
-    return m_state->preview_map;
-  }
-
   bool WorldLoading::claim_loading_capture (bool last_chance) noexcept {
     WorldLoadingState& state = *m_state;
-    if (state.capture_done || !state.terrain_visible)
+    if (state.capture_done)
       return false;
     if (!last_chance && state.elapsed () < 1.0f)
       return false;

@@ -43,7 +43,6 @@ namespace moppe {
                   const terrain::WorldRecipe& recipe,
                   std::span<const float> trail_influence,
                   std::span<const float> home_base_influence,
-                  const std::vector<std::vector<float>>& history,
                   const Vec3& sun_dir);
       void leave ();
 
@@ -131,8 +130,6 @@ namespace moppe {
       const terrain::FloodField& standing_water ();
       void inspect_drainage (float x, float y);
       std::optional<Vec3> terrain_point_at_screen (float x, float y) const;
-      void show_history_snapshot (std::size_t index);
-      std::string history_snapshot_name (std::size_t index) const;
       terrain::TerrainProgram& program () {
         return m_model.program ();
       }
@@ -157,10 +154,6 @@ namespace moppe {
       SurfacePresentation m_path_presentation;
       std::vector<float> m_saved_trail_influence;
       std::vector<float> m_saved_home_base_influence;
-      const std::vector<std::vector<float>>* m_history;
-      std::size_t m_history_index;
-      float m_history_age;
-      bool m_history_playing;
 
       bool m_active;
       std::optional<terrain::DrainageGraph> m_drainage;

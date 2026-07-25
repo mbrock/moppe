@@ -43,16 +43,15 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   const WorldRecipe recipe = world_without_trails (extent, 17, Seed { 42 });
 
   game::GeneratedWorld world (params, recipe);
-  game::GeneratedWorld::Builder build = world.build ();
-  fill_test_terrain (build.terrain ());
-  build.rebuild_surface ();
+  fill_test_terrain (world.terrain ());
+  world.rebuild_surface ();
 
   std::vector<game::GeneratedWorld::HydrologyStage> stages;
-  build.analyze_hydrology (
+  world.analyze_hydrology (
     [&stages] (game::GeneratedWorld::HydrologyStage stage) {
       stages.push_back (stage);
     });
-  build.materialize_analyses ();
+  world.materialize_analyses ();
 
   MOPPE_CHECK (world.recipe ().seed () == Seed { 42 });
   MOPPE_CHECK (world.params ().water_level == 50.0f * u::m);
@@ -70,17 +69,6 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.surface ().atlas ().hydrology ().moisture ());
   MOPPE_CHECK (world.surface ().atlas ().hydrology ().waterline ());
   MOPPE_CHECK (world.surface ().atlas ().geology ().materials ());
-  MOPPE_CHECK (!world.trails ().has_value ());
-
-  const auto* stable_terrain = &world.terrain ();
-  const auto* stable_surface = &world.surface ();
-  build.reset (world_without_trails (extent, 17, Seed { 43 }));
-  MOPPE_CHECK (&world.terrain () == stable_terrain);
-  MOPPE_CHECK (&world.surface () == stable_surface);
-  MOPPE_CHECK (world.recipe ().seed () == Seed { 43 });
-  MOPPE_CHECK (world.terrain_history ().empty ());
-  MOPPE_CHECK (!world.hydrology ().has_value ());
-  MOPPE_CHECK (!world.water_surface ().has_value ());
   MOPPE_CHECK (!world.trails ().has_value ());
 }
 
