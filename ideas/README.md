@@ -27,6 +27,9 @@ committed roadmap.
 - `watersheds-of-execution.md` treats a program as a landscape of possible
   paths, sampled execution as traffic through its catchments, and complexity
   analysis as a kind of computational hydrology.
+- `computed-together.md` collects the partitions and orderings an
+  interacting world needs — components, colourings, topological order,
+  iteration — and why terrain and machinery get different ones.
 - `the-machine.md` characterizes the motorcycle as an articulated mechanism
   in the Atelier tree's three storeys — kinematic topology, intrinsic
   qualities and dispositions, embedding — using the ontological and
