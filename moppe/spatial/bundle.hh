@@ -227,6 +227,35 @@ namespace moppe::spatial {
     return get<B::template spec_index<QS>> (row);
   }
 
+  // Bundles over one domain compose by carrying their columns side by side,
+  // so an analysis can produce its own narrow result and hand it to a wider
+  // store afterwards. Joining consumes its inputs and moves their columns;
+  // repeating a quantity between them is a compile error, since a bundle row
+  // holds each specification once.
+  template <typename Domain, typename... Left, typename... Right>
+    requires std::equality_comparable<Domain>
+  Bundle<Domain, Left..., Right...> join (Bundle<Domain, Left...> left,
+                                          Bundle<Domain, Right...> right) {
+    if (!(left.domain () == right.domain ()))
+      throw std::invalid_argument ("joined bundles need one shared domain");
+    return [&]<std::size_t... LeftColumn, std::size_t... RightColumn> (
+             std::index_sequence<LeftColumn...>,
+             std::index_sequence<RightColumn...>) {
+      return Bundle<Domain, Left..., Right...> (
+        left.domain (),
+        std::move (get<LeftColumn> (left))...,
+        std::move (get<RightColumn> (right))...);
+    }(std::index_sequence_for<Left...> {},
+           std::index_sequence_for<Right...> {});
+  }
+
+  template <typename First, typename Second, typename Third, typename... Rest>
+  auto join (First first, Second second, Third third, Rest... rest) {
+    return join (join (std::move (first), std::move (second)),
+                 std::move (third),
+                 std::move (rest)...);
+  }
+
   // Reconstruct a continuously sampled value from a finite bundle.  The
   // mp-units category chooses the algebra: quantities form an ordinary
   // weighted sum, while quantity points are reconstructed affinely from one
