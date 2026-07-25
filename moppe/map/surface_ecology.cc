@@ -69,16 +69,14 @@ namespace moppe::map {
     const float shore = meters_value (water_level);
     const float upper = meters_value (tree_line);
     const auto& geometry = atlas.geometry ();
-    const auto& elevation =
-      spatial::get<terrain::relative_terrain_elevation> (geometry);
+    const auto& elevation = spatial::get<terrain::surface_elevation> (geometry);
     const auto& normal = spatial::get<terrain::terrain_normal> (geometry);
     const auto& moisture = spatial::get<surface_moisture> (*moisture_sections);
     SurfaceHabitatSections& values =
       atlas.ecology ().materialize_tree_habitat ();
     auto& habitat = spatial::get<tree_habitat> (values);
     for (std::size_t offset = 0; offset < geometry.size (); ++offset) {
-      const float height = elevation[offset].numerical_value_in (one) *
-                           meters_value (m_height_scale);
+      const float height = terrain::surface_elevation_value (elevation[offset]);
       const float up = normal[offset].numerical_value_in (one)[1];
       const float dry_ground = smoothstep (shore + 3.0f, shore + 18.0f, height);
       const float below_tree_line =

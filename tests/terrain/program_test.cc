@@ -119,8 +119,8 @@ MOPPE_TEST (terrain_program_editor_delegates_to_typed_stage_editors) {
                original_continent_waves + 1);
   MOPPE_CHECK (editor.set_transform_normalized_property (0, 7, 0.75f));
   const auto& evolution = std::get<OrogenyEvolution> (program.transforms[0]);
-  MOPPE_CHECK_NEAR (evolution.evolution.sea_level, 0.225f, 1e-6f);
-  MOPPE_CHECK_NEAR (program.source.sea_level, 0.225f, 1e-6f);
+  MOPPE_CHECK_NEAR (evolution.evolution.sea_level, 146.25f, 1e-6f);
+  MOPPE_CHECK_NEAR (program.source.sea_level, 146.25f, 1e-6f);
 
   const TerrainProgram& read_only_program = program;
   const TerrainProgramEditor read_only (read_only_program);

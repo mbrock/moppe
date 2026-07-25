@@ -16,7 +16,7 @@ namespace moppe::map {
   // terrain, change ledgers, and lagged channel tangent makes a resumed
   // program equivalent to evaluating the same prefix again.
   struct TerrainCheckpoint {
-    std::vector<RelativeSurfaceElevation> elevations;
+    std::vector<SurfaceElevation> elevations;
     std::vector<ErodedSurfaceMaterial> eroded;
     std::vector<DepositedSurfaceMaterial> deposited;
     std::vector<terrain::ChannelTangent> channel_tangents;

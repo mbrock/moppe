@@ -26,9 +26,9 @@ namespace {
 
   std::vector<float> heights_of (const moppe::map::Surface& map) {
     std::vector<float> values;
-    values.reserve (map.relative_elevations ().size ());
-    for (const auto elevation : map.relative_elevations ())
-      values.push_back (elevation.numerical_value_in (mp_units::one));
+    values.reserve (map.elevations ().size ());
+    for (const auto elevation : map.elevations ())
+      values.push_back (moppe::terrain::surface_elevation_value (elevation));
     return values;
   }
 }

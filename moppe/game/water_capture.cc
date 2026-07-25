@@ -26,8 +26,9 @@ namespace moppe::game {
       const Vec3 scale = map.scale ();
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
-      const float y = water ? flood.water_level.values ()[cell] * scale[1]
-                            : map.relative_elevation_at (x, z) * scale[1];
+      const float y =
+        water ? flood.water_level.values ()[cell]
+              : terrain::surface_elevation_value (map.elevation_at (x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
 

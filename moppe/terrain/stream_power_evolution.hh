@@ -25,7 +25,8 @@ namespace moppe::terrain {
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
-    float sea_level = 50.0f / 650.0f;
+    // Metres in the terrain elevation frame.
+    float sea_level = 50.0f;
     // How strongly the prior geological step's channel tangent favours an
     // aligned, still-downhill D-infinity route. Zero recovers memoryless
     // routing; values must remain below one.

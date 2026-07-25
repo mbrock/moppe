@@ -306,7 +306,7 @@ namespace moppe::terrain {
       };
     case 7:
       return { "SEA LEVEL",
-               format_program_transform_float (evolution.sea_level, 3),
+               format_program_transform_float (evolution.sea_level, 1),
                ParameterDomain::Continuous };
     default:
       invalid_program_transform_property_index ();
@@ -342,7 +342,7 @@ namespace moppe::terrain {
         0.0f,
         0.95f);
     case 7:
-      return normalized_edit_value (evolution.sea_level, 0.0f, 0.3f);
+      return normalized_edit_value (evolution.sea_level, 0.0f, 195.0f);
     default:
       invalid_program_transform_property_index ();
     }
@@ -383,7 +383,7 @@ namespace moppe::terrain {
                                    channel_persistence[mp_units::one]);
     case 7:
       return replace_edit_value (evolution.sea_level,
-                                 edited_value (value, 0.0f, 0.3f));
+                                 edited_value (value, 0.0f, 195.0f));
     default:
       invalid_program_transform_property_index ();
     }

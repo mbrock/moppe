@@ -37,16 +37,12 @@ namespace moppe::map {
       { static_cast<std::size_t> (column), static_cast<std::size_t> (row) });
   }
 
-  const std::vector<RelativeSurfaceElevation>&
-  Surface::relative_elevations () const noexcept {
-    return spatial::get<terrain::relative_terrain_elevation> (
-      m_atlas.geometry ());
+  const std::vector<SurfaceElevation>& Surface::elevations () const noexcept {
+    return spatial::get<terrain::surface_elevation> (m_atlas.geometry ());
   }
 
-  std::vector<RelativeSurfaceElevation>&
-  Surface::relative_elevations () noexcept {
-    return spatial::get<terrain::relative_terrain_elevation> (
-      m_atlas.geometry ());
+  std::vector<SurfaceElevation>& Surface::elevations () noexcept {
+    return spatial::get<terrain::surface_elevation> (m_atlas.geometry ());
   }
 
   const std::vector<SurfaceNormal>& Surface::normals () const noexcept {
@@ -73,19 +69,32 @@ namespace moppe::map {
   }
 
   float Surface::relative_elevation_at (int column, int row) const {
-    return relative_elevations ()[offset (column, row)].numerical_value_in (
-      mp_units::one);
+    return terrain::surface_elevation_value (elevation_at (column, row)) /
+           meters_value (m_height_scale);
   }
 
   void Surface::set_relative_elevation (int column, int row, float value) {
-    relative_elevations ()[offset (column, row)] =
-      value * terrain::relative_terrain_elevation[mp_units::one];
+    set_elevation (column,
+                   row,
+                   SurfaceElevation (value * meters_value (m_height_scale) *
+                                     terrain::surface_elevation[u::m]));
   }
 
   void Surface::fill_relative_elevation (float value) {
-    std::ranges::fill (relative_elevations (),
-                       value *
-                         terrain::relative_terrain_elevation[mp_units::one]);
+    fill_elevation (SurfaceElevation (value * meters_value (m_height_scale) *
+                                      terrain::surface_elevation[u::m]));
+  }
+
+  SurfaceElevation Surface::elevation_at (int column, int row) const {
+    return elevations ()[offset (column, row)];
+  }
+
+  void Surface::set_elevation (int column, int row, SurfaceElevation value) {
+    elevations ()[offset (column, row)] = value;
+  }
+
+  void Surface::fill_elevation (SurfaceElevation value) {
+    std::ranges::fill (elevations (), value);
   }
 
   Vec3 Surface::normal_at (int column, int row) const {
@@ -95,7 +104,7 @@ namespace moppe::map {
   Vec3 Surface::vertex (int column, int row) const {
     const Vec3 spacing = scale ();
     return Vec3 (spacing[0] * column,
-                 spacing[1] * relative_elevation_at (column, row),
+                 terrain::surface_elevation_value (elevation_at (column, row)),
                  spacing[2] * row);
   }
 
@@ -126,10 +135,14 @@ namespace moppe::map {
     const float tx = gx - x0;
     const float tz = gz - z0;
     const float a = linear_interpolate (
-      relative_elevation_at (x0, z0), relative_elevation_at (x1, z0), tx);
+      terrain::surface_elevation_value (elevation_at (x0, z0)),
+      terrain::surface_elevation_value (elevation_at (x1, z0)),
+      tx);
     const float b = linear_interpolate (
-      relative_elevation_at (x0, z1), relative_elevation_at (x1, z1), tx);
-    return spacing[1] * linear_interpolate (a, b, tz);
+      terrain::surface_elevation_value (elevation_at (x0, z1)),
+      terrain::surface_elevation_value (elevation_at (x1, z1)),
+      tx);
+    return linear_interpolate (a, b, tz);
   }
 
   Vec3 Surface::interpolated_normal (float x, float z) const {
@@ -151,20 +164,24 @@ namespace moppe::map {
     return linear_vector_interpolate (a, b, tz);
   }
 
+  SurfaceElevation Surface::min_elevation () const {
+    return *std::ranges::min_element (
+      elevations (), {}, terrain::surface_elevation_value);
+  }
+
+  SurfaceElevation Surface::max_elevation () const {
+    return *std::ranges::max_element (
+      elevations (), {}, terrain::surface_elevation_value);
+  }
+
   float Surface::min_relative_elevation () const {
-    const auto found = std::ranges::min_element (
-      relative_elevations (), {}, [] (RelativeSurfaceElevation value) {
-        return value.numerical_value_in (mp_units::one);
-      });
-    return found->numerical_value_in (mp_units::one);
+    return terrain::surface_elevation_value (min_elevation ()) /
+           meters_value (m_height_scale);
   }
 
   float Surface::max_relative_elevation () const {
-    const auto found = std::ranges::max_element (
-      relative_elevations (), {}, [] (RelativeSurfaceElevation value) {
-        return value.numerical_value_in (mp_units::one);
-      });
-    return found->numerical_value_in (mp_units::one);
+    return terrain::surface_elevation_value (max_elevation ()) /
+           meters_value (m_height_scale);
   }
 
   void Surface::recompute_normals () {
@@ -176,9 +193,9 @@ namespace moppe::map {
     const Vec3 spacing = scale ();
     const auto point = [&] (int column, int row) {
       return Vec3 (spacing[0] * column,
-                   spacing[1] * relative_elevation_at (
-                                  terrain::wrap_index (column, width ()),
-                                  terrain::wrap_index (row, height ())),
+                   terrain::surface_elevation_value (
+                     elevation_at (terrain::wrap_index (column, width ()),
+                                   terrain::wrap_index (row, height ()))),
                    spacing[2] * row);
     };
     const auto face = [&] (int x1, int y1, int x2, int y2, int x3, int y3) {
@@ -221,12 +238,11 @@ namespace moppe::map {
         .height = height,
         .spacing_x = m_atlas.domain ().spacing_x (),
         .spacing_y = m_atlas.domain ().spacing_z (),
-        .height_scale = m_height_scale });
+        .height_scale = 1.0f * u::m });
   }
 
   terrain::TerrainView Surface::terrain_view () const {
-    return terrain::TerrainView (discretization ().grid (),
-                                 relative_elevations ());
+    return terrain::TerrainView (discretization ().grid (), elevations ());
   }
 
   void Surface::reset_material_history () {
@@ -258,15 +274,16 @@ namespace moppe::map {
                              const terrain::FieldEvaluator& evaluator) {
     const terrain::ScalarRaster raster =
       evaluator.evaluate (field, discretization ().field_sampling_grid ());
-    auto& elevations = relative_elevations ();
-    for (std::size_t cell = 0; cell < elevations.size (); ++cell)
-      elevations[cell] = raster.values ()[cell] *
-                         terrain::relative_terrain_elevation[mp_units::one];
+    auto& elevation_column = elevations ();
+    for (std::size_t cell = 0; cell < elevation_column.size (); ++cell)
+      elevation_column[cell] = SurfaceElevation (
+        raster.values ()[cell] * meters_value (m_height_scale) *
+        terrain::surface_elevation[u::m]);
     reset_material_history ();
   }
 
   namespace {
-    constexpr char surface_magic[4] = { 'M', 'O', 'P', '3' };
+    constexpr char surface_magic[4] = { 'M', 'O', 'P', '4' };
     constexpr char material_magic[4] = { 'L', 'G', 'R', '1' };
   }
 
@@ -290,8 +307,8 @@ namespace moppe::map {
     if (!file)
       return false;
     for (std::size_t cell = 0; cell < values.size (); ++cell)
-      relative_elevations ()[cell] =
-        values[cell] * terrain::relative_terrain_elevation[mp_units::one];
+      elevations ()[cell] =
+        SurfaceElevation (values[cell] * terrain::surface_elevation[u::m]);
 
     reset_material_history ();
     char ledger_magic[4] {};
@@ -329,8 +346,8 @@ namespace moppe::map {
     file.write (surface_magic, 4);
     file.write (reinterpret_cast<const char*> (&stored_width), 4);
     file.write (reinterpret_cast<const char*> (&stored_height), 4);
-    for (RelativeSurfaceElevation value : relative_elevations ()) {
-      const float scalar = value.numerical_value_in (mp_units::one);
+    for (SurfaceElevation value : elevations ()) {
+      const float scalar = terrain::surface_elevation_value (value);
       file.write (reinterpret_cast<const char*> (&scalar), sizeof (scalar));
     }
     file.write (material_magic, 4);

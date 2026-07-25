@@ -14,7 +14,7 @@ namespace moppe::terrain {
   // Site selection and routing express intent; cut and fill then reconcile
   // that intent with the terrain rather than letting drainage draw the route.
   struct TrailFormation {
-    float sea_level = 50.0f / 650.0f;
+    float sea_level = 50.0f;
     square_meters_t minimum_catchment_area =
       5000.0f * mp_units::si::metre * mp_units::si::metre;
     square_meters_t maximum_catchment_area =

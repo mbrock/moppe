@@ -1837,13 +1837,14 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 
   void WebGpuRenderer::set_terrain (
     const TerrainParams& params,
-    std::span<const terrain::RelativeTerrainElevation> heights,
+    std::span<const terrain::SurfaceElevation> heights,
     std::span<const terrain::TerrainNormal> normals) {
     const std::size_t sample_count =
       static_cast<std::size_t> (params.width) * params.height;
     if (params.width < 2 || params.height < 2 ||
         heights.size () != sample_count ||
-        (!normals.empty () && normals.size () != sample_count))
+        (!normals.empty () && normals.size () != sample_count) ||
+        params.height_scale <= 0.0f)
       throw std::invalid_argument ("invalid WebGPU terrain raster");
     m_state->terrain_params = params;
 
@@ -1869,9 +1870,17 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       static_cast<uint32_t> (params.height),
       1,
     };
+    // The renderer still consumes normalized texture lanes. Keep that
+    // conversion at this presentation boundary while terrain storage and
+    // simulation use physical elevations.
+    std::vector<float> presented_heights (sample_count);
+    for (std::size_t offset = 0; offset < sample_count; ++offset)
+      presented_heights[offset] =
+        terrain::surface_elevation_value (heights[offset]) /
+        params.height_scale;
     m_state->queue.WriteTexture (&height_destination,
-                                 heights.data (),
-                                 params.width * params.height * sizeof (float),
+                                 presented_heights.data (),
+                                 presented_heights.size () * sizeof (float),
                                  &height_layout,
                                  &extent);
 

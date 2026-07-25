@@ -30,11 +30,13 @@ namespace moppe::map {
     float relative_elevation_at (int column, int row) const;
     void set_relative_elevation (int column, int row, float value);
     void fill_relative_elevation (float value);
+    SurfaceElevation elevation_at (int column, int row) const;
+    void set_elevation (int column, int row, SurfaceElevation value);
+    void fill_elevation (SurfaceElevation value);
     Vec3 normal_at (int column, int row) const;
 
-    const std::vector<RelativeSurfaceElevation>&
-    relative_elevations () const noexcept;
-    std::vector<RelativeSurfaceElevation>& relative_elevations () noexcept;
+    const std::vector<SurfaceElevation>& elevations () const noexcept;
+    std::vector<SurfaceElevation>& elevations () noexcept;
     const std::vector<SurfaceNormal>& normals () const noexcept;
     const std::vector<ErodedSurfaceMaterial>& eroded_material () const noexcept;
     std::vector<ErodedSurfaceMaterial>& eroded_material () noexcept;
@@ -48,6 +50,8 @@ namespace moppe::map {
     bool in_bounds (float x, float z) const;
     float interpolated_height (float x, float z) const;
     Vec3 interpolated_normal (float x, float z) const;
+    SurfaceElevation min_elevation () const;
+    SurfaceElevation max_elevation () const;
     float min_relative_elevation () const;
     float max_relative_elevation () const;
 

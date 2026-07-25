@@ -188,7 +188,7 @@ namespace moppe {
       // -- world setup -------------------------------------------------
       virtual void
       set_terrain (const TerrainParams& params,
-                   std::span<const terrain::RelativeTerrainElevation> heights,
+                   std::span<const terrain::SurfaceElevation> heights,
                    std::span<const terrain::TerrainNormal> normals) = 0;
       // Hot development control: changes only terrain shading state, leaving
       // height/normal textures and chunk geometry intact.

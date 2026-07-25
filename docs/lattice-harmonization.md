@@ -66,9 +66,11 @@ that is an explicit presentation constraint, not a second topology.
 ## Stage: authoritative surface bundle (done)
 
 `SurfaceAtlas::geometry()` is the one finite terrain store. Its mandatory
-typed columns are relative elevation, normal, removed material, deposited
-material, and broad snow support. `GeneratedWorld` owns one `Surface`; there
-is no preceding height map and no geometry refresh copy.
+typed columns are elevation in metres, normal, removed material, deposited
+material, and broad snow support. Elevation is an affine quantity point with
+the native representation of a `float`; it is neither boxed nor normalized.
+`GeneratedWorld` owns one `Surface`; there is no preceding height map and no
+geometry refresh copy.
 
 Generation, Terrain Lab checkpoints, physics, hydrology, and rendering all
 read or mutate those columns. `TerrainView` is a borrowed analysis adapter,
@@ -87,12 +89,26 @@ Deleted with the old layer:
 The continuous-field DAG remains only as an initial continent/uplift producer.
 It does not own terrain and is not part of the runtime surface model.
 
+## Stage: physical elevation (in progress)
+
+The authoritative geometry column, CPU reconstruction, hydrology, terrain
+evolution, trails, and water sheets now share one physical elevation frame in
+metres. The old vertical scale survives only as a temporary presentation
+calibration: the existing terrain and water shaders still consume normalized
+texture lanes, so their renderer upload boundaries perform that conversion.
+
+Compatibility methods named `relative_elevation` and the corresponding
+`TerrainGrid::height_scale` remain while test fixtures and analysis entry
+points move to typed bundles. They are migration scaffolding, not part of the
+intended model.
+
 ## Remaining stages
 
-1. **One lattice value** — share site count, indexing, and wrapping between
-   `TerrainGrid`, `SurfaceDomain`, and `FieldSamplingGrid2D`. Field-coordinate
-   bounds, physical spacing, and reconstruction remain explicit charts or
-   policies over that lattice rather than becoming one omnibus domain type.
-2. **Reassess continuous fields** — replace the continent/uplift expression
-   compiler with direct finite typed generation if its CPU/Metal source
-   interchange is no longer worth maintaining.
+1. **Finish physical elevation** — migrate fixtures and analysis APIs, delete
+   relative-elevation access and vertical scaling, then let shaders consume
+   metre-valued elevations directly.
+2. **One lattice value** — replace `TerrainGrid`, `TerrainDiscretization`, and
+   `FieldSamplingGrid2D` with the bundle domain plus explicit chart operations.
+3. **Direct finite geology** — replace the continent/uplift expression
+   compiler and its CPU/Metal evaluators with one typed finite generator over
+   that domain.

@@ -58,7 +58,7 @@ namespace moppe::game {
 
     report (HydrologyStage::StandingWater);
     terrain::FloodField standing_water = terrain::analyze_standing_water (
-      m_surface.terrain_view (), m_recipe.normalized_water_datum ());
+      m_surface.terrain_view (), meters_value (m_recipe.water_datum ()));
 
     report (HydrologyStage::Lakes);
     terrain::LakeCensus lakes = terrain::census_lakes (standing_water);
@@ -108,8 +108,7 @@ namespace moppe::game {
                                      hydrology.lakes (),
                                      hydrology.drainage (),
                                      hydrology.rivers ());
-      m_water_surface.emplace (
-        m_surface.atlas ().domain (), sheets, m_surface.scale ()[1] * u::m);
+      m_water_surface.emplace (m_surface.atlas ().domain (), sheets);
 
       const terrain::Waterline waterline = terrain::extract_waterline (
         m_surface.terrain_view (), sheets.surface, hydrology.lakes ());

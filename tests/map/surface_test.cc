@@ -55,11 +55,11 @@ MOPPE_TEST (surface_sections_materialize_typed_height_and_normal_columns) {
 
   const map::SurfaceIndex index { 2, 1 };
   const auto elevation =
-    spatial::get<terrain::relative_terrain_elevation> (geometry[index]);
+    spatial::get<terrain::surface_elevation> (geometry[index]);
   const auto normal = spatial::get<terrain::terrain_normal> (geometry[index]);
   const auto snow_support = spatial::get<map::snow_support> (geometry[index]);
-  MOPPE_CHECK_NEAR (elevation.numerical_value_in (one),
-                    map.relative_elevation_at (2, 1),
+  MOPPE_CHECK_NEAR (terrain::surface_elevation_value (elevation),
+                    terrain::surface_elevation_value (map.elevation_at (2, 1)),
                     1e-6f);
   check_surface_vector (normal_value (normal), map.normal_at (2, 1));
   MOPPE_CHECK (snow_support >= 0.0f * map::snow_support[one]);

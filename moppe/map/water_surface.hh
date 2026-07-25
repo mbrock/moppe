@@ -32,9 +32,7 @@ namespace moppe::map {
   class WaterSurface {
   public:
     // Painted water sheets and the ground share one lattice.
-    WaterSurface (SurfaceDomain domain,
-                  const terrain::WaterSheets& sheets,
-                  meters_t terrain_height_scale);
+    WaterSurface (SurfaceDomain domain, const terrain::WaterSheets& sheets);
 
     WaterSurface (SurfaceDomain domain,
                   std::span<const float> normalized_level_and_amplitude,
