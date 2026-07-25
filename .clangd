@@ -1,2 +1,6 @@
 CompileFlags:
   CompilationDatabase: build
+  # Header commands are inferred under unity builds and may come from a
+  # target that does not consume moppe_spatial.
+  Add:
+    - -isystem../third_party/nanoarrow
