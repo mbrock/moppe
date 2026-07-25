@@ -54,6 +54,19 @@ is a physical depth.
 sampling. Matching ground and water dimensions are a world invariant, not a
 reason to combine them into one object.
 
+## Persistence
+
+Typed bundles are stored as standard Arrow IPC streams with one record batch.
+Each quantity is a named Arrow field: scalar representations use native Arrow
+numeric arrays and vector representations use fixed-size lists. Field metadata
+records the quantity specification, kind, unit, dimension, and storage form.
+Schema metadata carries the bundle version and serialized domain identity.
+
+The cache uses the `.arrows` extension. Readers validate all of this metadata
+against the requested C++ bundle type before constructing a bundle, so a file
+with the right physical numbers but the wrong domain, quantities, units, or
+dimensions is rejected.
+
 ## Presentation
 
 `game::SurfacePresentation` and `game::WaterPresentation` are the deliberate

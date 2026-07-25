@@ -6,11 +6,9 @@
 #include <tests/test.hh>
 
 #include <cstddef>
-#include <format>
 #include <optional>
 #include <sstream>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 using namespace moppe;
@@ -45,12 +43,17 @@ namespace {
 
   using StoredDisplacement = quantity<stored_displacement[u::m], float>;
   using StoredDensity = quantity<stored_density[one], float>;
-  using StoredDisplacementSpec =
-    std::remove_cvref_t<decltype (stored_displacement)>;
-  using StoredDensitySpec = std::remove_cvref_t<decltype (stored_density)>;
   using StoredRingBundle =
     spatial::Bundle<StoredRing, StoredDisplacement, StoredDensity>;
   using StoredNarrowBundle = spatial::Bundle<StoredRing, StoredDisplacement>;
+
+  inline constexpr struct stored_direction
+      : quantity_spec<mp_units::dimensionless,
+                      mp_units::quantity_tensor_order::vector,
+                      mp_units::is_kind> {
+  } stored_direction;
+  using StoredDirection = quantity<stored_direction[one], Vec3>;
+  using StoredVectorBundle = spatial::Bundle<StoredRing, StoredDirection>;
 
   inline constexpr struct stored_duration
       : quantity_spec<mp_units::isq::duration, mp_units::is_kind> {
@@ -101,29 +104,67 @@ MOPPE_TEST (a_bundle_round_trips_every_column_over_its_own_domain) {
   MOPPE_CHECK_NEAR (density[1].numerical_value_in (one), 0.25f, 1e-6f);
 }
 
-MOPPE_TEST (a_bundle_file_describes_each_quantity_before_its_binary_data) {
+MOPPE_TEST (a_bundle_file_is_an_arrow_stream_with_quantity_metadata) {
   std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
   spatial::write_bundle (file, written_ring ());
 
-  std::string line;
-  std::getline (file, line);
-  MOPPE_CHECK (line == "MOPBNDL2");
-  std::getline (file, line);
-  MOPPE_CHECK (line == "columns=2");
-  std::getline (file, line);
-  MOPPE_CHECK (
-    line == std::format (
-              "quantity kind=quantity bytes=4 unit=[m] dimension=[L] spec={}",
-              mp_units::detail::type_name<StoredDisplacementSpec> ()));
-  std::getline (file, line);
-  MOPPE_CHECK (
-    line ==
-    std::format ("quantity kind=quantity bytes=4 unit=[] dimension=[1] spec={}",
-                 mp_units::detail::type_name<StoredDensitySpec> ()));
-  std::getline (file, line);
-  MOPPE_CHECK (line == "sites=3");
-  std::getline (file, line);
-  MOPPE_CHECK (line == "data");
+  const std::string bytes = file.str ();
+  MOPPE_CHECK (bytes.size () > 4);
+  MOPPE_CHECK (static_cast<unsigned char> (bytes[0]) == 0xff);
+  MOPPE_CHECK (static_cast<unsigned char> (bytes[1]) == 0xff);
+  MOPPE_CHECK (static_cast<unsigned char> (bytes[2]) == 0xff);
+  MOPPE_CHECK (static_cast<unsigned char> (bytes[3]) == 0xff);
+
+  file.seekg (0);
+  spatial::detail::UniqueArrayStream stream;
+  MOPPE_CHECK (spatial::detail::read_ipc_stream (file, stream));
+  ArrowError error;
+  ArrowErrorInit (&error);
+  spatial::detail::UniqueSchema schema;
+  MOPPE_CHECK (ArrowArrayStreamGetSchema (
+                 &stream.value, &schema.value, &error) == NANOARROW_OK);
+  MOPPE_CHECK (std::string_view (schema.value.format) == "+s");
+  MOPPE_CHECK (schema.value.n_children == 2);
+
+  const ArrowSchema& displacement = *schema.value.children[0];
+  MOPPE_CHECK (std::string_view (displacement.name) ==
+               spatial::detail::quantity_spec_name<StoredDisplacement> ());
+  MOPPE_CHECK (std::string_view (displacement.format) == "f");
+  MOPPE_CHECK (spatial::detail::metadata_value (
+                 displacement, spatial::detail::unit_key) == "m");
+  MOPPE_CHECK (spatial::detail::metadata_value (
+                 displacement, spatial::detail::dimension_key) == "L");
+  MOPPE_CHECK (spatial::detail::metadata_value (
+                 displacement, spatial::detail::kind_key) == "quantity");
+
+  spatial::detail::UniqueArray batch;
+  MOPPE_CHECK (ArrowArrayStreamGetNext (&stream.value, &batch.value, &error) ==
+               NANOARROW_OK);
+  spatial::detail::UniqueArrayView view;
+  MOPPE_CHECK (ArrowArrayViewInitFromSchema (
+                 &view.value, &schema.value, &error) == NANOARROW_OK);
+  view.initialized = true;
+  MOPPE_CHECK (ArrowArrayViewSetArray (&view.value, &batch.value, &error) ==
+               NANOARROW_OK);
+  MOPPE_CHECK_NEAR (
+    ArrowArrayViewGetDoubleUnsafe (view.value.children[0], 2), 5.0, 1e-6);
+}
+
+MOPPE_TEST (a_vector_quantity_is_an_arrow_fixed_size_list) {
+  StoredVectorBundle bundle (StoredRing { 3 });
+  spatial::get<stored_direction> (bundle)[1] =
+    StoredDirection (Vec3 { 1.0f, 2.0f, 3.0f }, StoredDirection::reference);
+
+  std::stringstream file (std::ios::in | std::ios::out | std::ios::binary);
+  spatial::write_bundle (file, bundle);
+  const std::optional loaded = spatial::read_bundle<StoredVectorBundle> (file);
+
+  MOPPE_CHECK (loaded.has_value ());
+  const Vec3 value =
+    spatial::get<stored_direction> (*loaded)[1].numerical_value_in (one);
+  MOPPE_CHECK_NEAR (value[0], 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (value[1], 2.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (value[2], 3.0f, 1e-6f);
 }
 
 MOPPE_TEST (loading_keeps_the_callers_bundle_when_the_domain_differs) {
