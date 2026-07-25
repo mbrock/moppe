@@ -1,5 +1,4 @@
 #include <moppe/map/surface.hh>
-#include <moppe/map/terrain_generation.hh>
 #ifdef MOPPE_OROGENY_METAL_BACKEND
 #include <moppe/terrain/metal/metal_stream_power_evolution.hh>
 #endif

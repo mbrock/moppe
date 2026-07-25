@@ -96,7 +96,7 @@ initialize_terrain(surface, seed, water datum)
   -> form_terrain_trails(surface, trail parameters)
 ```
 
-These are free operations in `map/terrain_generation.*`, not methods on a
+These are free operations in `map/surface.*`, not methods on a
 stateful evaluator. There is no transform variant, legal-order validator,
 checkpoint ledger, editor schema, or second execution model.
 

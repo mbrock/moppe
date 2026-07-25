@@ -1,7 +1,7 @@
 #ifndef MOPPE_GAME_SURFACE_PRESENTATION_HH
 #define MOPPE_GAME_SURFACE_PRESENTATION_HH
 
-#include <moppe/map/surface_readings.hh>
+#include <moppe/map/surface.hh>
 #include <moppe/render/renderer.hh>
 
 #include <span>

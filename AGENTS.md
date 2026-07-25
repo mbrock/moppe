@@ -74,13 +74,14 @@
 - `moppe/mov/` is simulation only; `moppe/map/` is terrain generation.
   Both are GL-free and portable.
 - `moppe/terrain/` owns finite terrain algorithms and typed analysis values;
-  direct world construction lives in `moppe/map/terrain_generation.*`; see
-  `docs/terrain-expressions.md`.
+  see `docs/terrain-expressions.md`.
 - `moppe/spatial/` contains finite typed quantity bundles and generic local or
-  interpolated sampling operations. `moppe/map/surface*` materializes typed
-  ground sections over one shared surface domain; `water_surface.*` carries a
-  distinct water bundle in the same elevation frame. Game-side presentation
-  bridges are the only place those quantities become renderer texture lanes.
+  interpolated sampling operations. `moppe/map/surface.*` is the whole of
+  `moppe/map/`: the ground surface's typed quantities, the generation passes
+  that fill them over one shared surface domain, the readings analysed back
+  out, and the surface cache. `terrain::WaterSheets` carries a distinct water
+  bundle in the same elevation frame. Game-side presentation bridges are the
+  only place those quantities become renderer texture lanes.
 - Terrain renders by vertex-pulling from an R32F height texture +
   RG16Snorm normals; physics keeps the authoritative CPU heightmap.
 - Reversed-Z scene pass (MSAA→resolve), post chain (underwater grade,
