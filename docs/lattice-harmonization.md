@@ -21,7 +21,7 @@ finishing the port.
 - Test fixtures convert once, to the final semantics: an NxN map is N
   periodic cells, spacing = size/N.
 
-## Stage: seamless torus (in progress)
+## Stage: seamless torus (done)
 
 Touch points, surveyed:
 
@@ -54,10 +54,14 @@ Touch points, surveyed:
 - Terrain Lab / water capture / tests — fixture conversions and
   re-derived expectations (surface stencil boundary tests now wrap).
 
-Verification per commit: full build, ctest, fast-profile screenshot,
-terrain-lab capture, and a physics sanity ride near the wrap boundary
-(spawn is uniform over the torus, so ordinary screenshots exercise it).
-Web/WGSL is compile-only from this machine.
+Landed in "The world is a seamless torus": 67 files, net -347 lines.
+Generated worlds were preserved bit-for-bit -- the old convention
+sampled unique cells at k/(storage-1), which equals the new k/N with
+the resolution dropped by one.  Web/WGSL is compile-only verified from
+this machine; run the web build before trusting the browser path.
+
+Next mechanical follow-up: rename the unique_width/height/size synonyms
+(22 files) to plain width/height/size and delete them.
 
 ## Later stages
 
