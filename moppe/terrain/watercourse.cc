@@ -15,9 +15,9 @@ namespace moppe::terrain {
       return std::clamp ((slope - 0.035f) / 0.24f, 0.0f, 1.0f);
     }
 
-    float wave_amplitude (const FloodField& flood,
-                          const LakeCensus& census,
-                          std::size_t cell) {
+    float wave_factor (const FloodField& flood,
+                       const LakeCensus& census,
+                       std::size_t cell) {
       if (flood.ocean[cell])
         return 1.0f;
       const WaterBodyId body = census.body[cell];
@@ -46,7 +46,7 @@ namespace moppe::terrain {
                               const RiverNetwork& rivers,
                               const WatercoursePaint& parameters) {
     MOPPE_PROFILE_ZONE ("paint_watercourses");
-    const TerrainDomain& grid = flood.domain;
+    const TerrainDomain& grid = flood.domain ();
     if (terrain_domain != grid)
       throw std::invalid_argument (
         "watercourse terrain does not match hydrology");
@@ -61,27 +61,30 @@ namespace moppe::terrain {
     // render the running surface. The raster sheet is therefore reserved for
     // actual standing bodies. This removes the old bank-probe reconstruction
     // and its lattice-shaped dry-reach shorelines.
-    const ScalarRaster permanent =
+    const ElevationMap permanent =
       permanent_water_surface (flood, census, parameters.permanence);
-    std::vector<float> surface (permanent.values ().begin (),
-                                permanent.values ().end ());
+    const auto& permanent_elevations =
+      spatial::get<surface_elevation> (permanent);
+    std::vector<float> surface;
+    surface.reserve (count);
+    for (SurfaceElevation elevation : permanent_elevations)
+      surface.push_back (surface_elevation_value (elevation));
     std::vector<float> amplitude (count);
     for (std::size_t cell = 0; cell < count; ++cell)
-      amplitude[cell] = wave_amplitude (flood, census, cell);
+      amplitude[cell] = wave_factor (flood, census, cell);
 
     // A channel-like body a river traverses renders as ribbon pools with
     // real banks; pull it out of the sheet so the two representations never
     // overlap. Untraversed channel bodies are stagnant water with no river
     // to own them and keep their plate.
     if (!rivers.body_traversed.empty ()) {
-      const std::span<const float> level = flood.water_level.values ();
-      const std::span<const float> depth = flood.water_depth.values ();
       for (std::size_t cell = 0; cell < count; ++cell) {
         const WaterBodyId id = census.body[cell];
         if (id == LakeCensus::dry || id >= rivers.body_traversed.size ())
           continue;
         if (census.bodies[id].channel_like && rivers.body_traversed[id]) {
-          surface[cell] = level[cell] - depth[cell];
+          surface[cell] =
+            flood.water_level_m (cell) - flood.water_depth_m (cell);
           amplitude[cell] = 0.0f;
         }
       }
@@ -202,8 +205,17 @@ namespace moppe::terrain {
       surface = std::move (signed_surface);
     }
 
-    return { .surface = ScalarRaster (permanent.domain (), std::move (surface)),
-             .amplitude = std::move (amplitude),
-             .flow = std::move (flow) };
+    WaterSheets sheets (grid);
+    auto& sheet_elevations = spatial::get<surface_elevation> (sheets);
+    auto& amplitudes = spatial::get<wave_amplitude> (sheets);
+    auto& velocities = spatial::get<water_velocity> (sheets);
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      sheet_elevations[cell] =
+        SurfaceElevation (surface[cell] * surface_elevation[u::m]);
+      amplitudes[cell] = amplitude[cell] * wave_amplitude[one];
+      velocities[cell] = Vec3 (flow[2 * cell], 0.0f, flow[2 * cell + 1]) *
+                         water_velocity[u::m / u::s];
+    }
+    return sheets;
   }
 }

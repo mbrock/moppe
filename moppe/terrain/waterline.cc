@@ -28,7 +28,7 @@ namespace moppe::terrain {
   Waterline
   detail::extract_waterline (const TerrainDomain& grid,
                              std::span<const SurfaceElevation> elevations,
-                             const ScalarRaster& surface,
+                             std::span<const SurfaceElevation> surface,
                              const LakeCensus& census,
                              float wet_epsilon) {
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
@@ -36,12 +36,10 @@ namespace moppe::terrain {
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    if (surface.values ().size () != count)
+    if (surface.size () != count)
       throw std::invalid_argument ("water surface does not match terrain");
     if (census.body.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
-    const std::span<const float> level = surface.values ();
-
     // Signed wetness at each lattice node; positive is wet.  The
     // painted sheet holds ground height in dry cells, so this field is
     // clamped on the dry side: it decides topology (which corners are
@@ -49,13 +47,14 @@ namespace moppe::terrain {
     // side's level across the edge below.
     const auto field = [&] (std::size_t x, std::size_t y) {
       const std::size_t node = y * width + x;
-      return level[node] - elevation_at (grid, elevations, x, y) - wet_epsilon;
+      return surface_elevation_value (surface[node]) -
+             elevation_at (grid, elevations, x, y) - wet_epsilon;
     };
     const auto ground = [&] (std::size_t x, std::size_t y) {
       return elevation_at (grid, elevations, x, y);
     };
     const auto sheet = [&] (std::size_t x, std::size_t y) {
-      return level[y * width + x];
+      return surface_elevation_value (surface[y * width + x]);
     };
 
     std::unordered_map<std::uint64_t, WaterlineCrossing> crossings;

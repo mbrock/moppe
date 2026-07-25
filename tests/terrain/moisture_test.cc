@@ -11,30 +11,24 @@ MOPPE_TEST (moisture_decays_away_from_standing_water) {
   const std::size_t count = 81;
   const TerrainDomain grid (
     9, 9, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre);
-  const RasterDomain domain { .width = 9, .height = 9 };
+  const std::vector<float> levels (count, 0.0f);
+  const std::vector<float> depths (count, 0.0f);
+  const std::vector<float> slopes (count, 0.01f);
+  const std::vector<float> areas (count, 100.0f);
   std::vector<WaterBodyId> body (count, LakeCensus::dry);
   body[40] = 0;
-  const FloodField flood {
-    .domain = grid,
-    .sea_level = -1.0f,
-    .has_ocean = false,
-    .water_level = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
-    .water_depth = ScalarRaster (domain, std::vector<float> (count, 0.0f)),
-    .ocean = std::vector<std::uint8_t> (count, 0),
-    .spill_receiver = std::vector<CellIndex> (count, 40),
-    .outlets = { 40 }
-  };
+  const FloodField flood { .surface = make_flood_surface (grid, levels, depths),
+                           .sea_level = -1.0f,
+                           .has_ocean = false,
+                           .ocean = std::vector<std::uint8_t> (count, 0),
+                           .spill_receiver = std::vector<CellIndex> (count, 40),
+                           .outlets = { 40 } };
   const LakeCensus census { .body = std::move (body) };
-  const DrainageGraph drainage {
-    .domain = grid,
-    .receiver = std::vector<CellIndex> (count, 40),
-    .slope =
-      SlopeRaster (ScalarRaster (domain, std::vector<float> (count, 0.01f))),
-    .contributing_area = ContributingAreaRaster (
-      ScalarRaster (domain, std::vector<float> (count, 100.0f))),
-    .basin = std::vector<CellIndex> (count, 0),
-    .sinks = { 40 }
-  };
+  const DrainageGraph drainage { .readings =
+                                   make_drainage_readings (grid, slopes, areas),
+                                 .receiver = std::vector<CellIndex> (count, 40),
+                                 .basin = std::vector<CellIndex> (count, 0),
+                                 .sinks = { 40 } };
 
   const MoistureMap moisture = analyze_moisture (flood, census, drainage);
   const auto& values = spatial::get<surface_moisture> (moisture);

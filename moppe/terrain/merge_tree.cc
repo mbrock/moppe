@@ -247,16 +247,9 @@ namespace moppe::terrain {
       ocean[cell] = any_submerged && join_height <= sea_level ? 1 : 0;
     }
 
-    const TerrainDomain& grid = tree.domain;
-    const RasterDomain raster_domain {
-      .width = width,
-      .height = height,
-      .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
-      .max_y = meters_value (grid.spacing_z ()) * static_cast<float> (height)
-    };
     return { .has_ocean = any_submerged,
              .root_cell = root_cell,
-             .water_level = ScalarRaster (raster_domain, std::move (water)),
+             .water_level = make_elevation_map (tree.domain, water),
              .ocean = std::move (ocean) };
   }
 }

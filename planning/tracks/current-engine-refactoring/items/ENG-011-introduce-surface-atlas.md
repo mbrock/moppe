@@ -33,7 +33,8 @@ authoritative heightmap or invent a new terrain-generation kernel.
 ecology, and use views. Optional typed section pointers make each later
 materialization barrier observable, while a present all-zero section remains a
 real reading. Surface materializers, game consumers, presentation, and focused
-surface tests use those named views; `docs/surface-atlas.md` enumerates every
-section and its validity boundary. `cmake --build build --target moppe-tests`,
+surface tests use those named views; `docs/surface-storage.md` now describes
+the consolidated successor and its validity boundary.
+`cmake --build build --target moppe-tests`,
 `ctest --test-dir build --output-on-failure`, and `cmake --build build --target
 moppe` pass.

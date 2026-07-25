@@ -1,6 +1,7 @@
 #include <moppe/terrain/fractional_drainage.hh>
 
 #include <moppe/profile.hh>
+#include <moppe/spatial/bundle_operations.hh>
 #include <moppe/terrain/flood.hh>
 
 #include <algorithm>
@@ -24,7 +25,7 @@ namespace moppe::terrain {
         routing_surface_elevation[mp_units::si::metre]),
       float>;
     using RoutingSurface =
-      spatial::Bundle<TerrainLatticeDomain, RoutingSurfaceElevation>;
+      spatial::Bundle<TerrainCellDomain, RoutingSurfaceElevation>;
 
     constexpr std::array neighbour_offsets {
       std::array { 1, 0 },   std::array { 1, -1 }, std::array { 0, -1 },
@@ -184,7 +185,7 @@ namespace moppe::terrain {
 
     std::array<int, 2> receiver_offset (CellIndex cell,
                                         CellIndex receiver,
-                                        const TerrainLatticeDomain& domain) {
+                                        const TerrainCellDomain& domain) {
       const int width = static_cast<int> (domain.width ());
       const int height = static_cast<int> (domain.height ());
       int dx = static_cast<int> (receiver.value % domain.width ()) -
@@ -214,7 +215,7 @@ namespace moppe::terrain {
                                    ChannelTangent previous_tangent,
                                    ChannelPersistence persistence,
                                    const DInfinityStencil& stencil) {
-      const TerrainLatticeDomain& domain = surface.domain ();
+      const TerrainCellDomain& domain = surface.domain ();
       const TerrainDomain& grid = domain.terrain_domain ();
       const auto focus = spatial::BundleFocus (surface, cell);
       const RoutingSurfaceElevation center =
@@ -305,7 +306,7 @@ namespace moppe::terrain {
     }
 
     std::vector<CellIndex>
-    accumulate (const TerrainLatticeDomain& lattice,
+    accumulate (const TerrainCellDomain& lattice,
                 const std::vector<FractionalFlowRoute>& routes,
                 const std::vector<DrainageDirection>& directions,
                 std::vector<FractionalContributingArea>& areas,
@@ -377,24 +378,23 @@ namespace moppe::terrain {
     }
   }
 
-  TerrainLatticeDomain::TerrainLatticeDomain (TerrainDomain domain)
+  TerrainCellDomain::TerrainCellDomain (TerrainDomain domain)
       : m_domain (std::move (domain)) {}
 
-  std::size_t TerrainLatticeDomain::offset (CellIndex index) const {
+  std::size_t TerrainCellDomain::offset (CellIndex index) const {
     if (index.value >= size ())
       throw std::out_of_range ("cell is outside terrain lattice domain");
     return index.value;
   }
 
-  CellIndex TerrainLatticeDomain::index (std::size_t offset) const {
+  CellIndex TerrainCellDomain::index (std::size_t offset) const {
     if (offset >= size ())
       throw std::out_of_range ("offset is outside terrain lattice domain");
     return CellIndex { static_cast<std::uint32_t> (offset) };
   }
 
-  std::optional<CellIndex> TerrainLatticeDomain::neighbour (CellIndex index,
-                                                            int columns,
-                                                            int rows) const {
+  std::optional<CellIndex>
+  TerrainCellDomain::neighbour (CellIndex index, int columns, int rows) const {
     const std::size_t cell = offset (index);
     int x = static_cast<int> (cell % width ()) + columns;
     int y = static_cast<int> (cell / width ()) + rows;
@@ -405,7 +405,7 @@ namespace moppe::terrain {
   }
 
   FractionalFlowDomain::FractionalFlowDomain (
-    TerrainLatticeDomain lattice,
+    TerrainCellDomain lattice,
     std::vector<FractionalFlowRoute> routes,
     std::vector<CellIndex> topological_order)
       : m_lattice (std::move (lattice)), m_routes (std::move (routes)),
@@ -423,9 +423,8 @@ namespace moppe::terrain {
       ChannelPersistence persistence,
       const FractionalRouteBackend* backend) {
       MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
-      const TerrainDomain& grid = flood.domain;
-      if (flood.domain != grid ||
-          census.body.size () != grid.width () * grid.height ())
+      const TerrainDomain& grid = flood.domain ();
+      if (census.body.size () != grid.width () * grid.height ())
         throw std::invalid_argument (
           "fractional drainage inputs do not share one terrain lattice");
       const float persistence_value =
@@ -437,13 +436,18 @@ namespace moppe::terrain {
         throw std::invalid_argument (
           "fractional drainage channel memory is invalid");
 
-      TerrainLatticeDomain lattice (grid);
+      TerrainCellDomain lattice (grid);
       RoutingSurface surface (lattice);
-      const std::span<const float> levels = flood.water_level.values ();
+      const std::span<const SurfaceElevation> levels = flood.water_levels ();
+      std::vector<float> level_values;
+      level_values.reserve (levels.size ());
+      for (SurfaceElevation level : levels)
+        level_values.push_back (surface_elevation_value (level));
       auto& elevations = spatial::get<routing_surface_elevation> (surface);
       for (std::size_t offset = 0; offset < lattice.size (); ++offset)
         elevations[offset] = RoutingSurfaceElevation (
-          levels[offset] * routing_surface_elevation[mp_units::si::metre]);
+          level_values[offset] *
+          routing_surface_elevation[mp_units::si::metre]);
 
       // The wet receiver tree supplies flat lake routes and proven depression
       // spills, where continuous downhill direction is undefined. All strict
@@ -457,7 +461,7 @@ namespace moppe::terrain {
 
       if (backend) {
         backend->select_dry_routes (grid,
-                                    levels,
+                                    level_values,
                                     previous_tangent,
                                     persistence,
                                     flood.ocean,

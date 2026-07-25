@@ -3,7 +3,6 @@
 
 #include <moppe/spatial/bundle.hh>
 #include <moppe/terrain/flood.hh>
-#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/terrain_quantities.hh>
 #include <moppe/terrain/types.hh>
 
@@ -50,18 +49,21 @@ namespace moppe::terrain {
   namespace detail {
     Waterline extract_waterline (const TerrainDomain& domain,
                                  std::span<const SurfaceElevation> elevations,
-                                 const ScalarRaster& surface,
+                                 std::span<const SurfaceElevation> surface,
                                  const LakeCensus& census,
                                  float wet_epsilon);
   }
 
-  template <TerrainElevations Terrain>
+  template <TerrainElevations Terrain, TerrainElevations WaterSurface>
   Waterline extract_waterline (const Terrain& terrain,
-                               const ScalarRaster& surface,
+                               const WaterSurface& surface,
                                const LakeCensus& census,
                                float wet_epsilon = 1e-7f) {
-    return detail::extract_waterline (
-      terrain.domain (), elevations (terrain), surface, census, wet_epsilon);
+    return detail::extract_waterline (terrain.domain (),
+                                      elevations (terrain),
+                                      elevations (surface),
+                                      census,
+                                      wet_epsilon);
   }
 
   // Horizontal distance in meters from every lattice node to the

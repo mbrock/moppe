@@ -79,7 +79,7 @@ namespace moppe::game {
       lakes,
       drainage,
       channels,
-      terrain::visible_river_minimum_area (drainage.domain));
+      terrain::visible_river_minimum_area (drainage.domain ()));
 
     m_hydrology.emplace (Hydrology (std::move (standing_water),
                                     std::move (lakes),
@@ -99,16 +99,15 @@ namespace moppe::game {
       const Hydrology& hydrology = *m_hydrology;
       m_surface.derive_channel_flux (hydrology.channels ());
 
-      const terrain::WaterSheets sheets =
+      terrain::WaterSheets sheets =
         terrain::paint_watercourses (m_surface.geometry (),
                                      hydrology.standing_water (),
                                      hydrology.lakes (),
                                      hydrology.drainage (),
                                      hydrology.rivers ());
-      m_water_surface.emplace (m_surface.domain (), sheets);
-
       const terrain::Waterline waterline = terrain::extract_waterline (
-        m_surface.geometry (), sheets.surface, hydrology.lakes ());
+        m_surface.geometry (), sheets, hydrology.lakes ());
+      m_water_surface.emplace (std::move (sheets));
       m_surface.set_waterline_distance (
         terrain::waterline_proximity (waterline));
 
@@ -126,10 +125,8 @@ namespace moppe::game {
         m_trails = terrain::analyze_trail_network (m_surface.geometry (),
                                                    m_recipe.trail_formation ());
       m_surface.set_use (m_trails->use);
-    }
-
-    if (m_surface.atlas ().ecology ().tree_habitat ())
       m_surface.derive_forest_cover (m_recipe.seed ().value ^ 0x6f12ad37U);
+    }
 
     m_surface.derive_geology_materials ();
   }

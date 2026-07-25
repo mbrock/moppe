@@ -1,16 +1,20 @@
 #ifndef MOPPE_MAP_SURFACE_HH
 #define MOPPE_MAP_SURFACE_HH
 
-#include <moppe/map/surface_atlas.hh>
+#include <moppe/map/surface_sections.hh>
 #include <moppe/terrain/fractional_drainage.hh>
+#include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/trail.hh>
+#include <moppe/terrain/waterline.hh>
 
 #include <cstdint>
+#include <optional>
 #include <string>
 
 namespace moppe::map {
   // The world's one finite surface store. Its mandatory geometry bundle owns
-  // elevation, normals, and material history; optional atlas groups add later
-  // analyses over the same domain.
+  // elevation, normals, and material history; an optional readings bundle adds
+  // later analyses over the same domain.
   class Surface {
   public:
     Surface (int width, int height, const Vec3& size);
@@ -23,8 +27,8 @@ namespace moppe::map {
     int height () const noexcept;
     Vec3 sample_spacing () const noexcept;
     Vec3 world_extent () const noexcept;
-    const SurfaceDomain& domain () const noexcept {
-      return m_atlas.domain ();
+    const terrain::TerrainDomain& domain () const noexcept {
+      return m_geometry.domain ();
     }
 
     SurfaceElevation elevation_at (int column, int row) const;
@@ -32,11 +36,11 @@ namespace moppe::map {
     void fill_elevation (SurfaceElevation value);
     Vec3 normal_at (int column, int row) const;
 
-    const SurfaceGeometrySections& geometry () const noexcept {
-      return m_atlas.geometry ();
+    const SurfaceGeometry& geometry () const noexcept {
+      return m_geometry;
     }
-    SurfaceGeometrySections& geometry () noexcept {
-      return m_atlas.geometry ();
+    SurfaceGeometry& geometry () noexcept {
+      return m_geometry;
     }
 
     Vec3 vertex (int column, int row) const;
@@ -62,26 +66,25 @@ namespace moppe::map {
     TreeHabitat tree_habitat_at (const position_t& position) const;
     ForestCover forest_cover_at (const position_t& position) const;
 
-    void set_moisture (SurfaceMoistureSections moisture);
-    void set_waterline_distance (SurfaceWaterlineSections distance);
+    void set_moisture (terrain::MoistureMap moisture);
+    void set_waterline_distance (terrain::WaterlineProximity distance);
     void derive_channel_flux (const terrain::FractionalDrainage& channels);
-    void set_use (SurfaceUseSections use);
+    void set_use (terrain::TrailUseMap use);
     void derive_geology_materials ();
     void derive_tree_habitat (meters_t water_level, meters_t tree_line);
     void derive_forest_cover (std::uint32_t seed);
 
-    const SurfaceAtlas& atlas () const noexcept {
-      return m_atlas;
+    const SurfaceReadings* readings () const noexcept {
+      return m_readings ? &*m_readings : nullptr;
     }
 
   private:
     std::size_t offset (int column, int row) const;
-    SurfaceAtlas& mutable_atlas () noexcept {
-      return m_atlas;
-    }
+    SurfaceReadings& ensure_readings ();
 
     meters_t m_vertical_extent;
-    SurfaceAtlas m_atlas;
+    SurfaceGeometry m_geometry;
+    std::optional<SurfaceReadings> m_readings;
   };
 }
 

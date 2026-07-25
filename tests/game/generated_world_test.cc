@@ -67,10 +67,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world.hydrology ()->waterways ().bodies.size () <=
                world.hydrology ()->lakes ().bodies.size ());
   MOPPE_CHECK (world.water_surface ().has_value ());
-  MOPPE_CHECK (world.surface ().atlas ().hydrology ().channel_flux ());
-  MOPPE_CHECK (world.surface ().atlas ().hydrology ().moisture ());
-  MOPPE_CHECK (world.surface ().atlas ().hydrology ().waterline ());
-  MOPPE_CHECK (world.surface ().atlas ().geology ().materials ());
+  MOPPE_CHECK (world.surface ().readings ());
   MOPPE_CHECK (world.trails ().has_value ());
 }
 

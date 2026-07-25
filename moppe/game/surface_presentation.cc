@@ -15,64 +15,47 @@ namespace moppe::game {
 
   void SurfacePresentation::refresh (const map::Surface& surface) {
     MOPPE_PROFILE_ZONE ("surface.pack_presentation");
-    const map::SurfaceAtlas& atlas = surface.atlas ();
-    const map::SurfaceAtlas::Use& use = atlas.use ();
-    const map::SurfaceAtlas::Ecology& ecology = atlas.ecology ();
-    const map::SurfaceAtlas::Hydrology& hydrology = atlas.hydrology ();
-
-    if (const auto* readings = use.readings ()) {
+    if (const map::SurfaceReadings* readings = surface.readings ()) {
       m_trails = scalar_values<map::TrailInfluence> (
         spatial::get<map::trail_influence> (*readings));
       m_home_base = scalar_values<map::HomeBaseInfluence> (
         spatial::get<map::home_base_influence> (*readings));
-    } else {
-      m_trails.clear ();
-      m_home_base.clear ();
-    }
-    if (const auto* forest = ecology.forest_cover ())
       m_forest = scalar_values<map::ForestCover> (
-        spatial::get<map::forest_cover> (*forest));
-    else
-      m_forest.clear ();
-    if (const auto* moisture = hydrology.moisture ())
+        spatial::get<map::forest_cover> (*readings));
       m_moisture = scalar_values<map::SurfaceMoisture> (
-        spatial::get<map::surface_moisture> (*moisture));
-    else
-      m_moisture.clear ();
-    if (const auto* waterline = hydrology.waterline ()) {
-      const auto& distance = spatial::get<map::waterline_distance> (*waterline);
+        spatial::get<map::surface_moisture> (*readings));
+      const auto& distance = spatial::get<map::waterline_distance> (*readings);
       m_waterline_distance.resize (distance.size ());
       for (std::size_t offset = 0; offset < distance.size (); ++offset)
         m_waterline_distance[offset] =
           distance[offset].numerical_value_in (u::m);
-    } else
-      m_waterline_distance.clear ();
-    m_snow_support = scalar_values<map::SnowSupport> (
-      spatial::get<map::snow_support> (atlas.geometry ()));
-
-    if (const auto* channel_flux = hydrology.channel_flux ()) {
-      const auto& flux = spatial::get<map::channel_flux> (*channel_flux);
+      const auto& flux = spatial::get<map::channel_flux> (*readings);
       m_channel_flux.resize (2 * flux.size ());
       for (std::size_t offset = 0; offset < flux.size (); ++offset) {
         const Vec3 value = flux[offset].numerical_value_in (one);
         m_channel_flux[2 * offset] = value[0];
         m_channel_flux[2 * offset + 1] = value[2];
       }
-    } else
-      m_channel_flux.clear ();
-
-    if (const auto* materials = atlas.geology ().materials ()) {
       const auto erosion = scalar_values<map::ErosionExposure> (
-        spatial::get<map::erosion_exposure> (*materials));
+        spatial::get<map::erosion_exposure> (*readings));
       const auto deposition = scalar_values<map::DepositionCover> (
-        spatial::get<map::deposition_cover> (*materials));
+        spatial::get<map::deposition_cover> (*readings));
       m_geology.resize (2 * erosion.size ());
       for (std::size_t offset = 0; offset < erosion.size (); ++offset) {
         m_geology[2 * offset] = erosion[offset];
         m_geology[2 * offset + 1] = deposition[offset];
       }
-    } else
+    } else {
+      m_trails.clear ();
+      m_home_base.clear ();
+      m_forest.clear ();
+      m_moisture.clear ();
+      m_waterline_distance.clear ();
+      m_channel_flux.clear ();
       m_geology.clear ();
+    }
+    m_snow_support = scalar_values<map::SnowSupport> (
+      spatial::get<map::snow_support> (surface.geometry ()));
   }
 
   void SurfacePresentation::upload (render::Renderer& renderer,

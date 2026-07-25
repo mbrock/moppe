@@ -235,7 +235,7 @@ namespace moppe {
         const auto standing_depth = [this, &world_extent] (float x, float z) {
           if (!standing_water ())
             return 0.0f;
-          const terrain::TerrainDomain& grid = standing_water ()->domain;
+          const terrain::TerrainDomain& grid = standing_water ()->domain ();
           const auto wrap = [] (float value, float period) {
             value = std::fmod (value, period);
             return value < 0.0f ? value + period : value;
@@ -248,7 +248,8 @@ namespace moppe {
             static_cast<std::size_t> (wrap (z, world_extent[2]) /
                                       meters_value (grid.spacing_z ())) %
             standing_water ()->height ();
-          return standing_water ()->water_depth.at (gx, gz) * world_extent[1];
+          return standing_water ()->water_depth_m (grid.offset (
+            { static_cast<std::size_t> (gx), static_cast<std::size_t> (gz) }));
         };
 
         for (int i = 0; i < 6000; ++i) {

@@ -2,11 +2,12 @@
 #define MOPPE_TERRAIN_DRAINAGE_HH
 
 #include <moppe/terrain/elevation_map.hh>
-#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace moppe::terrain {
@@ -14,10 +15,31 @@ namespace moppe::terrain {
                  mp_units::dimensionless,
                  mp_units::non_negative);
 
-  using SlopeRaster = Raster<terrain_slope[mp_units::one]>;
   using slope_t = mp_units::quantity<terrain_slope[mp_units::one], float>;
-  using ContributingAreaRaster =
-    Raster<mp_units::isq::area[mp_units::si::metre * mp_units::si::metre]>;
+
+  inline constexpr struct contributing_area
+      : quantity_spec<mp_units::isq::area, mp_units::non_negative> {
+  } contributing_area;
+  using ContributingArea = quantity<contributing_area[u::m * u::m], float>;
+  using DrainageReadings =
+    spatial::Bundle<TerrainDomain, slope_t, ContributingArea>;
+
+  inline DrainageReadings
+  make_drainage_readings (TerrainDomain domain,
+                          std::span<const float> slopes,
+                          std::span<const float> areas) {
+    DrainageReadings readings (std::move (domain));
+    if (slopes.size () != readings.size () || areas.size () != readings.size ())
+      throw std::invalid_argument (
+        "drainage readings do not match terrain domain");
+    auto& slope_column = spatial::get<terrain_slope> (readings);
+    auto& area_column = spatial::get<contributing_area> (readings);
+    for (std::size_t cell = 0; cell < readings.size (); ++cell) {
+      slope_column[cell] = slopes[cell] * terrain_slope[mp_units::one];
+      area_column[cell] = areas[cell] * contributing_area[u::m * u::m];
+    }
+    return readings;
+  }
 
   struct FloodField;
   struct LakeCensus;
@@ -33,22 +55,40 @@ namespace moppe::terrain {
 
   // A compact functional graph. Dry drainage uses strictly lower receivers;
   // wet drainage may also follow acyclic equal-surface routes through water.
-  // Rasters contain unique torus samples without the duplicated render seam.
+  // Its readings bundle contains the same unique periodic terrain samples.
   struct DrainageGraph {
-    TerrainDomain domain;
+    DrainageReadings readings;
     std::vector<CellIndex> receiver;
-    SlopeRaster slope;
-    ContributingAreaRaster contributing_area;
     std::vector<CellIndex> basin;
     std::vector<CellIndex> sinks;
     std::vector<CellIndex> topological_order;
 
     std::size_t width () const noexcept {
-      return domain.width ();
+      return readings.domain ().width ();
     }
 
     std::size_t height () const noexcept {
-      return domain.height ();
+      return readings.domain ().height ();
+    }
+
+    const TerrainDomain& domain () const noexcept {
+      return readings.domain ();
+    }
+
+    std::span<const slope_t> slopes () const noexcept {
+      return spatial::get<terrain_slope> (readings);
+    }
+
+    std::span<const ContributingArea> contributing_areas () const noexcept {
+      return spatial::get<contributing_area> (readings);
+    }
+
+    slope_t slope_at (std::size_t cell) const {
+      return slopes ()[cell];
+    }
+
+    square_meters_t contributing_area_at (std::size_t cell) const {
+      return contributing_areas ()[cell];
     }
   };
 

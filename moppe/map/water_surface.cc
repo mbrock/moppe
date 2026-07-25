@@ -6,28 +6,10 @@
 #include <utility>
 
 namespace moppe::map {
-  WaterSurface::WaterSurface (SurfaceDomain domain,
-                              const terrain::WaterSheets& sheets)
-      : m_sections (std::move (domain)) {
-    const SurfaceDomain& lattice = m_sections.domain ();
-    if (sheets.surface.domain ().width != lattice.width () ||
-        sheets.surface.domain ().height != lattice.height ())
-      throw std::invalid_argument (
-        "Water sheets do not share the surface lattice");
-    const std::span<const float> levels = sheets.surface.values ();
-    for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
-      auto site = m_sections[m_sections.index (offset)];
-      spatial::get<surface_elevation> (site) =
-        SurfaceElevation (levels[offset] * surface_elevation[u::m]);
-      spatial::get<wave_amplitude> (site) =
-        sheets.amplitude[offset] * wave_amplitude[one];
-      spatial::get<water_velocity> (site) =
-        Vec3 (sheets.flow[2 * offset], 0.0f, sheets.flow[2 * offset + 1]) *
-        water_velocity[u::m / u::s];
-    }
-  }
+  WaterSurface::WaterSurface (WaterSurfaceSections sections)
+      : m_sections (std::move (sections)) {}
 
-  WaterSurface::WaterSurface (SurfaceDomain domain,
+  WaterSurface::WaterSurface (terrain::TerrainDomain domain,
                               std::span<const float> level_and_amplitude,
                               std::span<const float> planar_flow)
       : m_sections (std::move (domain)) {

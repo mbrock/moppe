@@ -12,27 +12,27 @@
 
 namespace moppe::map {
   int Surface::width () const noexcept {
-    return static_cast<int> (m_atlas.domain ().width ());
+    return static_cast<int> (m_geometry.domain ().width ());
   }
 
   int Surface::height () const noexcept {
-    return static_cast<int> (m_atlas.domain ().height ());
+    return static_cast<int> (m_geometry.domain ().height ());
   }
 
   Vec3 Surface::sample_spacing () const noexcept {
-    return Vec3 (meters_value (m_atlas.domain ().spacing_x ()),
+    return Vec3 (meters_value (m_geometry.domain ().spacing_x ()),
                  1.0f,
-                 meters_value (m_atlas.domain ().spacing_z ()));
+                 meters_value (m_geometry.domain ().spacing_z ()));
   }
 
   Vec3 Surface::world_extent () const noexcept {
-    return Vec3 (meters_value (m_atlas.domain ().period_x ()),
+    return Vec3 (meters_value (m_geometry.domain ().period_x ()),
                  meters_value (m_vertical_extent),
-                 meters_value (m_atlas.domain ().period_z ()));
+                 meters_value (m_geometry.domain ().period_z ()));
   }
 
   std::size_t Surface::offset (int column, int row) const {
-    return m_atlas.domain ().offset (
+    return m_geometry.domain ().offset (
       { static_cast<std::size_t> (column), static_cast<std::size_t> (row) });
   }
 
@@ -136,8 +136,7 @@ namespace moppe::map {
 
   void Surface::recompute_normals () {
     MOPPE_PROFILE_ZONE ("Surface::recompute_normals");
-    auto& normal_column =
-      spatial::get<terrain::terrain_normal> (m_atlas.geometry ());
+    auto& normal_column = spatial::get<terrain::terrain_normal> (m_geometry);
     std::ranges::fill (normal_column,
                        Vec3 (0, 0, 0) * terrain::terrain_normal[mp_units::one]);
     const Vec3 spacing = sample_spacing ();
@@ -219,7 +218,7 @@ namespace moppe::map {
         stored_width != width () || stored_height != height ())
       return false;
 
-    std::vector<float> values (m_atlas.domain ().size ());
+    std::vector<float> values (m_geometry.domain ().size ());
     file.read (reinterpret_cast<char*> (values.data ()),
                static_cast<std::streamsize> (values.size () * sizeof (float)));
     if (!file)

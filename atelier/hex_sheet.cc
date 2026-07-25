@@ -1,5 +1,7 @@
 #include "atelier/hex_sheet.hh"
 
+#include <moppe/spatial/bundle_operations.hh>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

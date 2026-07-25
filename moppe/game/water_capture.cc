@@ -27,7 +27,7 @@ namespace moppe::game {
       const bool water =
         census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
       const float y =
-        water ? flood.water_level.values ()[cell]
+        water ? flood.water_level_m (cell)
               : terrain::surface_elevation_value (map.elevation_at (x, z));
       return Vec3 (x * scale[0], y, z * scale[2]);
     }
@@ -156,7 +156,8 @@ namespace moppe::game {
                   cell,
                   upstream[cell],
                   drainage.receiver[cell],
-                  drainage.contributing_area.values ()[cell]);
+                  drainage.contributing_area_at (cell).numerical_value_in (
+                    u::m * u::m));
       }
       return best;
     }
@@ -212,7 +213,7 @@ namespace moppe::game {
       for (std::uint32_t cell = 0; cell < census.body.size (); ++cell) {
         if (census.body[cell] != selected->id)
           continue;
-        const float depth = flood.water_depth.values ()[cell];
+        const float depth = flood.water_depth_m (cell);
         consider (best, cell, cell, cell, depth);
       }
       best.score = square_meters_value (selected->area);

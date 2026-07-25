@@ -25,13 +25,12 @@ namespace moppe::map {
   }
 
   void Surface::derive_geology_materials () {
-    SurfaceAtlas& atlas = mutable_atlas ();
     const auto& eroded = spatial::get<eroded_surface_material> (geometry ());
     const auto& deposited =
       spatial::get<deposited_surface_material> (geometry ());
     const float eroded_scale = robust_positive_scale (eroded);
     const float deposited_scale = robust_positive_scale (deposited);
-    SurfaceGeologySections values (atlas.domain ());
+    SurfaceReadings& values = ensure_readings ();
     auto& exposure = spatial::get<erosion_exposure> (values);
     auto& cover = spatial::get<deposition_cover> (values);
     for (std::size_t offset = 0; offset < values.size (); ++offset) {
@@ -48,6 +47,5 @@ namespace moppe::map {
                     1.0f) *
         deposition_cover[one];
     }
-    atlas.geology ().set_materials (std::move (values));
   }
 }

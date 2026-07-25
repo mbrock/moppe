@@ -2,34 +2,73 @@
 #define MOPPE_TERRAIN_FLOOD_HH
 
 #include <moppe/terrain/elevation_map.hh>
-#include <moppe/terrain/raster.hh>
 #include <moppe/terrain/types.hh>
 
 #include <cstdint>
 #include <limits>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace moppe::terrain {
-  // The standing liquid surface over a materialized terrain. Rasters contain
-  // unique torus samples; spill_receiver forms a deterministic forest leading
-  // to the largest connected below-sea component (or the global-minimum
-  // fallback when the world has no ocean).
+  using FloodSurface =
+    spatial::Bundle<TerrainDomain, SurfaceElevation, StandingWaterDepth>;
+
+  inline FloodSurface make_flood_surface (TerrainDomain domain,
+                                          std::span<const float> levels,
+                                          std::span<const float> depths) {
+    FloodSurface surface (std::move (domain));
+    if (levels.size () != surface.size () || depths.size () != surface.size ())
+      throw std::invalid_argument (
+        "flood readings do not match terrain domain");
+    auto& level_column = spatial::get<surface_elevation> (surface);
+    auto& depth_column = spatial::get<standing_water_depth> (surface);
+    for (std::size_t cell = 0; cell < surface.size (); ++cell) {
+      level_column[cell] =
+        SurfaceElevation (levels[cell] * surface_elevation[u::m]);
+      depth_column[cell] = depths[cell] * standing_water_depth[u::m];
+    }
+    return surface;
+  }
+
+  // The standing liquid surface over a finite terrain. Its typed columns
+  // contain unique torus samples; spill_receiver forms a deterministic forest
+  // leading to the largest connected below-sea component (or the
+  // global-minimum fallback when the world has no ocean).
   struct FloodField {
-    TerrainDomain domain;
+    FloodSurface surface;
     float sea_level;
     bool has_ocean;
-    ScalarRaster water_level;
-    ScalarRaster water_depth;
     std::vector<std::uint8_t> ocean;
     std::vector<CellIndex> spill_receiver;
     std::vector<CellIndex> outlets;
 
     std::size_t width () const noexcept {
-      return domain.width ();
+      return surface.domain ().width ();
     }
 
     std::size_t height () const noexcept {
-      return domain.height ();
+      return surface.domain ().height ();
+    }
+
+    const TerrainDomain& domain () const noexcept {
+      return surface.domain ();
+    }
+
+    std::span<const SurfaceElevation> water_levels () const noexcept {
+      return spatial::get<surface_elevation> (surface);
+    }
+
+    std::span<const StandingWaterDepth> water_depths () const noexcept {
+      return spatial::get<standing_water_depth> (surface);
+    }
+
+    float water_level_m (std::size_t cell) const {
+      return surface_elevation_value (water_levels ()[cell]);
+    }
+
+    float water_depth_m (std::size_t cell) const {
+      return water_depths ()[cell].numerical_value_in (u::m);
     }
   };
 
@@ -100,7 +139,7 @@ namespace moppe::terrain {
       terrain.domain (), elevations (terrain), sea_level);
   }
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon = 1e-7f);
-  ScalarRaster permanent_water_surface (const FloodField& flood,
+  ElevationMap permanent_water_surface (const FloodField& flood,
                                         const LakeCensus& census,
                                         const WaterPermanence& permanence = {});
 }

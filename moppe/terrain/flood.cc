@@ -203,17 +203,16 @@ namespace moppe::terrain {
         }
     }
 
-    const RasterDomain domain {
-      .width = width,
-      .height = height,
-      .max_x = meters_value (grid.spacing_x ()) * static_cast<float> (width),
-      .max_y = meters_value (grid.spacing_z ()) * static_cast<float> (height)
-    };
-    return { .domain = grid,
+    FloodSurface surface (grid);
+    auto& levels = spatial::get<surface_elevation> (surface);
+    auto& depths = spatial::get<standing_water_depth> (surface);
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      levels[cell] = SurfaceElevation (water[cell] * surface_elevation[u::m]);
+      depths[cell] = depth[cell] * standing_water_depth[u::m];
+    }
+    return { .surface = std::move (surface),
              .sea_level = sea_level,
              .has_ocean = has_ocean,
-             .water_level = ScalarRaster (domain, std::move (water)),
-             .water_depth = ScalarRaster (domain, std::move (depth)),
              .ocean = std::move (ocean_cell),
              .spill_receiver = std::move (receiver),
              .outlets = std::move (outlets) };
@@ -226,15 +225,15 @@ namespace moppe::terrain {
     const std::size_t width = flood.width ();
     const std::size_t height = flood.height ();
     const std::size_t count = width * height;
-    const std::span<const float> depth = flood.water_depth.values ();
-    const std::span<const float> level = flood.water_level.values ();
+    const std::span<const StandingWaterDepth> depth = flood.water_depths ();
+    const std::span<const SurfaceElevation> level = flood.water_levels ();
     LakeCensus census { .body =
                           std::vector<WaterBodyId> (count, LakeCensus::dry) };
     std::queue<std::uint32_t> frontier;
-    const square_meters_t cell_area = flood.domain.cell_area ();
+    const square_meters_t cell_area = flood.domain ().cell_area ();
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
-      if (depth[origin] <= wet_epsilon ||
+      if (depth[origin].numerical_value_in (u::m) <= wet_epsilon ||
           census.body[origin] != LakeCensus::dry)
         continue;
       const WaterBodyId id { static_cast<std::uint32_t> (
@@ -263,11 +262,13 @@ namespace moppe::terrain {
         members.push_back (cell);
         const std::size_t x = cell % width;
         const std::size_t y = cell / width;
-        const meters_t depth_m = depth[cell] * mp_units::si::metre;
+        const meters_t depth_m =
+          depth[cell].numerical_value_in (u::m) * mp_units::si::metre;
         ++body.cells;
         body.maximum_depth = std::max (body.maximum_depth, depth_m);
         body.volume += depth_m * cell_area;
-        surface_sum_m += static_cast<double> (level[cell]);
+        surface_sum_m +=
+          static_cast<double> (surface_elevation_value (level[cell]));
         for (const FloodOffset offset : flood_neighbors) {
           const int raw_x = static_cast<int> (x) + offset.x;
           const int raw_y = static_cast<int> (y) + offset.y;
@@ -275,7 +276,7 @@ namespace moppe::terrain {
           const std::size_t ny = flood_wrapped (raw_y, height);
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
-          if (depth[next] > wet_epsilon) {
+          if (depth[next].numerical_value_in (u::m) > wet_epsilon) {
             if (census.body[next] == LakeCensus::dry) {
               census.body[next] = id;
               frontier.push (next);
@@ -290,7 +291,8 @@ namespace moppe::terrain {
         mp_units::si::metre;
       body.ocean_connected =
         flood.has_ocean &&
-        std::fabs (level[members.front ()] - flood.sea_level) <= wet_epsilon;
+        std::fabs (surface_elevation_value (level[members.front ()]) -
+                   flood.sea_level) <= wet_epsilon;
       if (!body.ocean_connected) {
         // A priority-flood path can leave a connected flat, cross a dry
         // saddle, and re-enter the same flat.  Use its final departure as the
@@ -335,8 +337,8 @@ namespace moppe::terrain {
       // visits, which would drain visibly if the sheet yielded them.
       constexpr float channel_inradius_cells = 2.05f;
       const float cell_step_m =
-        std::min (meters_value (flood.domain.spacing_x ()),
-                  meters_value (flood.domain.spacing_z ()));
+        std::min (meters_value (flood.domain ().spacing_x ()),
+                  meters_value (flood.domain ().spacing_z ()));
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
       for (std::uint32_t cell = 0; cell < count; ++cell)
@@ -394,7 +396,7 @@ namespace moppe::terrain {
            (water_body_is_permanent (body, permanence) && !body.channel_like);
   }
 
-  ScalarRaster permanent_water_surface (const FloodField& flood,
+  ElevationMap permanent_water_surface (const FloodField& flood,
                                         const LakeCensus& census,
                                         const WaterPermanence& permanence) {
     const std::size_t count = flood.width () * flood.height ();
@@ -406,16 +408,21 @@ namespace moppe::terrain {
         permanence.minimum_volume < 0.0f * mp_units::si::metre *
                                       mp_units::si::metre * mp_units::si::metre)
       throw std::invalid_argument ("water permanence must be non-negative");
-    const std::span<const float> level = flood.water_level.values ();
-    const std::span<const float> depth = flood.water_depth.values ();
-    std::vector<float> surface (count);
+    const std::span<const SurfaceElevation> level = flood.water_levels ();
+    const std::span<const StandingWaterDepth> depth = flood.water_depths ();
+    ElevationMap surface (flood.domain ());
+    auto& elevations = spatial::get<surface_elevation> (surface);
     for (std::size_t cell = 0; cell < count; ++cell) {
       const WaterBodyId id = census.body[cell];
       const bool permanent =
         id != LakeCensus::dry &&
         water_body_is_permanent (census.bodies[id], permanence);
-      surface[cell] = permanent ? level[cell] : level[cell] - depth[cell];
+      elevations[cell] =
+        permanent ? level[cell]
+                  : SurfaceElevation ((surface_elevation_value (level[cell]) -
+                                       depth[cell].numerical_value_in (u::m)) *
+                                      surface_elevation[u::m]);
     }
-    return ScalarRaster (flood.water_level.domain (), std::move (surface));
+    return surface;
   }
 }

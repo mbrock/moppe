@@ -1,8 +1,8 @@
 #ifndef MOPPE_MAP_SURFACE_SECTIONS_HH
 #define MOPPE_MAP_SURFACE_SECTIONS_HH
 
-#include <moppe/map/surface_domain.hh>
 #include <moppe/spatial/bundle.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/terrain_quantities.hh>
 
 namespace moppe::map {
@@ -71,27 +71,25 @@ namespace moppe::map {
   using terrain::HomeBaseInfluence;
   using terrain::TrailInfluence;
 
-  // Each named materialization group is a typed collection of 0-cochains over
-  // the same SurfaceDomain. SurfaceAtlas makes a group's presence explicit,
-  // so an unavailable reading cannot be mistaken for an ordinary zero.
-  using SurfaceGeometrySections = spatial::Bundle<SurfaceDomain,
-                                                  SurfaceElevation,
-                                                  SurfaceNormal,
-                                                  ErodedSurfaceMaterial,
-                                                  DepositedSurfaceMaterial,
-                                                  SnowSupport>;
-  using SurfaceChannelFluxSections =
-    spatial::Bundle<SurfaceDomain, ChannelFlux>;
-  using SurfaceMoistureSections =
-    spatial::Bundle<SurfaceDomain, SurfaceMoisture>;
-  using SurfaceWaterlineSections =
-    spatial::Bundle<SurfaceDomain, WaterlineDistance>;
-  using SurfaceGeologySections =
-    spatial::Bundle<SurfaceDomain, ErosionExposure, DepositionCover>;
-  using SurfaceHabitatSections = spatial::Bundle<SurfaceDomain, TreeHabitat>;
-  using SurfaceForestSections = spatial::Bundle<SurfaceDomain, ForestCover>;
-  using SurfaceUseSections =
-    spatial::Bundle<SurfaceDomain, TrailInfluence, HomeBaseInfluence>;
+  // Surface owns one mandatory geometry bundle and one derived-reading bundle
+  // over the same TerrainDomain. The latter is absent until world analysis
+  // begins; completed worlds contain every column.
+  using SurfaceGeometry = spatial::Bundle<terrain::TerrainDomain,
+                                          SurfaceElevation,
+                                          SurfaceNormal,
+                                          ErodedSurfaceMaterial,
+                                          DepositedSurfaceMaterial,
+                                          SnowSupport>;
+  using SurfaceReadings = spatial::Bundle<terrain::TerrainDomain,
+                                          ChannelFlux,
+                                          SurfaceMoisture,
+                                          WaterlineDistance,
+                                          ErosionExposure,
+                                          DepositionCover,
+                                          TreeHabitat,
+                                          ForestCover,
+                                          TrailInfluence,
+                                          HomeBaseInfluence>;
 }
 
 #endif

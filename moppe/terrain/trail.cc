@@ -256,11 +256,12 @@ namespace moppe::terrain {
       }
 
       bool wet (std::size_t node) const {
-        return flood.water_depth.values ()[source_cell (node)] > 1e-7f;
+        return flood.water_depth_m (source_cell (node)) > 1e-7f;
       }
 
       float catchment (std::size_t node) const {
-        return drainage.contributing_area.values ()[source_cell (node)];
+        return drainage.contributing_area_at (source_cell (node))
+          .numerical_value_in (u::m * u::m);
       }
 
       float delta_x (int from, int to) const {
@@ -1247,7 +1248,7 @@ namespace moppe::terrain {
     const AlignmentRaster material_raster =
       rasterize_alignment (grid, alignment, radius);
     for (std::size_t cell = 0; cell < count; ++cell)
-      if (flood.water_depth.values ()[cell] <= 1e-7f &&
+      if (flood.water_depth_m (cell) <= 1e-7f &&
           material_raster.distance_m[cell] < radius)
         influence[cell] =
           shoulder_ramp (material_raster.distance_m[cell], half_width, blend) *
@@ -1273,7 +1274,7 @@ namespace moppe::terrain {
           std::hypot (dx * meters_value (grid.spacing_x ()),
                       dy * meters_value (grid.spacing_z ()));
         const std::size_t cell = static_cast<std::size_t> (y) * width + x;
-        if (flood.water_depth.values ()[cell] <= 1e-7f)
+        if (flood.water_depth_m (cell) <= 1e-7f)
           home_base_influence[cell] =
             shoulder_ramp (distance, base_radius, base_blend) *
             terrain::home_base_influence[one];
@@ -1462,7 +1463,7 @@ namespace moppe::terrain {
     double fill_volume = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
       if (formation_raster.segment[cell] >= alignment_count ||
-          flood.water_depth.values ()[cell] > 1e-7f)
+          flood.water_depth_m (cell) > 1e-7f)
         continue;
       const float original_m = original[cell];
       const std::size_t segment = formation_raster.segment[cell];
