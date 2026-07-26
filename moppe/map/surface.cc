@@ -380,47 +380,77 @@ namespace moppe::map {
     return values;
   }
 
+  // How much canopy the world wants at each place, from 0 for bare ground to
+  // 1 for closed forest.
+  //
+  // Nothing here plants a tree. Placement samples this field later and turns
+  // it into three separate things: whether a candidate site gets a tree at
+  // all, how tall that tree grows, and how its foliage is tinted. So this is
+  // a density the world is asking for, not a probability -- forest.cc derives
+  // the probability from it with a threshold of its own.
   ForestCoverMap analyze_forest_cover (const TreeHabitatMap& habitat,
                                        const terrain::TrailUseMap& use,
                                        std::uint32_t seed) {
     if (use.domain () != habitat.domain ())
       throw std::invalid_argument (
         "Trail use does not share the surface domain");
+
+    using spatial::get;
+
     const terrain::TerrainDomain& domain = habitat.domain ();
     ForestCoverMap values (domain);
-    // The mosaic is a periodic field over the torus, so a site's place is
-    // needed as a fraction of the lap rather than as a storage position.
+
+    // Where a site sits as a fraction of one lap of the world, on each axis.
+    // The mosaic below is a field over the whole torus rather than a local
+    // reading, so it needs a place to stand rather than a storage position,
+    // and a fraction of a lap is what makes it meet itself across the seam.
     const float lap_x = static_cast<float> (domain.width ());
     const float lap_z = static_cast<float> (domain.height ());
+
+    // Woodland is patchy at more than one scale: a few large stands per lap,
+    // with smaller breaks inside them. The multipliers are how many patches
+    // fit around the world, and each noise field repeats on exactly that
+    // count so both wrap without a seam.
+    constexpr float stands_per_lap = 7.0f;
+    constexpr float breaks_per_lap = 23.0f;
+    constexpr auto signal = noise_signal[one];
 
     for (const terrain::TerrainIndex site : spatial::sites (habitat)) {
       const float u = static_cast<float> (site.column) / lap_x;
       const float v = static_cast<float> (site.row) / lap_z;
-      // Two octaves of the same periodic field; the mosaic stays a noise
-      // signal until the recruitment threshold reads it as a proportion.
-      const noise_signal_t broad =
-        periodic_noise (u * 7.0f, v * 7.0f, 7, 7, seed ^ 0x4b1d9e37U);
-      const noise_signal_t local =
-        periodic_noise (u * 23.0f, v * 23.0f, 23, 23, seed ^ 0x91e10da5U);
-      const noise_signal_t mosaic = 0.72f * broad + 0.28f * local;
-      const float recruitment =
-        band (0.44f * noise_signal[one], 0.61f * noise_signal[one], mosaic)
-          .numerical_value_in (one);
-      const float support = std::pow (
-        spatial::get<tree_habitat> (habitat[site]).numerical_value_in (one),
-        1.15f);
+
+      const noise_signal_t stands = periodic_noise (
+        u * stands_per_lap, v * stands_per_lap, 7, 7, seed ^ 0x4b1d9e37U);
+      const noise_signal_t breaks = periodic_noise (
+        u * breaks_per_lap, v * breaks_per_lap, 23, 23, seed ^ 0x91e10da5U);
+      const noise_signal_t mosaic = 0.72f * stands + 0.28f * breaks;
+
+      // Most of the mosaic is either forest or clearing; the band is narrow
+      // so the edges between them stay edges instead of a long gradient.
+      const auto seeded = band (0.44f * signal, 0.61f * signal, mosaic);
+
+      // Habitat raised slightly above one: good ground stays good, and
+      // marginal ground gives up a little faster than it otherwise would.
+      const auto habitable = std::pow (
+        get<tree_habitat> (habitat[site]).numerical_value_in (one), 1.15f);
+
+      // A route keeps almost all canopy off itself; a settlement clears its
+      // ground completely.
       const auto trodden = use[site];
-      const float route_clearance =
-        1.0f -
-        0.96f *
-          spatial::get<trail_influence> (trodden).numerical_value_in (one);
-      const float settled_clearance =
-        1.0f -
-        spatial::get<home_base_influence> (trodden).numerical_value_in (one);
-      spatial::get<forest_cover> (values[site]) =
-        std::clamp (support * recruitment * route_clearance * settled_clearance,
-                    0.0f,
-                    1.0f) *
+      const auto route_clearance = 1 - 0.96f * get<trail_influence> (trodden);
+      const auto settled_clearance = 1 - get<home_base_influence> (trodden);
+
+      // Every factor is a soft yes between 0 and 1, and multiplying them is
+      // a soft "and": canopy needs habitable ground AND a seeded patch AND no
+      // route AND no settlement. Any one of them near zero vetoes the rest,
+      // which is why a place can fail four mild tests and still come out
+      // bare. Adding them would say "any of these will do", which is not how
+      // a forest works.
+      const auto wanted =
+        habitable * seeded * route_clearance * settled_clearance;
+
+      get<forest_cover> (values[site]) =
+        std::clamp (wanted.numerical_value_in (one), 0.0f, 1.0f) *
         forest_cover[one];
     }
     return values;
