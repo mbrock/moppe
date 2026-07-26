@@ -8,9 +8,6 @@
 #include <vector>
 
 namespace moppe {
-  namespace terrain {
-    class StreamPowerEvolutionBackend;
-  }
   namespace platform {
     // Unified key codes: removes the old ASCII/GLUT_KEY_* numeric
     // collision ('d' == GLUT_KEY_LEFT == 100).  Only keys the game
@@ -133,11 +130,6 @@ namespace moppe {
 
     // Monotonic time in seconds; never wall-clock.
     double now ();
-
-    // Returns the platform's accelerated landscape-evolution backend when
-    // available. A null result keeps the authoritative portable CPU path.
-    std::unique_ptr<terrain::StreamPowerEvolutionBackend>
-    create_stream_power_evolution_backend ();
 
     // Screen areas covered by notches / home indicators, in points.
     // Zero on macOS.  The HUD and touch zones stay inside these.

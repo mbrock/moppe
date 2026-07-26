@@ -347,11 +347,6 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
 
 namespace moppe {
   namespace platform {
-    std::unique_ptr<terrain::StreamPowerEvolutionBackend>
-    create_stream_power_evolution_backend () {
-      return {};
-    }
-
     int run (Game& game, const Config& config) {
       g_game = &game;
       g_config = config;

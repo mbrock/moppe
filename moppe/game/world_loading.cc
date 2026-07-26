@@ -139,9 +139,6 @@ namespace moppe::game {
     evolve_terrain (WorldLoadingState& state,
                     const terrain::WorldRecipe& recipe,
                     map::SurfaceGeometry& terrain) {
-      std::unique_ptr<terrain::StreamPowerEvolutionBackend> evolution =
-        platform::create_stream_power_evolution_backend ();
-
       const auto report_geological_time =
         [&state, &recipe] (int completed_steps,
                            int total_steps,
@@ -178,11 +175,8 @@ namespace moppe::game {
 
       std::vector<meters_per_julian_year_t> uplift = map::initialize_terrain (
         terrain, recipe.seed (), recipe.water_datum (), report_field_rows);
-      map::evolve_terrain (terrain,
-                           uplift,
-                           recipe.evolution (),
-                           evolution.get (),
-                           report_geological_time);
+      map::evolve_terrain (
+        terrain, uplift, recipe.evolution (), report_geological_time);
       state.report ("Refining the terrain",
                     "Shaping coasts, channels, and the overland route");
       return map::form_terrain_trails (terrain, recipe.trail_formation ());

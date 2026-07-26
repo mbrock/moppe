@@ -70,6 +70,47 @@ namespace moppe::terrain {
             "must be non-negative");
     }
 
+    // How many whole steps a duration asks of a step size. The ratio of two
+    // times is a plain number, and this is the one place it honestly
+    // becomes a count.
+    int whole_step_count (julian_years_f64_t duration,
+                          julian_years_f64_t step,
+                          const char* excess) {
+      const double requested =
+        std::ceil ((duration / step).numerical_value_in (mp_units::one));
+      if (!std::isfinite (requested) ||
+          requested > std::numeric_limits<int>::max ())
+        throw std::invalid_argument (excess);
+      return static_cast<int> (requested);
+    }
+
+    // Remembered channel directions must arrive as finite horizontal unit
+    // vectors, and both readings stay typed: the squared magnitude answers
+    // finite and unit-length at once, and the dot with the vertical answers
+    // horizontal without naming which lane of the vector is up. A missing
+    // memory starts every channel from rest.
+    std::vector<ChannelTangent>
+    validated_channel_memory (std::span<const ChannelTangent> tangents,
+                              std::size_t count) {
+      if (tangents.empty ())
+        return std::vector<ChannelTangent> (
+          count, Vec3 () * channel_tangent[mp_units::one]);
+      if (tangents.size () != count)
+        throw std::invalid_argument (
+          "initial channel tangents do not match terrain");
+      const auto vertical = Vec3 (0.0f, 1.0f, 0.0f) * mp_units::one;
+      for (const ChannelTangent value : tangents) {
+        const auto length = value.magnitude ();
+        const auto lean = dot (value, vertical);
+        if (!mp_units::isfinite (length) ||
+            length * length > 1.0001f * mp_units::one ||
+            !(mp_units::abs (lean) <= 1e-6f * decltype (lean)::reference))
+          throw std::invalid_argument (
+            "initial channel tangents must be finite horizontal unit vectors");
+      }
+      return { tangents.begin (), tangents.end () };
+    }
+
     int diffuse_evolution_step (ElevationMap& elevation,
                                 const std::vector<std::uint8_t>& boundary,
                                 julian_years_f64_t duration,
@@ -86,13 +127,11 @@ namespace moppe::terrain {
       const julian_years_f64_t stable_dt =
         1.0 / (2.0 * diffusivity *
                (1.0 / (spacing_x * spacing_x) + 1.0 / (spacing_z * spacing_z)));
-      const double requested =
-        std::ceil ((duration / stable_dt).numerical_value_in (mp_units::one));
-      if (!std::isfinite (requested) ||
-          requested > std::numeric_limits<int>::max ())
-        throw std::invalid_argument (
-          "stream-power diffusion requests too many sweeps");
-      const int sweeps = std::max (1, static_cast<int> (requested));
+      const int sweeps = std::max (
+        1,
+        whole_step_count (duration,
+                          stable_dt,
+                          "stream-power diffusion requests too many sweeps"));
       // Diffusivity times the sweep's duration is an area: the square of
       // the distance one sweep spreads material across.
       const auto sweep_spread =
@@ -122,30 +161,16 @@ namespace moppe::terrain {
     }
   }
 
-  FractionalDrainage CpuStreamPowerEvolutionBackend::route_fractional (
-    const FloodField& flood,
-    const LakeCensus& census,
-    std::span<const ChannelTangent> previous_tangent,
-    ChannelPersistence persistence) const {
-    return analyze_fractional_drainage (
-      flood, census, previous_tangent, persistence);
-  }
-
   StreamPowerEvolutionResult detail::evolve_stream_power (
     const TerrainDomain& grid,
     std::span<const SurfaceElevation> elevations,
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
-    const StreamPowerEvolutionBackend& backend,
     const StreamPowerProgress& progress,
     std::span<const ChannelTangent> initial_channel_tangents) {
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (grid, elevations, uplift_rate, parameters);
     const std::size_t count = grid.width () * grid.height ();
-    if (!initial_channel_tangents.empty () &&
-        initial_channel_tangents.size () != count)
-      throw std::invalid_argument (
-        "initial channel tangents do not match terrain");
     const square_meters_t cell_area = grid.cell_area ();
     const julian_years_f64_t duration = parameters.duration;
     const julian_years_f64_t time_step = parameters.time_step;
@@ -156,21 +181,8 @@ namespace moppe::terrain {
                                                  elevations.end ());
     ElevationMap current (grid, { elevations.begin (), elevations.end () });
     auto& current_heights = spatial::get<surface_elevation> (current);
-    std::vector<ChannelTangent> channel_memory;
-    if (!initial_channel_tangents.empty ()) {
-      channel_memory.assign (initial_channel_tangents.begin (),
-                             initial_channel_tangents.end ());
-      for (const ChannelTangent value : channel_memory) {
-        const Vec3 tangent = value.numerical_value_in (mp_units::one);
-        if (!std::isfinite (tangent[0]) || !std::isfinite (tangent[1]) ||
-            !std::isfinite (tangent[2]) || std::fabs (tangent[1]) > 1e-6f ||
-            length2 (tangent) > 1.0001f)
-          throw std::invalid_argument (
-            "initial channel tangents must be finite horizontal unit vectors");
-      }
-    } else {
-      channel_memory.assign (count, Vec3 () * channel_tangent[mp_units::one]);
-    }
+    std::vector<ChannelTangent> channel_memory =
+      validated_channel_memory (initial_channel_tangents, count);
 
     StreamPowerEvolutionReport report { .cells = cell_count (count) };
     if (duration == julian_years_f64_t::zero ())
@@ -178,13 +190,8 @@ namespace moppe::terrain {
                .channel_tangents = std::move (channel_memory),
                .report = report };
 
-    const double requested_steps =
-      std::ceil ((duration / time_step).numerical_value_in (mp_units::one));
-    if (!std::isfinite (requested_steps) ||
-        requested_steps > std::numeric_limits<int>::max ())
-      throw std::invalid_argument (
-        "stream-power evolution requests too many steps");
-    const int steps = static_cast<int> (requested_steps);
+    const int steps = whole_step_count (
+      duration, time_step, "stream-power evolution requests too many steps");
     report.steps = iteration_count (steps);
     int diffusion_sweeps = 0;
     cubic_meters_f64_t tectonic_uplift_volume = 0.0 * u::m * u::m * u::m;
@@ -248,7 +255,7 @@ namespace moppe::terrain {
             mp_units::isq::height (uplifted - evolved) * cell_area;
         };
 
-        const FractionalDrainage drainage = backend.route_fractional (
+        const FractionalDrainage drainage = analyze_fractional_drainage (
           flood, census, channel_memory, parameters.channel_persistence);
         channel_memory = spatial::get<channel_tangent> (drainage);
         const auto& areas =
@@ -334,22 +341,5 @@ namespace moppe::terrain {
     return { .heights = std::move (current_heights),
              .channel_tangents = std::move (channel_memory),
              .report = report };
-  }
-
-  StreamPowerEvolutionResult detail::evolve_stream_power (
-    const TerrainDomain& domain,
-    std::span<const SurfaceElevation> elevations,
-    std::span<const meters_per_julian_year_t> uplift_rate,
-    const StreamPowerEvolution& parameters,
-    const StreamPowerProgress& progress,
-    std::span<const ChannelTangent> initial_channel_tangents) {
-    static const CpuStreamPowerEvolutionBackend backend;
-    return evolve_stream_power (domain,
-                                elevations,
-                                uplift_rate,
-                                parameters,
-                                backend,
-                                progress,
-                                initial_channel_tangents);
   }
 }

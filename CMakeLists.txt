@@ -215,7 +215,6 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/uber.metal
   moppe/shaders/metal/post.metal
   moppe/shaders/metal/terrain.metal
-  moppe/shaders/metal/orogeny.metal
   moppe/shaders/metal/sky.metal
   moppe/shaders/metal/ocean.metal
   moppe/shaders/metal/river.metal
@@ -225,7 +224,6 @@ set(MOPPE_METAL_SOURCES
 set(MOPPE_METAL_DEPS
   moppe/shaders/metal/common.h
   moppe/render/metal/shader_types.h
-  moppe/terrain/metal/orogeny_shader_types.h
 )
 
 execute_process(
@@ -270,9 +268,6 @@ else()
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${MOPPE_METAL_SOURCES} ${MOPPE_METAL_DEPS})
   file(READ moppe/render/metal/shader_types.h MOPPE_METAL_SOURCE)
-  file(READ moppe/terrain/metal/orogeny_shader_types.h
-    MOPPE_METAL_OROGENY_TYPES)
-  string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_OROGENY_TYPES}\n")
   file(READ moppe/shaders/metal/common.h MOPPE_METAL_COMMON)
   string(REPLACE
     "#include \"../../render/metal/shader_types.h\"" ""
@@ -281,9 +276,6 @@ else()
   foreach(src ${MOPPE_METAL_SOURCES})
     file(READ ${src} MOPPE_METAL_PART)
     string(REPLACE "#include \"common.h\"" ""
-      MOPPE_METAL_PART "${MOPPE_METAL_PART}")
-    string(REPLACE
-      "#include \"../../terrain/metal/orogeny_shader_types.h\"" ""
       MOPPE_METAL_PART "${MOPPE_METAL_PART}")
     string(APPEND MOPPE_METAL_SOURCE "\n${MOPPE_METAL_PART}\n")
   endforeach()
@@ -388,10 +380,6 @@ set(MOPPE_METAL_RENDER_SOURCES
   moppe/render/metal/metal_renderer.mm
 )
 
-set(MOPPE_METAL_TERRAIN_SOURCES
-  moppe/terrain/metal/metal_stream_power_evolution.mm
-)
-
 set(MOPPE_WEBGPU_SOURCES
   moppe/render/webgpu/webgpu_renderer.cc
   moppe/render/webgpu/webgpu_renderer.hh
@@ -435,14 +423,6 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(terrain-orogeny-benchmark)
-  if(APPLE AND NOT MOPPE_IOS)
-    target_sources(terrain-orogeny-benchmark PRIVATE
-      ${MOPPE_METAL_TERRAIN_SOURCES})
-    moppe_configure_metal_target(terrain-orogeny-benchmark)
-    target_compile_definitions(terrain-orogeny-benchmark PRIVATE
-      MOPPE_OROGENY_METAL_BACKEND=1
-      MOPPE_SHADER_ASSET_PATH="${MOPPE_SHADER_ASSET}")
-  endif()
 
   add_executable(terrain-water-depth-experiment EXCLUDE_FROM_ALL
     moppe/terrain/water_depth_experiment.cc
@@ -494,9 +474,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
   moppe_configure_code_target(moppe-tests)
   if(APPLE)
     target_sources(moppe-tests PRIVATE
-      ${MOPPE_APPLE_COMMON_SOURCES}
-      ${MOPPE_METAL_TERRAIN_SOURCES}
-      tests/terrain/metal_stream_power_evolution_test.cc)
+      ${MOPPE_APPLE_COMMON_SOURCES})
     moppe_configure_apple_target(moppe-tests)
     moppe_configure_metal_target(moppe-tests)
     target_compile_definitions(moppe-tests PRIVATE
@@ -570,7 +548,6 @@ if(APPLE AND MOPPE_TVOS)
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
     ${MOPPE_METAL_RENDER_SOURCES}
-    ${MOPPE_METAL_TERRAIN_SOURCES}
     moppe/platform/tvos/main_tvos.mm
   )
   moppe_configure_code_target(moppe-tvos)
@@ -618,7 +595,6 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
       ${MOPPE_TERRAIN_SOURCES}
       ${MOPPE_APPLE_COMMON_SOURCES}
       ${MOPPE_METAL_RENDER_SOURCES}
-      ${MOPPE_METAL_TERRAIN_SOURCES}
       moppe/platform/mac/main_mac.mm)
     moppe_configure_code_target(moppe-testbed)
     moppe_configure_apple_target(moppe-testbed)
@@ -637,7 +613,6 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_APPLICATION_SOURCES}
     ${MOPPE_APPLE_COMMON_SOURCES}
     ${MOPPE_METAL_RENDER_SOURCES}
-    ${MOPPE_METAL_TERRAIN_SOURCES}
     moppe/platform/mac/main_mac.mm)
   moppe_configure_code_target(moppe)
   moppe_configure_apple_target(moppe)

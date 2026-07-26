@@ -104,7 +104,7 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
   std::vector<int> completed;
-  std::vector<std::vector<float>> snapshots;
+  std::vector<std::vector<terrain::SurfaceElevation>> snapshots;
 
   const auto uplift =
     map::initialize_terrain (surface, Seed { 2468 }, 50.0f * u::m);
@@ -112,8 +112,8 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
     surface,
     uplift,
     evolution,
-    nullptr,
-    [&] (int done, int total, std::span<const float> heights) {
+    [&] (
+      int done, int total, std::span<const terrain::SurfaceElevation> heights) {
       MOPPE_CHECK (total == 4);
       completed.push_back (done);
       snapshots.emplace_back (heights.begin (), heights.end ());
@@ -122,12 +122,8 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
   MOPPE_CHECK (completed == std::vector<int> ({ 1, 2, 3, 4 }));
   MOPPE_CHECK (snapshots.size () == 4);
   MOPPE_CHECK (snapshots.front () != snapshots.back ());
-  std::vector<float> final;
-  const auto& elevations = spatial::get<terrain::surface_elevation> (surface);
-  final.reserve (elevations.size ());
-  for (const auto elevation : elevations)
-    final.push_back (surface_elevation_value (elevation));
-  MOPPE_CHECK (snapshots.back () == final);
+  MOPPE_CHECK (snapshots.back () ==
+               spatial::get<terrain::surface_elevation> (surface));
 }
 
 MOPPE_TEST (seeded_geology_separates_land_and_bathymetric_relief) {

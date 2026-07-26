@@ -15,6 +15,7 @@ using namespace moppe;
 namespace {
   struct ThreeSiteRing {
     using index_type = std::size_t;
+    using influence_type = float;
 
     constexpr std::size_t size () const {
       return 3;

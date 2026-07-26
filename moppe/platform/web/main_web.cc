@@ -339,11 +339,6 @@ namespace moppe::platform {
     return emscripten_get_now () / 1000.0;
   }
 
-  std::unique_ptr<terrain::StreamPowerEvolutionBackend>
-  create_stream_power_evolution_backend () {
-    return {};
-  }
-
   Insets safe_insets () {
     return {};
   }

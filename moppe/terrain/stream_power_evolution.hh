@@ -65,65 +65,14 @@ namespace moppe::terrain {
   using StreamPowerProgress =
     std::function<void (int, int, std::span<const SurfaceElevation>)>;
 
-  // Owns the implementation boundary for the non-pointwise part of one
-  // evolution step. The CPU backend is authoritative; Metal can replace the
-  // cell-local fractional route selection while preserving the same outer
-  // evolution API and portable fallback.
-  class StreamPowerEvolutionBackend {
-  public:
-    virtual ~StreamPowerEvolutionBackend () = default;
-
-    virtual FractionalDrainage
-    route_fractional (const FloodField& flood,
-                      const LakeCensus& census,
-                      std::span<const ChannelTangent> previous_tangent,
-                      ChannelPersistence persistence) const = 0;
-  };
-
-  class CpuStreamPowerEvolutionBackend final
-      : public StreamPowerEvolutionBackend {
-  public:
-    FractionalDrainage
-    route_fractional (const FloodField& flood,
-                      const LakeCensus& census,
-                      std::span<const ChannelTangent> previous_tangent,
-                      ChannelPersistence persistence) const override;
-  };
-
   namespace detail {
     StreamPowerEvolutionResult evolve_stream_power (
       const TerrainDomain& domain,
       std::span<const SurfaceElevation> elevations,
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters,
-      const StreamPowerEvolutionBackend& backend,
       const StreamPowerProgress& progress,
       std::span<const ChannelTangent> initial_channel_tangents);
-
-    StreamPowerEvolutionResult evolve_stream_power (
-      const TerrainDomain& domain,
-      std::span<const SurfaceElevation> elevations,
-      std::span<const meters_per_julian_year_t> uplift_rate,
-      const StreamPowerEvolution& parameters,
-      const StreamPowerProgress& progress,
-      std::span<const ChannelTangent> initial_channel_tangents);
-  }
-
-  template <TerrainElevations Terrain>
-  StreamPowerEvolutionResult evolve_stream_power (
-    const Terrain& terrain,
-    std::span<const meters_per_julian_year_t> uplift_rate,
-    const StreamPowerEvolution& parameters,
-    const StreamPowerEvolutionBackend& backend,
-    const StreamPowerProgress& progress = {},
-    std::span<const ChannelTangent> initial_channel_tangents = {}) {
-    return detail::evolve_stream_power (terrain.domain (),
-                                        elevations (terrain),
-                                        uplift_rate,
-                                        parameters,
-                                        backend,
-                                        progress,
-                                        initial_channel_tangents);
   }
 
   template <TerrainElevations Terrain>
