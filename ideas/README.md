@@ -41,6 +41,10 @@ committed roadmap.
   siblings of the terrain lattice — so stars, trees, lakes, and other
   many-of-a-kind state become bundles with the same visibility,
   serialization, and accounting as the fields.
+- `near-and-far.md` reads level of detail as movement through a lattice of
+  domains: quotient towers, the camera as a comonadic focus choosing each
+  region's floor, the far end changing ontological register from objects
+  back to fields, and lakes as projected rather than resident populations.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
