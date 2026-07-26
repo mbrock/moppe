@@ -59,6 +59,11 @@ committed roadmap.
   paradigm — substrate, seed, and journal; fields with a six-verb
   calculus; dynamics as posting with closing entries; regard as report;
   and beauty as legible, path-dependent history.
+- `rivers-first.md` inverts the lattice paradigm: simulate the objects,
+  derive the field — the drainage tree, divides, and migrating knickpoints
+  as the authoritative state with sediment ledgers per reach, elevation as
+  an on-demand report, and captures as zero-sum transactions of catchment
+  area.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
