@@ -202,8 +202,10 @@ namespace moppe::terrain {
     const StreamPowerEvolution& parameters,
     const StreamPowerProgress& progress,
     std::span<const ChannelTangent> initial_channel_tangents) {
+
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (grid, elevations, uplift_rate, parameters);
+
     const std::size_t count = grid.width () * grid.height ();
     const square_meters_t cell_area = grid.cell_area ();
     const julian_years_f64_t duration = parameters.duration;
@@ -213,13 +215,17 @@ namespace moppe::terrain {
     // in the domain's own storage order and seeds the working state whole.
     const std::vector<SurfaceElevation> initial (elevations.begin (),
                                                  elevations.end ());
-    ElevationMap current (grid, { elevations.begin (), elevations.end () });
-    auto& current_heights = spatial::get<surface_elevation> (current);
+
     std::vector<ChannelTangent> channel_memory =
       validated_channel_memory (initial_channel_tangents, count);
 
     StreamPowerEvolutionReport report { .cells = cell_count (count) };
-    if (duration == julian_years_f64_t::zero ())
+
+    // this copies the elevation column into a scratch bundle
+    ElevationMap current (grid, { elevations.begin (), elevations.end () });
+    auto& current_heights = get<surface_elevation> (current);
+
+    if (duration == 0)
       return { .heights = std::move (current_heights),
                .channel_tangents = std::move (channel_memory),
                .report = report };
@@ -229,20 +235,28 @@ namespace moppe::terrain {
     const IterationPace step_pace = time_step / one_iteration;
     const IterationCount steps = whole_step_count (
       duration, step_pace, "stream-power evolution requests too many steps");
+
     report.steps = steps;
+
     IterationCount diffusion_sweeps = 0 * one;
+
     cubic_meters_f64_t tectonic_uplift_volume = 0.0 * u::m * u::m * u::m;
     cubic_meters_f64_t incised_volume = 0.0 * u::m * u::m * u::m;
+
     ElevationMap next (grid);
-    auto& next_heights = spatial::get<surface_elevation> (next);
+
+    auto& next_heights = get<surface_elevation> (next);
     std::vector<std::uint8_t> boundary (count);
 
     for (IterationCount step = 0 * one; step < steps; step += one_iteration) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
+
       const julian_years_f64_t elapsed = step * step_pace;
       const julian_years_f64_t dt = std::min (time_step, duration - elapsed);
+
       const FloodField flood =
         analyze_standing_water (current, parameters.sea_level);
+
       const LakeCensus census = census_lakes (flood);
 
       std::copy (current_heights.begin (),
@@ -250,6 +264,7 @@ namespace moppe::terrain {
                  next_heights.begin ());
       std::fill (boundary.begin (), boundary.end (), 0);
       std::size_t fixed_boundaries = 0;
+
       {
         MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
         const auto solve = [&] (std::uint32_t cell,
@@ -274,11 +289,14 @@ namespace moppe::terrain {
             parameters.reference_incision_rate;
           const auto coupling = incision_velocity / run;
           const auto weight = dt * coupling;
+
           if (!mp_units::isfinite (weight))
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
+
           const meters_f64_t uplift = dt * uplift_rate[cell];
           const ElevationF64 uplifted = current_heights[cell] + uplift;
+
           // Backward Euler in affine form: the receiver, plus the cell's
           // surplus above it shrunk by the implicit weight. Depression
           // routing may cross a raw uphill bed edge, and incision is not
@@ -286,6 +304,7 @@ namespace moppe::terrain {
           const ElevationF64 solved =
             receiver + (uplifted - receiver) / (1.0 + weight);
           const ElevationF64 evolved = std::min (solved, uplifted);
+
           next_heights[cell] = mp_units::value_cast<float> (evolved);
           tectonic_uplift_volume += uplift * cell_area;
           incised_volume +=
@@ -297,12 +316,14 @@ namespace moppe::terrain {
         channel_memory = spatial::get<channel_tangent> (drainage);
         const auto& areas =
           spatial::get<fractional_contributing_area> (drainage);
+
         const auto order = drainage.domain ().topological_order ();
         for (auto position = order.rbegin (); position != order.rend ();
              ++position) {
           const CellIndex cell = *position;
           const FractionalFlowRoute& route = drainage.domain ().route (cell);
           ElevationF64 receiver = next_heights[cell.value];
+
           if (route.arc_count == 1) {
             receiver = next_heights[route.arcs[0].receiver.value];
           } else if (route.arc_count == 2) {
@@ -313,8 +334,10 @@ namespace moppe::terrain {
             receiver =
               primary + (secondary - primary) * route.receiver_interpolation;
           }
+
           const square_meters_t contributing_area =
             std::max (grid.cell_area (), square_meters_t (areas[cell.value]));
+
           solve (cell.value,
                  flood.ocean[cell.value] || route.empty (),
                  contributing_area,
@@ -368,22 +391,27 @@ namespace moppe::terrain {
     cubic_meters_f64_t raised_volume = 0.0 * u::m * u::m * u::m;
     meters_f64_t total_absolute_change = 0.0 * u::m;
     meters_f64_t maximum_absolute_change = 0.0 * u::m;
+
     for (std::size_t cell = 0; cell < count; ++cell) {
       const meters_f64_t change =
         mp_units::isq::height (current_heights[cell] - initial[cell]);
+
       if (change < meters_f64_t::zero ())
         lowered_volume -= change * cell_area;
       else
         raised_volume += change * cell_area;
+
       total_absolute_change += mp_units::abs (change);
       maximum_absolute_change =
         std::max (maximum_absolute_change, mp_units::abs (change));
     }
+
     report.lowered_volume = lowered_volume;
     report.raised_volume = raised_volume;
     report.mean_absolute_change =
       total_absolute_change / static_cast<double> (count);
     report.maximum_absolute_change = maximum_absolute_change;
+
     return { .heights = std::move (current_heights),
              .channel_tangents = std::move (channel_memory),
              .report = report };

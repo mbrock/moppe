@@ -440,6 +440,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_ENGINE_SOURCES}
     tests/test_main.cc
     tests/units_test.cc
+    tests/pacioli_test.cc
     tests/spatial/bundle_test.cc
     tests/spatial/bundle_storage_test.cc
     tests/terrain/domain_test.cc

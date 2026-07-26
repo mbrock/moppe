@@ -103,7 +103,7 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
   evolution.time_step = 50000.0f * mp_units::astronomy::Julian_year;
   map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
     33, 33, spatial_extent_in_metres (Vec3 (640, 0, 640))));
-  std::vector<int> completed;
+  std::vector<terrain::IterationCount> completed;
   std::vector<std::vector<terrain::SurfaceElevation>> snapshots;
 
   const auto uplift =
@@ -112,14 +112,19 @@ MOPPE_TEST (terrain_evolution_reports_each_geological_step) {
     surface,
     uplift,
     evolution,
-    [&] (
-      int done, int total, std::span<const terrain::SurfaceElevation> heights) {
-      MOPPE_CHECK (total == 4);
+    [&] (terrain::IterationCount done,
+         terrain::IterationCount total,
+         std::span<const terrain::SurfaceElevation> heights) {
+      MOPPE_CHECK (total == iteration_count (4));
       completed.push_back (done);
       snapshots.emplace_back (heights.begin (), heights.end ());
     });
 
-  MOPPE_CHECK (completed == std::vector<int> ({ 1, 2, 3, 4 }));
+  MOPPE_CHECK (completed ==
+               std::vector<terrain::IterationCount> ({ iteration_count (1),
+                                                       iteration_count (2),
+                                                       iteration_count (3),
+                                                       iteration_count (4) }));
   MOPPE_CHECK (snapshots.size () == 4);
   MOPPE_CHECK (snapshots.front () != snapshots.back ());
   MOPPE_CHECK (snapshots.back () ==
