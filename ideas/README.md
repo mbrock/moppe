@@ -54,6 +54,11 @@ committed roadmap.
   deterministic derivation à la BIP32, the save file as seed plus journal
   of deviations, and commitment as the trial balance upgraded to
   cryptography.
+- `insjo.md` is the synthesis: a world simulation like this one refounded
+  whole in the algebraic, accounting, ontological, and topological
+  paradigm — substrate, seed, and journal; fields with a six-verb
+  calculus; dynamics as posting with closing entries; regard as report;
+  and beauty as legible, path-dependent history.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
