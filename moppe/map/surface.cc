@@ -325,44 +325,51 @@ namespace moppe::map {
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
                                        meters_t water_level,
-                                       meters_t tree_line) {
+                                       meters_t tree_tops) {
     if (moisture.domain () != geometry.domain ())
       throw std::invalid_argument (
         "Moisture does not share the surface domain");
-    if (tree_line <= water_level + 20.0f * u::m)
+
+    using spatial::get;
+    using u::m;
+
+    if (tree_tops <= water_level + 20.0f * m)
       throw std::invalid_argument (
         "Tree line must leave a terrestrial habitat band");
 
-    // The habitat bands are elevations, so state them as such: the shore and
-    // the tree line are points in the same frame the ground is stored in.
-    constexpr auto metres = terrain::surface_elevation[u::m];
-    const SurfaceElevation shore =
-      terrain::surface_elevation_point (water_level);
-    const SurfaceElevation tree_top =
-      terrain::surface_elevation_point (tree_line);
     TreeHabitatMap values (geometry.domain ());
+
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const auto ground = geometry[site];
-      const SurfaceElevation height =
-        spatial::get<terrain::surface_elevation> (ground);
-      const float up =
-        spatial::get<terrain::terrain_normal> (ground).numerical_value_in (
-          one)[1];
-      const proportion_t dry_ground =
-        band (shore + 3.0f * metres, shore + 18.0f * metres, height);
-      const proportion_t below_tree_line =
-        1.0f * proportion[one] -
-        band (tree_top - 35.0f * metres, tree_top, height);
-      const float stable_soil = smoothstep (0.72f, 0.96f, up);
-      const float wetness = spatial::get<surface_moisture> (moisture[site])
-                              .numerical_value_in (one);
-      const float hydrated = smoothstep (0.10f, 0.42f, wetness);
-      const float not_sodden = 1.0f - smoothstep (0.78f, 0.98f, wetness);
-      const float water_response = 0.28f + 0.72f * hydrated * not_sodden;
-      spatial::get<tree_habitat> (values[site]) =
-        dry_ground.numerical_value_in (one) *
-        below_tree_line.numerical_value_in (one) * stable_soil *
-        water_response * tree_habitat[one];
+      const auto ground_normal = get<terrain::terrain_normal> (ground);
+      const auto ground_level =
+        get<terrain::surface_elevation> (ground).quantity_from_zero ();
+
+      const auto ground_horizontality =
+        ground_normal.numerical_value_in (one)[1] * one;
+
+      const auto soil_stability =
+        band (0.72f * one, 0.96f * one, ground_horizontality);
+
+      const auto soil_dryness =
+        band (water_level + 3.0f * m, water_level + 18.0f * m, ground_level);
+
+      // Trees thin out as the ground approaches the tree line and stop at
+      // it. The band rises from 0 to 1 across the last 35 m of climb, so one
+      // minus it is the headroom still left below the line: full well down
+      // the slope, nothing at the top.
+      const auto tree_line_headroom =
+        1 - band (tree_tops - 35.0f * m, tree_tops, ground_level);
+
+      const auto wetness = get<surface_moisture> (moisture[site]);
+
+      const auto hydrated = band (0.10f * one, 0.42f * one, wetness);
+      const auto not_sodden = 1 - band (0.78f * one, 0.98f * one, wetness);
+      const auto water_response = 0.28f + 0.72f * hydrated * not_sodden;
+      const auto treeishness =
+        soil_dryness * tree_line_headroom * soil_stability * water_response;
+
+      get<tree_habitat> (values[site]) = treeishness * tree_habitat[one];
     }
     return values;
   }
