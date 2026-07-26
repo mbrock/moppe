@@ -56,23 +56,34 @@ namespace moppe {
            static_cast<float> (0x01000000U);
   }
 
-  // Value noise that repeats over a whole number of cells on both axes, so it
-  // meets itself across the torus seam. The periods are in lattice cells.
-  inline noise_signal_t periodic_noise (float x,
-                                        float z,
-                                        std::uint32_t period_x,
-                                        std::uint32_t period_z,
+  // Value noise that repeats a whole number of times around the torus, so it
+  // meets itself at the seam.
+  //
+  // The place is where a site stands as a fraction of one lap. The count is
+  // how many patches fit around the world -- and it is one number, used both
+  // to scale the place and to wrap the lattice, because those are the same
+  // number. They were once written separately and had to be kept in step by
+  // hand; a field whose scale and period disagree simply stops closing.
+  //
+  // It has to be a whole number for the same reason.
+  inline noise_signal_t periodic_noise (proportion_t along_x,
+                                        proportion_t along_z,
+                                        std::uint32_t patches_per_lap,
                                         std::uint32_t seed) {
+    const float patches = static_cast<float> (patches_per_lap);
+    const float x = along_x.numerical_value_in (mp_units::one) * patches;
+    const float z = along_z.numerical_value_in (mp_units::one) * patches;
     const float xf = std::floor (x);
     const float zf = std::floor (z);
-    const auto wrap = [] (std::int64_t value, std::uint32_t period) {
-      const std::int64_t p = static_cast<std::int64_t> (period);
-      return static_cast<std::uint32_t> ((value % p + p) % p);
+    const auto wrap = [patches_per_lap] (float value) {
+      const std::int64_t period = static_cast<std::int64_t> (patches_per_lap);
+      const std::int64_t whole = static_cast<std::int64_t> (value);
+      return static_cast<std::uint32_t> ((whole % period + period) % period);
     };
-    const std::uint32_t x0 = wrap (static_cast<std::int64_t> (xf), period_x);
-    const std::uint32_t z0 = wrap (static_cast<std::int64_t> (zf), period_z);
-    const std::uint32_t x1 = (x0 + 1) % period_x;
-    const std::uint32_t z1 = (z0 + 1) % period_z;
+    const std::uint32_t x0 = wrap (xf);
+    const std::uint32_t z0 = wrap (zf);
+    const std::uint32_t x1 = (x0 + 1) % patches_per_lap;
+    const std::uint32_t z1 = (z0 + 1) % patches_per_lap;
     const float tx = smoothstep (0.0f, 1.0f, x - xf);
     const float tz = smoothstep (0.0f, 1.0f, z - zf);
     const float a = unit_hash (lattice_hash (x0, z0, seed));

@@ -234,6 +234,23 @@ namespace moppe::terrain {
       return { .column = offset % m_width, .row = offset / m_width };
     }
 
+    // Where a site stands as a fraction of one lap of the world, on each
+    // axis. A field that wraps around the world is placed by this rather than
+    // by a storage position: the fraction is what lets it meet itself at the
+    // seam, and it is the only reading of a lattice index that survives a
+    // change of resolution.
+    struct LapPosition {
+      proportion_t along_x;
+      proportion_t along_z;
+    };
+
+    LapPosition lap_position (TerrainIndex index) const {
+      return { .along_x = static_cast<float> (index.column) /
+                          static_cast<float> (m_width) * proportion[one],
+               .along_z = static_cast<float> (index.row) /
+                          static_cast<float> (m_height) * proportion[one] };
+    }
+
     // A step from one position to another across the torus. The wrap belongs
     // to the domain, so a rule that wants a neighbour asks for one instead of
     // recomputing the world's topology against the lattice dimensions.

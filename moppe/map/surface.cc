@@ -400,29 +400,21 @@ namespace moppe::map {
     const terrain::TerrainDomain& domain = habitat.domain ();
     ForestCoverMap values (domain);
 
-    // Where a site sits as a fraction of one lap of the world, on each axis.
-    // The mosaic below is a field over the whole torus rather than a local
-    // reading, so it needs a place to stand rather than a storage position,
-    // and a fraction of a lap is what makes it meet itself across the seam.
-    const float lap_x = static_cast<float> (domain.width ());
-    const float lap_z = static_cast<float> (domain.height ());
-
-    // Woodland is patchy at more than one scale: a few large stands per lap,
-    // with smaller breaks inside them. The multipliers are how many patches
-    // fit around the world, and each noise field repeats on exactly that
-    // count so both wrap without a seam.
-    constexpr float stands_per_lap = 7.0f;
-    constexpr float breaks_per_lap = 23.0f;
+    // Woodland is patchy at more than one scale: a few large stands per lap
+    // of the world, with smaller breaks inside them. Each count is how many
+    // patches fit around the world, which is also the period the field wraps
+    // on -- one number now, so the two cannot drift apart.
+    constexpr std::uint32_t stands_per_lap = 7;
+    constexpr std::uint32_t breaks_per_lap = 23;
     constexpr auto signal = noise_signal[one];
 
     for (const terrain::TerrainIndex site : spatial::sites (habitat)) {
-      const float u = static_cast<float> (site.column) / lap_x;
-      const float v = static_cast<float> (site.row) / lap_z;
+      const auto where = domain.lap_position (site);
 
       const noise_signal_t stands = periodic_noise (
-        u * stands_per_lap, v * stands_per_lap, 7, 7, seed ^ 0x4b1d9e37U);
+        where.along_x, where.along_z, stands_per_lap, seed ^ 0x4b1d9e37U);
       const noise_signal_t breaks = periodic_noise (
-        u * breaks_per_lap, v * breaks_per_lap, 23, 23, seed ^ 0x91e10da5U);
+        where.along_x, where.along_z, breaks_per_lap, seed ^ 0x91e10da5U);
       const noise_signal_t mosaic = 0.72f * stands + 0.28f * breaks;
 
       // Most of the mosaic is either forest or clearing; the band is narrow
