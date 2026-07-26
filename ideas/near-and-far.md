@@ -86,6 +86,46 @@ spatial index; the same hundred thousand at the horizon is a
 luminosity field. A galaxy is the far LOD of a star population —
 which is not a metaphor but a description of the night sky.
 
+## Tracing over, and the holes in a partition
+
+Bittner and Smith's theory of granular partitions supplies two
+concepts the tower picture needs and the renderer already lives by.
+
+The first is that granularity is **licensed ignorance**, which they
+call *tracing over*: a partition may trace over the parts of what it
+recognizes, the relations between them, or everything outside its
+focus — and "an object located at a minimal cell is an atom only
+relative to the partition involved." The far forest is atomic
+relative to the render partition. That is the whole content of an
+imposter: not a lie about trees but a cell that legitimately declines
+to have subcells, a whole recognized while its parts are traced over.
+The register shift of the previous section is their relative-parthood
+relation made visible: what counts as an object at all is indexed to
+the partition doing the recognizing.
+
+The second is **empty space**: the part of a cell not yet covered by
+its subcells — distinct from an empty cell, which projects onto
+nothing. Their gloss is startlingly operational: empty space "corresponds
+to a hole in our knowledge" and is "the starting-point for an
+ontology of questions." A coarse tile whose refinement is not
+yet resident is exactly this — the streaming system is the process
+that answers the questions the render partition is currently asking,
+and a pop-in artifact is an answer arriving late enough to be seen.
+Meanwhile spare slots in a population domain are empty *cells*, which
+`ontology.md` already defends via the periodic table: labeled boxes
+for what is not yet discovered are respectable. The two emptinesses
+deserve their different names because they fail differently: an
+empty cell is capacity; empty space is debt.
+
+Ellerman's subset–partition duality frames the whole essay from one
+step higher: the lattice of subsets and the lattice of partitions are
+the two dual logics, and his logical entropy — the probability that
+two random sites are distinguished — is precisely the "how
+differentiated is this world" measure that `computed-together.md`
+reaches for on the horizontal rank. Near-and-far is the same duality
+run vertically: choosing a partition is choosing which distinctions
+the frame will spend its budget maintaining.
+
 ## Two kinds of population
 
 Lakes show that populations come in two ontological kinds, and the
@@ -131,3 +171,24 @@ regard: when near and far disagree about what a thing is, that is not
 a hack to hide but the world changing floors — and the projection
 between floors is real work with a real name, exactly as
 `ontology.md` said of fields and objects.
+
+## Sources
+
+All in the sheaf library (`m.sheaf.less.rest`, with
+`Accept: text/markdown`), joining the list in `ontology.md`:
+
+- Bittner & Smith, *A Theory of Granular Partitions* (2003) — cells,
+  subcells, projection and location, tracing over, relative
+  parthood, empty cells versus empty space.
+- Bittner & Smith, *A Taxonomy of Granular Partitions* (2001) — how
+  accurately, structurally, and completely cell systems recognize
+  their objects.
+- Smith & Mark, *Do Mountains Exist?* (2003) — the object/field
+  opposition as a divide *between sciences*, with folk theory
+  object-based almost exclusively: the player's register is the
+  object register, which is why the near floor of every tower must
+  eventually be things. Its Water Forms section reads as a prose
+  specification of this game's hydrology.
+- Ellerman, *A Fundamental Duality in the Mathematical and Natural
+  Sciences* (2024) — subsets and partitions as dual logics; logical
+  entropy as the measure of maintained distinctions.
