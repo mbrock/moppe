@@ -81,14 +81,23 @@ namespace moppe::terrain {
             "uplift rate must be finite and non-negative");
     }
 
-    // How many steps of a step size cover a duration; the last covering
-    // step may be partial, so this rounds up. The ratio of two times is a
-    // plain number, and this is the one place it honestly becomes a count.
+    // The unit of the discrete time axis. Dividing a step size by it turns
+    // "so many years, each step" into a pace, and paces are what the count
+    // arithmetic below wants.
+    inline constexpr IterationCount one_iteration = 1 * one;
+
+    // How much time one iteration of a discrete pass covers.
+    using IterationPace = decltype (julian_years_f64_t {} / IterationCount {});
+
+    // How many iterations at a pace cover a duration; the last covering
+    // iteration may be partial, so this rounds up. No number is extracted
+    // anywhere: a duration over a pace already is a count.
     IterationCount whole_step_count (julian_years_f64_t duration,
-                                     julian_years_f64_t step,
+                                     IterationPace pace,
                                      const char* excess) {
-      const auto requested = mp_units::ceil<one> (duration / step);
-      if (!isfinite (requested) || requested > std::numeric_limits<int>::max ())
+      const auto requested = mp_units::ceil<one> (duration / pace);
+      if (!isfinite (requested) ||
+          requested > std::numeric_limits<int>::max () * one)
         throw std::invalid_argument (excess);
       return value_cast<int> (requested);
     }
@@ -136,42 +145,47 @@ namespace moppe::terrain {
       const meters_t spacing_x = grid.spacing_x ();
       const meters_t spacing_z = grid.spacing_z ();
 
-      // The longest sweep the explicit scheme can take and stay stable.
-      const julian_years_f64_t stable_dt =
-        1.0 / (2.0 * diffusivity *
-               (1.0 / (spacing_x * spacing_x) + 1.0 / (spacing_z * spacing_z)));
+      // The longest time one sweep may cover and stay stable: a pace, not a
+      // duration, because it is a property of each iteration of the scheme.
+      const IterationPace stable_pace =
+        1.0 /
+        (2.0 * diffusivity *
+         (1.0 / (spacing_x * spacing_x) + 1.0 / (spacing_z * spacing_z))) /
+        one_iteration;
 
       const IterationCount sweeps = std::max (
-        IterationCount (1),
+        one_iteration,
         whole_step_count (duration,
-                          stable_dt,
+                          stable_pace,
                           "stream-power diffusion requests too many sweeps"));
 
-      // Diffusivity times the sweep's duration is an area: the square of
-      // the distance one sweep spreads material across. The sweep count
-      // leaves its kind here -- dividing by the count quantity itself would
-      // carry a spurious per-iteration factor into the spread.
-      const auto sweep_spread = mp_units::value_cast<float> (
-        diffusivity * (duration / count_value (sweeps)));
+      // The pace actually swept: the duration shared evenly across the
+      // count. Diffusivity times a pace is then an area per iteration --
+      // the square of the distance each sweep spreads material across.
+      const IterationPace pace = duration / sweeps;
+      const auto sweep_spread =
+        mp_units::value_cast<float> (diffusivity * pace);
 
-      // Each sweep displaces every free cell along the Laplacian of the
-      // elevation around it, which the metric neighbourhood serves as an
-      // elevation per area; fixed base-level cells keep their height but
-      // still support their neighbours.
+      // Each sweep advances the discrete time axis by one iteration,
+      // displacing every free cell along the Laplacian of the elevation
+      // around it, which the metric neighbourhood serves as an elevation
+      // per area; fixed base-level cells keep their height but still
+      // support their neighbours.
 
       ElevationMap scratch (grid);
 
       auto& heights = get<surface_elevation> (elevation);
       auto& smoothed = get<surface_elevation> (scratch);
 
-      for (IterationCount sweep = 0 * one; sweep < sweeps; sweep += 1 * one) {
+      for (IterationCount sweep = 0 * one; sweep < sweeps;
+           sweep += one_iteration) {
         for_each_site (elevation, [&] (const auto& focus) {
           const std::size_t cell = grid.offset (focus.index ());
           const SurfaceElevation centre = get<surface_elevation> (focus);
-          smoothed[cell] =
-            boundary[cell]
-              ? centre
-              : centre + sweep_spread * laplacian<surface_elevation> (focus);
+          smoothed[cell] = boundary[cell]
+                             ? centre
+                             : centre + sweep_spread * one_iteration *
+                                          laplacian<surface_elevation> (focus);
         });
 
         heights.swap (smoothed);
@@ -210,8 +224,11 @@ namespace moppe::terrain {
                .channel_tangents = std::move (channel_memory),
                .report = report };
 
+    // The recipe's time step means "so many years, each step": a pace on
+    // the discrete axis of geological steps.
+    const IterationPace step_pace = time_step / one_iteration;
     const IterationCount steps = whole_step_count (
-      duration, time_step, "stream-power evolution requests too many steps");
+      duration, step_pace, "stream-power evolution requests too many steps");
     report.steps = steps;
     IterationCount diffusion_sweeps = 0 * one;
     cubic_meters_f64_t tectonic_uplift_volume = 0.0 * u::m * u::m * u::m;
@@ -220,9 +237,9 @@ namespace moppe::terrain {
     auto& next_heights = spatial::get<surface_elevation> (next);
     std::vector<std::uint8_t> boundary (count);
 
-    for (auto step = 0 * one; step < steps; ++step) {
+    for (IterationCount step = 0 * one; step < steps; step += one_iteration) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
-      const julian_years_f64_t elapsed = step * time_step;
+      const julian_years_f64_t elapsed = step * step_pace;
       const julian_years_f64_t dt = std::min (time_step, duration - elapsed);
       const FloodField flood =
         analyze_standing_water (current, parameters.sea_level);
@@ -340,7 +357,7 @@ namespace moppe::terrain {
       current_heights.swap (next_heights);
 
       if (progress)
-        progress (step + 1, steps, current_heights);
+        progress (step + one_iteration, steps, current_heights);
     }
 
     report.diffusion_sweeps = diffusion_sweeps;
