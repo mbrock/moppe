@@ -45,6 +45,10 @@ committed roadmap.
   domains: quotient towers, the camera as a comonadic focus choosing each
   region's floor, the far end changing ontological register from objects
   back to fields, and lakes as projected rather than resident populations.
+- `by-fiat.md` follows how projected entities come into being and keep
+  being: the erosion solver as the first namer of lakes, granularity as an
+  accounting policy, identity sustained by registers and document acts,
+  and shared fiat boundaries as the reason seams can close exactly.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
