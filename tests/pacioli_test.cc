@@ -98,3 +98,63 @@ MOPPE_TEST (pacioli_ordering_compares_balances_across_histories) {
   MOPPE_CHECK (smaller < pacioli<float> (4.0f));
   MOPPE_CHECK (pacioli<float> (3.0f) == smaller);
 }
+
+MOPPE_TEST (pacioli_vectors_are_vector_quantity_representations) {
+  using ledger_vec = Vec3T<pacioli<float>>;
+  static_assert (mp_units::detail::Vector<ledger_vec>);
+
+  // A walk east three metres and back: the displacement is zero, its
+  // magnitude is zero, and yet the eastward component remembers six metres
+  // of walking. Odometer and displacement in one value.
+  using walk_t =
+    mp_units::quantity<mp_units::isq::displacement[u::m], ledger_vec>;
+  const walk_t east =
+    ledger_vec { debit_of (3.0f), pacioli<float> {}, pacioli<float> {} } * u::m;
+  const walk_t walk = east + (-east);
+
+  MOPPE_CHECK (walk == ledger_vec {} * u::m);
+  const ledger_vec value = walk.numerical_value_in (u::m);
+  MOPPE_CHECK (value[0].balance () == 0.0f);
+  MOPPE_CHECK (value[0].turnover () == 6.0f);
+  MOPPE_CHECK (walk.magnitude ().numerical_value_in (u::m).balance () == 0.0f);
+}
+
+MOPPE_TEST (pacioli_vector_magnitude_norms_the_balances) {
+  using ledger_vec = Vec3T<pacioli<float>>;
+  // Components with busy histories and balances (3, -4, 0).
+  const auto v = ledger_vec { pacioli<float> { 5.0f, 2.0f },
+                              pacioli<float> { 1.0f, 5.0f },
+                              pacioli<float> { 7.0f, 7.0f } } *
+                 mp_units::isq::displacement[u::m];
+  const pacioli<float> length = v.magnitude ().numerical_value_in (u::m);
+  MOPPE_CHECK_NEAR (length.balance (), 5.0f, 1e-6f);
+  MOPPE_CHECK (length.credit == 0.0f);
+}
+
+MOPPE_TEST (pacioli_vector_columns_live_in_bundles) {
+  // A field of per-site displacement ledgers over the terrain lattice, with
+  // the metric Laplacian folding typed influences against pacioli vectors.
+  using LedgerFlow = mp_units::quantity<terrain::channel_tangent[mp_units::one],
+                                        Vec3T<pacioli<float>>>;
+  using LedgerField = spatial::Bundle<terrain::TerrainDomain, LedgerFlow>;
+
+  LedgerField field (
+    terrain::TerrainDomain (3, 3, spatial_extent_in_metres (Vec3 (3, 0, 3))));
+  auto& column = spatial::get<terrain::channel_tangent> (field);
+  column[4] = Vec3T<pacioli<float>> {
+    debit_of (2.0f), pacioli<float> {}, credit_of (2.0f)
+  } * terrain::channel_tangent[mp_units::one];
+
+  // The field's trial balance: postings across all sites sum by group law.
+  LedgerFlow total {};
+  for (const auto& entry : column)
+    total += entry;
+  MOPPE_CHECK (total == column[4]);
+
+  const auto curvature = spatial::laplacian<terrain::channel_tangent> (
+    spatial::BundleFocus (field, field.domain ().index (4)));
+  const auto reading =
+    curvature.numerical_value_in (mp_units::one / (u::m * u::m));
+  MOPPE_CHECK_NEAR (reading[0].balance (), -8.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (reading[2].balance (), 8.0f, 1e-6f);
+}
