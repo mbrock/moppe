@@ -58,7 +58,7 @@ namespace lavoir {
       // The row stride and total size fall out of the unit algebra:
       // bytes per pixel times pixels is bytes.
       const bytes_t row = extent.width * bgra_stride;
-      const bytes_t total = extent.width * extent.height * bgra_stride / pixel;
+      const bytes_t total = extent.width * extent.height * bgra_stride / px;
       image pixels {
         .width = extent.width,
         .height = extent.height,
@@ -69,8 +69,8 @@ namespace lavoir {
                         row.numerical_value_in (iec::byte),
                         MTL::Region (0,
                                      0,
-                                     extent.width.numerical_value_in (pixel),
-                                     extent.height.numerical_value_in (pixel)),
+                                     extent.width.numerical_value_in (px),
+                                     extent.height.numerical_value_in (px)),
                         0);
       m_metal.remove_resident (target.get ());
       m_metal.commit_residency ();

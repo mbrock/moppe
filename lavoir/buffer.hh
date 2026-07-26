@@ -10,7 +10,6 @@
 #include <new>
 #include <span>
 #include <type_traits>
-#include <utility>
 
 /// Storage for the workshop, held as Arrow buffers so that a column
 /// can travel unchanged between memory, an IPC stream on disk, and the
@@ -35,7 +34,7 @@ namespace lavoir {
       void* memory = nullptr;
       if (rounded != bytes_t::zero () &&
           posix_memalign (&memory,
-                          page_size.numerical_value_in (iec::byte),
+                          (1 * gpu_page).numerical_value_in (iec::byte),
                           rounded.numerical_value_in (iec::byte)) != 0)
         throw std::bad_alloc ();
 
@@ -112,26 +111,33 @@ namespace lavoir {
     requires std::is_trivially_copyable_v<T>
   class column {
   public:
+    using value_type = T;
+
+    /// The exchange rate between this column's two denominations:
+    /// bytes of storage per unit held.
+    static constexpr auto bytes_per_value = sizeof (T) * iec::byte / unit;
+
     column () = default;
 
-    static column with_count (std::size_t count) {
+    static column with_count (values_t count) {
       column result;
-      result.m_storage = buffer::with_size (count * (sizeof (T) * iec::byte));
+      result.m_storage = buffer::with_size (count * bytes_per_value);
       result.m_count = count;
       return result;
     }
 
-    std::size_t count () const {
+    values_t count () const {
       return m_count;
     }
 
     std::span<T> lease () {
-      return { reinterpret_cast<T*> (m_storage.lease ().data ()), m_count };
+      return { reinterpret_cast<T*> (m_storage.lease ().data ()),
+               m_count.numerical_value_in (unit) };
     }
 
     std::span<const T> lease () const {
       return { reinterpret_cast<const T*> (m_storage.lease ().data ()),
-               m_count };
+               m_count.numerical_value_in (unit) };
     }
 
     buffer& storage () {
@@ -140,6 +146,6 @@ namespace lavoir {
 
   private:
     buffer m_storage;
-    std::size_t m_count = 0;
+    values_t m_count = values_t::zero ();
   };
 }

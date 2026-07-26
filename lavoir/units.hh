@@ -17,40 +17,63 @@
 namespace lavoir {
   using namespace mp_units;
 
-  /// Frames of rendering and pixels of extent are counts of distinct
-  /// kinds: severed on purpose, like every count that must not mix.
-  QUANTITY_SPEC (frame_count, mp_units::dimensionless, mp_units::is_kind);
-  QUANTITY_SPEC (pixel_count, mp_units::dimensionless, mp_units::is_kind);
+  inline constexpr struct dim_occurrence : base_dimension<"#"> {
+  } dim_occurrence;
 
-  inline constexpr struct frame final
-      : named_unit<"frame", one, kind_of<frame_count>> {
-  } frame;
+  inline constexpr struct dim_cardinality : base_dimension<"@"> {
+  } dim_cardinality;
+
+  inline constexpr struct number_of_steps : quantity_spec<dim_occurrence> {
+  } number_of_steps;
+
+  inline constexpr struct number_of_units : quantity_spec<dim_cardinality> {
+  } number_of_units;
+
+  inline constexpr struct number_of_grid_units
+      : quantity_spec<number_of_units, is_kind> {
+  } number_of_grid_units;
+
+  inline constexpr struct grid_offset
+      : quantity_spec<number_of_grid_units,
+                      is_kind,
+                      quantity_tensor_order::vector> {
+  } grid_offset;
+
+  inline constexpr struct step final
+      : named_unit<"step", kind_of<number_of_steps>> {
+  } step;
+
+  inline constexpr struct unit final
+      : named_unit<"unit", kind_of<number_of_units>> {
+  } unit;
 
   inline constexpr struct pixel final
-      : named_unit<"px", one, kind_of<pixel_count>> {
-  } pixel;
+      : named_unit<"px", kind_of<number_of_grid_units>> {
+  } px;
 
-  /// The page is a unit of storage: 2^14 bytes, the alignment and
-  /// granularity Metal requires of memory it wraps without copying.
-  /// Rounding an allocation up to whole pages is therefore not
-  /// arithmetic but a ceiling conversion into this unit.
-  inline constexpr struct page final
+  inline constexpr struct frame final : named_unit<"frame", step> {
+  } frame;
+
+  inline constexpr struct gpu_page final
       : named_unit<"page", mag_power<2, 14> * iec::byte> {
-  } page;
+  } gpu_page;
 
   using bytes_t = quantity<isq::storage_capacity[iec::byte], std::size_t>;
-  using pages_t = quantity<isq::storage_capacity[page], std::size_t>;
-  using pixels_t = quantity<pixel_count[pixel], std::size_t>;
-  using frames_t = quantity<frame_count[frame], std::uint64_t>;
-  using seconds_t = quantity<si::second, double>;
+  using gpu_pages_t = quantity<isq::storage_capacity[gpu_page], std::size_t>;
+  using pixels_t = quantity<number_of_grid_units[px], std::size_t>;
+  using frames_t = quantity<frame, int64_t>;
+  using seconds_t = quantity<si::second>;
 
-  inline constexpr bytes_t page_size = bytes_t (1 * page);
+  /// Values held in a column are a cardinality; the size of one value
+  /// is then an exchange rate between denominations, bytes per unit,
+  /// and a column's storage falls out by conversion.
+  using values_t = quantity<number_of_units[unit], std::size_t>;
 
   /// The whole pages that cover a size: ceil as unit conversion.
-  inline constexpr pages_t pages_covering (bytes_t size) {
-    return ceil<page> (size);
+  inline constexpr gpu_pages_t pages_covering (bytes_t size) {
+    return ceil<gpu_page> (size);
   }
 
   /// A BGRA8 image row walks four bytes for every pixel.
-  inline constexpr auto bgra_stride = 4 * iec::byte / pixel;
+  inline constexpr auto bgra_stride = 4 * iec::byte / px;
 }

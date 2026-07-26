@@ -39,9 +39,9 @@
 - (void)drawFrame:(NSTimer*)timer {
   (void)timer;
   const NSRect pixels = [self convertRectToBacking:self.bounds];
-  _renderer->resize (
-    static_cast<std::size_t> (pixels.size.width) * lavoir::pixel,
-    static_cast<std::size_t> (pixels.size.height) * lavoir::pixel);
+  _renderer->resize (static_cast<std::size_t> (pixels.size.width) * lavoir::px,
+                     static_cast<std::size_t> (pixels.size.height) *
+                       lavoir::px);
   _renderer->draw ();
 }
 
@@ -82,11 +82,11 @@
 /// and write it as a PNG.
 static int capture_frame (const char* path, double seconds) {
   lavoir::renderer renderer;
-  renderer.resize (1800 * lavoir::pixel, 1300 * lavoir::pixel);
+  renderer.resize (1800 * lavoir::px, 1300 * lavoir::px);
   const lavoir::image image = renderer.capture (seconds * mp_units::si::second);
 
-  const std::size_t width = image.width.numerical_value_in (lavoir::pixel);
-  const std::size_t height = image.height.numerical_value_in (lavoir::pixel);
+  const std::size_t width = image.width.numerical_value_in (lavoir::px);
+  const std::size_t height = image.height.numerical_value_in (lavoir::px);
   NSURL* url = [NSURL fileURLWithPath:@(path)];
   NSData* pixels = [NSData dataWithBytesNoCopy:image.bgra.get ()
                                         length:4 * width * height
