@@ -1,7 +1,9 @@
 #include <moppe/terrain/stream_power_evolution.hh>
 
 #include <moppe/profile.hh>
+#include <moppe/quantities.hh>
 #include <moppe/spatial/bundle_operations.hh>
+#include <moppe/terrain/domain.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 
@@ -12,76 +14,83 @@
 #include <stdexcept>
 #include <vector>
 
+#include <mp-units/framework.h>
+#include <mp-units/math.h>
+#include <mp-units/systems/astronomy.h>
+#include <mp-units/systems/isq.h>
+#include <mp-units/systems/si.h>
+
 namespace moppe::terrain {
   namespace {
+    using mp_units::abs;
+    using mp_units::default_point_origin;
+    using mp_units::isfinite;
+    using mp_units::one;
+    using mp_units::quantity_point;
+    using mp_units::astronomy::Julian_year;
+    using mp_units::si::metre;
+    using spatial::for_each_site;
+    using spatial::get;
+    using spatial::laplacian;
+
     // The backward-Euler solve mixes heights of the whole world with small
     // per-step changes, so it carries its points at double precision and
     // narrows once when a solved cell is stored.
     using ElevationF64 =
-      mp_units::quantity_point<surface_elevation[u::m],
-                               mp_units::default_point_origin (
-                                 surface_elevation[u::m]),
-                               double>;
+      quantity_point<surface_elevation[u::m],
+                     default_point_origin (surface_elevation[u::m]),
+                     double>;
+
+    void
+    check_stream_power_evolution_parameters (const StreamPowerEvolution& p) {
+      if (!isfinite (p.duration) || p.duration < 0 || !isfinite (p.time_step) ||
+          p.time_step <= 0 || !isfinite (p.reference_incision_rate) ||
+          p.reference_incision_rate < 0 || !isfinite (p.reference_area) ||
+          p.reference_area <= 0 || !std::isfinite (p.area_exponent) ||
+          p.area_exponent < 0 || !isfinite (p.diffusivity) ||
+          p.diffusivity < 0 || !std::isfinite (p.sea_level) ||
+          !isfinite (p.channel_persistence) || p.channel_persistence < 0 ||
+          p.channel_persistence >= 1 * one)
+        throw std::invalid_argument (
+          "invalid stream-power evolution parameters");
+    }
 
     void validate_stream_power_evolution (
       const TerrainDomain& grid,
       std::span<const SurfaceElevation> elevations,
       std::span<const meters_per_julian_year_t> uplift_rate,
       const StreamPowerEvolution& parameters) {
+
       MOPPE_PROFILE_ZONE ("orogeny.validate");
+
       const std::size_t count = grid.width () * grid.height ();
+
       if (uplift_rate.size () != count)
         throw std::invalid_argument (
           "stream-power uplift field does not match terrain");
-      if (!mp_units::isfinite (parameters.duration) ||
-          parameters.duration < 0.0f * mp_units::astronomy::Julian_year ||
-          !mp_units::isfinite (parameters.time_step) ||
-          parameters.time_step <= 0.0f * mp_units::astronomy::Julian_year ||
-          !mp_units::isfinite (parameters.reference_incision_rate) ||
-          parameters.reference_incision_rate <
-            0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year ||
-          !mp_units::isfinite (parameters.reference_area) ||
-          parameters.reference_area <=
-            0.0f * mp_units::si::metre * mp_units::si::metre ||
-          !std::isfinite (parameters.area_exponent) ||
-          parameters.area_exponent < 0.0f ||
-          !mp_units::isfinite (parameters.diffusivity) ||
-          parameters.diffusivity < 0.0f * mp_units::si::metre *
-                                     mp_units::si::metre /
-                                     mp_units::astronomy::Julian_year ||
-          !std::isfinite (parameters.sea_level) ||
-          !mp_units::isfinite (parameters.channel_persistence) ||
-          parameters.channel_persistence <
-            0.0f * channel_persistence[mp_units::one] ||
-          parameters.channel_persistence >=
-            1.0f * channel_persistence[mp_units::one])
-        throw std::invalid_argument (
-          "invalid stream-power evolution parameters");
-      for (const SurfaceElevation elevation : elevations)
-        if (!mp_units::isfinite (elevation.quantity_from_zero ()))
+
+      check_stream_power_evolution_parameters (parameters);
+
+      for (const auto& elevation : elevations)
+        if (!isfinite (elevation.quantity_from_zero ()))
+          throw std::invalid_argument ("elevation must be finite");
+
+      for (const auto& uplift : uplift_rate)
+        if (!isfinite (uplift) || uplift < 0)
           throw std::invalid_argument (
-            "stream-power heights and uplift rates must be finite and uplift "
-            "must be non-negative");
-      for (const meters_per_julian_year_t uplift : uplift_rate)
-        if (!mp_units::isfinite (uplift) ||
-            uplift < meters_per_julian_year_t::zero ())
-          throw std::invalid_argument (
-            "stream-power heights and uplift rates must be finite and uplift "
-            "must be non-negative");
+            "uplift rate must be finite and non-negative");
     }
 
-    // How many whole steps a duration asks of a step size. The ratio of two
-    // times is a plain number, and this is the one place it honestly
-    // becomes a count.
-    int whole_step_count (julian_years_f64_t duration,
-                          julian_years_f64_t step,
-                          const char* excess) {
-      const double requested =
-        std::ceil ((duration / step).numerical_value_in (mp_units::one));
-      if (!std::isfinite (requested) ||
-          requested > std::numeric_limits<int>::max ())
+    // How many steps of a step size cover a duration; the last covering
+    // step may be partial, so this rounds up. The ratio of two times is a
+    // plain number, and this is the one place it honestly becomes a count.
+    IterationCount whole_step_count (julian_years_f64_t duration,
+                                     julian_years_f64_t step,
+                                     const char* excess) {
+      const auto requested = mp_units::ceil<one> (duration / step);
+      if (!isfinite (requested) || requested > std::numeric_limits<int>::max ())
         throw std::invalid_argument (excess);
-      return static_cast<int> (requested);
+      return value_cast<int> (requested);
     }
 
     // Remembered channel directions must arrive as finite horizontal unit
@@ -93,70 +102,81 @@ namespace moppe::terrain {
     validated_channel_memory (std::span<const ChannelTangent> tangents,
                               std::size_t count) {
       if (tangents.empty ())
-        return std::vector<ChannelTangent> (
-          count, Vec3 () * channel_tangent[mp_units::one]);
+        return std::vector<ChannelTangent> (count,
+                                            Vec3 () * channel_tangent[one]);
       if (tangents.size () != count)
         throw std::invalid_argument (
           "initial channel tangents do not match terrain");
-      const auto vertical = Vec3 (0.0f, 1.0f, 0.0f) * mp_units::one;
+
+      const auto vertical = Vec3 (0.0f, 1.0f, 0.0f) * one;
+
       for (const ChannelTangent value : tangents) {
         const auto length = value.magnitude ();
         const auto lean = dot (value, vertical);
-        if (!mp_units::isfinite (length) ||
-            length * length > 1.0001f * mp_units::one ||
-            !(mp_units::abs (lean) <= 1e-6f * decltype (lean)::reference))
+        if (!isfinite (length) || length * length > 1.0001f * one ||
+            !(abs (lean) <= 1e-6f * decltype (lean)::reference))
           throw std::invalid_argument (
             "initial channel tangents must be finite horizontal unit vectors");
       }
+
       return { tangents.begin (), tangents.end () };
     }
 
-    int diffuse_evolution_step (ElevationMap& elevation,
-                                const std::vector<std::uint8_t>& boundary,
-                                julian_years_f64_t duration,
-                                square_meters_per_julian_year_t diffusivity) {
+    IterationCount
+    diffuse_evolution_step (ElevationMap& elevation,
+                            const std::vector<std::uint8_t>& boundary,
+                            julian_years_f64_t duration,
+                            square_meters_per_julian_year_t diffusivity) {
       MOPPE_PROFILE_ZONE ("orogeny.diffuse_step");
-      if (duration == julian_years_f64_t::zero () ||
-          diffusivity == square_meters_per_julian_year_t::zero ())
-        return 0;
+
+      if (duration == 0 || diffusivity == 0)
+        return 0 * one;
+
       const TerrainDomain& grid = elevation.domain ();
       const meters_t spacing_x = grid.spacing_x ();
       const meters_t spacing_z = grid.spacing_z ();
-      // The longest sweep the explicit scheme can take and stay stable. The
-      // unit algebra alone says this is a time.
+
+      // The longest sweep the explicit scheme can take and stay stable.
       const julian_years_f64_t stable_dt =
         1.0 / (2.0 * diffusivity *
                (1.0 / (spacing_x * spacing_x) + 1.0 / (spacing_z * spacing_z)));
-      const int sweeps = std::max (
-        1,
+
+      const IterationCount sweeps = std::max (
+        IterationCount (1),
         whole_step_count (duration,
                           stable_dt,
                           "stream-power diffusion requests too many sweeps"));
+
       // Diffusivity times the sweep's duration is an area: the square of
-      // the distance one sweep spreads material across.
-      const auto sweep_spread =
-        mp_units::value_cast<float> (diffusivity * (duration / sweeps));
+      // the distance one sweep spreads material across. The sweep count
+      // leaves its kind here -- dividing by the count quantity itself would
+      // carry a spurious per-iteration factor into the spread.
+      const auto sweep_spread = mp_units::value_cast<float> (
+        diffusivity * (duration / count_value (sweeps)));
 
       // Each sweep displaces every free cell along the Laplacian of the
       // elevation around it, which the metric neighbourhood serves as an
       // elevation per area; fixed base-level cells keep their height but
       // still support their neighbours.
+
       ElevationMap scratch (grid);
-      auto& heights = spatial::get<surface_elevation> (elevation);
-      auto& smoothed = spatial::get<surface_elevation> (scratch);
-      for (int sweep = 0; sweep < sweeps; ++sweep) {
-        spatial::for_each_site (elevation, [&] (const auto& focus) {
+
+      auto& heights = get<surface_elevation> (elevation);
+      auto& smoothed = get<surface_elevation> (scratch);
+
+      for (IterationCount sweep = 0 * one; sweep < sweeps; sweep += 1 * one) {
+        for_each_site (elevation, [&] (const auto& focus) {
           const std::size_t cell = grid.offset (focus.index ());
-          const SurfaceElevation centre =
-            spatial::get<surface_elevation> (focus);
+          const SurfaceElevation centre = get<surface_elevation> (focus);
           smoothed[cell] =
             boundary[cell]
               ? centre
-              : centre +
-                  sweep_spread * spatial::laplacian<surface_elevation> (focus);
+              : centre + sweep_spread * laplacian<surface_elevation> (focus);
         });
+
         heights.swap (smoothed);
       }
+
       return sweeps;
     }
   }
@@ -190,17 +210,17 @@ namespace moppe::terrain {
                .channel_tangents = std::move (channel_memory),
                .report = report };
 
-    const int steps = whole_step_count (
+    const IterationCount steps = whole_step_count (
       duration, time_step, "stream-power evolution requests too many steps");
-    report.steps = iteration_count (steps);
-    int diffusion_sweeps = 0;
+    report.steps = steps;
+    IterationCount diffusion_sweeps = 0 * one;
     cubic_meters_f64_t tectonic_uplift_volume = 0.0 * u::m * u::m * u::m;
     cubic_meters_f64_t incised_volume = 0.0 * u::m * u::m * u::m;
     ElevationMap next (grid);
     auto& next_heights = spatial::get<surface_elevation> (next);
     std::vector<std::uint8_t> boundary (count);
 
-    for (int step = 0; step < steps; ++step) {
+    for (auto step = 0 * one; step < steps; ++step) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
       const julian_years_f64_t elapsed = step * time_step;
       const julian_years_f64_t dt = std::min (time_step, duration - elapsed);
@@ -285,18 +305,23 @@ namespace moppe::terrain {
                  receiver);
         }
       }
-      int step_sweeps = 0;
+
+      IterationCount step_sweeps = 0 * one;
       {
         MOPPE_PROFILE_ZONE ("orogeny.apply_hillslope_diffusion");
         step_sweeps =
           diffuse_evolution_step (next, boundary, dt, parameters.diffusivity);
       }
-      if (step_sweeps > std::numeric_limits<int>::max () - diffusion_sweeps)
+
+      if (step_sweeps >
+          std::numeric_limits<IterationCount>::max () - diffusion_sweeps)
         throw std::overflow_error (
           "stream-power diffusion sweep count overflow");
+
       diffusion_sweeps += step_sweeps;
       meters_f64_t total_step_change = 0.0 * u::m;
       meters_f64_t maximum_step_change = 0.0 * u::m;
+
       {
         MOPPE_PROFILE_ZONE ("orogeny.measure_step_change");
         for (std::size_t cell = 0; cell < count; ++cell) {
@@ -306,15 +331,19 @@ namespace moppe::terrain {
           maximum_step_change = std::max (maximum_step_change, change);
         }
       }
+
       report.fixed_boundaries = cell_count (fixed_boundaries);
       report.final_step_mean_change =
         total_step_change / static_cast<double> (count);
       report.final_step_maximum_change = maximum_step_change;
+
       current_heights.swap (next_heights);
+
       if (progress)
         progress (step + 1, steps, current_heights);
     }
-    report.diffusion_sweeps = iteration_count (diffusion_sweeps);
+
+    report.diffusion_sweeps = diffusion_sweeps;
     report.tectonic_uplift_volume = tectonic_uplift_volume;
     report.incised_volume = incised_volume;
 

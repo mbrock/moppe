@@ -62,8 +62,8 @@ namespace moppe::terrain {
   // Called after each geological step. The elevation span contains the
   // current lattice samples and remains valid only for the duration of the
   // callback.
-  using StreamPowerProgress =
-    std::function<void (int, int, std::span<const SurfaceElevation>)>;
+  using StreamPowerProgress = std::function<void (
+    IterationCount, IterationCount, std::span<const SurfaceElevation>)>;
 
   namespace detail {
     StreamPowerEvolutionResult evolve_stream_power (
