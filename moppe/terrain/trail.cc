@@ -151,9 +151,11 @@ namespace moppe::terrain {
       return result;
     }
 
-    float sample_height_m (std::span<const float> heights,
+    float sample_height_m (std::span<const SurfaceElevation> elevations,
                            const TerrainDomain& grid,
                            TrailAlignmentPoint point) {
+      const std::span<const float> heights =
+        surface_elevation_values (elevations);
       const int width = static_cast<int> (grid.width ());
       const int height = static_cast<int> (grid.height ());
       float x = point.x_m / meters_value (grid.spacing_x ());
@@ -1291,11 +1293,12 @@ namespace moppe::terrain {
     const std::size_t count = grid.width () * grid.height ();
     const float cell_area = square_meters_value (grid.cell_area ());
 
-    std::vector<float> original (count);
+    std::vector<SurfaceElevation> original (count);
     for (int y = 0; y < height; ++y)
       for (int x = 0; x < width; ++x)
         original[static_cast<std::size_t> (y) * width + x] =
-          elevation_at (grid, elevations, x, y);
+          elevations[grid.offset ({ .column = static_cast<std::size_t> (x),
+                                    .row = static_cast<std::size_t> (y) })];
 
     const DrainageGraph drainage = analyze_drainage (grid, elevations);
     const FloodField flood =
@@ -1412,7 +1415,7 @@ namespace moppe::terrain {
         std::lerp (exterior_side, natural_side, smooth_transition);
     }
 
-    std::vector<float> shaped = original;
+    std::vector<SurfaceElevation> shaped = original;
     std::vector<float> earthwork_delta_m (count, 0.0f);
     TrailFormationReport report;
     report.centerline_cells = cell_count (network.plan.circuit.size ());
@@ -1425,7 +1428,7 @@ namespace moppe::terrain {
       if (formation_raster.segment[cell] >= alignment_count ||
           flood.water_depth_m (cell) > 1e-7f)
         continue;
-      const float original_m = original[cell];
+      const float original_m = surface_elevation_value (original[cell]);
       const std::size_t segment = formation_raster.segment[cell];
       const std::size_t next = (segment + 1) % alignment_count;
       const float centerline_m = std::lerp (
@@ -1445,7 +1448,7 @@ namespace moppe::terrain {
       const double change = shaped_m - original_m;
       if (std::fabs (change) <= 1e-6)
         continue;
-      shaped[cell] = shaped_m;
+      shaped[cell] = surface_elevation_point (shaped_m * u::m);
       earthwork_delta_m[cell] = static_cast<float> (change);
       ++report.shaped_cells;
       absolute_change += std::fabs (change);

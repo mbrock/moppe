@@ -234,12 +234,11 @@ namespace moppe::map {
   // this material-scale reading rather than the detailed lighting normal.
   QUANTITY_SPEC (snow_support, proportion);
 
-  QUANTITY_SPEC (eroded_surface_material,
-                 mp_units::dimensionless,
-                 mp_units::is_kind);
-  QUANTITY_SPEC (deposited_surface_material,
-                 mp_units::dimensionless,
-                 mp_units::is_kind);
+  // Metres of surface the world's history has taken from or laid onto a
+  // column. Children of the elevation kind: an elevation change enters one
+  // of these by an explicit narrowing, never by dropping to a bare number.
+  QUANTITY_SPEC (eroded_surface_material, terrain::surface_elevation);
+  QUANTITY_SPEC (deposited_surface_material, terrain::surface_elevation);
 
   // ---- Analysed readings ----
 
