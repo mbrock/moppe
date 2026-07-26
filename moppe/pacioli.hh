@@ -1,7 +1,9 @@
 #ifndef MOPPE_PACIOLI_HH
 #define MOPPE_PACIOLI_HH
 
+#include <cmath>
 #include <compare>
+#include <concepts>
 #include <type_traits>
 
 // A T-account as a numeric representation type: the unreduced pair of
@@ -114,6 +116,21 @@ namespace moppe {
       return a.debit + b.credit <=> b.debit + a.credit;
     }
   };
+
+  // The Euclidean norm of two or three account balances, posted as a debit:
+  // a norm is not a group homomorphism, so like a quotient it cannot carry
+  // its operands' turnover. Found by argument-dependent lookup from
+  // cartesian_vector's magnitude, which is what lets a vector of ledgers be
+  // a vector-character quantity representation.
+  template <std::floating_point T>
+  constexpr pacioli<T> hypot (pacioli<T> a, pacioli<T> b) {
+    return { std::hypot (a.balance (), b.balance ()), T {} };
+  }
+
+  template <std::floating_point T>
+  constexpr pacioli<T> hypot (pacioli<T> a, pacioli<T> b, pacioli<T> c) {
+    return { std::hypot (a.balance (), b.balance (), c.balance ()), T {} };
+  }
 
   template <typename T>
   constexpr pacioli<T> debit_of (T amount) {
