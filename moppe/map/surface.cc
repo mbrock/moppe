@@ -441,6 +441,10 @@ namespace moppe::map {
       const auto wanted =
         habitable * seeded * route_clearance * settled_clearance;
 
+      // The bands are in range by construction, but the trail and home-base
+      // readings are stored data, and a clearance is one minus one of those.
+      // The clamp guards the inputs this rule did not compute, not its own
+      // arithmetic.
       get<forest_cover> (values[site]) =
         std::clamp (wanted.numerical_value_in (one), 0.0f, 1.0f) *
         forest_cover[one];
