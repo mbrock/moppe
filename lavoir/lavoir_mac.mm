@@ -39,8 +39,9 @@
 - (void)drawFrame:(NSTimer*)timer {
   (void)timer;
   const NSRect pixels = [self convertRectToBacking:self.bounds];
-  _renderer->resize (static_cast<std::size_t> (pixels.size.width),
-                     static_cast<std::size_t> (pixels.size.height));
+  _renderer->resize (
+    static_cast<std::size_t> (pixels.size.width) * lavoir::pixel,
+    static_cast<std::size_t> (pixels.size.height) * lavoir::pixel);
   _renderer->draw ();
 }
 
@@ -81,23 +82,25 @@
 /// and write it as a PNG.
 static int capture_frame (const char* path, double seconds) {
   lavoir::renderer renderer;
-  renderer.resize (1800, 1300);
-  const lavoir::image image = renderer.capture (seconds);
+  renderer.resize (1800 * lavoir::pixel, 1300 * lavoir::pixel);
+  const lavoir::image image = renderer.capture (seconds * mp_units::si::second);
 
+  const std::size_t width = image.width.numerical_value_in (lavoir::pixel);
+  const std::size_t height = image.height.numerical_value_in (lavoir::pixel);
   NSURL* url = [NSURL fileURLWithPath:@(path)];
   NSData* pixels = [NSData dataWithBytesNoCopy:image.bgra.get ()
-                                        length:4 * image.width * image.height
+                                        length:4 * width * height
                                   freeWhenDone:NO];
   CGColorSpaceRef colour_space = CGColorSpaceCreateWithName (kCGColorSpaceSRGB);
   CGDataProviderRef provider =
     CGDataProviderCreateWithCFData ((__bridge CFDataRef)pixels);
   const CGBitmapInfo bgra_little_endian =
     CGBitmapInfo (kCGImageAlphaNoneSkipFirst) | kCGBitmapByteOrder32Little;
-  CGImageRef cg_image = CGImageCreate (image.width,
-                                       image.height,
+  CGImageRef cg_image = CGImageCreate (width,
+                                       height,
                                        8,
                                        32,
-                                       4 * image.width,
+                                       4 * width,
                                        colour_space,
                                        bgra_little_endian,
                                        provider,

@@ -43,8 +43,8 @@ namespace lavoir {
       m_metal.submit (drawable, slot);
     }
 
-    image capture (double seconds_elapsed) {
-      (void)seconds_elapsed;
+    image capture (seconds_t elapsed) {
+      (void)elapsed;
       const viewport extent = m_surface.extent ();
       if (!m_surface.has_render_target ())
         throw std::runtime_error ("Cannot capture an unsized surface");
@@ -55,15 +55,22 @@ namespace lavoir {
       m_metal.submit_offscreen (slot);
       m_metal.wait_until_idle ();
 
+      // The row stride and total size fall out of the unit algebra:
+      // bytes per pixel times pixels is bytes.
+      const bytes_t row = extent.width * bgra_stride;
+      const bytes_t total = extent.width * extent.height * bgra_stride / pixel;
       image pixels {
         .width = extent.width,
         .height = extent.height,
-        .bgra =
-          std::make_unique<std::uint8_t[]> (4 * extent.width * extent.height),
+        .bgra = std::make_unique<std::uint8_t[]> (
+          total.numerical_value_in (iec::byte)),
       };
       target->getBytes (pixels.bgra.get (),
-                        4 * extent.width,
-                        MTL::Region (0, 0, extent.width, extent.height),
+                        row.numerical_value_in (iec::byte),
+                        MTL::Region (0,
+                                     0,
+                                     extent.width.numerical_value_in (pixel),
+                                     extent.height.numerical_value_in (pixel)),
                         0);
       m_metal.remove_resident (target.get ());
       m_metal.commit_residency ();
@@ -90,7 +97,7 @@ namespace lavoir {
     return m_impl->native_layer ();
   }
 
-  void renderer::resize (std::size_t width, std::size_t height) {
+  void renderer::resize (pixels_t width, pixels_t height) {
     m_impl->resize (viewport { .width = width, .height = height });
   }
 
@@ -98,7 +105,7 @@ namespace lavoir {
     m_impl->draw ();
   }
 
-  image renderer::capture (double seconds_elapsed) {
-    return m_impl->capture (seconds_elapsed);
+  image renderer::capture (seconds_t elapsed) {
+    return m_impl->capture (elapsed);
   }
 }

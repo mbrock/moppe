@@ -15,17 +15,18 @@ namespace lavoir {
   inline constexpr NS::UInteger sample_count = 4;
 
   struct viewport {
-    std::size_t width = 0;
-    std::size_t height = 0;
+    pixels_t width = pixels_t::zero ();
+    pixels_t height = pixels_t::zero ();
 
     bool is_empty () const {
-      return width == 0 || height == 0;
+      return width == pixels_t::zero () || height == pixels_t::zero ();
     }
 
-    double aspect_ratio () const {
+    /// Two pixel counts cancel to a plain ratio.
+    quantity<one, double> aspect_ratio () const {
       if (is_empty ())
         throw std::invalid_argument ("An empty viewport has no aspect ratio");
-      return static_cast<double> (width) / static_cast<double> (height);
+      return value_cast<double> (width) / value_cast<double> (height);
     }
   };
 
@@ -63,7 +64,9 @@ namespace lavoir {
 
       discard_render_targets (metal);
       m_viewport = extent;
-      m_layer->setDrawableSize (CGSizeMake (extent.width, extent.height));
+      m_layer->setDrawableSize (
+        CGSizeMake (extent.width.numerical_value_in (pixel),
+                    extent.height.numerical_value_in (pixel)));
       if (extent.is_empty ())
         return;
 
@@ -83,8 +86,8 @@ namespace lavoir {
       MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor (
           MTL::PixelFormatBGRA8Unorm_sRGB,
-          m_viewport.width,
-          m_viewport.height,
+          m_viewport.width.numerical_value_in (pixel),
+          m_viewport.height.numerical_value_in (pixel),
           false);
       descriptor->setStorageMode (MTL::StorageModeShared);
       descriptor->setUsage (MTL::TextureUsageRenderTarget);
@@ -100,8 +103,9 @@ namespace lavoir {
     make_render_pass (MTL::Texture* resolve_target) const {
       auto pass =
         NS::TransferPtr (MTL4::RenderPassDescriptor::alloc ()->init ());
-      pass->setRenderTargetWidth (m_viewport.width);
-      pass->setRenderTargetHeight (m_viewport.height);
+      pass->setRenderTargetWidth (m_viewport.width.numerical_value_in (pixel));
+      pass->setRenderTargetHeight (
+        m_viewport.height.numerical_value_in (pixel));
 
       MTL::RenderPassColorAttachmentDescriptor* colour =
         pass->colorAttachments ()->object (0);
@@ -125,7 +129,10 @@ namespace lavoir {
                                                     MTL::PixelFormat format) {
       MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor (
-          format, m_viewport.width, m_viewport.height, false);
+          format,
+          m_viewport.width.numerical_value_in (pixel),
+          m_viewport.height.numerical_value_in (pixel),
+          false);
       descriptor->setTextureType (MTL::TextureType2DMultisample);
       descriptor->setSampleCount (sample_count);
       descriptor->setStorageMode (MTL::StorageModePrivate);

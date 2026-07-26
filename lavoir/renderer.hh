@@ -1,6 +1,7 @@
 #pragma once
 
-#include <cstddef>
+#include "lavoir/units.hh"
+
 #include <cstdint>
 #include <memory>
 
@@ -14,8 +15,8 @@ namespace lavoir {
 
   /// One captured frame as CPU-side BGRA pixels.
   struct image {
-    std::size_t width = 0;
-    std::size_t height = 0;
+    pixels_t width = pixels_t::zero ();
+    pixels_t height = pixels_t::zero ();
     std::unique_ptr<std::uint8_t[]> bgra;
   };
 
@@ -25,9 +26,9 @@ namespace lavoir {
     ~renderer ();
 
     void* native_layer () const;
-    void resize (std::size_t width, std::size_t height);
+    void resize (pixels_t width, pixels_t height);
     void draw ();
-    image capture (double seconds_elapsed);
+    image capture (seconds_t elapsed);
 
   private:
     class impl;

@@ -1,12 +1,19 @@
 
-.PHONY: all archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
+.PHONY: all lavoir archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks plan plan-graph phone profile test testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	web web-deploy web-serve xcode
 
+all: lavoir
+
+# Configure (if needed) and build only Lavoir.
+lavoir:
+	@[ -f build/build.ninja ] || cmake -B build -G Ninja
+	cmake --build build --target lavoir
+
 # Configure (if needed) and build only the macOS game.
-all:
+moppe:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
 	cmake --build build --target moppe
 

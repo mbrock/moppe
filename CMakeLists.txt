@@ -209,6 +209,7 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
   target_link_options(lavoir PRIVATE -mmacosx-version-min=26.0)
   target_link_libraries(lavoir PRIVATE
+    mp-units::mp-units
     nanoarrow
     "-framework Cocoa"
     "-framework ImageIO"

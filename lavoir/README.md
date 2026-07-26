@@ -9,6 +9,11 @@ borrowing in between.
 
 - C++ with a thin Cocoa shim, metal-cpp, Metal 4. The renderer opens
   a window or captures headlessly (`lavoir --capture out.png`).
+- Quantities from the first stone (`units.hh`): storage in IEC bytes
+  with the page as a named unit (rounding an allocation is a ceiling
+  conversion, `ceil<page>`), frames and pixels as severed counting
+  kinds, seconds for time. Bare numbers leave only through named
+  numerical exits at foreign APIs.
 - Types are `snake_case`, in the manner of the standard library.
   CamelCase is reserved for concepts and template parameters.
 - Concepts before base classes: `Domain` and `Bundle` are concepts;
