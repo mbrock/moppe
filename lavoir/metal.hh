@@ -8,7 +8,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <stdexcept>
 #include <string>
 
@@ -98,7 +97,7 @@ namespace lavoir {
     }
 
     frame_slot begin_frame () {
-      m_frame_sequence += frames_t (1 * frame);
+      m_frame_sequence += 1 * frame;
       const frames_t sequence = m_frame_sequence;
       if (sequence > frames_in_flight)
         wait_until_complete (sequence - frames_in_flight);

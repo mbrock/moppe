@@ -65,8 +65,8 @@ namespace lavoir {
       discard_render_targets (metal);
       m_viewport = extent;
       m_layer->setDrawableSize (
-        CGSizeMake (extent.width.numerical_value_in (pixel),
-                    extent.height.numerical_value_in (pixel)));
+        CGSizeMake (extent.width.numerical_value_in (px),
+                    extent.height.numerical_value_in (px)));
       if (extent.is_empty ())
         return;
 
@@ -86,8 +86,8 @@ namespace lavoir {
       MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor (
           MTL::PixelFormatBGRA8Unorm_sRGB,
-          m_viewport.width.numerical_value_in (pixel),
-          m_viewport.height.numerical_value_in (pixel),
+          m_viewport.width.numerical_value_in (px),
+          m_viewport.height.numerical_value_in (px),
           false);
       descriptor->setStorageMode (MTL::StorageModeShared);
       descriptor->setUsage (MTL::TextureUsageRenderTarget);
@@ -103,9 +103,8 @@ namespace lavoir {
     make_render_pass (MTL::Texture* resolve_target) const {
       auto pass =
         NS::TransferPtr (MTL4::RenderPassDescriptor::alloc ()->init ());
-      pass->setRenderTargetWidth (m_viewport.width.numerical_value_in (pixel));
-      pass->setRenderTargetHeight (
-        m_viewport.height.numerical_value_in (pixel));
+      pass->setRenderTargetWidth (m_viewport.width.numerical_value_in (px));
+      pass->setRenderTargetHeight (m_viewport.height.numerical_value_in (px));
 
       MTL::RenderPassColorAttachmentDescriptor* colour =
         pass->colorAttachments ()->object (0);
@@ -130,8 +129,8 @@ namespace lavoir {
       MTL::TextureDescriptor* descriptor =
         MTL::TextureDescriptor::texture2DDescriptor (
           format,
-          m_viewport.width.numerical_value_in (pixel),
-          m_viewport.height.numerical_value_in (pixel),
+          m_viewport.width.numerical_value_in (px),
+          m_viewport.height.numerical_value_in (px),
           false);
       descriptor->setTextureType (MTL::TextureType2DMultisample);
       descriptor->setSampleCount (sample_count);
