@@ -236,6 +236,15 @@ namespace moppe::map {
 
   // ---- Readings ----
 
+  // Which way water runs at each place, and how much of a river it is.
+  //
+  // The direction comes straight from the drainage routing. The length is the
+  // interesting part: contributing area spans orders of magnitude across one
+  // world -- a hillslope cell drains itself, a river mouth drains a continent
+  // -- so scaling it linearly would leave every stream invisible next to the
+  // trunk. Compressing it logarithmically instead asks a different question:
+  // not how much drains here, but how far along the way from a puddle to a
+  // river this place has come.
   ChannelFluxMap
   analyze_channel_flux (const terrain::TerrainDomain& domain,
                         const terrain::FractionalDrainage& channels) {
@@ -247,15 +256,27 @@ namespace moppe::map {
       throw std::invalid_argument (
         "Channel analysis does not share the surface lattice");
 
-    // Activity compresses contributing area logarithmically onto 0..1:
-    // hillslope cells fade out and anything carrying river-scale drainage
-    // saturates.
-    const square_meters_t floor_area = 4.0f * grid.cell_area ();
-    const auto reach = [&] (auto area) {
-      return (area / floor_area).numerical_value_in (mp_units::one);
+    // The two ends of that way. Below a few cells of drainage there is no
+    // channel to speak of; past the area that makes a river visible there is
+    // nothing more to say, and everything larger reads the same.
+    const square_meters_t a_puddle = 4.0f * grid.cell_area ();
+    const square_meters_t a_river = terrain::visible_river_minimum_area (grid);
+
+    // How much larger than a puddle a drainage is. Dividing two areas leaves
+    // a plain number, which is what a logarithm needs.
+    const auto growth = [&] (square_meters_t area) {
+      return (area / a_puddle).numerical_value_in (mp_units::one);
     };
-    const float activity_span = std::log (
-      std::max (reach (terrain::visible_river_minimum_area (grid)), 1.001f));
+
+    // A place's position on the log scale between the two ends. Both logs
+    // share a base and it cancels, so which base this is does not matter --
+    // the ratio is the whole meaning, and it is why nothing here has to say
+    // whether it is natural or base ten.
+    const float river_growth = std::log (std::max (growth (a_river), 1.001f));
+    const auto activity = [&] (square_meters_t area) {
+      return std::clamp (
+        std::log (std::max (growth (area), 1e-6f)) / river_growth, 0.0f, 1.0f);
+    };
 
     // Still an offset walk: the drainage is a bundle over TerrainCellDomain
     // and the flux is one over TerrainDomain, so the two are related only by
@@ -263,14 +284,9 @@ namespace moppe::map {
     // domain's sites onto another's, which the spatial layer does not have.
     ChannelFluxMap flux (domain);
     auto& column = spatial::get<channel_flux> (flux);
-    for (std::size_t offset = 0; offset < domain.size (); ++offset) {
-      const float activity = std::clamp (
-        std::log (std::max (reach (areas[offset]), 1e-6f)) / activity_span,
-        0.0f,
-        1.0f);
-      column[offset] = tangents[offset].numerical_value_in (one) * activity *
-                       channel_flux[one];
-    }
+    for (std::size_t offset = 0; offset < domain.size (); ++offset)
+      column[offset] = tangents[offset].numerical_value_in (one) *
+                       activity (areas[offset]) * channel_flux[one];
     return flux;
   }
 
