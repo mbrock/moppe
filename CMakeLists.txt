@@ -195,10 +195,15 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     lavoir/buffer.hh
     lavoir/bundle.hh
     lavoir/lavoir_mac.mm
+    lavoir/lending.hh
     lavoir/metal.hh
+    lavoir/pipeline.hh
     lavoir/renderer.cc
     lavoir/renderer.hh
+    lavoir/shaders.hh
     lavoir/surface.hh
+    lavoir/units.hh
+    lavoir/wave.hh
   )
   set_target_properties(lavoir PROPERTIES UNITY_BUILD OFF)
   target_include_directories(lavoir PRIVATE
@@ -470,6 +475,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/units_test.cc
     tests/pacioli_test.cc
     tests/lavoir/buffer_test.cc
+    tests/lavoir/wave_test.cc
     tests/spatial/bundle_test.cc
     tests/spatial/bundle_storage_test.cc
     tests/terrain/domain_test.cc

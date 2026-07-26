@@ -64,6 +64,13 @@ namespace lavoir {
   using frames_t = quantity<frame, int64_t>;
   using seconds_t = quantity<si::second>;
 
+  /// A count along the occurrence axis, and the pace of a process
+  /// that advances by discrete steps: seconds per step has dimension
+  /// time over occurrence, so a duration divided by a pace is a count
+  /// of steps and nothing else.
+  using steps_t = quantity<number_of_steps[step], std::int64_t>;
+  using step_pace_t = quantity<si::second / step, double>;
+
   /// Values held in a column are a cardinality; the size of one value
   /// is then an exchange rate between denominations, bytes per unit,
   /// and a column's storage falls out by conversion.
