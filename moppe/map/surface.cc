@@ -339,17 +339,23 @@ namespace moppe::map {
 
     TreeHabitatMap values (geometry.domain ());
 
+    // How level the ground lies is the ground normal projected onto the
+    // vertical: a normal pointing straight up gives one, a cliff face gives
+    // nothing. Saying it as a dot product means no one has to know which lane
+    // of the vector the vertical happens to be stored in.
+    const auto world_up = Vec3 (0.0f, 1.0f, 0.0f) * one;
+    constexpr auto level_ground = terrain::terrain_normal[one];
+
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const auto ground = geometry[site];
       const auto ground_normal = get<terrain::terrain_normal> (ground);
       const auto ground_level =
         get<terrain::surface_elevation> (ground).quantity_from_zero ();
 
-      const auto ground_horizontality =
-        ground_normal.numerical_value_in (one)[1] * one;
+      const auto ground_horizontality = dot (ground_normal, world_up);
 
       const auto soil_stability =
-        band (0.72f * one, 0.96f * one, ground_horizontality);
+        band (0.72f * level_ground, 0.96f * level_ground, ground_horizontality);
 
       const auto soil_dryness =
         band (water_level + 3.0f * m, water_level + 18.0f * m, ground_level);
