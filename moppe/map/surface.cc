@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <ranges>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -153,15 +154,12 @@ namespace moppe::map {
                                  terrain::TerrainIndex site,
                                  float delta) {
       const auto row = surface[site];
-      if (delta < 0.0f) {
-        auto& eroded = spatial::get<eroded_surface_material> (row);
-        eroded = (eroded.numerical_value_in (one) - delta) *
-                 eroded_surface_material[one];
-      } else {
-        auto& deposited = spatial::get<deposited_surface_material> (row);
-        deposited = (deposited.numerical_value_in (one) + delta) *
-                    deposited_surface_material[one];
-      }
+      if (delta < 0.0f)
+        spatial::get<eroded_surface_material> (row) -=
+          delta * eroded_surface_material[one];
+      else
+        spatial::get<deposited_surface_material> (row) +=
+          delta * deposited_surface_material[one];
     }
 
     // The solver still answers in bare lattice samples, so this is where a
@@ -277,54 +275,52 @@ namespace moppe::map {
   }
 
   namespace {
+    // Quantities of one spec are ordered, so the percentile never has to
+    // leave the column's own type: nth_element compares them directly and
+    // the scale that comes back divides its own readings.
     template <typename Values>
-    float robust_positive_scale (const Values& values) {
-      std::vector<float> positive;
+    auto robust_positive_scale (const Values& values) {
+      using Value = std::ranges::range_value_t<Values>;
+      constexpr Value zero {};
+      std::vector<Value> positive;
       positive.reserve (values.size () / 8);
-      for (const auto value : values) {
-        const float scalar = value.numerical_value_in (mp_units::one);
-        if (scalar > 0.0f)
-          positive.push_back (scalar);
-      }
+      for (const Value value : values)
+        if (value > zero)
+          positive.push_back (value);
       if (positive.empty ())
-        return 1.0f;
+        return 1.0f * Value::reference;
       const std::size_t rank = positive.size () * 49 / 50;
       std::nth_element (
         positive.begin (), positive.begin () + rank, positive.end ());
-      return std::max (positive[rank], 1e-6f);
+      return std::max (positive[rank], 1e-6f * Value::reference);
     }
   }
 
   GeologyMaterials analyze_geology_materials (const SurfaceGeometry& geometry) {
     const auto& eroded = spatial::get<eroded_surface_material> (geometry);
     const auto& deposited = spatial::get<deposited_surface_material> (geometry);
-    const float eroded_scale = robust_positive_scale (eroded);
-    const float deposited_scale = robust_positive_scale (deposited);
+    const auto eroded_scale = robust_positive_scale (eroded);
+    const auto deposited_scale = robust_positive_scale (deposited);
     GeologyMaterials values (geometry.domain ());
     for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
       const auto ground = geometry[site];
       const auto reading = values[site];
+      // A reading over the scale drawn from its own column is a ratio, and a
+      // ratio of two like quantities has no unit to speak of.
+      const auto share = [] (auto value, auto scale) {
+        return std::clamp (
+          (value / scale).numerical_value_in (mp_units::one), 0.0f, 1.0f);
+      };
       spatial::get<erosion_exposure> (reading) =
-        std::clamp (
-          spatial::get<eroded_surface_material> (ground).numerical_value_in (
-            mp_units::one) /
-            eroded_scale,
-          0.0f,
-          1.0f) *
+        share (spatial::get<eroded_surface_material> (ground), eroded_scale) *
         erosion_exposure[one];
       spatial::get<deposition_cover> (reading) =
-        std::clamp (
-          spatial::get<deposited_surface_material> (ground).numerical_value_in (
-            mp_units::one) /
-            deposited_scale,
-          0.0f,
-          1.0f) *
+        share (spatial::get<deposited_surface_material> (ground),
+               deposited_scale) *
         deposition_cover[one];
     }
     return values;
   }
-
-  namespace {}
 
   TreeHabitatMap analyze_tree_habitat (const SurfaceGeometry& geometry,
                                        const terrain::MoistureMap& moisture,
