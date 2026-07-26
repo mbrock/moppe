@@ -55,6 +55,9 @@ namespace atelier {
   class HexSheetTopology {
   public:
     using index_type = TileId;
+    // A purely combinatorial neighbourhood: influence is a plain weight,
+    // normalized so a cell's total coupling is one whatever its degree.
+    using influence_type = Real;
 
     explicit HexSheetTopology (SheetBoundary boundary = SheetBoundary::periodic,
                                std::vector<HexCell> cells = {});

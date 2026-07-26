@@ -438,9 +438,9 @@ MOPPE_TEST (surface_material_sections_keep_meaning_until_the_numeric_bridge) {
   for (std::size_t cell = 0; cell < eroded.size (); ++cell) {
     const terrain::TerrainIndex index { cell % 3, cell / 3 };
     spatial::get<map::eroded_surface_material> (surface[index]) =
-      eroded[cell] * map::eroded_surface_material[mp_units::one];
+      eroded[cell] * map::eroded_surface_material[u::m];
     spatial::get<map::deposited_surface_material> (surface[index]) =
-      deposited[cell] * map::deposited_surface_material[mp_units::one];
+      deposited[cell] * map::deposited_surface_material[u::m];
   }
   const map::SurfaceReadings values = test::complete_readings (
     surface,

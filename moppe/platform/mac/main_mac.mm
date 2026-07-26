@@ -8,7 +8,6 @@
 #include <moppe/platform/apple/game_controller.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/render/metal/metal_renderer.hh>
-#include <moppe/terrain/metal/metal_stream_power_evolution.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -444,22 +443,6 @@ static void log_runtime_parameters (MoppeView* view) {
 namespace moppe {
   namespace platform {
     static __weak NSWindow* active_window = nil;
-
-    std::unique_ptr<terrain::StreamPowerEvolutionBackend>
-    create_stream_power_evolution_backend () {
-      const char* enabled = ::getenv ("MOPPE_METAL_OROGENY");
-      if (!enabled || std::string_view (enabled) == "0")
-        return {};
-      try {
-        return std::make_unique<
-          terrain::metal::MetalStreamPowerEvolutionBackend> (
-          asset_path (MOPPE_SHADER_NAME));
-      } catch (const std::exception& error) {
-        std::cerr << "moppe: Metal orogeny backend unavailable: "
-                  << error.what () << std::endl;
-        return {};
-      }
-    }
 
     int run (Game& game, const Config& config) {
       @autoreleasepool {

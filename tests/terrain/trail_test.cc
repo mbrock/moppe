@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <span>
 #include <vector>
 
 using moppe::meters_value;
@@ -84,7 +85,7 @@ namespace {
     };
   }
 
-  float sample_height_m (const std::vector<float>& heights,
+  float sample_height_m (std::span<const float> heights,
                          const TerrainDomain& grid,
                          float x_m,
                          float z_m) {
@@ -130,12 +131,15 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   for (int y = 1; y < 8; ++y)
     for (int x = 3; x <= 5; ++x)
       valley_changed |=
-        std::fabs (result.heights[y * 9 + x] - original[y * 9 + x]) > 1e-6f;
+        std::fabs (surface_elevation_value (result.heights[y * 9 + x]) -
+                   original[y * 9 + x]) > 1e-6f;
   MOPPE_CHECK (valley_changed);
 
   // Standing water is never used as trail or modified by a nearby stamp.
   for (int x = 0; x < 9; ++x)
-    MOPPE_CHECK_NEAR (result.heights[8 * 9 + x], original[8 * 9 + x], 1e-7f);
+    MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[8 * 9 + x]),
+                      original[8 * 9 + x],
+                      1e-7f);
 }
 
 MOPPE_TEST (trail_network_retains_connected_circuit_and_material_footprint) {
@@ -224,7 +228,8 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
   MOPPE_CHECK (spatial::get<trail_influence> (first.network.use) ==
                spatial::get<trail_influence> (second.network.use));
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
-    const float change_m = first.heights[cell] - original[cell];
+    const float change_m =
+      surface_elevation_value (first.heights[cell]) - original[cell];
     MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);
     MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
@@ -248,7 +253,8 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   MOPPE_CHECK (drained.network.plan.circuit == level.network.plan.circuit);
   MOPPE_CHECK (drained.heights != level.heights);
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
-    const float change_m = drained.heights[cell] - original[cell];
+    const float change_m =
+      surface_elevation_value (drained.heights[cell]) - original[cell];
     MOPPE_CHECK (change_m >=
                  -meters_value (drained_parameters.maximum_cut) - 1e-5f);
     MOPPE_CHECK (change_m <=
@@ -286,19 +292,22 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
       original, grid, mid_x - nx * natural_probe, mid_z - nz * natural_probe);
     const float downhill_sign =
       natural_positive <= natural_negative ? 1.0f : -1.0f;
-    const auto cross_section = [&] (const std::vector<float>& heights) {
-      const float downhill =
-        sample_height_m (heights,
-                         grid,
-                         mid_x + downhill_sign * nx * tread_probe,
-                         mid_z + downhill_sign * nz * tread_probe);
-      const float uphill =
-        sample_height_m (heights,
-                         grid,
-                         mid_x - downhill_sign * nx * tread_probe,
-                         mid_z - downhill_sign * nz * tread_probe);
-      return downhill - uphill;
-    };
+    const auto cross_section =
+      [&] (const std::vector<SurfaceElevation>& elevations) {
+        const std::span<const float> heights =
+          surface_elevation_values (elevations);
+        const float downhill =
+          sample_height_m (heights,
+                           grid,
+                           mid_x + downhill_sign * nx * tread_probe,
+                           mid_z + downhill_sign * nz * tread_probe);
+        const float uphill =
+          sample_height_m (heights,
+                           grid,
+                           mid_x - downhill_sign * nx * tread_probe,
+                           mid_z - downhill_sign * nz * tread_probe);
+        return downhill - uphill;
+      };
     if (cross_section (drained.heights) <
         cross_section (level.heights) - 1e-4f) {
       observed_downhill_fall = true;

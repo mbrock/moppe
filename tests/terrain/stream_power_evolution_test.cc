@@ -33,11 +33,10 @@ MOPPE_TEST (zero_duration_stream_power_evolution_is_identity) {
   const StreamPowerEvolutionResult result = evolve_stream_power (
     terrain, uplift, { .duration = 0.0f * mp_units::astronomy::Julian_year });
 
-  MOPPE_CHECK (result.heights == std::vector<float> (profile_heights.begin (),
-                                                     profile_heights.end ()));
+  MOPPE_CHECK (result.heights == spatial::get<surface_elevation> (terrain));
   MOPPE_CHECK (result.channel_tangents.size () == profile_heights.size ());
   for (const ChannelTangent tangent : result.channel_tangents)
-    MOPPE_CHECK (length (tangent.numerical_value_in (mp_units::one)) == 0.0f);
+    MOPPE_CHECK (tangent.magnitude () == 0.0f * mp_units::one);
   MOPPE_CHECK (result.report.steps == iteration_count (0));
 }
 
@@ -56,9 +55,10 @@ MOPPE_TEST (zero_incision_applies_spatial_uplift_and_fixes_the_ocean) {
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .sea_level = 0.0f });
 
-  MOPPE_CHECK_NEAR (result.heights[0], 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (result.heights[4], 42.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (result.heights[3], profile_heights[3], 1e-7f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[4]), 42.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (result.heights[3]), profile_heights[3], 1e-7f);
   MOPPE_CHECK (result.report.steps == iteration_count (4));
   MOPPE_CHECK (result.report.fixed_boundaries == cell_count (2));
 }
@@ -79,10 +79,12 @@ MOPPE_TEST (fixed_ocean_preserves_its_submerged_bathymetry) {
         0.0f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .sea_level = 0.0f });
 
-  MOPPE_CHECK_NEAR (result.heights[0], heights[0], 0.0f);
-  MOPPE_CHECK_NEAR (result.heights[1], heights[1], 0.0f);
-  MOPPE_CHECK (result.heights[2] > heights[2]);
-  MOPPE_CHECK (result.heights[3] > heights[3]);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (result.heights[0]), heights[0], 0.0f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (result.heights[1]), heights[1], 0.0f);
+  MOPPE_CHECK (result.heights[2] > surface_elevation_point (heights[2] * u::m));
+  MOPPE_CHECK (result.heights[3] > surface_elevation_point (heights[3] * u::m));
 }
 
 MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
@@ -103,10 +105,10 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       .sea_level = 0.0f });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
-  MOPPE_CHECK_NEAR (result.heights[0], 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (result.heights[1], 50.0f, 1e-6f);
-  MOPPE_CHECK_NEAR (result.heights[2], 0.0f, 0.0f);
-  MOPPE_CHECK_NEAR (result.heights[3], 50.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[1]), 50.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[2]), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[3]), 50.0f, 1e-6f);
 }
 
 MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
@@ -134,8 +136,10 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
   const float expected = 100.0f / (1.0f + legacy_weight);
 
-  MOPPE_CHECK_NEAR (result.heights[1], expected, 1e-7f);
-  MOPPE_CHECK_NEAR (result.heights[3], expected, 1e-7f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (result.heights[1]), expected, 1e-7f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (result.heights[3]), expected, 1e-7f);
 }
 
 MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
@@ -163,9 +167,10 @@ MOPPE_TEST (reference_area_reparameterization_preserves_incision) {
     evolve (100.0f, 2e-5f * std::pow (100.0f, exponent));
 
   for (std::size_t cell = 0; cell < profile_heights.size (); ++cell)
-    MOPPE_CHECK_NEAR (one_square_meter.heights[cell],
-                      one_hundred_square_meters.heights[cell],
-                      1e-6f);
+    MOPPE_CHECK_NEAR (
+      surface_elevation_value (one_square_meter.heights[cell]),
+      surface_elevation_value (one_hundred_square_meters.heights[cell]),
+      1e-6f);
 }
 
 MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
@@ -181,7 +186,8 @@ MOPPE_TEST (depression_routing_never_turns_incision_into_deposition) {
       .sea_level = 0.0f });
 
   for (std::size_t cell = 0; cell < basin.size (); ++cell)
-    MOPPE_CHECK (result.heights[cell] <= basin[cell] + 1e-7f);
+    MOPPE_CHECK (result.heights[cell] <=
+                 surface_elevation_point ((basin[cell] + 1e-7f) * u::m));
 }
 
 MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
@@ -203,8 +209,8 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
   MOPPE_CHECK (std::any_of (first.channel_tangents.begin (),
                             first.channel_tangents.end (),
                             [] (ChannelTangent tangent) {
-                              return length2 (tangent.numerical_value_in (
-                                       mp_units::one)) > 0.0f;
+                              return tangent.magnitude () >
+                                     0.0f * mp_units::one;
                             }));
 }
 
@@ -228,7 +234,9 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
                      mp_units::astronomy::Julian_year,
       .sea_level = -1.0f });
 
-  MOPPE_CHECK (result.heights[12] < heights[12]);
-  MOPPE_CHECK (result.heights[11] > heights[11]);
+  MOPPE_CHECK (result.heights[12] <
+               surface_elevation_point (heights[12] * u::m));
+  MOPPE_CHECK (result.heights[11] >
+               surface_elevation_point (heights[11] * u::m));
   MOPPE_CHECK (result.report.diffusion_sweeps == iteration_count (1));
 }

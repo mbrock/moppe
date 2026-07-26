@@ -35,6 +35,7 @@ namespace {
 
   struct AtelierThreeSiteRing {
     using index_type = std::size_t;
+    using influence_type = float;
 
     [[nodiscard]] constexpr std::size_t size () const {
       return 3;

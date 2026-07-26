@@ -118,13 +118,6 @@ static __weak UIWindow* g_window = nil;
 // ------------------------------------------------------------------
 
 namespace moppe::platform {
-  std::unique_ptr<terrain::StreamPowerEvolutionBackend>
-  create_stream_power_evolution_backend () {
-    // The portable backend remains faster when world generation and loading
-    // presentation contend for Apple TV's GPU.
-    return {};
-  }
-
   int run (Game& game, const Config& config) {
     g_game = &game;
     g_config = config;

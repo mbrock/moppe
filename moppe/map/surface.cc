@@ -235,14 +235,10 @@ namespace moppe::map {
   evolve_terrain (SurfaceGeometry& surface,
                   std::span<const meters_per_julian_year_t> uplift,
                   const terrain::StreamPowerEvolution& parameters,
-                  const terrain::StreamPowerEvolutionBackend* backend,
                   const terrain::StreamPowerProgress& progress) {
     MOPPE_PROFILE_ZONE ("terrain.evolve");
     terrain::StreamPowerEvolutionResult result =
-      backend
-        ? terrain::evolve_stream_power (
-            surface, uplift, parameters, *backend, progress)
-        : terrain::evolve_stream_power (surface, uplift, parameters, progress);
+      terrain::evolve_stream_power (surface, uplift, parameters, progress);
     set_elevations (surface, result.heights);
     return result.report;
   }

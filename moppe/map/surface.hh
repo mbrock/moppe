@@ -93,7 +93,6 @@ namespace moppe::map {
   evolve_terrain (SurfaceGeometry& surface,
                   std::span<const meters_per_julian_year_t> uplift,
                   const terrain::StreamPowerEvolution& parameters,
-                  const terrain::StreamPowerEvolutionBackend* backend = nullptr,
                   const terrain::StreamPowerProgress& progress = {});
 
   // Form the canonical built circuit in place and return its useful network.
