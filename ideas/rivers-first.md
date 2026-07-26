@@ -109,6 +109,59 @@ coarsen — and the lattice itself becomes a population with births
 and splits. Less radical than rivers-first, compatible with it as
 the flesh between the skeleton's bones.
 
+## The embedding storey
+
+The Atelier tree already knows the architecture this wants. An
+organism there is three storeys: combinatorial topology, intrinsic
+qualities, and an embedding into space — and the tests insist the
+storeys stay separate (embeddings leave the intrinsic partition
+unchanged; the seed changes the organism, not only its embedding).
+Rivers-first is the same building with water in it. The drainage
+tree is the organism: a manageable discrete structure with lengths,
+discharges, gradients as intrinsic qualities, and captures and
+knickpoints as its dynamic life. The *landscape* is the embedding —
+and nearly all of the visual richness lives in that map, not in the
+domain it maps.
+
+This is worth saying with full weight, because it relocates where
+complexity comes from. A drainage network is combinatorially simple
+— a tree, with statistics — yet basins look inexhaustibly intricate.
+The intricacy is the embedding's: a tree embedded densely into a
+basin is nearly space-filling, and the divides are the complement
+the filling leaves behind, boundary complexity conjured from
+planarity rather than stored. The embedding is built the way the
+Atelier grows a canopy or a turtle draws an L-system: each
+confluence carries a branching angle, each reach a developed length,
+and the geometry unfolds by composing simple local moves — turns,
+folds, rotations. A landscape is then a *word* in a group of local
+moves, the way a Rubik's cube position is a word in face turns:
+enormous configuration space, tiny generator set, and the seed
+derives the word (`by-derivation.md` again — the embedding is
+implied; only its revisions are posted).
+
+Two beautiful consequences follow. First, **meanders are
+corrugations**: when a reach's intrinsic length exceeds the straight
+distance its valley allows, the embedding must wrinkle to absorb the
+excess — which is literally how sinuosity works (sinuosity *is* the
+ratio of intrinsic to extrinsic length) and formally how isometric
+embeddings absorb excess metric à la Nash: spiral corrugations at
+the scale the mismatch demands. Meander migration becomes a flow on
+the embedding storey — curvature-driven motion of the reach's curve
+— while the organism above it holds still. Second, **the two paces
+separate cleanly**: topology changes rarely and discretely (a
+capture is a posting), the embedding flows continuously (meanders
+migrate, divides creep), and the fast storey can never corrupt the
+slow one's identities, because it cannot even express them.
+
+And one organism admits many embeddings, exactly as the Atelier's
+trees do — diagram, wind, flat, bridge. The water organism's
+embeddings are the game's views: the geographic embedding is the
+landscape; a schematic embedding is the subway-map of the basin that
+Terrain Lab wants; the long-profile embedding is the elevation
+graph a knickpoint migrates along. All projections of one machine,
+transparent in the `ontology.md` sense, because they share the
+organism they project.
+
 ## What the game would feel like
 
 Deep time becomes watchable in a new way: the camera can follow *a
