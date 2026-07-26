@@ -49,6 +49,11 @@ committed roadmap.
   being: the erosion solver as the first namer of lakes, granularity as an
   accounting policy, identity sustained by registers and document acts,
   and shared fiat boundaries as the reason seams can close exactly.
+- `by-derivation.md` is its sibling: the other regime of identity, where
+  the seed implies everything by labeled hash paths — hierarchical
+  deterministic derivation à la BIP32, the save file as seed plus journal
+  of deviations, and commitment as the trial balance upgraded to
+  cryptography.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
