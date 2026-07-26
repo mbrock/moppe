@@ -42,35 +42,43 @@ namespace moppe::map {
       };
     }
 
-    Vec3 snow_support_normal (const SurfaceGeometry& geometry,
-                              const SnowSupportStencil& stencil,
-                              terrain::TerrainIndex site) {
+    // The broad plane the snow rests on: a weighted average of the normals
+    // one stencil step away, which is a coarser reading of the ground than
+    // the lighting normal at a single cell.
+    SurfaceNormal snow_support_normal (const SurfaceGeometry& geometry,
+                                       const SnowSupportStencil& stencil,
+                                       terrain::TerrainIndex site) {
       const terrain::TerrainDomain& domain = geometry.domain ();
       const auto sample = [&] (int dx, int dz) {
         return spatial::get<terrain::terrain_normal> (
-                 geometry[domain.shifted (site, dx, dz)])
-          .numerical_value_in (mp_units::one);
+          geometry[domain.shifted (site, dx, dz)]);
       };
-      Vec3 support = sample (0, 0) * 4.0f;
+      SurfaceNormal support = sample (0, 0) * 4.0f;
       support += (sample (-stencil.dx, 0) + sample (stencil.dx, 0) +
                   sample (0, -stencil.dz) + sample (0, stencil.dz)) *
                  2.0f;
       support +=
         sample (-stencil.dx, -stencil.dz) + sample (stencil.dx, -stencil.dz) +
         sample (-stencil.dx, stencil.dz) + sample (stencil.dx, stencil.dz);
-      return normalized (support);
+      return support / support.magnitude ();
     }
 
     void populate_snow_support (SurfaceGeometry& geometry) {
       MOPPE_PROFILE_ZONE ("surface.populate_snow_support");
       const SnowSupportStencil stencil =
         snow_support_stencil (geometry.domain ());
+      // Snow answers to how level that broad plane lies, which is the plane
+      // projected onto the vertical -- the same reading the habitat rule
+      // takes of the ground itself.
+      const auto world_up = Vec3 (0.0f, 1.0f, 0.0f) * one;
+      constexpr auto level_ground = terrain::terrain_normal[one];
       spatial::for_each_site (geometry, [&] (const auto& site) {
+        const SurfaceNormal support =
+          snow_support_normal (geometry, stencil, site.index ());
+        const auto levelness = std::clamp (
+          dot (support, world_up), 0.0f * level_ground, 1.0f * level_ground);
         spatial::get<snow_support> (site) =
-          std::clamp (snow_support_normal (geometry, stencil, site.index ())[1],
-                      0.0f,
-                      1.0f) *
-          snow_support[one];
+          levelness.numerical_value_in (one) * snow_support[one];
       });
     }
 
@@ -81,36 +89,59 @@ namespace moppe::map {
                          Vec3 (0, 0, 0) *
                            terrain::terrain_normal[mp_units::one]);
 
-      // A cell corner, named as a step away from the site that owns the cell.
-      // The elevation comes from the wrapped position, but the coordinate does
-      // not wrap: a face spanning the seam has to stay continuous, or its
-      // normal would fold back on itself there.
+      // One lattice step in world space. This is the only place the cell
+      // spacing becomes a number, and it does so once for the whole sweep
+      // rather than per corner.
+      const float step_x = domain.spacing_x ().numerical_value_in (u::m);
+      const float step_z = domain.spacing_z ().numerical_value_in (u::m);
+
+      // A cell corner as a place in the world. The elevation is read at the
+      // wrapped position, but the horizontal coordinate does not wrap: a face
+      // spanning the seam has to stay continuous, or its normal would fold
+      // back on itself there.
       const auto corner = [&] (terrain::TerrainIndex site, int dx, int dz) {
-        return Vec3 (domain.spacing_x ().numerical_value_in (u::m) *
-                       (static_cast<int> (site.column) + dx),
-                     terrain::surface_elevation_value (
-                       spatial::get<terrain::surface_elevation> (
-                         geometry[domain.shifted (site, dx, dz)])),
-                     domain.spacing_z ().numerical_value_in (u::m) *
-                       (static_cast<int> (site.row) + dz));
+        const float along_x =
+          step_x * static_cast<float> (static_cast<int> (site.column) + dx);
+        const float along_z =
+          step_z * static_cast<float> (static_cast<int> (site.row) + dz);
+        const float height = terrain::surface_elevation_value (
+          spatial::get<terrain::surface_elevation> (
+            geometry[domain.shifted (site, dx, dz)]));
+        return position (Vec3 (along_x, height, along_z));
       };
-      const auto add =
-        [&] (terrain::TerrainIndex site, int dx, int dz, const Vec3& value) {
-          SurfaceNormal& normal = spatial::get<terrain::terrain_normal> (
-            geometry[domain.shifted (site, dx, dz)]);
-          normal = (normal.numerical_value_in (mp_units::one) + value) *
-                   terrain::terrain_normal[mp_units::one];
-        };
+
+      // The normal of the triangle spanned by two corners and the origin.
+      // Crossing two edges of a surface gives a vector along its normal whose
+      // length is twice the triangle's area, so dividing by its own magnitude
+      // is what leaves a direction and nothing else.
+      const auto facet = [&] (terrain::TerrainIndex site,
+                              const position_t& origin,
+                              int dx1,
+                              int dz1,
+                              int dx2,
+                              int dz2) -> SurfaceNormal {
+        const auto spanned = cross (corner (site, dx1, dz1) - origin,
+                                    corner (site, dx2, dz2) - origin);
+        return spanned / spanned.magnitude () *
+               terrain::terrain_normal[mp_units::one];
+      };
+
+      const auto add = [&] (terrain::TerrainIndex site,
+                            int dx,
+                            int dz,
+                            const SurfaceNormal& face) {
+        spatial::get<terrain::terrain_normal> (
+          geometry[domain.shifted (site, dx, dz)]) += face;
+      };
 
       // Each site owns the cell reaching one step further along both axes,
-      // split into two triangles whose face normals every touched corner
-      // accumulates.
+      // split into two triangles whose normals every touched corner
+      // accumulates. A corner shared by several faces ends up holding their
+      // sum, which points along the average of the surface there.
       for (const terrain::TerrainIndex site : spatial::sites (geometry)) {
-        const Vec3 origin = corner (site, 0, 0);
-        const Vec3 left = normalized (
-          cross (corner (site, 0, 1) - origin, corner (site, 1, 1) - origin));
-        const Vec3 right = normalized (
-          cross (corner (site, 1, 1) - origin, corner (site, 1, 0) - origin));
+        const position_t origin = corner (site, 0, 0);
+        const SurfaceNormal left = facet (site, origin, 0, 1, 1, 1);
+        const SurfaceNormal right = facet (site, origin, 1, 1, 1, 0);
         add (site, 0, 0, left);
         add (site, 0, 1, left);
         add (site, 1, 1, left);
@@ -119,12 +150,11 @@ namespace moppe::map {
         add (site, 1, 1, right);
       }
 
+      // Those sums carry the faces' areas as their length; only the direction
+      // is wanted, so each is divided by its own magnitude.
       for (SurfaceNormal& value :
-           spatial::get<terrain::terrain_normal> (geometry)) {
-        Vec3 normal = value.numerical_value_in (mp_units::one);
-        normalize (normal);
-        value = normal * terrain::terrain_normal[mp_units::one];
-      }
+           spatial::get<terrain::terrain_normal> (geometry))
+        value = value / value.magnitude ();
     }
   }
 
