@@ -162,6 +162,51 @@ graph a knickpoint migrates along. All projections of one machine,
 transparent in the `ontology.md` sense, because they share the
 organism they project.
 
+## χ: the river's own coordinate
+
+Geomorphology has already found the organism's intrinsic coordinate
+and built its fastest solvers on it. Perron and Royden's χ ("chi")
+analysis reparameterizes each channel by
+
+    χ(x) = ∫ (A₀ / A(s))^(m/n) ds
+
+— arc length upstream, warped so the drainage-area term of the
+stream power law is absorbed into the coordinate itself. In (χ, z)
+space an equilibrium river is a **straight line** whose slope is the
+steepness index; every channel in a basin, whatever its shape and
+area structure, collapses onto that line when it is in balance with
+uplift. Disequilibrium is visible as geometry — a slope break is a
+knickpoint — and transients travel at *constant celerity in χ*: the
+migrating waterfall, so intricate in geographic space, is a
+kinematic wave translating at uniform speed along the intrinsic
+coordinate. The analytical-erosion paper in the research library
+(Tzathas, Gailleton, Cordonnier & Steer 2024) industrializes the
+same insight by the method of characteristics: characteristics run
+along river paths, elevation at any place and time is advected from
+downstream along them, and thousands of erosion timesteps collapse
+into evaluated solutions — with landscape *age* becoming a direct
+control, a slider rather than a wait.
+
+For rivers-first this is the keystone. It says the organism's
+dynamics, expressed in the organism's own coordinates, is nearly
+trivial — straight lines at equilibrium, uniform translation in
+transient — so the knickpoint population's equations of motion are
+bookkeeping, and the steady-state heightfield is a *pure report*:
+z = k_s·χ evaluated over the tree, no simulation required. Deep-time
+scrubbing is analytic. And even the discrete events are forecast
+from the intrinsic reading: χ discontinuities across a divide
+predict which basin is the aggressor — the capture events of the
+journal, visible in advance on what is effectively the war map of
+basins (Willett et al.'s dynamic reorganization).
+
+The doctrinal reading joins the two halves of this essay: profiles
+straighten in χ; meanders straighten in arc length; the physics is
+simplest in intrinsic coordinates, and everything geographically
+intricate about a landscape — the folds, the wrinkles, the filling —
+belongs to the embedding. χ is not a trick for speed. It is the
+discovery that the river was never curved from its own point of
+view.
+
 ## What the game would feel like
 
 Deep time becomes watchable in a new way: the camera can follow *a
