@@ -113,7 +113,7 @@ namespace moppe::terrain {
   };
 
   struct TrailFormationResult {
-    std::vector<float> heights;
+    std::vector<SurfaceElevation> heights;
     TrailNetwork network;
     TrailFormationReport report;
   };

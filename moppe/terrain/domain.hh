@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 // The vocabulary every terrain algorithm shares: what identifies a cell, what
 // a cell carries, and the finite periodic lattice they live on. Algorithms
@@ -129,16 +130,36 @@ namespace moppe::terrain {
                    default_point_origin (surface_elevation[u::m]),
                    float>;
 
-  // A plain length becomes a point in the world's vertical frame. The two are
-  // different kinds, so mp-units will not carry one into the other on its own
-  // and the numeric step here is the conversion itself, not a shortcut.
+  // A displacement in the vertical frame: what subtracting two elevations
+  // leaves, and what erosion or construction adds to one.
+  using ElevationChange = quantity<surface_elevation[u::m], float>;
+
+  // A plain length becomes a point in the world's vertical frame. A bare
+  // metre quantity is a kind wildcard, so the point constructor accepts it
+  // directly; this helper only names the step.
   inline SurfaceElevation surface_elevation_point (meters_t value) {
-    return SurfaceElevation (value.numerical_value_in (u::m) *
-                             surface_elevation[u::m]);
+    return SurfaceElevation (value);
   }
 
   inline float surface_elevation_value (SurfaceElevation value) {
     return value.quantity_from_zero ().numerical_value_in (u::m);
+  }
+
+  // The metre numbers behind a run of elevation points, viewed in place.
+  // The point's representation is bitwise its metre value -- the identity
+  // the renderer already relies on when it uploads elevation spans as R32F
+  // texels -- so a numeric kernel can work over typed storage without a
+  // copy at either end.
+  inline std::span<float>
+  surface_elevation_values (std::span<SurfaceElevation> points) {
+    static_assert (sizeof (SurfaceElevation) == sizeof (float) &&
+                   alignof (SurfaceElevation) == alignof (float));
+    return { reinterpret_cast<float*> (points.data ()), points.size () };
+  }
+
+  inline std::span<const float>
+  surface_elevation_values (std::span<const SurfaceElevation> points) {
+    return { reinterpret_cast<const float*> (points.data ()), points.size () };
   }
 
   using TerrainNormal = mp_units::quantity<terrain_normal[mp_units::one], Vec3>;

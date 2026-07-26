@@ -77,8 +77,7 @@ namespace moppe::map {
           snow_support_normal (geometry, stencil, site.index ());
         const auto levelness = std::clamp (
           dot (support, world_up), 0.0f * level_ground, 1.0f * level_ground);
-        spatial::get<snow_support> (site) =
-          levelness.numerical_value_in (one) * snow_support[one];
+        spatial::get<snow_support> (site) = levelness.magnitude ();
       });
     }
 
@@ -175,33 +174,35 @@ namespace moppe::map {
 
     void reset_material_history (SurfaceGeometry& surface) {
       std::ranges::fill (spatial::get<eroded_surface_material> (surface),
-                         0.0f * eroded_surface_material[one]);
+                         0.0f * eroded_surface_material[u::m]);
       std::ranges::fill (spatial::get<deposited_surface_material> (surface),
-                         0.0f * deposited_surface_material[one]);
+                         0.0f * deposited_surface_material[u::m]);
     }
 
+    // A signed elevation displacement splits into the column's two one-way
+    // histories. The narrowing from elevation change to material is the
+    // explicit conversion; the sign decides which history it feeds.
     void record_material_change (SurfaceGeometry& surface,
                                  terrain::TerrainIndex site,
-                                 float delta) {
+                                 terrain::ElevationChange delta) {
       const auto row = surface[site];
-      if (delta < 0.0f)
+      if (delta < terrain::ElevationChange::zero ())
         spatial::get<eroded_surface_material> (row) -=
-          delta * eroded_surface_material[one];
+          ErodedSurfaceMaterial (delta);
       else
         spatial::get<deposited_surface_material> (row) +=
-          delta * deposited_surface_material[one];
+          DepositedSurfaceMaterial (delta);
     }
 
-    // The solver still answers in bare lattice samples, so this is where a
-    // linear buffer meets the surface. Asking the domain for each site's
-    // offset keeps that the only place the two orders have to agree.
+    // The solver answers in its own linear buffer, so this is where that
+    // order meets the surface. Asking the domain for each site's offset
+    // keeps this the only place the two orders have to agree.
     void set_elevations (SurfaceGeometry& surface,
-                         std::span<const float> heights) {
+                         std::span<const SurfaceElevation> elevations) {
       const terrain::TerrainDomain& domain = surface.domain ();
       for (const terrain::TerrainIndex site : spatial::sites (surface))
         spatial::get<terrain::surface_elevation> (surface[site]) =
-          SurfaceElevation (heights[domain.offset (site)] *
-                            terrain::surface_elevation[u::m]);
+          elevations[domain.offset (site)];
     }
   }
 
@@ -254,12 +255,11 @@ namespace moppe::map {
       terrain::form_trails (surface, parameters);
     const terrain::TerrainDomain& domain = surface.domain ();
     for (const terrain::TerrainIndex site : spatial::sites (surface)) {
-      const float formed = result.heights[domain.offset (site)];
+      const SurfaceElevation formed = result.heights[domain.offset (site)];
       auto& elevation =
         spatial::get<terrain::surface_elevation> (surface[site]);
-      record_material_change (
-        surface, site, formed - terrain::surface_elevation_value (elevation));
-      elevation = SurfaceElevation (formed * terrain::surface_elevation[u::m]);
+      record_material_change (surface, site, formed - elevation);
+      elevation = formed;
     }
     return std::move (result.network);
   }

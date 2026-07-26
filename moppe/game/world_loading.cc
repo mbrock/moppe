@@ -143,8 +143,9 @@ namespace moppe::game {
         platform::create_stream_power_evolution_backend ();
 
       const auto report_geological_time =
-        [&state, &recipe] (
-          int completed_steps, int total_steps, std::span<const float>) {
+        [&state, &recipe] (int completed_steps,
+                           int total_steps,
+                           std::span<const terrain::SurfaceElevation>) {
           const float duration =
             julian_years_value (recipe.evolution ().duration);
           const float step = julian_years_value (recipe.evolution ().time_step);

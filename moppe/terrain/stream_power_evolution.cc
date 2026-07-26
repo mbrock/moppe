@@ -61,7 +61,7 @@ namespace moppe::terrain {
       }
     }
 
-    int diffuse_evolution_step (std::vector<float>& heights,
+    int diffuse_evolution_step (std::vector<SurfaceElevation>& heights,
                                 const std::vector<std::uint8_t>& boundary,
                                 const TerrainDomain& grid,
                                 double duration_years,
@@ -92,8 +92,14 @@ namespace moppe::terrain {
         return static_cast<std::size_t> (result < 0 ? result + n : result);
       };
 
-      std::vector<float> next (heights.size ());
+      std::vector<SurfaceElevation> next (heights.size ());
       for (int sweep = 0; sweep < sweeps; ++sweep) {
+        // The stencil is pure metre arithmetic; both buffers are viewed in
+        // place so the sweep stays a float kernel over typed storage.
+        const std::span<const float> source =
+          surface_elevation_values (std::span (heights));
+        const std::span<float> destination =
+          surface_elevation_values (std::span (next));
         for (std::size_t y = 0; y < height; ++y) {
           const std::size_t up =
             neighbor (static_cast<std::ptrdiff_t> (y) - 1, height);
@@ -102,19 +108,20 @@ namespace moppe::terrain {
           for (std::size_t x = 0; x < width; ++x) {
             const std::size_t cell = y * width + x;
             if (boundary[cell]) {
-              next[cell] = heights[cell];
+              destination[cell] = source[cell];
               continue;
             }
             const std::size_t left =
               neighbor (static_cast<std::ptrdiff_t> (x) - 1, width);
             const std::size_t right =
               neighbor (static_cast<std::ptrdiff_t> (x) + 1, width);
-            const float center = heights[cell];
-            next[cell] = center +
-                         cx * (heights[y * width + left] +
-                               heights[y * width + right] - 2.0f * center) +
-                         cy * (heights[up * width + x] +
-                               heights[down * width + x] - 2.0f * center);
+            const float center = source[cell];
+            destination[cell] =
+              center +
+              cx * (source[y * width + left] + source[y * width + right] -
+                    2.0f * center) +
+              cy * (source[up * width + x] + source[down * width + x] -
+                    2.0f * center);
           }
         }
         heights.swap (next);
@@ -155,11 +162,12 @@ namespace moppe::terrain {
     const double diffusivity_m2_per_year =
       square_meters_per_julian_year_value (parameters.diffusivity);
 
-    std::vector<float> initial (count);
+    std::vector<SurfaceElevation> initial (count);
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x)
-        initial[y * width + x] = elevation_at (grid, elevations, x, y);
-    std::vector<float> current = initial;
+        initial[y * width + x] =
+          elevations[grid.offset ({ .column = x, .row = y })];
+    std::vector<SurfaceElevation> current = initial;
     std::vector<ChannelTangent> channel_memory;
     if (!initial_channel_tangents.empty ()) {
       channel_memory.assign (initial_channel_tangents.begin (),
@@ -192,14 +200,15 @@ namespace moppe::terrain {
     int diffusion_sweeps = 0;
     double tectonic_uplift_volume_m3 = 0.0;
     double incised_volume_m3 = 0.0;
-    std::vector<float> next (count);
+    std::vector<SurfaceElevation> next (count);
     std::vector<std::uint8_t> boundary (count);
 
     for (int step = 0; step < steps; ++step) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
       const double elapsed = static_cast<double> (step) * time_step_years;
       const double dt = std::min (time_step_years, duration_years - elapsed);
-      const ElevationMap routed_terrain = make_elevation_map (grid, current);
+      const ElevationMap routed_terrain = make_elevation_map (
+        grid, surface_elevation_values (std::span (current)));
       const FloodField flood =
         analyze_standing_water (routed_terrain, parameters.sea_level);
       const LakeCensus census = census_lakes (flood);
@@ -239,7 +248,7 @@ namespace moppe::terrain {
           if (!std::isfinite (weight))
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
-          const double old_height_m = current[cell];
+          const double old_height_m = surface_elevation_value (current[cell]);
           const double uplift_m =
             dt * meters_per_julian_year_value (uplift_rate[cell]);
           const double uplift_only_m = old_height_m + uplift_m;
@@ -248,7 +257,8 @@ namespace moppe::terrain {
           // Depression routing may cross a raw uphill bed edge. Incision is
           // not deposition: it may never raise a cell above uplift alone.
           const double evolved_m = std::min (solved_m, uplift_only_m);
-          next[cell] = static_cast<float> (evolved_m);
+          next[cell] =
+            surface_elevation_point (static_cast<float> (evolved_m) * u::m);
           tectonic_uplift_volume_m3 += uplift_m * cell_area_m2;
           incised_volume_m3 += (uplift_only_m - evolved_m) * cell_area_m2;
         };
@@ -263,15 +273,17 @@ namespace moppe::terrain {
              ++position) {
           const CellIndex cell = *position;
           const FractionalFlowRoute& route = drainage.domain ().route (cell);
-          double receiver_height_m = next[cell.value];
+          double receiver_height_m = surface_elevation_value (next[cell.value]);
           if (route.arc_count == 1) {
-            receiver_height_m = next[route.arcs[0].receiver.value];
+            receiver_height_m =
+              surface_elevation_value (next[route.arcs[0].receiver.value]);
           } else if (route.arc_count == 2) {
             const float interpolation =
               route.receiver_interpolation.numerical_value_in (mp_units::one);
-            receiver_height_m = std::lerp (next[route.arcs[0].receiver.value],
-                                           next[route.arcs[1].receiver.value],
-                                           interpolation);
+            receiver_height_m = std::lerp (
+              surface_elevation_value (next[route.arcs[0].receiver.value]),
+              surface_elevation_value (next[route.arcs[1].receiver.value]),
+              interpolation);
           }
           const square_meters_t physical_area =
             area[cell.value].numerical_value_in (mp_units::si::metre *
@@ -303,8 +315,8 @@ namespace moppe::terrain {
       {
         MOPPE_PROFILE_ZONE ("orogeny.measure_step_change");
         for (std::size_t cell = 0; cell < count; ++cell) {
-          const double change_m =
-            std::fabs (static_cast<double> (next[cell] - current[cell]));
+          const double change_m = std::fabs (static_cast<double> (
+            (next[cell] - current[cell]).numerical_value_in (u::m)));
           total_step_change_m += change_m;
           maximum_step_change_m = std::max (maximum_step_change_m, change_m);
         }
@@ -330,8 +342,8 @@ namespace moppe::terrain {
     double absolute_change_m = 0.0;
     double maximum_absolute_change_m = 0.0;
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const double change_m =
-        static_cast<double> (current[cell] - initial[cell]);
+      const double change_m = static_cast<double> (
+        (current[cell] - initial[cell]).numerical_value_in (u::m));
       if (change_m < 0.0)
         lowered_volume_m3 -= change_m * cell_area_m2;
       else

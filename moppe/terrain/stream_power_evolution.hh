@@ -54,15 +54,16 @@ namespace moppe::terrain {
 
   struct StreamPowerEvolutionResult {
     // One value per lattice sample.
-    std::vector<float> heights;
+    std::vector<SurfaceElevation> heights;
     std::vector<ChannelTangent> channel_tangents;
     StreamPowerEvolutionReport report;
   };
 
-  // Called after each geological step. The height span contains the current
-  // lattice samples and remains valid only for the duration of the callback.
+  // Called after each geological step. The elevation span contains the
+  // current lattice samples and remains valid only for the duration of the
+  // callback.
   using StreamPowerProgress =
-    std::function<void (int, int, std::span<const float>)>;
+    std::function<void (int, int, std::span<const SurfaceElevation>)>;
 
   // Owns the implementation boundary for the non-pointwise part of one
   // evolution step. The CPU backend is authoritative; Metal can replace the

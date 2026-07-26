@@ -39,9 +39,9 @@ namespace moppe::map {
 
   using SurfaceNormal = terrain::TerrainNormal;
   using SnowSupport = quantity<snow_support[one], float>;
-  using ErodedSurfaceMaterial = quantity<eroded_surface_material[one], float>;
+  using ErodedSurfaceMaterial = quantity<eroded_surface_material[u::m], float>;
   using DepositedSurfaceMaterial =
-    quantity<deposited_surface_material[one], float>;
+    quantity<deposited_surface_material[u::m], float>;
   using ChannelFlux = quantity<channel_flux[one], Vec3>;
   using terrain::SurfaceMoisture;
   using terrain::WaterlineDistance;
