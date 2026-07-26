@@ -284,6 +284,25 @@ namespace moppe::terrain {
                              static_cast<int> (m_height))) };
     }
 
+    // The metric neighbourhood: the four cardinal neighbours, each carrying
+    // the inverse square of the spacing that separates it. With that
+    // influence, folding influence * (neighbour - centre) over the
+    // neighbourhood is the discrete Laplacian of whatever quantity is read
+    // there, and its unit says so: the Laplacian of an elevation comes out
+    // as elevation per area.
+    using influence_type =
+      mp_units::quantity<mp_units::one / (u::m * u::m), float>;
+
+    template <typename Visitor>
+    void visit_neighbourhood (TerrainIndex centre, Visitor&& visitor) const {
+      const influence_type across_x = 1.0f / (m_spacing_x * m_spacing_x);
+      const influence_type across_z = 1.0f / (m_spacing_z * m_spacing_z);
+      visitor (shifted (centre, -1, 0), across_x);
+      visitor (shifted (centre, 1, 0), across_x);
+      visitor (shifted (centre, 0, -1), across_z);
+      visitor (shifted (centre, 0, 1), across_z);
+    }
+
     template <typename Visitor>
     void visit_interpolation_stencil (const position_t& position,
                                       Visitor&& visitor) const {

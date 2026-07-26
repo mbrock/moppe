@@ -43,6 +43,8 @@ namespace moppe {
     mp_units::quantity<mp_units::si::metre / mp_units::si::second, float>;
   using julian_years_t =
     mp_units::quantity<mp_units::astronomy::Julian_year, float>;
+  using julian_years_f64_t =
+    mp_units::quantity<mp_units::astronomy::Julian_year, double>;
   using meters_per_julian_year_t =
     mp_units::quantity<mp_units::si::metre / mp_units::astronomy::Julian_year,
                        float>;

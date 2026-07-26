@@ -25,6 +25,7 @@ namespace moppe::spatial {
   concept NeighbourhoodDomain =
     FiniteDomain<Domain> &&
     requires (const Domain& domain, typename Domain::index_type index) {
+      typename Domain::influence_type;
       domain.visit_neighbourhood (
         index, detail::NeighbourhoodProbe<typename Domain::index_type> {});
     };
@@ -174,6 +175,13 @@ namespace moppe::spatial {
                                std::move (operation));
   }
 
+  // The Laplacian of one quantity at a focus: the influence-weighted sum of
+  // differences toward each neighbour. The domain's influence carries the
+  // metric -- an inverse area on a spaced lattice, a plain weight on a
+  // purely topological one -- so the sum's type is the influence's times
+  // the quantity's, and on a metric domain the Laplacian of an elevation
+  // comes out as an elevation per area. Differences also mean this works
+  // over point columns: the Laplacian of points is made of displacements.
   template <mp_units::QuantitySpec auto QS,
             typename BundleType,
             typename Neighbourhood = adjacent_neighbourhood_t>
@@ -185,11 +193,14 @@ namespace moppe::spatial {
   auto laplacian (const BundleFocus<BundleType>& focus,
                   Neighbourhood neighbourhood = adjacent_neighbourhood) {
     const auto center = get<QS> (focus);
+    using Domain = typename BundleFocus<BundleType>::bundle_type::domain_type;
+    using Term = decltype (std::declval<typename Domain::influence_type> () *
+                           (center - center));
     return fold_neighbourhood (
       focus,
       std::move (neighbourhood),
-      center - center,
-      [center] (auto sum, const auto& neighbour, auto influence) {
+      Term::zero (),
+      [center] (Term sum, const auto& neighbour, auto influence) {
         return sum + influence * (get<QS> (neighbour) - center);
       });
   }
