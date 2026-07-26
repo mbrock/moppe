@@ -45,6 +45,10 @@ namespace moppe::terrain {
     std::optional<CellIndex>
     neighbour (CellIndex index, int columns, int rows) const;
 
+    // A purely topological neighbourhood: every neighbour counts the same,
+    // so the influence is a plain weight rather than a metric reading.
+    using influence_type = float;
+
     template <typename Visitor>
     void visit_neighbourhood (CellIndex center, Visitor&& visitor) const {
       constexpr std::array offsets {
