@@ -140,23 +140,29 @@ namespace moppe::game {
                     const terrain::WorldRecipe& recipe,
                     map::SurfaceGeometry& terrain) {
       const auto report_geological_time =
-        [&state, &recipe] (int completed_steps,
-                           int total_steps,
+        [&state, &recipe] (terrain::IterationCount completed_steps,
+                           terrain::IterationCount total_steps,
                            std::span<const terrain::SurfaceElevation>) {
-          const float duration =
-            julian_years_value (recipe.evolution ().duration);
-          const float step = julian_years_value (recipe.evolution ().time_step);
-          const int years_done = static_cast<int> (
-            std::lround (std::min (duration, completed_steps * step)));
-          const int years_total = static_cast<int> (std::lround (duration));
+          const julian_years_t duration = recipe.evolution ().duration;
+          const julian_years_t elapsed =
+            std::min (duration,
+                      terrain::count_value (completed_steps) *
+                        recipe.evolution ().time_step);
+          const auto whole_years = [] (julian_years_t time) {
+            return static_cast<int> (std::lround (
+              time.numerical_value_in (mp_units::astronomy::Julian_year)));
+          };
           std::ostringstream detail;
-          detail << "Geological time  " << grouped_number (years_done) << " / "
-                 << grouped_number (years_total) << " years  /  step "
-                 << completed_steps << " of " << total_steps;
-          state.report ("Running geological time",
-                        detail.str (),
-                        static_cast<float> (completed_steps) /
-                          std::max (1, total_steps));
+          detail << "Geological time  "
+                 << grouped_number (whole_years (elapsed)) << " / "
+                 << grouped_number (whole_years (duration))
+                 << " years  /  step " << terrain::count_value (completed_steps)
+                 << " of " << terrain::count_value (total_steps);
+          state.report (
+            "Running geological time",
+            detail.str (),
+            static_cast<float> (terrain::count_value (completed_steps)) /
+              std::max (1, terrain::count_value (total_steps)));
         };
 
       std::atomic<int> row_watermark { 0 };
