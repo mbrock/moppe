@@ -188,6 +188,33 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     "-framework Metal"
     "-framework QuartzCore"
     "-framework UniformTypeIdentifiers")
+
+  # Lavoir: the wash-house by the water. A fresh workshop with Arrow
+  # storage at the bottom and Metal at the top.
+  add_executable(lavoir MACOSX_BUNDLE EXCLUDE_FROM_ALL
+    lavoir/buffer.hh
+    lavoir/bundle.hh
+    lavoir/lavoir_mac.mm
+    lavoir/metal.hh
+    lavoir/renderer.cc
+    lavoir/renderer.hh
+    lavoir/surface.hh
+  )
+  set_target_properties(lavoir PROPERTIES UNITY_BUILD OFF)
+  target_include_directories(lavoir PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${metal-cpp_SOURCE_DIR})
+  target_compile_options(lavoir PRIVATE
+    -mmacosx-version-min=26.0
+    $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+  target_link_options(lavoir PRIVATE -mmacosx-version-min=26.0)
+  target_link_libraries(lavoir PRIVATE
+    nanoarrow
+    "-framework Cocoa"
+    "-framework ImageIO"
+    "-framework Metal"
+    "-framework QuartzCore"
+    "-framework UniformTypeIdentifiers")
 endif()
 
 # ---------------------------------------------------------------
@@ -441,6 +468,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/test_main.cc
     tests/units_test.cc
     tests/pacioli_test.cc
+    tests/lavoir/buffer_test.cc
     tests/spatial/bundle_test.cc
     tests/spatial/bundle_storage_test.cc
     tests/terrain/domain_test.cc
