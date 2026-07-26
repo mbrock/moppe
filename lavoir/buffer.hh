@@ -1,9 +1,12 @@
 #pragma once
 
+#include "lavoir/units.hh"
+
 #include "third_party/nanoarrow/nanoarrow.h"
 
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <new>
 #include <span>
 #include <type_traits>
@@ -11,21 +14,13 @@
 
 /// Storage for the workshop, held as Arrow buffers so that a column
 /// can travel unchanged between memory, an IPC stream on disk, and the
-/// GPU. Every allocation is page-aligned and page-rounded, which is
-/// exactly what Metal's no-copy buffer wrapping requires; the same
-/// bytes can later be lent upward to a texture or downward to a file
-/// without ever being copied. Ownership lives here and nowhere else:
-/// everything downstream borrows.
+/// GPU. Every allocation is page-aligned and rounded to whole pages,
+/// which is exactly what Metal's no-copy buffer wrapping requires; the
+/// same bytes can later be lent upward to a texture or downward to a
+/// file without ever being copied. Ownership lives here and nowhere
+/// else: everything downstream borrows.
 
 namespace lavoir {
-  /// The alignment and granularity Metal requires of memory it wraps
-  /// without copying, and a comfortable alignment for SIMD besides.
-  inline constexpr std::size_t page_size = 16384;
-
-  inline constexpr std::size_t pages_covering (std::size_t bytes) {
-    return (bytes + page_size - 1) / page_size * page_size;
-  }
-
   /// A move-only owner of one page-aligned Arrow buffer.
   class buffer {
   public:
@@ -33,12 +28,15 @@ namespace lavoir {
       ArrowBufferInit (&m_arrow);
     }
 
-    /// Allocate `bytes` of zeroed, page-aligned storage, rounded up to
-    /// whole pages so the buffer stays wrappable by the GPU.
-    static buffer with_size (std::size_t bytes) {
-      const std::size_t rounded = pages_covering (bytes);
+    /// Allocate zeroed, page-aligned storage covering `size`, rounded
+    /// up to whole pages so the buffer stays wrappable by the GPU.
+    static buffer with_size (bytes_t size) {
+      const bytes_t rounded = pages_covering (size).in (iec::byte);
       void* memory = nullptr;
-      if (rounded != 0 && posix_memalign (&memory, page_size, rounded) != 0)
+      if (rounded != bytes_t::zero () &&
+          posix_memalign (&memory,
+                          page_size.numerical_value_in (iec::byte),
+                          rounded.numerical_value_in (iec::byte)) != 0)
         throw std::bad_alloc ();
 
       buffer result;
@@ -49,10 +47,12 @@ namespace lavoir {
                                     int64_t) { std::free (data); },
                                 nullptr));
       result.m_arrow.data = static_cast<uint8_t*> (memory);
-      result.m_arrow.size_bytes = static_cast<int64_t> (bytes);
-      result.m_arrow.capacity_bytes = static_cast<int64_t> (rounded);
+      result.m_arrow.size_bytes =
+        static_cast<int64_t> (size.numerical_value_in (iec::byte));
+      result.m_arrow.capacity_bytes =
+        static_cast<int64_t> (rounded.numerical_value_in (iec::byte));
       if (memory != nullptr)
-        std::memset (memory, 0, rounded);
+        std::memset (memory, 0, rounded.numerical_value_in (iec::byte));
       return result;
     }
 
@@ -75,22 +75,24 @@ namespace lavoir {
       ArrowBufferReset (&m_arrow);
     }
 
-    std::size_t size () const {
-      return static_cast<std::size_t> (m_arrow.size_bytes);
+    bytes_t size () const {
+      return static_cast<std::size_t> (m_arrow.size_bytes) * iec::byte;
     }
 
-    std::size_t capacity () const {
-      return static_cast<std::size_t> (m_arrow.capacity_bytes);
+    bytes_t capacity () const {
+      return static_cast<std::size_t> (m_arrow.capacity_bytes) * iec::byte;
     }
 
     /// The whole allocation as borrowable bytes. The span is a lease:
     /// it must not outlive the buffer.
     std::span<std::byte> lease () {
-      return { reinterpret_cast<std::byte*> (m_arrow.data), size () };
+      return { reinterpret_cast<std::byte*> (m_arrow.data),
+               size ().numerical_value_in (iec::byte) };
     }
 
     std::span<const std::byte> lease () const {
-      return { reinterpret_cast<const std::byte*> (m_arrow.data), size () };
+      return { reinterpret_cast<const std::byte*> (m_arrow.data),
+               size ().numerical_value_in (iec::byte) };
     }
 
     /// The underlying Arrow buffer, for storage and interchange code
@@ -114,7 +116,7 @@ namespace lavoir {
 
     static column with_count (std::size_t count) {
       column result;
-      result.m_storage = buffer::with_size (count * sizeof (T));
+      result.m_storage = buffer::with_size (count * (sizeof (T) * iec::byte));
       result.m_count = count;
       return result;
     }

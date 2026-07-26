@@ -10,11 +10,11 @@
 namespace lv = lavoir;
 
 MOPPE_TEST (lavoir_buffers_are_page_aligned_and_page_rounded) {
-  const lv::buffer storage = lv::buffer::with_size (100);
-  MOPPE_CHECK (storage.size () == 100);
+  const lv::buffer storage = lv::buffer::with_size (100 * mp_units::iec::byte);
+  MOPPE_CHECK (storage.size () == 100 * mp_units::iec::byte);
   MOPPE_CHECK (storage.capacity () == lv::page_size);
   MOPPE_CHECK (reinterpret_cast<std::uintptr_t> (storage.lease ().data ()) %
-                 lv::page_size ==
+                 lv::page_size.numerical_value_in (mp_units::iec::byte) ==
                0);
 }
 
@@ -44,4 +44,34 @@ MOPPE_TEST (lavoir_fields_are_bundles_of_borrowed_values) {
 
   MOPPE_CHECK (counts[3] == 9);
   MOPPE_CHECK (storage.lease ()[8] == 64);
+}
+
+MOPPE_TEST (lavoir_pages_cover_sizes_by_ceiling_conversion) {
+  MOPPE_CHECK (lv::pages_covering (lv::bytes_t::zero ()) == 0 * lv::page);
+  MOPPE_CHECK (lv::pages_covering (1 * mp_units::iec::byte) == 1 * lv::page);
+  MOPPE_CHECK (lv::pages_covering (lv::page_size) == 1 * lv::page);
+  MOPPE_CHECK (lv::pages_covering (lv::page_size + 1 * mp_units::iec::byte) ==
+               2 * lv::page);
+
+  const lv::buffer storage = lv::buffer::with_size (100 * mp_units::iec::byte);
+  MOPPE_CHECK (storage.size () == 100 * mp_units::iec::byte);
+  MOPPE_CHECK (storage.capacity () == lv::bytes_t (1 * lv::page));
+}
+
+namespace {
+  template <typename A, typename B>
+  concept AddableWith = requires (A a, B b) { a + b; };
+}
+
+MOPPE_TEST (lavoir_counts_of_different_kinds_stay_severed) {
+  // A frame sequence and a pixel extent are both counts, and adding
+  // them is a compile error; the static assertion is the test.
+  static_assert (!AddableWith<lv::frames_t, lv::pixels_t>);
+  static_assert (AddableWith<lv::frames_t, lv::frames_t>);
+
+  // A BGRA row's bytes fall out of the stride: bytes per pixel times
+  // pixels is bytes.
+  const lv::pixels_t width = 1800 * lv::pixel;
+  const lv::bytes_t row = width * lv::bgra_stride;
+  MOPPE_CHECK (row == 7200 * mp_units::iec::byte);
 }
