@@ -37,6 +37,10 @@ committed roadmap.
   in the Atelier tree's three storeys — kinematic topology, intrinsic
   qualities and dispositions, embedding — using the ontological and
   Relation Ontology vocabulary.
+- `multitudes.md` proposes population domains — generational, hive-shaped
+  siblings of the terrain lattice — so stars, trees, lakes, and other
+  many-of-a-kind state become bundles with the same visibility,
+  serialization, and accounting as the fields.
 - `reading-map.md` is an annotated collection of papers, books, talks, games,
   and repositories around these overlapping design and technical questions.
 
