@@ -150,7 +150,15 @@ vertex OceanVaryings ocean_vertex (uint vid [[vertex_id]],
     // ground, and inland bodies only ripple with their per-body
     // amplitude: a tarn must not heave like the open sea.
     p.y = ocean_grid_sample (p.xz, u, water_levels).x;
-    wave_scale = ocean_wave_scale (p.xz, u, heights, water_levels);
+    // ocean_surface_point fades the swell to nothing by 900 m and the
+    // fragment stage's ripples take over. This grid spans the whole
+    // world, so all but a couple of percent of its corners are past
+    // that: reading the ten-tap shore filter for a swell about to be
+    // multiplied by zero is the grid's largest avoidable cost. Same
+    // number out, and the threshold is the fade's own.
+    wave_scale = length (p - u.camera_pos.xyz) < 900.0
+                   ? ocean_wave_scale (p.xz, u, heights, water_levels)
+                   : 0.0;
   }
   return ocean_surface_point (p, wave_scale, u);
 }
@@ -213,17 +221,39 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
       // ground is bilinear inside each cell, so its maximum sits on a
       // corner: this probe is exact, and a painted river a cell and a
       // half wide cannot slip between the samples.
-      bool wet = false;
-      float level = 0.0;
+      //
+      // A dry tile -- most of the window, most frames -- reads all 256
+      // corners, and there is only one thread per tile, so this loop has
+      // very little else to hide its memory latency behind. Two things
+      // therefore matter more here than the early exit does.
+      //
+      // The wrap is hoisted out: the window is sixteen wide against a
+      // lattice thousands of cells across, so one conditional subtract
+      // stands in for the modulo pair, and the loop does no integer
+      // division at all. And the row runs to its end instead of testing
+      // after every corner, which leaves its thirty-two reads mutually
+      // independent: the tile then waits on one memory latency per row
+      // rather than thirty-two in series.
+      const int period = int (u.shore.w);
       const int2 origin =
         (int2 (u.tiles.xy) + int2 (tile_x, tile_z)) * WATER_TILE_CELLS;
-      for (uint probe = 0; probe < 256u && !wet; ++probe) {
-        const int2 texel = origin + int2 (probe % 16u, probe / 16u);
-        const float water = ocean_grid_texel (texel, u, water_levels).x;
-        const float ground = ocean_grid_texel (texel, u, heights).x;
-        if (water > ground + 0.05 / u.shore.z) {
-          wet = true;
-          level = water * u.shore.z;
+      const int2 base = ((origin % period) + period) % period;
+      const float wet_epsilon = 0.05 / u.shore.z;
+      bool wet = false;
+      float level = 0.0;
+      for (uint row = 0; row < 16u && !wet; ++row) {
+        const int wrapped_z = base.y + int (row);
+        const uint tz =
+          uint (wrapped_z >= period ? wrapped_z - period : wrapped_z);
+        for (uint col = 0; col < 16u; ++col) {
+          const int wrapped_x = base.x + int (col);
+          const uint2 texel (
+            uint (wrapped_x >= period ? wrapped_x - period : wrapped_x), tz);
+          const float water = water_levels.read (texel).r;
+          if (water - heights.read (texel).r > wet_epsilon) {
+            wet = true;
+            level = water * u.shore.z;
+          }
         }
       }
       valid = wet;
@@ -264,9 +294,6 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
                                texture2d<float, access::read> water_levels
                                [[texture (MOPPE_TEX_WATER_LEVELS)]]) {
   constexpr uint side = WATER_TILE_CELLS + 1;
-  if (thread_id == 0u)
-    out.set_primitive_count (WATER_TILE_CELLS * WATER_TILE_CELLS * 2);
-
   const uint2 tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const float spacing = 1.0 / u.shore.x;
   const uint vx = thread_id % side;
@@ -329,10 +356,42 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
                   ocean_surface_point (
                     float3 (world_xz.x, water.x, world_xz.y), wave_scale, u));
 
+  // A cell whose four corners are all dry is dry throughout: water minus
+  // ground is bilinear inside the cell, so its maximum sits on a corner.
+  // That is the object stage's own tile-probe argument, applied one level
+  // down, and it is what lets the tile emit only the water it holds.
+  //
+  // It matters because a river passes *through* tiles rather than filling
+  // them. The tile survives on a handful of wet cells and then hands the
+  // rasterizer its whole lattice -- four hundred and fifty triangles,
+  // nearly all of them dry ground for the fragment stage to discard.
+  // Binning those is the tile pipeline's real expense; neither the wet
+  // probe nor the shading was ever close.
+  threadgroup bool corner_wet[side * side];
+  corner_wet[thread_id] = wet_self > 0.0;
+  threadgroup atomic_uint kept_cells;
+  if (thread_id == 0u)
+    atomic_store_explicit (&kept_cells, 0u, metal::memory_order_relaxed);
+  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+
+  const uint v0 = vz * side + vx;
+  bool keep = false;
+  uint slot = 0u;
   if (vx < WATER_TILE_CELLS && vz < WATER_TILE_CELLS) {
-    const uint cell = vz * WATER_TILE_CELLS + vx;
-    const uint v0 = vz * side + vx;
-    const uint base = 6u * cell;
+    keep = corner_wet[v0] || corner_wet[v0 + 1u] || corner_wet[v0 + side] ||
+           corner_wet[v0 + side + 1u];
+    if (keep)
+      slot = atomic_fetch_add_explicit (
+        &kept_cells, 1u, metal::memory_order_relaxed);
+  }
+  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+
+  if (thread_id == 0u)
+    out.set_primitive_count (
+      2u * atomic_load_explicit (&kept_cells, metal::memory_order_relaxed));
+
+  if (keep) {
+    const uint base = 6u * slot;
     out.set_index (base + 0u, v0);
     out.set_index (base + 1u, v0 + side);
     out.set_index (base + 2u, v0 + 1u);

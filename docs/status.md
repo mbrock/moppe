@@ -40,13 +40,24 @@ hillslope regime at all, which is why every hillside combed.
 Those are done. The ground now grades against its own relief, tree habitat
 reads a topographic wetness index, the forest mosaic answers to the ground
 instead of overruling it, the wind runs on three clocks, and the river surface
-no longer breathes in unison. Still open: the near-ground material, water kinds
-(junctions, lips, shorelines, the rider in the water), and lakes in the
-browser.
+no longer breathes in unison.
+
+The near-ground material has had its loudest fault removed: relief below the
+lattice is now one band-limited world-space field with analytic gradients,
+rather than a micro-normal read out of the screen derivatives of the albedo.
+That signal had no wavelength, so near ground resolved to a carpet of
+one-pixel static at every distance and crawled with the camera. What remains
+open there is character rather than legibility — the splat sources still
+carry all the close-range identity, and the metre-scale geometry of
+[RFC-008](../plan/rfc-008-geology-conditioned-tessellation.md) is untouched.
+Also still open: water kinds (junctions, lips, shorelines, the rider in the
+water), and lakes in the browser.
 
 The corrugation investigation is written up in
 [hillslopes and channels](hillslopes-and-channels.md), negative results
-included.
+included; where the water's GPU cost actually sits, and two optimizations
+that measured as nothing, are recorded in
+[renderer design](renderer-design.md).
 
 ## Completed consolidation
 
