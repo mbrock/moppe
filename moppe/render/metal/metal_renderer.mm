@@ -370,7 +370,9 @@ namespace moppe {
 
       struct MetalWaterResources {
         id<MTLBuffer> ocean_verts = nil;
+        id<MTLBuffer> ocean_indices = nil;
         uint32_t ocean_vcount = 0;
+        uint32_t ocean_icount = 0;
         float ocean_level = 0;
         id<MTLTexture> water_levels = nil;
         bool have_water_levels = false;
@@ -1599,37 +1601,50 @@ namespace moppe {
     void MetalRenderer::set_ocean (const OceanSetup& setup,
                                    const render::TexturePixels& water_levels) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::set_ocean");
-      // Regular triangle water grid. The vertex shader samples the
-      // optional standing-water surface and does the waving. Built as plain
-      // triangles to keep sea and lakes in one draw.
+      // Regular triangle water grid, indexed. One draw still covers sea
+      // and lakes together; the indices are what keep a corner shared by
+      // six triangles from being shaded six times. This vertex stage
+      // reads the standing-water sheet and rides the swell, so its cost
+      // is most of what the grid spends, and the plain-triangle form
+      // spent it 540,000 times over 90,601 distinct corners.
       const int cells = setup.cells;
+      const int side = cells + 1;
       const float step = 2 * setup.half_extent / cells;
       const float x0 = setup.center[0] - setup.half_extent;
       const float z0 = setup.center[2] - setup.half_extent;
 
       std::vector<float> verts;
-      verts.reserve ((size_t)cells * cells * 6 * 3);
+      verts.reserve ((size_t)side * side * 3);
+      for (int j = 0; j < side; ++j)
+        for (int i = 0; i < side; ++i) {
+          verts.push_back (x0 + i * step);
+          verts.push_back (setup.level);
+          verts.push_back (z0 + j * step);
+        }
+
+      // Same two triangles per cell, and the same winding, as the
+      // unrolled form emitted.
+      std::vector<uint32_t> indices;
+      indices.reserve ((size_t)cells * cells * 6);
       for (int j = 0; j < cells; ++j)
         for (int i = 0; i < cells; ++i) {
-          const float xa = x0 + i * step, xb = xa + step;
-          const float za = z0 + j * step, zb = za + step;
-          const float y = setup.level;
-          const float quad[6][3] = {
-            { xa, y, za }, { xa, y, zb }, { xb, y, za },
-            { xb, y, za }, { xa, y, zb }, { xb, y, zb },
-          };
-          for (int k = 0; k < 6; ++k) {
-            verts.push_back (quad[k][0]);
-            verts.push_back (quad[k][1]);
-            verts.push_back (quad[k][2]);
-          }
+          const uint32_t v = (uint32_t)(j * side + i);
+          const uint32_t quad[6] = { v,     v + side, v + 1,
+                                     v + 1, v + side, v + side + 1 };
+          for (const uint32_t index : quad)
+            indices.push_back (index);
         }
 
       m_water_resources.ocean_level = setup.level;
       m_water_resources.ocean_vcount = (uint32_t)(verts.size () / 3);
+      m_water_resources.ocean_icount = (uint32_t)indices.size ();
       m_water_resources.ocean_verts =
         [m_device newBufferWithBytes:verts.data ()
                               length:verts.size () * sizeof (float)
+                             options:MTLResourceStorageModeShared];
+      m_water_resources.ocean_indices =
+        [m_device newBufferWithBytes:indices.data ()
+                              length:indices.size () * sizeof (uint32_t)
                              options:MTLResourceStorageModeShared];
 
       // Physical elevation and wave amplitude write their final RG32F bytes
@@ -2362,9 +2377,11 @@ namespace moppe {
                    atIndex:MOPPE_BUF_VERTICES];
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc drawPrimitives:MTLPrimitiveTypeTriangle
-              vertexStart:0
-              vertexCount:water_resources.ocean_vcount];
+      [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                      indexCount:water_resources.ocean_icount
+                       indexType:MTLIndexTypeUInt32
+                     indexBuffer:water_resources.ocean_indices
+               indexBufferOffset:0];
 
       if (lattice) {
         if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {

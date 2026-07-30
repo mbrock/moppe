@@ -323,9 +323,36 @@ wet sheen; close shallow beds receive procedural pebble-scale bump detail.
 Grass responds more quietly to moisture, while cliff material uses triplanar
 projection, a slate/taupe palette, and world-height strata to avoid stretched
 red faces. Screen-space world-position derivatives suppress aggregate,
-micro-normal, pebble, and snow-specular frequencies as they become subpixel,
+trail-gravel, and snow-specular frequencies as they become subpixel,
 including nearby ground viewed almost parallel to its surface. These are
 shading effects only and do not alter collision geometry.
+
+Relief below the lattice is one band-limited field, `terrain_relief_gradient`,
+shared by the material micro-normal, the pebble bed, and the drainage rills.
+It is a four-octave sum of `moppe_value_noise_d` — value noise with an
+analytic gradient under a quintic fade, so the slope stays continuous across
+lattice cells — evaluated at world-space wavelengths and normalized to unit
+RMS slope, which makes each caller's strength a micro-gradient it can state:
+0.15 is roughly an eight-degree tilt whatever wavelength carries it. Amplitude
+falls with wavelength at the same rate, so every octave contributes the same
+slope and the sum is an average rather than a runaway. Each octave retires
+once its wavelength approaches the width of a screen pixel, and the pixel
+footprint is measured in all three axes rather than across the ground plane,
+because a cliff's relief is read on a vertical plane. `terrain_relief_volume`
+composes three plane evaluations under the splat triplanar's squared-normal
+weights and skips the ones that carry no weight, so ordinary ground pays for
+one; `terrain_perturb_normal` applies only the tangential part of the
+gradient, so a steep face rolls along itself instead of through itself.
+Character comes from the base wavelength — broken stone and fresh cuts
+fracture coarser than turf; alluvium answers by losing amplitude rather than
+gaining frequency.
+
+This replaced a micro-normal reconstructed from the screen derivatives of the
+composed albedo. That signal has no wavelength: its detail sat on the pixel
+grid at every distance, so near ground could only ever resolve to a carpet of
+one-pixel static, and it crawled whenever the camera moved. Retiring it also
+removed the `dfdx`/`dfdy` tangent-frame reconstruction from the fragment
+stage, and measured slightly cheaper than what it replaced.
 
 Terrain generation writes directly into the authoritative typed elevation
 column before texture upload. The renderer receives physical metre-valued
@@ -336,21 +363,32 @@ terrain expression graph or own an interactive generation preview.
 
 - sky.frag (228 lines, fully procedural) → MSL 1:1; uniforms time, sunHeight,
   cloudiness, sunDir, fogColor.
-- ocean.vert/frag → MSL on a regular grid mesh; the vertex stage samples the
+- ocean.vert/frag → MSL on a regular **indexed** grid mesh; the vertex stage
+  samples the
   standing-water surface (RG32F: level plus per-body wave amplitude) for
   ocean and lake elevation, and the fragment stage reads a second RG16F sheet
   of mouth-current arrows. Waves fade at shore,
   scale with the body's classification so tarns do not heave like the sea,
   and drive the shoreline lap from the same classification: at maximum retreat
   the sea moves about 6 cm, lakes about 6 mm, and ponds about 2 mm. Dry
-  fragments are discarded. On Metal3 hardware, standing water
+  fragments are discarded. The grid is indexed because this vertex stage
+  reads the water sheet and rides the swell: as plain triangles it spent that
+  work 540,000 times over 90,601 distinct corners. It also skips the ten-tap
+  shore filter past 900 m, where `ocean_surface_point` has already faded the
+  swell to nothing and the fragment ripples take over — the same number out,
+  for a grid that spans the whole world and has all but a couple of percent
+  of its corners out there. On Metal3 hardware, standing water
   within 700 m additionally renders through a mesh pipeline on the terrain
   sample lattice (object stage walks 15×15-cell tiles, probes every tile
   corner for wetness — exact, since water-minus-ground is bilinear per
   cell, so a river a cell and a half wide cannot slip between probes —
-  and culls; mesh stage emits 16×16 lattices sharing ocean_fragment); the
+  and culls; mesh stage emits a 16×16 lattice sharing ocean_fragment); the
   coarse grid keeps the horizon, both passes discarding on the same radius
-  so they partition exactly.
+  so they partition exactly. The mesh stage emits only the cells it holds
+  water for, by the tile probe's own argument one level down: a cell whose
+  four corners are all dry is dry throughout. A river passes *through* tiles
+  rather than filling them, so a surviving tile was handing the rasterizer
+  450 triangles of mostly dry ground for the fragment stage to discard.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was
@@ -386,6 +424,41 @@ waiting, drawable acquisition, and Metal encoding/submission, making a missed
 frame deadline distinguishable from compositor or drawable back-pressure.
 `MOPPE_PROFILE_GPU_SIMPLE=1` reports only command-buffer GPU time without
 injecting the more intrusive per-encoder counter samples.
+
+### Where the water's cost turned out to be
+
+The encoder spans are weak evidence about *which* work is expensive: on an
+M2 Pro they arrive as stage boundaries, and a cheap quarter-resolution bloom
+chain reports a longer span than the whole scene pass because the span
+includes waiting. The `--graphics-benchmark` cube is the instrument that
+answers the question, because it toggles one feature against a replayed tape.
+Read it as paired runs of the same schedule and compare per configuration;
+its ocean-on-minus-ocean-off contrast reproduces to a few tenths of a
+millisecond, while its absolute frame time does not.
+
+That contrast is also two regimes, reproducibly: with the small-effects block
+off the ocean costs about 12 ms, and with it on about 2 ms. Something else
+saturates first in the second regime and the water hides behind it, so a
+single averaged marginal cost describes neither.
+
+Successive stubbing found the cost was nowhere it was assumed to be. Gutting
+the entire ocean *fragment* shader — waves, ripples, shadow lookup, foam,
+reflection, blending — recovered 2.2 of 11.9 ms. Stubbing the ten-tap shore
+filter recovered 1.6. Rewriting the object stage's wetness probe to hoist its
+integer modulo and leave each row's reads mutually independent recovered
+nothing measurable. Disabling the near-water mesh pipeline outright recovered
+8.6, and within it the expense was the triangles themselves: tiles a river
+merely passes through, emitting full lattices for the fragment stage to
+discard.
+
+Two negative results are worth keeping, so they are not rediscovered. MSL
+specifies that `discard_fragment()` marks the fragment without ending the
+invocation, which suggests that following every rejection with a `return`
+should save the rest of a long shader. Measured on this GPU across the whole
+cube, it saves nothing — the implementation already stops a quad once all its
+lanes are discarded — so the shaders keep the plainer form. And the object
+stage's probe loop is not worth micro-optimizing at all: it runs 256 serial
+iterations per dry tile and still does not show up.
 
 The supported `--graphics-quality balanced` preset renders the 3D scene at
 two-thirds resolution while retaining every high-quality graphics feature.
