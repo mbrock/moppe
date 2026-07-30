@@ -1738,8 +1738,8 @@ namespace moppe {
       m_terrain_resources.have_moisture =
         upload_pixels (m_terrain_resources.moisture,
                        moisture,
-                       render::PixelFormat::r32f,
-                       MTLPixelFormatR32Float);
+                       render::PixelFormat::r16f,
+                       MTLPixelFormatR16Float);
     }
 
     void
@@ -1748,8 +1748,8 @@ namespace moppe {
       m_terrain_resources.have_forest =
         upload_pixels (m_terrain_resources.forest,
                        cover,
-                       render::PixelFormat::r32f,
-                       MTLPixelFormatR32Float);
+                       render::PixelFormat::r16f,
+                       MTLPixelFormatR16Float);
     }
 
     void MetalRenderer::set_terrain_snow_support (

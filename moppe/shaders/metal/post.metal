@@ -66,8 +66,10 @@ fragment float4 probe_fragment (QuadVaryings in [[stage_in]],
   return float4 (c, 1.0);
 }
 
-// Separable 9-tap gaussian; params.zw carries the texel step for
-// this direction.
+// Separable 9-tap gaussian represented by five linear samples. Each offset
+// lands between the two source texels whose weights it combines, so hardware
+// interpolation evaluates the same kernel with four fewer texture fetches.
+// params.zw carries the texel step for this direction.
 fragment float4 bloom_blur_fragment (QuadVaryings in [[stage_in]],
                                      constant MoppeQuadUniforms& q
                                      [[buffer (MOPPE_BUF_FRAME)]],
@@ -75,11 +77,14 @@ fragment float4 bloom_blur_fragment (QuadVaryings in [[stage_in]],
                                      [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float2 step = q.params.zw;
-  const float w[5] = { 0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216 };
-  float3 c = src.sample (smp, in.uv).rgb * w[0];
-  for (int i = 1; i < 5; ++i) {
-    c += src.sample (smp, in.uv + step * (float)i).rgb * w[i];
-    c += src.sample (smp, in.uv - step * (float)i).rgb * w[i];
+  constexpr float center_weight = 0.227027;
+  constexpr float2 pair_weights (0.3162162, 0.0702700);
+  constexpr float2 pair_offsets (1.3846154, 3.2307692);
+  float3 c = src.sample (smp, in.uv).rgb * center_weight;
+  for (int pair = 0; pair < 2; ++pair) {
+    const float2 offset = step * pair_offsets[pair];
+    c += src.sample (smp, in.uv + offset).rgb * pair_weights[pair];
+    c += src.sample (smp, in.uv - offset).rgb * pair_weights[pair];
   }
   return float4 (c, 1.0);
 }
@@ -108,14 +113,19 @@ fragment float4 present_fragment (QuadVaryings in [[stage_in]],
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
   const float time = q.params.y;
 
-  // Chromatic fringe, quadratic toward the corners so the center
-  // stays razor sharp.
+  // Real lateral chromatic aberration belongs to the outer lens. Keep the
+  // central image on one sample, then split red and blue only beyond the
+  // image circle's outer third. Besides removing false color from the
+  // subject and HUD-adjacent scenery, most pixels avoid two scene fetches.
   const float2 centered_uv = in.uv - 0.5;
   const float rr = dot (centered_uv, centered_uv);
-  const float2 fringe = centered_uv * rr * 0.010;
-  float3 color = float3 (scene.sample (smp, in.uv + fringe).r,
-                         scene.sample (smp, in.uv).g,
-                         scene.sample (smp, in.uv - fringe).b);
+  float3 color = scene.sample (smp, in.uv).rgb;
+  if (rr > 0.18) {
+    const float fringe_strength = smoothstep (0.18, 0.50, rr);
+    const float2 fringe = centered_uv * rr * (0.006 * fringe_strength);
+    color.r = scene.sample (smp, in.uv + fringe).r;
+    color.b = scene.sample (smp, in.uv - fringe).b;
+  }
 
   // Eye adaptation, then bloom (the bright pass already saw the
   // exposed scene, so it adds in matching units).

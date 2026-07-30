@@ -13,8 +13,12 @@ namespace moppe::game {
     using render::planar_texture_pixels;
     using render::texture_pixels;
 
+    // Both fields are bounded proportions. Half precision preserves far more
+    // resolution than their presentation thresholds can reveal, halves their
+    // bandwidth, and lets Metal filter them in hardware on every supported
+    // Apple GPU.
     renderer.set_terrain_moisture (
-      texture_pixels<map::surface_moisture> (readings, PixelFormat::r32f));
+      texture_pixels<map::surface_moisture> (readings, PixelFormat::r16f));
     renderer.set_terrain_geology (
       texture_pixels<map::erosion_exposure, map::deposition_cover> (
         readings, PixelFormat::rg16f));
@@ -34,7 +38,7 @@ namespace moppe::game {
     // An empty source is how a caller says "leave this overlay off".
     renderer.set_terrain_forest (
       include_forest
-        ? texture_pixels<map::forest_cover> (readings, PixelFormat::r32f)
+        ? texture_pixels<map::forest_cover> (readings, PixelFormat::r16f)
         : render::TexturePixels ());
   }
 }
