@@ -56,7 +56,7 @@ from 36 m to 94 m, close to the square-root scaling the geomorphology predicts
 — but it did not help. It moved the comb; it did not remove it, and it cost
 the fine drainage detail.
 
-## The fix
+## The change, and why it is off
 
 Real landscapes have a channel head: above some catchment, running water cuts a
 channel, and below it the ground is a hillslope shaped by creep. Moppe had no
@@ -71,26 +71,60 @@ catchment around that area — a channel head is not a sharp place on the ground
 so it is not a sharp threshold here. Below it, a cell receives uplift and
 diffusion and nothing else.
 
-The diffusivity did not need to change. The threshold alone does the work:
+The diffusivity did not need to change. The threshold alone moves every number
+that was meant to move:
 
 | | mean slope | spectral peak | excess |
 | --- | --- | --- | --- |
-| before | 36.0° | 36 m | +0.73 dex |
-| after | 28.4° | 37 m | +0.45 dex |
+| threshold off | 36.0° | 36 m | +0.73 dex |
+| threshold at 1200 m² | 28.4° | 37 m | +0.45 dex |
 
-The spectral peak barely moved, which is the point: the wavelength was never
-wrong. What was wrong was that the whole world sat at that one wavelength.
-With the hillslope regime restored, the same spacing survives as the drainage
-texture of real valleys, and the excess above the power law falls by half.
-A hillshade now shows trunk valleys with tributaries feeding them, and smooth
-ground in between.
+The spectral peak barely moves, which was meant to be the point: the wavelength
+was never wrong, only its universality. The hillshade gains trunk valleys with
+tributaries feeding them and smooth ground in between.
+
+**And the world it produces is worse.** Ridden, it is blobby and dull. The fine
+dendritic rilling the threshold suppresses turns out to be most of what makes
+this terrain beautiful, and every measurement in this document said the
+opposite. So `channel_initiation_area` ships at 1 m², which is off — the
+mechanism and the finding stay, the default does not.
+
+## What the instrument was wrong about
+
+The acceptance test here was a power spectrum over a bare hillshade, and it
+was answering a question nobody asked. It measured how far the elevation field
+departs from a power law at one wavelength, which is a real property, and it is
+not the property that decides whether a landscape is worth riding through.
+
+Lit, textured, and seen from a motorcycle, the "comb" is erosional grain. The
+hillshade renders it as a zebra pattern because a hillshade has no material, no
+sun angle worth the name, and no distance — it is a diagnostic image, and it
+made a virtue look like a pathology. A fixed-camera comparison in the actual
+renderer would have caught this immediately, and none was made: the two views
+compared before and after had different cameras, because the terrain they were
+framing had moved.
+
+`ideas/orientation.md` already says whose call this is — the human is "the
+wholeness evaluator ... a test that cannot be formalized but can be run by
+riding the motorcycle." A statistic can narrow the field. It cannot return the
+verdict, and when it disagrees with the ride, the ride is right.
+
+## What survives
+
+- The corrugation is physical and has a physical explanation, and the
+  three eliminations above are all still true.
+- The mean slope of the world genuinely is 36°, which genuinely is steep.
+  Whether that is a problem is now an open question rather than an assumption.
+- `channel_initiation_area` exists and works. If hillslopes are ever wanted --
+  for a gentler world profile, say, or somewhere the rilling reads badly at
+  close range -- it is one number, and the table above says what it costs.
 
 ## What is still open
 
-- Anisotropy rose from 1.53 to 1.76 and moved to 135°. The fine rills were
-  masking a directional bias in the routing, and with them gone it is the
-  next thing visible. This is RFC-010's territory after all, just not as the
-  cause.
+- With the threshold off, anisotropy stays at 1.53. It rose to 1.76 and moved
+  to 135° only when the rills were removed, which says they were masking a
+  directional bias in the routing rather than causing one. RFC-010's territory
+  if the smoothing is ever wanted.
 - The near-field ground texture aliases badly at close range — a separate
   material problem, unrelated to the shape of the land.
 - Erodibility remains a real thing that real landscapes have. It would need a

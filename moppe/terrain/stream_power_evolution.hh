@@ -21,12 +21,18 @@ namespace moppe::terrain {
     square_meters_t reference_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
     float area_exponent = 0.4f;
-    // Where the channel network begins. Above this catchment, running water
-    // cuts; below it, the ground is a hillslope and belongs to creep. With
-    // no threshold the stream-power law applies to a cell that drains only
-    // itself, so every cell becomes its own rill and the landscape combs.
+    // Where the channel network begins. Above this catchment running water
+    // cuts; below it the ground is a hillslope and belongs to creep.
+    //
+    // Off by default, and the reason is a judgement rather than a measurement.
+    // Raising it does what the geomorphology says it should: hillslopes appear
+    // between the channels, the mean slope of the world falls from 36 to 28
+    // degrees, and the spectral spike at the rill wavelength halves. The world
+    // that comes out is also blobby and dull. The fine dendritic rilling this
+    // suppresses is most of what makes the terrain beautiful to ride through,
+    // and no statistic said so -- see docs/hillslopes-and-channels.md.
     square_meters_t channel_initiation_area =
-      1200.0f * mp_units::si::metre * mp_units::si::metre;
+      1.0f * mp_units::si::metre * mp_units::si::metre;
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
