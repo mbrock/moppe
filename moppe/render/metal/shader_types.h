@@ -61,7 +61,7 @@ struct MoppeFrameUniforms {
   MoppeFloat4 sun_specular; // rgb
   MoppeFloat4 ambient;      // rgb
   MoppeFloat4 fog_color;    // rgb; w = fog_scale
-  MoppeFloat4 misc;         // x = time
+  MoppeFloat4 misc;         // x=time, y=cloudiness
   MoppeFloat4 shadow;       // x=strength, y=shadow texel
 };
 
@@ -85,7 +85,7 @@ struct MoppeTerrainUniforms {
     params0; // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale
   MoppeFloat4 params1; // x=height_scale_norm, y=sea_level, z=shadow_strength,
                        // w=shadow_texel
-  MoppeFloat4 params2; // reserved
+  MoppeFloat4 params2; // x=time, y=cloudiness
   MoppeFloat4 params3; // reserved
   MoppeFloat4 params4; // x=overlay ramp + 1, y=min, z=max, w=opacity
   MoppeFloat4 params5; // x=topology opacity, y=water, z=moisture,
@@ -130,7 +130,7 @@ struct MoppeOceanUniforms {
   MoppeFloat4 sun_specular;
   MoppeFloat4 ambient;
   MoppeFloat4 fog_color; // rgb; w = fog_scale
-  MoppeFloat4 params;    // x=time, y=sea level,
+  MoppeFloat4 params;    // x=time, y=sea level, z=cloudiness,
                          // w=standing-water raster enabled
   MoppeFloat4 shore;     // x=1/step_x, y=1/step_z,
                          // z=height_scale, w=grid width (0=off)

@@ -314,6 +314,7 @@ namespace moppe::game {
         }
       }
     }
-    return visibility * (1.0f - 0.65f * view.lighting.cloudiness);
+    return visibility *
+           (1.0f - 0.65f * view.lighting.cloudiness.numerical_value_in (one));
   }
 }

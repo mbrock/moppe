@@ -12,6 +12,8 @@
 #include <random>
 
 namespace moppe::game {
+  using cloud_cover_t = mp_units::quantity<cloud_cover[mp_units::one], float>;
+
   enum Mode { M_BIKE, M_FOOT, M_CAR, M_GLIDER };
   enum CamMode { CAM_CHASE, CAM_FRONT, CAM_HELMET };
 
@@ -22,7 +24,7 @@ namespace moppe::game {
     // double avoids losing tick precision during long-running sessions.
     double m_total_time = 0.0;
     float m_frame_time = 1.0f / 60.0f;
-    float m_cloudiness = 0.5f;
+    cloud_cover_t m_cloudiness = 0.5f * cloud_cover[mp_units::one];
     float m_flare = 0.0f;
     DisplayColor m_fog;
     float m_shake = 0.0f;

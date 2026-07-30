@@ -330,6 +330,29 @@ trail-gravel, and snow-specular frequencies as they become subpixel,
 including nearby ground viewed almost parallel to its surface. These are
 shading effects only and do not alter collision geometry.
 
+Weather is one lighting system rather than a sky decoration. The game's
+bounded cloudiness reading drives both cloud coverage and a broad layer
+projected from 420 metres along the sun vector. Its 1.6 by 0.8 metres/second
+drift modulates direct sun and specular response consistently on terrain,
+world geometry, and water; ambient sky light remains available beneath the
+layer. The field uses two warped triangle waves instead of texture traffic or
+trigonometric hash noise. This preserved the slow, soft result while reducing
+the measured 32-configuration median GPU cost from about 10% in the first
+prototype to measurement noise. An order-balanced adjacent A/B against the
+untouched checkpoint measured the final renderer 0.13 ms (0.97%) faster across
+configuration medians and 0.05 ms faster with every feature enabled; those
+small differences are evidence of parity, not a claimed speedup.
+
+Forest cover changes lighting as well as albedo. Explicit nearby crowns still
+provide silhouettes, but their existing filtered canopy grain now attenuates
+direct and hemisphere light on the forest floor. The signal converges toward
+an aggregate response with distance rather than adding subpixel tree or grass
+geometry. This is the small Moppe-specific version of Bruneton and Neyret's
+near-tree plus distant shader-map decomposition: ground radiance carries
+canopy shade as geometry fades (`#5BNBQQ`, `#X9PHPN` in the Sheaf literature
+library). Clearings, trails, snow, and submerged ground explicitly remove the
+canopy footprint.
+
 The bounded material readings use R16F/RG16F textures and one hardware-linear
 sample in the fragment shader. The half-texel coordinate convention makes an
 integral terrain site land exactly on its stored reading, while repeat

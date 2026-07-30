@@ -526,14 +526,17 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
 
   const float3 v = normalize (-to_frag);
   const float3 reflection_dir = reflect (-v, n);
-  const float sun_visibility = moppe_sun_visibility (in.world_pos,
-                                                     n,
-                                                     u.sun_dir.xyz,
-                                                     in.fog,
-                                                     u.light_matrix,
-                                                     u.shadow.x,
-                                                     u.shadow.y,
-                                                     shadow_map);
+  const float sun_visibility =
+    moppe_sun_visibility (in.world_pos,
+                          n,
+                          u.sun_dir.xyz,
+                          in.fog,
+                          u.light_matrix,
+                          u.shadow.x,
+                          u.shadow.y,
+                          shadow_map) *
+    moppe_cloud_transmission (
+      in.world_pos, u.sun_dir.xyz, u.params.x, u.params.z);
 
   // Schlick fresnel with a proper F0 floor.
   const float fresnel = 0.02 + 0.98 * pow (1.0 - max (dot (n, v), 0.0), 5.0);

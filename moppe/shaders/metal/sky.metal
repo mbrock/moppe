@@ -139,7 +139,7 @@ static float sky_cloud_shape (float3 p, float coverage, float time) {
   float base = sky_fbm (p * 0.3);
   float detail = sky_fbm (p * 1.2 + float3 (time * 0.05, 0.0, time * 0.03));
 
-  float cloud_coverage = 0.4 + coverage * 0.4;
+  float cloud_coverage = mix (0.72, 0.40, saturate (coverage));
 
   // A tighter edge gives defined puffs instead of amorphous smears.
   return smoothstep (

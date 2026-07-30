@@ -77,6 +77,7 @@ struct TerrainUniforms {
   terrain_scale: vec4<f32>,
   material_params: vec4<f32>,
   shadow_params: vec4<f32>,
+  weather_params: vec4<f32>,
 };
 
 struct ChunkUniforms {
@@ -303,6 +304,35 @@ fn value_noise(position: vec2<f32>) -> f32 {
   return mix(mix(a, b, fraction.x), mix(c, d, fraction.x), fraction.y);
 }
 
+fn cloud_transmission(world_position: vec3<f32>,
+                      sun_direction: vec3<f32>) -> f32 {
+  let cover = clamp(terrain.weather_params.y, 0.0, 1.0);
+  if (cover < 0.01) {
+    return 1.0;
+  }
+
+  let sun = normalize(sun_direction);
+  let cloud_layer_height_metres = 420.0;
+  let cloud_drift_metres_per_second = vec2<f32>(1.6, 0.8);
+  let inverse_cloud_scale_per_metre = 0.0016;
+  let projection = cloud_layer_height_metres / max(sun.y, 0.18);
+  let layer_position =
+    world_position.xz + sun.xz * projection -
+    terrain.weather_params.x * cloud_drift_metres_per_second;
+  let p = layer_position * inverse_cloud_scale_per_metre;
+  let wave_a = 1.0 -
+    abs(2.0 * fract(dot(p, vec2<f32>(0.91, 0.57))) - 1.0);
+  let wave_b = 1.0 -
+    abs(2.0 *
+        fract(dot(p, vec2<f32>(-0.43, 1.31)) + 0.27 * wave_a) -
+        1.0);
+  let field = 0.62 * wave_a + 0.38 * wave_b;
+  let threshold = mix(0.74, 0.38, cover);
+  let density = smoothstep(threshold, threshold + 0.16, field);
+  let daylight = smoothstep(-0.08, 0.18, sun.y);
+  return 1.0 - density * daylight * mix(0.40, 0.68, cover);
+}
+
 fn authored_linear(color: vec3<f32>) -> vec3<f32> {
   return pow(max(color, vec3<f32>(0.0)), vec3<f32>(2.2));
 }
@@ -448,7 +478,8 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
 
   let light_direction = normalize(terrain.sun_direction.xyz);
   let shadow = terrain_shadow(input.shadow_coordinate, input.fog,
-                              normal, light_direction);
+                              normal, light_direction) *
+               cloud_transmission(input.world_position, light_direction);
   let direct = clamp((dot(light_direction, normal) + 0.08) / 1.08,
                      0.0, 1.0);
   let hemisphere_mix = 0.5 + 0.5 * normal.y;
@@ -644,7 +675,7 @@ fn cloud_shape(position: vec3<f32>, coverage: f32, time: f32) -> f32 {
   let base = sky_fbm(position * 0.3);
   let detail = sky_fbm(position * 1.2 +
                        vec3<f32>(time * 0.05, 0.0, time * 0.03));
-  let threshold = 0.4 + coverage * 0.4;
+  let threshold = mix(0.72, 0.40, clamp(coverage, 0.0, 1.0));
   return smoothstep(threshold, threshold + 0.13, base + detail * 0.2);
 }
 
@@ -744,6 +775,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       std::array<float, 4> terrain_scale;
       std::array<float, 4> material_params;
       std::array<float, 4> shadow_params;
+      std::array<float, 4> weather_params;
     };
 
     struct alignas (16) TerrainChunkUniforms {
@@ -2130,6 +2162,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                          1.0f / m_state->terrain_shadow_size,
                          0.0f,
                          0.0f },
+      .weather_params = { frame.time, frame.cloud_cover, 0.0f, 0.0f },
     };
     m_state->queue.WriteBuffer (
       m_state->terrain_frame_buffer, 0, &uniforms, sizeof (uniforms));
