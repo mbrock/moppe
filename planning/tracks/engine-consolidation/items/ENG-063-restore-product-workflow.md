@@ -3,7 +3,7 @@ id = "ENG-063"
 title = "Restore Moppe as the ordinary repository workflow"
 rfc = "RFC-0002"
 track = "engine-consolidation"
-status = "ready"
+status = "done"
 depends_on = ["ENG-062"]
 order = 40
 areas = ["build", "workshops"]
@@ -26,3 +26,12 @@ Moppe.
 - `make` selects the game.
 - `make lavoir` and `make etalon-test` remain healthy.
 - The normal game and test build remain source-group unity builds.
+
+## Evidence
+
+The Makefile's default target is again `moppe`; a plain `make` configures the
+optimized desktop build and produces `moppe.app`. Lavoir no longer retains its
+constructor-only lattice spacing, so both the workshop and the shared test
+translation unit build without that warning. `make lavoir`,
+`make etalon-test`, and `make test` all pass, while the CMake game and test
+targets retain their source-group unity builds.
