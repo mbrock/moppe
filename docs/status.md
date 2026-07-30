@@ -5,10 +5,11 @@ product. Its active engine grows one periodic landscape from a seed, analyzes
 water, ecology, and trails over that landscape, starts a mutable riding
 session, and presents each frame through Metal or WebGPU.
 
-The game is working while its world model is becoming more explicit. Current
-work is consolidation, not replacement: finish the migrations opened by the
-terrain harmonization, keep the workshops as experiments, and make lake
-identity the first concrete relational world model.
+The game is working and its world model is explicit. The consolidation that
+made it so is complete; current work is the
+[living-world track](../planning/tracks/living-world/README.md), which spends
+the fields the generator already computes on what the ground, the plants, and
+the water are allowed to say about themselves.
 
 ## What exists
 
@@ -25,6 +26,17 @@ identity the first concrete relational world model.
   tour, forests, rivers, lakes, atmosphere, and post-processing.
 - Deterministic captures, graphics replay benchmarks, source analysis, typed
   Arrow bundle persistence, and 200 focused tests.
+
+## Current work
+
+[RFC-0003](../planning/rfcs/0003-a-world-that-reads-as-alive.md) opens the
+campaign for a world that reads as alive. Its finding is that the engine
+already computes more than it shows: the terrain material bands compared a
+metre elevation against normalized thresholds and turned every world into a
+snowfield, the merge tree and the waterline contours are built and dropped,
+moisture has no slope term, and WebGPU renders no lakes at all. The track
+therefore spends the existing readout before adding simulation — ecology from
+hydrology, then motion, then kinds of water.
 
 ## Completed consolidation
 
