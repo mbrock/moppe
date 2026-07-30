@@ -20,10 +20,15 @@ namespace moppe::test {
   moisture_map (const terrain::TerrainDomain& domain,
                 std::span<const float> samples) {
     std::vector<terrain::SurfaceMoisture> values;
+    std::vector<terrain::SoilWetness> wetness;
     values.reserve (samples.size ());
-    for (float sample : samples)
+    wetness.reserve (samples.size ());
+    for (float sample : samples) {
       values.push_back (sample * terrain::surface_moisture[one]);
-    return terrain::MoistureMap (domain, std::move (values));
+      wetness.push_back (sample * terrain::soil_wetness[one]);
+    }
+    return terrain::MoistureMap (
+      domain, std::move (values), std::move (wetness));
   }
 
   inline terrain::MoistureMap
@@ -31,7 +36,9 @@ namespace moppe::test {
     return terrain::MoistureMap (
       domain,
       std::vector<terrain::SurfaceMoisture> (
-        domain.size (), value * terrain::surface_moisture[one]));
+        domain.size (), value * terrain::surface_moisture[one]),
+      std::vector<terrain::SoilWetness> (domain.size (),
+                                         value * terrain::soil_wetness[one]));
   }
 
   inline terrain::WaterlineProximity
