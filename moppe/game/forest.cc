@@ -187,26 +187,42 @@ namespace moppe::game {
                                const Vec3& forward,
                                float height,
                                float radius) {
-      constexpr int sides = 7;
-      const Vec3 base = site.position + up * (0.24f * height);
-      const Vec3 top = site.position + up * (1.06f * height);
+      constexpr int tiers = 3;
+      constexpr int sides = 4;
       const float hue = hash_lane (site.seed, 23);
       draw.color (0.045f + 0.025f * hue,
                   0.15f + 0.085f * site.cover + 0.030f * hue,
                   0.035f + 0.025f * hue);
       draw.begin (render::Prim::Triangles);
-      for (int side = 0; side < sides; ++side) {
-        const float a0 = 2.0f * std::numbers::pi_v<float> * side / sides;
-        const float a1 = 2.0f * std::numbers::pi_v<float> * (side + 1) / sides;
-        const Vec3 p0 =
-          base + (across * std::cos (a0) + forward * std::sin (a0)) * radius;
-        const Vec3 p1 =
-          base + (across * std::cos (a1) + forward * std::sin (a1)) * radius;
-        // A conifer's leader stands on the stem; its skirt hangs off it.
-        constexpr Sway leader { 0.90f, 0.14f };
-        constexpr Sway skirt { 0.30f, 0.85f };
-        append_triangle (
-          draw, top, p0, p1, (p0 + p1) * 0.5f - base, leader, skirt, skirt);
+      for (int tier = 0; tier < tiers; ++tier) {
+        // Overlapping whorls expose the trunk between skirts and break the
+        // single rigid pyramid into the layered silhouette of a conifer. Each
+        // tier turns independently, so their four cheap faces do not line up
+        // into one continuous crease.
+        const float tier_f = static_cast<float> (tier);
+        const float base_height = (0.22f + 0.22f * tier_f) * height;
+        const float tip_height = (0.70f + 0.18f * tier_f) * height;
+        const float tier_radius = radius * (1.0f - 0.22f * tier_f);
+        const float turn =
+          2.0f * std::numbers::pi_v<float> * hash_lane (site.seed, 61 + tier);
+        const Vec3 base = site.position + up * base_height;
+        const Vec3 tip = site.position + up * tip_height;
+        for (int side = 0; side < sides; ++side) {
+          const float a0 =
+            turn + 2.0f * std::numbers::pi_v<float> * side / sides;
+          const float a1 =
+            turn + 2.0f * std::numbers::pi_v<float> * (side + 1) / sides;
+          const Vec3 p0 =
+            base +
+            (across * std::cos (a0) + forward * std::sin (a0)) * tier_radius;
+          const Vec3 p1 =
+            base +
+            (across * std::cos (a1) + forward * std::sin (a1)) * tier_radius;
+          const Sway leader { 0.64f + 0.13f * tier_f, 0.14f };
+          const Sway skirt { 0.28f + 0.16f * tier_f, 0.85f };
+          append_triangle (
+            draw, tip, p0, p1, (p0 + p1) * 0.5f - base, leader, skirt, skirt);
+        }
       }
       draw.end ();
     }

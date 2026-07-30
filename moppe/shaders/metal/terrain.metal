@@ -98,27 +98,23 @@ terrain_height_bilinear (float2 grid, texture2d<float, access::read> heights) {
   return mix (h0, h1, f.y);
 }
 
-static inline float3
-terrain_read_normal (uint2 p, texture2d<float, access::read> normals) {
+static inline float3 terrain_read_normal (uint2 p, texture2d<float> normals) {
   const float2 nxz = normals.read (p).rg;
   const float ny = sqrt (max (1.0 - dot (nxz, nxz), 0.0));
   return float3 (nxz.x, ny, nxz.y);
 }
 
-static inline float3
-terrain_normal_bilinear (float2 grid, texture2d<float, access::read> normals) {
+static inline float3 terrain_normal_filtered (float2 grid,
+                                              texture2d<float> normals) {
   const uint2 size (normals.get_width (), normals.get_height ());
-  grid -= floor (grid / float2 (size)) * float2 (size);
-  const uint2 p00 = uint2 (floor (grid)) % size;
-  const uint2 p11 = (p00 + uint2 (1)) % size;
-  const float2 f = fract (grid);
-  const float3 n0 = mix (terrain_read_normal (p00, normals),
-                         terrain_read_normal (uint2 (p11.x, p00.y), normals),
-                         f.x);
-  const float3 n1 = mix (terrain_read_normal (uint2 (p00.x, p11.y), normals),
-                         terrain_read_normal (p11, normals),
-                         f.x);
-  return mix (n0, n1, f.y);
+  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
+  // A normalized sample addresses texel centers. The half-texel offset makes
+  // an integral terrain coordinate land exactly on its authoritative normal,
+  // matching the old four-read interpolation at a quarter of the fetches.
+  const float2 uv = (grid + 0.5) / float2 (size);
+  const float2 nxz = normals.sample (smp, uv).rg;
+  const float ny = sqrt (max (1.0 - dot (nxz, nxz), 0.0));
+  return float3 (nxz.x, ny, nxz.y);
 }
 
 // Height on the actual triangle surface produced by a coarser grid.
@@ -143,8 +139,8 @@ static inline float terrain_height_on_lattice (
   return h11 + (1.0 - f.y) * (h10 - h11) + (1.0 - f.x) * (h01 - h11);
 }
 
-static inline float3 terrain_normal_on_lattice (
-  float2 grid, float step, texture2d<float, access::read> normals) {
+static inline float3
+terrain_normal_on_lattice (float2 grid, float step, texture2d<float> normals) {
   const uint2 size (normals.get_width (), normals.get_height ());
   grid -= floor (grid / float2 (size)) * float2 (size);
   const float2 cell = floor (grid / step) * step;
@@ -190,7 +186,7 @@ vertex TerrainVaryings terrain_vertex (
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   constant MoppeChunkUniforms& chunk [[buffer (MOPPE_BUF_CHUNK)]],
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
-  texture2d<float, access::read> normals [[texture (MOPPE_TEX_NORMALS)]]) {
+  texture2d<float> normals [[texture (MOPPE_TEX_NORMALS)]]) {
   const float2 grid = terrain_grid_pos (index, chunk);
   float h;
   float3 normal;
@@ -334,8 +330,10 @@ static inline float3 terrain_layer_triplanar (texture2d<float> tex,
   return x * w.x + y * w.y + z * w.z;
 }
 
+// R32F water levels are not linearly filterable on the oldest supported
+// Apple GPUs, so that one physical field retains explicit four-tap filtering.
 static inline float4
-terrain_field_sample (float2 uv, texture2d<float, access::read> field) {
+terrain_field_sample_read (float2 uv, texture2d<float, access::read> field) {
   const uint2 size (field.get_width (), field.get_height ());
   const float2 grid = fract (uv) * float2 (size);
   const uint2 p00 = uint2 (floor (grid)) % size;
@@ -346,6 +344,15 @@ terrain_field_sample (float2 uv, texture2d<float, access::read> field) {
   const float4 b =
     mix (field.read (uint2 (p00.x, p11.y)), field.read (p11), f.x);
   return mix (a, b, f.y);
+}
+
+// Material readings use filterable half formats. Sampling them directly turns
+// four explicit reads and three mixes into one texture operation, while the
+// repeat mode preserves the world's periodic seam.
+static inline float4 terrain_field_sample (float2 uv, texture2d<float> field) {
+  const float2 size (field.get_width (), field.get_height ());
+  constexpr sampler smp (coord::normalized, address::repeat, filter::linear);
+  return field.sample (smp, uv + 0.5 / size);
 }
 
 // Ground relief below the lattice, delivered as a gradient because the
@@ -489,35 +496,29 @@ static inline float4 terrain_overlay_color (float value,
   return float4 (terrain_heat_palette (t), opacity);
 }
 
-fragment float4
-terrain_fragment (TerrainVaryings in [[stage_in]],
-                  constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
-                  texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
-                  texture2d<float> dirt [[texture (MOPPE_TEX_DIRT)]],
-                  texture2d<float> snow [[texture (MOPPE_TEX_SNOW)]],
-                  texture2d<float> rock [[texture (MOPPE_TEX_ROCK)]],
-                  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
-                  texture2d<float, access::read> terrain_overlay
-                  [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
-                  texture2d<float, access::read> terrain_moisture
-                  [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-                  texture2d<float, access::read> terrain_water
-                  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
-                  texture2d<float, access::read> terrain_geology
-                  [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
-                  texture2d<float, access::read> normals
-                  [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
-                  texture2d<float, access::read> terrain_shore
-                  [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
-                  texture2d<float, access::read> terrain_paths
-                  [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
-                  texture2d<float, access::read> terrain_forest
-                  [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-                  texture2d<float, access::read> terrain_snow_support
-                  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
-                  texture2d<float, access::read> terrain_channel_flux
-                  [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
-                  sampler smp [[sampler (0)]]) {
+fragment float4 terrain_fragment (
+  TerrainVaryings in [[stage_in]],
+  constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
+  texture2d<float> dirt [[texture (MOPPE_TEX_DIRT)]],
+  texture2d<float> snow [[texture (MOPPE_TEX_SNOW)]],
+  texture2d<float> rock [[texture (MOPPE_TEX_ROCK)]],
+  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]],
+  texture2d<float, access::read> terrain_overlay
+  [[texture (MOPPE_TEX_TERRAIN_OVERLAY)]],
+  texture2d<float> terrain_moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
+  texture2d<float, access::read> terrain_water
+  [[texture (MOPPE_TEX_TERRAIN_WATER)]],
+  texture2d<float> terrain_geology [[texture (MOPPE_TEX_TERRAIN_GEOLOGY)]],
+  texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
+  texture2d<float> terrain_shore [[texture (MOPPE_TEX_TERRAIN_SHORE)]],
+  texture2d<float> terrain_paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+  texture2d<float> terrain_forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
+  texture2d<float> terrain_snow_support
+  [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+  texture2d<float> terrain_channel_flux
+  [[texture (MOPPE_TEX_TERRAIN_CHANNEL_FLUX)]],
+  sampler smp [[sampler (0)]]) {
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
   const float3 view_dir = to_frag / max (dist, 1e-4);
@@ -535,7 +536,7 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
   // shading detail, exactly as a normal-mapped mesh does.  The
   // subdivided near field keeps its analytic surface normals.
   float3 n = (u.params6.x > 0.5 && in.lod_step >= 1.0)
-               ? normalize (terrain_normal_bilinear (in.grid_coord, normals))
+               ? normalize (terrain_normal_filtered (in.grid_coord, normals))
                : normalize (in.normal);
   const float height = in.height;
   const float sea_level = u.params1.y;
@@ -548,7 +549,7 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
       ? saturate (terrain_field_sample (in.field_uv, terrain_moisture).r)
       : 0.0;
   const float water_level =
-    u.params5.y > 0.5 ? terrain_field_sample (in.field_uv, terrain_water).r
+    u.params5.y > 0.5 ? terrain_field_sample_read (in.field_uv, terrain_water).r
                       : -1.0;
   const float water_depth = max ((water_level - height) * u.params1.x, 0.0);
   const float submerged = smoothstep (0.015, 0.22, water_depth);
@@ -685,19 +686,30 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
 
   // The stones texture is olive; pull it toward a dry granite gray
   // and let the macro variation streak it.
-  float3 cliff_c = terrain_layer_triplanar (
-    rock, smp, in.world_pos, n, u.params0.w * 1.7, far_blend);
-  const float cliff_value = dot (cliff_c, float3 (0.299, 0.587, 0.114));
-  const float strata =
-    0.5 + 0.5 * sin (in.world_pos.y * 0.075 +
-                     3.5 * moppe_value_noise (in.world_pos.xz * 0.006));
-  const float3 strata_tint =
-    mix (float3 (0.72, 0.77, 0.80), float3 (0.92, 0.83, 0.68), 0.22 * strata);
-  cliff_c = mix (cliff_c, cliff_value * strata_tint, 0.92);
-  cliff_c *= 0.82 + 0.42 * coarse + 0.10 * strata;
+  // The old shader fetched every projection of cliff and snow on every
+  // lowland pixel, even where smoothstep had made their contribution exactly
+  // zero. These branches are spatially coherent material regions and avoid
+  // nine albedo fetches across ordinary grass, paths, and beaches.
+  float3 cliff_c = scree_c;
+  if (cliff_coef > 0.0) {
+    cliff_c = terrain_layer_triplanar (
+      rock, smp, in.world_pos, n, u.params0.w * 1.7, far_blend);
+    const float cliff_value = dot (cliff_c, float3 (0.299, 0.587, 0.114));
+    const float strata =
+      0.5 + 0.5 * sin (in.world_pos.y * 0.075 +
+                       3.5 * moppe_value_noise (in.world_pos.xz * 0.006));
+    const float3 strata_tint =
+      mix (float3 (0.72, 0.77, 0.80), float3 (0.92, 0.83, 0.68), 0.22 * strata);
+    cliff_c = mix (cliff_c, cliff_value * strata_tint, 0.92);
+    cliff_c *= 0.82 + 0.42 * coarse + 0.10 * strata;
+  }
 
-  float3 snow_c = terrain_layer (snow, smp, tc, far_blend);
-  snow_c *= 0.75 + 0.5 * snow.sample (smp, tc * 0.053 + float2 (0.21, 0.43)).r;
+  float3 snow_c = scree_c;
+  if (snow_coef > 0.0) {
+    snow_c = terrain_layer (snow, smp, tc, far_blend);
+    snow_c *=
+      0.75 + 0.5 * snow.sample (smp, tc * 0.053 + float2 (0.21, 0.43)).r;
+  }
 
   // -- compose ----------------------------------------------------
   float3 texel = grass_c;
@@ -875,28 +887,30 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
     in.shadow_coord, in.fog, n, l, u.params1.z, u.params1.w, shadow_map);
   // 0.9 is the old GL terrain material diffuse.
   const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
-  float3 lit = intensity * shadow * 0.9 * u.sun_diffuse.rgb +
-               moppe_hemisphere_light (u.ambient.rgb, n);
+  const float3 diffuse_light = intensity * shadow * 0.9 * u.sun_diffuse.rgb +
+                               moppe_hemisphere_light (u.ambient.rgb, n);
+  float3 color = texel * diffuse_light;
 
   // Material roughness gives rock and snow distinct grazing response instead
-  // of treating the whole heightfield as one matte sheet.
+  // of treating the whole heightfield as one matte sheet. Specular reflection
+  // is light, not dyed diffuse albedo: keeping it outside the texel product
+  // restores neutral glints on dark wet soil and colored rock.
   const float3 h = normalize (l - view_dir);
   const float roughness = mix (0.92, 0.68, cliff_coef);
   const float material_spec =
     (0.012 + 0.035 * (1.0 - roughness)) *
     pow (max (dot (n, h), 0.0), mix (18.0, 72.0, 1.0 - roughness));
-  lit += u.sun_specular.rgb * shadow * material_spec;
+  color += u.sun_specular.rgb * shadow * material_spec;
   // Snowfields retain a broader crystalline sparkle into HDR headroom.
-  lit += snow_coef * u.sun_specular.rgb * shadow *
-         pow (max (dot (n, h), 0.0), 32.0) *
-         mix (0.10, 0.5, coarse_detail_visibility);
+  color += snow_coef * u.sun_specular.rgb * shadow *
+           pow (max (dot (n, h), 0.0), 32.0) *
+           mix (0.06, 0.24, coarse_detail_visibility);
   // Damp ground has a broad, low-energy sheen; shallow submerged stones can
   // catch a tighter glint through the translucent water surface.
   const float wet_spec =
     wetness * pow (max (dot (n, h), 0.0), mix (18.0, 52.0, submerged));
-  lit += u.sun_specular.rgb * shadow * wet_spec * mix (0.035, 0.11, submerged);
-
-  float3 color = texel * lit;
+  color +=
+    u.sun_specular.rgb * shadow * wet_spec * mix (0.025, 0.075, submerged);
   if (u.params5.x > 0.0) {
     // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
     // field is allowed to disappear once it becomes sub-pixel instead of

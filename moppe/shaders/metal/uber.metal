@@ -14,6 +14,7 @@ struct UberVaryings {
   float4 color;
   float lit;
   float fogged;
+  float foliage;
 };
 
 vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
@@ -45,6 +46,9 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   out.color = float4 (moppe_srgb (c.rgb), c.a);
   out.lit = v.flags.x ? 1.0 : 0.0;
   out.fogged = v.flags.y ? 1.0 : 0.0;
+  // Flutter is authored only on foliage. Carry its continuous weight so
+  // lighting can distinguish a transmitting leaf crown from opaque wood.
+  out.foliage = float (v.flags.w) / 255.0;
   return out;
 }
 
@@ -89,6 +93,18 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     const float specular_coverage = smoothstep (0.82, 0.98, base.a);
     lit += specular_tint * frame.sun_specular.rgb * sun_visibility * 0.22 *
            pow (max (dot (n, h), 0.0), 64.0) * specular_coverage;
+
+    // Thin foliage transmits sunlight through its back face. This is not an
+    // ambient rim: it follows the actual sun, respects terrain shadowing, and
+    // is strongest at grazing view angles where a crown contains the most
+    // overlapping leaves. Trunks and ordinary props carry zero foliage.
+    const float leaf_back =
+      pow (max (dot (-n, l), 0.0), 1.6) * saturate (in.foliage);
+    const float leaf_depth =
+      0.35 + 0.65 * pow (1.0 - max (dot (n, v), 0.0), 2.0);
+    const float3 transmission_tint (1.12, 0.92, 0.62);
+    lit += base.rgb * frame.sun_diffuse.rgb * transmission_tint *
+           sun_visibility * leaf_back * leaf_depth * 0.34;
 
     // A restrained sky rim separates moving silhouettes from the
     // landscape, especially on their shadowed side.

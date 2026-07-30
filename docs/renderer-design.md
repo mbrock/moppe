@@ -169,7 +169,10 @@ camera-facing quads (only the HUD uses lines). Per-frame the whole list is a
 handful of draw calls on one dynamic buffer (double/triple-buffered).
 
 Vertex format (interleaved, 40 B): float3 pos, float3 normal, float2 uv,
-u8x4 color, u8x4 flags (x: lit, y: fogged; rest reserved).
+u8x4 color, u8x4 flags (x: lit, y: fogged, z: wind bend, w: foliage
+flutter). The uber shader also uses the flutter weight as material identity:
+thin foliage receives directional sun transmission while opaque wood and
+ordinary props remain on the normal diffuse/specular path.
 
 `MeshBuilder` records through the same API but bakes to an immutable Mesh.
 State changes inside a bake (e.g. unlit lamp glow spheres) become run
@@ -327,6 +330,25 @@ trail-gravel, and snow-specular frequencies as they become subpixel,
 including nearby ground viewed almost parallel to its surface. These are
 shading effects only and do not alter collision geometry.
 
+The bounded material readings use R16F/RG16F textures and one hardware-linear
+sample in the fragment shader. The half-texel coordinate convention makes an
+integral terrain site land exactly on its stored reading, while repeat
+addressing preserves the periodic seam. Moisture and forest cover are bounded
+proportions and narrow to R16F at upload; this halves their storage and
+bandwidth without approaching a visible threshold step. Physical elevation
+and water level remain R32F and retain explicit four-read interpolation on
+Apple GPUs where that format is not filterable. Fragment normals similarly
+filter the RG16Snorm x/z pair once and reconstruct y, instead of reconstructing
+and mixing four complete normals.
+
+Splat layers are evaluated only where they can contribute. Lowland grass,
+paths, and beaches do not fetch the six triplanar cliff samples or three snow
+samples after their material weights have reached zero. The branches are
+spatially coherent terrain regions rather than per-pixel noise. Terrain
+specular is composed after diffuse albedo: stone, snow, and wet-soil glints
+therefore retain the sun's neutral color instead of being multiplied by the
+ground texture.
+
 Relief below the lattice is one band-limited field, `terrain_relief_gradient`,
 shared by the material micro-normal, the pebble bed, and the drainage rills.
 It is a four-octave sum of `moppe_value_noise_d` — value noise with an
@@ -393,7 +415,11 @@ terrain expression graph or own an interactive generation preview.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was
   previously fixed-function GL_EXP2 and absent for some props — unifying on
-  the terrain curve makes the world consistent).
+  the terrain curve makes the world consistent). Foliage is identified by its
+  existing flutter weight and transmits warm directional light through
+  back-facing leaves, respecting both the real sun direction and terrain
+  shadows. Global conifers use three independently rotated crown whorls rather
+  than one rigid pyramid.
 - HUD uses a separate 2D pipeline (no lighting/fog, y-down ortho, scissor
   none, blend on).
 - Dust, spray, smoke, and sparkles are bounded emission events. Metal derives
@@ -459,6 +485,26 @@ cube, it saves nothing — the implementation already stops a quad once all its
 lanes are discarded — so the shaders keep the plainer form. And the object
 stage's probe loop is not worth micro-optimizing at all: it runs 256 serial
 iterations per dry tile and still does not show up.
+
+### Terrain and lens sampling pass
+
+A later paired replay addressed the cost common to every feature
+configuration rather than another optional block. Half-format material fields
+and fragment normals moved from four explicit reads to one filtered sample;
+zero-weight cliff and snow regions stopped fetching those splat layers. The
+bloom blur keeps the same nine-tap Gaussian kernel but combines adjacent
+weights into five hardware-linear samples. The present pass takes one central
+scene sample and confines its two extra red/blue samples to the outer lens,
+where lateral chromatic aberration belongs; central scenery stays sharp.
+
+On the local M2 Pro, a deterministic 960x600 high-quality replay with seed 123
+and fast terrain used 120 prelude frames, 10 settle frames, and 30 measured
+frames for each of the 32 feature configurations. The mean of their median GPU
+times fell from 9.317 ms to 7.202 ms, a 2.115 ms (21.8%) reduction. All 32
+configuration medians improved; the smallest improvement was 0.858 ms. These
+numbers are machine- and schedule-specific, but the across-the-cube result
+shows that the gain belongs to the shared terrain/post work rather than one
+favorable feature interaction.
 
 The supported `--graphics-quality balanced` preset renders the 3D scene at
 two-thirds resolution while retaining every high-quality graphics feature.
