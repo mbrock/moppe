@@ -129,6 +129,7 @@ namespace moppe::game {
     Mat4 view {};
     Mat4 projection {};
     float field_of_view = 70.0f;
+    float aspect = 1.0f;
   };
 
   struct FrameLighting {

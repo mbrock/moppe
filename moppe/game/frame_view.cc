@@ -148,6 +148,7 @@ namespace moppe::game {
       cinematic       ? input.selected_camera.field_of_view
       : water || tree ? 70.0f
                       : 100.0f + 9.0f * logic.m_fov_k;
+    result.camera.aspect = std::max (0.01f, input.aspect);
     result.camera.view = input.selected_camera.view;
 
     // Hard landings rotate only the reading of the riding camera.  The camera
@@ -184,7 +185,7 @@ namespace moppe::game {
 
     result.camera.projection =
       Mat4::perspective_reversed (result.camera.field_of_view * u::deg,
-                                  std::max (0.01f, input.aspect),
+                                  result.camera.aspect,
                                   0.5f,
                                   9000.0f);
 

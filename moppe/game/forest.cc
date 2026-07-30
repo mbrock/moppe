@@ -15,7 +15,8 @@ namespace moppe::game {
     using namespace mp_units;
 
     constexpr int forest_chunks_per_side = 16;
-    constexpr float forest_geometry_reach = 2200.0f;
+    constexpr meters_t forest_geometry_reach = 2200.0f * u::m;
+    constexpr meters_t forest_detail_reach = 700.0f * u::m;
 
     std::uint32_t
     forest_hash (std::uint32_t x, std::uint32_t z, std::uint32_t seed) {
@@ -37,41 +38,86 @@ namespace moppe::game {
       return hash_unit (forest_hash (value, lane, 0x517cc1b7U));
     }
 
-    float elevation_at (const map::SurfaceGeometry& surface, float x, float z) {
+    position_t sample_position (meters_t x, meters_t z) {
+      return position (
+        Vec3 (x.numerical_value_in (u::m), 0, z.numerical_value_in (u::m)));
+    }
+
+    terrain::SurfaceElevation
+    elevation_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
       return spatial::sample<terrain::surface_elevation> (
-               surface, moppe::position (Vec3 (x, 0, z)))
-        .quantity_from_zero ()
-        .numerical_value_in (u::m);
+        surface, sample_position (x, z));
     }
 
-    Vec3 normal_at (const map::SurfaceGeometry& surface, float x, float z) {
-      return normalized (spatial::sample<terrain::terrain_normal> (
-                           surface, moppe::position (Vec3 (x, 0, z)))
-                           .numerical_value_in (one));
+    terrain::TerrainNormal
+    normal_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
+      return spatial::sample<terrain::terrain_normal> (surface,
+                                                       sample_position (x, z));
     }
 
-    float cover_at (const map::SurfaceReadings& readings, float x, float z) {
+    map::ForestCover
+    cover_at (const map::SurfaceReadings& readings, meters_t x, meters_t z) {
       return spatial::sample<map::forest_cover> (readings,
-                                                 position (Vec3 (x, 0, z)))
-        .numerical_value_in (one);
+                                                 sample_position (x, z));
+    }
+
+    position_t forest_position (meters_t x,
+                                terrain::SurfaceElevation elevation,
+                                meters_t z) {
+      return position (
+        Vec3 (x.numerical_value_in (u::m),
+              elevation.quantity_from_zero ().numerical_value_in (u::m),
+              z.numerical_value_in (u::m)));
+    }
+
+    meters_t position_component (position_t value, std::size_t component) {
+      return position_value (value)[component] * u::m;
+    }
+
+    meters_t extent_component (const spatial_extent_t& value,
+                               std::size_t component) {
+      return extent_value (value)[component] * u::m;
+    }
+
+    bool visible_in_view (const displacement_t& delta,
+                          meters_t radius,
+                          const ForestView& view) {
+      const Vec3& offset = displacement_value (delta);
+      const meters_t forward = dot (offset, view.forward) * u::m;
+      if (forward < -radius)
+        return false;
+
+      const float vertical_tangent =
+        moppe::tan (view.vertical_field_of_view / 2.0f);
+      const float horizontal_tangent =
+        vertical_tangent * scalar_value (view.aspect_ratio);
+      const meters_t side = std::abs (dot (offset, view.right)) * u::m;
+      const meters_t height = std::abs (dot (offset, view.up)) * u::m;
+      const float side_plane_length =
+        std::sqrt (1.0f + horizontal_tangent * horizontal_tangent);
+      const float top_plane_length =
+        std::sqrt (1.0f + vertical_tangent * vertical_tangent);
+      return side <=
+               forward * horizontal_tangent + radius * side_plane_length &&
+             height <= forward * vertical_tangent + radius * top_plane_length;
     }
 
     void forest_vertex (render::DrawList& draw,
                         const Vec3& point,
                         const Vec3& normal,
-                        float bend,
-                        float flutter) {
+                        proportion_t bend,
+                        proportion_t flutter) {
       draw.normal (normal);
-      draw.wind (std::clamp (bend, 0.0f, 1.0f) * proportion[one]);
-      draw.flutter (std::clamp (flutter, 0.0f, 1.0f) * proportion[one]);
+      draw.wind (bend);
+      draw.flutter (flutter);
       draw.vertex (point);
     }
 
     // A vertex's two wind weights: how far up the plant it sits, and how far
     // out from its stem.
     struct Sway {
-      float bend;
-      float flutter;
+      proportion_t bend;
+      proportion_t flutter;
     };
 
     void append_triangle (render::DrawList& draw,
@@ -98,9 +144,12 @@ namespace moppe::game {
                        const Vec3& up,
                        const Vec3& across,
                        const Vec3& forward,
-                       float height,
-                       float radius) {
+                       meters_t height,
+                       meters_t radius) {
       const float tint = hash_lane (site.seed, 11);
+      const Vec3& root = position_value (site.position);
+      const float height_m = height.numerical_value_in (u::m);
+      const float radius_m = radius.numerical_value_in (u::m);
       draw.color (
         0.16f + 0.040f * tint, 0.075f + 0.028f * tint, 0.028f + 0.016f * tint);
       draw.begin (render::Prim::Triangles);
@@ -109,18 +158,24 @@ namespace moppe::game {
         const float a1 = 2.0f * std::numbers::pi_v<float> * (side + 1) / 3.0f;
         const Vec3 n0 = across * std::cos (a0) + forward * std::sin (a0);
         const Vec3 n1 = across * std::cos (a1) + forward * std::sin (a1);
-        const Vec3 p0 = site.position + n0 * radius;
-        const Vec3 p1 = site.position + n1 * radius;
-        const Vec3 q0 = p0 + up * height;
-        const Vec3 q1 = p1 + up * height;
+        const Vec3 p0 = root + n0 * radius_m;
+        const Vec3 p1 = root + n1 * radius_m;
+        const Vec3 q0 = p0 + up * height_m;
+        const Vec3 q1 = p1 + up * height_m;
         const Vec3 normal = normalized (n0 + n1);
         // Wood leans and does not flutter, whatever the wind does.
-        forest_vertex (draw, p0, normal, 0.0f, 0.0f);
-        forest_vertex (draw, p1, normal, 0.0f, 0.0f);
-        forest_vertex (draw, q1, normal, 0.16f, 0.0f);
-        forest_vertex (draw, p0, normal, 0.0f, 0.0f);
-        forest_vertex (draw, q1, normal, 0.16f, 0.0f);
-        forest_vertex (draw, q0, normal, 0.16f, 0.0f);
+        forest_vertex (
+          draw, p0, normal, 0.0f * proportion[one], 0.0f * proportion[one]);
+        forest_vertex (
+          draw, p1, normal, 0.0f * proportion[one], 0.0f * proportion[one]);
+        forest_vertex (
+          draw, q1, normal, 0.16f * proportion[one], 0.0f * proportion[one]);
+        forest_vertex (
+          draw, p0, normal, 0.0f * proportion[one], 0.0f * proportion[one]);
+        forest_vertex (
+          draw, q1, normal, 0.16f * proportion[one], 0.0f * proportion[one]);
+        forest_vertex (
+          draw, q0, normal, 0.16f * proportion[one], 0.0f * proportion[one]);
       }
       draw.end ();
     }
@@ -130,52 +185,93 @@ namespace moppe::game {
                                  const Vec3& up,
                                  const Vec3& across,
                                  const Vec3& forward,
-                                 float height,
-                                 float radius) {
-      constexpr int sides = 6;
-      const Vec3 bottom = site.position + up * (0.30f * height);
-      const Vec3 top = site.position + up * height;
-      const Vec3 center = site.position + up * (0.61f * height);
-      Vec3 ring[sides];
+                                 meters_t height,
+                                 meters_t radius) {
+      constexpr int sides = 5;
+      const Vec3& root = position_value (site.position);
+      const float height_m = height.numerical_value_in (u::m);
+      const float radius_m = radius.numerical_value_in (u::m);
+      const Vec3 bottom = root + up * (0.30f * height_m);
+      const Vec3 top = root + up * height_m;
+      const float turn =
+        2.0f * std::numbers::pi_v<float> * hash_lane (site.seed, 29);
+      const Vec3 lean = (across * (hash_lane (site.seed, 51) - 0.5f) +
+                         forward * (hash_lane (site.seed, 52) - 0.5f)) *
+                        (0.22f * radius_m);
+      const Vec3 lower_center = root + up * (0.53f * height_m) + lean * 0.45f;
+      const Vec3 upper_center = root + up * (0.73f * height_m) + lean;
+      Vec3 lower[sides];
+      Vec3 upper[sides];
       for (int side = 0; side < sides; ++side) {
-        const float angle = 2.0f * std::numbers::pi_v<float> * side / sides;
-        const float irregular =
-          0.86f + 0.25f * hash_lane (site.seed, 31 + side);
-        ring[side] =
-          center +
-          (across * std::cos (angle) + forward * std::sin (angle)) * radius *
-            irregular +
-          up * radius * (0.08f * (hash_lane (site.seed, 47 + side) - 0.5f));
+        const float angle =
+          turn + 2.0f * std::numbers::pi_v<float> * side / sides;
+        const Vec3 radial =
+          across * std::cos (angle) + forward * std::sin (angle);
+        const float lower_radius =
+          radius_m * (0.88f + 0.24f * hash_lane (site.seed, 31 + side));
+        const float upper_radius =
+          radius_m * (0.58f + 0.22f * hash_lane (site.seed, 41 + side));
+        lower[side] =
+          lower_center + radial * lower_radius +
+          up * radius_m * (0.10f * (hash_lane (site.seed, 61 + side) - 0.5f));
+        upper[side] =
+          upper_center + radial * upper_radius +
+          up * radius_m * (0.13f * (hash_lane (site.seed, 71 + side) - 0.5f));
       }
 
       const float hue = hash_lane (site.seed, 19);
+      const float cover = site.cover.numerical_value_in (one);
       draw.color (0.065f + 0.040f * hue,
-                  0.19f + 0.10f * site.cover + 0.040f * hue,
+                  0.19f + 0.10f * cover + 0.040f * hue,
                   0.035f + 0.030f * hue);
       draw.begin (render::Prim::Triangles);
       for (int side = 0; side < sides; ++side) {
-        const Vec3& a = ring[side];
-        const Vec3& b = ring[(side + 1) % sides];
-        const Vec3 outside = (a + b) * 0.5f - center;
-        constexpr Sway on_stem_low { 0.22f, 0.0f };
-        constexpr Sway on_stem_high { 0.92f, 0.10f };
-        constexpr Sway out_on_a_branch { 0.58f, 1.0f };
+        const Vec3& lower_a = lower[side];
+        const Vec3& lower_b = lower[(side + 1) % sides];
+        const Vec3& upper_a = upper[side];
+        const Vec3& upper_b = upper[(side + 1) % sides];
+        const Vec3 lower_outside = (lower_a + lower_b) * 0.5f - lower_center;
+        const Vec3 upper_outside = (upper_a + upper_b) * 0.5f - upper_center;
+        constexpr Sway on_stem_low { 0.22f * proportion[one],
+                                     0.0f * proportion[one] };
+        constexpr Sway on_stem_high { 0.92f * proportion[one],
+                                      0.10f * proportion[one] };
+        constexpr Sway lower_branch { 0.52f * proportion[one],
+                                      0.88f * proportion[one] };
+        constexpr Sway upper_branch { 0.72f * proportion[one],
+                                      1.0f * proportion[one] };
         append_triangle (draw,
                          bottom,
-                         b,
-                         a,
-                         outside,
+                         lower_b,
+                         lower_a,
+                         lower_outside,
                          on_stem_low,
-                         out_on_a_branch,
-                         out_on_a_branch);
+                         lower_branch,
+                         lower_branch);
+        append_triangle (draw,
+                         lower_a,
+                         lower_b,
+                         upper_b,
+                         lower_outside,
+                         lower_branch,
+                         lower_branch,
+                         upper_branch);
+        append_triangle (draw,
+                         lower_a,
+                         upper_b,
+                         upper_a,
+                         upper_outside,
+                         lower_branch,
+                         upper_branch,
+                         upper_branch);
         append_triangle (draw,
                          top,
-                         a,
-                         b,
-                         outside,
+                         upper_a,
+                         upper_b,
+                         upper_outside,
                          on_stem_high,
-                         out_on_a_branch,
-                         out_on_a_branch);
+                         upper_branch,
+                         upper_branch);
       }
       draw.end ();
     }
@@ -185,13 +281,17 @@ namespace moppe::game {
                                const Vec3& up,
                                const Vec3& across,
                                const Vec3& forward,
-                               float height,
-                               float radius) {
+                               meters_t height,
+                               meters_t radius) {
       constexpr int tiers = 3;
       constexpr int sides = 4;
       const float hue = hash_lane (site.seed, 23);
+      const float cover = site.cover.numerical_value_in (one);
+      const Vec3& root = position_value (site.position);
+      const float height_m = height.numerical_value_in (u::m);
+      const float radius_m = radius.numerical_value_in (u::m);
       draw.color (0.045f + 0.025f * hue,
-                  0.15f + 0.085f * site.cover + 0.030f * hue,
+                  0.15f + 0.085f * cover + 0.030f * hue,
                   0.035f + 0.025f * hue);
       draw.begin (render::Prim::Triangles);
       for (int tier = 0; tier < tiers; ++tier) {
@@ -200,13 +300,13 @@ namespace moppe::game {
         // tier turns independently, so their four cheap faces do not line up
         // into one continuous crease.
         const float tier_f = static_cast<float> (tier);
-        const float base_height = (0.22f + 0.22f * tier_f) * height;
-        const float tip_height = (0.70f + 0.18f * tier_f) * height;
-        const float tier_radius = radius * (1.0f - 0.22f * tier_f);
+        const float base_height = (0.22f + 0.22f * tier_f) * height_m;
+        const float tip_height = (0.70f + 0.18f * tier_f) * height_m;
+        const float tier_radius = radius_m * (1.0f - 0.22f * tier_f);
         const float turn =
           2.0f * std::numbers::pi_v<float> * hash_lane (site.seed, 61 + tier);
-        const Vec3 base = site.position + up * base_height;
-        const Vec3 tip = site.position + up * tip_height;
+        const Vec3 base = root + up * base_height;
+        const Vec3 tip = root + up * tip_height;
         for (int side = 0; side < sides; ++side) {
           const float a0 =
             turn + 2.0f * std::numbers::pi_v<float> * side / sides;
@@ -218,8 +318,10 @@ namespace moppe::game {
           const Vec3 p1 =
             base +
             (across * std::cos (a1) + forward * std::sin (a1)) * tier_radius;
-          const Sway leader { 0.64f + 0.13f * tier_f, 0.14f };
-          const Sway skirt { 0.28f + 0.16f * tier_f, 0.85f };
+          const Sway leader { (0.64f + 0.13f * tier_f) * proportion[one],
+                              0.14f * proportion[one] };
+          const Sway skirt { (0.28f + 0.16f * tier_f) * proportion[one],
+                             0.85f * proportion[one] };
           append_triangle (
             draw, tip, p0, p1, (p0 + p1) * 0.5f - base, leader, skirt, skirt);
         }
@@ -228,16 +330,19 @@ namespace moppe::game {
     }
 
     void append_tree (render::DrawList& draw, const ForestSite& site) {
-      const Vec3 up = normalized (Vec3 (0, 1, 0) * 0.78f + site.normal * 0.22f);
+      const Vec3 surface_normal = site.normal.numerical_value_in (one);
+      const Vec3 up =
+        normalized (Vec3 (0, 1, 0) * 0.78f + surface_normal * 0.22f);
       const float heading =
         2.0f * std::numbers::pi_v<float> * hash_lane (site.seed, 3);
       Vec3 forward (std::sin (heading), 0.0f, std::cos (heading));
       forward = normalized (forward - up * dot (forward, up));
       const Vec3 across = normalized (cross (up, forward));
-      const float height = site.scale * (9.0f + 4.0f * site.cover);
-      const float radius =
-        site.scale *
-        (site.form == ForestForm::conifer ? 0.23f * height : 0.26f * height);
+      const float cover = site.cover.numerical_value_in (one);
+      const float size = site.size.numerical_value_in (one);
+      const meters_t height = size * (9.0f + 4.0f * cover) * u::m;
+      const meters_t radius =
+        (site.form == ForestForm::conifer ? 0.23f : 0.26f) * height;
       append_trunk (
         draw, site, up, across, forward, 0.48f * height, 0.035f * height);
       if (site.form == ForestForm::conifer)
@@ -246,51 +351,124 @@ namespace moppe::game {
         append_broadleaf_crown (
           draw, site, up, across, forward, height, radius);
     }
+
+    void append_distant_tree (render::DrawList& draw, const ForestSite& site) {
+      const Vec3 surface_normal = site.normal.numerical_value_in (one);
+      const Vec3 up =
+        normalized (Vec3 (0, 1, 0) * 0.84f + surface_normal * 0.16f);
+      const float heading =
+        2.0f * std::numbers::pi_v<float> * hash_lane (site.seed, 3);
+      Vec3 forward (std::sin (heading), 0.0f, std::cos (heading));
+      forward = normalized (forward - up * dot (forward, up));
+      const Vec3 across = normalized (cross (up, forward));
+      const Vec3& root = position_value (site.position);
+      const float cover = site.cover.numerical_value_in (one);
+      const float size = site.size.numerical_value_in (one);
+      const meters_t height = size * (9.0f + 4.0f * cover) * u::m;
+      const meters_t radius =
+        (site.form == ForestForm::conifer ? 0.23f : 0.26f) * height;
+      const float height_m = height.numerical_value_in (u::m);
+      const float radius_m = radius.numerical_value_in (u::m);
+      const int sides = 4;
+      const float hue =
+        hash_lane (site.seed, site.form == ForestForm::conifer ? 23 : 19);
+      if (site.form == ForestForm::conifer)
+        draw.color (0.045f + 0.025f * hue,
+                    0.15f + 0.085f * cover + 0.030f * hue,
+                    0.035f + 0.025f * hue);
+      else
+        draw.color (0.065f + 0.040f * hue,
+                    0.19f + 0.10f * cover + 0.040f * hue,
+                    0.035f + 0.030f * hue);
+
+      const Vec3 base =
+        root + up * (site.form == ForestForm::conifer ? 0.12f * height_m
+                                                      : 0.27f * height_m);
+      const Vec3 tip = root + up * height_m;
+      const Vec3 middle =
+        root + up * (site.form == ForestForm::conifer ? 0.22f * height_m
+                                                      : 0.61f * height_m);
+      Vec3 ring[sides];
+      for (int side = 0; side < sides; ++side) {
+        const float angle =
+          2.0f * std::numbers::pi_v<float> * side / sides + heading;
+        ring[side] =
+          middle +
+          (across * std::cos (angle) + forward * std::sin (angle)) * radius_m;
+      }
+
+      constexpr Sway fixed { 0.18f * proportion[one], 0.0f * proportion[one] };
+      constexpr Sway crown { 0.72f * proportion[one], 0.68f * proportion[one] };
+      constexpr Sway leader { 0.92f * proportion[one],
+                              0.12f * proportion[one] };
+      draw.begin (render::Prim::Triangles);
+      for (int side = 0; side < sides; ++side) {
+        const Vec3& a = ring[side];
+        const Vec3& b = ring[(side + 1) % sides];
+        const Vec3 outside = (a + b) * 0.5f - middle;
+        if (site.form == ForestForm::broadleaf)
+          append_triangle (draw, base, b, a, outside, fixed, crown, crown);
+        append_triangle (draw, tip, a, b, outside, leader, crown, crown);
+      }
+      draw.end ();
+    }
   }
 
   ForestPlan plan_global_forest (const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
                                  std::uint32_t seed,
-                                 float spacing) {
-    if (spacing <= 0.0f)
+                                 meters_t spacing) {
+    if (spacing <= 0.0f * u::m)
       throw std::invalid_argument ("Forest spacing must be positive");
     const terrain::TerrainDomain& domain = surface.domain ();
     ForestPlan plan;
-    const float width = (domain.spacing_x ()).numerical_value_in (moppe::u::m) *
-                        static_cast<float> (domain.width ());
-    const float depth = (domain.spacing_z ()).numerical_value_in (moppe::u::m) *
-                        static_cast<float> (domain.height ());
-    plan.period = Vec3 (width, 0, depth);
+    const meters_t width = domain.period_x ();
+    const meters_t depth = domain.period_z ();
+    plan.period = spatial_extent_in_metres (Vec3 (
+      width.numerical_value_in (u::m), 0, depth.numerical_value_in (u::m)));
     const std::uint32_t columns =
-      std::max (1U, static_cast<std::uint32_t> (std::ceil (width / spacing)));
+      std::max (1U,
+                static_cast<std::uint32_t> (
+                  std::ceil ((width / spacing).numerical_value_in (one))));
     const std::uint32_t rows =
-      std::max (1U, static_cast<std::uint32_t> (std::ceil (depth / spacing)));
-    const float cell_x = width / static_cast<float> (columns);
-    const float cell_z = depth / static_cast<float> (rows);
+      std::max (1U,
+                static_cast<std::uint32_t> (
+                  std::ceil ((depth / spacing).numerical_value_in (one))));
+    const meters_t cell_x = width / static_cast<float> (columns);
+    const meters_t cell_z = depth / static_cast<float> (rows);
     plan.sites.reserve (static_cast<std::size_t> (columns) * rows / 4);
 
     for (std::uint32_t row = 0; row < rows; ++row)
       for (std::uint32_t column = 0; column < columns; ++column) {
         const std::uint32_t identity = forest_hash (column, row, seed);
-        const float x = (static_cast<float> (column) + 0.12f +
-                         0.76f * hash_lane (identity, 0)) *
-                        cell_x;
-        const float z =
+        const meters_t x = (static_cast<float> (column) + 0.12f +
+                            0.76f * hash_lane (identity, 0)) *
+                           cell_x;
+        const meters_t z =
           (static_cast<float> (row) + 0.12f + 0.76f * hash_lane (identity, 1)) *
           cell_z;
-        const float cover = cover_at (readings, x, z);
-        const float population = smoothstep (0.08f, 0.62f, cover);
-        if (cover < 0.06f || hash_lane (identity, 2) > population * 0.96f)
+        const map::ForestCover cover = cover_at (readings, x, z);
+        const proportion_t population = band (0.08f * map::forest_cover[one],
+                                              0.62f * map::forest_cover[one],
+                                              cover);
+        if (cover < 0.06f * map::forest_cover[one] ||
+            hash_lane (identity, 2) >
+              population.numerical_value_in (one) * 0.96f)
           continue;
-        const float elevation = elevation_at (surface, x, z);
-        const float high_ground =
-          std::clamp ((elevation - 115.0f) / 80.0f, 0.0f, 1.0f);
-        const float conifer_chance = 0.12f + 0.58f * high_ground;
+        const terrain::SurfaceElevation elevation =
+          elevation_at (surface, x, z);
+        const proportion_t high_ground =
+          band (terrain::surface_elevation_point (115.0f * u::m),
+                terrain::surface_elevation_point (195.0f * u::m),
+                elevation);
+        const float conifer_chance =
+          0.12f + 0.58f * high_ground.numerical_value_in (one);
         plan.sites.push_back (
-          { .position = Vec3 (x, elevation, z),
+          { .position = forest_position (x, elevation, z),
             .normal = normal_at (surface, x, z),
             .cover = cover,
-            .scale = 0.78f + 0.50f * hash_lane (identity, 4),
+            .size =
+              (0.78f + 0.50f * hash_lane (identity, 4)) * tree_size_factor[one],
             .seed = identity,
             .form = hash_lane (identity, 5) < conifer_chance
                       ? ForestForm::conifer
@@ -309,15 +487,23 @@ namespace moppe::game {
     m_tree_count = plan.sites.size ();
     m_chunks_x = forest_chunks_per_side;
     m_chunks_z = forest_chunks_per_side;
-    const float chunk_width = m_period[0] / m_chunks_x;
-    const float chunk_depth = m_period[2] / m_chunks_z;
+    const meters_t chunk_width =
+      extent_component (m_period, 0) / static_cast<float> (m_chunks_x);
+    const meters_t chunk_depth =
+      extent_component (m_period, 2) / static_cast<float> (m_chunks_z);
     std::vector<std::vector<const ForestSite*>> buckets (
       static_cast<std::size_t> (m_chunks_x) * m_chunks_z);
     for (const ForestSite& site : plan.sites) {
       const int x = std::clamp (
-        static_cast<int> (site.position[0] / chunk_width), 0, m_chunks_x - 1);
+        static_cast<int> ((position_component (site.position, 0) / chunk_width)
+                            .numerical_value_in (one)),
+        0,
+        m_chunks_x - 1);
       const int z = std::clamp (
-        static_cast<int> (site.position[2] / chunk_depth), 0, m_chunks_z - 1);
+        static_cast<int> ((position_component (site.position, 2) / chunk_depth)
+                            .numerical_value_in (one)),
+        0,
+        m_chunks_z - 1);
       buckets[static_cast<std::size_t> (z) * m_chunks_x + x].push_back (&site);
     }
 
@@ -329,47 +515,75 @@ namespace moppe::game {
           buckets[static_cast<std::size_t> (z) * m_chunks_x + x];
         if (sites.empty ())
           continue;
-        render::DrawList draw;
-        draw.state ().cull = false;
-        for (const ForestSite* site : sites)
-          append_tree (draw, *site);
+        render::DrawList detailed;
+        render::DrawList distant;
+        detailed.state ().cull = false;
+        distant.state ().cull = false;
+        for (const ForestSite* site : sites) {
+          append_tree (detailed, *site);
+          append_distant_tree (distant, *site);
+        }
         Chunk chunk;
-        chunk.center =
-          Vec3 ((x + 0.5f) * chunk_width, 110.0f, (z + 0.5f) * chunk_depth);
-        chunk.radius = 0.5f * std::sqrt (chunk_width * chunk_width +
-                                         chunk_depth * chunk_depth) +
-                       190.0f;
-        chunk.mesh = renderer.create_mesh (draw);
+        chunk.center = position (
+          Vec3 (((x + 0.5f) * chunk_width).numerical_value_in (u::m),
+                110.0f,
+                ((z + 0.5f) * chunk_depth).numerical_value_in (u::m)));
+        chunk.radius = 0.5f * mp_units::sqrt (chunk_width * chunk_width +
+                                              chunk_depth * chunk_depth) +
+                       190.0f * u::m;
+        chunk.detailed_mesh = renderer.create_mesh (detailed);
+        chunk.distant_mesh = renderer.create_mesh (distant);
         m_chunks.push_back (std::move (chunk));
       }
   }
 
   void ForestLandscape::draw (render::Renderer& renderer,
-                              const Vec3& camera,
-                              const Vec3& view_direction) const {
-    if (m_period[0] <= 0.0f || m_period[2] <= 0.0f)
+                              const ForestView& view) const {
+    const meters_t period_x = extent_component (m_period, 0);
+    const meters_t period_z = extent_component (m_period, 2);
+    if (period_x <= 0.0f * u::m || period_z <= 0.0f * u::m)
       return;
     for (const Chunk& chunk : m_chunks) {
-      const float reach = forest_geometry_reach + chunk.radius;
+      const meters_t reach = forest_geometry_reach + chunk.radius;
       const int minimum_x = static_cast<int> (
-        std::ceil ((camera[0] - reach - chunk.center[0]) / m_period[0]));
+        std::ceil (((position_component (view.position, 0) - reach -
+                     position_component (chunk.center, 0)) /
+                    period_x)
+                     .numerical_value_in (one)));
       const int maximum_x = static_cast<int> (
-        std::floor ((camera[0] + reach - chunk.center[0]) / m_period[0]));
+        std::floor (((position_component (view.position, 0) + reach -
+                      position_component (chunk.center, 0)) /
+                     period_x)
+                      .numerical_value_in (one)));
       const int minimum_z = static_cast<int> (
-        std::ceil ((camera[2] - reach - chunk.center[2]) / m_period[2]));
+        std::ceil (((position_component (view.position, 2) - reach -
+                     position_component (chunk.center, 2)) /
+                    period_z)
+                     .numerical_value_in (one)));
       const int maximum_z = static_cast<int> (
-        std::floor ((camera[2] + reach - chunk.center[2]) / m_period[2]));
+        std::floor (((position_component (view.position, 2) + reach -
+                      position_component (chunk.center, 2)) /
+                     period_z)
+                      .numerical_value_in (one)));
       for (int tile_z = minimum_z; tile_z <= maximum_z; ++tile_z)
         for (int tile_x = minimum_x; tile_x <= maximum_x; ++tile_x) {
-          const Vec3 offset (tile_x * m_period[0], 0, tile_z * m_period[2]);
-          const Vec3 delta = chunk.center + offset - camera;
-          const float distance_squared = length2 (delta);
+          const displacement_t offset =
+            displacement (Vec3 ((tile_x * period_x).numerical_value_in (u::m),
+                                0,
+                                (tile_z * period_z).numerical_value_in (u::m)));
+          const displacement_t delta = chunk.center + offset - view.position;
+          const auto distance_squared = dot (delta, delta);
           if (distance_squared > reach * reach)
             continue;
-          if (distance_squared > chunk.radius * chunk.radius &&
-              dot (delta, view_direction) < -chunk.radius)
+          if (!visible_in_view (delta, chunk.radius, view))
             continue;
-          renderer.draw_mesh (*chunk.mesh, Mat4::translation (offset));
+          const meters_t detailed_reach = forest_detail_reach + chunk.radius;
+          const render::MeshPtr& mesh =
+            distance_squared <= detailed_reach * detailed_reach
+              ? chunk.detailed_mesh
+              : chunk.distant_mesh;
+          renderer.draw_mesh (*mesh,
+                              Mat4::translation (displacement_value (offset)));
         }
     }
   }

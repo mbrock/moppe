@@ -218,4 +218,16 @@ namespace moppe::map {
   QUANTITY_SPEC (forest_cover, proportion);
 }
 
+namespace moppe::game {
+  // ---- Organisms ----
+
+  // A tree's size relative to the species' mature representative. Unlike a
+  // proportion this may exceed one, and unlike a bare scalar it cannot be
+  // confused with canopy recruitment or a random draw.
+  QUANTITY_SPEC (tree_size_factor,
+                 mp_units::dimensionless,
+                 mp_units::non_negative,
+                 mp_units::is_kind);
+}
+
 #endif

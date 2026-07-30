@@ -804,7 +804,14 @@ namespace moppe {
           draw_world_sky ();
 
         if (visibility.forest)
-          m_forest.draw (r, camera, frame.camera.forward);
+          m_forest.draw (
+            r,
+            { .position = position (camera),
+              .forward = frame.camera.frame_forward,
+              .right = frame.camera.right,
+              .up = frame.camera.up,
+              .vertical_field_of_view = frame.camera.field_of_view * u::deg,
+              .aspect_ratio = frame.camera.aspect * mp_units::one });
 
         if (visibility.tree_stand)
           m_tree_stand.draw (r);
