@@ -348,25 +348,84 @@ terrain_field_sample (float2 uv, texture2d<float, access::read> field) {
   return mix (a, b, f.y);
 }
 
-// Reconstruct a small-scale world-space normal from the screen derivatives of
-// the composed material signal. This lets the existing color assets carry
-// useful grain immediately; authored normal maps can later replace the height
-// proxy without changing the lighting model.
-static inline float3 terrain_detail_normal (float3 world,
+// Ground relief below the lattice, delivered as a gradient because the
+// shading only ever wants the slope.  Each octave has a world-space
+// wavelength and retires once that wavelength falls toward the width of a
+// screen pixel, so the ground holds its texture as the camera closes in and
+// simply runs out of octaves as it pulls away.
+//
+// The relief this replaced was read out of the screen derivatives of the
+// composed albedo.  That signal has no wavelength at all: its detail sits on
+// the pixel grid at every distance, which is why near ground read as static
+// and why it crawled whenever the camera moved.
+//
+// Amplitude falls with wavelength at the same rate here, so every octave
+// contributes the same slope and the sum is an average rather than a
+// runaway.  The result is normalized to unit RMS slope, which makes the
+// caller's strength a micro-gradient it can reason about: 0.15 is a
+// roughly eight-degree tilt, whatever wavelength carries it.
+constant int TERRAIN_RELIEF_OCTAVES = 4;
+constant float TERRAIN_RELIEF_LACUNARITY = 0.42;
+constant float TERRAIN_RELIEF_RMS = 0.305;
+
+static inline float2
+terrain_relief_gradient (float2 plane, float pixel_m, float base_wavelength) {
+  float2 gradient (0.0);
+  float wavelength = base_wavelength;
+  for (int octave = 0; octave < TERRAIN_RELIEF_OCTAVES; ++octave) {
+    // An octave already down to about twice the pixel width has nothing
+    // left to say and can only alias.  Wavelength shrinks monotonically,
+    // so once one octave is gone every finer one is too.
+    const float visible =
+      1.0 - smoothstep (0.30 * wavelength, 0.85 * wavelength, pixel_m);
+    if (visible <= 0.004)
+      break;
+    const float3 noise = moppe_value_noise_d (
+      plane / wavelength + float2 (11.3, 27.1) * float (octave));
+    gradient += noise.yz * visible;
+    wavelength *= TERRAIN_RELIEF_LACUNARITY;
+  }
+  return gradient / (TERRAIN_RELIEF_OCTAVES * TERRAIN_RELIEF_RMS);
+}
+
+// Relief lives on a plane, and a field laid over XZ smears into vertical
+// streaks on a wall exactly as an XZ-projected texture does.  Compose three
+// plane evaluations under the same squared-normal weights the splat
+// triplanar uses.  Ground the rider actually drives on weighs almost
+// entirely toward XZ and skips the other two.
+static inline float3 terrain_relief_volume (float3 world,
                                             float3 normal,
-                                            float signal,
-                                            float strength) {
-  const float3 dpdx = dfdx (world);
-  const float3 dpdy = dfdy (world);
-  const float dhdx = dfdx (signal);
-  const float dhdy = dfdy (signal);
-  const float3 r1 = cross (dpdy, normal);
-  const float3 r2 = cross (normal, dpdx);
-  const float denom = dot (dpdx, r1);
-  if (abs (denom) < 1e-7)
-    return normal;
-  const float3 gradient = (r1 * dhdx + r2 * dhdy) / denom;
-  return normalize (normal - gradient * strength);
+                                            float pixel_m,
+                                            float base_wavelength) {
+  float3 w = abs (normal);
+  w = w * w;
+  w /= max (w.x + w.y + w.z, 1e-4);
+  float3 gradient (0.0);
+  if (w.y > 0.01) {
+    const float2 g =
+      terrain_relief_gradient (world.xz, pixel_m, base_wavelength);
+    gradient += w.y * float3 (g.x, 0.0, g.y);
+  }
+  if (w.x > 0.01) {
+    const float2 g =
+      terrain_relief_gradient (world.zy, pixel_m, base_wavelength);
+    gradient += w.x * float3 (0.0, g.y, g.x);
+  }
+  if (w.z > 0.01) {
+    const float2 g =
+      terrain_relief_gradient (world.xy, pixel_m, base_wavelength);
+    gradient += w.z * float3 (g.x, g.y, 0.0);
+  }
+  return gradient;
+}
+
+// Tilt within the surface: only the tangential part of the relief gradient
+// perturbs the normal, so a steep face is rolled along itself instead of
+// being rotated through itself.
+static inline float3
+terrain_perturb_normal (float3 normal, float3 gradient, float strength) {
+  const float3 tangential = gradient - normal * dot (gradient, normal);
+  return normalize (normal - tangential * strength);
 }
 
 static inline float3 terrain_heat_palette (float t) {
@@ -757,52 +816,59 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
     texel = mix (texel, overlay.rgb, overlay.a);
   }
 
-  // Grass and soil are softly irregular; exposed stone has stronger relief;
-  // snow remains comparatively smooth. Fade the perturbation before the
-  // texture itself loses detail to keep distant terrain stable.
+  // How much world a pixel covers in every axis, not just across the
+  // ground plane: relief on a cliff is read on a vertical plane, where the
+  // XZ footprint says nothing about how much of it one pixel spans. This
+  // is what retires each relief octave at its own distance.
+  const float pixel_m =
+    max (length (dfdx (in.world_pos)), length (dfdy (in.world_pos)));
+
+  // Character, not only amount. Broken stone and fresh cuts fracture at a
+  // coarser wavelength than turf does; settled alluvium answers by losing
+  // amplitude rather than gaining frequency, and snow buries the lot.
   const float cut_relief = smoothstep (0.10, 0.65, geology.r);
   const float fill_relief = smoothstep (0.10, 0.65, geology.g);
+  const float relief_wavelength =
+    mix (1.05, 2.90, saturate (cliff_coef + 0.45 * scree_coef));
   const float detail_strength =
-    (0.08 + 0.42 * cliff_coef + 0.12 * scree_coef + 0.26 * cut_relief +
-     0.10 * trail_material * close_trail) *
-    (1.0 - 0.55 * fill_relief) * (1.0 - 0.8 * far_blend) *
-    (1.0 - 0.85 * snow_coef) * (1.0 - smoothstep (0.45, 2.2, ground_pixel_m));
-  const float material_signal = dot (texel, float3 (0.299, 0.587, 0.114));
-  n = terrain_detail_normal (in.world_pos, n, material_signal, detail_strength);
+    (0.13 + 0.42 * cliff_coef + 0.11 * scree_coef + 0.20 * cut_relief +
+     0.09 * trail_material * close_trail) *
+    (1.0 - 0.55 * fill_relief) * (1.0 - 0.85 * snow_coef);
+  n = terrain_perturb_normal (
+    n,
+    terrain_relief_volume (in.world_pos, n, pixel_m, relief_wavelength),
+    detail_strength);
+
   // Close wet flats pick up rounded pebble-scale relief. This is deliberately
   // subtle: it breaks the perfectly smooth underwater bed without pretending
-  // to alter collision geometry.
-  const float pebble =
-    0.68 * moppe_value_noise (in.world_pos.xz * 1.55 + float2 (7.1, 19.3)) +
-    0.32 * moppe_value_noise (in.world_pos.xz * 4.2 + float2 (31.7, 3.9));
+  // to alter collision geometry. A bed is flat by the time this fires, so
+  // the ground plane alone carries it.
   const float pebble_strength = max (submerged, 0.8 * swash_zone) *
                                 smoothstep (0.45, 0.92, n.y) *
-                                (1.0 - smoothstep (18.0, 120.0, dist)) * 0.28;
-  n = terrain_detail_normal (in.world_pos,
-                             n,
-                             pebble,
-                             pebble_strength *
-                               (1.0 - smoothstep (0.12, 0.65, ground_pixel_m)));
-  // Water-worked ground is anisotropic. The rill noise stays fixed in world
+                                (1.0 - smoothstep (18.0, 120.0, dist)) * 0.22;
+  if (pebble_strength > 0.002) {
+    const float2 g = terrain_relief_gradient (
+      in.world_pos.xz + float2 (7.1, 19.3), pixel_m, 0.62);
+    n = terrain_perturb_normal (n, float3 (g.x, 0.0, g.y), pebble_strength);
+  }
+
+  // Water-worked ground is anisotropic. The rill relief stays fixed in world
   // space; removing the along-flow component of its gradient leaves relief
   // that reads as streaks following the local drainage direction. Rotating
   // the noise domain by the flow direction instead would swing the sample
   // coordinate by the full world position wherever the direction turns,
   // decorrelating into speckle and rings.
-  const float2 flow_dir = channel_flux / max (channel_activity, 1e-4);
-  const float2 rill_base = in.world_pos.xz * 0.9 + float2 (13.7, 41.3);
-  const float rill_center = moppe_value_noise (rill_base);
-  const float2 rill_gradient =
-    float2 (moppe_value_noise (rill_base + float2 (0.31, 0.0)) - rill_center,
-            moppe_value_noise (rill_base + float2 (0.0, 0.31)) - rill_center);
-  const float2 rill_across =
-    rill_gradient - flow_dir * dot (rill_gradient, flow_dir);
-  const float rill_strength =
-    smoothstep (0.35, 0.90, channel_activity) * (1.0 - 0.85 * snow_coef) *
-    (1.0 - submerged * 0.5) * (1.0 - smoothstep (0.30, 1.6, ground_pixel_m)) *
-    0.28;
-  n =
-    normalize (n - float3 (rill_across.x, 0.0, rill_across.y) * rill_strength);
+  const float rill_strength = smoothstep (0.35, 0.90, channel_activity) *
+                              (1.0 - 0.85 * snow_coef) *
+                              (1.0 - submerged * 0.5) * 0.26;
+  if (rill_strength > 0.002) {
+    const float2 flow_dir = channel_flux / max (channel_activity, 1e-4);
+    const float2 g = terrain_relief_gradient (
+      in.world_pos.xz + float2 (13.7, 41.3), pixel_m, 1.15);
+    const float2 across = g - flow_dir * dot (g, flow_dir);
+    n = terrain_perturb_normal (
+      n, float3 (across.x, 0.0, across.y), rill_strength);
+  }
 
   // Per-pixel Lambert with real cast shadows.
   const float shadow = terrain_shadow_factor (
