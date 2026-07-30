@@ -142,6 +142,30 @@ struct MoppeOceanUniforms {
   MoppeFloat4 current; // x=flow raster enabled, y=geology raster enabled
 };
 
+// Undergrowth is generated, never stored. The object stage walks a window of
+// ground tiles around the camera and keeps the ones whose fields say
+// something grows there; the mesh stage turns each survivor into plants. So
+// what crosses this boundary is where the camera is and how the world's
+// lattice is laid out -- never a plant.
+struct MoppeUndergrowthUniforms {
+  MoppeMat4 view_proj;
+  MoppeMat4 light_matrix; // world -> biased shadow uv/z
+  MoppeFloat4 camera_pos;
+  MoppeFloat4 sun_dir;
+  MoppeFloat4 sun_diffuse;
+  MoppeFloat4 sun_specular;
+  MoppeFloat4 ambient;
+  MoppeFloat4 fog_color; // rgb; w = fog_scale
+  MoppeFloat4 lattice;   // x=1/step_x, y=1/step_z, z=height_scale,
+                         // w=lattice width in samples
+  MoppeFloat4 tiles;     // xy=origin tile indices, z=tiles per side,
+                         // w=tile side in metres
+  MoppeFloat4 params;    // x=time, y=cloudiness, z=reach in metres,
+                         // w=density scale
+  MoppeFloat4 shadow;    // x=strength, y=shadow texel
+  MoppeFloat4 relief;    // x=sea level, y=land relief
+};
+
 struct MoppeDustEmission {
   MoppeFloat4 position_birth; // xyz position, w birth time
   MoppeFloat4 velocity_count; // xyz base velocity, w particle count

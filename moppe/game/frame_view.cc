@@ -42,6 +42,7 @@ namespace moppe::game {
       visibility.water_inspection = water;
       visibility.tree_demo = tree;
       visibility.forest = !water && !tree;
+      visibility.undergrowth = !water && input.graphics.undergrowth;
       visibility.tree_stand = !water;
       visibility.actors = !water && !tree;
       visibility.ocean = input.graphics.ocean;

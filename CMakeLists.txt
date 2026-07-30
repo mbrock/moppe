@@ -248,6 +248,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/ocean.metal
   moppe/shaders/metal/river.metal
   moppe/shaders/metal/dust.metal
+  moppe/shaders/metal/undergrowth.metal
 )
 
 set(MOPPE_METAL_DEPS

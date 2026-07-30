@@ -320,6 +320,7 @@ namespace moppe {
         id<MTLRenderPipelineState> dust_mesh_soft = nil;
         id<MTLRenderPipelineState> dust_mesh_add = nil;
         id<MTLRenderPipelineState> water_tiles = nil;
+        id<MTLRenderPipelineState> undergrowth = nil;
         id<MTLRenderPipelineState> river = nil;
         bool mesh_shaders_ok = false;
 
@@ -672,6 +673,7 @@ namespace moppe {
       void draw_ocean (const OceanParams& params) override;
       void draw_dust (std::span<const DustEmission> emissions,
                       float logical_time) override;
+      void draw_undergrowth (const UndergrowthParams& params) override;
       void draw_rivers (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh, const Mat4& model) override;
       void draw_list (const DrawList& list) override;
@@ -1206,6 +1208,37 @@ namespace moppe {
                                                  error:&error];
             if (!m_pipelines.water_tiles)
               std::cerr << "moppe: water tile pipeline failed: "
+                        << (error ? error.localizedDescription.UTF8String : "?")
+                        << std::endl;
+          }
+
+          // Undergrowth: ferns and shrubs generated per frame from the
+          // world's own fields. Opaque, depth-written, no vertex buffer at
+          // all -- the object stage decides which ground is worth a
+          // threadgroup and the mesh stage grows the plants.
+          MTLMeshRenderPipelineDescriptor* g =
+            [[MTLMeshRenderPipelineDescriptor alloc] init];
+          g.objectFunction =
+            [m_library newFunctionWithName:@"undergrowth_object"];
+          g.meshFunction = [m_library newFunctionWithName:@"undergrowth_mesh"];
+          g.fragmentFunction =
+            [m_library newFunctionWithName:@"undergrowth_fragment"];
+          g.rasterSampleCount = m_msaa_samples;
+          g.colorAttachments[0].pixelFormat = scene;
+          g.depthAttachmentPixelFormat = depth;
+          g.stencilAttachmentPixelFormat = depth;
+          g.payloadMemoryLength = 1024;
+          g.maxTotalThreadsPerObjectThreadgroup = 64;
+          g.maxTotalThreadsPerMeshThreadgroup = 20;
+          if (g.objectFunction && g.meshFunction && g.fragmentFunction) {
+            NSError* error = nil;
+            m_pipelines.undergrowth = [m_device
+              newRenderPipelineStateWithMeshDescriptor:g
+                                               options:MTLPipelineOptionNone
+                                            reflection:nil
+                                                 error:&error];
+            if (!m_pipelines.undergrowth)
+              std::cerr << "moppe: undergrowth pipeline failed: "
                         << (error ? error.localizedDescription.UTF8String : "?")
                         << std::endl;
           }
@@ -2545,6 +2578,76 @@ namespace moppe {
                                    m_frame },
                                  emissions,
                                  logical_time);
+    }
+
+    void MetalRenderer::draw_undergrowth (const UndergrowthParams& params) {
+      const MetalTerrainResources& terrain = m_terrain_resources;
+      if (!m_pipelines.undergrowth || !terrain.have_terrain ||
+          !terrain.have_forest || !terrain.have_moisture || !terrain.have_paths)
+        return;
+      if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
+        MoppeUndergrowthUniforms u;
+        std::memset (&u, 0, sizeof (u));
+        u.view_proj = m_frame.uniforms.view_proj;
+        u.light_matrix = m_frame.uniforms.light_matrix;
+        u.camera_pos = m_frame.uniforms.camera_pos;
+        u.sun_dir = m_frame.uniforms.sun_dir;
+        u.sun_diffuse = m_frame.uniforms.sun_diffuse;
+        u.sun_specular = m_frame.uniforms.sun_specular;
+        u.ambient = m_frame.uniforms.ambient;
+        u.fog_color = m_frame.uniforms.fog_color;
+        u.shadow = m_frame.uniforms.shadow;
+        u.relief.x = m_frame.uniforms.misc.z;
+        u.relief.y = m_frame.uniforms.misc.w;
+
+        const TerrainParams& tp = terrain.params;
+        u.lattice.x = 1.0f / tp.scale[0];
+        u.lattice.y = 1.0f / tp.scale[2];
+        u.lattice.z = tp.scale[1];
+        u.lattice.w = (float)tp.width;
+
+        // The tile window is anchored to the world lattice rather than to the
+        // camera, so a plant keeps its identity as the rider moves and no
+        // amount of travelling makes the floor reshuffle itself.
+        const float tile_world = 2.8f;
+        const int tiles_side =
+          (int)std::ceil ((2.0f * params.reach) / tile_world);
+        u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - params.reach) /
+                                tile_world);
+        u.tiles.y = std::floor ((m_frame.params.camera_pos[2] - params.reach) /
+                                tile_world);
+        u.tiles.z = (float)tiles_side;
+        u.tiles.w = tile_world;
+        u.params.x = params.time;
+        u.params.y = params.cloud_cover;
+        u.params.z = params.reach;
+        u.params.w = params.density;
+
+        id<MTLRenderCommandEncoder> enc = scene_encoder ();
+        begin_gpu_pass (enc, GpuPass::Scene);
+        [enc setRenderPipelineState:m_pipelines.undergrowth];
+        [enc setDepthStencilState:m_pipelines.depth[1][1]];
+        [enc setCullMode:MTLCullModeNone];
+        [enc setObjectBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+        [enc setMeshBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+        [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+        const auto bind = [&] (id<MTLTexture> texture, NSUInteger slot) {
+          [enc setObjectTexture:texture atIndex:slot];
+          [enc setMeshTexture:texture atIndex:slot];
+        };
+        bind (terrain.heights, MOPPE_TEX_HEIGHTS);
+        bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
+        bind (terrain.forest, MOPPE_TEX_TERRAIN_FOREST);
+        bind (terrain.moisture, MOPPE_TEX_TERRAIN_MOISTURE);
+        [enc setObjectTexture:terrain.paths atIndex:MOPPE_TEX_TERRAIN_PATHS];
+        if (terrain.shadow_map)
+          [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
+        const NSUInteger total =
+          (NSUInteger)tiles_side * (NSUInteger)tiles_side;
+        [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
+          threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake (20, 1, 1)];
+      }
     }
 
     // -- draw lists ----------------------------------------------------

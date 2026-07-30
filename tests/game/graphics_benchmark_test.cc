@@ -162,3 +162,25 @@ MOPPE_TEST (graphics_benchmark_replay_reuses_the_public_session_tape) {
   for (const game::GameState& end : epoch_ends)
     check_state (end, epoch_ends.front ());
 }
+
+// A block is a claim about what the cube can separate. Undergrowth is a
+// whole geometry pass, so lumping it in with the small effects would make
+// its cost unmeasurable -- which is the only reason the cube exists.
+MOPPE_TEST (undergrowth_is_its_own_benchmark_dimension) {
+  using namespace moppe::game;
+  const auto block =
+    graphics_benchmark_partition (GraphicsFeatureId::undergrowth);
+  MOPPE_CHECK (RidingGraphicsPartition::name (block) == "undergrowth");
+  for (const GraphicsFeature* feature : graphics_features) {
+    if (!graphics_benchmark_includes (*feature))
+      continue;
+    if (feature->id == GraphicsFeatureId::undergrowth)
+      continue;
+    MOPPE_CHECK (graphics_benchmark_partition (feature->id) != block);
+  }
+
+  // Every hot riding feature still lands in some declared block, and the
+  // cube covers every combination of them.
+  MOPPE_CHECK (graphics_benchmark_dimension_count () ==
+               static_cast<int> (RidingGraphicsPartition::blocks.size ()));
+}

@@ -93,7 +93,7 @@ MOPPE_TEST (graphics_settings_print_every_resolved_value) {
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {
   const int bits = game::graphics_benchmark_dimension_count ();
-  MOPPE_CHECK (bits == 5);
+  MOPPE_CHECK (bits == 6);
   std::set<uint32_t> masks;
   uint32_t previous = game::gray_code (0);
   for (uint32_t epoch = 0; epoch < (1u << bits); ++epoch) {

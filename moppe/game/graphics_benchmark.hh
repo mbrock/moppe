@@ -47,13 +47,14 @@ namespace moppe::game {
       rivers,
       bloom,
       auto_exposure,
+      undergrowth,
       small_effects,
     };
 
     using block_type = Block;
     inline static constexpr std::array blocks {
-      Block::ocean,         Block::rivers,        Block::bloom,
-      Block::auto_exposure, Block::small_effects,
+      Block::ocean,         Block::rivers,      Block::bloom,
+      Block::auto_exposure, Block::undergrowth, Block::small_effects,
     };
 
     constexpr Block operator() (GraphicsFeatureId feature) const {
@@ -66,6 +67,8 @@ namespace moppe::game {
         return Block::bloom;
       case GraphicsFeatureId::auto_exposure:
         return Block::auto_exposure;
+      case GraphicsFeatureId::undergrowth:
+        return Block::undergrowth;
       default:
         return Block::small_effects;
       }
@@ -81,6 +84,8 @@ namespace moppe::game {
         return "bloom";
       case Block::auto_exposure:
         return "auto-exposure";
+      case Block::undergrowth:
+        return "undergrowth";
       case Block::small_effects:
         return "small-effects";
       }
