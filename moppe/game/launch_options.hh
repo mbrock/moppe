@@ -37,6 +37,9 @@ namespace moppe::game {
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;
     std::optional<GraphicsBenchmarkConfig> benchmark;
+    // Keeps a hand-started run behind the active application, the way
+    // captures and benchmarks already stay out of the way.
+    bool stay_inactive = false;
     // Negative until the launch either names a seed or recalls a remembered
     // one; a capture always pins its own so comparisons stay reproducible.
     int seed = -1;

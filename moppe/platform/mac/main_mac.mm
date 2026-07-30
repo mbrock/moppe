@@ -223,7 +223,9 @@ static void match_screen_refresh_rate (MoppeView* view) {
   view.preferredFramesPerSecond = hz > 0 ? hz : 60;
 }
 
-static void match_screen_render_size (MoppeView* view) {
+// Answers whether the presentation surface actually changed, so a caller can
+// re-report runtime parameters without narrating every resize event.
+static bool match_screen_render_size (MoppeView* view) {
   const NSSize points = view.bounds.size;
   // Present one drawable pixel per logical view point.  Rendering a 2x
   // Retina surface would quadruple scene and final-composite fill cost for a
@@ -240,9 +242,11 @@ static void match_screen_render_size (MoppeView* view) {
     CGSizeMake (std::round (points.width * backing * drawable_scale),
                 std::round (points.height * backing * drawable_scale));
   view.autoResizeDrawable = NO;
-  if (view.drawableSize.width != wanted.width ||
-      view.drawableSize.height != wanted.height)
-    view.drawableSize = wanted;
+  if (view.drawableSize.width == wanted.width &&
+      view.drawableSize.height == wanted.height)
+    return false;
+  view.drawableSize = wanted;
+  return true;
 }
 
 static const char* pixel_format_name (MTLPixelFormat format) {
@@ -426,8 +430,13 @@ static void log_runtime_parameters (MoppeView* view) {
 
 - (void)windowDidResize:(NSNotification*)note {
   NSWindow* window = note.object;
-  if ([window.contentView isKindOfClass:[MoppeView class]])
-    match_screen_render_size ((MoppeView*)window.contentView);
+  if ([window.contentView isKindOfClass:[MoppeView class]]) {
+    MoppeView* view = (MoppeView*)window.contentView;
+    // The startup report precedes the fullscreen transition, so the surface
+    // it described is not the one the game ends up rendering.
+    if (match_screen_render_size (view))
+      log_runtime_parameters (view);
+  }
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)app {

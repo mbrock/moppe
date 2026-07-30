@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <sstream>
 #include <string_view>
 
 namespace moppe::game {
@@ -203,6 +204,34 @@ namespace moppe::game {
           capture_to (options, values[1]);
           return true;
         } },
+      { "--window-size",
+        1,
+        "WIDTHxHEIGHT in points",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          int width = 0;
+          int height = 0;
+          char separator = 0;
+          std::istringstream text (values[0]);
+          text >> width >> separator >> height;
+          if (!text.eof () || (separator != 'x' && separator != 'X') ||
+              width < 64 || height < 64)
+            return unknown ("window size", values[0], error);
+          options.config.width = width;
+          options.config.height = height;
+          options.config.fullscreen = false;
+          return true;
+        } },
+      // Profiling a large window should not pull focus away from whatever
+      // the developer is reading while it runs.
+      { "--inactive",
+        0,
+        "",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.stay_inactive = true;
+          return true;
+        } },
       { "--seed",
         1,
         "an integer",
@@ -234,8 +263,8 @@ namespace moppe::game {
       options.config.capture_frames = !options.screenshot_path.empty () ||
                                       ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
       // An automated run stays behind whatever the developer is looking at.
-      options.config.activate =
-        !options.config.capture_frames && !options.benchmark;
+      options.config.activate = !options.config.capture_frames &&
+                                !options.benchmark && !options.stay_inactive;
       // A capture pins its own seed so repeated runs compare like with like.
       if (!options.screenshot_path.empty () && options.seed < 0)
         options.seed = 123;
