@@ -58,17 +58,19 @@ namespace moppe::terrain {
     meters_t
     offset_distance (int columns, int rows, const TerrainDomain& grid) {
       return std::hypot (
-               static_cast<float> (columns) * meters_value (grid.spacing_x ()),
-               static_cast<float> (rows) * meters_value (grid.spacing_z ())) *
+               static_cast<float> (columns) *
+                 (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+               static_cast<float> (rows) *
+                 (grid.spacing_z ()).numerical_value_in (moppe::u::m)) *
              mp_units::si::metre;
     }
 
     DrainageDirection
     direction_for_offset (int columns, int rows, const TerrainDomain& grid) {
-      const float x =
-        static_cast<float> (columns) * meters_value (grid.spacing_x ());
-      const float z =
-        static_cast<float> (rows) * meters_value (grid.spacing_z ());
+      const float x = static_cast<float> (columns) *
+                      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      const float z = static_cast<float> (rows) *
+                      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
       return normalized_angle (std::atan2 (z, x)) *
              drainage_direction[mp_units::angular::radian];
     }
@@ -122,20 +124,22 @@ namespace moppe::terrain {
             offset_distance (offsets.diagonal_x - offsets.cardinal_x,
                              offsets.diagonal_y - offsets.cardinal_y,
                              grid);
-          const float d1_m = meters_value (d1);
-          const float d2_m = meters_value (d2);
-          facets[i] = { .offsets = offsets,
-                        .d1 = d1,
-                        .d2 = d2,
-                        .extent = std::atan2 (d2_m, d1_m),
-                        .u1_x = offsets.cardinal_x *
-                                meters_value (grid.spacing_x ()) / d1_m,
-                        .u1_z = offsets.cardinal_y *
-                                meters_value (grid.spacing_z ()) / d1_m,
-                        .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
-                                meters_value (grid.spacing_x ()) / d2_m,
-                        .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
-                                meters_value (grid.spacing_z ()) / d2_m };
+          const float d1_m = (d1).numerical_value_in (moppe::u::m);
+          const float d2_m = (d2).numerical_value_in (moppe::u::m);
+          facets[i] = {
+            .offsets = offsets,
+            .d1 = d1,
+            .d2 = d2,
+            .extent = std::atan2 (d2_m, d1_m),
+            .u1_x = offsets.cardinal_x *
+                    (grid.spacing_x ()).numerical_value_in (moppe::u::m) / d1_m,
+            .u1_z = offsets.cardinal_y *
+                    (grid.spacing_z ()).numerical_value_in (moppe::u::m) / d1_m,
+            .u2_x = (offsets.diagonal_x - offsets.cardinal_x) *
+                    (grid.spacing_x ()).numerical_value_in (moppe::u::m) / d2_m,
+            .u2_z = (offsets.diagonal_y - offsets.cardinal_y) *
+                    (grid.spacing_z ()).numerical_value_in (moppe::u::m) / d2_m
+          };
         }
       }
     };
@@ -276,11 +280,11 @@ namespace moppe::terrain {
         const float direction_z = std::cos (relative) * geometry.u1_z +
                                   std::sin (relative) * geometry.u2_z;
         const float diagonal_fraction = relative / geometry.extent;
-        const float interpolation =
-          std::clamp (meters_value (geometry.d1) * std::tan (relative) /
-                        meters_value (geometry.d2),
-                      0.0f,
-                      1.0f);
+        const float interpolation = std::clamp (
+          (geometry.d1).numerical_value_in (moppe::u::m) * std::tan (relative) /
+            (geometry.d2).numerical_value_in (moppe::u::m),
+          0.0f,
+          1.0f);
         const DrainageDirection direction =
           normalized_angle (std::atan2 (direction_z, direction_x)) *
           drainage_direction[mp_units::angular::radian];
@@ -299,8 +303,8 @@ namespace moppe::terrain {
         best.route.arc_count = 2;
         best.route.receiver_interpolation =
           interpolation * facet_coordinate[mp_units::one];
-        best.route.run = meters_value (geometry.d1) / std::cos (relative) *
-                         mp_units::si::metre;
+        best.route.run = (geometry.d1).numerical_value_in (moppe::u::m) /
+                         std::cos (relative) * mp_units::si::metre;
         best.direction = direction;
         best.slope = facet_slope * terrain_slope[mp_units::one];
       }
@@ -510,7 +514,8 @@ namespace moppe::terrain {
         slopes[offset] = reading.slope;
       }
 
-      const float cell_area_m2 = square_meters_value (grid.cell_area ());
+      const float cell_area_m2 =
+        (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
       std::vector<FractionalContributingArea> areas (
         lattice.size (),
         cell_area_m2 * fractional_contributing_area[mp_units::si::metre *

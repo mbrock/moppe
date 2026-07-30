@@ -100,10 +100,12 @@ MOPPE_TEST (vehicle_state_restores_hidden_simulation_state) {
   MOPPE_CHECK_NEAR (restored.impact.numerical_value_in (u::m / u::s),
                     saved.impact.numerical_value_in (u::m / u::s),
                     1e-6f);
-  MOPPE_CHECK_NEAR (
-    meters_value (restored.fall_top), meters_value (saved.fall_top), 1e-6f);
-  MOPPE_CHECK_NEAR (
-    meters_value (restored.fall_drop), meters_value (saved.fall_drop), 1e-6f);
+  MOPPE_CHECK_NEAR ((restored.fall_top).numerical_value_in (moppe::u::m),
+                    (saved.fall_top).numerical_value_in (moppe::u::m),
+                    1e-6f);
+  MOPPE_CHECK_NEAR ((restored.fall_drop).numerical_value_in (moppe::u::m),
+                    (saved.fall_drop).numerical_value_in (moppe::u::m),
+                    1e-6f);
   MOPPE_CHECK (restored.body_kind == saved.body_kind);
 }
 

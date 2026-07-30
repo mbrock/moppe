@@ -72,9 +72,10 @@ MOPPE_TEST (generated_terrain_wraps_continuously) {
 
   // The lattice is seamless: sampling one period apart reads the same
   // ground in both axes.
-  const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
-                            0.0f,
-                            meters_value (surface.domain ().period_z ()));
+  const Vec3 period =
+    Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+          0.0f,
+          (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
   for (const float t : { 3.7f, 611.2f, 2499.9f }) {
     MOPPE_CHECK_NEAR (
       terrain::surface_elevation_value (

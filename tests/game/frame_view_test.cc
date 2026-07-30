@@ -326,7 +326,7 @@ MOPPE_TEST (
   FrameFixture underwater;
   game::FrameView submerged = clear_sun_view ();
   submerged.camera.position[1] =
-    meters_value (underwater.world.water_level) - 0.1f;
+    (underwater.world.water_level).numerical_value_in (moppe::u::m) - 0.1f;
   MOPPE_CHECK_NEAR (game::sun_visibility_target (
                       submerged, underwater.world, underwater.surface),
                     0.0f,

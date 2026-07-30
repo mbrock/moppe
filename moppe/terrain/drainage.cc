@@ -53,8 +53,10 @@ namespace moppe::terrain {
       if (dy < -height / 2)
         dy += height;
       return std::hypot (
-               static_cast<float> (dx) * meters_value (grid.spacing_x ()),
-               static_cast<float> (dy) * meters_value (grid.spacing_z ())) *
+               static_cast<float> (dx) *
+                 (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+               static_cast<float> (dy) *
+                 (grid.spacing_z ()).numerical_value_in (moppe::u::m)) *
              mp_units::si::metre;
     }
 
@@ -131,11 +133,11 @@ namespace moppe::terrain {
       // corners. Sampling below source-cell spacing makes the visible banks
       // independent of the terrain lattice.
       constexpr float tangent_scale = 0.34f;
-      const float sample_spacing =
-        std::clamp (0.4f * std::min (meters_value (grid.spacing_x ()),
-                                     meters_value (grid.spacing_z ())),
-                    0.75f,
-                    2.0f);
+      const float sample_spacing = std::clamp (
+        0.4f * std::min ((grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                         (grid.spacing_z ()).numerical_value_in (moppe::u::m)),
+        0.75f,
+        2.0f);
       for (std::size_t segment = 0; segment + 1 < raw.size (); ++segment) {
         const RiverAlignmentPoint& a = raw[segment];
         const RiverAlignmentPoint& b = raw[segment + 1];
@@ -192,8 +194,10 @@ namespace moppe::terrain {
       const TerrainDomain& grid = drainage.domain ();
       const int width = static_cast<int> (grid.width ());
       const int height = static_cast<int> (grid.height ());
-      const float period_x = width * meters_value (grid.spacing_x ());
-      const float period_z = height * meters_value (grid.spacing_z ());
+      const float period_x =
+        width * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      const float period_z =
+        height * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
       std::vector<std::uint8_t> waterfall_cells (grid.size (), 0);
       for (const Waterfall& waterfall : network.waterfalls)
         waterfall_cells[waterfall.lip_cell] = 1;
@@ -266,9 +270,9 @@ namespace moppe::terrain {
         for (std::size_t knot = 0; knot < cells.size (); ++knot) {
           const CellIndex cell = cells[knot];
           float x = static_cast<float> (cell % width) *
-                    meters_value (grid.spacing_x ());
+                    (grid.spacing_x ()).numerical_value_in (moppe::u::m);
           float z = static_cast<float> (cell / width) *
-                    meters_value (grid.spacing_z ());
+                    (grid.spacing_z ()).numerical_value_in (moppe::u::m);
           // Interior knots leave the lattice: the previous cell's D-infinity
           // route records where its continuous flow ray crosses the segment
           // between its two receivers, and pinning the knot to that crossing
@@ -284,14 +288,18 @@ namespace moppe::terrain {
               const CellIndex diagonal = route.arcs[1].receiver;
               const float t =
                 route.receiver_interpolation.numerical_value_in (mp_units::one);
-              const float cardinal_x = static_cast<float> (cardinal % width) *
-                                       meters_value (grid.spacing_x ());
-              const float cardinal_z = static_cast<float> (cardinal / width) *
-                                       meters_value (grid.spacing_z ());
-              const float diagonal_x = static_cast<float> (diagonal % width) *
-                                       meters_value (grid.spacing_x ());
-              const float diagonal_z = static_cast<float> (diagonal / width) *
-                                       meters_value (grid.spacing_z ());
+              const float cardinal_x =
+                static_cast<float> (cardinal % width) *
+                (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+              const float cardinal_z =
+                static_cast<float> (cardinal / width) *
+                (grid.spacing_z ()).numerical_value_in (moppe::u::m);
+              const float diagonal_x =
+                static_cast<float> (diagonal % width) *
+                (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+              const float diagonal_z =
+                static_cast<float> (diagonal / width) *
+                (grid.spacing_z ()).numerical_value_in (moppe::u::m);
               x = cardinal_x +
                   river_wrapped_delta (diagonal_x - cardinal_x, period_x) * t;
               z = cardinal_z +
@@ -347,7 +355,9 @@ namespace moppe::terrain {
                                     ? solve (reach.downstream_reach)
                                     : 0.0;
         active[id] = 0;
-        remaining[id] = meters_value (reach.alignment.length) + downstream;
+        remaining[id] =
+          (reach.alignment.length).numerical_value_in (moppe::u::m) +
+          downstream;
         return remaining[id];
       };
       for (RiverReach& reach : network.reaches) {
@@ -410,7 +420,8 @@ namespace moppe::terrain {
                elevation_at (domain, elevations, bx, by);
       });
 
-    const float cell_area = square_meters_value (domain.cell_area ());
+    const float cell_area =
+      (domain.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
     std::vector<float> area (count, cell_area);
     for (const std::uint32_t cell : order)
       if (receiver[cell] != cell)
@@ -450,9 +461,9 @@ namespace moppe::terrain {
             const std::size_t nx = wrapped (raw_x, width);
             const std::size_t ny = wrapped (raw_y, height);
             const std::size_t next = index (nx, ny);
-            const float distance =
-              std::hypot (offset.x * meters_value (grid.spacing_x ()),
-                          offset.y * meters_value (grid.spacing_z ()));
+            const float distance = std::hypot (
+              offset.x * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+              offset.y * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
             const float candidate = (surface_elevation_value (surface[cell]) -
                                      surface_elevation_value (surface[next])) /
                                     distance;
@@ -518,7 +529,8 @@ namespace moppe::terrain {
     // Equal-height lake routes cannot be accumulated by elevation order.
     // Receiver edges either lower the filled surface or follow the acyclic
     // priority-flood forest, so a general topological pass handles both.
-    const float cell_area = square_meters_value (grid.cell_area ());
+    const float cell_area =
+      (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
     std::vector<float> area (count, cell_area);
     std::vector<std::uint32_t> order;
     order.reserve (count);
@@ -564,10 +576,12 @@ namespace moppe::terrain {
                          const WaterfallParameters& waterfall_parameters) {
     MOPPE_PROFILE_ZONE ("extract_river_network");
     const std::size_t count = flood.width () * flood.height ();
-    if (!std::isfinite (square_meters_value (minimum_area)) ||
+    if (!std::isfinite (
+          (minimum_area).numerical_value_in (moppe::u::m * moppe::u::m)) ||
         minimum_area < 0.0f * mp_units::si::metre * mp_units::si::metre)
       throw std::invalid_argument ("river area threshold must be finite");
-    if (!std::isfinite (meters_value (waterfall_parameters.minimum_drop)) ||
+    if (!std::isfinite ((waterfall_parameters.minimum_drop)
+                          .numerical_value_in (moppe::u::m)) ||
         waterfall_parameters.minimum_drop < 0.0f * mp_units::si::metre ||
         !std::isfinite (waterfall_parameters.minimum_slope.numerical_value_in (
           mp_units::one)) ||
@@ -696,7 +710,7 @@ namespace moppe::terrain {
         last_candidate = i;
         const square_meters_t area = drainage.contributing_area_at (cell);
         const float score =
-          meters_value (drop) *
+          (drop).numerical_value_in (moppe::u::m) *
           std::sqrt (std::max (
             1.0f, (area / reference_area).numerical_value_in (mp_units::one)));
         if (!has_selected || score > selected_score ||

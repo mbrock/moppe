@@ -18,8 +18,9 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
-    const float spacing = 0.5f * (meters_value (grid.spacing_x ()) +
-                                  meters_value (grid.spacing_z ()));
+    const float spacing =
+      0.5f * ((grid.spacing_x ()).numerical_value_in (moppe::u::m) +
+              (grid.spacing_z ()).numerical_value_in (moppe::u::m));
 
     // Multi-source BFS distance (in grid steps) from every standing-water
     // cell. Grid distance is close enough to metric distance here: the
@@ -58,7 +59,8 @@ namespace moppe::terrain {
       }
     }
 
-    const float cell_area = square_meters_value (grid.cell_area ());
+    const float cell_area =
+      (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
     std::vector<SurfaceMoisture> moisture (count);
     {
       MOPPE_PROFILE_ZONE ("moisture.combine_water_and_drainage");

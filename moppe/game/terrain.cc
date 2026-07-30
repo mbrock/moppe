@@ -59,7 +59,7 @@ namespace moppe {
       params.width = static_cast<int> (surface.domain ().width ());
       params.height = static_cast<int> (surface.domain ().height ());
       params.scale = m_scale;
-      params.sea_level = meters_value (world.water_level);
+      params.sea_level = (world.water_level).numerical_value_in (moppe::u::m);
       params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = graphics.terrain_shadows ? 0.85f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);

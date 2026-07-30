@@ -113,14 +113,18 @@ namespace {
     for (std::size_t i = 0; i < cells.size (); ++i) {
       const terrain::CellIndex cell = cells[i];
       const terrain::CellIndex next = cells[(i + 1) % cells.size ()];
-      const float x = (cell.value % FlightFixture::side) *
-                      meters_value (fixture.grid.spacing_x ());
-      const float z = (cell.value / FlightFixture::side) *
-                      meters_value (fixture.grid.spacing_z ());
-      const float next_x = (next.value % FlightFixture::side) *
-                           meters_value (fixture.grid.spacing_x ());
-      const float next_z = (next.value / FlightFixture::side) *
-                           meters_value (fixture.grid.spacing_z ());
+      const float x =
+        (cell.value % FlightFixture::side) *
+        (fixture.grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      const float z =
+        (cell.value / FlightFixture::side) *
+        (fixture.grid.spacing_z ()).numerical_value_in (moppe::u::m);
+      const float next_x =
+        (next.value % FlightFixture::side) *
+        (fixture.grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      const float next_z =
+        (next.value / FlightFixture::side) *
+        (fixture.grid.spacing_z ()).numerical_value_in (moppe::u::m);
       alignment.points.push_back ({ x, z });
       alignment_length += std::hypot (next_x - x, next_z - z);
     }

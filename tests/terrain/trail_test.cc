@@ -8,7 +8,6 @@
 #include <span>
 #include <vector>
 
-using moppe::meters_value;
 using namespace moppe::terrain;
 
 namespace {
@@ -103,12 +102,14 @@ namespace {
                          const TerrainDomain& grid,
                          float x_m,
                          float z_m) {
-    const float x = std::clamp (x_m / meters_value (grid.spacing_x ()),
-                                0.0f,
-                                static_cast<float> (grid.width () - 1));
-    const float y = std::clamp (z_m / meters_value (grid.spacing_z ()),
-                                0.0f,
-                                static_cast<float> (grid.height () - 1));
+    const float x =
+      std::clamp (x_m / (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                  0.0f,
+                  static_cast<float> (grid.width () - 1));
+    const float y =
+      std::clamp (z_m / (grid.spacing_z ()).numerical_value_in (moppe::u::m),
+                  0.0f,
+                  static_cast<float> (grid.height () - 1));
     const int x0 = static_cast<int> (std::floor (x));
     const int y0 = static_cast<int> (std::floor (y));
     const int x1 = std::min (x0 + 1, static_cast<int> (grid.width () - 1));
@@ -137,7 +138,7 @@ MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   MOPPE_CHECK (result.report.maximum_centerline_grade >=
                result.report.mean_centerline_grade);
   MOPPE_CHECK (
-    meters_value (result.report.maximum_centerline_step) <=
+    (result.report.maximum_centerline_step).numerical_value_in (moppe::u::m) <=
     std::hypot (trail_valley_grid ().spacing_x ().numerical_value_in (u::m),
                 trail_valley_grid ().spacing_z ().numerical_value_in (u::m)) +
       1e-5f);
@@ -196,10 +197,12 @@ MOPPE_TEST (trail_network_retains_connected_circuit_and_material_footprint) {
   }
 
   const std::size_t width = network.domain.width ();
-  const float home_x = (network.plan.home_base.value % width) *
-                       meters_value (network.domain.spacing_x ());
-  const float home_z = (network.plan.home_base.value / width) *
-                       meters_value (network.domain.spacing_z ());
+  const float home_x =
+    (network.plan.home_base.value % width) *
+    (network.domain.spacing_x ()).numerical_value_in (moppe::u::m);
+  const float home_z =
+    (network.plan.home_base.value / width) *
+    (network.domain.spacing_z ()).numerical_value_in (moppe::u::m);
   MOPPE_CHECK_NEAR (network.alignment.points.front ().x_m, home_x, 1e-5f);
   MOPPE_CHECK_NEAR (network.alignment.points.front ().z_m, home_z, 1e-5f);
 
@@ -245,8 +248,12 @@ MOPPE_TEST (trail_formation_is_deterministic_and_bounded) {
     const float change_m =
       surface_elevation_value (first.heights[cell]) - original[cell];
     MOPPE_CHECK_NEAR (first.network.earthwork_delta_m[cell], change_m, 1e-5f);
-    MOPPE_CHECK (change_m >= -meters_value (parameters.maximum_cut) - 1e-5f);
-    MOPPE_CHECK (change_m <= meters_value (parameters.maximum_fill) + 1e-5f);
+    MOPPE_CHECK (change_m >=
+                 -(parameters.maximum_cut).numerical_value_in (moppe::u::m) -
+                   1e-5f);
+    MOPPE_CHECK (change_m <=
+                 (parameters.maximum_fill).numerical_value_in (moppe::u::m) +
+                   1e-5f);
   }
 }
 
@@ -269,17 +276,21 @@ MOPPE_TEST (trail_crossfall_drains_toward_the_naturally_lower_side) {
   for (std::size_t cell = 0; cell < original.size (); ++cell) {
     const float change_m =
       surface_elevation_value (drained.heights[cell]) - original[cell];
-    MOPPE_CHECK (change_m >=
-                 -meters_value (drained_parameters.maximum_cut) - 1e-5f);
-    MOPPE_CHECK (change_m <=
-                 meters_value (drained_parameters.maximum_fill) + 1e-5f);
+    MOPPE_CHECK (
+      change_m >=
+      -(drained_parameters.maximum_cut).numerical_value_in (moppe::u::m) -
+        1e-5f);
+    MOPPE_CHECK (
+      change_m <=
+      (drained_parameters.maximum_fill).numerical_value_in (moppe::u::m) +
+        1e-5f);
   }
 
   const TerrainDomain grid = trail_valley_grid ();
   const float maximum_x =
-    (grid.width () - 1) * meters_value (grid.spacing_x ());
+    (grid.width () - 1) * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
   const float maximum_z =
-    (grid.height () - 1) * meters_value (grid.spacing_z ());
+    (grid.height () - 1) * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
   bool observed_downhill_fall = false;
   for (std::size_t segment = 0;
        segment + 1 < drained.network.alignment.points.size ();
@@ -375,6 +386,6 @@ MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
     maximum_original_height =
       std::max (maximum_original_height, original[cell.value]);
   MOPPE_CHECK (maximum_original_height < 40.0f);
-  MOPPE_CHECK (
-    meters_value (result.report.maximum_centerline_height_above_sea) < 40.0f);
+  MOPPE_CHECK ((result.report.maximum_centerline_height_above_sea)
+                 .numerical_value_in (moppe::u::m) < 40.0f);
 }

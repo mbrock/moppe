@@ -62,10 +62,11 @@ namespace moppe::game {
       const auto& points = alignment.points;
       result.reserve (points.size ());
       const float source_width_m =
-        points.empty () ? 0.0f
-                        : meters_value (terrain::river_width (
-                            points.front ().contributing_area_m2 *
-                            mp_units::si::metre * mp_units::si::metre));
+        points.empty ()
+          ? 0.0f
+          : (terrain::river_width (points.front ().contributing_area_m2 *
+                                   mp_units::si::metre * mp_units::si::metre))
+              .numerical_value_in (moppe::u::m);
       const float source_length_m = std::max (14.0f, 3.0f * source_width_m);
       float mouth_distance_m = std::numeric_limits<float>::infinity ();
       bool falling_mouth = false;
@@ -95,9 +96,11 @@ namespace moppe::game {
         const Vec3 across (-tangent[2], 0.0f, tangent[0]);
         const auto area = center.contributing_area_m2 * mp_units::si::metre *
                           mp_units::si::metre;
-        const float width_m = meters_value (terrain::river_width (area));
+        const float width_m =
+          (terrain::river_width (area)).numerical_value_in (moppe::u::m);
         const float fill_depth =
-          0.72f * meters_value (terrain::river_depth (area));
+          0.72f *
+          (terrain::river_depth (area)).numerical_value_in (moppe::u::m);
         const float center_ground = terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
             land, moppe::position (Vec3 (center.x_m, 0.0f, center.z_m))));
@@ -329,9 +332,10 @@ namespace moppe::game {
     SurfacePoint nearest_image (SurfacePoint point,
                                 const SurfacePoint& reference,
                                 const map::SurfaceGeometry& surface) {
-      const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
-                                0.0f,
-                                meters_value (surface.domain ().period_z ()));
+      const Vec3 period =
+        Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+              0.0f,
+              (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
       point.position[0] =
         reference.position[0] +
         std::remainder (point.position[0] - reference.position[0], period[0]);
@@ -459,9 +463,10 @@ namespace moppe::game {
                               const map::SurfaceGeometry& surface,
                               const terrain::RiverNetwork& rivers) {
     m_mesh = renderer.create_mesh (build_river_ribbons (surface, rivers));
-    m_period = Vec3 (meters_value (surface.domain ().period_x ()),
-                     0.0f,
-                     meters_value (surface.domain ().period_z ()));
+    m_period =
+      Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+            0.0f,
+            (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
   }
 
   void RiverSurface::clear () {

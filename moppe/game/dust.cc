@@ -65,7 +65,7 @@ namespace moppe::game {
           .position = position_value (emission.position),
           .velocity = velocity_value (emission.velocity),
           .color = emission.color,
-          .size = meters_value (emission.style.size),
+          .size = (emission.style.size).numerical_value_in (moppe::u::m),
           .life = seconds_value (emission.style.lifetime),
           .gravity = emission.style.downward_acceleration.numerical_value_in (
             u::m / pow<2> (u::s)),

@@ -10,13 +10,15 @@ namespace moppe::terrain {
   }
 
   meters_t river_width (square_meters_t contributing_area) noexcept {
-    const float area = std::max (0.0f, square_meters_value (contributing_area));
+    const float area = std::max (
+      0.0f, (contributing_area).numerical_value_in (moppe::u::m * moppe::u::m));
     return std::clamp (width_per_sqrt_m2 * std::sqrt (area), 1.5f, 24.0f) *
            mp_units::si::metre;
   }
 
   meters_t river_depth (square_meters_t contributing_area) noexcept {
-    const float area = std::max (0.0f, square_meters_value (contributing_area));
+    const float area = std::max (
+      0.0f, (contributing_area).numerical_value_in (moppe::u::m * moppe::u::m));
     return std::clamp (depth_per_sqrt_m2 * std::sqrt (area), 0.4f, 2.5f) *
            mp_units::si::metre;
   }
