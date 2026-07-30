@@ -53,9 +53,13 @@ namespace moppe {
       void color (DisplayColor c, float a = 1.0f);
       void lit (bool on);
       void fogged (bool on);
-      // Wind sway weight for subsequent vertices (0 = anchored, 1 =
-      // full amplitude); the scene vertex shader animates it.
+      // How much of the gust's lean subsequent vertices take (0 = anchored,
+      // 1 = full amplitude). Grows with height up a plant.
       void wind (proportion_t w);
+      // How much of the bough-and-leaf shake they take. Grows with distance
+      // out from the stem, so the two weights together say where on the
+      // plant a vertex sits and the vertex shader needs no other clue.
+      void flutter (proportion_t w);
       void set_texture (const Texture* t);
       void normal (const Vec3& n);
       void uv (float u, float v);
@@ -124,6 +128,7 @@ namespace moppe {
       bool m_lit;
       bool m_fogged;
       uint8_t m_wind;
+      uint8_t m_flutter;
       const Texture* m_texture;
       DrawState m_state;
 

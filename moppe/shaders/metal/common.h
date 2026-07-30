@@ -14,23 +14,34 @@ struct MoppeVertexIn {
   packed_float3 normal;
   packed_float2 uv;
   uchar4 color;
-  uchar4 flags; // x: lit, y: fogged, z: wind, w: reserved
+  uchar4 flags; // x: lit, y: fogged, z: bend, w: flutter
 };
 
-// Wind sway: a slow prevailing gust plus a faster flutter,
-// phased by world position so the field moves as travelling waves
-// rather than in lockstep.  `w` is the vertex's wind weight (0..1);
-// anchored roots record 0 and skip this entirely.
-inline float3 moppe_wind (float3 world, float w, float t) {
+// Wind sway on three clocks, because a tree is not a flag. The gust leans
+// the whole plant and is slow; the bough answers it at its own rate; the
+// foliage flicks. A vertex says how much of each it takes: `bend` grows with
+// height up the plant, `flutter` with distance out from the stem, so the
+// weights come from where the vertex sits rather than from a number chosen
+// for it. Anchored roots record zero for both and skip this entirely.
+//
+// What the eye reads as woodiness is the ratio between the terms. One weight
+// scaling one waveform makes every part of the tree move in the same shape,
+// and a leaf that moves like a trunk reads as cloth.
+inline float3 moppe_wind (float3 world, float bend, float flutter, float t) {
   const float ph = world.x * 0.043 + world.z * 0.051;
   const float gust =
     sin (t * 1.13 + ph) + 0.45 * sin (t * 2.63 + ph * 1.7 + 1.3);
-  const float flutter = sin (t * 6.8 + ph * 13.0 + world.y * 1.9);
-  const float amp = 0.24 * w;
-  world.x += (0.79 * gust + 0.30 * flutter) * amp;
-  world.z += (0.53 * gust - 0.24 * flutter) * amp;
-  // Blades and boughs bow slightly as they bend away from vertical.
-  world.y -= 0.15 * abs (gust) * amp;
+  const float bough = sin (t * 3.90 + ph * 2.3 + 0.7);
+  const float flick = sin (t * 8.40 + ph * 13.0 + world.y * 1.9);
+  // The gust drives the bough as well: a branch swings further in a strong
+  // wind, rather than fidgeting at one amplitude through the calm.
+  const float driven = 0.55 + 0.45 * abs (gust);
+  const float lean = 0.26 * bend;
+  const float shake = 0.11 * flutter * driven;
+  world.x += 0.79 * gust * lean + (0.62 * bough + 0.44 * flick) * shake;
+  world.z += 0.53 * gust * lean + (0.47 * bough - 0.38 * flick) * shake;
+  // Boughs bow slightly as they bend away from vertical.
+  world.y -= 0.15 * abs (gust) * lean + 0.10 * abs (bough) * shake;
   return world;
 }
 

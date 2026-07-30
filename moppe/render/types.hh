@@ -46,10 +46,10 @@ namespace moppe {
       float nx, ny, nz;
       float u, v;
       PackedRgba8 color;
-      uint8_t lit;    // Lambert + specular vs. emissive passthrough
-      uint8_t fogged; // distance haze applied
-      uint8_t wind;   // 0..255 sway amplitude for the vertex shader
-      uint8_t reserved;
+      uint8_t lit;     // Lambert + specular vs. emissive passthrough
+      uint8_t fogged;  // distance haze applied
+      uint8_t wind;    // 0..255 lean with the gust, growing up the plant
+      uint8_t flutter; // 0..255 shake of foliage, growing out from the stem
     };
     static_assert (sizeof (Vertex) == 40, "streamed vertex is 40 bytes");
 

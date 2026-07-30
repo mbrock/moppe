@@ -130,6 +130,9 @@ namespace moppe::game {
                         float wind) {
       draw.normal (normal);
       draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
+      // Wood leans with the gust and does not shake; only what hangs off it
+      // does, which the foliage below asks for by name.
+      draw.flutter (0.0f * proportion[one]);
       draw.vertex (position);
     }
 
@@ -243,6 +246,7 @@ namespace moppe::game {
                         0.050f * youth,
                       0.045f + 0.035f * hue + 0.015f * youth);
           draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
+          draw.flutter (0.85f * proportion[one]);
           draw.push ();
           draw.translate (center);
           draw.rotate (turn * u::rad, frame.up);
@@ -522,6 +526,7 @@ namespace moppe::game {
     for (const TreeSite& site : m_grove.sites)
       append_tree (draw, site);
     draw.wind (0.0f * proportion[one]);
+    draw.flutter (0.0f * proportion[one]);
     m_mesh = renderer.create_mesh (draw);
   }
 

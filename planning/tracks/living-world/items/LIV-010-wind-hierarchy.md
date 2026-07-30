@@ -3,7 +3,7 @@ id = "LIV-010"
 title = "Make wind a hierarchy instead of one scalar"
 rfc = "RFC-0003"
 track = "living-world"
-status = "ready"
+status = "done"
 depends_on = []
 order = 60
 areas = ["rendering", "vegetation"]
@@ -43,3 +43,20 @@ ramp, or it leans like a trunk.
 *Horizon Zero Dawn* vegetation (Sheaf `#ABD2B8`): tree movement keyed to
 object height, branch to distance-to-trunk, leaf to distance-to-branch, with a
 global wind field sampled at object centre; the soft-clamp ramp for plants.
+
+## Evidence
+
+`moppe_wind` now runs three clocks -- gust, bough, flick -- and a vertex says
+how much of each it takes through two lanes: `wind` for the lean, growing up
+the plant, and `flutter` for the shake, growing out from the stem. The spare
+`reserved` byte carried the second lane, so the vertex is still forty bytes.
+
+The weights come from where a vertex sits rather than from a number chosen for
+it: trunk sides take zero flutter, a broadleaf's ring hangs out on branches and
+takes all of it, a conifer's leader stands on the stem while its skirt does
+not, and the hero stand's leaf blobs shake where its wood only leans. The bough
+term is driven by the gust's own magnitude, so a branch swings further in a
+strong wind instead of fidgeting through the calm.
+
+WebGPU animates no vegetation at all today, so this is Metal only. That gap
+predates the item and is recorded here rather than hidden.
