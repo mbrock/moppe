@@ -265,10 +265,10 @@ cells. The construction stamp may still widen its geometric core to one
 heightmap cell at coarse resolutions for collision continuity; the material
 footprint retains the requested physical width.
 
-These fields are stored on `TrailNetwork`, expanded across the duplicated
-torus render seam, and materialized as typed columns in `map::Surface`. The
-Metal renderer packs them into the R and G channels of one `RG16Float` terrain
-texture.
+These fields are stored together as the typed `TrailUseMap` on
+`TrailNetwork`. Completed-world analysis joins that bundle into
+`map::SurfaceReadings` over the same seam-free torus domain. Presentation
+writes them into the R and G channels of one `RG16Float` terrain texture.
 
 The terrain fragment shader interprets trail influence as a formed
 cross-section. It adds a warm crushed-stone base, world-space aggregate

@@ -2,7 +2,10 @@
 
 - `engine-atlas.md` — current engine map: domains, world/session/frame
   boundaries, presentation, and target dependencies.
-- `project.org` — living status, priorities, and dated progress notes.
+- `status.md` — current product, active consolidation, deliberate gaps, and
+  verification entry points.
+- `project.org` — archived project notebook and dated progress through
+  2026-07-17; its old present-tense subsystem descriptions are historical.
 - `generated-world.md` — completed-world construction, ownership, and
   activation lifetime.
 - `game-state.md` — session checkpoint, frame reading, and replay boundary.

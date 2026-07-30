@@ -1,5 +1,18 @@
-#+title: Moppe project
+#+title: Moppe project history through 2026-07-17
 #+startup: overview
+
+* Archive notice
+
+This notebook preserves the terrain and water campaign as it stood on
+2026-07-17.  Its present-tense descriptions of =TerrainProgram=, Terrain Lab,
+the evaluator hierarchy, and old world modes are historical: those systems
+were later removed by the direct-generation and lattice-harmonization work.
+
+Current repository status lives in [[file:status.md][status.md]], current
+ownership and build composition in [[file:engine-atlas.md][engine-atlas.md]],
+and executable work status in [[file:../planning/README.md][planning/]].
+The dated observations and rejected visual experiments below remain useful
+evidence and have not been rewritten to impersonate the current engine.
 
 * Purpose
 

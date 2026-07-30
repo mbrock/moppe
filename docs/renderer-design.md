@@ -302,8 +302,9 @@ subtle background tint identifies changes in geometric LOD. The dense
 quarter-cell mesh fades before becoming sub-pixel, while its source samples
 remain visible for comparison.
 
-Physics samples the authoritative typed surface bundle
-(`Surface::interpolated_height`/`interpolated_normal`, ~10 samples/frame).
+Physics samples the authoritative typed `SurfaceGeometry` bundle through
+`spatial::sample<surface_elevation>` and
+`spatial::sample<terrain_normal>` (~10 samples/frame).
 Rendering and physics share the exact grid
 samples; the reconstructed near surface is bounded to each source cell's
 corner range but can differ between samples from physics's bilinear surface.

@@ -1,10 +1,10 @@
 # Terrain generation and analysis
 
 Moppe has one finite terrain lattice and one authoritative ground bundle.
-Generation creates typed columns over that lattice; ordered transforms mutate
-the elevation and material-history columns; analyses return named finite
-products. There is no runtime field-expression language or general
-materialization backend.
+Generation creates typed columns over that lattice; direct geology, evolution,
+and trail operations mutate the elevation and material-history columns;
+analyses return named finite products. There is no runtime field-expression
+language, terrain program, or general materialization backend.
 
 ## The common domain
 
@@ -41,25 +41,26 @@ The types add compile-time meaning without boxed runtime storage.
 
 `TerrainElevations` is the analysis constraint for any `TerrainDomain` bundle
 containing `surface_elevation`. The minimal `ElevationMap` is useful for tests
-and numerical transform steps. The full surface geometry bundle satisfies the
+and numerical evolution steps. The full surface geometry bundle satisfies the
 same concept without copying or creating a view.
 
 ## Authoritative surface
 
-`Surface::geometry()` is the mandatory ground bundle. It contains:
+`map::SurfaceGeometry` is the mandatory ground bundle. It contains:
 
 - surface elevation;
 - terrain normal;
 - eroded and deposited material history;
 - broad snow support.
 
-One optional `SurfaceReadings` bundle holds the later hydrology, geology,
-ecology, and land-use columns. Completed-world construction fills it before
-handoff. `map::Surface` also owns interpolation, geometry rebuilding, cache
-I/O, material-history updates, and derivation of those readings.
+`GeneratedWorld` owns a separate complete `SurfaceReadings` bundle containing
+the later hydrology, geology, ecology, and land-use columns. Free operations
+in `map/surface.*` own geometry rebuilding, cache I/O, material-history
+updates, and derivation of their narrow source readings; `spatial::sample`
+owns interpolation through the domain.
 
 Ground and water use separate bundles over the same domain.
-`WaterSurfaceSections` reuses the ground elevation specification and affine
+`terrain::WaterSheets` reuses the ground elevation specification and affine
 frame, so water elevation minus ground elevation is a physical depth. Wave
 amplitude and water velocity remain water-specific columns.
 

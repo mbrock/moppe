@@ -8,19 +8,21 @@ ownership and target shape.
 
 ## Surface
 
-`map::Surface` owns `SurfaceGeometry` and the derived `SurfaceReadings` over
-one `terrain::TerrainDomain`; `game::SurfacePresentation` is the only bridge
-that turns them into renderer lanes.
+`game::GeneratedWorld` owns `map::SurfaceGeometry`,
+`map::SurfaceReadings`, and `terrain::WaterSheets` over one
+`terrain::TerrainDomain`. Free operations in `map/surface.*` build and
+analyze the ground; presentation is the only bridge that turns typed columns
+into renderer lanes.
 
 | Contract | Characterization owner |
 | --- | --- |
 | Continuous elevation and normal reads reconstruct the authoritative geometry bundle, including across the torus boundary. | `surface_reconstruction_matches_authoritative_geometry` and `surface_reconstruction_wraps_the_torus` in `tests/map/surface_test.cc` |
-| Mutating the elevation column changes surface reads immediately; rebuilding geometry readings clears dependent materialized sections. | `surface_geometry_is_authoritative_without_a_refresh_barrier` and `surface_presentation_is_the_numeric_bridge_for_typed_sections` in `tests/map/surface_test.cc` |
+| Mutating the elevation column changes surface reads immediately; rebuilding geometry has no copied refresh barrier. | `surface_geometry_is_authoritative_without_a_refresh_barrier` in `tests/map/surface_test.cc` |
 | Trail, home-base, channel-flux, moisture, waterline, geology, and ecology readings remain typed until presentation. | The focused materialization tests in `tests/map/surface_test.cc` |
-| Ground and water use the same domain while retaining distinct section bundles; water datum normalization and ocean setup happen only in `WaterPresentation`. | `tests/map/water_surface_test.cc` |
+| Ground and water use the same domain and elevation frame while retaining distinct bundles; ocean setup and texture layout happen only at presentation. | `tests/map/water_surface_test.cc` |
 
-The completed finite-section and presentation work changed the concrete bundle
-and grouping mechanism without changing these sampling, refresh, and ownership
+The later harmonization deleted the `Surface`, `SurfaceAtlas`, and
+`WaterSurface` wrappers without changing these sampling and ownership
 contracts. The numeric presentation bridge remains the named boundary.
 
 ## Terrain construction
@@ -38,9 +40,10 @@ Its copyable `game::GameState` checkpoint intentionally excludes generated
 terrain, resident resources, renderer history, and asynchronous loading. Each
 system that participates exposes a plain `state()` / `restore()` pair.
 
-`advance_game_session(context, session, input, seconds_t)` is the ordinary
-fixed-step seam. Its context names the completed-world values simulation reads
-without coupling it to `GeneratedWorld`; the application still selects input,
+`advance_game_session(world, surface, obstacles, session, input, seconds_t)`
+is the ordinary fixed-step seam. Its arguments name the completed-world values
+simulation reads without coupling it to `GeneratedWorld`; the application
+still selects input,
 advances weather during paused modes, and realizes platform effects. The
 central playable branch of `MoppeGame::tick` is only that delegation.
 
@@ -117,9 +120,9 @@ both Stars and Dust expose their presentation operations.
 Scene sources compose `FrameView` and its focused world, actor, water, effect,
 and overlay presentation. They may use Apple-common asset and glyph services,
 but do not own an OS event loop or Metal backend. Application sources hold the
-host-service caller `Terrain`; terminal apps add `main.cc` and exactly one
-selected platform implementation. Terrain-only command-line tools compile
-only the terrain and world source groups.
+host-service callers `Terrain` and `WorldLoading`; terminal apps add
+`main.cc` and exactly one selected platform implementation. Terrain-only
+command-line tools compile only the terrain and world source groups.
 
 ## Metal frame encoding
 

@@ -64,12 +64,13 @@ planning constraint, not a second topology.
 
 ## Stage: authoritative surface bundle (done)
 
-`Surface::geometry()` is the one finite terrain store. Its mandatory
-typed columns are elevation in metres, normal, removed material, deposited
-material, and broad snow support. Elevation is an affine quantity point with
-the native representation of a `float`; it is neither boxed nor normalized.
-`GeneratedWorld` owns one `Surface`; there is no preceding height map and no
-geometry refresh copy.
+At this stage, `Surface::geometry()` became the one finite terrain store. A
+later consolidation dissolved that final wrapper too: `GeneratedWorld` now
+owns the `SurfaceGeometry` bundle directly. Its mandatory typed columns are
+elevation in metres, normal, removed material, deposited material, and broad
+snow support. Elevation is an affine quantity point with the native
+representation of a `float`; it is neither boxed nor normalized. There is no
+preceding height map or geometry refresh copy.
 
 Generation, physics, hydrology, and rendering all read or mutate those
 columns. Analysis entry points accept any

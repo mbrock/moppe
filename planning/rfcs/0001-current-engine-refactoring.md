@@ -16,8 +16,10 @@ topological domain
   -> explicit extrinsic presentation
 ```
 
-The current `Surface`/`WaterSurface` atlas and the Atelier tree are proofs of
-this shape. The completed execution track is
+At the time of the decision, the `Surface`/`WaterSurface` atlas and the
+Atelier tree were proofs of this shape. Later harmonization dissolved those
+wrappers into direct typed bundles without changing the decision. The
+completed execution track is
 [`current-engine-refactoring`](../tracks/current-engine-refactoring/README.md).
 The reader-facing result is the [engine atlas](../../docs/engine-atlas.md).
 
@@ -44,13 +46,13 @@ produced this shape.
 ## Deferred and intentionally not claimed
 
 - No work item was dropped: all 19 items in the execution track are done.
-- The seam-free topology and registered frame projections described by the
-  Atelier-earth proposal remain future work; the current periodic heightmap
-  seam and implicit elevation frame are documented facts, not hidden debt.
+- Registered frame projections described by the Atelier-earth proposal remain
+  future work. Later work completed the seamless periodic lattice and physical
+  elevation frame without reopening this RFC.
 - Session checkpoints support fixed-world replay, not complete determinism of
   generation, loading, renderer history, or window state.
-- Metal is the implemented backend. A future WebGPU/Android backend remains
-  an option enabled by the portable API, not an RFC-0001 deliverable.
+- Metal was the implemented backend at closure. WebGPU landed afterwards;
+  Android remains unimplemented. Neither was an RFC-0001 deliverable.
 
 ## Completion record
 
