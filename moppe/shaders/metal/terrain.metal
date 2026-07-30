@@ -231,8 +231,7 @@ vertex TerrainVaryings terrain_vertex (
   // High ridges rise above the valley haze instead of dissolving into the
   // horizon with the lowlands. This keeps the world's distant relief legible
   // while nearby valleys retain the original atmospheric depth.
-  const float high_relief = smoothstep (0.36, 0.82, h);
-  fog *= mix (1.0, 0.58, high_relief);
+  fog = moppe_relief_haze (fog, world.y, u.params1.y, u.params7.z);
   if (u.fog_color.w > 0.0) {
     const float lowness = 1.0 - smoothstep (45.0, 170.0, world.y);
     fog += 0.3 * lowness * smoothstep (150.0, 1500.0, dist);

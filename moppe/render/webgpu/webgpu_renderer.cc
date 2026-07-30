@@ -543,9 +543,11 @@ fn shadow_vertex(input: VertexInput) -> @builtin(position) vec4<f32> {
   let period = vec2<i32>(textureDimensions(heights));
   let position = (vec2<i32>(round(grid)) % period + period) % period;
   let height = textureLoad(heights, position, 0).r;
-  let world = vec3<f32>(grid.x * shadow.terrain_scale.x,
+  let world = vec3<f32>(grid.x * shadow.terrain_scale.x +
+                          chunk.world_offset.x,
                         height * shadow.terrain_scale.y,
-                        grid.y * shadow.terrain_scale.z);
+                        grid.y * shadow.terrain_scale.z +
+                          chunk.world_offset.z);
   return shadow.light_view_proj * vec4<f32>(world, 1.0);
 }
 )wgsl";
@@ -805,7 +807,9 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     };
     constexpr uint32_t frame_uniform_stride = 256;
     constexpr uint32_t frame_uniform_slots = 4096;
-    constexpr uint32_t terrain_chunk_uniform_slots = 1024;
+    // The ordinary 2048-sample world has 256 chunks. A periodic shadow
+    // capture submits the canonical tile plus its eight neighbours.
+    constexpr uint32_t terrain_chunk_uniform_slots = 4096;
     constexpr uint64_t stream_vertex_buffer_bytes = 32 * 1024 * 1024;
 
     struct WebGpuTexture final : Texture {
@@ -2024,30 +2028,40 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     const int chunks_z = terrain.height / 128;
     const std::size_t chunk_count =
       static_cast<std::size_t> (chunks_x) * chunks_z;
-    m_state->ensure_terrain_chunk_bind_groups (chunk_count);
+    constexpr std::size_t periodic_tile_count = 9;
+    m_state->ensure_terrain_chunk_bind_groups (chunk_count *
+                                               periodic_tile_count);
     pass.SetVertexBuffer (0, m_state->terrain_vertices[lod]);
     pass.SetIndexBuffer (m_state->terrain_indices[lod],
                          wgpu::IndexFormat::Uint32);
     std::size_t chunk_index = 0;
-    for (int z = 0; z < chunks_z; ++z)
-      for (int x = 0; x < chunks_x; ++x) {
-        const TerrainChunkUniforms chunk_uniforms {
-          .origin_step = { static_cast<float> (x * 128),
-                           static_cast<float> (z * 128),
-                           step,
-                           step },
-          .morph = {},
-          .world_offset = {},
-        };
-        const uint64_t offset = chunk_index * frame_uniform_stride;
-        m_state->queue.WriteBuffer (m_state->terrain_chunk_buffer,
-                                    offset,
-                                    &chunk_uniforms,
-                                    sizeof (chunk_uniforms));
-        pass.SetBindGroup (1, m_state->terrain_chunk_bind_groups[chunk_index]);
-        pass.DrawIndexed (m_state->terrain_index_counts[lod]);
-        ++chunk_index;
-      }
+    const float period_x = terrain.width * terrain.scale[0];
+    const float period_z = terrain.height * terrain.scale[2];
+    for (int tile_z = -1; tile_z <= 1; ++tile_z)
+      for (int tile_x = -1; tile_x <= 1; ++tile_x)
+        for (int z = 0; z < chunks_z; ++z)
+          for (int x = 0; x < chunks_x; ++x) {
+            const TerrainChunkUniforms chunk_uniforms {
+              .origin_step = { static_cast<float> (x * 128),
+                               static_cast<float> (z * 128),
+                               step,
+                               step },
+              .morph = {},
+              .world_offset = { tile_x * period_x,
+                                0.0f,
+                                tile_z * period_z,
+                                0.0f },
+            };
+            const uint64_t offset = chunk_index * frame_uniform_stride;
+            m_state->queue.WriteBuffer (m_state->terrain_chunk_buffer,
+                                        offset,
+                                        &chunk_uniforms,
+                                        sizeof (chunk_uniforms));
+            pass.SetBindGroup (1,
+                               m_state->terrain_chunk_bind_groups[chunk_index]);
+            pass.DrawIndexed (m_state->terrain_index_counts[lod]);
+            ++chunk_index;
+          }
     pass.End ();
     wgpu::CommandBuffer command = encoder.Finish ();
     m_state->queue.Submit (1, &command);

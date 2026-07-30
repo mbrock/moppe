@@ -61,7 +61,7 @@ struct MoppeFrameUniforms {
   MoppeFloat4 sun_specular; // rgb
   MoppeFloat4 ambient;      // rgb
   MoppeFloat4 fog_color;    // rgb; w = fog_scale
-  MoppeFloat4 misc;         // x=time, y=cloudiness
+  MoppeFloat4 misc;         // x=time, y=cloudiness, z=sea, w=land relief
   MoppeFloat4 shadow;       // x=strength, y=shadow texel
 };
 

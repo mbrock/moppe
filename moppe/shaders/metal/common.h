@@ -133,6 +133,20 @@ inline float moppe_distance_fog (float dist, float fog_scale) {
   return saturate (1.0 - exp (-pow (dist * fog_scale, 1.5)));
 }
 
+// Air thins above the lowland haze layer. Terrain and the objects standing on
+// it must use the same relief-relative correction or distant vegetation
+// becomes a pale cutout against an artificially clear ridge.
+inline float moppe_relief_haze (float fog,
+                                float altitude,
+                                float sea_level,
+                                float land_relief) {
+  if (land_relief <= 0.0)
+    return fog;
+  const float relative_height = (altitude - sea_level) / land_relief;
+  const float high_relief = smoothstep (0.36, 0.82, relative_height);
+  return fog * mix (1.0, 0.58, high_relief);
+}
+
 // Soft hemisphere fill keeps silhouettes readable without flattening
 // the directional sun: cool sky above, warm earth bounce below.
 inline float3 moppe_hemisphere_light (float3 ambient, float3 normal) {

@@ -90,6 +90,12 @@ namespace moppe::game {
     float elapsed () const noexcept {
       return m_elapsed;
     }
+    float route_progress () const noexcept {
+      if (m_arc_samples.empty () || m_arc_samples.back ().distance <= 0.0f)
+        return 0.0f;
+      return std::clamp (
+        m_route_distance / m_arc_samples.back ().distance, 0.0f, 1.0f);
+    }
     const Vec3& position () const noexcept {
       return m_position;
     }

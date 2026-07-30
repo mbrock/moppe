@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "usage: tools/capture-terrain-survey OUTPUT_DIR [COUNT]" >&2
+  exit 2
+fi
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+output=$1
+count=${2:-12}
+fps=${MOPPE_CINEMATIC_CAPTURE_FPS:-30}
+seed=${MOPPE_SEED:-123}
+terrain=${MOPPE_TERRAIN_PROFILE:-fast}
+
+for value in "$count" "$fps"; do
+  if [[ ! $value =~ ^[1-9][0-9]*$ ]]; then
+    echo "COUNT and capture FPS must be positive integers" >&2
+    exit 2
+  fi
+done
+
+if [[ ! -x "$root/build/moppe.app/Contents/MacOS/moppe" ]]; then
+  echo "moppe is not built; run cmake --build build first" >&2
+  exit 1
+fi
+if ! command -v ffmpeg >/dev/null; then
+  echo "ffmpeg is required to assemble the survey sheet" >&2
+  exit 1
+fi
+if [[ -e "$output" ]] &&
+   compgen -G "$output/frame-*.png" >/dev/null; then
+  echo "$output already contains captured frames" >&2
+  exit 1
+fi
+
+mkdir -p "$output"
+
+MOPPE_METAL_HUD=0 \
+MOPPE_CINEMATIC_CAPTURE_DIR="$output" \
+MOPPE_CINEMATIC_CAPTURE_FRAMES="$count" \
+MOPPE_CINEMATIC_CAPTURE_FPS="$fps" \
+MOPPE_CINEMATIC_CAPTURE_PROGRESS=1 \
+  "$root/build/moppe.app/Contents/MacOS/moppe" \
+    --windowed \
+    --inactive \
+    --seed "$seed" \
+    --terrain-quality "$terrain" \
+    --graphics-quality high
+
+columns=4
+rows=$(((count + columns - 1) / columns))
+ffmpeg -y -loglevel error \
+  -framerate 1 \
+  -start_number 0 \
+  -i "$output/frame-%05d.png" \
+  -frames:v 1 \
+  -vf "scale=640:-2,tile=${columns}x${rows}:padding=8:margin=8" \
+  "$output/terrain-survey.png"
+
+printf 'seed=%s\nterrain=%s\nsamples=%s\nfps=%s\nspacing=route-progress\n' \
+  "$seed" "$terrain" "$count" "$fps" \
+  >"$output/survey.txt"
+
+echo "wrote $count frames and $output/terrain-survey.png"
