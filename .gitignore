@@ -11,5 +11,7 @@ terrain-lab.png
 *.xcworkspace/xcuserdata/
 moppe.xcworkspace/
 .cache/
+.zig-cache/
+zig-out/
 __pycache__/
 Untitled*
