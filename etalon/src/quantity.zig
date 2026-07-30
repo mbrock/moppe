@@ -98,6 +98,7 @@ pub fn QuantityPoint(
         const Self = @This();
 
         pub const quantity_spec = point_spec;
+        pub const representation = Representation;
         pub const Difference = Quantity(difference_spec, Representation);
 
         coherent_value: Representation,
@@ -168,6 +169,7 @@ test "types preserve meaning beyond dimension" {
         Airspeed.quantity_spec.dimension,
         ClimbRate.quantity_spec.dimension,
     );
+    try std.testing.expectEqual(@sizeOf(f64), @sizeOf(Airspeed));
 }
 
 test "units are conversions rather than semantic identities" {
