@@ -409,8 +409,6 @@ namespace moppe {
         // Running rivers are continuous ribbon meshes. The water sheets retain
         // standing bodies and carry each mouth's current into them.
         m_river_surface.rebuild (r, surface (), rivers ());
-        m_water_presentation.reset (world ().water_level, world ().map_size);
-        m_water_presentation.refresh (generated_world ().water_surface ());
       }
 
       void prepare_world_surface () {
@@ -579,7 +577,10 @@ namespace moppe {
         m_terrain.setup (r, surface (), world (), m_graphics);
         // The typed water and ground presentations can upload only after
         // set_terrain has established the texture dimensions.
-        m_water_presentation.upload (r);
+        upload_water (r,
+                      generated_world ().water_surface (),
+                      world ().water_level,
+                      world ().map_size);
         upload_surface_readings (
           r, surface (), surface_readings (), !m_water_shot);
       }
@@ -1440,7 +1441,6 @@ namespace moppe {
       InputFrameAdapter m_live_input;
       RiverSurface m_river_surface;
       Terrain m_terrain;
-      WaterPresentation m_water_presentation;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;
       BlobShadow m_blob;

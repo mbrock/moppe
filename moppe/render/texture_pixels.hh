@@ -34,13 +34,14 @@
 // that later defers an upload has to materialize the bytes first.
 
 namespace moppe::render {
-  enum class PixelFormat { r32f, r16f, rg16f, rg16snorm };
+  enum class PixelFormat { r32f, rg32f, r16f, rg16f, rg16snorm };
 
   constexpr std::size_t channels_in (PixelFormat format) {
     switch (format) {
     case PixelFormat::r32f:
     case PixelFormat::r16f:
       return 1;
+    case PixelFormat::rg32f:
     case PixelFormat::rg16f:
     case PixelFormat::rg16snorm:
       return 2;
@@ -49,7 +50,8 @@ namespace moppe::render {
   }
 
   constexpr std::size_t channel_bytes (PixelFormat format) {
-    return format == PixelFormat::r32f ? 4u : 2u;
+    return format == PixelFormat::r32f || format == PixelFormat::rg32f ? 4u
+                                                                       : 2u;
   }
 
   constexpr std::size_t bytes_per_pixel (PixelFormat format) {
@@ -105,6 +107,7 @@ namespace moppe::render {
     inline void write_channel (std::byte* at, PixelFormat format, float value) {
       switch (format) {
       case PixelFormat::r32f:
+      case PixelFormat::rg32f:
         std::memcpy (at, &value, sizeof (float));
         return;
       case PixelFormat::r16f:
@@ -201,7 +204,8 @@ namespace moppe::render {
       lanes[channel].resize (count);
       for (std::size_t pixel = 0; pixel < count; ++pixel) {
         const std::byte* at = bytes.data () + pixel * stride + channel * lane;
-        if (pixels.format () == PixelFormat::r32f) {
+        if (pixels.format () == PixelFormat::r32f ||
+            pixels.format () == PixelFormat::rg32f) {
           float value = 0.0f;
           std::memcpy (&value, at, sizeof value);
           lanes[channel][pixel] = value;

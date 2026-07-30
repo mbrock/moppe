@@ -2018,7 +2018,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     m_state->have_terrain_shadow = true;
   }
   void WebGpuRenderer::set_ocean (const OceanSetup& setup,
-                                  std::span<const float>) {
+                                  const TexturePixels&) {
     DrawList water;
     DrawState state;
     state.blend = true;

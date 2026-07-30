@@ -190,8 +190,9 @@ explicit workshops rather than alternate engine layers.
 
 The [current status](status.md) and
 [engine-consolidation track](../planning/tracks/engine-consolidation/README.md)
-name active work. The principal unfinished engine migrations are direct water
-presentation and removal of deprecated numerical exits.
+name active work. The principal unfinished engine migration is removal of the
+deprecated numerical exits; typed ground and water texture descriptions now
+share the direct backend-staging path.
 
 After them, lake identity is the first relational world slice: typed
 water-body membership, measurements, inlets, spills, outlets, and downstream

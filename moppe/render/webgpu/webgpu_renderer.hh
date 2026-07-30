@@ -37,7 +37,7 @@ namespace moppe::render {
     void clear_terrain_overlay () override;
     void render_terrain_shadow (const Mat4& light_view_proj) override;
     void set_ocean (const OceanSetup& setup,
-                    std::span<const float> water_levels) override;
+                    const TexturePixels& water_levels) override;
 
     bool begin_frame (const FrameParams& params) override;
     void draw_terrain (const ChunkDraw* chunks, int count) override;

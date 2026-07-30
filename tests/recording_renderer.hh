@@ -37,12 +37,28 @@ namespace moppe::test {
     void clear_terrain_overlay () override {}
     void render_terrain_shadow (const Mat4&) override {}
     void set_ocean (const render::OceanSetup& setup,
-                    std::span<const float> levels) override {
+                    const render::TexturePixels& levels) override {
       ocean = setup;
-      water_levels.assign (levels.begin (), levels.end ());
+      const auto lanes = render::decode_channels (levels);
+      water_levels.clear ();
+      if (lanes.size () != 2)
+        return;
+      water_levels.reserve (2 * lanes[0].size ());
+      for (std::size_t index = 0; index < lanes[0].size (); ++index) {
+        water_levels.push_back (lanes[0][index]);
+        water_levels.push_back (lanes[1][index]);
+      }
     }
-    void set_water_flow (std::span<const float> flow) override {
-      water_flow.assign (flow.begin (), flow.end ());
+    void set_water_flow (const render::TexturePixels& flow) override {
+      const auto lanes = render::decode_channels (flow);
+      water_flow.clear ();
+      if (lanes.size () != 2)
+        return;
+      water_flow.reserve (2 * lanes[0].size ());
+      for (std::size_t index = 0; index < lanes[0].size (); ++index) {
+        water_flow.push_back (lanes[0][index]);
+        water_flow.push_back (lanes[1][index]);
+      }
     }
     void set_terrain_paths (const render::TexturePixels& pixels) override {
       const auto lanes = render::decode_channels (pixels);

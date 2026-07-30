@@ -51,10 +51,10 @@ horizontal components of velocity drive flow detail. Rivers remain continuous
 reach/ribbon geometry derived from `RiverNetwork`, while water sheets carry
 seas, lakes, and current through mouths.
 
-The active RFC-0002 work removes the remaining retained float packing in water
-presentation. Ground readings already use borrowed `TexturePixels`
-descriptions that write their final format directly into backend staging
-memory.
+Water and ground readings use borrowed `TexturePixels` descriptions that
+write their final format directly into backend staging memory. Physical water
+elevation and amplitude write `RG32F`; planar velocity narrows once into
+`RG16F`.
 
 ## Persistence
 

@@ -1,45 +1,36 @@
 #include <moppe/game/water_presentation.hh>
 
 #include <moppe/profile.hh>
-
-#include <stdexcept>
+#include <moppe/render/texture_pixels.hh>
 
 namespace moppe::game {
   namespace {
     constexpr meters_t ocean_half_extent = 5500.0f * u::m;
-  }
 
-  void WaterPresentation::reset (meters_t water_datum,
-                                 const spatial_extent_t& world_extent) {
-    const Vec3& extent = extent_value (world_extent);
-    m_ocean.level = meters_value (water_datum);
-    m_ocean.center = Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2]);
-    m_ocean.half_extent = meters_value (ocean_half_extent);
-    m_ocean.cells = 300;
-    m_levels.clear ();
-    m_flow.clear ();
-  }
-
-  void WaterPresentation::refresh (const terrain::WaterSheets& water) {
-    MOPPE_PROFILE_ZONE ("water.pack_presentation");
-    const auto& elevation = spatial::get<terrain::surface_elevation> (water);
-    const auto& amplitude = spatial::get<terrain::wave_amplitude> (water);
-    const auto& velocity = spatial::get<terrain::water_velocity> (water);
-    m_levels.resize (2 * water.size ());
-    m_flow.resize (2 * water.size ());
-    for (std::size_t offset = 0; offset < water.size (); ++offset) {
-      m_levels[2 * offset] =
-        elevation[offset].quantity_from_zero ().numerical_value_in (u::m);
-      m_levels[2 * offset + 1] = amplitude[offset].numerical_value_in (one);
-      const Vec3 flow = velocity[offset].numerical_value_in (u::m / u::s);
-      m_flow[2 * offset] = flow[0];
-      m_flow[2 * offset + 1] = flow[2];
+    render::OceanSetup ocean_setup (meters_t water_datum,
+                                    const spatial_extent_t& world_extent) {
+      const Vec3& extent = extent_value (world_extent);
+      return {
+        .level = meters_value (water_datum),
+        .center = Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2]),
+        .half_extent = meters_value (ocean_half_extent),
+        .cells = 300,
+      };
     }
   }
 
-  void WaterPresentation::upload (render::Renderer& renderer) const {
-    MOPPE_PROFILE_ZONE ("water.upload_presentation");
-    renderer.set_ocean (m_ocean, m_levels);
-    renderer.set_water_flow (m_flow);
+  void upload_water (render::Renderer& renderer,
+                     const terrain::WaterSheets& water,
+                     meters_t water_datum,
+                     const spatial_extent_t& world_extent) {
+    MOPPE_PROFILE_ZONE ("water.upload");
+    using render::PixelFormat;
+    renderer.set_ocean (ocean_setup (water_datum, world_extent),
+                        render::texture_pixels<terrain::surface_elevation,
+                                               terrain::wave_amplitude> (
+                          water, PixelFormat::rg32f));
+    renderer.set_water_flow (
+      render::planar_texture_pixels<terrain::water_velocity> (
+        water, PixelFormat::rg16f));
   }
 }
