@@ -471,7 +471,9 @@ namespace moppe {
                           surface_readings (),
                           recipe ().seed ().value ^ 0xa34c91e5U);
         std::cerr << "global forest: " << m_forest.tree_count ()
-                  << " canopy representatives\n";
+                  << " canopy representatives, "
+                  << m_forest.resident_bytes () / (1024 * 1024)
+                  << " MB resident\n";
       }
 
       void plant_trailside () {
@@ -783,6 +785,15 @@ namespace moppe {
         return state;
       }
 
+      ForestView forest_view_for (const FrameView& frame) const {
+        return { .position = position (frame.camera.position),
+                 .forward = frame.camera.frame_forward,
+                 .right = frame.camera.right,
+                 .up = frame.camera.up,
+                 .vertical_field_of_view = frame.camera.field_of_view * u::deg,
+                 .aspect_ratio = frame.camera.aspect * mp_units::one };
+      }
+
       void draw_world_layers (render::Renderer& r, const FrameView& frame) {
         const FrameVisibility& visibility = frame.visibility;
         const Vec3& camera = frame.camera.position;
@@ -813,14 +824,7 @@ namespace moppe {
           draw_world_sky ();
 
         if (visibility.forest)
-          m_forest.draw (
-            r,
-            { .position = position (camera),
-              .forward = frame.camera.frame_forward,
-              .right = frame.camera.right,
-              .up = frame.camera.up,
-              .vertical_field_of_view = frame.camera.field_of_view * u::deg,
-              .aspect_ratio = frame.camera.aspect * mp_units::one });
+          m_forest.draw (r, forest_view_for (frame));
 
         if (visibility.tree_stand)
           m_tree_stand.draw (r);
@@ -1010,6 +1014,11 @@ namespace moppe {
                       << '\n';
           r.request_screenshot (m_screenshot_path);
         }
+        // Near forest meshes are baked here, outside the frame: the chunks
+        // about to be drawn are exactly the ones worth holding geometry for.
+        if (frame.visibility.forest)
+          m_forest.prepare (r, forest_view_for (frame));
+
         if (!r.begin_frame (frame_params_for (frame)))
           return;
 
