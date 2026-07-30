@@ -71,7 +71,7 @@ only when a current Moppe consumer makes the smaller mechanism worthwhile.
 The normal local checks are:
 
 ```sh
-make moppe
+make
 make test
 make web
 make check-format

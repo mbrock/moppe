@@ -39,7 +39,7 @@ namespace lavoir {
                 site_spacing_q spacing,
                 wave_speed_q speed,
                 step_pace_t pace)
-        : m_sites (sites), m_spacing (spacing), m_pace (pace) {
+        : m_sites (sites), m_pace (pace) {
       const auto courant = speed * (pace * (1 * step)) / (spacing * (1 * unit));
       m_courant = courant.numerical_value_in (one);
       if (!(m_courant > 0.0 && m_courant < 1.0))
@@ -134,7 +134,6 @@ namespace lavoir {
     }
 
     interval m_sites;
-    site_spacing_q m_spacing;
     step_pace_t m_pace;
     double m_courant = 0.0;
     std::array<column<metres_q>, wave_levels> m_levels;

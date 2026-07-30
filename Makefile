@@ -6,7 +6,7 @@
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	web web-deploy web-serve xcode
 
-all: lavoir
+all: moppe
 
 # Configure (if needed) and build only Lavoir.
 lavoir:

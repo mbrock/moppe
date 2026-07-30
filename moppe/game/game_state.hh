@@ -49,7 +49,7 @@ namespace moppe::game {
 
   // First replayable slice of a GameSession. Immutable world/resource
   // references remain attached to its live systems when this value is
-  // restored. Mutable city actors are deliberately outside the snapshot.
+  // restored.
   struct GameState {
     GameLogicState logic;
     mov::Vehicle::State vehicle;
