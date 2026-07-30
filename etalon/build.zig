@@ -30,6 +30,14 @@ pub fn build(b: *std.Build) void {
             .{ .name = "quantity", .module = quantity },
         },
     });
+    const bundle = b.createModule(.{
+        .root_source_file = b.path("src/bundle.zig"),
+        .target = target,
+        .imports = &.{
+            .{ .name = "specification", .module = specification },
+            .{ .name = "quantity", .module = quantity },
+        },
+    });
     const etalon = b.addModule("etalon", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
@@ -38,6 +46,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "specification", .module = specification },
             .{ .name = "quantity", .module = quantity },
             .{ .name = "field", .module = field },
+            .{ .name = "bundle", .module = bundle },
         },
     });
 
@@ -65,6 +74,7 @@ pub fn build(b: *std.Build) void {
         specification,
         quantity,
         field,
+        bundle,
         etalon,
     }) |module| {
         const tests = b.addTest(.{ .root_module = module });
@@ -107,4 +117,36 @@ pub fn build(b: *std.Build) void {
         .contains = "named interpretation disagrees with derived dimensions or order",
     };
     test_step.dependOn(&rejected_interpretation.step);
+
+    const rejected_bundle_schema = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/rejected_bundle_schema.zig",
+            ),
+            .target = target,
+            .imports = &.{
+                .{ .name = "etalon", .module = etalon },
+            },
+        }),
+    });
+    rejected_bundle_schema.expect_errors = .{
+        .contains = "Bundle row field 'raw_depth' is not a quantity value",
+    };
+    test_step.dependOn(&rejected_bundle_schema.step);
+
+    const rejected_domain_spacing = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(
+                "examples/rejected_domain_spacing.zig",
+            ),
+            .target = target,
+            .imports = &.{
+                .{ .name = "etalon", .module = etalon },
+            },
+        }),
+    });
+    rejected_domain_spacing.expect_errors = .{
+        .contains = "spacing does not measure the domain coordinate",
+    };
+    test_step.dependOn(&rejected_domain_spacing.step);
 }

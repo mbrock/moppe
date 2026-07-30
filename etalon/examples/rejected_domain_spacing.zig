@@ -1,15 +1,18 @@
 const std = @import("std");
 const etalon = @import("etalon");
 
-test "a scalar result cannot acquire vector meaning" {
+test "domain spacing has coordinate meaning, not merely length dimension" {
     const specs = etalon.specification.specs;
-    const Quantity = etalon.quantity.Quantity;
+    const units = etalon.quantity.units;
     const Elevation = etalon.quantity.QuantityPoint(
         specs.surface_elevation,
         specs.vertical_displacement,
         f64,
     );
-    const units = etalon.quantity.units;
+    const WaterDepth = etalon.quantity.Quantity(
+        specs.standing_water_depth,
+        f64,
+    );
     const Domain = etalon.bundle.PeriodicLineDomain(
         specs.spatial_coordinate,
     );
@@ -18,19 +21,12 @@ test "a scalar result cannot acquire vector meaning" {
         Elevation.from(1.0, units.metre),
     };
     const elevation_slice: []const Elevation = &elevations;
-    const mechanical = try etalon.field.laplacianPeriodicColumnAlloc(
+
+    const result = try etalon.field.laplacianPeriodicColumnAlloc(
         std.testing.allocator,
         Domain.init(elevations.len),
         elevation_slice,
-        Quantity(specs.spatial_coordinate, f64).from(
-            2.0,
-            units.metre,
-        ),
+        WaterDepth.from(2.0, units.metre),
     );
-    defer std.testing.allocator.free(mechanical);
-
-    _ = etalon.field.interpretValue(
-        specs.water_velocity,
-        mechanical[0],
-    );
+    defer std.testing.allocator.free(result);
 }
