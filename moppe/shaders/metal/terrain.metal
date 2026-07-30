@@ -553,12 +553,19 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
          float3 (0.299, 0.587, 0.114));
   const float jitter = coarse - 0.5;
   const float hj = height + 0.045 * jitter + 0.012 * (macro - 0.5);
+  // Altitude bands are fractions of this world's own land relief. The
+  // stored elevation is metres above the model datum, so a band constant
+  // only means something against the range it spans: the same 0.55 that
+  // is a snowline here would be ankle-deep read as a metre threshold.
+  const float land_relief = max (u.params7.z, 1.0);
+  const float hn =
+    (height - sea_level) / land_relief + 0.045 * jitter + 0.012 * (macro - 0.5);
 
   // Texture bands: by altitude AND slope.  Stony cliffs break
   // through on steep faces, dry scree takes over up high, snow only
   // settles on flatter ground, sand stays off the cliffs.
   const float cliff_coef = 1.0 - smoothstep (0.60, 0.80, n.y + 0.06 * jitter);
-  const float scree_coef = smoothstep (0.38, 0.58, hj);
+  const float scree_coef = smoothstep (0.38, 0.58, hn);
   // Snow retention is a material-scale reading of the broad hillside. The
   // detailed normal still lights every fold, but no longer turns each
   // lattice-scale steepness fluctuation into a hard snow/rock seam.
@@ -567,7 +574,7 @@ terrain_fragment (TerrainVaryings in [[stage_in]],
       ? saturate (terrain_field_sample (in.field_uv, terrain_snow_support).r)
       : n.y;
   const float snow_coef =
-    smoothstep (0.55, 0.68, hj) * smoothstep (0.58, 0.78, snow_support_up);
+    smoothstep (0.55, 0.68, hn) * smoothstep (0.58, 0.78, snow_support_up);
   // Use a world-space shoreline rule. The old normalized 0.03
   // band could mean tens of metres, leaving full grass fields growing from
   // visually sandy ground on tall worlds.

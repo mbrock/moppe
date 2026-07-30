@@ -1,6 +1,7 @@
 #include <moppe/game/terrain.hh>
 #include <moppe/gfx/tga.hh>
 #include <moppe/profile.hh>
+#include <moppe/terrain/readings.hh>
 
 #include <algorithm>
 #include <cmath>
@@ -60,6 +61,11 @@ namespace moppe {
       params.height = static_cast<int> (surface.domain ().height ());
       params.scale = m_scale;
       params.sea_level = (world.water_level).numerical_value_in (moppe::u::m);
+      // The material bands grade over this world's own land, so ask the
+      // surface how high it actually reaches instead of assuming a range.
+      params.land_relief = std::max (
+        terrain::measure_height_range (surface).maximum - params.sea_level,
+        1.0f);
       params.tex_scale = 0.5f / m_scale[0];
       params.shadow_strength = graphics.terrain_shadows ? 0.85f : 0.0f;
       params.fog_scale = attenuation_value (world.fog_scale);

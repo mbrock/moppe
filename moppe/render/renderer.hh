@@ -63,6 +63,11 @@ namespace moppe {
       int height;
       Vec3 scale;      // grid step x/z; y is one metre per height unit
       float sea_level; // world metres
+      // This world's own land relief: the metres between sea level and its
+      // highest ground. Altitude material bands are fractions of it, so a
+      // gentle world and an alpine one both grade from meadow to snowfield
+      // rather than reading the same absolute metre thresholds.
+      float land_relief = 400.0f;
       float tex_scale; // texture repeats per world metre
       float shadow_strength;
       float fog_scale;
