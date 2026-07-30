@@ -629,16 +629,21 @@ namespace moppe::terrain {
       float score;
     };
 
+    float desired_planning_radius (const PlanningGrid& grid,
+                                   const TrailFormation& parameters) {
+      const float world_span =
+        std::min (grid.width * grid.spacing_x, grid.height * grid.spacing_y);
+      return std::clamp (
+        (parameters.desired_circuit_radius).numerical_value_in (moppe::u::m),
+        0.12f * world_span,
+        0.36f * world_span);
+    }
+
     std::vector<std::size_t>
     choose_scenic_focuses (const PlanningGrid& grid,
                            std::size_t base,
                            const TrailFormation& parameters) {
-      const float world_span =
-        std::min (grid.width * grid.spacing_x, grid.height * grid.spacing_y);
-      const float desired = std::clamp (
-        (parameters.desired_circuit_radius).numerical_value_in (moppe::u::m),
-        0.12f * world_span,
-        0.36f * world_span);
+      const float desired = desired_planning_radius (grid, parameters);
       const int relief_reach = std::clamp (
         static_cast<int> (std::round (
           desired * 0.28f / std::min (grid.spacing_x, grid.spacing_y))),
@@ -997,6 +1002,11 @@ namespace moppe::terrain {
       std::size_t right;
       std::vector<std::size_t> circuit;
       float score;
+      // A home base in a small routable pocket snaps every anchor inward
+      // and closes a courtyard loop whose accumulated cost undercuts any
+      // real excursion. Collapse is judged against the desired radius so
+      // such a loop only ships when no expedition managed better.
+      bool collapsed;
     };
 
     // Route the two arms of one circuit: the outbound home-left-far ride is
@@ -1112,6 +1122,8 @@ namespace moppe::terrain {
       const float flank = std::clamp (
         0.12f * std::min (planner.width, planner.height), 2.0f, 18.0f);
       const int anchor_search = std::max (2, static_cast<int> (flank * 0.55f));
+      const float desired = desired_planning_radius (planner, parameters);
+      std::optional<CoarseCircuitPlan> pocket_loop;
       for (const std::size_t focus : focuses) {
         float forward_x =
           planner.delta_x (planner.x (home_base), planner.x (focus));
@@ -1149,6 +1161,7 @@ namespace moppe::terrain {
           continue;
 
         float route_cost = 0.0f;
+        float length = 0.0f;
         for (std::size_t i = 0; i < circuit->size (); ++i) {
           const std::size_t from = (*circuit)[i];
           const std::size_t to = (*circuit)[(i + 1) % circuit->size ()];
@@ -1160,18 +1173,27 @@ namespace moppe::terrain {
               : 0.0f;
           const float alpine =
             highland_ratio (planner.elevation (to), planner, parameters);
+          length += run;
           route_cost +=
             run * (1.0f + 8.0f * grade * grade + 4.0f * alpine * alpine);
         }
-        return CoarseCircuitPlan { .home_base = home_base,
-                                   .scenic_focus = focus,
-                                   .left = left,
-                                   .far = far,
-                                   .right = right,
-                                   .circuit = std::move (*circuit),
-                                   .score = route_cost - 24.0f * site.score };
+        CoarseCircuitPlan plan { .home_base = home_base,
+                                 .scenic_focus = focus,
+                                 .left = left,
+                                 .far = far,
+                                 .right = right,
+                                 .circuit = std::move (*circuit),
+                                 .score = route_cost - 24.0f * site.score,
+                                 .collapsed = length < 2.0f * desired };
+        if (!plan.collapsed)
+          return plan;
+        // A pocketed home base collapses every focus the same way; keep the
+        // first courtyard loop as a last resort and keep looking.
+        if (!pocket_loop)
+          pocket_loop = std::move (plan);
+        failure = "circuit collapsed far short of the desired radius";
       }
-      return std::nullopt;
+      return pocket_loop;
     }
 
     std::vector<CellIndex>
@@ -1330,8 +1352,13 @@ namespace moppe::terrain {
           failures.push_back (std::move (failure));
           continue;
         }
-        if (chosen && expedition->score >= chosen->score)
-          continue;
+        if (chosen) {
+          const bool better = expedition->collapsed == chosen->collapsed
+                                ? expedition->score < chosen->score
+                                : chosen->collapsed;
+          if (!better)
+            continue;
+        }
         std::vector<CellIndex> cells =
           expand_circuit (planner, expedition->circuit);
         if (cells.size () >= 4 && circuit_is_contiguous (grid, cells)) {
