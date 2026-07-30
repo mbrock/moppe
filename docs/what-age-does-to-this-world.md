@@ -3,6 +3,22 @@
 A note on why the terrain reads as over-eroded, written after riding it and
 disagreeing with it.
 
+## Settled by the screenshot gallery
+
+`screenshots/` was captured on 2026-07-19, the day before the change below,
+and the terrain in it is what the world is supposed to look like: tall alpine
+ridges with smooth interfluves and dendritic flutes running down them, forest
+on the mid slopes, snow above.
+
+Building that commit and generating seed 123 at the Play profile settles it.
+Its heights were still normalized against the world's declared 320 m vertical
+extent and ran 0 to 1.174, so the land reached 375 m with a median of 171 m.
+The current engine at the same seed and profile, with the durations restored,
+gives a maximum of 375.5 m and a median of 170.8 m. The same world, to within a
+tenth of a metre.
+
+Nothing else about the erosion had to change. The duration was the whole of it.
+
 ## The complaint
 
 The landscape looks hyper-eroded: fine parallel rilling over every hillside,
@@ -27,11 +43,17 @@ The world got taller, not older.
 
 Land relief above the datum, seed 123, everything else held:
 
-| Duration | Relief | Spectral excess at the rill wavelength |
+| Fast, 1024 samples | Relief | Spectral excess at the rill wavelength |
 | --- | --- | --- |
 | 200 ky | 137 m | +0.42 dex |
 | 400 ky | 260 m | +0.65 dex |
-| 750 ky (current) | 440 m | +0.78 dex |
+| 750 ky | 440 m | +0.78 dex |
+
+The profile the game actually runs is Play at 2048 samples, where the same
+tripling took the world from 325 m of relief to **755 m** — and 755 m across
+five kilometres is not a landscape at all. Ridden, it is a badlands of bare
+grey rock and near-vertical ravines, with no grass and no forest, because
+every material band sits below the ground.
 
 Relief grows very nearly linearly with time. That is the signature of a
 landscape that is **uplift-limited** — nowhere near the steady state where
@@ -69,12 +91,19 @@ with a river in it.
 
 ## What does
 
-The duration. It is the parameter that was changed to get here, and turning it
-back down is the parameter that undoes it. This is a worldbuilding decision
-rather than a correctness one: how tall should a five-kilometre world be?
+The duration, restored. Fast returns to 200 ky, Play to 500 ky, Research to
+1 My.
 
-If mature *and* tall is wanted, the honest route is to make the world actually
-reach steady state — incision strong enough to keep up with uplift over the
+And there is a principled answer to "how tall should it be" rather than a
+taste: `WorldParams::map_size` already declares the world's vertical extent as
+320 m. Before the change the generated relief filled that extent and slightly
+exceeded it — the July 19 heights topped out at 1.174 of it. After, the world
+stood two and a third times past its own declared bound. The durations are
+the world's height, and the height they should be chosen for is the one the
+world already says it has.
+
+If tall *and* mature is ever wanted, the honest route is to raise the declared
+extent and make the world actually reach steady state — incision strong enough to keep up with uplift over the
 run — rather than to bank uplift for longer. That is a real piece of work and
 it starts by asking what relief the game wants, then solving for the
 erodibility that holds it, instead of setting a clock and seeing what comes
