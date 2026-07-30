@@ -133,7 +133,7 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   // Both terraces must be real, sheet-rendered bodies for the sill to
   // matter, and they must sit at distinct levels.
   std::size_t permanent_bodies = 0;
-  for (const WaterBody& body : census.bodies)
+  for (const WaterBody& body : census.water_bodies ())
     permanent_bodies += water_body_is_permanent (body);
   MOPPE_CHECK (permanent_bodies == 2);
   const std::size_t upper = 1 * width + 1;
@@ -174,9 +174,9 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
-  const WaterBodyId pond_id = census.body[1 * width + 6];
+  const WaterBodyId pond_id = census.body_at (CellIndex { 1 * width + 6 });
   MOPPE_CHECK (pond_id != LakeCensus::dry);
-  const WaterBody& pond = census.bodies[pond_id];
+  const WaterBody& pond = census.water_body (pond_id);
   MOPPE_CHECK (water_body_is_permanent (pond));
   MOPPE_CHECK (pond.channel_like);
   MOPPE_CHECK (!water_body_terminates_rivers (pond));
@@ -188,7 +188,7 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
                            drainage,
                            1000.0f * mp_units::si::metre * mp_units::si::metre);
 
-  MOPPE_CHECK (rivers.body_traversed.size () == census.bodies.size ());
+  MOPPE_CHECK (rivers.body_traversed.size () == census.domain ().size ());
   MOPPE_CHECK (rivers.body_traversed[pond_id]);
 
   // The inlet reach continues across the pond: it links downstream and its

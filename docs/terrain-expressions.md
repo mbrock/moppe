@@ -124,8 +124,14 @@ elevation bundle + sea level
        ocean membership
        spill receivers
   -> LakeCensus
-       physical area, depth, volume, level, and spill
+       WaterBodyDomain
+       checked cell-to-body membership
+       physical area, depth, volume, level, shape, and spill rows
 ```
+
+The census is a discovered finite domain, not two public parallel vectors.
+See [Lake identity and relations](lake-domain.md) for its current consumers
+and the deliberately relation-specific continuation path.
 
 On the torus there is no exterior boundary. The largest connected component
 at or below sea level is the global ocean, with scan order breaking ties. An

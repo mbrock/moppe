@@ -1,6 +1,6 @@
 # RFC-0002: Consolidate the engine and make world relations explicit
 
-Status: accepted
+Status: realized (decision accepted)
 
 ## Decision
 

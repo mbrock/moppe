@@ -213,9 +213,9 @@ namespace moppe::game {
       const terrain::LakeCensus& census =
         std::get<terrain::LakeCensus> (hydrology);
       std::size_t wet = 0;
-      for (const terrain::WaterBody& body : census.bodies)
+      for (const terrain::WaterBody& body : census.water_bodies ())
         wet += terrain::count_value (body.cells);
-      std::cerr << "standing water: " << census.bodies.size () << " bodies, "
+      std::cerr << "standing water: " << census.domain ().size () << " bodies, "
                 << wet << " wet cells\n";
     }
 

@@ -430,7 +430,7 @@ namespace moppe::terrain {
       const FractionalRouteBackend* backend) {
       MOPPE_PROFILE_ZONE ("analyze_fractional_drainage");
       const TerrainDomain& grid = flood.domain ();
-      if (census.body.size () != grid.width () * grid.height ())
+      if (census.cell_count () != grid.width () * grid.height ())
         throw std::invalid_argument (
           "fractional drainage inputs do not share one terrain lattice");
       const float persistence_value =
@@ -471,14 +471,15 @@ namespace moppe::terrain {
                                     previous_tangent,
                                     persistence,
                                     flood.ocean,
-                                    census.body,
+                                    census.membership ().values (),
                                     routes,
                                     directions,
                                     slopes);
       } else {
         const DInfinityStencil stencil (grid);
         for (std::size_t offset = 0; offset < lattice.size (); ++offset) {
-          if (flood.ocean[offset] || census.body[offset] != LakeCensus::dry)
+          if (flood.ocean[offset] ||
+              census.body_at (lattice.index (offset)) != LakeCensus::dry)
             continue;
           const CellIndex cell = lattice.index (offset);
           const RouteReading reading = d_infinity_route (

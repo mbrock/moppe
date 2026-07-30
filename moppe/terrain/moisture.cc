@@ -10,7 +10,7 @@
 
 namespace moppe::terrain {
   MoistureMap analyze_moisture (const FloodField& flood,
-                                const LakeCensus& census,
+                                const WaterBodyMembership& water_bodies,
                                 const DrainageGraph& drainage,
                                 const MoistureParameters& parameters) {
     MOPPE_PROFILE_ZONE ("analyze_moisture");
@@ -31,7 +31,9 @@ namespace moppe::terrain {
     {
       MOPPE_PROFILE_ZONE ("moisture.distance_from_water");
       for (std::uint32_t cell = 0; cell < count; ++cell)
-        if (census.body[cell] != LakeCensus::dry || flood.ocean[cell]) {
+        if (water_bodies.body_at (CellIndex { cell }) !=
+              WaterBodyMembership::dry ||
+            flood.ocean[cell]) {
           steps[cell] = 0;
           frontier.push (cell);
         }

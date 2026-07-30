@@ -123,18 +123,19 @@ int main (int argc, char** argv) {
       const LakeCensus census = census_lakes (flood);
       std::array<std::size_t, category_count> bodies {};
       std::array<std::size_t, category_count> cells {};
-      for (const WaterBody& body : census.bodies) {
+      for (const WaterBody& body : census.water_bodies ()) {
         const std::size_t category = category_index (body.classification);
         ++bodies[category];
         ++populations[category].bodies;
       }
       const std::span<const StandingWaterDepth> depths = flood.water_depths ();
       for (std::size_t cell = 0; cell < depths.size (); ++cell) {
-        const WaterBodyId body = census.body[cell];
+        const WaterBodyId body =
+          census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
         if (body == LakeCensus::dry)
           continue;
         const std::size_t category =
-          category_index (census.bodies[body].classification);
+          category_index (census.water_body (body).classification);
         ++cells[category];
         populations[category].depths_m.push_back (
           depths[cell].numerical_value_in (u::m));

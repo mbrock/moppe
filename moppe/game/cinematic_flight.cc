@@ -71,8 +71,9 @@ namespace moppe::game {
         Vec3 (surface.domain ().spacing_x ().numerical_value_in (u::m),
               1.0f,
               surface.domain ().spacing_z ().numerical_value_in (u::m));
-      const bool wet =
-        census.body[cell] != terrain::LakeCensus::dry || flood.ocean[cell];
+      const bool wet = census.body_at (terrain::CellIndex { cell }) !=
+                         terrain::LakeCensus::dry ||
+                       flood.ocean[cell];
       const float y = wet ? flood.water_level_m (cell)
                           : terrain::surface_elevation_value (
                               spatial::get<terrain::surface_elevation> (
@@ -157,7 +158,7 @@ namespace moppe::game {
     FeatureCandidate choose_flight_lake (const terrain::FloodField& flood,
                                          const terrain::LakeCensus& census) {
       const terrain::WaterBody* body = nullptr;
-      for (const terrain::WaterBody& candidate : census.bodies) {
+      for (const terrain::WaterBody& candidate : census.water_bodies ()) {
         if (candidate.classification == terrain::WaterBodyClass::Sea)
           continue;
         if (!body || candidate.area > body->area)
@@ -168,8 +169,8 @@ namespace moppe::game {
         return best;
       best.score = (body->area).numerical_value_in (moppe::u::m * moppe::u::m);
       float deepest = -1.0f;
-      for (std::uint32_t cell = 0; cell < census.body.size (); ++cell)
-        if (census.body[cell] == body->id &&
+      for (std::uint32_t cell = 0; cell < census.cell_count (); ++cell)
+        if (census.body_at (terrain::CellIndex { cell }) == body->id &&
             flood.water_depth_m (cell) > deepest) {
           deepest = flood.water_depth_m (cell);
           best.cell = terrain::CellIndex (cell);

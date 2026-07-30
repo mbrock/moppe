@@ -214,6 +214,26 @@ namespace moppe::terrain {
              .spill_receiver = std::move (receiver) };
   }
 
+  WaterBodyMembership::WaterBodyMembership (
+    std::vector<WaterBodyId> body_at_cell, WaterBodyDomain bodies)
+      : m_bodies (bodies), m_body_at_cell (std::move (body_at_cell)) {
+    for (const WaterBodyId body : m_body_at_cell)
+      if (body != dry && !m_bodies.contains (body))
+        throw std::invalid_argument (
+          "water-body membership targets an unknown body");
+  }
+
+  LakeCensus::LakeCensus (std::vector<WaterBodyId> body_at_cell,
+                          std::vector<WaterBody> water_bodies)
+      : m_domain (water_bodies.size ()),
+        m_membership (std::move (body_at_cell), m_domain),
+        m_water_bodies (std::move (water_bodies)) {
+    for (std::size_t offset = 0; offset < m_water_bodies.size (); ++offset)
+      if (m_water_bodies[offset].id != m_domain.index (offset))
+        throw std::invalid_argument (
+          "water-body row identity does not match its domain");
+  }
+
   LakeCensus census_lakes (const FloodField& flood, float wet_epsilon) {
     MOPPE_PROFILE_ZONE ("census_lakes");
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
@@ -223,17 +243,16 @@ namespace moppe::terrain {
     const std::size_t count = width * height;
     const std::span<const StandingWaterDepth> depth = flood.water_depths ();
     const std::span<const SurfaceElevation> level = flood.water_levels ();
-    LakeCensus census { .body =
-                          std::vector<WaterBodyId> (count, LakeCensus::dry) };
+    std::vector<WaterBodyId> body_at_cell (count, LakeCensus::dry);
+    std::vector<WaterBody> bodies;
     std::queue<std::uint32_t> frontier;
     const square_meters_t cell_area = flood.domain ().cell_area ();
 
     for (std::uint32_t origin = 0; origin < count; ++origin) {
       if (depth[origin].numerical_value_in (u::m) <= wet_epsilon ||
-          census.body[origin] != LakeCensus::dry)
+          body_at_cell[origin] != LakeCensus::dry)
         continue;
-      const WaterBodyId id { static_cast<std::uint32_t> (
-        census.bodies.size ()) };
+      const WaterBodyId id { static_cast<std::uint32_t> (bodies.size ()) };
       WaterBody body { .id = id,
                        .cells = cell_count (0),
                        .area = 0.0f * mp_units::si::metre * mp_units::si::metre,
@@ -250,7 +269,7 @@ namespace moppe::terrain {
                        .channel_like = false };
       double surface_sum_m = 0.0;
       std::vector<std::uint32_t> members;
-      census.body[origin] = id;
+      body_at_cell[origin] = id;
       frontier.push (origin);
       while (!frontier.empty ()) {
         const std::uint32_t cell = frontier.front ();
@@ -273,8 +292,8 @@ namespace moppe::terrain {
           const std::uint32_t next =
             static_cast<std::uint32_t> (ny * width + nx);
           if (depth[next].numerical_value_in (u::m) > wet_epsilon) {
-            if (census.body[next] == LakeCensus::dry) {
-              census.body[next] = id;
+            if (body_at_cell[next] == LakeCensus::dry) {
+              body_at_cell[next] = id;
               frontier.push (next);
             }
           }
@@ -298,7 +317,7 @@ namespace moppe::terrain {
         std::size_t steps = 0;
         while (flood.spill_receiver[cell] != cell && steps < count) {
           const std::uint32_t next = flood.spill_receiver[cell];
-          if (census.body[cell] == id && census.body[next] != id) {
+          if (body_at_cell[cell] == id && body_at_cell[next] != id) {
             body.outlet_cell = cell;
             body.spill_cell = next;
           }
@@ -317,7 +336,7 @@ namespace moppe::terrain {
         body.classification = WaterBodyClass::Pond;
       else
         body.classification = WaterBodyClass::Lake;
-      census.bodies.push_back (body);
+      bodies.push_back (body);
     }
 
     // Shape reading: a multi-source sweep from every dry cell measures each
@@ -338,7 +357,7 @@ namespace moppe::terrain {
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
       for (std::uint32_t cell = 0; cell < count; ++cell)
-        if (census.body[cell] == LakeCensus::dry) {
+        if (body_at_cell[cell] == LakeCensus::dry) {
           shore_distance[cell] = 0;
           sweep.push (cell);
         }
@@ -361,21 +380,21 @@ namespace moppe::terrain {
         }
       }
       for (std::uint32_t cell = 0; cell < count; ++cell) {
-        const WaterBodyId id = census.body[cell];
+        const WaterBodyId id = body_at_cell[cell];
         if (id == LakeCensus::dry || shore_distance[cell] < 0)
           continue;
-        WaterBody& body = census.bodies[id];
+        WaterBody& body = bodies[id.value];
         body.inradius = std::max (body.inradius,
                                   static_cast<float> (shore_distance[cell]) *
                                     cell_step_m * mp_units::si::metre);
       }
-      for (WaterBody& body : census.bodies)
+      for (WaterBody& body : bodies)
         body.channel_like =
           !body.ocean_connected && water_body_is_permanent (body) &&
           body.inradius <=
             channel_inradius_cells * cell_step_m * mp_units::si::metre;
     }
-    return census;
+    return LakeCensus (std::move (body_at_cell), std::move (bodies));
   }
 
   bool water_body_is_permanent (const WaterBody& body,
@@ -396,7 +415,7 @@ namespace moppe::terrain {
                                         const LakeCensus& census,
                                         const WaterPermanence& permanence) {
     const std::size_t count = flood.width () * flood.height ();
-    if (census.body.size () != count)
+    if (census.cell_count () != count)
       throw std::invalid_argument ("lake census does not match flood field");
     if (permanence.minimum_area <
           0.0f * mp_units::si::metre * mp_units::si::metre ||
@@ -409,10 +428,11 @@ namespace moppe::terrain {
     ElevationMap surface (flood.domain ());
     auto& elevations = spatial::get<surface_elevation> (surface);
     for (std::size_t cell = 0; cell < count; ++cell) {
-      const WaterBodyId id = census.body[cell];
+      const WaterBodyId id =
+        census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
       const bool permanent =
         id != LakeCensus::dry &&
-        water_body_is_permanent (census.bodies[id], permanence);
+        water_body_is_permanent (census.water_body (id), permanence);
       elevations[cell] =
         permanent ? level[cell]
                   : SurfaceElevation ((surface_elevation_value (level[cell]) -

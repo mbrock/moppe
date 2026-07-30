@@ -19,7 +19,7 @@ namespace moppe::terrain {
   };
 
   MoistureMap analyze_moisture (const FloodField& flood,
-                                const LakeCensus& census,
+                                const WaterBodyMembership& water_bodies,
                                 const DrainageGraph& drainage,
                                 const MoistureParameters& parameters = {});
 }

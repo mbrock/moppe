@@ -9,12 +9,10 @@ using namespace moppe;
 using namespace moppe::terrain;
 
 namespace {
-  LakeCensus uniform_census (std::size_t count, WaterBodyId body) {
-    LakeCensus census { .body =
-                          std::vector<WaterBodyId> (count, LakeCensus::dry) };
-    for (std::size_t i = 0; i < count; ++i)
-      census.body[i] = body;
-    return census;
+  WaterBodyMembership uniform_membership (std::size_t count, WaterBodyId body) {
+    return WaterBodyMembership (
+      std::vector<WaterBodyId> (count, body),
+      WaterBodyDomain (body == no_water_body ? 0 : body.value + 1));
   }
 
   ElevationMap elevation_map (std::size_t width,
@@ -36,7 +34,7 @@ MOPPE_TEST (waterline_finds_the_exact_bilinear_crossing) {
   const ElevationMap surface =
     elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
   const Waterline waterline = extract_waterline (
-    terrain, surface, uniform_census (9, WaterBodyId { 4 }), 0.0f);
+    terrain, surface, uniform_membership (9, WaterBodyId { 4 }), 0.0f);
 
   // The wrap gives the wet column a second shoreline where the ground
   // falls from 8 back toward the water: level 1 meets that slope at
@@ -66,10 +64,12 @@ MOPPE_TEST (waterline_closes_a_loop_around_a_pond) {
   level[2 * 5 + 2] = -1.0f;
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (5, 5), ground);
-  LakeCensus census { .body = std::vector<WaterBodyId> (25, LakeCensus::dry) };
-  census.body[2 * 5 + 2] = WaterBodyId { 7 };
+  std::vector<WaterBodyId> body_at_cell (25, no_water_body);
+  body_at_cell[2 * 5 + 2] = WaterBodyId { 7 };
+  const WaterBodyMembership membership (std::move (body_at_cell),
+                                        WaterBodyDomain (8));
   const Waterline waterline =
-    extract_waterline (terrain, elevation_map (5, 5, level), census, 0.0f);
+    extract_waterline (terrain, elevation_map (5, 5, level), membership, 0.0f);
 
   MOPPE_CHECK (waterline.contours.size () == 1);
   const WaterlineContour& contour = waterline.contours.front ();
@@ -99,7 +99,7 @@ MOPPE_TEST (waterline_wraps_around_the_torus) {
   const Waterline waterline =
     extract_waterline (terrain,
                        elevation_map (unique, unique, level),
-                       uniform_census (unique * unique, WaterBodyId { 0 }),
+                       uniform_membership (unique * unique, WaterBodyId { 0 }),
                        0.0f);
 
   MOPPE_CHECK (waterline.contours.size () == 2);
@@ -120,9 +120,10 @@ MOPPE_TEST (waterline_proximity_measures_the_band_exactly) {
     TerrainDomain (3, 3, 2.0f * mp_units::si::metre), ground);
   const ElevationMap surface =
     elevation_map (3, 3, { 1.f, 4.f, 8.f, 1.f, 4.f, 8.f, 1.f, 4.f, 8.f });
-  LakeCensus census { .body = std::vector<WaterBodyId> (9, WaterBodyId { 0 }) };
+  const WaterBodyMembership membership =
+    uniform_membership (9, WaterBodyId { 0 });
   const Waterline waterline =
-    extract_waterline (terrain, surface, census, 0.0f);
+    extract_waterline (terrain, surface, membership, 0.0f);
   const WaterlineProximity proximity =
     waterline_proximity (waterline, 2.5f * u::m);
   const auto& distance = spatial::get<waterline_distance> (proximity);
@@ -147,11 +148,12 @@ MOPPE_TEST (waterline_extraction_is_deterministic) {
                          0.4f * std::cos (1.3f * static_cast<float> (y)) - 0.2f;
   const ElevationMap terrain =
     make_elevation_map (TerrainDomain (7, 7), ground);
-  const LakeCensus census = uniform_census (49, WaterBodyId { 1 });
+  const WaterBodyMembership membership =
+    uniform_membership (49, WaterBodyId { 1 });
   const Waterline first =
-    extract_waterline (terrain, elevation_map (7, 7, level), census);
+    extract_waterline (terrain, elevation_map (7, 7, level), membership);
   const Waterline second =
-    extract_waterline (terrain, elevation_map (7, 7, level), census);
+    extract_waterline (terrain, elevation_map (7, 7, level), membership);
 
   MOPPE_CHECK (first.contours.size () == second.contours.size ());
   MOPPE_CHECK (!first.contours.empty ());

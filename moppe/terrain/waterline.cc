@@ -29,7 +29,7 @@ namespace moppe::terrain {
   detail::extract_waterline (const TerrainDomain& grid,
                              std::span<const SurfaceElevation> elevations,
                              std::span<const SurfaceElevation> surface,
-                             const LakeCensus& census,
+                             const WaterBodyMembership& water_bodies,
                              float wet_epsilon) {
     if (!std::isfinite (wet_epsilon) || wet_epsilon < 0.0f)
       throw std::invalid_argument ("waterline epsilon must be non-negative");
@@ -38,7 +38,7 @@ namespace moppe::terrain {
     const std::size_t count = width * height;
     if (surface.size () != count)
       throw std::invalid_argument ("water surface does not match terrain");
-    if (census.body.size () != count)
+    if (water_bodies.size () != count)
       throw std::invalid_argument ("lake census does not match terrain");
     // Signed wetness at each lattice node; positive is wet.  The
     // painted sheet holds ground height in dry cells, so this field is
@@ -144,8 +144,10 @@ namespace moppe::terrain {
         };
         for (int corner = 0; corner < 4; ++corner)
           if ((mask & (1u << corner)) != 0 &&
-              census.body[corner_nodes[corner]] != no_water_body) {
-            body = census.body[corner_nodes[corner]];
+              water_bodies.body_at (CellIndex { static_cast<std::uint32_t> (
+                corner_nodes[corner]) }) != no_water_body) {
+            body = water_bodies.body_at (
+              CellIndex { static_cast<std::uint32_t> (corner_nodes[corner]) });
             break;
           }
 

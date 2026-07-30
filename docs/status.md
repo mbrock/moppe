@@ -24,13 +24,13 @@ identity the first concrete relational world model.
 - Motorcycle, car, walking, hang-glider, generated trail circuit, cinematic
   tour, forests, rivers, lakes, atmosphere, and post-processing.
 - Deterministic captures, graphics replay benchmarks, source analysis, typed
-  Arrow bundle persistence, and 199 focused tests.
+  Arrow bundle persistence, and 200 focused tests.
 
-## Active consolidation
+## Completed consolidation
 
-The accepted
+The realized
 [engine-consolidation track](../planning/tracks/engine-consolidation/README.md)
-is the source of truth for current implementation status. Its sequence is:
+records the closure sequence:
 
 1. publish the post-harmonization architecture accurately;
 2. make water-sheet presentation borrow typed columns directly;
@@ -50,8 +50,8 @@ remains the history of the ownership work. It is not an active backlog.
   generation, loading, window state, or renderer history.
 - WebGPU has a deliberately cheaper presentation than Metal. Android remains
   unimplemented.
-- Water-body identity is currently discovered by hydrology but is not yet a
-  first-class persistent domain.
+- Water-body identity is a first-class per-world domain, but not yet a
+  persistent identity across regeneration, split, merge, or evolving levels.
 - Roads, settlements, enduring player traces, and evolving inhabited places
   remain later design work.
 
