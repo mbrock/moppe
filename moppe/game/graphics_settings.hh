@@ -22,6 +22,7 @@ namespace moppe::game {
     terrain_fragment_normals,
     snow_support_filter,
     channel_flux_detail,
+    undergrowth,
   };
 
   struct GraphicsSettings {
@@ -52,6 +53,7 @@ namespace moppe::game {
     bool terrain_fragment_normals = true;
     bool snow_support_filter = true;
     bool channel_flux_detail = true;
+    bool undergrowth = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -156,7 +158,14 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 14> graphics_features {
+  inline constexpr GraphicsFeature undergrowth_feature {
+    GraphicsFeatureId::undergrowth,
+    "undergrowth",
+    &GraphicsSettings::undergrowth,
+    true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 15> graphics_features {
     &terrain_shadows_feature,     &ocean_feature,
     &river_ribbons_feature,       &particles_feature,
     &vehicle_effects_feature,     &star_effects_feature,
@@ -164,6 +173,7 @@ namespace moppe::game {
     &auto_exposure_feature,       &lens_flare_feature,
     &terrain_topology_feature,    &terrain_fragment_normals_feature,
     &snow_support_filter_feature, &channel_flux_detail_feature,
+    &undergrowth_feature,
   };
 
   GraphicsSettings high_graphics_settings ();

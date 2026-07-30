@@ -826,6 +826,15 @@ namespace moppe {
         if (visibility.forest)
           m_forest.draw (r, forest_view_for (frame));
 
+        // The floor grows itself from the same canopy and moisture fields the
+        // trees were planted from, so it arrives already agreeing with them.
+        if (visibility.undergrowth)
+          r.draw_undergrowth (
+            { .time = frame.lighting.time,
+              .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
+              .reach = 58.0f,
+              .density = 1.0f });
+
         if (visibility.tree_stand)
           m_tree_stand.draw (r);
       }

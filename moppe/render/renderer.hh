@@ -151,6 +151,18 @@ namespace moppe {
       Vec3 world_offset;
     };
 
+    // Ferns and shrubs on the forest floor. There is no plant list and no
+    // mesh: the backend walks ground tiles around the camera and grows
+    // whatever the terrain's own canopy, moisture, and trail fields say
+    // stands there. So what a frame passes is only how far to look and how
+    // thick to lay it on.
+    struct UndergrowthParams {
+      float time = 0.0f;
+      float cloud_cover = 0.0f;
+      float reach = 52.0f;  // world metres from the camera
+      float density = 1.0f; // art-directed scale over the field's own answer
+    };
+
     struct DustEmission {
       uint64_t id = 0;
       float birth_time = 0.0f;
@@ -268,6 +280,10 @@ namespace moppe {
                               float logical_time) {
         (void)emissions;
         (void)logical_time;
+      }
+      // Optional: backends without a mesh pipeline simply grow nothing.
+      virtual void draw_undergrowth (const UndergrowthParams& params) {
+        (void)params;
       }
       virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;

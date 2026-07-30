@@ -105,6 +105,7 @@ namespace moppe::game {
     bool sky_before_terrain = false;
     bool sky_after_terrain = true;
     bool forest = true;
+    bool undergrowth = true;
     bool tree_stand = true;
     bool actors = true;
     bool ocean = true;

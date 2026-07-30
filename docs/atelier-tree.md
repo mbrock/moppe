@@ -150,6 +150,34 @@ in play while giving the near tree roughly three times the geometry.
 Streamed full organisms and mesh-shader expansion remain later refinements
 rather than prerequisites for a forested world.
 
+## The floor: geometry that is never stored
+
+`moppe/shaders/metal/undergrowth.metal` grows the ferns and shrubs beneath
+the trees, and nothing about them is a mesh. An object stage walks a window
+of ground tiles around the camera and keeps the ones the world's own fields
+say something grows on: shade under a canopy, water in the soil, no trail
+worn across it, ground a rosette could hold. A mesh stage turns each
+surviving tile into plants — a hash decides where each one stands and what it
+is, the height and normal textures root it on the terrain by construction,
+and the same gust function the trees use moves it.
+
+That is the shape the vegetation shelf's `ideas/geometry-from-fields.md`
+proposes, and its payoff is not only that the plants cost no memory. They
+cannot drift out of step with the ground they grow on, because they are read
+from it rather than placed against it; and their count, size, and species can
+change every frame, because nothing is kept that could go stale. The distance
+level of detail is that freedom used directly: the object stage hands each
+tile a smaller plant budget as it recedes, and the mesh stage widens the
+survivors so the floor keeps the coverage the thinned-out plants were
+carrying. A fractional budget is spent as odds rather than rounded, so a
+stand thins out plant by plant instead of ending on a contour line.
+
+Measured on the riding camera through forest, the whole pass costs about
+0.018 ms a frame — the second cheapest block in the `--graphics-benchmark`
+cube, an order of magnitude under the ocean or the river ribbons. It needs
+Metal mesh shaders; backends without them grow nothing, and the
+`undergrowth` graphics feature turns it off.
+
 Run a quiet camera in the game renderer with:
 
 ```sh

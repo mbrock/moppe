@@ -14,14 +14,16 @@ CREATE OR REPLACE TABLE features(bit, name) AS VALUES
   (7, 'lens-flare'),
   (8, 'terrain-fragment-normals'),
   (9, 'snow-support-filter'),
-  (10, 'channel-flux-detail');
+  (10, 'channel-flux-detail'),
+  (11, 'undergrowth');
 
 CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
   (0, 'ocean'),
   (1, 'rivers'),
   (2, 'bloom'),
   (3, 'auto-exposure'),
-  (4, 'small-effects');
+  (4, 'undergrowth'),
+  (5, 'small-effects');
 
 CREATE OR REPLACE TABLE configuration_stats AS
 SELECT mask,
@@ -157,7 +159,8 @@ SELECT c.*,
        (c.mask & 128) != 0 AS lens_flare,
        (c.mask & 256) != 0 AS terrain_fragment_normals,
        (c.mask & 512) != 0 AS snow_support_filter,
-       (c.mask & 1024) != 0 AS channel_flux_detail
+       (c.mask & 1024) != 0 AS channel_flux_detail,
+       (c.mask & 2048) != 0 AS undergrowth
 FROM configuration_stats c;
 
 CREATE OR REPLACE TABLE deadline_summary AS
