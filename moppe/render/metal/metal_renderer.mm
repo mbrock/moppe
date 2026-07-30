@@ -58,9 +58,9 @@ namespace moppe {
 #if TARGET_OS_TV
       // At television viewing distance 2x MSAA preserves stable terrain edges
       // while halving the dominant scene-pass color and depth sample traffic.
-      const int MSAA_SAMPLES = 2;
+      const int DEFAULT_MSAA_SAMPLES = 2;
 #else
-      const int MSAA_SAMPLES = 4;
+      const int DEFAULT_MSAA_SAMPLES = 4;
 #endif
       const int CHUNK_CELLS = 128;
       const int TERRAIN_LOD_COUNT = (int)TerrainLod::Count;
@@ -83,19 +83,37 @@ namespace moppe {
           .count ();
       }
 
+      // Point resolution is an affordable scene size only when something
+      // bounds it.  A Retina panel bounds it by folding pixels into points;
+      // a desktop display attached at 1x does not, and a 7680x2160 one hands
+      // the scene pass twice a 4K frame.  So the desktop, where the display
+      // is whatever the player plugged in, takes the smaller of two bounds:
+      // the point-relative rule and a megapixel budget.  An oversized
+      // drawable then costs resolution instead of frame rate.  Handheld and
+      // television targets ship against known panels and keep the
+      // point-relative rule alone.
       float scene_render_scale (float backing_scale,
                                 float requested_scale,
-                                float scale_override) {
+                                float scale_override,
+                                float megapixel_budget,
+                                double drawable_pixels) {
 #if TARGET_OS_TV
         // When a 4K television uses a 2x UIKit backing scale, keep the
         // expensive 3D scene relative to point resolution and let the
         // inexpensive present/HUD pass target the native drawable.
+        (void)megapixel_budget, (void)drawable_pixels;
         float scale = requested_scale / std::max (1.0f, backing_scale);
 #elif TARGET_OS_IPHONE
-        (void)backing_scale;
+        (void)backing_scale, (void)megapixel_budget, (void)drawable_pixels;
         float scale = requested_scale;
 #else
-        float scale = requested_scale / std::max (1.0f, backing_scale);
+        const float point_relative = 1.0f / std::max (1.0f, backing_scale);
+        // Budgeted area becomes a linear scale through its square root.
+        const float affordable =
+          (megapixel_budget > 0.0f && drawable_pixels > 0)
+            ? (float)std::sqrt (megapixel_budget * 1.0e6 / drawable_pixels)
+            : 1.0f;
+        float scale = requested_scale * std::min (point_relative, affordable);
 #endif
         if (scale_override > 0.0f)
           scale = scale_override;
@@ -677,7 +695,9 @@ namespace moppe {
 
     private:
       void build_pipelines ();
-      void ensure_targets (float requested_scale, float scale_override);
+      void ensure_targets (float requested_scale,
+                           float scale_override,
+                           float megapixel_budget);
       id<MTLTexture> make_target (
         MTLPixelFormat fmt, int w, int h, int samples, bool memoryless);
       void upload_texture (id<MTLTexture> tex,
@@ -714,6 +734,9 @@ namespace moppe {
       MetalFrameTargets m_targets;
       MetalFrameEncoding m_frame;
       bool m_memoryless_ok = false;
+      // Fixed once, before the pipelines are built: every scene pipeline
+      // bakes its raster sample count, so this cannot follow a hot setting.
+      int m_msaa_samples = DEFAULT_MSAA_SAMPLES;
       bool m_profile_gpu = false;
       bool m_profile_gpu_passes = false;
       std::shared_ptr<FrameTiming> m_frame_timing;
@@ -875,10 +898,24 @@ namespace moppe {
         m_pipelines.mesh_shaders_ok =
           [m_device supportsFamily:MTLGPUFamilyMetal3];
 
+      // Read before the pipelines bake their raster sample count.  One is a
+      // meaningful setting, not a disabled one: it takes the scene pass off
+      // multisampled rasterization and out of a resolve entirely.
+      if (const char* text = ::getenv ("MOPPE_MSAA")) {
+        const int wanted = ::atoi (text);
+        if ((wanted == 1 || wanted == 2 || wanted == 4) &&
+            [m_device supportsTextureSampleCount:wanted])
+          m_msaa_samples = wanted;
+        else
+          std::cerr << "moppe: MOPPE_MSAA=" << text
+                    << " is not a supported sample count; keeping "
+                    << m_msaa_samples << 'x' << std::endl;
+      }
+
       std::cerr << "moppe: Metal: device=" << m_device.name.UTF8String
                 << ", frames-in-flight=" << FRAMES_IN_FLIGHT
                 << ", memoryless=" << (m_memoryless_ok ? "yes" : "no")
-                << ", mesh-shaders="
+                << ", msaa=" << m_msaa_samples << 'x' << ", mesh-shaders="
                 << (m_pipelines.mesh_shaders_ok ? "yes" : "no") << std::endl;
 
       NSError* error = nil;
@@ -999,14 +1036,14 @@ namespace moppe {
       const MTLPixelFormat depth = MTLPixelFormatDepth32Float_Stencil8;
 
       m_pipelines.uber_opaque = make_pipeline (
-        @"uber_vertex", @"uber_fragment", scene, depth, MSAA_SAMPLES, false);
+        @"uber_vertex", @"uber_fragment", scene, depth, m_msaa_samples, false);
       m_pipelines.uber_blend = make_pipeline (
-        @"uber_vertex", @"uber_fragment", scene, depth, MSAA_SAMPLES, true);
+        @"uber_vertex", @"uber_fragment", scene, depth, m_msaa_samples, true);
       m_pipelines.uber_add = make_pipeline (@"uber_vertex",
                                             @"uber_fragment",
                                             scene,
                                             depth,
-                                            MSAA_SAMPLES,
+                                            m_msaa_samples,
                                             true,
                                             true);
       m_pipelines.hud = make_pipeline (@"hud_vertex",
@@ -1061,7 +1098,7 @@ namespace moppe {
                                            @"terrain_fragment",
                                            scene,
                                            depth,
-                                           MSAA_SAMPLES,
+                                           m_msaa_samples,
                                            false);
       m_pipelines.terrain_shadow = make_pipeline (@"terrain_shadow_vertex",
                                                   nil,
@@ -1070,16 +1107,16 @@ namespace moppe {
                                                   1,
                                                   false);
       m_pipelines.sky = make_pipeline (
-        @"sky_vertex", @"sky_fragment", scene, depth, MSAA_SAMPLES, false);
+        @"sky_vertex", @"sky_fragment", scene, depth, m_msaa_samples, false);
       m_pipelines.ocean = make_pipeline (
-        @"ocean_vertex", @"ocean_fragment", scene, depth, MSAA_SAMPLES, true);
+        @"ocean_vertex", @"ocean_fragment", scene, depth, m_msaa_samples, true);
       m_pipelines.dust_soft = make_pipeline (
-        @"dust_vertex", @"dust_fragment", scene, depth, MSAA_SAMPLES, true);
+        @"dust_vertex", @"dust_fragment", scene, depth, m_msaa_samples, true);
       m_pipelines.dust_add = make_pipeline (@"dust_vertex",
                                             @"dust_fragment",
                                             scene,
                                             depth,
-                                            MSAA_SAMPLES,
+                                            m_msaa_samples,
                                             true,
                                             true);
       if (m_pipelines.mesh_shaders_ok) {
@@ -1090,7 +1127,7 @@ namespace moppe {
             p.meshFunction = [m_library newFunctionWithName:@"dust_mesh"];
             p.fragmentFunction =
               [m_library newFunctionWithName:@"dust_fragment"];
-            p.rasterSampleCount = MSAA_SAMPLES;
+            p.rasterSampleCount = m_msaa_samples;
             p.colorAttachments[0].pixelFormat = scene;
             p.colorAttachments[0].blendingEnabled = YES;
             p.colorAttachments[0].sourceRGBBlendFactor =
@@ -1130,7 +1167,7 @@ namespace moppe {
           w.meshFunction = [m_library newFunctionWithName:@"water_tile_mesh"];
           w.fragmentFunction =
             [m_library newFunctionWithName:@"ocean_fragment"];
-          w.rasterSampleCount = MSAA_SAMPLES;
+          w.rasterSampleCount = m_msaa_samples;
           w.colorAttachments[0].pixelFormat = scene;
           w.colorAttachments[0].blendingEnabled = YES;
           w.colorAttachments[0].sourceRGBBlendFactor =
@@ -1161,7 +1198,7 @@ namespace moppe {
         }
       }
       m_pipelines.river = make_pipeline (
-        @"river_vertex", @"river_fragment", scene, depth, MSAA_SAMPLES, true);
+        @"river_vertex", @"river_fragment", scene, depth, m_msaa_samples, true);
 
       // Depth-stencil states, reversed-Z.
       for (int test = 0; test < 2; ++test)
@@ -1733,16 +1770,19 @@ namespace moppe {
       td.textureType =
         samples > 1 ? MTLTextureType2DMultisample : MTLTextureType2D;
       td.sampleCount = samples;
+      // A tile-resident attachment never leaves the pass that writes it, so
+      // it carries no shader-read usage even at one sample per pixel.
+      const bool tile_only = memoryless && m_memoryless_ok;
       td.usage = MTLTextureUsageRenderTarget |
-                 (samples > 1 ? 0 : MTLTextureUsageShaderRead);
-      td.storageMode = (memoryless && m_memoryless_ok)
-                         ? MTLStorageModeMemoryless
-                         : MTLStorageModePrivate;
+                 (samples > 1 || tile_only ? 0 : MTLTextureUsageShaderRead);
+      td.storageMode =
+        tile_only ? MTLStorageModeMemoryless : MTLStorageModePrivate;
       return [m_device newTextureWithDescriptor:td];
     }
 
     void MetalRenderer::ensure_targets (float requested_scale,
-                                        float scale_override) {
+                                        float scale_override,
+                                        float megapixel_budget) {
       const int drawable_w = (int)m_view.drawableSize.width;
       const int drawable_h = (int)m_view.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
@@ -1750,8 +1790,11 @@ namespace moppe {
       const CGSize points = m_view.bounds.size;
       const float backing_scale =
         points.width > 0 ? drawable_w / (float)points.width : 1.0f;
-      const float scale =
-        scene_render_scale (backing_scale, requested_scale, scale_override);
+      const float scale = scene_render_scale (backing_scale,
+                                              requested_scale,
+                                              scale_override,
+                                              megapixel_budget,
+                                              (double)drawable_w * drawable_h);
       const int w = std::max (1, (int)std::round (drawable_w * scale));
       const int h = std::max (1, (int)std::round (drawable_h * scale));
       if (w == m_targets.width && h == m_targets.height && m_targets.msaa_color)
@@ -1759,12 +1802,16 @@ namespace moppe {
 
       m_targets.width = w;
       m_targets.height = h;
-      m_targets.msaa_color =
-        make_target (MTLPixelFormatRGBA16Float, w, h, MSAA_SAMPLES, true);
-      m_targets.msaa_depth = make_target (
-        MTLPixelFormatDepth32Float_Stencil8, w, h, MSAA_SAMPLES, true);
       m_targets.scene_a =
         make_target (MTLPixelFormatRGBA16Float, w, h, 1, false);
+      // Without multisampling there is nothing to resolve, so the scene pass
+      // draws straight into the texture the resolve would have produced.
+      m_targets.msaa_color =
+        m_msaa_samples > 1
+          ? make_target (MTLPixelFormatRGBA16Float, w, h, m_msaa_samples, true)
+          : m_targets.scene_a;
+      m_targets.msaa_depth = make_target (
+        MTLPixelFormatDepth32Float_Stencil8, w, h, m_msaa_samples, true);
       m_targets.scene_b =
         make_target (MTLPixelFormatRGBA16Float, w, h, 1, false);
       m_targets.prev_frame =
@@ -1776,8 +1823,9 @@ namespace moppe {
       m_targets.bloom_b =
         make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
       std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
-                << drawable_h << ", scene=" << w << 'x' << h
-                << ", render-scale=" << scale << ", msaa=" << MSAA_SAMPLES
+                << drawable_h << ", scene=" << w << 'x' << h << " ("
+                << (w * (double)h / 1.0e6) << " MP)"
+                << ", render-scale=" << scale << ", msaa=" << m_msaa_samples
                 << 'x' << std::endl;
       if (!m_targets.probe_tex) {
         m_targets.probe_tex =
@@ -1823,7 +1871,9 @@ namespace moppe {
       const double frame_start = cpu_time ();
       {
         MOPPE_PROFILE_ZONE ("MetalRenderer::ensure_targets");
-        ensure_targets (params.scene_scale, params.render_scale_override);
+        ensure_targets (params.scene_scale,
+                        params.render_scale_override,
+                        params.scene_megapixel_budget);
       }
       const double targets_done = cpu_time ();
       if (!m_targets.msaa_color)
@@ -1942,9 +1992,13 @@ namespace moppe {
       MTLRenderPassDescriptor* rp =
         [MTLRenderPassDescriptor renderPassDescriptor];
       rp.colorAttachments[0].texture = m_targets.msaa_color;
-      rp.colorAttachments[0].resolveTexture = m_targets.scene_a;
       rp.colorAttachments[0].loadAction = MTLLoadActionClear;
-      rp.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+      if (m_msaa_samples > 1) {
+        rp.colorAttachments[0].resolveTexture = m_targets.scene_a;
+        rp.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
+      } else {
+        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+      }
       rp.colorAttachments[0].clearColor =
         MTLClearColorMake (std::pow (m_frame.params.clear_color.red, 2.2f),
                            std::pow (m_frame.params.clear_color.green, 2.2f),

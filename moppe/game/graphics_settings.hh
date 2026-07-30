@@ -29,6 +29,12 @@ namespace moppe::game {
     // Zero uses scene_scale relative to the point-resolution baseline.
     // A positive value is an absolute fraction of drawable resolution.
     float render_scale_override = 0.0f;
+    // The most scene pixels the 3D passes may cover at scene_scale 1, in
+    // megapixels.  Point resolution alone does not bound the scene on a
+    // desktop display attached at 1x, so this is what keeps an oversized
+    // drawable costing resolution rather than frame rate.  Zero disables
+    // the budget and restores the point-relative rule on its own.
+    float scene_megapixel_budget = 4.2f;
     // Late afternoon: a lower, warmer sun with longer shadows.
     float sun_height = 0.56f;
 
