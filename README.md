@@ -75,16 +75,18 @@ Useful ways to start it include:
 Run the test suite with:
 
 ```sh
+cmake --build build --target moppe-tests
 ctest --test-dir build --output-on-failure
 ```
 
-The first configuration fetches pinned source dependencies. CMake also emits
-`compile_commands.json` automatically for editor tooling.
+Or use `make test` for both commands. The first configuration fetches pinned
+source dependencies. CMake also emits `compile_commands.json` automatically
+for editor tooling.
 
 ## Find your way around
 
-- [Project status](docs/project.org) describes what exists, what is active,
-  and what remains experimental.
+- [Current status](docs/status.md) describes what exists, what is active, and
+  what remains experimental.
 - [Engine atlas](docs/engine-atlas.md) is the current map of the engine's
   domains, ownership boundaries, and target graph.
 - [Generated worlds](docs/generated-world.md) explains construction and
@@ -95,6 +97,8 @@ The first configuration fetches pinned source dependencies. CMake also emits
   work items.
 - [Ideas](ideas/README.md) holds the longer-range design writing behind the
   world.
+- [Project history](docs/project.org) preserves the dated terrain and water
+  campaign notebook through July 17, 2026.
 - [Development guidelines](AGENTS.md) collects the complete build, capture,
   profiling, iOS, and working-practice commands.
 

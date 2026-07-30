@@ -11,8 +11,9 @@ water, and analysis artifacts outside that checkpoint; its construction and
 borrowing rules are documented in [Generated worlds](generated-world.md).
 World construction is single-flight: a worker completes an owned candidate,
 then one main-thread activation transitions the world/session pair while
-preserving terrain-borrow ordering. The loading preview observes copied height
-snapshots only, so neither it nor `GameState` owns an in-progress world.
+preserving terrain-borrow ordering. The loading screen observes status text,
+not candidate terrain, so neither it nor `GameState` owns an in-progress
+world.
 
 `game::GameSession` is the concrete owner of running gameplay state. It owns
 `game::GameLogicState` (the clock, weather and camera effects, player mode and
@@ -31,15 +32,15 @@ readings make rendering independent of later simulation mutation, but they are
 not replay checkpoint state.
 
 Ordinary playable simulation has one public fixed-step operation:
-`game::advance_game_session(context, session, input, seconds_t)`. Its compact
-context supplies only the completed world's parameters, terrain, obstacles,
-and the persistent landscape scale used by the chase camera; it does not
-expose `GeneratedWorld`, loading, platform, or renderer types. The operation
-applies the `InputFrame`, advances actors and effects, updates score,
-camera, and FOV, and reports the small set of application-side effects it
-cannot realize itself. `MoppeGame::tick` selects live or recorded input,
-continues the global clock and weather through paused cinematic and tree-demo
-modes, then delegates ordinary play through that operation.
+`game::advance_game_session(world, surface, obstacles, session, input,
+seconds_t)`. Its inputs supply only the completed world's parameters,
+geometry, and collision obstacles; it does not expose `GeneratedWorld`,
+loading, platform, or renderer types. The operation applies the `InputFrame`,
+advances actors and effects, updates score, camera, and FOV, and reports the
+small set of application-side effects it cannot realize itself.
+`MoppeGame::tick` selects live or recorded input, continues the global clock
+and weather through paused cinematic and tree-demo modes, then delegates
+ordinary play through that operation.
 
 A completed-world handoff retires the old session before its old generated
 world, then constructs a fresh session against the new world. In particular,

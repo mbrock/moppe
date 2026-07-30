@@ -1,71 +1,78 @@
 # Generated worlds
 
-`game::GeneratedWorld` is the stable, renderer-free owner of one completed
-world. It binds the immutable physical description (`WorldRecipe` and its
-`WorldParams`) to one authoritative typed surface and its
-materialized readings. Gameplay does not own parallel copies of these
-artifacts.
+`game::GeneratedWorld` is the non-copyable, non-movable, renderer-free owner
+of one completed landscape. It is assembled from finished values; holding one
+means no construction stage remains optional or in progress.
 
-## What it owns
+## Finished artifacts
 
-| Artifact | Valid after |
+| Artifact | Meaning |
 | --- | --- |
-| `Surface` and its mandatory `SurfaceGeometry` | construction |
-| Geometry normals and snow support | `rebuild_surface()` |
-| `Hydrology` | `analyze_hydrology()` |
-| `WaterSurface`, `SurfaceReadings`, and trail network | `derive_surface_readings()` |
+| `WorldParams` and `WorldRecipe` | bound extent, resolution, datum, seed, profile, and algorithms |
+| `map::SurfaceGeometry` | authoritative elevation, normals, material history, and snow support |
+| `game::Hydrology` | flood, lakes, wet drainage, fractional channels, and rivers in derivation order |
+| `terrain::WaterSheets` | water elevation, wave amplitude, and velocity |
+| `terrain::TrailNetwork` | built route, alignment, grading report, and typed use readings |
+| `map::SurfaceReadings` | completed hydrology, geology, ecology, and trail readings over the ground |
 
-`Hydrology` is one named, complete value: standing water, lake census, wet
-drainage, fractional channel drainage, water-body flow, and river network are
-constructed together. A normal completed world therefore cannot expose, for
-example, rivers without the flood and drainage readings they depend on.
-`WaterSurface` and the trail network use optional storage to express their
-construction boundary and to support focused tests, but ordinary completed
-worlds build both.
+`Hydrology` is a tuple of distinct stage types. Code that consumes the complete
+analysis binds the five values by name; focused application access uses their
+types. A normal completed world cannot expose rivers without the flood, lake,
+and drainage results from which they were derived.
 
-## Mutability and lifetime
+## Construction
 
-`GeneratedWorld` is non-copyable and non-movable. `GameSession`'s vehicles
-and glider borrow its one surface. `MoppeGame`
-therefore keeps the active world behind an owning `unique_ptr`: a worker builds
-a fresh completed world, and the main thread transfers that owner exactly once
-at `activate_completed_world()`.
+The mutable construction capability lives in `world_loading.cc`, not on
+`GeneratedWorld`:
 
-At activation, the outgoing session and world remain alive while the completed
-owner becomes
-active and a fresh session binds its new surface. The retired
-session then releases its old borrows before the retired world is destroyed.
-Only after that handoff does the main thread build renderer-facing river,
-water, ground, forest, and actor presentation. The active world is
-consequently never half-mutated by a loading worker.
+```text
+allocate SurfaceGeometry
+  -> load typed cache or initialize/evolve/form trails
+  -> rebuild geometry readings
+  -> analyze hydrology
+  -> paint water and derive surface readings
+  -> construct GeneratedWorld from the finished parts
+```
 
-`WorldLoading` owns generation as a deliberately single-flight operation:
-running builds are never cancelled. Its job owns the requested recipe and
-shares only the loader's internal state, never a raw pointer back to
-`MoppeGame`. The platform retains that state through its main-thread
-completion callback, so closing the application cannot leave the worker with
-an application borrow. A failed build retains the existing clear failure
-behavior: it logs the generation error and exits rather than exposing an
-incomplete candidate.
+The loading screen sees `LoadingStatus`, not candidate terrain. The deleted
+terrain preview and generation-history queue are not part of the current
+handoff.
 
-While generation runs, `WorldLoading` shares only status text with the
-loading screen; the screen neither borrows nor owns a candidate world's
-terrain state. Once the platform callback marks the candidate complete,
-`MoppeGame` polls and transfers the completed owner on the main thread
-before beginning renderer-facing activation.
+`WorldLoading` owns a single-flight job containing the requested parameters
+and recipe. The worker retains a shared loader state rather than a raw
+`MoppeGame` pointer, reports progress under a narrow mutex, and publishes one
+`unique_ptr<GeneratedWorld>`. Failure logs the exception and exits instead of
+publishing a partial world.
 
-Ordinary gameplay receives const readings. The loading worker calls the
-three build steps (`rebuild_surface`, `analyze_hydrology`,
-`derive_surface_readings`) in order after evaluating the terrain, through the
-mutable `surface()` overload.
+## Activation and borrowing
+
+The main thread takes a completed owner exactly once. When replacing an active
+world, `MoppeGame`:
+
+1. retains the outgoing world and session;
+2. installs the completed world;
+3. binds a fresh `GameSession` to its geometry;
+4. destroys the retired session, releasing its borrows; then
+5. destroys the retired world.
+
+Only after activation does the main thread build renderer resources, forests,
+river ribbons, actor placement, and the opening journey. The loading worker
+never mutates the active world or owns GPU resources.
+
+Ordinary gameplay reads the completed artifacts through const accessors.
+`GameState` can be restored only against a session prepared for the same
+world; terrain and hydrology do not enter the checkpoint.
 
 ## Checks
 
-`tests/game/generated_world_test.cc` verifies the named completed artifacts,
-their materialized geometry and readings, and that a non-movable world
-transfers by its owner rather than a value move. The deterministic
-water-capture tool exercises the runtime construction path:
+Focused tests cover finished-artifact construction and ownership. The short
+runtime acceptance path exercises generation, handoff, renderer activation,
+and capture:
 
 ```sh
-tools/capture-water /tmp/river.png river
+MOPPE_TERRAIN_PROFILE=smoke tools/capture-game /tmp/moppe-smoke.png
 ```
+
+`MOPPE_REGENERATE_ONCE=1` exercises the same ownership transition twice.
+Feature-targeted water captures use the full normal construction path while
+selecting a deterministic hydrological subject.

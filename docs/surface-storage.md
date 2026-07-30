@@ -1,75 +1,87 @@
 # Surface storage and presentation
 
-Moppe has one periodic `terrain::TerrainDomain` and two ground bundles over
-it. `map::Surface` owns both:
+Moppe stores ground geometry, derived ground readings, and water as three
+typed bundles over one periodic `terrain::TerrainDomain`.
 
-- `SurfaceGeometry` always exists. It contains elevation, normal, eroded and
-  deposited material history, and broad snow support.
-- `SurfaceReadings` is created when world analysis begins. It contains channel
-  flux, moisture, waterline distance, erosion and deposition presentation
-  signals, tree habitat, forest cover, trail influence, and home-base
-  influence.
+| Bundle | Owner | Columns |
+| --- | --- | --- |
+| `map::SurfaceGeometry` | `GeneratedWorld` | surface elevation, terrain normal, eroded material, deposited material, snow support |
+| `map::SurfaceReadings` | `GeneratedWorld` | channel flux, moisture, waterline distance, erosion exposure, deposition cover, tree habitat, forest cover, trail influence, home-base influence |
+| `terrain::WaterSheets` | `GeneratedWorld` | surface elevation, wave amplitude, water velocity |
 
-There is no separate surface-domain type or atlas object. Terrain algorithms,
-ground storage, hydrology products, and water sheets exchange the same domain
-value directly.
+No `SurfaceDomain`, `SurfaceAtlas`, `map::Surface`, or `map::WaterSurface`
+wrapper remains. Algorithms exchange the domain and bundles they actually
+consume.
 
 ## Geometry
 
-Surface elevation is an affine point in the world's vertical frame. It is
-stored in metres with the native representation of one `float`. Normal and
-snow-support reconstruction use the interpolation stencil owned by
-`TerrainDomain`.
+Surface elevation is an affine quantity point in the world's vertical frame,
+stored directly as one `float` in metres. Ground and water use the same
+elevation specification, so their difference is a physical length. Normals
+are vector quantities with the native `Vec3` representation.
 
-Generation mutates the geometry bundle directly. Rebuilding geometry readings
-recomputes normals and snow support and clears derived readings, because their
-inputs may have changed.
+Generation mutates `SurfaceGeometry` directly. `map::rebuild_geometry`
+reconstructs normals and broad snow support after either generation or cache
+loading. Continuous reads use `TerrainDomain`'s periodic interpolation
+stencil; there is no copied refresh surface.
 
 ## Derived readings
 
-Completed-world construction fills `SurfaceReadings` in one explicit sequence:
+Each analysis produces the narrowest useful bundle:
 
 ```text
 fractional drainage -> channel flux
 standing water + drainage -> moisture
-painted water sheet -> waterline distance
-moisture + geometry -> tree habitat
-trail analysis -> trail and home-base influence
-habitat + use -> forest cover
-material history -> erosion exposure and deposition cover
+painted water -> waterline distance
+material history -> erosion exposure + deposition cover
+geometry + moisture -> tree habitat
+habitat + trail use -> forest cover
+trail network -> trail influence + home-base influence
 ```
 
-The active world is handed to the main thread only after this sequence. The
-single optional bundle supports focused construction tests without imposing
-an option or repeated domain copy on every column group.
+`game::analyze_surface` joins those bundles into one `SurfaceReadings` value
+when it assembles the completed world. Domain equality is checked at the join,
+and duplicate quantity specifications are compile-time errors.
 
 ## Water
 
-`terrain::WaterSheets` is a distinct typed bundle over the same domain. It
-contains water elevation, wave amplitude, and planar velocity. Ground and
-water share an elevation specification and affine frame, so their difference
-is a physical depth.
+`terrain::WaterSheets` retains water separately from the ground while sharing
+its domain. Elevation and amplitude drive the standing-water texture; the
+horizontal components of velocity drive flow detail. Rivers remain continuous
+reach/ribbon geometry derived from `RiverNetwork`, while water sheets carry
+seas, lakes, and current through mouths.
 
-`map::WaterSurface` owns the completed water-sheet bundle and offers continuous
-sampling. Matching ground and water dimensions are a world invariant, not a
-reason to combine them into one object.
+The active RFC-0002 work removes the remaining retained float packing in water
+presentation. Ground readings already use borrowed `TexturePixels`
+descriptions that write their final format directly into backend staging
+memory.
 
 ## Persistence
 
-Typed bundles are stored as standard Arrow IPC streams with one record batch.
-Each quantity is a named Arrow field: scalar representations use native Arrow
-numeric arrays and vector representations use fixed-size lists. Field metadata
-records the quantity specification, kind, unit, dimension, and storage form.
-Schema metadata carries the bundle version and serialized domain identity.
+`spatial::write_bundle` stores a typed bundle as one Arrow IPC stream record
+batch. Scalar representations become Arrow numeric arrays; vector
+representations become fixed-size lists; unusual trivial representations use
+fixed-size binary.
 
-The cache uses the `.arrows` extension. Readers validate all of this metadata
-against the requested C++ bundle type before constructing a bundle, so a file
-with the right physical numbers but the wrong domain, quantities, units, or
-dimensions is rejected.
+Field metadata records quantity specification, kind, unit, dimension, and
+storage form. Schema metadata records bundle version and serialized domain
+identity. A reader rejects a stream whose domain, column set, units,
+dimensions, or representations do not match the requested C++ bundle type.
 
-## Presentation
+The terrain cache therefore stores the expensive `SurfaceGeometry` value
+without inventing a parallel cache schema. Later derived readings are rebuilt
+from the geometry and current code.
 
-`game::SurfacePresentation` and `game::WaterPresentation` are the deliberate
-quantity-to-number bridges. They pack typed columns into the homogeneous float
-lanes expected by the renderer. Terrain and ecology policy remains on the
-world side of this boundary.
+## Presentation boundary
+
+Presentation owns the conversion from typed columns to renderer resources:
+
+- `game::Terrain` uploads authoritative elevation and normal columns;
+- ground-reading upload creates format-specific `TexturePixels` rules;
+- water presentation supplies ocean setup and typed water texture rules; and
+- river presentation builds continuous ribbon geometry.
+
+A rule borrows its bundle for the duration of the renderer call and writes
+once into storage supplied by the backend. Units and semantic quantity types
+do not leak into Metal or WebGPU APIs, and numeric texture-lane policy does
+not leak back into terrain analysis.
