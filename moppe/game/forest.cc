@@ -59,29 +59,38 @@ namespace moppe::game {
     void forest_vertex (render::DrawList& draw,
                         const Vec3& point,
                         const Vec3& normal,
-                        float wind) {
+                        float bend,
+                        float flutter) {
       draw.normal (normal);
-      draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
+      draw.wind (std::clamp (bend, 0.0f, 1.0f) * proportion[one]);
+      draw.flutter (std::clamp (flutter, 0.0f, 1.0f) * proportion[one]);
       draw.vertex (point);
     }
+
+    // A vertex's two wind weights: how far up the plant it sits, and how far
+    // out from its stem.
+    struct Sway {
+      float bend;
+      float flutter;
+    };
 
     void append_triangle (render::DrawList& draw,
                           Vec3 a,
                           Vec3 b,
                           Vec3 c,
                           const Vec3& outside,
-                          float wind_a,
-                          float wind_b,
-                          float wind_c) {
+                          Sway sway_a,
+                          Sway sway_b,
+                          Sway sway_c) {
       Vec3 normal = normalized (cross (b - a, c - a));
       if (dot (normal, outside) < 0.0f) {
         std::swap (b, c);
-        std::swap (wind_b, wind_c);
+        std::swap (sway_b, sway_c);
         normal = -normal;
       }
-      forest_vertex (draw, a, normal, wind_a);
-      forest_vertex (draw, b, normal, wind_b);
-      forest_vertex (draw, c, normal, wind_c);
+      forest_vertex (draw, a, normal, sway_a.bend, sway_a.flutter);
+      forest_vertex (draw, b, normal, sway_b.bend, sway_b.flutter);
+      forest_vertex (draw, c, normal, sway_c.bend, sway_c.flutter);
     }
 
     void append_trunk (render::DrawList& draw,
@@ -105,12 +114,13 @@ namespace moppe::game {
         const Vec3 q0 = p0 + up * height;
         const Vec3 q1 = p1 + up * height;
         const Vec3 normal = normalized (n0 + n1);
-        forest_vertex (draw, p0, normal, 0.0f);
-        forest_vertex (draw, p1, normal, 0.0f);
-        forest_vertex (draw, q1, normal, 0.16f);
-        forest_vertex (draw, p0, normal, 0.0f);
-        forest_vertex (draw, q1, normal, 0.16f);
-        forest_vertex (draw, q0, normal, 0.16f);
+        // Wood leans and does not flutter, whatever the wind does.
+        forest_vertex (draw, p0, normal, 0.0f, 0.0f);
+        forest_vertex (draw, p1, normal, 0.0f, 0.0f);
+        forest_vertex (draw, q1, normal, 0.16f, 0.0f);
+        forest_vertex (draw, p0, normal, 0.0f, 0.0f);
+        forest_vertex (draw, q1, normal, 0.16f, 0.0f);
+        forest_vertex (draw, q0, normal, 0.16f, 0.0f);
       }
       draw.end ();
     }
@@ -147,8 +157,25 @@ namespace moppe::game {
         const Vec3& a = ring[side];
         const Vec3& b = ring[(side + 1) % sides];
         const Vec3 outside = (a + b) * 0.5f - center;
-        append_triangle (draw, bottom, b, a, outside, 0.22f, 0.58f, 0.58f);
-        append_triangle (draw, top, a, b, outside, 0.92f, 0.58f, 0.58f);
+        constexpr Sway on_stem_low { 0.22f, 0.0f };
+        constexpr Sway on_stem_high { 0.92f, 0.10f };
+        constexpr Sway out_on_a_branch { 0.58f, 1.0f };
+        append_triangle (draw,
+                         bottom,
+                         b,
+                         a,
+                         outside,
+                         on_stem_low,
+                         out_on_a_branch,
+                         out_on_a_branch);
+        append_triangle (draw,
+                         top,
+                         a,
+                         b,
+                         outside,
+                         on_stem_high,
+                         out_on_a_branch,
+                         out_on_a_branch);
       }
       draw.end ();
     }
@@ -175,8 +202,11 @@ namespace moppe::game {
           base + (across * std::cos (a0) + forward * std::sin (a0)) * radius;
         const Vec3 p1 =
           base + (across * std::cos (a1) + forward * std::sin (a1)) * radius;
+        // A conifer's leader stands on the stem; its skirt hangs off it.
+        constexpr Sway leader { 0.90f, 0.14f };
+        constexpr Sway skirt { 0.30f, 0.85f };
         append_triangle (
-          draw, top, p0, p1, (p0 + p1) * 0.5f - base, 0.90f, 0.30f, 0.30f);
+          draw, top, p0, p1, (p0 + p1) * 0.5f - base, leader, skirt, skirt);
       }
       draw.end ();
     }
