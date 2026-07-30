@@ -62,3 +62,10 @@ including cells draining only themselves, so the world had no hillslope regime
 at all -- mean slope 36 degrees, parallel grooves everywhere.
 `StreamPowerEvolution::channel_initiation_area` restores the regime: mean slope
 28.4 degrees and half the spectral excess, with the diffusivity unchanged.
+
+It ships off. Ridden, the smoothed world is blobby and dull, and the rilling
+the threshold suppresses is most of what makes this terrain beautiful. Every
+measurement in the note said the opposite, which is the item's real result: a
+power spectrum over a bare hillshade measures a property of the elevation
+field, not whether a landscape is worth riding through, and the fixed-camera
+comparison in the actual renderer that would have caught this was never made.
