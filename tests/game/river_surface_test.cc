@@ -47,10 +47,10 @@ MOPPE_TEST (visible_river_area_scales_with_the_terrain_cells) {
   const terrain::TerrainDomain grid (
     9, 9, 2.0f * mp_units::si::metre, 3.0f * mp_units::si::metre);
 
-  MOPPE_CHECK_NEAR (
-    square_meters_value (terrain::visible_river_minimum_area (grid)),
-    166666.67f,
-    1.0f);
+  MOPPE_CHECK_NEAR ((terrain::visible_river_minimum_area (grid))
+                      .numerical_value_in (moppe::u::m * moppe::u::m),
+                    166666.67f,
+                    1.0f);
 }
 
 MOPPE_TEST (river_ribbons_are_dense_widen_downstream_and_fade_at_mouths) {

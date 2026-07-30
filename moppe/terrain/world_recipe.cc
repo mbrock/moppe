@@ -32,8 +32,9 @@ namespace moppe::terrain {
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
-    m_evolution.sea_level = meters_value (water_datum);
-    m_trail_formation.sea_level = meters_value (water_datum);
+    m_evolution.sea_level = (water_datum).numerical_value_in (moppe::u::m);
+    m_trail_formation.sea_level =
+      (water_datum).numerical_value_in (moppe::u::m);
   }
 
   WorldRecipe make_world_recipe (spatial_extent_t extent,

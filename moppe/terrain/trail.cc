@@ -56,8 +56,10 @@ namespace moppe::terrain {
     TrailAlignmentPoint nearest_image (TrailAlignmentPoint point,
                                        TrailAlignmentPoint reference,
                                        const TerrainDomain& grid) {
-      const float period_x = grid.width () * meters_value (grid.spacing_x ());
-      const float period_z = grid.height () * meters_value (grid.spacing_z ());
+      const float period_x =
+        grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      const float period_z =
+        grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
       point.x_m =
         reference.x_m + wrapped_delta (point.x_m - reference.x_m, period_x);
       point.z_m =
@@ -108,23 +110,24 @@ namespace moppe::terrain {
         const float length2 = ab.x_m * ab.x_m + ab.z_m * ab.z_m;
         if (length2 <= 1e-8f)
           continue;
-        const int min_x =
-          static_cast<int> (std::floor ((std::min (a.x_m, b.x_m) - radius) /
-                                        meters_value (grid.spacing_x ())));
-        const int max_x =
-          static_cast<int> (std::ceil ((std::max (a.x_m, b.x_m) + radius) /
-                                       meters_value (grid.spacing_x ())));
-        const int min_y =
-          static_cast<int> (std::floor ((std::min (a.z_m, b.z_m) - radius) /
-                                        meters_value (grid.spacing_z ())));
-        const int max_y =
-          static_cast<int> (std::ceil ((std::max (a.z_m, b.z_m) + radius) /
-                                       meters_value (grid.spacing_z ())));
+        const int min_x = static_cast<int> (
+          std::floor ((std::min (a.x_m, b.x_m) - radius) /
+                      (grid.spacing_x ()).numerical_value_in (moppe::u::m)));
+        const int max_x = static_cast<int> (
+          std::ceil ((std::max (a.x_m, b.x_m) + radius) /
+                     (grid.spacing_x ()).numerical_value_in (moppe::u::m)));
+        const int min_y = static_cast<int> (
+          std::floor ((std::min (a.z_m, b.z_m) - radius) /
+                      (grid.spacing_z ()).numerical_value_in (moppe::u::m)));
+        const int max_y = static_cast<int> (
+          std::ceil ((std::max (a.z_m, b.z_m) + radius) /
+                     (grid.spacing_z ()).numerical_value_in (moppe::u::m)));
         for (int unwrapped_y = min_y; unwrapped_y <= max_y; ++unwrapped_y)
           for (int unwrapped_x = min_x; unwrapped_x <= max_x; ++unwrapped_x) {
             const TrailAlignmentPoint point {
-              unwrapped_x * meters_value (grid.spacing_x ()),
-              unwrapped_y * meters_value (grid.spacing_z ())
+              unwrapped_x *
+                (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+              unwrapped_y * (grid.spacing_z ()).numerical_value_in (moppe::u::m)
             };
             const TrailAlignmentPoint ap = point - a;
             const float t = std::clamp (
@@ -158,8 +161,10 @@ namespace moppe::terrain {
         surface_elevation_values (elevations);
       const int width = static_cast<int> (grid.width ());
       const int height = static_cast<int> (grid.height ());
-      float x = point.x_m / meters_value (grid.spacing_x ());
-      float y = point.z_m / meters_value (grid.spacing_z ());
+      float x =
+        point.x_m / (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+      float y =
+        point.z_m / (grid.spacing_z ()).numerical_value_in (moppe::u::m);
       x = wrap_coordinate (x, static_cast<float> (width));
       y = wrap_coordinate (y, static_cast<float> (height));
       const int x0 = static_cast<int> (std::floor (x));
@@ -363,13 +368,15 @@ namespace moppe::terrain {
     float preferred_route_elevation (const PlanningGrid& grid,
                                      const TrailFormation& parameters) {
       return sea_elevation (grid, parameters) +
-             meters_value (parameters.highland_preference_height_above_sea);
+             (parameters.highland_preference_height_above_sea)
+               .numerical_value_in (moppe::u::m);
     }
 
     float alpine_avoidance_elevation (const PlanningGrid& grid,
                                       const TrailFormation& parameters) {
       return sea_elevation (grid, parameters) +
-             meters_value (parameters.alpine_avoidance_height_above_sea);
+             (parameters.alpine_avoidance_height_above_sea)
+               .numerical_value_in (moppe::u::m);
     }
 
     float highland_ratio (float elevation,
@@ -530,7 +537,7 @@ namespace moppe::terrain {
                        const TrailFormation& parameters) {
       const float sea = sea_elevation (grid, parameters);
       const float target_water =
-        meters_value (parameters.home_base_water_distance);
+        (parameters.home_base_water_distance).numerical_value_in (moppe::u::m);
       const int shelter_reach =
         std::clamp (static_cast<int> (std::round (
                       120.0f / std::min (grid.spacing_x, grid.spacing_y))),
@@ -552,7 +559,8 @@ namespace moppe::terrain {
         const float elevation = grid.elevation (node);
         const float above_sea = elevation - sea;
         const float slope = grid.grade (node);
-        if (above_sea < meters_value (parameters.minimum_height_above_sea) ||
+        if (above_sea < (parameters.minimum_height_above_sea)
+                          .numerical_value_in (moppe::u::m) ||
             slope > 0.75f)
           continue;
         const float water = nearest_water (grid, node, target_water * 2.5f);
@@ -600,7 +608,9 @@ namespace moppe::terrain {
       std::ranges::reverse (candidates);
       std::vector<HomeBaseSite> sites;
       const float separation = std::max (
-        120.0f, 0.22f * meters_value (parameters.desired_circuit_radius));
+        120.0f,
+        0.22f *
+          (parameters.desired_circuit_radius).numerical_value_in (moppe::u::m));
       for (const HomeBaseSite candidate : candidates) {
         const bool distinct =
           std::ranges::all_of (sites, [&] (const HomeBaseSite site) {
@@ -619,10 +629,10 @@ namespace moppe::terrain {
                                      const TrailFormation& parameters) {
       const float world_span =
         std::min (grid.width * grid.spacing_x, grid.height * grid.spacing_y);
-      const float desired =
-        std::clamp (meters_value (parameters.desired_circuit_radius),
-                    0.12f * world_span,
-                    0.36f * world_span);
+      const float desired = std::clamp (
+        (parameters.desired_circuit_radius).numerical_value_in (moppe::u::m),
+        0.12f * world_span,
+        0.36f * world_span);
       const int relief_reach = std::clamp (
         static_cast<int> (std::round (
           desired * 0.28f / std::min (grid.spacing_x, grid.spacing_y))),
@@ -682,8 +692,9 @@ namespace moppe::terrain {
         return reachable;
       const float maximum_grade =
         parameters.maximum_grade.numerical_value_in (mp_units::one);
-      const float earthwork_budget = meters_value (parameters.maximum_cut) +
-                                     meters_value (parameters.maximum_fill);
+      const float earthwork_budget =
+        (parameters.maximum_cut).numerical_value_in (moppe::u::m) +
+        (parameters.maximum_fill).numerical_value_in (moppe::u::m);
       std::queue<std::size_t> frontier;
       reachable[start] = 1;
       frontier.push (start);
@@ -809,15 +820,18 @@ namespace moppe::terrain {
         parameters.maximum_grade.numerical_value_in (mp_units::one);
       const float designed_grade =
         parameters.designed_grade.numerical_value_in (mp_units::one);
-      const float earthwork_budget = meters_value (parameters.maximum_cut) +
-                                     meters_value (parameters.maximum_fill);
+      const float earthwork_budget =
+        (parameters.maximum_cut).numerical_value_in (moppe::u::m) +
+        (parameters.maximum_fill).numerical_value_in (moppe::u::m);
       // Construction capacity is a feasibility limit, not a discount. A
       // larger cut/fill allowance must not make a steep edge more attractive
       // than a contour-following edge that needs less work.
       constexpr float preferred_earthwork_m = 4.0f;
       const float target_catchment =
-        std::sqrt (square_meters_value (parameters.minimum_catchment_area) *
-                   square_meters_value (parameters.maximum_catchment_area));
+        std::sqrt ((parameters.minimum_catchment_area)
+                     .numerical_value_in (moppe::u::m * moppe::u::m) *
+                   (parameters.maximum_catchment_area)
+                     .numerical_value_in (moppe::u::m * moppe::u::m));
       const float direct_distance =
         std::max (grid.distance (start, goal), grid.spacing_x);
       std::size_t goal_state = state_count;
@@ -1160,20 +1174,23 @@ namespace moppe::terrain {
 
   void TrailFormation::validate () const {
     if (!std::isfinite (sea_level) ||
-        !std::isfinite (square_meters_value (minimum_catchment_area)) ||
-        !std::isfinite (square_meters_value (maximum_catchment_area)) ||
+        !std::isfinite ((minimum_catchment_area)
+                          .numerical_value_in (moppe::u::m * moppe::u::m)) ||
+        !std::isfinite ((maximum_catchment_area)
+                          .numerical_value_in (moppe::u::m * moppe::u::m)) ||
         minimum_catchment_area <=
           0.0f * mp_units::si::metre * mp_units::si::metre ||
         maximum_catchment_area < minimum_catchment_area ||
-        !std::isfinite (meters_value (minimum_height_above_sea)) ||
+        !std::isfinite (
+          (minimum_height_above_sea).numerical_value_in (moppe::u::m)) ||
         minimum_height_above_sea < 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (width)) ||
+        !std::isfinite ((width).numerical_value_in (moppe::u::m)) ||
         width <= 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (shoulder_blend)) ||
+        !std::isfinite ((shoulder_blend).numerical_value_in (moppe::u::m)) ||
         shoulder_blend < 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (maximum_cut)) ||
+        !std::isfinite ((maximum_cut).numerical_value_in (moppe::u::m)) ||
         maximum_cut < 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (maximum_fill)) ||
+        !std::isfinite ((maximum_fill).numerical_value_in (moppe::u::m)) ||
         maximum_fill < 0.0f * mp_units::si::metre ||
         !std::isfinite (maximum_grade.numerical_value_in (mp_units::one)) ||
         maximum_grade < 0.0f * terrain_slope[mp_units::one] ||
@@ -1184,15 +1201,20 @@ namespace moppe::terrain {
         crossfall < 0.0f * terrain_slope[mp_units::one] ||
         crossfall > 0.1f * terrain_slope[mp_units::one] ||
         grading_iterations < 0 ||
-        !std::isfinite (meters_value (home_base_water_distance)) ||
+        !std::isfinite (
+          (home_base_water_distance).numerical_value_in (moppe::u::m)) ||
         home_base_water_distance <= 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (home_base_pad_radius)) ||
+        !std::isfinite (
+          (home_base_pad_radius).numerical_value_in (moppe::u::m)) ||
         home_base_pad_radius <= 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (desired_circuit_radius)) ||
+        !std::isfinite (
+          (desired_circuit_radius).numerical_value_in (moppe::u::m)) ||
         desired_circuit_radius <= 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (highland_preference_height_above_sea)) ||
+        !std::isfinite ((highland_preference_height_above_sea)
+                          .numerical_value_in (moppe::u::m)) ||
         highland_preference_height_above_sea <= 0.0f * mp_units::si::metre ||
-        !std::isfinite (meters_value (alpine_avoidance_height_above_sea)) ||
+        !std::isfinite ((alpine_avoidance_height_above_sea)
+                          .numerical_value_in (moppe::u::m)) ||
         alpine_avoidance_height_above_sea <
           highland_preference_height_above_sea)
       throw std::invalid_argument ("trail formation parameters are invalid");
@@ -1292,8 +1314,10 @@ namespace moppe::terrain {
     // Unlike the constructed height stamp, the material footprint keeps its
     // authored width. Sampling a distance to the continuous alignment makes
     // a narrow path legible without inflating its core to a whole grid cell.
-    const float half_width = 0.5f * meters_value (parameters.width);
-    const float blend = meters_value (parameters.shoulder_blend);
+    const float half_width =
+      0.5f * (parameters.width).numerical_value_in (moppe::u::m);
+    const float blend =
+      (parameters.shoulder_blend).numerical_value_in (moppe::u::m);
     const float radius = half_width + blend;
     const AlignmentRaster material_raster =
       rasterize_alignment (grid, alignment, radius);
@@ -1304,15 +1328,18 @@ namespace moppe::terrain {
           shoulder_ramp (material_raster.distance_m[cell], half_width, blend) *
           trail_influence[one];
 
-    const float base_radius = meters_value (parameters.home_base_pad_radius);
+    const float base_radius =
+      (parameters.home_base_pad_radius).numerical_value_in (moppe::u::m);
     const float base_blend = std::max (6.0f, 0.45f * base_radius);
     const int base_reach_x =
-      static_cast<int> (std::ceil ((base_radius + base_blend) /
-                                   meters_value (grid.spacing_x ()))) +
+      static_cast<int> (
+        std::ceil ((base_radius + base_blend) /
+                   (grid.spacing_x ()).numerical_value_in (moppe::u::m))) +
       1;
     const int base_reach_y =
-      static_cast<int> (std::ceil ((base_radius + base_blend) /
-                                   meters_value (grid.spacing_z ()))) +
+      static_cast<int> (
+        std::ceil ((base_radius + base_blend) /
+                   (grid.spacing_z ()).numerical_value_in (moppe::u::m))) +
       1;
     const int base_x = static_cast<int> (home_base_cell.value % width);
     const int base_y = static_cast<int> (home_base_cell.value / width);
@@ -1320,9 +1347,9 @@ namespace moppe::terrain {
       for (int dx = -base_reach_x; dx <= base_reach_x; ++dx) {
         const int x = wrap_index (base_x + dx, width);
         const int y = wrap_index (base_y + dy, height);
-        const float distance =
-          std::hypot (dx * meters_value (grid.spacing_x ()),
-                      dy * meters_value (grid.spacing_z ()));
+        const float distance = std::hypot (
+          dx * (grid.spacing_x ()).numerical_value_in (moppe::u::m),
+          dy * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
         const std::size_t cell = static_cast<std::size_t> (y) * width + x;
         if (flood.water_depth_m (cell) <= 1e-7f)
           home_base_influence[cell] =
@@ -1359,7 +1386,8 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
-    const float cell_area = square_meters_value (grid.cell_area ());
+    const float cell_area =
+      (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
 
     std::vector<SurfaceElevation> original (count);
     for (int y = 0; y < height; ++y)
@@ -1386,8 +1414,10 @@ namespace moppe::terrain {
     std::vector<float> grade_m = original_profile_m;
     const float maximum_grade =
       parameters.maximum_grade.numerical_value_in (mp_units::one);
-    const float maximum_cut = meters_value (parameters.maximum_cut);
-    const float maximum_fill = meters_value (parameters.maximum_fill);
+    const float maximum_cut =
+      (parameters.maximum_cut).numerical_value_in (moppe::u::m);
+    const float maximum_fill =
+      (parameters.maximum_fill).numerical_value_in (moppe::u::m);
     for (int iteration = 0;
          iteration < count_value (parameters.grading_iterations);
          ++iteration) {
@@ -1419,12 +1449,14 @@ namespace moppe::terrain {
     // alignment. The geometric core still grows to one source cell at coarse
     // resolutions so collision remains a continuous formed surface; the
     // independently generated material footprint retains the authored width.
-    const float authored_half_width = 0.5f * meters_value (parameters.width);
-    const float half_width =
-      std::max (authored_half_width,
-                1.01f * std::max (meters_value (grid.spacing_x ()),
-                                  meters_value (grid.spacing_z ())));
-    const float blend = meters_value (parameters.shoulder_blend);
+    const float authored_half_width =
+      0.5f * (parameters.width).numerical_value_in (moppe::u::m);
+    const float half_width = std::max (
+      authored_half_width,
+      1.01f * std::max ((grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                        (grid.spacing_z ()).numerical_value_in (moppe::u::m)));
+    const float blend =
+      (parameters.shoulder_blend).numerical_value_in (moppe::u::m);
     const float radius = half_width + blend;
     const AlignmentRaster formation_raster =
       rasterize_alignment (grid, network.alignment, radius);
@@ -1436,10 +1468,10 @@ namespace moppe::terrain {
     // three-centimetres-per-metre drainage slope into a large terrace.
     const float crossfall =
       parameters.crossfall.numerical_value_in (mp_units::one);
-    const float probe_distance =
-      std::max (authored_half_width,
-                0.5f * std::min (meters_value (grid.spacing_x ()),
-                                 meters_value (grid.spacing_z ())));
+    const float probe_distance = std::max (
+      authored_half_width,
+      0.5f * std::min ((grid.spacing_x ()).numerical_value_in (moppe::u::m),
+                       (grid.spacing_z ()).numerical_value_in (moppe::u::m)));
     std::vector<float> downhill_side (alignment_count, 1.0f);
     double signed_area = 0.0;
     for (std::size_t segment = 0; segment < alignment_count; ++segment) {
@@ -1559,7 +1591,9 @@ namespace moppe::terrain {
       grade_distance += run;
       accumulated_rise += rise;
       report.maximum_centerline_step =
-        std::max (meters_value (report.maximum_centerline_step), run) *
+        std::max (
+          (report.maximum_centerline_step).numerical_value_in (moppe::u::m),
+          run) *
         mp_units::si::metre;
       report.maximum_centerline_grade =
         std::max (report.maximum_centerline_grade, grade);

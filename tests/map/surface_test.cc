@@ -327,9 +327,10 @@ MOPPE_TEST (surface_reconstruction_wraps_the_torus) {
   map::rebuild_geometry (surface);
 
   // Sampling one period apart reads the same surface.
-  const Vec3 period = Vec3 (meters_value (surface.domain ().period_x ()),
-                            0.0f,
-                            meters_value (surface.domain ().period_z ()));
+  const Vec3 period =
+    Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+          0.0f,
+          (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
   for (const Vec3& point : { Vec3 (3.25f, 0, 7.5f), Vec3 (39.25f, 0, 37.5f) }) {
     const position_t p = position (point);
     const position_t wrapped =

@@ -332,9 +332,9 @@ namespace moppe::terrain {
       // cells wide. Wider flooded reaches can hide arms the alignment never
       // visits, which would drain visibly if the sheet yielded them.
       constexpr float channel_inradius_cells = 2.05f;
-      const float cell_step_m =
-        std::min (meters_value (flood.domain ().spacing_x ()),
-                  meters_value (flood.domain ().spacing_z ()));
+      const float cell_step_m = std::min (
+        (flood.domain ().spacing_x ()).numerical_value_in (moppe::u::m),
+        (flood.domain ().spacing_z ()).numerical_value_in (moppe::u::m));
       std::vector<std::int32_t> shore_distance (count, -1);
       std::queue<std::uint32_t> sweep;
       for (std::uint32_t cell = 0; cell < count; ++cell)

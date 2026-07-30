@@ -34,9 +34,10 @@ namespace moppe::game {
     Vec3 unwrap_near (Vec3 point,
                       const Vec3& reference,
                       const map::SurfaceGeometry& surface) {
-      const Vec3 size = Vec3 (meters_value (surface.domain ().period_x ()),
-                              0.0f,
-                              meters_value (surface.domain ().period_z ()));
+      const Vec3 size =
+        Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+              0.0f,
+              (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
       for (int axis : { 0, 2 }) {
         while (point[axis] - reference[axis] > size[axis] * 0.5f)
           point[axis] -= size[axis];
@@ -112,7 +113,9 @@ namespace moppe::game {
         if (reach.cells.size () < 4)
           continue;
         const float area =
-          std::max (1.0f, square_meters_value (reach.downstream_area));
+          std::max (1.0f,
+                    (reach.downstream_area)
+                      .numerical_value_in (moppe::u::m * moppe::u::m));
         const float score = std::sqrt (area) * reach.cells.size ();
         if (score > best.score) {
           const std::size_t middle = reach.cells.size () / 2;
@@ -138,9 +141,11 @@ namespace moppe::game {
       FeatureCandidate best;
       for (const terrain::Waterfall& fall : rivers.waterfalls) {
         const float score =
-          meters_value (fall.drop) *
+          (fall.drop).numerical_value_in (moppe::u::m) *
           std::sqrt (
-            std::max (1.0f, square_meters_value (fall.contributing_area)));
+            std::max (1.0f,
+                      (fall.contributing_area)
+                        .numerical_value_in (moppe::u::m * moppe::u::m)));
         if (score > best.score) {
           best.cell = fall.lip_cell;
           best.score = score;
@@ -161,7 +166,7 @@ namespace moppe::game {
       FeatureCandidate best;
       if (!body)
         return best;
-      best.score = square_meters_value (body->area);
+      best.score = (body->area).numerical_value_in (moppe::u::m * moppe::u::m);
       float deepest = -1.0f;
       for (std::uint32_t cell = 0; cell < census.body.size (); ++cell)
         if (census.body[cell] == body->id &&
@@ -509,13 +514,14 @@ namespace moppe::game {
       if (!plan.waypoints.empty ())
         subject =
           unwrap_near (subject, plan.waypoints.back ().position, surface);
-      const float radius =
-        std::clamp (Vec3 (meters_value (surface.domain ().period_x ()),
-                          0.0f,
-                          meters_value (surface.domain ().period_z ()))[0] *
-                      0.055f,
-                    160.0f,
-                    330.0f);
+      const float radius = std::clamp (
+        Vec3 (
+          (surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+          0.0f,
+          (surface.domain ().period_z ()).numerical_value_in (moppe::u::m))[0] *
+          0.055f,
+        160.0f,
+        330.0f);
       Vec3 incoming (1, 0, 0);
       if (!plan.waypoints.empty ()) {
         incoming = subject - plan.waypoints.back ().position;

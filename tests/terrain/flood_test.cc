@@ -117,13 +117,22 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   MOPPE_CHECK (census.bodies.size () == 1);
   MOPPE_CHECK (census.bodies[0].cells == cell_count (1));
   MOPPE_CHECK_NEAR (
-    moppe::square_meters_value (census.bodies[0].area), 2.0f, 0.0f);
+    (census.bodies[0].area).numerical_value_in (moppe::u::m * moppe::u::m),
+    2.0f,
+    0.0f);
   MOPPE_CHECK_NEAR (
-    moppe::meters_value (census.bodies[0].maximum_depth), 10.0f, 0.0f);
+    (census.bodies[0].maximum_depth).numerical_value_in (moppe::u::m),
+    10.0f,
+    0.0f);
   MOPPE_CHECK_NEAR (
-    moppe::meters_value (census.bodies[0].mean_depth), 10.0f, 0.0f);
+    (census.bodies[0].mean_depth).numerical_value_in (moppe::u::m),
+    10.0f,
+    0.0f);
   MOPPE_CHECK_NEAR (
-    moppe::cubic_meters_value (census.bodies[0].volume), 20.0f, 0.0f);
+    (census.bodies[0].volume)
+      .numerical_value_in (moppe::u::m * moppe::u::m * moppe::u::m),
+    20.0f,
+    0.0f);
   MOPPE_CHECK (!census.bodies[0].ocean_connected);
   MOPPE_CHECK (census.bodies[0].outlet_cell == 12);
   MOPPE_CHECK (census.bodies[0].spill_cell == 7);
@@ -176,8 +185,10 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
   const WaterBody& lake = census.bodies[census.body[8 * width + 6]];
   MOPPE_CHECK (water_body_is_permanent (strip));
   MOPPE_CHECK (water_body_is_permanent (lake));
-  MOPPE_CHECK_NEAR (moppe::meters_value (strip.inradius), 20.0f, 0.0f);
-  MOPPE_CHECK_NEAR (moppe::meters_value (lake.inradius), 80.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    (strip.inradius).numerical_value_in (moppe::u::m), 20.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    (lake.inradius).numerical_value_in (moppe::u::m), 80.0f, 0.0f);
   MOPPE_CHECK (strip.channel_like);
   MOPPE_CHECK (!lake.channel_like);
 }

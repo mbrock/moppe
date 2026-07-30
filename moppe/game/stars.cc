@@ -45,9 +45,10 @@ namespace moppe {
         throw std::invalid_argument ("star count exceeds supported maximum");
       std::mt19937 rng (555);
       std::uniform_real_distribution<float> u (0.0f, 1.0f);
-      const Vec3 size = Vec3 (meters_value (surface.domain ().period_x ()),
-                              0.0f,
-                              meters_value (surface.domain ().period_z ()));
+      const Vec3 size =
+        Vec3 ((surface.domain ().period_x ()).numerical_value_in (moppe::u::m),
+              0.0f,
+              (surface.domain ().period_z ()).numerical_value_in (moppe::u::m));
       m_period = size;
       m_collected = 0;
 
@@ -60,7 +61,7 @@ namespace moppe {
         float ground = terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
             surface, moppe::position (Vec3 (s.pos[0], 0.0f, s.pos[2]))));
-        if (ground < meters_value (params.water_level) + 2)
+        if (ground < (params.water_level).numerical_value_in (moppe::u::m) + 2)
           continue; // land only
 
         // Every fourth star hangs high up: jump-jet territory

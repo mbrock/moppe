@@ -11,9 +11,9 @@ namespace moppe::game {
                                     const spatial_extent_t& world_extent) {
       const Vec3& extent = extent_value (world_extent);
       return {
-        .level = meters_value (water_datum),
+        .level = (water_datum).numerical_value_in (moppe::u::m),
         .center = Vec3 (0.5f * extent[0], 0.0f, 0.5f * extent[2]),
-        .half_extent = meters_value (ocean_half_extent),
+        .half_extent = (ocean_half_extent).numerical_value_in (moppe::u::m),
         .cells = 300,
       };
     }

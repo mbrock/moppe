@@ -109,7 +109,8 @@ namespace moppe::game {
         const terrain::CellIndex from =
           middle > 0 ? reach.cells[middle - 1] : cell;
         const float score =
-          square_meters_value (reach.downstream_area) *
+          (reach.downstream_area)
+            .numerical_value_in (moppe::u::m * moppe::u::m) *
           std::sqrt (static_cast<float> (reach.cells.size ()));
         consider (best, cell, from, next, score);
       }
@@ -132,7 +133,8 @@ namespace moppe::game {
         // benchmark cases for the same apparent "stream start."
         if (reach.cells.size () < 3 || incoming[reach.id] != 0)
           continue;
-        const float area = square_meters_value (reach.downstream_area);
+        const float area = (reach.downstream_area)
+                             .numerical_value_in (moppe::u::m * moppe::u::m);
         if (area > smallest_area ||
             (area == smallest_area && reach.cells.size () <= longest_reach))
           continue;
@@ -189,7 +191,8 @@ namespace moppe::game {
                   cell,
                   from,
                   drainage.receiver[cell],
-                  square_meters_value (reach.downstream_area));
+                  (reach.downstream_area)
+                    .numerical_value_in (moppe::u::m * moppe::u::m));
       }
       return best;
     }
@@ -198,9 +201,11 @@ namespace moppe::game {
       Candidate best;
       for (const terrain::Waterfall& fall : rivers.waterfalls) {
         const float score =
-          meters_value (fall.drop) *
+          (fall.drop).numerical_value_in (moppe::u::m) *
           std::sqrt (
-            std::max (1.0f, square_meters_value (fall.contributing_area)));
+            std::max (1.0f,
+                      (fall.contributing_area)
+                        .numerical_value_in (moppe::u::m * moppe::u::m)));
         consider (best, fall.lip_cell, fall.lip_cell, fall.foot_cell, score);
       }
       return best;
@@ -229,7 +234,8 @@ namespace moppe::game {
         const float depth = flood.water_depth_m (cell);
         consider (best, cell, cell, cell, depth);
       }
-      best.score = square_meters_value (selected->area);
+      best.score =
+        (selected->area).numerical_value_in (moppe::u::m * moppe::u::m);
       best.to = selected->outlet_cell != terrain::WaterBody::no_cell
                   ? selected->outlet_cell
                   : selected->spill_cell;

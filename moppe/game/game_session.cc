@@ -309,7 +309,8 @@ namespace moppe::game {
     }
 
     const bool in_water =
-      vehicle_position[1] < meters_value (world.water_level) + 1.0f;
+      vehicle_position[1] <
+      (world.water_level).numerical_value_in (moppe::u::m) + 1.0f;
     const bool driving = logic.m_mode == M_BIKE || logic.m_mode == M_CAR;
 
     // Long jumps become score events after three seconds. Keep the last

@@ -210,9 +210,9 @@ namespace moppe::game {
       throw std::invalid_argument ("Forest spacing must be positive");
     const terrain::TerrainDomain& domain = surface.domain ();
     ForestPlan plan;
-    const float width =
-      meters_value (domain.spacing_x ()) * static_cast<float> (domain.width ());
-    const float depth = meters_value (domain.spacing_z ()) *
+    const float width = (domain.spacing_x ()).numerical_value_in (moppe::u::m) *
+                        static_cast<float> (domain.width ());
+    const float depth = (domain.spacing_z ()).numerical_value_in (moppe::u::m) *
                         static_cast<float> (domain.height ());
     plan.period = Vec3 (width, 0, depth);
     const std::uint32_t columns =

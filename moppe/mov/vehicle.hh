@@ -160,7 +160,7 @@ namespace moppe {
 
       // How far the last flight fell, peak to touchdown, in meters
       float pop_fall_drop () {
-        const float value = meters_value (m_fall_drop);
+        const float value = (m_fall_drop).numerical_value_in (moppe::u::m);
         m_fall_drop = 0 * u::m;
         return value;
       }

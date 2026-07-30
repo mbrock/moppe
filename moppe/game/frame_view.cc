@@ -48,7 +48,8 @@ namespace moppe::game {
       visibility.river_ribbons = input.graphics.river_ribbons;
       visibility.dust = input.graphics.particles;
       visibility.underwater =
-        view.camera.position[1] < meters_value (input.world.water_level);
+        view.camera.position[1] <
+        (input.world.water_level).numerical_value_in (moppe::u::m);
       visibility.motion_blur =
         input.graphics.motion_blur && view.motion_blur_amount > 0.01f;
       visibility.vehicle_effects =
@@ -126,7 +127,8 @@ namespace moppe::game {
       .position = position_value (state.position),
       .heading = state.heading,
       .walk = state.walk.numerical_value_in (one),
-      .animation_distance = meters_value (state.animation_distance),
+      .animation_distance =
+        (state.animation_distance).numerical_value_in (moppe::u::m),
     };
   }
 
@@ -293,7 +295,7 @@ namespace moppe::game {
                                const map::SurfaceGeometry& surface) {
     const Vec3& camera = view.camera.position;
     float visibility = 1.0f;
-    if (camera[1] < meters_value (world.water_level))
+    if (camera[1] < (world.water_level).numerical_value_in (moppe::u::m))
       visibility = 0.0f;
     else {
       for (int i = 1; i <= 40; ++i) {

@@ -31,8 +31,10 @@ namespace {
     for (std::size_t y = 0; y < height; ++y)
       for (std::size_t x = 0; x < width; ++x)
         heights[y * width + x] =
-          100.0f - gradient_x * x * meters_value (grid.spacing_x ()) -
-          gradient_y * y * meters_value (grid.spacing_z ());
+          100.0f -
+          gradient_x * x *
+            (grid.spacing_x ()).numerical_value_in (moppe::u::m) -
+          gradient_y * y * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
     return heights;
   }
 
@@ -134,7 +136,8 @@ MOPPE_TEST (fractional_accumulation_is_conservative_acyclic_and_deterministic) {
   }
   MOPPE_CHECK_NEAR (static_cast<float> (outlet_area_m2),
                     static_cast<float> (width * height) *
-                      square_meters_value (plane_grid ().cell_area ()),
+                      (plane_grid ().cell_area ())
+                        .numerical_value_in (moppe::u::m * moppe::u::m),
                     1e-3f);
 }
 

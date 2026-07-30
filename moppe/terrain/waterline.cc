@@ -229,8 +229,10 @@ namespace moppe::terrain {
     std::sort (keys.begin (), keys.end ());
 
     Waterline waterline { .domain = grid };
-    const float spacing_x = meters_value (grid.spacing_x ());
-    const float spacing_y = meters_value (grid.spacing_z ());
+    const float spacing_x =
+      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+    const float spacing_y =
+      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
 
     const auto walk = [&] (std::uint64_t start, bool closed) {
       WaterlineContour contour { .closed = closed };
@@ -268,15 +270,17 @@ namespace moppe::terrain {
 
   WaterlineProximity waterline_proximity (const Waterline& waterline,
                                           meters_t band) {
-    const float band_m = meters_value (band);
+    const float band_m = (band).numerical_value_in (moppe::u::m);
     if (!std::isfinite (band_m) || band <= 0.0f * u::m)
       throw std::invalid_argument ("waterline band must be positive");
     const TerrainDomain& grid = waterline.domain;
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    const float spacing_x = meters_value (grid.spacing_x ());
-    const float spacing_y = meters_value (grid.spacing_z ());
+    const float spacing_x =
+      (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+    const float spacing_y =
+      (grid.spacing_z ()).numerical_value_in (moppe::u::m);
     const float world_x = spacing_x * static_cast<float> (width);
     const float world_y = spacing_y * static_cast<float> (height);
 

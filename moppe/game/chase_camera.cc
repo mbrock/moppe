@@ -64,7 +64,7 @@ namespace moppe {
 
       position_t want_target =
         position + quantity_cast<isq::position_vector> (m_ahead);
-      const float dist = meters_value (m_distance);
+      const float dist = (m_distance).numerical_value_in (moppe::u::m);
       const Vec3 scaled_offset = d * dist;
       const position_t want_position =
         position +
@@ -100,7 +100,7 @@ namespace moppe {
       Vec3 offset = camera_position - subject_position;
       const float horiz =
         std::sqrt (offset[0] * offset[0] + offset[2] * offset[2]);
-      const float max_len = meters_value (m_distance) +
+      const float max_len = (m_distance).numerical_value_in (moppe::u::m) +
                             0.06f * m_speed.numerical_value_in (u::m / u::s);
       if (horiz > max_len) {
         const float s = max_len / horiz;

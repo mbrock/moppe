@@ -308,8 +308,10 @@ namespace moppe::game {
       const auto& habitat = spatial::get<map::tree_habitat> (readings);
       const std::size_t step = std::max<std::size_t> (
         1, std::min (domain.width (), domain.height ()) / 180);
-      const float period_x = meters_value (domain.period_x ());
-      const float period_z = meters_value (domain.period_z ());
+      const float period_x =
+        (domain.period_x ()).numerical_value_in (moppe::u::m);
+      const float period_z =
+        (domain.period_z ()).numerical_value_in (moppe::u::m);
       std::vector<PatchCandidate> candidates;
       for (std::size_t row = 0; row < domain.height (); row += step)
         for (std::size_t column = 0; column < domain.width (); column += step) {
@@ -320,9 +322,11 @@ namespace moppe::game {
           if (support < 0.18f || habitability < 0.34f)
             continue;
           const float x =
-            static_cast<float> (column) * meters_value (domain.spacing_x ());
+            static_cast<float> (column) *
+            (domain.spacing_x ()).numerical_value_in (moppe::u::m);
           const float z =
-            static_cast<float> (row) * meters_value (domain.spacing_z ());
+            static_cast<float> (row) *
+            (domain.spacing_z ()).numerical_value_in (moppe::u::m);
           const float variation = unit_hash (
             seed ^ static_cast<std::uint32_t> (offset * 2654435761ULL));
           float score = support + 0.06f * variation;

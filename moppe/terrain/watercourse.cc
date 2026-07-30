@@ -114,38 +114,41 @@ namespace moppe::terrain {
             continue;
           const float direction_x = run_x / run;
           const float direction_z = run_z / run;
-          const float speed = meters_per_second_value (
-            parameters.base_speed +
-            parameters.rapid_speed * rapid_signal (center.slope) +
-            parameters.waterfall_speed * center.waterfall);
+          const float speed =
+            (parameters.base_speed +
+             parameters.rapid_speed * rapid_signal (center.slope) +
+             parameters.waterfall_speed * center.waterfall)
+              .numerical_value_in (moppe::u::m / moppe::u::s);
           const float radius =
-            0.5f * meters_value (river_width (center.contributing_area_m2 *
-                                              mp_units::si::metre *
-                                              mp_units::si::metre)) +
-            meters_value (parameters.bank_margin);
-          const int cx = static_cast<int> (
-            std::lround (center.x_m / meters_value (grid.spacing_x ())));
-          const int cy = static_cast<int> (
-            std::lround (center.z_m / meters_value (grid.spacing_z ())));
+            0.5f * (river_width (center.contributing_area_m2 *
+                                 mp_units::si::metre * mp_units::si::metre))
+                     .numerical_value_in (moppe::u::m) +
+            (parameters.bank_margin).numerical_value_in (moppe::u::m);
+          const int cx = static_cast<int> (std::lround (
+            center.x_m / (grid.spacing_x ()).numerical_value_in (moppe::u::m)));
+          const int cy = static_cast<int> (std::lround (
+            center.z_m / (grid.spacing_z ()).numerical_value_in (moppe::u::m)));
           constexpr int stamp_limit_cells = 16;
-          const int reach_x =
-            std::min (stamp_limit_cells,
-                      static_cast<int> (
-                        std::ceil (radius / meters_value (grid.spacing_x ()))));
-          const int reach_y =
-            std::min (stamp_limit_cells,
-                      static_cast<int> (
-                        std::ceil (radius / meters_value (grid.spacing_z ()))));
+          const int reach_x = std::min (
+            stamp_limit_cells,
+            static_cast<int> (std::ceil (
+              radius / (grid.spacing_x ()).numerical_value_in (moppe::u::m))));
+          const int reach_y = std::min (
+            stamp_limit_cells,
+            static_cast<int> (std::ceil (
+              radius / (grid.spacing_z ()).numerical_value_in (moppe::u::m))));
           for (int dy = -reach_y; dy <= reach_y; ++dy)
             for (int dx = -reach_x; dx <= reach_x; ++dx) {
               const int x = wrap_index (cx + dx, width);
               const int y = wrap_index (cy + dy, height);
               const float delta_x = std::remainder (
-                x * meters_value (grid.spacing_x ()) - center.x_m,
-                width * meters_value (grid.spacing_x ()));
+                x * (grid.spacing_x ()).numerical_value_in (moppe::u::m) -
+                  center.x_m,
+                width * (grid.spacing_x ()).numerical_value_in (moppe::u::m));
               const float delta_z = std::remainder (
-                y * meters_value (grid.spacing_z ()) - center.z_m,
-                height * meters_value (grid.spacing_z ()));
+                y * (grid.spacing_z ()).numerical_value_in (moppe::u::m) -
+                  center.z_m,
+                height * (grid.spacing_z ()).numerical_value_in (moppe::u::m));
               const float distance = std::hypot (delta_x, delta_z);
               if (distance >= radius)
                 continue;

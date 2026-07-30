@@ -197,8 +197,10 @@ namespace moppe {
           return {};
         const terrain::TerrainDomain& grid = trail_network ().domain;
         const std::size_t width = grid.width ();
-        const float x = (cell.value % width) * meters_value (grid.spacing_x ());
-        const float z = (cell.value / width) * meters_value (grid.spacing_z ());
+        const float x = (cell.value % width) *
+                        (grid.spacing_x ()).numerical_value_in (moppe::u::m);
+        const float z = (cell.value / width) *
+                        (grid.spacing_z ()).numerical_value_in (moppe::u::m);
         return Vec3 (x,
                      terrain::surface_elevation_value (
                        spatial::sample<terrain::surface_elevation> (
@@ -269,9 +271,10 @@ namespace moppe {
         const auto& alignment = trail_network ().alignment.points;
         if (alignment.size () < 2)
           return;
-        const float period_x = grid.width () * meters_value (grid.spacing_x ());
+        const float period_x =
+          grid.width () * (grid.spacing_x ()).numerical_value_in (moppe::u::m);
         const float period_z =
-          grid.height () * meters_value (grid.spacing_z ());
+          grid.height () * (grid.spacing_z ()).numerical_value_in (moppe::u::m);
         const float home_x = alignment.front ().x_m;
         const float home_z = alignment.front ().z_m;
         const auto wrap_delta = [] (float delta, float period) {
