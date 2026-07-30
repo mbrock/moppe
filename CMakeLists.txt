@@ -463,6 +463,13 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(terrain-water-depth-experiment)
+
+  add_executable(terrain-trail-soak EXCLUDE_FROM_ALL
+    moppe/terrain/trail_soak.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
+  )
+  moppe_configure_code_target(terrain-trail-soak)
 endif()
 
 # Tests are configured for IDEs and CTest, but excluded from the default build.

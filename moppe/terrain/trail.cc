@@ -624,9 +624,15 @@ namespace moppe::terrain {
       return sites;
     }
 
-    std::size_t choose_scenic_focus (const PlanningGrid& grid,
-                                     std::size_t base,
-                                     const TrailFormation& parameters) {
+    struct ScenicCandidate {
+      std::size_t node;
+      float score;
+    };
+
+    std::vector<std::size_t>
+    choose_scenic_focuses (const PlanningGrid& grid,
+                           std::size_t base,
+                           const TrailFormation& parameters) {
       const float world_span =
         std::min (grid.width * grid.spacing_x, grid.height * grid.spacing_y);
       const float desired = std::clamp (
@@ -638,8 +644,7 @@ namespace moppe::terrain {
           desired * 0.28f / std::min (grid.spacing_x, grid.spacing_y))),
         2,
         12);
-      float best_score = -std::numeric_limits<float>::infinity ();
-      std::size_t best = base;
+      std::vector<ScenicCandidate> candidates;
       for (std::size_t node = 0;
            node < static_cast<std::size_t> (grid.width) * grid.height;
            ++node) {
@@ -672,15 +677,38 @@ namespace moppe::terrain {
         const float alpine = highland_ratio (elevation, grid, parameters);
         const float score =
           distance_score + feature_score - 55.0f * alpine * alpine;
-        if (score > best_score) {
-          best_score = score;
-          best = node;
-        }
+        candidates.push_back ({ node, score });
       }
-      if (best == base)
+      if (candidates.empty ())
         throw std::runtime_error ("no scenic focus for trail circuit");
-      return best;
+      // One expedition gets a few genuinely different circuits to try:
+      // routing around the best focus can fail on a single blocked pass
+      // that a focus in another quarter of the annulus never meets.
+      std::ranges::sort (
+        candidates, std::ranges::greater {}, &ScenicCandidate::score);
+      const float separation = 0.4f * desired;
+      std::vector<std::size_t> focuses;
+      for (const ScenicCandidate candidate : candidates) {
+        const bool distinct =
+          std::ranges::all_of (focuses, [&] (const std::size_t focus) {
+            return grid.distance (candidate.node, focus) >= separation;
+          });
+        if (distinct)
+          focuses.push_back (candidate.node);
+        if (focuses.size () == 4)
+          break;
+      }
+      return focuses;
     }
+
+    // Feasibility leaves a small slack above the authored maximum grade so
+    // discretization noise cannot sever an otherwise buildable corridor. The
+    // desperate slack is the last resort for closing a loop on heavily
+    // dissected terrain: eroded valley networks are dendritic, and when no
+    // second disjoint arm exists at the leisurely limit, a short technical
+    // pitch over a spur ridge beats abandoning the circuit.
+    constexpr float feasible_grade_slack = 0.04f;
+    constexpr float desperate_grade_slack = 0.12f;
 
     std::vector<std::uint8_t> routable_land (const PlanningGrid& grid,
                                              std::size_t start,
@@ -714,7 +742,8 @@ namespace moppe::terrain {
               continue;
             const PlanningGrid::EdgeProfile profile =
               grid.edge_profile (current, next, earthwork_budget);
-            if (profile.maximum_achievable_grade > maximum_grade + 0.04f)
+            if (profile.maximum_achievable_grade >
+                maximum_grade + feasible_grade_slack)
               continue;
             reachable[next] = 1;
             frontier.push (next);
@@ -781,7 +810,8 @@ namespace moppe::terrain {
                    std::size_t start,
                    std::size_t goal,
                    const TrailFormation& parameters,
-                   const std::vector<std::uint8_t>& avoid = {}) {
+                   const std::vector<std::uint8_t>& avoid = {},
+                   float grade_slack = feasible_grade_slack) {
       constexpr int headings = 8;
       constexpr int no_heading = headings;
       constexpr int states_per_node = headings + 1;
@@ -866,7 +896,7 @@ namespace moppe::terrain {
           const float grade =
             std::max (profile.mean_grade, 0.55f * profile.maximum_grade);
           const float achievable_grade = profile.maximum_achievable_grade;
-          if (achievable_grade > maximum_grade + 0.04f)
+          if (achievable_grade > maximum_grade + grade_slack)
             continue;
           const float maximum_excess =
             std::max (0.0f, achievable_grade - maximum_grade) /
@@ -969,50 +999,17 @@ namespace moppe::terrain {
       float score;
     };
 
-    std::optional<CoarseCircuitPlan>
-    explore_circuit (const PlanningGrid& planner,
-                     HomeBaseSite site,
-                     const TrailFormation& parameters,
-                     std::string& failure) {
-      const std::size_t home_base = site.node;
-      const std::vector<std::uint8_t> reachable =
-        routable_land (planner, home_base, parameters);
-      const std::size_t focus =
-        choose_scenic_focus (planner, home_base, parameters);
-      float forward_x =
-        planner.delta_x (planner.x (home_base), planner.x (focus));
-      float forward_y =
-        planner.delta_y (planner.y (home_base), planner.y (focus));
-      const float forward_length = std::hypot (forward_x, forward_y);
-      forward_x /= std::max (forward_length, 1.0f);
-      forward_y /= std::max (forward_length, 1.0f);
-      const float flank = std::clamp (
-        0.12f * std::min (planner.width, planner.height), 2.0f, 18.0f);
-      const int anchor_search = std::max (2, static_cast<int> (flank * 0.55f));
-      const float focus_x = static_cast<float> (planner.x (focus));
-      const float focus_y = static_cast<float> (planner.y (focus));
-      const std::size_t left =
-        nearest_buildable_site (planner,
-                                focus_x - forward_y * flank,
-                                focus_y + forward_x * flank,
-                                anchor_search,
-                                reachable,
-                                parameters);
-      const std::size_t far =
-        nearest_buildable_site (planner,
-                                focus_x + forward_x * flank,
-                                focus_y + forward_y * flank,
-                                anchor_search,
-                                reachable,
-                                parameters);
-      const std::size_t right =
-        nearest_buildable_site (planner,
-                                focus_x + forward_y * flank,
-                                focus_y - forward_x * flank,
-                                anchor_search,
-                                reachable,
-                                parameters);
-
+    // Route the two arms of one circuit: the outbound home-left-far ride is
+    // free, while the inbound home-right-far ride must stay off it so the
+    // loop encloses the focus instead of retracing itself.
+    std::optional<std::vector<std::size_t>>
+    route_circuit_arms (const PlanningGrid& planner,
+                        std::size_t home_base,
+                        std::size_t left,
+                        std::size_t far,
+                        std::size_t right,
+                        const TrailFormation& parameters,
+                        std::string& failure) {
       const std::size_t planner_cells =
         static_cast<std::size_t> (planner.width) * planner.height;
       const std::vector<std::size_t> home_to_left =
@@ -1021,18 +1018,26 @@ namespace moppe::terrain {
         failure = "home base could not reach the left control site";
         return std::nullopt;
       }
-      std::vector<std::size_t> outbound;
-      std::vector<std::size_t> inbound;
-      bool routed = false;
       // Prefer a full coarse cell of space between arms. Narrow passes may
       // not have 48 metres to spare, so retry while forbidding only actual
-      // centerline reuse. The resulting paths remain distinct.
-      for (int padding = 1; padding >= 0; --padding) {
-        outbound = home_to_left;
+      // centerline reuse; the last attempt also accepts short technical
+      // pitches so a spur ridge can carry the second arm.
+      struct Attempt {
+        int padding;
+        float grade_slack;
+      };
+      constexpr Attempt attempts[] = {
+        { .padding = 1, .grade_slack = feasible_grade_slack },
+        { .padding = 0, .grade_slack = feasible_grade_slack },
+        { .padding = 0, .grade_slack = desperate_grade_slack },
+      };
+      for (const Attempt attempt : attempts) {
+        std::vector<std::size_t> outbound = home_to_left;
         std::vector<std::uint8_t> outbound_avoid (planner_cells, 0);
-        avoid_path (planner, outbound, left, far, padding, outbound_avoid);
-        const std::vector<std::size_t> left_to_far =
-          shortest_ride (planner, left, far, parameters, outbound_avoid);
+        avoid_path (
+          planner, outbound, left, far, attempt.padding, outbound_avoid);
+        const std::vector<std::size_t> left_to_far = shortest_ride (
+          planner, left, far, parameters, outbound_avoid, attempt.grade_slack);
         if (left_to_far.empty ()) {
           failure = "left control site could not reach the far control site";
           continue;
@@ -1044,16 +1049,22 @@ namespace moppe::terrain {
         }
 
         std::vector<std::uint8_t> inbound_avoid (planner_cells, 0);
-        avoid_path (planner, outbound, home_base, far, padding, inbound_avoid);
-        inbound =
-          shortest_ride (planner, home_base, right, parameters, inbound_avoid);
+        avoid_path (
+          planner, outbound, home_base, far, attempt.padding, inbound_avoid);
+        std::vector<std::size_t> inbound = shortest_ride (planner,
+                                                          home_base,
+                                                          right,
+                                                          parameters,
+                                                          inbound_avoid,
+                                                          attempt.grade_slack);
         if (inbound.empty ()) {
           failure = "home base could not reach the right control site";
           continue;
         }
-        avoid_path (planner, inbound, right, far, padding, inbound_avoid);
-        const std::vector<std::size_t> right_to_far =
-          shortest_ride (planner, right, far, parameters, inbound_avoid);
+        avoid_path (
+          planner, inbound, right, far, attempt.padding, inbound_avoid);
+        const std::vector<std::size_t> right_to_far = shortest_ride (
+          planner, right, far, parameters, inbound_avoid, attempt.grade_slack);
         if (right_to_far.empty ()) {
           failure = "right control site could not reach the far control site";
           continue;
@@ -1063,39 +1074,104 @@ namespace moppe::terrain {
           failure = "inbound route did not join its control sites";
           continue;
         }
-        routed = true;
-        break;
-      }
-      if (!routed)
-        return std::nullopt;
 
-      std::vector<std::size_t> circuit = outbound;
-      if (inbound.size () > 2)
-        for (std::size_t i = inbound.size () - 1; i-- > 1;)
-          circuit.push_back (inbound[i]);
+        // The avoidance openings around the shared endpoints let the arms
+        // approach on any bearing, but a node used by both arms would later
+        // splice the scenic head out of the fine-grid circuit. Treat that
+        // as a failed attempt rather than a routing success.
+        std::vector<std::uint8_t> outbound_nodes (planner_cells, 0);
+        for (const std::size_t node : outbound)
+          outbound_nodes[node] = 1;
+        bool arms_share_ground = false;
+        for (std::size_t i = 1; i + 1 < inbound.size (); ++i)
+          arms_share_ground |= outbound_nodes[inbound[i]] != 0;
+        if (arms_share_ground) {
+          failure = "circuit arms could not enclose the focus apart";
+          continue;
+        }
 
-      float route_cost = 0.0f;
-      for (std::size_t i = 0; i < circuit.size (); ++i) {
-        const std::size_t from = circuit[i];
-        const std::size_t to = circuit[(i + 1) % circuit.size ()];
-        const float run = planner.distance (from, to);
-        const float grade =
-          run > 0.0f
-            ? std::fabs (planner.elevation (to) - planner.elevation (from)) /
-                run
-            : 0.0f;
-        const float alpine =
-          highland_ratio (planner.elevation (to), planner, parameters);
-        route_cost +=
-          run * (1.0f + 8.0f * grade * grade + 4.0f * alpine * alpine);
+        std::vector<std::size_t> circuit = std::move (outbound);
+        if (inbound.size () > 2)
+          for (std::size_t i = inbound.size () - 1; i-- > 1;)
+            circuit.push_back (inbound[i]);
+        return circuit;
       }
-      return CoarseCircuitPlan { .home_base = home_base,
-                                 .scenic_focus = focus,
-                                 .left = left,
-                                 .far = far,
-                                 .right = right,
-                                 .circuit = std::move (circuit),
-                                 .score = route_cost - 24.0f * site.score };
+      return std::nullopt;
+    }
+
+    std::optional<CoarseCircuitPlan>
+    explore_circuit (const PlanningGrid& planner,
+                     HomeBaseSite site,
+                     const TrailFormation& parameters,
+                     std::string& failure) {
+      const std::size_t home_base = site.node;
+      const std::vector<std::uint8_t> reachable =
+        routable_land (planner, home_base, parameters);
+      const std::vector<std::size_t> focuses =
+        choose_scenic_focuses (planner, home_base, parameters);
+      const float flank = std::clamp (
+        0.12f * std::min (planner.width, planner.height), 2.0f, 18.0f);
+      const int anchor_search = std::max (2, static_cast<int> (flank * 0.55f));
+      for (const std::size_t focus : focuses) {
+        float forward_x =
+          planner.delta_x (planner.x (home_base), planner.x (focus));
+        float forward_y =
+          planner.delta_y (planner.y (home_base), planner.y (focus));
+        const float forward_length = std::hypot (forward_x, forward_y);
+        forward_x /= std::max (forward_length, 1.0f);
+        forward_y /= std::max (forward_length, 1.0f);
+        const float focus_x = static_cast<float> (planner.x (focus));
+        const float focus_y = static_cast<float> (planner.y (focus));
+        const std::size_t left =
+          nearest_buildable_site (planner,
+                                  focus_x - forward_y * flank,
+                                  focus_y + forward_x * flank,
+                                  anchor_search,
+                                  reachable,
+                                  parameters);
+        const std::size_t far =
+          nearest_buildable_site (planner,
+                                  focus_x + forward_x * flank,
+                                  focus_y + forward_y * flank,
+                                  anchor_search,
+                                  reachable,
+                                  parameters);
+        const std::size_t right =
+          nearest_buildable_site (planner,
+                                  focus_x + forward_y * flank,
+                                  focus_y - forward_x * flank,
+                                  anchor_search,
+                                  reachable,
+                                  parameters);
+        std::optional<std::vector<std::size_t>> circuit = route_circuit_arms (
+          planner, home_base, left, far, right, parameters, failure);
+        if (!circuit)
+          continue;
+
+        float route_cost = 0.0f;
+        for (std::size_t i = 0; i < circuit->size (); ++i) {
+          const std::size_t from = (*circuit)[i];
+          const std::size_t to = (*circuit)[(i + 1) % circuit->size ()];
+          const float run = planner.distance (from, to);
+          const float grade =
+            run > 0.0f
+              ? std::fabs (planner.elevation (to) - planner.elevation (from)) /
+                  run
+              : 0.0f;
+          const float alpine =
+            highland_ratio (planner.elevation (to), planner, parameters);
+          route_cost +=
+            run * (1.0f + 8.0f * grade * grade + 4.0f * alpine * alpine);
+        }
+        return CoarseCircuitPlan { .home_base = home_base,
+                                   .scenic_focus = focus,
+                                   .left = left,
+                                   .far = far,
+                                   .right = right,
+                                   .circuit = std::move (*circuit),
+                                   .score = route_cost - 24.0f * site.score };
+      }
+      return std::nullopt;
     }
 
     std::vector<CellIndex>
