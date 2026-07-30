@@ -72,6 +72,12 @@ namespace moppe {
       return 450;
     }
 
+    static int cinematic_capture_frame_step () {
+      if (const char* value = ::getenv ("MOPPE_CINEMATIC_CAPTURE_STEP"))
+        return std::max (1, ::atoi (value));
+      return 1;
+    }
+
     class MoppeGame : public platform::Game {
     public:
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
@@ -972,7 +978,16 @@ namespace moppe {
         if (cinematic) {
           if (const char* directory =
                 ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
-            if (m_cinematic_capture_frame < cinematic_capture_frame_limit ()) {
+            const int capture_count = cinematic_capture_frame_limit ();
+            const bool survey = ::getenv ("MOPPE_CINEMATIC_CAPTURE_PROGRESS");
+            const float next_progress =
+              (m_cinematic_capture_frame + 0.5f) / capture_count;
+            const bool sample_frame =
+              survey ? m_cinematic.route_progress () >= next_progress
+                     : m_cinematic_capture_render_frame++ %
+                           cinematic_capture_frame_step () ==
+                         0;
+            if (sample_frame && m_cinematic_capture_frame < capture_count) {
               if (m_cinematic_capture_frame == 0)
                 std::filesystem::create_directories (directory);
               std::ostringstream path;
@@ -1482,6 +1497,7 @@ namespace moppe {
       std::optional<WaterInspection> m_water_inspection;
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
+      int m_cinematic_capture_render_frame = 0;
       std::atomic<bool> m_ready;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;

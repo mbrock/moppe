@@ -29,6 +29,9 @@
     `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
     defaults.
+  - Representative still survey along the cinematic drone route:
+    `tools/capture-terrain-survey /tmp/terrain-survey 12`. This writes the
+    individual frames, a contact sheet, and the deterministic capture settings.
   - Feature-targeted water capture: `tools/capture-water /tmp/mouth.png mouth`.
     Feature names are `stream`, `river`, `confluence`, `mouth`, `waterfall`,
     and `lake`;

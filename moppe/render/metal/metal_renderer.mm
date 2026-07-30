@@ -1580,22 +1580,34 @@ namespace moppe {
         ++shadow_lod;
       const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
       const int chunks = m_terrain_resources.params.width / CHUNK_CELLS;
-      for (int cz = 0; cz < chunks; ++cz)
-        for (int cx = 0; cx < chunks; ++cx) {
-          MoppeChunkUniforms c;
-          std::memset (&c, 0, sizeof (c));
-          c.origin_x = cx * CHUNK_CELLS;
-          c.origin_z = cz * CHUNK_CELLS;
-          c.step = shadow_step;
-          c.verts_per_row = TERRAIN_LOD_VERTS[shadow_lod];
-          c.parent_step = shadow_step;
-          [enc setVertexBytes:&c length:sizeof (c) atIndex:MOPPE_BUF_CHUNK];
-          [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
-                          indexCount:m_terrain_resources.index_count[shadow_lod]
-                           indexType:MTLIndexTypeUInt32
-                         indexBuffer:m_terrain_resources.indices[shadow_lod]
-                   indexBufferOffset:0];
-        }
+      const float period_x =
+        m_terrain_resources.params.width * m_terrain_resources.params.scale[0];
+      const float period_z =
+        m_terrain_resources.params.height * m_terrain_resources.params.scale[2];
+      // The visible ground is periodic. Neighbouring copies must participate
+      // in this canonical tile's shadow map too, or occluders disappear at a
+      // wrap edge and leave a ruler-straight lighting discontinuity.
+      for (int tile_z = -1; tile_z <= 1; ++tile_z)
+        for (int tile_x = -1; tile_x <= 1; ++tile_x)
+          for (int cz = 0; cz < chunks; ++cz)
+            for (int cx = 0; cx < chunks; ++cx) {
+              MoppeChunkUniforms c;
+              std::memset (&c, 0, sizeof (c));
+              c.origin_x = cx * CHUNK_CELLS;
+              c.origin_z = cz * CHUNK_CELLS;
+              c.step = shadow_step;
+              c.verts_per_row = TERRAIN_LOD_VERTS[shadow_lod];
+              c.parent_step = shadow_step;
+              c.world_offset.x = tile_x * period_x;
+              c.world_offset.z = tile_z * period_z;
+              [enc setVertexBytes:&c length:sizeof (c) atIndex:MOPPE_BUF_CHUNK];
+              [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
+                              indexCount:m_terrain_resources
+                                           .index_count[shadow_lod]
+                               indexType:MTLIndexTypeUInt32
+                             indexBuffer:m_terrain_resources.indices[shadow_lod]
+                       indexBufferOffset:0];
+            }
       [enc endEncoding];
       [cmd commit];
       [cmd waitUntilCompleted];
@@ -1996,6 +2008,10 @@ namespace moppe {
       m_frame.uniforms.fog_color = f4lin (params.clear_color, params.fog_scale);
       m_frame.uniforms.misc.x = params.time;
       m_frame.uniforms.misc.y = params.cloud_cover;
+      if (m_terrain_resources.have_terrain) {
+        m_frame.uniforms.misc.z = m_terrain_resources.params.sea_level;
+        m_frame.uniforms.misc.w = m_terrain_resources.params.land_relief;
+      }
       m_frame.uniforms.shadow.x = m_terrain_resources.have_shadow
                                     ? m_terrain_resources.params.shadow_strength
                                     : 0.0f;

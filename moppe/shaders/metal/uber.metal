@@ -68,7 +68,11 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
     const float dist = length (in.world_pos - frame.camera_pos.xyz);
-    const float fog = moppe_distance_fog (dist, frame.fog_color.w);
+    const float fog =
+      moppe_relief_haze (moppe_distance_fog (dist, frame.fog_color.w),
+                         in.world_pos.y,
+                         frame.misc.z,
+                         frame.misc.w);
     const float sun_visibility =
       moppe_sun_visibility (in.world_pos,
                             n,
@@ -120,7 +124,11 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
   if (in.fogged > 0.5) {
     const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
     const float dist = length (to_frag);
-    const float fog = moppe_distance_fog (dist, frame.fog_color.w);
+    const float fog =
+      moppe_relief_haze (moppe_distance_fog (dist, frame.fog_color.w),
+                         in.world_pos.y,
+                         frame.misc.z,
+                         frame.misc.w);
     const float3 fog_c = moppe_warmed_fog (
       frame.fog_color.rgb, to_frag / max (dist, 1e-4), frame.sun_dir.xyz);
     color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
