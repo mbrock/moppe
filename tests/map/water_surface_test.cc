@@ -70,7 +70,7 @@ MOPPE_TEST (water_surface_is_a_distinct_bundle_in_the_ground_elevation_frame) {
   MOPPE_CHECK_NEAR (velocity[2], -2.0f, 1e-6f);
 }
 
-MOPPE_TEST (water_presentation_packs_physical_bundle_sections) {
+MOPPE_TEST (water_presentation_writes_typed_sections_directly) {
   using namespace moppe;
   const terrain::TerrainDomain domain (2, 2, 10.0f * u::m, 10.0f * u::m);
   const std::array level_and_amplitude {
@@ -82,32 +82,16 @@ MOPPE_TEST (water_presentation_packs_physical_bundle_sections) {
   const terrain::WaterSheets water =
     water_sheets (domain, level_and_amplitude, flow);
 
-  game::WaterPresentation presentation;
-  presentation.reset (10.0f * u::m,
-                      spatial_extent_in_metres (Vec3 (200, 100, 300)));
-  MOPPE_CHECK (presentation.levels ().empty ());
-  MOPPE_CHECK (presentation.flow ().empty ());
   test::RecordingRenderer renderer;
-  presentation.upload (renderer);
+  game::upload_water (renderer,
+                      water,
+                      10.0f * u::m,
+                      spatial_extent_in_metres (Vec3 (200, 100, 300)));
   MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
   MOPPE_CHECK_NEAR (renderer.ocean.center[0], 100.0f, 1e-6f);
   MOPPE_CHECK_NEAR (renderer.ocean.center[2], 150.0f, 1e-6f);
   MOPPE_CHECK_NEAR (renderer.ocean.half_extent, 5500.0f, 1e-6f);
   MOPPE_CHECK (renderer.ocean.cells == 300);
-  MOPPE_CHECK (renderer.water_levels.empty ());
-  MOPPE_CHECK (renderer.water_flow.empty ());
-  presentation.refresh (water);
-
-  MOPPE_CHECK (presentation.levels ().size () == level_and_amplitude.size ());
-  MOPPE_CHECK (presentation.flow ().size () == flow.size ());
-  for (std::size_t index = 0; index < level_and_amplitude.size (); ++index)
-    MOPPE_CHECK_NEAR (
-      presentation.levels ()[index], level_and_amplitude[index], 1e-6f);
-  for (std::size_t index = 0; index < flow.size (); ++index)
-    MOPPE_CHECK_NEAR (presentation.flow ()[index], flow[index], 1e-6f);
-
-  presentation.upload (renderer);
-  MOPPE_CHECK_NEAR (renderer.ocean.level, 10.0f, 1e-6f);
   MOPPE_CHECK (std::ranges::equal (renderer.water_levels, level_and_amplitude));
   MOPPE_CHECK (std::ranges::equal (renderer.water_flow, flow));
 }

@@ -3,7 +3,7 @@ id = "ENG-061"
 title = "Upload typed water sheets without retained packing vectors"
 rfc = "RFC-0002"
 track = "engine-consolidation"
-status = "ready"
+status = "done"
 depends_on = ["ENG-060"]
 order = 20
 areas = ["render", "water", "bundles"]
@@ -28,3 +28,13 @@ or change the water simulation.
   texture and writes it once into staging memory.
 - WebGPU retains its supported lower-cost ocean path.
 - Water-presentation and renderer tests pass.
+
+## Evidence
+
+`upload_water` borrows `WaterSheets` and describes elevation/amplitude as
+`RG32F` and planar velocity as `RG16F`. `MetalRenderer::upload_pixels` is the
+single checked staging path for ground and water textures; the old retained
+float vectors and second flow-halving vector are gone. The recording renderer
+decodes the descriptions for
+`water_presentation_writes_typed_sections_directly`, and the complete test
+binary passes.

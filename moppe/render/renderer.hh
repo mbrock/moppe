@@ -195,15 +195,16 @@ namespace moppe {
       virtual void render_terrain_shadow (const Mat4& light_view_proj) = 0;
       // Optional standing-water raster turns the ocean grid into the complete
       // surface: sea plus inland lakes. Samples are interleaved pairs of
-      // (normalized surface level, wave amplitude factor) following the
-      // terrain grid; an empty span retains the single full-swell sea plane.
+      // (physical surface elevation, wave amplitude factor) following the
+      // terrain grid; an empty description retains the single full-swell sea
+      // plane.
       virtual void set_ocean (const OceanSetup& setup,
-                              std::span<const float> water_levels) = 0;
-      // Water flow following the terrain grid: interleaved (x, z) world
-      // velocity in meters per second per sample. Rivers carry strong
-      // downstream arrows, lakes almost none; the water shader advects
-      // its surface detail along them. Optional; an empty span clears.
-      virtual void set_water_flow (std::span<const float> flow) {
+                              const TexturePixels& water_levels) = 0;
+      // Water flow following the terrain grid: (x, z) world velocity in
+      // metres per second per sample. Rivers carry strong downstream arrows,
+      // lakes almost none; the water shader advects its surface detail along
+      // them. Optional; an empty description clears.
+      virtual void set_water_flow (const TexturePixels& flow) {
         (void)flow;
       }
       // Ground moisture in [0,1] following the terrain grid. Optional.
