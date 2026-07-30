@@ -62,6 +62,31 @@ inline float moppe_value_noise (float2 p) {
   return mix (mix (a, b, u.x), mix (c, d, u.x), u.y);
 }
 
+// The same field with its exact gradient, for the surfaces that want a
+// slope rather than a value.  Two differences from the plain version
+// matter to a normal: the fade is quintic, whose first derivative
+// vanishes at the cell corners, so the gradient is continuous across
+// the lattice instead of creasing along every cell edge; and the
+// gradient is analytic, so it costs no extra hashes and does not
+// depend on how large a screen pixel happens to be.
+// Returns (value, d/dx, d/dy).
+inline float3 moppe_value_noise_d (float2 p) {
+  const float2 i = floor (p);
+  const float2 f = fract (p);
+  const float2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  const float2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  const float a = moppe_hash12 (i);
+  const float b = moppe_hash12 (i + float2 (1, 0));
+  const float c = moppe_hash12 (i + float2 (0, 1));
+  const float d = moppe_hash12 (i + float2 (1, 1));
+  const float k1 = b - a;
+  const float k2 = c - a;
+  const float k3 = a - b - c + d;
+  return float3 (a + k1 * u.x + k2 * u.y + k3 * u.x * u.y,
+                 du.x * (k1 + k3 * u.y),
+                 du.y * (k2 + k3 * u.x));
+}
+
 // The scene computes in LINEAR light (half-float targets); art
 // colors are still authored as familiar display-space numbers and
 // decoded with this at the point of use.  The present pass
