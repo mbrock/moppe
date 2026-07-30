@@ -11,14 +11,14 @@
 #include <numbers>
 #include <optional>
 #include <queue>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace moppe::terrain {
   namespace {
-    constexpr float maximum_traversable_grade = 0.85f;
-
     float shoulder_ramp (float distance, float half_width, float blend) {
       if (distance <= half_width)
         return 1.0f;
@@ -673,12 +673,17 @@ namespace moppe::terrain {
     }
 
     std::vector<std::uint8_t> routable_land (const PlanningGrid& grid,
-                                             std::size_t start) {
+                                             std::size_t start,
+                                             const TrailFormation& parameters) {
       const std::size_t count =
         static_cast<std::size_t> (grid.width) * grid.height;
       std::vector<std::uint8_t> reachable (count, 0);
       if (grid.wet (start))
         return reachable;
+      const float maximum_grade =
+        parameters.maximum_grade.numerical_value_in (mp_units::one);
+      const float earthwork_budget = meters_value (parameters.maximum_cut) +
+                                     meters_value (parameters.maximum_fill);
       std::queue<std::size_t> frontier;
       reachable[start] = 1;
       frontier.push (start);
@@ -696,10 +701,9 @@ namespace moppe::terrain {
             const float run = grid.distance (current, next);
             if (run <= 0.0f)
               continue;
-            const float grade =
-              std::fabs (grid.elevation (next) - grid.elevation (current)) /
-              run;
-            if (grade > maximum_traversable_grade)
+            const PlanningGrid::EdgeProfile profile =
+              grid.edge_profile (current, next, earthwork_budget);
+            if (profile.maximum_achievable_grade > maximum_grade + 0.04f)
               continue;
             reachable[next] = 1;
             frontier.push (next);
@@ -860,8 +864,6 @@ namespace moppe::terrain {
           const float detour_ratio =
             (grid.distance (start, next) + grid.distance (next, goal)) /
             direct_distance;
-          if (detour_ratio > 4.0f)
-            continue;
           const float corridor = std::max (0.0f, detour_ratio - 1.12f);
           float turn = 0.0f;
           if (previous_heading != no_heading) {
@@ -929,6 +931,7 @@ namespace moppe::terrain {
                      const std::vector<std::size_t>& path,
                      std::size_t open_start,
                      std::size_t open_end,
+                     int padding,
                      std::vector<std::uint8_t>& avoid) {
       const float open_radius =
         1.75f * std::max (grid.spacing_x, grid.spacing_y);
@@ -936,8 +939,8 @@ namespace moppe::terrain {
         if (grid.distance (node, open_start) < open_radius ||
             grid.distance (node, open_end) < open_radius)
           continue;
-        for (int dy = -1; dy <= 1; ++dy)
-          for (int dx = -1; dx <= 1; ++dx)
+        for (int dy = -padding; dy <= padding; ++dy)
+          for (int dx = -padding; dx <= padding; ++dx)
             avoid[grid.node (grid.x (node) + dx, grid.y (node) + dy)] = 1;
       }
     }
@@ -955,10 +958,11 @@ namespace moppe::terrain {
     std::optional<CoarseCircuitPlan>
     explore_circuit (const PlanningGrid& planner,
                      HomeBaseSite site,
-                     const TrailFormation& parameters) {
+                     const TrailFormation& parameters,
+                     std::string& failure) {
       const std::size_t home_base = site.node;
       const std::vector<std::uint8_t> reachable =
-        routable_land (planner, home_base);
+        routable_land (planner, home_base, parameters);
       const std::size_t focus =
         choose_scenic_focus (planner, home_base, parameters);
       float forward_x =
@@ -997,27 +1001,58 @@ namespace moppe::terrain {
 
       const std::size_t planner_cells =
         static_cast<std::size_t> (planner.width) * planner.height;
-      std::vector<std::size_t> outbound =
+      const std::vector<std::size_t> home_to_left =
         shortest_ride (planner, home_base, left, parameters);
-      std::vector<std::uint8_t> outbound_avoid (planner_cells, 0);
-      avoid_path (planner, outbound, left, far, outbound_avoid);
-      append_path (
-        outbound,
-        shortest_ride (planner, left, far, parameters, outbound_avoid));
-      if (outbound.empty () || outbound.front () != home_base ||
-          outbound.back () != far)
+      if (home_to_left.empty ()) {
+        failure = "home base could not reach the left control site";
         return std::nullopt;
+      }
+      std::vector<std::size_t> outbound;
+      std::vector<std::size_t> inbound;
+      bool routed = false;
+      // Prefer a full coarse cell of space between arms. Narrow passes may
+      // not have 48 metres to spare, so retry while forbidding only actual
+      // centerline reuse. The resulting paths remain distinct.
+      for (int padding = 1; padding >= 0; --padding) {
+        outbound = home_to_left;
+        std::vector<std::uint8_t> outbound_avoid (planner_cells, 0);
+        avoid_path (planner, outbound, left, far, padding, outbound_avoid);
+        const std::vector<std::size_t> left_to_far =
+          shortest_ride (planner, left, far, parameters, outbound_avoid);
+        if (left_to_far.empty ()) {
+          failure = "left control site could not reach the far control site";
+          continue;
+        }
+        append_path (outbound, left_to_far);
+        if (outbound.front () != home_base || outbound.back () != far) {
+          failure = "outbound route did not join its control sites";
+          continue;
+        }
 
-      std::vector<std::uint8_t> inbound_avoid (planner_cells, 0);
-      avoid_path (planner, outbound, home_base, far, inbound_avoid);
-      std::vector<std::size_t> inbound =
-        shortest_ride (planner, home_base, right, parameters, inbound_avoid);
-      avoid_path (planner, inbound, right, far, inbound_avoid);
-      append_path (
-        inbound,
-        shortest_ride (planner, right, far, parameters, inbound_avoid));
-      if (inbound.empty () || inbound.front () != home_base ||
-          inbound.back () != far)
+        std::vector<std::uint8_t> inbound_avoid (planner_cells, 0);
+        avoid_path (planner, outbound, home_base, far, padding, inbound_avoid);
+        inbound =
+          shortest_ride (planner, home_base, right, parameters, inbound_avoid);
+        if (inbound.empty ()) {
+          failure = "home base could not reach the right control site";
+          continue;
+        }
+        avoid_path (planner, inbound, right, far, padding, inbound_avoid);
+        const std::vector<std::size_t> right_to_far =
+          shortest_ride (planner, right, far, parameters, inbound_avoid);
+        if (right_to_far.empty ()) {
+          failure = "right control site could not reach the far control site";
+          continue;
+        }
+        append_path (inbound, right_to_far);
+        if (inbound.front () != home_base || inbound.back () != far) {
+          failure = "inbound route did not join its control sites";
+          continue;
+        }
+        routed = true;
+        break;
+      }
+      if (!routed)
         return std::nullopt;
 
       std::vector<std::size_t> circuit = outbound;
@@ -1053,18 +1088,27 @@ namespace moppe::terrain {
     expand_circuit (const PlanningGrid& grid,
                     const std::vector<std::size_t>& coarse_circuit) {
       std::vector<CellIndex> circuit;
-      std::vector<std::uint8_t> seen (
-        static_cast<std::size_t> (grid.source_width) * grid.source_height, 0);
-      const auto append_cell = [&circuit, &seen, &grid] (int x, int y) {
-        x = wrap_index (x, grid.source_width);
-        y = wrap_index (y, grid.source_height);
-        const std::size_t cell =
-          static_cast<std::size_t> (y) * grid.source_width + x;
-        if (!seen[cell]) {
-          seen[cell] = 1;
+      const std::size_t no_position =
+        static_cast<std::size_t> (grid.source_width) * grid.source_height;
+      std::vector<std::size_t> position (no_position, no_position);
+      const auto append_cell =
+        [&circuit, &position, &grid, no_position] (int x, int y) {
+          x = wrap_index (x, grid.source_width);
+          y = wrap_index (y, grid.source_height);
+          const std::size_t cell =
+            static_cast<std::size_t> (y) * grid.source_width + x;
+          if (!circuit.empty () && circuit.back ().value == cell)
+            return;
+          if (position[cell] != no_position) {
+            const std::size_t retained = position[cell] + 1;
+            for (std::size_t i = retained; i < circuit.size (); ++i)
+              position[circuit[i].value] = no_position;
+            circuit.resize (retained);
+            return;
+          }
+          position[cell] = circuit.size ();
           circuit.emplace_back (static_cast<std::uint32_t> (cell));
-        }
-      };
+        };
       for (std::size_t segment = 0; segment < coarse_circuit.size ();
            ++segment) {
         const std::size_t from = coarse_circuit[segment];
@@ -1176,25 +1220,49 @@ namespace moppe::terrain {
       planning_grid (grid, elevations, drainage, flood);
     std::optional<CoarseCircuitPlan> chosen;
     std::vector<CellIndex> chosen_cells;
-    for (const HomeBaseSite site : choose_home_bases (planner, parameters)) {
+    const std::vector<HomeBaseSite> sites =
+      choose_home_bases (planner, parameters);
+    std::vector<std::string> failures;
+    for (const HomeBaseSite site : sites) {
       try {
+        std::string failure;
         std::optional<CoarseCircuitPlan> expedition =
-          explore_circuit (planner, site, parameters);
-        if (!expedition || (chosen && expedition->score >= chosen->score))
+          explore_circuit (planner, site, parameters, failure);
+        if (!expedition) {
+          failures.push_back (std::move (failure));
+          continue;
+        }
+        if (chosen && expedition->score >= chosen->score)
           continue;
         std::vector<CellIndex> cells =
           expand_circuit (planner, expedition->circuit);
         if (cells.size () >= 4 && circuit_is_contiguous (grid, cells)) {
           chosen = std::move (expedition);
           chosen_cells = std::move (cells);
+        } else {
+          failures.emplace_back (
+            "coarse route did not expand to a contiguous fine-grid circuit");
         }
-      } catch (const std::runtime_error&) {
+      } catch (const std::runtime_error& error) {
         // An expedition can fail to find a focus while another base succeeds.
+        failures.emplace_back (error.what ());
       }
     }
-    if (!chosen)
-      throw std::runtime_error (
-        "no home-base expedition found a complete trail circuit");
+    if (!chosen) {
+      std::ostringstream message;
+      message << "no home-base expedition found a complete trail circuit";
+      bool first = true;
+      for (std::size_t i = 0; i < failures.size (); ++i) {
+        if (std::find (failures.begin (), failures.begin () + i, failures[i]) !=
+            failures.begin () + i)
+          continue;
+        const std::size_t repetitions = static_cast<std::size_t> (
+          std::count (failures.begin (), failures.end (), failures[i]));
+        message << (first ? ": " : "; ") << repetitions << "x " << failures[i];
+        first = false;
+      }
+      throw std::runtime_error (message.str ());
+    }
     const std::size_t home_base = chosen->home_base;
     const std::size_t focus = chosen->scenic_focus;
     const std::size_t left = chosen->left;

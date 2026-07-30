@@ -64,6 +64,20 @@ namespace {
     return { 17, 17, 24.0f * mp_units::si::metre, 24.0f * mp_units::si::metre };
   }
 
+  std::vector<float> narrow_land_ring () {
+    constexpr int side = 25;
+    std::vector<float> heights (side * side, -5.0f);
+    for (int y = 4; y <= 20; ++y)
+      for (int x = 4; x <= 20; ++x)
+        if (x <= 5 || x >= 19 || y <= 5 || y >= 19)
+          heights[static_cast<std::size_t> (y) * side + x] = 10.0f;
+    return heights;
+  }
+
+  TerrainDomain narrow_land_ring_grid () {
+    return { 25, 25, 24.0f * mp_units::si::metre, 24.0f * mp_units::si::metre };
+  }
+
   std::vector<float> alpine_temptation () {
     constexpr int side = 25;
     std::vector<float> heights (side * side, 0.16f * 100.0f);
@@ -330,6 +344,20 @@ MOPPE_TEST (trail_circuit_keeps_control_sites_on_home_base_land) {
   const std::vector<float> heights = moated_peak ();
   for (const CellIndex site : result.network.plan.control_sites)
     MOPPE_CHECK (heights[site.value] > parameters.sea_level);
+}
+
+MOPPE_TEST (trail_circuit_can_use_adjacent_arms_through_narrow_land) {
+  const std::vector<float> heights = narrow_land_ring ();
+  TrailFormation parameters = test_parameters ();
+  parameters.sea_level = 0.0f;
+  parameters.home_base_water_distance = 48.0f * mp_units::si::metre;
+  parameters.desired_circuit_radius = 180.0f * mp_units::si::metre;
+  const TrailFormationResult result = form_trails (
+    make_elevation_map (narrow_land_ring_grid (), heights), parameters);
+
+  MOPPE_CHECK (result.network.plan.circuit.size () >= 4);
+  for (const CellIndex cell : result.network.plan.circuit)
+    MOPPE_CHECK (heights[cell.value] > parameters.sea_level);
 }
 
 MOPPE_TEST (pioneer_circuit_views_the_mountain_from_below) {
