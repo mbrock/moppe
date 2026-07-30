@@ -903,6 +903,18 @@ namespace moppe {
       // Read before the pipelines bake their raster sample count.  One is a
       // meaningful setting, not a disabled one: it takes the scene pass off
       // multisampled rasterization and out of a resolve entirely.
+      if (![m_device supportsTextureSampleCount:m_msaa_samples]) {
+        const int requested_default = m_msaa_samples;
+        for (const int candidate : { 4, 2, 1 })
+          if (candidate <= requested_default &&
+              [m_device supportsTextureSampleCount:candidate]) {
+            m_msaa_samples = candidate;
+            break;
+          }
+        std::cerr << "moppe: default " << requested_default
+                  << "x MSAA is unavailable; using " << m_msaa_samples << "x"
+                  << std::endl;
+      }
       if (const char* text = ::getenv ("MOPPE_MSAA")) {
         const int wanted = ::atoi (text);
         if ((wanted == 1 || wanted == 2 || wanted == 4) &&

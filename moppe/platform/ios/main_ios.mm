@@ -26,6 +26,7 @@ using moppe::platform::Key;
 
 static Game* g_game = 0;
 static Config g_config;
+static UIWindow* g_window = nil;
 
 static float
 control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
@@ -69,7 +70,7 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   layer.lineWidth = 1.5;
   layer.hidden = YES;
   layer.zPosition = 100;
-  layer.contentsScale = [UIScreen mainScreen].scale;
+  layer.contentsScale = self.traitCollection.displayScale;
   [self.layer addSublayer:layer];
   return layer;
 }
@@ -310,15 +311,19 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
 
 // ------------------------------------------------------------------
 
-@interface MoppeAppDelegate : UIResponder <UIApplicationDelegate>
+@interface MoppeSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property (strong, nonatomic) UIWindow* window;
 @end
 
-@implementation MoppeAppDelegate
+@implementation MoppeSceneDelegate
 
-- (BOOL)application:(UIApplication*)application
-  didFinishLaunchingWithOptions:(NSDictionary*)options {
-  self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+- (void)scene:(UIScene*)scene
+  willConnectToSession:(UISceneSession*)session
+               options:(UISceneConnectionOptions*)options {
+  if (![scene isKindOfClass:[UIWindowScene class]])
+    return;
+  self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
+  g_window = self.window;
 
   MoppeViewController* vc = [[MoppeViewController alloc] init];
   MoppeTouchView* view =
@@ -339,7 +344,28 @@ control_axis (CGFloat displacement, CGFloat dead_zone, CGFloat travel) {
   g_game->setup (*renderer,
                  (int)(view.drawableSize.width / scale),
                  (int)(view.drawableSize.height / scale));
-  return YES;
+}
+
+- (void)sceneDidDisconnect:(UIScene*)scene {
+  if (g_window == self.window)
+    g_window = nil;
+}
+@end
+
+// ------------------------------------------------------------------
+
+@interface MoppeAppDelegate : UIResponder <UIApplicationDelegate>
+@end
+
+@implementation MoppeAppDelegate
+- (UISceneConfiguration*)application:(UIApplication*)application
+  configurationForConnectingSceneSession:(UISceneSession*)session
+                                 options:(UISceneConnectionOptions*)options {
+  UISceneConfiguration* configuration =
+    [[UISceneConfiguration alloc] initWithName:@"Moppe"
+                                   sessionRole:session.role];
+  configuration.delegateClass = [MoppeSceneDelegate class];
+  return configuration;
 }
 @end
 
@@ -366,15 +392,9 @@ namespace moppe {
 
     Insets safe_insets () {
       Insets r;
-      UIWindow* w = nil;
-      for (UIWindow* win in [UIApplication sharedApplication].windows)
-        if (win.isKeyWindow) {
-          w = win;
-          break;
-        }
-      if (!w)
+      if (!g_window)
         return r;
-      const UIEdgeInsets si = w.safeAreaInsets;
+      const UIEdgeInsets si = g_window.safeAreaInsets;
       r.left = (float)si.left;
       r.top = (float)si.top;
       r.right = (float)si.right;
