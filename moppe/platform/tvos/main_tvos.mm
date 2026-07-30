@@ -18,7 +18,9 @@ using moppe::platform::Game;
 
 static Game* g_game = nullptr;
 static Config g_config;
-static __weak UIWindow* g_window = nil;
+// Keep the active scene window available to the platform service for safe-area
+// insets. The scene delegate clears this reference when the scene disconnects.
+static UIWindow* g_window = nil;
 
 // ------------------------------------------------------------------
 
@@ -72,16 +74,19 @@ static __weak UIWindow* g_window = nil;
 
 // ------------------------------------------------------------------
 
-@interface MoppeTVAppDelegate : UIResponder <UIApplicationDelegate>
+@interface MoppeTVSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property (strong, nonatomic) UIWindow* window;
 @property (strong, nonatomic) MoppeTVViewController* viewController;
 @end
 
-@implementation MoppeTVAppDelegate
+@implementation MoppeTVSceneDelegate
 
-- (BOOL)application:(UIApplication*)application
-  didFinishLaunchingWithOptions:(NSDictionary*)options {
-  self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
+- (void)scene:(UIScene*)scene
+  willConnectToSession:(UISceneSession*)session
+               options:(UISceneConnectionOptions*)options {
+  if (![scene isKindOfClass:[UIWindowScene class]])
+    return;
+  self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene*)scene];
   g_window = self.window;
 
   MoppeTVViewController* vc = [[MoppeTVViewController alloc] init];
@@ -103,15 +108,37 @@ static __weak UIWindow* g_window = nil;
 
   g_game->setup (
     *renderer, (int)view.bounds.size.width, (int)view.bounds.size.height);
-  return YES;
 }
 
-- (void)applicationWillResignActive:(UIApplication*)application {
+- (void)sceneWillResignActive:(UIScene*)scene {
   [self.viewController disconnectGameController];
 }
 
-- (void)applicationDidBecomeActive:(UIApplication*)application {
+- (void)sceneDidBecomeActive:(UIScene*)scene {
   [self.viewController connectGameController];
+}
+
+- (void)sceneDidDisconnect:(UIScene*)scene {
+  [self.viewController disconnectGameController];
+  if (g_window == self.window)
+    g_window = nil;
+}
+@end
+
+// ------------------------------------------------------------------
+
+@interface MoppeTVAppDelegate : UIResponder <UIApplicationDelegate>
+@end
+
+@implementation MoppeTVAppDelegate
+- (UISceneConfiguration*)application:(UIApplication*)application
+  configurationForConnectingSceneSession:(UISceneSession*)session
+                                 options:(UISceneConnectionOptions*)options {
+  UISceneConfiguration* configuration =
+    [[UISceneConfiguration alloc] initWithName:@"Moppe"
+                                   sessionRole:session.role];
+  configuration.delegateClass = [MoppeTVSceneDelegate class];
+  return configuration;
 }
 @end
 

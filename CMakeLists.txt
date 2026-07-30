@@ -22,16 +22,12 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# Without an explicit target, Xcode uses the installed SDK version as the
-# minimum OS, making device builds uninstallable on slightly older iPhones.
-if(MOPPE_MOBILE_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-  if(MOPPE_TVOS)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "16.0" CACHE STRING
-      "Minimum supported tvOS version")
-  else()
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING
-      "Minimum supported iOS version")
-  endif()
+# Moppe uses the current Apple platform generation rather than carrying
+# availability shims for old mobile runtimes. FORCE also upgrades an existing
+# Xcode build directory instead of silently retaining its former cached target.
+if(MOPPE_MOBILE_APPLE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING
+    "Minimum supported iOS or tvOS version" FORCE)
 endif()
 
 project(moppe LANGUAGES C CXX)
@@ -431,6 +427,8 @@ endfunction()
 function(moppe_configure_apple_target target)
   target_compile_options(${target} PRIVATE
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>)
+  set_target_properties(${target} PROPERTIES
+    XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES")
   target_link_libraries(${target} PRIVATE
     "-framework Foundation"
     "-framework CoreText"
