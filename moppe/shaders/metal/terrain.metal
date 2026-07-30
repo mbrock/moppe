@@ -664,9 +664,8 @@ fragment float4 terrain_fragment (
                   smoothstep (0.08, 0.30, height));
   grass_c *= mix (float3 (1.0), float3 (0.76, 0.91, 0.70), damp * 0.55);
 
-  // Dense full-geometry grass occludes the soil and lower stalks beneath it.
-  // Mirror the CPU clump field so the ground darkens where blades grow, then
-  // fade the treatment with the 90 m geometry radius.
+  // A filtered clump field gives nearby grass some ground-level structure
+  // without asking unstable subpixel blade geometry to carry the surface.
   const float grass_patch = saturate (
     0.52 +
     0.28 * sin (in.world_pos.x * 0.036 + 1.7 * sin (in.world_pos.z * 0.019)) +
@@ -885,10 +884,27 @@ fragment float4 terrain_fragment (
   // Per-pixel Lambert with real cast shadows.
   const float shadow = terrain_shadow_factor (
     in.shadow_coord, in.fog, n, l, u.params1.z, u.params1.w, shadow_map);
+  const float direct_visibility =
+    shadow *
+    moppe_cloud_transmission (in.world_pos, l, u.params2.x, u.params2.y);
+
+  // Near trees provide their own silhouettes. Beneath and beyond them, stable
+  // canopy-filtered ground radiance preserves forest volume and shade without
+  // asking subpixel geometry to do the work (Bruneton 2012, #5BNBQQ,
+  // #X9PHPN).
+  const float canopy_footprint = forest_presence * (1.0 - base_material) *
+                                 (1.0 - trail_material) * (1.0 - snow_coef) *
+                                 (1.0 - submerged);
+  const float dapple = smoothstep (0.36, 0.72, canopy_grain);
+  const float near_canopy_sun = mix (0.42, 1.0, dapple);
+  const float canopy_sun = mix (near_canopy_sun, 0.62, forest_distance);
+  const float canopy_direct = mix (1.0, canopy_sun, canopy_footprint);
+  const float canopy_ambient = mix (1.0, 0.76, canopy_footprint);
   // 0.9 is the old GL terrain material diffuse.
   const float intensity = saturate ((dot (l, n) + 0.08) / 1.08);
-  const float3 diffuse_light = intensity * shadow * 0.9 * u.sun_diffuse.rgb +
-                               moppe_hemisphere_light (u.ambient.rgb, n);
+  const float3 diffuse_light =
+    intensity * direct_visibility * canopy_direct * 0.9 * u.sun_diffuse.rgb +
+    canopy_ambient * moppe_hemisphere_light (u.ambient.rgb, n);
   float3 color = texel * diffuse_light;
 
   // Material roughness gives rock and snow distinct grazing response instead
@@ -900,17 +916,18 @@ fragment float4 terrain_fragment (
   const float material_spec =
     (0.012 + 0.035 * (1.0 - roughness)) *
     pow (max (dot (n, h), 0.0), mix (18.0, 72.0, 1.0 - roughness));
-  color += u.sun_specular.rgb * shadow * material_spec;
+  color +=
+    u.sun_specular.rgb * direct_visibility * canopy_direct * material_spec;
   // Snowfields retain a broader crystalline sparkle into HDR headroom.
-  color += snow_coef * u.sun_specular.rgb * shadow *
+  color += snow_coef * u.sun_specular.rgb * direct_visibility *
            pow (max (dot (n, h), 0.0), 32.0) *
            mix (0.06, 0.24, coarse_detail_visibility);
   // Damp ground has a broad, low-energy sheen; shallow submerged stones can
   // catch a tighter glint through the translucent water surface.
   const float wet_spec =
     wetness * pow (max (dot (n, h), 0.0), mix (18.0, 52.0, submerged));
-  color +=
-    u.sun_specular.rgb * shadow * wet_spec * mix (0.025, 0.075, submerged);
+  color += u.sun_specular.rgb * direct_visibility * canopy_direct * wet_spec *
+           mix (0.025, 0.075, submerged);
   if (u.params5.x > 0.0) {
     // Cyan is the actual vertex-pulled render lattice. Its quarter-cell near
     // field is allowed to disappear once it becomes sub-pixel instead of

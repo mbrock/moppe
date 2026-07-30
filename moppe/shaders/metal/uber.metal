@@ -69,14 +69,16 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
     const float dist = length (in.world_pos - frame.camera_pos.xyz);
     const float fog = moppe_distance_fog (dist, frame.fog_color.w);
-    const float sun_visibility = moppe_sun_visibility (in.world_pos,
-                                                       n,
-                                                       l,
-                                                       fog,
-                                                       frame.light_matrix,
-                                                       frame.shadow.x,
-                                                       frame.shadow.y,
-                                                       shadow_map);
+    const float sun_visibility =
+      moppe_sun_visibility (in.world_pos,
+                            n,
+                            l,
+                            fog,
+                            frame.light_matrix,
+                            frame.shadow.x,
+                            frame.shadow.y,
+                            shadow_map) *
+      moppe_cloud_transmission (in.world_pos, l, frame.misc.x, frame.misc.y);
 
     // AMBIENT_AND_DIFFUSE color material: both terms scale the
     // vertex color.

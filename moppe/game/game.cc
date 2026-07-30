@@ -649,11 +649,13 @@ namespace moppe {
         const float total_time = logic ().m_total_time;
 
         // Weather remains part of the world while actors are paused.
-        float cloudiness =
-          std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
-          0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
-          std::sin (total_time * 0.02f) * 0.05f;
-        clamp (cloudiness, 0.0f, 1.0f);
+        cloud_cover_t cloudiness =
+          (std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
+           0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
+           std::sin (total_time * 0.02f) * 0.05f) *
+          cloud_cover[one];
+        cloudiness = std::clamp (
+          cloudiness, 0.0f * cloud_cover[one], 1.0f * cloud_cover[one]);
         logic ().m_cloudiness = cloudiness;
 
         // Fog stays mostly sky-blue.  Directional warmth is added in
@@ -735,6 +737,7 @@ namespace moppe {
         params.ambient = frame.lighting.ambient;
         params.exposure_bias = frame.lighting.exposure_bias;
         params.time = frame.lighting.time;
+        params.cloud_cover = frame.lighting.cloudiness.numerical_value_in (one);
         params.sun_visibility = frame.lighting.sun_visibility;
         params.scene_scale = frame.graphics.scene_scale;
         params.render_scale_override = frame.graphics.render_scale_override;
@@ -781,7 +784,7 @@ namespace moppe {
           render::SkyParams sky;
           sky.time = frame.lighting.time;
           sky.sun_height = frame.lighting.sun_height;
-          sky.cloudiness = frame.lighting.cloudiness;
+          sky.cloudiness = frame.lighting.cloudiness.numerical_value_in (one);
           sky.sun_dir = frame.lighting.sun_direction;
           sky.fog_color = frame.lighting.fog_color;
           r.draw_sky (sky);

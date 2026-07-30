@@ -52,7 +52,7 @@ namespace {
       session->bike ().set_heading (Vec3 (0, 0, 1));
       session->camera ().place (Vec3 (48, 20, 32), Vec3 (48, 12, 48));
       session->logic ().m_total_time = 12.5;
-      session->logic ().m_cloudiness = 0.42f;
+      session->logic ().m_cloudiness = 0.42f * game::cloud_cover[one];
       session->logic ().m_flare = 0.37f;
       session->logic ().m_fog = DisplayColor (0.4f, 0.5f, 0.6f);
       session->logic ().m_fov_k = 0.25f;
@@ -99,7 +99,9 @@ namespace {
                             const game::GameLogicState& expected) {
     MOPPE_CHECK_NEAR (actual.m_total_time, expected.m_total_time, 1e-6f);
     MOPPE_CHECK_NEAR (actual.m_frame_time, expected.m_frame_time, 1e-6f);
-    MOPPE_CHECK_NEAR (actual.m_cloudiness, expected.m_cloudiness, 1e-6f);
+    MOPPE_CHECK_NEAR (actual.m_cloudiness.numerical_value_in (one),
+                      expected.m_cloudiness.numerical_value_in (one),
+                      1e-6f);
     MOPPE_CHECK_NEAR (actual.m_flare, expected.m_flare, 1e-6f);
     frame_view_check_color (actual.m_fog, expected.m_fog);
     MOPPE_CHECK_NEAR (actual.m_shake, expected.m_shake, 1e-6f);
@@ -347,7 +349,7 @@ MOPPE_TEST (
 
   FrameFixture cloudy;
   game::FrameView overcast = clear_sun_view ();
-  overcast.lighting.cloudiness = 0.4f;
+  overcast.lighting.cloudiness = 0.4f * game::cloud_cover[one];
   MOPPE_CHECK_NEAR (
     game::sun_visibility_target (overcast, cloudy.world, cloudy.surface),
     0.74f,

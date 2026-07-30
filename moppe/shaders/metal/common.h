@@ -62,6 +62,38 @@ inline float moppe_value_noise (float2 p) {
   return mix (mix (a, b, u.x), mix (c, d, u.x), u.y);
 }
 
+// A broad, world-stable approximation of transmission through a cloud layer.
+// Projecting the sample point toward one common layer keeps terrain, trees,
+// vehicles, and water beneath the same moving cloud shadow.
+inline float moppe_cloud_transmission (float3 world_pos,
+                                       float3 sun_direction,
+                                       float time,
+                                       float cloudiness) {
+  const float cover = saturate (cloudiness);
+  if (cover < 0.01) {
+    return 1.0;
+  }
+
+  const float3 sun = normalize (sun_direction);
+  const float cloud_layer_height_metres = 420.0;
+  const float2 cloud_drift_metres_per_second (1.6, 0.8);
+  const float inverse_cloud_scale_per_metre = 0.0016;
+  const float projection = cloud_layer_height_metres / max (sun.y, 0.18);
+  const float2 layer_pos =
+    world_pos.xz + sun.xz * projection - time * cloud_drift_metres_per_second;
+  const float2 p = layer_pos * inverse_cloud_scale_per_metre;
+  const float wave_a =
+    1.0 - abs (2.0 * fract (dot (p, float2 (0.91, 0.57))) - 1.0);
+  const float wave_b =
+    1.0 -
+    abs (2.0 * fract (dot (p, float2 (-0.43, 1.31)) + 0.27 * wave_a) - 1.0);
+  const float field = 0.62 * wave_a + 0.38 * wave_b;
+  const float threshold = mix (0.74, 0.38, cover);
+  const float density = smoothstep (threshold, threshold + 0.16, field);
+  const float daylight = smoothstep (-0.08, 0.18, sun.y);
+  return 1.0 - density * daylight * mix (0.40, 0.68, cover);
+}
+
 // The same field with its exact gradient, for the surfaces that want a
 // slope rather than a value.  Two differences from the plain version
 // matter to a normal: the fade is quintic, whose first derivative

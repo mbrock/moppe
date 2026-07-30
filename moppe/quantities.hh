@@ -219,6 +219,12 @@ namespace moppe::map {
 }
 
 namespace moppe::game {
+  // ---- Weather ----
+
+  // The covered fraction of the sky. It remains distinct from terrain and
+  // vegetation proportions until the renderer narrows it to a GPU lane.
+  QUANTITY_SPEC (cloud_cover, proportion);
+
   // ---- Organisms ----
 
   // A tree's size relative to the species' mature representative. Unlike a

@@ -1995,6 +1995,7 @@ namespace moppe {
       m_frame.uniforms.ambient = f4lin (params.ambient);
       m_frame.uniforms.fog_color = f4lin (params.clear_color, params.fog_scale);
       m_frame.uniforms.misc.x = params.time;
+      m_frame.uniforms.misc.y = params.cloud_cover;
       m_frame.uniforms.shadow.x = m_terrain_resources.have_shadow
                                     ? m_terrain_resources.params.shadow_strength
                                     : 0.0f;
@@ -2110,6 +2111,8 @@ namespace moppe {
       u.params1.z = terrain.have_shadow ? terrain.params.shadow_strength : 0;
       u.params1.w = terrain.shadow_map ? 1.0f / (float)terrain.shadow_map.width
                                        : 1.0f / 4096.0f;
+      u.params2.x = frame.params.time;
+      u.params2.y = frame.params.cloud_cover;
       if (terrain.have_overlay) {
         u.params4.x = 1.0f + static_cast<float> (terrain.overlay_params.ramp);
         u.params4.y = terrain.overlay_params.minimum;
@@ -2333,6 +2336,7 @@ namespace moppe {
       u.fog_color = f4lin (params.fog_color, params.fog_scale);
       u.params.x = params.time;
       u.params.y = water_resources.ocean_level;
+      u.params.z = frame.params.cloud_cover;
       u.params.w = water_resources.have_water_levels ? 1.0f : 0.0f;
       u.world_offset.x = params.world_offset[0];
       u.world_offset.z = params.world_offset[2];
