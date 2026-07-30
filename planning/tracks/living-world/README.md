@@ -13,6 +13,7 @@ flowchart LR
     LIV003["LIV-003: cover from habitat"]
     LIV004["LIV-004: species and vigor"]
     LIV005["LIV-005: measure the corrugation"]
+    LIV006["LIV-006: near-ground material"]
   end
   subgraph motion["2. Surfaces move"]
     LIV010["LIV-010: wind hierarchy"]
@@ -32,13 +33,18 @@ flowchart LR
   end
   LIV001 --> LIV002 --> LIV003 --> LIV004
   LIV001 --> LIV005
+  LIV001 --> LIV006
   LIV010 --> LIV011 --> LIV012
   LIV011 --> LIV013
   LIV014 --> LIV015 --> LIV020 --> LIV021 --> LIV022
   LIV023 --> LIV024
 ```
 
-Movement 1 is the readout the world was already owed. Movement 2 is the
+Movement 1 is the readout the world was already owed. Its first item made the
+ground visible for the first time, which promptly turned up two more constants
+of the same family — a tree line fixed in metres on a world of any relief, and
+an erosion law with no hillslope regime at all — and one material that had
+never been looked at because snow was covering it. Movement 2 is the
 cheapest aliveness in the whole library — most of its items are a day. Movement
 3 closes the water TODOs the archived notebook has carried since July, and its
 first item is expected to make rivers *cheaper*, not dearer.
