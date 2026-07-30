@@ -467,14 +467,25 @@ namespace moppe::map {
         where.along_x, where.along_z, breaks_per_lap, seed ^ 0x91e10da5U);
       const noise_signal_t mosaic = 0.72f * stands + 0.28f * breaks;
 
-      // Most of the mosaic is either forest or clearing; the band is narrow
-      // so the edges between them stay edges instead of a long gradient.
-      const auto seeded = band (0.44f * signal, 0.61f * signal, mosaic);
-
       // Habitat raised slightly above one: good ground stays good, and
       // marginal ground gives up a little faster than it otherwise would.
       const auto habitable = std::pow (
         get<tree_habitat> (habitat[site]).numerical_value_in (one), 1.15f);
+
+      // The ground decides how hard the mosaic has to try. Multiplying the
+      // two instead would make the noise an equal author of where the forest
+      // is, and a wet corridor would go bare as often as a dry ridge. Here a
+      // sheltered damp hollow closes canopy on a low roll and a dry shoulder
+      // needs a high one, so the stands land where the water does and the
+      // noise only says where their edges fall.
+      const auto reluctant = 0.74f * signal;
+      const auto eager = 0.30f * signal;
+      const auto gate = reluctant + (eager - reluctant) * habitable;
+
+      // Most of the mosaic is either forest or clearing; the band is narrow
+      // so the edges between them stay edges instead of a long gradient.
+      const auto seeded =
+        band (gate - 0.085f * signal, gate + 0.085f * signal, mosaic);
 
       // A route keeps almost all canopy off itself; a settlement clears its
       // ground completely.
@@ -488,8 +499,12 @@ namespace moppe::map {
       // which is why a place can fail four mild tests and still come out
       // bare. Adding them would say "any of these will do", which is not how
       // a forest works.
+      // Habitat has already chosen where the stands are; here it only says
+      // how thickly they grow, which is what placement reads for density,
+      // height, and tint.
+      const auto thickness = 0.45f + 0.55f * habitable;
       const auto wanted =
-        habitable * seeded * route_clearance * settled_clearance;
+        thickness * seeded * route_clearance * settled_clearance;
 
       // The bands are in range by construction, but the trail and home-base
       // readings are stored data, and a clearance is one minus one of those.
