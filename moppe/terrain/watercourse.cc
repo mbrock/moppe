@@ -20,10 +20,11 @@ namespace moppe::terrain {
                        std::size_t cell) {
       if (flood.ocean[cell])
         return 1.0f;
-      const WaterBodyId body = census.body[cell];
-      if (body == LakeCensus::dry || body >= census.bodies.size ())
+      const WaterBodyId body =
+        census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
+      if (!census.domain ().contains (body))
         return 0.0f;
-      switch (census.bodies[body].classification) {
+      switch (census.water_body (body).classification) {
       case WaterBodyClass::Sea:
         return 1.0f;
       case WaterBodyClass::Lake:
@@ -53,7 +54,7 @@ namespace moppe::terrain {
     const int width = static_cast<int> (grid.width ());
     const int height = static_cast<int> (grid.height ());
     const std::size_t count = grid.width () * grid.height ();
-    if (census.body.size () != count || drainage.receiver.size () != count)
+    if (census.cell_count () != count || drainage.receiver.size () != count)
       throw std::invalid_argument (
         "watercourse painting inputs do not share a grid");
 
@@ -79,10 +80,11 @@ namespace moppe::terrain {
     // to own them and keep their plate.
     if (!rivers.body_traversed.empty ()) {
       for (std::size_t cell = 0; cell < count; ++cell) {
-        const WaterBodyId id = census.body[cell];
+        const WaterBodyId id =
+          census.body_at (CellIndex { static_cast<std::uint32_t> (cell) });
         if (id == LakeCensus::dry || id >= rivers.body_traversed.size ())
           continue;
-        if (census.bodies[id].channel_like && rivers.body_traversed[id]) {
+        if (census.water_body (id).channel_like && rivers.body_traversed[id]) {
           surface[cell] =
             flood.water_level_m (cell) - flood.water_depth_m (cell);
           amplitude[cell] = 0.0f;

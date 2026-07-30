@@ -21,6 +21,17 @@ namespace {
   }
 }
 
+MOPPE_TEST (water_body_membership_rejects_an_unknown_identity) {
+  bool rejected = false;
+  try {
+    static_cast<void> (WaterBodyMembership (
+      std::vector<WaterBodyId> { WaterBodyId { 1 } }, WaterBodyDomain (1)));
+  } catch (const std::invalid_argument&) {
+    rejected = true;
+  }
+  MOPPE_CHECK (rejected);
+}
+
 MOPPE_TEST (priority_flood_fills_a_basin_to_its_lowest_spill) {
   const std::array heights { 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 3.f, 2.f, 3.f,
                              0.f, 0.f, 3.f, 1.f, 3.f, 0.f, 0.f, 3.f, 3.f,
@@ -58,11 +69,11 @@ MOPPE_TEST (an_enclosed_below_sea_basin_is_not_a_second_ocean) {
   const LakeCensus census = census_lakes (flood);
 
   MOPPE_CHECK_NEAR (water_level_at (flood, 2, 2), 3.0f, 0.0f);
-  MOPPE_CHECK (census.bodies.size () == 2);
-  MOPPE_CHECK (census.bodies[0].ocean_connected);
-  MOPPE_CHECK (!census.bodies[1].ocean_connected);
-  MOPPE_CHECK (census.bodies[1].outlet_cell == 12);
-  MOPPE_CHECK (census.bodies[1].spill_cell != WaterBody::no_cell);
+  MOPPE_CHECK (census.domain ().size () == 2);
+  MOPPE_CHECK (census.water_bodies ()[0].ocean_connected);
+  MOPPE_CHECK (!census.water_bodies ()[1].ocean_connected);
+  MOPPE_CHECK (census.water_bodies ()[1].outlet_cell == 12);
+  MOPPE_CHECK (census.water_bodies ()[1].spill_cell != WaterBody::no_cell);
 }
 
 MOPPE_TEST (periodic_flood_can_spill_across_the_wrap) {
@@ -114,29 +125,30 @@ MOPPE_TEST (lake_census_measures_physical_area_depth_and_volume) {
   const FloodField flood = analyze_standing_water (terrain, 0.0f);
   const LakeCensus census = census_lakes (flood);
 
-  MOPPE_CHECK (census.bodies.size () == 1);
-  MOPPE_CHECK (census.bodies[0].cells == cell_count (1));
+  MOPPE_CHECK (census.domain ().size () == 1);
+  MOPPE_CHECK (census.water_bodies ()[0].cells == cell_count (1));
+  MOPPE_CHECK_NEAR ((census.water_bodies ()[0].area)
+                      .numerical_value_in (moppe::u::m * moppe::u::m),
+                    2.0f,
+                    0.0f);
   MOPPE_CHECK_NEAR (
-    (census.bodies[0].area).numerical_value_in (moppe::u::m * moppe::u::m),
-    2.0f,
-    0.0f);
-  MOPPE_CHECK_NEAR (
-    (census.bodies[0].maximum_depth).numerical_value_in (moppe::u::m),
+    (census.water_bodies ()[0].maximum_depth).numerical_value_in (moppe::u::m),
     10.0f,
     0.0f);
   MOPPE_CHECK_NEAR (
-    (census.bodies[0].mean_depth).numerical_value_in (moppe::u::m),
+    (census.water_bodies ()[0].mean_depth).numerical_value_in (moppe::u::m),
     10.0f,
     0.0f);
   MOPPE_CHECK_NEAR (
-    (census.bodies[0].volume)
+    (census.water_bodies ()[0].volume)
       .numerical_value_in (moppe::u::m * moppe::u::m * moppe::u::m),
     20.0f,
     0.0f);
-  MOPPE_CHECK (!census.bodies[0].ocean_connected);
-  MOPPE_CHECK (census.bodies[0].outlet_cell == 12);
-  MOPPE_CHECK (census.bodies[0].spill_cell == 7);
-  MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Puddle);
+  MOPPE_CHECK (!census.water_bodies ()[0].ocean_connected);
+  MOPPE_CHECK (census.water_bodies ()[0].outlet_cell == 12);
+  MOPPE_CHECK (census.water_bodies ()[0].spill_cell == 7);
+  MOPPE_CHECK (census.water_bodies ()[0].classification ==
+               WaterBodyClass::Puddle);
 }
 
 MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
@@ -151,9 +163,9 @@ MOPPE_TEST (lake_census_uses_the_final_exit_from_a_reentered_body) {
                            .spill_receiver = { 1, 4, 5, 6, 5, 8, 7, 8, 8 } };
   const LakeCensus census = census_lakes (flood);
 
-  MOPPE_CHECK (census.bodies.size () == 1);
-  MOPPE_CHECK (census.bodies[0].outlet_cell == 4);
-  MOPPE_CHECK (census.bodies[0].spill_cell == 5);
+  MOPPE_CHECK (census.domain ().size () == 1);
+  MOPPE_CHECK (census.water_bodies ()[0].outlet_cell == 4);
+  MOPPE_CHECK (census.water_bodies ()[0].spill_cell == 5);
 }
 
 MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
@@ -180,9 +192,11 @@ MOPPE_TEST (census_shape_separates_channel_water_from_lakes) {
                            .spill_receiver = std::move (receiver) };
   const LakeCensus census = census_lakes (flood);
 
-  MOPPE_CHECK (census.bodies.size () == 2);
-  const WaterBody& strip = census.bodies[census.body[2 * width + 5]];
-  const WaterBody& lake = census.bodies[census.body[8 * width + 6]];
+  MOPPE_CHECK (census.domain ().size () == 2);
+  const WaterBody& strip =
+    census.water_body (census.body_at (CellIndex { 2 * width + 5 }));
+  const WaterBody& lake =
+    census.water_body (census.body_at (CellIndex { 8 * width + 6 }));
   MOPPE_CHECK (water_body_is_permanent (strip));
   MOPPE_CHECK (water_body_is_permanent (lake));
   MOPPE_CHECK_NEAR (
@@ -204,8 +218,8 @@ MOPPE_TEST (permanence_removes_small_ponds_but_never_the_sea) {
     census,
     { .minimum_area = 1000000.0f * mp_units::si::metre * mp_units::si::metre });
 
-  MOPPE_CHECK (census.bodies.size () == 1);
-  MOPPE_CHECK (census.bodies[0].classification == WaterBodyClass::Sea);
+  MOPPE_CHECK (census.domain ().size () == 1);
+  MOPPE_CHECK (census.water_bodies ()[0].classification == WaterBodyClass::Sea);
   const auto& levels = spatial::get<surface_elevation> (permanent);
   MOPPE_CHECK_NEAR (
     surface_elevation_value (levels[permanent.domain ().offset ({ 0, 0 })]),

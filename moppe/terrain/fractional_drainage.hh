@@ -16,7 +16,7 @@
 
 namespace moppe::terrain {
   struct FloodField;
-  struct LakeCensus;
+  class LakeCensus;
 
   // A CellIndex view of TerrainDomain for topology algorithms. It does not
   // describe a second lattice: it retains the same dimensions and spacing

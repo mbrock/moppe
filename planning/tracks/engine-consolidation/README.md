@@ -20,3 +20,7 @@ flowchart LR
 The sequence is intentionally narrow. It does not reopen the completed
 RFC-0001 ownership work, and it does not make the workshop implementations
 dependencies of the game.
+
+All six items are complete. The track left the direct engine intact, closed
+the staged storage and unit migrations, restored the product workflow, and
+introduced the first checked relation over a discovered world domain.

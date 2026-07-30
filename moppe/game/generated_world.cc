@@ -70,10 +70,10 @@ namespace moppe::game {
     terrain::WaterSheets sheets = terrain::paint_watercourses (
       geometry, standing_water, lakes, drainage, rivers);
     const terrain::Waterline waterline =
-      terrain::extract_waterline (geometry, sheets, lakes);
+      terrain::extract_waterline (geometry, sheets, lakes.membership ());
 
     terrain::MoistureMap moisture =
-      terrain::analyze_moisture (standing_water, lakes, drainage);
+      terrain::analyze_moisture (standing_water, lakes.membership (), drainage);
     map::TreeHabitatMap habitat = map::analyze_tree_habitat (
       geometry, moisture, water_level, water_level + 145.0f * u::m);
     map::ForestCoverMap cover = map::analyze_forest_cover (

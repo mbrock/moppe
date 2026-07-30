@@ -49,19 +49,19 @@ namespace moppe::terrain {
     Waterline extract_waterline (const TerrainDomain& domain,
                                  std::span<const SurfaceElevation> elevations,
                                  std::span<const SurfaceElevation> surface,
-                                 const LakeCensus& census,
+                                 const WaterBodyMembership& water_bodies,
                                  float wet_epsilon);
   }
 
   template <TerrainElevations Terrain, TerrainElevations WaterSurface>
   Waterline extract_waterline (const Terrain& terrain,
                                const WaterSurface& surface,
-                               const LakeCensus& census,
+                               const WaterBodyMembership& water_bodies,
                                float wet_epsilon = 1e-7f) {
     return detail::extract_waterline (terrain.domain (),
                                       elevations (terrain),
                                       elevations (surface),
-                                      census,
+                                      water_bodies,
                                       wet_epsilon);
   }
 

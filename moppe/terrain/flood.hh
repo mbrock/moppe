@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -97,11 +98,77 @@ namespace moppe::terrain {
     bool channel_like;
   };
 
-  struct LakeCensus {
+  // The quotient relation discovered by the lake census: every terrain-cell
+  // offset maps to one identity in a particular WaterBodyDomain, or to dry.
+  // Consumers that only need wet/dry identity borrow this relation directly
+  // instead of receiving the body's physical measurements as well.
+  class WaterBodyMembership {
+  public:
     static constexpr WaterBodyId dry = no_water_body;
 
-    std::vector<WaterBodyId> body;
-    std::vector<WaterBody> bodies;
+    WaterBodyMembership () = default;
+    WaterBodyMembership (std::vector<WaterBodyId> body_at_cell,
+                         WaterBodyDomain bodies);
+
+    std::size_t size () const noexcept {
+      return m_body_at_cell.size ();
+    }
+
+    const WaterBodyDomain& bodies () const noexcept {
+      return m_bodies;
+    }
+
+    WaterBodyId body_at (CellIndex cell) const {
+      if (cell.value >= m_body_at_cell.size ())
+        throw std::out_of_range ("cell outside water-body membership");
+      return m_body_at_cell[cell.value];
+    }
+
+    std::span<const WaterBodyId> values () const noexcept {
+      return m_body_at_cell;
+    }
+
+  private:
+    WaterBodyDomain m_bodies;
+    std::vector<WaterBodyId> m_body_at_cell;
+  };
+
+  class LakeCensus {
+  public:
+    static constexpr WaterBodyId dry = WaterBodyMembership::dry;
+
+    LakeCensus () = default;
+    LakeCensus (std::vector<WaterBodyId> body_at_cell,
+                std::vector<WaterBody> water_bodies);
+
+    const WaterBodyDomain& domain () const noexcept {
+      return m_domain;
+    }
+
+    const WaterBodyMembership& membership () const noexcept {
+      return m_membership;
+    }
+
+    std::size_t cell_count () const noexcept {
+      return m_membership.size ();
+    }
+
+    WaterBodyId body_at (CellIndex cell) const {
+      return m_membership.body_at (cell);
+    }
+
+    const WaterBody& water_body (WaterBodyId id) const {
+      return m_water_bodies[m_domain.offset (id)];
+    }
+
+    std::span<const WaterBody> water_bodies () const noexcept {
+      return m_water_bodies;
+    }
+
+  private:
+    WaterBodyDomain m_domain;
+    WaterBodyMembership m_membership;
+    std::vector<WaterBody> m_water_bodies;
   };
 
   struct WaterPermanence {

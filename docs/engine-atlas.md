@@ -81,7 +81,9 @@ The expensive geometry bundle may come from a typed Arrow cache. Whether
 loaded or generated, normals and broad snow support are rebuilt before water
 analysis. Hydrology derives, in order, a `FloodField`, `LakeCensus`,
 `DrainageGraph`, `FractionalDrainage`, and `RiverNetwork`. Surface analysis
-then paints `WaterSheets` and joins the completed ground readings.
+then paints `WaterSheets` and joins the completed ground readings. The census
+owns a finite `WaterBodyDomain`, checked cell membership, and physical body
+rows; consumers that only need identity borrow the membership relation.
 
 There is no terrain expression DAG, generic evaluator, transform variant,
 program editor, checkpoint ledger, or second mutable Terrain Lab execution
@@ -186,24 +188,27 @@ build and must be requested through `make test` or the `moppe-tests` target.
 The ordinary product target is Moppe. Atelier, Lavoir, and Étalon remain
 explicit workshops rather than alternate engine layers.
 
-## Current work and deliberate gaps
+## Completed consolidation and deliberate gaps
 
 The [current status](status.md) and
 [engine-consolidation track](../planning/tracks/engine-consolidation/README.md)
-name active work. The principal unfinished engine migration is removal of the
-deprecated numerical exits; typed ground and water texture descriptions now
-share the direct backend-staging path.
+record the completed closure. Typed ground and water texture descriptions
+share direct backend staging, the numerical-exit helper family is gone, and
+Moppe is again the ordinary build.
 
-After them, lake identity is the first relational world slice: typed
-water-body membership, measurements, inlets, spills, outlets, and downstream
-continuation. Persistent places, roads, settlements, complete process history,
-and a generic ontology runtime are not current subsystems.
+Lake identity is the first relational world slice: a typed body domain,
+checked membership, and physical measurement rows are current. Inlet, spill,
+outlet, and downstream consumers ground the next relation-specific tables
+described in [Lake identity and relations](lake-domain.md). Persistent places,
+roads, settlements, complete process history, and a generic ontology runtime
+are not current subsystems.
 
 ## Detailed maps
 
 - [Current status](status.md)
 - [Surface storage and presentation](surface-storage.md)
 - [Terrain generation and analysis](terrain-expressions.md)
+- [Lake identity and relations](lake-domain.md)
 - [Generated worlds](generated-world.md)
 - [Game state and replay](game-state.md)
 - [Refactoring seams](refactoring-seams.md)

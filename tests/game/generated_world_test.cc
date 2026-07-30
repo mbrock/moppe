@@ -83,7 +83,7 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   const auto& [standing_water, lakes, drainage, channels, rivers] =
     world->hydrology ();
   MOPPE_CHECK (standing_water.width () == 17);
-  MOPPE_CHECK (lakes.body.size () == 17 * 17);
+  MOPPE_CHECK (lakes.cell_count () == 17 * 17);
   MOPPE_CHECK (drainage.receiver.size () == 17 * 17);
   MOPPE_CHECK (channels.domain ().size () == 17 * 17);
   MOPPE_CHECK (world->water_surface ().size () == 17 * 17);

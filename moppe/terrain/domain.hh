@@ -85,6 +85,43 @@ namespace moppe::terrain {
     std::numeric_limits<std::uint32_t>::max ()
   };
 
+  // A discovered, dense set of water-body identities. Unlike a bare vector
+  // length, this value says which identifier space a per-body table or a
+  // relation targets.
+  class WaterBodyDomain {
+  public:
+    using index_type = WaterBodyId;
+
+    constexpr WaterBodyDomain () noexcept = default;
+    explicit constexpr WaterBodyDomain (std::size_t size) noexcept
+        : m_size (size) {}
+
+    constexpr std::size_t size () const noexcept {
+      return m_size;
+    }
+
+    constexpr bool contains (WaterBodyId id) const noexcept {
+      return id != no_water_body && id.value < m_size;
+    }
+
+    std::size_t offset (WaterBodyId id) const {
+      if (!contains (id))
+        throw std::out_of_range ("water-body identifier outside domain");
+      return id.value;
+    }
+
+    WaterBodyId index (std::size_t offset) const {
+      if (offset >= m_size)
+        throw std::out_of_range ("water-body offset outside domain");
+      return WaterBodyId { static_cast<std::uint32_t> (offset) };
+    }
+
+  private:
+    std::size_t m_size = 0;
+  };
+
+  static_assert (spatial::FiniteDomain<WaterBodyDomain>);
+
   using CellCount = mp_units::quantity<cell_count[mp_units::one], std::size_t>;
   using ReachCount =
     mp_units::quantity<reach_count[mp_units::one], std::size_t>;

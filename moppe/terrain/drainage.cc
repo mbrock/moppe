@@ -202,14 +202,14 @@ namespace moppe::terrain {
       for (const Waterfall& waterfall : network.waterfalls)
         waterfall_cells[waterfall.lip_cell] = 1;
       const auto water_cell = [&] (CellIndex cell) {
-        return census.body[cell] != LakeCensus::dry || flood.ocean[cell];
+        return census.body_at (cell) != LakeCensus::dry || flood.ocean[cell];
       };
       const auto terminating_water_cell = [&] (CellIndex cell) {
         if (flood.ocean[cell])
           return true;
-        const WaterBodyId id = census.body[cell];
+        const WaterBodyId id = census.body_at (cell);
         return id != LakeCensus::dry &&
-               water_body_terminates_rivers (census.bodies[id]);
+               water_body_terminates_rivers (census.water_body (id));
       };
 
       for (RiverReach& reach : network.reaches) {
@@ -221,7 +221,7 @@ namespace moppe::terrain {
         // the standing-water sheet instead of appearing at a hard dry
         // cross-section.
         if (reach.upstream_body != no_water_body) {
-          const WaterBody& body = census.bodies[reach.upstream_body];
+          const WaterBody& body = census.water_body (reach.upstream_body);
           if (water_body_terminates_rivers (body) &&
               body.outlet_cell != WaterBody::no_cell &&
               body.outlet_cell != cells.front ())
@@ -244,7 +244,7 @@ namespace moppe::terrain {
         } else {
           while (water_cell (cells.back ()) &&
                  !terminating_water_cell (cells.back ())) {
-            const WaterBodyId id = census.body[cells.back ()];
+            const WaterBodyId id = census.body_at (cells.back ());
             if (id != LakeCensus::dry &&
                 (crossings.empty () || crossings.back () != id))
               crossings.push_back (id);
@@ -438,7 +438,7 @@ namespace moppe::terrain {
     const std::size_t width = grid.width ();
     const std::size_t height = grid.height ();
     const std::size_t count = width * height;
-    if (census.body.size () != count)
+    if (census.cell_count () != count)
       throw std::invalid_argument ("lake census does not match terrain");
 
     const std::span<const SurfaceElevation> surface = flood.water_levels ();
@@ -483,7 +483,7 @@ namespace moppe::terrain {
       MOPPE_PROFILE_ZONE ("wet_drainage.route_lake_interiors");
       std::vector<std::uint8_t> routed (count, 0);
       std::queue<std::uint32_t> body_frontier;
-      for (const WaterBody& body : census.bodies) {
+      for (const WaterBody& body : census.water_bodies ()) {
         if (body.ocean_connected || body.outlet_cell == WaterBody::no_cell)
           continue;
         receiver[body.outlet_cell] = body.spill_cell;
@@ -501,7 +501,7 @@ namespace moppe::terrain {
             const std::size_t ny = wrapped (raw_y, height);
             const std::uint32_t next =
               static_cast<std::uint32_t> (index (nx, ny));
-            if (routed[next] || census.body[next] != body.id)
+            if (routed[next] || census.body_at (CellIndex { next }) != body.id)
               continue;
             routed[next] = 1;
             receiver[next] = cell;
@@ -588,14 +588,14 @@ namespace moppe::terrain {
         waterfall_parameters.minimum_slope <
           0.0f * terrain_slope[mp_units::one])
       throw std::invalid_argument ("waterfall thresholds must be finite");
-    if (census.body.size () != count || flood.ocean.size () != count ||
+    if (census.cell_count () != count || flood.ocean.size () != count ||
         drainage.width () != flood.width () ||
         drainage.height () != flood.height ())
       throw std::invalid_argument ("river analyses do not share a domain");
 
     std::vector<std::uint8_t> eligible (count, 0);
     for (std::uint32_t cell = 0; cell < count; ++cell)
-      eligible[cell] = census.body[cell] == LakeCensus::dry &&
+      eligible[cell] = census.body_at (CellIndex { cell }) == LakeCensus::dry &&
                        !flood.ocean[cell] && drainage.receiver[cell] != cell &&
                        drainage.contributing_area_at (cell) >= minimum_area;
 
@@ -608,7 +608,7 @@ namespace moppe::terrain {
 
     std::vector<WaterBodyId> body_at_spill (count, no_water_body);
     WaterBodyId ocean_body = no_water_body;
-    for (const WaterBody& body : census.bodies) {
+    for (const WaterBody& body : census.water_bodies ()) {
       if (body.spill_cell != WaterBody::no_cell)
         body_at_spill[body.spill_cell] = body.id;
       if (body.classification == WaterBodyClass::Sea &&
@@ -619,7 +619,7 @@ namespace moppe::terrain {
     RiverNetwork network { .minimum_area = minimum_area,
                            .waterfall_parameters = waterfall_parameters,
                            .body_traversed = std::vector<std::uint8_t> (
-                             census.bodies.size (), 0) };
+                             census.domain ().size (), 0) };
     std::vector<RiverReachId> reach_by_cell (count, RiverReach::no_id);
     for (std::uint32_t start = 0; start < count; ++start) {
       if (!eligible[start] || reach_by_cell[start] != RiverReach::no_id ||
@@ -648,8 +648,8 @@ namespace moppe::terrain {
         cell = next;
       }
       const std::uint32_t next = drainage.receiver[reach.cells.back ()];
-      if (census.body[next] != LakeCensus::dry)
-        reach.downstream_body = census.body[next];
+      if (census.body_at (CellIndex { next }) != LakeCensus::dry)
+        reach.downstream_body = census.body_at (CellIndex { next });
       else if (flood.ocean[next]) {
         reach.downstream_ocean = true;
         if (ocean_body != no_water_body)
@@ -671,7 +671,7 @@ namespace moppe::terrain {
       if (reach.downstream_reach != RiverReach::no_id ||
           reach.downstream_body == no_water_body)
         continue;
-      const WaterBody& body = census.bodies[reach.downstream_body];
+      const WaterBody& body = census.water_body (reach.downstream_body);
       if (water_body_terminates_rivers (body) ||
           body.spill_cell == WaterBody::no_cell || !eligible[body.spill_cell])
         continue;

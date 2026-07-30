@@ -81,11 +81,11 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
   MOPPE_CHECK (wet.receiver[12] != 12);
   MOPPE_CHECK (receiver_root (wet, 12) != no_cell);
 
-  const WaterBody& lake = census.bodies[0];
+  const WaterBody& lake = census.water_bodies ()[0];
   std::size_t exits = 0;
-  for (std::uint32_t member = 0; member < census.body.size (); ++member)
-    if (census.body[member] == lake.id &&
-        census.body[wet.receiver[member]] != lake.id)
+  for (std::uint32_t member = 0; member < census.cell_count (); ++member)
+    if (census.body_at (CellIndex { member }) == lake.id &&
+        census.body_at (wet.receiver[member]) != lake.id)
       ++exits;
   MOPPE_CHECK (exits == 1);
   MOPPE_CHECK (wet.receiver[lake.outlet_cell] == lake.spill_cell);
@@ -111,7 +111,7 @@ MOPPE_TEST (wet_drainage_carries_a_catchment_across_a_lake) {
       MOPPE_CHECK_NEAR (inlet.flow_distance_m, spill.flow_distance_m, 1e-5f);
     }
     for (const std::uint32_t member : reach.cells) {
-      MOPPE_CHECK (census.body[member] == LakeCensus::dry);
+      MOPPE_CHECK (census.body_at (CellIndex { member }) == LakeCensus::dry);
       MOPPE_CHECK (!flood.ocean[member]);
     }
   }
@@ -328,8 +328,8 @@ MOPPE_TEST (waterfall_selection_clusters_adjacent_steep_steps) {
                            .has_ocean = false,
                            .ocean = std::vector<std::uint8_t> (count, 0),
                            .spill_receiver = receiver };
-  const LakeCensus census { .body = std::vector<WaterBodyId> (
-                              count, LakeCensus::dry) };
+  const LakeCensus census (std::vector<WaterBodyId> (count, LakeCensus::dry),
+                           {});
   const DrainageGraph drainage { .readings =
                                    make_drainage_readings (grid, slopes, areas),
                                  .receiver = receiver };

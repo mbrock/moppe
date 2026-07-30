@@ -43,8 +43,9 @@ namespace {
                   .has_ocean = false,
                   .ocean = std::vector<std::uint8_t> (count, 0),
                   .spill_receiver = std::vector<terrain::CellIndex> (count) },
-          census { .body = std::vector<terrain::WaterBodyId> (
-                     count, terrain::LakeCensus::dry) },
+          census (
+            std::vector<terrain::WaterBodyId> (count, terrain::LakeCensus::dry),
+            {}),
           drainage { .readings = constant_drainage_readings (
                        grid, count, 0.05f, 10000.0f),
                      .receiver = std::vector<terrain::CellIndex> (count) },
@@ -251,8 +252,8 @@ MOPPE_TEST (cinematic_planner_reads_across_a_toroidal_seam) {
     .ocean = std::vector<std::uint8_t> (count, 0),
     .spill_receiver = receiver
   };
-  const terrain::LakeCensus census { .body = std::vector<terrain::WaterBodyId> (
-                                       count, terrain::LakeCensus::dry) };
+  const terrain::LakeCensus census (
+    std::vector<terrain::WaterBodyId> (count, terrain::LakeCensus::dry), {});
   const terrain::DrainageGraph drainage {
     .readings = constant_drainage_readings (grid, count, 0.0f, 10000.0f),
     .receiver = receiver

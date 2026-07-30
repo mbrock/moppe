@@ -33,7 +33,7 @@ namespace moppe::terrain {
   }
 
   struct FloodField;
-  struct LakeCensus;
+  class LakeCensus;
 
   // One receiver per cell across lakes and proven depression spills. This
   // supplies routes where continuous downhill drainage is undefined and
