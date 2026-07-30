@@ -1,5 +1,5 @@
 
-.PHONY: all lavoir archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
+.PHONY: all lavoir moppe archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks plan plan-graph phone profile test testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
@@ -12,9 +12,9 @@ lavoir:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
 	cmake --build build --target lavoir
 
-# Configure (if needed) and build only the macOS game.
+# Configure an optimized gameplay build and build only the macOS game.
 moppe:
-	@[ -f build/build.ninja ] || cmake -B build -G Ninja
+	cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
 	cmake --build build --target moppe
 
 # Build and run the separately requested test program.
