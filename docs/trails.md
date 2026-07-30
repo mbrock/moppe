@@ -119,7 +119,10 @@ each one.
 
 A candidate must be dry, above the minimum water clearance, and not
 extraordinarily steep. A later expedition succeeds only when the complete
-circuit stays on routable land. The candidate score prefers:
+circuit stays on routable land. Control-site reachability uses the same
+full-resolution edge profile and post-earthwork grade limit as route search,
+so an anchor is never declared reachable by a looser proxy that A* will later
+reject. The candidate score prefers:
 
 - a useful distance from water;
 - locally flat ground;
@@ -149,7 +152,11 @@ home -> right flank -> far side
 
 The second half is reversed and joined to the first, producing one directed
 cycle. Avoidance masks discourage the second half from reusing the first
-except near their shared endpoints.
+except near their shared endpoints. The planner first asks for one coarse cell
+of clearance between the arms. If a narrow pass cannot provide that much
+space, it retries while excluding the occupied centerline cells themselves;
+the two arms remain distinct without pretending that buildable land beside an
+existing trail is impassable.
 
 An edge is rejected when it is wet, outside the allowed corridor, or remains
 far too steep even after the available earthwork allowance. Edges that remain
@@ -181,8 +188,10 @@ routes less attractive.
 
 Completed expeditions are scored as whole loops. The best successful loop is
 expanded back to source-grid cells. Expansion must produce a continuous
-cycle of neighboring cells; an overlap that would create a jump is treated as
-a failed expedition rather than silently entering the network.
+cycle of neighboring cells. If rasterization revisits a cell, chronological
+loop erasure removes the enclosed detour at that cell and preserves an
+adjacent simple cycle instead of skipping the repeated cell and splicing a
+jump into the route.
 
 The chosen planning loop also becomes a periodic cubic Hermite alignment in
 physical world coordinates. Its damped tangents round the eight-way A*
