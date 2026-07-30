@@ -3,7 +3,7 @@ id = "LIV-014"
 title = "Stop the water surface pulsing and let speed show"
 rfc = "RFC-0003"
 track = "living-world"
-status = "ready"
+status = "done"
 depends_on = []
 order = 100
 areas = ["rendering", "water"]
@@ -41,3 +41,19 @@ repetition.
 repetition and pulsing, and their fixes; speed-scaled tangent-space normals.
 Measured cost in its original form: two texture fetches, twenty-one pixel
 instructions.
+
+## Evidence
+
+Both copies of the two-phase advection reset on one global clock, so every
+fragment in the world handed over at the same instant. A low-frequency offset
+now staggers the handover: it varies over tens of metres, so neighbouring
+fragments still agree and nothing tears, while no two stretches of river pulse
+together.
+
+Surface relief is now proportional to flow speed, which the shader already
+derives from rapid, waterfall, channel profile and depth. A still pool goes
+glassy and a chute stays rough, where before both wore the same detail.
+
+The pulse is a temporal artifact and a still capture cannot show its absence;
+what a capture does show is that a pool and a chute in one frame no longer
+read as the same water.

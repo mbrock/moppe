@@ -81,7 +81,14 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
                       mix (0.20, 1.0, channel_profile) *
                       mix (0.35, 1.0, depth_profile);
   const float cycle = 1.7;
-  const float phase0 = fract (time / cycle);
+  // Both copies reset on the same clock, so without this every fragment in
+  // the world hands over at the same instant and the whole surface breathes.
+  // A low-frequency offset staggers the handover from reach to reach: it
+  // varies over tens of metres, so neighbouring fragments still agree and
+  // nothing tears, while no two stretches of river pulse together.
+  const float stagger =
+    moppe_value_noise (float2 (in.uv.x * 0.7, in.uv.y * 0.031));
+  const float phase0 = fract (time / cycle + stagger);
   const float phase1 = fract (phase0 + 0.5);
   const float handoff = abs (2.0 * phase0 - 1.0);
   const float2 base1 = float2 (in.uv.x * 7.0, in.uv.y * 0.9);
@@ -133,7 +140,12 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
                 moppe_value_noise (flow21 + float2 (0.0, 0.33)),
                 handoff) -
            n2);
-  const float bump = 0.10 + 0.10 * in.rapid + 0.10 * in.waterfall;
+  // Relief in proportion to how fast the water is going. A still pool has
+  // nothing to roughen its surface, and the same detail laid over both a
+  // pool and a chute says they are the same water when they are not.
+  const float liveliness = smoothstep (0.4, 3.2, speed);
+  const float bump =
+    (0.03 + 0.10 * liveliness) + 0.10 * in.rapid + 0.10 * in.waterfall;
   float3 n = normalize (in.normal + bump * (grad_across * across_axis +
                                             grad_downstream * downstream_axis));
 
