@@ -21,7 +21,7 @@ MOPPE_TEST (world_recipe_binds_physical_world_to_generation_values) {
   MOPPE_CHECK_NEAR (recipe.evolution ().sea_level, 50.0f, 0.0f);
   MOPPE_CHECK_NEAR (recipe.trail_formation ().sea_level, 50.0f, 0.0f);
   MOPPE_CHECK (recipe.evolution ().duration ==
-               750000.0f * mp_units::astronomy::Julian_year);
+               200000.0f * mp_units::astronomy::Julian_year);
   MOPPE_CHECK (recipe.evolution ().diffusivity ==
                0.0001f * mp_units::si::metre * mp_units::si::metre /
                  mp_units::astronomy::Julian_year);
