@@ -102,7 +102,12 @@ MOPPE_TEST (one_implicit_step_matches_the_closed_form_solution) {
       .reference_incision_rate =
         0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = 0.0f,
-      .sea_level = 0.0f });
+      .sea_level = 0.0f,
+      // A four-cell world is entirely below any real channel head, so say
+      // that this case is about the fluvial law and not about where the
+      // channel network begins.
+      .channel_initiation_area =
+        1.0f * mp_units::si::metre * mp_units::si::metre });
 
   // dt v_ref / distance = 1, so z' = (100 m + 1 * 0 m) / (1 + 1).
   MOPPE_CHECK_NEAR (surface_elevation_value (result.heights[0]), 0.0f, 0.0f);
@@ -131,7 +136,9 @@ MOPPE_TEST (one_square_meter_reference_preserves_legacy_calibration) {
       .reference_incision_rate =
         legacy_k * mp_units::si::metre / mp_units::astronomy::Julian_year,
       .area_exponent = exponent,
-      .sea_level = 0.0f });
+      .sea_level = 0.0f,
+      .channel_initiation_area =
+        1.0f * mp_units::si::metre * mp_units::si::metre });
   const float legacy_weight =
     duration_years * legacy_k * std::pow (area_m2, exponent) / distance_m;
   const float expected = 100.0f / (1.0f + legacy_weight);
@@ -239,4 +246,35 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
   MOPPE_CHECK (result.heights[11] >
                surface_elevation_point (heights[11] * u::m));
   MOPPE_CHECK (result.report.diffusion_sweeps == iteration_count (1));
+}
+
+MOPPE_TEST (hillslope_catchments_are_left_to_creep) {
+  // The same two ridges twice: once with a channel head far below their
+  // catchment, once with one far above it. Running water cuts the first and
+  // leaves the second for the hillslope pass, which is the whole content of
+  // the channel-initiation area.
+  constexpr std::array heights { 0.0f, 100.0f, 0.0f, 100.0f };
+  const ElevationMap terrain = make_elevation_map (
+    TerrainDomain (
+      2, 2, 10.0f * mp_units::si::metre, 10.0f * mp_units::si::metre),
+    heights);
+  const auto uplift = uniform_uplift (heights.size (), 0.0f);
+  const auto evolve = [&] (float initiation_m2) {
+    return evolve_stream_power (
+      terrain,
+      uplift,
+      { .duration = 100.0f * mp_units::astronomy::Julian_year,
+        .time_step = 100.0f * mp_units::astronomy::Julian_year,
+        .reference_incision_rate =
+          0.1f * mp_units::si::metre / mp_units::astronomy::Julian_year,
+        .area_exponent = 0.0f,
+        .sea_level = 0.0f,
+        .channel_initiation_area =
+          initiation_m2 * mp_units::si::metre * mp_units::si::metre });
+  };
+
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (evolve (1.0f).heights[1]), 50.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    surface_elevation_value (evolve (100000.0f).heights[1]), 100.0f, 1e-6f);
 }

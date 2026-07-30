@@ -119,6 +119,12 @@ namespace moppe::terrain {
   // ---- Water ----
 
   QUANTITY_SPEC (surface_moisture, proportion);
+  // How much water the ground itself holds, as against how near it is to
+  // water. Upslope catchment says how much arrives; local slope says how
+  // fast it leaves again. A valley floor and a gully can gather the same
+  // water and be nothing alike to stand on, which surface_moisture cannot
+  // say and a plant cares about more than anything else.
+  QUANTITY_SPEC (soil_wetness, proportion);
   QUANTITY_SPEC (waterline_distance, mp_units::isq::length, mp_units::is_kind);
   QUANTITY_SPEC (standing_water_depth,
                  mp_units::isq::length,

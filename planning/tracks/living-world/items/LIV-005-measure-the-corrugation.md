@@ -3,7 +3,7 @@ id = "LIV-005"
 title = "Diagnose the hillslope corrugation before fixing it"
 rfc = "RFC-0003"
 track = "living-world"
-status = "ready"
+status = "done"
 depends_on = ["LIV-001"]
 order = 50
 areas = ["terrain", "rendering", "analysis"]
@@ -49,3 +49,16 @@ the third cause from the first two.
 ## Research
 
 Perron on evenly spaced ridges and valleys, via `ideas/reading-map.md` §14.
+
+## Evidence
+
+[docs/hillslopes-and-channels.md](../../../../docs/hillslopes-and-channels.md).
+The corrugation was physical, not a lattice artifact: doubling the resolution
+left its wavelength unchanged in metres. Channel persistence and spatially
+varying rock strength were both tested and both ruled out, the second because
+at 750 ky the world is far from the steady state where erodibility governs
+relief. The cause was that the stream-power law applied to every cell,
+including cells draining only themselves, so the world had no hillslope regime
+at all -- mean slope 36 degrees, parallel grooves everywhere.
+`StreamPowerEvolution::channel_initiation_area` restores the regime: mean slope
+28.4 degrees and half the spectral excess, with the diffusivity unchanged.

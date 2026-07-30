@@ -202,6 +202,7 @@ namespace moppe::terrain {
   using TerrainNormal = mp_units::quantity<terrain_normal[mp_units::one], Vec3>;
 
   using SurfaceMoisture = quantity<surface_moisture[one], float>;
+  using SoilWetness = quantity<soil_wetness[one], float>;
   using WaterlineDistance = quantity<waterline_distance[u::m], float>;
   using StandingWaterDepth = quantity<standing_water_depth[u::m], float>;
   using WaveAmplitude = quantity<wave_amplitude[one], float>;
