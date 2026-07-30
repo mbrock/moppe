@@ -2051,6 +2051,7 @@ namespace moppe {
         (terrain.params.channel_flux_detail && terrain.have_channel_flux)
           ? 1.0f
           : 0.0f;
+      u.params7.z = terrain.params.land_relief;
 
       [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
       [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];

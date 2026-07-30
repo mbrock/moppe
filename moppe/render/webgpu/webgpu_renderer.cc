@@ -105,7 +105,7 @@ struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) world_position: vec3<f32>,
   @location(1) normal: vec3<f32>,
-  @location(2) normalized_height: f32,
+  @location(2) elevation: f32,
   @location(3) fog: f32,
   @location(4) grid_coord: vec2<f32>,
   @location(5) @interpolate(flat) lod_step: f32,
@@ -267,7 +267,9 @@ fn terrain_vertex(input: VertexInput) -> VertexOutput {
   // High ridges rise above the valley haze instead of dissolving into the
   // horizon with the lowlands. This keeps the world's distant relief legible
   // while nearby valleys retain the original atmospheric depth.
-  let high_relief = smoothstep(0.36, 0.82, height);
+  let high_relief = smoothstep(0.36, 0.82,
+                               (height - terrain.terrain_scale.w) /
+                                 terrain.material_params.y);
   fog *= mix(1.0, 0.58, high_relief);
   let lowness = 1.0 - smoothstep(45.0, 170.0, world.y);
   fog += 0.3 * lowness * smoothstep(150.0, 1500.0, distance_to_camera);
@@ -276,7 +278,7 @@ fn terrain_vertex(input: VertexInput) -> VertexOutput {
   output.position = terrain.view_proj * vec4<f32>(world, 1.0);
   output.world_position = world;
   output.normal = normal;
-  output.normalized_height = height;
+  output.elevation = height;
   output.fog = clamp(fog, 0.0, 1.0);
   output.grid_coord = grid;
   output.lod_step = chunk.origin_step.z;
@@ -409,17 +411,19 @@ fn terrain_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
     0.35 * value_noise(input.world_position.xz * 0.0091 +
                        vec2<f32>(3.7, 31.9));
   let jitter = coarse - 0.5;
-  let height = input.normalized_height;
-  let adjusted_height =
-    height + 0.045 * jitter + 0.012 * (macro_variation - 0.5);
-  let cliff = 1.0 - smoothstep(0.60, 0.80, normal.y + 0.06 * jitter);
-  let scree = smoothstep(0.38, 0.58, adjusted_height);
-  let snow_cover = smoothstep(0.55, 0.68, adjusted_height) *
-                    smoothstep(0.58, 0.78, normal.y);
+  let height = input.elevation;
   let sea = terrain.terrain_scale.w;
-  let beach_low = sea + 0.5 / terrain.material_params.y;
-  let beach_high = sea + 3.0 / terrain.material_params.y;
-  let beach = (1.0 - smoothstep(beach_low, beach_high, adjusted_height)) *
+  // Altitude bands are fractions of this world's own land relief: the
+  // stored elevation is metres above the model datum, so the band
+  // constants only mean anything against the range they span.
+  let land = (height - sea) / terrain.material_params.y +
+             0.045 * jitter + 0.012 * (macro_variation - 0.5);
+  let cliff = 1.0 - smoothstep(0.60, 0.80, normal.y + 0.06 * jitter);
+  let scree = smoothstep(0.38, 0.58, land);
+  let snow_cover = smoothstep(0.55, 0.68, land) *
+                    smoothstep(0.58, 0.78, normal.y);
+  // The swash band is a real width in metres, not a fraction of relief.
+  let beach = (1.0 - smoothstep(sea + 0.5, sea + 3.0, height)) *
               smoothstep(0.55, 0.75, normal.y);
 
   let grass_value = dot(grass, vec3<f32>(0.299, 0.587, 0.114));
@@ -2118,7 +2122,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                          terrain.scale[2],
                          terrain.sea_level },
       .material_params = { terrain.tex_scale,
-                           1.0f,
+                           terrain.land_relief,
                            terrain.fragment_normals ? 1.0f : 0.0f,
                            terrain.topology_overlay ? 1.0f : 0.0f },
       .shadow_params = { m_state->have_terrain_shadow ? terrain.shadow_strength

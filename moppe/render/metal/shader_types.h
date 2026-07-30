@@ -93,7 +93,8 @@ struct MoppeTerrainUniforms {
   MoppeFloat4 params6; // x=fragment normals, y=shore, z=trail influence,
                        // w=forest cover
   MoppeFloat4 params7; // x=filtered snow-support slope enabled,
-                       // y=channel flux detail enabled
+                       // y=channel flux detail enabled,
+                       // z=land relief above sea level in metres
 };
 
 // Per-chunk terrain instance data.
