@@ -58,6 +58,12 @@
   - Overrides: `MOPPE_IOS_DEVICE`, `MOPPE_IOS_TEAM`,
     `MOPPE_IOS_CONFIGURATION`, and `MOPPE_IOS_BUILD_DIR`.
 
+## Research Library
+- The hosted Sheaf research library is available through `tools/sheaf`; start
+  with `tools/sheaf help`, then use `search`, `read`, and `note`.
+- The helper defaults to `https://m.sheaf.less.rest` and obtains its token over
+  `ssh igloo` when `SHEAF_TOKEN` is not already set.
+
 ## Architecture (see docs/renderer-design.md)
 - `moppe/quantities.hh` is the registry of every quantity specification, in
   namespace sections. Declare new ones there with the `QUANTITY_SPEC` macro,
