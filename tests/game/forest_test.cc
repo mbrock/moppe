@@ -5,7 +5,19 @@
 #include <tests/test.hh>
 
 #include <algorithm>
+#include <concepts>
 #include <vector>
+
+static_assert (std::same_as<decltype (moppe::game::ForestSite {}.position),
+                            moppe::position_t>);
+static_assert (std::same_as<decltype (moppe::game::ForestSite {}.normal),
+                            moppe::terrain::TerrainNormal>);
+static_assert (std::same_as<decltype (moppe::game::ForestSite {}.cover),
+                            moppe::map::ForestCover>);
+static_assert (std::same_as<decltype (moppe::game::ForestSite {}.size),
+                            moppe::game::TreeSizeFactor>);
+static_assert (std::same_as<decltype (moppe::game::ForestPlan {}.period),
+                            moppe::spatial_extent_t>);
 
 MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   using namespace moppe;
@@ -29,10 +41,14 @@ MOPPE_TEST (global_forest_sites_are_stable_and_follow_canopy_cover) {
   for (std::size_t index = 0; index < first.sites.size (); ++index) {
     const game::ForestSite& site = first.sites[index];
     MOPPE_CHECK (site.seed == second.sites[index].seed);
-    MOPPE_CHECK_NEAR (site.position[0], second.sites[index].position[0], 1e-6f);
-    MOPPE_CHECK_NEAR (site.position[2], second.sites[index].position[2], 1e-6f);
-    MOPPE_CHECK (site.cover >= 0.06f);
-    MOPPE_CHECK (site.normal[1] > 0.99f);
+    MOPPE_CHECK_NEAR (position_value (site.position)[0],
+                      position_value (second.sites[index].position)[0],
+                      1e-6f);
+    MOPPE_CHECK_NEAR (position_value (site.position)[2],
+                      position_value (second.sites[index].position)[2],
+                      1e-6f);
+    MOPPE_CHECK (site.cover >= 0.06f * map::forest_cover[mp_units::one]);
+    MOPPE_CHECK (site.normal.numerical_value_in (mp_units::one)[1] > 0.99f);
   }
 }
 
