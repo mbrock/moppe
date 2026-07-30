@@ -1,11 +1,14 @@
 #include <moppe/game/forest.hh>
 #include <moppe/map/surface.hh>
 
+#include <tests/recording_renderer.hh>
 #include <tests/surface_fixture.hh>
 #include <tests/test.hh>
 
 #include <algorithm>
 #include <concepts>
+#include <cstddef>
+#include <span>
 #include <vector>
 
 static_assert (std::same_as<decltype (moppe::game::ForestSite {}.position),
@@ -14,6 +17,8 @@ static_assert (std::same_as<decltype (moppe::game::ForestSite {}.normal),
                             moppe::terrain::TerrainNormal>);
 static_assert (std::same_as<decltype (moppe::game::ForestSite {}.cover),
                             moppe::map::ForestCover>);
+static_assert (std::same_as<decltype (moppe::game::ForestSite {}.moisture),
+                            moppe::map::SurfaceMoisture>);
 static_assert (std::same_as<decltype (moppe::game::ForestSite {}.size),
                             moppe::game::TreeSizeFactor>);
 static_assert (std::same_as<decltype (moppe::game::ForestPlan {}.period),
@@ -68,4 +73,79 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
 
   MOPPE_CHECK (
     game::plan_global_forest (surface, readings, 0x31415926U).sites.empty ());
+}
+
+namespace {
+  moppe::game::ForestView looking_from (const moppe::Vec3& eye) {
+    return { .position = moppe::position (eye) };
+  }
+
+  std::size_t average_of (std::span<const std::size_t> counts) {
+    std::size_t total = 0;
+    for (std::size_t count : counts)
+      total += count;
+    return counts.empty () ? 0 : total / counts.size ();
+  }
+}
+
+// Building near geometry on demand is what keeps the world's whole tree
+// population from carrying an organism's worth of triangles at once. That
+// only holds if a near mesh is both much dearer than the cheap one it stands
+// in for, and let go of again once nobody is standing near it.
+MOPPE_TEST (near_forest_geometry_follows_the_camera_and_is_released_behind_it) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    129, 129, spatial_extent_in_metres (Vec3 (2400, 0, 2400))));
+  std::ranges::fill (spatial::get<terrain::surface_elevation> (surface),
+                     moppe::terrain::surface_elevation_point (
+                       0.42f * 180.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  const map::SurfaceReadings readings = test::complete_readings (
+    surface,
+    { .moisture = test::uniform_moisture (surface.domain (), 0.48f),
+      .seed = 0xdecafbadU });
+
+  test::RecordingRenderer renderer;
+  game::ForestLandscape forest;
+  forest.rebuild (renderer, surface, readings, 0xa511e9b3U);
+
+  // Nothing near has been asked for yet, so only the cheap world-wide meshes
+  // are held.
+  const std::size_t far_only = forest.resident_bytes ();
+  const std::size_t far_meshes = renderer.baked_vertex_counts.size ();
+  MOPPE_CHECK (forest.tree_count () > 1000);
+  MOPPE_CHECK (far_meshes > 0);
+  MOPPE_CHECK (far_only > 0);
+  MOPPE_CHECK (forest.resident_chunk_count () == 0);
+
+  // A frame brings in a bounded number of chunks rather than every chunk it
+  // wants, so arriving somewhere costs coarse trees briefly, not a stall.
+  forest.prepare (renderer, looking_from (Vec3 (600, 120, 600)));
+  MOPPE_CHECK (forest.resident_chunk_count () > 0);
+  MOPPE_CHECK (forest.resident_chunk_count () <= 2);
+
+  const std::span<const std::size_t> baked { renderer.baked_vertex_counts };
+  MOPPE_CHECK (average_of (baked.subspan (far_meshes)) >
+               2 * average_of (baked.first (far_meshes)));
+
+  const auto settle = [&] (const Vec3& eye) {
+    for (int frame = 0; frame < 220; ++frame)
+      forest.prepare (renderer, looking_from (eye));
+  };
+
+  settle (Vec3 (600, 120, 600));
+  const std::size_t chunks_here = forest.resident_chunk_count ();
+  const std::size_t near_here = forest.resident_bytes () - far_only;
+  MOPPE_CHECK (chunks_here > 2);
+  MOPPE_CHECK (near_here > 0);
+  // Residency is a neighbourhood, not the world.
+  MOPPE_CHECK (chunks_here < 96);
+
+  // The far corner of a periodic world is as far away as anywhere gets.
+  settle (Vec3 (1800, 120, 1800));
+  const std::size_t near_there = forest.resident_bytes () - far_only;
+  MOPPE_CHECK (forest.resident_chunk_count () > 2);
+  MOPPE_CHECK (forest.resident_chunk_count () < 96);
+  // Had the departed neighbourhood been kept, this would be about double.
+  MOPPE_CHECK (near_there < near_here * 3 / 2);
 }

@@ -61,13 +61,27 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
                                [[texture (MOPPE_TEX_SHADOW)]],
                                sampler smp [[sampler (0)]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
+  const float dist = length (in.world_pos - frame.camera_pos.xyz);
+
+  // A crown a kilometre off lands on one or two pixels, and it lands on
+  // ground the haze has already taken most of the way to white. Left at its
+  // own contrast it is a dark speck, and a hillside of dark specks reads as
+  // dirt on the lens rather than as a forest. So foliage converges with
+  // distance on the tone the terrain's own filtered canopy is painting
+  // underneath it: the far tree joins the mass it belongs to, which is what
+  // being that far away means. Doing it here rather than in the baked
+  // palettes makes it continuous, so nothing pops at an LOD boundary.
+  const float3 canopy_aggregate = moppe_srgb (float3 (0.205, 0.300, 0.140));
+  base.rgb =
+    mix (base.rgb,
+         canopy_aggregate,
+         0.92 * saturate (in.foliage) * smoothstep (260.0, 900.0, dist));
 
   float3 color = base.rgb;
   if (in.lit > 0.5) {
     float3 n = normalize (in.normal);
     const float3 l = frame.sun_dir.xyz;
     const float lambert = saturate ((dot (n, l) + 0.10) / 1.10);
-    const float dist = length (in.world_pos - frame.camera_pos.xyz);
     const float fog =
       moppe_relief_haze (moppe_distance_fog (dist, frame.fog_color.w),
                          in.world_pos.y,
@@ -95,8 +109,12 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     const float3 specular_tint = mix (base.rgb, float3 (1.0), 0.20);
     // Soft ground overlays and translucent effects must not inherit the hard
     // glossy prop highlight. Besides looking wet, it aliases badly when a
-    // nearly coplanar decal is seen at a grazing angle.
-    const float specular_coverage = smoothstep (0.82, 0.98, base.a);
+    // nearly coplanar decal is seen at a grazing angle.  Leaves are the same
+    // argument at the other end of the world: a crown is matte, and a
+    // shininess-64 lobe on one is what turns a distant hillside of trees into
+    // white confetti as each faceted crown flashes in and out of the highlight.
+    const float specular_coverage =
+      smoothstep (0.82, 0.98, base.a) * (1.0 - saturate (in.foliage));
     lit += specular_tint * frame.sun_specular.rgb * sun_visibility * 0.22 *
            pow (max (dot (n, h), 0.0), 64.0) * specular_coverage;
 
@@ -113,17 +131,19 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
            sun_visibility * leaf_back * leaf_depth * 0.34;
 
     // A restrained sky rim separates moving silhouettes from the
-    // landscape, especially on their shadowed side.
+    // landscape, especially on their shadowed side.  Foliage keeps only a
+    // trace of it: a crown already has its own back-light term above, and a
+    // rim on every tree in a forest is not a silhouette, it is a haze.
     const float rim =
       pow (1.0 - max (dot (n, v), 0.0), 3.0) * (0.35 + 0.65 * max (n.y, 0.0));
-    lit += base.rgb * float3 (0.025, 0.04, 0.065) * rim;
+    lit += base.rgb * float3 (0.025, 0.04, 0.065) * rim *
+           (1.0 - 0.75 * saturate (in.foliage));
 
     color = lit;
   }
 
   if (in.fogged > 0.5) {
     const float3 to_frag = in.world_pos - frame.camera_pos.xyz;
-    const float dist = length (to_frag);
     const float fog =
       moppe_relief_haze (moppe_distance_fog (dist, frame.fog_color.w),
                          in.world_pos.y,

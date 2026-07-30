@@ -56,6 +56,14 @@ namespace moppe {
            static_cast<float> (0x01000000U);
   }
 
+  // Independent unit values off one identity, a named lane at a time: this
+  // site's heading, its size, its colour. Callers ask for a lane instead of
+  // mixing a fresh seed by hand, so two properties of the same thing cannot
+  // accidentally end up correlated.
+  inline float hash_lane (std::uint32_t identity, std::uint32_t lane) {
+    return unit_hash (lattice_hash (identity, lane, 0x517cc1b7U));
+  }
+
   // Value noise that repeats a whole number of times around the torus, so it
   // meets itself at the seam.
   //

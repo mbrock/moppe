@@ -380,6 +380,7 @@ set(MOPPE_SCENE_SOURCES
   moppe/game/glider_render.cc
   moppe/game/vehicle_render.cc
   moppe/game/hud.cc
+  moppe/game/foliage.cc
   moppe/game/forest.cc
   moppe/game/tree_stand.cc
 )
@@ -505,6 +506,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/generated_world_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc
+    tests/game/foliage_test.cc
     tests/game/forest_test.cc
     tests/game/tree_stand_test.cc
     tests/game/cinematic_flight_test.cc

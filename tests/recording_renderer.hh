@@ -3,6 +3,8 @@
 
 #include <moppe/render/renderer.hh>
 
+#include <cstddef>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -21,8 +23,15 @@ namespace moppe::test {
                                        const void*) override {
       return {};
     }
-    render::MeshPtr create_mesh (const render::DrawList&) override {
-      return {};
+    // Retained geometry comes back as a real handle. A subject that decides
+    // when to hold a mesh and when to let it go cannot be tested against a
+    // renderer that always answers null.
+    std::vector<std::size_t> baked_vertex_counts;
+    std::size_t meshes_drawn = 0;
+
+    render::MeshPtr create_mesh (const render::DrawList& recorded) override {
+      baked_vertex_counts.push_back (recorded.vertices ().size ());
+      return std::make_shared<render::Mesh> ();
     }
     void set_terrain (const render::TerrainParams&,
                       std::span<const terrain::SurfaceElevation>,
@@ -74,7 +83,9 @@ namespace moppe::test {
     void draw_sky (const render::SkyParams&) override {}
     void draw_ocean (const render::OceanParams&) override {}
     void draw_rivers (const render::Mesh&, const Mat4&) override {}
-    void draw_mesh (const render::Mesh&, const Mat4&) override {}
+    void draw_mesh (const render::Mesh&, const Mat4&) override {
+      ++meshes_drawn;
+    }
     void draw_list (const render::DrawList&) override {}
     void apply_underwater (float) override {}
     void apply_motion_blur (float) override {}

@@ -2,6 +2,7 @@
 
 #include <atelier/tree.hh>
 
+#include <moppe/game/foliage.hh>
 #include <moppe/profile.hh>
 #include <moppe/render/draw.hh>
 
@@ -124,51 +125,49 @@ namespace moppe::game {
       return positions;
     }
 
-    void branch_vertex (render::DrawList& draw,
-                        const Vec3& position,
-                        const Vec3& normal,
-                        float wind) {
-      draw.normal (normal);
-      draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
-      // Wood leans with the gust and does not shake; only what hangs off it
-      // does, which the foliage below asks for by name.
-      draw.flutter (0.0f * proportion[one]);
-      draw.vertex (position);
-    }
-
     void append_branch (render::DrawList& draw,
+                        const FoliagePalette& bark,
                         const Vec3& start,
                         const Vec3& end,
                         float start_radius,
                         float end_radius,
                         float start_wind,
                         float end_wind,
-                        float color_variation) {
+                        float start_exposure,
+                        float end_exposure) {
       const Vec3 axis = normalized (end - start);
       const Vec3 anchor =
         std::abs (axis[1]) > 0.90f ? Vec3 (1, 0, 0) : Vec3 (0, 1, 0);
       const Vec3 across = normalized (cross (axis, anchor));
       const Vec3 around = normalized (cross (across, axis));
       constexpr int sides = 6;
-      draw.color (0.20f + 0.040f * color_variation,
-                  0.10f + 0.025f * color_variation,
-                  0.040f + 0.015f * color_variation);
+      const auto ring = [&] (const Vec3& centre,
+                             const Vec3& outward,
+                             float radius,
+                             float wind,
+                             float exposure) {
+        return FoliageVertex { centre + outward * radius,
+                               outward,
+                               exposure,
+                               std::clamp (wind, 0.0f, 1.0f) * proportion[one],
+                               // Wood leans with the gust and does not shake;
+                               // only what hangs off it does, which the
+                               // foliage below asks for by name.
+                               0.0f * proportion[one] };
+      };
       draw.begin (render::Prim::Triangles);
       for (int side = 0; side < sides; ++side) {
         const float a0 = 2.0f * std::numbers::pi_v<float> * side / sides;
         const float a1 = 2.0f * std::numbers::pi_v<float> * (side + 1) / sides;
         const Vec3 n0 = across * std::cos (a0) + around * std::sin (a0);
         const Vec3 n1 = across * std::cos (a1) + around * std::sin (a1);
-        const Vec3 s0 = start + n0 * start_radius;
-        const Vec3 s1 = start + n1 * start_radius;
-        const Vec3 e0 = end + n0 * end_radius;
-        const Vec3 e1 = end + n1 * end_radius;
-        branch_vertex (draw, s0, n0, start_wind);
-        branch_vertex (draw, e0, n0, end_wind);
-        branch_vertex (draw, e1, n1, end_wind);
-        branch_vertex (draw, s0, n0, start_wind);
-        branch_vertex (draw, e1, n1, end_wind);
-        branch_vertex (draw, s1, n1, start_wind);
+        foliage_quad (
+          draw,
+          bark,
+          ring (start, n0, start_radius, start_wind, start_exposure),
+          ring (start, n1, start_radius, start_wind, start_exposure),
+          ring (end, n1, end_radius, end_wind, end_exposure),
+          ring (end, n0, end_radius, end_wind, end_exposure));
       }
       draw.end ();
     }
@@ -204,14 +203,61 @@ namespace moppe::game {
         std::pow (height, 1.35f) * (0.35f + 0.65f * flex), 0.0f, 1.0f);
     }
 
+    // How much sky a leaf cluster sees, from where it sits in its own crown:
+    // high and out on the edge is the lit skin, low and near the axis is the
+    // interior. Without this every cluster is the same green and a hundred of
+    // them read as a bunch of grapes rather than as a canopy.
+    struct CrownExtent {
+      Vec3 axis_foot;
+      float rise = 1.0f;
+      float spread = 1.0f;
+    };
+
+    CrownExtent crown_extent (const atelier::Tree& tree,
+                              const std::vector<Vec3>& world_positions) {
+      const auto& vigor = spatial::get<atelier::bud_vigor> (tree.vertices ());
+      CrownExtent extent;
+      float lowest = 0.0f;
+      float highest = 0.0f;
+      Vec3 sum;
+      std::size_t count = 0;
+      for (atelier::TreeVertexId vertex = 1;
+           vertex < tree.topology ().vertex_count ();
+           ++vertex) {
+        if (vigor[vertex].numerical_value_in (one) <= 0.0f)
+          continue;
+        const Vec3& point = world_positions[vertex];
+        lowest = count == 0 ? point[1] : std::min (lowest, point[1]);
+        highest = count == 0 ? point[1] : std::max (highest, point[1]);
+        sum += point;
+        ++count;
+      }
+      if (count == 0)
+        return extent;
+      extent.axis_foot = sum / static_cast<float> (count);
+      extent.axis_foot[1] = lowest;
+      extent.rise = std::max (0.5f, highest - lowest);
+      for (atelier::TreeVertexId vertex = 1;
+           vertex < tree.topology ().vertex_count ();
+           ++vertex)
+        if (vigor[vertex].numerical_value_in (one) > 0.0f)
+          extent.spread =
+            std::max (extent.spread,
+                      std::sqrt (horizontal_distance_squared (
+                        world_positions[vertex], extent.axis_foot)));
+      return extent;
+    }
+
     void append_leaves (render::DrawList& draw,
                         const atelier::Tree& tree,
                         const TreeSite& site,
                         const TreeFrame& frame,
+                        const FoliagePalette& palette,
                         const std::vector<Vec3>& local_positions,
                         const std::vector<Vec3>& world_positions,
                         float maximum_generation) {
       const auto& vigor = spatial::get<atelier::bud_vigor> (tree.vertices ());
+      const CrownExtent extent = crown_extent (tree, world_positions);
       for (atelier::TreeVertexId vertex = 1;
            vertex < tree.topology ().vertex_count ();
            ++vertex) {
@@ -226,7 +272,12 @@ namespace moppe::game {
         const float seed = tree.form (parent).material_seed;
         const float wind =
           vertex_wind (tree, vertex, maximum_generation) + 0.12f;
-        const int lobe_count = site.cohort == TreeCohort::sapling ? 2 : 3;
+        // A canopy tree carries more foliage per bud than a sapling does, and
+        // the difference between three sprays and five is the difference
+        // between a crown you can see through and one you cannot.
+        const int lobe_count = site.cohort == TreeCohort::sapling ? 2
+                               : site.cohort == TreeCohort::young ? 3
+                                                                  : 5;
         for (int lobe = 0; lobe < lobe_count; ++lobe) {
           const float turn = seed * 5.7f + 2.399963f * lobe;
           const Vec3 offset =
@@ -237,20 +288,32 @@ namespace moppe::game {
           const Vec3 center = world_positions[vertex] + offset * spread;
           const float size =
             site.scale * (0.25f + 0.085f * strength + 0.020f * lobe);
-          const float hue = unit_hash (site.seed + 71 * vertex + 19 * lobe);
-          const float youth = site.cohort == TreeCohort::sapling ? 1.0f
-                              : site.cohort == TreeCohort::young ? 0.45f
-                                                                 : 0.0f;
-          draw.color (0.09f + 0.055f * hue + 0.025f * youth,
-                      0.21f + 0.09f * site.habitat + 0.045f * hue +
-                        0.050f * youth,
-                      0.045f + 0.035f * hue + 0.015f * youth);
+          const float grain = unit_hash (site.seed + 71 * vertex + 19 * lobe);
+          const float rise = std::clamp (
+            (center[1] - extent.axis_foot[1]) / extent.rise, 0.0f, 1.0f);
+          const float outward = std::clamp (
+            std::sqrt (horizontal_distance_squared (center, extent.axis_foot)) /
+              extent.spread,
+            0.0f,
+            1.0f);
+          const Vec3 colour = linear_vector_interpolate (
+            palette.shaded,
+            palette.sunlit,
+            std::clamp (0.10f + 0.52f * rise + 0.34f * outward +
+                          0.16f * (grain - 0.5f),
+                        0.0f,
+                        1.0f));
+          draw.color (colour[0], colour[1], colour[2]);
           draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
           draw.flutter (0.85f * proportion[one]);
           draw.push ();
           draw.translate (center);
           draw.rotate (turn * u::rad, frame.up);
-          draw.scale (1.08f * size, 0.90f * size, size);
+          // No two sprays of leaves are the same shape, and a cluster that
+          // is exactly a sphere is the one thing that always reads as a bead.
+          draw.scale (size * (1.18f + 0.34f * grain),
+                      size * (0.72f + 0.30f * strength),
+                      size * (0.92f + 0.30f * (1.0f - grain)));
           draw.sphere (1.0f, 6, 3);
           draw.pop ();
         }
@@ -272,25 +335,52 @@ namespace moppe::game {
                     static_cast<float> (topology.vertex (vertex).generation));
       }
 
+      // A young tree is greener than an old one, and a well watered site is
+      // greener than a dry one. Both belong to the same ramp every other
+      // plant in the world is coloured along.
+      const float youth = site.cohort == TreeCohort::sapling ? 1.0f
+                          : site.cohort == TreeCohort::young ? 0.45f
+                                                             : 0.0f;
+      const FoliagePalette crown = crown_palette (
+        FoliageKind::broadleaf,
+        { .moisture = std::clamp (site.habitat + 0.22f * youth, 0.0f, 1.0f),
+          .cover = site.habitat },
+        site.seed);
+      const FoliagePalette bark =
+        bark_palette (FoliageKind::broadleaf, site.seed);
+
       const auto& radius = spatial::get<atelier::branch_radius> (tree.edges ());
       for (atelier::TreeEdgeId id = 0; id < topology.edge_count (); ++id) {
         const atelier::TreeEdge& edge = topology.edge (id);
         const float r0 =
           1.18f * site.scale * radius[id].numerical_value_in (u::m);
         const float r1 = 1.18f * site.scale * branch_end_radius (tree, id);
+        // A limb deep in the crown is in the crown's own shade; one on the
+        // outside is not. Generation is the cheapest honest proxy for which.
+        const auto lit_share = [&] (atelier::TreeVertexId vertex) {
+          return std::clamp (
+            0.24f + 0.76f *
+                      static_cast<float> (topology.vertex (vertex).generation) /
+                      maximum_generation,
+            0.0f,
+            1.0f);
+        };
         append_branch (draw,
+                       bark,
                        world_positions[edge.parent],
                        world_positions[edge.child],
                        r0,
                        r1,
                        vertex_wind (tree, edge.parent, maximum_generation),
                        vertex_wind (tree, edge.child, maximum_generation),
-                       tree.form (id).material_seed);
+                       lit_share (edge.parent),
+                       lit_share (edge.child));
       }
       append_leaves (draw,
                      tree,
                      site,
                      frame,
+                     crown,
                      local_positions,
                      world_positions,
                      maximum_generation);

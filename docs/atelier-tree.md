@@ -103,12 +103,52 @@ for deterministic inspection.
 
 All branches and leaf clusters in the detailed stand are baked into one
 retained world-space mesh. Branch generation and intrinsic flexibility become
-per-vertex wind weights, which the existing Moppe scene shader animates. The
-global population uses much cheaper trunks and faceted crown volumes baked into
-a 16 by 16 grid of cullable meshes. Beyond the explicit crown range, the same
-cover field becomes a filtered terrain material, preserving wooded masses into
-the haze. Instancing, streamed full organisms, and mesh-shader expansion remain
-later refinements rather than prerequisites for a forested world.
+per-vertex wind weights, which the existing Moppe scene shader animates.
+
+## What a crown says beyond where it is
+
+`moppe/game/foliage.*` is the vocabulary every plant in the world is drawn
+with, and it exists because a cheap crown fails in two ways that have nothing
+to do with its triangle count. It lights by facet, so a five-sided drum reads
+as folded paper; and it carries one flat colour, so a hillside reads as one
+painted green. Both are decided when the mesh is baked and cost nothing to
+draw.
+
+So a plant vertex carries the outward direction of the volume it belongs to
+rather than of its triangle, and how much sky its part of the canopy sees.
+Species, ground moisture, canopy cover, and plain individual variation pick
+the two ends of the colour ramp that exposure runs along; bark is the same
+mechanism with a wood ramp, dark at the root and lit where the stem rises
+clear. Twenty triangles shaded this way read as a mass of leaves, which is
+the whole reason the global population can stay cheap.
+
+## Three distances
+
+`ForestLandscape` presents the population at three scales, and the interesting
+one is what it refuses to draw.
+
+Within a couple of hundred metres a tree is an organism: a stem that flares
+into its own root plate and tapers and bends, limbs leaving it at heights you
+can see, and a crown of two or three separate masses with sky between them.
+Beyond that only volume and colour still carry, and a tree becomes a handful
+of triangles. Beyond about a kilometre it is smaller than the pixel it lands
+in, and the terrain's own filtered canopy is the more honest representation:
+drawing individual trees there produced a horizon-wide band of dark specks on
+haze-whitened ground, which reads as dirt on the lens rather than as forest.
+The scene shader converges foliage albedo on that canopy tone as distance
+grows, so the handover is a change of texture and not of colour.
+
+Only the near representation is expensive, and at any moment about a dozen
+chunks of the world's lattice are close enough to want it. So the cheap mesh
+is built once for the whole world and kept, and the near mesh is built when a
+chunk comes within reach and released when it leaves — a bounded number per
+frame, so arriving somewhere costs a few frames of coarser trees rather than
+one long stall. Baking the near mesh for every chunk of the world instead cost
+287 MB that was almost entirely idle; the residency scheme peaks around 156 MB
+in play while giving the near tree roughly three times the geometry.
+
+Streamed full organisms and mesh-shader expansion remain later refinements
+rather than prerequisites for a forested world.
 
 Run a quiet camera in the game renderer with:
 
