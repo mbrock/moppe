@@ -1,5 +1,6 @@
 
-.PHONY: all lavoir moppe archive atelier callgraph callgraph-analyze callgraph-cache callgraph-diff \
+.PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
+	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
 	complexity format hooks plan plan-graph phone profile test testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
@@ -28,6 +29,18 @@ atelier:
 	@[ -f build/build.ninja ] || cmake -B build -G Ninja
 	cmake --build build --target atelier
 	open build/atelier.app
+
+# Build and run the Zig quantity-specification workshop.
+etalon:
+	cd etalon && zig build run
+
+# Run the Zig quantity-specification workshop's tests.
+etalon-test:
+	cd etalon && zig build test
+
+# Keep the nightly compiler alive and incrementally re-run Étalon's tests.
+etalon-watch:
+	cd etalon && zig build -fincremental --watch unit
 
 # Format all tracked C, C++, Objective-C, and Metal sources.
 format:
