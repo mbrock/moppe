@@ -109,6 +109,12 @@ namespace moppe::game {
         return false;
       }
     }
+    if (const char* budget = std::getenv ("MOPPE_SCENEPIXELS")) {
+      if (!parse_float (budget, 0.0f, 64.0f, settings.scene_megapixel_budget)) {
+        error = "MOPPE_SCENEPIXELS must be between 0 and 64 (megapixels)";
+        return false;
+      }
+    }
     if (const char* sun = std::getenv ("MOPPE_SUNHEIGHT")) {
       if (!parse_float (sun, 0.0f, 1.0f, settings.sun_height)) {
         error = "MOPPE_SUNHEIGHT must be between 0 and 1";
@@ -128,6 +134,7 @@ namespace moppe::game {
                                 const GraphicsSettings& settings) {
     output << "moppe: graphics: scene-scale=" << settings.scene_scale
            << " render-scale-override=" << settings.render_scale_override
+           << " scene-megapixel-budget=" << settings.scene_megapixel_budget
            << " sun-height=" << settings.sun_height;
     for (const GraphicsFeature* feature : graphics_features)
       output << ' ' << feature->name << '='

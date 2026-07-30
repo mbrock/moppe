@@ -22,6 +22,9 @@
     `--graphics-quality low|balanced|high`
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
+    - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`
+      keeps a hand-started run behind the active app. Together they profile a
+      large surface without taking over the display.
   - Deterministic opening-cinematic video:
     `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
@@ -40,7 +43,12 @@
     `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`
     (autopilot for screenshots), `MOPPE_SUNHEIGHT=<0..1>`, `MOPPE_NOSHADOW=1`,
-    `MOPPE_RENDERSCALE=<0.25..1>`
+    `MOPPE_RENDERSCALE=<0.25..1>`, `MOPPE_SCENEPIXELS=<megapixels>` (the
+    scene-resolution budget; `0` restores the point-relative rule alone), and
+    `MOPPE_MSAA=1|2|4` (sample count, fixed before the pipelines are built)
+  - The desktop scene resolution is the smaller of the point-relative rule and
+    `scene_megapixel_budget`, so a display attached at 1x — a 7680x2160 one
+    asks for twice a 4K frame — costs resolution rather than frame rate.
 - Renderer smoke test: `./build/moppe-testbed`
 - iOS (simulator): `cmake -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS
   -DCMAKE_OSX_SYSROOT=iphonesimulator` then build the `moppe-ios` target

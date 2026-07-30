@@ -738,6 +738,7 @@ namespace moppe {
         params.sun_visibility = frame.lighting.sun_visibility;
         params.scene_scale = frame.graphics.scene_scale;
         params.render_scale_override = frame.graphics.render_scale_override;
+        params.scene_megapixel_budget = frame.graphics.scene_megapixel_budget;
         params.bloom = frame.graphics.bloom;
         params.auto_exposure = frame.graphics.auto_exposure;
         params.lens_flare = frame.graphics.lens_flare;
@@ -1026,6 +1027,12 @@ namespace moppe {
         const Vec3 eye (0.0f, 34.0f, 0.0f);
         const Vec3 target (0.0f, 27.0f, -100.0f);
         render::FrameParams fp;
+        // The loading screen sizes the same render targets the game will use.
+        // Leaving the budget off here would build a full-drawable set only to
+        // replace it on the first world frame.
+        fp.scene_scale = m_graphics.scene_scale;
+        fp.render_scale_override = m_graphics.render_scale_override;
+        fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
         fp.view = Mat4::look_at (eye, target, Vec3 (0, 1, 0));
         fp.proj = Mat4::perspective_reversed (
           64.0f * u::deg, width / std::max (1.0f, height), 0.5f, 9000.0f);
@@ -1161,6 +1168,9 @@ namespace moppe {
       }
       void render_game_over (render::Renderer& r) {
         render::FrameParams fp;
+        fp.scene_scale = m_graphics.scene_scale;
+        fp.render_scale_override = m_graphics.render_scale_override;
+        fp.scene_megapixel_budget = m_graphics.scene_megapixel_budget;
         fp.clear_color = DisplayColor (0, 0, 0);
         fp.view = Mat4 ();
         fp.proj = Mat4 ();
