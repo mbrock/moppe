@@ -2,6 +2,7 @@
 
 #include <moppe/profile.hh>
 #include <moppe/terrain/moisture.hh>
+#include <moppe/terrain/readings.hh>
 #include <moppe/terrain/river.hh>
 #include <moppe/terrain/waterline.hh>
 
@@ -74,8 +75,19 @@ namespace moppe::game {
 
     terrain::MoistureMap moisture =
       terrain::analyze_moisture (standing_water, lakes.membership (), drainage);
+    // Where the forest stops is a fraction of this world's own relief, not a
+    // fixed climb from the sea. A flat island and an alpine world both want a
+    // tree line, and they do not want the same one in metres. This fraction
+    // sits just under where the terrain shader begins to hold snow, so the
+    // last trees thin out into the snowfields instead of ending under them.
+    constexpr float tree_line_share_of_relief = 0.62f;
+    const meters_t land_relief =
+      terrain::measure_height_range (geometry).maximum * u::m - water_level;
     map::TreeHabitatMap habitat = map::analyze_tree_habitat (
-      geometry, moisture, water_level, water_level + 145.0f * u::m);
+      geometry,
+      moisture,
+      water_level,
+      water_level + tree_line_share_of_relief * land_relief);
     map::ForestCoverMap cover = map::analyze_forest_cover (
       habitat, use, recipe.seed ().value ^ 0x6f12ad37U);
 

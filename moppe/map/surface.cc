@@ -409,10 +409,18 @@ namespace moppe::map {
       const auto tree_line_headroom =
         1 - band (tree_tops - 35.0f * m, tree_tops, ground_level);
 
-      const auto wetness = get<surface_moisture> (moisture[site]);
+      // What the ground holds, not how near it is to open water: a bank a
+      // step from the river can be a dry cut, and a flat two hundred metres
+      // away can be a bog. The tree is standing in soil, not beside a view.
+      const auto wetness = get<terrain::soil_wetness> (moisture[site]);
 
-      const auto hydrated = band (0.10f * one, 0.42f * one, wetness);
-      const auto not_sodden = 1 - band (0.78f * one, 0.98f * one, wetness);
+      // Where these bands sit is a reading of the index's own distribution
+      // over a generated world: the driest tenth of the ground sits at zero,
+      // the median hillside near a fifth, and the wettest tenth is standing
+      // water and the flats around it. So trees want more than a bare ridge
+      // and less than a bog, and almost every hillside qualifies.
+      const auto hydrated = band (0.05f * one, 0.20f * one, wetness);
+      const auto not_sodden = 1 - band (0.60f * one, 0.88f * one, wetness);
       const auto water_response = 0.28f + 0.72f * hydrated * not_sodden;
       const auto treeishness =
         soil_dryness * tree_line_headroom * soil_stability * water_response;

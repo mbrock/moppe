@@ -43,6 +43,7 @@ namespace moppe::map {
   using DepositedSurfaceMaterial =
     quantity<deposited_surface_material[u::m], float>;
   using ChannelFlux = quantity<channel_flux[one], Vec3>;
+  using terrain::SoilWetness;
   using terrain::SurfaceMoisture;
   using terrain::WaterlineDistance;
   using ErosionExposure = quantity<erosion_exposure[one], float>;
@@ -64,6 +65,7 @@ namespace moppe::map {
   using SurfaceReadings = spatial::Bundle<terrain::TerrainDomain,
                                           ChannelFlux,
                                           SurfaceMoisture,
+                                          SoilWetness,
                                           WaterlineDistance,
                                           ErosionExposure,
                                           DepositionCover,

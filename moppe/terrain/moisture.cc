@@ -64,6 +64,7 @@ namespace moppe::terrain {
     const float cell_area =
       (grid.cell_area ()).numerical_value_in (moppe::u::m * moppe::u::m);
     std::vector<SurfaceMoisture> moisture (count);
+    std::vector<SoilWetness> wetness (count);
     {
       MOPPE_PROFILE_ZONE ("moisture.combine_water_and_drainage");
       for (std::size_t cell = 0; cell < count; ++cell) {
@@ -74,19 +75,28 @@ namespace moppe::terrain {
           std::exp (-distance / parameters.water_reach_m);
         const float area =
           drainage.contributing_area_at (cell).numerical_value_in (u::m * u::m);
-        const float damp =
-          std::clamp (std::log2 (std::max (area / cell_area, 1.0f)) /
-                        parameters.drainage_span_log2,
-                      0.0f,
-                      1.0f);
+        // How many cells' worth of ground drains through this one. A cell
+        // that drains only itself counts once, which is where the logarithm
+        // starts.
+        const float upstream = std::max (area / cell_area, 1.0f);
+        const float damp = std::clamp (
+          std::log2 (upstream) / parameters.drainage_span_log2, 0.0f, 1.0f);
         moisture[cell] =
           std::clamp ((1.0f - parameters.drainage_weight) * near_water +
                         parameters.drainage_weight * damp,
                       0.0f,
                       1.0f) *
           surface_moisture[one];
+
+        const float fall =
+          std::max (drainage.slope_at (cell).numerical_value_in (one),
+                    parameters.flattest_believable_slope);
+        const float index = std::log2 (upstream) - std::log2 (fall);
+        wetness[cell] =
+          std::clamp (index / parameters.wetness_span_octaves, 0.0f, 1.0f) *
+          soil_wetness[one];
       }
     }
-    return MoistureMap (grid, std::move (moisture));
+    return MoistureMap (grid, std::move (moisture), std::move (wetness));
   }
 }
