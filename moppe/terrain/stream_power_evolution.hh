@@ -21,6 +21,12 @@ namespace moppe::terrain {
     square_meters_t reference_area =
       1.0f * mp_units::si::metre * mp_units::si::metre;
     float area_exponent = 0.4f;
+    // Where the channel network begins. Above this catchment, running water
+    // cuts; below it, the ground is a hillslope and belongs to creep. With
+    // no threshold the stream-power law applies to a cell that drains only
+    // itself, so every cell becomes its own rill and the landscape combs.
+    square_meters_t channel_initiation_area =
+      1200.0f * mp_units::si::metre * mp_units::si::metre;
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;

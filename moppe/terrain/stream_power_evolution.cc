@@ -1,5 +1,6 @@
 #include <moppe/terrain/stream_power_evolution.hh>
 
+#include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 #include <moppe/quantities.hh>
 #include <moppe/spatial/bundle_operations.hh>
@@ -284,8 +285,21 @@ namespace moppe::terrain {
 
           const double area_growth = (area / parameters.reference_area)
                                        .numerical_value_in (mp_units::one);
+          // Soft country gives way faster under the same discharge, so its
+          // channels cut down while the hard ground beside them holds up.
+          // That difference is where a landscape gets more than one valley
+          // spacing, and with it a hierarchy instead of a comb.
+          // A channel head is not a sharp place on the ground, so it is not
+          // a sharp threshold here either: the fluvial share rises across a
+          // factor of four in catchment around the initiation area.
+          const double channel_share = static_cast<double> (
+            smoothstep (-1.0f,
+                        1.0f,
+                        std::log2 (static_cast<float> (
+                          (area / parameters.channel_initiation_area)
+                            .numerical_value_in (mp_units::one)))));
           const auto incision_velocity =
-            std::pow (area_growth, parameters.area_exponent) *
+            channel_share * std::pow (area_growth, parameters.area_exponent) *
             parameters.reference_incision_rate;
           const auto coupling = incision_velocity / run;
           const auto weight = dt * coupling;
