@@ -29,14 +29,24 @@ the water are allowed to say about themselves.
 
 ## Current work
 
-[RFC-0003](../planning/rfcs/0003-a-world-that-reads-as-alive.md) opens the
-campaign for a world that reads as alive. Its finding is that the engine
-already computes more than it shows: the terrain material bands compared a
-metre elevation against normalized thresholds and turned every world into a
-snowfield, the merge tree and the waterline contours are built and dropped,
-moisture has no slope term, and WebGPU renders no lakes at all. The track
-therefore spends the existing readout before adding simulation — ecology from
-hydrology, then motion, then kinds of water.
+[RFC-0003](../planning/rfcs/0003-a-world-that-reads-as-alive.md) is the active
+campaign: spend what the generator already knows before adding more simulation.
+Its finding was that the engine computed far more than it showed, and the first
+six items bore that out — material bands that compared a metre elevation to a
+normalized threshold, a tree line fixed at 145 m on a world with 500 m of
+relief, a moisture field with no slope term, and an erosion law with no
+hillslope regime at all, which is why every hillside combed.
+
+Those are done. The ground now grades against its own relief, tree habitat
+reads a topographic wetness index, the forest mosaic answers to the ground
+instead of overruling it, the wind runs on three clocks, and the river surface
+no longer breathes in unison. Still open: the near-ground material, water kinds
+(junctions, lips, shorelines, the rider in the water), and lakes in the
+browser.
+
+The corrugation investigation is written up in
+[hillslopes and channels](hillslopes-and-channels.md), negative results
+included.
 
 ## Completed consolidation
 
