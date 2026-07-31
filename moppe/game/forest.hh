@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace moppe::game {
@@ -94,6 +95,8 @@ namespace moppe::game {
       std::vector<ForestSite> sites;
       render::MeshPtr near_mesh;
       render::MeshPtr far_mesh;
+      std::unique_ptr<render::DrawList> near_build;
+      std::size_t near_build_site = 0;
       std::size_t near_bytes = 0;
       std::size_t far_bytes = 0;
       std::uint64_t wanted_epoch = 0;
