@@ -2,7 +2,8 @@
 .PHONY: all lavoir moppe archive atelier etalon etalon-test etalon-watch \
 	callgraph callgraph-analyze callgraph-cache callgraph-diff \
 	check-format \
-	complexity format hooks plan plan-graph phone profile test testflight tracy tv \
+	complexity format gazetteer hooks plan plan-graph phone profile test \
+	testflight tracy tv \
 	tracy-benchmark-capture tracy-capture tracy-import tree-shot water-benchmark \
 	web web-deploy web-serve xcode
 
@@ -141,6 +142,11 @@ web-deploy:
 # Build a deterministic grove from surface habitat and capture it in-game.
 tree-shot:
 	./tools/capture-trees
+
+# Compose a frozen, varied landscape survey and its inspectable HTML report.
+gazetteer:
+	./tools/capture-terrain-gazetteer \
+		"$(or $(GAZETTEER_OUT),/tmp/moppe-gazetteer)"
 
 # Capture the curated hydrology gallery and write its HTML/CSV report.
 water-benchmark:

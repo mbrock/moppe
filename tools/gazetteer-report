@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""Validate a landscape gazetteer and build its local visual report."""
+
+from __future__ import annotations
+
+import csv
+import html
+import math
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+
+def fail(message: str) -> None:
+    print(f"gazetteer-report: {message}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+def contact_sheet(directory: Path, count: int) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        fail("ffmpeg is required to assemble contact-sheet.png")
+    columns = min(4, count)
+    rows = math.ceil(count / columns)
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-loglevel",
+            "error",
+            "-framerate",
+            "1",
+            "-pattern_type",
+            "glob",
+            "-i",
+            str(directory / "frame-*.png"),
+            "-frames:v",
+            "1",
+            "-vf",
+            f"scale=480:-2,tile={columns}x{rows}:padding=8:margin=8",
+            str(directory / "contact-sheet.png"),
+        ],
+        check=True,
+    )
+
+
+def display_number(row: dict[str, str], field: str, digits: int = 2) -> str:
+    try:
+        return f"{float(row[field]):.{digits}f}"
+    except (KeyError, ValueError):
+        return "-"
+
+
+def report_html(rows: list[dict[str, str]], settings: str) -> str:
+    cards = []
+    for row in rows:
+        filename = html.escape(row["filename"], quote=True)
+        name = html.escape(row["name"].replace("-", " ").title())
+        category = html.escape(row["category"].title())
+        readings = (
+            f"elevation {display_number(row, 'ground_elevation_m', 1)} m · "
+            f"waterline {display_number(row, 'waterline_distance_m', 1)} m · "
+            f"wetness {display_number(row, 'soil_wetness')} · "
+            f"forest {display_number(row, 'forest_cover')}"
+        )
+        camera = (
+            f"FOV {display_number(row, 'vertical_fov_deg', 0)}° · "
+            f"clearance {display_number(row, 'camera_clearance_m', 1)} m · "
+            f"cell {html.escape(row['site_cell'])}"
+        )
+        cards.append(
+            f"""
+            <article>
+              <a href="{filename}"><img src="{filename}" alt="{name}"></a>
+              <div class="copy">
+                <span class="category">{category}</span><h2>{name}</h2>
+                <p>{readings}</p><p class="camera">{camera}</p>
+              </div>
+            </article>"""
+        )
+    escaped_settings = html.escape(settings.strip())
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Moppe landscape gazetteer</title>
+<style>
+:root {{ color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
+body {{ margin: 0; background: #11150f; color: #e8eddf; }}
+header {{ max-width: 1500px; margin: auto; padding: 42px 28px 22px; }}
+h1 {{ font: 600 clamp(2rem, 5vw, 4.5rem)/.95 ui-serif, Georgia, serif;
+      margin: 0 0 16px; letter-spacing: -.035em; }}
+header p {{ color: #adb9a3; max-width: 72ch; }}
+header a {{ color: #d5df9e; }}
+pre {{ background: #1b2118; border: 1px solid #303a2a; border-radius: 8px;
+       display: inline-block; padding: 10px 14px; color: #bdc8b2; }}
+main {{ display: grid; grid-template-columns: repeat(auto-fit,minmax(360px,1fr));
+        gap: 20px; max-width: 1500px; margin: auto; padding: 20px 28px 60px; }}
+article {{ background: #1a2017; border: 1px solid #30392b; border-radius: 11px;
+           overflow: hidden; box-shadow: 0 16px 40px #05070366; }}
+img {{ width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block;
+       background: #090b08; }}
+.copy {{ padding: 16px 18px 19px; }}
+h2 {{ display: inline; margin: 0 0 10px 10px; font-size: 1.08rem; }}
+.category {{ background: #49563b; color: #eff7de; border-radius: 999px;
+             padding: 3px 8px; font-size: .68rem; text-transform: uppercase;
+             letter-spacing: .09em; }}
+p {{ margin: 10px 0 0; color: #c2cab9; font-size: .86rem; }}
+.camera {{ color: #828e7b; font-variant-numeric: tabular-nums; }}
+</style></head><body><header><h1>Landscape gazetteer</h1>
+<p>{len(rows)} independently composed, frozen views of one generated world.
+The <a href="gazetteer.csv">CSV</a> preserves the dimensional camera and
+surface readings behind every image; the <a href="contact-sheet.png">contact
+sheet</a> is the quick visual comparison.</p><pre>{escaped_settings}</pre>
+</header><main>{''.join(cards)}</main></body></html>"""
+
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print("usage: tools/gazetteer-report OUTPUT_DIR", file=sys.stderr)
+        raise SystemExit(2)
+    directory = Path(sys.argv[1])
+    csv_path = directory / "gazetteer.csv"
+    if not csv_path.is_file():
+        fail(f"missing {csv_path}")
+    with csv_path.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    if not rows:
+        fail("gazetteer.csv contains no shots")
+    for row in rows:
+        image = directory / row.get("filename", "")
+        if not image.is_file() or image.stat().st_size == 0:
+            fail(f"missing captured image {image}")
+
+    contact_sheet(directory, len(rows))
+    settings_path = directory / "capture.txt"
+    settings = (
+        settings_path.read_text(encoding="utf-8")
+        if settings_path.is_file()
+        else "capture settings unavailable"
+    )
+    (directory / "index.html").write_text(
+        report_html(rows, settings), encoding="utf-8"
+    )
+
+
+if __name__ == "__main__":
+    main()

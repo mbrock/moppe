@@ -22,6 +22,13 @@ namespace moppe::game {
     int measured_frames = 120;
   };
 
+  struct GazetteerCaptureConfig {
+    std::string output_directory;
+    // Frozen views still render a few times so auto-exposure and bounded near
+    // forest residency reach the same state before every captured frame.
+    int settle_frames = 18;
+  };
+
   // Everything one launch of the game is configured with.  This is the whole
   // command line resolved into values: no argv survives past parsing, and no
   // platform service is consulted, so the derived defaults below stay
@@ -37,6 +44,7 @@ namespace moppe::game {
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;
     std::optional<GraphicsBenchmarkConfig> benchmark;
+    std::optional<GazetteerCaptureConfig> gazetteer;
     // Keeps a hand-started run behind the active application, the way
     // captures and benchmarks already stay out of the way.
     bool stay_inactive = false;

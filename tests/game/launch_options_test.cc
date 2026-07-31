@@ -76,6 +76,7 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--graphics-enable", "not-a-feature" }));
   // Benchmark pacing without a destination has nowhere to write.
   MOPPE_CHECK (rejects ({ "--benchmark-frames", "10" }));
+  MOPPE_CHECK (rejects ({ "--gazetteer-settle", "10" }));
   // An unrecognized argument is not an error; it is simply not a setting.
   MOPPE_CHECK (!rejects ({ "--not-a-flag" }));
 }
@@ -101,6 +102,16 @@ MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {
     parsed ({ "--tree-screenshot", "/tmp/trees.png", "--tree-count", "12" });
   MOPPE_CHECK (trees.tree_demo);
   MOPPE_CHECK (trees.tree_count == 12);
+
+  const game::LaunchOptions gazetteer = parsed (
+    { "--terrain-gazetteer", "/tmp/gazetteer", "--gazetteer-settle", "7" });
+  MOPPE_CHECK (gazetteer.gazetteer.has_value ());
+  MOPPE_CHECK (gazetteer.gazetteer->output_directory == "/tmp/gazetteer");
+  MOPPE_CHECK (gazetteer.gazetteer->settle_frames == 7);
+  MOPPE_CHECK (!gazetteer.config.fullscreen);
+  MOPPE_CHECK (!gazetteer.config.activate);
+  MOPPE_CHECK (gazetteer.config.capture_frames);
+  MOPPE_CHECK (gazetteer.seed == 123);
 }
 
 MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {

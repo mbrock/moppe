@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: tools/capture-terrain-gazetteer OUTPUT_DIR" >&2
+  exit 2
+fi
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+output=$1
+seed=${MOPPE_SEED:-123}
+terrain=${MOPPE_TERRAIN_PROFILE:-fast}
+graphics=${MOPPE_GAZETTEER_GRAPHICS:-high}
+settle=${MOPPE_GAZETTEER_SETTLE:-18}
+window=${MOPPE_GAZETTEER_WINDOW:-1600x900}
+
+if [[ ! $settle =~ ^[1-9][0-9]*$ ]]; then
+  echo "MOPPE_GAZETTEER_SETTLE must be a positive integer" >&2
+  exit 2
+fi
+if [[ -e $output ]] && compgen -G "$output/frame-*.png" >/dev/null; then
+  echo "$output already contains captured frames" >&2
+  exit 1
+fi
+if [[ ! -f $build_dir/build.ninja ]]; then
+  cmake -S "$root" -B "$build_dir" -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo
+fi
+
+cmake --build "$build_dir" --target moppe_bundle_shaders
+mkdir -p "$output"
+
+MOPPE_METAL_HUD=0 \
+  "$build_dir/moppe.app/Contents/MacOS/moppe" \
+    --terrain-gazetteer "$output" \
+    --gazetteer-settle "$settle" \
+    --windowed \
+    --window-size "$window" \
+    --inactive \
+    --seed "$seed" \
+    --terrain-quality "$terrain" \
+    --graphics-quality "$graphics"
+
+printf '%s\n' \
+  "mode=frozen-frame-composition" \
+  "seed=$seed" \
+  "terrain=$terrain" \
+  "graphics=$graphics" \
+  "window=$window" \
+  "settle_frames=$settle" \
+  >"$output/capture.txt"
+
+"$root/tools/gazetteer-report" "$output"
+echo "wrote the landscape gazetteer to $output"
