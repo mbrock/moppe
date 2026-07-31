@@ -1,29 +1,26 @@
-// Ferns and low shrubs on the forest floor, generated rather than stored.
+// Grass and occasional ferns on the forest floor, generated rather than
+// stored.
 //
 // Nothing here is a mesh. The object stage walks a window of ground tiles
 // around the camera and keeps the ones the world's own fields say something
-// grows on -- shade under a canopy, water in the soil, no trail worn across
-// it, ground the plant could stand on. The mesh stage turns each surviving
-// tile into plants: a hash decides where each one sits and what it is, the
-// height and normal textures root it on the terrain by construction, and the
-// same gust function the trees use moves it. So undergrowth costs no memory,
+// grows on -- light and water, no trail worn across it, ground the plant could
+// stand on. The mesh stage turns each surviving tile into plants: a hash
+// decides where each one sits and what it is, and the height and normal
+// textures root it on the terrain by construction. The same gust function the
+// trees use moves it. So undergrowth costs no memory,
 // cannot drift out of step with the ground it grows on, and can change its
 // count and its shape every frame, because nothing is kept to go stale.
 
 #include "common.h"
 
-// A plant is four sprays -- fronds of a fern, leafy shoots of a shrub -- and
-// a spray is one arched strip of six cross-sections. Six is what buys the
-// outline: a frond's edge is lobed, not smooth, and one whole meshlet of
-// smooth-edged leaves reads as plastic cutlery no matter what colour it is.
-#define UNDERGROWTH_SPRAY_SECTIONS 6
+// A plant is a tuft of four blades, or occasionally four fern fronds, and each
+// blade is one strip of three cross-sections. The same strip can make a narrow,
+// gently twisted grass blade or the lobed outline of a frond.
+#define UNDERGROWTH_SPRAY_SECTIONS 3
 #define UNDERGROWTH_SPRAY_VERTICES (UNDERGROWTH_SPRAY_SECTIONS * 2)
 #define UNDERGROWTH_SPRAY_PRIMITIVES ((UNDERGROWTH_SPRAY_SECTIONS - 1) * 2)
-#define UNDERGROWTH_SPRAYS_PER_PLANT 4
-#define UNDERGROWTH_PLANTS_PER_TILE 5
-#define UNDERGROWTH_LOD_TRANSITION 0.38
-#define UNDERGROWTH_TILE_THREADS                                               \
-  (UNDERGROWTH_PLANTS_PER_TILE * UNDERGROWTH_SPRAYS_PER_PLANT)
+#define UNDERGROWTH_LOD_TRANSITION 0.52
+#define UNDERGROWTH_TILE_THREADS MOPPE_UNDERGROWTH_MESH_THREADS
 #define UNDERGROWTH_OBJECT_THREADS 64
 
 struct UndergrowthVaryings {
@@ -105,12 +102,10 @@ undergrowth_ground_normal (float2 world_xz,
     float3 (packed.x, sqrt (saturate (1.0 - dot (packed, packed))), packed.y));
 }
 
-// How much undergrowth one patch of ground carries. Shade is the whole
-// argument: a fern lives where a canopy already stands, so the same forest
-// field that draws the trees decides what grows beneath them. Soil water
-// sets how lush it gets, a worn trail clears it -- ground people ride over
-// does not keep its ferns -- and a slope past what a rosette can hold sheds
-// it entirely.
+// How much ground vegetation one patch carries. Grass is the substrate, so it
+// also occupies open country; a closed canopy thins it rather than being the
+// reason it exists. Soil water sets how lush it gets, a worn trail clears it,
+// and a slope past what roots can hold sheds it entirely.
 static inline float undergrowth_density (float2 world_xz,
                                          constant MoppeUndergrowthUniforms& u,
                                          texture2d<float> forest,
@@ -120,20 +115,20 @@ static inline float undergrowth_density (float2 world_xz,
   const float canopy = saturate (undergrowth_field (world_xz, u, forest).r);
   const float wet = saturate (undergrowth_field (world_xz, u, moisture).r);
   const float2 worn = saturate (undergrowth_field (world_xz, u, paths).rg);
-  // Broad clumping so the floor is patchy rather than evenly furred: real
-  // understory grows in stands with open leaf litter between them.
+  // Broad variation breaks up an evenly upholstered floor without opening the
+  // large bare holes that made the former rosette layer look planted.
   const float clump =
     moppe_value_noise (world_xz * 0.085) * 0.55 +
     moppe_value_noise (world_xz * 0.021 + float2 (17.3, 4.1)) * 0.45;
-  const float shade = smoothstep (0.06, 0.55, canopy);
-  const float damp = 0.34 + 0.66 * smoothstep (0.02, 0.48, wet);
+  const float light = 1.0 - 0.30 * smoothstep (0.32, 0.92, canopy);
+  const float damp = 0.75 + 0.25 * smoothstep (0.02, 0.48, wet);
   const float standable = smoothstep (0.52, 0.78, ground_normal.y);
   const float cleared = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
-  return saturate ((0.34 + 1.45 * shade) * damp * standable * cleared *
-                   smoothstep (0.20, 0.60, clump) * u.params.w);
+  const float variation = 0.88 + 0.24 * smoothstep (0.18, 0.72, clump);
+  return saturate (light * damp * standable * cleared * variation * u.params.w);
 }
 
-// Each world tile owns one phase for thinning its ordered five plants. The
+// Each world tile owns one phase for thinning its ordered ten plants. The
 // phase must be addressed by the world cell, never by the tile's temporary
 // slot in the moving camera window: using the latter makes the whole floor
 // choose new counts whenever the window crosses one tile boundary.
@@ -144,7 +139,7 @@ static inline float undergrowth_lod_phase (uint2 cell) {
 static inline uint undergrowth_lod_plants (float wanted, uint2 cell) {
   const float phase = undergrowth_lod_phase (cell);
   const float begun = max (wanted - phase + UNDERGROWTH_LOD_TRANSITION, 0.0);
-  return min (uint (ceil (begun)), uint (UNDERGROWTH_PLANTS_PER_TILE));
+  return min (uint (ceil (begun)), uint (MOPPE_UNDERGROWTH_PLANTS_PER_TILE));
 }
 
 static inline float
@@ -201,7 +196,7 @@ undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
       // distance, and the mesh stage widens the remaining coverage as the
       // budget recedes.
       const float near_share = 1.0 - smoothstep (0.62 * reach, reach, distance);
-      wanted = density * near_share * float (UNDERGROWTH_PLANTS_PER_TILE);
+      wanted = density * near_share * float (MOPPE_UNDERGROWTH_PLANTS_PER_TILE);
       plants = undergrowth_lod_plants (wanted, uint2 (cell));
       valid = plants > 0u;
     }
@@ -235,8 +230,7 @@ undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
 
 // Everything one spray needs to exist, resolved from a hash and the ground.
 // Reach and climb are kept apart because they are what tell the two plants
-// apart: a fern throws its fronds outward and lets them fall, a shrub sends
-// its shoots up and holds them there.
+// apart: a fern throws its fronds outward while a grass blade rises.
 struct UndergrowthSpray {
   float3 root;
   float3 up;
@@ -261,17 +255,18 @@ struct UndergrowthSpray {
   texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
-  texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]]) {
+  texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
+  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
   const uint plants = max (undergrowth_lod_plants (tile.wanted, cell), 1u);
   if (thread_id == 0u) {
-    out.set_primitive_count (plants * UNDERGROWTH_SPRAYS_PER_PLANT *
+    out.set_primitive_count (plants * MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT *
                              UNDERGROWTH_SPRAY_PRIMITIVES);
   }
 
-  const uint plant = thread_id / UNDERGROWTH_SPRAYS_PER_PLANT;
-  const uint spray = thread_id % UNDERGROWTH_SPRAYS_PER_PLANT;
+  const uint plant = thread_id / MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT;
+  const uint spray = thread_id % MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT;
   if (plant >= plants)
     return;
 
@@ -294,14 +289,13 @@ struct UndergrowthSpray {
 
   const float canopy = saturate (undergrowth_field (root_xz, u, forest).r);
   const float wet = saturate (undergrowth_field (root_xz, u, moisture).r);
-  const float vigour = 0.55 + 0.60 * wet + 0.25 * canopy;
-
-  // Two plants, one construction. A fern is a low rosette of long arching
-  // fronds and belongs in shade; a shrub is a tighter, more upright, smaller
-  // leaved thing that holds the open ground and the forest edge. Which one
-  // grows here is mostly the canopy's decision, with enough of a hash left
-  // in it that a stand is never uniform.
-  const float fern_odds = saturate (0.20 + 1.05 * canopy);
+  const float2 worn = saturate (undergrowth_field (root_xz, u, paths).rg);
+  const float root_clear = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
+  // Grass is the ordinary answer. Ferns are an accent reserved for damp shade,
+  // not a second carpet competing with it.
+  const float fern_habitat =
+    smoothstep (0.28, 0.86, canopy) * smoothstep (0.18, 0.74, wet);
+  const float fern_odds = 0.025 + 0.14 * fern_habitat;
   const bool fern = undergrowth_hash (identity, 3u) < fern_odds;
 
   // A plant straddles its LOD threshold by growing into or out of the ground.
@@ -309,22 +303,21 @@ struct UndergrowthSpray {
   // layer translucent and giving depth ownership to stochastic fragments.
   const float presence = undergrowth_lod_presence (tile.wanted, plant, cell);
   // Plants thinned out by distance leave gaps, so the survivors take on the
-  // coverage continuously. Basing this on the fractional budget rather than
-  // the emitted integer count stops every survivor changing size at once.
+  // projected width continuously. Height remains an ecological property:
+  // making survivors taller as they recede is a conspicuous LOD tell.
   const float thinning =
-    sqrt (float (UNDERGROWTH_PLANTS_PER_TILE) / max (tile.wanted, 1.0));
-  // Squaring the draw puts most plants small and a few large, which is the
-  // shape of any stand that has been competing for light for a while. A
-  // uniform draw reads as a planted bed.
+    sqrt (float (MOPPE_UNDERGROWTH_PLANTS_PER_TILE) / max (tile.wanted, 1.0));
   const float draw = undergrowth_hash (identity, 4u);
-  const float scale = sqrt (presence) * vigour * (0.66 + 1.18 * draw * draw) *
-                      mix (1.0, min (thinning, 1.7), 0.7);
+  const float scale = sqrt (presence * root_clear) *
+                      (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
+                      (0.65 + 0.65 * draw * draw);
+  const float coverage = mix (1.0, min (thinning, 1.8), fern ? 0.45 : 0.72);
 
   UndergrowthSpray s;
   s.root = root;
-  // Undergrowth follows the ground more closely than a tree does; it has no
-  // trunk to straighten it out.
-  s.up = normalize (mix (ground_normal, float3 (0, 1, 0), 0.35));
+  // Fronds follow the ground; grass gravitropism makes its blades mostly
+  // upright even when their roots are on a bank.
+  s.up = normalize (mix (ground_normal, float3 (0, 1, 0), fern ? 0.38 : 0.72));
   const float turn = 6.2831853 * undergrowth_hash (identity, 5u) +
                      1.5707963 * float (spray) +
                      0.55 * (undergrowth_hash (identity, 6u + spray) - 0.5);
@@ -335,31 +328,31 @@ struct UndergrowthSpray {
 
   const float spread = 0.80 + 0.45 * undergrowth_hash (identity, 11u + spray);
   if (fern) {
-    // A frond leaves the crown steeply, tops out about two thirds along, and
-    // falls away to a drooping tip.
-    s.reach = scale * 0.70 * spread;
-    s.climb = scale * 0.94 * spread;
-    s.width = scale * 0.205;
-    s.lift = 2.10;
-    s.arch = 1.72;
-    s.lobed = 0.46;
-    s.tint = float3 (0.100, 0.315, 0.086);
+    s.reach = scale * 0.48 * spread * coverage;
+    s.climb = scale * 0.62 * spread;
+    s.width = scale * 0.105 * coverage;
+    s.lift = 1.88;
+    s.arch = 1.20;
+    s.lobed = 0.38;
+    s.tint = float3 (0.115, 0.300, 0.075);
   } else {
-    // A shoot goes up and stays up, so a shrub reads as a mass at knee
-    // height rather than as something spilled on the ground.
-    s.reach = scale * 0.46 * spread;
-    s.climb = scale * 1.42 * spread;
-    s.width = scale * 0.360;
-    s.lift = 1.50;
-    s.arch = 0.42;
-    s.lobed = 0.10;
-    s.tint = float3 (0.175, 0.295, 0.098);
+    // One strip stands for a small blade cluster at game scale: narrow enough
+    // to read as grass, but wide enough to retain stable MSAA coverage while
+    // riding past it.
+    s.reach = scale * 0.16 * spread;
+    s.climb = scale * 0.65 * spread;
+    s.width = scale * 0.045 * coverage;
+    s.lift = 1.22;
+    s.arch = 0.20;
+    s.lobed = 0.0;
+    s.tint = float3 (0.205, 0.360, 0.105);
   }
-  // Damp ground is deeper and greener; a dry shaded floor goes olive.
-  s.tint *= float3 (1.18 - 0.34 * wet, 0.80 + 0.42 * wet, 0.80 + 0.30 * wet);
+  // Damp grass is deeper and greener; dry blades run straw-olive without
+  // becoming a second ground texture.
+  s.tint *= float3 (1.12 - 0.24 * wet, 0.84 + 0.30 * wet, 0.82 + 0.22 * wet);
   const float olive = undergrowth_hash (identity, 17u) - 0.5;
-  s.tint *= float3 (1.0 + 0.62 * olive, 1.0, 1.0 - 0.58 * olive);
-  s.tint *= 0.80 + 0.42 * undergrowth_hash (identity, 19u);
+  s.tint *= float3 (1.0 + 0.28 * olive, 1.0, 1.0 - 0.24 * olive);
+  s.tint *= 0.90 + 0.25 * undergrowth_hash (identity, 19u);
 
   const uint vertex_base = thread_id * UNDERGROWTH_SPRAY_VERTICES;
   const uint primitive_base = thread_id * UNDERGROWTH_SPRAY_PRIMITIVES;
@@ -373,26 +366,26 @@ struct UndergrowthSpray {
     const float rise = s.lift * t - s.arch * t * t;
     const float3 spine =
       s.root + s.out * (s.reach * t) + s.up * (s.climb * rise);
-    // Widest a little past halfway and closed at the tip: a leaf, not a
-    // ribbon. The lobes riding on that profile are what a fern's edge is,
-    // and they cost nothing but the cross-sections already being emitted.
-    const float taper = 0.42 + 1.25 * t - 1.35 * t * t;
+    // Grass keeps nearly one width until its pointed tip; a fern broadens
+    // through the middle and carries lobes on that profile.
+    const float taper =
+      fern ? 0.42 + 1.25 * t - 1.35 * t * t : 0.72 + 0.28 * sin (3.1415927 * t);
     const float lobes = 1.0 + s.lobed * cos (12.566371 * t);
     const float half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
     const float3 side = normalize (cross (s.out, s.up));
-    // The blade twists as it falls, so a rosette never shows four identical
-    // faces to the light.
+    // A little twist keeps a tuft from showing four identical faces. Ferns
+    // twist more strongly as their broad fronds fall.
     const float3 face = normalize (
       s.up + s.out * (0.55 * rise) +
-      side * (0.30 * sin (6.2831853 * undergrowth_hash (identity, 23u + spray) +
-                          2.2 * t)));
+      side *
+        ((fern ? 0.30 : 0.12) *
+         sin (6.2831853 * undergrowth_hash (identity, 23u + spray) + 2.2 * t)));
     const float3 edge = normalize (cross (face, s.out));
 
-    // These broad leaves travel much less than a tree's loose crown. Keeping
-    // the fast flick subordinate to the slow bend avoids subpixel edge
-    // scintillation while preserving one shared wind field.
-    const float bend = 0.24 + 0.56 * t;
-    const float flutter = 0.14 + 0.30 * t;
+    // Fine grass edges scintillate easily, so the fast flick remains
+    // subordinate to the shared low-frequency bend.
+    const float bend = 0.18 + 0.50 * t;
+    const float flutter = 0.08 + 0.22 * t;
     const float3 left =
       moppe_wind (spine - edge * half_width, bend, flutter, u.params.x);
     const float3 right =
@@ -464,8 +457,8 @@ fragment float4 undergrowth_fragment (UndergrowthVaryings in [[stage_in]],
   float3 color = base * (moppe_hemisphere_light (u.ambient.rgb, n) +
                          u.sun_diffuse.rgb * lambert * sun_visibility);
 
-  // A frond is one leaf thick and glows when the sun is behind it, which is
-  // most of what tells undergrowth apart from painted ground.
+  // A blade is one leaf thick and glows when the sun is behind it, which is
+  // most of what tells this layer apart from painted ground.
   const float leaf_back = pow (max (dot (-n, l), 0.0), 1.8);
   const float3 transmission_tint (0.96, 0.88, 0.62);
   color += base * u.sun_diffuse.rgb * transmission_tint * sun_visibility *

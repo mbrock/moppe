@@ -1212,9 +1212,9 @@ namespace moppe {
                         << std::endl;
           }
 
-          // Undergrowth: ferns and shrubs generated per frame from the
-          // world's own fields. Opaque, depth-written, no vertex buffer at
-          // all -- the object stage decides which ground is worth a
+          // Undergrowth: grass and occasional ferns generated per frame from
+          // the world's own fields. Opaque, depth-written, no vertex buffer
+          // at all -- the object stage decides which ground is worth a
           // threadgroup and the mesh stage grows the plants.
           MTLMeshRenderPipelineDescriptor* g =
             [[MTLMeshRenderPipelineDescriptor alloc] init];
@@ -1229,7 +1229,7 @@ namespace moppe {
           g.stencilAttachmentPixelFormat = depth;
           g.payloadMemoryLength = 1024;
           g.maxTotalThreadsPerObjectThreadgroup = 64;
-          g.maxTotalThreadsPerMeshThreadgroup = 20;
+          g.maxTotalThreadsPerMeshThreadgroup = MOPPE_UNDERGROWTH_MESH_THREADS;
           if (g.objectFunction && g.meshFunction && g.fragmentFunction) {
             NSError* error = nil;
             m_pipelines.undergrowth = [m_device
@@ -2609,7 +2609,7 @@ namespace moppe {
         // The tile window is anchored to the world lattice rather than to the
         // camera, so a plant keeps its identity as the rider moves and no
         // amount of travelling makes the floor reshuffle itself.
-        const float tile_world = 2.8f;
+        const float tile_world = 2.0f;
         const int tiles_side =
           (int)std::ceil ((2.0f * params.reach) / tile_world);
         u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - params.reach) /
@@ -2639,14 +2639,15 @@ namespace moppe {
         bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
         bind (terrain.forest, MOPPE_TEX_TERRAIN_FOREST);
         bind (terrain.moisture, MOPPE_TEX_TERRAIN_MOISTURE);
-        [enc setObjectTexture:terrain.paths atIndex:MOPPE_TEX_TERRAIN_PATHS];
+        bind (terrain.paths, MOPPE_TEX_TERRAIN_PATHS);
         if (terrain.shadow_map)
           [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
         const NSUInteger total =
           (NSUInteger)tiles_side * (NSUInteger)tiles_side;
         [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
           threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake (20, 1, 1)];
+            threadsPerMeshThreadgroup:MTLSizeMake (
+                                        MOPPE_UNDERGROWTH_MESH_THREADS, 1, 1)];
       }
     }
 

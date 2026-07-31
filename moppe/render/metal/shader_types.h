@@ -147,6 +147,11 @@ struct MoppeOceanUniforms {
 // something grows there; the mesh stage turns each survivor into plants. So
 // what crosses this boundary is where the camera is and how the world's
 // lattice is laid out -- never a plant.
+#define MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT 4
+#define MOPPE_UNDERGROWTH_PLANTS_PER_TILE 10
+#define MOPPE_UNDERGROWTH_MESH_THREADS                                         \
+  (MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT * MOPPE_UNDERGROWTH_PLANTS_PER_TILE)
+
 struct MoppeUndergrowthUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
