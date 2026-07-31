@@ -186,7 +186,9 @@ struct MoppeUndergrowthUniforms {
   MoppeFloat4 interaction; // xyz=current mover,
                            // w=parting radius in metres
   MoppeFloat4 shadow;      // x=strength, y=shadow texel
-  MoppeFloat4 relief;      // x=sea level, y=land relief
+  MoppeFloat4 relief;      // x=sea level, y=land relief,
+                           // z=snow support available,
+                           // w=standing-water levels available
 };
 
 struct MoppeDustEmission {

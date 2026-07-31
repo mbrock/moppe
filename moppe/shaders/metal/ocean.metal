@@ -567,10 +567,17 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
       ? saturate (1.4 * ocean_grid_sample_raw (in.world_pos.xz, u, geology).y)
       : 0.0;
 
-  const float3 deep = moppe_srgb (float3 (0.035, 0.17, 0.28));
-  const float3 shallow = moppe_srgb (float3 (0.10, 0.42, 0.55));
+  const float3 deep = moppe_srgb (float3 (0.045, 0.21, 0.31));
+  const float3 shallow = moppe_srgb (float3 (0.11, 0.46, 0.55));
   const float3 murk = moppe_srgb (float3 (0.22, 0.30, 0.17));
-  float3 water = mix (deep, shallow, 0.25 + 0.5 * fresnel);
+  // The water column is landscape information. A shallow shelf keeps its
+  // mineral turquoise, then grades through a several-metre littoral zone into
+  // the deep body colour. Fresnel still supplies the view-dependent sky film
+  // below; it no longer makes every lake the same flat blue regardless of its
+  // bathymetry.
+  const float body_depth = smoothstep (0.35, 11.0, depth_m);
+  float3 water = mix (shallow, deep, body_depth);
+  water = mix (water, shallow, 0.16 * fresnel);
   water = mix (water, murk, 0.6 * turbidity);
   float alpha = mix (0.78, 0.95, fresnel);
   alpha = mix (alpha, 0.96, 0.7 * turbidity);

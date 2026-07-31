@@ -719,7 +719,13 @@ fragment float4 terrain_fragment (
   const float sand_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
   const float3 sand_c =
     mix (scree_c, sand_value * float3 (1.12, 1.03, 0.82), 0.82);
-  texel = mix (texel, sand_c, beach_coef);
+  // The extracted waterline describes lakes and rivers as well as the global
+  // sea. Give every gentle shore a narrow water-worked margin instead of
+  // letting turf meet translucent water at a mathematically sharp edge.
+  const float shore_material = max (beach_coef, 0.78 * swash_zone) *
+                               (1.0 - submerged) * (1.0 - snow_coef) *
+                               smoothstep (0.48, 0.74, n.y);
+  texel = mix (texel, sand_c, shore_material);
   // The sediment ledger is material information the simulation already
   // proved: fresh cuts expose raw regolith, deposition builds smooth
   // pale alluvium on gentle ground.  Both defer to snow.
