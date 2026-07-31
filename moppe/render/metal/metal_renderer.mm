@@ -1215,7 +1215,7 @@ namespace moppe {
           // Undergrowth: grass and occasional ferns generated per frame from
           // the world's own fields. Opaque, depth-written, no vertex buffer
           // at all -- the object stage decides which ground is worth a
-          // threadgroup and the mesh stage grows the plants.
+          // threadgroup and the mesh stage grows the shoots.
           MTLMeshRenderPipelineDescriptor* g =
             [[MTLMeshRenderPipelineDescriptor alloc] init];
           g.objectFunction =
@@ -2609,7 +2609,9 @@ namespace moppe {
         // The tile window is anchored to the world lattice rather than to the
         // camera, so a plant keeps its identity as the rider moves and no
         // amount of travelling makes the floor reshuffle itself.
-        const float tile_world = 2.0f;
+        // A metre-sized cell gives the field enough independent roots to read
+        // as grass rather than a lattice of broad four-way plant proxies.
+        const float tile_world = 1.0f;
         const int tiles_side =
           (int)std::ceil ((2.0f * params.reach) / tile_world);
         u.tiles.x = std::floor ((m_frame.params.camera_pos[0] - params.reach) /
@@ -2622,6 +2624,10 @@ namespace moppe {
         u.params.y = params.cloud_cover;
         u.params.z = params.reach;
         u.params.w = params.density;
+        u.interaction.x = params.interaction_position[0];
+        u.interaction.y = params.interaction_position[1];
+        u.interaction.z = params.interaction_position[2];
+        u.interaction.w = params.interaction_radius;
 
         id<MTLRenderCommandEncoder> enc = scene_encoder ();
         begin_gpu_pass (enc, GpuPass::Scene);

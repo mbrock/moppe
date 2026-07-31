@@ -154,13 +154,15 @@ namespace moppe {
     // Grass and occasional ferns on the forest floor. There is no plant list
     // and no mesh: the backend walks ground tiles around the camera and grows
     // whatever the terrain's own canopy, moisture, and trail fields say
-    // stands there. So what a frame passes is only how far to look and how
-    // thick to lay it on.
+    // stands there. The optional interaction footprint lets the current mover
+    // part those generated blades without turning them into retained objects.
     struct UndergrowthParams {
       float time = 0.0f;
       float cloud_cover = 0.0f;
       float reach = 52.0f;  // world metres from the camera
       float density = 1.0f; // art-directed scale over the field's own answer
+      Vec3 interaction_position {};
+      float interaction_radius = 0.0f;
     };
 
     struct DustEmission {

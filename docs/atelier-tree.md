@@ -156,12 +156,15 @@ rather than prerequisites for a forested world.
 ferns in damp shade, and nothing about it is a stored mesh. An object stage
 walks a window of ground tiles around the camera and keeps the ones the
 world's own fields say something grows on: light and water in the soil, no
-trail worn across it, ground roots can hold. A mesh stage turns each surviving
-tile into plants — a hash decides where each one stands and what it is, the
-height and normal textures root it on the terrain by construction, and the
-same gust function the trees use moves it. Each generated root samples the
-trail field again, so grass grows down at a worn edge instead of exposing the
-coarser tile that proposed it.
+trail worn across it, ground roots can hold. Each one-metre tile grows up to
+32 independently rooted shoots — almost all narrow grass blades, with rare
+fern fronds in damp shade. Four cross-sections give each shoot a curved
+silhouette, while a shared C++/Metal meshlet contract proves at compile time
+that the tile remains within Metal's output limits. A hash decides where each
+shoot stands and what it is, the height and normal textures root it on the
+terrain by construction, and the same gust function the trees use moves it.
+Each generated root samples the trail field again, so grass grows down at a
+worn edge instead of exposing the coarser tile that proposed it.
 
 That is the shape the vegetation shelf's `ideas/geometry-from-fields.md`
 proposes, and its payoff is not only that the plants cost no memory. They
@@ -177,11 +180,21 @@ at its threshold. A sward therefore thins plant by plant into the terrain's
 filtered grass material without either a contour line or a camera-window
 boundary reshuffling the floor.
 
+The dense field also has two temporal rules. Fine flutter fades before an
+individual blade becomes subpixel, leaving the slower coherent gust instead
+of distant glitter; and high-frequency blade-to-blade colour differences stay
+subordinate to the continuous moisture and canopy fields. In gameplay the
+current bike, car, or walker contributes one small interaction footprint.
+Roots remain fixed, but upper sections lean out and lie down as the mover
+passes, so the field participates in motion without acquiring a retained
+plant simulation.
+
 In a 1280x800 high-quality riding feature cube, the denser grass pass adds a
-median 0.47 ms of command-buffer time (0.54 ms mean). That is a deliberate
-visual cost, but remains small beside the 8.33 ms 120 Hz frame budget. It needs
-Metal mesh shaders; backends without them grow nothing, and the `undergrowth`
-graphics feature turns it off.
+median 0.75 ms of command-buffer time (0.84 ms mean). The fully enabled
+configuration remains below 10 ms at the median. That is a deliberate visual
+cost for about 3.2 times the prior blade density, but it leaves ample room in a
+60 Hz frame. It needs Metal mesh shaders; backends without them grow nothing,
+and the `undergrowth` graphics feature turns it off.
 
 Run a quiet camera in the game renderer with:
 

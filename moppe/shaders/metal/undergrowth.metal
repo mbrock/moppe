@@ -4,7 +4,7 @@
 // Nothing here is a mesh. The object stage walks a window of ground tiles
 // around the camera and keeps the ones the world's own fields say something
 // grows on -- light and water, no trail worn across it, ground the plant could
-// stand on. The mesh stage turns each surviving tile into plants: a hash
+// stand on. The mesh stage turns each surviving tile into shoots: a hash
 // decides where each one sits and what it is, and the height and normal
 // textures root it on the terrain by construction. The same gust function the
 // trees use moves it. So undergrowth costs no memory,
@@ -13,12 +13,9 @@
 
 #include "common.h"
 
-// A plant is a tuft of four blades, or occasionally four fern fronds, and each
-// blade is one strip of three cross-sections. The same strip can make a narrow,
-// gently twisted grass blade or the lobed outline of a frond.
-#define UNDERGROWTH_SPRAY_SECTIONS 3
-#define UNDERGROWTH_SPRAY_VERTICES (UNDERGROWTH_SPRAY_SECTIONS * 2)
-#define UNDERGROWTH_SPRAY_PRIMITIVES ((UNDERGROWTH_SPRAY_SECTIONS - 1) * 2)
+// Each mesh thread grows one independently rooted grass blade or rare fern
+// frond. Four cross-sections give that shoot a curved silhouette while the
+// shared constants keep the meshlet exactly within Metal's 256-vertex limit.
 #define UNDERGROWTH_LOD_TRANSITION 0.52
 #define UNDERGROWTH_TILE_THREADS MOPPE_UNDERGROWTH_MESH_THREADS
 #define UNDERGROWTH_OBJECT_THREADS 64
@@ -41,12 +38,11 @@ struct UndergrowthPayload {
   UndergrowthTile tiles[UNDERGROWTH_OBJECT_THREADS];
 };
 
-using UndergrowthMesh =
-  metal::mesh<UndergrowthVaryings,
-              void,
-              UNDERGROWTH_TILE_THREADS * UNDERGROWTH_SPRAY_VERTICES,
-              UNDERGROWTH_TILE_THREADS * UNDERGROWTH_SPRAY_PRIMITIVES,
-              metal::topology::triangle>;
+using UndergrowthMesh = metal::mesh<UndergrowthVaryings,
+                                    void,
+                                    MOPPE_UNDERGROWTH_MESH_VERTICES,
+                                    MOPPE_UNDERGROWTH_MESH_PRIMITIVES,
+                                    metal::topology::triangle>;
 
 // ---- reading the world ---------------------------------------------
 
@@ -128,7 +124,7 @@ static inline float undergrowth_density (float2 world_xz,
   return saturate (light * damp * standable * cleared * variation * u.params.w);
 }
 
-// Each world tile owns one phase for thinning its ordered ten plants. The
+// Each world tile owns one phase for thinning its ordered shoots. The
 // phase must be addressed by the world cell, never by the tile's temporary
 // slot in the moving camera window: using the latter makes the whole floor
 // choose new counts whenever the window crosses one tile boundary.
@@ -136,15 +132,15 @@ static inline float undergrowth_lod_phase (uint2 cell) {
   return undergrowth_hash (cell, 0x51a7u);
 }
 
-static inline uint undergrowth_lod_plants (float wanted, uint2 cell) {
+static inline uint undergrowth_lod_shoots (float wanted, uint2 cell) {
   const float phase = undergrowth_lod_phase (cell);
   const float begun = max (wanted - phase + UNDERGROWTH_LOD_TRANSITION, 0.0);
-  return min (uint (ceil (begun)), uint (MOPPE_UNDERGROWTH_PLANTS_PER_TILE));
+  return min (uint (ceil (begun)), uint (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE));
 }
 
 static inline float
-undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
-  const float threshold = float (plant) + undergrowth_lod_phase (cell);
+undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
+  const float threshold = float (shoot) + undergrowth_lod_phase (cell);
   const float presence = smoothstep (threshold - UNDERGROWTH_LOD_TRANSITION,
                                      threshold + UNDERGROWTH_LOD_TRANSITION,
                                      wanted);
@@ -177,7 +173,7 @@ undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
   const uint tile_x = index % max (tiles_side, 1u);
   const uint tile_z = index / max (tiles_side, 1u);
   float wanted = 0.0;
-  uint plants = 0u;
+  uint shoots = 0u;
 
   if (valid) {
     const int2 cell = int2 (u.tiles.xy) + int2 (tile_x, tile_z);
@@ -192,13 +188,13 @@ undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
         undergrowth_ground_normal (center, u, normals);
       const float density =
         undergrowth_density (center, u, forest, moisture, paths, ground_normal);
-      // The budget is the level of detail. Plants grow down continuously with
+      // The budget is the level of detail. Shoots grow down continuously with
       // distance, and the mesh stage widens the remaining coverage as the
       // budget recedes.
       const float near_share = 1.0 - smoothstep (0.62 * reach, reach, distance);
-      wanted = density * near_share * float (MOPPE_UNDERGROWTH_PLANTS_PER_TILE);
-      plants = undergrowth_lod_plants (wanted, uint2 (cell));
-      valid = plants > 0u;
+      wanted = density * near_share * float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE);
+      shoots = undergrowth_lod_shoots (wanted, uint2 (cell));
+      valid = shoots > 0u;
     }
 
     if (valid) {
@@ -226,18 +222,18 @@ undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
   }
 }
 
-// ---- the mesh stage: what a plant is -------------------------------
+// ---- the mesh stage: what a shoot is -------------------------------
 
-// Everything one spray needs to exist, resolved from a hash and the ground.
-// Reach and climb are kept apart because they are what tell the two plants
+// Everything one shoot needs to exist, resolved from a hash and the ground.
+// Reach and climb are kept apart because they are what tell the two forms
 // apart: a fern throws its fronds outward while a grass blade rises.
-struct UndergrowthSpray {
+struct UndergrowthShoot {
   float3 root;
   float3 up;
-  float3 out;  // horizontal direction the spray reaches along
+  float3 out;  // horizontal direction the shoot reaches along
   float3 tint; // display-space colour at the lit end
-  float reach; // metres out from the crown
-  float climb; // metres of rise at the spray's highest
+  float reach; // metres out from the root
+  float climb; // metres of rise at the shoot's highest
   float width;
   float lift;  // how steeply it leaves the crown
   float arch;  // how far it falls away again before the tip
@@ -259,29 +255,27 @@ struct UndergrowthSpray {
   texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
-  const uint plants = max (undergrowth_lod_plants (tile.wanted, cell), 1u);
+  const uint shoots = max (undergrowth_lod_shoots (tile.wanted, cell), 1u);
   if (thread_id == 0u) {
-    out.set_primitive_count (plants * MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT *
-                             UNDERGROWTH_SPRAY_PRIMITIVES);
+    out.set_primitive_count (shoots * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT);
   }
 
-  const uint plant = thread_id / MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT;
-  const uint spray = thread_id % MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT;
-  if (plant >= plants)
+  const uint shoot = thread_id;
+  if (shoot >= shoots)
     return;
 
   const float tile_world = u.tiles.w;
   const uint2 identity =
-    uint2 (cell.x * 73856093u + plant, cell.y * 19349663u + plant * 83492791u);
+    uint2 (cell.x * 73856093u + shoot, cell.y * 19349663u + shoot * 83492791u);
 
-  // Where the plant stands inside its tile. Jitter well inside the edge so a
-  // tile's plants stay its own: a plant that wanders across the boundary
+  // Where the shoot stands inside its tile. Jitter inside the edge so a
+  // tile's shoots stay its own: a root that wanders across the boundary
   // would pop when its own tile fails a cull its neighbour passed.
   const float2 base =
     (float2 (int2 (u.tiles.xy)) + float2 (tile.index)) * tile_world;
   const float2 root_xz =
-    base + tile_world * float2 (0.10 + 0.80 * undergrowth_hash (identity, 1u),
-                                0.10 + 0.80 * undergrowth_hash (identity, 2u));
+    base + tile_world * float2 (0.03 + 0.94 * undergrowth_hash (identity, 1u),
+                                0.03 + 0.94 * undergrowth_hash (identity, 2u));
 
   const float3 ground_normal = undergrowth_ground_normal (root_xz, u, normals);
   const float ground = undergrowth_ground (root_xz, u, heights);
@@ -295,38 +289,37 @@ struct UndergrowthSpray {
   // not a second carpet competing with it.
   const float fern_habitat =
     smoothstep (0.28, 0.86, canopy) * smoothstep (0.18, 0.74, wet);
-  const float fern_odds = 0.025 + 0.14 * fern_habitat;
+  const float fern_odds = 0.012 + 0.06 * fern_habitat;
   const bool fern = undergrowth_hash (identity, 3u) < fern_odds;
 
-  // A plant straddles its LOD threshold by growing into or out of the ground.
+  // A shoot straddles its LOD threshold by growing into or out of the ground.
   // The short transition keeps motion continuous without turning the whole
   // layer translucent and giving depth ownership to stochastic fragments.
-  const float presence = undergrowth_lod_presence (tile.wanted, plant, cell);
-  // Plants thinned out by distance leave gaps, so the survivors take on the
+  const float presence = undergrowth_lod_presence (tile.wanted, shoot, cell);
+  // Shoots thinned out by distance leave gaps, so the survivors take on the
   // projected width continuously. Height remains an ecological property:
   // making survivors taller as they recede is a conspicuous LOD tell.
   const float thinning =
-    sqrt (float (MOPPE_UNDERGROWTH_PLANTS_PER_TILE) / max (tile.wanted, 1.0));
+    sqrt (float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE) / max (tile.wanted, 1.0));
   const float draw = undergrowth_hash (identity, 4u);
   const float scale = sqrt (presence * root_clear) *
                       (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
                       (0.65 + 0.65 * draw * draw);
   const float coverage = mix (1.0, min (thinning, 1.8), fern ? 0.45 : 0.72);
 
-  UndergrowthSpray s;
+  UndergrowthShoot s;
   s.root = root;
   // Fronds follow the ground; grass gravitropism makes its blades mostly
   // upright even when their roots are on a bank.
   s.up = normalize (mix (ground_normal, float3 (0, 1, 0), fern ? 0.38 : 0.72));
   const float turn = 6.2831853 * undergrowth_hash (identity, 5u) +
-                     1.5707963 * float (spray) +
-                     0.55 * (undergrowth_hash (identity, 6u + spray) - 0.5);
+                     0.55 * (undergrowth_hash (identity, 6u) - 0.5);
   const float3 across =
     normalize (cross (s.up, float3 (0.0, 0.0, 1.0)) + float3 (0.001, 0.0, 0.0));
   const float3 along = normalize (cross (across, s.up));
   s.out = normalize (across * cos (turn) + along * sin (turn));
 
-  const float spread = 0.80 + 0.45 * undergrowth_hash (identity, 11u + spray);
+  const float spread = 0.80 + 0.45 * undergrowth_hash (identity, 11u);
   if (fern) {
     s.reach = scale * 0.48 * spread * coverage;
     s.climb = scale * 0.62 * spread;
@@ -336,12 +329,11 @@ struct UndergrowthSpray {
     s.lobed = 0.38;
     s.tint = float3 (0.115, 0.300, 0.075);
   } else {
-    // One strip stands for a small blade cluster at game scale: narrow enough
-    // to read as grass, but wide enough to retain stable MSAA coverage while
-    // riding past it.
+    // One strip is one blade. Density now supplies the field's visual mass,
+    // letting the individual silhouette remain convincingly narrow.
     s.reach = scale * 0.16 * spread;
     s.climb = scale * 0.65 * spread;
-    s.width = scale * 0.045 * coverage;
+    s.width = scale * 0.026 * coverage;
     s.lift = 1.22;
     s.arch = 0.20;
     s.lobed = 0.0;
@@ -350,22 +342,48 @@ struct UndergrowthSpray {
   // Damp grass is deeper and greener; dry blades run straw-olive without
   // becoming a second ground texture.
   s.tint *= float3 (1.12 - 0.24 * wet, 0.84 + 0.30 * wet, 0.82 + 0.22 * wet);
+  // Keep blade-to-blade variation subordinate to the continuous habitat
+  // fields. High-contrast salt and pepper reads as glitter once the blades
+  // become subpixel, even though every blade has stable identity.
   const float olive = undergrowth_hash (identity, 17u) - 0.5;
-  s.tint *= float3 (1.0 + 0.28 * olive, 1.0, 1.0 - 0.24 * olive);
-  s.tint *= 0.90 + 0.25 * undergrowth_hash (identity, 19u);
+  s.tint *= float3 (1.0 + 0.12 * olive, 1.0, 1.0 - 0.10 * olive);
+  s.tint *= 0.96 + 0.11 * undergrowth_hash (identity, 19u);
 
-  const uint vertex_base = thread_id * UNDERGROWTH_SPRAY_VERTICES;
-  const uint primitive_base = thread_id * UNDERGROWTH_SPRAY_PRIMITIVES;
+  const uint vertex_base = thread_id * MOPPE_UNDERGROWTH_VERTICES_PER_SHOOT;
+  const uint primitive_base =
+    thread_id * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT;
   const uint index_base = primitive_base * 3u;
 
-  // The spray's spine: it leaves the crown steeply, then falls away. The
+  // Fine-scale motion is meaningful only while a blade spans several pixels.
+  // Beyond that, the coherent gust remains but the fast flick fades before it
+  // can turn a distant field into temporal sparkle.
+  const float camera_distance = length (root_xz - u.camera_pos.xz);
+  const float micro_detail =
+    1.0 - smoothstep (0.28 * u.params.z, 0.72 * u.params.z, camera_distance);
+
+  // The active mover parts the field without retaining or rewriting a single
+  // blade. Roots stay fixed; upper sections lean away and lie down toward the
+  // centre of the footprint, then recover automatically as it passes.
+  const float2 from_mover = root_xz - u.interaction.xz;
+  const float mover_distance = length (from_mover);
+  const float response =
+    u.interaction.w > 0.0
+      ? 1.0 -
+          smoothstep (0.18 * u.interaction.w, u.interaction.w, mover_distance)
+      : 0.0;
+  const float2 away = from_mover / max (mover_distance, 0.08);
+
+  // The shoot's spine: it leaves the root steeply, then falls away. The
   // last cross-section is closed to a point, so a frond ends in a tip
   // rather than in a cut edge.
-  for (uint step = 0; step < UNDERGROWTH_SPRAY_SECTIONS; ++step) {
-    const float t = float (step) / float (UNDERGROWTH_SPRAY_SECTIONS - 1);
+  for (uint step = 0; step < MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT; ++step) {
+    const float t =
+      float (step) / float (MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT - 1);
     const float rise = s.lift * t - s.arch * t * t;
-    const float3 spine =
-      s.root + s.out * (s.reach * t) + s.up * (s.climb * rise);
+    float3 spine = s.root + s.out * (s.reach * t) + s.up * (s.climb * rise);
+    const float upper = smoothstep (0.0, 0.58, t) * response;
+    spine += float3 (away.x, 0.0, away.y) * (0.42 * upper);
+    spine -= s.up * (s.climb * rise * 0.72 * response);
     // Grass keeps nearly one width until its pointed tip; a fern broadens
     // through the middle and carries lobes on that profile.
     const float taper =
@@ -373,19 +391,18 @@ struct UndergrowthSpray {
     const float lobes = 1.0 + s.lobed * cos (12.566371 * t);
     const float half_width = s.width * (t >= 0.999 ? 0.0 : taper * lobes);
     const float3 side = normalize (cross (s.out, s.up));
-    // A little twist keeps a tuft from showing four identical faces. Ferns
-    // twist more strongly as their broad fronds fall.
+    // A little twist keeps neighbouring blades from showing identical faces.
+    // Ferns twist more strongly as their broad fronds fall.
     const float3 face = normalize (
       s.up + s.out * (0.55 * rise) +
-      side *
-        ((fern ? 0.30 : 0.12) *
-         sin (6.2831853 * undergrowth_hash (identity, 23u + spray) + 2.2 * t)));
+      side * ((fern ? 0.30 : 0.12) *
+              sin (6.2831853 * undergrowth_hash (identity, 23u) + 2.2 * t)));
     const float3 edge = normalize (cross (face, s.out));
 
     // Fine grass edges scintillate easily, so the fast flick remains
-    // subordinate to the shared low-frequency bend.
+    // subordinate to the shared low-frequency bend and disappears at range.
     const float bend = 0.18 + 0.50 * t;
-    const float flutter = 0.08 + 0.22 * t;
+    const float flutter = (0.06 + 0.18 * t) * micro_detail;
     const float3 left =
       moppe_wind (spine - edge * half_width, bend, flutter, u.params.x);
     const float3 right =
@@ -411,7 +428,8 @@ struct UndergrowthSpray {
     out.set_vertex (vertex_base + step * 2u + 1u, v);
   }
 
-  for (uint quad = 0; quad + 1u < UNDERGROWTH_SPRAY_SECTIONS; ++quad) {
+  for (uint quad = 0; quad + 1u < MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT;
+       ++quad) {
     const uint corner = vertex_base + quad * 2u;
     const uint slot = index_base + quad * 6u;
     out.set_index (slot + 0u, corner + 0u);
