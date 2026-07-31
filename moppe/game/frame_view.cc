@@ -36,6 +36,7 @@ namespace moppe::game {
       const bool cinematic = input.scene == FrameSceneMode::Cinematic;
       const bool water = input.scene == FrameSceneMode::WaterInspection;
       const bool tree = input.scene == FrameSceneMode::TreeDemo;
+      const bool gazetteer = input.scene == FrameSceneMode::Gazetteer;
 
       FrameVisibility visibility;
       visibility.cinematic = cinematic;
@@ -47,7 +48,7 @@ namespace moppe::game {
       visibility.actors = !water && !tree;
       visibility.ocean = input.graphics.ocean;
       visibility.river_ribbons = input.graphics.river_ribbons;
-      visibility.dust = input.graphics.particles;
+      visibility.dust = !gazetteer && input.graphics.particles;
       visibility.underwater =
         view.camera.position[1] <
         (input.world.water_level).numerical_value_in (moppe::u::m);
@@ -57,7 +58,7 @@ namespace moppe::game {
         visibility.actors && input.graphics.vehicle_effects;
       visibility.star_effects =
         visibility.actors && input.graphics.star_effects;
-      visibility.game_hud = !cinematic && !water && !tree;
+      visibility.game_hud = !cinematic && !water && !tree && !gazetteer;
       visibility.cinematic_hud = cinematic;
       return visibility;
     }
@@ -145,10 +146,12 @@ namespace moppe::game {
 
     result.camera.position = input.selected_camera.position;
     result.camera.forward = input.selected_camera.forward;
-    result.camera.field_of_view =
-      cinematic       ? input.selected_camera.field_of_view
-      : water || tree ? 70.0f
-                      : 100.0f + 9.0f * logic.m_fov_k;
+    result.camera.field_of_view = cinematic
+                                    ? input.selected_camera.field_of_view
+                                  : water || tree ? 70.0f * u::deg
+                                  : input.scene == FrameSceneMode::Gazetteer
+                                    ? input.selected_camera.field_of_view
+                                    : (100.0f + 9.0f * logic.m_fov_k) * u::deg;
     result.camera.aspect = std::max (0.01f, input.aspect);
     result.camera.view = input.selected_camera.view;
 
@@ -184,11 +187,8 @@ namespace moppe::game {
                                         -result.camera.view.m[6],
                                         -result.camera.view.m[10]);
 
-    result.camera.projection =
-      Mat4::perspective_reversed (result.camera.field_of_view * u::deg,
-                                  result.camera.aspect,
-                                  0.5f,
-                                  9000.0f);
+    result.camera.projection = Mat4::perspective_reversed (
+      result.camera.field_of_view, result.camera.aspect, 0.5f, 9000.0f);
 
     result.lighting.fog_color = logic.m_fog;
     result.lighting.clear_color = logic.m_fog;

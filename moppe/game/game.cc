@@ -23,6 +23,7 @@
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
+#include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/river_surface.hh>
@@ -55,6 +56,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <memory>
@@ -88,8 +90,9 @@ namespace moppe {
             m_renderer (0), m_tree_demo (options.tree_demo),
             m_tree_count (options.tree_count),
             m_screenshot_path (options.screenshot_path),
-            m_water_shot (options.water_shot), m_screenshot_frames (0),
-            m_ready (false), m_benchmark (options.benchmark),
+            m_water_shot (options.water_shot), m_gazetteer (options.gazetteer),
+            m_screenshot_frames (0), m_ready (false),
+            m_benchmark (options.benchmark),
             m_benchmark_baseline (options.graphics) {
         if (m_benchmark)
           m_benchmark_replay.emplace (GraphicsBenchmarkReplay::Config {
@@ -542,6 +545,34 @@ namespace moppe {
         std::cerr << '\n';
       }
 
+      void plan_gazetteer_capture () {
+        if (!m_gazetteer)
+          return;
+        MOPPE_PROFILE_ZONE ("startup.plan_landscape_gazetteer");
+        m_gazetteer_plan =
+          plan_landscape_gazetteer (surface (),
+                                    surface_readings (),
+                                    standing_water (),
+                                    lake_census (),
+                                    drainage (),
+                                    rivers (),
+                                    trail_network (),
+                                    position (m_spawn_position));
+        if (m_gazetteer_plan.empty ())
+          throw std::runtime_error ("landscape gazetteer found no viewpoints");
+        std::filesystem::create_directories (m_gazetteer->output_directory);
+        const std::filesystem::path manifest =
+          std::filesystem::path (m_gazetteer->output_directory) /
+          "gazetteer.csv";
+        std::ofstream output (manifest);
+        if (!output)
+          throw std::runtime_error ("cannot write gazetteer manifest: " +
+                                    manifest.string ());
+        write_landscape_gazetteer_csv (output, m_gazetteer_plan);
+        std::cerr << "landscape gazetteer: " << m_gazetteer_plan.shots.size ()
+                  << " frozen viewpoints -> " << manifest << '\n';
+      }
+
       // The finished world arrived from the generation thread.  Everything
       // left runs in one go: build the retained presentations, place the
       // player, upload the terrain, and start playing.  The loading frame
@@ -556,7 +587,10 @@ namespace moppe {
         place_stars_and_player ();
         grow_global_forest ();
         plant_trailside ();
-        plan_opening_journey ();
+        if (m_gazetteer)
+          plan_gazetteer_capture ();
+        else
+          plan_opening_journey ();
         remember_seed (world (),
                        recipe ().generation_profile (),
                        static_cast<int> (recipe ().seed ().value));
@@ -570,12 +604,15 @@ namespace moppe {
         upload_world_terrain (r);
         if (m_graphics.terrain_shadows)
           cast_world_shadows (r);
+        if (m_gazetteer)
+          r.reset_temporal_state ();
         m_ready = true;
         MOPPE_PROFILE_PLOT ("startup.ready", 1);
 
         const bool automated =
           !m_screenshot_path.empty () || m_benchmark.has_value () ||
-          m_water_shot.has_value () || m_tree_demo || ::getenv ("MOPPE_DEMO");
+          m_water_shot.has_value () || m_gazetteer.has_value () ||
+          m_tree_demo || ::getenv ("MOPPE_DEMO");
         if (!automated && !m_skip_cinematic_requested &&
             !m_cinematic_plan.empty ()) {
           m_cinematic.start (m_cinematic_plan, surface ());
@@ -599,6 +636,24 @@ namespace moppe {
       void cast_world_shadows (render::Renderer& r) {
         MOPPE_PROFILE_ZONE ("startup.cast_world_shadows");
         m_terrain.render_shadow (r, sun_direction_for (m_graphics.sun_height));
+      }
+
+      void update_world_atmosphere (float total_time) {
+        // Weather remains part of the world while actors are paused.
+        cloud_cover_t cloudiness =
+          (std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
+           0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
+           std::sin (total_time * 0.02f) * 0.05f) *
+          cloud_cover[one];
+        cloudiness = std::clamp (
+          cloudiness, 0.0f * cloud_cover[one], 1.0f * cloud_cover[one]);
+        logic ().m_cloudiness = cloudiness;
+
+        // Fog stays mostly sky-blue. Directional warmth is added in the
+        // shaders only when looking toward the sun.
+        const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
+        logic ().m_fog =
+          mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
       }
 
       // -- simulation --------------------------------------------------
@@ -649,28 +704,26 @@ namespace moppe {
         if (logic ().m_game_over)
           return;
 
+        // The gazetteer is an offline frame composer, not a demo playback.
+        // Simulation, actors, wind, and weather are frozen; only the camera's
+        // terrain-aware sun visibility is derived anew for the current shot.
+        if (m_gazetteer) {
+          constexpr float documentary_time = 41.0f;
+          logic ().m_frame_time = 0.0f;
+          logic ().m_total_time = documentary_time;
+          update_world_atmosphere (documentary_time);
+          const FrameView view = compose_frame_view (frame_view_input (1.0f));
+          logic ().m_flare = sun_visibility_target (view, world (), surface ());
+          return;
+        }
+
         InputFrame input = m_live_input.take_frame ();
         if (scripted_input)
           input = *scripted_input;
 
         logic ().m_total_time += dt;
         const float total_time = logic ().m_total_time;
-
-        // Weather remains part of the world while actors are paused.
-        cloud_cover_t cloudiness =
-          (std::sin (total_time * 0.0003f) * 0.4f + 0.5f +
-           0.3f * std::pow (std::sin (total_time * 0.0008f), 2.0f) +
-           std::sin (total_time * 0.02f) * 0.05f) *
-          cloud_cover[one];
-        cloudiness = std::clamp (
-          cloudiness, 0.0f * cloud_cover[one], 1.0f * cloud_cover[one]);
-        logic ().m_cloudiness = cloudiness;
-
-        // Fog stays mostly sky-blue.  Directional warmth is added in
-        // the shaders only when looking toward the sun.
-        const DisplayColor horizon = horizon_color_for (m_graphics.sun_height);
-        logic ().m_fog =
-          mix_display (horizon, DisplayColor (0.90f, 0.94f, 1.0f), 0.18f);
+        update_world_atmosphere (total_time);
 
         if (m_cinematic.active ()) {
           if (input.leave_cinematic) {
@@ -790,7 +843,7 @@ namespace moppe {
                  .forward = frame.camera.frame_forward,
                  .right = frame.camera.right,
                  .up = frame.camera.up,
-                 .vertical_field_of_view = frame.camera.field_of_view * u::deg,
+                 .vertical_field_of_view = frame.camera.field_of_view,
                  .aspect_ratio = frame.camera.aspect * mp_units::one };
       }
 
@@ -1000,6 +1053,7 @@ namespace moppe {
           (float)r.width_pts () / std::max (1, r.height_pts ());
         const FrameView frame = compose_frame_view (frame_view_input (aspect));
         const bool cinematic = frame.visibility.cinematic;
+        const GazetteerShot* gazetteer_shot = current_gazetteer_shot ();
 
         static const int screenshot_delay = [] {
           if (const char* frames = ::getenv ("MOPPE_SCREENSHOT_FRAMES"))
@@ -1044,6 +1098,15 @@ namespace moppe {
                       << '\n';
           r.request_screenshot (m_screenshot_path);
         }
+        const bool captured_gazetteer =
+          gazetteer_shot && m_gazetteer &&
+          m_gazetteer_settle_frame >= m_gazetteer->settle_frames;
+        if (captured_gazetteer) {
+          const std::filesystem::path path =
+            std::filesystem::path (m_gazetteer->output_directory) /
+            gazetteer_image_filename (m_gazetteer_shot, gazetteer_shot->name);
+          r.request_screenshot (path.string ());
+        }
         // Near forest meshes are baked here, outside the frame: the chunks
         // about to be drawn are exactly the ones worth holding geometry for.
         if (frame.visibility.forest)
@@ -1068,6 +1131,21 @@ namespace moppe {
         if (captured_cinematic) {
           if (m_cinematic_capture_frame >= cinematic_capture_frame_limit ())
             platform::request_quit ();
+        }
+        if (gazetteer_shot) {
+          if (!captured_gazetteer) {
+            ++m_gazetteer_settle_frame;
+          } else {
+            std::cerr << "gazetteer frame " << m_gazetteer_shot + 1 << '/'
+                      << m_gazetteer_plan.shots.size () << ": "
+                      << gazetteer_shot->name << '\n';
+            ++m_gazetteer_shot;
+            m_gazetteer_settle_frame = 0;
+            if (m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
+              platform::request_quit ();
+            else
+              r.reset_temporal_state ();
+          }
         }
       }
 
@@ -1303,18 +1381,34 @@ namespace moppe {
       }
 
     private:
+      const GazetteerShot* current_gazetteer_shot () const noexcept {
+        if (!m_gazetteer || m_gazetteer_shot >= m_gazetteer_plan.shots.size ())
+          return nullptr;
+        return &m_gazetteer_plan.shots[m_gazetteer_shot];
+      }
+
       FrameViewInput frame_view_input (float aspect) const {
         FrameSceneMode scene = FrameSceneMode::Gameplay;
         FrameCameraReading camera;
         const bool cinematic = m_cinematic.active ();
 
-        if (cinematic) {
+        if (const GazetteerShot* shot = current_gazetteer_shot ()) {
+          scene = FrameSceneMode::Gazetteer;
+          const Vec3& eye = position_value (shot->eye);
+          const Vec3& subject = position_value (shot->subject);
+          camera = {
+            .position = eye,
+            .forward = normalized (subject - eye),
+            .view = Mat4::look_at (eye, subject, Vec3 (0, 1, 0)),
+            .field_of_view = shot->vertical_field_of_view,
+          };
+        } else if (cinematic) {
           scene = FrameSceneMode::Cinematic;
           camera = {
             .position = m_cinematic.position (),
             .forward = m_cinematic.forward (),
             .view = m_cinematic.view_matrix (),
-            .field_of_view = m_cinematic.field_of_view (),
+            .field_of_view = m_cinematic.field_of_view () * u::deg,
           };
         } else {
           if (m_water_inspection)
@@ -1325,7 +1419,7 @@ namespace moppe {
             .position = session ().camera ().position (),
             .forward = session ().camera ().forward (),
             .view = session ().camera ().view_matrix (),
-            .field_of_view = 70.0f,
+            .field_of_view = 70.0f * u::deg,
           };
         }
 
@@ -1534,6 +1628,10 @@ namespace moppe {
       std::string m_screenshot_path;
       std::optional<WaterShot> m_water_shot;
       std::optional<WaterInspection> m_water_inspection;
+      std::optional<GazetteerCaptureConfig> m_gazetteer;
+      LandscapeGazetteer m_gazetteer_plan;
+      std::size_t m_gazetteer_shot = 0;
+      int m_gazetteer_settle_frame = 0;
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
       int m_cinematic_capture_render_frame = 0;

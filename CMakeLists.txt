@@ -353,6 +353,7 @@ set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
   moppe/game/water_capture.cc
+  moppe/game/landscape_gazetteer.cc
 )
 
 set(MOPPE_SIMULATION_SOURCES
@@ -504,6 +505,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/graphics_settings_test.cc
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
+    tests/game/landscape_gazetteer_test.cc
     tests/game/generated_world_test.cc
     tests/game/river_surface_test.cc
     tests/game/water_capture_test.cc

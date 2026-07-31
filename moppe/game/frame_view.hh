@@ -12,7 +12,13 @@
 namespace moppe::game {
   // The one selected presentation mode for a finished world frame. These are
   // deliberately concrete application modes, not a generic scene hierarchy.
-  enum class FrameSceneMode { Gameplay, Cinematic, WaterInspection, TreeDemo };
+  enum class FrameSceneMode {
+    Gameplay,
+    Cinematic,
+    WaterInspection,
+    TreeDemo,
+    Gazetteer
+  };
 
   // A camera has already been selected by the application before composing a
   // frame.  Keeping its view matrix here preserves cinematics' banked camera
@@ -21,7 +27,7 @@ namespace moppe::game {
     Vec3 position {};
     Vec3 forward { 0, 0, 1 };
     Mat4 view {};
-    float field_of_view = 70.0f;
+    degrees_t field_of_view = 70.0f * u::deg;
   };
 
   // Renderer-facing snapshots of the parts of a vehicle that actually affect
@@ -129,7 +135,7 @@ namespace moppe::game {
     Vec3 frame_forward { 0, 0, 1 };
     Mat4 view {};
     Mat4 projection {};
-    float field_of_view = 70.0f;
+    degrees_t field_of_view = 70.0f * u::deg;
     float aspect = 1.0f;
   };
 

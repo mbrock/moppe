@@ -16,6 +16,12 @@ namespace moppe::game {
       return *options.benchmark;
     }
 
+    GazetteerCaptureConfig& gazetteer_config (LaunchOptions& options) {
+      if (!options.gazetteer)
+        options.gazetteer = GazetteerCaptureConfig {};
+      return *options.gazetteer;
+    }
+
     int frame_count (const char* value) {
       return std::max (1, std::atoi (value));
     }
@@ -120,6 +126,21 @@ namespace moppe::game {
         "a positive frame count",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           benchmark_config (options).prelude_frames = frame_count (values[0]);
+          return true;
+        } },
+      { "--terrain-gazetteer",
+        1,
+        "an output directory",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          gazetteer_config (options).output_directory = values[0];
+          options.config.fullscreen = false;
+          return true;
+        } },
+      { "--gazetteer-settle",
+        1,
+        "a positive frame count",
+        [] (LaunchOptions& options, const char* const* values, std::string&) {
+          gazetteer_config (options).settle_frames = frame_count (values[0]);
           return true;
         } },
       { "--fast",
@@ -256,17 +277,22 @@ namespace moppe::game {
         error = "--graphics-benchmark is required with benchmark options";
         return false;
       }
+      if (options.gazetteer && options.gazetteer->output_directory.empty ()) {
+        error = "--terrain-gazetteer is required with gazetteer options";
+        return false;
+      }
       if (options.generation_profile ==
             terrain::TerrainGenerationProfile::Smoke ||
           options.generation_profile == terrain::TerrainGenerationProfile::Fast)
         options.world.resolution = 1024;
       options.config.capture_frames = !options.screenshot_path.empty () ||
+                                      options.gazetteer ||
                                       ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
       // An automated run stays behind whatever the developer is looking at.
       options.config.activate = !options.config.capture_frames &&
                                 !options.benchmark && !options.stay_inactive;
       // A capture pins its own seed so repeated runs compare like with like.
-      if (!options.screenshot_path.empty () && options.seed < 0)
+      if (options.config.capture_frames && options.seed < 0)
         options.seed = 123;
       return true;
     }

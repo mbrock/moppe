@@ -67,7 +67,7 @@ namespace {
   };
 
   game::FrameCameraReading camera_reading (const game::GameSession& session,
-                                           float fov = 58.0f) {
+                                           degrees_t fov = 58.0f * u::deg) {
     return {
       .position = session.camera ().position (),
       .forward = session.camera ().forward (),
@@ -283,7 +283,7 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
     .forward = normalized (Vec3 (1, -0.2f, 1)),
     .view =
       Mat4::look_at (Vec3 (20, 60, 20), Vec3 (80, 20, 80), Vec3 (0, 1, 0)),
-    .field_of_view = 52.0f,
+    .field_of_view = 52.0f * u::deg,
   };
   game::FrameViewInput cinematic = gameplay_input (fixture);
   cinematic.selected_camera = cinematic_camera;
@@ -292,7 +292,8 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   const game::FrameView flight = game::compose_frame_view (cinematic);
 
   MOPPE_CHECK (flight.scene == game::FrameSceneMode::Cinematic);
-  MOPPE_CHECK_NEAR (flight.camera.field_of_view, 52.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    flight.camera.field_of_view.numerical_value_in (u::deg), 52.0f, 1e-6f);
   MOPPE_CHECK (
     frame_view_same_matrix (flight.camera.view, cinematic_camera.view));
   MOPPE_CHECK_NEAR (flight.motion_blur_amount, 0.47f, 1e-6f);
@@ -300,6 +301,27 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   MOPPE_CHECK (flight.visibility.sky_after_terrain);
   MOPPE_CHECK (flight.visibility.cinematic_hud);
   MOPPE_CHECK (!flight.visibility.game_hud);
+}
+
+MOPPE_TEST (frame_view_selects_frozen_gazetteer_rules) {
+  FrameFixture fixture;
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.scene = game::FrameSceneMode::Gazetteer;
+  input.selected_camera.field_of_view = 61.0f * u::deg;
+
+  const game::FrameView view = game::compose_frame_view (input);
+
+  MOPPE_CHECK (view.scene == game::FrameSceneMode::Gazetteer);
+  MOPPE_CHECK_NEAR (
+    view.camera.field_of_view.numerical_value_in (u::deg), 61.0f, 1e-6f);
+  MOPPE_CHECK (view.visibility.forest);
+  MOPPE_CHECK (view.visibility.undergrowth);
+  MOPPE_CHECK (view.visibility.actors);
+  MOPPE_CHECK (view.visibility.ocean);
+  MOPPE_CHECK (view.visibility.river_ribbons);
+  MOPPE_CHECK (!view.visibility.dust);
+  MOPPE_CHECK (!view.visibility.game_hud);
+  MOPPE_CHECK (!view.visibility.cinematic_hud);
 }
 
 MOPPE_TEST (frame_view_carries_sun_height) {
