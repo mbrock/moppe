@@ -611,8 +611,8 @@ namespace moppe::game {
     const meters_t chunk_depth =
       extent_component (m_period, 2) / static_cast<float> (m_chunks_z);
 
-    m_chunks.assign (static_cast<std::size_t> (m_chunks_x) * m_chunks_z,
-                     Chunk {});
+    m_chunks.clear ();
+    m_chunks.resize (static_cast<std::size_t> (m_chunks_x) * m_chunks_z);
     for (ForestSite& site : plan.sites) {
       const int x = std::clamp (
         static_cast<int> ((position_component (site.position, 0) / chunk_width)
@@ -663,9 +663,14 @@ namespace moppe::game {
     // of seconds is far cheaper than rebuilding it, and it is what keeps the
     // boundary from thrashing when somebody rides along it.
     constexpr std::uint64_t residency_grace = 150;
-    constexpr int builds_per_frame = 2;
+    // Recording detailed organisms is CPU work too. Spread it across calls,
+    // as well as limiting uploads, so entering an uncached neighbourhood
+    // cannot take a whole frame just to finish one or two compound meshes.
+    constexpr std::size_t sites_per_frame = 96;
+    constexpr int meshes_per_frame = 1;
 
-    int built = 0;
+    std::size_t built_sites = 0;
+    int built_meshes = 0;
     for (Chunk& chunk : m_chunks) {
       const meters_t reach = forest_detail_reach + chunk.radius;
       bool wanted = false;
@@ -679,29 +684,50 @@ namespace moppe::game {
       if (!wanted)
         continue;
       chunk.wanted_epoch = m_epoch;
-      if (chunk.near_mesh || built == builds_per_frame)
+      if (chunk.near_mesh || built_meshes == meshes_per_frame ||
+          built_sites == sites_per_frame)
         continue;
-      render::DrawList near_trees;
-      near_trees.state ().cull = false;
-      for (const ForestSite& site : chunk.sites)
-        append_tree (near_trees, site);
+
+      if (!chunk.near_build) {
+        chunk.near_build = std::make_unique<render::DrawList> ();
+        chunk.near_build->state ().cull = false;
+      }
+      while (chunk.near_build_site < chunk.sites.size () &&
+             built_sites < sites_per_frame) {
+        append_tree (*chunk.near_build, chunk.sites[chunk.near_build_site++]);
+        ++built_sites;
+      }
+      if (chunk.near_build_site != chunk.sites.size ())
+        continue;
+
       chunk.near_bytes =
-        near_trees.vertices ().size () * sizeof (render::Vertex);
-      chunk.near_mesh = renderer.create_mesh (near_trees);
-      ++built;
+        chunk.near_build->vertices ().size () * sizeof (render::Vertex);
+      chunk.near_mesh = renderer.create_mesh (*chunk.near_build);
+      chunk.near_build.reset ();
+      chunk.near_build_site = 0;
+      ++built_meshes;
     }
 
-    for (Chunk& chunk : m_chunks)
+    for (Chunk& chunk : m_chunks) {
       if (chunk.near_mesh && chunk.wanted_epoch + residency_grace < m_epoch) {
         chunk.near_mesh.reset ();
         chunk.near_bytes = 0;
       }
+      if (chunk.near_build && chunk.wanted_epoch + residency_grace < m_epoch) {
+        chunk.near_build.reset ();
+        chunk.near_build_site = 0;
+      }
+    }
   }
 
   std::size_t ForestLandscape::resident_bytes () const noexcept {
     std::size_t bytes = 0;
-    for (const Chunk& chunk : m_chunks)
+    for (const Chunk& chunk : m_chunks) {
       bytes += chunk.near_bytes + chunk.far_bytes;
+      if (chunk.near_build)
+        bytes +=
+          chunk.near_build->vertices ().size () * sizeof (render::Vertex);
+    }
     return bytes;
   }
 

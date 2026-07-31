@@ -1,5 +1,6 @@
 #include <moppe/render/draw.hh>
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <map>
@@ -239,10 +240,10 @@ namespace moppe {
 
       flush_run_state ();
 
-      // Triangulate in bulk: size the output once, append with plain
-      // push_backs (or one range copy), and account for the run at the
-      // end.  This path is per-vertex-hot for the whole immediate-mode
-      // HUD, so no per-vertex bookkeeping.
+      // Triangulate in bulk, append with plain push_backs (or one range
+      // copy), and account for the run at the end.  This path is
+      // per-vertex-hot for the whole immediate-mode HUD, so no per-vertex
+      // bookkeeping.
       std::vector<Vertex>& out = m_vertices;
       const size_t start = out.size ();
 
@@ -269,7 +270,16 @@ namespace moppe {
         need = n >= 2 ? (n - 1) * 6 : 0;
         break;
       }
-      out.reserve (start + need);
+      const size_t required = start + need;
+      if (required > out.capacity ()) {
+        // Preserve amortized growth across begin/end batches.  Reserving the
+        // exact batch size here made compound meshes copy every vertex built
+        // so far for each new branch or leaf primitive.
+        size_t capacity = required;
+        if (out.capacity () <= out.max_size () / 2)
+          capacity = std::max (required, out.capacity () * 2);
+        out.reserve (capacity);
+      }
 
       switch (m_prim) {
       case Prim::Triangles:

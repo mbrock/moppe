@@ -118,11 +118,16 @@ MOPPE_TEST (near_forest_geometry_follows_the_camera_and_is_released_behind_it) {
   MOPPE_CHECK (far_only > 0);
   MOPPE_CHECK (forest.resident_chunk_count () == 0);
 
-  // A frame brings in a bounded number of chunks rather than every chunk it
-  // wants, so arriving somewhere costs coarse trees briefly, not a stall.
+  // A frame advances a bounded batch rather than every chunk it wants, so
+  // arriving somewhere costs coarse trees briefly, not a stall. At most one
+  // completed near mesh is uploaded by a call.
   forest.prepare (renderer, looking_from (Vec3 (600, 120, 600)));
-  MOPPE_CHECK (forest.resident_chunk_count () > 0);
-  MOPPE_CHECK (forest.resident_chunk_count () <= 2);
+  MOPPE_CHECK (forest.resident_chunk_count () <= 1);
+  MOPPE_CHECK (renderer.baked_vertex_counts.size () <= far_meshes + 1);
+  for (int frame = 0; frame < 32 && forest.resident_chunk_count () == 0;
+       ++frame)
+    forest.prepare (renderer, looking_from (Vec3 (600, 120, 600)));
+  MOPPE_CHECK (forest.resident_chunk_count () == 1);
 
   const std::span<const std::size_t> baked { renderer.baked_vertex_counts };
   MOPPE_CHECK (average_of (baked.subspan (far_meshes)) >
