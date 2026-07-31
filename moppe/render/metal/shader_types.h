@@ -144,13 +144,29 @@ struct MoppeOceanUniforms {
 
 // Undergrowth is generated, never stored. The object stage walks a window of
 // ground tiles around the camera and keeps the ones whose fields say
-// something grows there; the mesh stage turns each survivor into plants. So
+// something grows there; the mesh stage turns each survivor into shoots. So
 // what crosses this boundary is where the camera is and how the world's
-// lattice is laid out -- never a plant.
-#define MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT 4
-#define MOPPE_UNDERGROWTH_PLANTS_PER_TILE 10
-#define MOPPE_UNDERGROWTH_MESH_THREADS                                         \
-  (MOPPE_UNDERGROWTH_SPRAYS_PER_PLANT * MOPPE_UNDERGROWTH_PLANTS_PER_TILE)
+// lattice is laid out -- never a plant. These derived counts are shared with
+// the pipeline setup so a density change cannot silently exceed Metal's mesh
+// output limits.
+#define MOPPE_UNDERGROWTH_SHOOTS_PER_TILE 32
+#define MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT 4
+#define MOPPE_UNDERGROWTH_VERTICES_PER_SHOOT                                   \
+  (MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT * 2)
+#define MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT                                 \
+  ((MOPPE_UNDERGROWTH_SECTIONS_PER_SHOOT - 1) * 2)
+#define MOPPE_UNDERGROWTH_MESH_THREADS MOPPE_UNDERGROWTH_SHOOTS_PER_TILE
+#define MOPPE_UNDERGROWTH_MESH_VERTICES                                        \
+  (MOPPE_UNDERGROWTH_MESH_THREADS * MOPPE_UNDERGROWTH_VERTICES_PER_SHOOT)
+#define MOPPE_UNDERGROWTH_MESH_PRIMITIVES                                      \
+  (MOPPE_UNDERGROWTH_MESH_THREADS * MOPPE_UNDERGROWTH_PRIMITIVES_PER_SHOOT)
+
+#ifndef __METAL_VERSION__
+static_assert (MOPPE_UNDERGROWTH_MESH_VERTICES <= 256,
+               "undergrowth meshlet exceeds Metal vertex limit");
+static_assert (MOPPE_UNDERGROWTH_MESH_PRIMITIVES <= 512,
+               "undergrowth meshlet exceeds Metal primitive limit");
+#endif
 
 struct MoppeUndergrowthUniforms {
   MoppeMat4 view_proj;
@@ -160,15 +176,17 @@ struct MoppeUndergrowthUniforms {
   MoppeFloat4 sun_diffuse;
   MoppeFloat4 sun_specular;
   MoppeFloat4 ambient;
-  MoppeFloat4 fog_color; // rgb; w = fog_scale
-  MoppeFloat4 lattice;   // x=1/step_x, y=1/step_z, z=height_scale,
-                         // w=lattice width in samples
-  MoppeFloat4 tiles;     // xy=origin tile indices, z=tiles per side,
-                         // w=tile side in metres
-  MoppeFloat4 params;    // x=time, y=cloudiness, z=reach in metres,
-                         // w=density scale
-  MoppeFloat4 shadow;    // x=strength, y=shadow texel
-  MoppeFloat4 relief;    // x=sea level, y=land relief
+  MoppeFloat4 fog_color;   // rgb; w = fog_scale
+  MoppeFloat4 lattice;     // x=1/step_x, y=1/step_z, z=height_scale,
+                           // w=lattice width in samples
+  MoppeFloat4 tiles;       // xy=origin tile indices, z=tiles per side,
+                           // w=tile side in metres
+  MoppeFloat4 params;      // x=time, y=cloudiness, z=reach in metres,
+                           // w=density scale
+  MoppeFloat4 interaction; // xyz=current mover,
+                           // w=parting radius in metres
+  MoppeFloat4 shadow;      // x=strength, y=shadow texel
+  MoppeFloat4 relief;      // x=sea level, y=land relief
 };
 
 struct MoppeDustEmission {

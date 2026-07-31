@@ -828,12 +828,33 @@ namespace moppe {
 
         // The floor grows itself from the same canopy and moisture fields the
         // trees were planted from, so it arrives already agreeing with them.
-        if (visibility.undergrowth)
+        // Gameplay movers part the generated field locally; cinematics keep
+        // their authored floor undisturbed even though actors may exist.
+        if (visibility.undergrowth) {
+          float interaction_radius = 0.0f;
+          if (frame.scene == FrameSceneMode::Gameplay) {
+            switch (frame.actors.active_mode) {
+            case M_BIKE:
+              interaction_radius = 1.15f;
+              break;
+            case M_FOOT:
+              interaction_radius = 0.55f;
+              break;
+            case M_CAR:
+              interaction_radius = 1.55f;
+              break;
+            case M_GLIDER:
+              break;
+            }
+          }
           r.draw_undergrowth (
             { .time = frame.lighting.time,
               .cloud_cover = frame.lighting.cloudiness.numerical_value_in (one),
               .reach = 58.0f,
-              .density = 1.0f });
+              .density = 1.0f,
+              .interaction_position = frame.hud.subject_position,
+              .interaction_radius = interaction_radius });
+        }
 
         if (visibility.tree_stand)
           m_tree_stand.draw (r);
