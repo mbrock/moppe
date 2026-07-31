@@ -21,6 +21,7 @@
 #define UNDERGROWTH_SPRAY_PRIMITIVES ((UNDERGROWTH_SPRAY_SECTIONS - 1) * 2)
 #define UNDERGROWTH_SPRAYS_PER_PLANT 4
 #define UNDERGROWTH_PLANTS_PER_TILE 5
+#define UNDERGROWTH_LOD_TRANSITION 0.38
 #define UNDERGROWTH_TILE_THREADS                                               \
   (UNDERGROWTH_PLANTS_PER_TILE * UNDERGROWTH_SPRAYS_PER_PLANT)
 #define UNDERGROWTH_OBJECT_THREADS 64
@@ -35,7 +36,7 @@ struct UndergrowthVaryings {
 
 struct UndergrowthTile {
   uint2 index;
-  uint plants;
+  float wanted;
 };
 
 struct UndergrowthPayload {
@@ -132,6 +133,30 @@ static inline float undergrowth_density (float2 world_xz,
                    smoothstep (0.20, 0.60, clump) * u.params.w);
 }
 
+// Each world tile owns one phase for thinning its ordered five plants. The
+// phase must be addressed by the world cell, never by the tile's temporary
+// slot in the moving camera window: using the latter makes the whole floor
+// choose new counts whenever the window crosses one tile boundary.
+static inline float undergrowth_lod_phase (uint2 cell) {
+  return undergrowth_hash (cell, 0x51a7u);
+}
+
+static inline uint undergrowth_lod_plants (float wanted, uint2 cell) {
+  const float phase = undergrowth_lod_phase (cell);
+  const float begun = max (wanted - phase + UNDERGROWTH_LOD_TRANSITION, 0.0);
+  return min (uint (ceil (begun)), uint (UNDERGROWTH_PLANTS_PER_TILE));
+}
+
+static inline float
+undergrowth_lod_presence (float wanted, uint plant, uint2 cell) {
+  const float threshold = float (plant) + undergrowth_lod_phase (cell);
+  const float presence = smoothstep (threshold - UNDERGROWTH_LOD_TRANSITION,
+                                     threshold + UNDERGROWTH_LOD_TRANSITION,
+                                     wanted);
+  // An unusually early phase must still leave truly barren ground empty.
+  return presence * smoothstep (0.0, UNDERGROWTH_LOD_TRANSITION, wanted);
+}
+
 // ---- the object stage: which tiles are worth a threadgroup ---------
 
 [[object]] void undergrowth_object (
@@ -156,11 +181,12 @@ static inline float undergrowth_density (float2 world_xz,
   bool valid = index < tiles_side * tiles_side;
   const uint tile_x = index % max (tiles_side, 1u);
   const uint tile_z = index / max (tiles_side, 1u);
+  float wanted = 0.0;
   uint plants = 0u;
 
   if (valid) {
-    const float2 base =
-      (float2 (int2 (u.tiles.xy)) + float2 (tile_x, tile_z)) * tile_world;
+    const int2 cell = int2 (u.tiles.xy) + int2 (tile_x, tile_z);
+    const float2 base = float2 (cell) * tile_world;
     const float2 center = base + 0.5 * tile_world;
     const float distance = length (center - u.camera_pos.xz);
     const float reach = u.params.z;
@@ -171,18 +197,12 @@ static inline float undergrowth_density (float2 world_xz,
         undergrowth_ground_normal (center, u, normals);
       const float density =
         undergrowth_density (center, u, forest, moisture, paths, ground_normal);
-      // The budget is the level of detail. Plants thin out with distance
-      // rather than vanishing at a ring, and the mesh stage widens the
-      // survivors to hold the coverage the thinned-out ones were carrying.
+      // The budget is the level of detail. Plants grow down continuously with
+      // distance, and the mesh stage widens the remaining coverage as the
+      // budget recedes.
       const float near_share = 1.0 - smoothstep (0.62 * reach, reach, distance);
-      // Rounding a fractional budget draws a contour line on the ground
-      // wherever the field crosses a half. Carrying the fraction as odds
-      // instead lets a stand thin out plant by plant, which is how a stand
-      // actually ends.
-      const float wanted =
-        density * near_share * float (UNDERGROWTH_PLANTS_PER_TILE);
-      plants = uint (
-        floor (wanted + undergrowth_hash (uint2 (tile_x, tile_z), 0x51a7u)));
+      wanted = density * near_share * float (UNDERGROWTH_PLANTS_PER_TILE);
+      plants = undergrowth_lod_plants (wanted, uint2 (cell));
       valid = plants > 0u;
     }
 
@@ -199,7 +219,7 @@ static inline float undergrowth_density (float2 world_xz,
       const uint slot =
         atomic_fetch_add_explicit (&survivors, 1u, metal::memory_order_relaxed);
       payload.tiles[slot].index = uint2 (tile_x, tile_z);
-      payload.tiles[slot].plants = plants;
+      payload.tiles[slot].wanted = wanted;
     }
   }
 
@@ -243,7 +263,8 @@ struct UndergrowthSpray {
   texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
-  const uint plants = max (tile.plants, 1u);
+  const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
+  const uint plants = max (undergrowth_lod_plants (tile.wanted, cell), 1u);
   if (thread_id == 0u) {
     out.set_primitive_count (plants * UNDERGROWTH_SPRAYS_PER_PLANT *
                              UNDERGROWTH_SPRAY_PRIMITIVES);
@@ -255,7 +276,6 @@ struct UndergrowthSpray {
     return;
 
   const float tile_world = u.tiles.w;
-  const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
   const uint2 identity =
     uint2 (cell.x * 73856093u + plant, cell.y * 19349663u + plant * 83492791u);
 
@@ -284,17 +304,21 @@ struct UndergrowthSpray {
   const float fern_odds = saturate (0.20 + 1.05 * canopy);
   const bool fern = undergrowth_hash (identity, 3u) < fern_odds;
 
+  // A plant straddles its LOD threshold by growing into or out of the ground.
+  // The short transition keeps motion continuous without turning the whole
+  // layer translucent and giving depth ownership to stochastic fragments.
+  const float presence = undergrowth_lod_presence (tile.wanted, plant, cell);
   // Plants thinned out by distance leave gaps, so the survivors take on the
-  // coverage: the floor keeps looking as dense as it did, out of fewer of
-  // them. Without this the understory visibly evaporates as you ride away.
+  // coverage continuously. Basing this on the fractional budget rather than
+  // the emitted integer count stops every survivor changing size at once.
   const float thinning =
-    sqrt (float (UNDERGROWTH_PLANTS_PER_TILE) / float (plants));
+    sqrt (float (UNDERGROWTH_PLANTS_PER_TILE) / max (tile.wanted, 1.0));
   // Squaring the draw puts most plants small and a few large, which is the
   // shape of any stand that has been competing for light for a while. A
   // uniform draw reads as a planted bed.
   const float draw = undergrowth_hash (identity, 4u);
-  const float scale =
-    vigour * (0.66 + 1.18 * draw * draw) * mix (1.0, min (thinning, 1.7), 0.7);
+  const float scale = sqrt (presence) * vigour * (0.66 + 1.18 * draw * draw) *
+                      mix (1.0, min (thinning, 1.7), 0.7);
 
   UndergrowthSpray s;
   s.root = root;
@@ -364,8 +388,11 @@ struct UndergrowthSpray {
                           2.2 * t)));
     const float3 edge = normalize (cross (face, s.out));
 
-    const float bend = 0.30 + 0.70 * t;
-    const float flutter = 0.55 + 0.45 * t;
+    // These broad leaves travel much less than a tree's loose crown. Keeping
+    // the fast flick subordinate to the slow bend avoids subpixel edge
+    // scintillation while preserving one shared wind field.
+    const float bend = 0.24 + 0.56 * t;
+    const float flutter = 0.14 + 0.30 * t;
     const float3 left =
       moppe_wind (spine - edge * half_width, bend, flutter, u.params.x);
     const float3 right =
@@ -439,10 +466,10 @@ fragment float4 undergrowth_fragment (UndergrowthVaryings in [[stage_in]],
 
   // A frond is one leaf thick and glows when the sun is behind it, which is
   // most of what tells undergrowth apart from painted ground.
-  const float leaf_back = pow (max (dot (-n, l), 0.0), 1.5);
-  const float3 transmission_tint (1.16, 0.94, 0.58);
+  const float leaf_back = pow (max (dot (-n, l), 0.0), 1.8);
+  const float3 transmission_tint (0.96, 0.88, 0.62);
   color += base * u.sun_diffuse.rgb * transmission_tint * sun_visibility *
-           leaf_back * (0.30 + 0.70 * in.exposure) * 0.95;
+           leaf_back * (0.30 + 0.70 * in.exposure) * 0.52;
 
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
