@@ -2582,6 +2582,7 @@ namespace moppe {
 
     void MetalRenderer::draw_undergrowth (const UndergrowthParams& params) {
       const MetalTerrainResources& terrain = m_terrain_resources;
+      const MetalWaterResources& water = m_water_resources;
       if (!m_pipelines.undergrowth || !terrain.have_terrain ||
           !terrain.have_forest || !terrain.have_moisture || !terrain.have_paths)
         return;
@@ -2599,6 +2600,8 @@ namespace moppe {
         u.shadow = m_frame.uniforms.shadow;
         u.relief.x = m_frame.uniforms.misc.z;
         u.relief.y = m_frame.uniforms.misc.w;
+        u.relief.z = terrain.have_snow_support ? 1.0f : 0.0f;
+        u.relief.w = water.have_water_levels ? 1.0f : 0.0f;
 
         const TerrainParams& tp = terrain.params;
         u.lattice.x = 1.0f / tp.scale[0];
@@ -2646,6 +2649,11 @@ namespace moppe {
         bind (terrain.forest, MOPPE_TEX_TERRAIN_FOREST);
         bind (terrain.moisture, MOPPE_TEX_TERRAIN_MOISTURE);
         bind (terrain.paths, MOPPE_TEX_TERRAIN_PATHS);
+        bind (terrain.have_snow_support ? terrain.snow_support
+                                        : terrain.heights,
+              MOPPE_TEX_TERRAIN_SNOW_SUPPORT);
+        bind (water.have_water_levels ? water.water_levels : terrain.heights,
+              MOPPE_TEX_TERRAIN_WATER);
         if (terrain.shadow_map)
           [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
         const NSUInteger total =

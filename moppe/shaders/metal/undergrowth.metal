@@ -107,6 +107,9 @@ static inline float undergrowth_density (float2 world_xz,
                                          texture2d<float> forest,
                                          texture2d<float> moisture,
                                          texture2d<float> paths,
+                                         texture2d<float> snow_support,
+                                         texture2d<float> water_levels,
+                                         float ground_m,
                                          float3 ground_normal) {
   const float canopy = saturate (undergrowth_field (world_xz, u, forest).r);
   const float wet = saturate (undergrowth_field (world_xz, u, moisture).r);
@@ -121,7 +124,27 @@ static inline float undergrowth_density (float2 world_xz,
   const float standable = smoothstep (0.52, 0.78, ground_normal.y);
   const float cleared = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
   const float variation = 0.88 + 0.24 * smoothstep (0.18, 0.72, clump);
-  return saturate (light * damp * standable * cleared * variation * u.params.w);
+  // A generated blade must agree with the terrain material under it. The
+  // filtered support field is the same broad hillside reading that retains
+  // snow, while relative altitude removes grass gradually through the alpine
+  // transition instead of drawing a hard contour. Standing water is a
+  // physical exclusion rather than merely very damp habitat.
+  const float support =
+    u.relief.z > 0.5
+      ? saturate (undergrowth_field (world_xz, u, snow_support).r)
+      : ground_normal.y;
+  const float relative_height = (ground_m - u.relief.x) / max (u.relief.y, 1.0);
+  const float snow_habitat =
+    smoothstep (0.55, 0.68, relative_height) * smoothstep (0.58, 0.78, support);
+  const float alpine_survival = 1.0 - smoothstep (0.50, 0.67, relative_height);
+  const float water_depth =
+    u.relief.w > 0.5
+      ? undergrowth_field (world_xz, u, water_levels).r - ground_m
+      : 0.0;
+  const float dry_ground = 1.0 - smoothstep (0.02, 0.30, water_depth);
+  return saturate (light * damp * standable * cleared * variation *
+                   alpine_survival * (1.0 - snow_habitat) * dry_ground *
+                   u.params.w);
 }
 
 // Each world tile owns one phase for thinning its ordered shoots. The
@@ -160,7 +183,9 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]]) {
+  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+  texture2d<float> snow_support [[texture (MOPPE_TEX_TERRAIN_SNOW_SUPPORT)]],
+  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   threadgroup atomic_uint survivors;
   if (thread_id == 0u)
     atomic_store_explicit (&survivors, 0u, metal::memory_order_relaxed);
@@ -173,6 +198,7 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
   const uint tile_x = index % max (tiles_side, 1u);
   const uint tile_z = index / max (tiles_side, 1u);
   float wanted = 0.0;
+  float ground = 0.0;
   uint shoots = 0u;
 
   if (valid) {
@@ -186,8 +212,16 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
     if (valid) {
       const float3 ground_normal =
         undergrowth_ground_normal (center, u, normals);
-      const float density =
-        undergrowth_density (center, u, forest, moisture, paths, ground_normal);
+      ground = undergrowth_ground (center, u, heights);
+      const float density = undergrowth_density (center,
+                                                 u,
+                                                 forest,
+                                                 moisture,
+                                                 paths,
+                                                 snow_support,
+                                                 water_levels,
+                                                 ground,
+                                                 ground_normal);
       // The budget is the level of detail. Shoots grow down continuously with
       // distance, and the mesh stage widens the remaining coverage as the
       // budget recedes.
@@ -198,7 +232,6 @@ undergrowth_lod_presence (float wanted, uint shoot, uint2 cell) {
     }
 
     if (valid) {
-      const float ground = undergrowth_ground (center, u, heights);
       const float4 clip =
         u.view_proj * float4 (center.x, ground + 0.5, center.y, 1.0);
       const float margin = 1.25 * clip.w + 2.0 * tile_world;
@@ -305,7 +338,7 @@ struct UndergrowthShoot {
   const float scale = sqrt (presence * root_clear) *
                       (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
                       (0.65 + 0.65 * draw * draw);
-  const float coverage = mix (1.0, min (thinning, 1.8), fern ? 0.45 : 0.72);
+  const float coverage = mix (1.0, min (thinning, 1.5), fern ? 0.45 : 0.72);
 
   UndergrowthShoot s;
   s.root = root;
@@ -333,7 +366,7 @@ struct UndergrowthShoot {
     // letting the individual silhouette remain convincingly narrow.
     s.reach = scale * 0.16 * spread;
     s.climb = scale * 0.65 * spread;
-    s.width = scale * 0.026 * coverage;
+    s.width = scale * 0.018 * coverage;
     s.lift = 1.22;
     s.arch = 0.20;
     s.lobed = 0.0;
