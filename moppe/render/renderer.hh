@@ -151,8 +151,8 @@ namespace moppe {
       Vec3 world_offset;
     };
 
-    // Ferns and shrubs on the forest floor. There is no plant list and no
-    // mesh: the backend walks ground tiles around the camera and grows
+    // Grass and occasional ferns on the forest floor. There is no plant list
+    // and no mesh: the backend walks ground tiles around the camera and grows
     // whatever the terrain's own canopy, moisture, and trail fields say
     // stands there. So what a frame passes is only how far to look and how
     // thick to lay it on.

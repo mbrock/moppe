@@ -152,14 +152,16 @@ rather than prerequisites for a forested world.
 
 ## The floor: geometry that is never stored
 
-`moppe/shaders/metal/undergrowth.metal` grows the ferns and shrubs beneath
-the trees, and nothing about them is a mesh. An object stage walks a window
-of ground tiles around the camera and keeps the ones the world's own fields
-say something grows on: shade under a canopy, water in the soil, no trail
-worn across it, ground a rosette could hold. A mesh stage turns each
-surviving tile into plants — a hash decides where each one stands and what it
-is, the height and normal textures root it on the terrain by construction,
-and the same gust function the trees use moves it.
+`moppe/shaders/metal/undergrowth.metal` grows mostly grass, with occasional
+ferns in damp shade, and nothing about it is a stored mesh. An object stage
+walks a window of ground tiles around the camera and keeps the ones the
+world's own fields say something grows on: light and water in the soil, no
+trail worn across it, ground roots can hold. A mesh stage turns each surviving
+tile into plants — a hash decides where each one stands and what it is, the
+height and normal textures root it on the terrain by construction, and the
+same gust function the trees use moves it. Each generated root samples the
+trail field again, so grass grows down at a worn edge instead of exposing the
+coarser tile that proposed it.
 
 That is the shape the vegetation shelf's `ideas/geometry-from-fields.md`
 proposes, and its payoff is not only that the plants cost no memory. They
@@ -167,18 +169,19 @@ cannot drift out of step with the ground they grow on, because they are read
 from it rather than placed against it; and their count, size, and species can
 change every frame, because nothing is kept that could go stale. The distance
 level of detail is that freedom used directly: the object stage hands each
-tile a smaller plant budget as it recedes, and the mesh stage widens the
-survivors so the floor keeps the coverage the thinned-out plants were
-carrying. Each world tile owns a stable phase for spending that fractional
-budget, and a plant grows through a short transition at its threshold. A stand
-therefore thins plant by plant without either a contour line or a camera-window
+tile a smaller plant budget as it recedes, and the mesh stage widens surviving
+blades without making them taller, so the floor keeps the projected coverage
+the thinned-out plants were carrying. Each world tile owns a stable phase for
+spending that fractional budget, and a plant grows through a short transition
+at its threshold. A sward therefore thins plant by plant into the terrain's
+filtered grass material without either a contour line or a camera-window
 boundary reshuffling the floor.
 
-Measured on the riding camera through forest, the whole pass costs about
-0.018 ms a frame — the second cheapest block in the `--graphics-benchmark`
-cube, an order of magnitude under the ocean or the river ribbons. It needs
-Metal mesh shaders; backends without them grow nothing, and the
-`undergrowth` graphics feature turns it off.
+In a 1280x800 high-quality riding feature cube, the denser grass pass adds a
+median 0.47 ms of command-buffer time (0.54 ms mean). That is a deliberate
+visual cost, but remains small beside the 8.33 ms 120 Hz frame budget. It needs
+Metal mesh shaders; backends without them grow nothing, and the `undergrowth`
+graphics feature turns it off.
 
 Run a quiet camera in the game renderer with:
 
