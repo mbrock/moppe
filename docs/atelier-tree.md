@@ -169,8 +169,10 @@ change every frame, because nothing is kept that could go stale. The distance
 level of detail is that freedom used directly: the object stage hands each
 tile a smaller plant budget as it recedes, and the mesh stage widens the
 survivors so the floor keeps the coverage the thinned-out plants were
-carrying. A fractional budget is spent as odds rather than rounded, so a
-stand thins out plant by plant instead of ending on a contour line.
+carrying. Each world tile owns a stable phase for spending that fractional
+budget, and a plant grows through a short transition at its threshold. A stand
+therefore thins plant by plant without either a contour line or a camera-window
+boundary reshuffling the floor.
 
 Measured on the riding camera through forest, the whole pass costs about
 0.018 ms a frame — the second cheapest block in the `--graphics-benchmark`
