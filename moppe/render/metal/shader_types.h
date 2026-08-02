@@ -54,6 +54,12 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_WATER_FLOW_FRAGMENT 2
 #define MOPPE_TEX_WATER_GEOLOGY_FRAGMENT 4
 
+// Buffer indices for the isolated reflection-geometry atelier.
+#define MOPPE_BUF_REFLECTION_AS 0
+#define MOPPE_BUF_REFLECTION_UNIFORMS 1
+#define MOPPE_BUF_REFLECTION_OUTPUT 2
+#define MOPPE_BUF_REFLECTION_VERTICES 3
+
 struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 light_matrix;   // world -> biased shadow uv/z
@@ -65,6 +71,19 @@ struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
   MoppeFloat4 fog_color;    // rgb; w = fog_scale
   MoppeFloat4 misc;         // x=time, y=cloudiness, z=sea, w=land relief
   MoppeFloat4 shadow;       // x=strength, y=shadow texel
+};
+
+// A primary-ray camera and one RGBA16F diagnostic target. The target is split
+// into normal, distance, primitive/barycentric, and hit-mask quadrants so the
+// acceleration structure remains independently inspectable before water or
+// temporal reconstruction depends on it.
+struct MOPPE_SHADER_ALIGN MoppeReflectionGeometryUniforms {
+  MoppeFloat4 camera;       // xyz=origin, w=max ray distance
+  MoppeFloat4 camera_right; // xyz
+  MoppeFloat4 camera_up;    // xyz
+  MoppeFloat4 camera_back;  // xyz; camera forward is -back
+  MoppeFloat4 projection;   // xy=perspective scale, zw=output dimensions
+  MoppeFloat4 output;       // x=half4 row stride, yzw=reserved
 };
 
 // Per-draw transform for retained meshes (identity for draw lists,

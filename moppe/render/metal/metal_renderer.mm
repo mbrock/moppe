@@ -26,6 +26,7 @@
 #include <moppe/render/metal/metal4_frame.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
+#include <moppe/render/reflection_geometry.hh>
 
 #include <algorithm>
 #include <array>
@@ -37,6 +38,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -352,6 +354,9 @@ namespace moppe {
         id<MTLRenderPipelineState> water_tiles = nil;
         id<MTLRenderPipelineState> undergrowth = nil;
         id<MTLRenderPipelineState> river = nil;
+#if !TARGET_OS_IPHONE
+        id<MTLComputePipelineState> reflection_geometry = nil;
+#endif
         bool mesh_shaders_ok = false;
 
         // Depth-stencil: index [test][write], reversed-Z (>=).
@@ -398,6 +403,17 @@ namespace moppe {
         bool have_shore = false;
         id<MTLTexture> paths = nil;
         bool have_paths = false;
+#if !TARGET_OS_IPHONE
+        // Goal 0 atelier only: one bounded, terrain-only BLAS derived from the
+        // completed surface. It is absent unless explicitly requested.
+        id<MTLBuffer> reflection_vertices = nil;
+        id<MTLAccelerationStructure> reflection_structure = nil;
+        ReflectionTerrainProxy reflection_proxy;
+        NSUInteger reflection_structure_bytes = 0;
+        NSUInteger reflection_scratch_bytes = 0;
+        double reflection_proxy_ms = 0.0;
+        double reflection_build_ms = 0.0;
+#endif
       };
 
       struct MetalWaterResources {
@@ -827,6 +843,11 @@ namespace moppe {
       void end_scene_encoder ();
       void update_exposure ();
       void begin_gpu_pass (id<MTL4RenderCommandEncoder> enc, GpuPass pass);
+#if !TARGET_OS_IPHONE
+      void build_reflection_geometry ();
+      void retire_reflection_geometry ();
+      void write_reflection_geometry_report () const;
+#endif
 
       CAMetalLayer* m_layer;
       id<MTLDevice> m_device;
@@ -836,6 +857,12 @@ namespace moppe {
 #if !TARGET_OS_TV
       id<MTL4Compiler> m_compiler;
       bool m_spatial_upscaling_supported = false;
+#endif
+#if !TARGET_OS_IPHONE
+      id<MTL4ArgumentTable> m_reflection_arguments;
+      std::string m_reflection_geometry_path;
+      std::vector<terrain::SurfaceElevation> m_reflection_heights;
+      bool m_reflection_geometry_written = false;
 #endif
 
       MetalPipelines m_pipelines;
@@ -958,6 +985,15 @@ namespace moppe {
         m_frame.capture_path = requested;
         if (const char* frames = ::getenv ("MOPPE_METAL_CAPTURE_FRAMES"))
           m_frame.capture_frame_limit = std::max (1, ::atoi (frames));
+      }
+      if (const char* requested = ::getenv ("MOPPE_REFLECTION_GEOMETRY")) {
+        m_reflection_geometry_path = requested;
+        if (m_reflection_geometry_path.empty ())
+          throw std::invalid_argument (
+            "MOPPE_REFLECTION_GEOMETRY needs an output PNG path");
+        if (!m_device.supportsRaytracing)
+          throw std::runtime_error (
+            "Reflection geometry requested on a device without ray tracing");
       }
 #endif
 
@@ -1084,6 +1120,11 @@ namespace moppe {
       m_frame.arguments.fragment = make_arguments (@"Moppe fragment bindings");
       m_frame.arguments.object = make_arguments (@"Moppe object bindings");
       m_frame.arguments.mesh = make_arguments (@"Moppe mesh bindings");
+#if !TARGET_OS_IPHONE
+      if (m_pipelines.reflection_geometry)
+        m_reflection_arguments =
+          make_arguments (@"Moppe reflection geometry atelier bindings");
+#endif
 
       for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
         m_frame.arena[i].device = m_device;
@@ -1110,6 +1151,9 @@ namespace moppe {
       if (m_frame.sequence)
         [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                timeoutMS:5000];
+#if !TARGET_OS_IPHONE
+      retire_reflection_geometry ();
+#endif
     }
 
     id<MTLRenderPipelineState>
@@ -1178,6 +1222,23 @@ namespace moppe {
       // The scene depth target carries a stencil plane so self-overlapping
       // translucent surfaces (river strips) can blend first-fragment-wins.
       const MTLPixelFormat depth = MTLPixelFormatDepth32Float_Stencil8;
+
+#if !TARGET_OS_IPHONE
+      if (!m_reflection_geometry_path.empty ()) {
+        id<MTLFunction> function =
+          [m_library newFunctionWithName:@"reflection_geometry_atelier"];
+        NSError* error = nil;
+        if (function)
+          m_pipelines.reflection_geometry =
+            [m_device newComputePipelineStateWithFunction:function
+                                                    error:&error];
+        if (!m_pipelines.reflection_geometry)
+          throw std::runtime_error (
+            std::string ("Could not build reflection geometry pipeline: ") +
+            (error ? error.localizedDescription.UTF8String
+                   : "shader function missing"));
+      }
+#endif
 
       m_pipelines.uber_opaque = make_pipeline (
         @"uber_vertex", @"uber_fragment", scene, depth, m_msaa_samples, false);
@@ -1491,6 +1552,188 @@ namespace moppe {
       return buffer;
     }
 
+#if !TARGET_OS_IPHONE
+    void MetalRenderer::retire_reflection_geometry () {
+      if (m_terrain_resources.reflection_structure && m_frame.sequence &&
+          ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                                  timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out retiring reflection geometry from an in-flight frame");
+      if (m_terrain_resources.reflection_structure)
+        [m_residency removeAllocation:m_terrain_resources.reflection_structure];
+      if (m_terrain_resources.reflection_vertices)
+        [m_residency removeAllocation:m_terrain_resources.reflection_vertices];
+      if (m_terrain_resources.reflection_structure ||
+          m_terrain_resources.reflection_vertices)
+        [m_residency commit];
+      m_terrain_resources.reflection_structure = nil;
+      m_terrain_resources.reflection_vertices = nil;
+      m_terrain_resources.reflection_proxy = {};
+      m_terrain_resources.reflection_structure_bytes = 0;
+      m_terrain_resources.reflection_scratch_bytes = 0;
+      m_terrain_resources.reflection_proxy_ms = 0.0;
+      m_terrain_resources.reflection_build_ms = 0.0;
+      m_reflection_geometry_written = false;
+    }
+
+    void MetalRenderer::build_reflection_geometry () {
+      if (m_reflection_geometry_path.empty () ||
+          m_terrain_resources.reflection_structure ||
+          m_reflection_heights.empty () || !m_frame.drawable)
+        return;
+
+      const Mat4& view = m_frame.params.view;
+      Vec3 forward (-view.m[2], 0.0f, -view.m[10]);
+      const float forward_length = std::sqrt (dot (forward, forward));
+      if (forward_length > 1e-4f)
+        forward = forward * (1.0f / forward_length);
+      else
+        forward = Vec3 (0.0f, 0.0f, -1.0f);
+      const Vec3 focus = m_frame.params.camera_pos + forward * 1024.0f;
+      const double proxy_start = cpu_time ();
+      ReflectionTerrainProxy proxy = build_reflection_terrain_proxy (
+        m_terrain_resources.params,
+        m_reflection_heights,
+        focus,
+        m_frame.params.proj * m_frame.params.view,
+        static_cast<int> (m_frame.drawable.texture.width),
+        static_cast<int> (m_frame.drawable.texture.height),
+        8,
+        2048.0f);
+      const double proxy_ms = (cpu_time () - proxy_start) * 1000.0;
+
+      static_assert (sizeof (ReflectionProxyVertex) == 12);
+      const std::size_t vertex_bytes =
+        proxy.triangles.size () * sizeof (ReflectionProxyVertex);
+      id<MTLBuffer> vertices = create_private_buffer (
+        proxy.triangles.data (), vertex_bytes, @"Moppe reflection terrain");
+
+      MTLAccelerationStructureTriangleGeometryDescriptor* geometry =
+        [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
+      geometry.label = @"Moppe reflection terrain triangles";
+      geometry.vertexBuffer = vertices;
+      geometry.vertexBufferOffset = 0;
+      geometry.vertexFormat = MTLAttributeFormatFloat3;
+      geometry.vertexStride = sizeof (ReflectionProxyVertex);
+      geometry.triangleCount = proxy.metrics.triangle_count;
+      geometry.opaque = YES;
+
+      MTLPrimitiveAccelerationStructureDescriptor* descriptor =
+        [MTLPrimitiveAccelerationStructureDescriptor descriptor];
+      descriptor.geometryDescriptors = @[ geometry ];
+      descriptor.usage = MTLAccelerationStructureUsagePreferFastIntersection;
+      const MTLAccelerationStructureSizes sizes =
+        [m_device accelerationStructureSizesWithDescriptor:descriptor];
+      id<MTLAccelerationStructure> structure = [m_device
+        newAccelerationStructureWithSize:sizes.accelerationStructureSize];
+      structure.label = @"Moppe reflection terrain BLAS";
+      id<MTLBuffer> scratch =
+        [m_device newBufferWithLength:sizes.buildScratchBufferSize
+                              options:MTLResourceStorageModePrivate];
+      scratch.label = @"Moppe reflection terrain build scratch";
+      if (!vertices || !structure || !scratch)
+        throw std::runtime_error (
+          "Could not allocate reflection geometry resources");
+      make_resident (structure);
+      make_resident (scratch);
+
+      const double build_start = cpu_time ();
+      id<MTLCommandQueue> build_queue = [m_device newCommandQueue];
+      build_queue.label = @"Moppe reflection geometry builder";
+      id<MTLCommandBuffer> command = [build_queue commandBuffer];
+      id<MTLAccelerationStructureCommandEncoder> encoder =
+        [command accelerationStructureCommandEncoder];
+      [encoder buildAccelerationStructure:structure
+                               descriptor:descriptor
+                            scratchBuffer:scratch
+                      scratchBufferOffset:0];
+      [encoder endEncoding];
+      [command commit];
+      [command waitUntilCompleted];
+      if (command.error)
+        throw std::runtime_error (
+          std::string ("Reflection geometry build failed: ") +
+          command.error.localizedDescription.UTF8String);
+      const double build_ms = (cpu_time () - build_start) * 1000.0;
+      [m_residency removeAllocation:scratch];
+      [m_residency commit];
+
+      m_terrain_resources.reflection_vertices = vertices;
+      m_terrain_resources.reflection_structure = structure;
+      m_terrain_resources.reflection_proxy = std::move (proxy);
+      m_terrain_resources.reflection_structure_bytes =
+        sizes.accelerationStructureSize;
+      m_terrain_resources.reflection_scratch_bytes =
+        sizes.buildScratchBufferSize;
+      m_terrain_resources.reflection_proxy_ms = proxy_ms;
+      m_terrain_resources.reflection_build_ms = build_ms;
+      m_reflection_heights.clear ();
+      m_reflection_heights.shrink_to_fit ();
+
+      const ReflectionProxyMetrics& metrics =
+        m_terrain_resources.reflection_proxy.metrics;
+      std::cerr << "moppe: reflection geometry: triangles="
+                << metrics.triangle_count << ", vertices=" << vertex_bytes
+                << " B, blas=" << sizes.accelerationStructureSize
+                << " B, scratch=" << sizes.buildScratchBufferSize
+                << " B, proxy=" << proxy_ms << " ms, build=" << build_ms
+                << " ms" << std::endl;
+    }
+
+    void MetalRenderer::write_reflection_geometry_report () const {
+      const ReflectionTerrainProxy& proxy =
+        m_terrain_resources.reflection_proxy;
+      const ReflectionProxyMetrics& metrics = proxy.metrics;
+      std::ofstream output (m_reflection_geometry_path + ".txt");
+      output << std::fixed << std::setprecision (3);
+      output << "reflection_geometry_goal=0\n";
+      output << "device=" << m_device.name.UTF8String << '\n';
+      output << "source=authoritative_completed_surface\n";
+      output << "geometry=bounded_periodic_terrain_only\n";
+      output << "builder=metal_acceleration_structure_encoder\n";
+      output << "query=metal4_compute_argument_table\n";
+      output << "usage=prefer_fast_intersection\n";
+      output << "ordinary_water_rendering=unchanged\n";
+      output << "panels=normal,distance,primitive_barycentric,hit_mask\n";
+      output << "source_stride=" << proxy.source_stride << '\n';
+      output << "cells=" << proxy.cells_x << 'x' << proxy.cells_z << '\n';
+      output << "bounds_m=" << proxy.minimum_x << ',' << proxy.minimum_z << ','
+             << proxy.maximum_x << ',' << proxy.maximum_z << '\n';
+      output << "triangles=" << metrics.triangle_count << '\n';
+      output << "vertex_bytes="
+             << proxy.triangles.size () * sizeof (ReflectionProxyVertex)
+             << '\n';
+      const std::size_t source_height_bytes =
+        static_cast<std::size_t> (m_terrain_resources.params.width) *
+        m_terrain_resources.params.height * sizeof (terrain::SurfaceElevation);
+      const std::size_t vertex_bytes =
+        proxy.triangles.size () * sizeof (ReflectionProxyVertex);
+      output << "temporary_source_height_bytes=" << source_height_bytes << '\n';
+      output << "acceleration_structure_bytes="
+             << m_terrain_resources.reflection_structure_bytes << '\n';
+      output << "build_scratch_bytes="
+             << m_terrain_resources.reflection_scratch_bytes << '\n';
+      output << "retained_gpu_bytes="
+             << vertex_bytes + m_terrain_resources.reflection_structure_bytes
+             << '\n';
+      output << "peak_build_gpu_bytes="
+             << vertex_bytes + m_terrain_resources.reflection_structure_bytes +
+                  m_terrain_resources.reflection_scratch_bytes
+             << '\n';
+      output << "proxy_generation_ms="
+             << m_terrain_resources.reflection_proxy_ms << '\n';
+      output << "acceleration_structure_build_ms="
+             << m_terrain_resources.reflection_build_ms << '\n';
+      output << "height_samples=" << metrics.source_sample_count << '\n';
+      output << "height_rms_m=" << metrics.height_rms_m << '\n';
+      output << "height_p95_m=" << metrics.height_p95_m << '\n';
+      output << "height_max_m=" << metrics.height_max_m << '\n';
+      output << "projected_samples=" << metrics.projected_sample_count << '\n';
+      output << "projected_p95_px=" << metrics.projected_p95_px << '\n';
+      output << "projected_max_px=" << metrics.projected_max_px << '\n';
+    }
+#endif
+
     void MetalRenderer::blit_into (id<MTLTexture> tex,
                                    id<MTLBuffer> staging,
                                    int w,
@@ -1598,6 +1841,12 @@ namespace moppe {
       if (w < 2 || h < 2 || heights.size () != sample_count ||
           normals.size () != sample_count || params.scale[1] != 1.0f)
         throw std::invalid_argument ("invalid Metal terrain raster");
+#if !TARGET_OS_IPHONE
+      if (!m_reflection_geometry_path.empty ()) {
+        retire_reflection_geometry ();
+        m_reflection_heights.assign (heights.begin (), heights.end ());
+      }
+#endif
       m_terrain_resources.params = params;
 
       // Heights: R32Float, read() access only.
@@ -3746,6 +3995,9 @@ namespace moppe {
 
     void MetalRenderer::request_screenshot (const std::string& path) {
       m_frame.screenshot_path = path;
+#if !TARGET_OS_IPHONE
+      build_reflection_geometry ();
+#endif
     }
 
     void MetalRenderer::end_frame () {
@@ -3754,10 +4006,18 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("MetalRenderer::finish_scene_encoding");
         end_scene_encoder (); // in case nothing was drawn
       }
+#if !TARGET_OS_IPHONE
+      // Automated captures can request their path before begin_frame, when no
+      // drawable exists. The forcing camera is final here, so this is the
+      // authoritative point at which to materialize its bounded proxy.
+      build_reflection_geometry ();
+#endif
 
 #if !TARGET_OS_IPHONE
       id<MTLBuffer> capture = nil;
+      id<MTLBuffer> reflection_diagnostic = nil;
       std::size_t capture_row_bytes = 0;
+      std::size_t reflection_row_bytes = 0;
       int capture_width = 0;
       int capture_height = 0;
       const std::string capture_path = m_frame.screenshot_path;
@@ -3785,6 +4045,52 @@ namespace moppe {
             destinationBytesPerRow:capture_row_bytes
           destinationBytesPerImage:capture_row_bytes * capture_height];
         [blit endEncoding];
+      }
+
+      if (!capture_path.empty () && !m_reflection_geometry_written &&
+          m_pipelines.reflection_geometry &&
+          m_terrain_resources.reflection_structure && m_frame.drawable) {
+        const int width = static_cast<int> (m_frame.drawable.texture.width);
+        const int height = static_cast<int> (m_frame.drawable.texture.height);
+        reflection_row_bytes = (static_cast<std::size_t> (width) * 8 + 255) &
+                               ~static_cast<std::size_t> (255);
+        reflection_diagnostic =
+          [m_device newBufferWithLength:reflection_row_bytes * height
+                                options:MTLResourceStorageModeShared];
+        reflection_diagnostic.label = @"Moppe reflection geometry diagnostic";
+        make_resident (reflection_diagnostic);
+
+        MoppeReflectionGeometryUniforms uniforms {};
+        uniforms.camera = f4 (m_frame.params.camera_pos);
+        uniforms.camera.w = 8192.0f;
+        const Mat4& view = m_frame.params.view;
+        uniforms.camera_right = { view.m[0], view.m[4], view.m[8], 0.0f };
+        uniforms.camera_up = { view.m[1], view.m[5], view.m[9], 0.0f };
+        uniforms.camera_back = { view.m[2], view.m[6], view.m[10], 0.0f };
+        uniforms.projection = { m_frame.params.proj.m[0],
+                                m_frame.params.proj.m[5],
+                                static_cast<float> (width),
+                                static_cast<float> (height) };
+        uniforms.output.x = static_cast<float> (reflection_row_bytes / 8);
+        const MTLGPUAddress uniform_address =
+          m_frame.arena[m_frame.slot].write (uniforms);
+        [m_reflection_arguments
+            setResource:m_terrain_resources.reflection_structure.gpuResourceID
+          atBufferIndex:MOPPE_BUF_REFLECTION_AS];
+        [m_reflection_arguments setAddress:uniform_address
+                                   atIndex:MOPPE_BUF_REFLECTION_UNIFORMS];
+        [m_reflection_arguments setAddress:reflection_diagnostic.gpuAddress
+                                   atIndex:MOPPE_BUF_REFLECTION_OUTPUT];
+        [m_reflection_arguments
+          setAddress:m_terrain_resources.reflection_vertices.gpuAddress
+             atIndex:MOPPE_BUF_REFLECTION_VERTICES];
+        id<MTL4ComputeCommandEncoder> diagnostic =
+          [m_frame.command_buffer computeCommandEncoder];
+        [diagnostic setComputePipelineState:m_pipelines.reflection_geometry];
+        [diagnostic setArgumentTable:m_reflection_arguments];
+        [diagnostic dispatchThreads:MTLSizeMake (width, height, 1)
+              threadsPerThreadgroup:MTLSizeMake (8, 8, 1)];
+        [diagnostic endEncoding];
       }
 #endif
 
@@ -3942,6 +4248,23 @@ namespace moppe {
         else
           std::cout << "moppe: wrote screenshot " << capture_path << std::endl;
         [m_residency removeAllocation:capture];
+        [m_residency commit];
+      }
+      if (reflection_diagnostic) {
+        if (!write_capture_png (m_reflection_geometry_path,
+                                capture_width,
+                                capture_height,
+                                reflection_row_bytes,
+                                reflection_diagnostic.contents))
+          std::cerr << "moppe: failed to write reflection geometry "
+                    << m_reflection_geometry_path << std::endl;
+        else {
+          write_reflection_geometry_report ();
+          m_reflection_geometry_written = true;
+          std::cout << "moppe: wrote reflection geometry "
+                    << m_reflection_geometry_path << std::endl;
+        }
+        [m_residency removeAllocation:reflection_diagnostic];
         [m_residency commit];
       }
       m_frame.screenshot_path.clear ();
