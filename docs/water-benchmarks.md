@@ -80,13 +80,13 @@ duration, status, and log path for future image-difference or metric tooling.
 
 ## Current acceptance questions
 
-- Streams and rivers should be continuous ribbons contained by recognizable
-  beds, with width increasing downstream rather than reading as overlapping
-  planar sheets.
+- Streams and rivers should be one continuous clipped field contained by
+  recognizable beds, with width increasing downstream rather than reading as
+  overlapping planar sheets.
 - Confluences should form one junction without a dark overlap wedge, gap, or
   duplicated ownership at the endpoint.
-- Mouths should widen and dissolve into their receiving body without a block,
-  hanging edge, or ribbon drawn across the lake.
+- Mouths should widen and join their receiving body without a block, hanging
+  edge, or duplicate surface drawn across the lake.
 - Waterfall candidates should read as a lip, falling sheet, and foot rather
   than a steep terrain-following strip.
 - Lake boundaries should follow the terrain-scale shoreline without coarse

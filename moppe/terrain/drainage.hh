@@ -95,10 +95,9 @@ namespace moppe::terrain {
     float waterfall = 0.0f;
     float standing_water = 0.0f;
     float water_level_m = 0.0f;
-    // Flooded water the ribbon itself owns: channel-like bodies and small
-    // depressions the route crosses. The ribbon holds water_level_m across
-    // such stretches and widens to the local waterline, where standing_water
-    // instead retires the ribbon under a sheet-rendered body.
+    // Flooded channel-like bodies and small depressions the route crosses.
+    // The running-water painter holds water_level_m across such stretches;
+    // standing_water instead marks a body that terminates the river.
     float pooled = 0.0f;
   };
 
@@ -144,8 +143,8 @@ namespace moppe::terrain {
     std::vector<RiverReach> reaches;
     std::vector<Waterfall> waterfalls;
     // One flag per census body: a river alignment passes through it from
-    // inlet to outlet. Traversed channel-like bodies render as ribbon pools
-    // and must therefore stay out of the standing-water sheet.
+    // inlet to outlet. Traversed channel-like bodies remain pooled at their
+    // flood level but receive the running field's current and calm amplitude.
     std::vector<std::uint8_t> body_traversed;
   };
 

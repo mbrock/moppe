@@ -342,14 +342,14 @@ namespace moppe::terrain {
     // Shape reading: a multi-source sweep from every dry cell measures each
     // wet cell's distance to shore in cell steps, and a body's largest such
     // distance is its flooded inradius. A permanent inland body no wider
-    // than a few cells is a flooded channel segment, not a lake: the river
-    // ribbon can own it with proper banks, where the flat sheet would
-    // terrace it into plates.
+    // than a few cells is a flooded channel segment, not a terminating lake:
+    // the running field can carry current through it without flattening the
+    // rest of the reach into a chain of body-owned plates.
     {
       MOPPE_PROFILE_ZONE ("census.measure_body_shape");
-      // Two cells of inradius keeps ribbon ownership to pools four to five
-      // cells wide. Wider flooded reaches can hide arms the alignment never
-      // visits, which would drain visibly if the sheet yielded them.
+      // Two cells of inradius limits channel classification to pools four to
+      // five cells wide. Wider flooded reaches can hide arms the alignment
+      // never visits and should remain terminating standing bodies.
       constexpr float channel_inradius_cells = 2.05f;
       const float cell_step_m = std::min (
         (flood.domain ().spacing_x ()).numerical_value_in (moppe::u::m),

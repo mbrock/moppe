@@ -25,7 +25,7 @@ the water are allowed to say about themselves.
 - Motorcycle, car, walking, hang-glider, generated trail circuit, cinematic
   tour, forests, rivers, lakes, atmosphere, and post-processing.
 - Deterministic captures, graphics replay benchmarks, source analysis, typed
-  Arrow bundle persistence, and 200 focused tests.
+  Arrow bundle persistence, and 207 focused tests.
 
 ## Current work
 
@@ -50,8 +50,13 @@ one-pixel static at every distance and crawled with the camera. What remains
 open there is character rather than legibility — the splat sources still
 carry all the close-range identity, and the metre-scale geometry of
 [RFC-008](../plan/rfc-008-geology-conditioned-tessellation.md) is untouched.
-Also still open: water kinds (junctions, lips, shorelines, the rider in the
-water), and lakes in the browser.
+Horizontal water is now one clipped field: running alignments paint levels
+and current into the same `WaterSheets` value as seas and lakes, exact
+per-cell shoreline geometry joins bends and confluences, and only vertical
+nickpoints remain explicit waterfall curtains. Current-aligned shading and a
+fine-to-channel-detail handoff make the distinction visible without retaining
+the old reach ribbons. Still open are richer plunge-pool spray, the rider's
+local-lake underwater state, and lakes in the browser.
 
 The corrugation investigation is written up in
 [hillslopes and channels](hillslopes-and-channels.md), negative results

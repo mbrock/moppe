@@ -82,7 +82,7 @@ namespace moppe::test {
     void draw_terrain (const render::ChunkDraw*, int) override {}
     void draw_sky (const render::SkyParams&) override {}
     void draw_ocean (const render::OceanParams&) override {}
-    void draw_rivers (const render::Mesh&, const Mat4&) override {}
+    void draw_waterfalls (const render::Mesh&, const Mat4&) override {}
     void draw_mesh (const render::Mesh&, const Mat4&) override {
       ++meshes_drawn;
     }

@@ -46,10 +46,12 @@ and duplicate quantity specifications are compile-time errors.
 ## Water
 
 `terrain::WaterSheets` retains water separately from the ground while sharing
-its domain. Elevation and amplitude drive the standing-water texture; the
-horizontal components of velocity drive flow detail. Rivers remain continuous
-reach/ribbon geometry derived from `RiverNetwork`, while water sheets carry
-seas, lakes, and current through mouths.
+its domain. Elevation and amplitude drive the continuous horizontal water
+surface; the horizontal components of velocity drive flow-aligned detail.
+Seas, lakes, traversed pools, river reaches, confluences, and mouths therefore
+share one clipped field. Only vertical waterfall curtains are geometry derived
+from `RiverNetwork`, because a single elevation at each x/z cannot represent a
+falling sheet.
 
 Water and ground readings use borrowed `TexturePixels` descriptions that
 write their final format directly into backend staging memory. Physical water
@@ -79,7 +81,7 @@ Presentation owns the conversion from typed columns to renderer resources:
 - `game::Terrain` uploads authoritative elevation and normal columns;
 - ground-reading upload creates format-specific `TexturePixels` rules;
 - water presentation supplies ocean setup and typed water texture rules; and
-- river presentation builds continuous ribbon geometry.
+- waterfall presentation builds only vertical nickpoint curtains.
 
 A rule borrows its bundle for the duration of the renderer call and writes
 once into storage supplied by the backend. Units and semantic quantity types

@@ -1,12 +1,8 @@
-// Flow-aligned translucent water for routed streams. Geometry supplies
-// level cross-sections over orogeny valleys: cross-stream u, a
-// confluence-continuous downstream coordinate v in meters, rapid strength in
-// color.r, the water
-// column depth in color.g (normalized by MOPPE_RIVER_DEPTH_SPAN meters),
-// waterfall strength in color.b, and fade opacity in color.a. Surface
-// detail scrolls along v so the pattern advects downstream like a flow
-// map; transparency follows the actual water column, so shallow water is
-// glassy and deep water reads as a body.
+// Flow-aligned translucent water for explicit waterfall curtains. Horizontal
+// rivers live in the clipped WaterSheets field; this shader owns only the
+// vertical primitive a height field cannot express. Geometry supplies
+// cross-curtain u, falling distance v, depth in color.g, waterfall strength
+// in color.b, and edge opacity in color.a.
 
 #include "common.h"
 
@@ -64,8 +60,8 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float distance = length (to_frag);
   const float fog = moppe_distance_fog (distance, frame.fog_color.w);
   const float fog_factor = smoothstep (0.0, 0.9, fog);
-  // Periodic worlds submit nearby copies of the complete river network.
-  // Terrain already owns the fully opaque haze, so reject distant ribbons
+  // Periodic worlds submit nearby copies of the waterfall set. Terrain
+  // already owns the fully opaque haze, so reject distant curtains
   // before procedural flow, derivatives, reflection, or shadow sampling.
   if (fog_factor >= 0.995)
     discard_fragment ();
@@ -107,7 +103,7 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float n2 = mix (n20, n21, handoff);
   const float surface = 0.6 * n1 + 0.4 * n2;
 
-  // Recover the ribbon's cross-stream and downstream axes from derivatives of
+  // Recover the curtain's cross-stream and downstream axes from derivatives of
   // its true flow coordinates. Normal detail now turns around bends instead of
   // being tilted along the world's x/z axes.
   const float3 dpdx = dfdx (in.world_pos);
@@ -150,6 +146,10 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
                                             grad_downstream * downstream_axis));
 
   const float3 view = normalize (frame.camera_pos.xyz - in.world_pos);
+  // Curtains are visible from both banks. Face their shading normal toward
+  // the viewer so the back does not become a full-Fresnel white card.
+  if (dot (n, view) < 0.0)
+    n = -n;
   const float fresnel =
     0.035 + 0.965 * pow (1.0 - max (dot (n, view), 0.0), 5.0);
   const float3 reflection_dir = reflect (-view, n);
@@ -186,8 +186,11 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float churn =
     saturate (0.6 * in.rapid * mix (0.55, 1.0, channel_profile) *
               smoothstep (0.55, 0.95, 0.5 * (n1 + n2) + 0.25 * in.rapid));
-  const float fall =
-    saturate (in.waterfall * (0.45 + 0.55 * smoothstep (0.3, 0.75, n1)));
+  // A falling sheet is clear water broken into aerated streaks, not a solid
+  // white card. Two advected scales make irregular ropes of foam with
+  // translucent gaps between them.
+  const float fall_pattern = 0.62 * n1 + 0.38 * n2;
+  const float fall = in.waterfall * smoothstep (0.58, 0.86, fall_pattern);
   const float bank_contact = smoothstep (0.025, 0.10, depth_m) *
                              (1.0 - smoothstep (0.18, 0.48, depth_m));
   const float bank = smoothstep (0.45, 0.95, cross_position) * bank_contact *
@@ -215,6 +218,6 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
     wet * (0.04 + 0.74 * optical_depth + 0.12 * fresnel);
   const float alpha =
     edge * in.opacity *
-    saturate (clear_surface + 0.35 * in.waterfall + 0.55 * foam);
+    saturate (clear_surface + 0.08 * in.waterfall + 0.68 * foam);
   return float4 (color, alpha);
 }

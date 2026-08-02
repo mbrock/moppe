@@ -146,7 +146,7 @@ Presentation is deliberately game-shaped:
 | --- | --- |
 | geometry and ground readings | terrain setup and typed texture descriptions |
 | water sheets and datum | ocean setup, water level/amplitude, and flow textures |
-| river network | continuous river ribbon mesh |
+| river network | horizontal water painting plus vertical waterfall curtains |
 | world and frame readings | terrain, forest, actors, water, effects, HUD |
 
 Typed quantities become numeric texture or API storage only here. The renderer

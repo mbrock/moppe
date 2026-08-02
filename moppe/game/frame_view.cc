@@ -47,7 +47,7 @@ namespace moppe::game {
       visibility.tree_stand = !water;
       visibility.actors = !water && !tree;
       visibility.ocean = input.graphics.ocean;
-      visibility.river_ribbons = input.graphics.river_ribbons;
+      visibility.waterfall_curtains = input.graphics.waterfall_curtains;
       visibility.dust = !gazetteer && input.graphics.particles;
       visibility.underwater =
         view.camera.position[1] <

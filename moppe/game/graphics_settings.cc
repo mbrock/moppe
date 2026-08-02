@@ -124,8 +124,8 @@ namespace moppe::game {
     }
     if (env_enabled ("MOPPE_NOSHADOW"))
       settings.terrain_shadows = false;
-    if (env_enabled ("MOPPE_RIVER_RIBBONS"))
-      settings.river_ribbons = true;
+    if (env_enabled ("MOPPE_WATERFALL_CURTAINS"))
+      settings.waterfall_curtains = true;
     if (env_enabled ("MOPPE_TERRAIN_TOPOLOGY"))
       settings.terrain_topology = true;
     return true;

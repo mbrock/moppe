@@ -91,10 +91,9 @@ namespace moppe::terrain {
     // width at the body's widest point. Size classes cannot tell a flooded
     // channel segment from a lake; this shape reading can.
     meters_t inradius;
-    // A permanent body narrow enough for the river ribbon to own: flooded
-    // channel water rather than a standing lake. The sheet renderer's
-    // one-flat-level-per-body model terraces such bodies into plates, while
-    // a ribbon renders them as pools of the river that flows through them.
+    // A permanent body narrow enough to behave as flooded channel water
+    // rather than a terminating lake. The running-water field preserves its
+    // flood level and carries current through it.
     bool channel_like;
   };
 
@@ -187,7 +186,7 @@ namespace moppe::terrain {
 
   // Rivers terminate only at bodies wide enough to stand as sheets: the sea
   // and permanent non-channel lakes. Channel-like bodies pass rivers through
-  // and become ribbon-rendered pools of the river that traverses them.
+  // and become flowing pools in the shared water field.
   bool water_body_terminates_rivers (const WaterBody& body,
                                      const WaterPermanence& permanence = {});
 

@@ -25,10 +25,10 @@ world.
 | Relation or table | Current consumer | Why it exists |
 | --- | --- | --- |
 | cell -> body membership | waterline extraction and moisture | identify wet ground without borrowing body measurements |
-| cell -> body membership | drainage and watercourse painting | distinguish dry routes, sheet water, and ribbon-owned pools |
+| cell -> body membership | drainage and watercourse painting | distinguish dry routes, terminating bodies, and traversed flowing pools |
 | body measurements | permanence, capture, cinematic planning | classify and select bodies by area, depth, volume, shape, and sea connection |
 | body -> outlet cell and spill cell | wet drainage | route a whole flat body through its proven final exit |
-| reach -> upstream/downstream body | river extraction and rendering | end an inlet at sheet water or continue a ribbon through a channel-like body |
+| reach -> upstream/downstream body | river extraction and rendering | end an inlet at a standing body or continue the running field through a channel-like body |
 | body -> inlet reaches | river inspection, derived today by reversing `downstream_body` | enumerate water entering a body |
 | body -> downstream reach | cross-body river continuity, derived today from the spill cell | continue flow after a non-terminal body |
 

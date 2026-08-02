@@ -22,7 +22,7 @@ MOPPE_TEST (graphics_feature_registry_finds_canonical_entities) {
 
 MOPPE_TEST (graphics_features_describe_hot_switchability) {
   MOPPE_CHECK (game::ocean_feature.hot);
-  MOPPE_CHECK (game::river_ribbons_feature.hot);
+  MOPPE_CHECK (game::waterfall_curtains_feature.hot);
   MOPPE_CHECK (game::particles_feature.hot);
   MOPPE_CHECK (game::vehicle_effects_feature.hot);
   MOPPE_CHECK (game::star_effects_feature.hot);
@@ -115,7 +115,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   MOPPE_CHECK (!equivalent (
     partition, game::GraphicsFeatureId::ocean, game::GraphicsFeatureId::bloom));
   MOPPE_CHECK (!equivalent (partition,
-                            game::GraphicsFeatureId::river_ribbons,
+                            game::GraphicsFeatureId::waterfall_curtains,
                             game::GraphicsFeatureId::ocean));
 
   game::GraphicsSettings settings = game::low_graphics_settings ();
@@ -132,7 +132,7 @@ MOPPE_TEST (graphics_benchmark_partition_groups_small_effects) {
   MOPPE_CHECK (settings.channel_flux_detail);
   MOPPE_CHECK (settings.terrain_topology);
   MOPPE_CHECK (!settings.ocean);
-  MOPPE_CHECK (!settings.river_ribbons);
+  MOPPE_CHECK (!settings.waterfall_curtains);
   MOPPE_CHECK (!settings.bloom);
   MOPPE_CHECK (!settings.auto_exposure);
 }

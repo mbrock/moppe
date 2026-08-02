@@ -73,6 +73,32 @@ outlet in its alignment and dissolves into the standing-water sheet. The stream
 benchmark camera looks back at that root; its former mid-reach view could slice
 the first section with the near plane and falsely resemble a hard source.
 
+## Implemented field and nickpoint slice (2026-08-02)
+
+The retained reach ribbons have been retired. Dense alignments now paint
+shallow monotone levels and planar velocity into the same `WaterSheets` field
+as seas and lakes. This realizes the research shelf's velocity-field direction
+without introducing a shallow-water solve: two-phase Vlachos advection uses a
+local basis built from the painted vector, and overlapping tributary stamps
+blend before shading. Junctions, mouths, and traversed pools are therefore one
+surface rather than a set of meshes with alpha overlap rules.
+
+Near Metal geometry reconstructs the signed water-minus-ground field with
+exact edge crossings and an asymptotic decider for bilinear saddle cells. A
+per-segment analytic-distance prototype, closer to drawing every trajectory as
+a screen-space implicit curve, was rejected during the visual gate: its
+independently fitted segment planes produced visible blocks and projected
+across terrain. The shared field keeps topology and water ownership in the
+world artifact, while the mesh shader only reconstructs it.
+
+Peytavie's distinction between ordinary reaches and waterfall primitives is
+now explicit. Falling spans are omitted from the horizontal field and each
+selected hydrological nickpoint receives one small ballistic curtain, pinched
+at the lip and widened toward the foot. This is still an appearance primitive,
+not a fluid solve; richer plunge-pool foam and spray remain later work. Narrow
+running water fades to terrain channel detail before the coarse ocean LOD,
+while standing bodies continue onto the horizon grid.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in
