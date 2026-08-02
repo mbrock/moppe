@@ -41,10 +41,10 @@ amended the first draft. The deltas, now integrated below, were:
 - The height texture is accessed **exclusively via texture read()** at
   integer coords (R32F is not linearly filterable before Apple9); the
   RG16Snorm normal texture likewise reads at vertex rate.
-- **All texture uploads go through a staging buffer + blit encoder** — the
-  simulator only allows private-storage textures, and it's the right answer
-  on TBDR devices anyway. Streaming DrawList memory is a growable per-frame
-  pool keyed to a triple-buffer semaphore.
+- **All texture uploads go through a staging buffer + Metal 4 compute-encoder
+  copy** — the destination textures and static geometry stay private on TBDR
+  devices. Uniforms, transient DrawLists, chunk records, and emissions share a
+  growable arena in each of three shared-event-paced frame slots.
 - Scene-pass MSAA color/depth are **memoryless** on Apple-family GPUs
   (private on the simulator), storeAction resolve / depth dontCare. The
   present pass is **not** MSAA (it composites an already-resolved quad +
@@ -57,9 +57,9 @@ amended the first draft. The deltas, now integrated below, were:
   the filmic SDR grade stays below 1.0 while scene highlights can exceed it.
   iOS keeps an 8-bit SDR drawable.
 - macOS frame pacing uses **CAMetalDisplayLink** on the main run loop and
-  renders into the drawable supplied with each update. MTKView remains the
-  input/view host and its automatic draw loop is the fallback on systems
-  without CAMetalDisplayLink.
+  renders into the drawable supplied with each update. MetalKit may remain a
+  platform view/input convenience, but the renderer owns only a
+  `CAMetalLayer`; drawable pacing and EDR headroom cross explicit functions.
 - One metallib **per SDK** (macosx / iphoneos / iphonesimulator) via
   xcrun -sdk. A macOS Command Line Tools build without the offline Metal
   compiler bundles combined MSL source for runtime compilation instead.
@@ -204,7 +204,7 @@ otherwise long-lived Metal state visible at the right lifetime:
 | `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
 | `MetalWaterResources` | A completed world: the ocean grid, horizontal-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
 | `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, and exposure resources. It recreates these on target-size or quality changes and owns temporal validity separately from a world resource. |
-| `MetalFrameEncoding` | One drawable frame: command buffer, drawable, frame parameters and uniforms, the selected in-flight stream slot, current scene target, timestamp spans, and capture bookkeeping. It owns no retained world texture. |
+| `MetalFrameEncoding` | One drawable frame: reusable Metal 4 command buffer, command-allocator ring, shared completion event, drawable, frame parameters, argument tables, selected frame arena, current scene target, counter-heap timestamp spans, and capture bookkeeping. It owns no retained world texture. |
 
 Concrete Terrain, Water, Scene, Post, and HUD pass operations receive only
 the owners and pipeline state they read or write. Terrain and Water both
@@ -221,12 +221,46 @@ Post. Separate names therefore do not imply separate Metal encoders or a
 change to the established scene order. The HUD operation remains responsible
 for the final composite even when its 2D list is empty.
 
-`MetalRenderer` also remains the frame-lifecycle coordinator: it begins and
-commits the command buffer, attaches the stable GPU timing spans and benchmark
-completion handler, brackets ready-world Metal capture, performs screenshots,
-and returns the in-flight stream slot only after completion. Concrete passes
-encode work under that lifecycle; they do not create command buffers, commit,
-or independently manage capture/timing state.
+`MetalRenderer` also remains the frame-lifecycle coordinator: it records one
+reusable command buffer, submits it with Metal 4 commit feedback, signals the
+shared completion event and drawable, brackets ready-world Metal capture,
+performs screenshots, and collects counter-heap timing. Concrete passes encode
+work under that lifecycle; they do not independently submit, capture, or time.
+
+### Metal 4 execution contract
+
+The Apple backend intentionally has no pre-Metal-4 path. Apple deployment
+targets are 26.0 and offline shaders compile as `metal4.0`. The execution
+model follows Apple's Metal 4 core guidance and WWDC25 sessions:
+
+Apple's 26.5 Simulator SDK omits the Metal 4 core Objective-C API. Simulator
+projects still compile, but launch fails with a direct explanation; Moppe does
+not retain a second legacy Metal transport that behaves differently from its
+device backend. Validate rendering on macOS or a Metal 4 iPhone/Apple TV.
+
+- One reusable `MTL4CommandBuffer` records each frame with one command
+  allocator per in-flight slot. A shared event paces reuse; queue-level
+  drawable waiting/signaling replaces command-buffer presentation and
+  completion semaphores.
+- Four stage-specific argument tables replace per-draw `set*Bytes`, buffer,
+  texture, and sampler calls. The CPU writes stable GPU addresses and resource
+  IDs; each frame arena preserves them until its slot completes and adds
+  resident spill allocations only for exceptional frames.
+- One explicit residency set contains retained textures, private static
+  geometry, frame arenas, and targets. The `CAMetalLayer` residency set is
+  attached separately. Target replacement waits for prior frame use before
+  old allocations leave residency.
+- Named Metal 4 barriers express render-to-render and render-to-copy
+  dependencies. Upload, readback, feedback-copy, and mip generation use
+  `MTL4ComputeCommandEncoder` blit-stage operations.
+- Commit feedback supplies whole-frame GPU time and errors. Optional
+  `MTL4CounterHeap` timestamps retain game-pass labels without depending on
+  the legacy Tracy Metal integration.
+
+Primary references are Apple's
+[Metal 4 core API overview](https://developer.apple.com/documentation/metal/understanding-the-metal-4-core-api),
+[Go small with Metal 4](https://developer.apple.com/videos/play/wwdc2025/205/),
+and [Discover Metal 4](https://developer.apple.com/videos/play/wwdc2025/254/).
 
 Conventions: reversed-Z (clear 0, GREATER_EQUAL; near 0.5, far 9000/30000
 demands it), Metal [0,1] clip z, non-sRGB formats everywhere to preserve the

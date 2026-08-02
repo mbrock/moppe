@@ -8,10 +8,12 @@
 
 #ifdef __METAL_VERSION__
 #include <metal_stdlib>
+#define MOPPE_SHADER_ALIGN
 typedef metal::float4x4 MoppeMat4;
 typedef metal::float4 MoppeFloat4;
 #else
 #include <cstdint>
+#define MOPPE_SHADER_ALIGN alignas (16)
 struct MoppeMat4 {
   float m[16];
 };
@@ -52,7 +54,7 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_WATER_FLOW_FRAGMENT 2
 #define MOPPE_TEX_WATER_GEOLOGY_FRAGMENT 4
 
-struct MoppeFrameUniforms {
+struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 light_matrix;   // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;   // xyz; w unused
@@ -67,12 +69,12 @@ struct MoppeFrameUniforms {
 
 // Per-draw transform for retained meshes (identity for draw lists,
 // whose vertices are already world space).
-struct MoppeDrawUniforms {
+struct MOPPE_SHADER_ALIGN MoppeDrawUniforms {
   MoppeMat4 model;
   MoppeFloat4 nrm0, nrm1, nrm2; // normal-matrix columns
 };
 
-struct MoppeTerrainUniforms {
+struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeMat4 view_proj;    // scene: reversed-Z; shadow pass: light NDC
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
@@ -98,7 +100,7 @@ struct MoppeTerrainUniforms {
 };
 
 // Per-chunk terrain instance data.
-struct MoppeChunkUniforms {
+struct MOPPE_SHADER_ALIGN MoppeChunkUniforms {
   int origin_x;
   int origin_z;
   float step; // source texels per rendered grid cell
@@ -112,16 +114,18 @@ struct MoppeChunkUniforms {
 #ifndef __METAL_VERSION__
 static_assert (sizeof (MoppeChunkUniforms) == 48,
                "terrain chunk uniforms must match Metal layout");
+static_assert (alignof (MoppeChunkUniforms) == 16,
+               "shader records require 16-byte GPU alignment");
 #endif
 
-struct MoppeSkyUniforms {
+struct MOPPE_SHADER_ALIGN MoppeSkyUniforms {
   MoppeMat4 view_proj; // rotation-only view * reversed-Z proj
   MoppeFloat4 sun_dir;
   MoppeFloat4 fog_color;
   MoppeFloat4 params; // x=time, y=sun_height, z=cloudiness
 };
 
-struct MoppeOceanUniforms {
+struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
@@ -168,7 +172,7 @@ static_assert (MOPPE_UNDERGROWTH_MESH_PRIMITIVES <= 512,
                "undergrowth meshlet exceeds Metal primitive limit");
 #endif
 
-struct MoppeUndergrowthUniforms {
+struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
@@ -191,14 +195,14 @@ struct MoppeUndergrowthUniforms {
                            // w=standing-water levels available
 };
 
-struct MoppeDustEmission {
+struct MOPPE_SHADER_ALIGN MoppeDustEmission {
   MoppeFloat4 position_birth; // xyz position, w birth time
   MoppeFloat4 velocity_count; // xyz base velocity, w particle count
   MoppeFloat4 color_id;       // rgb display-space color, w emission id
   MoppeFloat4 style;          // size, life, gravity, spread
 };
 
-struct MoppeDustUniforms {
+struct MOPPE_SHADER_ALIGN MoppeDustUniforms {
   MoppeFloat4 camera_right; // xyz
   MoppeFloat4 camera_up;    // xyz
   MoppeFloat4 params;       // x logical time
@@ -206,16 +210,18 @@ struct MoppeDustUniforms {
 
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,
 // bloom bright/blur.
-struct MoppeQuadUniforms {
+struct MOPPE_SHADER_ALIGN MoppeQuadUniforms {
   MoppeFloat4 tint;   // rgb * alpha blend factor
   MoppeFloat4 params; // x=uv zoom, y=time, zw=blur texel step
   MoppeFloat4 sun;    // xy=sun screen uv, z=flare strength,
                       // w=aspect (present pass only)
 };
 
-struct MoppeHudUniforms {
+struct MOPPE_SHADER_ALIGN MoppeHudUniforms {
   MoppeMat4 proj;     // point coords, y-down
   MoppeFloat4 params; // x=extended-linear output
 };
+
+#undef MOPPE_SHADER_ALIGN
 
 #endif

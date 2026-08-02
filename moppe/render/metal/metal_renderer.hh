@@ -7,16 +7,19 @@
 
 namespace moppe {
   namespace render {
-    // Creates the Metal backend attached to an MTKView (passed as
-    // void* so this header stays Objective-C-free).  The view's pixel
-    // format and colorspace are configured here.  shader_path names a
-    // compiled library or runtime-compilable source inside the assets.
-    Renderer* create_metal_renderer (void* mtk_view,
+    // Creates the Metal 4 backend for a CAMetalLayer (passed as void* so this
+    // header stays Objective-C-free).  The backend owns command submission;
+    // the platform owns display pacing and drawable acquisition.
+    Renderer* create_metal_renderer (void* metal_layer,
                                      const std::string& shader_path);
 
-    // Supplies a drawable acquired by CAMetalDisplayLink for the next frame.
-    // When none is supplied, the backend acquires MTKView.currentDrawable.
+    // Supplies a drawable acquired by CAMetalDisplayLink or the platform view
+    // for the next frame.  When none is supplied, the layer acquires one.
     void set_metal_drawable (Renderer& renderer, void* drawable);
+
+    // Supplies the display's current EDR headroom without coupling the backend
+    // to NSWindow/NSScreen or a particular host view class.
+    void set_metal_edr_headroom (Renderer& renderer, float headroom);
   }
 }
 

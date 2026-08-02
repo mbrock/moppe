@@ -340,6 +340,12 @@ static void log_runtime_parameters (MoppeView* view) {
   if (dt > 0)
     self.game->tick (dt);
   const double render_start = moppe::platform::now ();
+  NSScreen* screen = view.window.screen;
+  const float headroom =
+    screen ? (float)screen.maximumExtendedDynamicRangeColorComponentValue
+           : 1.0f;
+  moppe::render::set_metal_edr_headroom (*self.renderer,
+                                         std::max (1.0f, headroom));
   self.game->render (*self.renderer);
   const double frame_end = moppe::platform::now ();
   if (m_profile_cpu) {
@@ -482,16 +488,20 @@ namespace moppe {
 
         MoppeView* view = [[MoppeView alloc] initWithFrame:frame device:nil];
         view.game = &game;
+        view.colorPixelFormat = MTLPixelFormatRGBA16Float;
+        view.depthStencilPixelFormat = MTLPixelFormatInvalid;
+        view.sampleCount = 1;
         if (config.capture_frames)
           view.framebufferOnly = NO;
         window.contentView = view;
         match_screen_refresh_rate (view);
         match_screen_render_size (view);
 
-        // The renderer configures the view (formats, colorspace).
+        // The host owns view policy; the renderer owns the CAMetalLayer and
+        // Metal 4 submission contract beneath it.
         std::string lib = asset_path (MOPPE_SHADER_NAME);
         render::Renderer* renderer =
-          render::create_metal_renderer ((__bridge void*)view, lib);
+          render::create_metal_renderer ((__bridge void*)view.layer, lib);
         log_runtime_parameters (view);
 
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
