@@ -634,6 +634,11 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   n = normalize (n);
 
   const float3 v = normalize (-to_frag);
+  // Keep the optical normal facing the viewer. The same sheet is visible
+  // from below while swimming, but Fresnel is defined against the interface
+  // normal on the viewer's side rather than against a signed dot product.
+  if (dot (n, v) < 0.0)
+    n = -n;
   const float3 reflection_dir = reflect (-v, n);
   const float sun_visibility =
     moppe_sun_visibility (in.world_pos,
@@ -647,18 +652,35 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     moppe_cloud_transmission (
       in.world_pos, u.sun_dir.xyz, u.params.x, u.params.z);
 
-  // Schlick fresnel with a proper F0 floor.
-  const float fresnel = 0.02 + 0.98 * pow (1.0 - max (dot (n, v), 0.0), 5.0);
+  // Air-to-water Schlick Fresnel. F0 follows from an IOR of 1.333: water is
+  // almost transparent head-on but becomes a proper mirror at grazing view.
+  const float water_f0 = 0.02037;
+  const float nv = max (dot (n, v), 1e-4);
+  const float fresnel = water_f0 + (1.0 - water_f0) * pow (1.0 - nv, 5.0);
 
-  // Sun glint, dimmed by haze so it doesn't ghost through the fog.
+  // A compact GGX sun lobe. Flow and rapids broaden the microfacet
+  // distribution instead of adding an unrelated white highlight.
   const float3 sun = normalize (u.sun_dir.xyz);
   const float3 h = normalize (sun + v);
+  const float nl = max (dot (n, sun), 0.0);
   const float nh = max (dot (n, h), 0.0);
-  // The sharp glint deliberately exceeds display white: HDR keeps
-  // it for the bloom pass and the tonemapper's shoulder.
-  const float sharp_glint = pow (nh, 120.0) * 1.9;
-  const float broad_glint = pow (nh, 24.0) * 0.14;
-  const float spec = (sharp_glint + broad_glint) * (1.0 - in.fog);
+  const float vh = max (dot (v, h), 0.0);
+  const float roughness = 0.10 + 0.07 * flowing + 0.05 * rapid;
+  const float alpha_roughness = roughness * roughness;
+  const float alpha2 = alpha_roughness * alpha_roughness;
+  const float denominator = nh * nh * (alpha2 - 1.0) + 1.0;
+  const float distribution =
+    alpha2 / max (3.14159265 * denominator * denominator, 1e-5);
+  const float geometry_k = 0.5 * alpha_roughness;
+  const float geometry_v = nv / (nv * (1.0 - geometry_k) + geometry_k);
+  const float geometry_l =
+    nl / max (nl * (1.0 - geometry_k) + geometry_k, 1e-4);
+  const float sun_fresnel = water_f0 + (1.0 - water_f0) * pow (1.0 - vh, 5.0);
+  const float spec = nl > 0.0 ? min (distribution * geometry_v * geometry_l *
+                                       sun_fresnel / max (4.0 * nv, 1e-4),
+                                     6.0) *
+                                  (1.0 - in.fog)
+                              : 0.0;
 
   const float daylight = smoothstep (-0.08, 0.18, sun.y);
   const float golden = daylight * (1.0 - smoothstep (0.15, 0.65, sun.y));
@@ -676,40 +698,12 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
       ? saturate (1.4 * ocean_grid_sample_raw (in.world_pos.xz, u, geology).y)
       : 0.0;
 
-  const float3 deep = moppe_srgb (float3 (0.045, 0.21, 0.31));
-  const float3 shallow = moppe_srgb (float3 (0.11, 0.46, 0.55));
-  const float3 murk = moppe_srgb (float3 (0.22, 0.30, 0.17));
-  // The water column is landscape information. A shallow shelf keeps its
-  // mineral turquoise, then grades through a several-metre littoral zone into
-  // the deep body colour. Fresnel still supplies the view-dependent sky film
-  // below; it no longer makes every lake the same flat blue regardless of its
-  // bathymetry.
-  const float body_depth = smoothstep (0.35, 11.0, depth_m);
-  float3 water = mix (shallow, deep, body_depth);
-  // Advected anisotropic detail modulates absorption as well as the normal.
-  // The darker troughs remain visible when a broad sky reflection would
-  // otherwise flatten a shallow channel into a uniformly cyan shape.
-  water = mix (water, deep, 0.10 * flowing);
-  water *= mix (1.0, 0.82 + 0.30 * flow_detail, flowing);
-  water = mix (water, shallow, 0.16 * fresnel);
-  water = mix (water, murk, 0.6 * turbidity);
-  float alpha = mix (0.78, 0.95, fresnel);
-  alpha = mix (alpha, 0.96, 0.7 * turbidity);
-
-  // Shoreline: the seabed shows through glassy turquoise shallows,
-  // and a band of animated foam hugs the waterline.
+  float foam = 0.0;
+  float3 foam_radiance (0.0);
+  // Shoreline foam and running-water churn are an opaque material laid over
+  // the optical surface. Keep their coverage separate until the water column
+  // has established reflection and transmission below.
   if (u.shore.w > 0.5) {
-    // Clarity by water column: tropical turquoise over the sand.
-    // Rivers run murkier than the sea — silt rides the current — so
-    // flow shortens the extinction length and a metre of moving
-    // water reads as a body instead of glass over gravel.
-    // Silt shortens the extinction length the same way current-borne
-    // sediment does, so a polluted lake gives up its glassy shallows.
-    const float clarity =
-      exp (-depth_m * mix (mix (0.14, 0.55, flowing), 1.8, turbidity));
-    water = mix (water, moppe_srgb (float3 (0.13, 0.52, 0.50)), 0.6 * clarity);
-    alpha = mix (alpha, 0.35, clarity * (1.0 - 0.5 * fresnel));
-
     // Foam: hugs the waterline (the pow sharpens the band so the
     // wide shallow shelf doesn't stripe), pulsing gently, broken up
     // by drifting value noise (plane-wave products read as plaid
@@ -717,8 +711,8 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     // Foam surges with the swash: brightest as the water runs up the
     // beach, thinning as it drains back.
     const float surge = 0.5 + 0.5 * swash_phase;
-    float foam = pow (1.0 - smoothstep (0.0, 1.2, depth_m), 1.7) *
-                 (0.65 + 0.45 * surge) * (1.0 - flowing);
+    foam = pow (1.0 - smoothstep (0.0, 1.2, depth_m), 1.7) *
+           (0.65 + 0.45 * surge) * (1.0 - flowing);
     // The breakup noise only runs inside the shore band; deep water
     // keeps its zero foam without paying for it.
     if (foam > 1e-3) {
@@ -739,12 +733,10 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     foam = saturate (foam) * (0.35 + 0.65 * daylight);
 
     const float3 foam_albedo = moppe_srgb (float3 (0.93, 0.97, 1.0));
-    const float3 foam_light = moppe_hemisphere_light (u.ambient.rgb, n) +
-                              u.sun_diffuse.rgb *
-                                (0.35 + 0.65 * max (dot (n, sun), 0.0)) *
-                                sun_visibility;
-    water = mix (water, foam_albedo * foam_light, foam);
-    alpha = max (alpha, foam * 0.9);
+    const float3 foam_light =
+      moppe_hemisphere_light (u.ambient.rgb, n) +
+      u.sun_diffuse.rgb * (0.35 + 0.65 * nl) * sun_visibility;
+    foam_radiance = foam_albedo * foam_light;
   }
 
   // Aerial perspective: same sun-warmed haze as the terrain.
@@ -753,12 +745,39 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   const float3 sky_reflection =
     moppe_sky_radiance (u.fog_color.rgb, reflection_dir, sun);
 
-  // The mirror term stays below half so grazing water keeps its own
-  // color against a bright horizon; suspended silt scatters light
-  // before it reaches the surface film, dulling the reflection more.
-  const float3 color =
-    mix (water, sky_reflection, (0.45 - 0.18 * turbidity) * fresnel) +
-    glint_color * spec * daylight * sun_visibility;
+  // Beer-Lambert extinction carries the transparency. Red is absorbed first;
+  // sediment and current-borne particles shorten all three mean free paths.
+  // The destination framebuffer already contains the lit bed, so alpha is
+  // chosen to leave exactly the surviving scalar share of that bed visible.
+  float3 extinction = float3 (0.34, 0.10, 0.045);
+  extinction += turbidity * float3 (1.25, 0.92, 0.62);
+  extinction += flowing * float3 (0.10, 0.14, 0.16);
+  extinction *= mix (1.0, 1.10 - 0.16 * (flow_detail - 0.5), flowing);
+  const float3 transmission = exp (-extinction * depth_m);
+  const float bed_visibility = dot (transmission, float3 (0.299, 0.587, 0.114));
+
+  // Light removed from the bed path becomes colored in-scattering from the
+  // water column. This is what gives deep water body without painting a cyan
+  // layer over a five-centimetre stream.
+  const float3 clear_scatter = moppe_srgb (float3 (0.035, 0.34, 0.43));
+  const float3 silt_scatter = moppe_srgb (float3 (0.28, 0.30, 0.13));
+  const float3 scatter_tint = mix (clear_scatter, silt_scatter, turbidity);
+  const float3 column_light = float3 (0.44) +
+                              0.72 * moppe_hemisphere_light (u.ambient.rgb, n) +
+                              0.22 * u.sun_diffuse.rgb * nl * sun_visibility;
+  const float3 column_radiance =
+    (1.0 - fresnel) * scatter_tint * (1.0 - transmission) * column_light;
+  const float3 glint_radiance =
+    glint_color * u.sun_specular.rgb * spec * daylight * sun_visibility;
+
+  // Standard alpha blending can reproduce reflection + volume + transmitted
+  // bed when the source is normalized by the coverage it contributes.
+  float alpha = saturate (1.0 - (1.0 - fresnel) * saturate (bed_visibility));
+  float3 color = (fresnel * sky_reflection + column_radiance + glint_radiance) /
+                 max (alpha, 0.02);
+
+  color = mix (color, foam_radiance, foam);
+  alpha = mix (alpha, 0.96, foam);
 
   // Feathered waterline: alpha fades out over the last few centimeters
   // of water column instead of ending at a discard cliff.

@@ -99,6 +99,27 @@ not a fluid solve; richer plunge-pool foam and spray remain later work. Narrow
 running water fades to terrain channel detail before the coarse ocean LOD,
 while standing bodies continue onto the horizon grid.
 
+## Implemented optical and littoral slice (2026-08-02)
+
+The shared Metal fragment material now treats the framebuffer's lit bed as the
+transmitted term rather than painting a translucent water color over it.
+Schlick Fresnel uses the air--water IOR, a roughness-aware GGX lobe carries the
+sun, and RGB Beer--Lambert extinction determines how much bed light survives.
+The complementary absorbed share becomes colored in-scattering, with geology
+and current shortening the path through turbid water. This realizes the
+research shelf's depth-bounded optical layer without introducing a scene-color
+copy: reflection, water volume, and scalar bed transmission compose through
+ordinary alpha blending. Displaced screen-space refraction remains a separate
+future render-pass decision.
+
+Transparency also moved the useful detail under and beside the sheet. A close,
+band-limited cellular field gives water-worked ground stable rounded stones,
+using one identity for mineral color, boundary seam, and normal. It is full on
+shallow beds, quieter on damp margins, and gone before it aliases. The signed
+water crossing now excludes each jittered grass root individually and shapes a
+subtle taller, denser dry-bank fringe. Water, bed, and vegetation therefore
+answer to the same boundary rather than meeting as three unrelated effects.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in

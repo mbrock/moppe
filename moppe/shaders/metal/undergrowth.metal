@@ -141,10 +141,17 @@ static inline float undergrowth_density (float2 world_xz,
     u.relief.w > 0.5
       ? undergrowth_field (world_xz, u, water_levels).r - ground_m
       : 0.0;
-  const float dry_ground = 1.0 - smoothstep (0.02, 0.30, water_depth);
+  const float dry_ground = 1.0 - smoothstep (0.002, 0.030, water_depth);
+  // A signed water level is also a habitat boundary. On the dry side of the
+  // zero crossing, a narrow riparian band grows slightly denser; on the wet
+  // side the same signal still excludes roots completely.
+  const float shore =
+    u.relief.w > 0.5 ? 1.0 - smoothstep (0.05, 1.35, abs (water_depth)) : 0.0;
+  const float riparian =
+    shore * dry_ground * smoothstep (0.52, 0.80, ground_normal.y);
   return saturate (light * damp * standable * cleared * variation *
                    alpine_survival * (1.0 - snow_habitat) * dry_ground *
-                   u.params.w);
+                   (1.0 + 0.18 * riparian) * u.params.w);
 }
 
 // Each world tile owns one phase for thinning its ordered shoots. The
@@ -285,7 +292,8 @@ struct UndergrowthShoot {
   texture2d<float> normals [[texture (MOPPE_TEX_TERRAIN_NORMALS)]],
   texture2d<float> forest [[texture (MOPPE_TEX_TERRAIN_FOREST)]],
   texture2d<float> moisture [[texture (MOPPE_TEX_TERRAIN_MOISTURE)]],
-  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]]) {
+  texture2d<float> paths [[texture (MOPPE_TEX_TERRAIN_PATHS)]],
+  texture2d<float> water_levels [[texture (MOPPE_TEX_TERRAIN_WATER)]]) {
   const UndergrowthTile tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const uint2 cell = uint2 (int2 (u.tiles.xy) + int2 (tile.index));
   const uint shoots = max (undergrowth_lod_shoots (tile.wanted, cell), 1u);
@@ -318,6 +326,15 @@ struct UndergrowthShoot {
   const float wet = saturate (undergrowth_field (root_xz, u, moisture).r);
   const float2 worn = saturate (undergrowth_field (root_xz, u, paths).rg);
   const float root_clear = 1.0 - saturate (max (worn.x, worn.y) * 1.6);
+  const float root_water_depth =
+    u.relief.w > 0.5 ? undergrowth_field (root_xz, u, water_levels).r - ground
+                     : 0.0;
+  const float root_dry = 1.0 - smoothstep (0.002, 0.030, root_water_depth);
+  const float root_shore =
+    u.relief.w > 0.5 ? 1.0 - smoothstep (0.05, 1.35, abs (root_water_depth))
+                     : 0.0;
+  const float riparian =
+    root_shore * root_dry * smoothstep (0.52, 0.80, ground_normal.y);
   // Grass is the ordinary answer. Ferns are an accent reserved for damp shade,
   // not a second carpet competing with it.
   const float fern_habitat =
@@ -335,9 +352,9 @@ struct UndergrowthShoot {
   const float thinning =
     sqrt (float (MOPPE_UNDERGROWTH_SHOOTS_PER_TILE) / max (tile.wanted, 1.0));
   const float draw = undergrowth_hash (identity, 4u);
-  const float scale = sqrt (presence * root_clear) *
+  const float scale = sqrt (presence * root_clear * root_dry) *
                       (0.60 + 0.35 * wet + 0.08 * (1.0 - canopy)) *
-                      (0.65 + 0.65 * draw * draw);
+                      (0.65 + 0.65 * draw * draw) * (1.0 + 0.18 * riparian);
   const float coverage = mix (1.0, min (thinning, 1.5), fern ? 0.45 : 0.72);
 
   UndergrowthShoot s;
@@ -371,10 +388,17 @@ struct UndergrowthShoot {
     s.arch = 0.20;
     s.lobed = 0.0;
     s.tint = float3 (0.205, 0.360, 0.105);
+    // Bank grasses trade their meadow spread for a taller upright profile.
+    // This is a continuous habitat response, not a separately scattered row
+    // of reeds that could drift away from the waterline.
+    s.reach *= 1.0 - 0.18 * riparian;
+    s.climb *= 1.0 + 0.28 * riparian;
+    s.width *= 1.0 - 0.08 * riparian;
   }
   // Damp grass is deeper and greener; dry blades run straw-olive without
   // becoming a second ground texture.
   s.tint *= float3 (1.12 - 0.24 * wet, 0.84 + 0.30 * wet, 0.82 + 0.22 * wet);
+  s.tint *= mix (float3 (1.0), float3 (0.82, 1.10, 0.88), riparian);
   // Keep blade-to-blade variation subordinate to the continuous habitat
   // fields. High-contrast salt and pepper reads as glitter once the blades
   // become subpixel, even though every blade has stable identity.

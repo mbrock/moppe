@@ -41,8 +41,12 @@ not be collapsed into one score.
    sawteeth, skirts, or floating slabs? This is the most useful renderer
    regression layer.
 3. **Material and motion:** Do depth, current direction, foam, transparency,
-   rapids, and falling-water cues agree with the geometry? Still images cover
-   most material failures, but motion needs a later short clip suite.
+   reflected sky, sun glint, visible bed, wet-bank material, rapids, and
+   falling-water cues agree with the geometry? A shallow view should expose
+   stones without making the water disappear at grazing angles; a lake should
+   reflect more toward the horizon without becoming an opaque blue plate.
+   Still images cover most material failures, but motion needs a later short
+   clip suite.
 
 Keep performance separate. The gallery reports generation-and-capture wall
 time for operational diagnostics, but `--graphics-benchmark` remains the GPU
@@ -91,6 +95,9 @@ duration, status, and log path for future image-difference or metric tooling.
   than a steep terrain-following strip.
 - Lake boundaries should follow the terrain-scale shoreline without coarse
   triangular skirts, bright sawteeth, or checkerboard occupancy.
+- Transparent shallow water should reveal one stable worked bed rather than a
+  cyan fill, crawling noise, or a repeated pebble decal. Grass roots should
+  stop on the wet side while the dry bank remains a continuous habitat.
 
 These are visual acceptance questions, not automatic pixel thresholds. Once a
 specific defect is fixed and stable across machines, a cropped image metric can

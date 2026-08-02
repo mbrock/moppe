@@ -55,8 +55,14 @@ and current into the same `WaterSheets` value as seas and lakes, exact
 per-cell shoreline geometry joins bends and confluences, and only vertical
 nickpoints remain explicit waterfall curtains. Current-aligned shading and a
 fine-to-channel-detail handoff make the distinction visible without retaining
-the old reach ribbons. Still open are richer plunge-pool spray, the rider's
-local-lake underwater state, and lakes in the browser.
+the old reach ribbons. Its Metal material now treats reflectance and
+transmission as one optical budget: physical Fresnel and a GGX sun lobe own the
+surface, RGB extinction exposes or absorbs the lit bed by depth, and absorbed
+light supplies the water body. Stable close-bed stones and a signed-water
+riparian grass response make that transparency belong to the shore instead of
+ending at an unrelated turf edge. Still open are displaced screen-space
+refraction, richer plunge-pool spray, the rider's local-lake underwater state,
+and lakes in the browser.
 
 The corrugation investigation is written up in
 [hillslopes and channels](hillslopes-and-channels.md), negative results
