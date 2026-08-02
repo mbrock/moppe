@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+build_dir=${MOPPE_BUILD_DIR:-"$root/build"}
+diagnostic=${1:-/tmp/moppe-water-reflection-signal.png}
+scene=${2:-${diagnostic%.*}-scene.png}
+
+mkdir -p "$(dirname -- "$diagnostic")" "$(dirname -- "$scene")"
+rm -f "$diagnostic" "$diagnostic.txt" "$scene"
+
+cmake --build "$build_dir" --target moppe
+
+MOPPE_PROFILE_GPU=1 \
+MOPPE_SCREENSHOT_FRAMES=${MOPPE_SCREENSHOT_FRAMES:-60} \
+MOPPE_WATER_REFLECTION_SIGNAL="$diagnostic" \
+  "$root/tools/capture-water" "$scene" lake
+
+for artifact in "$diagnostic" "$diagnostic.txt" "$scene"; do
+  if [ ! -s "$artifact" ]; then
+    echo "capture-water-reflection-signal: missing $artifact" >&2
+    exit 1
+  fi
+done
+
+printf '%s\n' "$scene" "$diagnostic" "$diagnostic.txt"

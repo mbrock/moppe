@@ -360,6 +360,16 @@ seam behavior, and lifecycle ownership. This does not clear Gate 3: the next
 decision is still whether one raw water-reflection signal earns composition
 and later reconstruction.
 
+Goal 1 is also complete in that track. The quarter-linear-resolution pass now
+rasterizes actual standing-water origins and optical normals, traces the Goal
+0 terrain proxy, and publishes raw radiance, hit normal, hit distance, and
+validity independently. On the 2560 by 1600 lake forcing capture, 69.7% of the
+640 by 400 signal contains water but only 0.9% of visible reflected rays hit
+terrain. The isolated M2 Pro ray query has a 0.238 ms median, but the forcing
+view does not yet show enough non-analytical reflection to earn composition or
+denoising. Gate 3 therefore remains open: its next input is a more grazing,
+terrain-reflecting forcing camera, not Gate 4.
+
 ### Gate 4: Denoise only the signal that earned it
 
 MetalFX denoised upscaling is a separate hardware tier. Query

@@ -1,6 +1,6 @@
 # Reflection geometry findings
 
-Date: 2026-08-02
+Date: 2026-08-03
 
 Verdict: keep this code as an opt-in atelier foundation and proceed to one
 raw, low-resolution water-reflection signal. Do not enable it in ordinary
@@ -91,3 +91,70 @@ publish raw reflected radiance, hit distance, and hit normal before any
 composite. It should not yet add actors, trees, refits, denoising, temporal
 upscaling, frame interpolation, shadows, ambient occlusion, or global
 illumination.
+
+## Goal 1: raw standing-water reflection signal
+
+Goal 1 is complete. `tools/capture-water-reflection-signal OUTPUT.png` uses
+the same seed-123 deterministic lake forcing case and writes the untouched
+scene, a six-panel raw-signal diagnostic, and a text report. The opt-in
+`MOPPE_WATER_REFLECTION_SIGNAL` path reuses Goal 0's terrain acceleration
+structure. Ordinary water remains the exact fallback and does not sample any
+new output.
+
+The renderer now has an explicit `MetalReflectionTargets` owner per in-flight
+slot. A single-sample render pass rasterizes the same coarse and clipped
+lattice water surfaces as ordinary water at one quarter of drawable width and
+height. Its fragment stage rejects running water and publishes RGBA32F world
+origin plus RGBA16F optical normal and roughness. The ordinary fragment and
+the input fragment share the directionless ripple-normal function, so the ray
+does not quietly use a flat or unrelated interface.
+
+One Metal 4 compute pass first traces camera-to-water visibility against the
+terrain proxy, then traces one reflected ray for every visible input. A hit
+writes deliberately small terrain radiance, hit normal, and hit distance; a
+miss calls the same procedural sky-radiance function as ordinary water. Raw
+radiance, hit normal, R32F hit distance, and RGBA8 input/visible/hit validity
+remain separate textures. A second diagnostic-only compute pass lays out
+origin depth, optical normal, raw radiance, hit normal, hit distance, and
+validity without feeding any value back into the frame.
+
+At the native 2560 by 1600 forcing capture, the signal is 640 by 400:
+
+| measure | result |
+| --- | ---: |
+| signal pixels | 256,000 |
+| water input pixels | 178,458 (69.7%) |
+| visible water pixels | 176,635 (99.0%) |
+| terrain reflection hits | 1,647 (0.9% of visible) |
+| persistent targets per in-flight slot | 12,288,000 B |
+| persistent targets for three slots | 36,864,000 B |
+| memoryless depth during the active pass | 1,024,000 B |
+| retained Goal 0 geometry and BLAS | 4,675,784 B |
+
+The diagnostic shows continuous origin depth and ripple normals across the
+foreground lake, coherent sky radiance on misses, and small but matching
+normal/distance/hit-mask shapes where reflected rays meet terrain. It also
+answers the visual question narrowly: this steep aerial view sends almost all
+valid rays to sky. Only 0.9% see terrain, so a composition would be difficult
+to judge and a denoiser would mostly reconstruct a signal Moppe already has
+analytically.
+
+The ray query has a dedicated measurement that replays the captured 640 by
+400 inputs 32 times in a drawable-free Metal 4 command buffer. Four fresh M2
+Pro launches measured 0.229, 0.235, 0.241, and 0.243 ms per query (median
+0.238 ms). The normal frame's overlapping counter span is much smaller and is
+retained only as diagnostic metadata; it is not used as the cost claim.
+Whole-frame display-linked A/B runs crossed compositor pacing boundaries and
+were correspondingly noisy, so they likewise do not replace the isolated
+query measurement.
+
+The final forcing capture completed with `MTL_DEBUG_LAYER=1`, printed
+`Metal API Validation Enabled`, and produced no validation error. The narrow
+macOS build and CTest pass, the renderer testbed launches, and iOS/tvOS
+simulator plus unsigned device-SDK builds complete. The narrow verdict is to
+keep Goal 1 as an opt-in atelier and stop before composition or MetalFX
+denoising. A next reflection goal must first select a lower, grazing
+bank/mountain forcing camera that produces materially more terrain hits, then
+compare raw traced radiance against the current analytical environment. The
+present result does not justify actors, trees, running water, refits, temporal
+history, or product settings.

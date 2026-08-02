@@ -323,6 +323,17 @@ water checkpoint. Its isolated ocean estimate moved by 0.052 ms while the
 paired-frame spread remained over one millisecond, evidence of parity rather
 than a measurable regression.
 
+The macOS-only reflection atelier remains outside this composition.
+`MOPPE_WATER_REFLECTION_SIGNAL=/tmp/signal.png` allocates quarter-linear-
+resolution targets per in-flight slot, rerasterizes the same standing-water
+surface into float world origins and shared optical normals, and traces the
+bounded Goal 0 terrain proxy. Raw radiance, hit normal, hit distance, and
+input/visibility/hit validity remain separate textures. The command
+`tools/capture-water-reflection-signal /tmp/signal.png` writes an untouched
+lake scene, a six-panel diagnostic, and a text report. Running water,
+composition, denoising, temporal history, and scene instances are excluded.
+This is a measured representation proof, not a graphics setting.
+
 A height field cannot express vertical water. `WaterfallSurface` therefore
 builds only a small explicit curtain for each selected hydrological
 nickpoint. The curtain follows the lip-to-foot direction, accelerates
@@ -545,11 +556,12 @@ On macOS the Metal performance HUD is disabled by default; set
 `MOPPE_METAL_HUD=1` when its frame rate, GPU time, and resource-memory readouts
 are useful. `MOPPE_PROFILE_GPU=1` also writes one-second command-buffer GPU
 time summaries to stderr, including timestamp-counter spans for the scene,
-post effects, bloom, exposure probe, and present/HUD encoders. Encoder stages
-can overlap on tile-based GPUs, so those spans diagnose expensive work but do
-not necessarily add up to the command-buffer duration. Devices supporting
-draw-boundary timestamps additionally split the scene into terrain, sky,
-water and other scene geometry. `MOPPE_PROFILE_CPU=1` reports the
+post effects, bloom, exposure probe, reflection atelier, and present/HUD
+encoders. Encoder stages can overlap on tile-based GPUs, so those spans
+diagnose expensive work but do not necessarily add up to the command-buffer
+duration. Devices supporting draw-boundary timestamps additionally split the
+scene into terrain, sky, water and other scene geometry.
+`MOPPE_PROFILE_CPU=1` reports the
 effective callback rate and CPU time in the game tick and render call. It also
 splits renderer time into render-target maintenance, in-flight command-buffer
 waiting, drawable acquisition, and Metal encoding/submission, making a missed
