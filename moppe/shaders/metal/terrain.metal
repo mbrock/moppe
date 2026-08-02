@@ -311,6 +311,22 @@ terrain_layer (texture2d<float> tex, sampler smp, float2 tc, float far_blend) {
   return mix (near_c, far_c, far_blend);
 }
 
+// Dirt is sourced from a close photograph of loose gravel. Its centimetre
+// contrast is useful as material evidence, but resolving every photographed
+// grain makes an entire trail look like salt and pepper and gives HDR a field
+// of isolated bright pixels to preserve. An additive mip bias integrates that
+// source before lighting while the world-space fields below restore the
+// metre-scale structure a rider should actually read.
+static inline float3 terrain_layer_integrated (texture2d<float> tex,
+                                               sampler smp,
+                                               float2 tc,
+                                               float far_blend) {
+  const float3 near_c = tex.sample (smp, tc, bias (1.35)).rgb;
+  const float3 far_c =
+    tex.sample (smp, tc * 0.19 + float2 (0.13, 0.71), bias (1.10)).rgb;
+  return mix (near_c, far_c, far_blend);
+}
+
 // Steep faces cannot use the ground's XZ projection without smearing the
 // texture vertically. Blend three world-space projections by surface normal;
 // squaring the weights keeps broad faces crisp while rounding transitions.
@@ -734,8 +750,8 @@ fragment float4 terrain_fragment (
   grass_c *= 1.0 - 0.24 * grass_ground;
 
   // -- scree / cliff / snow ---------------------------------------
-  float3 scree_c = terrain_layer (dirt, smp, tc, far_blend);
-  scree_c *= 0.7 + 0.6 * dirt.sample (smp, tc * 0.061).r;
+  float3 scree_c = terrain_layer_integrated (dirt, smp, tc, far_blend);
+  scree_c *= 0.82 + 0.36 * dirt.sample (smp, tc * 0.061, bias (1.50)).r;
   // Rein in the linear-space saturation of the pink gravel (ACES
   // pushes warm midtones hard).
   const float scree_value = dot (scree_c, float3 (0.299, 0.587, 0.114));
@@ -844,27 +860,34 @@ fragment float4 terrain_fragment (
   const float trail_shoulder =
     smoothstep (0.04, 0.22, trail) * (1.0 - smoothstep (0.38, 0.64, trail));
   const float close_trail = 1.0 - smoothstep (55.0, 240.0, dist);
+  // Each octave retires before its wavelength falls through a pixel. The old
+  // generic visibility masks kept the 0.79 m octave alive even when one pixel
+  // covered more than a metre, exactly the recipe for moving glitter.
+  const float trail_coarse_visibility =
+    1.0 - smoothstep (0.64, 1.78, ground_pixel_m);
+  const float trail_fine_visibility =
+    1.0 - smoothstep (0.16, 0.43, ground_pixel_m);
   const float trail_gravel_coarse =
     mix (0.5,
          moppe_value_noise (in.world_pos.xz * 0.31 + float2 (11.7, 29.1)),
-         coarse_detail_visibility);
+         trail_coarse_visibility);
   const float trail_gravel_fine =
     mix (0.5,
          moppe_value_noise (in.world_pos.xz * 1.27 + float2 (47.3, 5.9)),
-         fine_detail_visibility);
+         trail_fine_visibility);
   const float trail_gravel =
-    0.58 * trail_gravel_coarse + 0.42 * trail_gravel_fine;
+    0.72 * trail_gravel_coarse + 0.28 * trail_gravel_fine;
   const float worn_bands =
     (1.0 - smoothstep (0.055, 0.15, abs (trail - 0.64))) * close_trail *
     trail_footprint;
 
-  const float trail_value = max (sand_value, 0.30);
+  const float trail_value = mix (0.34, clamp (sand_value, 0.24, 0.56), 0.38);
   float3 trail_c = mix (scree_c, trail_value * float3 (0.86, 0.57, 0.31), 0.94);
-  trail_c *= 0.87 + 0.24 * trail_gravel;
-  const float pale_grit = smoothstep (0.64, 0.84, trail_gravel);
+  trail_c *= 0.93 + 0.14 * trail_gravel;
+  const float pale_grit = smoothstep (0.66, 0.84, trail_gravel_coarse);
   trail_c = mix (trail_c,
                  sand_value * float3 (0.98, 0.82, 0.58),
-                 0.16 * pale_grit * close_trail * trail_core);
+                 0.055 * pale_grit * trail_coarse_visibility * trail_core);
   trail_c *= 1.0 - 0.24 * trail_shoulder;
   trail_c *= 1.0 - 0.16 * worn_bands;
   trail_c *= 1.0 + 0.08 * trail_core * close_trail;
@@ -926,12 +949,17 @@ fragment float4 terrain_fragment (
   // amplitude rather than gaining frequency, and snow buries the lot.
   const float cut_relief = smoothstep (0.10, 0.65, geology.r);
   const float fill_relief = smoothstep (0.10, 0.65, geology.g);
-  const float relief_wavelength =
+  float relief_wavelength =
     mix (1.05, 2.90, saturate (cliff_coef + 0.45 * scree_coef));
+  // A compacted path has broader, lower relief than untouched gravel. This
+  // both reads as travelled ground and keeps its normal response out of the
+  // one-pixel HDR highlight regime.
+  relief_wavelength *= mix (1.0, 1.45, trail_material);
   const float detail_strength =
     (0.13 + 0.42 * cliff_coef + 0.11 * scree_coef + 0.20 * cut_relief +
-     0.09 * trail_material * close_trail) *
-    (1.0 - 0.55 * fill_relief) * (1.0 - 0.85 * snow_coef);
+     0.035 * trail_material * close_trail) *
+    (1.0 - 0.55 * fill_relief) * (1.0 - 0.85 * snow_coef) *
+    mix (1.0, 0.62, trail_material);
   n = terrain_perturb_normal (
     n,
     terrain_relief_volume (in.world_pos, n, pixel_m, relief_wavelength),
