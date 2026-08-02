@@ -218,6 +218,7 @@ namespace moppe::game {
     result.environment.time = seconds (result.lighting.time);
 
     result.graphics = {
+      .upscaling = input.graphics.upscaling,
       .scene_scale = input.graphics.scene_scale,
       .render_scale_override = input.graphics.render_scale_override,
       .scene_megapixel_budget = input.graphics.scene_megapixel_budget,

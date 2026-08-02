@@ -124,6 +124,7 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   static_assert (std::is_copy_assignable_v<game::FrameView>);
 
   FrameFixture fixture;
+  fixture.graphics.upscaling = render::UpscalingMode::Linear;
   const game::GameState before = fixture.running ().state ();
   const game::FrameViewInput input = gameplay_input (fixture);
 
@@ -144,6 +145,7 @@ MOPPE_TEST (frame_view_is_a_read_only_deterministic_value) {
   MOPPE_CHECK (after.stars.count == before.stars.count);
 
   MOPPE_CHECK (first.scene == game::FrameSceneMode::Gameplay);
+  MOPPE_CHECK (first.graphics.upscaling == render::UpscalingMode::Linear);
   MOPPE_CHECK (frame_view_same_matrix (first.camera.view, second.camera.view));
   MOPPE_CHECK (
     frame_view_same_matrix (first.camera.projection, second.camera.projection));

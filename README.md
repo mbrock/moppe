@@ -70,6 +70,9 @@ Useful ways to start it include:
 
 # Select a supported graphics preset.
 ./build/moppe.app/Contents/MacOS/moppe --graphics-quality balanced
+
+# Compare the default spatial MetalFX reconstruction with linear enlargement.
+./build/moppe.app/Contents/MacOS/moppe --upscaling linear
 ```
 
 Run the test suite with:

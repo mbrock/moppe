@@ -20,6 +20,9 @@
     while airborne and drops the attached bike while gliding.
   - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
+    - `--upscaling spatial|linear` requests MetalFX spatial reconstruction or
+      the exact linear fallback. Spatial is the default; startup prints the
+      requested and backend-resolved mode.
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`

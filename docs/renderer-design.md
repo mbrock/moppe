@@ -191,7 +191,10 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
        underwater grade (when camera submerged)
        motion-blur ghosts: current += 3 zoomed alpha quads of prevFrame
        blit current → prevFrame (feedback persists across frames)
-    present pass (MSAA → drawable): fullscreen quad of final scene + HUD
+    reconstruction (when scene < drawable and supported)
+       MetalFX spatial: linear HDR scene → native-size RGBA16F
+       linear fallback: present samples the scene texture directly
+    present pass (reconstructed scene → drawable): final treatment + HUD
        draw list (2D ortho, y-down, top-left origin) + text
 
 The Metal implementation realizes this as a fixed, concrete encoding path,
@@ -203,7 +206,7 @@ otherwise long-lived Metal state visible at the right lifetime:
 | --- | --- |
 | `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
 | `MetalWaterResources` | A completed world: the ocean grid, horizontal-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
-| `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, and exposure resources. It recreates these on target-size or quality changes and owns temporal validity separately from a world resource. |
+| `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, exposure, and the optional spatial MetalFX scaler/fence/output. It recreates these on target-size, quality, or upscaling-policy changes and owns temporal validity separately from a world resource. |
 | `MetalFrameEncoding` | One drawable frame: reusable Metal 4 command buffer, command-allocator ring, shared completion event, drawable, frame parameters, argument tables, selected frame arena, current scene target, counter-heap timestamp spans, and capture bookkeeping. It owns no retained world texture. |
 
 Concrete Terrain, Water, Scene, Post, and HUD pass operations receive only
@@ -256,6 +259,11 @@ device backend. Validate rendering on macOS or a Metal 4 iPhone/Apple TV.
 - Commit feedback supplies whole-frame GPU time and errors. Optional
   `MTL4CounterHeap` timestamps retain game-pass labels without depending on
   the legacy Tracy Metal integration.
+- On supported macOS and iOS devices, one renderer-owned `MTL4Compiler`
+  creates a spatial MetalFX scaler at target-configuration lifetime. Its
+  reported texture usages shape the scene and output allocations, one fence
+  synchronizes the untracked scaler work, and the scaler encodes into the
+  frame's existing command buffer. tvOS resolves the request to linear.
 
 Primary references are Apple's
 [Metal 4 core API overview](https://developer.apple.com/documentation/metal/understanding-the-metal-4-core-api),
@@ -613,6 +621,15 @@ surface, decorative particles, motion blur, bloom, exposure probe, or lens
 flare. `--graphics-quality high` is the default full presentation. The low
 preset retains terrain, vehicles, physics, sky, waterfall curtains, and HUD so
 it remains playable while isolating optional rendering cost.
+
+All presets request spatial MetalFX by default. When the scene is smaller
+than the drawable and the device supports Metal 4 MetalFX, the renderer
+reconstructs the linear HDR scene into a native-size RGBA16F target before
+the existing tone map, print-like grade, EDR treatment, lens treatment, and
+native HUD. `--upscaling linear` retains the former direct linear sample for
+fallbacks and exact A/B comparisons. Startup reports requested and resolved
+`native | spatial | linear` modes together with both dimensions and the
+fallback reason.
 
 The Apple TV default retains the high-quality feature set but uses 75% of
 UIKit point resolution for the 3D scene. The present pass and HUD still use

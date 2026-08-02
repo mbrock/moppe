@@ -1,6 +1,6 @@
 # RFC-0004: Reconstruct expensive pixels on Metal 4
 
-Status: proposed
+Status: accepted
 
 ## Decision
 
@@ -29,9 +29,10 @@ history. Ray-traced reflections ask it to represent additional geometry and
 produce a noisy signal. Neural denoising is useful only after all of those
 inputs are correct.
 
-This RFC remains proposed. Per the repository planning contract, it does not
-receive an execution track or implementation statuses until the decision is
-accepted.
+The decision is accepted. Its first execution track is
+[`pixel-reconstruction`](../tracks/pixel-reconstruction/README.md), which
+freezes the post-overhaul baseline and proves spatial MetalFX before any
+temporal or ray-tracing work begins.
 
 ## Why this, and why after the overhaul
 
