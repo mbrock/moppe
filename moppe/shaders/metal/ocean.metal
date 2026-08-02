@@ -165,13 +165,23 @@ vertex OceanVaryings ocean_vertex (uint vid [[vertex_id]],
 
 // ---- lattice water tiles (mesh pipeline) ---------------------------
 
-// A tile is 15x15 terrain cells: a 16x16 vertex lattice (256, the
-// meshlet limit) and 450 triangles. The object stage walks a window of
-// tiles around the camera and keeps only wet, visible ones; the mesh
-// stage emits the water surface on the terrain's own sample lattice,
-// so near shorelines resolve at terrain resolution instead of the
-// coarse grid's.
-#define WATER_TILE_CELLS 15
+// A tile is 8x8 terrain cells. Its 9x9 lattice corners plus every horizontal
+// and vertical edge crossing fit in one 225-vertex meshlet. Boundary cells
+// are clipped to the signed water-minus-ground zero set instead of moving a
+// dry lattice corner and leaving its neighbouring triangles attached. That
+// distinction matters on cliffs: moving the corner made a water-shaded flap;
+// clipping makes a shoreline.
+#define WATER_TILE_CELLS 8
+#define WATER_TILE_SIDE (WATER_TILE_CELLS + 1)
+#define WATER_TILE_CORNERS (WATER_TILE_SIDE * WATER_TILE_SIDE)
+#define WATER_TILE_HORIZONTAL_EDGES (WATER_TILE_CELLS * WATER_TILE_SIDE)
+#define WATER_TILE_VERTICAL_EDGES (WATER_TILE_SIDE * WATER_TILE_CELLS)
+#define WATER_TILE_HORIZONTAL_BASE WATER_TILE_CORNERS
+#define WATER_TILE_VERTICAL_BASE                                               \
+  (WATER_TILE_HORIZONTAL_BASE + WATER_TILE_HORIZONTAL_EDGES)
+#define WATER_TILE_VERTEX_COUNT                                                \
+  (WATER_TILE_VERTICAL_BASE + WATER_TILE_VERTICAL_EDGES)
+#define WATER_TILE_MAX_TRIANGLES (WATER_TILE_CELLS * WATER_TILE_CELLS * 4)
 #define WATER_OBJECT_THREADS 64
 
 struct WaterTilePayload {
@@ -182,7 +192,7 @@ struct WaterTilePayload {
 using WaterTileMesh = metal::mesh<OceanVaryings,
                                   void,
                                   256,
-                                  WATER_TILE_CELLS * WATER_TILE_CELLS * 2,
+                                  WATER_TILE_MAX_TRIANGLES,
                                   metal::topology::triangle>;
 
 [[object]] void
@@ -222,18 +232,16 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
       // corner: this probe is exact, and a painted river a cell and a
       // half wide cannot slip between the samples.
       //
-      // A dry tile -- most of the window, most frames -- reads all 256
+      // A dry tile -- most of the window, most frames -- reads all 81
       // corners, and there is only one thread per tile, so this loop has
       // very little else to hide its memory latency behind. Two things
       // therefore matter more here than the early exit does.
       //
-      // The wrap is hoisted out: the window is sixteen wide against a
-      // lattice thousands of cells across, so one conditional subtract
+      // The wrap is hoisted out: the tile window is tiny against a lattice
+      // thousands of cells across, so one conditional subtract
       // stands in for the modulo pair, and the loop does no integer
-      // division at all. And the row runs to its end instead of testing
-      // after every corner, which leaves its thirty-two reads mutually
-      // independent: the tile then waits on one memory latency per row
-      // rather than thirty-two in series.
+      // division at all. The row runs to its end instead of testing after
+      // every corner, leaving its reads mutually independent.
       const int period = int (u.shore.w);
       const int2 origin =
         (int2 (u.tiles.xy) + int2 (tile_x, tile_z)) * WATER_TILE_CELLS;
@@ -241,11 +249,11 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
       const float wet_epsilon = 0.05 / u.shore.z;
       bool wet = false;
       float level = 0.0;
-      for (uint row = 0; row < 16u && !wet; ++row) {
+      for (uint row = 0; row < WATER_TILE_SIDE && !wet; ++row) {
         const int wrapped_z = base.y + int (row);
         const uint tz =
           uint (wrapped_z >= period ? wrapped_z - period : wrapped_z);
-        for (uint col = 0; col < 16u; ++col) {
+        for (uint col = 0; col < WATER_TILE_SIDE; ++col) {
           const int wrapped_x = base.x + int (col);
           const uint2 texel (
             uint (wrapped_x >= period ? wrapped_x - period : wrapped_x), tz);
@@ -293,112 +301,174 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
                                [[texture (MOPPE_TEX_HEIGHTS)]],
                                texture2d<float, access::read> water_levels
                                [[texture (MOPPE_TEX_WATER_LEVELS)]]) {
-  constexpr uint side = WATER_TILE_CELLS + 1;
+  constexpr uint side = WATER_TILE_SIDE;
   const uint2 tile = payload.tiles[min (mesh_id, payload.count - 1u)];
   const float spacing = 1.0 / u.shore.x;
-  const uint vx = thread_id % side;
-  const uint vz = thread_id / side;
-  const int2 texel =
-    (int2 (u.tiles.xy) + int2 (tile)) * WATER_TILE_CELLS + int2 (vx, vz);
-  float2 world_xz =
-    ((float2 (int2 (u.tiles.xy)) + float2 (tile)) * float (WATER_TILE_CELLS) +
-     float2 (vx, vz)) *
-    spacing;
+  const int2 origin = (int2 (u.tiles.xy) + int2 (tile)) * WATER_TILE_CELLS;
+  const float2 world_origin = float2 (origin) * spacing;
 
-  // Waterline conformance: a dry lattice vertex bordering wet cells
-  // slides onto the wet/dry crossing of its lattice edges (the zero of
-  // the bilinear water-minus-ground, exact per edge), so the mesh edge
-  // lands on the true waterline instead of ending at a discard
-  // staircase.  Neighboring tiles compute the same texels, so the seam
-  // stays crack-free.
-  const float ground_self = ocean_grid_texel (texel, u, heights).x;
-  const float wet_self =
-    ocean_grid_texel (texel, u, water_levels).x - ground_self;
-  if (wet_self <= 0.0) {
-    constexpr int2 lattice_edges[4] = {
-      int2 (1, 0), int2 (-1, 0), int2 (0, 1), int2 (0, -1)
-    };
-    float2 shift = float2 (0.0);
-    float weight = 0.0;
-    for (int k = 0; k < 4; ++k) {
-      const int2 neighbor = texel + lattice_edges[k];
-      const float level_neighbor =
-        ocean_grid_texel (neighbor, u, water_levels).x;
-      const float ground_neighbor = ocean_grid_texel (neighbor, u, heights).x;
-      if (level_neighbor - ground_neighbor > 0.0) {
-        // Water is locally flat: the neighbor's level extends across
-        // the edge and meets the ground slope where the shoreline
-        // sits.  (The sheet itself is clamped to ground on dry cells,
-        // so its own difference carries no crossing information.)
-        const float drop = ground_self - ground_neighbor;
-        const float t =
-          drop > 1e-6 ? clamp ((ground_self - level_neighbor) / drop, 0.0, 1.0)
-                      : 0.0;
-        // Conform only where the bank is gentle.  On a steep bank the
-        // vertex would slide far in plan while its dry triangle mates
-        // stay high on the wall, hanging a water-shaded flap over the
-        // wet cells; there the discard edge tucks against the cliff
-        // anyway.
-        const float bank_m = (ground_self - level_neighbor) * u.shore.z;
-        const float gentle = 1.0 - smoothstep (0.5, 1.3, bank_m);
-        shift += float2 (lattice_edges[k]) * (t * gentle);
-        weight += gentle;
-      }
+  // First publish the signed water depth at every lattice corner. A later
+  // thread owns each possible edge crossing, so adjacent cells and adjacent
+  // tiles name the same geometric point instead of independently moving one
+  // of their dry corners.
+  threadgroup float corner_depth[WATER_TILE_CORNERS];
+  if (thread_id < WATER_TILE_CORNERS) {
+    const uint vx = thread_id % side;
+    const uint vz = thread_id / side;
+    const int2 texel = origin + int2 (vx, vz);
+    const float ground = ocean_grid_texel (texel, u, heights).x;
+    const float water = ocean_grid_texel (texel, u, water_levels).x;
+    corner_depth[thread_id] = water - ground;
+    if (water > ground) {
+      const float2 world_xz = world_origin + float2 (vx, vz) * spacing;
+      const float wave_scale =
+        ocean_wave_scale (world_xz, u, heights, water_levels);
+      out.set_vertex (
+        thread_id,
+        ocean_surface_point (
+          float3 (world_xz.x, water * u.shore.z, world_xz.y), wave_scale, u));
     }
-    if (weight > 0.0)
-      world_xz += spacing * (shift / weight);
   }
-
-  const float2 water = ocean_grid_sample (world_xz, u, water_levels);
-  const float wave_scale =
-    ocean_wave_scale (world_xz, u, heights, water_levels);
-  out.set_vertex (thread_id,
-                  ocean_surface_point (
-                    float3 (world_xz.x, water.x, world_xz.y), wave_scale, u));
-
-  // A cell whose four corners are all dry is dry throughout: water minus
-  // ground is bilinear inside the cell, so its maximum sits on a corner.
-  // That is the object stage's own tile-probe argument, applied one level
-  // down, and it is what lets the tile emit only the water it holds.
-  //
-  // It matters because a river passes *through* tiles rather than filling
-  // them. The tile survives on a handful of wet cells and then hands the
-  // rasterizer its whole lattice -- four hundred and fifty triangles,
-  // nearly all of them dry ground for the fragment stage to discard.
-  // Binning those is the tile pipeline's real expense; neither the wet
-  // probe nor the shading was ever close.
-  threadgroup bool corner_wet[side * side];
-  corner_wet[thread_id] = wet_self > 0.0;
-  threadgroup atomic_uint kept_cells;
-  if (thread_id == 0u)
-    atomic_store_explicit (&kept_cells, 0u, metal::memory_order_relaxed);
   threadgroup_barrier (metal::mem_flags::mem_threadgroup);
 
-  const uint v0 = vz * side + vx;
-  bool keep = false;
-  uint slot = 0u;
-  if (vx < WATER_TILE_CELLS && vz < WATER_TILE_CELLS) {
-    keep = corner_wet[v0] || corner_wet[v0 + 1u] || corner_wet[v0 + side] ||
-           corner_wet[v0 + side + 1u];
-    if (keep)
-      slot = atomic_fetch_add_explicit (
-        &kept_cells, 1u, metal::memory_order_relaxed);
+  // Horizontal edge intersections.
+  if (thread_id >= WATER_TILE_HORIZONTAL_BASE &&
+      thread_id < WATER_TILE_VERTICAL_BASE) {
+    const uint edge = thread_id - WATER_TILE_HORIZONTAL_BASE;
+    const uint vx = edge % WATER_TILE_CELLS;
+    const uint vz = edge / WATER_TILE_CELLS;
+    const uint a = vz * side + vx;
+    const uint b = a + 1u;
+    const float da = corner_depth[a];
+    const float db = corner_depth[b];
+    if ((da > 0.0) != (db > 0.0)) {
+      const float t = clamp (da / (da - db), 0.0, 1.0);
+      const float2 world_xz =
+        world_origin + (float2 (vx, vz) + float2 (t, 0.0)) * spacing;
+      const float water = ocean_grid_sample (world_xz, u, water_levels).x;
+      const float wave_scale =
+        ocean_wave_scale (world_xz, u, heights, water_levels);
+      out.set_vertex (thread_id,
+                      ocean_surface_point (
+                        float3 (world_xz.x, water, world_xz.y), wave_scale, u));
+    }
   }
+
+  // Vertical edge intersections.
+  if (thread_id >= WATER_TILE_VERTICAL_BASE &&
+      thread_id < WATER_TILE_VERTEX_COUNT) {
+    const uint edge = thread_id - WATER_TILE_VERTICAL_BASE;
+    const uint vx = edge % side;
+    const uint vz = edge / side;
+    const uint a = vz * side + vx;
+    const uint b = a + side;
+    const float da = corner_depth[a];
+    const float db = corner_depth[b];
+    if ((da > 0.0) != (db > 0.0)) {
+      const float t = clamp (da / (da - db), 0.0, 1.0);
+      const float2 world_xz =
+        world_origin + (float2 (vx, vz) + float2 (0.0, t)) * spacing;
+      const float water = ocean_grid_sample (world_xz, u, water_levels).x;
+      const float wave_scale =
+        ocean_wave_scale (world_xz, u, heights, water_levels);
+      out.set_vertex (thread_id,
+                      ocean_surface_point (
+                        float3 (world_xz.x, water, world_xz.y), wave_scale, u));
+    }
+  }
+
+  // Each cell contributes a clipped perimeter polygon. The two saddle cases
+  // use the bilinear determinant as an asymptotic decider: either two separate
+  // wet corners, or the same corners joined by a four-triangle neck.
+  threadgroup atomic_uint kept_triangles;
+  if (thread_id == 0u)
+    atomic_store_explicit (&kept_triangles, 0u, metal::memory_order_relaxed);
+  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
+
+  uint triangle_indices[12];
+  uint triangle_count = 0u;
+  if (thread_id < WATER_TILE_CELLS * WATER_TILE_CELLS) {
+    const uint cx = thread_id % WATER_TILE_CELLS;
+    const uint cz = thread_id / WATER_TILE_CELLS;
+    const uint corners[4] = { cz * side + cx,
+                              cz * side + cx + 1u,
+                              (cz + 1u) * side + cx + 1u,
+                              (cz + 1u) * side + cx };
+    const uint edges[4] = {
+      WATER_TILE_HORIZONTAL_BASE + cz * WATER_TILE_CELLS + cx,
+      WATER_TILE_VERTICAL_BASE + cz * side + cx + 1u,
+      WATER_TILE_HORIZONTAL_BASE + (cz + 1u) * WATER_TILE_CELLS + cx,
+      WATER_TILE_VERTICAL_BASE + cz * side + cx
+    };
+    uint mask = 0u;
+    for (uint corner = 0u; corner < 4u; ++corner)
+      if (corner_depth[corners[corner]] > 0.0)
+        mask |= 1u << corner;
+
+    if (mask == 5u || mask == 10u) {
+      // Nielson's asymptotic decider for the bilinear patch. Sampling the
+      // cell center is only an approximation and can flip the connection
+      // when the opposite corners have very different magnitudes.
+      const float determinant =
+        corner_depth[corners[0]] * corner_depth[corners[2]] -
+        corner_depth[corners[1]] * corner_depth[corners[3]];
+      const float center = corner_depth[corners[0]] + corner_depth[corners[1]] +
+                           corner_depth[corners[2]] + corner_depth[corners[3]];
+      const bool center_wet =
+        mask == 5u ? determinant > 0.0 || (determinant == 0.0 && center > 0.0)
+                   : determinant < 0.0 || (determinant == 0.0 && center > 0.0);
+      const uint first = mask == 5u ? 0u : 1u;
+      const uint second = first + 2u;
+      const uint before_first = (first + 3u) % 4u;
+      const uint before_second = (second + 3u) % 4u;
+      triangle_indices[0] = corners[first];
+      triangle_indices[1] = edges[first];
+      triangle_indices[2] = edges[before_first];
+      triangle_indices[3] = corners[second];
+      triangle_indices[4] = edges[second];
+      triangle_indices[5] = edges[before_second];
+      triangle_count = 2u;
+      if (center_wet) {
+        triangle_indices[6] = edges[first];
+        triangle_indices[7] = edges[second];
+        triangle_indices[8] = edges[before_first];
+        triangle_indices[9] = edges[before_first];
+        triangle_indices[10] = edges[second];
+        triangle_indices[11] = edges[before_second];
+        triangle_count = 4u;
+      }
+    } else if (mask != 0u) {
+      uint polygon[8];
+      uint polygon_count = 0u;
+      for (uint corner = 0u; corner < 4u; ++corner) {
+        const uint next = (corner + 1u) % 4u;
+        const bool wet = (mask & (1u << corner)) != 0u;
+        const bool next_wet = (mask & (1u << next)) != 0u;
+        if (wet)
+          polygon[polygon_count++] = corners[corner];
+        if (wet != next_wet)
+          polygon[polygon_count++] = edges[corner];
+      }
+      for (uint triangle = 0u; triangle + 2u < polygon_count; ++triangle) {
+        triangle_indices[3u * triangle] = polygon[0];
+        triangle_indices[3u * triangle + 1u] = polygon[triangle + 1u];
+        triangle_indices[3u * triangle + 2u] = polygon[triangle + 2u];
+      }
+      triangle_count = polygon_count >= 3u ? polygon_count - 2u : 0u;
+    }
+  }
+
+  uint triangle_slot = 0u;
+  if (triangle_count > 0u)
+    triangle_slot = atomic_fetch_add_explicit (
+      &kept_triangles, triangle_count, metal::memory_order_relaxed);
   threadgroup_barrier (metal::mem_flags::mem_threadgroup);
 
   if (thread_id == 0u)
     out.set_primitive_count (
-      2u * atomic_load_explicit (&kept_cells, metal::memory_order_relaxed));
-
-  if (keep) {
-    const uint base = 6u * slot;
-    out.set_index (base + 0u, v0);
-    out.set_index (base + 1u, v0 + side);
-    out.set_index (base + 2u, v0 + 1u);
-    out.set_index (base + 3u, v0 + 1u);
-    out.set_index (base + 4u, v0 + side);
-    out.set_index (base + 5u, v0 + side + 1u);
-  }
+      atomic_load_explicit (&kept_triangles, metal::memory_order_relaxed));
+  for (uint index = 0u; index < 3u * triangle_count; ++index)
+    out.set_index (3u * triangle_slot + index, triangle_indices[index]);
 }
 
 // Bilinear ground height under a point, in world meters.  R32F
@@ -430,10 +500,30 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
     discard_fragment ();
 
   const float ground = ocean_grid_height (in.world_pos.xz, u, heights);
-  const float surface = u.params.w > 0.5
-                          ? ocean_grid_height (in.world_pos.xz, u, water_levels)
-                          : u.params.y;
+  const float2 water_state =
+    u.params.w > 0.5 ? ocean_grid_sample (in.world_pos.xz, u, water_levels)
+                     : float2 (u.params.y, 1.0);
+  const float surface = water_state.x;
   const float still_depth = surface - ground;
+
+  // Keep the surface two-sided only while the camera is actually submerged
+  // in this water field. Without this test a dry ravine below an elevated
+  // lake sees the lake's underside as a bright blue ceiling. True underwater
+  // views remain intact because the camera probe is wet and below its local
+  // surface.
+  if (dot (normalize (in.normal), normalize (-to_frag)) <= 0.0 &&
+      u.params.w > 0.5) {
+    const float2 camera_water =
+      ocean_grid_sample (u.camera_pos.xz, u, water_levels);
+    // The gameplay underwater pass currently belongs to the sea. Inland
+    // lake sheets may bridge very steep banks in the finite terrain field;
+    // treating a dry camera below one as submerged recreates the blue-roof
+    // glitch this test exists to reject.
+    const bool camera_in_water =
+      camera_water.y > 0.5 && u.camera_pos.y < camera_water.x + 0.10;
+    if (!camera_in_water)
+      discard_fragment ();
+  }
 
   // The flow sheet: which way the water moves and how fast, painted
   // per terrain cell. Rivers carry strong arrows, lakes almost none,
@@ -443,12 +533,13 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   float rapid = 0.0;
   float flow_detail = 0.5;
   float2 flow_grad = float2 (0.0);
+  float flow_speed = 0.0;
   const float flow_fade = exp (-dist * 0.0012);
   if (u.current.x > 0.5 && u.shore.w > 0.5) {
     const float2 flow = ocean_grid_sample_raw (in.world_pos.xz, u, water_flow);
-    const float speed = length (flow);
-    flowing = smoothstep (0.25, 1.0, speed) * flow_fade;
-    rapid = smoothstep (4.0, 7.5, speed);
+    flow_speed = length (flow);
+    flowing = smoothstep (0.25, 1.0, flow_speed) * flow_fade;
+    rapid = smoothstep (4.0, 7.5, flow_speed);
     if (flowing > 1e-3) {
       // Flow map, two phases: a copy of the surface detail drifts
       // with the current for one cycle and hands over to a fresh copy
@@ -458,8 +549,15 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
       const float t0 = fract (time / cycle);
       const float t1 = fract (t0 + 0.5);
       const float blend = abs (2.0 * t0 - 1.0);
-      const float2 base_uv = in.world_pos.xz * 0.85;
-      const float2 drift = flow * (0.85 * cycle);
+      // The texture frame follows the current: a dense cross-stream axis and
+      // a longer along-stream axis make ripples stretch with flow through
+      // bends. At confluences the painted vector already blends the two
+      // incoming directions, so this basis rotates continuously too.
+      const float2 direction = flow / max (flow_speed, 1e-4);
+      const float2 across = float2 (-direction.y, direction.x);
+      const float2 base_uv = float2 (dot (in.world_pos.xz, across) * 1.15,
+                                     dot (in.world_pos.xz, direction) * 0.32);
+      const float2 drift = float2 (0.0, flow_speed * 0.32 * cycle);
       const float2 uv0 = base_uv - drift * (t0 - 0.5);
       const float2 uv1 = base_uv - drift * (t1 - 0.5);
       const float n0 = moppe_value_noise (uv0);
@@ -471,9 +569,23 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
         float2 (moppe_value_noise (uv1 + float2 (0.31, 0.0)) - n1,
                 moppe_value_noise (uv1 + float2 (0.0, 0.29)) - n1);
       flow_detail = mix (n0, n1, blend);
-      flow_grad = mix (g0, g1, blend);
+      const float2 texture_grad = mix (g0, g1, blend);
+      flow_grad = across * texture_grad.x + direction * (0.32 * texture_grad.y);
     }
   }
+
+  // A narrow channel cannot survive resampling by the whole-world coarse
+  // grid. The exact lattice owns running water nearby and hands it to the
+  // terrain's channel-flux detail before the 700 m tile boundary; standing
+  // bodies continue seamlessly onto the coarse surface.
+  const bool running_water =
+    flow_speed > 0.25 && water_state.y < 0.01 && still_depth < 3.0;
+  if (u.tiles.w > 0.5 && running_water)
+    discard_fragment ();
+  const float running_lod =
+    u.tiles.w < -0.5 && running_water
+      ? 1.0 - smoothstep (0.80 * -u.tiles.w, -u.tiles.w, planar)
+      : 1.0;
 
   // A small lap at the waterline. Reuse the water sheet's body-scale motion
   // factor so lakes and ponds remain nearly still instead of receiving the
@@ -482,10 +594,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   const float shore_band = 1.0 - smoothstep (0.0, 1.5, still_depth);
   const float swash_phase =
     sin (time * 1.15 + 6.28318 * moppe_value_noise (in.world_pos.xz * 0.045));
-  const float body_motion =
-    u.params.w > 0.5
-      ? saturate (ocean_grid_sample_raw (in.world_pos.xz, u, water_levels).y)
-      : 1.0;
+  const float body_motion = saturate (water_state.y);
   const float swash =
     shore_band * 0.03 * body_motion * (1.0 + swash_phase) * (1.0 - flowing);
   const float depth_m = max (still_depth - swash, 0.0);
@@ -519,7 +628,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
          (0.16 * wavelet_fade * (moppe_value_noise (ripple1 + 7.3) - 0.5) +
           0.12 * chop_fade * (moppe_value_noise (ripple2 + 3.1) - 0.5) +
           0.11 * streak_fade * (moppe_value_noise (ripple3 + 11.7) - 0.5));
-  const float flow_bump = flowing * (0.14 + 0.20 * rapid);
+  const float flow_bump = flowing * (0.36 + 0.34 * rapid);
   n.x += flow_bump * flow_grad.x;
   n.z += flow_bump * flow_grad.y;
   n = normalize (n);
@@ -577,6 +686,11 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // bathymetry.
   const float body_depth = smoothstep (0.35, 11.0, depth_m);
   float3 water = mix (shallow, deep, body_depth);
+  // Advected anisotropic detail modulates absorption as well as the normal.
+  // The darker troughs remain visible when a broad sky reflection would
+  // otherwise flatten a shallow channel into a uniformly cyan shape.
+  water = mix (water, deep, 0.10 * flowing);
+  water *= mix (1.0, 0.82 + 0.30 * flow_detail, flowing);
   water = mix (water, shallow, 0.16 * fresnel);
   water = mix (water, murk, 0.6 * turbidity);
   float alpha = mix (0.78, 0.95, fresnel);
@@ -650,6 +764,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // of water column instead of ending at a discard cliff.
   if (u.params.w > 0.5)
     alpha *= smoothstep (0.0, 0.12, depth_m);
+  alpha *= running_lod;
 
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);

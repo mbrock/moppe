@@ -287,7 +287,8 @@ namespace moppe {
       virtual void draw_undergrowth (const UndergrowthParams& params) {
         (void)params;
       }
-      virtual void draw_rivers (const Mesh& mesh, const Mat4& model) = 0;
+      // Vertical nickpoint curtains; horizontal water belongs to draw_ocean.
+      virtual void draw_waterfalls (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;
       virtual void draw_list (const DrawList& list) = 0;
       // Post effects; call between world drawing and draw_hud.

@@ -202,7 +202,7 @@ otherwise long-lived Metal state visible at the right lifetime:
 | Owner | Lifetime and contents |
 | --- | --- |
 | `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
-| `MetalWaterResources` | A completed world: the ocean grid, standing-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
+| `MetalWaterResources` | A completed world: the ocean grid, horizontal-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
 | `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, and exposure resources. It recreates these on target-size or quality changes and owns temporal validity separately from a world resource. |
 | `MetalFrameEncoding` | One drawable frame: command buffer, drawable, frame parameters and uniforms, the selected in-flight stream slot, current scene target, timestamp spans, and capture bookkeeping. It owns no retained world texture. |
 
@@ -234,37 +234,38 @@ original gamma-space look. The sky shader forces depth to the far plane
 (z = 0 under reversed-Z) and tests against cleared depth, so terrain still
 occludes the expensive cloud shader.
 
-Running rivers are explicit meshes built from `RiverAlignment`, a dense
-continuous trajectory attached to every topological reach.  Drainage cells
-remain the routing authority; a damped cubic Hermite reading removes receiver
-corners, interpolates area, slope, waterfall, and mouth state, and assigns an
-arc coordinate that is continuous through confluences.  Width and depth are
-physical functions of contributing area.  Seven vertices across each section
-form a soft-edged ribbon, with depth recovered against the unmodified orogeny
-heightfield and the derived water profile clamped non-increasing downstream.
-At a confluence every tributary blends toward the outgoing tangent and bank
-envelope, then terminates on the outgoing reach's exact seven-vertex first
-section. A true headwater pinches to a damp point; a lake-fed root extends one
-section into the wet outlet. The ribbon similarly dissolves beneath the
-standing surface after crossing a mouth.
+Horizontal water is one continuous `terrain::WaterSheets` field. Standing
+bodies first contribute their flood level and body-scale wave amplitude. The
+dense `RiverAlignment` trajectories then paint a shallow bank-constrained
+level and planar current into that same field. Their level profile is monotone
+downstream, headwaters taper in width and depth, and all tributaries share the
+outgoing reach's junction level. Overlapping current stamps blend vectors, so
+the confluence owns one surface and one smoothly turning flow basis rather
+than several reach meshes fighting at the same pixels. Traversed channel-like
+pools retain their flood level but receive running-water amplitude and flow.
 
-`river.metal` orients its detail from screen derivatives of that curved mesh,
-so normals and foam follow bends rather than world axes.  Two advected phases
-reset and hand over out of phase, avoiding the texture stretch and snap of a
-single scrolling normal map.  The global arc coordinate keeps phase coherent
-at reach joins. Rapid, depth, waterfall, and feather signals arrive in the
-vertex color channels. The measured water column drives spectral attenuation,
-opacity, and a shallow bank-contact band. Cross-channel position and depth
-shape advection speed, approximating a bank-confined velocity profile without
-a per-river flow solve. Dry ribbon fragments are discarded before the
-first-fragment overlap stencil can mask valid water underneath.
+The Metal near-water mesh reconstructs the signed water-minus-ground field
+cell by cell. It creates exact edge intersections, applies an asymptotic
+decider to ambiguous saddle cases, and triangulates only the wet polygon.
+Bends, junctions, pool transitions, and mouths are therefore unions in one
+field: there are no reach caps, overlapping alpha edges, or dry vertices moved
+while their old triangles remain attached. The fragment shader derives an
+anisotropic texture frame from the current vector. Its two advected phases
+stretch across the channel and travel along it; because junction currents
+already blend, the shading turns through a confluence without a texture seam.
+Depth drives absorption and clarity while current drives aligned normal
+detail, subtle trough contrast, and rapid churn.
 
-`terrain::paint_watercourses` now reserves the lattice water surface for real
-standing bodies.  It only stamps the continuous river current into wet cells
-past each mouth, allowing the ocean/lake material and ribbon to meet without
-inventing dry-reach water levels or reverse-engineering banks from a raster
-carve.  Terrain, drainage, and running-water geometry therefore remain three
-explicit readings instead of mutating one another.
+A height field cannot express vertical water. `WaterfallSurface` therefore
+builds only a small explicit curtain for each selected hydrological
+nickpoint. The curtain follows the lip-to-foot direction, accelerates
+ballistically down the drop, widens toward the plunge pool, and uses the
+flowing-water shader's falling detail. Its cost is 216 vertices per waterfall,
+independent of river-alignment length. Falling spans are omitted from the
+horizontal field, so the curtain bridges lip and foot instead of overlapping a
+sloped water ramp. This is the complete representation split: one field for
+all horizontal sea, lake, pool, and river water; one primitive for vertical
+nickpoints.
 
 Feature-targeted visual checks use
 `tools/capture-water /tmp/water.png FEATURE`, where `FEATURE` is `stream`,
@@ -410,9 +411,9 @@ terrain expression graph or own an interactive generation preview.
   cloudiness, sunDir, fogColor.
 - ocean.vert/frag → MSL on a regular **indexed** grid mesh; the vertex stage
   samples the
-  standing-water surface (RG32F: level plus per-body wave amplitude) for
-  ocean and lake elevation, and the fragment stage reads a second RG16F sheet
-  of mouth-current arrows. Waves fade at shore,
+  water surface (RG32F: level plus per-body wave amplitude) for sea, lake,
+  pool, and river elevation, and the fragment stage reads a second RG16F sheet
+  of current arrows. Waves fade at shore,
   scale with the body's classification so tarns do not heave like the sea,
   and drive the shoreline lap from the same classification: at maximum retreat
   the sea moves about 6 cm, lakes about 6 mm, and ponds about 2 mm. Dry
@@ -424,16 +425,15 @@ terrain expression graph or own an interactive generation preview.
   for a grid that spans the whole world and has all but a couple of percent
   of its corners out there. On Metal3 hardware, standing water
   within 700 m additionally renders through a mesh pipeline on the terrain
-  sample lattice (object stage walks 15×15-cell tiles, probes every tile
-  corner for wetness — exact, since water-minus-ground is bilinear per
-  cell, so a river a cell and a half wide cannot slip between probes —
-  and culls; mesh stage emits a 16×16 lattice sharing ocean_fragment); the
-  coarse grid keeps the horizon, both passes discarding on the same radius
-  so they partition exactly. The mesh stage emits only the cells it holds
-  water for, by the tile probe's own argument one level down: a cell whose
-  four corners are all dry is dry throughout. A river passes *through* tiles
-  rather than filling them, so a surviving tile was handing the rasterizer
-  450 triangles of mostly dry ground for the fragment stage to discard.
+  sample lattice. The object stage walks 8×8-cell tiles and culls wholly dry
+  ones. The mesh stage fits the 9×9 corners and all 144 possible edge
+  crossings into one 225-vertex meshlet, then emits at most 256 triangles by
+  clipping each bilinear cell to its exact signed shoreline. The coarse grid
+  keeps the horizon and standing bodies. Narrow running water fades into the
+  terrain's channel-flux reading from 560–700 m and is rejected by the coarse
+  pass rather than being widened into grid-sized distant triangles. Dry
+  cameras reject the underside of elevated inland sheets; the two-sided sea
+  remains available to the underwater pass.
 - underwater.vert/frag → fullscreen-triangle post pass.
 - Immediate/baked geometry uses one "uber" forward shader: Lambert + modest
   Blinn specular for lit runs, plus the terrain's exact haze formula (fog was
@@ -536,8 +536,8 @@ displays. The `--graphics-quality low` preset remains a deliberately severe
 performance baseline: half-resolution 3D scene, no terrain shadows, ocean
 surface, decorative particles, motion blur, bloom, exposure probe, or lens
 flare. `--graphics-quality high` is the default full presentation. The low
-preset retains terrain, vehicles, physics, sky, rivers, and HUD so it remains
-playable while isolating optional rendering cost.
+preset retains terrain, vehicles, physics, sky, waterfall curtains, and HUD so
+it remains playable while isolating optional rendering cost.
 
 The Apple TV default retains the high-quality feature set but uses 75% of
 UIKit point resolution for the 3D scene. The present pass and HUD still use
@@ -554,14 +554,15 @@ list such as `--graphics-quality low --graphics-enable ocean,bloom`. Startup
 prints every resolved feature and numeric graphics setting so scripted
 performance runs record the actual configuration. The legacy
 `MOPPE_RENDERSCALE`, `MOPPE_NOSHADOW`,
-`MOPPE_RIVER_RIBBONS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
+`MOPPE_WATERFALL_CURTAINS`, `MOPPE_TERRAIN_TOPOLOGY`, and `MOPPE_SUNHEIGHT`
 controls remain supported but are resolved centrally into the same settings.
 Each Boolean feature descriptor also records whether it is hot-switchable:
 changing a hot feature's stored value is sufficient for the next frame, with
-no resource rebuild or renderer-state reset. Ocean, river ribbons, particles,
+no resource rebuild or renderer-state reset. Ocean, waterfall curtains,
+particles,
 vehicle and star effects, bloom, automatic exposure, and lens flare are
-currently hot. River meshes are prepared once even when their draw is
-disabled, which lets the benchmark measure them independently. Terrain shadows
+currently hot. The fixed-size waterfall mesh is prepared once even when its
+draw is disabled, which lets the benchmark measure it independently. Terrain shadows
 and motion blur remain conservatively marked not hot. The terrain topology
 overlay is hot and can be toggled with `G`.
 To create a trace for Xcode's Metal debugger, run

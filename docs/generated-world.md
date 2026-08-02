@@ -56,7 +56,7 @@ world, `MoppeGame`:
 5. destroys the retired world.
 
 Only after activation does the main thread build renderer resources, forests,
-river ribbons, actor placement, and the opening journey. The loading worker
+fixed-size waterfall curtains, actor placement, and the opening journey. The loading worker
 never mutates the active world or owns GPU resources.
 
 Ordinary gameplay reads the completed artifacts through const accessors.

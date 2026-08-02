@@ -43,7 +43,7 @@ namespace moppe::render {
     void draw_terrain (const ChunkDraw* chunks, int count) override;
     void draw_sky (const SkyParams& params) override;
     void draw_ocean (const OceanParams& params) override;
-    void draw_rivers (const Mesh& mesh, const Mat4& model) override;
+    void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
     void draw_mesh (const Mesh& mesh, const Mat4& model) override;
     void draw_list (const DrawList& list) override;
     void apply_underwater (float time) override;

@@ -318,7 +318,7 @@ MOPPE_TEST (frame_view_selects_frozen_gazetteer_rules) {
   MOPPE_CHECK (view.visibility.undergrowth);
   MOPPE_CHECK (view.visibility.actors);
   MOPPE_CHECK (view.visibility.ocean);
-  MOPPE_CHECK (view.visibility.river_ribbons);
+  MOPPE_CHECK (view.visibility.waterfall_curtains);
   MOPPE_CHECK (!view.visibility.dust);
   MOPPE_CHECK (!view.visibility.game_hud);
   MOPPE_CHECK (!view.visibility.cinematic_hud);

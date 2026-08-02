@@ -2245,7 +2245,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       return;
     draw_mesh (*m_state->ocean_mesh, Mat4::translation (params.world_offset));
   }
-  void WebGpuRenderer::draw_rivers (const Mesh& mesh, const Mat4& model) {
+  void WebGpuRenderer::draw_waterfalls (const Mesh& mesh, const Mat4& model) {
     const auto& source = static_cast<const WebGpuMesh&> (mesh);
     if (!source.river_vertex_buffer) {
       std::vector<Vertex> vertices = source.vertices;
@@ -2256,14 +2256,14 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
         const float opacity = vertex.color.a / 255.0f;
         const float body = std::clamp (depth * 5.0f, 0.0f, 1.0f);
         const float foam =
-          std::clamp (0.32f * rapid + 0.72f * waterfall, 0.0f, 0.88f);
+          std::clamp (0.28f * rapid + 0.34f * waterfall, 0.0f, 0.72f);
         DisplayColor color = mix_display (DisplayColor (0.09f, 0.38f, 0.46f),
                                           DisplayColor (0.025f, 0.12f, 0.24f),
                                           body);
         color = mix_display (color, DisplayColor (0.78f, 0.90f, 0.94f), foam);
         const float alpha =
           opacity *
-          std::clamp (0.28f + 0.64f * body + 0.38f * waterfall, 0.28f, 0.94f);
+          std::clamp (0.18f + 0.58f * body + 0.12f * waterfall, 0.18f, 0.88f);
         vertex.color = PackedRgba8 (color.red, color.green, color.blue, alpha);
       }
       source.river_vertex_buffer =

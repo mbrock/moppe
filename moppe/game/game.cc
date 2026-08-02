@@ -26,7 +26,6 @@
 #include <moppe/game/landscape_gazetteer.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
-#include <moppe/game/river_surface.hh>
 #include <moppe/game/seed_memory.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
@@ -36,6 +35,7 @@
 #include <moppe/game/walker_render.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/water_presentation.hh>
+#include <moppe/game/waterfall_surface.hh>
 #include <moppe/game/world.hh>
 #include <moppe/game/world_loading.hh>
 #include <moppe/map/surface.hh>
@@ -418,9 +418,10 @@ namespace moppe {
       void prepare_world_water () {
         MOPPE_PROFILE_ZONE ("startup.prepare_world_water");
         render::Renderer& r = *m_renderer;
-        // Running rivers are continuous ribbon meshes. The water sheets retain
-        // standing bodies and carry each mouth's current into them.
-        m_river_surface.rebuild (r, surface (), rivers ());
+        // Horizontal water was prepared with the world on the loading worker.
+        // The render handoff builds only the few vertical nickpoint curtains,
+        // never a dense mesh along every river reach.
+        m_waterfall_surface.rebuild (r, surface (), rivers ());
       }
 
       void prepare_world_surface () {
@@ -979,11 +980,11 @@ namespace moppe {
           r.draw_ocean (ocean);
         }
 
-        // Standing water writes depth first. Rivers then shade only their
-        // visible surface, rather than paying for fragments hidden beneath a
-        // lake or the sea, and retain a clean current layer through mouths.
-        if (visibility.river_ribbons)
-          m_river_surface.draw (r, camera);
+        // Running channels are part of the same clipped water-level field as
+        // lakes and the sea. Only vertical nickpoint geometry is separate;
+        // ordinary reaches never draw an overlapping ribbon here.
+        if (visibility.waterfall_curtains)
+          m_waterfall_surface.draw (r, camera);
       }
 
       void draw_effect_layers (render::Renderer& r, const FrameView& frame) {
@@ -1549,7 +1550,7 @@ namespace moppe {
         m_skip_cinematic_requested = false;
         m_cinematic.stop ();
         m_cinematic_plan = {};
-        m_river_surface.clear ();
+        m_waterfall_surface.clear ();
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
         terrain::WorldRecipe next_recipe =
@@ -1610,7 +1611,7 @@ namespace moppe {
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       InputFrameAdapter m_live_input;
-      RiverSurface m_river_surface;
+      WaterfallSurface m_waterfall_surface;
       Terrain m_terrain;
       ForestLandscape m_forest;
       TreeStand m_tree_stand;

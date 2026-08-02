@@ -115,7 +115,7 @@ namespace moppe::game {
     bool tree_stand = true;
     bool actors = true;
     bool ocean = true;
-    bool river_ribbons = true;
+    bool waterfall_curtains = true;
     bool dust = true;
     bool underwater = false;
     bool motion_blur = false;

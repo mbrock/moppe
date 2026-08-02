@@ -563,9 +563,9 @@ namespace moppe {
       public:
         static void draw_ocean (const MetalWaterPassInputs& inputs,
                                 const OceanParams& params);
-        static void draw_rivers (const MetalWaterPassInputs& inputs,
-                                 const Mesh& mesh,
-                                 const Mat4& model);
+        static void draw_waterfalls (const MetalWaterPassInputs& inputs,
+                                     const Mesh& mesh,
+                                     const Mat4& model);
       };
 
       class MetalDrawListEncoder {
@@ -674,7 +674,7 @@ namespace moppe {
       void draw_dust (std::span<const DustEmission> emissions,
                       float logical_time) override;
       void draw_undergrowth (const UndergrowthParams& params) override;
-      void draw_rivers (const Mesh& mesh, const Mat4& model) override;
+      void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
       void draw_mesh (const Mesh& mesh, const Mat4& model) override;
       void draw_list (const DrawList& list) override;
       void apply_underwater (float time) override;
@@ -1174,7 +1174,7 @@ namespace moppe {
           m_pipelines.dust_mesh_soft = make_dust_mesh (false);
           m_pipelines.dust_mesh_add = make_dust_mesh (true);
 
-          // Lattice water tiles: the near standing-water surface on the
+          // Lattice water tiles: the near horizontal-water surface on the
           // terrain's own sample grid, sharing the ocean fragment shader.
           MTLMeshRenderPipelineDescriptor* w =
             [[MTLMeshRenderPipelineDescriptor alloc] init];
@@ -1661,7 +1661,7 @@ namespace moppe {
       // Regular triangle water grid, indexed. One draw still covers sea
       // and lakes together; the indices are what keep a corner shared by
       // six triangles from being shaded six times. This vertex stage
-      // reads the standing-water sheet and rides the swell, so its cost
+      // reads the horizontal-water sheet and rides the swell, so its cost
       // is most of what the grid spends, and the plain-triangle form
       // spent it 540,000 times over 90,601 distinct corners.
       const int cells = setup.cells;
@@ -2426,7 +2426,9 @@ namespace moppe {
                            water_resources.have_water_levels &&
                            terrain.have_terrain && terrain.heights;
       const float fine_radius = 700.0f;
-      const float tile_world = 15.0f * terrain.params.scale[0];
+      // Must match WATER_TILE_CELLS in ocean.metal: the CPU places the tile
+      // window while the mesh shader expands each origin into exact cells.
+      const float tile_world = 8.0f * terrain.params.scale[0];
       const int tiles_side = (int)std::ceil ((2.0f * fine_radius) / tile_world);
       if (lattice) {
         u.tiles.x =
@@ -2846,9 +2848,9 @@ namespace moppe {
                                  model);
     }
 
-    void MetalWaterPass::draw_rivers (const MetalWaterPassInputs& inputs,
-                                      const Mesh& mesh,
-                                      const Mat4& model) {
+    void MetalWaterPass::draw_waterfalls (const MetalWaterPassInputs& inputs,
+                                          const Mesh& mesh,
+                                          const Mat4& model) {
       id<MTLRenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
@@ -2884,19 +2886,19 @@ namespace moppe {
                   vertexCount:run.count];
     }
 
-    void MetalRenderer::draw_rivers (const Mesh& mesh, const Mat4& model) {
+    void MetalRenderer::draw_waterfalls (const Mesh& mesh, const Mat4& model) {
       const MetalMesh& metal_mesh = (const MetalMesh&)mesh;
       if (!m_pipelines.river || !metal_mesh.vertices)
         return;
       id<MTLRenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Water);
-      MetalWaterPass::draw_rivers ({ encoder,
-                                     m_pipelines,
-                                     m_terrain_resources,
-                                     m_water_resources,
-                                     m_frame },
-                                   mesh,
-                                   model);
+      MetalWaterPass::draw_waterfalls ({ encoder,
+                                         m_pipelines,
+                                         m_terrain_resources,
+                                         m_water_resources,
+                                         m_frame },
+                                       mesh,
+                                       model);
     }
 
     // -- post ----------------------------------------------------------

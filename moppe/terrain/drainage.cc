@@ -217,9 +217,8 @@ namespace moppe::terrain {
         if (cells.empty ())
           continue;
         // A reach born at a lake spill starts on the first dry cell. Include
-        // the wet outlet immediately upstream so its ribbon can dissolve into
-        // the standing-water sheet instead of appearing at a hard dry
-        // cross-section.
+        // the wet outlet immediately upstream so its flow and level join the
+        // standing body instead of appearing at a hard dry cross-section.
         if (reach.upstream_body != no_water_body) {
           const WaterBody& body = census.water_body (reach.upstream_body);
           if (water_body_terminates_rivers (body) &&
@@ -230,12 +229,11 @@ namespace moppe::terrain {
         CellIndex next = drainage.receiver[cells.back ()];
         if (next != cells.back ())
           cells.push_back (next);
-        // Carry sheet-rendered mouths far enough into their standing surface
-        // for the ribbon to dissolve below it. Channel-like bodies and tiny
-        // non-rendered depressions are instead crossed along their proven
-        // receiver route, so they cannot punch dry gaps into an otherwise
-        // continuous visible river; each body crossed end to end is recorded
-        // so the sheet can yield it to the ribbon.
+        // Carry mouths far enough into their standing surface for current to
+        // enter the receiving body. Channel-like bodies and tiny depressions
+        // are crossed along their proven receiver route, so they cannot punch
+        // gaps into an otherwise continuous visible river; each body crossed
+        // end to end is recorded for the running-water painter.
         std::vector<WaterBodyId> crossings;
         if (terminating_water_cell (cells.back ())) {
           next = drainage.receiver[cells.back ()];

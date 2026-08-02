@@ -74,15 +74,25 @@ namespace {
   }
 }
 
-MOPPE_TEST (running_rivers_do_not_mutate_the_standing_water_lattice) {
+MOPPE_TEST (running_rivers_are_shallow_flowing_water_in_the_shared_field) {
   const PaintedValley valley = paint_valley ();
   MOPPE_CHECK (!valley.rivers.reaches.empty ());
 
-  const std::size_t dry_trunk = 4 * 9 + 4;
-  MOPPE_CHECK (valley.flood.water_depth_m (dry_trunk) == 0.0f);
-  MOPPE_CHECK_NEAR (
-    sheet_level_m (valley.sheets, dry_trunk), valley.heights[dry_trunk], 1e-6f);
-  MOPPE_CHECK_NEAR (sheet_wave (valley.sheets, dry_trunk), 0.0f, 0.0f);
+  bool found_running_cell = false;
+  for (std::size_t cell = 0; cell < valley.heights.size (); ++cell) {
+    if (valley.flood.water_depth_m (cell) > 0.0f)
+      continue;
+    const float depth =
+      sheet_level_m (valley.sheets, cell) - valley.heights[cell];
+    const Vec3 velocity = sheet_velocity (valley.sheets, cell);
+    if (depth <= 0.005f || std::hypot (velocity[0], velocity[2]) <= 0.25f)
+      continue;
+    MOPPE_CHECK (depth <= 2.5f);
+    MOPPE_CHECK_NEAR (sheet_wave (valley.sheets, cell), 0.0f, 0.0f);
+    found_running_cell = true;
+    break;
+  }
+  MOPPE_CHECK (found_running_cell);
 }
 
 MOPPE_TEST (standing_water_keeps_its_level_and_wave_character) {
@@ -153,12 +163,12 @@ MOPPE_TEST (sill_between_terraced_bodies_signs_to_the_lower_level) {
   MOPPE_CHECK_NEAR (sheet_level_m (sheets, sill), 3.0f, 1e-5f);
 }
 
-MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
+MOPPE_TEST (traversed_channel_like_bodies_join_the_running_water_field) {
   // A valley descending to the sea with a flooded channel stretch midway:
   // five cells of flat water one cell wide, permanent by size but shaped
   // like a river. The route must cross it as one continuous alignment that
-  // pools at the flood level, and the standing-water sheet must yield the
-  // stretch to the ribbon.
+  // pools at the flood level. The one water field keeps that level while its
+  // wave amplitude and velocity identify the stretch as running water.
   constexpr std::size_t width = 14;
   constexpr std::size_t height = 3;
   const std::array<float, width> profile { 0.9f,  0.55f, 0.5f,  0.45f, 0.2f,
@@ -192,7 +202,7 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
   MOPPE_CHECK (rivers.body_traversed[pond_id]);
 
   // The inlet reach continues across the pond: it links downstream and its
-  // alignment pools at the flood level with the ribbon staying opaque.
+  // alignment pools at the flood level.
   const RiverReach* inlet =
     watercourse_reach_containing (rivers, 1 * width + 3);
   MOPPE_CHECK (inlet);
@@ -208,14 +218,16 @@ MOPPE_TEST (rivers_own_traversed_channel_like_bodies) {
     }
   MOPPE_CHECK (pooled_point);
 
-  // The sheet yields the traversed stretch: its cells drop to ground level
-  // and carry no wave amplitude, while the sea keeps its plate.
+  // The shared sheet retains the pool's physical level and adds current,
+  // while the sea keeps its standing plate.
   const WaterSheets sheets =
     paint_watercourses (terrain, flood, census, drainage, rivers);
   const std::size_t pond_cell = 1 * width + 6;
   MOPPE_CHECK_NEAR (
-    sheet_level_m (sheets, pond_cell), heights[pond_cell], 1e-4f);
+    sheet_level_m (sheets, pond_cell), flood.water_level_m (pond_cell), 1e-4f);
   MOPPE_CHECK_NEAR (sheet_wave (sheets, pond_cell), 0.0f, 0.0f);
+  const Vec3 pond_velocity = sheet_velocity (sheets, pond_cell);
+  MOPPE_CHECK (std::hypot (pond_velocity[0], pond_velocity[2]) > 0.25f);
   const std::size_t sea_cell = 1 * width + 12;
   MOPPE_CHECK_NEAR (sheet_level_m (sheets, sea_cell), 0.0f, 1e-5f);
 }

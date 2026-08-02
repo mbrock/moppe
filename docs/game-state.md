@@ -70,7 +70,7 @@ The intended experiment loop is:
 The built-in graphics benchmark implements this loop at a fixed 120 Hz. It
 constructs the checkpoint after a deterministic scripted prelude, then visits
 all Boolean combinations of a graphics-feature partition in Gray-code order.
-The current riding partition preserves ocean, river ribbons, bloom, and
+The current riding partition preserves ocean, waterfall curtains, bloom, and
 automatic exposure as separate blocks and identifies particles, vehicle
 effects, star effects, lens flare, fragment terrain normals, snow-support
 filtering, and channel-flux detail as one `small-effects` block. This reduces

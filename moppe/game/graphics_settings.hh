@@ -10,7 +10,7 @@ namespace moppe::game {
   enum class GraphicsFeatureId {
     terrain_shadows,
     ocean,
-    river_ribbons,
+    waterfall_curtains,
     particles,
     vehicle_effects,
     star_effects,
@@ -41,7 +41,7 @@ namespace moppe::game {
 
     bool terrain_shadows = true;
     bool ocean = true;
-    bool river_ribbons = true;
+    bool waterfall_curtains = true;
     bool particles = true;
     bool vehicle_effects = true;
     bool star_effects = true;
@@ -85,10 +85,10 @@ namespace moppe::game {
   inline constexpr GraphicsFeature ocean_feature {
     GraphicsFeatureId::ocean, "ocean", &GraphicsSettings::ocean, true
   };
-  inline constexpr GraphicsFeature river_ribbons_feature {
-    GraphicsFeatureId::river_ribbons,
-    "river-ribbons",
-    &GraphicsSettings::river_ribbons,
+  inline constexpr GraphicsFeature waterfall_curtains_feature {
+    GraphicsFeatureId::waterfall_curtains,
+    "waterfall-curtains",
+    &GraphicsSettings::waterfall_curtains,
     true
   };
   inline constexpr GraphicsFeature particles_feature {
@@ -167,7 +167,7 @@ namespace moppe::game {
 
   inline constexpr std::array<const GraphicsFeature*, 15> graphics_features {
     &terrain_shadows_feature,     &ocean_feature,
-    &river_ribbons_feature,       &particles_feature,
+    &waterfall_curtains_feature,  &particles_feature,
     &vehicle_effects_feature,     &star_effects_feature,
     &motion_blur_feature,         &bloom_feature,
     &auto_exposure_feature,       &lens_flare_feature,

@@ -5,7 +5,7 @@ SELECT * FROM read_csv_auto(getvariable('input'));
 -- order. terrain-topology is a hot debug view, not an ordinary-riding bit.
 CREATE OR REPLACE TABLE features(bit, name) AS VALUES
   (0, 'ocean'),
-  (1, 'river-ribbons'),
+  (1, 'waterfall-curtains'),
   (2, 'particles'),
   (3, 'vehicle-effects'),
   (4, 'star-effects'),
@@ -19,7 +19,7 @@ CREATE OR REPLACE TABLE features(bit, name) AS VALUES
 
 CREATE OR REPLACE TABLE partition_blocks(bit, name) AS VALUES
   (0, 'ocean'),
-  (1, 'rivers'),
+  (1, 'waterfalls'),
   (2, 'bloom'),
   (3, 'auto-exposure'),
   (4, 'undergrowth'),
@@ -150,7 +150,7 @@ ORDER BY logical_frame;
 CREATE OR REPLACE VIEW configurations AS
 SELECT c.*,
        (c.mask & 1) != 0 AS ocean,
-       (c.mask & 2) != 0 AS river_ribbons,
+       (c.mask & 2) != 0 AS waterfall_curtains,
        (c.mask & 4) != 0 AS particles,
        (c.mask & 8) != 0 AS vehicle_effects,
        (c.mask & 16) != 0 AS star_effects,
