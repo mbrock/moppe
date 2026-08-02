@@ -60,9 +60,14 @@ transmission as one optical budget: physical Fresnel and a GGX sun lobe own the
 surface, RGB extinction exposes or absorbs the lit bed by depth, and absorbed
 light supplies the water body. Stable close-bed stones and a signed-water
 riparian grass response make that transparency belong to the shore instead of
-ending at an unrelated turf edge. Still open are displaced screen-space
-refraction, richer plunge-pool spray, the rider's local-lake underwater state,
-and lakes in the browser.
+ending at an unrelated turf edge. Shallow running water now substitutes a
+restrained bank-and-canopy environment at grazing angles, because the cheap
+sky environment alone made shaded channels into bright blue-white ribbons;
+open standing water keeps the sky response. The photographed dirt source is
+also pre-integrated before lighting, and compacted-path aggregate and relief
+retire by wavelength instead of surviving into one-pixel EDR glimmer. Still
+open are true scene reflection/refraction, richer plunge-pool spray, the
+rider's local-lake underwater state, and lakes in the browser.
 
 The corrugation investigation is written up in
 [hillslopes and channels](hillslopes-and-channels.md), negative results

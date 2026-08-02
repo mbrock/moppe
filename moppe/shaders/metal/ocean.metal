@@ -1,7 +1,7 @@
 // Animated translucent ocean -- port of shaders/ocean.vert +
 // ocean.frag.  Three overlapping sine swells with Gerstner-style
 // horizontal displacement and an analytic normal in the vertex
-// stage; procedural ripples, Schlick fresnel and a Blinn sun glint
+// stage; procedural ripples, Schlick fresnel and a GGX sun glint
 // in the fragment stage.  Lighting runs in world space (the GLSL
 // eye-space detour existed only for fixed-function GL lights).
 
@@ -534,11 +534,16 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   float flow_detail = 0.5;
   float2 flow_grad = float2 (0.0);
   float flow_speed = 0.0;
+  float current_character = 0.0;
   const float flow_fade = exp (-dist * 0.0012);
   if (u.current.x > 0.5 && u.shore.w > 0.5) {
     const float2 flow = ocean_grid_sample_raw (in.world_pos.xz, u, water_flow);
     flow_speed = length (flow);
-    flowing = smoothstep (0.25, 1.0, flow_speed) * flow_fade;
+    // Keep the material identity independent of camera distance. Only the
+    // animated detail retires into the distance; otherwise a dark stream
+    // would turn back into a bright sky ribbon as the camera pulled away.
+    current_character = smoothstep (0.25, 1.0, flow_speed);
+    flowing = current_character * flow_fade;
     rapid = smoothstep (4.0, 7.5, flow_speed);
     if (flowing > 1e-3) {
       // Flow map, two phases: a copy of the surface detail drifts
@@ -665,7 +670,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   const float nl = max (dot (n, sun), 0.0);
   const float nh = max (dot (n, h), 0.0);
   const float vh = max (dot (v, h), 0.0);
-  const float roughness = 0.10 + 0.07 * flowing + 0.05 * rapid;
+  const float roughness = 0.10 + 0.10 * current_character + 0.06 * rapid;
   const float alpha_roughness = roughness * roughness;
   const float alpha2 = alpha_roughness * alpha_roughness;
   const float denominator = nh * nh * (alpha2 - 1.0) + 1.0;
@@ -742,8 +747,36 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // Aerial perspective: same sun-warmed haze as the terrain.
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), sun);
-  const float3 sky_reflection =
+  float3 sky_reflection =
     moppe_sky_radiance (u.fog_color.rgb, reflection_dir, sun);
+
+  // The cheap environment map contains sky but no terrain. That is a fair
+  // approximation on an open lake; in a shallow channel it reflects a bright
+  // horizon where the real ray would usually meet a bank, reeds, or canopy.
+  // Depth and current are the material evidence available here: they leave
+  // standing/deep water alone and replace only the grazing environment of small
+  // running water with a restrained earth-and-vegetation response. Fresnel
+  // itself stays physical -- this changes what the surface sees, not how much
+  // of it the interface reflects.
+  float shallow_channel = 0.0;
+  if (current_character > 0.001) {
+    shallow_channel =
+      current_character * (1.0 - smoothstep (0.35, 1.80, depth_m));
+    const float horizon_reflection =
+      1.0 - smoothstep (0.16, 0.82, saturate (reflection_dir.y));
+    const float channel_enclosure =
+      shallow_channel * mix (0.34, 1.0, horizon_reflection);
+    const float3 green_bank = moppe_srgb (float3 (0.15, 0.20, 0.12));
+    const float3 earth_bank = moppe_srgb (float3 (0.24, 0.20, 0.12));
+    const float3 bank_albedo = mix (green_bank, earth_bank, turbidity);
+    const float bank_light =
+      0.58 + 0.26 * sun_visibility +
+      0.45 * dot (moppe_hemisphere_light (u.ambient.rgb, n),
+                  float3 (0.299, 0.587, 0.114));
+    const float3 bank_reflection = bank_albedo * bank_light;
+    sky_reflection =
+      mix (sky_reflection, bank_reflection, 0.78 * channel_enclosure);
+  }
 
   // Beer-Lambert extinction carries the transparency. Red is absorbed first;
   // sediment and current-borne particles shorten all three mean free paths.
@@ -761,7 +794,9 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // layer over a five-centimetre stream.
   const float3 clear_scatter = moppe_srgb (float3 (0.035, 0.34, 0.43));
   const float3 silt_scatter = moppe_srgb (float3 (0.28, 0.30, 0.13));
-  const float3 scatter_tint = mix (clear_scatter, silt_scatter, turbidity);
+  const float3 stream_scatter = moppe_srgb (float3 (0.10, 0.22, 0.16));
+  float3 scatter_tint = mix (clear_scatter, silt_scatter, turbidity);
+  scatter_tint = mix (scatter_tint, stream_scatter, 0.62 * shallow_channel);
   const float3 column_light = float3 (0.44) +
                               0.72 * moppe_hemisphere_light (u.ambient.rgb, n) +
                               0.22 * u.sun_diffuse.rgb * nl * sun_visibility;

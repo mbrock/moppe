@@ -267,6 +267,20 @@ because the shader normalizes its surface radiance by the coverage left after
 bed transmission. This is optical transmission, not displaced screen-space
 refraction; the latter still requires an opaque-scene sample.
 
+The procedural environment contains sky but no terrain. That omission is
+mostly honest for lakes and the ocean, but it made a little shaded stream
+reflect a bright open horizon where the real ray would meet its banks, reeds,
+or canopy. Running-water identity and shallow depth now select a restrained
+green/earth bank-radiance proxy at grazing reflection angles. The physical
+Fresnel term is unchanged; the approximation changes the environment being
+reflected, and a spatially coherent branch keeps the work off standing-water
+fragments. This is not screen-space reflection and does not claim to reproduce
+a particular tree or bank silhouette. The identical 64-configuration GPU cube
+measured a 7.143 ms overall median after this pass versus 7.163 ms at the prior
+water checkpoint. Its isolated ocean estimate moved by 0.052 ms while the
+paired-frame spread remained over one millisecond, evidence of parity rather
+than a measurable regression.
+
 A height field cannot express vertical water. `WaterfallSurface` therefore
 builds only a small explicit curtain for each selected hydrological
 nickpoint. The curtain follows the lip-to-foot direction, accelerates
@@ -347,6 +361,16 @@ derivatives suppress aggregate, trail-gravel, pebbles, and snow-specular
 frequencies as they become subpixel, including nearby ground viewed almost
 parallel to its surface. These are shading effects only and do not alter
 collision geometry.
+
+The dirt source is a close photograph of loose gravel. Its centimetre-scale
+contrast is pre-integrated with an additive mip bias before lighting, so it
+supplies material color without turning every trail into a field of isolated
+bright and dark grains. Compacted paths then restore deliberate world-scale
+structure with lower-contrast coarse aggregate and broader, weaker normal
+relief. Their 3.2 m and 0.79 m procedural octaves each retire against their own
+pixel footprint; the fine octave is gone before a pixel spans half its
+wavelength. This prevents distant crawl and also keeps EDR from preserving
+single-pixel gravel peaks as false highlights.
 
 Weather is one lighting system rather than a sky decoration. The game's
 bounded cloudiness reading drives both cloud coverage and a broad layer

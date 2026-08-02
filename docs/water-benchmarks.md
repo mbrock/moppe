@@ -12,6 +12,13 @@ make water-benchmark
 open /tmp/moppe-water-benchmark/index.html
 ```
 
+The default sun is intentionally low enough to expose flow and depth. A bright
+horizon is the complementary reflection stress case:
+
+```sh
+MOPPE_SUNHEIGHT=0.70 tools/water-benchmark /tmp/moppe-water-bright
+```
+
 The default suite contains two headwater streams, two trunk rivers, two
 confluences, two mouths, two waterfall candidates, and two lakes. The cases use
 fixed fast-profile seeds selected because the relevant structures really exist;
@@ -98,6 +105,10 @@ duration, status, and log path for future image-difference or metric tooling.
 - Transparent shallow water should reveal one stable worked bed rather than a
   cyan fill, crawling noise, or a repeated pebble decal. Grass roots should
   stop on the wet side while the dry bank remains a continuous habitat.
+- A shaded shallow channel should not become a uniformly blue-white ribbon
+  merely because the cheap environment contains sky but no banks. Its grazing
+  response should remain darker and earth/vegetation-influenced, while open
+  lakes still reflect the sky and solar path.
 
 These are visual acceptance questions, not automatic pixel thresholds. Once a
 specific defect is fixed and stable across machines, a cropped image metric can

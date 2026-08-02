@@ -120,6 +120,17 @@ water crossing now excludes each jittered grass root individually and shapes a
 subtle taller, denser dry-bank fringe. Water, bed, and vegetation therefore
 answer to the same boundary rather than meeting as three unrelated effects.
 
+The first optical result also exposed a limitation of the cheap environment:
+it contains only procedural sky. That is convincing on open standing water,
+but a narrow shaded channel then reflects a bright horizon where a real ray
+would usually meet vegetation or a bank. The follow-up material pass keeps the
+air--water Fresnel budget intact and changes the incident environment instead.
+Shallow current selects a dark green/earth bank-radiance proxy at grazing
+angles; deep rivers and standing bodies retain the open-sky response. It is a
+bounded terrain-aware approximation, not screen-space reflection, and avoids
+adding a scene-color pass until actual displaced reflection/refraction earns
+one.
+
 ## Production flow maps
 
 - `vlachos-2010-water-flow-portal-2.pdf` — Alex Vlachos, “Water Flow in
