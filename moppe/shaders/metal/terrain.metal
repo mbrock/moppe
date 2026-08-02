@@ -394,6 +394,65 @@ terrain_relief_gradient (float2 plane, float pixel_m, float base_wavelength) {
   return gradient / (TERRAIN_RELIEF_OCTAVES * TERRAIN_RELIEF_RMS);
 }
 
+struct TerrainPebbleSample {
+  float cap;
+  float tone;
+  float2 gradient;
+};
+
+// A small jittered cellular bed. The nearest site supplies one rounded cap;
+// the gap to the second-nearest site opens a dark seam between stones. It is
+// evaluated only on close, wet, gently sloping ground, where transparency
+// makes centimetre-scale bed character worth its fragment cost.
+static inline TerrainPebbleSample terrain_pebble_sample (float2 world_xz) {
+  constexpr float frequency = 3.0;
+  const float2 p = world_xz * frequency;
+  const float2 cell = floor (p);
+  const float2 local = fract (p);
+  float nearest = 10.0;
+  float second = 10.0;
+  float2 nearest_gradient (0.0);
+  float nearest_tone = 0.5;
+  for (int z = -1; z <= 1; ++z)
+    for (int x = -1; x <= 1; ++x) {
+      const float2 offset (x, z);
+      const float2 identity = cell + offset;
+      const float2 jitter (moppe_hash12 (identity + float2 (19.1, 7.3)),
+                           moppe_hash12 (identity + float2 (3.7, 31.9)));
+      const float2 delta = local - (offset + float2 (0.18) + 0.64 * jitter);
+      const float angle =
+        6.2831853 * moppe_hash12 (identity + float2 (13.7, 41.3));
+      const float2 major (cos (angle), sin (angle));
+      const float2 minor (-major.y, major.x);
+      const float radius =
+        mix (0.42, 0.78, moppe_hash12 (identity + float2 (29.7, 11.5)));
+      const float aspect =
+        mix (0.76, 1.28, moppe_hash12 (identity + float2 (5.3, 61.7)));
+      const float2 axes = radius * float2 (aspect, 1.0 / aspect);
+      const float2 shaped (dot (delta, major) / axes.x,
+                           dot (delta, minor) / axes.y);
+      const float distance = length (shaped);
+      const float2 distance_gradient =
+        (major * shaped.x / axes.x + minor * shaped.y / axes.y) /
+        max (distance, 1e-3);
+      if (distance < nearest) {
+        second = nearest;
+        nearest = distance;
+        nearest_gradient = distance_gradient;
+        nearest_tone = moppe_hash12 (identity + float2 (47.3, 5.9));
+      } else if (distance < second) {
+        second = distance;
+      }
+    }
+
+  const float round = saturate ((1.0 - nearest) / 0.62);
+  const float cap = round * round * (3.0 - 2.0 * round);
+  const float seam = smoothstep (0.035, 0.16, second - nearest);
+  const float slope = -6.0 * round * (1.0 - round) / 0.62;
+  const float2 gradient = frequency * slope * nearest_gradient;
+  return { cap * seam, nearest_tone, gradient * seam };
+}
+
 // Relief lives on a plane, and a field laid over XZ smears into vertical
 // streaks on a wall exactly as an XZ-projected texture does.  Compose three
 // plane evaluations under the same squared-normal weights the splat
@@ -751,6 +810,29 @@ fragment float4 terrain_fragment (
     mix (scree_c, scree_value * float3 (0.88, 0.84, 0.76), 0.55) *
     (0.82 + 0.30 * coarse);
   texel = mix (texel, wash_c, 0.42 * wash);
+
+  // Water clarity has something worth revealing. Close flat beds and their
+  // damp margins resolve into individual rounded stones; distance retires the
+  // cellular work before it can shimmer or become a permanent GPU tax.
+  const float pebble_material = max (submerged, 0.52 * swash_zone) *
+                                smoothstep (0.48, 0.90, n.y) *
+                                (1.0 - snow_coef) * fine_detail_visibility *
+                                (1.0 - smoothstep (18.0, 55.0, dist));
+  TerrainPebbleSample pebble = { 0.0, 0.5, float2 (0.0) };
+  if (pebble_material > 0.002) {
+    pebble = terrain_pebble_sample (in.world_pos.xz);
+    const float3 cool_stone (0.28, 0.31, 0.32);
+    const float3 warm_stone (0.39, 0.34, 0.29);
+    const float3 pale_stone (0.47, 0.46, 0.42);
+    float3 stone_srgb =
+      mix (cool_stone, warm_stone, smoothstep (0.18, 0.78, pebble.tone));
+    stone_srgb =
+      mix (stone_srgb, pale_stone, smoothstep (0.76, 0.97, pebble.tone));
+    const float3 stone = moppe_srgb (stone_srgb) * (0.72 + 0.36 * pebble.cap);
+    const float3 interstitial = moppe_srgb (float3 (0.10, 0.11, 0.105));
+    const float3 pebble_c = mix (interstitial, stone, pebble.cap);
+    texel = mix (texel, pebble_c, pebble_material * (0.52 + 0.48 * pebble.cap));
+  }
   // Read the trail mask as a formed cross-section. Its falloff gives us two
   // edge-parallel wear bands without imposing a world-aligned texture on a
   // winding route. Coarse aggregate remains visible from the bike; the broad
@@ -855,18 +937,13 @@ fragment float4 terrain_fragment (
     terrain_relief_volume (in.world_pos, n, pixel_m, relief_wavelength),
     detail_strength);
 
-  // Close wet flats pick up rounded pebble-scale relief. This is deliberately
-  // subtle: it breaks the perfectly smooth underwater bed without pretending
-  // to alter collision geometry. A bed is flat by the time this fires, so
-  // the ground plane alone carries it.
-  const float pebble_strength = max (submerged, 0.8 * swash_zone) *
-                                smoothstep (0.45, 0.92, n.y) *
-                                (1.0 - smoothstep (18.0, 120.0, dist)) * 0.22;
-  if (pebble_strength > 0.002) {
-    const float2 g = terrain_relief_gradient (
-      in.world_pos.xz + float2 (7.1, 19.3), pixel_m, 0.62);
-    n = terrain_perturb_normal (n, float3 (g.x, 0.0, g.y), pebble_strength);
-  }
+  // The same cellular caps perturb the bed normal. Albedo and relief therefore
+  // describe one set of stones instead of unrelated layers sliding through
+  // each other below the transparent surface.
+  const float pebble_strength = pebble_material * (0.06 + 0.08 * pebble.cap);
+  if (pebble_strength > 0.002)
+    n = terrain_perturb_normal (
+      n, float3 (pebble.gradient.x, 0.0, pebble.gradient.y), pebble_strength);
 
   // Water-worked ground is anisotropic. The rill relief stays fixed in world
   // space; removing the along-flow component of its gradient leaves relief

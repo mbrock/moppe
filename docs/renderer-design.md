@@ -254,7 +254,18 @@ anisotropic texture frame from the current vector. Its two advected phases
 stretch across the channel and travel along it; because junction currents
 already blend, the shading turns through a confluence without a texture seam.
 Depth drives absorption and clarity while current drives aligned normal
-detail, subtle trough contrast, and rapid churn.
+detail, subtle trough contrast, and rapid churn. The optical blend is split
+into the terms it actually owns. Air-to-water Fresnel with an IOR of 1.333
+reflects the procedural sky and supplies the GGX sun glint. Per-channel
+Beer--Lambert extinction determines how much of the already-rendered bed
+survives, and only the removed light becomes depth-colored in-scattering.
+Normal-incidence shallows are therefore mostly bed, deep water retains a
+colored body, and grazing water becomes a mirror without a hand-tuned
+reflection cap. Turbidity shortens the extinction path but does not erase the
+surface Fresnel film. Standard alpha blending can express those three terms
+because the shader normalizes its surface radiance by the coverage left after
+bed transmission. This is optical transmission, not displaced screen-space
+refraction; the latter still requires an opaque-scene sample.
 
 A height field cannot express vertical water. `WaterfallSurface` therefore
 builds only a small explicit curtain for each selected hydrological
@@ -323,13 +334,19 @@ transformed lights by the modelview).
 
 Terrain materials also consume the hydrology's standing-water and moisture
 rasters. Submerged beds and damp banks lose diffuse energy and gain a restrained
-wet sheen; close shallow beds receive procedural pebble-scale bump detail.
-Grass responds more quietly to moisture, while cliff material uses triplanar
-projection, a slate/taupe palette, and world-height strata to avoid stretched
-red faces. Screen-space world-position derivatives suppress aggregate,
-trail-gravel, and snow-specular frequencies as they become subpixel,
-including nearby ground viewed almost parallel to its surface. These are
-shading effects only and do not alter collision geometry.
+wet sheen. Close shallow beds and a quieter share of their dry margins resolve
+into one stable jittered cellular pebble field: size, aspect, orientation,
+mineral albedo, seam, and normal all come from the same stone identity, then
+retire before becoming subpixel. Grass responds more quietly to moisture. Its
+root is tested against the signed water surface at the actual jittered shoot
+position, preventing mixed shoreline tiles from planting blades underwater;
+the dry side of the crossing becomes a subtly denser, taller riparian band.
+Cliff material uses triplanar projection, a slate/taupe palette, and
+world-height strata to avoid stretched red faces. Screen-space world-position
+derivatives suppress aggregate, trail-gravel, pebbles, and snow-specular
+frequencies as they become subpixel, including nearby ground viewed almost
+parallel to its surface. These are shading effects only and do not alter
+collision geometry.
 
 Weather is one lighting system rather than a sky decoration. The game's
 bounded cloudiness reading drives both cloud coverage and a broad layer
