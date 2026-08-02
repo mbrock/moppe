@@ -81,6 +81,16 @@ namespace moppe::game {
             return unknown ("graphics quality", values[0], error);
           return true;
         } },
+      { "--upscaling",
+        1,
+        "linear or spatial",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          if (!parse_upscaling_mode (values[0], options.graphics.upscaling))
+            return unknown ("upscaling mode", values[0], error);
+          return true;
+        } },
       { "--graphics-enable",
         1,
         "a comma-separated feature list",

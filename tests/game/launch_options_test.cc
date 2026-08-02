@@ -54,6 +54,11 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
     terrain::TerrainGenerationProfile::Research);
   MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).generation_profile ==
                terrain::TerrainGenerationProfile::Smoke);
+  MOPPE_CHECK (parsed ({ "--upscaling", "linear" }).graphics.upscaling ==
+               render::UpscalingMode::Linear);
+  MOPPE_CHECK (
+    parsed ({ "--graphics-quality", "balanced", "--upscaling", "linear" })
+      .graphics.upscaling == render::UpscalingMode::Linear);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {
@@ -66,6 +71,7 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   };
   MOPPE_CHECK (rejects ({ "--graphics-quality" }));
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
+  MOPPE_CHECK (rejects ({ "--upscaling", "neural" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "0" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "65" }));

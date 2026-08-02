@@ -1,6 +1,8 @@
 #ifndef MOPPE_GAME_GRAPHICS_SETTINGS_HH
 #define MOPPE_GAME_GRAPHICS_SETTINGS_HH
 
+#include <moppe/render/types.hh>
+
 #include <array>
 #include <iosfwd>
 #include <string>
@@ -26,6 +28,7 @@ namespace moppe::game {
   };
 
   struct GraphicsSettings {
+    render::UpscalingMode upscaling = render::UpscalingMode::Spatial;
     float scene_scale = 1.0f;
     // Zero uses scene_scale relative to the point-resolution baseline.
     // A positive value is an absolute fraction of drawable resolution.
@@ -184,6 +187,9 @@ namespace moppe::game {
   // preserving the complete presentation feature set.
   GraphicsSettings apple_tv_graphics_settings ();
   const GraphicsFeature* find_graphics_feature (std::string_view name);
+  const char* upscaling_mode_name (render::UpscalingMode mode);
+  bool parse_upscaling_mode (std::string_view name,
+                             render::UpscalingMode& mode);
 
   // Parses a comma-separated list of canonical feature names.
   bool set_graphics_features (GraphicsSettings& settings,

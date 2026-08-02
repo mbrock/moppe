@@ -65,6 +65,27 @@ namespace moppe::game {
     return settings;
   }
 
+  const char* upscaling_mode_name (render::UpscalingMode mode) {
+    switch (mode) {
+    case render::UpscalingMode::Linear:
+      return "linear";
+    case render::UpscalingMode::Spatial:
+      return "spatial";
+    }
+    return "unknown";
+  }
+
+  bool parse_upscaling_mode (std::string_view name,
+                             render::UpscalingMode& mode) {
+    if (name == "linear")
+      mode = render::UpscalingMode::Linear;
+    else if (name == "spatial")
+      mode = render::UpscalingMode::Spatial;
+    else
+      return false;
+    return true;
+  }
+
   const GraphicsFeature* find_graphics_feature (std::string_view name) {
     const auto found = std::find_if (graphics_features.begin (),
                                      graphics_features.end (),
@@ -133,7 +154,9 @@ namespace moppe::game {
 
   void print_graphics_settings (std::ostream& output,
                                 const GraphicsSettings& settings) {
-    output << "moppe: graphics: scene-scale=" << settings.scene_scale
+    output << "moppe: graphics: upscaling="
+           << upscaling_mode_name (settings.upscaling)
+           << " scene-scale=" << settings.scene_scale
            << " render-scale-override=" << settings.render_scale_override
            << " scene-megapixel-budget=" << settings.scene_megapixel_budget
            << " sun-height=" << settings.sun_height;

@@ -458,6 +458,11 @@ function(moppe_configure_metal_target target)
     "-framework MetalKit"
     "-framework QuartzCore"
     "-framework ImageIO")
+  # The iOS/tvOS simulator SDKs omit MetalFX along with the Metal 4 core API;
+  # those targets compile the explicit unavailable renderer stub above.
+  if(NOT MOPPE_TVOS AND NOT MOPPE_APPLE_SIMULATOR)
+    target_link_libraries(${target} PRIVATE "-framework MetalFX")
+  endif()
   add_dependencies(${target} moppe_shaders)
 endfunction()
 
