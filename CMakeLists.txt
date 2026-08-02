@@ -254,6 +254,7 @@ set(MOPPE_METAL_SOURCES
   moppe/shaders/metal/river.metal
   moppe/shaders/metal/dust.metal
   moppe/shaders/metal/undergrowth.metal
+  moppe/shaders/metal/reflection_geometry.metal
 )
 
 set(MOPPE_METAL_DEPS
@@ -334,6 +335,7 @@ endif()
 
 set(MOPPE_RENDER_SOURCES
   moppe/render/draw.cc
+  moppe/render/reflection_geometry.cc
   moppe/render/text.cc
 )
 
@@ -533,6 +535,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/map/surface_test.cc
     tests/map/water_surface_test.cc
     tests/map/terrain_generation_test.cc
+    tests/render/reflection_geometry_test.cc
   )
   moppe_configure_code_target(moppe-tests)
   if(APPLE)

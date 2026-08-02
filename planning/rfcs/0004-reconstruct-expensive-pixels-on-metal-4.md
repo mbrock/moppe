@@ -352,6 +352,14 @@ If the visual gain is small, a better analytical bank environment or a
 bounded planar reflection may be the honest answer. The acceleration structure
 does not become permanent merely because it works.
 
+Goal 0 of this gate is complete in the
+[reflection-geometry track](../tracks/reflection-geometry/README.md). A
+bounded, periodic terrain proxy and inspectable Metal ray query work at the
+deterministic lake view, with measured error, memory, build-time variability,
+seam behavior, and lifecycle ownership. This does not clear Gate 3: the next
+decision is still whether one raw water-reflection signal earns composition
+and later reconstruction.
+
 ### Gate 4: Denoise only the signal that earned it
 
 MetalFX denoised upscaling is a separate hardware tier. Query
