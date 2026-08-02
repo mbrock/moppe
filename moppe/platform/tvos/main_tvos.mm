@@ -63,6 +63,8 @@ static UIWindow* g_window = nil;
     dt = 0.05f;
   if (dt > 0)
     g_game->tick (dt);
+  moppe::render::set_metal_drawable (*self.renderer,
+                                     (__bridge void*)view.currentDrawable);
   g_game->render (*self.renderer);
 }
 
@@ -93,11 +95,14 @@ static UIWindow* g_window = nil;
   vc.controllerUserInteractionEnabled = NO;
   MTKView* view = [[MTKView alloc] initWithFrame:self.window.bounds device:nil];
   view.preferredFramesPerSecond = 60;
+  view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+  view.depthStencilPixelFormat = MTLPixelFormatInvalid;
+  view.sampleCount = 1;
   vc.view = view;
 
   std::string lib = moppe::platform::asset_path ("moppe.metallib");
   moppe::render::Renderer* renderer =
-    moppe::render::create_metal_renderer ((__bridge void*)view, lib);
+    moppe::render::create_metal_renderer ((__bridge void*)view.layer, lib);
   vc.renderer = renderer;
   view.delegate = vc;
 

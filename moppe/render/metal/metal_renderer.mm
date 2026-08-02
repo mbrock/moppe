@@ -1,4 +1,4 @@
-// Metal backend for moppe/render.  One command buffer per frame:
+// Metal 4 backend for moppe/render. One reusable command buffer per frame:
 //
 //   scene pass   MSAA -> resolve into sceneA (reversed-Z depth)
 //   post passes  underwater grade / motion-blur ghosts on sceneA/B
@@ -6,11 +6,10 @@
 //
 // Terrain is vertex-pulled from height/normal textures; the shadow
 // map is a one-time Depth16Unorm ortho render.  All texture uploads
-// go through staging buffers + blit (simulator requires private
-// storage; it's the right call on TBDR devices anyway).
+// go through staging buffers + compute-encoder copies so retained resources
+// stay in private storage on TBDR devices.
 
 #import <Metal/Metal.h>
-#import <MetalKit/MetalKit.h>
 #import <QuartzCore/QuartzCore.h>
 #import <TargetConditionals.h>
 #if TARGET_OS_IPHONE
@@ -21,18 +20,9 @@
 #endif
 
 #include <moppe/profile.hh>
+#include <moppe/render/metal/metal4_frame.hh>
 #include <moppe/render/metal/metal_renderer.hh>
 #include <moppe/render/metal/shader_types.h>
-
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-#include <tracy/TracyMetal.hmm>
-#define MOPPE_METAL_ZONE(context, descriptor, name)                            \
-  TracyMetalZone (context, descriptor, name)
-#define MOPPE_METAL_ZONE_DISABLED(context, descriptor, name) ((void)0)
-#else
-#define MOPPE_METAL_ZONE(context, descriptor, name) ((void)0)
-#define MOPPE_METAL_ZONE_DISABLED(context, descriptor, name) ((void)0)
-#endif
 
 #include <algorithm>
 #include <array>
@@ -49,6 +39,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 namespace moppe {
@@ -76,6 +67,7 @@ namespace moppe {
       const int PROBE_W = 32; // auto-exposure luminance probe
       const int PROBE_H = 16;
       const int MAX_TIMESTAMP_SAMPLES = 64;
+      const std::size_t FRAME_ARENA_CAPACITY = 8 << 20;
 
       double cpu_time () {
         using Clock = std::chrono::steady_clock;
@@ -294,11 +286,27 @@ namespace moppe {
       struct MetalTexture : public Texture {
         id<MTLTexture> texture = nil;
         id<MTLSamplerState> sampler = nil;
+        id<MTLResidencySet> residency = nil;
+
+        ~MetalTexture () override {
+          if (texture && residency) {
+            [residency removeAllocation:texture];
+            [residency commit];
+          }
+        }
       };
 
       struct MetalMesh : public Mesh {
         id<MTLBuffer> vertices = nil;
         std::vector<DrawList::Run> runs;
+        id<MTLResidencySet> residency = nil;
+
+        ~MetalMesh () override {
+          if (vertices && residency) {
+            [residency removeAllocation:vertices];
+            [residency commit];
+          }
+        }
       };
 
       // The private Metal backend keeps long-lived GPU state in concrete
@@ -330,6 +338,7 @@ namespace moppe {
         id<MTLDepthStencilState> river_depth = nil;
         id<MTLSamplerState> sampler_repeat = nil;
         id<MTLSamplerState> sampler_clamp = nil;
+        id<MTLTexture> shadow_fallback = nil;
         TexturePtr white;
       };
 
@@ -402,15 +411,21 @@ namespace moppe {
         int width = 0, height = 0;
       };
 
+      using MetalFrameArena = metal4::FrameArena;
+      using MetalArgumentTables = metal4::ArgumentTables;
+
       struct MetalFrameEncoding {
         // A single scene encoder is shared by terrain, water, and scene
         // passes.  The stream is likewise shared by world DrawLists and HUD.
-        dispatch_semaphore_t inflight;
         int slot = 0;
-        id<MTLBuffer> stream[FRAMES_IN_FLIGHT] {};
-        size_t stream_used = 0;
-        id<MTLCommandBuffer> command_buffer = nil;
-        id<MTLRenderCommandEncoder> scene_encoder = nil;
+        uint64_t sequence = 0;
+        MetalFrameArena arena[FRAMES_IN_FLIGHT];
+        MetalArgumentTables arguments;
+        MTLGPUAddress frame_uniforms = 0;
+        id<MTL4CommandBuffer> command_buffer = nil;
+        id<MTL4CommandAllocator> command_allocators[FRAMES_IN_FLIGHT] {};
+        id<MTLSharedEvent> completion_event = nil;
+        id<MTL4RenderCommandEncoder> scene_encoder = nil;
         id<CAMetalDrawable> drawable = nil;
         id<CAMetalDrawable> pending_drawable = nil;
         id<MTLTexture> current_scene = nil;
@@ -425,16 +440,13 @@ namespace moppe {
         // Timestamp state stays whole-frame so pass labels retain their
         // benchmark meaning even though their encoder ownership is split.
         bool profile_this_frame = false;
-        id<MTLCounterSampleBuffer> timestamp_samples[FRAMES_IN_FLIGHT] {};
-        id<MTLBuffer> timestamp_results[FRAMES_IN_FLIGHT] {};
-        std::vector<GpuPass> sample_passes;
+        id<MTL4CounterHeap> timestamp_heaps[FRAMES_IN_FLIGHT] {};
+        // One label for each interval between adjacent timestamp samples.
+        // A pass transition in a shared encoder closes the former interval;
+        // an encoder end closes the final one.
+        std::vector<GpuPass> sample_intervals;
         int timestamp_count = 0;
         GpuPass current_gpu_pass = GpuPass::Count;
-        bool draw_boundary_timestamps = false;
-        bool stage_boundary_timestamps = false;
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-        TracyMetalCtx* tracy_metal = nullptr;
-#endif
 
 #if !TARGET_OS_IPHONE
         bool capture_active = false;
@@ -444,86 +456,88 @@ namespace moppe {
 #endif
       };
 
+      void bind_address (MetalFrameEncoding& frame,
+                         MTLRenderStages stage,
+                         NSUInteger index,
+                         MTLGPUAddress address) {
+        metal4::bind_address (frame.arguments, stage, index, address);
+      }
+
+      void bind_texture (MetalFrameEncoding& frame,
+                         MTLRenderStages stage,
+                         NSUInteger index,
+                         id<MTLTexture> texture) {
+        metal4::bind_texture (frame.arguments, stage, index, texture);
+      }
+
+      void bind_sampler (MetalFrameEncoding& frame,
+                         MTLRenderStages stage,
+                         NSUInteger index,
+                         id<MTLSamplerState> sampler) {
+        metal4::bind_sampler (frame.arguments, stage, index, sampler);
+      }
+
+      void use_arguments (id<MTL4RenderCommandEncoder> encoder,
+                          MetalFrameEncoding& frame,
+                          MTLRenderStages stages) {
+        metal4::use_arguments (encoder, frame.arguments, stages);
+      }
+
+      using metal4::wait_for_render_or_blit_writes;
+      using metal4::wait_for_render_writes;
+
       void record_gpu_pass_start (MetalFrameEncoding& frame,
-                                  id<MTLRenderCommandEncoder> encoder,
+                                  id<MTL4RenderCommandEncoder> encoder,
                                   GpuPass pass) {
-        if (!frame.draw_boundary_timestamps || !frame.profile_this_frame ||
-            !frame.timestamp_samples[frame.slot] ||
+        if (!frame.profile_this_frame || !frame.timestamp_heaps[frame.slot] ||
             pass == frame.current_gpu_pass ||
             frame.timestamp_count >= MAX_TIMESTAMP_SAMPLES - 1)
           return;
-        [encoder sampleCountersInBuffer:frame.timestamp_samples[frame.slot]
-                          atSampleIndex:frame.timestamp_count
-                            withBarrier:YES];
+        [encoder writeTimestampWithGranularity:MTL4TimestampGranularityRelaxed
+                                    afterStage:MTLRenderStageFragment
+                                      intoHeap:frame.timestamp_heaps[frame.slot]
+                                       atIndex:frame.timestamp_count];
+        if (frame.timestamp_count > 0 &&
+            frame.current_gpu_pass != GpuPass::Count)
+          frame.sample_intervals.push_back (frame.current_gpu_pass);
         ++frame.timestamp_count;
-        frame.sample_passes.push_back (pass);
         frame.current_gpu_pass = pass;
       }
 
       void record_gpu_pass_end (MetalFrameEncoding& frame,
-                                id<MTLRenderCommandEncoder> encoder) {
-        if (!frame.draw_boundary_timestamps || !frame.profile_this_frame ||
-            !frame.timestamp_samples[frame.slot] ||
+                                id<MTL4RenderCommandEncoder> encoder) {
+        if (!frame.profile_this_frame || !frame.timestamp_heaps[frame.slot] ||
             frame.timestamp_count == 0 ||
             frame.timestamp_count >= MAX_TIMESTAMP_SAMPLES)
           return;
-        [encoder sampleCountersInBuffer:frame.timestamp_samples[frame.slot]
-                          atSampleIndex:frame.timestamp_count
-                            withBarrier:YES];
+        [encoder writeTimestampWithGranularity:MTL4TimestampGranularityRelaxed
+                                    afterStage:MTLRenderStageFragment
+                                      intoHeap:frame.timestamp_heaps[frame.slot]
+                                       atIndex:frame.timestamp_count];
+        frame.sample_intervals.push_back (frame.current_gpu_pass);
         ++frame.timestamp_count;
         frame.current_gpu_pass = GpuPass::Count;
       }
 
-      void attach_gpu_pass_timing (MetalFrameEncoding& frame,
-                                   MTLRenderPassDescriptor* descriptor,
-                                   GpuPass pass) {
-        if (!frame.stage_boundary_timestamps || !frame.profile_this_frame ||
-            !frame.timestamp_samples[frame.slot] ||
-            frame.timestamp_count + 2 > MAX_TIMESTAMP_SAMPLES)
-          return;
-        MTLRenderPassSampleBufferAttachmentDescriptor* attachment =
-          descriptor.sampleBufferAttachments[
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-            1
-#else
-            0
-#endif
-        ];
-        attachment.sampleBuffer = frame.timestamp_samples[frame.slot];
-        attachment.startOfVertexSampleIndex = frame.timestamp_count++;
-        attachment.endOfFragmentSampleIndex = frame.timestamp_count++;
-        frame.sample_passes.push_back (pass);
-      }
-
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      TracyMetalCtx* metal_tracy (MetalFrameEncoding& frame) {
-        return frame.tracy_metal;
-      }
-#else
-      [[maybe_unused]] void* metal_tracy (MetalFrameEncoding&) {
-        return nullptr;
-      }
-#endif
-
       struct MetalTerrainPassInputs {
-        id<MTLRenderCommandEncoder> encoder;
+        id<MTL4RenderCommandEncoder> encoder;
         const MetalPipelines& pipelines;
         MetalTerrainResources& terrain;
         const MetalWaterResources& water;
-        const MetalFrameEncoding& frame;
+        MetalFrameEncoding& frame;
       };
 
       struct MetalWaterPassInputs {
-        id<MTLRenderCommandEncoder> encoder;
+        id<MTL4RenderCommandEncoder> encoder;
         const MetalPipelines& pipelines;
         const MetalTerrainResources& terrain;
         const MetalWaterResources& water;
-        const MetalFrameEncoding& frame;
+        MetalFrameEncoding& frame;
       };
 
       struct MetalDrawListInputs {
         id<MTLDevice> device;
-        id<MTLRenderCommandEncoder> encoder;
+        id<MTL4RenderCommandEncoder> encoder;
         const MetalPipelines& pipelines;
         const MetalTerrainResources& terrain;
         MetalFrameEncoding& frame;
@@ -531,7 +545,8 @@ namespace moppe {
 
       struct MetalScenePassInputs {
         id<MTLDevice> device;
-        id<MTLRenderCommandEncoder> encoder;
+        id<MTLResidencySet> residency;
+        id<MTL4RenderCommandEncoder> encoder;
         const MetalPipelines& pipelines;
         const MetalTerrainResources& terrain;
         MetalSceneResources& scene;
@@ -575,12 +590,13 @@ namespace moppe {
                           const std::vector<DrawList::Run>& runs,
                           bool hud);
 
-        static size_t stream_vertices (id<MTLDevice> device,
-                                       MetalFrameEncoding& frame,
-                                       const std::vector<Vertex>& vertices);
-        static void set_run_state (id<MTLRenderCommandEncoder> encoder,
+        static MTLGPUAddress
+        stream_vertices (MetalFrameEncoding& frame,
+                         const std::vector<Vertex>& vertices);
+        static void set_run_state (id<MTL4RenderCommandEncoder> encoder,
                                    const MetalPipelines& pipelines,
                                    const MetalTerrainResources& terrain,
+                                   MetalFrameEncoding& frame,
                                    const DrawState& state,
                                    const Texture* texture,
                                    bool hud);
@@ -618,7 +634,7 @@ namespace moppe {
 
     class MetalRenderer : public Renderer {
     public:
-      MetalRenderer (MTKView* view, const std::string& lib_path);
+      MetalRenderer (CAMetalLayer* layer, const std::string& lib_path);
       ~MetalRenderer () override;
 
       // resources
@@ -662,11 +678,16 @@ namespace moppe {
                       int h,
                       int bytes_per_pixel,
                       bool gen_mips);
+      void make_resident (id<MTLAllocation> allocation);
+      void submit_and_wait (id<MTL4CommandBuffer> command_buffer);
 
       // frame
       bool begin_frame (const FrameParams& params) override;
       void set_next_drawable (id<CAMetalDrawable> drawable) {
         m_frame.pending_drawable = drawable;
+      }
+      void set_edr_headroom (float headroom) {
+        m_frame.edr_headroom = std::max (1.0f, headroom);
       }
       void draw_terrain (const ChunkDraw* chunks, int count) override;
       void draw_sky (const SkyParams& params) override;
@@ -704,12 +725,16 @@ namespace moppe {
                            float megapixel_budget);
       id<MTLTexture> make_target (
         MTLPixelFormat fmt, int w, int h, int samples, bool memoryless);
+      void retire_scene_targets ();
       void upload_texture (id<MTLTexture> tex,
                            const void* pixels,
                            int w,
                            int h,
                            int bytes_per_pixel,
                            bool gen_mips);
+      id<MTLBuffer> create_private_buffer (const void* bytes,
+                                           std::size_t size,
+                                           NSString* label);
       id<MTLRenderPipelineState> make_pipeline (NSString* vs,
                                                 NSString* fs,
                                                 MTLPixelFormat color,
@@ -719,16 +744,15 @@ namespace moppe {
                                                 bool additive = false);
 
       // scene-pass encoding helpers
-      id<MTLRenderCommandEncoder> scene_encoder ();
+      id<MTL4RenderCommandEncoder> scene_encoder ();
       void end_scene_encoder ();
       void update_exposure ();
-      void begin_gpu_pass (id<MTLRenderCommandEncoder> enc, GpuPass pass);
-      void finish_gpu_pass (id<MTLRenderCommandEncoder> enc);
-      void attach_gpu_pass (MTLRenderPassDescriptor* desc, GpuPass pass);
+      void begin_gpu_pass (id<MTL4RenderCommandEncoder> enc, GpuPass pass);
 
-      MTKView* m_view;
+      CAMetalLayer* m_layer;
       id<MTLDevice> m_device;
-      id<MTLCommandQueue> m_queue;
+      id<MTL4CommandQueue> m_queue;
+      id<MTLResidencySet> m_residency;
       id<MTLLibrary> m_library;
 
       MetalPipelines m_pipelines;
@@ -758,29 +782,36 @@ namespace moppe {
 
     // ------------------------------------------------------------------
 
-    MetalRenderer::MetalRenderer (MTKView* view, const std::string& lib_path) {
-      m_view = view;
-      m_device = view.device ? view.device : MTLCreateSystemDefaultDevice ();
-      m_queue = [m_device newCommandQueue];
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      m_frame.tracy_metal = TracyMetalContext (m_device);
-      if (m_frame.tracy_metal)
-        TracyMetalContextName (m_frame.tracy_metal, "Moppe Metal", 11);
-#endif
+    MetalRenderer::MetalRenderer (CAMetalLayer* layer,
+                                  const std::string& lib_path) {
+      m_layer = layer;
+      m_device = layer.device ? layer.device : MTLCreateSystemDefaultDevice ();
+      m_queue = [m_device newMTL4CommandQueue];
+      if (!m_queue)
+        throw std::runtime_error ("Metal 4 is unavailable");
+      m_frame.command_buffer = [m_device newCommandBuffer];
+      m_frame.completion_event = [m_device newSharedEvent];
+      m_frame.completion_event.signaledValue = 0;
+      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i)
+        m_frame.command_allocators[i] = [m_device newCommandAllocator];
+
+      NSError* residency_error = nil;
+      MTLResidencySetDescriptor* residency_desc =
+        [[MTLResidencySetDescriptor alloc] init];
+      residency_desc.initialCapacity = 192;
+      residency_desc.label = @"Moppe renderer resources";
+      m_residency = [m_device newResidencySetWithDescriptor:residency_desc
+                                                      error:&residency_error];
+      if (!m_residency)
+        throw std::runtime_error (
+          std::string ("Could not create Metal 4 residency set: ") +
+          (residency_error ? residency_error.localizedDescription.UTF8String
+                           : "unknown error"));
+      [m_queue addResidencySet:m_residency];
 
       const bool requested_gpu_passes =
         ::getenv ("MOPPE_PROFILE_GPU") != nullptr;
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      // Metal cannot reliably resolve Tracy's descriptor timestamps while a
-      // second profiler samples draw/stage boundaries in the same encoders.
-      // Keep Moppe's whole-command-buffer timing and let Tracy own pass data.
-      m_profile_gpu_passes = false;
-      if (requested_gpu_passes)
-        std::cerr << "moppe: Tracy owns Metal encoder timestamps; "
-                  << "using command-buffer timing for MOPPE_PROFILE_GPU\n";
-#else
       m_profile_gpu_passes = requested_gpu_passes;
-#endif
       m_profile_gpu = requested_gpu_passes ||
                       ::getenv ("MOPPE_PROFILE_GPU_SIMPLE") != nullptr;
       m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
@@ -800,64 +831,22 @@ namespace moppe {
       }
 
       if (m_profile_gpu_passes) {
-        if (@available (macOS 11.0, iOS 14.0, tvOS 14.0, *)) {
-          id<MTLCounterSet> timestamps = nil;
-          for (id<MTLCounterSet> set in m_device.counterSets)
-            if ([set.name isEqualToString:MTLCommonCounterSetTimestamp]) {
-              timestamps = set;
-              break;
-            }
-          m_frame.draw_boundary_timestamps =
-            timestamps &&
-            [m_device
-              supportsCounterSampling:MTLCounterSamplingPointAtDrawBoundary];
-          m_frame.stage_boundary_timestamps =
-            timestamps &&
-            [m_device
-              supportsCounterSampling:MTLCounterSamplingPointAtStageBoundary];
-          if (timestamps && (m_frame.draw_boundary_timestamps ||
-                             m_frame.stage_boundary_timestamps)) {
-            if (!m_frame.draw_boundary_timestamps &&
-                m_frame.stage_boundary_timestamps)
-              std::cerr
-                << "moppe: GPU pass timing uses encoder-stage timestamps; "
-                << "spans may overlap" << std::endl;
-            for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-              MTLCounterSampleBufferDescriptor* desc =
-                [[MTLCounterSampleBufferDescriptor alloc] init];
-              desc.counterSet = timestamps;
-              desc.storageMode = MTLStorageModePrivate;
-              desc.sampleCount = MAX_TIMESTAMP_SAMPLES;
-              desc.label = @"Moppe frame pass timestamps";
-              NSError* error = nil;
-              m_frame.timestamp_samples[i] =
-                [m_device newCounterSampleBufferWithDescriptor:desc
-                                                         error:&error];
-              m_frame.timestamp_results[i] =
-                [m_device newBufferWithLength:MAX_TIMESTAMP_SAMPLES *
-                                              sizeof (MTLCounterResultTimestamp)
-                                      options:MTLResourceStorageModeShared];
-              if (!m_frame.timestamp_samples[i]) {
-                std::cerr << "moppe: GPU pass timestamps unavailable: "
-                          << error.localizedDescription.UTF8String << std::endl;
-                break;
-              }
-            }
-          } else {
-            std::cerr << "moppe: per-pass GPU timestamps unsupported"
-                      << " (timestamp set=" << (timestamps ? "yes" : "no")
-                      << ", draw-boundary="
-                      << ([m_device supportsCounterSampling:
-                                      MTLCounterSamplingPointAtDrawBoundary]
-                            ? "yes"
-                            : "no")
-                      << ", stage-boundary="
-                      << ([m_device supportsCounterSampling:
-                                      MTLCounterSamplingPointAtStageBoundary]
-                            ? "yes"
-                            : "no")
-                      << ")" << std::endl;
-          }
+        std::cerr << "moppe: GPU pass timing uses Metal 4 counter heaps; "
+                     "spans may overlap"
+                  << std::endl;
+        for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+          MTL4CounterHeapDescriptor* desc =
+            [[MTL4CounterHeapDescriptor alloc] init];
+          desc.type = MTL4CounterHeapTypeTimestamp;
+          desc.count = MAX_TIMESTAMP_SAMPLES;
+          NSError* error = nil;
+          m_frame.timestamp_heaps[i] =
+            [m_device newCounterHeapWithDescriptor:desc error:&error];
+          m_frame.timestamp_heaps[i].label = @"Moppe frame pass timestamps";
+          if (!m_frame.timestamp_heaps[i])
+            throw std::runtime_error (
+              std::string ("Metal 4 timestamp heap unavailable: ") +
+              (error ? error.localizedDescription.UTF8String : "unknown"));
         }
       }
 
@@ -869,38 +858,34 @@ namespace moppe {
       }
 #endif
 
-      view.device = m_device;
+      layer.device = m_device;
 #if TARGET_OS_IPHONE
-      view.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+      layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
 #else
-      view.colorPixelFormat = MTLPixelFormatRGBA16Float;
+      layer.pixelFormat = MTLPixelFormatRGBA16Float;
 #endif
-      view.depthStencilPixelFormat = MTLPixelFormatInvalid;
-      view.sampleCount = 1;
 #if !TARGET_OS_IPHONE
       {
         CGColorSpaceRef linear =
           CGColorSpaceCreateWithName (kCGColorSpaceExtendedLinearSRGB);
-        view.colorspace = linear;
+        layer.colorspace = linear;
         CGColorSpaceRelease (linear);
-        CAMetalLayer* layer = (CAMetalLayer*)view.layer;
         layer.wantsExtendedDynamicRangeContent = YES;
         layer.displaySyncEnabled = YES;
+        [m_queue addResidencySet:layer.residencySet];
       }
-      if (view.window)
-        m_frame.scale = (float)view.window.backingScaleFactor;
 #else
-      m_frame.scale = (float)view.contentScaleFactor;
+      [m_queue addResidencySet:layer.residencySet];
 #endif
+      m_frame.scale = std::max (1.0f, (float)layer.contentsScale);
 
 #if TARGET_OS_SIMULATOR
       m_memoryless_ok = false;
 #else
       m_memoryless_ok = [m_device supportsFamily:MTLGPUFamilyApple2];
 #endif
-      if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *))
-        m_pipelines.mesh_shaders_ok =
-          [m_device supportsFamily:MTLGPUFamilyMetal3];
+      m_pipelines.mesh_shaders_ok =
+        [m_device supportsFamily:MTLGPUFamilyMetal3];
 
       // Read before the pipelines bake their raster sample count.  One is a
       // meaningful setting, not a disabled one: it takes the scene pass off
@@ -959,9 +944,55 @@ namespace moppe {
 
       build_pipelines ();
 
-      m_frame.inflight = dispatch_semaphore_create (FRAMES_IN_FLIGHT);
-      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i)
-        m_frame.stream[i] = nil;
+      // Metal 4 validation requires every statically declared argument to be
+      // bound even when a uniform disables its use. A depth-typed fallback
+      // keeps that contract honest for draws made before a world shadow is
+      // published.
+      MTLTextureDescriptor* shadow_fallback_desc = [MTLTextureDescriptor
+        texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth16Unorm
+                                     width:1
+                                    height:1
+                                 mipmapped:NO];
+      shadow_fallback_desc.storageMode = MTLStorageModePrivate;
+      shadow_fallback_desc.usage = MTLTextureUsageShaderRead;
+      m_pipelines.shadow_fallback =
+        [m_device newTextureWithDescriptor:shadow_fallback_desc];
+      m_pipelines.shadow_fallback.label = @"Moppe inert shadow binding";
+      make_resident (m_pipelines.shadow_fallback);
+
+      MTL4ArgumentTableDescriptor* argument_desc =
+        [[MTL4ArgumentTableDescriptor alloc] init];
+      argument_desc.maxBufferBindCount = 4;
+      argument_desc.maxTextureBindCount = 16;
+      argument_desc.maxSamplerStateBindCount = 1;
+      argument_desc.initializeBindings = YES;
+      auto make_arguments = [&] (NSString* label) {
+        argument_desc.label = label;
+        NSError* error = nil;
+        id<MTL4ArgumentTable> table =
+          [m_device newArgumentTableWithDescriptor:argument_desc error:&error];
+        if (!table)
+          throw std::runtime_error (
+            std::string ("Could not create Metal 4 argument table: ") +
+            (error ? error.localizedDescription.UTF8String : "unknown"));
+        return table;
+      };
+      m_frame.arguments.vertex = make_arguments (@"Moppe vertex bindings");
+      m_frame.arguments.fragment = make_arguments (@"Moppe fragment bindings");
+      m_frame.arguments.object = make_arguments (@"Moppe object bindings");
+      m_frame.arguments.mesh = make_arguments (@"Moppe mesh bindings");
+
+      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+        m_frame.arena[i].device = m_device;
+        m_frame.arena[i].residency = m_residency;
+        m_frame.arena[i].buffer =
+          [m_device newBufferWithLength:FRAME_ARENA_CAPACITY
+                                options:MTLResourceStorageModeShared];
+        m_frame.arena[i].buffer.label =
+          [NSString stringWithFormat:@"Moppe frame arena %d", i];
+        [m_residency addAllocation:m_frame.arena[i].buffer];
+      }
+      [m_residency commit];
 
       // 1x1 white fallback texture.
       TextureDesc wd;
@@ -973,15 +1004,9 @@ namespace moppe {
     }
 
     MetalRenderer::~MetalRenderer () {
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      if (m_frame.tracy_metal) {
-        id<MTLCommandBuffer> fence = [m_queue commandBuffer];
-        [fence commit];
-        [fence waitUntilCompleted];
-        TracyMetalCollect (m_frame.tracy_metal);
-        TracyMetalDestroy (m_frame.tracy_metal);
-      }
-#endif
+      if (m_frame.sequence)
+        [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                               timeoutMS:5000];
     }
 
     id<MTLRenderPipelineState>
@@ -1136,112 +1161,106 @@ namespace moppe {
                                             true,
                                             true);
       if (m_pipelines.mesh_shaders_ok) {
-        if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
-          const auto make_dust_mesh = [&] (bool additive) {
-            MTLMeshRenderPipelineDescriptor* p =
-              [[MTLMeshRenderPipelineDescriptor alloc] init];
-            p.meshFunction = [m_library newFunctionWithName:@"dust_mesh"];
-            p.fragmentFunction =
-              [m_library newFunctionWithName:@"dust_fragment"];
-            p.rasterSampleCount = m_msaa_samples;
-            p.colorAttachments[0].pixelFormat = scene;
-            p.colorAttachments[0].blendingEnabled = YES;
-            p.colorAttachments[0].sourceRGBBlendFactor =
-              MTLBlendFactorSourceAlpha;
-            p.colorAttachments[0].destinationRGBBlendFactor =
-              additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
-            p.colorAttachments[0].sourceAlphaBlendFactor =
-              MTLBlendFactorSourceAlpha;
-            p.colorAttachments[0].destinationAlphaBlendFactor =
-              MTLBlendFactorOneMinusSourceAlpha;
-            p.depthAttachmentPixelFormat = depth;
-            p.stencilAttachmentPixelFormat = depth;
-            p.maxTotalThreadsPerMeshThreadgroup = 64;
-            if (!p.meshFunction || !p.fragmentFunction)
-              return (id<MTLRenderPipelineState>)nil;
-            NSError* error = nil;
-            id<MTLRenderPipelineState> result = [m_device
-              newRenderPipelineStateWithMeshDescriptor:p
-                                               options:MTLPipelineOptionNone
-                                            reflection:nil
-                                                 error:&error];
-            if (!result)
-              std::cerr << "moppe: dust mesh pipeline failed: "
-                        << (error ? error.localizedDescription.UTF8String : "?")
-                        << std::endl;
-            return result;
-          };
-          m_pipelines.dust_mesh_soft = make_dust_mesh (false);
-          m_pipelines.dust_mesh_add = make_dust_mesh (true);
-
-          // Lattice water tiles: the near horizontal-water surface on the
-          // terrain's own sample grid, sharing the ocean fragment shader.
-          MTLMeshRenderPipelineDescriptor* w =
+        const auto make_dust_mesh = [&] (bool additive) {
+          MTLMeshRenderPipelineDescriptor* p =
             [[MTLMeshRenderPipelineDescriptor alloc] init];
-          w.objectFunction =
-            [m_library newFunctionWithName:@"water_tile_object"];
-          w.meshFunction = [m_library newFunctionWithName:@"water_tile_mesh"];
-          w.fragmentFunction =
-            [m_library newFunctionWithName:@"ocean_fragment"];
-          w.rasterSampleCount = m_msaa_samples;
-          w.colorAttachments[0].pixelFormat = scene;
-          w.colorAttachments[0].blendingEnabled = YES;
-          w.colorAttachments[0].sourceRGBBlendFactor =
+          p.meshFunction = [m_library newFunctionWithName:@"dust_mesh"];
+          p.fragmentFunction = [m_library newFunctionWithName:@"dust_fragment"];
+          p.rasterSampleCount = m_msaa_samples;
+          p.colorAttachments[0].pixelFormat = scene;
+          p.colorAttachments[0].blendingEnabled = YES;
+          p.colorAttachments[0].sourceRGBBlendFactor =
             MTLBlendFactorSourceAlpha;
-          w.colorAttachments[0].destinationRGBBlendFactor =
-            MTLBlendFactorOneMinusSourceAlpha;
-          w.colorAttachments[0].sourceAlphaBlendFactor =
+          p.colorAttachments[0].destinationRGBBlendFactor =
+            additive ? MTLBlendFactorOne : MTLBlendFactorOneMinusSourceAlpha;
+          p.colorAttachments[0].sourceAlphaBlendFactor =
             MTLBlendFactorSourceAlpha;
-          w.colorAttachments[0].destinationAlphaBlendFactor =
+          p.colorAttachments[0].destinationAlphaBlendFactor =
             MTLBlendFactorOneMinusSourceAlpha;
-          w.depthAttachmentPixelFormat = depth;
-          w.stencilAttachmentPixelFormat = depth;
-          w.payloadMemoryLength = 1024;
-          w.maxTotalThreadsPerObjectThreadgroup = 64;
-          w.maxTotalThreadsPerMeshThreadgroup = 256;
-          if (w.objectFunction && w.meshFunction && w.fragmentFunction) {
-            NSError* error = nil;
-            m_pipelines.water_tiles = [m_device
-              newRenderPipelineStateWithMeshDescriptor:w
-                                               options:MTLPipelineOptionNone
-                                            reflection:nil
-                                                 error:&error];
-            if (!m_pipelines.water_tiles)
-              std::cerr << "moppe: water tile pipeline failed: "
-                        << (error ? error.localizedDescription.UTF8String : "?")
-                        << std::endl;
-          }
+          p.depthAttachmentPixelFormat = depth;
+          p.stencilAttachmentPixelFormat = depth;
+          p.maxTotalThreadsPerMeshThreadgroup = 64;
+          if (!p.meshFunction || !p.fragmentFunction)
+            return (id<MTLRenderPipelineState>)nil;
+          NSError* error = nil;
+          id<MTLRenderPipelineState> result = [m_device
+            newRenderPipelineStateWithMeshDescriptor:p
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!result)
+            std::cerr << "moppe: dust mesh pipeline failed: "
+                      << (error ? error.localizedDescription.UTF8String : "?")
+                      << std::endl;
+          return result;
+        };
+        m_pipelines.dust_mesh_soft = make_dust_mesh (false);
+        m_pipelines.dust_mesh_add = make_dust_mesh (true);
 
-          // Undergrowth: grass and occasional ferns generated per frame from
-          // the world's own fields. Opaque, depth-written, no vertex buffer
-          // at all -- the object stage decides which ground is worth a
-          // threadgroup and the mesh stage grows the shoots.
-          MTLMeshRenderPipelineDescriptor* g =
-            [[MTLMeshRenderPipelineDescriptor alloc] init];
-          g.objectFunction =
-            [m_library newFunctionWithName:@"undergrowth_object"];
-          g.meshFunction = [m_library newFunctionWithName:@"undergrowth_mesh"];
-          g.fragmentFunction =
-            [m_library newFunctionWithName:@"undergrowth_fragment"];
-          g.rasterSampleCount = m_msaa_samples;
-          g.colorAttachments[0].pixelFormat = scene;
-          g.depthAttachmentPixelFormat = depth;
-          g.stencilAttachmentPixelFormat = depth;
-          g.payloadMemoryLength = 1024;
-          g.maxTotalThreadsPerObjectThreadgroup = 64;
-          g.maxTotalThreadsPerMeshThreadgroup = MOPPE_UNDERGROWTH_MESH_THREADS;
-          if (g.objectFunction && g.meshFunction && g.fragmentFunction) {
-            NSError* error = nil;
-            m_pipelines.undergrowth = [m_device
-              newRenderPipelineStateWithMeshDescriptor:g
-                                               options:MTLPipelineOptionNone
-                                            reflection:nil
-                                                 error:&error];
-            if (!m_pipelines.undergrowth)
-              std::cerr << "moppe: undergrowth pipeline failed: "
-                        << (error ? error.localizedDescription.UTF8String : "?")
-                        << std::endl;
-          }
+        // Lattice water tiles: the near horizontal-water surface on the
+        // terrain's own sample grid, sharing the ocean fragment shader.
+        MTLMeshRenderPipelineDescriptor* w =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        w.objectFunction = [m_library newFunctionWithName:@"water_tile_object"];
+        w.meshFunction = [m_library newFunctionWithName:@"water_tile_mesh"];
+        w.fragmentFunction = [m_library newFunctionWithName:@"ocean_fragment"];
+        w.rasterSampleCount = m_msaa_samples;
+        w.colorAttachments[0].pixelFormat = scene;
+        w.colorAttachments[0].blendingEnabled = YES;
+        w.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+        w.colorAttachments[0].destinationRGBBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
+        w.colorAttachments[0].sourceAlphaBlendFactor =
+          MTLBlendFactorSourceAlpha;
+        w.colorAttachments[0].destinationAlphaBlendFactor =
+          MTLBlendFactorOneMinusSourceAlpha;
+        w.depthAttachmentPixelFormat = depth;
+        w.stencilAttachmentPixelFormat = depth;
+        w.payloadMemoryLength = 1024;
+        w.maxTotalThreadsPerObjectThreadgroup = 64;
+        w.maxTotalThreadsPerMeshThreadgroup = 256;
+        if (w.objectFunction && w.meshFunction && w.fragmentFunction) {
+          NSError* error = nil;
+          m_pipelines.water_tiles = [m_device
+            newRenderPipelineStateWithMeshDescriptor:w
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.water_tiles)
+            std::cerr << "moppe: water tile pipeline failed: "
+                      << (error ? error.localizedDescription.UTF8String : "?")
+                      << std::endl;
+        }
+
+        // Undergrowth: grass and occasional ferns generated per frame from
+        // the world's own fields. Opaque, depth-written, no vertex buffer
+        // at all -- the object stage decides which ground is worth a
+        // threadgroup and the mesh stage grows the shoots.
+        MTLMeshRenderPipelineDescriptor* g =
+          [[MTLMeshRenderPipelineDescriptor alloc] init];
+        g.objectFunction =
+          [m_library newFunctionWithName:@"undergrowth_object"];
+        g.meshFunction = [m_library newFunctionWithName:@"undergrowth_mesh"];
+        g.fragmentFunction =
+          [m_library newFunctionWithName:@"undergrowth_fragment"];
+        g.rasterSampleCount = m_msaa_samples;
+        g.colorAttachments[0].pixelFormat = scene;
+        g.depthAttachmentPixelFormat = depth;
+        g.stencilAttachmentPixelFormat = depth;
+        g.payloadMemoryLength = 1024;
+        g.maxTotalThreadsPerObjectThreadgroup = 64;
+        g.maxTotalThreadsPerMeshThreadgroup = MOPPE_UNDERGROWTH_MESH_THREADS;
+        if (g.objectFunction && g.meshFunction && g.fragmentFunction) {
+          NSError* error = nil;
+          m_pipelines.undergrowth = [m_device
+            newRenderPipelineStateWithMeshDescriptor:g
+                                             options:MTLPipelineOptionNone
+                                          reflection:nil
+                                               error:&error];
+          if (!m_pipelines.undergrowth)
+            std::cerr << "moppe: undergrowth pipeline failed: "
+                      << (error ? error.localizedDescription.UTF8String : "?")
+                      << std::endl;
         }
       }
       m_pipelines.river = make_pipeline (
@@ -1315,7 +1334,58 @@ namespace moppe {
         [m_device newBufferWithBytes:pixels
                               length:bytes
                              options:MTLResourceStorageModeShared];
+      make_resident (staging);
       blit_into (tex, staging, w, h, bpp, gen_mips);
+      [m_residency removeAllocation:staging];
+      [m_residency commit];
+    }
+
+    void MetalRenderer::make_resident (id<MTLAllocation> allocation) {
+      if (!allocation)
+        return;
+      [m_residency addAllocation:allocation];
+      [m_residency commit];
+    }
+
+    void MetalRenderer::submit_and_wait (id<MTL4CommandBuffer> command_buffer) {
+      id<MTLSharedEvent> completed = [m_device newSharedEvent];
+      [command_buffer endCommandBuffer];
+      const id<MTL4CommandBuffer> commands[] = { command_buffer };
+      [m_queue commit:commands count:1];
+      [m_queue signalEvent:completed value:1];
+      if (![completed waitUntilSignaledValue:1 timeoutMS:5000])
+        throw std::runtime_error ("Timed out waiting for Metal 4 submission");
+    }
+
+    id<MTLBuffer> MetalRenderer::create_private_buffer (const void* bytes,
+                                                        std::size_t size,
+                                                        NSString* label) {
+      if (!bytes || size == 0)
+        return nil;
+      id<MTLBuffer> staging =
+        [m_device newBufferWithBytes:bytes
+                              length:size
+                             options:MTLResourceStorageModeShared];
+      id<MTLBuffer> buffer =
+        [m_device newBufferWithLength:size
+                              options:MTLResourceStorageModePrivate];
+      buffer.label = label;
+      make_resident (staging);
+      make_resident (buffer);
+      id<MTL4CommandAllocator> allocator = [m_device newCommandAllocator];
+      id<MTL4CommandBuffer> command = [m_device newCommandBuffer];
+      [command beginCommandBufferWithAllocator:allocator];
+      id<MTL4ComputeCommandEncoder> copy = [command computeCommandEncoder];
+      [copy copyFromBuffer:staging
+              sourceOffset:0
+                  toBuffer:buffer
+         destinationOffset:0
+                      size:size];
+      [copy endEncoding];
+      submit_and_wait (command);
+      [m_residency removeAllocation:staging];
+      [m_residency commit];
+      return buffer;
     }
 
     void MetalRenderer::blit_into (id<MTLTexture> tex,
@@ -1325,8 +1395,10 @@ namespace moppe {
                                    int bpp,
                                    bool gen_mips) {
       const size_t bytes = (size_t)w * h * bpp;
-      id<MTLCommandBuffer> cmd = [m_queue commandBuffer];
-      id<MTLBlitCommandEncoder> blit = [cmd blitCommandEncoder];
+      id<MTL4CommandAllocator> allocator = [m_device newCommandAllocator];
+      id<MTL4CommandBuffer> cmd = [m_device newCommandBuffer];
+      [cmd beginCommandBufferWithAllocator:allocator];
+      id<MTL4ComputeCommandEncoder> blit = [cmd computeCommandEncoder];
       [blit copyFromBuffer:staging
                sourceOffset:0
           sourceBytesPerRow:(NSUInteger)w * bpp
@@ -1339,8 +1411,7 @@ namespace moppe {
       if (gen_mips)
         [blit generateMipmapsForTexture:tex];
       [blit endEncoding];
-      [cmd commit];
-      [cmd waitUntilCompleted];
+      submit_and_wait (cmd);
     }
 
     TexturePtr MetalRenderer::create_texture (const TextureDesc& desc,
@@ -1377,6 +1448,8 @@ namespace moppe {
       t->width = desc.width;
       t->height = desc.height;
       t->texture = [m_device newTextureWithDescriptor:td];
+      t->residency = m_residency;
+      make_resident (t->texture);
 
       MTLSamplerDescriptor* sd = [[MTLSamplerDescriptor alloc] init];
       sd.minFilter = desc.filter == TextureFilter::Nearest
@@ -1400,12 +1473,13 @@ namespace moppe {
     MeshPtr MetalRenderer::create_mesh (const DrawList& recorded) {
       MOPPE_PROFILE_ZONE ("MetalRenderer::create_mesh");
       MetalMesh* m = new MetalMesh ();
+      m->residency = m_residency;
       m->runs.assign (recorded.runs ().begin (), recorded.runs ().end ());
       if (!recorded.vertices ().empty ())
-        m->vertices = [m_device
-          newBufferWithBytes:recorded.vertices ().data ()
-                      length:recorded.vertices ().size () * sizeof (Vertex)
-                     options:MTLResourceStorageModeShared];
+        m->vertices =
+          create_private_buffer (recorded.vertices ().data (),
+                                 recorded.vertices ().size () * sizeof (Vertex),
+                                 @"Moppe retained mesh");
       return MeshPtr (m);
     }
 
@@ -1435,6 +1509,7 @@ namespace moppe {
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.heights = [m_device newTextureWithDescriptor:td];
+        make_resident (m_terrain_resources.heights);
       }
       upload_texture (m_terrain_resources.heights,
                       heights.data (),
@@ -1462,6 +1537,7 @@ namespace moppe {
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.normals = [m_device newTextureWithDescriptor:td];
+        make_resident (m_terrain_resources.normals);
       }
       upload_texture (
         m_terrain_resources.normals, packed.data (), w, h, 4, false);
@@ -1469,31 +1545,27 @@ namespace moppe {
       // Shared chunk-local index templates.  The finest inserts one
       // virtual vertex between source samples; progressively coarser
       // levels use source strides 1, 2, 4, and 8.
-      struct Gen {
-        static id<MTLBuffer>
-        make (id<MTLDevice> dev, int vpr, uint32_t& count_out) {
-          std::vector<uint32_t> idx;
-          const int rows = vpr - 1;
-          idx.reserve ((size_t)rows * (vpr * 2 + 1));
-          for (int r = 0; r < rows; ++r) {
-            for (int x = 0; x < vpr; ++x) {
-              idx.push_back ((uint32_t)(r * vpr + x));
-              idx.push_back ((uint32_t)((r + 1) * vpr + x));
-            }
-            idx.push_back (0xFFFFFFFFu); // strip restart
+      for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod) {
+        if (m_terrain_resources.indices[lod])
+          continue;
+        const int vpr = TERRAIN_LOD_VERTS[lod];
+        std::vector<uint32_t> indices;
+        const int rows = vpr - 1;
+        indices.reserve ((size_t)rows * (vpr * 2 + 1));
+        for (int row = 0; row < rows; ++row) {
+          for (int x = 0; x < vpr; ++x) {
+            indices.push_back ((uint32_t)(row * vpr + x));
+            indices.push_back ((uint32_t)((row + 1) * vpr + x));
           }
-          count_out = (uint32_t)idx.size ();
-          return [dev newBufferWithBytes:idx.data ()
-                                  length:idx.size () * 4
-                                 options:MTLResourceStorageModeShared];
+          indices.push_back (0xFFFFFFFFu); // strip restart
         }
-      };
-      for (int lod = 0; lod < TERRAIN_LOD_COUNT; ++lod)
-        if (!m_terrain_resources.indices[lod])
-          m_terrain_resources.indices[lod] =
-            Gen::make (m_device,
-                       TERRAIN_LOD_VERTS[lod],
-                       m_terrain_resources.index_count[lod]);
+        m_terrain_resources.index_count[lod] =
+          static_cast<uint32_t> (indices.size ());
+        m_terrain_resources.indices[lod] = create_private_buffer (
+          indices.data (),
+          indices.size () * sizeof (uint32_t),
+          [NSString stringWithFormat:@"Moppe terrain LOD %d indices", lod]);
+      }
 
       m_terrain_resources.have_terrain = true;
     }
@@ -1529,6 +1601,7 @@ namespace moppe {
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
         m_terrain_resources.overlay = [m_device newTextureWithDescriptor:td];
+        make_resident (m_terrain_resources.overlay);
       }
       upload_texture (m_terrain_resources.overlay,
                       values.data (),
@@ -1562,6 +1635,7 @@ namespace moppe {
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
         m_terrain_resources.shadow_map = [m_device newTextureWithDescriptor:td];
+        make_resident (m_terrain_resources.shadow_map);
       }
 
       // Bias: xy from NDC [-1,1] to uv [0,1], with the Metal
@@ -1573,21 +1647,21 @@ namespace moppe {
       bias.m[13] = 0.5f;
       m_terrain_resources.light_biased = bias * light_view_proj;
 
-      MTLRenderPassDescriptor* rp =
-        [MTLRenderPassDescriptor renderPassDescriptor];
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.depthAttachment.texture = m_terrain_resources.shadow_map;
       rp.depthAttachment.loadAction = MTLLoadActionClear;
       rp.depthAttachment.storeAction = MTLStoreActionStore;
       rp.depthAttachment.clearDepth = 1.0;
 
-      id<MTLCommandBuffer> cmd = [m_queue commandBuffer];
+      id<MTL4CommandAllocator> allocator = [m_device newCommandAllocator];
+      id<MTL4CommandBuffer> cmd = [m_device newCommandBuffer];
+      [cmd beginCommandBufferWithAllocator:allocator];
       // This setup pass runs on the world-generation thread. Tracy 0.13.1's
       // Metal server crashes when a context first receives a GPU zone from
       // that worker and later receives frame zones from the render thread.
       // Keep its existing command-buffer timing until upstream supports this
       // cross-thread pattern reliably.
-      MOPPE_METAL_ZONE_DISABLED (m_frame.tracy_metal, rp, "Terrain shadow");
-      id<MTLRenderCommandEncoder> enc =
+      id<MTL4RenderCommandEncoder> enc =
         [cmd renderCommandEncoderWithDescriptor:rp];
       [enc setRenderPipelineState:m_pipelines.terrain_shadow];
       [enc setDepthStencilState:m_pipelines.shadow_depth];
@@ -1602,9 +1676,6 @@ namespace moppe {
       u.params0.x = m_terrain_resources.params.scale[0];
       u.params0.y = m_terrain_resources.params.scale[1];
       u.params0.z = m_terrain_resources.params.scale[2];
-      [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc setVertexTexture:m_terrain_resources.heights
-                    atIndex:MOPPE_TEX_HEIGHTS];
 
       constexpr int requested_step = 1;
       int shadow_lod = TERRAIN_NATIVE_LOD;
@@ -1613,6 +1684,36 @@ namespace moppe {
         ++shadow_lod;
       const float shadow_step = TERRAIN_LOD_STEP[shadow_lod];
       const int chunks = m_terrain_resources.params.width / CHUNK_CELLS;
+      const NSUInteger draw_count = 9 * chunks * chunks;
+      MetalFrameEncoding scratch;
+      scratch.arena[0].buffer = [m_device
+        newBufferWithLength:sizeof (u) +
+                            draw_count * (sizeof (MoppeChunkUniforms) + 256)
+                    options:MTLResourceStorageModeShared];
+      make_resident (scratch.arena[0].buffer);
+      MTL4ArgumentTableDescriptor* argument_desc =
+        [[MTL4ArgumentTableDescriptor alloc] init];
+      argument_desc.maxBufferBindCount = 4;
+      argument_desc.maxTextureBindCount = 16;
+      argument_desc.initializeBindings = YES;
+      NSError* argument_error = nil;
+      scratch.arguments.vertex =
+        [m_device newArgumentTableWithDescriptor:argument_desc
+                                           error:&argument_error];
+      if (!scratch.arguments.vertex)
+        throw std::runtime_error (
+          std::string ("Could not create shadow argument table: ") +
+          (argument_error ? argument_error.localizedDescription.UTF8String
+                          : "unknown"));
+      bind_address (scratch,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_FRAME,
+                    scratch.arena[0].write (u));
+      bind_texture (scratch,
+                    MTLRenderStageVertex,
+                    MOPPE_TEX_HEIGHTS,
+                    m_terrain_resources.heights);
+      use_arguments (enc, scratch, MTLRenderStageVertex);
       const float period_x =
         m_terrain_resources.params.width * m_terrain_resources.params.scale[0];
       const float period_z =
@@ -1633,24 +1734,27 @@ namespace moppe {
               c.parent_step = shadow_step;
               c.world_offset.x = tile_x * period_x;
               c.world_offset.z = tile_z * period_z;
-              [enc setVertexBytes:&c length:sizeof (c) atIndex:MOPPE_BUF_CHUNK];
+              bind_address (scratch,
+                            MTLRenderStageVertex,
+                            MOPPE_BUF_CHUNK,
+                            scratch.arena[0].write (c));
               [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
                               indexCount:m_terrain_resources
                                            .index_count[shadow_lod]
                                indexType:MTLIndexTypeUInt32
                              indexBuffer:m_terrain_resources.indices[shadow_lod]
-                       indexBufferOffset:0];
+                                           .gpuAddress
+                       indexBufferLength:m_terrain_resources.indices[shadow_lod]
+                                           .length
+                           instanceCount:1];
             }
       [enc endEncoding];
-      [cmd commit];
-      [cmd waitUntilCompleted];
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      TracyMetalCollect (m_frame.tracy_metal);
-#endif
+      submit_and_wait (cmd);
+      [m_residency removeAllocation:scratch.arena[0].buffer];
+      [m_residency commit];
       if (::getenv ("MOPPE_PROFILE_SHADOW")) {
-        const double gpu_ms = 1000.0 * (cmd.GPUEndTime - cmd.GPUStartTime);
         std::cerr << "terrain shadow: " << shadow_size << "px, step "
-                  << shadow_step << ", " << gpu_ms << " ms GPU\n";
+                  << shadow_step << "\n";
       }
       m_terrain_resources.have_shadow = true;
     }
@@ -1695,14 +1799,12 @@ namespace moppe {
       m_water_resources.ocean_level = setup.level;
       m_water_resources.ocean_vcount = (uint32_t)(verts.size () / 3);
       m_water_resources.ocean_icount = (uint32_t)indices.size ();
-      m_water_resources.ocean_verts =
-        [m_device newBufferWithBytes:verts.data ()
-                              length:verts.size () * sizeof (float)
-                             options:MTLResourceStorageModeShared];
+      m_water_resources.ocean_verts = create_private_buffer (
+        verts.data (), verts.size () * sizeof (float), @"Moppe ocean vertices");
       m_water_resources.ocean_indices =
-        [m_device newBufferWithBytes:indices.data ()
-                              length:indices.size () * sizeof (uint32_t)
-                             options:MTLResourceStorageModeShared];
+        create_private_buffer (indices.data (),
+                               indices.size () * sizeof (uint32_t),
+                               @"Moppe ocean indices");
 
       // Physical elevation and wave amplitude write their final RG32F bytes
       // directly into staging storage.
@@ -1748,10 +1850,12 @@ namespace moppe {
         td.storageMode = MTLStorageModePrivate;
         td.usage = MTLTextureUsageShaderRead;
         texture = [m_device newTextureWithDescriptor:td];
+        make_resident (texture);
       }
       id<MTLBuffer> staging =
         [m_device newBufferWithLength:pixels.byte_size ()
                               options:MTLResourceStorageModeShared];
+      make_resident (staging);
       pixels.write_into (static_cast<std::byte*> (staging.contents));
       blit_into (texture,
                  staging,
@@ -1759,6 +1863,8 @@ namespace moppe {
                  height,
                  static_cast<int> (render::bytes_per_pixel (pixels.format ())),
                  false);
+      [m_residency removeAllocation:staging];
+      [m_residency commit];
       return true;
     }
 
@@ -1849,17 +1955,47 @@ namespace moppe {
                  (samples > 1 || tile_only ? 0 : MTLTextureUsageShaderRead);
       td.storageMode =
         tile_only ? MTLStorageModeMemoryless : MTLStorageModePrivate;
-      return [m_device newTextureWithDescriptor:td];
+      id<MTLTexture> texture = [m_device newTextureWithDescriptor:td];
+      // Memoryless attachments exist only in tile memory and cannot belong to
+      // a residency set. Every resource that survives its pass is resident.
+      if (!tile_only)
+        make_resident (texture);
+      return texture;
+    }
+
+    void MetalRenderer::retire_scene_targets () {
+      if (m_frame.sequence &&
+          ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                                  timeoutMS:5000])
+        throw std::runtime_error ("Timed out retiring Metal 4 frame targets");
+      std::vector<id<MTLTexture>> targets;
+      const auto retire = [&] (id<MTLTexture> texture) {
+        if (texture && texture.storageMode != MTLStorageModeMemoryless &&
+            std::find (targets.begin (), targets.end (), texture) ==
+              targets.end ()) {
+          targets.push_back (texture);
+          [m_residency removeAllocation:texture];
+        }
+      };
+      retire (m_targets.msaa_color);
+      retire (m_targets.msaa_depth);
+      retire (m_targets.scene_a);
+      retire (m_targets.scene_b);
+      retire (m_targets.prev_frame);
+      retire (m_targets.bloom_a);
+      retire (m_targets.bloom_b);
+      if (!targets.empty ())
+        [m_residency commit];
     }
 
     void MetalRenderer::ensure_targets (float requested_scale,
                                         float scale_override,
                                         float megapixel_budget) {
-      const int drawable_w = (int)m_view.drawableSize.width;
-      const int drawable_h = (int)m_view.drawableSize.height;
+      const int drawable_w = (int)m_layer.drawableSize.width;
+      const int drawable_h = (int)m_layer.drawableSize.height;
       if (drawable_w == 0 || drawable_h == 0)
         return;
-      const CGSize points = m_view.bounds.size;
+      const CGSize points = m_layer.bounds.size;
       const float backing_scale =
         points.width > 0 ? drawable_w / (float)points.width : 1.0f;
       const float scale = scene_render_scale (backing_scale,
@@ -1872,6 +2008,7 @@ namespace moppe {
       if (w == m_targets.width && h == m_targets.height && m_targets.msaa_color)
         return;
 
+      retire_scene_targets ();
       m_targets.width = w;
       m_targets.height = h;
       m_targets.scene_a =
@@ -1906,6 +2043,8 @@ namespace moppe {
           m_targets.probe_buf[i] =
             [m_device newBufferWithLength:PROBE_W * PROBE_H * 16
                                   options:MTLResourceStorageModeShared];
+        for (id<MTLBuffer> buffer : m_targets.probe_buf)
+          make_resident (buffer);
       }
       // Freshly created: undefined contents until the first blur blit.
       m_targets.prev_valid = false;
@@ -1951,13 +2090,15 @@ namespace moppe {
       if (!m_targets.msaa_color)
         return false;
 
+      const uint64_t next_sequence = m_frame.sequence + 1;
       {
         MOPPE_PROFILE_ZONE ("MetalRenderer::wait_for_inflight_frame");
-        dispatch_semaphore_wait (m_frame.inflight, DISPATCH_TIME_FOREVER);
+        if (next_sequence > FRAMES_IN_FLIGHT &&
+            ![m_frame.completion_event
+              waitUntilSignaledValue:next_sequence - FRAMES_IN_FLIGHT
+                           timeoutMS:1000])
+          throw std::runtime_error ("Timed out waiting for a Metal 4 frame");
       }
-#if defined(TRACY_ENABLE) && !TARGET_OS_IPHONE
-      TracyMetalCollect (m_frame.tracy_metal);
-#endif
       const double inflight_done = cpu_time ();
 
       {
@@ -1966,14 +2107,12 @@ namespace moppe {
           m_frame.drawable = m_frame.pending_drawable;
           m_frame.pending_drawable = nil;
         } else {
-          m_frame.drawable = m_view.currentDrawable;
+          m_frame.drawable = [m_layer nextDrawable];
         }
       }
       const double drawable_done = cpu_time ();
-      if (!m_frame.drawable) {
-        dispatch_semaphore_signal (m_frame.inflight);
+      if (!m_frame.drawable)
         return false;
-      }
       if (m_profile_cpu) {
         m_cpu_frame_start = frame_start;
         m_cpu_encode_start = drawable_done;
@@ -1982,11 +2121,19 @@ namespace moppe {
         m_cpu_drawable_total += drawable_done - inflight_done;
       }
 
-      m_frame.slot = (m_frame.slot + 1) % FRAMES_IN_FLIGHT;
-      m_frame.stream_used = 0;
+      m_frame.sequence = next_sequence;
+      m_frame.slot = static_cast<int> ((next_sequence - 1) % FRAMES_IN_FLIGHT);
+      m_frame.arena[m_frame.slot].reset ();
+      id<MTL4CommandAllocator> allocator =
+        m_frame.command_allocators[m_frame.slot];
+      [allocator reset];
+      [m_frame.command_buffer beginCommandBufferWithAllocator:allocator];
+      if (m_frame.timestamp_heaps[m_frame.slot])
+        [m_frame.timestamp_heaps[m_frame.slot]
+          invalidateCounterRange:NSMakeRange (0, MAX_TIMESTAMP_SAMPLES)];
       m_frame.profile_this_frame = params.profile;
       m_frame.timestamp_count = 0;
-      m_frame.sample_passes.clear ();
+      m_frame.sample_intervals.clear ();
       m_frame.current_gpu_pass = GpuPass::Count;
 
 #if !TARGET_OS_IPHONE
@@ -2014,18 +2161,10 @@ namespace moppe {
       }
 #endif
 
-      const CGSize points = m_view.bounds.size;
-      m_frame.scale = points.width > 0
-                        ? (float)m_view.drawableSize.width / (float)points.width
-                        : 1.0f;
-#if !TARGET_OS_IPHONE
-      if (m_view.window) {
-        NSScreen* screen = m_view.window.screen;
-        if (screen)
-          m_frame.edr_headroom = std::max (
-            1.0f, (float)screen.maximumExtendedDynamicRangeColorComponentValue);
-      }
-#endif
+      const CGSize points = m_layer.bounds.size;
+      m_frame.scale = points.width > 0 ? (float)m_layer.drawableSize.width /
+                                           (float)points.width
+                                       : 1.0f;
       m_frame.width_pts = (int)points.width;
       m_frame.height_pts = (int)points.height;
 
@@ -2055,19 +2194,19 @@ namespace moppe {
 
       update_exposure ();
 
-      m_frame.command_buffer = [m_queue commandBuffer];
+      m_frame.frame_uniforms =
+        m_frame.arena[m_frame.slot].write (m_frame.uniforms);
       m_frame.current_scene = m_targets.scene_a;
       m_frame.scene_encoder = nil;
       m_frame.scene_pass_done = false;
       return true;
     }
 
-    id<MTLRenderCommandEncoder> MetalRenderer::scene_encoder () {
+    id<MTL4RenderCommandEncoder> MetalRenderer::scene_encoder () {
       if (m_frame.scene_encoder)
         return m_frame.scene_encoder;
 
-      MTLRenderPassDescriptor* rp =
-        [MTLRenderPassDescriptor renderPassDescriptor];
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.colorAttachments[0].texture = m_targets.msaa_color;
       rp.colorAttachments[0].loadAction = MTLLoadActionClear;
       if (m_msaa_samples > 1) {
@@ -2089,9 +2228,7 @@ namespace moppe {
       rp.stencilAttachment.loadAction = MTLLoadActionClear;
       rp.stencilAttachment.storeAction = MTLStoreActionDontCare;
       rp.stencilAttachment.clearStencil = 0;
-      attach_gpu_pass (rp, GpuPass::Scene);
 
-      MOPPE_METAL_ZONE (m_frame.tracy_metal, rp, "Scene");
       m_frame.scene_encoder =
         [m_frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       m_frame.scene_encoder.label = @"World scene";
@@ -2099,18 +2236,9 @@ namespace moppe {
       return m_frame.scene_encoder;
     }
 
-    void MetalRenderer::begin_gpu_pass (id<MTLRenderCommandEncoder> enc,
+    void MetalRenderer::begin_gpu_pass (id<MTL4RenderCommandEncoder> enc,
                                         GpuPass pass) {
       record_gpu_pass_start (m_frame, enc, pass);
-    }
-
-    void MetalRenderer::finish_gpu_pass (id<MTLRenderCommandEncoder> enc) {
-      record_gpu_pass_end (m_frame, enc);
-    }
-
-    void MetalRenderer::attach_gpu_pass (MTLRenderPassDescriptor* desc,
-                                         GpuPass pass) {
-      attach_gpu_pass_timing (m_frame, desc, pass);
     }
 
     void MetalRenderer::end_scene_encoder () {
@@ -2133,8 +2261,8 @@ namespace moppe {
       const MetalPipelines& pipelines = inputs.pipelines;
       MetalTerrainResources& terrain = inputs.terrain;
       const MetalWaterResources& water = inputs.water;
-      const MetalFrameEncoding& frame = inputs.frame;
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      MetalFrameEncoding& frame = inputs.frame;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
 
       [enc setRenderPipelineState:pipelines.terrain];
       [enc setDepthStencilState:pipelines.depth[1][1]];
@@ -2186,56 +2314,87 @@ namespace moppe {
           : 0.0f;
       u.params7.z = terrain.params.land_relief;
 
-      [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc setVertexTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
-      [enc setVertexTexture:terrain.normals atIndex:MOPPE_TEX_NORMALS];
+      const MTLGPUAddress uniforms = frame.arena[frame.slot].write (u);
+      bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+      bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+      bind_texture (
+        frame, MTLRenderStageVertex, MOPPE_TEX_HEIGHTS, terrain.heights);
+      bind_texture (
+        frame, MTLRenderStageVertex, MOPPE_TEX_NORMALS, terrain.normals);
 
-      MetalTexture* grass = (MetalTexture*)terrain.grass.get ();
-      MetalTexture* dirt = (MetalTexture*)terrain.dirt.get ();
-      MetalTexture* rock = (MetalTexture*)terrain.rock.get ();
-      MetalTexture* snow = (MetalTexture*)terrain.snow.get ();
-      if (grass) {
-        [enc setFragmentTexture:grass->texture atIndex:MOPPE_TEX_GRASS];
-        [enc setFragmentSamplerState:grass->sampler atIndex:0];
-      }
-      if (dirt)
-        [enc setFragmentTexture:dirt->texture atIndex:MOPPE_TEX_DIRT];
-      if (rock)
-        [enc setFragmentTexture:rock->texture atIndex:MOPPE_TEX_ROCK];
-      if (snow)
-        [enc setFragmentTexture:snow->texture atIndex:MOPPE_TEX_SNOW];
-      if (terrain.shadow_map)
-        [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
-      if (terrain.overlay)
-        [enc setFragmentTexture:terrain.overlay
-                        atIndex:MOPPE_TEX_TERRAIN_OVERLAY];
-      [enc setFragmentTexture:(terrain.have_moisture ? terrain.moisture
-                                                     : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_MOISTURE];
-      [enc setFragmentTexture:(water.have_water_levels ? water.water_levels
-                                                       : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_WATER];
-      [enc setFragmentTexture:(terrain.have_geology ? terrain.geology
-                                                    : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_GEOLOGY];
-      [enc setFragmentTexture:terrain.normals
-                      atIndex:MOPPE_TEX_TERRAIN_NORMALS];
-      [enc setFragmentTexture:(terrain.have_shore ? terrain.shore
-                                                  : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_SHORE];
-      [enc setFragmentTexture:(terrain.have_paths ? terrain.paths
-                                                  : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_PATHS];
-      [enc setFragmentTexture:(terrain.have_forest ? terrain.forest
-                                                   : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_FOREST];
-      [enc setFragmentTexture:(terrain.have_snow_support ? terrain.snow_support
-                                                         : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_SNOW_SUPPORT];
-      [enc setFragmentTexture:(terrain.have_channel_flux ? terrain.channel_flux
-                                                         : terrain.heights)
-                      atIndex:MOPPE_TEX_TERRAIN_CHANNEL_FLUX];
+      MetalTexture* fallback =
+        static_cast<MetalTexture*> (pipelines.white.get ());
+      MetalTexture* grass = static_cast<MetalTexture*> (terrain.grass.get ());
+      MetalTexture* dirt = static_cast<MetalTexture*> (terrain.dirt.get ());
+      MetalTexture* rock = static_cast<MetalTexture*> (terrain.rock.get ());
+      MetalTexture* snow = static_cast<MetalTexture*> (terrain.snow.get ());
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_GRASS,
+                    (grass ? grass : fallback)->texture);
+      bind_sampler (
+        frame, MTLRenderStageFragment, 0, (grass ? grass : fallback)->sampler);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_DIRT,
+                    (dirt ? dirt : fallback)->texture);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_ROCK,
+                    (rock ? rock : fallback)->texture);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SNOW,
+                    (snow ? snow : fallback)->texture);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : pipelines.shadow_fallback);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_OVERLAY,
+                    terrain.overlay ? terrain.overlay : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_MOISTURE,
+                    terrain.have_moisture ? terrain.moisture : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_WATER,
+                    water.have_water_levels ? water.water_levels
+                                            : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_GEOLOGY,
+                    terrain.have_geology ? terrain.geology : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_NORMALS,
+                    terrain.normals);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_SHORE,
+                    terrain.have_shore ? terrain.shore : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_PATHS,
+                    terrain.have_paths ? terrain.paths : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_FOREST,
+                    terrain.have_forest ? terrain.forest : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_SNOW_SUPPORT,
+                    terrain.have_snow_support ? terrain.snow_support
+                                              : terrain.heights);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_TERRAIN_CHANNEL_FLUX,
+                    terrain.have_channel_flux ? terrain.channel_flux
+                                              : terrain.heights);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
 
       for (int i = 0; i < count; ++i) {
         const int lod =
@@ -2252,12 +2411,16 @@ namespace moppe {
                                                     : TERRAIN_LOD_STEP[lod];
         c.world_offset.x = chunks[i].offset_x;
         c.world_offset.z = chunks[i].offset_z;
-        [enc setVertexBytes:&c length:sizeof (c) atIndex:MOPPE_BUF_CHUNK];
+        bind_address (frame,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_CHUNK,
+                      frame.arena[frame.slot].write (c));
         [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangleStrip
                         indexCount:terrain.index_count[lod]
                          indexType:MTLIndexTypeUInt32
-                       indexBuffer:terrain.indices[lod]
-                 indexBufferOffset:0];
+                       indexBuffer:terrain.indices[lod].gpuAddress
+                 indexBufferLength:terrain.indices[lod].length
+                     instanceCount:1];
       }
     }
 
@@ -2265,7 +2428,7 @@ namespace moppe {
       if (!m_pipelines.terrain || !m_terrain_resources.have_terrain ||
           count == 0)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Terrain);
       MetalTerrainPass::draw ({ encoder,
                                 m_pipelines,
@@ -2279,7 +2442,7 @@ namespace moppe {
     void MetalScenePass::draw_sky (const MetalScenePassInputs& inputs,
                                    const SkyParams& params) {
       id<MTLDevice> device = inputs.device;
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       MetalSceneResources& scene = inputs.scene;
       MetalFrameEncoding& frame = inputs.frame;
@@ -2319,6 +2482,8 @@ namespace moppe {
           [device newBufferWithBytes:v.data ()
                               length:v.size () * sizeof (float)
                              options:MTLResourceStorageModeShared];
+        [inputs.residency addAllocation:scene.sky_verts];
+        [inputs.residency commit];
       }
 
       [enc setRenderPipelineState:pipelines.sky];
@@ -2339,9 +2504,14 @@ namespace moppe {
       u.params.y = params.sun_height;
       u.params.z = params.cloudiness;
 
-      [enc setVertexBuffer:scene.sky_verts offset:0 atIndex:MOPPE_BUF_VERTICES];
-      [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+      const MTLGPUAddress uniforms = frame.arena[frame.slot].write (u);
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_VERTICES,
+                    scene.sky_verts.gpuAddress);
+      bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+      bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       [enc drawPrimitives:MTLPrimitiveTypeTriangle
               vertexStart:0
               vertexCount:scene.sky_vcount];
@@ -2350,9 +2520,10 @@ namespace moppe {
     void MetalRenderer::draw_sky (const SkyParams& params) {
       if (!m_pipelines.sky)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Sky);
       MetalScenePass::draw_sky ({ m_device,
+                                  m_residency,
                                   encoder,
                                   m_pipelines,
                                   m_terrain_resources,
@@ -2363,11 +2534,11 @@ namespace moppe {
 
     void MetalWaterPass::draw_ocean (const MetalWaterPassInputs& inputs,
                                      const OceanParams& params) {
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
       const MetalWaterResources& water_resources = inputs.water;
-      const MetalFrameEncoding& frame = inputs.frame;
+      MetalFrameEncoding& frame = inputs.frame;
 
       [enc setRenderPipelineState:pipelines.ocean];
       [enc setDepthStencilState:pipelines.depth[1][1]];
@@ -2400,24 +2571,35 @@ namespace moppe {
         u.shore.y = 1.0f / terrain.params.scale[2];
         u.shore.z = terrain.params.scale[1];
         u.shore.w = (float)terrain.params.width;
-        [enc setFragmentTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
-        [enc setVertexTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
+        bind_texture (
+          frame, MTLRenderStageFragment, MOPPE_TEX_HEIGHTS, terrain.heights);
+        bind_texture (
+          frame, MTLRenderStageVertex, MOPPE_TEX_HEIGHTS, terrain.heights);
       }
       id<MTLTexture> water = water_resources.have_water_levels
                                ? water_resources.water_levels
                                : terrain.heights;
-      [enc setVertexTexture:water atIndex:MOPPE_TEX_WATER_LEVELS];
-      [enc setFragmentTexture:water atIndex:MOPPE_TEX_WATER_LEVELS_FRAGMENT];
+      if (!water)
+        water = static_cast<MetalTexture*> (pipelines.white.get ())->texture;
+      bind_texture (frame, MTLRenderStageVertex, MOPPE_TEX_WATER_LEVELS, water);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_WATER_LEVELS_FRAGMENT, water);
       u.current.x = water_resources.have_water_flow ? 1.0f : 0.0f;
-      [enc setFragmentTexture:water_resources.have_water_flow
-                                ? water_resources.water_flow
-                                : water
-                      atIndex:MOPPE_TEX_WATER_FLOW_FRAGMENT];
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_WATER_FLOW_FRAGMENT,
+                    water_resources.have_water_flow ? water_resources.water_flow
+                                                    : water);
       u.current.y = terrain.have_geology ? 1.0f : 0.0f;
-      [enc setFragmentTexture:terrain.have_geology ? terrain.geology : water
-                      atIndex:MOPPE_TEX_WATER_GEOLOGY_FRAGMENT];
-      if (terrain.shadow_map)
-        [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_WATER_GEOLOGY_FRAGMENT,
+                    terrain.have_geology ? terrain.geology : water);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : pipelines.shadow_fallback);
 
       // Near standing water renders on the terrain lattice through the
       // mesh pipeline; the coarse grid keeps the horizon. Both passes
@@ -2439,44 +2621,51 @@ namespace moppe {
         u.tiles.w = fine_radius;
       }
 
-      [enc setVertexBuffer:water_resources.ocean_verts
-                    offset:0
-                   atIndex:MOPPE_BUF_VERTICES];
-      [enc setVertexBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+      const MTLGPUAddress uniforms = frame.arena[frame.slot].write (u);
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_VERTICES,
+                    water_resources.ocean_verts.gpuAddress);
+      bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+      bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       [enc drawIndexedPrimitives:MTLPrimitiveTypeTriangle
                       indexCount:water_resources.ocean_icount
                        indexType:MTLIndexTypeUInt32
-                     indexBuffer:water_resources.ocean_indices
-               indexBufferOffset:0];
+                     indexBuffer:water_resources.ocean_indices.gpuAddress
+               indexBufferLength:water_resources.ocean_indices.length
+                   instanceCount:1];
 
       if (lattice) {
-        if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
-          MoppeOceanUniforms t = u;
-          t.tiles.w = -fine_radius;
-          [enc setRenderPipelineState:pipelines.water_tiles];
-          [enc setObjectBytes:&t length:sizeof (t) atIndex:MOPPE_BUF_FRAME];
-          [enc setObjectTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
-          [enc setObjectTexture:water_resources.water_levels
-                        atIndex:MOPPE_TEX_WATER_LEVELS];
-          [enc setMeshBytes:&t length:sizeof (t) atIndex:MOPPE_BUF_FRAME];
-          [enc setMeshTexture:terrain.heights atIndex:MOPPE_TEX_HEIGHTS];
-          [enc setMeshTexture:water_resources.water_levels
-                      atIndex:MOPPE_TEX_WATER_LEVELS];
-          [enc setFragmentBytes:&t length:sizeof (t) atIndex:MOPPE_BUF_FRAME];
-          const NSUInteger total =
-            (NSUInteger)tiles_side * (NSUInteger)tiles_side;
-          [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
-            threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
-              threadsPerMeshThreadgroup:MTLSizeMake (256, 1, 1)];
+        MoppeOceanUniforms t = u;
+        t.tiles.w = -fine_radius;
+        const MTLGPUAddress tile_uniforms = frame.arena[frame.slot].write (t);
+        [enc setRenderPipelineState:pipelines.water_tiles];
+        for (MTLRenderStages stage :
+             { MTLRenderStageObject, MTLRenderStageMesh }) {
+          bind_address (frame, stage, MOPPE_BUF_FRAME, tile_uniforms);
+          bind_texture (frame, stage, MOPPE_TEX_HEIGHTS, terrain.heights);
+          bind_texture (
+            frame, stage, MOPPE_TEX_WATER_LEVELS, water_resources.water_levels);
         }
+        bind_address (
+          frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, tile_uniforms);
+        use_arguments (enc,
+                       frame,
+                       MTLRenderStageObject | MTLRenderStageMesh |
+                         MTLRenderStageFragment);
+        const NSUInteger total =
+          (NSUInteger)tiles_side * (NSUInteger)tiles_side;
+        [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
+          threadsPerObjectThreadgroup:MTLSizeMake (64, 1, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake (256, 1, 1)];
       }
     }
 
     void MetalRenderer::draw_ocean (const OceanParams& params) {
       if (!m_pipelines.ocean || !m_water_resources.ocean_verts)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Water);
       MetalWaterPass::draw_ocean ({ encoder,
                                     m_pipelines,
@@ -2489,10 +2678,9 @@ namespace moppe {
     void MetalScenePass::draw_dust (const MetalScenePassInputs& inputs,
                                     std::span<const DustEmission> emissions,
                                     float logical_time) {
-      id<MTLDevice> device = inputs.device;
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
-      const MetalFrameEncoding& frame = inputs.frame;
+      MetalFrameEncoding& frame = inputs.frame;
 
       MoppeDustUniforms uniforms {};
       uniforms.camera_right = f4 (frame.params.cam_right);
@@ -2526,38 +2714,39 @@ namespace moppe {
         id<MTLRenderPipelineState> mesh_pipeline =
           additive ? pipelines.dust_mesh_add : pipelines.dust_mesh_soft;
         if (mesh_pipeline) {
-          if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
-            id<MTLBuffer> buffer = [device
-              newBufferWithBytes:packed.data ()
-                          length:packed.size () * sizeof (MoppeDustEmission)
-                         options:MTLResourceStorageModeShared];
-            [enc setRenderPipelineState:mesh_pipeline];
-            [enc setMeshBuffer:buffer offset:0 atIndex:MOPPE_BUF_VERTICES];
-            [enc setMeshBytes:&frame.uniforms
-                       length:sizeof (frame.uniforms)
-                      atIndex:MOPPE_BUF_FRAME];
-            [enc setMeshBytes:&uniforms
-                       length:sizeof (uniforms)
-                      atIndex:MOPPE_BUF_DRAW];
-            [enc drawMeshThreadgroups:MTLSizeMake (packed.size (), 1, 1)
-              threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
-                threadsPerMeshThreadgroup:MTLSizeMake (64, 1, 1)];
-            continue;
-          }
+          const MTLGPUAddress emissions_address =
+            frame.arena[frame.slot].write (
+              std::span<const MoppeDustEmission> (packed));
+          const MTLGPUAddress dust_uniforms =
+            frame.arena[frame.slot].write (uniforms);
+          [enc setRenderPipelineState:mesh_pipeline];
+          bind_address (
+            frame, MTLRenderStageMesh, MOPPE_BUF_VERTICES, emissions_address);
+          bind_address (
+            frame, MTLRenderStageMesh, MOPPE_BUF_FRAME, frame.frame_uniforms);
+          bind_address (
+            frame, MTLRenderStageMesh, MOPPE_BUF_DRAW, dust_uniforms);
+          use_arguments (enc, frame, MTLRenderStageMesh);
+          [enc drawMeshThreadgroups:MTLSizeMake (packed.size (), 1, 1)
+            threadsPerObjectThreadgroup:MTLSizeMake (1, 1, 1)
+              threadsPerMeshThreadgroup:MTLSizeMake (64, 1, 1)];
+          continue;
         }
 
         [enc setRenderPipelineState:additive ? pipelines.dust_add
                                              : pipelines.dust_soft];
-        [enc setVertexBytes:&frame.uniforms
-                     length:sizeof (frame.uniforms)
-                    atIndex:MOPPE_BUF_FRAME];
-        [enc setVertexBytes:&uniforms
-                     length:sizeof (uniforms)
-                    atIndex:MOPPE_BUF_DRAW];
+        bind_address (
+          frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, frame.frame_uniforms);
+        bind_address (frame,
+                      MTLRenderStageVertex,
+                      MOPPE_BUF_DRAW,
+                      frame.arena[frame.slot].write (uniforms));
         for (const MoppeDustEmission& emission : packed) {
-          [enc setVertexBytes:&emission
-                       length:sizeof (emission)
-                      atIndex:MOPPE_BUF_VERTICES];
+          bind_address (frame,
+                        MTLRenderStageVertex,
+                        MOPPE_BUF_VERTICES,
+                        frame.arena[frame.slot].write (emission));
+          use_arguments (enc, frame, MTLRenderStageVertex);
           [enc
             drawPrimitives:MTLPrimitiveTypeTriangle
                vertexStart:0
@@ -2571,8 +2760,9 @@ namespace moppe {
                                    float logical_time) {
       if (emissions.empty () || !m_pipelines.dust_soft || !m_pipelines.dust_add)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       MetalScenePass::draw_dust ({ m_device,
+                                   m_residency,
                                    encoder,
                                    m_pipelines,
                                    m_terrain_resources,
@@ -2588,7 +2778,7 @@ namespace moppe {
       if (!m_pipelines.undergrowth || !terrain.have_terrain ||
           !terrain.have_forest || !terrain.have_moisture || !terrain.have_paths)
         return;
-      if (@available (macOS 13.0, iOS 16.0, tvOS 16.0, *)) {
+      {
         MoppeUndergrowthUniforms u;
         std::memset (&u, 0, sizeof (u));
         u.view_proj = m_frame.uniforms.view_proj;
@@ -2634,30 +2824,42 @@ namespace moppe {
         u.interaction.z = params.interaction_position[2];
         u.interaction.w = params.interaction_radius;
 
-        id<MTLRenderCommandEncoder> enc = scene_encoder ();
+        id<MTL4RenderCommandEncoder> enc = scene_encoder ();
         begin_gpu_pass (enc, GpuPass::Scene);
         [enc setRenderPipelineState:m_pipelines.undergrowth];
         [enc setDepthStencilState:m_pipelines.depth[1][1]];
         [enc setCullMode:MTLCullModeNone];
-        [enc setObjectBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-        [enc setMeshBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentBytes:&u length:sizeof (u) atIndex:MOPPE_BUF_FRAME];
+        const MTLGPUAddress uniforms = m_frame.arena[m_frame.slot].write (u);
+        for (MTLRenderStages stage : { MTLRenderStageObject,
+                                       MTLRenderStageMesh,
+                                       MTLRenderStageFragment })
+          bind_address (m_frame, stage, MOPPE_BUF_FRAME, uniforms);
         const auto bind = [&] (id<MTLTexture> texture, NSUInteger slot) {
-          [enc setObjectTexture:texture atIndex:slot];
-          [enc setMeshTexture:texture atIndex:slot];
+          bind_texture (m_frame, MTLRenderStageObject, slot, texture);
+          bind_texture (m_frame, MTLRenderStageMesh, slot, texture);
         };
         bind (terrain.heights, MOPPE_TEX_HEIGHTS);
         bind (terrain.normals, MOPPE_TEX_TERRAIN_NORMALS);
-        bind (terrain.forest, MOPPE_TEX_TERRAIN_FOREST);
-        bind (terrain.moisture, MOPPE_TEX_TERRAIN_MOISTURE);
-        bind (terrain.paths, MOPPE_TEX_TERRAIN_PATHS);
+        bind (terrain.forest ? terrain.forest : terrain.heights,
+              MOPPE_TEX_TERRAIN_FOREST);
+        bind (terrain.moisture ? terrain.moisture : terrain.heights,
+              MOPPE_TEX_TERRAIN_MOISTURE);
+        bind (terrain.paths ? terrain.paths : terrain.heights,
+              MOPPE_TEX_TERRAIN_PATHS);
         bind (terrain.have_snow_support ? terrain.snow_support
                                         : terrain.heights,
               MOPPE_TEX_TERRAIN_SNOW_SUPPORT);
         bind (water.have_water_levels ? water.water_levels : terrain.heights,
               MOPPE_TEX_TERRAIN_WATER);
-        if (terrain.shadow_map)
-          [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
+        bind_texture (m_frame,
+                      MTLRenderStageFragment,
+                      MOPPE_TEX_SHADOW,
+                      terrain.shadow_map ? terrain.shadow_map
+                                         : m_pipelines.shadow_fallback);
+        use_arguments (enc,
+                       m_frame,
+                       MTLRenderStageObject | MTLRenderStageMesh |
+                         MTLRenderStageFragment);
         const NSUInteger total =
           (NSUInteger)tiles_side * (NSUInteger)tiles_side;
         [enc drawMeshThreadgroups:MTLSizeMake ((total + 63) / 64, 1, 1)
@@ -2669,40 +2871,17 @@ namespace moppe {
 
     // -- draw lists ----------------------------------------------------
 
-    size_t
-    MetalDrawListEncoder::stream_vertices (id<MTLDevice> device,
-                                           MetalFrameEncoding& frame,
+    MTLGPUAddress
+    MetalDrawListEncoder::stream_vertices (MetalFrameEncoding& frame,
                                            const std::vector<Vertex>& verts) {
-      const size_t bytes = verts.size () * sizeof (Vertex);
-      const size_t offset = frame.stream_used;
-      const size_t needed = offset + bytes;
-
-      id<MTLBuffer> buf = frame.stream[frame.slot];
-      if (!buf || buf.length < needed) {
-        // Native-resolution HUD text plus transient world-space effects can
-        // legitimately exceed 1 MiB. Avoid replacing the shared
-        // per-frame buffer between the scene and HUD encoders in the common
-        // case; growth remains available for genuinely larger frames.
-        size_t cap = buf ? buf.length : (4 << 20);
-        while (cap < needed)
-          cap *= 2;
-        // Old buffer stays retained by prior encoder commands.
-        buf = [device newBufferWithLength:cap
-                                  options:MTLResourceStorageModeShared];
-        if (offset > 0 && frame.stream[frame.slot])
-          std::memcpy (buf.contents, frame.stream[frame.slot].contents, offset);
-        frame.stream[frame.slot] = buf;
-      }
-
-      std::memcpy ((uint8_t*)buf.contents + offset, verts.data (), bytes);
-      frame.stream_used = needed;
-      return offset;
+      return frame.arena[frame.slot].write (std::span<const Vertex> (verts));
     }
 
     void
-    MetalDrawListEncoder::set_run_state (id<MTLRenderCommandEncoder> enc,
+    MetalDrawListEncoder::set_run_state (id<MTL4RenderCommandEncoder> enc,
                                          const MetalPipelines& pipelines,
                                          const MetalTerrainResources& terrain,
+                                         MetalFrameEncoding& frame,
                                          const DrawState& s,
                                          const Texture* tex,
                                          bool hud) {
@@ -2721,32 +2900,44 @@ namespace moppe {
       const MetalTexture* mt = (const MetalTexture*)tex;
       if (!mt)
         mt = (const MetalTexture*)pipelines.white.get ();
-      [enc setFragmentTexture:mt->texture atIndex:MOPPE_TEX_COLOR];
-      if (!hud && terrain.shadow_map)
-        [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
-      [enc setFragmentSamplerState:mt->sampler atIndex:0];
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_COLOR, mt->texture);
+      if (!hud)
+        bind_texture (frame,
+                      MTLRenderStageFragment,
+                      MOPPE_TEX_SHADOW,
+                      terrain.shadow_map ? terrain.shadow_map
+                                         : pipelines.shadow_fallback);
+      bind_sampler (frame, MTLRenderStageFragment, 0, mt->sampler);
+      use_arguments (enc, frame, MTLRenderStageFragment);
     }
 
     void MetalDrawListEncoder::play (const MetalDrawListInputs& inputs,
                                      const std::vector<Vertex>& verts,
                                      const std::vector<DrawList::Run>& runs,
                                      bool hud) {
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       MetalFrameEncoding& frame = inputs.frame;
 
       if (verts.empty ())
         return;
-      const size_t base = stream_vertices (inputs.device, frame, verts);
-      [enc setVertexBuffer:frame.stream[frame.slot]
-                    offset:base
-                   atIndex:MOPPE_BUF_VERTICES];
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_VERTICES,
+                    stream_vertices (frame, verts));
+      use_arguments (enc, frame, MTLRenderStageVertex);
 
       for (size_t i = 0; i < runs.size (); ++i) {
         const DrawList::Run& r = runs[i];
         if (r.count == 0)
           continue;
-        set_run_state (
-          enc, inputs.pipelines, inputs.terrain, r.state, r.texture, hud);
+        set_run_state (enc,
+                       inputs.pipelines,
+                       inputs.terrain,
+                       frame,
+                       r.state,
+                       r.texture,
+                       hud);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:r.first
                 vertexCount:r.count];
@@ -2756,7 +2947,7 @@ namespace moppe {
     void MetalScenePass::draw_list (const MetalScenePassInputs& inputs,
                                     const DrawList& list) {
       id<MTLDevice> device = inputs.device;
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
       MetalFrameEncoding& frame = inputs.frame;
@@ -2767,13 +2958,14 @@ namespace moppe {
       du.nrm0.x = 1;
       du.nrm1.y = 1;
       du.nrm2.z = 1;
-      [enc setVertexBytes:&du length:sizeof (du) atIndex:MOPPE_BUF_DRAW];
-      [enc setVertexBytes:&frame.uniforms
-                   length:sizeof (frame.uniforms)
-                  atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&frame.uniforms
-                     length:sizeof (frame.uniforms)
-                    atIndex:MOPPE_BUF_FRAME];
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_DRAW,
+                    frame.arena[frame.slot].write (du));
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, frame.frame_uniforms);
+      bind_address (
+        frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, frame.frame_uniforms);
 
       MetalDrawListEncoder::play ({ device, enc, pipelines, terrain, frame },
                                   list.vertices (),
@@ -2784,9 +2976,10 @@ namespace moppe {
     void MetalRenderer::draw_list (const DrawList& list) {
       if (list.empty ())
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Scene);
       MetalScenePass::draw_list ({ m_device,
+                                   m_residency,
                                    encoder,
                                    m_pipelines,
                                    m_terrain_resources,
@@ -2798,10 +2991,10 @@ namespace moppe {
     void MetalScenePass::draw_mesh (const MetalScenePassInputs& inputs,
                                     const Mesh& mesh,
                                     const Mat4& model) {
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
-      const MetalFrameEncoding& frame = inputs.frame;
+      MetalFrameEncoding& frame = inputs.frame;
       const MetalMesh& m = (const MetalMesh&)mesh;
 
       MoppeDrawUniforms du;
@@ -2811,21 +3004,23 @@ namespace moppe {
       du.nrm0 = f4 (nm.c0);
       du.nrm1 = f4 (nm.c1);
       du.nrm2 = f4 (nm.c2);
-      [enc setVertexBytes:&du length:sizeof (du) atIndex:MOPPE_BUF_DRAW];
-      [enc setVertexBytes:&frame.uniforms
-                   length:sizeof (frame.uniforms)
-                  atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&frame.uniforms
-                     length:sizeof (frame.uniforms)
-                    atIndex:MOPPE_BUF_FRAME];
-
-      [enc setVertexBuffer:m.vertices offset:0 atIndex:MOPPE_BUF_VERTICES];
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_DRAW,
+                    frame.arena[frame.slot].write (du));
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, frame.frame_uniforms);
+      bind_address (
+        frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, frame.frame_uniforms);
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_VERTICES, m.vertices.gpuAddress);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       for (size_t i = 0; i < m.runs.size (); ++i) {
         const DrawList::Run& r = m.runs[i];
         if (r.count == 0)
           continue;
         MetalDrawListEncoder::set_run_state (
-          enc, pipelines, terrain, r.state, r.texture, false);
+          enc, pipelines, terrain, frame, r.state, r.texture, false);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:r.first
                 vertexCount:r.count];
@@ -2836,9 +3031,10 @@ namespace moppe {
       const MetalMesh& metal_mesh = (const MetalMesh&)mesh;
       if (!metal_mesh.vertices)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Scene);
       MetalScenePass::draw_mesh ({ m_device,
+                                   m_residency,
                                    encoder,
                                    m_pipelines,
                                    m_terrain_resources,
@@ -2851,10 +3047,10 @@ namespace moppe {
     void MetalWaterPass::draw_waterfalls (const MetalWaterPassInputs& inputs,
                                           const Mesh& mesh,
                                           const Mat4& model) {
-      id<MTLRenderCommandEncoder> enc = inputs.encoder;
+      id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
-      const MetalFrameEncoding& frame = inputs.frame;
+      MetalFrameEncoding& frame = inputs.frame;
       const MetalMesh& m = (const MetalMesh&)mesh;
 
       [enc setRenderPipelineState:pipelines.river];
@@ -2869,16 +3065,22 @@ namespace moppe {
       du.nrm0 = f4 (nm.c0);
       du.nrm1 = f4 (nm.c1);
       du.nrm2 = f4 (nm.c2);
-      [enc setVertexBytes:&du length:sizeof (du) atIndex:MOPPE_BUF_DRAW];
-      [enc setVertexBytes:&frame.uniforms
-                   length:sizeof (frame.uniforms)
-                  atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&frame.uniforms
-                     length:sizeof (frame.uniforms)
-                    atIndex:MOPPE_BUF_FRAME];
-      if (terrain.shadow_map)
-        [enc setFragmentTexture:terrain.shadow_map atIndex:MOPPE_TEX_SHADOW];
-      [enc setVertexBuffer:m.vertices offset:0 atIndex:MOPPE_BUF_VERTICES];
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_DRAW,
+                    frame.arena[frame.slot].write (du));
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, frame.frame_uniforms);
+      bind_address (
+        frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, frame.frame_uniforms);
+      bind_texture (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_TEX_SHADOW,
+                    terrain.shadow_map ? terrain.shadow_map
+                                       : pipelines.shadow_fallback);
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_VERTICES, m.vertices.gpuAddress);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       for (const DrawList::Run& run : m.runs)
         if (run.count > 0)
           [enc drawPrimitives:MTLPrimitiveTypeTriangle
@@ -2890,7 +3092,7 @@ namespace moppe {
       const MetalMesh& metal_mesh = (const MetalMesh&)mesh;
       if (!m_pipelines.river || !metal_mesh.vertices)
         return;
-      id<MTLRenderCommandEncoder> encoder = scene_encoder ();
+      id<MTL4RenderCommandEncoder> encoder = scene_encoder ();
       begin_gpu_pass (encoder, GpuPass::Water);
       MetalWaterPass::draw_waterfalls ({ encoder,
                                          m_pipelines,
@@ -2913,17 +3115,15 @@ namespace moppe {
       id<MTLTexture> dst =
         (src == targets.scene_a) ? targets.scene_b : targets.scene_a;
 
-      MTLRenderPassDescriptor* rp =
-        [MTLRenderPassDescriptor renderPassDescriptor];
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.colorAttachments[0].texture = dst;
       rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-      attach_gpu_pass_timing (frame, rp, GpuPass::Post);
 
-      MOPPE_METAL_ZONE (metal_tracy (frame), rp, "Underwater");
-      id<MTLRenderCommandEncoder> enc =
+      id<MTL4RenderCommandEncoder> enc =
         [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Underwater post-process";
+      wait_for_render_or_blit_writes (enc);
       record_gpu_pass_start (frame, enc, GpuPass::Post);
       MoppeQuadUniforms q;
       std::memset (&q, 0, sizeof (q));
@@ -2931,9 +3131,11 @@ namespace moppe {
       q.params.x = 1; // no zoom
       q.params.y = time;
       [enc setRenderPipelineState:pipelines.underwater];
-      [enc setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-      [enc setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
+      const MTLGPUAddress uniforms = frame.arena[frame.slot].write (q);
+      bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+      bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+      bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
       [enc endEncoding];
 
@@ -2960,8 +3162,9 @@ namespace moppe {
       // (re)created prev texture holds undefined memory: skip the
       // ghosts and just prime it (the old build's m_blur_valid).
       if (!targets.prev_valid) {
-        id<MTLBlitCommandEncoder> prime =
-          [frame.command_buffer blitCommandEncoder];
+        id<MTL4ComputeCommandEncoder> prime =
+          [frame.command_buffer computeCommandEncoder];
+        wait_for_render_writes (prime);
         [prime copyFromTexture:frame.current_scene
                      toTexture:targets.prev_frame];
         [prime endEncoding];
@@ -2969,17 +3172,15 @@ namespace moppe {
         return;
       }
 
-      MTLRenderPassDescriptor* rp =
-        [MTLRenderPassDescriptor renderPassDescriptor];
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.colorAttachments[0].texture = frame.current_scene;
       rp.colorAttachments[0].loadAction = MTLLoadActionLoad;
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-      attach_gpu_pass_timing (frame, rp, GpuPass::Post);
 
-      MOPPE_METAL_ZONE (metal_tracy (frame), rp, "Motion blur");
-      id<MTLRenderCommandEncoder> enc =
+      id<MTL4RenderCommandEncoder> enc =
         [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Motion blur";
+      wait_for_render_or_blit_writes (enc);
       record_gpu_pass_start (frame, enc, GpuPass::Post);
       [enc setRenderPipelineState:pipelines.ghost];
       for (int i = 1; i <= 3; ++i) {
@@ -2989,17 +3190,22 @@ namespace moppe {
         q.tint.x = q.tint.y = q.tint.z = 1;
         q.tint.w = alpha;
         q.params.x = 1.0f + 0.012f * i * strength;
-        [enc setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentTexture:targets.prev_frame atIndex:MOPPE_TEX_SCENE];
+        const MTLGPUAddress uniforms = frame.arena[frame.slot].write (q);
+        bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+        bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+        bind_texture (
+          frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, targets.prev_frame);
+        use_arguments (
+          enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:3];
       }
       [enc endEncoding];
 
-      id<MTLBlitCommandEncoder> blit =
-        [frame.command_buffer blitCommandEncoder];
+      id<MTL4ComputeCommandEncoder> blit =
+        [frame.command_buffer computeCommandEncoder];
+      wait_for_render_writes (blit);
       [blit copyFromTexture:frame.current_scene toTexture:targets.prev_frame];
       [blit endEncoding];
     }
@@ -3022,21 +3228,22 @@ namespace moppe {
                                   id<MTLTexture> src,
                                   id<MTLTexture> dst,
                                   const MoppeQuadUniforms& q) {
-        MTLRenderPassDescriptor* rp =
-          [MTLRenderPassDescriptor renderPassDescriptor];
+        MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
         rp.colorAttachments[0].texture = dst;
         rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
         rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-        attach_gpu_pass_timing (frame, rp, GpuPass::Post);
-        MOPPE_METAL_ZONE (metal_tracy (frame), rp, "Loading blur");
-        id<MTLRenderCommandEncoder> enc =
+        id<MTL4RenderCommandEncoder> enc =
           [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
         enc.label = label;
+        wait_for_render_or_blit_writes (enc);
         record_gpu_pass_start (frame, enc, GpuPass::Post);
         [enc setRenderPipelineState:pipeline];
-        [enc setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
+        const MTLGPUAddress uniforms = frame.arena[frame.slot].write (q);
+        bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+        bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+        bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+        use_arguments (
+          enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:3];
@@ -3095,62 +3302,37 @@ namespace moppe {
       MetalFrameTargets& targets = inputs.targets;
       MetalFrameEncoding& frame = inputs.frame;
 
-      enum class QuadZone {
-        BloomBright,
-        BloomHorizontal,
-        BloomVertical,
-        Exposure
-      };
       // One fullscreen pass into `dst` reading `src`.
-      auto quad_pass = [&] (QuadZone zone,
-                            GpuPass pass,
+      auto quad_pass = [&] (GpuPass pass,
                             NSString* label,
                             id<MTLRenderPipelineState> pso,
                             id<MTLTexture> src,
                             id<MTLTexture> dst,
                             const MoppeQuadUniforms& q) {
-        MTLRenderPassDescriptor* p =
-          [MTLRenderPassDescriptor renderPassDescriptor];
+        MTL4RenderPassDescriptor* p = [[MTL4RenderPassDescriptor alloc] init];
         p.colorAttachments[0].texture = dst;
         p.colorAttachments[0].loadAction = MTLLoadActionDontCare;
         p.colorAttachments[0].storeAction = MTLStoreActionStore;
-        attach_gpu_pass_timing (frame, p, pass);
         const auto encode = [&] {
-          id<MTLRenderCommandEncoder> e =
+          id<MTL4RenderCommandEncoder> e =
             [frame.command_buffer renderCommandEncoderWithDescriptor:p];
           e.label = label;
+          wait_for_render_or_blit_writes (e);
           record_gpu_pass_start (frame, e, pass);
           [e setRenderPipelineState:pso];
-          [e setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-          [e setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-          [e setFragmentTexture:src atIndex:MOPPE_TEX_SCENE];
+          const MTLGPUAddress uniforms = frame.arena[frame.slot].write (q);
+          bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+          bind_address (
+            frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+          bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+          use_arguments (
+            e, frame, MTLRenderStageVertex | MTLRenderStageFragment);
           [e drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:3];
           [e endEncoding];
         };
-        switch (zone) {
-        case QuadZone::BloomBright: {
-          MOPPE_METAL_ZONE (metal_tracy (frame), p, "Bloom bright pass");
-          encode ();
-          break;
-        }
-        case QuadZone::BloomHorizontal: {
-          MOPPE_METAL_ZONE (metal_tracy (frame), p, "Bloom horizontal blur");
-          encode ();
-          break;
-        }
-        case QuadZone::BloomVertical: {
-          MOPPE_METAL_ZONE (metal_tracy (frame), p, "Bloom vertical blur");
-          encode ();
-          break;
-        }
-        case QuadZone::Exposure: {
-          MOPPE_METAL_ZONE (metal_tracy (frame), p, "Exposure probe");
-          encode ();
-          break;
-        }
-        }
+        encode ();
       };
 
       // Bloom: bright-pass into quarter res, then a separable blur
@@ -3164,8 +3346,7 @@ namespace moppe {
         q.tint.x = q.tint.y = q.tint.z = 1;
         q.tint.w = targets.exposure * frame.params.exposure_bias;
         q.params.x = 1;
-        quad_pass (QuadZone::BloomBright,
-                   GpuPass::Bloom,
+        quad_pass (GpuPass::Bloom,
                    @"Bloom bright pass",
                    pipelines.bloom_bright,
                    frame.current_scene,
@@ -3174,8 +3355,7 @@ namespace moppe {
 
         q.params.z = 1.0f / (float)targets.bloom_a.width;
         q.params.w = 0;
-        quad_pass (QuadZone::BloomHorizontal,
-                   GpuPass::Bloom,
+        quad_pass (GpuPass::Bloom,
                    @"Bloom horizontal blur",
                    pipelines.bloom_blur,
                    targets.bloom_a,
@@ -3183,8 +3363,7 @@ namespace moppe {
                    q);
         q.params.z = 0;
         q.params.w = 1.0f / (float)targets.bloom_a.height;
-        quad_pass (QuadZone::BloomVertical,
-                   GpuPass::Bloom,
+        quad_pass (GpuPass::Bloom,
                    @"Bloom vertical blur",
                    pipelines.bloom_blur,
                    targets.bloom_b,
@@ -3201,16 +3380,16 @@ namespace moppe {
         std::memset (&q, 0, sizeof (q));
         q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
         q.params.x = 1;
-        quad_pass (QuadZone::Exposure,
-                   GpuPass::Exposure,
+        quad_pass (GpuPass::Exposure,
                    @"Exposure probe",
                    pipelines.probe,
                    frame.current_scene,
                    targets.probe_tex,
                    q);
 
-        id<MTLBlitCommandEncoder> blit =
-          [frame.command_buffer blitCommandEncoder];
+        id<MTL4ComputeCommandEncoder> blit =
+          [frame.command_buffer computeCommandEncoder];
+        wait_for_render_writes (blit);
         [blit copyFromTexture:targets.probe_tex
                        sourceSlice:0
                        sourceLevel:0
@@ -3223,17 +3402,15 @@ namespace moppe {
         [blit endEncoding];
       }
 
-      MTLRenderPassDescriptor* rp =
-        [MTLRenderPassDescriptor renderPassDescriptor];
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.colorAttachments[0].texture = frame.drawable.texture;
       rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
-      attach_gpu_pass_timing (frame, rp, GpuPass::Present);
 
-      MOPPE_METAL_ZONE (metal_tracy (frame), rp, "Present and HUD");
-      id<MTLRenderCommandEncoder> enc =
+      id<MTL4RenderCommandEncoder> enc =
         [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Present and HUD";
+      wait_for_render_or_blit_writes (enc);
       record_gpu_pass_start (frame, enc, GpuPass::Present);
 
       // Scene quad with the tonemap, grade, bloom, and lens flare.
@@ -3279,11 +3456,16 @@ namespace moppe {
         }
 
         [enc setRenderPipelineState:pipelines.present];
-        [enc setVertexBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentBytes:&q length:sizeof (q) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentTexture:frame.current_scene atIndex:MOPPE_TEX_SCENE];
+        const MTLGPUAddress uniforms = frame.arena[frame.slot].write (q);
+        bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+        bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
+        bind_texture (
+          frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, frame.current_scene);
         if (bloom_ok)
-          [enc setFragmentTexture:targets.bloom_a atIndex:MOPPE_TEX_BLOOM];
+          bind_texture (
+            frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, targets.bloom_a);
+        use_arguments (
+          enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:3];
@@ -3298,8 +3480,9 @@ namespace moppe {
 #if !TARGET_OS_IPHONE
         hu.params.x = 1;
 #endif
-        [enc setVertexBytes:&hu length:sizeof (hu) atIndex:MOPPE_BUF_FRAME];
-        [enc setFragmentBytes:&hu length:sizeof (hu) atIndex:MOPPE_BUF_FRAME];
+        const MTLGPUAddress uniforms = frame.arena[frame.slot].write (hu);
+        bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
+        bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
         MetalDrawListEncoder::play ({ device, enc, pipelines, terrain, frame },
                                     list.vertices (),
                                     list.runs (),
@@ -3343,8 +3526,10 @@ namespace moppe {
         capture =
           [m_device newBufferWithLength:capture_row_bytes * capture_height
                                 options:MTLResourceStorageModeShared];
-        id<MTLBlitCommandEncoder> blit =
-          [m_frame.command_buffer blitCommandEncoder];
+        make_resident (capture);
+        id<MTL4ComputeCommandEncoder> blit =
+          [m_frame.command_buffer computeCommandEncoder];
+        wait_for_render_writes (blit);
         [blit copyFromTexture:m_frame.drawable.texture
                        sourceSlice:0
                        sourceLevel:0
@@ -3359,29 +3544,10 @@ namespace moppe {
       }
 #endif
 
-      if (m_frame.drawable
-#if !TARGET_OS_IPHONE
-          && capture_path.empty ()
-#endif
-      )
-        [m_frame.command_buffer presentDrawable:m_frame.drawable];
-
-      id<MTLBuffer> timestamp_results = nil;
       const int timestamp_count = m_frame.timestamp_count;
-      const std::vector<GpuPass> sample_passes = m_frame.sample_passes;
-      if (timestamp_count > 1 && m_frame.timestamp_samples[m_frame.slot]) {
-        timestamp_results = m_frame.timestamp_results[m_frame.slot];
-        id<MTLBlitCommandEncoder> resolve =
-          [m_frame.command_buffer blitCommandEncoder];
-        resolve.label = @"Resolve frame timestamps";
-        [resolve resolveCounters:m_frame.timestamp_samples[m_frame.slot]
-                         inRange:NSMakeRange (0, timestamp_count)
-               destinationBuffer:timestamp_results
-               destinationOffset:0];
-        [resolve endEncoding];
-      }
-
-      dispatch_semaphore_t sem = m_frame.inflight;
+      const std::vector<GpuPass> sample_intervals = m_frame.sample_intervals;
+      id<MTL4CounterHeap> timestamp_heap =
+        m_frame.timestamp_heaps[m_frame.slot];
       std::shared_ptr<FrameTiming> timing =
         m_frame.profile_this_frame ? m_frame_timing : nullptr;
       std::shared_ptr<BenchmarkOutput> benchmark =
@@ -3391,59 +3557,59 @@ namespace moppe {
         m_frame.params.benchmark_partition_mask;
       const uint32_t benchmark_epoch = m_frame.params.benchmark_epoch;
       const uint32_t benchmark_frame = m_frame.params.benchmark_frame;
-      [m_frame.command_buffer addCompletedHandler:^(
-                                id<MTLCommandBuffer> command) {
-        if (benchmark && command.GPUEndTime >= command.GPUStartTime) {
+      MTL4CommitOptions* commit_options = [[MTL4CommitOptions alloc] init];
+      [commit_options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
+        if (feedback.error)
+          std::cerr << "moppe: Metal 4 submission failed: "
+                    << feedback.error.localizedDescription.UTF8String
+                    << std::endl;
+        if (benchmark && feedback.GPUEndTime >= feedback.GPUStartTime) {
           const BenchmarkSample sample { benchmark_mask,
                                          benchmark_partition_mask,
                                          benchmark_epoch,
                                          benchmark_frame,
-                                         1000.0 * (command.GPUEndTime -
-                                                   command.GPUStartTime) };
+                                         1000.0 * (feedback.GPUEndTime -
+                                                   feedback.GPUStartTime) };
           {
             std::lock_guard<std::mutex> lock (benchmark->mutex);
             benchmark->samples.push_back (sample);
           }
           ++benchmark->completed;
         }
-        if (timing && command.GPUEndTime >= command.GPUStartTime) {
+        if (timing && feedback.GPUEndTime >= feedback.GPUStartTime) {
           const double gpu_ms =
-            1000.0 * (command.GPUEndTime - command.GPUStartTime);
+            1000.0 * (feedback.GPUEndTime - feedback.GPUStartTime);
           std::array<double, GPU_PASS_COUNT> pass_ms {};
-          if (timestamp_results && timestamp_count > 1) {
+          NSData* timestamp_results =
+            timestamp_heap && timestamp_count > 1
+              ? [timestamp_heap
+                  resolveCounterRange:NSMakeRange (0, timestamp_count)]
+              : nil;
+          if (timestamp_results) {
             const auto* samples =
               static_cast<const MTLCounterResultTimestamp*> (
-                timestamp_results.contents);
-            if (sample_passes.size () + 1 == (size_t)timestamp_count) {
-              for (int i = 0; i + 1 < timestamp_count; ++i) {
+                timestamp_results.bytes);
+            if (sample_intervals.size () + 1 == (size_t)timestamp_count) {
+              for (std::size_t i = 0; i < sample_intervals.size (); ++i) {
                 const uint64_t a = samples[i].timestamp;
                 const uint64_t b = samples[i + 1].timestamp;
                 if (a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
                     b >= a)
-                  pass_ms[static_cast<int> (sample_passes[i])] +=
-                    (b - a) / 1000000.0;
-              }
-            } else if (sample_passes.size () * 2 == (size_t)timestamp_count) {
-              for (size_t i = 0; i < sample_passes.size (); ++i) {
-                const uint64_t a = samples[i * 2].timestamp;
-                const uint64_t b = samples[i * 2 + 1].timestamp;
-                if (a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
-                    b >= a)
-                  pass_ms[static_cast<int> (sample_passes[i])] +=
+                  pass_ms[static_cast<int> (sample_intervals[i])] +=
                     (b - a) / 1000000.0;
               }
             }
           }
           std::lock_guard<std::mutex> lock (timing->mutex);
           if (timing->interval_start == 0)
-            timing->interval_start = command.GPUEndTime;
+            timing->interval_start = feedback.GPUEndTime;
           timing->gpu_total_ms += gpu_ms;
           timing->gpu_min_ms = std::min (timing->gpu_min_ms, gpu_ms);
           timing->gpu_max_ms = std::max (timing->gpu_max_ms, gpu_ms);
           for (int i = 0; i < GPU_PASS_COUNT; ++i)
             timing->pass_total_ms[i] += pass_ms[i];
           ++timing->frames;
-          const double elapsed = command.GPUEndTime - timing->interval_start;
+          const double elapsed = feedback.GPUEndTime - timing->interval_start;
           if (elapsed >= 1.0) {
             std::cerr << "frame GPU: " << timing->gpu_total_ms / timing->frames
                       << " ms avg, " << timing->gpu_min_ms << " ms min, "
@@ -3458,7 +3624,7 @@ namespace moppe {
                             << " ms";
               std::cerr << std::endl;
             }
-            timing->interval_start = command.GPUEndTime;
+            timing->interval_start = feedback.GPUEndTime;
             timing->gpu_total_ms = 0;
             timing->gpu_min_ms = std::numeric_limits<double>::max ();
             timing->gpu_max_ms = 0;
@@ -3466,11 +3632,22 @@ namespace moppe {
             timing->frames = 0;
           }
         }
-        dispatch_semaphore_signal (sem);
       }];
       {
         MOPPE_PROFILE_ZONE ("MetalRenderer::commit_command_buffer");
-        [m_frame.command_buffer commit];
+        [m_frame.command_buffer endCommandBuffer];
+        [m_queue waitForDrawable:m_frame.drawable];
+        const id<MTL4CommandBuffer> commands[] = { m_frame.command_buffer };
+        [m_queue commit:commands count:1 options:commit_options];
+        [m_queue signalEvent:m_frame.completion_event value:m_frame.sequence];
+#if !TARGET_OS_IPHONE
+        if (capture_path.empty ()) {
+#endif
+          [m_queue signalDrawable:m_frame.drawable];
+          [m_frame.drawable present];
+#if !TARGET_OS_IPHONE
+        }
+#endif
       }
       if (m_profile_cpu && m_cpu_frame_start > 0) {
         const double now = cpu_time ();
@@ -3498,7 +3675,8 @@ namespace moppe {
 #if !TARGET_OS_IPHONE
       if (m_frame.capture_active && m_frame.profile_this_frame &&
           ++m_frame.capture_frames >= m_frame.capture_frame_limit) {
-        [m_frame.command_buffer waitUntilCompleted];
+        [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                               timeoutMS:5000];
         [[MTLCaptureManager sharedCaptureManager] stopCapture];
         m_frame.capture_active = false;
         std::cerr << "moppe: wrote Metal capture " << m_frame.capture_path
@@ -3508,7 +3686,8 @@ namespace moppe {
 
 #if !TARGET_OS_IPHONE
       if (capture) {
-        [m_frame.command_buffer waitUntilCompleted];
+        [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                               timeoutMS:5000];
         if (!write_capture_png (capture_path,
                                 capture_width,
                                 capture_height,
@@ -3518,11 +3697,12 @@ namespace moppe {
                     << std::endl;
         else
           std::cout << "moppe: wrote screenshot " << capture_path << std::endl;
+        [m_residency removeAllocation:capture];
+        [m_residency commit];
       }
       m_frame.screenshot_path.clear ();
 #endif
 
-      m_frame.command_buffer = nil;
       m_frame.drawable = nil;
       m_frame.current_scene = nil;
     }
@@ -3536,9 +3716,11 @@ namespace moppe {
       // Epoch changes restore CPU state while previous frames may still be in
       // flight. A queue fence keeps their exposure blits from racing this
       // reset; transition time is outside the measured frame block.
-      id<MTLCommandBuffer> fence = [m_queue commandBuffer];
-      [fence commit];
-      [fence waitUntilCompleted];
+      if (m_frame.sequence &&
+          ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
+                                                  timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out waiting to reset Metal temporal state");
       m_targets.prev_valid = false;
       m_targets.exposure = 1.0f;
       for (id<MTLBuffer> buffer : m_targets.probe_buf)
@@ -3579,14 +3761,19 @@ namespace moppe {
 
     // ------------------------------------------------------------------
 
-    Renderer* create_metal_renderer (void* mtk_view,
+    Renderer* create_metal_renderer (void* metal_layer,
                                      const std::string& lib_path) {
-      return new MetalRenderer ((__bridge MTKView*)mtk_view, lib_path);
+      return new MetalRenderer ((__bridge CAMetalLayer*)metal_layer, lib_path);
     }
 
     void set_metal_drawable (Renderer& renderer, void* drawable) {
       MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
       metal.set_next_drawable ((__bridge id<CAMetalDrawable>)drawable);
+    }
+
+    void set_metal_edr_headroom (Renderer& renderer, float headroom) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      metal.set_edr_headroom (headroom);
     }
   }
 }

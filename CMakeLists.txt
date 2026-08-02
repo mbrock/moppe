@@ -3,12 +3,16 @@ cmake_minimum_required(VERSION 3.24)
 set(MOPPE_IOS FALSE)
 set(MOPPE_TVOS FALSE)
 set(MOPPE_MOBILE_APPLE FALSE)
+set(MOPPE_APPLE_SIMULATOR FALSE)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(MOPPE_IOS TRUE)
   set(MOPPE_MOBILE_APPLE TRUE)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "tvOS")
   set(MOPPE_TVOS TRUE)
   set(MOPPE_MOBILE_APPLE TRUE)
+endif()
+if(CMAKE_OSX_SYSROOT MATCHES "[Ss]imulator")
+  set(MOPPE_APPLE_SIMULATOR TRUE)
 endif()
 
 # The normal build is an edit build: do no optimization, and keep only the line
@@ -22,12 +26,13 @@ if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# Moppe uses the current Apple platform generation rather than carrying
-# availability shims for old mobile runtimes. FORCE also upgrades an existing
-# Xcode build directory instead of silently retaining its former cached target.
-if(MOPPE_MOBILE_APPLE)
+# Moppe's Apple renderer is Metal 4-only.  Metal 4 arrived with the 26.0
+# platform generation, so every Apple target names that contract explicitly
+# instead of inheriting an SDK-dependent desktop default or carrying an older
+# Metal compatibility path.  FORCE also upgrades existing build directories.
+if(APPLE)
   set(CMAKE_OSX_DEPLOYMENT_TARGET "26.0" CACHE STRING
-    "Minimum supported iOS or tvOS version" FORCE)
+    "Minimum Apple platform version (required by Metal 4)" FORCE)
 endif()
 
 project(moppe LANGUAGES C CXX)
@@ -269,7 +274,7 @@ if(MOPPE_METAL_RESULT EQUAL 0)
     add_custom_command(
       OUTPUT ${air}
       COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
-              -std=metal3.0
+              -std=metal4.0
               -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
               -o ${air}
       DEPENDS ${src} ${MOPPE_METAL_DEPS}
@@ -408,9 +413,16 @@ set(MOPPE_APPLE_COMMON_SOURCES
   moppe/platform/apple/game_controller.mm
 )
 
-set(MOPPE_METAL_RENDER_SOURCES
-  moppe/render/metal/metal_renderer.mm
-)
+if(MOPPE_APPLE_SIMULATOR)
+  # Apple's simulator SDK deliberately omits the Metal 4 core Objective-C
+  # API. Keep simulator projects buildable, but fail explicitly at launch
+  # instead of compiling a second, legacy command-submission backend.
+  set(MOPPE_METAL_RENDER_SOURCES
+    moppe/render/metal/metal4_simulator_unavailable.mm)
+else()
+  set(MOPPE_METAL_RENDER_SOURCES
+    moppe/render/metal/metal_renderer.mm)
+endif()
 
 set(MOPPE_WEBGPU_SOURCES
   moppe/render/webgpu/webgpu_renderer.cc
