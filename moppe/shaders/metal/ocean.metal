@@ -471,6 +471,96 @@ water_tile_object (object_data WaterTilePayload& payload [[payload]],
     out.set_index (3u * triangle_slot + index, triangle_indices[index]);
 }
 
+// The directionless ripple field is optical evidence shared by ordinary
+// water shading and the ray-query input pass. Flow deformation is layered on
+// afterward by ocean_fragment; Goal 1 deliberately admits standing water
+// only, so it calls this with full strength.
+static float3 ocean_ripple_normal (OceanVaryings in,
+                                   constant MoppeOceanUniforms& u,
+                                   float flow_atten) {
+  const float time = u.params.x;
+  const float dist = length (in.world_pos - u.camera_pos.xyz);
+  float3 n = normalize (in.normal);
+  const float wavelet_fade = exp (-dist * 0.008);
+  const float chop_fade = exp (-dist * 0.002);
+  const float streak_fade = 1.0 - 0.6 * smoothstep (2000.0, 6000.0, dist);
+  const float2 ripple1 =
+    in.world_pos.xz * 0.35 + float2 (time * 0.9, -time * 0.7);
+  const float2 ripple2 =
+    in.world_pos.xz * 0.11 - float2 (time * 0.4, time * 0.5);
+  const float2 ripple3 =
+    in.world_pos.xz * 0.017 + float2 (time * 0.16, time * 0.11);
+  n.x +=
+    flow_atten * (0.16 * wavelet_fade * (moppe_value_noise (ripple1) - 0.5) +
+                  0.12 * chop_fade * (moppe_value_noise (ripple2) - 0.5) +
+                  0.11 * streak_fade * (moppe_value_noise (ripple3) - 0.5));
+  n.z += flow_atten *
+         (0.16 * wavelet_fade * (moppe_value_noise (ripple1 + 7.3) - 0.5) +
+          0.12 * chop_fade * (moppe_value_noise (ripple2 + 3.1) - 0.5) +
+          0.11 * streak_fade * (moppe_value_noise (ripple3 + 11.7) - 0.5));
+  return normalize (n);
+}
+
+struct ReflectionWaterInput {
+  float4 origin [[color (0)]];
+  half4 optical_normal [[color (1)]];
+};
+
+// Rasterize the same clipped, displaced standing-water surface as the normal
+// water pass. World positions remain float32 because half precision loses
+// metres at Moppe's kilometre-scale periodic coordinates.
+fragment ReflectionWaterInput reflection_water_input_fragment (
+  OceanVaryings in [[stage_in]],
+  constant MoppeOceanUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
+  texture2d<float, access::read> water_levels
+  [[texture (MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
+  texture2d<float, access::read> water_flow
+  [[texture (MOPPE_TEX_WATER_FLOW_FRAGMENT)]]) {
+  const float3 to_frag = in.world_pos - u.camera_pos.xyz;
+  const float planar = length (in.world_pos.xz - u.camera_pos.xz);
+  if (u.tiles.w > 0.5 && planar < u.tiles.w)
+    discard_fragment ();
+  if (u.tiles.w < -0.5 && planar > -u.tiles.w)
+    discard_fragment ();
+
+  const float ground = ocean_grid_height (in.world_pos.xz, u, heights);
+  const float2 water_state =
+    u.params.w > 0.5 ? ocean_grid_sample (in.world_pos.xz, u, water_levels)
+                     : float2 (u.params.y, 1.0);
+  const float still_depth = water_state.x - ground;
+  if (u.params.w > 0.5 && still_depth <= 0.005)
+    discard_fragment ();
+
+  if (dot (normalize (in.normal), normalize (-to_frag)) <= 0.0 &&
+      u.params.w > 0.5) {
+    const float2 camera_water =
+      ocean_grid_sample (u.camera_pos.xz, u, water_levels);
+    const bool camera_in_water =
+      camera_water.y > 0.5 && u.camera_pos.y < camera_water.x + 0.10;
+    if (!camera_in_water)
+      discard_fragment ();
+  }
+
+  float flow_speed = 0.0;
+  if (u.current.x > 0.5 && u.shore.w > 0.5)
+    flow_speed =
+      length (ocean_grid_sample_raw (in.world_pos.xz, u, water_flow));
+  const bool running_water =
+    flow_speed > 0.25 && water_state.y < 0.01 && still_depth < 3.0;
+  if (running_water)
+    discard_fragment ();
+
+  float3 normal = ocean_ripple_normal (in, u, 1.0);
+  const float3 view = normalize (-to_frag);
+  if (dot (normal, view) < 0.0)
+    normal = -normal;
+  ReflectionWaterInput out;
+  out.origin = float4 (in.world_pos, 1.0);
+  out.optical_normal = half4 (half3 (normal), 0.10h);
+  return out;
+}
+
 // Bilinear ground height under a point, in world meters.  R32F
 // must be read() at integer coords, so filter by hand.
 fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
@@ -606,8 +696,6 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   if (u.params.w > 0.5 && still_depth <= 0.005)
     discard_fragment ();
 
-  float3 n = normalize (in.normal);
-
   // Small-scale ripples on top of the swells.  Three drifting
   // value-noise octaves hand over with distance -- fine wavelets
   // underfoot, broad wind streaks far out -- so each keeps roughly
@@ -616,23 +704,7 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
   // sheet of milk.  Where the water flows, the directionless drift
   // yields to the advected detail riding the current.
   const float flow_atten = 1.0 - 0.75 * flowing;
-  const float wavelet_fade = exp (-dist * 0.008);
-  const float chop_fade = exp (-dist * 0.002);
-  const float streak_fade = 1.0 - 0.6 * smoothstep (2000.0, 6000.0, dist);
-  const float2 ripple1 =
-    in.world_pos.xz * 0.35 + float2 (time * 0.9, -time * 0.7);
-  const float2 ripple2 =
-    in.world_pos.xz * 0.11 - float2 (time * 0.4, time * 0.5);
-  const float2 ripple3 =
-    in.world_pos.xz * 0.017 + float2 (time * 0.16, time * 0.11);
-  n.x +=
-    flow_atten * (0.16 * wavelet_fade * (moppe_value_noise (ripple1) - 0.5) +
-                  0.12 * chop_fade * (moppe_value_noise (ripple2) - 0.5) +
-                  0.11 * streak_fade * (moppe_value_noise (ripple3) - 0.5));
-  n.z += flow_atten *
-         (0.16 * wavelet_fade * (moppe_value_noise (ripple1 + 7.3) - 0.5) +
-          0.12 * chop_fade * (moppe_value_noise (ripple2 + 3.1) - 0.5) +
-          0.11 * streak_fade * (moppe_value_noise (ripple3 + 11.7) - 0.5));
+  float3 n = ocean_ripple_normal (in, u, flow_atten);
   const float flow_bump = flowing * (0.36 + 0.34 * rapid);
   n.x += flow_bump * flow_grad.x;
   n.z += flow_bump * flow_grad.y;

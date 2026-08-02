@@ -143,14 +143,15 @@ namespace moppe {
         Post,
         Bloom,
         Exposure,
+        Reflection,
         Reconstruction,
         Present,
         Count
       };
       constexpr int GPU_PASS_COUNT = static_cast<int> (GpuPass::Count);
       const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = {
-        "terrain", "sky",      "water",   "scene",  "post",
-        "bloom",   "exposure", "upscale", "present"
+        "terrain", "sky",      "water",      "scene",   "post",
+        "bloom",   "exposure", "reflection", "upscale", "present"
       };
 
       struct FrameTiming {
@@ -181,7 +182,7 @@ namespace moppe {
       };
 
 #if !TARGET_OS_IPHONE
-      float half_to_float (std::uint16_t half) {
+      float metal_half_to_float (std::uint16_t half) {
         const std::uint32_t sign = (half & 0x8000u) << 16;
         std::uint32_t exponent = (half >> 10) & 0x1fu;
         std::uint32_t mantissa = half & 0x03ffu;
@@ -228,9 +229,9 @@ namespace moppe {
           for (int x = 0; x < width; ++x) {
             unsigned char* pixel =
               pixels.data () + (static_cast<std::size_t> (y) * width + x) * 4;
-            pixel[0] = linear_byte (half_to_float (row[x * 4]));
-            pixel[1] = linear_byte (half_to_float (row[x * 4 + 1]));
-            pixel[2] = linear_byte (half_to_float (row[x * 4 + 2]));
+            pixel[0] = linear_byte (metal_half_to_float (row[x * 4]));
+            pixel[1] = linear_byte (metal_half_to_float (row[x * 4 + 1]));
+            pixel[2] = linear_byte (metal_half_to_float (row[x * 4 + 2]));
             pixel[3] = 255;
           }
         }
@@ -356,6 +357,10 @@ namespace moppe {
         id<MTLRenderPipelineState> river = nil;
 #if !TARGET_OS_IPHONE
         id<MTLComputePipelineState> reflection_geometry = nil;
+        id<MTLRenderPipelineState> reflection_water_input = nil;
+        id<MTLRenderPipelineState> reflection_water_tiles = nil;
+        id<MTLComputePipelineState> water_reflection_signal = nil;
+        id<MTLComputePipelineState> water_reflection_diagnostic = nil;
 #endif
         bool mesh_shaders_ok = false;
 
@@ -456,6 +461,20 @@ namespace moppe {
         float exposure = 1.0f;
         int width = 0, height = 0;
       };
+
+#if !TARGET_OS_IPHONE
+      struct MetalReflectionTargets {
+        id<MTLTexture> origin = nil;
+        id<MTLTexture> optical_normal = nil;
+        id<MTLTexture> depth = nil;
+        id<MTLTexture> radiance = nil;
+        id<MTLTexture> hit_normal = nil;
+        id<MTLTexture> hit_distance = nil;
+        id<MTLTexture> validity = nil;
+        int width = 0;
+        int height = 0;
+      };
+#endif
 
       using MetalFrameArena = metal4::FrameArena;
       using MetalArgumentTables = metal4::ArgumentTables;
@@ -667,7 +686,9 @@ namespace moppe {
       class MetalWaterPass {
       public:
         static void draw_ocean (const MetalWaterPassInputs& inputs,
-                                const OceanParams& params);
+                                const OceanParams& params,
+                                id<MTLRenderPipelineState> ocean = nil,
+                                id<MTLRenderPipelineState> tiles = nil);
         static void draw_waterfalls (const MetalWaterPassInputs& inputs,
                                      const Mesh& mesh,
                                      const Mat4& model);
@@ -844,9 +865,19 @@ namespace moppe {
       void update_exposure ();
       void begin_gpu_pass (id<MTL4RenderCommandEncoder> enc, GpuPass pass);
 #if !TARGET_OS_IPHONE
+      bool reflection_requested () const;
       void build_reflection_geometry ();
       void retire_reflection_geometry ();
       void write_reflection_geometry_report () const;
+      void draw_water_reflection_signal (id<MTLBuffer> __strong& diagnostic,
+                                         std::size_t& row_bytes,
+                                         int& width,
+                                         int& height);
+      void write_water_reflection_report (const void* diagnostic,
+                                          std::size_t row_bytes,
+                                          int width,
+                                          int height) const;
+      void benchmark_water_reflection_query ();
 #endif
 
       CAMetalLayer* m_layer;
@@ -861,8 +892,14 @@ namespace moppe {
 #if !TARGET_OS_IPHONE
       id<MTL4ArgumentTable> m_reflection_arguments;
       std::string m_reflection_geometry_path;
+      std::string m_water_reflection_path;
       std::vector<terrain::SurfaceElevation> m_reflection_heights;
       bool m_reflection_geometry_written = false;
+      bool m_water_reflection_written = false;
+      OceanParams m_reflection_ocean;
+      bool m_have_reflection_ocean = false;
+      double m_water_reflection_gpu_ms = -1.0;
+      double m_water_reflection_query_gpu_ms = -1.0;
 #endif
 
       MetalPipelines m_pipelines;
@@ -870,6 +907,9 @@ namespace moppe {
       MetalWaterResources m_water_resources;
       MetalSceneResources m_scene_resources;
       MetalFrameTargets m_targets;
+#if !TARGET_OS_IPHONE
+      std::array<MetalReflectionTargets, FRAMES_IN_FLIGHT> m_reflection_targets;
+#endif
       MetalFrameEncoding m_frame;
       bool m_memoryless_ok = false;
       // Fixed once, before the pipelines are built: every scene pipeline
@@ -994,6 +1034,15 @@ namespace moppe {
         if (!m_device.supportsRaytracing)
           throw std::runtime_error (
             "Reflection geometry requested on a device without ray tracing");
+      }
+      if (const char* requested = ::getenv ("MOPPE_WATER_REFLECTION_SIGNAL")) {
+        m_water_reflection_path = requested;
+        if (m_water_reflection_path.empty ())
+          throw std::invalid_argument (
+            "MOPPE_WATER_REFLECTION_SIGNAL needs an output PNG path");
+        if (!m_device.supportsRaytracing)
+          throw std::runtime_error (
+            "Water reflection requested on a device without ray tracing");
       }
 #endif
 
@@ -1121,9 +1170,10 @@ namespace moppe {
       m_frame.arguments.object = make_arguments (@"Moppe object bindings");
       m_frame.arguments.mesh = make_arguments (@"Moppe mesh bindings");
 #if !TARGET_OS_IPHONE
-      if (m_pipelines.reflection_geometry)
+      if (m_pipelines.reflection_geometry ||
+          m_pipelines.water_reflection_signal)
         m_reflection_arguments =
-          make_arguments (@"Moppe reflection geometry atelier bindings");
+          make_arguments (@"Moppe reflection atelier bindings");
 #endif
 
       for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
@@ -1237,6 +1287,46 @@ namespace moppe {
             std::string ("Could not build reflection geometry pipeline: ") +
             (error ? error.localizedDescription.UTF8String
                    : "shader function missing"));
+      }
+      if (!m_water_reflection_path.empty ()) {
+        MTLRenderPipelineDescriptor* input =
+          [[MTLRenderPipelineDescriptor alloc] init];
+        input.vertexFunction = [m_library newFunctionWithName:@"ocean_vertex"];
+        input.fragmentFunction =
+          [m_library newFunctionWithName:@"reflection_water_input_fragment"];
+        input.rasterSampleCount = 1;
+        input.colorAttachments[0].pixelFormat = MTLPixelFormatRGBA32Float;
+        input.colorAttachments[1].pixelFormat = MTLPixelFormatRGBA16Float;
+        input.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+        NSError* error = nil;
+        if (input.vertexFunction && input.fragmentFunction)
+          m_pipelines.reflection_water_input =
+            [m_device newRenderPipelineStateWithDescriptor:input error:&error];
+        if (!m_pipelines.reflection_water_input)
+          throw std::runtime_error (
+            std::string ("Could not build reflection water-input pipeline: ") +
+            (error ? error.localizedDescription.UTF8String
+                   : "shader function missing"));
+
+        const auto make_compute = [&] (NSString* name) {
+          id<MTLFunction> function = [m_library newFunctionWithName:name];
+          NSError* compute_error = nil;
+          id<MTLComputePipelineState> result =
+            function
+              ? [m_device newComputePipelineStateWithFunction:function
+                                                        error:&compute_error]
+              : nil;
+          if (!result)
+            throw std::runtime_error (
+              std::string ("Could not build ") + name.UTF8String + ": " +
+              (compute_error ? compute_error.localizedDescription.UTF8String
+                             : "shader function missing"));
+          return result;
+        };
+        m_pipelines.water_reflection_signal =
+          make_compute (@"water_reflection_signal");
+        m_pipelines.water_reflection_diagnostic =
+          make_compute (@"water_reflection_diagnostic");
       }
 #endif
 
@@ -1396,6 +1486,41 @@ namespace moppe {
                       << std::endl;
         }
 
+#if !TARGET_OS_IPHONE
+        if (!m_water_reflection_path.empty ()) {
+          MTLMeshRenderPipelineDescriptor* reflection =
+            [[MTLMeshRenderPipelineDescriptor alloc] init];
+          reflection.objectFunction =
+            [m_library newFunctionWithName:@"water_tile_object"];
+          reflection.meshFunction =
+            [m_library newFunctionWithName:@"water_tile_mesh"];
+          reflection.fragmentFunction =
+            [m_library newFunctionWithName:@"reflection_water_input_fragment"];
+          reflection.rasterSampleCount = 1;
+          reflection.colorAttachments[0].pixelFormat =
+            MTLPixelFormatRGBA32Float;
+          reflection.colorAttachments[1].pixelFormat =
+            MTLPixelFormatRGBA16Float;
+          reflection.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+          reflection.payloadMemoryLength = 1024;
+          reflection.maxTotalThreadsPerObjectThreadgroup = 64;
+          reflection.maxTotalThreadsPerMeshThreadgroup = 256;
+          if (reflection.objectFunction && reflection.meshFunction &&
+              reflection.fragmentFunction) {
+            NSError* error = nil;
+            m_pipelines.reflection_water_tiles = [m_device
+              newRenderPipelineStateWithMeshDescriptor:reflection
+                                               options:MTLPipelineOptionNone
+                                            reflection:nil
+                                                 error:&error];
+            if (!m_pipelines.reflection_water_tiles)
+              throw std::runtime_error (
+                std::string ("Could not build reflection water tiles: ") +
+                (error ? error.localizedDescription.UTF8String : "unknown"));
+          }
+        }
+#endif
+
         // Undergrowth: grass and occasional ferns generated per frame from
         // the world's own fields. Opaque, depth-written, no vertex buffer
         // at all -- the object stage decides which ground is worth a
@@ -1553,6 +1678,11 @@ namespace moppe {
     }
 
 #if !TARGET_OS_IPHONE
+    bool MetalRenderer::reflection_requested () const {
+      return !m_reflection_geometry_path.empty () ||
+             !m_water_reflection_path.empty ();
+    }
+
     void MetalRenderer::retire_reflection_geometry () {
       if (m_terrain_resources.reflection_structure && m_frame.sequence &&
           ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
@@ -1574,10 +1704,11 @@ namespace moppe {
       m_terrain_resources.reflection_proxy_ms = 0.0;
       m_terrain_resources.reflection_build_ms = 0.0;
       m_reflection_geometry_written = false;
+      m_water_reflection_written = false;
     }
 
     void MetalRenderer::build_reflection_geometry () {
-      if (m_reflection_geometry_path.empty () ||
+      if (!reflection_requested () ||
           m_terrain_resources.reflection_structure ||
           m_reflection_heights.empty () || !m_frame.drawable)
         return;
@@ -1678,6 +1809,242 @@ namespace moppe {
                 << " B, scratch=" << sizes.buildScratchBufferSize
                 << " B, proxy=" << proxy_ms << " ms, build=" << build_ms
                 << " ms" << std::endl;
+    }
+
+    void MetalRenderer::draw_water_reflection_signal (
+      id<MTLBuffer> __strong& diagnostic,
+      std::size_t& row_bytes,
+      int& diagnostic_width,
+      int& diagnostic_height) {
+      MetalReflectionTargets& targets = m_reflection_targets[m_frame.slot];
+      if (m_water_reflection_path.empty () || !m_have_reflection_ocean ||
+          !m_pipelines.reflection_water_input ||
+          !m_pipelines.water_reflection_signal ||
+          !m_terrain_resources.reflection_structure || !targets.origin)
+        return;
+
+      record_gpu_pass_start (m_frame, GpuPass::Reflection);
+      MTL4RenderPassDescriptor* pass = [[MTL4RenderPassDescriptor alloc] init];
+      pass.colorAttachments[0].texture = targets.origin;
+      pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+      pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+      pass.colorAttachments[0].clearColor = MTLClearColorMake (0, 0, 0, 0);
+      pass.colorAttachments[1].texture = targets.optical_normal;
+      pass.colorAttachments[1].loadAction = MTLLoadActionClear;
+      pass.colorAttachments[1].storeAction = MTLStoreActionStore;
+      pass.colorAttachments[1].clearColor = MTLClearColorMake (0, 0, 0, 0);
+      pass.depthAttachment.texture = targets.depth;
+      pass.depthAttachment.loadAction = MTLLoadActionClear;
+      pass.depthAttachment.storeAction = MTLStoreActionDontCare;
+      pass.depthAttachment.clearDepth = 0.0;
+      id<MTL4RenderCommandEncoder> input =
+        [m_frame.command_buffer renderCommandEncoderWithDescriptor:pass];
+      input.label = @"Standing-water reflection inputs";
+      [input setFrontFacingWinding:MTLWindingCounterClockwise];
+      MetalWaterPass::draw_ocean (
+        { input, m_pipelines, m_terrain_resources, m_water_resources, m_frame },
+        m_reflection_ocean,
+        m_pipelines.reflection_water_input,
+        m_pipelines.reflection_water_tiles);
+      [input endEncoding];
+
+      const int width = targets.width;
+      const int height = targets.height;
+      MoppeWaterReflectionUniforms uniforms {};
+      uniforms.camera = f4 (m_frame.params.camera_pos);
+      uniforms.camera.w = 8192.0f;
+      uniforms.sun_dir = m_frame.uniforms.sun_dir;
+      uniforms.sun_colour = m_frame.uniforms.sun_diffuse;
+      uniforms.ambient = m_frame.uniforms.ambient;
+      uniforms.fog_colour = m_frame.uniforms.fog_color;
+      uniforms.dimensions = { static_cast<float> (width),
+                              static_cast<float> (height),
+                              static_cast<float> (width * 3),
+                              static_cast<float> (height * 2) };
+      const MTLGPUAddress uniform_address =
+        m_frame.arena[m_frame.slot].write (uniforms);
+      [m_reflection_arguments
+          setResource:m_terrain_resources.reflection_structure.gpuResourceID
+        atBufferIndex:MOPPE_BUF_REFLECTION_AS];
+      [m_reflection_arguments setAddress:uniform_address
+                                 atIndex:MOPPE_BUF_REFLECTION_UNIFORMS];
+      [m_reflection_arguments
+        setAddress:m_terrain_resources.reflection_vertices.gpuAddress
+           atIndex:MOPPE_BUF_REFLECTION_VERTICES];
+      [m_reflection_arguments setTexture:targets.origin.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_ORIGIN];
+      [m_reflection_arguments setTexture:targets.optical_normal.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_OPTICAL_NORMAL];
+      [m_reflection_arguments setTexture:targets.radiance.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_RADIANCE];
+      [m_reflection_arguments setTexture:targets.hit_normal.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_HIT_NORMAL];
+      [m_reflection_arguments setTexture:targets.hit_distance.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_HIT_DISTANCE];
+      [m_reflection_arguments setTexture:targets.validity.gpuResourceID
+                                 atIndex:MOPPE_TEX_REFLECTION_VALIDITY];
+
+      id<MTL4ComputeCommandEncoder> query =
+        [m_frame.command_buffer computeCommandEncoder];
+      query.label = @"Raw standing-water reflection query";
+      [query barrierAfterQueueStages:MTLStageFragment
+                        beforeStages:MTLStageDispatch
+                   visibilityOptions:MTL4VisibilityOptionDevice];
+      [query setComputePipelineState:m_pipelines.water_reflection_signal];
+      [query setArgumentTable:m_reflection_arguments];
+      [query dispatchThreads:MTLSizeMake (width, height, 1)
+        threadsPerThreadgroup:MTLSizeMake (8, 8, 1)];
+      [query endEncoding];
+      record_gpu_pass_end (m_frame);
+
+      if (m_frame.screenshot_path.empty () || m_water_reflection_written)
+        return;
+      diagnostic_width = width * 3;
+      diagnostic_height = height * 2;
+      row_bytes = (static_cast<std::size_t> (diagnostic_width) * 8 + 255) &
+                  ~static_cast<std::size_t> (255);
+      diagnostic = [m_device newBufferWithLength:row_bytes * diagnostic_height
+                                         options:MTLResourceStorageModeShared];
+      diagnostic.label = @"Moppe water reflection signal diagnostic";
+      make_resident (diagnostic);
+
+      uniforms.output.x = static_cast<float> (row_bytes / 8);
+      const MTLGPUAddress diagnostic_uniforms =
+        m_frame.arena[m_frame.slot].write (uniforms);
+      [m_reflection_arguments setAddress:diagnostic_uniforms
+                                 atIndex:MOPPE_BUF_REFLECTION_UNIFORMS];
+      [m_reflection_arguments setAddress:diagnostic.gpuAddress
+                                 atIndex:MOPPE_BUF_REFLECTION_OUTPUT];
+      id<MTL4ComputeCommandEncoder> display =
+        [m_frame.command_buffer computeCommandEncoder];
+      display.label = @"Water reflection signal diagnostic";
+      [display barrierAfterQueueStages:MTLStageDispatch
+                          beforeStages:MTLStageDispatch
+                     visibilityOptions:MTL4VisibilityOptionDevice];
+      [display setComputePipelineState:m_pipelines.water_reflection_diagnostic];
+      [display setArgumentTable:m_reflection_arguments];
+      [display dispatchThreads:MTLSizeMake (
+                                 diagnostic_width, diagnostic_height, 1)
+         threadsPerThreadgroup:MTLSizeMake (8, 8, 1)];
+      [display endEncoding];
+    }
+
+    void MetalRenderer::write_water_reflection_report (const void* diagnostic,
+                                                       std::size_t row_bytes,
+                                                       int width,
+                                                       int height) const {
+      const int signal_width = width / 3;
+      const int signal_height = height / 2;
+      std::size_t inputs = 0;
+      std::size_t visible = 0;
+      std::size_t hits = 0;
+      const auto* bytes = static_cast<const std::byte*> (diagnostic);
+      for (int y = 0; y < signal_height; ++y) {
+        const auto* row = reinterpret_cast<const std::uint16_t*> (
+          bytes + static_cast<std::size_t> (y + signal_height) * row_bytes);
+        for (int x = 0; x < signal_width; ++x) {
+          const std::size_t pixel =
+            static_cast<std::size_t> (x + 2 * signal_width) * 4;
+          inputs += metal_half_to_float (row[pixel]) > 0.5f;
+          visible += metal_half_to_float (row[pixel + 1]) > 0.5f;
+          hits += metal_half_to_float (row[pixel + 2]) > 0.5f;
+        }
+      }
+
+      const std::size_t pixels =
+        static_cast<std::size_t> (signal_width) * signal_height;
+      const std::size_t persistent_bytes_per_pixel =
+        16 + 8 + 8 + 8 + 4 + 4 + (m_memoryless_ok ? 0 : 4);
+      std::ofstream output (m_water_reflection_path + ".txt");
+      output << std::fixed << std::setprecision (3);
+      output << "water_reflection_goal=1\n";
+      output << "device=" << m_device.name.UTF8String << '\n';
+      output << "surface=actual_clipped_displaced_standing_water\n";
+      output << "running_water=excluded\n";
+      output << "query=metal4_compute_argument_table\n";
+      output << "visibility=camera_to_water_terrain_ray\n";
+      output << "ordinary_water_rendering=unchanged\n";
+      output << "signal_dimensions=" << signal_width << 'x' << signal_height
+             << '\n';
+      output << "linear_resolution_scale=0.250\n";
+      output << "panels=origin_depth,optical_normal,raw_radiance,hit_normal,"
+                "hit_distance,validity\n";
+      output << "signal_pixels=" << pixels << '\n';
+      output << "water_input_pixels=" << inputs << '\n';
+      output << "visible_water_pixels=" << visible << '\n';
+      output << "terrain_hit_pixels=" << hits << '\n';
+      output << "water_input_coverage="
+             << (pixels ? static_cast<double> (inputs) / pixels : 0.0) << '\n';
+      output << "visible_fraction="
+             << (inputs ? static_cast<double> (visible) / inputs : 0.0) << '\n';
+      output << "terrain_hit_fraction="
+             << (visible ? static_cast<double> (hits) / visible : 0.0) << '\n';
+      output << "signal_persistent_bytes_per_slot="
+             << pixels * persistent_bytes_per_pixel << '\n';
+      output << "signal_persistent_bytes_inflight="
+             << pixels * persistent_bytes_per_pixel * FRAMES_IN_FLIGHT << '\n';
+      output << "signal_transient_depth_bytes="
+             << (m_memoryless_ok ? pixels * 4 : 0) << '\n';
+      output << "reflection_counter_span_ms=" << m_water_reflection_gpu_ms
+             << '\n';
+      output << "isolated_ray_query_gpu_ms=" << m_water_reflection_query_gpu_ms
+             << '\n';
+      output << "acceleration_structure_bytes="
+             << m_terrain_resources.reflection_structure_bytes << '\n';
+      output << "terrain_proxy_triangles="
+             << m_terrain_resources.reflection_proxy.metrics.triangle_count
+             << '\n';
+    }
+
+    void MetalRenderer::benchmark_water_reflection_query () {
+      const MetalReflectionTargets& targets =
+        m_reflection_targets[m_frame.slot];
+      if (m_water_reflection_path.empty () ||
+          !m_pipelines.water_reflection_signal ||
+          !m_terrain_resources.reflection_structure || !targets.origin)
+        return;
+
+      constexpr int iterations = 32;
+      id<MTL4CommandAllocator> allocator = [m_device newCommandAllocator];
+      id<MTL4CommandBuffer> command = [m_device newCommandBuffer];
+      [command beginCommandBufferWithAllocator:allocator];
+      for (int iteration = 0; iteration < iterations; ++iteration) {
+        id<MTL4ComputeCommandEncoder> query = [command computeCommandEncoder];
+        query.label = @"Isolated water reflection query benchmark";
+        if (iteration > 0)
+          [query barrierAfterQueueStages:MTLStageDispatch
+                            beforeStages:MTLStageDispatch
+                       visibilityOptions:MTL4VisibilityOptionDevice];
+        [query setComputePipelineState:m_pipelines.water_reflection_signal];
+        [query setArgumentTable:m_reflection_arguments];
+        [query dispatchThreads:MTLSizeMake (targets.width, targets.height, 1)
+          threadsPerThreadgroup:MTLSizeMake (8, 8, 1)];
+        [query endEncoding];
+      }
+      [command endCommandBuffer];
+
+      __block double elapsed_ms = -1.0;
+      dispatch_semaphore_t feedback_done = dispatch_semaphore_create (0);
+      MTL4CommitOptions* options = [[MTL4CommitOptions alloc] init];
+      [options addFeedbackHandler:^(id<MTL4CommitFeedback> feedback) {
+        if (!feedback.error && feedback.GPUEndTime >= feedback.GPUStartTime)
+          elapsed_ms = 1000.0 * (feedback.GPUEndTime - feedback.GPUStartTime);
+        dispatch_semaphore_signal (feedback_done);
+      }];
+      id<MTLSharedEvent> completed = [m_device newSharedEvent];
+      const id<MTL4CommandBuffer> commands[] = { command };
+      [m_queue commit:commands count:1 options:options];
+      [m_queue signalEvent:completed value:1];
+      if (![completed waitUntilSignaledValue:1 timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out benchmarking the water reflection query");
+      if (dispatch_semaphore_wait (
+            feedback_done,
+            dispatch_time (DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0)
+        throw std::runtime_error (
+          "Timed out receiving water reflection query timing");
+      if (elapsed_ms >= 0.0)
+        m_water_reflection_query_gpu_ms = elapsed_ms / iterations;
     }
 
     void MetalRenderer::write_reflection_geometry_report () const {
@@ -1842,7 +2209,7 @@ namespace moppe {
           normals.size () != sample_count || params.scale[1] != 1.0f)
         throw std::invalid_argument ("invalid Metal terrain raster");
 #if !TARGET_OS_IPHONE
-      if (!m_reflection_geometry_path.empty ()) {
+      if (reflection_requested ()) {
         retire_reflection_geometry ();
         m_reflection_heights.assign (heights.begin (), heights.end ());
       }
@@ -2341,6 +2708,17 @@ namespace moppe {
       retire (m_targets.prev_frame);
       retire (m_targets.bloom_a);
       retire (m_targets.bloom_b);
+#if !TARGET_OS_IPHONE
+      for (const MetalReflectionTargets& reflection : m_reflection_targets) {
+        retire (reflection.origin);
+        retire (reflection.optical_normal);
+        retire (reflection.depth);
+        retire (reflection.radiance);
+        retire (reflection.hit_normal);
+        retire (reflection.hit_distance);
+        retire (reflection.validity);
+      }
+#endif
 #if !TARGET_OS_TV
       if (m_targets.spatial_scaler) {
         m_targets.spatial_scaler.colorTexture = nil;
@@ -2352,6 +2730,9 @@ namespace moppe {
 #endif
       if (!targets.empty ())
         [m_residency commit];
+#if !TARGET_OS_IPHONE
+      m_reflection_targets.fill ({});
+#endif
     }
 
     void MetalRenderer::ensure_targets (float requested_scale,
@@ -2457,6 +2838,54 @@ namespace moppe {
         make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
       m_targets.bloom_b =
         make_target (MTLPixelFormatRGBA16Float, bw, bh, 1, false);
+#if !TARGET_OS_IPHONE
+      if (!m_water_reflection_path.empty ()) {
+        const int rw = std::max (1, drawable_w / 4);
+        const int rh = std::max (1, drawable_h / 4);
+        for (MetalReflectionTargets& reflection : m_reflection_targets) {
+          reflection.width = rw;
+          reflection.height = rh;
+          reflection.origin =
+            make_target (MTLPixelFormatRGBA32Float, rw, rh, 1, false);
+          reflection.optical_normal =
+            make_target (MTLPixelFormatRGBA16Float, rw, rh, 1, false);
+          reflection.depth =
+            make_target (MTLPixelFormatDepth32Float, rw, rh, 1, true);
+          reflection.radiance = make_target (MTLPixelFormatRGBA16Float,
+                                             rw,
+                                             rh,
+                                             1,
+                                             false,
+                                             MTLTextureUsageShaderWrite);
+          reflection.hit_normal = make_target (MTLPixelFormatRGBA16Float,
+                                               rw,
+                                               rh,
+                                               1,
+                                               false,
+                                               MTLTextureUsageShaderWrite);
+          reflection.hit_distance = make_target (MTLPixelFormatR32Float,
+                                                 rw,
+                                                 rh,
+                                                 1,
+                                                 false,
+                                                 MTLTextureUsageShaderWrite);
+          reflection.validity = make_target (MTLPixelFormatRGBA8Unorm,
+                                             rw,
+                                             rh,
+                                             1,
+                                             false,
+                                             MTLTextureUsageShaderWrite);
+          reflection.origin.label = @"Moppe reflection water origins";
+          reflection.optical_normal.label =
+            @"Moppe reflection water optical normals";
+          reflection.radiance.label = @"Moppe raw water reflection radiance";
+          reflection.hit_normal.label = @"Moppe water reflection hit normals";
+          reflection.hit_distance.label =
+            @"Moppe water reflection hit distance";
+          reflection.validity.label = @"Moppe water reflection validity";
+        }
+      }
+#endif
 #if !TARGET_OS_TV
       if (m_targets.spatial_scaler) {
         m_targets.spatial_output = make_target (MTLPixelFormatRGBA16Float,
@@ -2640,6 +3069,9 @@ namespace moppe {
       m_frame.current_scene = m_targets.scene_a;
       m_frame.scene_encoder = nil;
       m_frame.scene_pass_done = false;
+#if !TARGET_OS_IPHONE
+      m_have_reflection_ocean = false;
+#endif
       return true;
     }
 
@@ -2984,14 +3416,18 @@ namespace moppe {
     }
 
     void MetalWaterPass::draw_ocean (const MetalWaterPassInputs& inputs,
-                                     const OceanParams& params) {
+                                     const OceanParams& params,
+                                     id<MTLRenderPipelineState> ocean,
+                                     id<MTLRenderPipelineState> tiles) {
       id<MTL4RenderCommandEncoder> enc = inputs.encoder;
       const MetalPipelines& pipelines = inputs.pipelines;
       const MetalTerrainResources& terrain = inputs.terrain;
       const MetalWaterResources& water_resources = inputs.water;
       MetalFrameEncoding& frame = inputs.frame;
 
-      [enc setRenderPipelineState:pipelines.ocean];
+      ocean = ocean ? ocean : pipelines.ocean;
+      tiles = tiles ? tiles : pipelines.water_tiles;
+      [enc setRenderPipelineState:ocean];
       [enc setDepthStencilState:pipelines.depth[1][1]];
       [enc setCullMode:MTLCullModeNone]; // visible from below too
 
@@ -3055,8 +3491,7 @@ namespace moppe {
       // Near standing water renders on the terrain lattice through the
       // mesh pipeline; the coarse grid keeps the horizon. Both passes
       // discard on the same radius so they partition exactly.
-      const bool lattice = pipelines.water_tiles &&
-                           water_resources.have_water_levels &&
+      const bool lattice = tiles && water_resources.have_water_levels &&
                            terrain.have_terrain && terrain.heights;
       const float fine_radius = 700.0f;
       // Must match WATER_TILE_CELLS in ocean.metal: the CPU places the tile
@@ -3091,7 +3526,7 @@ namespace moppe {
         MoppeOceanUniforms t = u;
         t.tiles.w = -fine_radius;
         const MTLGPUAddress tile_uniforms = frame.arena[frame.slot].write (t);
-        [enc setRenderPipelineState:pipelines.water_tiles];
+        [enc setRenderPipelineState:tiles];
         for (MTLRenderStages stage :
              { MTLRenderStageObject, MTLRenderStageMesh }) {
           bind_address (frame, stage, MOPPE_BUF_FRAME, tile_uniforms);
@@ -3124,6 +3559,12 @@ namespace moppe {
                                     m_water_resources,
                                     m_frame },
                                   params);
+#if !TARGET_OS_IPHONE
+      if (!m_water_reflection_path.empty ()) {
+        m_reflection_ocean = params;
+        m_have_reflection_ocean = true;
+      }
+#endif
     }
 
     void MetalScenePass::draw_dust (const MetalScenePassInputs& inputs,
@@ -4016,10 +4457,14 @@ namespace moppe {
 #if !TARGET_OS_IPHONE
       id<MTLBuffer> capture = nil;
       id<MTLBuffer> reflection_diagnostic = nil;
+      id<MTLBuffer> water_reflection_diagnostic = nil;
       std::size_t capture_row_bytes = 0;
       std::size_t reflection_row_bytes = 0;
+      std::size_t water_reflection_row_bytes = 0;
       int capture_width = 0;
       int capture_height = 0;
+      int water_reflection_width = 0;
+      int water_reflection_height = 0;
       const std::string capture_path = m_frame.screenshot_path;
       if (!capture_path.empty () && m_frame.drawable) {
         capture_width = static_cast<int> (m_frame.drawable.texture.width);
@@ -4046,6 +4491,11 @@ namespace moppe {
           destinationBytesPerImage:capture_row_bytes * capture_height];
         [blit endEncoding];
       }
+
+      draw_water_reflection_signal (water_reflection_diagnostic,
+                                    water_reflection_row_bytes,
+                                    water_reflection_width,
+                                    water_reflection_height);
 
       if (!capture_path.empty () && !m_reflection_geometry_written &&
           m_pipelines.reflection_geometry &&
@@ -4238,6 +4688,29 @@ namespace moppe {
       if (capture) {
         [m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                timeoutMS:5000];
+        if (timestamp_heap && timestamp_count > 1) {
+          NSData* results = [timestamp_heap
+            resolveCounterRange:NSMakeRange (0, timestamp_count)];
+          const auto* samples =
+            static_cast<const MTLCounterResultTimestamp*> (results.bytes);
+          if (results &&
+              sample_intervals.size () + 1 == (std::size_t)timestamp_count) {
+            double reflection_ms = 0.0;
+            for (std::size_t i = 0; i < sample_intervals.size (); ++i) {
+              if (sample_intervals[i] != GpuPass::Reflection)
+                continue;
+              const uint64_t a = samples[i].timestamp;
+              const uint64_t b = samples[i + 1].timestamp;
+              if (a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
+                  b >= a)
+                reflection_ms += (b - a) / 1000000.0;
+            }
+            if (reflection_ms > 0.0)
+              m_water_reflection_gpu_ms = reflection_ms;
+          }
+        }
+        if (water_reflection_diagnostic)
+          benchmark_water_reflection_query ();
         if (!write_capture_png (capture_path,
                                 capture_width,
                                 capture_height,
@@ -4265,6 +4738,26 @@ namespace moppe {
                     << m_reflection_geometry_path << std::endl;
         }
         [m_residency removeAllocation:reflection_diagnostic];
+        [m_residency commit];
+      }
+      if (water_reflection_diagnostic) {
+        if (!write_capture_png (m_water_reflection_path,
+                                water_reflection_width,
+                                water_reflection_height,
+                                water_reflection_row_bytes,
+                                water_reflection_diagnostic.contents))
+          std::cerr << "moppe: failed to write water reflection signal "
+                    << m_water_reflection_path << std::endl;
+        else {
+          write_water_reflection_report (water_reflection_diagnostic.contents,
+                                         water_reflection_row_bytes,
+                                         water_reflection_width,
+                                         water_reflection_height);
+          m_water_reflection_written = true;
+          std::cout << "moppe: wrote water reflection signal "
+                    << m_water_reflection_path << std::endl;
+        }
+        [m_residency removeAllocation:water_reflection_diagnostic];
         [m_residency commit];
       }
       m_frame.screenshot_path.clear ();
