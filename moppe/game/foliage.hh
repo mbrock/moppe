@@ -6,6 +6,10 @@
 
 #include <cstdint>
 
+namespace moppe::render {
+  class Renderer;
+}
+
 // What makes a handful of triangles read as a mass of leaves.
 //
 // A cheap crown volume fails in two ways that have nothing to do with how
@@ -45,6 +49,18 @@ namespace moppe::game {
   [[nodiscard]] FoliagePalette bark_palette (FoliageKind kind,
                                              std::uint32_t seed);
 
+  // One shared white-and-coverage atlas for near leaf cards. Colour remains
+  // an ecological property of the individual tree; the texture contributes
+  // only a perforated leaf silhouette with filtered alpha at distance.
+  [[nodiscard]] render::TexturePtr
+  make_leaf_card_texture (render::Renderer& renderer);
+
+  [[nodiscard]] render::TexturePtr
+  make_conifer_card_texture (render::Renderer& renderer);
+
+  [[nodiscard]] render::TexturePtr
+  make_conifer_crown_texture (render::Renderer& renderer);
+
   // Distance does the rest. Once a crown is a pixel or two across, the scene
   // shader converges its albedo on the canopy tone the terrain is already
   // painting underneath, so a far tree joins the mass it belongs to instead
@@ -59,6 +75,8 @@ namespace moppe::game {
     float exposure; // 0 = deep interior or root, 1 = sunlit outer skin
     proportion_t bend;
     proportion_t flutter;
+    float u = 0.0f;
+    float v = 0.0f;
   };
 
   // Plants are recorded two-sided -- a leaf has no back -- so winding carries

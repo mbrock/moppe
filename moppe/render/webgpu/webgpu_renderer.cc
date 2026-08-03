@@ -31,21 +31,26 @@ struct VertexInput {
   @location(1) normal: vec3<f32>,
   @location(2) uv: vec2<f32>,
   @location(3) color: vec4<f32>,
+  @location(4) flags: vec4<f32>,
 };
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
   @location(0) uv: vec2<f32>,
   @location(1) color: vec4<f32>,
+  @location(2) world_position: vec3<f32>,
+  @location(3) foliage: f32,
 };
 
 @vertex
 fn world_vertex(input: VertexInput) -> VertexOutput {
   var output: VertexOutput;
-  output.position = frame.view_proj * frame.model *
-                    vec4<f32>(input.position, 1.0);
+  let world = frame.model * vec4<f32>(input.position, 1.0);
+  output.position = frame.view_proj * world;
   output.uv = input.uv;
   output.color = input.color;
+  output.world_position = world.xyz;
+  output.foliage = input.flags.w;
   return output;
 }
 
@@ -55,12 +60,28 @@ fn hud_vertex(input: VertexInput) -> VertexOutput {
   output.position = frame.hud_proj * vec4<f32>(input.position, 1.0);
   output.uv = input.uv;
   output.color = input.color;
+  output.world_position = vec3<f32>(0.0);
+  output.foliage = 0.0;
   return output;
 }
 
 @fragment
 fn color_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
-  return input.color * textureSample(color_texture, color_sampler, input.uv);
+  var base = input.color * textureSample(color_texture, color_sampler,
+                                         input.uv);
+  let footprint = max(length(dpdx(input.world_position)),
+                      length(dpdy(input.world_position)));
+  let lattice = exp2(floor(log2(max(footprint, 0.015))));
+  var cell = fract(floor(input.world_position / lattice) * 0.1031);
+  cell += dot(cell, cell.yzx + vec3<f32>(33.33));
+  let threshold = fract((cell.x + cell.y) * cell.z);
+  if (input.foliage > 0.0 && base.a < 0.999 && base.a <= threshold) {
+    discard;
+  }
+  if (input.foliage > 0.0 && base.a < 0.999) {
+    base.a = 1.0;
+  }
+  return base;
 }
 )wgsl";
 
@@ -1651,7 +1672,7 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       if (const auto found = pipelines.find (key); found != pipelines.end ())
         return found->second;
 
-      std::array<wgpu::VertexAttribute, 4> attributes {};
+      std::array<wgpu::VertexAttribute, 5> attributes {};
       attributes[0].format = wgpu::VertexFormat::Float32x3;
       attributes[0].offset = 0;
       attributes[0].shaderLocation = 0;
@@ -1664,6 +1685,9 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
       attributes[3].format = wgpu::VertexFormat::Unorm8x4;
       attributes[3].offset = 32;
       attributes[3].shaderLocation = 3;
+      attributes[4].format = wgpu::VertexFormat::Unorm8x4;
+      attributes[4].offset = 36;
+      attributes[4].shaderLocation = 4;
       wgpu::VertexBufferLayout vertex_layout {};
       vertex_layout.arrayStride = sizeof (Vertex);
       vertex_layout.stepMode = wgpu::VertexStepMode::Vertex;

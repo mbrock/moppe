@@ -103,6 +103,9 @@ namespace moppe::game {
     };
 
     std::vector<Chunk> m_chunks;
+    render::TexturePtr m_leaf_texture;
+    render::TexturePtr m_conifer_texture;
+    render::TexturePtr m_distant_conifer_texture;
     spatial_extent_t m_period {};
     std::size_t m_tree_count = 0;
     std::uint64_t m_epoch = 0;

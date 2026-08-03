@@ -5,6 +5,7 @@
 #include <moppe/render/draw.hh>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <stdexcept>
@@ -370,25 +371,120 @@ namespace moppe::game {
       draw.end ();
     }
 
+    struct LeafCloud {
+      Vec3 base;
+      Vec3 tip;
+      meters_t radius;
+      std::uint32_t lane;
+      float shelter;
+    };
+
+    // Three intersecting, irregular cards carry the small-scale silhouette
+    // around one dense crown core. Their texture is coverage only: colour,
+    // lighting, wind and crown exposure still come from the organism.
+    void append_leaf_cloud (render::DrawList& draw,
+                            const TreeForm& tree,
+                            const LeafCloud& cloud,
+                            const render::Texture* texture) {
+      const Vec3 axis = cloud.tip - cloud.base;
+      const Vec3 direction = normalized (axis);
+      const Vec3 cloud_center = cloud.base + axis * 0.55f;
+      const float radius = cloud.radius.numerical_value_in (u::m);
+      const float rise = rise_of (tree, cloud_center);
+      const float bend = std::clamp (0.18f + 0.84f * rise, 0.0f, 1.0f);
+      const float turn = PI2 * hash_lane (tree.seed, cloud.lane + 200);
+
+      draw.set_texture (texture);
+      draw.begin (render::Prim::Triangles);
+      for (int card = 0; card < 3; ++card) {
+        const float angle = turn + PI * card / 3.0f;
+        const Vec3 across = tree.axes.across * std::cos (angle) +
+                            tree.axes.forward * std::sin (angle);
+        Vec3 vertical = direction - across * dot (direction, across);
+        if (length2 (vertical) < 1e-4f)
+          vertical = tree.axes.up;
+        vertical = normalized (vertical);
+        const float grain = hash_lane (tree.seed, cloud.lane + 211 + card);
+        const float half_width = radius * (0.82f + 0.24f * grain);
+        const float half_height = std::max (
+          0.58f * radius, length (axis) * (0.30f + 0.08f * (1.0f - grain)));
+        const Vec3 center =
+          cloud_center + across * (radius * 0.12f * (grain - 0.5f)) +
+          vertical * (radius * 0.10f *
+                      (hash_lane (tree.seed, cloud.lane + 219 + card) - 0.5f));
+        const Vec3 outward = normalized (
+          cross (across, vertical) + tree.axes.up * (0.24f + 0.18f * grain));
+        const auto leaf =
+          [&] (const Vec3& point, float exposure, float u, float v) {
+            return FoliageVertex { point,
+                                   outward,
+                                   cloud.shelter * exposure,
+                                   bend * proportion[one],
+                                   1.0f * proportion[one],
+                                   u,
+                                   v };
+          };
+        foliage_quad (
+          draw,
+          tree.crown,
+          leaf (center - across * half_width - vertical * half_height,
+                0.18f,
+                0.0f,
+                0.0f),
+          leaf (center + across * half_width - vertical * half_height,
+                0.30f,
+                1.0f,
+                0.0f),
+          leaf (center + across * half_width + vertical * half_height,
+                1.0f,
+                1.0f,
+                1.0f),
+          leaf (center - across * half_width + vertical * half_height,
+                0.86f,
+                0.0f,
+                1.0f));
+      }
+      draw.end ();
+    }
+
     // Near enough to ride past, a tree stops being a mass and becomes an
     // organism. The stem bends and you can see limbs leave it; the crown is
     // several separate masses with sky between them rather than one
     // blob. None of that survives two hundred metres, which is exactly why
     // it is affordable: the band that gets it is small.
-    void append_near_broadleaf (render::DrawList& draw, const TreeForm& tree) {
+    void append_near_broadleaf (render::DrawList& draw,
+                                const TreeForm& tree,
+                                const render::Texture* leaf_texture) {
       const float height_m = tree.height.numerical_value_in (u::m);
       const float radius_m = tree.crown_radius.numerical_value_in (u::m);
       const Vec3& up = tree.axes.up;
+      std::array<LeafCloud, 9> clouds {};
+      std::size_t cloud_count = 0;
+      const auto append_crown = [&] (const Vec3& base,
+                                     const Vec3& tip,
+                                     meters_t radius,
+                                     int sides,
+                                     std::uint32_t lane,
+                                     float shelter) {
+        clouds[cloud_count++] = { base, tip, radius, lane, shelter };
+        const Vec3 center = base + (tip - base) * 0.55f;
+        append_crown_lobe (draw,
+                           tree,
+                           center + (base - center) * 0.70f,
+                           center + (tip - center) * 0.70f,
+                           radius * 0.64f,
+                           sides,
+                           lane,
+                           shelter * 0.86f);
+      };
+
       append_stem (draw, tree, 0.84f, 0.017f, 6);
-      append_crown_lobe (draw,
-                         tree,
-                         tree.root + up * (0.70f * height_m) +
-                           tree.lean * 0.44f,
-                         tree.root + up * height_m + tree.lean,
-                         tree.crown_radius * 0.50f,
-                         6,
-                         29,
-                         1.0f);
+      append_crown (tree.root + up * (0.70f * height_m) + tree.lean * 0.44f,
+                    tree.root + up * height_m + tree.lean,
+                    tree.crown_radius * 0.50f,
+                    6,
+                    29,
+                    1.0f);
       constexpr int limbs = 4;
       for (int limb = 0; limb < limbs; ++limb) {
         const float turn = PI2 * hash_lane (tree.seed, 91) +
@@ -422,9 +518,7 @@ namespace moppe::game {
                      (0.0080f - 0.0007f * limb) * height_m,
                      0.0035f * height_m,
                      3);
-        append_crown_lobe (
-          draw,
-          tree,
+        append_crown (
           crest - up * (0.070f * height_m) - outward * (0.08f * radius_m),
           crest + up * (0.12f * height_m) + outward * (0.10f * radius_m),
           tree.crown_radius *
@@ -433,17 +527,18 @@ namespace moppe::game {
           101 + 48 * static_cast<std::uint32_t> (limb),
           0.76f + 0.05f * limb);
         const Vec3 inner = shoulder + (crest - shoulder) * 0.44f;
-        append_crown_lobe (
-          draw,
-          tree,
-          inner - up * (0.050f * height_m),
-          inner + up * (0.090f * height_m) + outward * (0.04f * radius_m),
-          tree.crown_radius *
-            (0.23f + 0.06f * hash_lane (tree.seed, 121 + limb)),
-          5,
-          317 + 48 * static_cast<std::uint32_t> (limb),
-          0.69f + 0.04f * limb);
+        append_crown (inner - up * (0.050f * height_m),
+                      inner + up * (0.090f * height_m) +
+                        outward * (0.04f * radius_m),
+                      tree.crown_radius *
+                        (0.23f + 0.06f * hash_lane (tree.seed, 121 + limb)),
+                      5,
+                      317 + 48 * static_cast<std::uint32_t> (limb),
+                      0.69f + 0.04f * limb);
       }
+      for (std::size_t index = 0; index < cloud_count; ++index)
+        append_leaf_cloud (draw, tree, clouds[index], leaf_texture);
+      draw.set_texture (nullptr);
     }
 
     // A spruce is a stack of drooping whorls under a leader, not a cone. Each
@@ -452,23 +547,29 @@ namespace moppe::game {
     void append_conifer_crown (render::DrawList& draw,
                                const TreeForm& tree,
                                int tiers,
-                               int sides) {
+                               int sides,
+                               const render::Texture* conifer_texture) {
       const float height_m = tree.height.numerical_value_in (u::m);
       const float radius_m = tree.crown_radius.numerical_value_in (u::m);
       const auto needle = [&] (const Vec3& point,
                                const Vec3& outward,
                                float flutter,
-                               float grain) {
+                               float grain,
+                               float u,
+                               float v) {
         const float rise = rise_of (tree, point);
         return FoliageVertex {
           point,
           outward,
           std::clamp (0.10f + 0.98f * rise + grain, 0.0f, 1.0f),
           std::clamp (0.18f + 0.90f * rise, 0.0f, 1.0f) * proportion[one],
-          flutter * proportion[one]
+          flutter * proportion[one],
+          u,
+          v
         };
       };
 
+      draw.set_texture (conifer_texture);
       draw.begin (render::Prim::Triangles);
       for (int tier = 0; tier < tiers; ++tier) {
         const float share = static_cast<float> (tier) / (tiers - 1);
@@ -498,34 +599,41 @@ namespace moppe::game {
           const Vec3 inner =
             foot + tree.axes.up * ((0.055f - 0.025f * share) * height_m);
           const Vec3 tip = foot + radial * reach - tree.axes.up * droop;
-          const Vec3 shoulder =
-            foot + radial * (0.52f * reach) - tree.axes.up * (0.42f * droop);
           const float half_width = (0.19f + 0.05f * (1.0f - share)) * reach;
           const Vec3 out = normalized (radial * 0.76f + tree.axes.up * 0.65f);
-          foliage_triangle (
+          foliage_quad (
             draw,
             tree.crown,
-            needle (inner, tree.axes.up, 0.38f, 0.06f),
-            needle (shoulder + tangent * half_width, out, 0.90f, -0.08f),
-            needle (tip, out, 0.98f, 0.02f));
-          foliage_triangle (
-            draw,
-            tree.crown,
-            needle (inner, tree.axes.up, 0.38f, 0.06f),
-            needle (tip, out, 0.98f, 0.02f),
-            needle (shoulder - tangent * half_width, out, 0.90f, -0.08f));
+            needle (inner - tangent * half_width,
+                    tree.axes.up,
+                    0.38f,
+                    0.06f,
+                    0.0f,
+                    0.0f),
+            needle (inner + tangent * half_width,
+                    tree.axes.up,
+                    0.38f,
+                    0.06f,
+                    1.0f,
+                    0.0f),
+            needle (tip + tangent * half_width, out, 0.98f, 0.02f, 1.0f, 1.0f),
+            needle (tip - tangent * half_width, out, 0.98f, 0.02f, 0.0f, 1.0f));
         }
       }
       draw.end ();
+      draw.set_texture (nullptr);
     }
 
-    void append_tree (render::DrawList& draw, const ForestSite& site) {
+    void append_tree (render::DrawList& draw,
+                      const ForestSite& site,
+                      const render::Texture* leaf_texture,
+                      const render::Texture* conifer_texture) {
       const TreeForm tree = resolve_tree (site, 0.20f);
       if (site.form == ForestForm::conifer) {
         append_stem (draw, tree, 0.98f, 0.014f, 6);
-        append_conifer_crown (draw, tree, 8, 6);
+        append_conifer_crown (draw, tree, 8, 6, conifer_texture);
       } else {
-        append_near_broadleaf (draw, tree);
+        append_near_broadleaf (draw, tree, leaf_texture);
       }
     }
 
@@ -563,36 +671,35 @@ namespace moppe::game {
       draw.end ();
     }
 
-    // Beyond the near band a tree is a few pixels of canopy. A broadleaf
-    // keeps two overlapping masses and the clean trunk interval beneath
-    // them. Together with the trunk ribbon that costs the same eight total
-    // triangles as the old ground-to-tip diamond, but preserves the tree's
-    // identity. Conifers keep one narrow volume. Outward normals lift toward
-    // the sky so both light as soft bodies rather than flashing facets.
-    void append_distant_tree (render::DrawList& draw, const ForestSite& site) {
-      const TreeForm tree = resolve_tree (site, 0.14f);
-      constexpr int sides = 4;
-      const bool conifer = site.form == ForestForm::conifer;
+    // Beyond the near band a tree is a few pixels of canopy. Two crossed
+    // cards keep a volume from every bearing while filtered coverage carries
+    // the species silhouette below the pixel. Trunks and the two crown
+    // materials are recorded in separate lists so a whole chunk remains
+    // three runs rather than alternating texture state for every organism.
+    void append_distant_crown (render::DrawList& draw,
+                               const TreeForm& tree,
+                               bool conifer) {
       const float height_m = tree.height.numerical_value_in (u::m);
       const float radius_m = tree.crown_radius.numerical_value_in (u::m);
       const Vec3& up = tree.axes.up;
-      append_distant_stem (draw, tree, conifer ? 0.82f : 0.70f);
       const Vec3 waist = tree.root + up * (0.40f * height_m);
       const Vec3 crest = tree.root + up * height_m + tree.lean * 0.5f;
-      const auto mass = [&] (const Vec3& point, const Vec3& outward) {
-        const float rise = rise_of (tree, point);
-        return FoliageVertex {
-          point,
-          normalized (outward * 0.86f + up * 0.52f),
-          std::clamp (0.22f + 0.62f * rise, 0.0f, 1.0f),
-          std::clamp (0.20f + 0.80f * rise, 0.0f, 1.0f) * proportion[one],
-          (rise > 0.34f ? 0.62f : 0.0f) * proportion[one]
+      const auto mass =
+        [&] (const Vec3& point, const Vec3& outward, float u, float v) {
+          const float rise = rise_of (tree, point);
+          return FoliageVertex {
+            point,
+            normalized (outward * 0.86f + up * 0.52f),
+            std::clamp (0.22f + 0.62f * rise, 0.0f, 1.0f),
+            std::clamp (0.20f + 0.80f * rise, 0.0f, 1.0f) * proportion[one],
+            (rise > 0.34f ? 0.62f : 0.0f) * proportion[one],
+            u,
+            v
+          };
         };
-      };
 
       draw.begin (render::Prim::Triangles);
       if (!conifer) {
-        constexpr int lobe_sides = 3;
         for (int lobe = 0; lobe < 2; ++lobe) {
           const float direction = lobe == 0 ? 1.0f : -1.0f;
           const float lower_rise = lobe == 0 ? 0.55f : 0.49f;
@@ -605,35 +712,31 @@ namespace moppe::game {
                             tree.lean * (0.28f * lower_rise);
           const Vec3 tip = tree.root + up * (upper_rise * height_m) +
                            offset * 0.70f + tree.lean * (0.52f * upper_rise);
-          const float turn = PI2 * hash_lane (tree.seed, 141 + lobe);
-          for (int side = 0; side < lobe_sides; ++side) {
-            const float a0 = turn + PI2 * side / lobe_sides;
-            const float a1 = turn + PI2 * (side + 1) / lobe_sides;
-            const Vec3 r0 = tree.axes.across * std::cos (a0) +
-                            tree.axes.forward * std::sin (a0);
-            const Vec3 r1 = tree.axes.across * std::cos (a1) +
-                            tree.axes.forward * std::sin (a1);
-            foliage_triangle (draw,
-                              tree.crown,
-                              mass (tip, up),
-                              mass (base + r0 * lobe_radius, r0),
-                              mass (base + r1 * lobe_radius, r1));
+          for (const Vec3& axis :
+               std::array { tree.axes.across, tree.axes.forward }) {
+            const Vec3 outward = normalized (up * 0.62f + axis * 0.38f);
+            foliage_quad (
+              draw,
+              tree.crown,
+              mass (base - axis * lobe_radius, outward, 0.0f, 0.0f),
+              mass (base + axis * lobe_radius, outward, 1.0f, 0.0f),
+              mass (tip + axis * (0.56f * lobe_radius), outward, 1.0f, 1.0f),
+              mass (tip - axis * (0.56f * lobe_radius), outward, 0.0f, 1.0f));
           }
         }
         draw.end ();
         return;
       }
-      for (int side = 0; side < sides; ++side) {
-        const float a0 = PI2 * side / sides;
-        const float a1 = PI2 * (side + 1) / sides;
-        const Vec3 r0 =
-          tree.axes.across * std::cos (a0) + tree.axes.forward * std::sin (a0);
-        const Vec3 r1 =
-          tree.axes.across * std::cos (a1) + tree.axes.forward * std::sin (a1);
-        const Vec3 p0 = waist + r0 * radius_m;
-        const Vec3 p1 = waist + r1 * radius_m;
-        foliage_triangle (
-          draw, tree.crown, mass (crest, up), mass (p0, r0), mass (p1, r1));
+      for (const Vec3& axis :
+           std::array { tree.axes.across, tree.axes.forward }) {
+        const Vec3 outward = normalized (up * 0.62f + axis * 0.38f);
+        foliage_quad (
+          draw,
+          tree.crown,
+          mass (waist - axis * radius_m, outward, 0.0f, 0.0f),
+          mass (waist + axis * radius_m, outward, 1.0f, 0.0f),
+          mass (crest + axis * (0.06f * radius_m), outward, 1.0f, 1.0f),
+          mass (crest - axis * (0.06f * radius_m), outward, 0.0f, 1.0f));
       }
       draw.end ();
     }
@@ -720,6 +823,9 @@ namespace moppe::game {
       extent_component (m_period, 2) / static_cast<float> (m_chunks_z);
 
     m_chunks.clear ();
+    m_leaf_texture = make_leaf_card_texture (renderer);
+    m_conifer_texture = make_conifer_card_texture (renderer);
+    m_distant_conifer_texture = make_conifer_crown_texture (renderer);
     m_chunks.resize (static_cast<std::size_t> (m_chunks_x) * m_chunks_z);
     for (ForestSite& site : plan.sites) {
       const int x = std::clamp (
@@ -749,9 +855,25 @@ namespace moppe::game {
         if (chunk.sites.empty ())
           continue;
         render::DrawList far_trees;
+        render::DrawList far_stems;
+        render::DrawList far_broadleaf;
+        render::DrawList far_conifers;
         far_trees.state ().cull = false;
-        for (const ForestSite& site : chunk.sites)
-          append_distant_tree (far_trees, site);
+        far_stems.state ().cull = false;
+        far_broadleaf.state ().cull = false;
+        far_conifers.state ().cull = false;
+        far_broadleaf.set_texture (m_leaf_texture.get ());
+        far_conifers.set_texture (m_distant_conifer_texture.get ());
+        for (const ForestSite& site : chunk.sites) {
+          const TreeForm tree = resolve_tree (site, 0.14f);
+          const bool conifer = site.form == ForestForm::conifer;
+          append_distant_stem (far_stems, tree, conifer ? 0.82f : 0.70f);
+          append_distant_crown (
+            conifer ? far_conifers : far_broadleaf, tree, conifer);
+        }
+        far_trees.append (far_stems);
+        far_trees.append (far_broadleaf);
+        far_trees.append (far_conifers);
         chunk.far_bytes =
           far_trees.vertices ().size () * sizeof (render::Vertex);
         chunk.far_mesh = renderer.create_mesh (far_trees);
@@ -802,7 +924,10 @@ namespace moppe::game {
       }
       while (chunk.near_build_site < chunk.sites.size () &&
              built_sites < sites_per_frame) {
-        append_tree (*chunk.near_build, chunk.sites[chunk.near_build_site++]);
+        append_tree (*chunk.near_build,
+                     chunk.sites[chunk.near_build_site++],
+                     m_leaf_texture.get (),
+                     m_conifer_texture.get ());
         ++built_sites;
       }
       if (chunk.near_build_site != chunk.sites.size ())

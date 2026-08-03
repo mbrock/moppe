@@ -61,6 +61,7 @@ namespace moppe::game {
 
   private:
     TreeGrove m_grove;
+    render::TexturePtr m_leaf_texture;
     render::MeshPtr m_mesh;
   };
 }
