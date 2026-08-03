@@ -255,9 +255,11 @@ namespace moppe::game {
                         const FoliagePalette& palette,
                         const std::vector<Vec3>& local_positions,
                         const std::vector<Vec3>& world_positions,
-                        float maximum_generation) {
+                        float maximum_generation,
+                        const render::Texture* leaf_texture) {
       const auto& vigor = spatial::get<atelier::bud_vigor> (tree.vertices ());
       const CrownExtent extent = crown_extent (tree, world_positions);
+      draw.set_texture (leaf_texture);
       for (atelier::TreeVertexId vertex = 1;
            vertex < tree.topology ().vertex_count ();
            ++vertex) {
@@ -296,31 +298,63 @@ namespace moppe::game {
               extent.spread,
             0.0f,
             1.0f);
-          const Vec3 colour = linear_vector_interpolate (
-            palette.shaded,
-            palette.sunlit,
-            std::clamp (0.10f + 0.52f * rise + 0.34f * outward +
-                          0.16f * (grain - 0.5f),
-                        0.0f,
-                        1.0f));
-          draw.color (colour[0], colour[1], colour[2]);
-          draw.wind (std::clamp (wind, 0.0f, 1.0f) * proportion[one]);
-          draw.flutter (0.85f * proportion[one]);
-          draw.push ();
-          draw.translate (center);
-          draw.rotate (turn * u::rad, frame.up);
-          // No two sprays of leaves are the same shape, and a cluster that
-          // is exactly a sphere is the one thing that always reads as a bead.
-          draw.scale (size * (1.18f + 0.34f * grain),
-                      size * (0.72f + 0.30f * strength),
-                      size * (0.92f + 0.30f * (1.0f - grain)));
-          draw.sphere (1.0f, 6, 3);
-          draw.pop ();
+          const float exposure = std::clamp (
+            0.10f + 0.52f * rise + 0.34f * outward + 0.16f * (grain - 0.5f),
+            0.0f,
+            1.0f);
+          const float half_width = size * (1.12f + 0.34f * grain);
+          const float half_height = size * (0.78f + 0.28f * strength);
+          for (int card = 0; card < 2; ++card) {
+            const float card_turn = turn + 0.5f * PI * card;
+            const Vec3 across = frame.across * std::cos (card_turn) +
+                                frame.forward * std::sin (card_turn);
+            Vec3 vertical = frame.up + branch * 0.24f;
+            vertical -= across * dot (vertical, across);
+            vertical = normalized (vertical);
+            const Vec3 normal = normalized (cross (across, vertical) +
+                                            frame.up * (0.20f + 0.18f * grain));
+            const auto leaf =
+              [&] (const Vec3& point, float shade, float u, float v) {
+                return FoliageVertex {
+                  point,
+                  normal,
+                  std::clamp (exposure + shade, 0.0f, 1.0f),
+                  std::clamp (wind, 0.0f, 1.0f) * proportion[one],
+                  0.90f * proportion[one],
+                  u,
+                  v
+                };
+              };
+            draw.begin (render::Prim::Triangles);
+            foliage_quad (
+              draw,
+              palette,
+              leaf (center - across * half_width - vertical * half_height,
+                    -0.16f,
+                    0.0f,
+                    0.0f),
+              leaf (center + across * half_width - vertical * half_height,
+                    -0.08f,
+                    1.0f,
+                    0.0f),
+              leaf (center + across * half_width + vertical * half_height,
+                    0.12f,
+                    1.0f,
+                    1.0f),
+              leaf (center - across * half_width + vertical * half_height,
+                    0.06f,
+                    0.0f,
+                    1.0f));
+            draw.end ();
+          }
         }
       }
+      draw.set_texture (nullptr);
     }
 
-    void append_tree (render::DrawList& draw, const TreeSite& site) {
+    void append_tree (render::DrawList& draw,
+                      const TreeSite& site,
+                      const render::Texture* leaf_texture) {
       const atelier::Tree tree (site.seed);
       const atelier::DirectedTreeTopology& topology = tree.topology ();
       const TreeFrame frame = frame_at (site);
@@ -383,7 +417,8 @@ namespace moppe::game {
                      crown,
                      local_positions,
                      world_positions,
-                     maximum_generation);
+                     maximum_generation,
+                     leaf_texture);
     }
 
     struct PatchCandidate {
@@ -608,13 +643,15 @@ namespace moppe::game {
     MOPPE_PROFILE_ZONE ("TreeStand::rebuild");
     m_grove = plan_tree_grove (surface, readings, seed, desired_count, focus);
     m_mesh.reset ();
+    m_leaf_texture.reset ();
     if (m_grove.sites.empty ())
       return;
+    m_leaf_texture = make_leaf_card_texture (renderer);
 
     render::DrawList draw;
     draw.state ().cull = false;
     for (const TreeSite& site : m_grove.sites)
-      append_tree (draw, site);
+      append_tree (draw, site, m_leaf_texture.get ());
     draw.wind (0.0f * proportion[one]);
     draw.flutter (0.0f * proportion[one]);
     m_mesh = renderer.create_mesh (draw);

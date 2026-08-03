@@ -9,6 +9,7 @@
 struct UberVaryings {
   float4 position [[position]];
   float3 world_pos;
+  float3 coverage_pos;
   float3 normal;
   float2 uv;
   float4 color;
@@ -27,6 +28,7 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   const MoppeVertexIn v = verts[vid];
 
   float4 world = draw.model * float4 (float3 (v.position), 1.0);
+  const float3 coverage_pos = world.xyz;
   const float3x3 nrm (draw.nrm0.xyz, draw.nrm1.xyz, draw.nrm2.xyz);
 
   if (v.flags.z || v.flags.w)
@@ -38,6 +40,7 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   UberVaryings out;
   out.position = frame.view_proj * world;
   out.world_pos = world.xyz;
+  out.coverage_pos = coverage_pos;
   out.normal = nrm * float3 (v.normal);
   out.uv = float2 (v.uv);
   // Vertex colors are authored in display space; decode to linear
@@ -62,6 +65,26 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
                                sampler smp [[sampler (0)]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
   const float dist = length (in.world_pos - frame.camera_pos.xyz);
+
+  // A filtered card texel is coverage, not translucency. Compare it against
+  // a stable rest-position lattice whose cell size tracks the fragment's
+  // world-space footprint. This preserves expected leaf coverage through the
+  // mip chain without the fixed-cutoff thinning and scintillation that make
+  // ordinary alpha-tested foliage visibly synthetic. The test is gated by
+  // the foliage signal, so soft shadows and other alpha textures keep their
+  // existing blended behavior.
+  if (in.foliage > 0.0 && base.a < 0.999) {
+    const float footprint =
+      max (length (dfdx (in.coverage_pos)), length (dfdy (in.coverage_pos)));
+    const float lattice = exp2 (floor (log2 (max (footprint, 0.015))));
+    float3 cell = floor (in.coverage_pos / lattice);
+    cell = fract (cell * 0.1031);
+    cell += dot (cell, cell.yzx + 33.33);
+    const float threshold = fract ((cell.x + cell.y) * cell.z);
+    if (base.a <= threshold)
+      discard_fragment ();
+    base.a = 1.0;
+  }
 
   // A crown a kilometre off lands on one or two pixels, and it lands on
   // ground the haze has already taken most of the way to white. Left at its
