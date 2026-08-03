@@ -10,10 +10,10 @@ namespace moppe::game {
     // Display-space greens, decoded to linear by the scene shader. The two
     // species differ in more than hue: a conifer holds its needles in deep
     // shaded columns, a broadleaf spreads a thinner brighter sheet.
-    constexpr Vec3 broadleaf_sun (0.168f, 0.372f, 0.078f);
-    constexpr Vec3 broadleaf_shade (0.034f, 0.122f, 0.052f);
-    constexpr Vec3 conifer_sun (0.104f, 0.286f, 0.086f);
-    constexpr Vec3 conifer_shade (0.022f, 0.090f, 0.058f);
+    constexpr Vec3 broadleaf_sun (0.185f, 0.350f, 0.095f);
+    constexpr Vec3 broadleaf_shade (0.052f, 0.142f, 0.065f);
+    constexpr Vec3 conifer_sun (0.118f, 0.270f, 0.095f);
+    constexpr Vec3 conifer_shade (0.034f, 0.108f, 0.064f);
 
     void foliage_vertex (render::DrawList& draw,
                          const FoliagePalette& palette,
@@ -50,8 +50,8 @@ namespace moppe::game {
     // Young bark keeps its species colour; old bark greys out whatever it
     // started as, which is most of what tells two neighbours apart.
     const Vec3 fresh = kind == FoliageKind::conifer
-                         ? Vec3 (0.225f, 0.116f, 0.062f)
-                         : Vec3 (0.198f, 0.146f, 0.104f);
+                         ? Vec3 (0.245f, 0.132f, 0.076f)
+                         : Vec3 (0.220f, 0.166f, 0.122f);
     const Vec3 lit = linear_vector_interpolate (
       fresh, Vec3 (0.168f, 0.152f, 0.136f), hash_lane (seed, 11));
     // Bark in shade is not black. It is lit by the ground and by whatever
