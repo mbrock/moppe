@@ -70,9 +70,11 @@ storage form. Schema metadata records bundle version and serialized domain
 identity. A reader rejects a stream whose domain, column set, units,
 dimensions, or representations do not match the requested C++ bundle type.
 
-The terrain cache therefore stores the expensive `SurfaceGeometry` value
-without inventing a parallel cache schema. Later derived readings are rebuilt
-from the geometry and current code.
+The fallback terrain cache stores the expensive `SurfaceGeometry` value
+without inventing a parallel schema. On a finished-world cache miss, later
+readings are rebuilt from that geometry and current code. The normal writable
+cache stores every `GeneratedWorld` bundle together with compact topology and
+the forest plan, so a hit bypasses all renderer-free world analysis.
 
 ## Presentation boundary
 

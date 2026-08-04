@@ -3,11 +3,13 @@
 #include <moppe/spatial/bundle_storage.hh>
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <span>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -19,6 +21,27 @@ namespace moppe::game {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
     constexpr std::uint32_t CACHE_VERSION = 1;
+
+    std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
+      const Vec3 extent = extent_value (recipe.extent ());
+      const auto bits = [] (float value) {
+        return std::bit_cast<std::uint32_t> (value);
+      };
+      std::ostringstream name;
+      name << terrain::profile_id (recipe.generation_profile ()) << '-'
+           << recipe.resolution () << '-' << recipe.seed ().value << std::hex
+           << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
+           << bits (extent[2]) << "-water-"
+           << bits ((recipe.water_datum ()).numerical_value_in (u::m));
+      return name.str ();
+    }
+
+    spatial_extent_t forest_period (const terrain::TerrainDomain& domain) {
+      return spatial_extent_in_metres (
+        Vec3 (domain.period_x ().numerical_value_in (u::m),
+              0,
+              domain.period_z ().numerical_value_in (u::m)));
+    }
 
     std::filesystem::path file_in (const std::string& directory,
                                    const char* name) {
@@ -445,6 +468,17 @@ namespace moppe::game {
     }
   }
 
+  std::string world_cache_name (const terrain::WorldRecipe& recipe,
+                                const WorldCacheConfig& config,
+                                std::string_view build_identity) {
+    if (config.mode == WorldCacheMode::Disabled)
+      return {};
+    const std::string cache_namespace =
+      config.key.empty () ? std::string (build_identity) : "key-" + config.key;
+    return "world-" + cache_namespace + '-' + recipe_cache_identity (recipe) +
+           ".world";
+  }
+
   std::unique_ptr<GeneratedWorld>
   try_load_world_cache (WorldParams params,
                         terrain::WorldRecipe recipe,
@@ -487,6 +521,14 @@ namespace moppe::game {
         !read_trails (topology, trails, cells))
       return {};
 
+    const std::uint32_t forest_seed = recipe.seed ().value ^ 0xa34c91e5U;
+    std::optional<ForestPlan> forest =
+      try_load_forest_plan (file_in (directory, "forest-plan.bin").string (),
+                            forest_seed,
+                            forest_period (domain));
+    if (!forest)
+      return {};
+
     Hydrology hydrology (std::move (flood),
                          std::move (lakes),
                          std::move (drainage),
@@ -497,7 +539,8 @@ namespace moppe::game {
                                              std::move (hydrology),
                                              std::move (water),
                                              std::move (trails),
-                                             std::move (readings));
+                                             std::move (readings),
+                                             std::move (*forest));
   }
 
   void save_world_cache (const GeneratedWorld& world,
@@ -510,6 +553,9 @@ namespace moppe::game {
     save_bundle (world.water_surface (), file_in (directory, "water.arrows"));
     save_bundle (world.readings (), file_in (directory, "readings.arrows"));
     save_bundle (world.trails ().use, file_in (directory, "trail-use.arrows"));
+    save_forest_plan (world.forest (),
+                      world.recipe ().seed ().value ^ 0xa34c91e5U,
+                      file_in (directory, "forest-plan.bin").string ());
 
     BinaryWriter topology (file_in (directory, "topology.bin"));
     write_recipe (topology, world.recipe ());

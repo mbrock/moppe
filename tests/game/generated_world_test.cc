@@ -1,7 +1,9 @@
 #include <moppe/game/generated_world.hh>
+#include <moppe/game/world_cache.hh>
 
 #include <tests/test.hh>
 
+#include <filesystem>
 #include <memory>
 #include <type_traits>
 #include <vector>
@@ -46,8 +48,11 @@ namespace {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
+    trails.earthwork_delta_m.resize (surface.domain ().size (), 0.0f);
     auto [water, readings] = game::analyze_surface (
       surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+    game::ForestPlan forest = game::plan_global_forest (
+      surface, readings, recipe.seed ().value ^ 0xa34c91e5U);
     return std::make_unique<game::GeneratedWorld> (
       params,
       recipe,
@@ -55,7 +60,8 @@ namespace {
       std::move (analysis.hydrology),
       std::move (water),
       std::move (trails),
-      std::move (readings));
+      std::move (readings),
+      std::move (forest));
   }
 }
 
@@ -89,6 +95,8 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world->water_surface ().size () == 17 * 17);
   MOPPE_CHECK (world->readings ().size () == 17 * 17);
   MOPPE_CHECK (world->trails ().domain == world->surface ().domain ());
+  MOPPE_CHECK (world->forest ().period ==
+               spatial_extent_in_metres (Vec3 (640, 0, 640)));
 }
 
 MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
@@ -113,4 +121,63 @@ MOPPE_TEST (generated_world_handoffs_move_the_owner_not_the_world) {
   MOPPE_CHECK (!completed);
   MOPPE_CHECK (active.get () == address);
   MOPPE_CHECK (active->recipe ().seed () == Seed { 72 });
+}
+
+MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const std::filesystem::path cache =
+    std::filesystem::temp_directory_path () / "moppe-world-cache-test.world";
+  std::filesystem::remove_all (cache);
+  const spatial_extent_t extent =
+    spatial_extent_in_metres (Vec3 (640, 650, 640));
+  const WorldRecipe recipe = test_world_recipe (extent, 17, Seed { 91 });
+  const std::unique_ptr<game::GeneratedWorld> written =
+    build_test_world (recipe, game::WorldParams {});
+  game::save_world_cache (*written, cache.string ());
+
+  const std::unique_ptr<game::GeneratedWorld> restored =
+    game::try_load_world_cache (game::WorldParams {}, recipe, cache.string ());
+  MOPPE_CHECK (restored != nullptr);
+  MOPPE_CHECK (restored->surface ().size () == written->surface ().size ());
+  MOPPE_CHECK (restored->readings ().size () == written->readings ().size ());
+  MOPPE_CHECK (restored->water_surface ().size () ==
+               written->water_surface ().size ());
+  MOPPE_CHECK (restored->forest ().period == written->forest ().period);
+  MOPPE_CHECK (restored->forest ().sites.size () ==
+               written->forest ().sites.size ());
+  MOPPE_CHECK (std::filesystem::is_regular_file (cache / "forest-plan.bin"));
+
+  const WorldRecipe other_seed = test_world_recipe (extent, 17, Seed { 92 });
+  MOPPE_CHECK (!game::try_load_world_cache (
+    game::WorldParams {}, other_seed, cache.string ()));
+  std::filesystem::remove_all (cache);
+}
+
+MOPPE_TEST (named_world_cache_key_replaces_only_the_build_identity) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const spatial_extent_t extent =
+    spatial_extent_in_metres (Vec3 (640, 650, 640));
+  const WorldRecipe first = test_world_recipe (extent, 17, Seed { 91 });
+  const WorldRecipe second = test_world_recipe (extent, 17, Seed { 92 });
+  const game::WorldCacheConfig automatic;
+  MOPPE_CHECK (game::world_cache_name (first, automatic, "build-a") !=
+               game::world_cache_name (first, automatic, "build-b"));
+
+  game::WorldCacheConfig named { .key = "terrain-tuning" };
+  const std::string first_path =
+    game::world_cache_name (first, named, "build-a");
+  const std::string second_path =
+    game::world_cache_name (second, named, "build-b");
+  MOPPE_CHECK (first_path.find ("world-key-terrain-tuning-") !=
+               std::string::npos);
+  MOPPE_CHECK (first_path ==
+               game::world_cache_name (first, named, "another-build"));
+  MOPPE_CHECK (first_path != second_path);
+
+  named.mode = game::WorldCacheMode::Disabled;
+  MOPPE_CHECK (game::world_cache_name (first, named, "build-a").empty ());
 }

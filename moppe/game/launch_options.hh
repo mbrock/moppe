@@ -4,6 +4,7 @@
 #include <moppe/game/graphics_settings.hh>
 #include <moppe/game/water_capture.hh>
 #include <moppe/game/world.hh>
+#include <moppe/game/world_cache.hh>
 #include <moppe/platform/platform.hh>
 #include <moppe/terrain/world_recipe.hh>
 
@@ -40,6 +41,7 @@ namespace moppe::game {
     platform::Config config { .title = "Moppe" };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
+    WorldCacheConfig world_cache;
     bool tree_demo = false;
     std::size_t tree_count = 9;
     std::string screenshot_path;

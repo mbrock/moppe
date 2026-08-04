@@ -67,6 +67,7 @@ profile, stream-power evolution, and trail formation. `WorldLoading` spells
 the one real construction order literally:
 
 ```text
+whole-world cache hit, or:
 SurfaceGeometry(TerrainDomain)
   -> initialize_terrain
   -> evolve_terrain
@@ -74,12 +75,17 @@ SurfaceGeometry(TerrainDomain)
   -> rebuild_geometry
   -> analyze_hydrology
   -> analyze_surface
+  -> plan_global_forest
   -> GeneratedWorld
 ```
 
-The expensive geometry bundle may come from a typed Arrow cache. Whether
-loaded or generated, normals and broad snow support are rebuilt before water
-analysis. Hydrology derives, in order, a `FloodField`, `LakeCensus`,
+The completed world is cached automatically under executable and recipe
+identity. A named CLI cache namespace can deliberately remain stable across
+builds, while the recipe and cache schemas are still validated on every load.
+On a whole-world miss, the expensive geometry bundle may still come from its
+older typed Arrow cache. Whether loaded or generated, normals and broad snow
+support are rebuilt before water analysis. Hydrology derives, in order, a
+`FloodField`, `LakeCensus`,
 `DrainageGraph`, `FractionalDrainage`, and `RiverNetwork`. Surface analysis
 then paints `WaterSheets` and joins the completed ground readings. The census
 owns a finite `WaterBodyDomain`, checked cell membership, and physical body
@@ -98,7 +104,8 @@ path.
 - the complete hydrology result;
 - `WaterSheets`;
 - `TrailNetwork`; and
-- `SurfaceReadings`.
+- `SurfaceReadings`; and
+- the global renderer-free `ForestPlan`.
 
 Holding a `GeneratedWorld` therefore means construction is complete.
 `WorldLoading` is single-flight and non-cancellable. The worker shares loader

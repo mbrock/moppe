@@ -1,38 +1,15 @@
 #ifndef MOPPE_GAME_FOREST_HH
 #define MOPPE_GAME_FOREST_HH
 
-#include <moppe/game/foliage.hh>
-#include <moppe/map/surface.hh>
+#include <moppe/game/forest_plan.hh>
 #include <moppe/render/renderer.hh>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <optional>
-#include <string>
 #include <vector>
 
 namespace moppe::game {
-  using ForestForm = FoliageKind;
-
-  using TreeSizeFactor =
-    mp_units::quantity<tree_size_factor[mp_units::one], float>;
-
-  struct ForestSite {
-    position_t position {};
-    terrain::TerrainNormal normal {};
-    map::ForestCover cover {};
-    map::SurfaceMoisture moisture {};
-    TreeSizeFactor size = 1.0f * tree_size_factor[mp_units::one];
-    std::uint32_t seed = 0;
-    ForestForm form = ForestForm::broadleaf;
-  };
-
-  struct ForestPlan {
-    std::vector<ForestSite> sites;
-    spatial_extent_t period {};
-  };
-
   struct ForestView {
     position_t position {};
     Vec3 forward { 0, 0, 1 };
@@ -41,25 +18,6 @@ namespace moppe::game {
     degrees_t vertical_field_of_view = 70.0f * u::deg;
     magnitude_t aspect_ratio = 1.0f * mp_units::one;
   };
-
-  // Convert the continuous canopy field into stable individuals on a
-  // jittered grid. Positions and identities depend only on world seed and
-  // lattice cell, so revisiting an area never produces a different forest.
-  [[nodiscard]] ForestPlan
-  plan_global_forest (const map::SurfaceGeometry& surface,
-                      const map::SurfaceReadings& readings,
-                      std::uint32_t seed,
-                      meters_t spacing = 12.0f * u::m);
-
-  // The plan is renderer-independent and expensive to derive over a large
-  // surface, so packaged worlds can carry it beside their terrain fields.
-  void save_forest_plan (const ForestPlan& plan,
-                         std::uint32_t seed,
-                         const std::string& path);
-  [[nodiscard]] std::optional<ForestPlan>
-  try_load_forest_plan (const std::string& path,
-                        std::uint32_t seed,
-                        const spatial_extent_t& expected_period);
 
   // Terrain-scale presentation of the population.
   //
@@ -82,7 +40,7 @@ namespace moppe::game {
                   const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed);
-    void rebuild (render::Renderer& renderer, ForestPlan plan);
+    void rebuild (render::Renderer& renderer, const ForestPlan& plan);
 
     // Brings the near meshes for the chunks about to be drawn into
     // residence, a bounded number per call so a fast approach costs a few

@@ -80,8 +80,10 @@ namespace moppe::game {
 
   class WorldLoadingState {
   public:
-    explicit WorldLoadingState (const terrain::WorldRecipe& initial_recipe)
-        : seed (initial_recipe.seed ().value), clock_start (platform::now ()) {}
+    WorldLoadingState (const terrain::WorldRecipe& initial_recipe,
+                       WorldCacheConfig initial_cache_config)
+        : seed (initial_recipe.seed ().value), clock_start (platform::now ()),
+          cache_config (std::move (initial_cache_config)) {}
 
     // Everything the mutex guards, resettable in one assignment.
     struct Shared {
@@ -133,6 +135,8 @@ namespace moppe::game {
     double clock_start;
     std::atomic<bool> generation_complete = false;
     std::atomic<bool> in_flight = false;
+
+    const WorldCacheConfig cache_config;
 
     // Main-thread only.
     bool capture_done = false;
@@ -263,6 +267,29 @@ namespace moppe::game {
         std::cerr << "moppe: bundled world cache rejected; rebuilding"
                   << std::endl;
       }
+
+      const std::string world_cache_file = world_cache_name (
+        recipe, state.cache_config, platform::executable_build_id ());
+      const std::string world_cache =
+        world_cache_file.empty () ? std::string {}
+                                  : platform::cache_path (world_cache_file);
+      if (!world_cache.empty () &&
+          state.cache_config.mode == WorldCacheMode::Reuse) {
+        state.report ("Looking for a saved world",
+                      state.cache_config.key.empty ()
+                        ? "Checking this executable build, profile, and seed"
+                        : "Checking named cache '" + state.cache_config.key +
+                            "'");
+        if (std::unique_ptr<GeneratedWorld> world =
+              try_load_world_cache (job.params, recipe, world_cache)) {
+          std::cerr << "moppe: world cache: local=" << world_cache << std::endl;
+          state.report ("Reading the saved world",
+                        "Reusing terrain, water, routes, and forest plan");
+          state.publish_completed (std::move (world));
+          return;
+        }
+        std::cerr << "moppe: world cache miss: " << world_cache << std::endl;
+      }
       map::SurfaceGeometry surface =
         map::SurfaceGeometry (terrain::TerrainDomain (
           recipe.resolution (), recipe.resolution (), recipe.extent ()));
@@ -308,14 +335,30 @@ namespace moppe::game {
       auto [water, readings] = analyze_surface (
         surface, recipe, analysis.hydrology, analysis.channels, trails.use);
 
-      state.publish_completed (
+      state.report ("Planting the forests",
+                    "Choosing the persistent trees across the landscape");
+      ForestPlan forest = plan_global_forest (
+        surface, readings, recipe.seed ().value ^ 0xa34c91e5U);
+
+      std::unique_ptr<GeneratedWorld> world =
         std::make_unique<GeneratedWorld> (job.params,
                                           recipe,
                                           std::move (surface),
                                           std::move (analysis.hydrology),
                                           std::move (water),
                                           std::move (trails),
-                                          std::move (readings)));
+                                          std::move (readings),
+                                          std::move (forest));
+      if (!world_cache.empty ()) {
+        state.report ("Saving the finished world",
+                      state.cache_config.key.empty ()
+                        ? "Keeping every generated artifact for this build"
+                        : "Updating named cache '" + state.cache_config.key +
+                            "'");
+        save_world_cache (*world, world_cache);
+        std::cerr << "moppe: world cache saved: " << world_cache << std::endl;
+      }
+      state.publish_completed (std::move (world));
     }
 
     // -- thread plumbing -------------------------------------------------
@@ -340,8 +383,10 @@ namespace moppe::game {
 
   // -- the main-thread facade --------------------------------------------
 
-  WorldLoading::WorldLoading (const terrain::WorldRecipe& recipe)
-      : m_state (std::make_shared<WorldLoadingState> (recipe)) {}
+  WorldLoading::WorldLoading (const terrain::WorldRecipe& recipe,
+                              WorldCacheConfig cache_config)
+      : m_state (std::make_shared<WorldLoadingState> (
+          recipe, std::move (cache_config))) {}
 
   void WorldLoading::start (const WorldParams& world,
                             terrain::WorldRecipe recipe) {

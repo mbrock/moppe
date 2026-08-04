@@ -3,6 +3,7 @@
 #include <moppe/game/graphics_benchmark.hh>
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <cmath>
 #include <cstdint>
@@ -69,6 +70,22 @@ namespace moppe::game {
                       float& result,
                       std::string& error) {
       return parse_float_option (value, option, 0.25f, 1.0f, result, error);
+    }
+
+    bool set_world_cache_key (LaunchOptions& options,
+                              const char* value,
+                              std::string& error) {
+      const std::string_view key = value;
+      if (key.empty () || key.size () > 64 ||
+          !std::all_of (key.begin (), key.end (), [] (unsigned char c) {
+            return std::isalnum (c) || c == '-' || c == '_' || c == '.';
+          })) {
+        error = "--world-cache-key must be 1..64 letters, digits, '.', '_', "
+                "or '-'";
+        return false;
+      }
+      options.world_cache.key = key;
+      return true;
     }
 
     // One recognized flag: how many values it consumes, what to say when they
@@ -312,6 +329,34 @@ namespace moppe::game {
               terrain::TerrainGenerationProfile::Research;
           else
             return unknown ("terrain quality", values[0], error);
+          return true;
+        } },
+      { "--world-cache-key",
+        "",
+        1,
+        "<NAME>",
+        "Reuse a named whole-world cache across executable builds.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          return set_world_cache_key (options, values[0], error);
+        } },
+      { "--refresh-world-cache",
+        "",
+        0,
+        "",
+        "Rebuild and replace the selected whole-world cache.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.world_cache.mode = WorldCacheMode::Refresh;
+          return true;
+        } },
+      { "--no-world-cache",
+        "",
+        0,
+        "",
+        "Skip whole-world cache loading and saving for this launch.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.world_cache.mode = WorldCacheMode::Disabled;
           return true;
         } },
       { "--tree-demo",

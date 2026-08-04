@@ -44,13 +44,19 @@ namespace moppe::game {
     const std::filesystem::path root (platform::cache_path (""));
     for (const std::filesystem::directory_entry& entry :
          std::filesystem::directory_iterator (root, error)) {
-      if (error || !entry.is_regular_file ())
+      if (error)
         continue;
       const std::string name = entry.path ().filename ().string ();
       const bool terrain_file =
-        name.starts_with ("terrain-") || name.starts_with ("last-seed-");
+        entry.is_regular_file () &&
+        (name.starts_with ("terrain-") || name.starts_with ("last-seed-"));
+      const bool automatic_world = entry.is_directory () &&
+                                   name.starts_with ("world-") &&
+                                   !name.starts_with ("world-key-");
       if (terrain_file && name.find (build_id) == std::string::npos)
         std::filesystem::remove (entry.path (), error);
+      else if (automatic_world && name.find (build_id) == std::string::npos)
+        std::filesystem::remove_all (entry.path (), error);
     }
   }
 }

@@ -1,4 +1,4 @@
-#include <moppe/game/forest.hh>
+#include <moppe/game/forest_plan.hh>
 
 #include <moppe/gfx/signal.hh>
 

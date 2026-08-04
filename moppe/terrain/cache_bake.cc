@@ -87,6 +87,9 @@ int main (int argc, char** argv) {
       game::analyze_hydrology (surface, recipe);
     auto [water, readings] = game::analyze_surface (
       surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+    const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
+    game::ForestPlan forest =
+      game::plan_global_forest (surface, readings, forest_seed);
     auto world =
       std::make_unique<game::GeneratedWorld> (game::WorldParams {},
                                               recipe,
@@ -94,19 +97,9 @@ int main (int argc, char** argv) {
                                               std::move (analysis.hydrology),
                                               std::move (water),
                                               std::move (trails),
-                                              std::move (readings));
+                                              std::move (readings),
+                                              std::move (forest));
     game::save_world_cache (*world, output.string ());
-    const std::uint32_t forest_seed = seed ^ 0xa34c91e5U;
-    game::ForestPlan forest = game::plan_global_forest (
-      world->surface (), world->readings (), forest_seed);
-    const std::filesystem::path forest_path = output / "forest-plan.bin";
-    game::save_forest_plan (forest, forest_seed, forest_path.string ());
-    const std::optional<game::ForestPlan> restored_forest =
-      game::try_load_forest_plan (
-        forest_path.string (), forest_seed, forest.period);
-    if (!restored_forest ||
-        restored_forest->sites.size () != forest.sites.size ())
-      throw std::runtime_error ("written forest plan did not validate");
     world.reset ();
     if (!game::try_load_world_cache (
           game::WorldParams {}, recipe, output.string ()))

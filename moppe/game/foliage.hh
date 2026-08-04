@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_FOLIAGE_HH
 #define MOPPE_GAME_FOLIAGE_HH
 
+#include <moppe/game/foliage_kind.hh>
 #include <moppe/gfx/math.hh>
 #include <moppe/render/draw.hh>
 
@@ -26,8 +27,6 @@ namespace moppe::render {
 // the ground, lit where it rises clear.
 
 namespace moppe::game {
-  enum class FoliageKind { broadleaf, conifer };
-
   // The ground a crown answers to. A well watered closed canopy is deep and
   // saturated; a dry opening is olive and pale.
   struct FoliageGround {

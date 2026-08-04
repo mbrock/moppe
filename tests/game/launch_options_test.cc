@@ -41,6 +41,8 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (options.graphics.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK (options.screenshot_path.empty ());
   MOPPE_CHECK (!options.benchmark.has_value ());
+  MOPPE_CHECK (options.world_cache.mode == game::WorldCacheMode::Reuse);
+  MOPPE_CHECK (options.world_cache.key.empty ());
   // Unresolved: main recalls the last played seed for an ordinary launch.
   MOPPE_CHECK (options.seed < 0);
 }
@@ -73,6 +75,9 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--gazetteer-settle",
          "--fast",
          "--terrain-quality",
+         "--world-cache-key",
+         "--refresh-world-cache",
+         "--no-world-cache",
          "--tree-demo",
          "--tree-count",
          "--tree-screenshot",
@@ -150,6 +155,9 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--drawable-scale", "half" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
+  MOPPE_CHECK (rejects ({ "--world-cache-key" }));
+  MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
+  MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "0" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "65" }));
   MOPPE_CHECK (rejects ({ "--water-screenshot", "canyon", "/tmp/a.png" }));
@@ -162,6 +170,18 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--gazetteer-settle", "10" }));
   // An unrecognized argument is not an error; it is simply not a setting.
   MOPPE_CHECK (!rejects ({ "--not-a-flag" }));
+}
+
+MOPPE_TEST (launch_selects_stable_whole_world_cache_policy) {
+  const game::LaunchOptions named =
+    parsed ({ "--world-cache-key", "terrain-tuning_3" });
+  MOPPE_CHECK (named.world_cache.mode == game::WorldCacheMode::Reuse);
+  MOPPE_CHECK (named.world_cache.key == "terrain-tuning_3");
+
+  MOPPE_CHECK (parsed ({ "--refresh-world-cache" }).world_cache.mode ==
+               game::WorldCacheMode::Refresh);
+  MOPPE_CHECK (parsed ({ "--no-world-cache" }).world_cache.mode ==
+               game::WorldCacheMode::Disabled);
 }
 
 MOPPE_TEST (launch_captures_pin_a_seed_and_stay_out_of_the_way) {

@@ -1,6 +1,7 @@
 #ifndef MOPPE_GAME_GENERATED_WORLD_HH
 #define MOPPE_GAME_GENERATED_WORLD_HH
 
+#include <moppe/game/forest_plan.hh>
 #include <moppe/game/world.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/flood.hh>
@@ -65,7 +66,8 @@ namespace moppe::game {
                     Hydrology hydrology,
                     terrain::WaterSheets water,
                     terrain::TrailNetwork trails,
-                    map::SurfaceReadings readings);
+                    map::SurfaceReadings readings,
+                    ForestPlan forest);
     GeneratedWorld (const GeneratedWorld&) = delete;
     GeneratedWorld& operator= (const GeneratedWorld&) = delete;
     GeneratedWorld (GeneratedWorld&&) = delete;
@@ -99,6 +101,10 @@ namespace moppe::game {
       return m_trails;
     }
 
+    const ForestPlan& forest () const noexcept {
+      return m_forest;
+    }
+
   private:
     WorldParams m_params;
     terrain::WorldRecipe m_recipe;
@@ -107,6 +113,7 @@ namespace moppe::game {
     terrain::WaterSheets m_water_surface;
     terrain::TrailNetwork m_trails;
     map::SurfaceReadings m_readings;
+    ForestPlan m_forest;
   };
 }
 
