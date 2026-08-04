@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace moppe::game {
   // How long the GPU benchmark rides before it starts trusting its own
@@ -51,6 +52,7 @@ namespace moppe::game {
     // Negative until the launch either names a seed or recalls a remembered
     // one; a capture always pins its own so comparisons stay reproducible.
     int seed = -1;
+    bool show_help = false;
   };
 
   // Parses argv over already-initialized options, so a platform may install
@@ -60,6 +62,10 @@ namespace moppe::game {
                              char** argv,
                              LaunchOptions& options,
                              std::string& error);
+
+  // Generated from the parser's flag registry so accepted options and their
+  // help text remain one definition.
+  std::string launch_options_help (std::string_view program_name);
 
   // The benchmark's output path and feature set reach the renderer backend
   // through the environment, which is the one channel both the native and

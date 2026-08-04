@@ -35,6 +35,10 @@ int main (int argc, char** argv) {
     std::cerr << error << '\n';
     return -1;
   }
+  if (options.show_help) {
+    std::cout << game::launch_options_help (argc > 0 ? argv[0] : "moppe");
+    return 0;
+  }
   if (!game::apply_graphics_environment (options.graphics, error)) {
     std::cerr << error << '\n';
     return -1;

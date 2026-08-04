@@ -44,6 +44,47 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (options.seed < 0);
 }
 
+MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
+  game::LaunchOptions options;
+  std::string error;
+  MOPPE_CHECK (parse ({ "-h" }, options, error));
+  MOPPE_CHECK (options.show_help);
+
+  const std::string help = game::launch_options_help ("/tmp/moppe");
+  MOPPE_CHECK (help.starts_with ("Usage: moppe [options]"));
+  for (const char* option : {
+         "--help",
+         "--fullscreen",
+         "--windowed",
+         "--graphics-quality",
+         "--upscaling",
+         "--render-scale",
+         "--drawable-scale",
+         "--graphics-enable",
+         "--graphics-disable",
+         "--graphics-benchmark",
+         "--benchmark-frames",
+         "--benchmark-settle",
+         "--benchmark-prelude",
+         "--terrain-gazetteer",
+         "--gazetteer-settle",
+         "--fast",
+         "--terrain-quality",
+         "--tree-demo",
+         "--tree-count",
+         "--tree-screenshot",
+         "--screenshot",
+         "--water-screenshot",
+         "--window-size",
+         "--inactive",
+         "--seed",
+       })
+    MOPPE_CHECK (help.find (option) != std::string::npos);
+  MOPPE_CHECK (help.find ("-h, --help") != std::string::npos);
+  MOPPE_CHECK (help.find ("Graphics features:") != std::string::npos);
+  MOPPE_CHECK (help.find ("undergrowth") != std::string::npos);
+}
+
 MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (!parsed ({ "--graphics-quality", "low" }).graphics.bloom);
   MOPPE_CHECK (parsed ({ "--graphics-quality", "high" }).graphics.bloom);
