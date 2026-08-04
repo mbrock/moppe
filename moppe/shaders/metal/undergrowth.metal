@@ -463,10 +463,8 @@ struct UndergrowthShoot {
     const float flutter = (0.06 + 0.18 * t) * micro_detail;
     const float3 left_base = spine - edge * half_width;
     const float3 right_base = spine + edge * half_width;
-    const float3 left =
-      moppe_wind (left_base, bend, flutter, u.params.x);
-    const float3 right =
-      moppe_wind (right_base, bend, flutter, u.params.x);
+    const float3 left = moppe_wind (left_base, bend, flutter, u.params.x);
+    const float3 right = moppe_wind (right_base, bend, flutter, u.params.x);
     const float3 previous_left =
       moppe_wind (left_base, bend, flutter, u.temporal.z);
     const float3 previous_right =
@@ -485,18 +483,18 @@ struct UndergrowthShoot {
 
     v.world_pos = left;
     v.position = u.view_proj * float4 (left, 1.0);
-    v.motion = moppe_motion_vector (
-      u.unjittered_view_proj * float4 (left, 1.0),
-      u.previous_view_proj * float4 (previous_left, 1.0),
-      u.temporal.xy);
+    v.motion =
+      moppe_motion_vector (u.unjittered_view_proj * float4 (left, 1.0),
+                           u.previous_view_proj * float4 (previous_left, 1.0),
+                           u.temporal.xy);
     out.set_vertex (vertex_base + step * 2u, v);
 
     v.world_pos = right;
     v.position = u.view_proj * float4 (right, 1.0);
-    v.motion = moppe_motion_vector (
-      u.unjittered_view_proj * float4 (right, 1.0),
-      u.previous_view_proj * float4 (previous_right, 1.0),
-      u.temporal.xy);
+    v.motion =
+      moppe_motion_vector (u.unjittered_view_proj * float4 (right, 1.0),
+                           u.previous_view_proj * float4 (previous_right, 1.0),
+                           u.temporal.xy);
     out.set_vertex (vertex_base + step * 2u + 1u, v);
   }
 
@@ -516,12 +514,10 @@ struct UndergrowthShoot {
 // ---- the fragment stage --------------------------------------------
 
 fragment MoppeTemporalOutput undergrowth_fragment (
-                                      UndergrowthVaryings in [[stage_in]],
-                                      bool front_facing [[front_facing]],
-                                      constant MoppeUndergrowthUniforms& u
-                                      [[buffer (MOPPE_BUF_FRAME)]],
-                                      depth2d<float> shadow_map
-                                      [[texture (MOPPE_TEX_SHADOW)]]) {
+  UndergrowthVaryings in [[stage_in]],
+  bool front_facing [[front_facing]],
+  constant MoppeUndergrowthUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
   // A leaf has no back. Facing the normal at whoever is looking is what
   // stops half of every rosette reading as a hole cut in the ground.
   const float3 n = normalize (front_facing ? in.normal : -in.normal);

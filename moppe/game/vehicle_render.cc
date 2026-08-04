@@ -458,13 +458,12 @@ namespace moppe {
                              Mat4::translation (Vec3 (0.17f, -0.30f, -0.80f)) *
                              Mat4::rotation (180 * u::deg, y_axis);
         draw_part (*fm.lick_outer,
+                   muffler * Mat4::scaling (Vec3 (
+                               0.07f, 0.07f, (0.16f + 0.30f * thrust) * lick)));
+        draw_part (*fm.lick_core,
                    muffler *
                      Mat4::scaling (
-                       Vec3 (0.07f, 0.07f, (0.16f + 0.30f * thrust) * lick)));
-        draw_part (
-          *fm.lick_core,
-          muffler * Mat4::scaling (
-                      Vec3 (0.035f, 0.035f, (0.22f + 0.36f * thrust) * lick)));
+                       Vec3 (0.035f, 0.035f, (0.22f + 0.36f * thrust) * lick)));
       }
 
       // Live jump-jet output: a layered additive plume -- a wide warm
@@ -499,11 +498,9 @@ namespace moppe {
             *fm.plume_sheath,
             jet * Mat4::scaling (Vec3 (sheath_r, sheath_r, sheath_l * len)));
           draw_part (*fm.plume_body,
-                     jet * Mat4::scaling (
-                             Vec3 (body_r, body_r, body_l * len)));
+                     jet * Mat4::scaling (Vec3 (body_r, body_r, body_l * len)));
           draw_part (*fm.plume_core,
-                     jet * Mat4::scaling (
-                             Vec3 (core_r, core_r, core_l * len)));
+                     jet * Mat4::scaling (Vec3 (core_r, core_r, core_l * len)));
         }
       }
     }

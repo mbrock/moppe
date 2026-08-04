@@ -21,8 +21,8 @@
   - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
     - `--upscaling temporal|spatial|linear` requests MetalFX temporal or
-      spatial reconstruction, or the exact linear fallback. Spatial remains
-      the default; startup prints the requested and backend-resolved mode.
+      spatial reconstruction, or the exact linear fallback. Temporal is the
+      default; startup prints the requested and backend-resolved mode.
       Temporal uses a single-sample jittered scene with persistent depth,
       motion vectors, exposure, and a reactive mask rather than scene MSAA.
     - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a

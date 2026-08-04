@@ -130,12 +130,10 @@ static OceanVaryings ocean_surface_point (float3 p,
   float fog = moppe_distance_fog (dist, u.fog_color.w);
   fog += 0.3 * smoothstep (150.0, 1500.0, dist);
   out.fog = saturate (fog);
-  const float4 current_reference =
-    u.unjittered_view_proj * float4 (p, 1.0);
-  const float4 previous_reference =
-    u.previous_view_proj * float4 (p, 1.0);
-  out.motion = moppe_motion_vector (
-    current_reference, previous_reference, u.temporal.xy);
+  const float4 current_reference = u.unjittered_view_proj * float4 (p, 1.0);
+  const float4 previous_reference = u.previous_view_proj * float4 (p, 1.0);
+  out.motion =
+    moppe_motion_vector (current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 
@@ -570,19 +568,17 @@ fragment ReflectionWaterInput reflection_water_input_fragment (
 
 // Bilinear ground height under a point, in world meters.  R32F
 // must be read() at integer coords, so filter by hand.
-fragment MoppeTemporalOutput ocean_fragment (OceanVaryings in [[stage_in]],
-                                constant MoppeOceanUniforms& u
-                                [[buffer (MOPPE_BUF_FRAME)]],
-                                texture2d<float, access::read> heights
-                                [[texture (MOPPE_TEX_HEIGHTS)]],
-                                texture2d<float, access::read> water_levels
-                                [[texture (MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
-                                texture2d<float, access::read> water_flow
-                                [[texture (MOPPE_TEX_WATER_FLOW_FRAGMENT)]],
-                                texture2d<float, access::read> geology
-                                [[texture (MOPPE_TEX_WATER_GEOLOGY_FRAGMENT)]],
-                                depth2d<float> shadow_map
-                                [[texture (MOPPE_TEX_SHADOW)]]) {
+fragment MoppeTemporalOutput ocean_fragment (
+  OceanVaryings in [[stage_in]],
+  constant MoppeOceanUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+  texture2d<float, access::read> heights [[texture (MOPPE_TEX_HEIGHTS)]],
+  texture2d<float, access::read> water_levels
+  [[texture (MOPPE_TEX_WATER_LEVELS_FRAGMENT)]],
+  texture2d<float, access::read> water_flow
+  [[texture (MOPPE_TEX_WATER_FLOW_FRAGMENT)]],
+  texture2d<float, access::read> geology
+  [[texture (MOPPE_TEX_WATER_GEOLOGY_FRAGMENT)]],
+  depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
   const float time = u.params.x;
   const float3 to_frag = in.world_pos - u.camera_pos.xyz;
   const float dist = length (to_frag);
@@ -902,7 +898,5 @@ fragment MoppeTemporalOutput ocean_fragment (OceanVaryings in [[stage_in]],
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);
   return moppe_temporal_output (
-    float4 (mix (color, fog_c, ff), alpha * (1.0 - 0.4 * ff)),
-    in.motion,
-    0.78);
+    float4 (mix (color, fog_c, ff), alpha * (1.0 - 0.4 * ff)), in.motion, 0.78);
 }

@@ -265,10 +265,10 @@ device backend. Validate rendering on macOS or a Metal 4 iPhone/Apple TV.
   `MTL4CounterHeap` timestamps retain game-pass labels without depending on
   the legacy Tracy Metal integration.
 - On supported macOS and iOS devices, one renderer-owned `MTL4Compiler`
-  creates a spatial MetalFX scaler at target-configuration lifetime. Its
-  reported texture usages shape the scene and output allocations, one fence
-  synchronizes the untracked scaler work, and the scaler encodes into the
-  frame's existing command buffer. tvOS resolves the request to linear.
+  creates the requested temporal or spatial MetalFX scaler at
+  target-configuration lifetime. Its reported texture usages shape the scene
+  and output allocations, one fence synchronizes the untracked scaler work,
+  and the scaler encodes into the frame's existing command buffer.
 
 Primary references are Apple's
 [Metal 4 core API overview](https://developer.apple.com/documentation/metal/understanding-the-metal-4-core-api),
@@ -639,19 +639,20 @@ flare. `--graphics-quality high` is the default full presentation. The low
 preset retains terrain, vehicles, physics, sky, waterfall curtains, and HUD so
 it remains playable while isolating optional rendering cost.
 
-All presets request spatial MetalFX by default. When the scene is smaller than
+All presets request temporal MetalFX by default. When the scene is smaller than
 the drawable and a physical macOS, iOS, or tvOS device supports Metal 4
 MetalFX, the renderer reconstructs the linear HDR scene into a native-size
 RGBA16F target before the existing tone map, print-like grade, EDR treatment,
 lens treatment, and native HUD. `--upscaling linear` retains the former direct
 linear sample for fallbacks and exact A/B comparisons. Startup reports
-requested and resolved `native | temporal | spatial | linear` modes together with both
-dimensions and the fallback reason.
+requested and resolved `native | temporal | spatial | linear` modes together
+with both dimensions and the fallback reason.
 
-`--upscaling temporal` selects the MetalFX temporal path when Metal 4 temporal
-scaling is available, falls back to spatial when only spatial MetalFX is
-available, and finally to linear enlargement. A temporal scene intentionally
-uses one raster sample per pixel: the temporal scaler supplies antialiasing,
+The default temporal request selects the MetalFX temporal path when Metal 4
+temporal scaling is available, falls back to spatial when only spatial
+MetalFX is available, and finally to linear enlargement. A temporal scene
+intentionally uses one raster sample per pixel: the temporal scaler supplies
+antialiasing,
 while keeping multisampled depth and motion would require costly and ambiguous
 resolves. Spatial and linear retain the configured 2x/4x memoryless MSAA path.
 
@@ -682,11 +683,12 @@ invalidates MetalFX history, prior camera/object/list state, exposure feedback,
 and the older gameplay motion-blur history together.
 
 The Apple TV default uses half of UIKit point resolution for the 3D scene.
-Spatial MetalFX reconstructs that scene to the native drawable on supported
-Apple TV hardware, with the linear present sample remaining the fallback. The
-present pass and HUD still use the native drawable, and tvOS uses 2x scene
-MSAA instead of 4x. The television preset keeps water, particles, vehicle and
-star effects, lens flare, and detailed terrain materials, while disabling
+Temporal MetalFX reconstructs that scene to the native drawable on supported
+Apple TV hardware, with spatial and then linear reconstruction as fallbacks.
+The present pass and HUD still use the native drawable. Temporal uses its 1x
+jittered scene; spatial and linear fallbacks use 2x scene MSAA instead of 4x.
+The television preset keeps water, particles, vehicle and star effects, lens
+flare, and detailed terrain materials, while disabling
 terrain shadows, motion blur, bloom, the exposure probe, and procedural
 undergrowth. Those remain available through `--graphics-quality high` or
 individual feature overrides. Explicit quality presets remain relative to the

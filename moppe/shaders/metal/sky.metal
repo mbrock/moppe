@@ -27,8 +27,8 @@ vertex SkyVaryings sky_vertex (uint vid [[vertex_id]],
   float4 current_reference = u.unjittered_view_proj * float4 (p, 1.0);
   float4 previous_reference = u.previous_view_proj * float4 (p, 1.0);
   current_reference.z = previous_reference.z = 0.0;
-  out.motion = moppe_motion_vector (
-    current_reference, previous_reference, u.temporal.xy);
+  out.motion =
+    moppe_motion_vector (current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 
@@ -186,8 +186,8 @@ static float3 sky_cloud_lighting (float cloud_density,
 }
 
 fragment MoppeTemporalOutput sky_fragment (SkyVaryings in [[stage_in]],
-                              constant MoppeSkyUniforms& u
-                              [[buffer (MOPPE_BUF_FRAME)]]) {
+                                           constant MoppeSkyUniforms& u
+                                           [[buffer (MOPPE_BUF_FRAME)]]) {
   const float time = u.params.x;
   const float sun_height = u.params.y;
   const float cloudiness = u.params.z;

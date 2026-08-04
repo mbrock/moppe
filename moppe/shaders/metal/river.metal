@@ -48,10 +48,10 @@ vertex RiverVaryings river_vertex (uint vid [[vertex_id]],
 }
 
 fragment MoppeTemporalOutput river_fragment (RiverVaryings in [[stage_in]],
-                                constant MoppeFrameUniforms& frame
-                                [[buffer (MOPPE_BUF_FRAME)]],
-                                depth2d<float> shadow_map
-                                [[texture (MOPPE_TEX_SHADOW)]]) {
+                                             constant MoppeFrameUniforms& frame
+                                             [[buffer (MOPPE_BUF_FRAME)]],
+                                             depth2d<float> shadow_map
+                                             [[texture (MOPPE_TEX_SHADOW)]]) {
   const float time = frame.misc.x;
   const float edge =
     smoothstep (0.0, 0.08, in.uv.x) * smoothstep (0.0, 0.08, 1.0 - in.uv.x);

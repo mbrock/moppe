@@ -38,6 +38,7 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
   MOPPE_CHECK (options.config.activate);
   MOPPE_CHECK (!options.config.capture_frames);
   MOPPE_CHECK_NEAR (options.config.drawable_scale, 1.0f, 0.0f);
+  MOPPE_CHECK (options.graphics.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK (options.screenshot_path.empty ());
   MOPPE_CHECK (!options.benchmark.has_value ());
   // Unresolved: main recalls the last played seed for an ordinary launch.

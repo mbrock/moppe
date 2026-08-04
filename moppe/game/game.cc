@@ -975,12 +975,10 @@ namespace moppe {
         // already drawn: exhaust and jump-jet flames, then star halos.
         if (visibility.vehicle_effects &&
             !(helmet && actors.active_mode == M_BIKE))
-          render_vehicle_flames (
-            r, actors.bike, frame.lighting.time, 0x1000);
+          render_vehicle_flames (r, actors.bike, frame.lighting.time, 0x1000);
         if (visibility.vehicle_effects && actors.car &&
             !(helmet && actors.active_mode == M_CAR))
-          render_vehicle_flames (
-            r, *actors.car, frame.lighting.time, 0x2000);
+          render_vehicle_flames (r, *actors.car, frame.lighting.time, 0x2000);
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
