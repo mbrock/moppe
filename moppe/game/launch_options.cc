@@ -7,8 +7,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <iomanip>
+#include <iterator>
 #include <sstream>
 #include <string_view>
+#include <vector>
 
 namespace moppe::game {
   namespace {
@@ -62,29 +65,46 @@ namespace moppe::game {
     // rather than every handler repeating the same test.
     struct Flag {
       std::string_view name;
+      std::string_view alias;
       int arity;
       const char* expects;
+      const char* description;
       bool (*apply) (LaunchOptions&, const char* const*, std::string&);
     };
 
     constexpr Flag flags[] = {
-      { "--fullscreen",
+      { "--help",
+        "-h",
         0,
         "",
+        "Show this help and exit.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          options.show_help = true;
+          return true;
+        } },
+      { "--fullscreen",
+        "",
+        0,
+        "",
+        "Present in a fullscreen Space.",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.config.fullscreen = true;
           return true;
         } },
       { "--windowed",
+        "",
         0,
         "",
+        "Present in a resizable window.",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.config.fullscreen = false;
           return true;
         } },
       { "--graphics-quality",
+        "",
         1,
-        "low, balanced, or high",
+        "<low|balanced|high>",
+        "Select a graphics preset.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -100,8 +120,10 @@ namespace moppe::game {
           return true;
         } },
       { "--upscaling",
+        "",
         1,
-        "linear or spatial",
+        "<linear|spatial>",
+        "Select MetalFX spatial reconstruction or linear scaling.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -110,8 +132,10 @@ namespace moppe::game {
           return true;
         } },
       { "--render-scale",
+        "",
         1,
-        "a number from 0.25 to 1",
+        "<0.25..1>",
+        "Set 3D scene dimensions relative to the drawable.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -121,8 +145,10 @@ namespace moppe::game {
                               error);
         } },
       { "--drawable-scale",
+        "",
         1,
-        "a number from 0.25 to 1",
+        "<0.25..1>",
+        "Set the macOS drawable relative to display backing pixels.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -132,8 +158,10 @@ namespace moppe::game {
                               error);
         } },
       { "--graphics-enable",
+        "",
         1,
-        "a comma-separated feature list",
+        "<FEATURE,...>",
+        "Enable named graphics features after preset selection.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -141,8 +169,10 @@ namespace moppe::game {
             options.graphics, values[0], true, error);
         } },
       { "--graphics-disable",
+        "",
         1,
-        "a comma-separated feature list",
+        "<FEATURE,...>",
+        "Disable named graphics features after preset selection.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -150,59 +180,75 @@ namespace moppe::game {
             options.graphics, values[0], false, error);
         } },
       { "--graphics-benchmark",
+        "",
         1,
-        "a CSV path",
+        "<CSV>",
+        "Run the partitioned graphics benchmark and write CSV.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           benchmark_config (options).output_path = values[0];
           options.config.fullscreen = false;
           return true;
         } },
       { "--benchmark-frames",
+        "",
         1,
-        "a positive frame count",
+        "<COUNT>",
+        "Set measured frames per benchmark configuration.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           benchmark_config (options).measured_frames = frame_count (values[0]);
           return true;
         } },
       { "--benchmark-settle",
+        "",
         1,
-        "a positive frame count",
+        "<COUNT>",
+        "Set settling frames between benchmark configurations.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           benchmark_config (options).settle_frames = frame_count (values[0]);
           return true;
         } },
       { "--benchmark-prelude",
+        "",
         1,
-        "a positive frame count",
+        "<COUNT>",
+        "Set the benchmark ride prelude length.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           benchmark_config (options).prelude_frames = frame_count (values[0]);
           return true;
         } },
       { "--terrain-gazetteer",
+        "",
         1,
-        "an output directory",
+        "<DIRECTORY>",
+        "Capture the frozen landscape gazetteer.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           gazetteer_config (options).output_directory = values[0];
           options.config.fullscreen = false;
           return true;
         } },
       { "--gazetteer-settle",
+        "",
         1,
-        "a positive frame count",
+        "<COUNT>",
+        "Set settling frames before each gazetteer image.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           gazetteer_config (options).settle_frames = frame_count (values[0]);
           return true;
         } },
       { "--fast",
+        "",
         0,
         "",
+        "Use the fast terrain-generation profile.",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.generation_profile = terrain::TerrainGenerationProfile::Fast;
           return true;
         } },
       { "--terrain-quality",
+        "",
         1,
-        "smoke, fast, play, or research",
+        "<smoke|fast|play|research>",
+        "Select the terrain-generation profile.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -224,15 +270,19 @@ namespace moppe::game {
           return true;
         } },
       { "--tree-demo",
+        "",
         0,
         "",
+        "Open the focused tree renderer demo.",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.tree_demo = true;
           return true;
         } },
       { "--tree-count",
+        "",
         1,
-        "an integer from 1 to 64",
+        "<1..64>",
+        "Set the tree-demo organism count.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -245,23 +295,29 @@ namespace moppe::game {
           return true;
         } },
       { "--tree-screenshot",
+        "",
         1,
-        "a PNG path",
+        "<PNG>",
+        "Capture the tree demo to a PNG and exit.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           options.tree_demo = true;
           capture_to (options, values[0]);
           return true;
         } },
       { "--screenshot",
+        "",
         1,
-        "a PNG path",
+        "<PNG>",
+        "Capture one gameplay PNG and exit.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           capture_to (options, values[0]);
           return true;
         } },
       { "--water-screenshot",
+        "",
         2,
-        "a feature and PNG path",
+        "<FEATURE> <PNG>",
+        "Capture stream, river, confluence, mouth, waterfall, or lake.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -276,8 +332,10 @@ namespace moppe::game {
           return true;
         } },
       { "--window-size",
+        "",
         1,
-        "WIDTHxHEIGHT in points",
+        "<WIDTHxHEIGHT>",
+        "Set the windowed logical size.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
@@ -297,15 +355,19 @@ namespace moppe::game {
       // Profiling a large window should not pull focus away from whatever
       // the developer is reading while it runs.
       { "--inactive",
+        "",
         0,
         "",
+        "Keep the window behind the active application.",
         [] (LaunchOptions& options, const char* const*, std::string&) {
           options.stay_inactive = true;
           return true;
         } },
       { "--seed",
+        "",
         1,
-        "an integer",
+        "<INTEGER>",
+        "Select a deterministic world seed.",
         [] (LaunchOptions& options, const char* const* values, std::string&) {
           options.seed = std::atoi (values[0]);
           return true;
@@ -314,7 +376,7 @@ namespace moppe::game {
 
     const Flag* find_flag (std::string_view name) {
       for (const Flag& flag : flags)
-        if (flag.name == name)
+        if (flag.name == name || (!flag.alias.empty () && flag.alias == name))
           return &flag;
       return nullptr;
     }
@@ -348,10 +410,59 @@ namespace moppe::game {
     }
   }
 
+  std::string launch_options_help (std::string_view program_name) {
+    const std::size_t separator = program_name.find_last_of ("/\\");
+    if (separator != std::string_view::npos)
+      program_name.remove_prefix (separator + 1);
+
+    std::vector<std::string> syntax;
+    syntax.reserve (std::size (flags));
+    std::size_t width = 0;
+    for (const Flag& flag : flags) {
+      std::string line;
+      if (!flag.alias.empty ())
+        line = std::string (flag.alias) + ", ";
+      line += flag.name;
+      if (flag.arity > 0)
+        line += " " + std::string (flag.expects);
+      width = std::max (width, line.size ());
+      syntax.push_back (std::move (line));
+    }
+
+    std::ostringstream output;
+    output << "Usage: " << program_name << " [options]\n\nOptions:\n";
+    for (std::size_t index = 0; index < std::size (flags); ++index)
+      output << "  " << std::left << std::setw (static_cast<int> (width + 2))
+             << syntax[index] << flags[index].description << '\n';
+    output << "\nGraphics features:\n  ";
+    std::size_t column = 2;
+    for (const GraphicsFeature* feature : graphics_features) {
+      const std::size_t separator_width = column > 2 ? 2 : 0;
+      if (column + separator_width + feature->name.size () > 78) {
+        output << "\n  ";
+        column = 2;
+      } else if (separator_width) {
+        output << ", ";
+        column += separator_width;
+      }
+      output << feature->name;
+      column += feature->name.size ();
+    }
+    output << '\n';
+    return output.str ();
+  }
+
   bool parse_launch_options (int argc,
                              char** argv,
                              LaunchOptions& options,
                              std::string& error) {
+    for (int i = 1; i < argc; ++i) {
+      const Flag* flag = find_flag (argv[i]);
+      if (flag && flag->name == "--help") {
+        options.show_help = true;
+        return true;
+      }
+    }
     for (int i = 1; i < argc; ++i) {
       // An unrecognized argument is not an error: hosts append their own.
       const Flag* flag = find_flag (argv[i]);
