@@ -247,12 +247,10 @@ vertex TerrainVaryings terrain_vertex (
   out.mesh_coord =
     (grid - float2 (chunk.origin_x, chunk.origin_z)) / chunk.step;
   out.lod_step = chunk.step;
-  const float4 current_reference =
-    u.unjittered_view_proj * float4 (world, 1.0);
-  const float4 previous_reference =
-    u.previous_view_proj * float4 (world, 1.0);
-  out.motion = moppe_motion_vector (
-    current_reference, previous_reference, u.temporal.xy);
+  const float4 current_reference = u.unjittered_view_proj * float4 (world, 1.0);
+  const float4 previous_reference = u.previous_view_proj * float4 (world, 1.0);
+  out.motion =
+    moppe_motion_vector (current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 

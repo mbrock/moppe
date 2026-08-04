@@ -75,16 +75,16 @@ struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
   MoppeMat4 view_proj;            // jittered current world -> clip
   MoppeMat4 unjittered_view_proj; // current world -> reference clip
   MoppeMat4 previous_view_proj;   // previous world -> reference clip
-  MoppeMat4 light_matrix;   // world -> biased shadow uv/z
-  MoppeFloat4 camera_pos;   // xyz; w unused
-  MoppeFloat4 sun_dir;      // xyz world-space toward sun
-  MoppeFloat4 sun_diffuse;  // rgb
-  MoppeFloat4 sun_specular; // rgb
-  MoppeFloat4 ambient;      // rgb
-  MoppeFloat4 fog_color;    // rgb; w = fog_scale
-  MoppeFloat4 misc;         // x=time, y=cloudiness, z=sea, w=land relief
-  MoppeFloat4 shadow;       // x=strength, y=shadow texel
-  MoppeFloat4 temporal;     // xy=input pixels, z=previous time, w=enabled
+  MoppeMat4 light_matrix;         // world -> biased shadow uv/z
+  MoppeFloat4 camera_pos;         // xyz; w unused
+  MoppeFloat4 sun_dir;            // xyz world-space toward sun
+  MoppeFloat4 sun_diffuse;        // rgb
+  MoppeFloat4 sun_specular;       // rgb
+  MoppeFloat4 ambient;            // rgb
+  MoppeFloat4 fog_color;          // rgb; w = fog_scale
+  MoppeFloat4 misc;               // x=time, y=cloudiness, z=sea, w=land relief
+  MoppeFloat4 shadow;             // x=strength, y=shadow texel
+  MoppeFloat4 temporal;           // xy=input pixels, z=previous time, w=enabled
 };
 
 // A primary-ray camera and one RGBA16F diagnostic target. The target is split
@@ -119,11 +119,11 @@ struct MOPPE_SHADER_ALIGN MoppeDrawUniforms {
   MoppeMat4 model;
   MoppeMat4 previous_model;
   MoppeFloat4 nrm0, nrm1, nrm2; // normal-matrix columns
-  MoppeFloat4 temporal; // x=previous vertex buffer, y=reactivity
+  MoppeFloat4 temporal;         // x=previous vertex buffer, y=reactivity
 };
 
 struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
-  MoppeMat4 view_proj;    // scene: reversed-Z; shadow pass: light NDC
+  MoppeMat4 view_proj; // scene: reversed-Z; shadow pass: light NDC
   MoppeMat4 unjittered_view_proj;
   MoppeMat4 previous_view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
@@ -135,18 +135,18 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeFloat4 fog_color; // rgb; w = fog_scale
   MoppeFloat4
     params0; // x=grid_step_x, y=height_scale_y, z=grid_step_z, w=tex_scale
-  MoppeFloat4 params1; // x=height_scale_norm, y=sea_level, z=shadow_strength,
-                       // w=shadow_texel
-  MoppeFloat4 params2; // x=time, y=cloudiness
-  MoppeFloat4 params3; // reserved
-  MoppeFloat4 params4; // x=overlay ramp + 1, y=min, z=max, w=opacity
-  MoppeFloat4 params5; // x=topology opacity, y=water, z=moisture,
-                       // w=geology
-  MoppeFloat4 params6; // x=fragment normals, y=shore, z=trail influence,
-                       // w=forest cover
-  MoppeFloat4 params7; // x=filtered snow-support slope enabled,
-                       // y=channel flux detail enabled,
-                       // z=land relief above sea level in metres
+  MoppeFloat4 params1;  // x=height_scale_norm, y=sea_level, z=shadow_strength,
+                        // w=shadow_texel
+  MoppeFloat4 params2;  // x=time, y=cloudiness
+  MoppeFloat4 params3;  // reserved
+  MoppeFloat4 params4;  // x=overlay ramp + 1, y=min, z=max, w=opacity
+  MoppeFloat4 params5;  // x=topology opacity, y=water, z=moisture,
+                        // w=geology
+  MoppeFloat4 params6;  // x=fragment normals, y=shore, z=trail influence,
+                        // w=forest cover
+  MoppeFloat4 params7;  // x=filtered snow-support slope enabled,
+                        // y=channel flux detail enabled,
+                        // z=land relief above sea level in metres
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 
@@ -175,7 +175,7 @@ struct MOPPE_SHADER_ALIGN MoppeSkyUniforms {
   MoppeMat4 previous_view_proj;
   MoppeFloat4 sun_dir;
   MoppeFloat4 fog_color;
-  MoppeFloat4 params; // x=time, y=sun_height, z=cloudiness
+  MoppeFloat4 params;   // x=time, y=sun_height, z=cloudiness
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 
@@ -195,11 +195,11 @@ struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
   MoppeFloat4 shore;     // x=1/step_x, y=1/step_z,
                          // z=height_scale, w=grid width (0=off)
   MoppeFloat4 world_offset;
-  MoppeFloat4 shadow;  // x=strength, y=shadow texel
-  MoppeFloat4 tiles;   // xy=origin tile indices, z=tiles per side,
-                       // w=fine radius (+: coarse pass discards
-                       // inside; -: lattice pass discards outside)
-  MoppeFloat4 current; // x=flow raster enabled, y=geology raster enabled
+  MoppeFloat4 shadow;   // x=strength, y=shadow texel
+  MoppeFloat4 tiles;    // xy=origin tile indices, z=tiles per side,
+                        // w=fine radius (+: coarse pass discards
+                        // inside; -: lattice pass discards outside)
+  MoppeFloat4 current;  // x=flow raster enabled, y=geology raster enabled
   MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 

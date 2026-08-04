@@ -63,19 +63,16 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
   const float previous_age = dust.params.y - emission.position_birth.w;
   float3 previous_center =
     emission.position_birth.xyz + offset + velocity * previous_age;
-  previous_center.y -=
-    0.5 * emission.style.z * previous_age * previous_age;
-  const float previous_life01 =
-    saturate (1.0 - previous_age / lifetime);
+  previous_center.y -= 0.5 * emission.style.z * previous_age * previous_age;
+  const float previous_life01 = saturate (1.0 - previous_age / lifetime);
   const float previous_size = base_size * (1.7 - 0.7 * previous_life01);
   const float previous_rotation =
     (dust_random (eid, particle, 8) * 2.0 - 1.0) * 3.14159 +
     (dust_random (eid, particle, 9) * 2.0 - 1.0) * 2.2 * previous_age;
   const float previous_ca = cos (previous_rotation);
   const float previous_sa = sin (previous_rotation);
-  const float2 previous_rotated (
-    q.x * previous_ca - q.y * previous_sa,
-    q.x * previous_sa + q.y * previous_ca);
+  const float2 previous_rotated (q.x * previous_ca - q.y * previous_sa,
+                                 q.x * previous_sa + q.y * previous_ca);
   const float3 previous_world =
     previous_center +
     dust.camera_right.xyz * (previous_rotated.x * previous_size) +

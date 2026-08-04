@@ -261,9 +261,8 @@ inline float2 moppe_motion_vector (float4 current_clip,
   return (previous - current) * float2 (0.5, -0.5) * dimensions;
 }
 
-inline MoppeTemporalOutput moppe_temporal_output (float4 color,
-                                                  float2 motion,
-                                                  float reactive) {
+inline MoppeTemporalOutput
+moppe_temporal_output (float4 color, float2 motion, float reactive) {
   MoppeTemporalOutput out;
   out.color = color;
   out.motion = motion;

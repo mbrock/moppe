@@ -71,8 +71,8 @@ Useful ways to start it include:
 # Select a supported graphics preset.
 ./build/moppe.app/Contents/MacOS/moppe --graphics-quality balanced
 
-# Try temporal MetalFX reconstruction (spatial remains the default).
-./build/moppe.app/Contents/MacOS/moppe --upscaling temporal
+# Compare the default temporal MetalFX reconstruction with spatial.
+./build/moppe.app/Contents/MacOS/moppe --upscaling spatial
 
 # Compare reconstruction with exact linear enlargement.
 ./build/moppe.app/Contents/MacOS/moppe --upscaling linear

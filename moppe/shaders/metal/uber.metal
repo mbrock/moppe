@@ -45,11 +45,10 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
                             float (v.flags.w) / 255.0,
                             frame.misc.x);
   if (previous_v.flags.z || previous_v.flags.w)
-    previous_world.xyz =
-      moppe_wind (previous_world.xyz,
-                  float (previous_v.flags.z) / 255.0,
-                  float (previous_v.flags.w) / 255.0,
-                  frame.temporal.z);
+    previous_world.xyz = moppe_wind (previous_world.xyz,
+                                     float (previous_v.flags.z) / 255.0,
+                                     float (previous_v.flags.w) / 255.0,
+                                     frame.temporal.z);
 
   UberVaryings out;
   out.position = frame.view_proj * world;
@@ -67,8 +66,7 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   // lighting can distinguish a transmitting leaf crown from opaque wood.
   out.foliage = float (v.flags.w) / 255.0;
   const float4 current_reference = frame.unjittered_view_proj * world;
-  const float4 previous_reference =
-    frame.previous_view_proj * previous_world;
+  const float4 previous_reference = frame.previous_view_proj * previous_world;
   out.motion = moppe_motion_vector (
     current_reference, previous_reference, frame.temporal.xy);
   out.reactive = max (draw.temporal.y, 0.35 * out.foliage);
@@ -76,13 +74,13 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
 }
 
 fragment MoppeTemporalOutput uber_fragment (UberVaryings in [[stage_in]],
-                               constant MoppeFrameUniforms& frame
-                               [[buffer (MOPPE_BUF_FRAME)]],
-                               texture2d<float> tex
-                               [[texture (MOPPE_TEX_COLOR)]],
-                               depth2d<float> shadow_map
-                               [[texture (MOPPE_TEX_SHADOW)]],
-                               sampler smp [[sampler (0)]]) {
+                                            constant MoppeFrameUniforms& frame
+                                            [[buffer (MOPPE_BUF_FRAME)]],
+                                            texture2d<float> tex
+                                            [[texture (MOPPE_TEX_COLOR)]],
+                                            depth2d<float> shadow_map
+                                            [[texture (MOPPE_TEX_SHADOW)]],
+                                            sampler smp [[sampler (0)]]) {
   float4 base = in.color * tex.sample (smp, in.uv);
   const float dist = length (in.world_pos - frame.camera_pos.xyz);
 
@@ -197,8 +195,7 @@ fragment MoppeTemporalOutput uber_fragment (UberVaryings in [[stage_in]],
     color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
   }
 
-  return moppe_temporal_output (
-    float4 (color, base.a), in.motion, in.reactive);
+  return moppe_temporal_output (float4 (color, base.a), in.motion, in.reactive);
 }
 
 // ---------------------------------------------------------------

@@ -28,7 +28,7 @@ namespace moppe::game {
   };
 
   struct GraphicsSettings {
-    render::UpscalingMode upscaling = render::UpscalingMode::Spatial;
+    render::UpscalingMode upscaling = render::UpscalingMode::Temporal;
     float scene_scale = 1.0f;
     // Zero uses scene_scale relative to the point-resolution baseline.
     // A positive value is an absolute fraction of drawable resolution.
@@ -184,7 +184,7 @@ namespace moppe::game {
   GraphicsSettings low_graphics_settings ();
   // Apple TV renders the scene below UIKit point resolution and leaves dense
   // procedural ground cover and full-frame cinematic passes to the high
-  // preset. Water, particles, vehicle effects, and spatial reconstruction
+  // preset. Water, particles, vehicle effects, and temporal reconstruction
   // remain enabled by default.
   GraphicsSettings apple_tv_graphics_settings ();
   const GraphicsFeature* find_graphics_feature (std::string_view name);
