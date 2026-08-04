@@ -30,6 +30,10 @@
       default; startup prints the requested and backend-resolved mode.
       Temporal uses a single-sample jittered scene with persistent depth,
       motion vectors, exposure, and a reactive mask rather than scene MSAA.
+    - `--frame-interpolation on|off` controls macOS MetalFX frame generation.
+      It defaults on for supported Metal 4 devices at 90 Hz or above: Moppe
+      renders and simulates at half refresh, then alternates a generated
+      midpoint and the retained real frame at the full display cadence.
     - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
       fraction of display backing resolution. `--render-scale <0.25..1>`
       independently selects the 3D scene as a fraction of that drawable;

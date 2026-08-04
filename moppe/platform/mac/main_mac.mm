@@ -306,6 +306,7 @@ static void log_runtime_parameters (MoppeView* view) {
 @property (nonatomic, assign) moppe::render::Renderer* renderer;
 - (void)connectGameController;
 - (void)startDisplayLinkForView:(MoppeView*)view;
+- (void)configureFrameInterpolationForView:(MoppeView*)view;
 @end
 
 @implementation MoppeDelegate {
@@ -318,8 +319,10 @@ static void log_runtime_parameters (MoppeView* view) {
   double m_dt_min;
   double m_dt_max;
   int m_profile_frames;
+  int m_profile_presentations;
   bool m_profile_cpu;
   CAMetalDisplayLink* m_display_link;
+  bool m_present_rendered_next;
   CGSize m_actual_drawable_size;
   MoppeView* m_view;
   std::unique_ptr<moppe::platform::AppleGameController> m_controller;
@@ -336,8 +339,10 @@ static void log_runtime_parameters (MoppeView* view) {
   m_dt_min = std::numeric_limits<double>::infinity ();
   m_dt_max = 0;
   m_profile_frames = 0;
+  m_profile_presentations = 0;
   m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
   m_display_link = nil;
+  m_present_rendered_next = false;
   m_view = nil;
   return self;
 }
@@ -354,6 +359,7 @@ static void log_runtime_parameters (MoppeView* view) {
     dt = 0;
   if (dt > 0.05f)
     dt = 0.05f; // anti-tunneling clamp, as in the GL build
+  moppe::render::set_metal_frame_delta_time (*self.renderer, dt);
   const double tick_start = moppe::platform::now ();
   if (m_controller)
     m_controller->poll ();
@@ -383,6 +389,7 @@ static void log_runtime_parameters (MoppeView* view) {
       const double scale = 1000.0 / m_profile_frames;
       std::cerr << "frame CPU: " << m_profile_frames / elapsed
                 << " Hz (preferred=" << view.preferredFramesPerSecond
+                << ", display=" << m_profile_presentations / elapsed << " Hz"
                 << "), tick=" << m_tick_total * scale
                 << " ms, render=" << m_render_total * scale
                 << " ms, max=" << m_frame_max * 1000.0
@@ -397,6 +404,7 @@ static void log_runtime_parameters (MoppeView* view) {
       m_dt_min = std::numeric_limits<double>::infinity ();
       m_dt_max = 0;
       m_profile_frames = 0;
+      m_profile_presentations = 0;
     }
   }
 }
@@ -421,15 +429,35 @@ static void log_runtime_parameters (MoppeView* view) {
     m_display_link.delegate = self;
     const float hz = (float)view.preferredFramesPerSecond;
     m_display_link.preferredFrameRateRange = CAFrameRateRangeMake (hz, hz, hz);
+    [self configureFrameInterpolationForView:view];
     [m_display_link addToRunLoop:NSRunLoop.mainRunLoop
                          forMode:NSRunLoopCommonModes];
-    std::cerr << "moppe: CAMetalDisplayLink pacing at " << hz << " Hz"
-              << std::endl;
   }
+}
+
+- (void)configureFrameInterpolationForView:(MoppeView*)view {
+  const float hz = (float)view.preferredFramesPerSecond;
+  const bool supported =
+    moppe::render::metal_frame_interpolation_supported (*self.renderer);
+  const bool enabled = supported && hz >= 90.0f;
+  moppe::render::set_metal_frame_interpolation_enabled (*self.renderer,
+                                                        enabled);
+  m_present_rendered_next = false;
+  std::cerr << "moppe: CAMetalDisplayLink pacing at " << hz
+            << " Hz, frame-interpolation=" << (enabled ? "on" : "off");
+  if (enabled)
+    std::cerr << " (render=" << hz * 0.5f << " Hz, present=" << hz << " Hz)";
+  else if (supported)
+    std::cerr << " (display below 90 Hz)";
+  else
+    std::cerr << " (disabled or unsupported)";
+  std::cerr << std::endl;
 }
 
 - (void)metalDisplayLink:(CAMetalDisplayLink*)link
              needsUpdate:(CAMetalDisplayLinkUpdate*)update {
+  if (m_profile_cpu)
+    ++m_profile_presentations;
   const CGSize actual =
     CGSizeMake (update.drawable.texture.width, update.drawable.texture.height);
   if (actual.width != m_actual_drawable_size.width ||
@@ -447,9 +475,18 @@ static void log_runtime_parameters (MoppeView* view) {
                     : "no")
               << std::endl;
   }
+  if (m_present_rendered_next &&
+      moppe::render::present_metal_rendered_frame (
+        *self.renderer, (__bridge void*)update.drawable)) {
+    m_present_rendered_next = false;
+    return;
+  }
+  m_present_rendered_next = false;
   moppe::render::set_metal_drawable (*self.renderer,
                                      (__bridge void*)update.drawable);
   [self drawFrame:m_view presentationTime:update.targetPresentationTimestamp];
+  m_present_rendered_next =
+    moppe::render::metal_frame_interpolation_active (*self.renderer);
 }
 
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {
@@ -476,6 +513,7 @@ static void log_runtime_parameters (MoppeView* view) {
       const float hz = (float)view.preferredFramesPerSecond;
       m_display_link.preferredFrameRateRange =
         CAFrameRateRangeMake (hz, hz, hz);
+      [self configureFrameInterpolationForView:view];
     }
   }
 }
@@ -547,8 +585,11 @@ namespace moppe {
         // The host owns view policy; the renderer owns the CAMetalLayer and
         // Metal 4 submission contract beneath it.
         std::string lib = asset_path (MOPPE_SHADER_NAME);
-        render::Renderer* renderer = render::create_metal_renderer (
-          (__bridge void*)view.layer, lib, config.msaa_samples);
+        render::Renderer* renderer =
+          render::create_metal_renderer ((__bridge void*)view.layer,
+                                         lib,
+                                         config.msaa_samples,
+                                         config.frame_interpolation);
         log_runtime_parameters (view);
 
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];

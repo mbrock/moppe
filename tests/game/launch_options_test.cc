@@ -61,6 +61,7 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--windowed",
          "--graphics-quality",
          "--upscaling",
+         "--frame-interpolation",
          "--msaa",
          "--render-scale",
          "--scene-megapixels",
@@ -109,6 +110,10 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (parsed ({ "--upscaling", "temporal" }).graphics.upscaling ==
                render::UpscalingMode::Temporal);
   MOPPE_CHECK (
+    parsed ({ "--frame-interpolation", "on" }).config.frame_interpolation);
+  MOPPE_CHECK (
+    !parsed ({ "--frame-interpolation", "off" }).config.frame_interpolation);
+  MOPPE_CHECK (
     parsed ({ "--graphics-quality", "balanced", "--upscaling", "linear" })
       .graphics.upscaling == render::UpscalingMode::Linear);
   const game::LaunchOptions scales =
@@ -147,6 +152,7 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--graphics-quality" }));
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
   MOPPE_CHECK (rejects ({ "--upscaling", "neural" }));
+  MOPPE_CHECK (rejects ({ "--frame-interpolation", "maybe" }));
   MOPPE_CHECK (rejects ({ "--msaa", "0" }));
   MOPPE_CHECK (rejects ({ "--msaa", "8" }));
   MOPPE_CHECK (rejects ({ "--msaa", "2x" }));
