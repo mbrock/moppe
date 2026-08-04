@@ -13,6 +13,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <set>
 
 using moppe::platform::Game;
@@ -308,11 +309,14 @@ static void log_runtime_parameters (MoppeView* view) {
 @end
 
 @implementation MoppeDelegate {
-  double m_last_time;
+  double m_last_presentation_time;
   double m_profile_start;
   double m_tick_total;
   double m_render_total;
   double m_frame_max;
+  double m_dt_total;
+  double m_dt_min;
+  double m_dt_max;
   int m_profile_frames;
   bool m_profile_cpu;
   CAMetalDisplayLink* m_display_link;
@@ -323,11 +327,14 @@ static void log_runtime_parameters (MoppeView* view) {
 
 - (instancetype)init {
   self = [super init];
-  m_last_time = 0;
+  m_last_presentation_time = 0;
   m_profile_start = 0;
   m_tick_total = 0;
   m_render_total = 0;
   m_frame_max = 0;
+  m_dt_total = 0;
+  m_dt_min = std::numeric_limits<double>::infinity ();
+  m_dt_max = 0;
   m_profile_frames = 0;
   m_profile_cpu = ::getenv ("MOPPE_PROFILE_CPU") != nullptr;
   m_display_link = nil;
@@ -335,10 +342,16 @@ static void log_runtime_parameters (MoppeView* view) {
   return self;
 }
 
-- (void)drawFrame:(MTKView*)view {
-  const double t = moppe::platform::now ();
-  float dt = m_last_time > 0 ? (float)(t - m_last_time) : 1.0f / 60;
-  m_last_time = t;
+- (void)drawFrame:(MTKView*)view presentationTime:(double)presentation_time {
+  const double callback_time = moppe::platform::now ();
+  if (!std::isfinite (presentation_time) || presentation_time <= 0)
+    presentation_time = callback_time;
+  float dt = m_last_presentation_time > 0
+               ? (float)(presentation_time - m_last_presentation_time)
+               : 1.0f / 60;
+  m_last_presentation_time = presentation_time;
+  if (!std::isfinite (dt) || dt < 0)
+    dt = 0;
   if (dt > 0.05f)
     dt = 0.05f; // anti-tunneling clamp, as in the GL build
   const double tick_start = moppe::platform::now ();
@@ -357,10 +370,13 @@ static void log_runtime_parameters (MoppeView* view) {
   const double frame_end = moppe::platform::now ();
   if (m_profile_cpu) {
     if (m_profile_start == 0)
-      m_profile_start = t;
+      m_profile_start = callback_time;
     m_tick_total += render_start - tick_start;
     m_render_total += frame_end - render_start;
     m_frame_max = std::max (m_frame_max, frame_end - tick_start);
+    m_dt_total += dt;
+    m_dt_min = std::min (m_dt_min, (double)dt);
+    m_dt_max = std::max (m_dt_max, (double)dt);
     ++m_profile_frames;
     const double elapsed = frame_end - m_profile_start;
     if (elapsed >= 1.0) {
@@ -369,11 +385,17 @@ static void log_runtime_parameters (MoppeView* view) {
                 << " Hz (preferred=" << view.preferredFramesPerSecond
                 << "), tick=" << m_tick_total * scale
                 << " ms, render=" << m_render_total * scale
-                << " ms, max=" << m_frame_max * 1000.0 << " ms" << std::endl;
+                << " ms, max=" << m_frame_max * 1000.0
+                << " ms, simulation-dt=" << m_dt_total * scale << " ms ["
+                << m_dt_min * 1000.0 << ", " << m_dt_max * 1000.0 << ']'
+                << std::endl;
       m_profile_start = frame_end;
       m_tick_total = 0;
       m_render_total = 0;
       m_frame_max = 0;
+      m_dt_total = 0;
+      m_dt_min = std::numeric_limits<double>::infinity ();
+      m_dt_max = 0;
       m_profile_frames = 0;
     }
   }
@@ -387,7 +409,7 @@ static void log_runtime_parameters (MoppeView* view) {
 - (void)drawInMTKView:(MTKView*)view {
   if (m_display_link)
     return;
-  [self drawFrame:view];
+  [self drawFrame:view presentationTime:moppe::platform::now ()];
 }
 
 - (void)startDisplayLinkForView:(MoppeView*)view {
@@ -427,7 +449,7 @@ static void log_runtime_parameters (MoppeView* view) {
   }
   moppe::render::set_metal_drawable (*self.renderer,
                                      (__bridge void*)update.drawable);
-  [self drawFrame:m_view];
+  [self drawFrame:m_view presentationTime:update.targetPresentationTimestamp];
 }
 
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size {

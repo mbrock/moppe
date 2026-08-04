@@ -191,6 +191,7 @@ namespace moppe {
         uint32_t epoch;
         uint32_t frame;
         double gpu_ms;
+        std::array<double, GPU_PASS_COUNT> pass_ms;
       };
 
       struct BenchmarkOutput {
@@ -200,6 +201,7 @@ namespace moppe {
         int expected = 0;
         std::string path;
         std::vector<std::string> feature_names;
+        bool pass_timing = false;
       };
 
 #if !TARGET_OS_IPHONE
@@ -541,6 +543,9 @@ namespace moppe {
         std::vector<GpuPass> sample_intervals;
         int timestamp_count = 0;
         GpuPass current_gpu_pass = GpuPass::Count;
+        MTL4TimestampGranularity timestamp_granularity =
+          MTL4TimestampGranularityRelaxed;
+        double timestamp_ms_per_tick = 0.0;
 
 #if !TARGET_OS_IPHONE
         bool capture_active = false;
@@ -594,7 +599,7 @@ namespace moppe {
           frame.current_gpu_pass = pass;
           return;
         }
-        [encoder writeTimestampWithGranularity:MTL4TimestampGranularityRelaxed
+        [encoder writeTimestampWithGranularity:frame.timestamp_granularity
                                     afterStage:MTLRenderStageFragment
                                       intoHeap:frame.timestamp_heaps[frame.slot]
                                        atIndex:frame.timestamp_count];
@@ -612,7 +617,7 @@ namespace moppe {
             frame.timestamp_count >= MAX_TIMESTAMP_SAMPLES ||
             frame.current_gpu_pass == GpuPass::Count)
           return;
-        [encoder writeTimestampWithGranularity:MTL4TimestampGranularityRelaxed
+        [encoder writeTimestampWithGranularity:frame.timestamp_granularity
                                     afterStage:MTLRenderStageFragment
                                       intoHeap:frame.timestamp_heaps[frame.slot]
                                        atIndex:frame.timestamp_count];
@@ -990,6 +995,9 @@ namespace moppe {
       m_queue = [m_device newMTL4CommandQueue];
       if (!m_queue)
         throw std::runtime_error ("Metal 4 is unavailable");
+      const uint64_t timestamp_frequency = [m_device queryTimestampFrequency];
+      if (timestamp_frequency > 0)
+        m_frame.timestamp_ms_per_tick = 1000.0 / timestamp_frequency;
       m_spatial_upscaling_supported =
         [MTLFXSpatialScalerDescriptor supportsMetal4FX:m_device];
       m_temporal_upscaling_supported =
@@ -1042,6 +1050,8 @@ namespace moppe {
       if (const char* path = ::getenv ("MOPPE_BENCHMARK_OUTPUT")) {
         m_benchmark = std::make_shared<BenchmarkOutput> ();
         m_benchmark->path = path;
+        m_benchmark->pass_timing =
+          ::getenv ("MOPPE_BENCHMARK_PASSES") != nullptr;
         if (const char* expected = ::getenv ("MOPPE_BENCHMARK_EXPECTED"))
           m_benchmark->expected = std::max (1, ::atoi (expected));
         if (const char* names = ::getenv ("MOPPE_BENCHMARK_FEATURES")) {
@@ -1051,11 +1061,22 @@ namespace moppe {
             m_benchmark->feature_names.push_back (name);
         }
       }
+      // Precise timestamps may split a render encoder, so ordinary benchmark
+      // runs stay minimally invasive and pass attribution is explicit.
+      if (m_benchmark && m_benchmark->pass_timing) {
+        m_profile_gpu_passes = true;
+        m_frame.timestamp_granularity = MTL4TimestampGranularityPrecise;
+      }
 
       if (m_profile_gpu_passes) {
-        std::cerr << "moppe: GPU pass timing uses Metal 4 counter heaps; "
-                     "spans may overlap"
-                  << std::endl;
+        if (m_benchmark && m_benchmark->pass_timing)
+          std::cerr << "moppe: GPU pass timing uses Metal 4 counter heaps; "
+                       "benchmark spans may add profiling overhead"
+                    << std::endl;
+        else if (requested_gpu_passes)
+          std::cerr << "moppe: GPU pass timing uses Metal 4 counter heaps; "
+                       "spans may overlap"
+                    << std::endl;
         for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
           MTL4CounterHeapDescriptor* desc =
             [[MTL4CounterHeapDescriptor alloc] init];
@@ -3368,13 +3389,19 @@ namespace moppe {
       m_frame.scene_encoder =
         [m_frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       m_frame.scene_encoder.label = @"World scene";
+      // Apple GPUs execute this as one tile render pass. Draw-level
+      // timestamps inside it collapse to the pass boundary, so attribute the
+      // encoder as a whole instead of publishing misleading terrain/sky
+      // fragments.
+      record_gpu_pass_start (m_frame, m_frame.scene_encoder, GpuPass::Scene);
       [m_frame.scene_encoder setFrontFacingWinding:MTLWindingCounterClockwise];
       return m_frame.scene_encoder;
     }
 
     void MetalRenderer::begin_gpu_pass (id<MTL4RenderCommandEncoder> enc,
                                         GpuPass pass) {
-      record_gpu_pass_start (m_frame, enc, pass);
+      (void)enc;
+      (void)pass;
     }
 
     void MetalRenderer::end_scene_encoder () {
@@ -3382,6 +3409,7 @@ namespace moppe {
         if (m_targets.spatial_fence)
           [m_frame.scene_encoder updateFence:m_targets.spatial_fence
                           afterEncoderStages:MTLStageFragment];
+        record_gpu_pass_end (m_frame, m_frame.scene_encoder);
         [m_frame.scene_encoder endEncoding];
         m_frame.scene_encoder = nil;
         m_frame.scene_pass_done = true;
@@ -4990,6 +5018,7 @@ namespace moppe {
 
       const int timestamp_count = m_frame.timestamp_count;
       const std::vector<GpuPass> sample_intervals = m_frame.sample_intervals;
+      const double timestamp_ms_per_tick = m_frame.timestamp_ms_per_tick;
       id<MTL4CounterHeap> timestamp_heap =
         m_frame.timestamp_heaps[m_frame.slot];
       std::shared_ptr<FrameTiming> timing =
@@ -5007,13 +5036,34 @@ namespace moppe {
           std::cerr << "moppe: Metal 4 submission failed: "
                     << feedback.error.localizedDescription.UTF8String
                     << std::endl;
+        std::array<double, GPU_PASS_COUNT> pass_ms {};
+        NSData* timestamp_results =
+          timestamp_heap && timestamp_count > 1
+            ? [timestamp_heap
+                resolveCounterRange:NSMakeRange (0, timestamp_count)]
+            : nil;
+        if (timestamp_results) {
+          const auto* samples = static_cast<const MTLCounterResultTimestamp*> (
+            timestamp_results.bytes);
+          if (sample_intervals.size () + 1 == (size_t)timestamp_count) {
+            for (std::size_t i = 0; i < sample_intervals.size (); ++i) {
+              const uint64_t a = samples[i].timestamp;
+              const uint64_t b = samples[i + 1].timestamp;
+              if (a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
+                  b >= a)
+                pass_ms[static_cast<int> (sample_intervals[i])] +=
+                  (b - a) * timestamp_ms_per_tick;
+            }
+          }
+        }
         if (benchmark && feedback.GPUEndTime >= feedback.GPUStartTime) {
           const BenchmarkSample sample { benchmark_mask,
                                          benchmark_partition_mask,
                                          benchmark_epoch,
                                          benchmark_frame,
                                          1000.0 * (feedback.GPUEndTime -
-                                                   feedback.GPUStartTime) };
+                                                   feedback.GPUStartTime),
+                                         pass_ms };
           {
             std::lock_guard<std::mutex> lock (benchmark->mutex);
             benchmark->samples.push_back (sample);
@@ -5023,27 +5073,6 @@ namespace moppe {
         if (timing && feedback.GPUEndTime >= feedback.GPUStartTime) {
           const double gpu_ms =
             1000.0 * (feedback.GPUEndTime - feedback.GPUStartTime);
-          std::array<double, GPU_PASS_COUNT> pass_ms {};
-          NSData* timestamp_results =
-            timestamp_heap && timestamp_count > 1
-              ? [timestamp_heap
-                  resolveCounterRange:NSMakeRange (0, timestamp_count)]
-              : nil;
-          if (timestamp_results) {
-            const auto* samples =
-              static_cast<const MTLCounterResultTimestamp*> (
-                timestamp_results.bytes);
-            if (sample_intervals.size () + 1 == (size_t)timestamp_count) {
-              for (std::size_t i = 0; i < sample_intervals.size (); ++i) {
-                const uint64_t a = samples[i].timestamp;
-                const uint64_t b = samples[i + 1].timestamp;
-                if (a != MTLCounterErrorValue && b != MTLCounterErrorValue &&
-                    b >= a)
-                  pass_ms[static_cast<int> (sample_intervals[i])] +=
-                    (b - a) / 1000000.0;
-              }
-            }
-          }
           std::lock_guard<std::mutex> lock (timing->mutex);
           if (timing->interval_start == 0)
             timing->interval_start = feedback.GPUEndTime;
@@ -5260,6 +5289,9 @@ namespace moppe {
         });
       std::ofstream output (m_benchmark->path);
       output << "epoch,mask,partition_mask,logical_frame,gpu_ms";
+      if (m_benchmark->pass_timing)
+        for (int i = 0; i < GPU_PASS_COUNT; ++i)
+          output << ',' << GPU_PASS_NAMES[i] << "_ms";
       for (const std::string& name : m_benchmark->feature_names)
         output << ',' << name;
       output << '\n';
@@ -5267,6 +5299,9 @@ namespace moppe {
         output << sample.epoch << ',' << sample.mask << ','
                << sample.partition_mask << ',' << sample.frame << ','
                << sample.gpu_ms;
+        if (m_benchmark->pass_timing)
+          for (double pass_ms : sample.pass_ms)
+            output << ',' << pass_ms;
         for (std::size_t bit = 0; bit < m_benchmark->feature_names.size ();
              ++bit)
           output << ',' << ((sample.mask & (1u << bit)) ? 1 : 0);
