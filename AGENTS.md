@@ -31,15 +31,17 @@
       Temporal uses a single-sample jittered scene with persistent depth,
       motion vectors, exposure, and a reactive mask rather than scene MSAA.
     - `--frame-interpolation on|off` controls macOS MetalFX frame generation.
-      It defaults on for supported Metal 4 devices at 90 Hz or above: Moppe
-      renders and simulates at half refresh, then alternates a generated
-      midpoint and the retained real frame at the full display cadence.
+      It defaults off, with ordinary play paced directly at 60 Hz. Explicit
+      `on` requests the high-refresh display cadence and alternates a generated
+      midpoint with the retained real frame when supported.
     - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
       fraction of display backing resolution. `--render-scale <0.25..1>`
       independently selects the 3D scene as a fraction of that drawable;
       `MOPPE_RENDERSCALE` remains its environment equivalent. Ordinary play
-      defaults both scales to `0.5`; explicit flags override either, and an
-      explicit quality preset replaces the ordinary graphics baseline.
+      keeps the drawable native up to a 4.2 MP area cap, then scales it down;
+      the 3D scene defaults to half that drawable. Explicit flags override
+      either, and an explicit quality preset replaces the ordinary graphics
+      baseline.
     - `--msaa 1|2|4` fixes the scene sample count before pipeline creation.
       `--scene-megapixels <0..64>` controls the desktop scene-area safety cap;
       zero disables it. Explicit flags override their legacy environment

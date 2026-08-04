@@ -90,8 +90,8 @@ amended the first draft. The deltas, now integrated below, were:
   atmosphere noticeably.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
   bug is documented at main.cc:3182). HUD coordinates are view **points**.
-  On macOS the default drawable uses the view's full backing-pixel extent;
-  `--drawable-scale` can reduce that final surface independently, while
+  On macOS the default drawable uses the view's full backing-pixel extent up
+  to a 4.2 MP area cap; `--drawable-scale` overrides that policy, while
   `--render-scale` or `MOPPE_RENDERSCALE` chooses the 3D scene fraction that
   MetalFX reconstructs into it. `--scene-megapixels` optionally caps that
   scene area on desktop, and `--msaa` selects 1x, 2x, or 4x scene
@@ -696,19 +696,19 @@ invalidates MetalFX history, prior camera/object/list state, exposure feedback,
 and the older gameplay motion-blur history together.
 
 On macOS, `--frame-interpolation on|off` controls MetalFX frame generation;
-it defaults on but resolves off below 90 Hz, on unsupported devices, or when
-temporal reconstruction cannot supply its depth and motion contract. Ordinary
-play defaults both the final drawable and 3D scene to half scale so the
-full-drawable interpolation pass and the earlier world passes have separate,
-bounded pixel budgets. Motion blur defaults off; it remains an explicit
-graphics feature. The interpolator runs after Moppe's native-size tone map. It
-receives the temporal scaler, current and previous HUD-free color, reversed-Z
-depth, input-pixel motion, projection and jitter, and a UI-composited copy of
-the current frame. The first frame primes history. Later render callbacks
-present the generated midpoint, and the following display-link callback
-presents the retained real frame without rendering the world again. Gameplay
-simulation remains fixed at 120 Hz: a normal interpolated render consumes two
-8.33 ms logical steps before MetalFX fills their presentation midpoint.
+it defaults off, and ordinary play renders and presents directly at 60 Hz.
+Motion blur also defaults off. The default desktop drawable stays at native
+backing resolution up to 4.2 megapixels and scales larger surfaces down to that
+area; `--drawable-scale` bypasses that automatic cap. The 3D scene defaults to
+half the resulting drawable dimensions. An explicit interpolation request uses
+the display's high-refresh cadence when MetalFX and temporal reconstruction can
+supply the required depth and motion contract. The interpolator runs after
+Moppe's native-size tone map. It receives the temporal scaler, current and
+previous HUD-free color, reversed-Z depth, input-pixel motion, projection and
+jitter, and a UI-composited copy of the current frame. The first frame primes
+history. Later render callbacks present the generated midpoint, and the
+following display-link callback presents the retained real frame without
+rendering the world again. Gameplay simulation remains fixed at 120 Hz.
 Startup reports both the render and
 presentation cadences, while GPU pass profiling reports frame interpolation
 separately from temporal upscaling.

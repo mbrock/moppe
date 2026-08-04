@@ -37,8 +37,8 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
                terrain::TerrainGenerationProfile::Play);
   MOPPE_CHECK (options.config.activate);
   MOPPE_CHECK (!options.config.capture_frames);
-  MOPPE_CHECK (options.config.frame_interpolation);
-  MOPPE_CHECK_NEAR (options.config.drawable_scale, 0.5f, 0.0f);
+  MOPPE_CHECK (!options.config.frame_interpolation);
+  MOPPE_CHECK_NEAR (options.config.drawable_scale, 0.0f, 0.0f);
   MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
   MOPPE_CHECK (!options.graphics.motion_blur);
   MOPPE_CHECK (options.graphics.upscaling == render::UpscalingMode::Temporal);
