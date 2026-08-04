@@ -124,6 +124,48 @@ namespace {
   }
 }
 
+MOPPE_TEST (default_trail_brief_is_broad_and_low_grade) {
+  const TrailFormation parameters;
+  MOPPE_CHECK_NEAR (
+    (parameters.width).numerical_value_in (moppe::u::m), 12.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    (parameters.shoulder_blend).numerical_value_in (moppe::u::m), 8.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    parameters.designed_grade.numerical_value_in (mp_units::one), 0.03f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    parameters.maximum_grade.numerical_value_in (mp_units::one), 0.08f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    parameters.crossfall.numerical_value_in (mp_units::one), 0.01f, 1e-6f);
+}
+
+MOPPE_TEST (broad_trail_brief_expands_the_formed_riding_core) {
+  const ElevationMap terrain =
+    make_elevation_map (trail_valley_grid (), bumpy_valley ());
+  TrailFormation narrow = test_parameters ();
+  narrow.width = 2.0f * mp_units::si::metre;
+  narrow.shoulder_blend = 0.0f * mp_units::si::metre;
+  TrailFormation broad = narrow;
+  broad.width = 12.0f * mp_units::si::metre;
+
+  const TrailFormationResult narrow_result = form_trails (terrain, narrow);
+  const TrailFormationResult broad_result = form_trails (terrain, broad);
+  MOPPE_CHECK (broad_result.network.alignment ==
+               narrow_result.network.alignment);
+  MOPPE_CHECK_NEAR (
+    (broad_result.network.formed_width).numerical_value_in (moppe::u::m),
+    12.0f,
+    1e-6f);
+
+  const auto count_core = [] (const TrailFormationResult& result) {
+    return std::ranges::count_if (
+      spatial::get<trail_influence> (result.network.use),
+      [] (TrailInfluence influence) {
+        return influence > 0.99f * trail_influence[mp_units::one];
+      });
+  };
+  MOPPE_CHECK (count_core (broad_result) > count_core (narrow_result));
+}
+
 MOPPE_TEST (trail_formation_grades_a_dry_valley_floor) {
   const std::vector<float> original = bumpy_valley ();
   const TrailFormationResult result = form_trails (

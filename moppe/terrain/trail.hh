@@ -19,22 +19,22 @@ namespace moppe::terrain {
     square_meters_t maximum_catchment_area =
       100000.0f * mp_units::si::metre * mp_units::si::metre;
     meters_t minimum_height_above_sea = 1.5f * mp_units::si::metre;
-    meters_t width = 3.0f * mp_units::si::metre;
-    meters_t shoulder_blend = 4.0f * mp_units::si::metre;
-    meters_t maximum_cut = 2.5f * mp_units::si::metre;
-    meters_t maximum_fill = 1.5f * mp_units::si::metre;
+    meters_t width = 12.0f * mp_units::si::metre;
+    meters_t shoulder_blend = 8.0f * mp_units::si::metre;
+    meters_t maximum_cut = 4.0f * mp_units::si::metre;
+    meters_t maximum_fill = 3.0f * mp_units::si::metre;
     // Grade is longitudinal rise over distance along the route: following a
     // contour is zero grade even on a steep sidehill. The formation pass
     // separately benches the path cross-section toward its centerline height.
     // Designed grade is the ordinary leisure-path target. Maximum grade is a
     // local exception after the available cut and fill have been accounted
     // for, not the grade that the route search should routinely accept.
-    slope_t maximum_grade = 0.12f * terrain_slope[mp_units::one];
-    slope_t designed_grade = 0.05f * terrain_slope[mp_units::one];
+    slope_t maximum_grade = 0.08f * terrain_slope[mp_units::one];
+    slope_t designed_grade = 0.03f * terrain_slope[mp_units::one];
     // The compacted tread gently falls toward the naturally lower side so
     // rain crosses the trail instead of being held on a level bench.
-    slope_t crossfall = 0.03f * terrain_slope[mp_units::one];
-    IterationCount grading_iterations = iteration_count (24);
+    slope_t crossfall = 0.01f * terrain_slope[mp_units::one];
+    IterationCount grading_iterations = iteration_count (40);
     meters_t home_base_water_distance = 90.0f * mp_units::si::metre;
     meters_t home_base_pad_radius = 18.0f * mp_units::si::metre;
     meters_t desired_circuit_radius = 900.0f * mp_units::si::metre;
