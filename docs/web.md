@@ -45,8 +45,10 @@ native algorithms and can take substantially longer in WebAssembly.
 The browser needs WebGPU and WebAssembly threads. Current Chrome and Safari on
 macOS are the primary development browsers. Keyboard controls are the native
 controls: `W`/`S` drive, `A`/`D` steer, `Space` boosts or skips the opening
-cinematic, and `E` performs contextual actions. Clicking the canvas requests
-pointer lock for pointer-driven modes.
+cinematic, and `E` performs contextual actions. Keep steering during a jump to
+whip the motorcycle sideways, then straighten it before touchdown to bank the
+clean-landing multiplier and recover jump-jet charge. Clicking the canvas
+requests pointer lock for pointer-driven modes.
 
 ## Public releases
 

@@ -491,7 +491,22 @@ namespace moppe {
       damping_t pose_rate = 10.0f / u::s;
       if (airborne () && length2 (velocity) > 4.0f) {
         float time_to_landing = 0.0f;
-        if (expected_landing_pose (pose_forward, pose_up, time_to_landing)) {
+        const bool whipping = abs (m_yaw) > 0.18f * u::rad;
+        if (whipping) {
+          // Full-lock steering is a deliberate motocross whip. Preserve the
+          // trajectory's pitch but let the chassis yaw visibly around it;
+          // releasing the stick hands control back to landing preparation.
+          pose_forward = m_heading;
+          pose_forward[1] = normalized (velocity)[1];
+          normalize (pose_forward);
+          Vec3 right = cross (Vec3 (0, 1, 0), pose_forward);
+          if (length2 (right) < 0.0001f)
+            right = Vec3 (1, 0, 0);
+          normalize (right);
+          pose_up = cross (pose_forward, right);
+          pose_rate = 9.0f / u::s;
+        } else if (expected_landing_pose (
+                     pose_forward, pose_up, time_to_landing)) {
           const float response = 4.0f + 5.0f / std::max (0.5f, time_to_landing);
           pose_rate = response / u::s;
         } else {

@@ -29,11 +29,14 @@ namespace moppe {
       int lives;
       // m_star_field.collected(): the "x N" star counter.
       int stars;
-      // Accumulated stunt score and the current/resulting long jump.
+      // Accumulated stunt score and the current/resulting air whip.
       int score;
       float airtime_s;
+      float spin_degrees;
       float landed_airtime_s;
+      float landed_spin_degrees;
       int landed_points;
+      bool landed_clean;
       float landed_age_s;
       // m_mode == M_FOOT: zeroes the speed, parks the boost dial and
       // shows the "ON FOOT" tag.
@@ -52,7 +55,8 @@ namespace moppe {
       HudState ()
           : speed_kmh (0), boost_ready01 (1.0f), health01 (1.0f),
             odometer_m (0), lives (10), stars (0), score (0), airtime_s (0),
-            landed_airtime_s (0), landed_points (0), landed_age_s (10),
+            spin_degrees (0), landed_airtime_s (0), landed_spin_degrees (0),
+            landed_points (0), landed_clean (false), landed_age_s (10),
             on_foot (false), gliding (false), can_deploy_glider (false),
             can_drop_bike (false), vertical_speed_mps (0),
             frame_time_s (1.0f / 60.0f), heading_radians (0.0f) {}

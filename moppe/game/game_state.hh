@@ -43,8 +43,13 @@ namespace moppe::game {
     bool m_car_exists = false;
     int m_score = 0;
     float m_jump_airtime = 0.0f;
+    float m_jump_spin_radians = 0.0f;
+    float m_jump_peak_spin_radians = 0.0f;
+    Vec3 m_jump_last_heading { 0, 0, 1 };
     float m_landed_airtime = 0.0f;
+    float m_landed_spin_degrees = 0.0f;
     int m_landed_points = 0;
+    bool m_landed_clean = false;
     float m_landed_age = 10.0f;
     std::mt19937 m_fx_rng { 7 };
   };

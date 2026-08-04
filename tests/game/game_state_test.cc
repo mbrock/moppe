@@ -6,6 +6,7 @@
 #include <tests/test.hh>
 
 #include <algorithm>
+#include <cmath>
 #include <type_traits>
 #include <vector>
 
@@ -144,6 +145,114 @@ MOPPE_TEST (airborne_vehicle_prepares_for_expected_landing_plane) {
   // points up. The surface normal also banks toward the downhill side.
   MOPPE_CHECK (vehicle.render_orientation ()[1] > 0.0f);
   MOPPE_CHECK (vehicle.render_normal ()[0] < 0.0f);
+}
+
+MOPPE_TEST (air_steering_visibly_whips_the_motocross) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (160, 0, 160))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+
+  mov::Vehicle vehicle (position (Vec3 (50, 30, 50)),
+                        0 * u::deg,
+                        surface,
+                        1000 * u::N,
+                        10 * u::kW,
+                        100 * u::kg);
+  mov::Vehicle::State flight = vehicle.state ();
+  flight.position = position (Vec3 (50, 30, 50));
+  flight.velocity = velocity (Vec3 (0, 0, 18));
+  flight.heading = Vec3 (0, 0, 1);
+  flight.thrust_orientation = flight.heading;
+  flight.render_heading = flight.heading;
+  flight.render_normal = Vec3 (0, 1, 0);
+  flight.airborne_time = seconds (1.0f);
+  flight.fall_top = 30 * u::m;
+  vehicle.restore (flight);
+  vehicle.set_yaw (90 * u::deg);
+
+  for (int i = 0; i < 30; ++i)
+    vehicle.update (seconds (1.0f / 60.0f));
+
+  MOPPE_CHECK (std::abs (vehicle.orientation ()[0]) > 0.35f);
+  MOPPE_CHECK (std::abs (vehicle.render_orientation ()[0]) > 0.25f);
+}
+
+MOPPE_TEST (clean_air_whip_banks_points_and_recharges_jump_jets) {
+  using namespace moppe;
+  map::SurfaceGeometry surface = map::SurfaceGeometry (terrain::TerrainDomain (
+    17, 17, spatial_extent_in_metres (Vec3 (160, 0, 160))));
+  std::ranges::fill (
+    spatial::get<terrain::surface_elevation> (surface),
+    moppe::terrain::surface_elevation_point (10.0f * mp_units::si::metre));
+  map::rebuild_geometry (surface);
+  game::WorldParams world;
+  world.map_size = spatial_extent_in_metres (Vec3 (160, 20, 160));
+  world.resolution = static_cast<int> (surface.domain ().width ());
+  world.water_level = 0 * u::m;
+  std::vector<mov::Box> obstacles;
+  game::GameSession session (world, surface);
+
+  mov::Vehicle::State flight = session.bike ().state ();
+  flight.position = position (Vec3 (50, 18, 50));
+  flight.velocity = velocity (Vec3 (0, 0, 15));
+  flight.heading = Vec3 (0, 0, 1);
+  flight.thrust_orientation = flight.heading;
+  flight.render_heading = flight.heading;
+  flight.airborne_time = seconds (1.5f);
+  flight.fall_top = 18 * u::m;
+  flight.boost_charge = 0.2f;
+  flight.boost_recharge_delay = seconds (1.0f);
+  session.bike ().restore (flight);
+
+  const seconds_t step = seconds (1.0f / 60.0f);
+  game::advance_game_session (
+    world, surface, obstacles, session, game::InputFrame {}, step);
+
+  flight = session.bike ().state ();
+  flight.velocity = velocity (Vec3 (15, 0, 0));
+  flight.heading = Vec3 (1, 0, 0);
+  flight.thrust_orientation = flight.heading;
+  flight.render_heading = flight.heading;
+  session.bike ().restore (flight);
+  game::advance_game_session (
+    world, surface, obstacles, session, game::InputFrame {}, step);
+  MOPPE_CHECK_NEAR (
+    std::abs (session.logic ().m_jump_spin_radians), 1.5707963f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 1e-4f);
+
+  flight = session.bike ().state ();
+  flight.velocity = velocity (Vec3 (0, 0, 15));
+  flight.heading = Vec3 (0, 0, 1);
+  flight.thrust_orientation = flight.heading;
+  flight.render_heading = flight.heading;
+  session.bike ().restore (flight);
+  game::advance_game_session (
+    world, surface, obstacles, session, game::InputFrame {}, step);
+  MOPPE_CHECK_NEAR (
+    std::abs (session.logic ().m_jump_spin_radians), 0.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (
+    session.logic ().m_jump_peak_spin_radians, 1.5707963f, 1e-4f);
+
+  flight = session.bike ().state ();
+  flight.position = position (Vec3 (52, 11.05f, 50));
+  flight.velocity = velocity (Vec3 (0, -1, 15));
+  flight.airborne_time = seconds (1.7f);
+  flight.fall_top = 18 * u::m;
+  session.bike ().restore (flight);
+  game::advance_game_session (
+    world, surface, obstacles, session, game::InputFrame {}, seconds (0.1f));
+
+  MOPPE_CHECK (session.logic ().m_landed_clean);
+  MOPPE_CHECK_NEAR (session.logic ().m_landed_spin_degrees, 90.0f, 1e-3f);
+  MOPPE_CHECK (session.logic ().m_landed_points > 350);
+  MOPPE_CHECK (session.logic ().m_score == session.logic ().m_landed_points);
+  MOPPE_CHECK (session.bike ().boost_charge () > 0.3f);
+  MOPPE_CHECK (!session.dust ().state ().emissions.empty ());
 }
 
 MOPPE_TEST (camera_and_walker_state_round_trip) {

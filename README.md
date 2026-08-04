@@ -41,8 +41,8 @@ The current engine includes:
 - procedural orogeny, erosion, drainage, lakes, rivers, and designed trails;
 - deterministic seeded worlds with periodic topology;
 - terrain-aware vegetation and generated-world spawn selection;
-- motorcycle physics, a deployable hang glider, atmosphere, water, shadows,
-  and post-processing;
+- motorcycle physics with jump jets and scored air whips, a deployable hang
+  glider, atmosphere, water, shadows, and post-processing;
 - keyboard, touch, and game-controller input;
 - a portable game-shaped rendering API with Metal backends for Apple devices.
 
