@@ -38,7 +38,7 @@ namespace moppe::game {
   // testable.
   struct LaunchOptions {
     WorldParams world;
-    GraphicsSettings graphics = high_graphics_settings ();
+    GraphicsSettings graphics = default_graphics_settings ();
     platform::Config config { .title = "Moppe" };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;

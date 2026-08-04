@@ -37,8 +37,10 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
                terrain::TerrainGenerationProfile::Play);
   MOPPE_CHECK (options.config.activate);
   MOPPE_CHECK (!options.config.capture_frames);
-  MOPPE_CHECK (!options.config.frame_interpolation);
-  MOPPE_CHECK_NEAR (options.config.drawable_scale, 1.0f, 0.0f);
+  MOPPE_CHECK (options.config.frame_interpolation);
+  MOPPE_CHECK_NEAR (options.config.drawable_scale, 0.5f, 0.0f);
+  MOPPE_CHECK_NEAR (options.graphics.render_scale_override, 0.5f, 0.0f);
+  MOPPE_CHECK (!options.graphics.motion_blur);
   MOPPE_CHECK (options.graphics.upscaling == render::UpscalingMode::Temporal);
   MOPPE_CHECK (options.screenshot_path.empty ());
   MOPPE_CHECK (!options.benchmark.has_value ());
@@ -114,6 +116,9 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
     parsed ({ "--frame-interpolation", "on" }).config.frame_interpolation);
   MOPPE_CHECK (
     !parsed ({ "--frame-interpolation", "off" }).config.frame_interpolation);
+  const game::LaunchOptions high = parsed ({ "--graphics-quality", "high" });
+  MOPPE_CHECK_NEAR (high.graphics.render_scale_override, 0.0f, 0.0f);
+  MOPPE_CHECK (high.graphics.motion_blur);
   MOPPE_CHECK (
     parsed ({ "--graphics-quality", "balanced", "--upscaling", "linear" })
       .graphics.upscaling == render::UpscalingMode::Linear);

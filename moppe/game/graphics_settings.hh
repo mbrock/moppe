@@ -179,6 +179,9 @@ namespace moppe::game {
     &undergrowth_feature,
   };
 
+  // Ordinary play favors stable high-refresh presentation. Explicit quality
+  // presets remain available as named alternatives.
+  GraphicsSettings default_graphics_settings ();
   GraphicsSettings high_graphics_settings ();
   GraphicsSettings balanced_graphics_settings ();
   GraphicsSettings low_graphics_settings ();
