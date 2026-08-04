@@ -703,9 +703,11 @@ scaler, current and previous HUD-free color, reversed-Z depth, input-pixel
 motion, projection and jitter, and a UI-composited copy of the current frame.
 The first frame primes history. Later render callbacks present the generated
 midpoint, and the following display-link callback presents the retained real
-frame without ticking or rendering the world again. Startup reports both the
-render and presentation cadences, while GPU pass profiling reports frame
-interpolation separately from temporal upscaling.
+frame without rendering the world again. Gameplay simulation remains fixed at
+120 Hz: a normal interpolated render consumes two 8.33 ms logical steps before
+MetalFX fills their presentation midpoint. Startup reports both the render and
+presentation cadences, while GPU pass profiling reports frame interpolation
+separately from temporal upscaling.
 
 The Apple TV default uses half of UIKit point resolution for the 3D scene.
 Temporal MetalFX reconstructs that scene to the native drawable on supported

@@ -42,6 +42,15 @@ small set of application-side effects it cannot realize itself.
 and weather through paused cinematic and tree-demo modes, then delegates
 ordinary play through that operation.
 
+Ordinary play converts the platform's presentation interval into phase-locked
+120 Hz steps before calling that operation. A slightly early display callback
+therefore remains one simulation step rather than producing a zero-step frame
+followed by two steps. Delayed callbacks can catch up by at most six steps;
+excess elapsed time is discarded instead of feeding one unstable large step
+into vehicles, the glider, or the chase camera. Graphics-benchmark replay and
+deterministic cinematic capture retain their deliberate contract of one
+logical step per rendered frame.
+
 A completed-world handoff retires the old session before its old generated
 world, then constructs a fresh session against the new world. In particular,
 pressing `N` begins a new world session rather than carrying a player, score,
