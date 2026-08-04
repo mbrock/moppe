@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <concepts>
 #include <cstddef>
+#include <filesystem>
+#include <fstream>
 #include <span>
 #include <vector>
 
@@ -73,6 +75,38 @@ MOPPE_TEST (global_forest_sites_leave_materialized_clearings_empty) {
 
   MOPPE_CHECK (
     game::plan_global_forest (surface, readings, 0x31415926U).sites.empty ());
+}
+
+MOPPE_TEST (baked_forest_plan_round_trips_and_rejects_bad_identity) {
+  using namespace moppe;
+  const std::filesystem::path path =
+    std::filesystem::temp_directory_path () / "moppe-forest-plan-test.bin";
+  const spatial_extent_t period = spatial_extent_in_metres (Vec3 (640, 0, 480));
+  game::ForestPlan plan;
+  plan.period = period;
+  plan.sites.push_back (
+    { .position = position (Vec3 (12, 34, 56)),
+      .normal = Vec3 (0, 1, 0) * terrain::terrain_normal[mp_units::one],
+      .cover = 0.7f * map::forest_cover[mp_units::one],
+      .moisture = 0.4f * map::surface_moisture[mp_units::one],
+      .size = 1.2f * game::tree_size_factor[mp_units::one],
+      .seed = 1234,
+      .form = game::ForestForm::conifer });
+
+  game::save_forest_plan (plan, 99, path.string ());
+  const std::optional<game::ForestPlan> restored =
+    game::try_load_forest_plan (path.string (), 99, period);
+  MOPPE_CHECK (restored.has_value ());
+  MOPPE_CHECK (restored->sites.size () == 1);
+  MOPPE_CHECK (restored->sites[0].seed == 1234);
+  MOPPE_CHECK (restored->sites[0].form == game::ForestForm::conifer);
+  MOPPE_CHECK_NEAR (
+    position_value (restored->sites[0].position)[1], 34.0f, 0.0f);
+  MOPPE_CHECK (!game::try_load_forest_plan (path.string (), 100, period));
+
+  std::ofstream (path, std::ios::binary | std::ios::trunc).put ('x');
+  MOPPE_CHECK (!game::try_load_forest_plan (path.string (), 99, period));
+  std::filesystem::remove (path);
 }
 
 namespace {

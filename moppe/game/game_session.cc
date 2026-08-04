@@ -164,6 +164,8 @@ namespace moppe::game {
 
       if (input.deploy_glider)
         use_glider_control (session, terrain);
+      else if (input.deploy_glider_held && session.logic ().m_mode != M_GLIDER)
+        deploy_glider (session, terrain);
       if (input.toggle_mount) {
         if (session.can_deploy_glider (terrain) || session.can_drop_bike ())
           use_glider_control (session, terrain);

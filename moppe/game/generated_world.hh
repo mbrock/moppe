@@ -24,21 +24,26 @@ namespace moppe::game {
   using HydrologyProgress = std::function<void (HydrologyStage)>;
 
   // What analyzing a world's water leaves behind, in the order the stages
-  // derive it: each stage reads the results before it.
+  // derive it. Fractional drainage is construction-only: it contributes the
+  // final channel-flux reading, but gameplay never retains or queries it.
   using Hydrology = std::tuple<terrain::FloodField,
                                terrain::LakeCensus,
                                terrain::DrainageGraph,
-                               terrain::FractionalDrainage,
                                terrain::RiverNetwork>;
+
+  struct HydrologyAnalysis {
+    Hydrology hydrology;
+    terrain::FractionalDrainage channels;
+  };
 
   // The recipe is authoritative for a world's extent, resolution, and datum,
   // both before it is generated and after.
   WorldParams bind_world_params (WorldParams params,
                                  const terrain::WorldRecipe& recipe);
 
-  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
-                               const terrain::WorldRecipe& recipe,
-                               const HydrologyProgress& progress = {});
+  HydrologyAnalysis analyze_hydrology (const map::SurfaceGeometry& geometry,
+                                       const terrain::WorldRecipe& recipe,
+                                       const HydrologyProgress& progress = {});
 
   // Painted water and the readings over the ground arrive together: the
   // waterline the readings measure against comes from the sheets.
@@ -46,6 +51,7 @@ namespace moppe::game {
   analyze_surface (const map::SurfaceGeometry& geometry,
                    const terrain::WorldRecipe& recipe,
                    const Hydrology& hydrology,
+                   const terrain::FractionalDrainage& channels,
                    const terrain::TrailUseMap& use);
 
   // A generated world's durable, renderer-free artifacts. It is assembled

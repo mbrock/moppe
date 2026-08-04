@@ -635,7 +635,8 @@ preset retains terrain, vehicles, physics, sky, waterfall curtains, and HUD so
 it remains playable while isolating optional rendering cost.
 
 All presets request spatial MetalFX by default. When the scene is smaller
-than the drawable and the device supports Metal 4 MetalFX, the renderer
+than the drawable and a physical macOS, iOS, or tvOS device supports Metal 4
+MetalFX, the renderer
 reconstructs the linear HDR scene into a native-size RGBA16F target before
 the existing tone map, print-like grade, EDR treatment, lens treatment, and
 native HUD. `--upscaling linear` retains the former direct linear sample for
@@ -643,13 +644,16 @@ fallbacks and exact A/B comparisons. Startup reports requested and resolved
 `native | spatial | linear` modes together with both dimensions and the
 fallback reason.
 
-The Apple TV default retains the high-quality feature set but uses 75% of
-UIKit point resolution for the 3D scene. The present pass and HUD still use
-the native drawable. tvOS also uses 2x scene MSAA instead of 4x. MSAA alone
-halves scene color/depth sample traffic; on a 2x 4K drawable, point-relative
-resolution takes the combined reduction to about 84% versus the former
-two-thirds-native, 4x-MSAA default. Explicit quality presets remain relative
-to the point-resolution baseline, and `MOPPE_RENDERSCALE` remains an absolute
+The Apple TV default uses half of UIKit point resolution for the 3D scene.
+Spatial MetalFX reconstructs that scene to the native drawable on supported
+Apple TV hardware, with the linear present sample remaining the fallback. The
+present pass and HUD still use the native drawable, and tvOS uses 2x scene
+MSAA instead of 4x. The television preset keeps water, particles, vehicle and
+star effects, lens flare, and detailed terrain materials, while disabling
+terrain shadows, motion blur, bloom, the exposure probe, and procedural
+undergrowth. Those remain available through `--graphics-quality high` or
+individual feature overrides. Explicit quality presets remain relative to the
+point-resolution baseline, and `MOPPE_RENDERSCALE` remains an absolute
 drawable fraction.
 Presets resolve into a typed graphics-settings value rather than remaining a
 quality-mode branch. Boolean features can then be changed independently with

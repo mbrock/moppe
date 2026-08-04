@@ -24,6 +24,10 @@ int main (int argc, char** argv) {
   game::LaunchOptions options;
 #ifdef MOPPE_DEFAULT_APPLE_TV_GRAPHICS
   options.graphics = game::apple_tv_graphics_settings ();
+  // The Apple TV bundle carries this exact evolved landscape. Command-line
+  // launch arguments can still replace the seed for development runs.
+  options.world.resolution = 1024;
+  options.seed = 123;
 #endif
 
   std::string error;

@@ -10,13 +10,13 @@ means no construction stage remains optional or in progress.
 | --- | --- |
 | `WorldParams` and `WorldRecipe` | bound extent, resolution, datum, seed, profile, and algorithms |
 | `map::SurfaceGeometry` | authoritative elevation, normals, material history, and snow support |
-| `game::Hydrology` | flood, lakes, wet drainage, fractional channels, and rivers in derivation order |
+| `game::Hydrology` | flood, lakes, wet drainage, and rivers in derivation order |
 | `terrain::WaterSheets` | water elevation, wave amplitude, and velocity |
 | `terrain::TrailNetwork` | built route, alignment, grading report, and typed use readings |
 | `map::SurfaceReadings` | completed hydrology, geology, ecology, and trail readings over the ground |
 
 `Hydrology` is a tuple of distinct stage types. Code that consumes the complete
-analysis binds the five values by name; focused application access uses their
+analysis binds the four values by name; focused application access uses their
 types. A normal completed world cannot expose rivers without the flood, lake,
 and drainage results from which they were derived.
 
@@ -37,6 +37,20 @@ allocate SurfaceGeometry
 The loading screen sees `LoadingStatus`, not candidate terrain. The deleted
 terrain preview and generation-history queue are not part of the current
 handoff.
+
+The Apple TV install path runs the complete renderer-free world pipeline once
+in a native Release baker. It bundles typed Arrow fields for terrain, flood,
+drainage, water, trail use, and surface readings, plus compact lake, river, and
+trail topology for the default Play-profile, seed-123 world. The bundle also
+carries the renderer-independent global forest plan, avoiding hundreds of
+thousands of habitat samples during device startup. Its
+television-specific 1024-square lattice retains the Play erosion age while
+bounding asset size. A normal Apple TV launch constructs `GeneratedWorld`
+directly from that bundle; only renderer resources, actors, and presentation
+meshes initialize on device. The recipe, cache schema, forest seed, and world
+extent are checked before loading, while alternate seeds and profiles retain
+the ordinary generated,
+writable-cache path.
 
 `WorldLoading` owns a single-flight job containing the requested parameters
 and recipe. The worker retains a shared loader state rather than a raw

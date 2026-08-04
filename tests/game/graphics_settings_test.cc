@@ -62,12 +62,25 @@ MOPPE_TEST (balanced_graphics_reduces_resolution_without_removing_features) {
       MOPPE_CHECK (feature->enabled (settings));
 }
 
-MOPPE_TEST (apple_tv_graphics_preserves_the_complete_feature_set) {
+MOPPE_TEST (apple_tv_graphics_keeps_effects_but_avoids_full_frame_costs) {
   const game::GraphicsSettings settings = game::apple_tv_graphics_settings ();
-  MOPPE_CHECK_NEAR (settings.scene_scale, 0.75f, 0.0f);
-  for (const game::GraphicsFeature* feature : game::graphics_features)
-    if (feature != &game::terrain_topology_feature)
-      MOPPE_CHECK (feature->enabled (settings));
+  MOPPE_CHECK_NEAR (settings.scene_scale, 0.5f, 0.0f);
+  MOPPE_CHECK (settings.upscaling == render::UpscalingMode::Spatial);
+  MOPPE_CHECK (settings.ocean);
+  MOPPE_CHECK (settings.waterfall_curtains);
+  MOPPE_CHECK (settings.particles);
+  MOPPE_CHECK (settings.vehicle_effects);
+  MOPPE_CHECK (settings.star_effects);
+  MOPPE_CHECK (settings.lens_flare);
+  MOPPE_CHECK (settings.terrain_fragment_normals);
+  MOPPE_CHECK (settings.snow_support_filter);
+  MOPPE_CHECK (settings.channel_flux_detail);
+  MOPPE_CHECK (!settings.terrain_shadows);
+  MOPPE_CHECK (!settings.motion_blur);
+  MOPPE_CHECK (!settings.bloom);
+  MOPPE_CHECK (!settings.auto_exposure);
+  MOPPE_CHECK (!settings.terrain_topology);
+  MOPPE_CHECK (!settings.undergrowth);
 }
 
 MOPPE_TEST (graphics_feature_lists_reject_unknown_and_empty_names) {

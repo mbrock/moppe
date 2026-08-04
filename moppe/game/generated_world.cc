@@ -17,9 +17,9 @@ namespace moppe::game {
     return params;
   }
 
-  Hydrology analyze_hydrology (const map::SurfaceGeometry& geometry,
-                               const terrain::WorldRecipe& recipe,
-                               const HydrologyProgress& progress) {
+  HydrologyAnalysis analyze_hydrology (const map::SurfaceGeometry& geometry,
+                                       const terrain::WorldRecipe& recipe,
+                                       const HydrologyProgress& progress) {
     MOPPE_PROFILE_ZONE ("game::analyze_hydrology");
     const auto report = [&progress] (HydrologyStage stage) {
       if (progress)
@@ -49,20 +49,21 @@ namespace moppe::game {
       channels,
       terrain::visible_river_minimum_area (drainage.domain ()));
 
-    return Hydrology (std::move (standing_water),
-                      std::move (lakes),
-                      std::move (drainage),
-                      std::move (channels),
-                      std::move (rivers));
+    return { Hydrology (std::move (standing_water),
+                        std::move (lakes),
+                        std::move (drainage),
+                        std::move (rivers)),
+             std::move (channels) };
   }
 
   std::tuple<terrain::WaterSheets, map::SurfaceReadings>
   analyze_surface (const map::SurfaceGeometry& geometry,
                    const terrain::WorldRecipe& recipe,
                    const Hydrology& hydrology,
+                   const terrain::FractionalDrainage& channels,
                    const terrain::TrailUseMap& use) {
     MOPPE_PROFILE_ZONE ("game::analyze_surface");
-    const auto& [standing_water, lakes, drainage, channels, rivers] = hydrology;
+    const auto& [standing_water, lakes, drainage, rivers] = hydrology;
     const meters_t water_level = recipe.water_datum ();
 
     map::ChannelFluxMap channel_flux =

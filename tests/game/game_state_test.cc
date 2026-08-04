@@ -409,6 +409,12 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   std::vector<mov::Box> obstacles;
   game::GameSession session (world, surface);
 
+  game::InputFrame held;
+  held.deploy_glider_held = true;
+  game::advance_game_session (
+    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
+  MOPPE_CHECK (session.logic ().m_mode == game::M_BIKE);
+
   mov::Vehicle::State airborne = session.bike ().state ();
   airborne.position = position (Vec3 (80, 40, 80));
   airborne.velocity = velocity (Vec3 (0, 1, 20));
@@ -418,10 +424,8 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
   airborne.fall_top = 40 * u::m;
   session.bike ().restore (airborne);
 
-  game::InputFrame deploy;
-  deploy.deploy_glider = true;
   game::advance_game_session (
-    world, surface, obstacles, session, deploy, seconds (1.0f / 60.0f));
+    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
 
   MOPPE_CHECK (session.logic ().m_mode == game::M_GLIDER);
   MOPPE_CHECK (session.glider ().bike_attached ());
@@ -430,6 +434,10 @@ MOPPE_TEST (deploying_glider_carries_then_drops_motocross) {
     length (session.glider ().position () - session.bike ().position ()),
     2.4f,
     1e-4f);
+
+  game::advance_game_session (
+    world, surface, obstacles, session, held, seconds (1.0f / 60.0f));
+  MOPPE_CHECK (session.glider ().bike_attached ());
 
   game::InputFrame drop;
   drop.deploy_glider = true;

@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace moppe::game {
@@ -49,6 +51,16 @@ namespace moppe::game {
                       std::uint32_t seed,
                       meters_t spacing = 12.0f * u::m);
 
+  // The plan is renderer-independent and expensive to derive over a large
+  // surface, so packaged worlds can carry it beside their terrain fields.
+  void save_forest_plan (const ForestPlan& plan,
+                         std::uint32_t seed,
+                         const std::string& path);
+  [[nodiscard]] std::optional<ForestPlan>
+  try_load_forest_plan (const std::string& path,
+                        std::uint32_t seed,
+                        const spatial_extent_t& expected_period);
+
   // Terrain-scale presentation of the population.
   //
   // Three things happen to a tree as it recedes. Near enough to ride past it
@@ -70,6 +82,7 @@ namespace moppe::game {
                   const map::SurfaceGeometry& surface,
                   const map::SurfaceReadings& readings,
                   std::uint32_t seed);
+    void rebuild (render::Renderer& renderer, ForestPlan plan);
 
     // Brings the near meshes for the chunks about to be drawn into
     // residence, a bounded number per call so a fast approach costs a few

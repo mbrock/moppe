@@ -23,11 +23,13 @@ namespace moppe::game {
       using platform::Key;
       const float value = down ? 1.0f : 0.0f;
 
-      // E is an edge-triggered gameplay action and historically skipped the
-      // mount-combo state machine.
+      // E has an activation edge plus held state so deployment can wait for
+      // the bike to reach a safe height. It skips the mount-combo state
+      // machine.
       if (key == Key::E) {
-        if (down)
+        if (down && !m_deploy_glider_held)
           m_deploy_glider = true;
+        m_deploy_glider_held = down;
         return;
       }
       if (key == Key::Mount) {
@@ -116,6 +118,7 @@ namespace moppe::game {
       frame.boost =
         std::max (input_value (frame.boost), input_value (m_keys.boost));
       frame.deploy_glider = m_deploy_glider;
+      frame.deploy_glider_held = m_deploy_glider_held;
       frame.toggle_mount = m_toggle_mount;
       frame.cycle_camera = m_cycle_camera;
       frame.leave_cinematic = m_leave_cinematic;
@@ -130,6 +133,7 @@ namespace moppe::game {
       m_analog = {};
       m_keys = {};
       m_deploy_glider = false;
+      m_deploy_glider_held = false;
       m_toggle_mount = false;
       m_cycle_camera = false;
       m_leave_cinematic = false;
@@ -153,6 +157,7 @@ namespace moppe::game {
     InputFrame m_analog;
     InputFrame m_keys;
     bool m_deploy_glider = false;
+    bool m_deploy_glider_held = false;
     bool m_toggle_mount = false;
     bool m_cycle_camera = false;
     bool m_leave_cinematic = false;

@@ -12,6 +12,7 @@ namespace moppe::game {
     control_signal_t drive {};
     proportion_t boost {};
     bool deploy_glider = false;
+    bool deploy_glider_held = false;
     bool toggle_mount = false;
     bool cycle_camera = false;
     bool leave_cinematic = false;

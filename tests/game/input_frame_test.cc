@@ -43,7 +43,16 @@ MOPPE_TEST (input_frame_adapter_maps_keyboard_controls_and_actions) {
   input.key (platform::Key::E, true);
   frame = input.take_frame ();
   MOPPE_CHECK (frame.deploy_glider);
-  MOPPE_CHECK (!input.take_frame ().deploy_glider);
+  MOPPE_CHECK (frame.deploy_glider_held);
+  frame = input.take_frame ();
+  MOPPE_CHECK (!frame.deploy_glider);
+  MOPPE_CHECK (frame.deploy_glider_held);
+  input.key (platform::Key::E, true);
+  frame = input.take_frame ();
+  MOPPE_CHECK (!frame.deploy_glider);
+  MOPPE_CHECK (frame.deploy_glider_held);
+  input.key (platform::Key::E, false);
+  MOPPE_CHECK (!input.take_frame ().deploy_glider_held);
 
   input.key (platform::Key::Tab, true);
   frame = input.take_frame ();

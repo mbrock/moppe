@@ -27,44 +27,6 @@ namespace moppe::game {
     // it: the area to cover falls with the square.
     constexpr meters_t forest_detail_reach = 260.0f * u::m;
 
-    position_t sample_position (meters_t x, meters_t z) {
-      return position (
-        Vec3 (x.numerical_value_in (u::m), 0, z.numerical_value_in (u::m)));
-    }
-
-    terrain::SurfaceElevation
-    elevation_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
-      return spatial::sample<terrain::surface_elevation> (
-        surface, sample_position (x, z));
-    }
-
-    terrain::TerrainNormal
-    normal_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
-      return spatial::sample<terrain::terrain_normal> (surface,
-                                                       sample_position (x, z));
-    }
-
-    map::ForestCover
-    cover_at (const map::SurfaceReadings& readings, meters_t x, meters_t z) {
-      return spatial::sample<map::forest_cover> (readings,
-                                                 sample_position (x, z));
-    }
-
-    map::SurfaceMoisture
-    moisture_at (const map::SurfaceReadings& readings, meters_t x, meters_t z) {
-      return spatial::sample<map::surface_moisture> (readings,
-                                                     sample_position (x, z));
-    }
-
-    position_t forest_position (meters_t x,
-                                terrain::SurfaceElevation elevation,
-                                meters_t z) {
-      return position (
-        Vec3 (x.numerical_value_in (u::m),
-              elevation.quantity_from_zero ().numerical_value_in (u::m),
-              z.numerical_value_in (u::m)));
-    }
-
     meters_t position_component (position_t value, std::size_t component) {
       return position_value (value)[component] * u::m;
     }
@@ -742,76 +704,16 @@ namespace moppe::game {
     }
   }
 
-  ForestPlan plan_global_forest (const map::SurfaceGeometry& surface,
-                                 const map::SurfaceReadings& readings,
-                                 std::uint32_t seed,
-                                 meters_t spacing) {
-    if (spacing <= 0.0f * u::m)
-      throw std::invalid_argument ("Forest spacing must be positive");
-    const terrain::TerrainDomain& domain = surface.domain ();
-    ForestPlan plan;
-    const meters_t width = domain.period_x ();
-    const meters_t depth = domain.period_z ();
-    plan.period = spatial_extent_in_metres (Vec3 (
-      width.numerical_value_in (u::m), 0, depth.numerical_value_in (u::m)));
-    const std::uint32_t columns =
-      std::max (1U,
-                static_cast<std::uint32_t> (
-                  std::ceil ((width / spacing).numerical_value_in (one))));
-    const std::uint32_t rows =
-      std::max (1U,
-                static_cast<std::uint32_t> (
-                  std::ceil ((depth / spacing).numerical_value_in (one))));
-    const meters_t cell_x = width / static_cast<float> (columns);
-    const meters_t cell_z = depth / static_cast<float> (rows);
-    plan.sites.reserve (static_cast<std::size_t> (columns) * rows / 4);
-
-    for (std::uint32_t row = 0; row < rows; ++row)
-      for (std::uint32_t column = 0; column < columns; ++column) {
-        const std::uint32_t identity = lattice_hash (column, row, seed);
-        const meters_t x = (static_cast<float> (column) + 0.12f +
-                            0.76f * hash_lane (identity, 0)) *
-                           cell_x;
-        const meters_t z =
-          (static_cast<float> (row) + 0.12f + 0.76f * hash_lane (identity, 1)) *
-          cell_z;
-        const map::ForestCover cover = cover_at (readings, x, z);
-        const proportion_t population = band (0.08f * map::forest_cover[one],
-                                              0.62f * map::forest_cover[one],
-                                              cover);
-        if (cover < 0.06f * map::forest_cover[one] ||
-            hash_lane (identity, 2) >
-              population.numerical_value_in (one) * 0.96f)
-          continue;
-        const terrain::SurfaceElevation elevation =
-          elevation_at (surface, x, z);
-        const proportion_t high_ground =
-          band (terrain::surface_elevation_point (115.0f * u::m),
-                terrain::surface_elevation_point (195.0f * u::m),
-                elevation);
-        const float conifer_chance =
-          0.12f + 0.58f * high_ground.numerical_value_in (one);
-        plan.sites.push_back (
-          { .position = forest_position (x, elevation, z),
-            .normal = normal_at (surface, x, z),
-            .cover = cover,
-            .moisture = moisture_at (readings, x, z),
-            .size =
-              (0.78f + 0.50f * hash_lane (identity, 4)) * tree_size_factor[one],
-            .seed = identity,
-            .form = hash_lane (identity, 5) < conifer_chance
-                      ? ForestForm::conifer
-                      : ForestForm::broadleaf });
-      }
-    return plan;
-  }
-
   void ForestLandscape::rebuild (render::Renderer& renderer,
                                  const map::SurfaceGeometry& surface,
                                  const map::SurfaceReadings& readings,
                                  std::uint32_t seed) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild");
-    ForestPlan plan = plan_global_forest (surface, readings, seed);
+    rebuild (renderer, plan_global_forest (surface, readings, seed));
+  }
+
+  void ForestLandscape::rebuild (render::Renderer& renderer, ForestPlan plan) {
+    MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild_plan");
     m_period = plan.period;
     m_tree_count = plan.sites.size ();
     m_epoch = 0;

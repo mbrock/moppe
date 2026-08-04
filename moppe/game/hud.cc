@@ -479,7 +479,7 @@ namespace moppe {
 
       if (st.can_deploy_glider || st.can_drop_bike) {
         const std::string prompt =
-          st.can_drop_bike ? "E  DROP MOTOCROSS" : "E  DEPLOY GLIDER";
+          st.can_drop_bike ? "A / E  DROP MOTOCROSS" : "A / E  DEPLOY GLIDER";
         dl.color (0.65f, 0.9f, 1.0f, 0.94f);
         m_helv12->draw (dl,
                         width_pts * 0.5f - m_helv12->measure (prompt) * 0.5f,

@@ -21,6 +21,7 @@ namespace {
                       moppe::game::input_value (expected.boost),
                       0.0f);
     MOPPE_CHECK (actual.deploy_glider == expected.deploy_glider);
+    MOPPE_CHECK (actual.deploy_glider_held == expected.deploy_glider_held);
     MOPPE_CHECK (actual.toggle_mount == expected.toggle_mount);
     MOPPE_CHECK (actual.cycle_camera == expected.cycle_camera);
     MOPPE_CHECK (actual.leave_cinematic == expected.leave_cinematic);
