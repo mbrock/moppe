@@ -164,7 +164,7 @@ namespace moppe::game {
         "",
         1,
         "<on|off>",
-        "Opt into MetalFX frame interpolation on high-refresh macOS.",
+        "Enable or disable MetalFX frame interpolation on high-refresh macOS.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {
