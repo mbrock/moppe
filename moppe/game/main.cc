@@ -43,6 +43,8 @@ int main (int argc, char** argv) {
     std::cerr << error << '\n';
     return -1;
   }
+  if (options.scene_megapixel_budget)
+    options.graphics.scene_megapixel_budget = *options.scene_megapixel_budget;
   game::print_graphics_settings (std::cerr, options.graphics);
   if (options.benchmark)
     game::publish_benchmark_environment (*options.benchmark);

@@ -27,6 +27,10 @@
       fraction of display backing resolution. `--render-scale <0.25..1>`
       independently selects the 3D scene as a fraction of that drawable;
       `MOPPE_RENDERSCALE` remains its environment equivalent.
+    - `--msaa 1|2|4` fixes the scene sample count before pipeline creation.
+      `--scene-megapixels <0..64>` controls the desktop scene-area safety cap;
+      zero disables it. Explicit flags override their legacy environment
+      equivalents.
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`

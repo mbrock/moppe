@@ -741,7 +741,9 @@ namespace moppe {
 
     class MetalRenderer : public Renderer {
     public:
-      MetalRenderer (CAMetalLayer* layer, const std::string& lib_path);
+      MetalRenderer (CAMetalLayer* layer,
+                     const std::string& lib_path,
+                     int requested_msaa);
       ~MetalRenderer () override;
 
       // resources
@@ -927,7 +929,8 @@ namespace moppe {
     // ------------------------------------------------------------------
 
     MetalRenderer::MetalRenderer (CAMetalLayer* layer,
-                                  const std::string& lib_path) {
+                                  const std::string& lib_path,
+                                  int requested_msaa) {
       m_layer = layer;
       m_device = layer.device ? layer.device : MTLCreateSystemDefaultDevice ();
       m_queue = [m_device newMTL4CommandQueue];
@@ -1082,7 +1085,14 @@ namespace moppe {
                   << "x MSAA is unavailable; using " << m_msaa_samples << "x"
                   << std::endl;
       }
-      if (const char* text = ::getenv ("MOPPE_MSAA")) {
+      if (requested_msaa > 0) {
+        if ([m_device supportsTextureSampleCount:requested_msaa])
+          m_msaa_samples = requested_msaa;
+        else
+          std::cerr << "moppe: requested " << requested_msaa
+                    << "x MSAA is unavailable; keeping " << m_msaa_samples
+                    << 'x' << std::endl;
+      } else if (const char* text = ::getenv ("MOPPE_MSAA")) {
         const int wanted = ::atoi (text);
         if ((wanted == 1 || wanted == 2 || wanted == 4) &&
             [m_device supportsTextureSampleCount:wanted])
@@ -4801,8 +4811,10 @@ namespace moppe {
     // ------------------------------------------------------------------
 
     Renderer* create_metal_renderer (void* metal_layer,
-                                     const std::string& lib_path) {
-      return new MetalRenderer ((__bridge CAMetalLayer*)metal_layer, lib_path);
+                                     const std::string& lib_path,
+                                     int msaa_samples) {
+      return new MetalRenderer (
+        (__bridge CAMetalLayer*)metal_layer, lib_path, msaa_samples);
     }
 
     void set_metal_drawable (Renderer& renderer, void* drawable) {

@@ -11,7 +11,8 @@ namespace moppe {
     // header stays Objective-C-free).  The backend owns command submission;
     // the platform owns display pacing and drawable acquisition.
     Renderer* create_metal_renderer (void* metal_layer,
-                                     const std::string& shader_path);
+                                     const std::string& shader_path,
+                                     int msaa_samples = 0);
 
     // Supplies a drawable acquired by CAMetalDisplayLink or the platform view
     // for the next frame.  When none is supplied, the layer acquires one.
