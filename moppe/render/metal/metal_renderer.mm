@@ -166,13 +166,14 @@ namespace moppe {
         Exposure,
         Reflection,
         Reconstruction,
+        Interpolation,
         Present,
         Count
       };
       constexpr int GPU_PASS_COUNT = static_cast<int> (GpuPass::Count);
       const char* GPU_PASS_NAMES[GPU_PASS_COUNT] = {
-        "terrain", "sky",      "water",      "scene",   "post",
-        "bloom",   "exposure", "reflection", "upscale", "present"
+        "terrain",  "sky",        "water",   "scene",         "post",   "bloom",
+        "exposure", "reflection", "upscale", "interpolation", "present"
       };
 
       struct FrameTiming {
@@ -474,6 +475,10 @@ namespace moppe {
         id<MTLTexture> spatial_output = nil;
         id<MTL4FXSpatialScaler> spatial_scaler = nil;
         id<MTL4FXTemporalScaler> temporal_scaler = nil;
+        id<MTL4FXFrameInterpolator> frame_interpolator = nil;
+        id<MTLTexture> interpolator_color[FRAMES_IN_FLIGHT] {};
+        id<MTLTexture> interpolator_composite[FRAMES_IN_FLIGHT] {};
+        id<MTLTexture> interpolator_output[FRAMES_IN_FLIGHT] {};
         id<MTLTexture> exposure_tex = nil;
         id<MTLFence> spatial_fence = nil;
         UpscalingMode requested_upscaling = UpscalingMode::Temporal;
@@ -486,6 +491,7 @@ namespace moppe {
         id<MTLBuffer> probe_buf[FRAMES_IN_FLIGHT] {};
         float exposure = 1.0f;
         bool temporal_history_valid = false;
+        bool interpolation_history_valid = false;
         int width = 0, height = 0;
       };
 
@@ -530,6 +536,7 @@ namespace moppe {
         int width_pts = 0, height_pts = 0;
         float scale = 1.0f;
         float edr_headroom = 1.0f;
+        float interpolation_delta_time = 1.0f / 60.0f;
         float jitter_x = 0.0f, jitter_y = 0.0f;
         std::string screenshot_path;
 
@@ -786,7 +793,8 @@ namespace moppe {
     public:
       MetalRenderer (CAMetalLayer* layer,
                      const std::string& lib_path,
-                     int requested_msaa);
+                     int requested_msaa,
+                     bool request_frame_interpolation);
       ~MetalRenderer () override;
 
       // resources
@@ -841,6 +849,25 @@ namespace moppe {
       void set_edr_headroom (float headroom) {
         m_frame.edr_headroom = std::max (1.0f, headroom);
       }
+      bool frame_interpolation_supported () const {
+        return m_frame_interpolation_requested &&
+               m_frame_interpolation_supported;
+      }
+      bool frame_interpolation_active () const {
+        return m_frame_interpolation_enabled && m_targets.frame_interpolator;
+      }
+      void set_frame_interpolation_enabled (bool enabled) {
+        const bool resolved = enabled && frame_interpolation_supported ();
+        if (resolved == m_frame_interpolation_enabled)
+          return;
+        m_frame_interpolation_enabled = resolved;
+        m_targets.interpolation_history_valid = false;
+      }
+      void set_frame_delta_time (float delta_time) {
+        if (std::isfinite (delta_time) && delta_time > 0.0f)
+          m_frame.interpolation_delta_time = delta_time;
+      }
+      bool present_rendered_frame (id<CAMetalDrawable> drawable);
       void draw_terrain (const ChunkDraw* chunks, int count) override;
       void draw_sky (const SkyParams& params) override;
       void draw_ocean (const OceanParams& params) override;
@@ -928,11 +955,17 @@ namespace moppe {
       CAMetalLayer* m_layer;
       id<MTLDevice> m_device;
       id<MTL4CommandQueue> m_queue;
+      id<MTL4CommandAllocator> m_present_allocators[FRAMES_IN_FLIGHT] {};
+      id<MTLSharedEvent> m_present_completion_event;
+      uint64_t m_present_sequence = 0;
       id<MTLResidencySet> m_residency;
       id<MTLLibrary> m_library;
       id<MTL4Compiler> m_compiler;
       bool m_spatial_upscaling_supported = false;
       bool m_temporal_upscaling_supported = false;
+      bool m_frame_interpolation_requested = false;
+      bool m_frame_interpolation_supported = false;
+      bool m_frame_interpolation_enabled = false;
 #if !TARGET_OS_IPHONE
       id<MTL4ArgumentTable> m_reflection_arguments;
       std::string m_reflection_geometry_path;
@@ -989,7 +1022,8 @@ namespace moppe {
 
     MetalRenderer::MetalRenderer (CAMetalLayer* layer,
                                   const std::string& lib_path,
-                                  int requested_msaa) {
+                                  int requested_msaa,
+                                  bool request_frame_interpolation) {
       m_layer = layer;
       m_device = layer.device ? layer.device : MTLCreateSystemDefaultDevice ();
       m_queue = [m_device newMTL4CommandQueue];
@@ -1002,7 +1036,11 @@ namespace moppe {
         [MTLFXSpatialScalerDescriptor supportsMetal4FX:m_device];
       m_temporal_upscaling_supported =
         [MTLFXTemporalScalerDescriptor supportsMetal4FX:m_device];
-      if (m_spatial_upscaling_supported || m_temporal_upscaling_supported) {
+      m_frame_interpolation_requested = request_frame_interpolation;
+      m_frame_interpolation_supported =
+        [MTLFXFrameInterpolatorDescriptor supportsMetal4FX:m_device];
+      if (m_spatial_upscaling_supported || m_temporal_upscaling_supported ||
+          m_frame_interpolation_supported) {
         MTL4CompilerDescriptor* compiler_desc =
           [[MTL4CompilerDescriptor alloc] init];
         compiler_desc.label = @"Moppe MetalFX compiler";
@@ -1012,6 +1050,7 @@ namespace moppe {
         if (!m_compiler) {
           m_spatial_upscaling_supported = false;
           m_temporal_upscaling_supported = false;
+          m_frame_interpolation_supported = false;
           std::cerr << "moppe: MetalFX unavailable: compiler: "
                     << (compiler_error
                           ? compiler_error.localizedDescription.UTF8String
@@ -1019,11 +1058,14 @@ namespace moppe {
                     << std::endl;
         }
       }
-      m_frame.command_buffer = [m_device newCommandBuffer];
       m_frame.completion_event = [m_device newSharedEvent];
       m_frame.completion_event.signaledValue = 0;
-      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i)
+      m_present_completion_event = [m_device newSharedEvent];
+      m_present_completion_event.signaledValue = 0;
+      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
         m_frame.command_allocators[i] = [m_device newCommandAllocator];
+        m_present_allocators[i] = [m_device newCommandAllocator];
+      }
 
       NSError* residency_error = nil;
       MTLResidencySetDescriptor* residency_desc =
@@ -2848,6 +2890,11 @@ namespace moppe {
           ![m_frame.completion_event waitUntilSignaledValue:m_frame.sequence
                                                   timeoutMS:5000])
         throw std::runtime_error ("Timed out retiring Metal 4 frame targets");
+      if (m_present_sequence &&
+          ![m_present_completion_event waitUntilSignaledValue:m_present_sequence
+                                                    timeoutMS:5000])
+        throw std::runtime_error (
+          "Timed out retiring Metal 4 presentation targets");
       std::vector<id<MTLTexture>> targets;
       const auto retire = [&] (id<MTLTexture> texture) {
         if (texture && texture.storageMode != MTLStorageModeMemoryless &&
@@ -2867,6 +2914,11 @@ namespace moppe {
       retire (m_targets.prev_frame);
       retire (m_targets.bloom_a);
       retire (m_targets.bloom_b);
+      for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+        retire (m_targets.interpolator_color[i]);
+        retire (m_targets.interpolator_composite[i]);
+        retire (m_targets.interpolator_output[i]);
+      }
 #if !TARGET_OS_IPHONE
       for (const MetalReflectionTargets& reflection : m_reflection_targets) {
         retire (reflection.origin);
@@ -2890,10 +2942,19 @@ namespace moppe {
         m_targets.temporal_scaler.exposureTexture = nil;
         m_targets.temporal_scaler.outputTexture = nil;
       }
+      if (m_targets.frame_interpolator) {
+        m_targets.frame_interpolator.colorTexture = nil;
+        m_targets.frame_interpolator.prevColorTexture = nil;
+        m_targets.frame_interpolator.depthTexture = nil;
+        m_targets.frame_interpolator.motionTexture = nil;
+        m_targets.frame_interpolator.uiTexture = nil;
+        m_targets.frame_interpolator.outputTexture = nil;
+      }
       retire (m_targets.spatial_output);
       retire (m_targets.exposure_tex);
       m_targets.spatial_scaler = nil;
       m_targets.temporal_scaler = nil;
+      m_targets.frame_interpolator = nil;
       m_targets.spatial_fence = nil;
       if (!targets.empty ())
         [m_residency commit];
@@ -2937,11 +2998,16 @@ namespace moppe {
                  m_spatial_upscaling_supported) {
         resolved = ResolvedUpscaling::Spatial;
       }
+      const bool wants_frame_interpolation =
+        m_frame_interpolation_enabled && m_frame_interpolation_supported &&
+        resolved == ResolvedUpscaling::Temporal;
       if (w == m_targets.width && h == m_targets.height &&
           drawable_w == m_targets.output_width &&
           drawable_h == m_targets.output_height &&
           upscaling == m_targets.requested_upscaling &&
-          resolved == m_targets.resolved_upscaling && m_targets.msaa_color)
+          resolved == m_targets.resolved_upscaling && m_targets.msaa_color &&
+          static_cast<bool> (m_targets.frame_interpolator) ==
+            wants_frame_interpolation)
         return;
 
       retire_scene_targets ();
@@ -2956,6 +3022,9 @@ namespace moppe {
       MTLTextureUsage depth_input_usage = 0;
       MTLTextureUsage motion_input_usage = 0;
       MTLTextureUsage reactive_input_usage = 0;
+      MTLTextureUsage interpolation_color_usage = 0;
+      MTLTextureUsage interpolation_ui_usage = 0;
+      MTLTextureUsage interpolation_output_usage = 0;
       const char* resolution_reason = native ? "scene-matches-drawable"
                                       : upscaling == UpscalingMode::Linear
                                         ? "requested"
@@ -3030,6 +3099,38 @@ namespace moppe {
           resolution_reason = "scaler-creation-failed";
           std::cerr << "moppe: MetalFX spatial scaler creation failed; "
                        "using linear enlargement"
+                    << std::endl;
+        }
+      }
+      if (resolved == ResolvedUpscaling::Temporal &&
+          m_frame_interpolation_enabled && m_frame_interpolation_supported &&
+          m_targets.temporal_scaler) {
+        MTLFXFrameInterpolatorDescriptor* descriptor =
+          [[MTLFXFrameInterpolatorDescriptor alloc] init];
+        descriptor.colorTextureFormat = MTLPixelFormatRGBA16Float;
+        descriptor.outputTextureFormat = MTLPixelFormatRGBA16Float;
+        descriptor.depthTextureFormat = MTLPixelFormatDepth32Float;
+        descriptor.motionTextureFormat = MTLPixelFormatRG16Float;
+        descriptor.uiTextureFormat = MTLPixelFormatRGBA16Float;
+        descriptor.scaler = m_targets.temporal_scaler;
+        descriptor.inputWidth = w;
+        descriptor.inputHeight = h;
+        descriptor.outputWidth = drawable_w;
+        descriptor.outputHeight = drawable_h;
+        m_targets.frame_interpolator =
+          [descriptor newFrameInterpolatorWithDevice:m_device
+                                            compiler:m_compiler];
+        if (m_targets.frame_interpolator) {
+          m_targets.frame_interpolator.fence = m_targets.spatial_fence;
+          interpolation_color_usage =
+            m_targets.frame_interpolator.colorTextureUsage;
+          interpolation_ui_usage = m_targets.frame_interpolator.uiTextureUsage;
+          interpolation_output_usage =
+            m_targets.frame_interpolator.outputTextureUsage;
+        } else {
+          m_frame_interpolation_supported = false;
+          std::cerr << "moppe: MetalFX frame interpolator creation failed; "
+                       "presenting rendered frames directly"
                     << std::endl;
         }
       }
@@ -3136,6 +3237,35 @@ namespace moppe {
           make_target (MTLPixelFormatR16Float, 1, 1, 1, false);
         m_targets.exposure_tex.label = @"Moppe temporal exposure";
       }
+      if (m_targets.frame_interpolator) {
+        for (int i = 0; i < FRAMES_IN_FLIGHT; ++i) {
+          m_targets.interpolator_color[i] =
+            make_target (MTLPixelFormatRGBA16Float,
+                         drawable_w,
+                         drawable_h,
+                         1,
+                         false,
+                         interpolation_color_usage);
+          m_targets.interpolator_composite[i] =
+            make_target (MTLPixelFormatRGBA16Float,
+                         drawable_w,
+                         drawable_h,
+                         1,
+                         false,
+                         interpolation_ui_usage);
+          m_targets.interpolator_output[i] =
+            make_target (MTLPixelFormatRGBA16Float,
+                         drawable_w,
+                         drawable_h,
+                         1,
+                         false,
+                         interpolation_output_usage);
+          m_targets.interpolator_color[i].label = @"Moppe interpolator color";
+          m_targets.interpolator_composite[i].label =
+            @"Moppe interpolator UI composite";
+          m_targets.interpolator_output[i].label = @"Moppe interpolated output";
+        }
+      }
       std::cerr << "moppe: render targets: actual-drawable=" << drawable_w
                 << 'x' << drawable_h << ", scene=" << w << 'x' << h << " ("
                 << (w * (double)h / 1.0e6) << " MP)"
@@ -3143,7 +3273,8 @@ namespace moppe {
                 << "x, upscaling=requested:"
                 << upscaling_name (m_targets.requested_upscaling)
                 << ",resolved:" << upscaling_name (m_targets.resolved_upscaling)
-                << ",reason:" << resolution_reason << std::endl;
+                << ",reason:" << resolution_reason << ", frame-interpolation="
+                << (m_targets.frame_interpolator ? "on" : "off") << std::endl;
       if (!m_targets.probe_tex) {
         m_targets.probe_tex =
           make_target (MTLPixelFormatRGBA32Float, PROBE_W, PROBE_H, 1, false);
@@ -3157,6 +3288,7 @@ namespace moppe {
       // Freshly created: undefined contents until the first blur blit.
       m_targets.prev_valid = false;
       m_targets.temporal_history_valid = false;
+      m_targets.interpolation_history_valid = false;
     }
 
     // Log-average the last completed probe and ease the exposure
@@ -3203,11 +3335,21 @@ namespace moppe {
       const uint64_t next_sequence = m_frame.sequence + 1;
       {
         MOPPE_PROFILE_ZONE ("MetalRenderer::wait_for_inflight_frame");
+        constexpr uint64_t wait_timeout_ms = 1000;
         if (next_sequence > FRAMES_IN_FLIGHT &&
             ![m_frame.completion_event
               waitUntilSignaledValue:next_sequence - FRAMES_IN_FLIGHT
-                           timeoutMS:1000])
+                           timeoutMS:wait_timeout_ms])
           throw std::runtime_error ("Timed out waiting for a Metal 4 frame");
+        const uint64_t reused_sequence = next_sequence > FRAMES_IN_FLIGHT
+                                           ? next_sequence - FRAMES_IN_FLIGHT
+                                           : 0;
+        if (reused_sequence && m_present_sequence >= reused_sequence &&
+            ![m_present_completion_event
+              waitUntilSignaledValue:reused_sequence
+                           timeoutMS:wait_timeout_ms])
+          throw std::runtime_error (
+            "Timed out waiting for a Metal 4 presentation frame");
       }
       const double inflight_done = cpu_time ();
 
@@ -3237,6 +3379,11 @@ namespace moppe {
       id<MTL4CommandAllocator> allocator =
         m_frame.command_allocators[m_frame.slot];
       [allocator reset];
+      // A command allocator is explicitly reusable after endCommandBuffer;
+      // a command-buffer recording object is not resubmitted. Keeping this
+      // distinction also makes the Metal validation layer agree with the
+      // real Metal 4 submission path.
+      m_frame.command_buffer = [m_device newCommandBuffer];
       [m_frame.command_buffer beginCommandBufferWithAllocator:allocator];
       if (m_frame.timestamp_heaps[m_frame.slot])
         [m_frame.timestamp_heaps[m_frame.slot]
@@ -4801,9 +4948,16 @@ namespace moppe {
       }
 
       id<MTLTexture> present_scene = frame.current_scene;
+      const bool interpolate = targets.frame_interpolator &&
+                               targets.interpolator_color[frame.slot] &&
+                               targets.interpolator_composite[frame.slot] &&
+                               targets.interpolator_output[frame.slot];
+      id<MTLTexture> rendered_color = interpolate
+                                        ? targets.interpolator_color[frame.slot]
+                                        : frame.drawable.texture;
 
       MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
-      rp.colorAttachments[0].texture = frame.drawable.texture;
+      rp.colorAttachments[0].texture = rendered_color;
       rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
       rp.colorAttachments[0].storeAction = MTLStoreActionStore;
 
@@ -4877,8 +5031,9 @@ namespace moppe {
                 vertexCount:3];
       }
 
-      // HUD overlay in point coordinates.
-      if (!list.empty () && pipelines.hud) {
+      const auto draw_hud_overlay = [&] (id<MTL4RenderCommandEncoder> target) {
+        if (list.empty () || !pipelines.hud)
+          return;
         MoppeHudUniforms hu;
         std::memset (&hu, 0, sizeof (hu));
         hu.proj = m4 (
@@ -4889,14 +5044,148 @@ namespace moppe {
         const MTLGPUAddress uniforms = frame.arena[frame.slot].write (hu);
         bind_address (frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, uniforms);
         bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
-        MetalDrawListEncoder::play ({ device, enc, pipelines, terrain, frame },
-                                    list.vertices (),
-                                    list.runs (),
-                                    true);
+        MetalDrawListEncoder::play (
+          { device, target, pipelines, terrain, frame },
+          list.vertices (),
+          list.runs (),
+          true);
+      };
+
+      if (!interpolate) {
+        // HUD overlay in point coordinates.
+        draw_hud_overlay (enc);
+        record_gpu_pass_end (frame, enc);
+        [enc endEncoding];
+        return;
       }
 
       record_gpu_pass_end (frame, enc);
+      if (targets.spatial_fence)
+        [enc updateFence:targets.spatial_fence
+          afterEncoderStages:MTLStageFragment];
       [enc endEncoding];
+
+      // Keep both versions Apple exposes in its composited-UI integration:
+      // a HUD-free, tone-mapped color input and the exact current frame with
+      // Moppe's HUD on top. The interpolator decomposites the latter so UI
+      // stays crisp rather than being motion-warped with the world.
+      id<MTL4ComputeCommandEncoder> composite_copy =
+        [frame.command_buffer computeCommandEncoder];
+      composite_copy.label = @"Frame interpolation color copy";
+      if (targets.spatial_fence)
+        [composite_copy waitForFence:targets.spatial_fence
+                 beforeEncoderStages:MTLStageBlit];
+      wait_for_render_writes (composite_copy);
+      [composite_copy
+        copyFromTexture:rendered_color
+              toTexture:targets.interpolator_composite[frame.slot]];
+      if (targets.spatial_fence)
+        [composite_copy updateFence:targets.spatial_fence
+                 afterEncoderStages:MTLStageBlit];
+      [composite_copy endEncoding];
+
+      if (!list.empty () && pipelines.hud) {
+        MTL4RenderPassDescriptor* composite_pass =
+          [[MTL4RenderPassDescriptor alloc] init];
+        composite_pass.colorAttachments[0].texture =
+          targets.interpolator_composite[frame.slot];
+        composite_pass.colorAttachments[0].loadAction = MTLLoadActionLoad;
+        composite_pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+        id<MTL4RenderCommandEncoder> composite = [frame.command_buffer
+          renderCommandEncoderWithDescriptor:composite_pass];
+        composite.label = @"Frame interpolation UI composite";
+        if (targets.spatial_fence)
+          [composite waitForFence:targets.spatial_fence
+              beforeEncoderStages:MTLStageFragment];
+        wait_for_render_or_blit_writes (composite);
+        draw_hud_overlay (composite);
+        if (targets.spatial_fence)
+          [composite updateFence:targets.spatial_fence
+              afterEncoderStages:MTLStageFragment];
+        [composite endEncoding];
+      }
+
+      id<MTL4FXFrameInterpolator> interpolator = targets.frame_interpolator;
+      const int previous_slot =
+        (frame.slot + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
+      const bool have_history = targets.interpolation_history_valid;
+      interpolator.colorTexture = rendered_color;
+      interpolator.prevColorTexture =
+        have_history ? targets.interpolator_color[previous_slot]
+                     : rendered_color;
+      interpolator.depthTexture = targets.msaa_depth;
+      interpolator.motionTexture = targets.motion;
+      interpolator.uiTexture = targets.interpolator_composite[frame.slot];
+      interpolator.uiTextureComposited = YES;
+      interpolator.outputTexture = targets.interpolator_output[frame.slot];
+      interpolator.motionVectorScaleX = 1.0f;
+      interpolator.motionVectorScaleY = 1.0f;
+      interpolator.deltaTime = frame.interpolation_delta_time;
+      const float projection_a = frame.params.proj.m[10];
+      const float projection_b = frame.params.proj.m[14];
+      interpolator.nearPlane =
+        projection_b / std::max (projection_a + 1.0f, 1e-6f);
+      interpolator.farPlane =
+        projection_a > 1e-6f ? projection_b / projection_a : 9000.0f;
+      interpolator.fieldOfView = 2.0f *
+                                 std::atan (1.0f / frame.params.proj.m[5]) *
+                                 (180.0f / 3.14159265358979323846f);
+      interpolator.aspectRatio =
+        frame.params.proj.m[0] != 0.0f
+          ? frame.params.proj.m[5] / frame.params.proj.m[0]
+          : (float)targets.output_width / targets.output_height;
+      interpolator.jitterOffsetX = frame.jitter_x;
+      interpolator.jitterOffsetY = frame.jitter_y;
+      interpolator.depthReversed = YES;
+      interpolator.shouldResetHistory = !have_history;
+      [frame.command_buffer pushDebugGroup:@"MetalFX frame interpolation"];
+#if !TARGET_OS_TV
+      record_gpu_pass_start (frame, GpuPass::Interpolation);
+#endif
+      [interpolator encodeToCommandBuffer:frame.command_buffer];
+#if !TARGET_OS_TV
+      record_gpu_pass_end (frame);
+#endif
+      [frame.command_buffer popDebugGroup];
+      targets.interpolation_history_valid = true;
+
+      // The first encoded call only primes history. Afterwards this callback
+      // presents the midpoint; the next display-link callback presents the
+      // stored real frame without advancing simulation.
+      id<MTLTexture> display_source =
+        have_history ? targets.interpolator_output[frame.slot]
+                     : targets.interpolator_composite[frame.slot];
+      MTL4RenderPassDescriptor* display_pass =
+        [[MTL4RenderPassDescriptor alloc] init];
+      display_pass.colorAttachments[0].texture = frame.drawable.texture;
+      display_pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      display_pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+      id<MTL4RenderCommandEncoder> display =
+        [frame.command_buffer renderCommandEncoderWithDescriptor:display_pass];
+      display.label = @"Present interpolated frame";
+      if (targets.spatial_fence)
+        [display waitForFence:targets.spatial_fence
+          beforeEncoderStages:MTLStageFragment];
+      wait_for_render_or_blit_writes (display);
+      record_gpu_pass_start (frame, display, GpuPass::Present);
+      [display setRenderPipelineState:pipelines.copy];
+      MoppeQuadUniforms copy {};
+      copy.tint.x = copy.tint.y = copy.tint.z = copy.tint.w = 1.0f;
+      copy.params.x = 1.0f;
+      const MTLGPUAddress copy_uniforms = frame.arena[frame.slot].write (copy);
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, copy_uniforms);
+      bind_address (
+        frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, copy_uniforms);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, display_source);
+      use_arguments (
+        display, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [display drawPrimitives:MTLPrimitiveTypeTriangle
+                  vertexStart:0
+                  vertexCount:3];
+      record_gpu_pass_end (frame, display);
+      [display endEncoding];
     }
 
     void MetalRenderer::draw_hud (const DrawList& list) {
@@ -4904,6 +5193,64 @@ namespace moppe {
       MetalHudPass::draw (
         { m_device, m_pipelines, m_terrain_resources, m_targets, m_frame },
         list);
+    }
+
+    bool MetalRenderer::present_rendered_frame (id<CAMetalDrawable> drawable) {
+      if (!drawable || !frame_interpolation_active () || !m_frame.sequence)
+        return false;
+      const int slot =
+        static_cast<int> ((m_frame.sequence - 1) % FRAMES_IN_FLIGHT);
+      id<MTLTexture> source = m_targets.interpolator_composite[slot];
+      if (!source || source.width != drawable.texture.width ||
+          source.height != drawable.texture.height)
+        return false;
+
+      const uint64_t sequence = ++m_present_sequence;
+      constexpr uint64_t wait_timeout_ms = 1000;
+      if (sequence > FRAMES_IN_FLIGHT &&
+          ![m_present_completion_event
+            waitUntilSignaledValue:sequence - FRAMES_IN_FLIGHT
+                         timeoutMS:wait_timeout_ms])
+        throw std::runtime_error (
+          "Timed out waiting for a Metal 4 presentation frame");
+      const int present_slot =
+        static_cast<int> ((sequence - 1) % FRAMES_IN_FLIGHT);
+      id<MTL4CommandAllocator> allocator = m_present_allocators[present_slot];
+      [allocator reset];
+      id<MTL4CommandBuffer> command = [m_device newCommandBuffer];
+      command.label = @"Moppe rendered-frame presentation";
+      [command beginCommandBufferWithAllocator:allocator];
+      MTL4RenderPassDescriptor* pass = [[MTL4RenderPassDescriptor alloc] init];
+      pass.colorAttachments[0].texture = drawable.texture;
+      pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+      id<MTL4RenderCommandEncoder> encoder =
+        [command renderCommandEncoderWithDescriptor:pass];
+      encoder.label = @"Present rendered frame";
+      [encoder setRenderPipelineState:m_pipelines.copy];
+      MoppeQuadUniforms copy {};
+      copy.tint.x = copy.tint.y = copy.tint.z = copy.tint.w = 1.0f;
+      copy.params.x = 1.0f;
+      const MTLGPUAddress copy_uniforms = m_frame.arena[slot].write (copy);
+      bind_address (
+        m_frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, copy_uniforms);
+      bind_address (
+        m_frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, copy_uniforms);
+      bind_texture (m_frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, source);
+      use_arguments (
+        encoder, m_frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                  vertexStart:0
+                  vertexCount:3];
+      [encoder endEncoding];
+      [command endCommandBuffer];
+      [m_queue waitForDrawable:drawable];
+      const id<MTL4CommandBuffer> commands[] = { command };
+      [m_queue commit:commands count:1];
+      [m_queue signalEvent:m_present_completion_event value:sequence];
+      [m_queue signalDrawable:drawable];
+      [drawable present];
+      return true;
     }
 
     void MetalRenderer::request_screenshot (const std::string& path) {
@@ -5264,6 +5611,7 @@ namespace moppe {
           "Timed out waiting to reset Metal temporal state");
       m_targets.prev_valid = false;
       m_targets.temporal_history_valid = false;
+      m_targets.interpolation_history_valid = false;
       m_targets.exposure = 1.0f;
       m_camera_history_valid = false;
       m_previous_models.clear ();
@@ -5316,9 +5664,12 @@ namespace moppe {
 
     Renderer* create_metal_renderer (void* metal_layer,
                                      const std::string& lib_path,
-                                     int msaa_samples) {
-      return new MetalRenderer (
-        (__bridge CAMetalLayer*)metal_layer, lib_path, msaa_samples);
+                                     int msaa_samples,
+                                     bool request_frame_interpolation) {
+      return new MetalRenderer ((__bridge CAMetalLayer*)metal_layer,
+                                lib_path,
+                                msaa_samples,
+                                request_frame_interpolation);
     }
 
     void set_metal_drawable (Renderer& renderer, void* drawable) {
@@ -5329,6 +5680,33 @@ namespace moppe {
     void set_metal_edr_headroom (Renderer& renderer, float headroom) {
       MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
       metal.set_edr_headroom (headroom);
+    }
+
+    bool metal_frame_interpolation_supported (Renderer& renderer) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      return metal.frame_interpolation_supported ();
+    }
+
+    bool metal_frame_interpolation_active (Renderer& renderer) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      return metal.frame_interpolation_active ();
+    }
+
+    void set_metal_frame_interpolation_enabled (Renderer& renderer,
+                                                bool enabled) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      metal.set_frame_interpolation_enabled (enabled);
+    }
+
+    void set_metal_frame_delta_time (Renderer& renderer, float delta_time) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      metal.set_frame_delta_time (delta_time);
+    }
+
+    bool present_metal_rendered_frame (Renderer& renderer, void* drawable) {
+      MetalRenderer& metal = static_cast<MetalRenderer&> (renderer);
+      return metal.present_rendered_frame (
+        (__bridge id<CAMetalDrawable>)drawable);
     }
   }
 }

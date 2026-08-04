@@ -56,10 +56,14 @@ amended the first draft. The deltas, now integrated below, were:
   extended-linear sRGB RGBA16Float drawable and requests live EDR headroom;
   the filmic SDR grade stays below 1.0 while scene highlights can exceed it.
   iOS keeps an 8-bit SDR drawable.
-- macOS frame pacing uses **CAMetalDisplayLink** on the main run loop and
-  renders into the drawable supplied with each update. MetalKit may remain a
-  platform view/input convenience, but the renderer owns only a
-  `CAMetalLayer`; drawable pacing and EDR headroom cross explicit functions.
+- macOS frame pacing uses **CAMetalDisplayLink** on the main run loop. At 90 Hz
+  or above, supported Metal 4 hardware alternates a MetalFX-generated midpoint
+  with the stored real frame, so simulation and full world rendering run at
+  half the display cadence while every display-link drawable is presented.
+  Lower-refresh and unsupported configurations render directly on every
+  update. MetalKit remains a platform view/input convenience, while drawable
+  pacing, interpolation policy, frame delta, and EDR headroom cross explicit
+  host/backend functions.
 - One metallib **per SDK** (macosx / iphoneos / iphonesimulator) via
   xcrun -sdk. A macOS Command Line Tools build without the offline Metal
   compiler bundles combined MSL source for runtime compilation instead.
@@ -199,8 +203,11 @@ Fixed pass structure per frame, expressed as explicit API on `Renderer`:
        underwater grade (when camera submerged)
        motion-blur ghosts: current += 3 zoomed alpha quads of prevFrame
        blit current → prevFrame (feedback persists across frames)
-    present pass (reconstructed scene → drawable): final treatment + HUD
-       draw list (2D ortho, y-down, top-left origin) + text
+    present pass: final treatment + HUD
+       direct: reconstructed scene → drawable
+       frame interpolation: tone-mapped HUD-free color + current UI composite
+          → MetalFX midpoint → current display-link drawable
+          next display-link drawable ← stored current UI composite
 
 The Metal implementation realizes this as a fixed, concrete encoding path,
 not as a generic render graph. `MetalRenderer` remains the small facade for
@@ -211,8 +218,8 @@ otherwise long-lived Metal state visible at the right lifetime:
 | --- | --- |
 | `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
 | `MetalWaterResources` | A completed world: the ocean grid, horizontal-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
-| `MetalFrameTargets` | The renderer target configuration: scene color/depth, temporal motion/reactive inputs, native post ping-pong, previous-frame feedback, bloom, probe/exposure, and optional temporal/spatial MetalFX scaler, fence, and output. It recreates these on target-size or upscaling-policy changes and owns both feedback and MetalFX history validity. |
-| `MetalFrameEncoding` | One drawable frame: reusable Metal 4 command buffer, command-allocator ring, shared completion event, drawable, frame parameters, argument tables, selected frame arena, current scene target, counter-heap timestamp spans, and capture bookkeeping. It owns no retained world texture. |
+| `MetalFrameTargets` | The renderer target configuration: scene color/depth, temporal motion/reactive inputs, native post ping-pong, previous-frame feedback, bloom, probe/exposure, optional temporal/spatial MetalFX scaler, frame interpolator, per-flight color/UI/output textures, and their shared fence. It recreates these on target-size or policy changes and owns both reconstruction and interpolation history validity. |
+| `MetalFrameEncoding` | One drawable frame: current Metal 4 command buffer, reusable command-allocator ring, shared completion event, drawable, frame parameters, argument tables, selected frame arena, current scene target, counter-heap timestamp spans, and capture bookkeeping. It owns no retained world texture. |
 
 Concrete Terrain, Water, Scene, Post, and HUD pass operations receive only
 the owners and pipeline state they read or write. Terrain and Water both
@@ -686,6 +693,18 @@ underwater grade, motion-blur feedback, bloom, exposure probing, tone mapping,
 and native HUD. Camera/world transitions call `reset_temporal_state()`, which
 invalidates MetalFX history, prior camera/object/list state, exposure feedback,
 and the older gameplay motion-blur history together.
+
+On macOS, `--frame-interpolation on|off` controls MetalFX frame generation;
+it defaults on but resolves off below 90 Hz, on unsupported devices, or when
+temporal reconstruction cannot supply its depth and motion contract. The
+interpolator runs after Moppe's native-size tone map. It receives the temporal
+scaler, current and previous HUD-free color, reversed-Z depth, input-pixel
+motion, projection and jitter, and a UI-composited copy of the current frame.
+The first frame primes history. Later render callbacks present the generated
+midpoint, and the following display-link callback presents the retained real
+frame without ticking or rendering the world again. Startup reports both the
+render and presentation cadences, while GPU pass profiling reports frame
+interpolation separately from temporal upscaling.
 
 The Apple TV default uses half of UIKit point resolution for the 3D scene.
 Temporal MetalFX reconstructs that scene to the native drawable on supported

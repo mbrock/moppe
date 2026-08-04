@@ -160,6 +160,23 @@ namespace moppe::game {
             return unknown ("upscaling mode", values[0], error);
           return true;
         } },
+      { "--frame-interpolation",
+        "",
+        1,
+        "<on|off>",
+        "Enable or disable MetalFX frame interpolation on high-refresh macOS.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          const std::string_view value = values[0];
+          if (value == "on")
+            options.config.frame_interpolation = true;
+          else if (value == "off")
+            options.config.frame_interpolation = false;
+          else
+            return unknown ("frame interpolation mode", values[0], error);
+          return true;
+        } },
       { "--msaa",
         "",
         1,
