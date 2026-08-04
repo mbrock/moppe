@@ -49,14 +49,14 @@ The defaults describe the first leisure path:
 | minimum catchment | 5,000 m2 | Lower end of the useful valley-floor range |
 | maximum catchment | 100,000 m2 | Upper end of the useful valley-floor range |
 | minimum height above sea | 1.5 m | Keeps work off the waterline |
-| path width | 3 m | Requested compacted core width |
-| shoulder blend | 4 m | Soft transition from core to natural ground |
-| maximum cut | 2.5 m | Most any sample may be lowered from original terrain |
-| maximum fill | 1.5 m | Most any sample may be raised from original terrain |
-| designed grade | 5% | Ordinary leisure-route target and search preference |
-| maximum grade | 12% | Formation target for constrained local exceptions |
-| crossfall | 3% | Tread drainage toward the naturally lower side |
-| grading iterations | 24 | Repeated relaxation passes around the circuit |
+| path width | 12 m | Broad compacted riding core |
+| shoulder blend | 8 m | Soft transition from core to natural ground |
+| maximum cut | 4 m | Most any sample may be lowered from original terrain |
+| maximum fill | 3 m | Most any sample may be raised from original terrain |
+| designed grade | 3% | Ordinary leisure-route target and search preference |
+| maximum grade | 8% | Formation target for constrained local exceptions |
+| crossfall | 1% | Tread drainage toward the naturally lower side |
+| grading iterations | 40 | Repeated relaxation passes around the circuit |
 | home base to water | 90 m | Preferred water distance during site selection |
 | home-base pad radius | 18 m | Compacted clearing around the circuit origin |
 | desired circuit radius | 900 m | Scale for the scenic focus and loop |
@@ -80,7 +80,7 @@ steep from side to side.
 
 Cross-slope is a different concern. The formation stamp pulls the riding
 surface toward the centerline elevation, which benches the path across a
-sidehill, then gives the compacted tread a 3% crossfall toward the naturally
+sidehill, then gives the compacted tread a 1% crossfall toward the naturally
 lower side, using the loop exterior where the ground is effectively level.
 That small deliberate fall lets rain cross the trail rather than collecting on
 a level bench. Cut and fill limits bound the operation, so a sufficiently
@@ -92,9 +92,9 @@ The designed and maximum grades are not equivalent:
   looks like. Exceeding it becomes progressively expensive.
 - `maximum_grade` is used when estimating feasibility and when relaxing the
   chosen centerline. It is the desired local ceiling after available
-  earthworks, not permission for route search to routinely use 12% slopes.
+  earthworks, not permission for route search to routinely use 8% slopes.
 
-Because every height sample is limited to 2.5 m of cut and 1.5 m of fill, the
+Because every height sample is limited to 4 m of cut and 3 m of fill, the
 finished path can still contain grade exceptions. The report counts these
 segments instead of pretending the maximum was achieved.
 
@@ -162,9 +162,9 @@ An edge is rejected when it is wet, outside the allowed corridor, or remains
 far too steep even after the available earthwork allowance. Edges that remain
 feasible are priced by:
 
-- longitudinal grade relative to the 5% design target;
+- longitudinal grade relative to the 3% design target;
 - absolute earthwork required beyond that target;
-- any residual excess over the 12% maximum;
+- any residual excess over the 8% maximum;
 - abrupt heading changes;
 - unnecessarily large detours;
 - departure from the preferred catchment range;
@@ -221,15 +221,15 @@ cinematic route.
 ## 5. Grading and earthworks
 
 Formation samples the pre-trail terrain along the continuous alignment. For
-24 iterations, neighboring arc-length samples whose elevation difference
-exceeds the 12% target move halfway toward compliance. Every sample remains
+40 iterations, neighboring arc-length samples whose elevation difference
+exceeds the 8% target move halfway toward compliance. Every sample remains
 clamped to its own original elevation plus the fill allowance or minus the cut
 allowance.
 
 Each nearby heightmap sample then finds its nearest point on the alignment and
 interpolates the relaxed vertical profile there. The formation pass samples
 the natural ground on both sides of every alignment segment and lowers the
-target by 3 centimetres per metre toward the lower side. This crossfall is
+target by 1 centimetre per metre toward the lower side. This crossfall is
 clamped to the authored tread width even when a coarse preview widens the
 construction stamp. The shoulder smoothly blends back to the original
 surface. Standing-water cells are never shaped. The result retains a physical
@@ -238,7 +238,7 @@ materializing the composed heightmap used by the current renderer and physics.
 
 At coarse preview resolutions, the effective half-width is at least slightly
 more than one terrain cell. This preserves a continuous ribbon, but it also
-means preview images may show a path wider than the nominal 3 metres.
+means preview images may show a path wider than the nominal 12 metres.
 
 `TrailFormationReport` records what actually happened:
 
