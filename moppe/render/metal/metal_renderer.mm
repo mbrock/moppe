@@ -2881,8 +2881,8 @@ namespace moppe {
                                                 spatial_output_usage);
         m_targets.spatial_output.label = @"Moppe spatially reconstructed HDR";
       }
-      std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
-                << drawable_h << ", scene=" << w << 'x' << h << " ("
+      std::cerr << "moppe: render targets: actual-drawable=" << drawable_w
+                << 'x' << drawable_h << ", scene=" << w << 'x' << h << " ("
                 << (w * (double)h / 1.0e6) << " MP)"
                 << ", render-scale=" << scale << ", msaa=" << m_msaa_samples
                 << "x, upscaling=requested:"

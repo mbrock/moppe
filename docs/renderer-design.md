@@ -85,13 +85,12 @@ amended the first draft. The deltas, now integrated below, were:
   exactly the mist's full-strength altitude (H_CITY = 45) and would change
   atmosphere noticeably.
 - HUD pipeline: **cull none** (the y-down ortho flips winding; this exact
-  bug is documented at main.cc:3182). HUD coordinates are view **points**;
-  on macOS the drawable and 3D scene default to one pixel per view point, so
-  a 2x Retina screen presents at half its physical width and height. This
-  avoids spending four times the fill bandwidth on a sharper HUD and final
-  composite. `MOPPE_RENDERSCALE` can reduce the 3D scene further without
-  changing the drawable. Safe-area insets offset HUD anchors and touch zones
-  on iOS, and "Times" maps to "Times New Roman" on iOS.
+  bug is documented at main.cc:3182). HUD coordinates are view **points**.
+  On macOS the default drawable uses the view's full backing-pixel extent;
+  `--drawable-scale` can reduce that final surface independently, while
+  `--render-scale` or `MOPPE_RENDERSCALE` chooses the 3D scene fraction that
+  MetalFX reconstructs into it. Safe-area insets offset HUD anchors and touch
+  zones on iOS, and "Times" maps to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.
@@ -634,15 +633,14 @@ flare. `--graphics-quality high` is the default full presentation. The low
 preset retains terrain, vehicles, physics, sky, waterfall curtains, and HUD so
 it remains playable while isolating optional rendering cost.
 
-All presets request spatial MetalFX by default. When the scene is smaller
-than the drawable and a physical macOS, iOS, or tvOS device supports Metal 4
-MetalFX, the renderer
-reconstructs the linear HDR scene into a native-size RGBA16F target before
-the existing tone map, print-like grade, EDR treatment, lens treatment, and
-native HUD. `--upscaling linear` retains the former direct linear sample for
-fallbacks and exact A/B comparisons. Startup reports requested and resolved
-`native | spatial | linear` modes together with both dimensions and the
-fallback reason.
+All presets request spatial MetalFX by default. When the scene is smaller than
+the drawable and a physical macOS, iOS, or tvOS device supports Metal 4
+MetalFX, the renderer reconstructs the linear HDR scene into a native-size
+RGBA16F target before the existing tone map, print-like grade, EDR treatment,
+lens treatment, and native HUD. `--upscaling linear` retains the former direct
+linear sample for fallbacks and exact A/B comparisons. Startup reports
+requested and resolved `native | spatial | linear` modes together with both
+dimensions and the fallback reason.
 
 The Apple TV default uses half of UIKit point resolution for the 3D scene.
 Spatial MetalFX reconstructs that scene to the native drawable on supported
@@ -655,6 +653,7 @@ undergrowth. Those remain available through `--graphics-quality high` or
 individual feature overrides. Explicit quality presets remain relative to the
 point-resolution baseline, and `MOPPE_RENDERSCALE` remains an absolute
 drawable fraction.
+
 Presets resolve into a typed graphics-settings value rather than remaining a
 quality-mode branch. Boolean features can then be changed independently with
 `--graphics-enable` and `--graphics-disable`; each accepts a comma-separated

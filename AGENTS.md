@@ -23,6 +23,10 @@
     - `--upscaling spatial|linear` requests MetalFX spatial reconstruction or
       the exact linear fallback. Spatial is the default; startup prints the
       requested and backend-resolved mode.
+    - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
+      fraction of display backing resolution. `--render-scale <0.25..1>`
+      independently selects the 3D scene as a fraction of that drawable;
+      `MOPPE_RENDERSCALE` remains its environment equivalent.
     - Override Boolean graphics features with comma-separated
       `--graphics-enable <names>` and `--graphics-disable <names>` lists.
     - `--window-size WIDTHxHEIGHT` picks the windowed size, and `--inactive`

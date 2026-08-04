@@ -45,32 +45,28 @@ namespace moppe::game {
         Vec3 (x.numerical_value_in (u::m), 0, z.numerical_value_in (u::m)));
     }
 
-    terrain::SurfaceElevation elevation_at (const map::SurfaceGeometry& surface,
-                                             meters_t x,
-                                             meters_t z) {
+    terrain::SurfaceElevation
+    elevation_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
       return spatial::sample<terrain::surface_elevation> (
         surface, sample_position (x, z));
     }
 
-    terrain::TerrainNormal normal_at (const map::SurfaceGeometry& surface,
-                                      meters_t x,
-                                      meters_t z) {
-      return spatial::sample<terrain::terrain_normal> (
-        surface, sample_position (x, z));
+    terrain::TerrainNormal
+    normal_at (const map::SurfaceGeometry& surface, meters_t x, meters_t z) {
+      return spatial::sample<terrain::terrain_normal> (surface,
+                                                       sample_position (x, z));
     }
 
-    map::ForestCover cover_at (const map::SurfaceReadings& readings,
-                               meters_t x,
-                               meters_t z) {
+    map::ForestCover
+    cover_at (const map::SurfaceReadings& readings, meters_t x, meters_t z) {
       return spatial::sample<map::forest_cover> (readings,
                                                  sample_position (x, z));
     }
 
-    map::SurfaceMoisture moisture_at (const map::SurfaceReadings& readings,
-                                      meters_t x,
-                                      meters_t z) {
-      return spatial::sample<map::surface_moisture> (
-        readings, sample_position (x, z));
+    map::SurfaceMoisture
+    moisture_at (const map::SurfaceReadings& readings, meters_t x, meters_t z) {
+      return spatial::sample<map::surface_moisture> (readings,
+                                                     sample_position (x, z));
     }
 
     position_t forest_position (meters_t x,
@@ -128,8 +124,7 @@ namespace moppe::game {
                             0.76f * hash_lane (identity, 0)) *
                            cell_x;
         const meters_t z =
-          (static_cast<float> (row) + 0.12f +
-           0.76f * hash_lane (identity, 1)) *
+          (static_cast<float> (row) + 0.12f + 0.76f * hash_lane (identity, 1)) *
           cell_z;
         const map::ForestCover cover = cover_at (readings, x, z);
         const proportion_t population = band (0.08f * map::forest_cover[one],
@@ -139,7 +134,8 @@ namespace moppe::game {
             hash_lane (identity, 2) >
               population.numerical_value_in (one) * 0.96f)
           continue;
-        const terrain::SurfaceElevation elevation = elevation_at (surface, x, z);
+        const terrain::SurfaceElevation elevation =
+          elevation_at (surface, x, z);
         const proportion_t high_ground =
           band (terrain::surface_elevation_point (115.0f * u::m),
                 terrain::surface_elevation_point (195.0f * u::m),
@@ -217,14 +213,15 @@ namespace moppe::game {
     for (std::uint64_t i = 0; i < header.site_count; ++i) {
       ForestSiteRecord record {};
       input.read (reinterpret_cast<char*> (&record), sizeof (record));
-      if (!input || record.form > static_cast<std::uint32_t> (ForestForm::conifer))
+      if (!input ||
+          record.form > static_cast<std::uint32_t> (ForestForm::conifer))
         return std::nullopt;
       plan.sites.push_back (
-        { .position = position (Vec3 (record.position[0],
-                                     record.position[1],
-                                     record.position[2])),
-          .normal = Vec3 (record.normal[0], record.normal[1], record.normal[2]) *
-                    terrain::terrain_normal[one],
+        { .position = position (
+            Vec3 (record.position[0], record.position[1], record.position[2])),
+          .normal =
+            Vec3 (record.normal[0], record.normal[1], record.normal[2]) *
+            terrain::terrain_normal[one],
           .cover = record.cover * map::forest_cover[one],
           .moisture = record.moisture * map::surface_moisture[one],
           .size = record.size * tree_size_factor[one],

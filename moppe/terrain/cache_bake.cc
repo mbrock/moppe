@@ -1,5 +1,5 @@
-#include <moppe/game/generated_world.hh>
 #include <moppe/game/forest.hh>
+#include <moppe/game/generated_world.hh>
 #include <moppe/game/world_cache.hh>
 #include <moppe/map/surface.hh>
 #include <moppe/terrain/world_recipe.hh>

@@ -89,6 +89,7 @@ static Key map_key (NSEvent* event) {
 
 @interface MoppeView : MTKView
 @property (nonatomic, assign) Game* game;
+@property (nonatomic, assign) float drawableScale;
 @end
 
 @implementation MoppeView {
@@ -227,25 +228,27 @@ static void match_screen_refresh_rate (MoppeView* view) {
 // re-report runtime parameters without narrating every resize event.
 static bool match_screen_render_size (MoppeView* view) {
   const NSSize points = view.bounds.size;
-  // Present one drawable pixel per logical view point.  Rendering a 2x
-  // Retina surface would quadruple scene and final-composite fill cost for a
-  // modest HUD sharpness gain; the optional scene scale can reduce 3D work
-  // further without changing this presentation surface.
-  //
-  // Do not derive this from convertSizeToBacking:.  MTKView can fold a
-  // manually overridden drawableSize back into that conversion after a
-  // Space/focus transition.  The window's backing scale is stable.
+  // Drawable scale chooses the final presentation texture independently of
+  // the renderer's scene scale. At one, a Retina window gets its full backing
+  // pixels; at one half, Core Animation expands a half-width/half-height
+  // drawable over the same fullscreen view.
   const CGFloat backing = view.window ? view.window.backingScaleFactor
                                       : NSScreen.mainScreen.backingScaleFactor;
-  const CGFloat drawable_scale = 1.0 / std::max (1.0, (double)backing);
+  const CGFloat drawable_scale =
+    std::clamp ((double)view.drawableScale, 0.25, 1.0);
+  const CGFloat contents_scale = backing * drawable_scale;
   const CGSize wanted =
-    CGSizeMake (std::round (points.width * backing * drawable_scale),
-                std::round (points.height * backing * drawable_scale));
+    CGSizeMake (std::round (points.width * contents_scale),
+                std::round (points.height * contents_scale));
+  CAMetalLayer* layer = (CAMetalLayer*)view.layer;
   view.autoResizeDrawable = NO;
-  if (view.drawableSize.width == wanted.width &&
-      view.drawableSize.height == wanted.height)
+  if (layer.contentsScale == contents_scale &&
+      layer.drawableSize.width == wanted.width &&
+      layer.drawableSize.height == wanted.height)
     return false;
+  layer.contentsScale = contents_scale;
   view.drawableSize = wanted;
+  layer.drawableSize = wanted;
   return true;
 }
 
@@ -268,7 +271,7 @@ static void log_runtime_parameters (MoppeView* view) {
   NSScreen* screen = view.window.screen;
   CAMetalLayer* layer = (CAMetalLayer*)view.layer;
   const NSSize points = view.bounds.size;
-  const CGSize pixels = view.drawableSize;
+  const CGSize requested = layer.drawableSize;
   const NSInteger maximum_fps = screen ? screen.maximumFramesPerSecond : 0;
   const CGFloat backing = view.window ? view.window.backingScaleFactor : 1.0;
 
@@ -278,9 +281,12 @@ static void log_runtime_parameters (MoppeView* view) {
             << ", display-sync=" << (layer.displaySyncEnabled ? "on" : "off")
             << '\n'
             << "  view: " << (int)points.width << 'x' << (int)points.height
-            << " points, " << (int)pixels.width << 'x' << (int)pixels.height
-            << " pixels, backing-scale=" << backing << '\n'
-            << "  drawable: color=" << pixel_format_name (view.colorPixelFormat)
+            << " points, backing-scale=" << backing << '\n'
+            << "  drawable policy: scale=" << view.drawableScale
+            << " of backing pixels, requested=" << (int)requested.width << 'x'
+            << (int)requested.height << '\n'
+            << "  drawable format: color="
+            << pixel_format_name (view.colorPixelFormat)
             << ", depth=" << pixel_format_name (view.depthStencilPixelFormat)
             << ", samples=" << view.sampleCount
             << ", framebuffer-only=" << (view.framebufferOnly ? "yes" : "no")
@@ -310,6 +316,7 @@ static void log_runtime_parameters (MoppeView* view) {
   int m_profile_frames;
   bool m_profile_cpu;
   CAMetalDisplayLink* m_display_link;
+  CGSize m_actual_drawable_size;
   MoppeView* m_view;
   std::unique_ptr<moppe::platform::AppleGameController> m_controller;
 }
@@ -401,6 +408,23 @@ static void log_runtime_parameters (MoppeView* view) {
 
 - (void)metalDisplayLink:(CAMetalDisplayLink*)link
              needsUpdate:(CAMetalDisplayLinkUpdate*)update {
+  const CGSize actual =
+    CGSizeMake (update.drawable.texture.width, update.drawable.texture.height);
+  if (actual.width != m_actual_drawable_size.width ||
+      actual.height != m_actual_drawable_size.height) {
+    m_actual_drawable_size = actual;
+    CAMetalLayer* layer = (CAMetalLayer*)m_view.layer;
+    const CGSize requested = layer.drawableSize;
+    std::cerr << "moppe: display-link drawable: actual=" << (int)actual.width
+              << 'x' << (int)actual.height
+              << ", requested=" << (int)requested.width << 'x'
+              << (int)requested.height << ", match="
+              << (actual.width == requested.width &&
+                      actual.height == requested.height
+                    ? "yes"
+                    : "no")
+              << std::endl;
+  }
   moppe::render::set_metal_drawable (*self.renderer,
                                      (__bridge void*)update.drawable);
   [self drawFrame:m_view];
@@ -488,6 +512,7 @@ namespace moppe {
 
         MoppeView* view = [[MoppeView alloc] initWithFrame:frame device:nil];
         view.game = &game;
+        view.drawableScale = config.drawable_scale;
         view.colorPixelFormat = MTLPixelFormatRGBA16Float;
         view.depthStencilPixelFormat = MTLPixelFormatInvalid;
         view.sampleCount = 1;
