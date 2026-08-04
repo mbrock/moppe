@@ -259,8 +259,11 @@ namespace moppe::game {
     hud.stars = input.session.stars ().collected ();
     hud.score = logic.m_score;
     hud.airtime_s = logic.m_jump_airtime;
+    hud.spin_degrees = logic.m_jump_peak_spin_radians * 180.0f / 3.14159265f;
     hud.landed_airtime_s = logic.m_landed_airtime;
+    hud.landed_spin_degrees = logic.m_landed_spin_degrees;
     hud.landed_points = logic.m_landed_points;
+    hud.landed_clean = logic.m_landed_clean;
     hud.landed_age_s = logic.m_landed_age;
     hud.on_foot = logic.m_mode == M_FOOT;
     hud.gliding = logic.m_mode == M_GLIDER;

@@ -175,6 +175,9 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   logic.m_lives = 6;
   logic.m_score = 420;
   logic.m_jump_airtime = 2.75f;
+  logic.m_jump_peak_spin_radians = 1.5707963f;
+  logic.m_landed_spin_degrees = 180.0f;
+  logic.m_landed_clean = true;
   logic.m_landed_age = 0.35f;
   logic.m_frame_time = 0.0125f;
 
@@ -185,6 +188,9 @@ MOPPE_TEST (frame_view_snapshots_hud_and_overlay_readings) {
   MOPPE_CHECK (frozen.hud.lives == 6);
   MOPPE_CHECK (frozen.hud.score == 420);
   MOPPE_CHECK_NEAR (frozen.hud.airtime_s, 2.75f, 1e-6f);
+  MOPPE_CHECK_NEAR (frozen.hud.spin_degrees, 90.0f, 1e-4f);
+  MOPPE_CHECK_NEAR (frozen.hud.landed_spin_degrees, 180.0f, 1e-6f);
+  MOPPE_CHECK (frozen.hud.landed_clean);
   MOPPE_CHECK_NEAR (frozen.hud.landed_age_s, 0.35f, 1e-6f);
   MOPPE_CHECK_NEAR (frozen.hud.frame_time_s, 0.0125f, 1e-6f);
   MOPPE_CHECK_NEAR (frozen.hud.heading_radians, 0.0f, 1e-6f);

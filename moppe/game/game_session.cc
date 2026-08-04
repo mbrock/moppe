@@ -312,21 +312,81 @@ namespace moppe::game {
       vehicle_position[1] <
       (world.water_level).numerical_value_in (moppe::u::m) + 1.0f;
     const bool driving = logic.m_mode == M_BIKE || logic.m_mode == M_CAR;
+    const float impact = driving ? vehicle.pop_impact () : 0.0f;
 
-    // Long jumps become score events after three seconds. Keep the last
-    // airborne time locally because Vehicle clears its timer on touchdown.
+    // Air steering is a visible motocross whip and a scoring mechanic. The
+    // shortest signed angle between successive headings survives wraparound.
+    // Returning the bike to line unwinds the live angle, but the largest
+    // committed angle stays banked so a proper whip-and-recover earns credit.
+    bool clean_stunt_landing = false;
+    int landed_trick_quarters = 0;
     if (driving && vehicle.airtime () > 0.0f) {
+      Vec3 heading = vehicle.orientation ();
+      heading[1] = 0.0f;
+      if (length2 (heading) > 0.0001f)
+        normalize (heading);
+      else
+        heading = logic.m_jump_last_heading;
+
+      if (logic.m_jump_airtime > 0.0f) {
+        Vec3 previous = logic.m_jump_last_heading;
+        previous[1] = 0.0f;
+        if (length2 (previous) > 0.0001f) {
+          normalize (previous);
+          const float sine = cross (previous, heading)[1];
+          const float cosine =
+            std::clamp (dot (previous, heading), -1.0f, 1.0f);
+          logic.m_jump_spin_radians += std::atan2 (sine, cosine);
+          logic.m_jump_peak_spin_radians =
+            std::max (logic.m_jump_peak_spin_radians,
+                      std::abs (logic.m_jump_spin_radians));
+        }
+      } else {
+        logic.m_jump_spin_radians = 0.0f;
+        logic.m_jump_peak_spin_radians = 0.0f;
+      }
+      logic.m_jump_last_heading = heading;
       logic.m_jump_airtime = vehicle.airtime ();
       logic.m_landed_age += elapsed;
     } else {
-      if (driving && logic.m_jump_airtime >= 3.0f) {
+      if (driving && logic.m_jump_airtime >= 0.75f) {
+        constexpr float pi = 3.14159265f;
+        const float spin_degrees = logic.m_jump_peak_spin_radians * 180.0f / pi;
+        landed_trick_quarters =
+          (int)std::floor ((spin_degrees + 10.0f) / 90.0f);
+
+        Vec3 horizontal_velocity = vehicle.velocity ();
+        horizontal_velocity[1] = 0.0f;
+        float alignment = 1.0f;
+        if (length2 (horizontal_velocity) > 1.0f) {
+          normalize (horizontal_velocity);
+          alignment =
+            std::abs (dot (horizontal_velocity, vehicle.orientation ()));
+        }
+        clean_stunt_landing = impact < 7.0f && alignment > 0.82f;
+
+        const float air_points =
+          60.0f * logic.m_jump_airtime * logic.m_jump_airtime;
+        const float trick_points =
+          125.0f * landed_trick_quarters * landed_trick_quarters;
+        const float landing_multiplier = clean_stunt_landing ? 1.5f : 1.0f;
         logic.m_landed_airtime = logic.m_jump_airtime;
-        logic.m_landed_points = (int)std::round (100.0f * logic.m_jump_airtime *
-                                                 logic.m_jump_airtime);
+        logic.m_landed_spin_degrees = spin_degrees;
+        logic.m_landed_clean = clean_stunt_landing;
+        logic.m_landed_points =
+          (int)std::round ((air_points + trick_points) * landing_multiplier);
         logic.m_score += logic.m_landed_points;
         logic.m_landed_age = 0.0f;
+
+        // A clean stunt keeps the ride flowing: the better the whip, the more
+        // jump-jet reserve comes back for the next launch.
+        if (clean_stunt_landing)
+          vehicle.replenish_boost (
+            std::min (0.35f, 0.10f + 0.04f * landed_trick_quarters));
       }
       logic.m_jump_airtime = 0.0f;
+      logic.m_jump_spin_radians = 0.0f;
+      logic.m_jump_peak_spin_radians = 0.0f;
       logic.m_landed_age += elapsed;
     }
     const DisplayColor dust_color (0.60f, 0.52f, 0.40f);
@@ -335,6 +395,22 @@ namespace moppe::game {
     const Vec3 forward = session.subject_heading ();
     const Vec3 rear_wheel =
       vehicle_position - forward * 1.4f + Vec3 (0, -0.7f, 0);
+
+    if (clean_stunt_landing && landed_trick_quarters > 0) {
+      Dust::Style trick_flash;
+      trick_flash.size = 0.22f * u::m;
+      trick_flash.lifetime = 0.65f * u::s;
+      trick_flash.downward_acceleration =
+        5.0f * isq::acceleration[u::m / pow<2> (u::s)];
+      trick_flash.spread = 1.2f * one;
+      trick_flash.additive = true;
+      session.dust ().emit (
+        moppe::position (vehicle_position + Vec3 (0, -0.4f, 0)),
+        velocity (vehicle.velocity () * 0.15f + Vec3 (0, 3, 0)),
+        std::min (24, 8 + landed_trick_quarters * 4),
+        DisplayColor (0.25f, 0.78f, 1.0f),
+        trick_flash);
+    }
 
     // Drift kicks up dirt from the rear wheel (or spray).
     if (driving && vehicle.grounded () && vehicle.drift_speed () > 6.0f) {
@@ -425,7 +501,6 @@ namespace moppe::game {
 
     // Hard landings shake the camera and burst dirt outward: a low pancake of
     // dust plus a ring of ballistic clods.
-    const float impact = driving ? vehicle.pop_impact () : 0.0f;
     if (impact > 8.0f) {
       logic.m_shake = std::min (0.28f, 0.010f * impact);
       logic.m_shake_time = 0.0f;

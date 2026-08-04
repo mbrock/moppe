@@ -83,8 +83,11 @@ namespace moppe::game {
     int stars = 0;
     int score = 0;
     float airtime_s = 0.0f;
+    float spin_degrees = 0.0f;
     float landed_airtime_s = 0.0f;
+    float landed_spin_degrees = 0.0f;
     int landed_points = 0;
+    bool landed_clean = false;
     float landed_age_s = 10.0f;
     bool on_foot = false;
     bool gliding = false;

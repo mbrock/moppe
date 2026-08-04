@@ -827,8 +827,11 @@ namespace moppe {
         state.stars = reading.stars;
         state.score = reading.score;
         state.airtime_s = reading.airtime_s;
+        state.spin_degrees = reading.spin_degrees;
         state.landed_airtime_s = reading.landed_airtime_s;
+        state.landed_spin_degrees = reading.landed_spin_degrees;
         state.landed_points = reading.landed_points;
+        state.landed_clean = reading.landed_clean;
         state.landed_age_s = reading.landed_age_s;
         state.on_foot = reading.on_foot;
         state.gliding = reading.gliding;
@@ -1577,6 +1580,8 @@ namespace moppe {
         logic ().m_shake = 0.0f;
         logic ().m_shake_time = 0.0f;
         logic ().m_jump_airtime = 0.0f;
+        logic ().m_jump_spin_radians = 0.0f;
+        logic ().m_jump_peak_spin_radians = 0.0f;
         logic ().m_landed_age = 10.0f;
         logic ().m_mode = M_BIKE;
         // Back to the start, but ON the ground rather than 600 m

@@ -519,15 +519,22 @@ namespace moppe {
         dl, layout.status.width - 9 - m_helv10->measure (score), 24, score);
       dl.pop ();
 
-      // Long-jump callout. Each new tenth briefly punches the live counter
-      // larger; a landing banks the score, bounces once, then swishes away.
-      if (st.airtime_s >= 3.0f) {
+      // Stunt callout. Steering in the air whips the bike around; every new
+      // quarter turn punches the counter while a clean landing banks it.
+      if (st.airtime_s >= 0.65f) {
         const float tenth = st.airtime_s * 10.0f;
         const float tick = 1.0f - (tenth - std::floor (tenth));
-        const float build = clamp01 ((st.airtime_s - 3.0f) / 5.0f);
+        const float build = clamp01 ((st.airtime_s - 0.65f) / 5.0f);
         const float scale = 1.0f + 0.18f * build + 0.10f * tick * tick;
-        char text[32];
-        snprintf (text, sizeof text, "AIR  %.1f s", st.airtime_s);
+        char text[48];
+        if (st.spin_degrees >= 45.0f)
+          snprintf (text,
+                    sizeof text,
+                    "AIR %.1f s   WHIP %.0f DEG",
+                    st.airtime_s,
+                    st.spin_degrees);
+        else
+          snprintf (text, sizeof text, "AIR  %.1f s", st.airtime_s);
         dl.push ();
         dl.translate (width_pts * 0.5f, height_pts * 0.28f, 0);
         dl.scale (scale, scale, 1);
@@ -540,12 +547,21 @@ namespace moppe {
         const float bounce =
           1.0f + 0.22f * std::exp (-4.0f * age) * std::sin (18.0f * age);
         const float swish = age * age * 75.0f;
-        char text[48];
-        snprintf (text,
-                  sizeof text,
-                  "LANDED %.1f s  +%d",
-                  st.landed_airtime_s,
-                  st.landed_points);
+        char text[64];
+        if (st.landed_spin_degrees >= 80.0f)
+          snprintf (text,
+                    sizeof text,
+                    "%s %.0f DEG WHIP  +%d",
+                    st.landed_clean ? "CLEAN" : "SKETCHY",
+                    st.landed_spin_degrees,
+                    st.landed_points);
+        else
+          snprintf (text,
+                    sizeof text,
+                    "%s %.1f s  +%d",
+                    st.landed_clean ? "CLEAN" : "LANDED",
+                    st.landed_airtime_s,
+                    st.landed_points);
         dl.push ();
         dl.translate (
           width_pts * 0.5f + swish, height_pts * 0.28f - age * 18.0f, 0);
