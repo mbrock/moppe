@@ -4509,9 +4509,10 @@ namespace moppe {
 
       if (m_targets.temporal_scaler && m_targets.spatial_output &&
           m_targets.motion && m_targets.reactive && m_targets.exposure_tex) {
-        // Materialize the adapted exposure on-GPU in the exact 1x1 R16F
-        // contract MetalFX consumes. Temporal output is consequently already
-        // exposed; present/bloom avoid applying the value a second time.
+        // Materialize a neutral exposure in the exact 1x1 R16F contract
+        // MetalFX consumes. Reconstruction owns linear HDR pixels; Moppe's
+        // bloom and present passes apply the adapted exposure afterward, just
+        // as they do for native, spatial, and linear reconstruction.
         MTL4RenderPassDescriptor* exposure_pass =
           [[MTL4RenderPassDescriptor alloc] init];
         exposure_pass.colorAttachments[0].texture = m_targets.exposure_tex;
@@ -4523,8 +4524,7 @@ namespace moppe {
         wait_for_render_or_blit_writes (exposure_encoder);
         [exposure_encoder setRenderPipelineState:m_pipelines.exposure];
         MoppeQuadUniforms exposure {};
-        exposure.tint.x =
-          m_frame.params.auto_exposure ? m_targets.exposure : 1.0f;
+        exposure.tint.x = 1.0f;
         const MTLGPUAddress exposure_uniforms =
           m_frame.arena[m_frame.slot].write (exposure);
         bind_address (
@@ -4839,8 +4839,7 @@ namespace moppe {
       const MetalTerrainResources& terrain = inputs.terrain;
       MetalFrameTargets& targets = inputs.targets;
       MetalFrameEncoding& frame = inputs.frame;
-      const float presentation_exposure =
-        targets.temporal_scaler ? 1.0f : targets.exposure;
+      const float presentation_exposure = targets.exposure;
 
       // One fullscreen pass into `dst` reading `src`.
       auto quad_pass = [&] (GpuPass pass,
@@ -4922,8 +4921,6 @@ namespace moppe {
         MoppeQuadUniforms q;
         std::memset (&q, 0, sizeof (q));
         q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
-        if (targets.temporal_scaler && targets.exposure > 1e-4f)
-          q.tint.w = 1.0f / targets.exposure;
         q.params.x = 1;
         quad_pass (GpuPass::Exposure,
                    @"Exposure probe",
