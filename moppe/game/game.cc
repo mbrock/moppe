@@ -84,7 +84,8 @@ namespace moppe {
     public:
       MoppeGame (const LaunchOptions& options, terrain::WorldRecipe recipe)
           : m_params (bind_world_params (options.world, recipe)),
-            m_recipe (std::move (recipe)), m_loading (this->recipe ()),
+            m_recipe (std::move (recipe)),
+            m_loading (this->recipe (), options.world_cache),
             m_graphics (options.graphics), m_spawn_position (position_value (
                                              this->world ().spawn_position ())),
             m_renderer (0), m_tree_demo (options.tree_demo),
@@ -470,26 +471,7 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_tree_demo || m_water_inspection)
           return;
-        const std::uint32_t forest_seed = recipe ().seed ().value ^ 0xa34c91e5U;
-        bool used_baked_plan = false;
-#ifdef MOPPE_BUNDLED_WORLD_CACHE
-        const terrain::TerrainDomain& domain = surface ().domain ();
-        const spatial_extent_t period = spatial_extent_in_metres (
-          Vec3 (domain.period_x ().numerical_value_in (u::m),
-                0,
-                domain.period_z ().numerical_value_in (u::m)));
-        const std::string plan_path =
-          platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE) + "/forest-plan.bin";
-        if (std::optional<ForestPlan> plan =
-              try_load_forest_plan (plan_path, forest_seed, period)) {
-          m_forest.rebuild (*m_renderer, std::move (*plan));
-          used_baked_plan = true;
-          std::cerr << "global forest: baked plan=" << plan_path << '\n';
-        }
-#endif
-        if (!used_baked_plan)
-          m_forest.rebuild (
-            *m_renderer, surface (), surface_readings (), forest_seed);
+        m_forest.rebuild (*m_renderer, generated_world ().forest ());
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)

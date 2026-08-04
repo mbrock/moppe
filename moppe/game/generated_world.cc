@@ -110,10 +110,11 @@ namespace moppe::game {
                                   Hydrology hydrology,
                                   terrain::WaterSheets water,
                                   terrain::TrailNetwork trails,
-                                  map::SurfaceReadings readings)
+                                  map::SurfaceReadings readings,
+                                  ForestPlan forest)
       : m_params (bind_world_params (params, recipe)),
         m_recipe (std::move (recipe)), m_surface (std::move (surface)),
         m_hydrology (std::move (hydrology)),
         m_water_surface (std::move (water)), m_trails (std::move (trails)),
-        m_readings (std::move (readings)) {}
+        m_readings (std::move (readings)), m_forest (std::move (forest)) {}
 }

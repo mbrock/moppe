@@ -5,8 +5,23 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace moppe::game {
+  enum class WorldCacheMode { Reuse, Refresh, Disabled };
+
+  // The default namespace follows the linked executable, so changing any
+  // world-building code gets a fresh cache automatically. A named namespace
+  // deliberately omits that build identity for iterative development.
+  struct WorldCacheConfig {
+    WorldCacheMode mode = WorldCacheMode::Reuse;
+    std::string key;
+  };
+
+  std::string world_cache_name (const terrain::WorldRecipe& recipe,
+                                const WorldCacheConfig& config,
+                                std::string_view build_identity);
+
   // A finished-world cache is a directory of typed Arrow fields plus compact
   // topology. It contains every renderer-free artifact GeneratedWorld owns.
   std::unique_ptr<GeneratedWorld>

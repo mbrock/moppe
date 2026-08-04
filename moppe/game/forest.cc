@@ -712,7 +712,8 @@ namespace moppe::game {
     rebuild (renderer, plan_global_forest (surface, readings, seed));
   }
 
-  void ForestLandscape::rebuild (render::Renderer& renderer, ForestPlan plan) {
+  void ForestLandscape::rebuild (render::Renderer& renderer,
+                                 const ForestPlan& plan) {
     MOPPE_PROFILE_ZONE ("ForestLandscape::rebuild_plan");
     m_period = plan.period;
     m_tree_count = plan.sites.size ();
@@ -729,7 +730,7 @@ namespace moppe::game {
     m_conifer_texture = make_conifer_card_texture (renderer);
     m_distant_conifer_texture = make_conifer_crown_texture (renderer);
     m_chunks.resize (static_cast<std::size_t> (m_chunks_x) * m_chunks_z);
-    for (ForestSite& site : plan.sites) {
+    for (const ForestSite& site : plan.sites) {
       const int x = std::clamp (
         static_cast<int> ((position_component (site.position, 0) / chunk_width)
                             .numerical_value_in (one)),

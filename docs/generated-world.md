@@ -14,6 +14,7 @@ means no construction stage remains optional or in progress.
 | `terrain::WaterSheets` | water elevation, wave amplitude, and velocity |
 | `terrain::TrailNetwork` | built route, alignment, grading report, and typed use readings |
 | `map::SurfaceReadings` | completed hydrology, geology, ecology, and trail readings over the ground |
+| `game::ForestPlan` | stable renderer-free tree sites, forms, and identities across the world |
 
 `Hydrology` is a tuple of distinct stage types. Code that consumes the complete
 analysis binds the four values by name; focused application access uses their
@@ -31,6 +32,7 @@ allocate SurfaceGeometry
   -> rebuild geometry readings
   -> analyze hydrology
   -> paint water and derive surface readings
+  -> plan the global forest
   -> construct GeneratedWorld from the finished parts
 ```
 
@@ -38,19 +40,26 @@ The loading screen sees `LoadingStatus`, not candidate terrain. The deleted
 terrain preview and generation-history queue are not part of the current
 handoff.
 
-The Apple TV install path runs the complete renderer-free world pipeline once
-in a native Release baker. It bundles typed Arrow fields for terrain, flood,
-drainage, water, trail use, and surface readings, plus compact lake, river, and
-trail topology for the default Play-profile, seed-123 world. The bundle also
-carries the renderer-independent global forest plan, avoiding hundreds of
-thousands of habitat samples during device startup. Its
+Every writable host saves that completed renderer-free world as a directory of
+typed Arrow fields, compact topology, and the renderer-independent forest
+plan. The automatic directory name contains the linked executable identity and
+the complete recipe identity, so a changed build or world parameters cannot
+silently reuse stale generated data. `--world-cache-key NAME` replaces only the
+build portion with a stable developer namespace; profile, resolution, seed,
+extent, and water datum still select separate worlds within it.
+`--refresh-world-cache` rebuilds and replaces the selected entry, while
+`--no-world-cache` retains the older terrain-only cache path without loading or
+saving a completed world.
+
+The Apple TV install path additionally runs the same pipeline once in a native
+Release baker and bundles the directory for the default Play-profile, seed-123
+world. Its
 television-specific 1024-square lattice retains the Play erosion age while
 bounding asset size. A normal Apple TV launch constructs `GeneratedWorld`
 directly from that bundle; only renderer resources, actors, and presentation
 meshes initialize on device. The recipe, cache schema, forest seed, and world
 extent are checked before loading, while alternate seeds and profiles retain
-the ordinary generated,
-writable-cache path.
+the ordinary writable-cache path.
 
 `WorldLoading` owns a single-flight job containing the requested parameters
 and recipe. The worker retains a shared loader state rather than a raw

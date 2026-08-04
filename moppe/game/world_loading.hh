@@ -2,6 +2,7 @@
 #define MOPPE_GAME_WORLD_LOADING_HH
 
 #include <moppe/game/generated_world.hh>
+#include <moppe/game/world_cache.hh>
 
 #include <cstdint>
 #include <memory>
@@ -36,7 +37,8 @@ namespace moppe::game {
   // requested the build.
   class WorldLoading {
   public:
-    explicit WorldLoading (const terrain::WorldRecipe& recipe);
+    WorldLoading (const terrain::WorldRecipe& recipe,
+                  WorldCacheConfig cache_config);
 
     WorldLoading (const WorldLoading&) = delete;
     WorldLoading& operator= (const WorldLoading&) = delete;

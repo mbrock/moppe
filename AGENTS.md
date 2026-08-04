@@ -20,6 +20,11 @@
     while airborne and drops the attached bike while gliding.
   - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
+    - Finished worlds automatically load from and save to a cache keyed by the
+      executable build and complete world recipe. `--world-cache-key <name>`
+      keeps a stable developer cache namespace across rebuilds;
+      `--refresh-world-cache` replaces its selected entry, and
+      `--no-world-cache` bypasses finished-world caching for one launch.
     - `--upscaling temporal|spatial|linear` requests MetalFX temporal or
       spatial reconstruction, or the exact linear fallback. Temporal is the
       default; startup prints the requested and backend-resolved mode.

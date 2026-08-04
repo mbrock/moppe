@@ -17,8 +17,9 @@ namespace moppe::game {
                        terrain::TerrainGenerationProfile profile);
 
   // Cached terrain from earlier builds cannot be trusted to match the current
-  // generator, and it is large.  Drop it rather than let the cache grow one
-  // world per build.
+  // generator, and it is large. Drop obsolete automatic terrain and finished
+  // world caches rather than retaining one world per build. Named world-cache
+  // namespaces deliberately survive builds.
   void prune_obsolete_terrain_caches ();
 }
 
