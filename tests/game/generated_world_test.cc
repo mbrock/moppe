@@ -40,21 +40,22 @@ namespace {
     fill_test_terrain (surface);
     map::rebuild_geometry (surface);
 
-    game::Hydrology hydrology =
+    game::HydrologyAnalysis analysis =
       game::analyze_hydrology (surface, recipe, progress);
     terrain::TrailNetwork trails {
       .domain = surface.domain (),
       .use = terrain::TrailUseMap (surface.domain ()),
     };
-    auto [water, readings] =
-      game::analyze_surface (surface, recipe, hydrology, trails.use);
-    return std::make_unique<game::GeneratedWorld> (params,
-                                                   recipe,
-                                                   std::move (surface),
-                                                   std::move (hydrology),
-                                                   std::move (water),
-                                                   std::move (trails),
-                                                   std::move (readings));
+    auto [water, readings] = game::analyze_surface (
+      surface, recipe, analysis.hydrology, analysis.channels, trails.use);
+    return std::make_unique<game::GeneratedWorld> (
+      params,
+      recipe,
+      std::move (surface),
+      std::move (analysis.hydrology),
+      std::move (water),
+      std::move (trails),
+      std::move (readings));
   }
 }
 
@@ -80,12 +81,11 @@ MOPPE_TEST (generated_world_owns_a_complete_named_world) {
   MOPPE_CHECK (world->params ().water_level == 50.0f * u::m);
   MOPPE_CHECK (world->surface ().domain ().width () == 17);
   MOPPE_CHECK (stages.size () == 5);
-  const auto& [standing_water, lakes, drainage, channels, rivers] =
-    world->hydrology ();
+  const auto& [standing_water, lakes, drainage, rivers] = world->hydrology ();
   MOPPE_CHECK (standing_water.width () == 17);
   MOPPE_CHECK (lakes.cell_count () == 17 * 17);
   MOPPE_CHECK (drainage.receiver.size () == 17 * 17);
-  MOPPE_CHECK (channels.domain ().size () == 17 * 17);
+  MOPPE_CHECK (rivers.body_traversed.size () == lakes.domain ().size ());
   MOPPE_CHECK (world->water_surface ().size () == 17 * 17);
   MOPPE_CHECK (world->readings ().size () == 17 * 17);
   MOPPE_CHECK (world->trails ().domain == world->surface ().domain ());

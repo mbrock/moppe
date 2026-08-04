@@ -7,6 +7,8 @@ device="${MOPPE_TVOS_DEVICE:-Living Room}"
 team="${MOPPE_TVOS_TEAM:-AA8RNDKMB9}"
 configuration="${MOPPE_TVOS_CONFIGURATION:-Release}"
 build_dir="${MOPPE_TVOS_BUILD_DIR:-$root/build-tvos-device}"
+bake_build_dir="${MOPPE_TVOS_BAKE_BUILD_DIR:-$root/build-tvos-bake}"
+baked_world="${MOPPE_TVOS_BAKED_WORLD:-}"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   cat <<EOF
@@ -19,6 +21,8 @@ Environment overrides:
   MOPPE_TVOS_TEAM           Apple development team (default: $team)
   MOPPE_TVOS_CONFIGURATION  Xcode configuration (default: $configuration)
   MOPPE_TVOS_BUILD_DIR      Physical-device build directory
+  MOPPE_TVOS_BAKE_BUILD_DIR Native terrain-baker build directory
+  MOPPE_TVOS_BAKED_WORLD    Reuse a specific pre-baked world directory
 EOF
   exit 0
 fi
@@ -28,13 +32,13 @@ device_id="$device"
 if ! xcrun devicectl device info details \
   --device "$device_id" >/dev/null 2>&1; then
   device_id="$({ xcrun devicectl list devices 2>/dev/null || true; } | awk \
-    -v name="$device" 'index($0, name) == 1 {
+    -v name="$device" '!found && index($0, name) == 1 {
       for (i = 1; i <= NF; ++i)
         if (length($i) == 36 && substr($i, 9, 1) == "-" &&
             substr($i, 14, 1) == "-" && substr($i, 19, 1) == "-" &&
             substr($i, 24, 1) == "-") {
           print $i
-          exit
+          found = 1
         }
     }')"
 fi
@@ -46,17 +50,36 @@ if [[ -z "$device_id" ]] || ! xcrun devicectl device info details \
   exit 1
 fi
 device_udid="$(xcrun devicectl device info details --device "$device_id" | \
-  awk '/udid:/ { print $NF; exit }')"
+  awk '/udid:/ && !found { print $NF; found = 1 }')"
 if [[ -z "$device_udid" ]]; then
   echo "error: could not determine Xcode's identifier for $device." >&2
   exit 1
+fi
+
+if [[ -z "$baked_world" ]]; then
+  echo "Building the native terrain baker..."
+  cmake -S "$root" -B "$bake_build_dir" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DMOPPE_BUILD_DEVELOPER_TOOLS=ON
+  cmake --build "$bake_build_dir" --target terrain-cache-bake
+  baker="$bake_build_dir/terrain-cache-bake"
+  baker_id="$(shasum -a 256 "$baker" | awk '{ print substr($1, 1, 16) }')"
+  baked_world="$bake_build_dir/apple-tv-world-play-1024-seed-123-$baker_id"
+  if [[ ! -f "$baked_world/topology.bin" ||
+        ! -f "$baked_world/forest-plan.bin" ]]; then
+    echo "Baking finished Play world (1024 square, seed 123) on this Mac..."
+    "$baker" "$baked_world" 1024 play 123
+  else
+    echo "Reusing host-baked world: $baked_world"
+  fi
 fi
 
 echo "Configuring the physical-device build..."
 cmake -S "$root" -B "$build_dir" -G Xcode \
   -DCMAKE_SYSTEM_NAME=tvOS \
   -DCMAKE_OSX_SYSROOT=appletvos \
-  -DCMAKE_OSX_ARCHITECTURES=arm64
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DMOPPE_TVOS_BAKED_WORLD="$baked_world"
 
 echo "Building and signing Moppe for $device..."
 xcodebuild -quiet \

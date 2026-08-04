@@ -7,6 +7,8 @@
 
 #include <moppe/game/world_loading.hh>
 
+#include <moppe/game/world_cache.hh>
+
 #include <moppe/platform/platform.hh>
 #include <moppe/profile.hh>
 
@@ -54,6 +56,23 @@ namespace moppe::game {
            << bits ((recipe.water_datum ()).numerical_value_in (moppe::u::m))
            << ".arrows";
       return platform::cache_path (name.str ());
+    }
+
+    std::string bundled_world_cache_path (const terrain::WorldRecipe& recipe) {
+#ifdef MOPPE_BUNDLED_WORLD_CACHE
+      const Vec3 extent = extent_value (recipe.extent ());
+      const bool is_apple_tv_default =
+        recipe.generation_profile () ==
+          terrain::TerrainGenerationProfile::Play &&
+        recipe.resolution () == 1024 && recipe.seed ().value == 123 &&
+        extent[0] == 5000.0f && extent[1] == 320.0f && extent[2] == 5000.0f &&
+        recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f;
+      if (is_apple_tv_default)
+        return platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
+#else
+      (void)recipe;
+#endif
+      return {};
     }
   }
 
@@ -231,6 +250,19 @@ namespace moppe::game {
       MOPPE_PROFILE_ZONE ("WorldLoading::build_world");
       WorldLoadingState& state = *job.state;
       const terrain::WorldRecipe& recipe = job.recipe;
+      if (const std::string bundled = bundled_world_cache_path (recipe);
+          !bundled.empty ()) {
+        state.report ("Reading bundled world",
+                      "Loading finished Apple TV terrain and analysis");
+        if (std::unique_ptr<GeneratedWorld> world =
+              try_load_world_cache (job.params, recipe, bundled)) {
+          std::cerr << "moppe: world cache: bundled=" << bundled << std::endl;
+          state.publish_completed (std::move (world));
+          return;
+        }
+        std::cerr << "moppe: bundled world cache rejected; rebuilding"
+                  << std::endl;
+      }
       map::SurfaceGeometry surface =
         map::SurfaceGeometry (terrain::TerrainDomain (
           recipe.resolution (), recipe.resolution (), recipe.extent ()));
@@ -243,6 +275,7 @@ namespace moppe::game {
       state.report ("Looking for saved terrain",
                     "Checking this build, profile, and seed");
       if (map::try_load_cache (surface, cache)) {
+        std::cerr << "moppe: terrain cache: local=" << cache << std::endl;
         state.report ("Reading saved terrain",
                       "Reusing the finished heightfield");
       } else {
@@ -258,12 +291,12 @@ namespace moppe::game {
                     "Rebuilding normals and broad surface readings");
       map::rebuild_geometry (surface);
 
-      Hydrology hydrology =
+      HydrologyAnalysis analysis =
         analyze_hydrology (surface, recipe, [&state] (HydrologyStage stage) {
           const auto [title, detail] = hydrology_report (stage);
           state.report (title, detail);
         });
-      log_standing_water (hydrology);
+      log_standing_water (analysis.hydrology);
 
       state.report ("Assembling the world",
                     "Painting water, moisture, materials, and the opening "
@@ -272,14 +305,14 @@ namespace moppe::game {
         evolved_trails
           ? std::move (*evolved_trails)
           : terrain::analyze_trail_network (surface, recipe.trail_formation ());
-      auto [water, readings] =
-        analyze_surface (surface, recipe, hydrology, trails.use);
+      auto [water, readings] = analyze_surface (
+        surface, recipe, analysis.hydrology, analysis.channels, trails.use);
 
       state.publish_completed (
         std::make_unique<GeneratedWorld> (job.params,
                                           recipe,
                                           std::move (surface),
-                                          std::move (hydrology),
+                                          std::move (analysis.hydrology),
                                           std::move (water),
                                           std::move (trails),
                                           std::move (readings)));

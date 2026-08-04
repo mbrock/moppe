@@ -10,11 +10,9 @@
 // stay in private storage on TBDR devices.
 
 #import <Metal/Metal.h>
-#import <TargetConditionals.h>
-#if !TARGET_OS_TV
 #import <MetalFX/MetalFX.h>
-#endif
 #import <QuartzCore/QuartzCore.h>
+#import <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #import <UIKit/UIKit.h>
 #else
@@ -445,11 +443,9 @@ namespace moppe {
         id<MTLTexture> prev_frame = nil;
         id<MTLTexture> bloom_a = nil, bloom_b = nil;
         bool prev_valid = false;
-#if !TARGET_OS_TV
         id<MTLTexture> spatial_output = nil;
         id<MTL4FXSpatialScaler> spatial_scaler = nil;
         id<MTLFence> spatial_fence = nil;
-#endif
         UpscalingMode requested_upscaling = UpscalingMode::Spatial;
         ResolvedUpscaling resolved_upscaling = ResolvedUpscaling::Linear;
         int output_width = 0, output_height = 0;
@@ -885,10 +881,8 @@ namespace moppe {
       id<MTL4CommandQueue> m_queue;
       id<MTLResidencySet> m_residency;
       id<MTLLibrary> m_library;
-#if !TARGET_OS_TV
       id<MTL4Compiler> m_compiler;
       bool m_spatial_upscaling_supported = false;
-#endif
 #if !TARGET_OS_IPHONE
       id<MTL4ArgumentTable> m_reflection_arguments;
       std::string m_reflection_geometry_path;
@@ -939,7 +933,6 @@ namespace moppe {
       m_queue = [m_device newMTL4CommandQueue];
       if (!m_queue)
         throw std::runtime_error ("Metal 4 is unavailable");
-#if !TARGET_OS_TV
       m_spatial_upscaling_supported =
         [MTLFXSpatialScalerDescriptor supportsMetal4FX:m_device];
       if (m_spatial_upscaling_supported) {
@@ -958,7 +951,6 @@ namespace moppe {
                     << std::endl;
         }
       }
-#endif
       m_frame.command_buffer = [m_device newCommandBuffer];
       m_frame.completion_event = [m_device newSharedEvent];
       m_frame.completion_event.signaledValue = 0;
@@ -2719,7 +2711,6 @@ namespace moppe {
         retire (reflection.validity);
       }
 #endif
-#if !TARGET_OS_TV
       if (m_targets.spatial_scaler) {
         m_targets.spatial_scaler.colorTexture = nil;
         m_targets.spatial_scaler.outputTexture = nil;
@@ -2727,7 +2718,6 @@ namespace moppe {
       retire (m_targets.spatial_output);
       m_targets.spatial_scaler = nil;
       m_targets.spatial_fence = nil;
-#endif
       if (!targets.empty ())
         [m_residency commit];
 #if !TARGET_OS_IPHONE
@@ -2761,11 +2751,9 @@ namespace moppe {
       const bool native = w == drawable_w && h == drawable_h;
       ResolvedUpscaling resolved =
         native ? ResolvedUpscaling::Native : ResolvedUpscaling::Linear;
-#if !TARGET_OS_TV
       if (!native && upscaling == UpscalingMode::Spatial &&
           m_spatial_upscaling_supported)
         resolved = ResolvedUpscaling::Spatial;
-#endif
       if (w == m_targets.width && h == m_targets.height &&
           drawable_w == m_targets.output_width &&
           drawable_h == m_targets.output_height &&
@@ -2786,7 +2774,6 @@ namespace moppe {
                                       : upscaling == UpscalingMode::Linear
                                         ? "requested"
                                         : "unsupported";
-#if !TARGET_OS_TV
       MTLTextureUsage spatial_output_usage = 0;
       if (resolved == ResolvedUpscaling::Spatial) {
         resolution_reason = "supported";
@@ -2817,7 +2804,6 @@ namespace moppe {
                     << std::endl;
         }
       }
-#endif
       m_targets.scene_a = make_target (
         MTLPixelFormatRGBA16Float, w, h, 1, false, spatial_input_usage);
       // Without multisampling there is nothing to resolve, so the scene pass
@@ -2886,7 +2872,6 @@ namespace moppe {
         }
       }
 #endif
-#if !TARGET_OS_TV
       if (m_targets.spatial_scaler) {
         m_targets.spatial_output = make_target (MTLPixelFormatRGBA16Float,
                                                 drawable_w,
@@ -2896,7 +2881,6 @@ namespace moppe {
                                                 spatial_output_usage);
         m_targets.spatial_output.label = @"Moppe spatially reconstructed HDR";
       }
-#endif
       std::cerr << "moppe: render targets: drawable=" << drawable_w << 'x'
                 << drawable_h << ", scene=" << w << 'x' << h << " ("
                 << (w * (double)h / 1.0e6) << " MP)"
@@ -3116,22 +3100,18 @@ namespace moppe {
 
     void MetalRenderer::end_scene_encoder () {
       if (m_frame.scene_encoder) {
-#if !TARGET_OS_TV
         if (m_targets.spatial_fence)
           [m_frame.scene_encoder updateFence:m_targets.spatial_fence
                           afterEncoderStages:MTLStageFragment];
-#endif
         [m_frame.scene_encoder endEncoding];
         m_frame.scene_encoder = nil;
         m_frame.scene_pass_done = true;
       } else if (!m_frame.scene_pass_done) {
         // Nothing was drawn: run an empty pass so sceneA is cleared.
         scene_encoder ();
-#if !TARGET_OS_TV
         if (m_targets.spatial_fence)
           [m_frame.scene_encoder updateFence:m_targets.spatial_fence
                           afterEncoderStages:MTLStageFragment];
-#endif
         [m_frame.scene_encoder endEncoding];
         m_frame.scene_encoder = nil;
         m_frame.scene_pass_done = true;
@@ -4029,11 +4009,9 @@ namespace moppe {
       bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
       use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
       [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-#if !TARGET_OS_TV
       if (targets.spatial_fence)
         [enc updateFence:targets.spatial_fence
           afterEncoderStages:MTLStageFragment];
-#endif
       [enc endEncoding];
 
       frame.current_scene = dst;
@@ -4098,11 +4076,9 @@ namespace moppe {
                 vertexStart:0
                 vertexCount:3];
       }
-#if !TARGET_OS_TV
       if (targets.spatial_fence)
         [enc updateFence:targets.spatial_fence
           afterEncoderStages:MTLStageFragment];
-#endif
       [enc endEncoding];
 
       id<MTL4ComputeCommandEncoder> blit =
@@ -4125,16 +4101,11 @@ namespace moppe {
       MetalFrameTargets& targets = inputs.targets;
       MetalFrameEncoding& frame = inputs.frame;
 
-      const auto pass = [&frame
-#if !TARGET_OS_TV
-                         ,
-                         &targets
-#endif
-      ] (NSString* label,
-                        id<MTLRenderPipelineState> pipeline,
-                        id<MTLTexture> src,
-                        id<MTLTexture> dst,
-                        const MoppeQuadUniforms& q) {
+      const auto pass = [&frame, &targets] (NSString* label,
+                                            id<MTLRenderPipelineState> pipeline,
+                                            id<MTLTexture> src,
+                                            id<MTLTexture> dst,
+                                            const MoppeQuadUniforms& q) {
         MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
         rp.colorAttachments[0].texture = dst;
         rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
@@ -4154,12 +4125,10 @@ namespace moppe {
         [enc drawPrimitives:MTLPrimitiveTypeTriangle
                 vertexStart:0
                 vertexCount:3];
-#if !TARGET_OS_TV
         if (targets.spatial_fence &&
             (dst == targets.scene_a || dst == targets.scene_b))
           [enc updateFence:targets.spatial_fence
             afterEncoderStages:MTLStageFragment];
-#endif
         [enc endEncoding];
       };
 
@@ -4316,20 +4285,22 @@ namespace moppe {
       }
 
       id<MTLTexture> present_scene = frame.current_scene;
-#if !TARGET_OS_TV
       if (targets.spatial_scaler && targets.spatial_output) {
         targets.spatial_scaler.colorTexture = frame.current_scene;
         targets.spatial_scaler.inputContentWidth = targets.width;
         targets.spatial_scaler.inputContentHeight = targets.height;
         targets.spatial_scaler.outputTexture = targets.spatial_output;
         [frame.command_buffer pushDebugGroup:@"Spatial MetalFX"];
+#if !TARGET_OS_TV
         record_gpu_pass_start (frame, GpuPass::Reconstruction);
+#endif
         [targets.spatial_scaler encodeToCommandBuffer:frame.command_buffer];
+#if !TARGET_OS_TV
         record_gpu_pass_end (frame);
+#endif
         [frame.command_buffer popDebugGroup];
         present_scene = targets.spatial_output;
       }
-#endif
 
       MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
       rp.colorAttachments[0].texture = frame.drawable.texture;
@@ -4339,11 +4310,9 @@ namespace moppe {
       id<MTL4RenderCommandEncoder> enc =
         [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
       enc.label = @"Present and HUD";
-#if !TARGET_OS_TV
       if (targets.spatial_fence)
         [enc waitForFence:targets.spatial_fence
           beforeEncoderStages:MTLStageFragment];
-#endif
       wait_for_render_or_blit_writes (enc);
       record_gpu_pass_start (frame, enc, GpuPass::Present);
 

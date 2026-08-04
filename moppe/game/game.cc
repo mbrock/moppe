@@ -470,10 +470,26 @@ namespace moppe {
         MOPPE_PROFILE_ZONE ("startup.build_global_forest");
         if (m_tree_demo || m_water_inspection)
           return;
-        m_forest.rebuild (*m_renderer,
-                          surface (),
-                          surface_readings (),
-                          recipe ().seed ().value ^ 0xa34c91e5U);
+        const std::uint32_t forest_seed = recipe ().seed ().value ^ 0xa34c91e5U;
+        bool used_baked_plan = false;
+#ifdef MOPPE_BUNDLED_WORLD_CACHE
+        const terrain::TerrainDomain& domain = surface ().domain ();
+        const spatial_extent_t period = spatial_extent_in_metres (
+          Vec3 (domain.period_x ().numerical_value_in (u::m),
+                0,
+                domain.period_z ().numerical_value_in (u::m)));
+        const std::string plan_path =
+          platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE) + "/forest-plan.bin";
+        if (std::optional<ForestPlan> plan =
+              try_load_forest_plan (plan_path, forest_seed, period)) {
+          m_forest.rebuild (*m_renderer, std::move (*plan));
+          used_baked_plan = true;
+          std::cerr << "global forest: baked plan=" << plan_path << '\n';
+        }
+#endif
+        if (!used_baked_plan)
+          m_forest.rebuild (
+            *m_renderer, surface (), surface_readings (), forest_seed);
         std::cerr << "global forest: " << m_forest.tree_count ()
                   << " canopy representatives, "
                   << m_forest.resident_bytes () / (1024 * 1024)

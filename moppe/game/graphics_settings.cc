@@ -61,7 +61,16 @@ namespace moppe::game {
 
   GraphicsSettings apple_tv_graphics_settings () {
     GraphicsSettings settings = high_graphics_settings ();
-    settings.scene_scale = 0.75f;
+    // A15 has to feed a 4K television as well as reconstruct the scene. Keep
+    // the water and moment-to-moment effects, but avoid the passes whose cost
+    // scales across the whole image or explodes into dense procedural
+    // geometry. MetalFX restores the output footprint from this 540p scene.
+    settings.scene_scale = 0.5f;
+    settings.terrain_shadows = false;
+    settings.motion_blur = false;
+    settings.bloom = false;
+    settings.auto_exposure = false;
+    settings.undergrowth = false;
     return settings;
   }
 

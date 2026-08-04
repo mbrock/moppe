@@ -71,6 +71,8 @@ option(MOPPE_BUILD_DEVELOPER_TOOLS
 option(MOPPE_UNITY_BUILD
   "Compile each target as a single unity translation unit" ON)
 option(MOPPE_ENABLE_TRACY "Enable Tracy runtime profiling" OFF)
+set(MOPPE_TVOS_BAKED_WORLD "" CACHE PATH
+  "Host-baked default finished-world cache to bundle into the tvOS app")
 
 # Moppe's implementation files are deliberately small, but compiling every one
 # separately makes heavily-templated headers (notably mp-units) dominate build
@@ -360,6 +362,8 @@ set(MOPPE_TERRAIN_SOURCES
 set(MOPPE_WORLD_SOURCES
   moppe/map/surface.cc
   moppe/game/generated_world.cc
+  moppe/game/world_cache.cc
+  moppe/game/forest_plan.cc
   moppe/game/water_capture.cc
   moppe/game/landscape_gazetteer.cc
 )
@@ -461,9 +465,11 @@ function(moppe_configure_metal_target target)
     "-framework MetalKit"
     "-framework QuartzCore"
     "-framework ImageIO")
-  # The iOS/tvOS simulator SDKs omit MetalFX along with the Metal 4 core API;
-  # those targets compile the explicit unavailable renderer stub above.
-  if(NOT MOPPE_TVOS AND NOT MOPPE_APPLE_SIMULATOR)
+  # Apple simulator SDKs omit MetalFX along with the Metal 4 core API; those
+  # targets compile the explicit unavailable renderer stub above. Physical
+  # macOS, iOS, and tvOS targets all use the shared MetalFX reconstruction
+  # path when the device reports support.
+  if(NOT MOPPE_APPLE_SIMULATOR)
     target_link_libraries(${target} PRIVATE "-framework MetalFX")
   endif()
   add_dependencies(${target} moppe_shaders)
@@ -491,6 +497,13 @@ if(MOPPE_BUILD_DEVELOPER_TOOLS AND NOT MOPPE_MOBILE_APPLE)
     ${MOPPE_WORLD_SOURCES}
   )
   moppe_configure_code_target(terrain-trail-soak)
+
+  add_executable(terrain-cache-bake EXCLUDE_FROM_ALL
+    moppe/terrain/cache_bake.cc
+    ${MOPPE_TERRAIN_SOURCES}
+    ${MOPPE_WORLD_SOURCES}
+  )
+  moppe_configure_code_target(terrain-cache-bake)
 endif()
 
 # Tests are configured for IDEs and CTest, but excluded from the default build.
@@ -622,6 +635,15 @@ if(APPLE AND MOPPE_TVOS)
   moppe_configure_metal_target(moppe-tvos)
   target_compile_definitions(moppe-tvos PRIVATE
     MOPPE_DEFAULT_APPLE_TV_GRAPHICS)
+  if(MOPPE_TVOS_BAKED_WORLD)
+    if(NOT IS_DIRECTORY "${MOPPE_TVOS_BAKED_WORLD}")
+      message(FATAL_ERROR
+        "MOPPE_TVOS_BAKED_WORLD is not a directory: "
+        "${MOPPE_TVOS_BAKED_WORLD}")
+    endif()
+    target_compile_definitions(moppe-tvos PRIVATE
+      MOPPE_BUNDLED_WORLD_CACHE="world/apple-tv-default")
+  endif()
   target_link_libraries(moppe-tvos PRIVATE "-framework UIKit")
   set_target_properties(moppe-tvos PROPERTIES
     OUTPUT_NAME "Moppe"
@@ -651,6 +673,17 @@ if(APPLE AND MOPPE_TVOS)
       ${CMAKE_CURRENT_SOURCE_DIR}/data
       $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/data
     COMMENT "Bundling assets into Moppe.app (tvOS)")
+  if(MOPPE_TVOS_BAKED_WORLD)
+    add_custom_command(TARGET moppe-tvos POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E remove_directory
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/terrain
+      COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/world/apple-tv-default
+      COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${MOPPE_TVOS_BAKED_WORLD}
+        $<TARGET_BUNDLE_CONTENT_DIR:moppe-tvos>/world/apple-tv-default
+      COMMENT "Bundling host-baked Apple TV world")
+  endif()
 endif()
 
 if(APPLE AND NOT MOPPE_MOBILE_APPLE)
