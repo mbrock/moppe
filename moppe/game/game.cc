@@ -959,24 +959,28 @@ namespace moppe {
         // In helmet cam you ARE the rider: don't draw yourself.
         const bool helmet = actors.helmet_camera;
         if (!(helmet && actors.active_mode == M_BIKE))
-          render_vehicle (r, m_world_dl, actors.bike, frame.lighting.time);
+          render_vehicle (
+            r, m_world_dl, actors.bike, frame.lighting.time, 0x1000);
         if (actors.car && !(helmet && actors.active_mode == M_CAR))
-          render_vehicle (r, m_world_dl, *actors.car, frame.lighting.time);
+          render_vehicle (
+            r, m_world_dl, *actors.car, frame.lighting.time, 0x2000);
         if (actors.walker && !helmet)
           render_walker (m_world_dl, *actors.walker, frame.lighting.time);
         if (actors.glider && !helmet)
           render_glider (m_world_dl, *actors.glider, frame.lighting.time);
 
-        r.draw_list (m_world_dl);
+        r.draw_list (m_world_dl, 0x0001);
 
         // Additive glow after the solid list, so it blends over everything
         // already drawn: exhaust and jump-jet flames, then star halos.
         if (visibility.vehicle_effects &&
             !(helmet && actors.active_mode == M_BIKE))
-          render_vehicle_flames (r, actors.bike, frame.lighting.time);
+          render_vehicle_flames (
+            r, actors.bike, frame.lighting.time, 0x1000);
         if (visibility.vehicle_effects && actors.car &&
             !(helmet && actors.active_mode == M_CAR))
-          render_vehicle_flames (r, *actors.car, frame.lighting.time);
+          render_vehicle_flames (
+            r, *actors.car, frame.lighting.time, 0x2000);
         if (visibility.star_effects)
           session ().stars ().render (r, frame.environment);
       }
@@ -1013,6 +1017,10 @@ namespace moppe {
         // Dust last so spray sits atop every water surface.
         if (visibility.dust)
           session ().dust ().render (r);
+
+        // Reconstruction consumes untouched color/depth/motion/reactivity;
+        // screen-space grades and feedback operate on its full-size result.
+        r.reconstruct_scene ();
 
         // Post effects.
         if (visibility.underwater)

@@ -17,6 +17,7 @@ struct RiverVaryings {
   float depth;
   float waterfall;
   float opacity;
+  float2 motion [[center_no_perspective]];
 };
 
 vertex RiverVaryings river_vertex (uint vid [[vertex_id]],
@@ -38,10 +39,15 @@ vertex RiverVaryings river_vertex (uint vid [[vertex_id]],
   out.depth = float (v.color.g) / 255.0;
   out.waterfall = float (v.color.b) / 255.0;
   out.opacity = float (v.color.a) / 255.0;
+  out.motion = moppe_motion_vector (
+    frame.unjittered_view_proj * world,
+    frame.previous_view_proj *
+      (draw.previous_model * float4 (float3 (v.position), 1.0)),
+    frame.temporal.xy);
   return out;
 }
 
-fragment float4 river_fragment (RiverVaryings in [[stage_in]],
+fragment MoppeTemporalOutput river_fragment (RiverVaryings in [[stage_in]],
                                 constant MoppeFrameUniforms& frame
                                 [[buffer (MOPPE_BUF_FRAME)]],
                                 depth2d<float> shadow_map
@@ -219,5 +225,5 @@ fragment float4 river_fragment (RiverVaryings in [[stage_in]],
   const float alpha =
     edge * in.opacity *
     saturate (clear_surface + 0.08 * in.waterfall + 0.68 * foam);
-  return float4 (color, alpha);
+  return moppe_temporal_output (float4 (color, alpha), in.motion, 0.85);
 }

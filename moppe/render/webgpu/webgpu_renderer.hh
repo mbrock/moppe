@@ -44,8 +44,11 @@ namespace moppe::render {
     void draw_sky (const SkyParams& params) override;
     void draw_ocean (const OceanParams& params) override;
     void draw_waterfalls (const Mesh& mesh, const Mat4& model) override;
-    void draw_mesh (const Mesh& mesh, const Mat4& model) override;
-    void draw_list (const DrawList& list) override;
+    void draw_mesh (const Mesh& mesh,
+                    const Mat4& model,
+                    uint64_t motion_id = 0) override;
+    void draw_list (const DrawList& list,
+                    uint64_t motion_id = 0) override;
     void apply_underwater (float time) override;
     void apply_motion_blur (float strength) override;
     void apply_scene_blur () override;

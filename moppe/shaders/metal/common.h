@@ -242,4 +242,33 @@ moppe_sky_radiance (float3 fog_color, float3 direction, float3 sun_dir) {
   return sky;
 }
 
+// All world fragment functions share this result shape. Spatial/linear
+// pipelines attach only color; temporal pipelines additionally retain motion
+// in input-pixel coordinates and a selective history rejection weight.
+struct MoppeTemporalOutput {
+  float4 color [[color (0)]];
+  float2 motion [[color (1)]];
+  float reactive [[color (2)]];
+};
+
+inline float2 moppe_motion_vector (float4 current_clip,
+                                   float4 previous_clip,
+                                   float2 dimensions) {
+  const float2 current = current_clip.xy / max (current_clip.w, 1e-6);
+  const float2 previous = previous_clip.xy / max (previous_clip.w, 1e-6);
+  // Metal framebuffer coordinates point down in Y. MetalFX wants the vector
+  // from the current sample back to its previous-frame pixel.
+  return (previous - current) * float2 (0.5, -0.5) * dimensions;
+}
+
+inline MoppeTemporalOutput moppe_temporal_output (float4 color,
+                                                  float2 motion,
+                                                  float reactive) {
+  MoppeTemporalOutput out;
+  out.color = color;
+  out.motion = motion;
+  out.reactive = saturate (reactive);
+  return out;
+}
+
 #endif

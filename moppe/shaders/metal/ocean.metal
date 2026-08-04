@@ -12,6 +12,7 @@ struct OceanVaryings {
   float3 world_pos;
   float3 normal;
   float fog;
+  float2 motion [[center_no_perspective]];
 };
 
 // Bilinear grid sample under a point. Float textures must be read at
@@ -129,6 +130,12 @@ static OceanVaryings ocean_surface_point (float3 p,
   float fog = moppe_distance_fog (dist, u.fog_color.w);
   fog += 0.3 * smoothstep (150.0, 1500.0, dist);
   out.fog = saturate (fog);
+  const float4 current_reference =
+    u.unjittered_view_proj * float4 (p, 1.0);
+  const float4 previous_reference =
+    u.previous_view_proj * float4 (p, 1.0);
+  out.motion = moppe_motion_vector (
+    current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 
@@ -563,7 +570,7 @@ fragment ReflectionWaterInput reflection_water_input_fragment (
 
 // Bilinear ground height under a point, in world meters.  R32F
 // must be read() at integer coords, so filter by hand.
-fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
+fragment MoppeTemporalOutput ocean_fragment (OceanVaryings in [[stage_in]],
                                 constant MoppeOceanUniforms& u
                                 [[buffer (MOPPE_BUF_FRAME)]],
                                 texture2d<float, access::read> heights
@@ -894,5 +901,8 @@ fragment float4 ocean_fragment (OceanVaryings in [[stage_in]],
 
   // Identical fog curve to the terrain so shorelines match.
   const float ff = smoothstep (0.0, 0.9, in.fog);
-  return float4 (mix (color, fog_c, ff), alpha * (1.0 - 0.4 * ff));
+  return moppe_temporal_output (
+    float4 (mix (color, fog_c, ff), alpha * (1.0 - 0.4 * ff)),
+    in.motion,
+    0.78);
 }

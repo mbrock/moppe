@@ -20,6 +20,7 @@ struct TerrainVaryings {
   float2 grid_coord;       // authoritative source-height lattice
   float2 mesh_coord;       // actual rendered lattice
   float lod_step [[flat]]; // source texels per rendered grid edge
+  float2 motion [[center_no_perspective]];
 };
 
 // Catmull-Rom reconstruction and its derivative. The final 2D height is
@@ -246,6 +247,12 @@ vertex TerrainVaryings terrain_vertex (
   out.mesh_coord =
     (grid - float2 (chunk.origin_x, chunk.origin_z)) / chunk.step;
   out.lod_step = chunk.step;
+  const float4 current_reference =
+    u.unjittered_view_proj * float4 (world, 1.0);
+  const float4 previous_reference =
+    u.previous_view_proj * float4 (world, 1.0);
+  out.motion = moppe_motion_vector (
+    current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 
@@ -570,7 +577,7 @@ static inline float4 terrain_overlay_color (float value,
   return float4 (terrain_heat_palette (t), opacity);
 }
 
-fragment float4 terrain_fragment (
+fragment MoppeTemporalOutput terrain_fragment (
   TerrainVaryings in [[stage_in]],
   constant MoppeTerrainUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
   texture2d<float> grass [[texture (MOPPE_TEX_GRASS)]],
@@ -603,7 +610,7 @@ fragment float4 terrain_fragment (
   // Fully fogged: skip all texture and shadow work.
   const float fog_factor = smoothstep (0.0, 0.9, in.fog);
   if (fog_factor >= 0.995)
-    return float4 (fog_c, 1.0);
+    return moppe_temporal_output (float4 (fog_c, 1.0), in.motion, 0.0);
 
   // Native and coarser LODs light from the full-resolution normal
   // texture at fragment rate: a stride-8 silhouette carries full
@@ -1084,5 +1091,6 @@ fragment float4 terrain_fragment (
     color = mix (
       color, float3 (1.0, 0.63, 0.08), 0.96 * source_vertex * distance_fade);
   }
-  return float4 (mix (color, fog_c, fog_factor), 1.0);
+  return moppe_temporal_output (
+    float4 (mix (color, fog_c, fog_factor), 1.0), in.motion, 0.0);
 }

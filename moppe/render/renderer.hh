@@ -290,9 +290,19 @@ namespace moppe {
       }
       // Vertical nickpoint curtains; horizontal water belongs to draw_ocean.
       virtual void draw_waterfalls (const Mesh& mesh, const Mat4& model) = 0;
-      virtual void draw_mesh (const Mesh& mesh, const Mat4& model) = 0;
-      virtual void draw_list (const DrawList& list) = 0;
-      // Post effects; call between world drawing and draw_hud.
+      // A nonzero motion id names geometry whose prior transform/vertices
+      // should be retained for temporal reconstruction. IDs need only remain
+      // stable within one renderer and are deliberately absent from Mesh.
+      virtual void draw_mesh (const Mesh& mesh,
+                              const Mat4& model,
+                              uint64_t motion_id = 0) = 0;
+      virtual void draw_list (const DrawList& list,
+                              uint64_t motion_id = 0) = 0;
+      // Resolve the low-resolution 3D scene before screen-space effects. It
+      // is idempotent so backend-specific callers can safely enforce the
+      // boundary again before HUD/present.
+      virtual void reconstruct_scene () {}
+      // Post effects; call after reconstruction and before draw_hud.
       virtual void apply_underwater (float time) = 0;
       virtual void apply_motion_blur (float strength) = 0;
       // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.

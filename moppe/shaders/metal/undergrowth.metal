@@ -26,6 +26,7 @@ struct UndergrowthVaryings {
   float3 normal;
   float3 color;
   float exposure;
+  float2 motion [[center_no_perspective]];
 };
 
 struct UndergrowthTile {
@@ -460,10 +461,16 @@ struct UndergrowthShoot {
     // subordinate to the shared low-frequency bend and disappears at range.
     const float bend = 0.18 + 0.50 * t;
     const float flutter = (0.06 + 0.18 * t) * micro_detail;
+    const float3 left_base = spine - edge * half_width;
+    const float3 right_base = spine + edge * half_width;
     const float3 left =
-      moppe_wind (spine - edge * half_width, bend, flutter, u.params.x);
+      moppe_wind (left_base, bend, flutter, u.params.x);
     const float3 right =
-      moppe_wind (spine + edge * half_width, bend, flutter, u.params.x);
+      moppe_wind (right_base, bend, flutter, u.params.x);
+    const float3 previous_left =
+      moppe_wind (left_base, bend, flutter, u.temporal.z);
+    const float3 previous_right =
+      moppe_wind (right_base, bend, flutter, u.temporal.z);
 
     // Exposure along the frond stands in for how much sky its part of the
     // plant sees: the litter at the base of a rosette is nearly black, the
@@ -478,10 +485,18 @@ struct UndergrowthShoot {
 
     v.world_pos = left;
     v.position = u.view_proj * float4 (left, 1.0);
+    v.motion = moppe_motion_vector (
+      u.unjittered_view_proj * float4 (left, 1.0),
+      u.previous_view_proj * float4 (previous_left, 1.0),
+      u.temporal.xy);
     out.set_vertex (vertex_base + step * 2u, v);
 
     v.world_pos = right;
     v.position = u.view_proj * float4 (right, 1.0);
+    v.motion = moppe_motion_vector (
+      u.unjittered_view_proj * float4 (right, 1.0),
+      u.previous_view_proj * float4 (previous_right, 1.0),
+      u.temporal.xy);
     out.set_vertex (vertex_base + step * 2u + 1u, v);
   }
 
@@ -500,7 +515,8 @@ struct UndergrowthShoot {
 
 // ---- the fragment stage --------------------------------------------
 
-fragment float4 undergrowth_fragment (UndergrowthVaryings in [[stage_in]],
+fragment MoppeTemporalOutput undergrowth_fragment (
+                                      UndergrowthVaryings in [[stage_in]],
                                       bool front_facing [[front_facing]],
                                       constant MoppeUndergrowthUniforms& u
                                       [[buffer (MOPPE_BUF_FRAME)]],
@@ -542,5 +558,5 @@ fragment float4 undergrowth_fragment (UndergrowthVaryings in [[stage_in]],
   const float3 fog_c =
     moppe_warmed_fog (u.fog_color.rgb, to_frag / max (dist, 1e-4), l);
   color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
-  return float4 (color, 1.0);
+  return moppe_temporal_output (float4 (color, 1.0), in.motion, 0.55);
 }

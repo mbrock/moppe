@@ -165,11 +165,13 @@ namespace moppe {
         r.draw_mesh (
           *m_body,
           place * Mat4::rotation ((time * 150.0f + s.phase) * u::deg, y_axis) *
-            Mat4::rotation ((time * 95.0f + s.phase * 0.7f) * u::deg, x_axis));
+            Mat4::rotation ((time * 95.0f + s.phase * 0.7f) * u::deg, x_axis),
+          0x100000 + i * 2);
 
         const float pulse = 1.0f + 0.15f * std::sin (time * 2.0f + s.phase);
         r.draw_mesh (*m_halo,
-                     place * Mat4::scaling (Vec3 (pulse, pulse, pulse)));
+                     place * Mat4::scaling (Vec3 (pulse, pulse, pulse)),
+                     0x100001 + i * 2);
       }
     }
   }

@@ -100,6 +100,8 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
                terrain::TerrainGenerationProfile::Smoke);
   MOPPE_CHECK (parsed ({ "--upscaling", "linear" }).graphics.upscaling ==
                render::UpscalingMode::Linear);
+  MOPPE_CHECK (parsed ({ "--upscaling", "temporal" }).graphics.upscaling ==
+               render::UpscalingMode::Temporal);
   MOPPE_CHECK (
     parsed ({ "--graphics-quality", "balanced", "--upscaling", "linear" })
       .graphics.upscaling == render::UpscalingMode::Linear);

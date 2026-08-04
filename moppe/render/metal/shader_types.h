@@ -27,6 +27,7 @@ struct MoppeFloat4 {
 #define MOPPE_BUF_FRAME 1
 #define MOPPE_BUF_DRAW 2
 #define MOPPE_BUF_CHUNK 3
+#define MOPPE_BUF_PREVIOUS_VERTICES 4
 
 // Texture indices (fragment stage).
 #define MOPPE_TEX_COLOR 0
@@ -71,7 +72,9 @@ struct MoppeFloat4 {
 #define MOPPE_TEX_REFLECTION_VALIDITY 5
 
 struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
-  MoppeMat4 view_proj;
+  MoppeMat4 view_proj;            // jittered current world -> clip
+  MoppeMat4 unjittered_view_proj; // current world -> reference clip
+  MoppeMat4 previous_view_proj;   // previous world -> reference clip
   MoppeMat4 light_matrix;   // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;   // xyz; w unused
   MoppeFloat4 sun_dir;      // xyz world-space toward sun
@@ -81,6 +84,7 @@ struct MOPPE_SHADER_ALIGN MoppeFrameUniforms {
   MoppeFloat4 fog_color;    // rgb; w = fog_scale
   MoppeFloat4 misc;         // x=time, y=cloudiness, z=sea, w=land relief
   MoppeFloat4 shadow;       // x=strength, y=shadow texel
+  MoppeFloat4 temporal;     // xy=input pixels, z=previous time, w=enabled
 };
 
 // A primary-ray camera and one RGBA16F diagnostic target. The target is split
@@ -113,11 +117,15 @@ struct MOPPE_SHADER_ALIGN MoppeWaterReflectionUniforms {
 // whose vertices are already world space).
 struct MOPPE_SHADER_ALIGN MoppeDrawUniforms {
   MoppeMat4 model;
+  MoppeMat4 previous_model;
   MoppeFloat4 nrm0, nrm1, nrm2; // normal-matrix columns
+  MoppeFloat4 temporal; // x=previous vertex buffer, y=reactivity
 };
 
 struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeMat4 view_proj;    // scene: reversed-Z; shadow pass: light NDC
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
@@ -139,6 +147,7 @@ struct MOPPE_SHADER_ALIGN MoppeTerrainUniforms {
   MoppeFloat4 params7; // x=filtered snow-support slope enabled,
                        // y=channel flux detail enabled,
                        // z=land relief above sea level in metres
+  MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 
 // Per-chunk terrain instance data.
@@ -162,13 +171,18 @@ static_assert (alignof (MoppeChunkUniforms) == 16,
 
 struct MOPPE_SHADER_ALIGN MoppeSkyUniforms {
   MoppeMat4 view_proj; // rotation-only view * reversed-Z proj
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
   MoppeFloat4 sun_dir;
   MoppeFloat4 fog_color;
   MoppeFloat4 params; // x=time, y=sun_height, z=cloudiness
+  MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 
 struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
   MoppeMat4 view_proj;
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
@@ -186,6 +200,7 @@ struct MOPPE_SHADER_ALIGN MoppeOceanUniforms {
                        // w=fine radius (+: coarse pass discards
                        // inside; -: lattice pass discards outside)
   MoppeFloat4 current; // x=flow raster enabled, y=geology raster enabled
+  MoppeFloat4 temporal; // xy=input pixels, z=previous time, w=enabled
 };
 
 // Undergrowth is generated, never stored. The object stage walks a window of
@@ -216,6 +231,8 @@ static_assert (MOPPE_UNDERGROWTH_MESH_PRIMITIVES <= 512,
 
 struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
   MoppeMat4 view_proj;
+  MoppeMat4 unjittered_view_proj;
+  MoppeMat4 previous_view_proj;
   MoppeMat4 light_matrix; // world -> biased shadow uv/z
   MoppeFloat4 camera_pos;
   MoppeFloat4 sun_dir;
@@ -235,6 +252,7 @@ struct MOPPE_SHADER_ALIGN MoppeUndergrowthUniforms {
   MoppeFloat4 relief;      // x=sea level, y=land relief,
                            // z=snow support available,
                            // w=standing-water levels available
+  MoppeFloat4 temporal;    // xy=input pixels, z=previous time, w=enabled
 };
 
 struct MOPPE_SHADER_ALIGN MoppeDustEmission {
@@ -247,7 +265,7 @@ struct MOPPE_SHADER_ALIGN MoppeDustEmission {
 struct MOPPE_SHADER_ALIGN MoppeDustUniforms {
   MoppeFloat4 camera_right; // xyz
   MoppeFloat4 camera_up;    // xyz
-  MoppeFloat4 params;       // x logical time
+  MoppeFloat4 params;       // x=current time, y=previous time
 };
 
 // Fullscreen quad passes: present, motion-blur ghosts, underwater,

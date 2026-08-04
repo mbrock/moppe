@@ -4,6 +4,7 @@ struct DustVaryings {
   float4 position [[position]];
   float2 uv;
   float4 color;
+  float2 motion [[center_no_perspective]];
 };
 
 inline uint dust_hash (uint x) {
@@ -59,6 +60,26 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
   const float2 rotated (q.x * ca - q.y * sa, q.x * sa + q.y * ca);
   const float3 world = center + dust.camera_right.xyz * (rotated.x * size) +
                        dust.camera_up.xyz * (rotated.y * size);
+  const float previous_age = dust.params.y - emission.position_birth.w;
+  float3 previous_center =
+    emission.position_birth.xyz + offset + velocity * previous_age;
+  previous_center.y -=
+    0.5 * emission.style.z * previous_age * previous_age;
+  const float previous_life01 =
+    saturate (1.0 - previous_age / lifetime);
+  const float previous_size = base_size * (1.7 - 0.7 * previous_life01);
+  const float previous_rotation =
+    (dust_random (eid, particle, 8) * 2.0 - 1.0) * 3.14159 +
+    (dust_random (eid, particle, 9) * 2.0 - 1.0) * 2.2 * previous_age;
+  const float previous_ca = cos (previous_rotation);
+  const float previous_sa = sin (previous_rotation);
+  const float2 previous_rotated (
+    q.x * previous_ca - q.y * previous_sa,
+    q.x * previous_sa + q.y * previous_ca);
+  const float3 previous_world =
+    previous_center +
+    dust.camera_right.xyz * (previous_rotated.x * previous_size) +
+    dust.camera_up.xyz * (previous_rotated.y * previous_size);
   const float age01 = 1.0 - life01;
   const float fade_in = min (1.0, age01 * 8.0);
   const float value = 0.88 + 0.16 * dust_random (eid, particle, 10);
@@ -69,6 +90,10 @@ inline DustVaryings dust_vertex_for (constant MoppeFrameUniforms& frame,
   out.uv = q;
   out.color =
     float4 (moppe_srgb (emission.color_id.xyz * value), fade_in * life01);
+  out.motion = moppe_motion_vector (
+    frame.unjittered_view_proj * float4 (world, 1.0),
+    frame.previous_view_proj * float4 (previous_world, 1.0),
+    frame.temporal.xy);
   return out;
 }
 
@@ -112,8 +137,9 @@ using DustMesh =
     out.set_index (pb * 3u + i, vb + indices[i]);
 }
 
-fragment float4 dust_fragment (DustVaryings in [[stage_in]]) {
+fragment MoppeTemporalOutput dust_fragment (DustVaryings in [[stage_in]]) {
   const float radius = length (in.uv);
   const float soft = 1.0 - smoothstep (0.15, 1.0, radius);
-  return float4 (in.color.rgb, in.color.a * soft);
+  return moppe_temporal_output (
+    float4 (in.color.rgb, in.color.a * soft), in.motion, 1.0);
 }

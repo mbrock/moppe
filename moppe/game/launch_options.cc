@@ -134,8 +134,8 @@ namespace moppe::game {
       { "--upscaling",
         "",
         1,
-        "<linear|spatial>",
-        "Select MetalFX spatial reconstruction or linear scaling.",
+        "<linear|spatial|temporal>",
+        "Select temporal/spatial MetalFX reconstruction or linear scaling.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {

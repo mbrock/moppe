@@ -7,6 +7,7 @@
 struct SkyVaryings {
   float4 position [[position]];
   float3 dir; // object-space direction from the dome center
+  float2 motion [[center_no_perspective]];
 };
 
 vertex SkyVaryings sky_vertex (uint vid [[vertex_id]],
@@ -23,6 +24,11 @@ vertex SkyVaryings sky_vertex (uint vid [[vertex_id]],
   clip.z = 0.0;
   out.position = clip;
   out.dir = p;
+  float4 current_reference = u.unjittered_view_proj * float4 (p, 1.0);
+  float4 previous_reference = u.previous_view_proj * float4 (p, 1.0);
+  current_reference.z = previous_reference.z = 0.0;
+  out.motion = moppe_motion_vector (
+    current_reference, previous_reference, u.temporal.xy);
   return out;
 }
 
@@ -179,7 +185,7 @@ static float3 sky_cloud_lighting (float cloud_density,
   return mix (cloud_color * 0.12, cloud_color, daylight);
 }
 
-fragment float4 sky_fragment (SkyVaryings in [[stage_in]],
+fragment MoppeTemporalOutput sky_fragment (SkyVaryings in [[stage_in]],
                               constant MoppeSkyUniforms& u
                               [[buffer (MOPPE_BUF_FRAME)]]) {
   const float time = u.params.x;
@@ -279,5 +285,8 @@ fragment float4 sky_fragment (SkyVaryings in [[stage_in]],
     (fract (sin (dot (dir.xy, float2 (12.9898, 78.233))) * 43758.5453) - 0.5) /
     255.0;
 
-  return float4 (sky_color, 1.0);
+  // Cloud density evolves independently of geometry, so retain less history
+  // where it is strongest while keeping clear-sky camera rotation stable.
+  return moppe_temporal_output (
+    float4 (sky_color, 1.0), in.motion, 0.22 * clouds);
 }

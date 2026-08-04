@@ -80,6 +80,8 @@ namespace moppe::game {
       return "linear";
     case render::UpscalingMode::Spatial:
       return "spatial";
+    case render::UpscalingMode::Temporal:
+      return "temporal";
     }
     return "unknown";
   }
@@ -90,6 +92,8 @@ namespace moppe::game {
       mode = render::UpscalingMode::Linear;
     else if (name == "spatial")
       mode = render::UpscalingMode::Spatial;
+    else if (name == "temporal")
+      mode = render::UpscalingMode::Temporal;
     else
       return false;
     return true;
