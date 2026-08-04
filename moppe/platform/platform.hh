@@ -53,11 +53,11 @@ namespace moppe {
       // Zero asks the renderer for its platform default. A positive value is
       // fixed before pipelines and multisampled targets are created.
       int msaa_samples = 0;
-      // On high-refresh macOS displays, render one complete simulation frame
-      // for every two display-link updates and let MetalFX synthesize the
-      // intervening presentation. Unsupported devices and lower-refresh
-      // displays retain the ordinary one-render-per-update path.
-      bool frame_interpolation = true;
+      // Opt-in on high-refresh macOS displays: render one complete simulation
+      // frame for every two display-link updates and let MetalFX synthesize
+      // the intervening presentation. Its full-drawable cost is too large to
+      // assume that every supported device can sustain the requested cadence.
+      bool frame_interpolation = false;
       bool fullscreen = false;
       bool capture_frames = false; // request blit-readable drawables
       bool activate = true; // let automated runs stay behind the active app
