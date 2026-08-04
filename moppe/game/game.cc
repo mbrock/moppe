@@ -27,6 +27,7 @@
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/seed_memory.hh>
+#include <moppe/game/simulation_clock.hh>
 #include <moppe/game/stars.hh>
 #include <moppe/game/surface_presentation.hh>
 #include <moppe/game/terrain.hh>
@@ -108,6 +109,8 @@ namespace moppe {
       void setup (render::Renderer& r, int, int) override {
         MOPPE_PROFILE_ZONE ("MoppeGame::setup");
         m_renderer = &r;
+        std::cerr << "moppe: simulation: fixed-step=120 Hz, catch-up-limit="
+                  << MAX_SIMULATION_CATCH_UP_STEPS << " steps" << std::endl;
 
         // Fast, main-thread resource setup; the heavy world build
         // runs behind the loading screen.
@@ -657,8 +660,37 @@ namespace moppe {
 
       // -- simulation --------------------------------------------------
 
-      void tick (float dt) override {
-        MOPPE_PROFILE_ZONE ("MoppeGame::tick");
+      void tick (float elapsed) override {
+        if (!m_ready) {
+          m_simulation_clock.reset ();
+          return;
+        }
+
+        // Offline replay and cinematic capture deliberately bind one logical
+        // step to one rendered frame. Ordinary play instead consumes the
+        // presentation interval through a fixed 120 Hz clock.
+        const bool frame_locked =
+          m_benchmark.has_value () ||
+          (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR"));
+        if (frame_locked) {
+          m_simulation_clock.reset ();
+          tick_simulation (elapsed);
+          return;
+        }
+
+        const int steps = m_simulation_clock.consume (elapsed);
+        MOPPE_PROFILE_PLOT ("simulation.steps", steps);
+        for (int step = 0; step < steps; ++step)
+          tick_simulation (static_cast<float> (FIXED_SIMULATION_STEP_SECONDS));
+
+        // The HUD reports rendered-frame cadence, not the internal 120 Hz
+        // integration frequency. Gazetteer views intentionally report zero.
+        if (m_ready && !m_gazetteer)
+          logic ().m_frame_time = elapsed;
+      }
+
+      void tick_simulation (float dt) {
+        MOPPE_PROFILE_ZONE ("MoppeGame::tick_simulation");
         std::optional<InputFrame> scripted_input;
         if (m_cinematic.active () && ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR")) {
           const int fps = [] {
@@ -1623,6 +1655,7 @@ namespace moppe {
       CinematicFlightPlan m_cinematic_plan;
       CinematicFlight m_cinematic;
       InputFrameAdapter m_live_input;
+      SimulationClock m_simulation_clock;
       WaterfallSurface m_waterfall_surface;
       Terrain m_terrain;
       ForestLandscape m_forest;

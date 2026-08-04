@@ -539,6 +539,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/game/input_frame_test.cc
     tests/game/launch_options_test.cc
     tests/game/landscape_gazetteer_test.cc
+    tests/game/simulation_clock_test.cc
     tests/game/generated_world_test.cc
     tests/game/waterfall_surface_test.cc
     tests/game/water_capture_test.cc
