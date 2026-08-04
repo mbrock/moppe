@@ -22,6 +22,7 @@ namespace moppe::game {
     int prelude_frames = 480;
     int settle_frames = 30;
     int measured_frames = 120;
+    bool pass_timing = false;
   };
 
   struct GazetteerCaptureConfig {

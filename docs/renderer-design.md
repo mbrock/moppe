@@ -564,8 +564,10 @@ time summaries to stderr, including timestamp-counter spans for the scene,
 post effects, bloom, exposure probe, reflection atelier, and present/HUD
 encoders. Encoder stages can overlap on tile-based GPUs, so those spans
 diagnose expensive work but do not necessarily add up to the command-buffer
-duration. Devices supporting draw-boundary timestamps additionally split the
-scene into terrain, sky, water and other scene geometry.
+duration. The Metal backend converts its counter heap's device-clock ticks
+with `queryTimestampFrequency`; they are not nanoseconds. Because Apple GPUs
+execute world geometry as one tile render pass, the profiler attributes that
+encoder as `scene` rather than claiming misleading draw-level boundaries.
 `MOPPE_PROFILE_CPU=1` reports the
 effective callback rate and CPU time in the game tick and render call. It also
 splits renderer time into render-target maintenance, in-flight command-buffer
@@ -583,7 +585,10 @@ includes waiting. The `--graphics-benchmark` cube is the instrument that
 answers the question, because it toggles one feature against a replayed tape.
 Read it as paired runs of the same schedule and compare per configuration;
 its ocean-on-minus-ocean-off contrast reproduces to a few tenths of a
-millisecond, while its absolute frame time does not.
+millisecond, while its absolute frame time does not. Add
+`--benchmark-pass-timing` when the CSV also needs precise
+Metal 4 pass columns. That mode may split encoders and is for attribution, not
+whole-frame throughput comparisons.
 
 That contrast is also two regimes, reproducibly: with the small-effects block
 off the ocean costs about 12 ms, and with it on about 2 ms. Something else

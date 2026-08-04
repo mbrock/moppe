@@ -68,7 +68,9 @@
     `MOPPE_DEMO=1` so it measures a ride rather than the spawn point):
     `./build/moppe.app/Contents/MacOS/moppe --graphics-benchmark /tmp/gpu.csv
     --windowed --seed 123 --terrain-quality fast`. Development overrides are
-    `--benchmark-prelude`, `--benchmark-settle`, and `--benchmark-frames`.
+    `--benchmark-prelude`, `--benchmark-settle`, `--benchmark-frames`, and
+    `--benchmark-pass-timing` for precise Metal 4 pass columns (with profiling
+    overhead).
     Analyze a completed CSV with
     `tools/graphics-benchmark-analyze INPUT.csv [OUTPUT_DIR]`.
   - Dev env vars: `MOPPE_ASSETS=<repo>` (asset override), `MOPPE_DEMO=1`

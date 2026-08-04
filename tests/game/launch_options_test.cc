@@ -231,6 +231,7 @@ MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
                                                 "24",
                                                 "--graphics-benchmark",
                                                 "/tmp/gpu.csv",
+                                                "--benchmark-pass-timing",
                                                 "--benchmark-settle",
                                                 "5" });
   MOPPE_CHECK (options.benchmark.has_value ());
@@ -238,6 +239,7 @@ MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
   MOPPE_CHECK (options.benchmark->measured_frames == 24);
   MOPPE_CHECK (options.benchmark->settle_frames == 5);
   MOPPE_CHECK (options.benchmark->prelude_frames == 480);
+  MOPPE_CHECK (options.benchmark->pass_timing);
   MOPPE_CHECK (!options.config.fullscreen);
   MOPPE_CHECK (!options.config.activate);
 }
@@ -265,4 +267,9 @@ MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {
   MOPPE_CHECK (
     std::string (::getenv ("MOPPE_BENCHMARK_FEATURES")).find ("bloom") !=
     std::string::npos);
+  MOPPE_CHECK (::getenv ("MOPPE_BENCHMARK_PASSES") == nullptr);
+
+  benchmark.pass_timing = true;
+  game::publish_benchmark_environment (benchmark);
+  MOPPE_CHECK (::getenv ("MOPPE_BENCHMARK_PASSES") != nullptr);
 }

@@ -278,6 +278,15 @@ namespace moppe::game {
           benchmark_config (options).prelude_frames = frame_count (values[0]);
           return true;
         } },
+      { "--benchmark-pass-timing",
+        "",
+        0,
+        "",
+        "Record precise Metal 4 pass timestamps in benchmark CSV.",
+        [] (LaunchOptions& options, const char* const*, std::string&) {
+          benchmark_config (options).pass_timing = true;
+          return true;
+        } },
       { "--terrain-gazetteer",
         "",
         1,
@@ -604,6 +613,10 @@ namespace moppe::game {
         feature_names += feature->name;
       }
     ::setenv ("MOPPE_BENCHMARK_FEATURES", feature_names.c_str (), 1);
+    if (benchmark.pass_timing)
+      ::setenv ("MOPPE_BENCHMARK_PASSES", "1", 1);
+    else
+      ::unsetenv ("MOPPE_BENCHMARK_PASSES");
   }
 
   terrain::WorldRecipe make_launch_recipe (const LaunchOptions& options) {
