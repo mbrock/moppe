@@ -369,7 +369,7 @@ namespace moppe {
         id<MTLSamplerState> sampler_repeat = nil;
         id<MTLSamplerState> sampler_clamp = nil;
         id<MTLTexture> shadow_fallback = nil;
-        TexturePtr white;
+        TexturePtr white, black;
       };
 
       struct MetalTerrainResources {
@@ -1187,6 +1187,13 @@ namespace moppe {
       wd.filter = TextureFilter::Nearest;
       const uint8_t white[4] = { 255, 255, 255, 255 };
       m_pipelines.white = create_texture (wd, white);
+
+      // Post shaders statically declare all inputs, so Metal 4 requires a
+      // valid bloom texture even when the pass is disabled. More importantly,
+      // the shared argument table otherwise retains terrain's dirt texture in
+      // slot 1 and the present shader adds it over the entire image.
+      const uint8_t black[4] = { 0, 0, 0, 0 };
+      m_pipelines.black = create_texture (wd, black);
     }
 
     MetalRenderer::~MetalRenderer () {
@@ -4364,9 +4371,12 @@ namespace moppe {
         bind_address (frame, MTLRenderStageFragment, MOPPE_BUF_FRAME, uniforms);
         bind_texture (
           frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, present_scene);
-        if (bloom_ok)
-          bind_texture (
-            frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, targets.bloom_a);
+        MetalTexture* inert_bloom =
+          static_cast<MetalTexture*> (pipelines.black.get ());
+        bind_texture (frame,
+                      MTLRenderStageFragment,
+                      MOPPE_TEX_BLOOM,
+                      bloom_ok ? targets.bloom_a : inert_bloom->texture);
         use_arguments (
           enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
         [enc drawPrimitives:MTLPrimitiveTypeTriangle

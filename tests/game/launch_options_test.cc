@@ -105,6 +105,20 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
     parsed ({ "--drawable-scale", "0.5", "--render-scale", "0.375" });
   MOPPE_CHECK_NEAR (scales.config.drawable_scale, 0.5f, 0.0f);
   MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
+
+  // A preset is the baseline regardless of where it appears; explicit
+  // settings must not disappear merely because the preset was spelled last.
+  const game::LaunchOptions trailing_preset = parsed ({
+    "--render-scale",
+    "0.25",
+    "--graphics-enable",
+    "bloom",
+    "--graphics-quality",
+    "low",
+  });
+  MOPPE_CHECK_NEAR (
+    trailing_preset.graphics.render_scale_override, 0.25f, 0.0f);
+  MOPPE_CHECK (trailing_preset.graphics.bloom);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {

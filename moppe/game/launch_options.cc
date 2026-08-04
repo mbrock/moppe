@@ -463,6 +463,25 @@ namespace moppe::game {
         return true;
       }
     }
+
+    // Presets are a baseline, while every other graphics flag is an explicit
+    // override. Resolve all presets first so spelling --graphics-quality at
+    // the end of a command cannot erase an earlier --render-scale or feature
+    // selection. If more than one preset is present, the last still wins.
+    for (int i = 1; i < argc; ++i) {
+      const Flag* flag = find_flag (argv[i]);
+      if (!flag)
+        continue;
+      if (i + flag->arity >= argc) {
+        error = std::string (argv[i]) + " requires " + flag->expects;
+        return false;
+      }
+      if (flag->name == "--graphics-quality" &&
+          !flag->apply (options, argv + i + 1, error))
+        return false;
+      i += flag->arity;
+    }
+
     for (int i = 1; i < argc; ++i) {
       // An unrecognized argument is not an error: hosts append their own.
       const Flag* flag = find_flag (argv[i]);
@@ -472,7 +491,8 @@ namespace moppe::game {
         error = std::string (argv[i]) + " requires " + flag->expects;
         return false;
       }
-      if (!flag->apply (options, argv + i + 1, error))
+      if (flag->name != "--graphics-quality" &&
+          !flag->apply (options, argv + i + 1, error))
         return false;
       i += flag->arity;
     }
