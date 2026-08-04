@@ -683,9 +683,10 @@ undergrowth is moderate, and translucent/appearance-driven ocean, waterfalls,
 dust, flames, and first-frame dynamic geometry reject progressively more
 history. This lets accurate camera/object vectors do the normal reprojection
 work while preventing alpha-blended or procedurally changing pixels from
-leaving trails. A private 1x1 R16F texture carries the existing adapted
-exposure into MetalFX; temporal output therefore skips the duplicate exposure
-multiplier in bloom/present.
+leaving trails. A private 1x1 R16F texture supplies neutral exposure to
+MetalFX. Reconstruction therefore preserves linear HDR pixels, while Moppe's
+bloom and present passes own adapted exposure identically for native and
+reconstructed scenes.
 
 `Renderer::reconstruct_scene()` is the explicit boundary between world and
 screen-space work. Temporal/spatial/linear reconstruction now precedes
