@@ -3,6 +3,8 @@
 #include <moppe/game/graphics_benchmark.hh>
 
 #include <algorithm>
+#include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <sstream>
@@ -36,6 +38,22 @@ namespace moppe::game {
     bool unknown (const char* what, const char* value, std::string& error) {
       error = std::string ("unknown ") + what + ": " + value;
       return false;
+    }
+
+    bool parse_scale (const char* value,
+                      const char* option,
+                      float& result,
+                      std::string& error) {
+      char* end = nullptr;
+      errno = 0;
+      const float parsed = std::strtof (value, &end);
+      if (errno || end == value || *end != '\0' || !std::isfinite (parsed) ||
+          parsed < 0.25f || parsed > 1.0f) {
+        error = std::string (option) + " must be between 0.25 and 1";
+        return false;
+      }
+      result = parsed;
+      return true;
     }
 
     // One recognized flag: how many values it consumes, what to say when they
@@ -90,6 +108,28 @@ namespace moppe::game {
           if (!parse_upscaling_mode (values[0], options.graphics.upscaling))
             return unknown ("upscaling mode", values[0], error);
           return true;
+        } },
+      { "--render-scale",
+        1,
+        "a number from 0.25 to 1",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          return parse_scale (values[0],
+                              "--render-scale",
+                              options.graphics.render_scale_override,
+                              error);
+        } },
+      { "--drawable-scale",
+        1,
+        "a number from 0.25 to 1",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          return parse_scale (values[0],
+                              "--drawable-scale",
+                              options.config.drawable_scale,
+                              error);
         } },
       { "--graphics-enable",
         1,

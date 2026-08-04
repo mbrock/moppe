@@ -73,6 +73,15 @@ Useful ways to start it include:
 
 # Compare the default spatial MetalFX reconstruction with linear enlargement.
 ./build/moppe.app/Contents/MacOS/moppe --upscaling linear
+
+# Reconstruct a half-resolution scene into a full-Retina drawable.
+./build/moppe.app/Contents/MacOS/moppe --fullscreen \
+  --drawable-scale 1 --render-scale 0.5
+
+# Reconstruct into a half-Retina drawable, which macOS then presents
+# fullscreen over the same display area.
+./build/moppe.app/Contents/MacOS/moppe --fullscreen \
+  --drawable-scale 0.5 --render-scale 0.5
 ```
 
 Run the test suite with:

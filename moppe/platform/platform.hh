@@ -47,6 +47,9 @@ namespace moppe {
       std::string title;
       int width = 1280; // ignored when fullscreen
       int height = 800;
+      // Final drawable dimensions relative to the display's backing-pixel
+      // dimensions. The 3D render scale remains independent of this.
+      float drawable_scale = 1.0f;
       bool fullscreen = false;
       bool capture_frames = false; // request blit-readable drawables
       bool activate = true; // let automated runs stay behind the active app

@@ -37,6 +37,7 @@ MOPPE_TEST (launch_defaults_to_an_activated_play_window) {
                terrain::TerrainGenerationProfile::Play);
   MOPPE_CHECK (options.config.activate);
   MOPPE_CHECK (!options.config.capture_frames);
+  MOPPE_CHECK_NEAR (options.config.drawable_scale, 1.0f, 0.0f);
   MOPPE_CHECK (options.screenshot_path.empty ());
   MOPPE_CHECK (!options.benchmark.has_value ());
   // Unresolved: main recalls the last played seed for an ordinary launch.
@@ -59,6 +60,10 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
   MOPPE_CHECK (
     parsed ({ "--graphics-quality", "balanced", "--upscaling", "linear" })
       .graphics.upscaling == render::UpscalingMode::Linear);
+  const game::LaunchOptions scales =
+    parsed ({ "--drawable-scale", "0.5", "--render-scale", "0.375" });
+  MOPPE_CHECK_NEAR (scales.config.drawable_scale, 0.5f, 0.0f);
+  MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
 }
 
 MOPPE_TEST (launch_rejects_malformed_command_lines) {
@@ -72,6 +77,9 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--graphics-quality" }));
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
   MOPPE_CHECK (rejects ({ "--upscaling", "neural" }));
+  MOPPE_CHECK (rejects ({ "--drawable-scale", "0.1" }));
+  MOPPE_CHECK (rejects ({ "--drawable-scale", "half" }));
+  MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "0" }));
   MOPPE_CHECK (rejects ({ "--tree-count", "65" }));
