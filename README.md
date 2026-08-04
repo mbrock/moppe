@@ -82,6 +82,11 @@ Useful ways to start it include:
 # fullscreen over the same display area.
 ./build/moppe.app/Contents/MacOS/moppe --fullscreen \
   --drawable-scale 0.5 --render-scale 0.5
+
+# Compare raster cost at 1x, 2x, or 4x MSAA. The optional scene-area cap is
+# applied before MetalFX; zero removes the desktop's default 4.2 MP cap.
+./build/moppe.app/Contents/MacOS/moppe --msaa 2 \
+  --scene-megapixels 2.0
 ```
 
 Run the test suite with:

@@ -89,8 +89,10 @@ amended the first draft. The deltas, now integrated below, were:
   On macOS the default drawable uses the view's full backing-pixel extent;
   `--drawable-scale` can reduce that final surface independently, while
   `--render-scale` or `MOPPE_RENDERSCALE` chooses the 3D scene fraction that
-  MetalFX reconstructs into it. Safe-area insets offset HUD anchors and touch
-  zones on iOS, and "Times" maps to "Times New Roman" on iOS.
+  MetalFX reconstructs into it. `--scene-megapixels` optionally caps that
+  scene area on desktop, and `--msaa` selects 1x, 2x, or 4x scene
+  multisampling before pipeline creation. Safe-area insets offset HUD anchors
+  and touch zones on iOS, and "Times" maps to "Times New Roman" on iOS.
 - Underwater + motion blur no longer alias one texture (the GL build's
   shared m_blur_tex made submerged ghosts zoom the *current* frame); the
   port keeps an independent prevFrame. Divergence is deliberate.

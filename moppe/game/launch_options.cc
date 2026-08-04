@@ -43,20 +43,32 @@ namespace moppe::game {
       return false;
     }
 
-    bool parse_scale (const char* value,
-                      const char* option,
-                      float& result,
-                      std::string& error) {
+    bool parse_float_option (const char* value,
+                             const char* option,
+                             float minimum,
+                             float maximum,
+                             float& result,
+                             std::string& error) {
       char* end = nullptr;
       errno = 0;
       const float parsed = std::strtof (value, &end);
       if (errno || end == value || *end != '\0' || !std::isfinite (parsed) ||
-          parsed < 0.25f || parsed > 1.0f) {
-        error = std::string (option) + " must be between 0.25 and 1";
+          parsed < minimum || parsed > maximum) {
+        std::ostringstream message;
+        message << option << " must be between " << minimum << " and "
+                << maximum;
+        error = message.str ();
         return false;
       }
       result = parsed;
       return true;
+    }
+
+    bool parse_scale (const char* value,
+                      const char* option,
+                      float& result,
+                      std::string& error) {
+      return parse_float_option (value, option, 0.25f, 1.0f, result, error);
     }
 
     // One recognized flag: how many values it consumes, what to say when they
@@ -131,6 +143,24 @@ namespace moppe::game {
             return unknown ("upscaling mode", values[0], error);
           return true;
         } },
+      { "--msaa",
+        "",
+        1,
+        "<1|2|4>",
+        "Set the scene multisample count before pipelines are built.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          char* end = nullptr;
+          const long samples = std::strtol (values[0], &end, 10);
+          if (end == values[0] || *end != '\0' ||
+              (samples != 1 && samples != 2 && samples != 4)) {
+            error = "--msaa must be 1, 2, or 4";
+            return false;
+          }
+          options.config.msaa_samples = static_cast<int> (samples);
+          return true;
+        } },
       { "--render-scale",
         "",
         1,
@@ -143,6 +173,21 @@ namespace moppe::game {
                               "--render-scale",
                               options.graphics.render_scale_override,
                               error);
+        } },
+      { "--scene-megapixels",
+        "",
+        1,
+        "<0..64>",
+        "Cap desktop 3D scene area in megapixels; zero disables the cap.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float budget = 0.0f;
+          if (!parse_float_option (
+                values[0], "--scene-megapixels", 0.0f, 64.0f, budget, error))
+            return false;
+          options.scene_megapixel_budget = budget;
+          return true;
         } },
       { "--drawable-scale",
         "",

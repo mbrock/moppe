@@ -50,6 +50,9 @@ namespace moppe {
       // Final drawable dimensions relative to the display's backing-pixel
       // dimensions. The 3D render scale remains independent of this.
       float drawable_scale = 1.0f;
+      // Zero asks the renderer for its platform default. A positive value is
+      // fixed before pipelines and multisampled targets are created.
+      int msaa_samples = 0;
       bool fullscreen = false;
       bool capture_frames = false; // request blit-readable drawables
       bool activate = true; // let automated runs stay behind the active app

@@ -46,6 +46,9 @@ namespace moppe::game {
     std::optional<WaterShot> water_shot;
     std::optional<GraphicsBenchmarkConfig> benchmark;
     std::optional<GazetteerCaptureConfig> gazetteer;
+    // Applied after legacy environment settings so an explicit command-line
+    // budget wins. Zero disables the desktop megapixel safety cap.
+    std::optional<float> scene_megapixel_budget;
     // Keeps a hand-started run behind the active application, the way
     // captures and benchmarks already stay out of the way.
     bool stay_inactive = false;

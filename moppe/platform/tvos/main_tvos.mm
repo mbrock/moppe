@@ -101,8 +101,8 @@ static UIWindow* g_window = nil;
   vc.view = view;
 
   std::string lib = moppe::platform::asset_path ("moppe.metallib");
-  moppe::render::Renderer* renderer =
-    moppe::render::create_metal_renderer ((__bridge void*)view.layer, lib);
+  moppe::render::Renderer* renderer = moppe::render::create_metal_renderer (
+    (__bridge void*)view.layer, lib, g_config.msaa_samples);
   vc.renderer = renderer;
   view.delegate = vc;
 

@@ -58,7 +58,9 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--windowed",
          "--graphics-quality",
          "--upscaling",
+         "--msaa",
          "--render-scale",
+         "--scene-megapixels",
          "--drawable-scale",
          "--graphics-enable",
          "--graphics-disable",
@@ -105,6 +107,11 @@ MOPPE_TEST (launch_quality_flags_select_settings) {
     parsed ({ "--drawable-scale", "0.5", "--render-scale", "0.375" });
   MOPPE_CHECK_NEAR (scales.config.drawable_scale, 0.5f, 0.0f);
   MOPPE_CHECK_NEAR (scales.graphics.render_scale_override, 0.375f, 0.0f);
+  const game::LaunchOptions raster =
+    parsed ({ "--msaa", "2", "--scene-megapixels", "1.25" });
+  MOPPE_CHECK (raster.config.msaa_samples == 2);
+  MOPPE_CHECK (raster.scene_megapixel_budget.has_value ());
+  MOPPE_CHECK_NEAR (*raster.scene_megapixel_budget, 1.25f, 0.0f);
 
   // A preset is the baseline regardless of where it appears; explicit
   // settings must not disappear merely because the preset was spelled last.
@@ -132,6 +139,10 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--graphics-quality" }));
   MOPPE_CHECK (rejects ({ "--graphics-quality", "medium" }));
   MOPPE_CHECK (rejects ({ "--upscaling", "neural" }));
+  MOPPE_CHECK (rejects ({ "--msaa", "0" }));
+  MOPPE_CHECK (rejects ({ "--msaa", "8" }));
+  MOPPE_CHECK (rejects ({ "--msaa", "2x" }));
+  MOPPE_CHECK (rejects ({ "--scene-megapixels", "65" }));
   MOPPE_CHECK (rejects ({ "--drawable-scale", "0.1" }));
   MOPPE_CHECK (rejects ({ "--drawable-scale", "half" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));

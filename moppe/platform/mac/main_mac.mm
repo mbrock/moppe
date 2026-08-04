@@ -525,8 +525,8 @@ namespace moppe {
         // The host owns view policy; the renderer owns the CAMetalLayer and
         // Metal 4 submission contract beneath it.
         std::string lib = asset_path (MOPPE_SHADER_NAME);
-        render::Renderer* renderer =
-          render::create_metal_renderer ((__bridge void*)view.layer, lib);
+        render::Renderer* renderer = render::create_metal_renderer (
+          (__bridge void*)view.layer, lib, config.msaa_samples);
         log_runtime_parameters (view);
 
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
