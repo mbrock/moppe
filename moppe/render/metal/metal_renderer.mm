@@ -5115,8 +5115,15 @@ namespace moppe {
       interpolator.uiTexture = targets.interpolator_composite[frame.slot];
       interpolator.uiTextureComposited = YES;
       interpolator.outputTexture = targets.interpolator_output[frame.slot];
-      interpolator.motionVectorScaleX = 1.0f;
-      interpolator.motionVectorScaleY = 1.0f;
+      // Moppe writes motion in scene-pixel coordinates, while the frame
+      // interpolator compares the reconstructed, drawable-sized color pair.
+      // Convert between those coordinate systems; leaving this at one makes
+      // every generated frame under-travel whenever temporal upscaling is
+      // active, producing an alternating stutter during fast camera motion.
+      interpolator.motionVectorScaleX =
+        (float)targets.output_width / std::max (targets.width, 1);
+      interpolator.motionVectorScaleY =
+        (float)targets.output_height / std::max (targets.height, 1);
       interpolator.deltaTime = frame.interpolation_delta_time;
       const float projection_a = frame.params.proj.m[10];
       const float projection_b = frame.params.proj.m[14];

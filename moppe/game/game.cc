@@ -334,7 +334,11 @@ namespace moppe {
         dl.state (state);
         dl.lit (false);
         dl.fogged (false);
-        dl.color (0.01f, 0.025f, 0.035f, 0.78f);
+        // Keep the map field opaque. With frame interpolation, a translucent
+        // HUD field is first composited over the current rendered scene and
+        // then decomposited by MetalFX for the generated midpoint. Fast
+        // ground motion makes that reconstruction visibly pulse in flight.
+        dl.color (0.01f, 0.025f, 0.035f, 1.0f);
         dl.begin (render::Prim::Quads);
         dl.vertex (map_x, map_y);
         dl.vertex (map_x + map_size, map_y);

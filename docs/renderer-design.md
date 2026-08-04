@@ -696,15 +696,18 @@ invalidates MetalFX history, prior camera/object/list state, exposure feedback,
 and the older gameplay motion-blur history together.
 
 On macOS, `--frame-interpolation on|off` controls MetalFX frame generation;
-it defaults on but resolves off below 90 Hz, on unsupported devices, or when
-temporal reconstruction cannot supply its depth and motion contract. The
-interpolator runs after Moppe's native-size tone map. It receives the temporal
-scaler, current and previous HUD-free color, reversed-Z depth, input-pixel
-motion, projection and jitter, and a UI-composited copy of the current frame.
-The first frame primes history. Later render callbacks present the generated
-midpoint, and the following display-link callback presents the retained real
-frame without rendering the world again. Gameplay simulation remains fixed at
-120 Hz: a normal interpolated render consumes two 8.33 ms logical steps before
+it defaults off because the interpolation pass operates at full drawable
+resolution and support alone does not imply enough GPU budget to hold the
+requested presentation cadence. Explicit `on` still resolves off below 90 Hz,
+on unsupported devices, or when temporal reconstruction cannot supply its
+depth and motion contract. The interpolator runs after Moppe's native-size tone
+map. It receives the temporal scaler, current and previous HUD-free color,
+reversed-Z depth, scene-pixel motion scaled into drawable-pixel coordinates,
+projection and jitter, and a UI-composited copy of the current frame. The first
+frame primes history. Later render callbacks present the generated midpoint,
+and the following display-link callback presents the retained real frame
+without rendering the world again. Gameplay simulation remains fixed at 120
+Hz: a normal interpolated render consumes two 8.33 ms logical steps before
 MetalFX fills their presentation midpoint. Startup reports both the render and
 presentation cadences, while GPU pass profiling reports frame interpolation
 separately from temporal upscaling.
