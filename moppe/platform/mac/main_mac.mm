@@ -90,6 +90,7 @@ static Key map_key (NSEvent* event) {
 
 @interface MoppeView : MTKView
 @property (nonatomic, assign) Game* game;
+@property (nonatomic, assign) float requestedDrawableScale;
 @property (nonatomic, assign) float drawableScale;
 @end
 
@@ -219,10 +220,29 @@ static Key map_key (NSEvent* event) {
 
 // ------------------------------------------------------------------
 
-static void match_screen_refresh_rate (MoppeView* view) {
+static void match_screen_refresh_rate (MoppeView* view, bool use_high_refresh) {
   NSScreen* screen = view.window.screen;
-  const NSInteger hz = screen ? screen.maximumFramesPerSecond : 60;
-  view.preferredFramesPerSecond = hz > 0 ? hz : 60;
+  const NSInteger maximum_hz = screen ? screen.maximumFramesPerSecond : 60;
+  const NSInteger available_hz = maximum_hz > 0 ? maximum_hz : 60;
+  view.preferredFramesPerSecond =
+    use_high_refresh ? available_hz : std::min<NSInteger> (available_hz, 60);
+}
+
+static constexpr double DEFAULT_DRAWABLE_MEGAPIXELS = 4.2;
+
+static CGFloat resolved_drawable_scale (MoppeView* view) {
+  if (view.requestedDrawableScale > 0.0f)
+    return std::clamp ((double)view.requestedDrawableScale, 0.25, 1.0);
+
+  const NSSize points = view.bounds.size;
+  const CGFloat backing = view.window ? view.window.backingScaleFactor
+                                      : NSScreen.mainScreen.backingScaleFactor;
+  const double backing_pixels =
+    points.width * backing * points.height * backing;
+  if (backing_pixels <= 0.0)
+    return 1.0;
+  const double budget_pixels = DEFAULT_DRAWABLE_MEGAPIXELS * 1.0e6;
+  return std::clamp (std::sqrt (budget_pixels / backing_pixels), 0.25, 1.0);
 }
 
 // Answers whether the presentation surface actually changed, so a caller can
@@ -235,8 +255,8 @@ static bool match_screen_render_size (MoppeView* view) {
   // drawable over the same fullscreen view.
   const CGFloat backing = view.window ? view.window.backingScaleFactor
                                       : NSScreen.mainScreen.backingScaleFactor;
-  const CGFloat drawable_scale =
-    std::clamp ((double)view.drawableScale, 0.25, 1.0);
+  const CGFloat drawable_scale = resolved_drawable_scale (view);
+  view.drawableScale = drawable_scale;
   const CGFloat contents_scale = backing * drawable_scale;
   const CGSize wanted =
     CGSizeMake (std::round (points.width * contents_scale),
@@ -283,8 +303,13 @@ static void log_runtime_parameters (MoppeView* view) {
             << '\n'
             << "  view: " << (int)points.width << 'x' << (int)points.height
             << " points, backing-scale=" << backing << '\n'
-            << "  drawable policy: scale=" << view.drawableScale
-            << " of backing pixels, requested=" << (int)requested.width << 'x'
+            << "  drawable policy: ";
+  if (view.requestedDrawableScale > 0.0f)
+    std::cerr << "explicit-scale=" << view.drawableScale;
+  else
+    std::cerr << "auto-cap=" << DEFAULT_DRAWABLE_MEGAPIXELS
+              << " MP, resolved-scale=" << view.drawableScale;
+  std::cerr << " of backing pixels, requested=" << (int)requested.width << 'x'
             << (int)requested.height << '\n'
             << "  drawable format: color="
             << pixel_format_name (view.colorPixelFormat)
@@ -304,6 +329,7 @@ static void log_runtime_parameters (MoppeView* view) {
                                      CAMetalDisplayLinkDelegate>
 @property (nonatomic, assign) Game* game;
 @property (nonatomic, assign) moppe::render::Renderer* renderer;
+@property (nonatomic, assign) BOOL frameInterpolationRequested;
 - (void)connectGameController;
 - (void)startDisplayLinkForView:(MoppeView*)view;
 - (void)configureFrameInterpolationForView:(MoppeView*)view;
@@ -427,8 +453,6 @@ static void log_runtime_parameters (MoppeView* view) {
     m_display_link =
       [[CAMetalDisplayLink alloc] initWithMetalLayer:(CAMetalLayer*)view.layer];
     m_display_link.delegate = self;
-    const float hz = (float)view.preferredFramesPerSecond;
-    m_display_link.preferredFrameRateRange = CAFrameRateRangeMake (hz, hz, hz);
     [self configureFrameInterpolationForView:view];
     [m_display_link addToRunLoop:NSRunLoop.mainRunLoop
                          forMode:NSRunLoopCommonModes];
@@ -436,9 +460,12 @@ static void log_runtime_parameters (MoppeView* view) {
 }
 
 - (void)configureFrameInterpolationForView:(MoppeView*)view {
-  const float hz = (float)view.preferredFramesPerSecond;
   const bool supported =
     moppe::render::metal_frame_interpolation_supported (*self.renderer);
+  match_screen_refresh_rate (view, supported);
+  const float hz = (float)view.preferredFramesPerSecond;
+  if (m_display_link)
+    m_display_link.preferredFrameRateRange = CAFrameRateRangeMake (hz, hz, hz);
   const bool enabled = supported && hz >= 90.0f;
   moppe::render::set_metal_frame_interpolation_enabled (*self.renderer,
                                                         enabled);
@@ -447,10 +474,12 @@ static void log_runtime_parameters (MoppeView* view) {
             << " Hz, frame-interpolation=" << (enabled ? "on" : "off");
   if (enabled)
     std::cerr << " (render=" << hz * 0.5f << " Hz, present=" << hz << " Hz)";
+  else if (!self.frameInterpolationRequested)
+    std::cerr << " (not requested)";
   else if (supported)
     std::cerr << " (display below 90 Hz)";
   else
-    std::cerr << " (disabled or unsupported)";
+    std::cerr << " (unsupported)";
   std::cerr << std::endl;
 }
 
@@ -507,13 +536,11 @@ static void log_runtime_parameters (MoppeView* view) {
   NSWindow* window = note.object;
   if ([window.contentView isKindOfClass:[MoppeView class]]) {
     MoppeView* view = (MoppeView*)window.contentView;
-    match_screen_refresh_rate (view);
     match_screen_render_size (view);
     if (m_display_link) {
-      const float hz = (float)view.preferredFramesPerSecond;
-      m_display_link.preferredFrameRateRange =
-        CAFrameRateRangeMake (hz, hz, hz);
       [self configureFrameInterpolationForView:view];
+    } else {
+      match_screen_refresh_rate (view, false);
     }
   }
 }
@@ -572,14 +599,14 @@ namespace moppe {
 
         MoppeView* view = [[MoppeView alloc] initWithFrame:frame device:nil];
         view.game = &game;
-        view.drawableScale = config.drawable_scale;
+        view.requestedDrawableScale = config.drawable_scale;
         view.colorPixelFormat = MTLPixelFormatRGBA16Float;
         view.depthStencilPixelFormat = MTLPixelFormatInvalid;
         view.sampleCount = 1;
         if (config.capture_frames)
           view.framebufferOnly = NO;
         window.contentView = view;
-        match_screen_refresh_rate (view);
+        match_screen_refresh_rate (view, config.frame_interpolation);
         match_screen_render_size (view);
 
         // The host owns view policy; the renderer owns the CAMetalLayer and
@@ -590,17 +617,17 @@ namespace moppe {
                                          lib,
                                          config.msaa_samples,
                                          config.frame_interpolation);
-        log_runtime_parameters (view);
-
         MoppeDelegate* delegate = [[MoppeDelegate alloc] init];
         delegate.game = &game;
         delegate.renderer = renderer;
+        delegate.frameInterpolationRequested = config.frame_interpolation;
         [delegate connectGameController];
         view.delegate = delegate;
         window.delegate = delegate;
         NSApp.delegate = delegate;
 
         [delegate startDisplayLinkForView:view];
+        log_runtime_parameters (view);
 
         if (config.activate) {
           [window makeKeyAndOrderFront:nil];

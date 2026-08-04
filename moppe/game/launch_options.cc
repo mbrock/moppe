@@ -227,7 +227,7 @@ namespace moppe::game {
         "",
         1,
         "<0.25..1>",
-        "Set the macOS drawable relative to display backing pixels.",
+        "Override the automatic macOS drawable backing-pixel scale.",
         [] (LaunchOptions& options,
             const char* const* values,
             std::string& error) {

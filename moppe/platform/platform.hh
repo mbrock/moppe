@@ -47,17 +47,16 @@ namespace moppe {
       std::string title;
       int width = 1280; // ignored when fullscreen
       int height = 800;
-      // Final drawable dimensions relative to the display's backing-pixel
-      // dimensions. The 3D render scale remains independent of this.
-      float drawable_scale = 0.5f;
+      // Final drawable dimensions relative to display backing pixels. Zero
+      // selects the macOS display-size-aware default; explicit flags are
+      // positive. The 3D render scale remains independent of this.
+      float drawable_scale = 0.0f;
       // Zero asks the renderer for its platform default. A positive value is
       // fixed before pipelines and multisampled targets are created.
       int msaa_samples = 0;
-      // On high-refresh macOS displays, render one complete simulation frame
-      // for every two display-link updates and let MetalFX synthesize the
-      // intervening presentation. Unsupported devices and lower-refresh
-      // displays retain the ordinary one-render-per-update path.
-      bool frame_interpolation = true;
+      // Ordinary desktop play renders and presents directly at 60 Hz.
+      // MetalFX frame interpolation is available through an explicit flag.
+      bool frame_interpolation = false;
       bool fullscreen = false;
       bool capture_frames = false; // request blit-readable drawables
       bool activate = true; // let automated runs stay behind the active app
