@@ -2300,13 +2300,17 @@ fn sky_fragment(input: VertexOutput) -> @location(0) vec4<f32> {
                           model);
   }
 
-  void WebGpuRenderer::draw_mesh (const Mesh& mesh, const Mat4& model) {
+  void WebGpuRenderer::draw_mesh (const Mesh& mesh,
+                                  const Mat4& model,
+                                  uint64_t motion_id) {
+    (void)motion_id;
     const auto& source = static_cast<const WebGpuMesh&> (mesh);
     m_state->play_buffer (
       source.vertex_buffer, source.vertices.size (), source.runs, false, model);
   }
 
-  void WebGpuRenderer::draw_list (const DrawList& list) {
+  void WebGpuRenderer::draw_list (const DrawList& list, uint64_t motion_id) {
+    (void)motion_id;
     m_state->play (list.vertices (), list.runs (), false);
   }
 

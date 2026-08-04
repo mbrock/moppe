@@ -339,7 +339,8 @@ namespace moppe {
     void render_vehicle (render::Renderer& r,
                          render::DrawList& dl,
                          const VehiclePose& vehicle,
-                         float time) {
+                         float time,
+                         uint64_t motion_base) {
       dl.push ();
       dl.mult (vehicle_frame (vehicle));
 
@@ -351,6 +352,11 @@ namespace moppe {
 
       const BikeMeshes& bm = bike_meshes (r);
       const Mat4 frame = dl.matrix ();
+      uint64_t motion_part = motion_base;
+      const auto draw_part = [&] (const render::Mesh& mesh,
+                                  const Mat4& transform) {
+        r.draw_mesh (mesh, transform, ++motion_part);
+      };
 
       const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0), z_axis (0, 0, 1);
       const Mat4 axle =
@@ -363,10 +369,10 @@ namespace moppe {
       const float wheel_drop = -vehicle.suspension * 0.45f;
 
       // Rear wheel on the swingarm.
-      r.draw_mesh (*bm.wheel,
-                   frame *
-                     Mat4::translation (Vec3 (0, -0.55f + wheel_drop, -0.75f)) *
-                     axle);
+      draw_part (*bm.wheel,
+                 frame *
+                   Mat4::translation (Vec3 (0, -0.55f + wheel_drop, -0.75f)) *
+                   axle);
 
       // Rear swingarm down to the axle, with a bright shock absorber;
       // both stretch with the suspension, so they stay immediate.
@@ -383,13 +389,13 @@ namespace moppe {
                    0.055f);
 
       // The rigid frame cluster: engine, tank, seat, fenders, exhaust.
-      r.draw_mesh (*bm.chassis, frame);
+      draw_part (*bm.chassis, frame);
 
       // Steering assembly: triple clamp cluster, fork legs, front wheel.
       const radians_t steer = -vehicle.yaw_radians * 0.4f * u::rad;
       const Mat4 steering = frame * Mat4::translation (Vec3 (0, 0.05f, 0.55f)) *
                             Mat4::rotation (steer, y_axis);
-      r.draw_mesh (*bm.steering, steering);
+      draw_part (*bm.steering, steering);
 
       // Fork legs run from the clamp down to the front axle.
       dl.push ();
@@ -403,7 +409,7 @@ namespace moppe {
                      0.055f);
       dl.pop ();
 
-      r.draw_mesh (
+      draw_part (
         *bm.wheel,
         steering *
           Mat4::translation (Vec3 (0, -0.60f + wheel_drop * 0.7f, 0.20f)) *
@@ -411,10 +417,10 @@ namespace moppe {
 
       // Gimballed jump-jet nozzles under the frame.
       for (int s = -1; s <= 1; s += 2)
-        r.draw_mesh (*bm.nozzle,
-                     frame *
-                       Mat4::translation (Vec3 (s * 0.14f, -0.45f, -0.35f)) *
-                       Mat4::rotation (boost_nozzle_angle (vehicle), x_axis));
+        draw_part (*bm.nozzle,
+                   frame *
+                     Mat4::translation (Vec3 (s * 0.14f, -0.45f, -0.35f)) *
+                     Mat4::rotation (boost_nozzle_angle (vehicle), x_axis));
 
       dl.pop ();
     }
@@ -425,7 +431,8 @@ namespace moppe {
     // same reason the star halos draw last.
     void render_vehicle_flames (render::Renderer& r,
                                 const VehiclePose& vehicle,
-                                float time) {
+                                float time,
+                                uint64_t motion_base) {
       const bool bike = (vehicle.body_kind == 0);
       const float thrust = std::abs (vehicle.thrust);
       const bool exhaust = bike && thrust > 0.1f;
@@ -436,6 +443,11 @@ namespace moppe {
       const FlameMeshes& fm = flame_meshes (r);
       const Mat4 frame = vehicle_frame (vehicle);
       const Vec3 x_axis (1, 0, 0), y_axis (0, 1, 0);
+      uint64_t motion_part = motion_base + 0x100;
+      const auto draw_part = [&] (const render::Mesh& mesh,
+                                  const Mat4& transform) {
+        r.draw_mesh (mesh, transform, ++motion_part);
+      };
 
       // Exhaust flame licking out of the muffler under load: an
       // additive two-layer lick with a pale core.
@@ -445,11 +457,11 @@ namespace moppe {
         const Mat4 muffler = frame *
                              Mat4::translation (Vec3 (0.17f, -0.30f, -0.80f)) *
                              Mat4::rotation (180 * u::deg, y_axis);
-        r.draw_mesh (*fm.lick_outer,
-                     muffler *
-                       Mat4::scaling (
-                         Vec3 (0.07f, 0.07f, (0.16f + 0.30f * thrust) * lick)));
-        r.draw_mesh (
+        draw_part (*fm.lick_outer,
+                   muffler *
+                     Mat4::scaling (
+                       Vec3 (0.07f, 0.07f, (0.16f + 0.30f * thrust) * lick)));
+        draw_part (
           *fm.lick_core,
           muffler * Mat4::scaling (
                       Vec3 (0.035f, 0.035f, (0.22f + 0.36f * thrust) * lick)));
@@ -483,15 +495,15 @@ namespace moppe {
             frame *
             Mat4::translation (Vec3 (s * nozzle[0], nozzle[1], nozzle[2])) *
             Mat4::rotation (boost_nozzle_angle (vehicle), x_axis);
-          r.draw_mesh (
+          draw_part (
             *fm.plume_sheath,
             jet * Mat4::scaling (Vec3 (sheath_r, sheath_r, sheath_l * len)));
-          r.draw_mesh (*fm.plume_body,
-                       jet *
-                         Mat4::scaling (Vec3 (body_r, body_r, body_l * len)));
-          r.draw_mesh (*fm.plume_core,
-                       jet *
-                         Mat4::scaling (Vec3 (core_r, core_r, core_l * len)));
+          draw_part (*fm.plume_body,
+                     jet * Mat4::scaling (
+                             Vec3 (body_r, body_r, body_l * len)));
+          draw_part (*fm.plume_core,
+                     jet * Mat4::scaling (
+                             Vec3 (core_r, core_r, core_l * len)));
         }
       }
     }

@@ -54,6 +54,8 @@ fragment float4 bloom_bright_fragment (QuadVaryings in [[stage_in]],
 // Auto-exposure probe: a handful of wide taps averaged into a tiny
 // target the CPU reads back for the adaptation loop.
 fragment float4 probe_fragment (QuadVaryings in [[stage_in]],
+                                constant MoppeQuadUniforms& q
+                                [[buffer (MOPPE_BUF_FRAME)]],
                                 texture2d<float> scene
                                 [[texture (MOPPE_TEX_SCENE)]]) {
   constexpr sampler smp (address::clamp_to_edge, filter::linear);
@@ -63,7 +65,15 @@ fragment float4 probe_fragment (QuadVaryings in [[stage_in]],
   c += scene.sample (smp, in.uv - o).rgb * 0.2;
   c += scene.sample (smp, in.uv + float2 (o.x, -o.y)).rgb * 0.2;
   c += scene.sample (smp, in.uv + float2 (-o.x, o.y)).rgb * 0.2;
+  c *= q.tint.w;
   return float4 (c, 1.0);
+}
+
+fragment float exposure_fragment (QuadVaryings in [[stage_in]],
+                                  constant MoppeQuadUniforms& q
+                                  [[buffer (MOPPE_BUF_FRAME)]]) {
+  (void)in;
+  return q.tint.x;
 }
 
 // Separable 9-tap gaussian represented by five linear samples. Each offset

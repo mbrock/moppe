@@ -111,7 +111,10 @@ MOPPE_TEST (graphics_upscaling_modes_parse_and_print_canonically) {
   MOPPE_CHECK (game::parse_upscaling_mode ("linear", mode));
   MOPPE_CHECK (mode == render::UpscalingMode::Linear);
   MOPPE_CHECK (std::string (game::upscaling_mode_name (mode)) == "linear");
-  MOPPE_CHECK (!game::parse_upscaling_mode ("temporal", mode));
+  MOPPE_CHECK (game::parse_upscaling_mode ("temporal", mode));
+  MOPPE_CHECK (mode == render::UpscalingMode::Temporal);
+  MOPPE_CHECK (std::string (game::upscaling_mode_name (mode)) == "temporal");
+  MOPPE_CHECK (!game::parse_upscaling_mode ("neural", mode));
 }
 
 MOPPE_TEST (graphics_benchmark_visits_every_partition_mask_in_gray_order) {

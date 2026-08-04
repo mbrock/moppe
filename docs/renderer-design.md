@@ -184,17 +184,21 @@ boundaries.
 Fixed pass structure per frame, expressed as explicit API on `Renderer`:
 
     shadow pass (once per world)  → 4096² Depth16, terrain only
-    scene pass  (MSAA 4x → resolve into sceneA, Depth32F reversed-Z)
+    scene pass
+       spatial/linear: memoryless MSAA → sceneA, reversed-Z depth
+       temporal: jittered 1x sceneA + persistent reversed-Z depth +
+                 RG16F motion + R8 reactive mask
        terrain → sky → city sectors → immediate world
        draw list (stars, wildlife, fish, vehicles, walker, people, cars,
        blob shadows) → water (sea, lakes, and painted rivers) → dust
-    post passes (ping-pong sceneA/sceneB as needed)
+    reconstruction (when scene < drawable)
+       MetalFX temporal: color/depth/motion/exposure/reactive → native HDR
+       MetalFX spatial: linear HDR scene → native-size RGBA16F
+       linear fallback: one exact bilinear enlargement → native-size HDR
+    post passes (native-size ping-pong as needed)
        underwater grade (when camera submerged)
        motion-blur ghosts: current += 3 zoomed alpha quads of prevFrame
        blit current → prevFrame (feedback persists across frames)
-    reconstruction (when scene < drawable and supported)
-       MetalFX spatial: linear HDR scene → native-size RGBA16F
-       linear fallback: present samples the scene texture directly
     present pass (reconstructed scene → drawable): final treatment + HUD
        draw list (2D ortho, y-down, top-left origin) + text
 
@@ -207,7 +211,7 @@ otherwise long-lived Metal state visible at the right lifetime:
 | --- | --- |
 | `MetalTerrainResources` | A completed world: terrain topology/index templates, current and prior height/normal textures, material and presentation rasters, inspection overlay, and the terrain shadow/light transition state. |
 | `MetalWaterResources` | A completed world: the ocean grid, horizontal-water levels, current/flow fields, and water-specific presentation state. Water borrows the terrain domain; it does not duplicate terrain ownership. |
-| `MetalFrameTargets` | The renderer target configuration: MSAA scene color/depth, scene ping-pong textures, previous-frame feedback, bloom, probe, exposure, and the optional spatial MetalFX scaler/fence/output. It recreates these on target-size, quality, or upscaling-policy changes and owns temporal validity separately from a world resource. |
+| `MetalFrameTargets` | The renderer target configuration: scene color/depth, temporal motion/reactive inputs, native post ping-pong, previous-frame feedback, bloom, probe/exposure, and optional temporal/spatial MetalFX scaler, fence, and output. It recreates these on target-size or upscaling-policy changes and owns both feedback and MetalFX history validity. |
 | `MetalFrameEncoding` | One drawable frame: reusable Metal 4 command buffer, command-allocator ring, shared completion event, drawable, frame parameters, argument tables, selected frame arena, current scene target, counter-heap timestamp spans, and capture bookkeeping. It owns no retained world texture. |
 
 Concrete Terrain, Water, Scene, Post, and HUD pass operations receive only
@@ -219,9 +223,9 @@ composite and 2D list. This is deliberately a set of named, game-specific
 operations rather than a scheduler or dependency-graph abstraction.
 
 Terrain, Water, and Scene still share one lazy scene render encoder. The
-encoder begins with the scene resolve/depth attachments, preserves their
+encoder begins with the selected scene attachments, preserves their
 depth/stencil ordering across those operations, and closes exactly once before
-Post. Separate names therefore do not imply separate Metal encoders or a
+Reconstruction. Separate names therefore do not imply separate Metal encoders or a
 change to the established scene order. The HUD operation remains responsible
 for the final composite even when its 2D list is empty.
 
@@ -641,8 +645,41 @@ MetalFX, the renderer reconstructs the linear HDR scene into a native-size
 RGBA16F target before the existing tone map, print-like grade, EDR treatment,
 lens treatment, and native HUD. `--upscaling linear` retains the former direct
 linear sample for fallbacks and exact A/B comparisons. Startup reports
-requested and resolved `native | spatial | linear` modes together with both
+requested and resolved `native | temporal | spatial | linear` modes together with both
 dimensions and the fallback reason.
+
+`--upscaling temporal` selects the MetalFX temporal path when Metal 4 temporal
+scaling is available, falls back to spatial when only spatial MetalFX is
+available, and finally to linear enlargement. A temporal scene intentionally
+uses one raster sample per pixel: the temporal scaler supplies antialiasing,
+while keeping multisampled depth and motion would require costly and ambiguous
+resolves. Spatial and linear retain the configured 2x/4x memoryless MSAA path.
+
+Temporal projection jitter is a Halton (2,3) sequence. The raster projection
+contains the subpixel offset, while motion is calculated from unjittered
+current and previous clip positions and expressed directly in input pixels;
+the same offsets are passed to MetalFX. Static terrain, sky rotation, wind,
+generated undergrowth, and ballistic dust all produce prior-frame positions.
+Moving retained meshes carry stable renderer motion IDs and previous model
+matrices. The immediate actor list retains its prior world-space vertex stream
+when topology matches; topology changes reject history for that content.
+
+The reactive mask is deliberately material-specific rather than a global
+"moving" bit. Opaque terrain has zero reactivity, foliage is mild, generated
+undergrowth is moderate, and translucent/appearance-driven ocean, waterfalls,
+dust, flames, and first-frame dynamic geometry reject progressively more
+history. This lets accurate camera/object vectors do the normal reprojection
+work while preventing alpha-blended or procedurally changing pixels from
+leaving trails. A private 1x1 R16F texture carries the existing adapted
+exposure into MetalFX; temporal output therefore skips the duplicate exposure
+multiplier in bloom/present.
+
+`Renderer::reconstruct_scene()` is the explicit boundary between world and
+screen-space work. Temporal/spatial/linear reconstruction now precedes
+underwater grade, motion-blur feedback, bloom, exposure probing, tone mapping,
+and native HUD. Camera/world transitions call `reset_temporal_state()`, which
+invalidates MetalFX history, prior camera/object/list state, exposure feedback,
+and the older gameplay motion-blur history together.
 
 The Apple TV default uses half of UIKit point resolution for the 3D scene.
 Spatial MetalFX reconstructs that scene to the native drawable on supported

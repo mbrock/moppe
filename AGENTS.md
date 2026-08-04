@@ -20,9 +20,11 @@
     while airborne and drops the attached bike while gliding.
   - Modes: `--fullscreen`, `--windowed`,
     `--graphics-quality low|balanced|high`
-    - `--upscaling spatial|linear` requests MetalFX spatial reconstruction or
-      the exact linear fallback. Spatial is the default; startup prints the
-      requested and backend-resolved mode.
+    - `--upscaling temporal|spatial|linear` requests MetalFX temporal or
+      spatial reconstruction, or the exact linear fallback. Spatial remains
+      the default; startup prints the requested and backend-resolved mode.
+      Temporal uses a single-sample jittered scene with persistent depth,
+      motion vectors, exposure, and a reactive mask rather than scene MSAA.
     - On macOS, `--drawable-scale <0.25..1>` selects the final drawable as a
       fraction of display backing resolution. `--render-scale <0.25..1>`
       independently selects the 3D scene as a fraction of that drawable;

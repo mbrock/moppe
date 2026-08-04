@@ -16,6 +16,8 @@ struct UberVaryings {
   float lit;
   float fogged;
   float foliage;
+  float2 motion [[center_no_perspective]];
+  float reactive [[flat]];
 };
 
 vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
@@ -24,10 +26,16 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
                                  constant MoppeFrameUniforms& frame
                                  [[buffer (MOPPE_BUF_FRAME)]],
                                  constant MoppeDrawUniforms& draw
-                                 [[buffer (MOPPE_BUF_DRAW)]]) {
+                                 [[buffer (MOPPE_BUF_DRAW)]],
+                                 const device MoppeVertexIn* previous_verts
+                                 [[buffer (MOPPE_BUF_PREVIOUS_VERTICES)]]) {
   const MoppeVertexIn v = verts[vid];
+  const MoppeVertexIn previous_v =
+    draw.temporal.x > 0.5 ? previous_verts[vid] : v;
 
   float4 world = draw.model * float4 (float3 (v.position), 1.0);
+  float4 previous_world =
+    draw.previous_model * float4 (float3 (previous_v.position), 1.0);
   const float3 coverage_pos = world.xyz;
   const float3x3 nrm (draw.nrm0.xyz, draw.nrm1.xyz, draw.nrm2.xyz);
 
@@ -36,6 +44,12 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
                             float (v.flags.z) / 255.0,
                             float (v.flags.w) / 255.0,
                             frame.misc.x);
+  if (previous_v.flags.z || previous_v.flags.w)
+    previous_world.xyz =
+      moppe_wind (previous_world.xyz,
+                  float (previous_v.flags.z) / 255.0,
+                  float (previous_v.flags.w) / 255.0,
+                  frame.temporal.z);
 
   UberVaryings out;
   out.position = frame.view_proj * world;
@@ -52,10 +66,16 @@ vertex UberVaryings uber_vertex (uint vid [[vertex_id]],
   // Flutter is authored only on foliage. Carry its continuous weight so
   // lighting can distinguish a transmitting leaf crown from opaque wood.
   out.foliage = float (v.flags.w) / 255.0;
+  const float4 current_reference = frame.unjittered_view_proj * world;
+  const float4 previous_reference =
+    frame.previous_view_proj * previous_world;
+  out.motion = moppe_motion_vector (
+    current_reference, previous_reference, frame.temporal.xy);
+  out.reactive = max (draw.temporal.y, 0.35 * out.foliage);
   return out;
 }
 
-fragment float4 uber_fragment (UberVaryings in [[stage_in]],
+fragment MoppeTemporalOutput uber_fragment (UberVaryings in [[stage_in]],
                                constant MoppeFrameUniforms& frame
                                [[buffer (MOPPE_BUF_FRAME)]],
                                texture2d<float> tex
@@ -177,7 +197,8 @@ fragment float4 uber_fragment (UberVaryings in [[stage_in]],
     color = mix (color, fog_c, smoothstep (0.0, 0.9, fog));
   }
 
-  return float4 (color, base.a);
+  return moppe_temporal_output (
+    float4 (color, base.a), in.motion, in.reactive);
 }
 
 // ---------------------------------------------------------------
