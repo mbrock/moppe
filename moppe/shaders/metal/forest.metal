@@ -98,13 +98,15 @@ static inline uint forest_part_count (float pixels, uint seed) {
     return 1u;
   if (pixels < 48.0 * threshold)
     return 3u;
-  if (pixels < 320.0 * threshold)
+  if (pixels < 160.0 * threshold)
     return MOPPE_FOREST_PARTS_PER_TREE;
   return MOPPE_FOREST_HERO_PARTS;
 }
 
-// Eight object threads consider eight individuals. Each survivor can schedule
-// up to eight organ meshlets, so the whole payload remains bounded at 64.
+// One object threadgroup considers one individual: thread zero reads the
+// organism and chooses its projected detail, then all threads cooperate to
+// schedule its organs. A hero assembly owns the whole payload, so dense
+// stands never make neighbouring trees drop their boughs.
 [[object]] void forest_object (object_data ForestPayload& payload [[payload]],
                                metal::mesh_grid_properties mesh_grid,
                                uint thread_id [[thread_index_in_threadgroup]],
@@ -113,13 +115,11 @@ static inline uint forest_part_count (float pixels, uint seed) {
                                [[buffer (MOPPE_BUF_FRAME)]],
                                device const MoppeForestInstance* trees
                                [[buffer (MOPPE_BUF_FOREST)]]) {
-  threadgroup atomic_uint emitted;
-  if (thread_id == 0u)
-    atomic_store_explicit (&emitted, 0u, metal::memory_order_relaxed);
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
-
-  const uint tree_index = group.x * MOPPE_FOREST_OBJECT_THREADS + thread_id;
+  // Every thread derives the same cheap verdict for its tree, so the
+  // organ schedule needs no shared memory and no barrier.
+  const uint tree_index = group.x;
   const uint tree_count = uint (u.world.z);
+  uint parts = 0u;
   if (tree_index < tree_count) {
     const MoppeForestInstance tree = trees[tree_index];
     const float3 root = forest_root (tree, u, 4u, false);
@@ -130,41 +130,28 @@ static inline uint forest_part_count (float pixels, uint seed) {
     const float4 clip = u.view_proj * float4 (centre, 1.0);
     const float clip_radius =
       radius * max (abs (u.view_proj[0][0]), abs (u.view_proj[1][1]));
-    bool visible = clip.w > -radius && abs (clip.x) < clip.w + clip_radius &&
-                   abs (clip.y) < clip.w + clip_radius;
-
+    const bool visible = clip.w > -radius &&
+                         abs (clip.x) < clip.w + clip_radius &&
+                         abs (clip.y) < clip.w + clip_radius;
     float pixels = 0.0;
     if (visible) {
       const float4 bottom = u.view_proj * float4 (root, 1.0);
       const float4 top = u.view_proj * float4 (root + up * height, 1.0);
       if (bottom.w > 0.01 && top.w > 0.01)
         pixels = abs (top.y / top.w - bottom.y / bottom.w) * 0.5 * u.temporal.y;
-    }
-    uint parts = visible ? forest_part_count (pixels, tree.identity.x) : 0u;
-    // Only conifers own a bough-assembly expansion; a hero broadleaf keeps
-    // the ordinary organ set.
-    if (parts == MOPPE_FOREST_HERO_PARTS && tree.identity.y != 1u)
-      parts = MOPPE_FOREST_PARTS_PER_TREE;
-    if (parts > 0u) {
-      const uint first = atomic_fetch_add_explicit (
-        &emitted, parts, metal::memory_order_relaxed);
-      // Hero assemblies can oversubscribe the shared payload; the fringe of
-      // the last crowded tree yields rather than overflowing the buffer.
-      const uint budget = first < MOPPE_FOREST_PAYLOAD_PARTS
-                            ? min (parts, MOPPE_FOREST_PAYLOAD_PARTS - first)
-                            : 0u;
-      for (uint part = 0u; part < budget; ++part)
-        payload.parts[first + part] = { tree_index, part, parts, 4u };
+      parts = forest_part_count (pixels, tree.identity.x);
+      // Only conifers own a bough-assembly expansion; a hero broadleaf
+      // keeps the ordinary organ set.
+      if (parts == MOPPE_FOREST_HERO_PARTS && tree.identity.y != 1u)
+        parts = MOPPE_FOREST_PARTS_PER_TREE;
     }
   }
-
-  threadgroup_barrier (metal::mem_flags::mem_threadgroup);
   if (thread_id == 0u) {
-    payload.count =
-      min (atomic_load_explicit (&emitted, metal::memory_order_relaxed),
-           uint (MOPPE_FOREST_PAYLOAD_PARTS));
-    mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
+    payload.count = parts;
+    mesh_grid.set_threadgroups_per_grid (uint3 (parts, 1, 1));
   }
+  for (uint part = thread_id; part < parts; part += MOPPE_FOREST_OBJECT_THREADS)
+    payload.parts[part] = { tree_index, part, parts, 4u };
 }
 
 // Shadow detail is deliberately coarser: every periodic image contributes one
@@ -247,8 +234,10 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   organ.conifer = tree.identity.y == 1u;
   organ.proxy = part.lod == 1u;
   organ.wood = part.part == 0u && !organ.proxy;
+  // A hero conifer is trunk plus boughs and nothing else: no shell or cone
+  // primitive exists at that tier.
   organ.frond =
-    organ.conifer && part.lod == MOPPE_FOREST_HERO_PARTS && part.part >= 3u;
+    organ.conifer && part.lod == MOPPE_FOREST_HERO_PARTS && part.part >= 1u;
   const float heading = 6.2831853 * forest_hash (organ.seed, 3u);
   const float3 reference =
     abs (organ.up.y) > 0.92 ? float3 (0.0, 0.0, 1.0) : float3 (0.0, 1.0, 0.0);
@@ -269,23 +258,26 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   } else if (organ.wood) {
     const float trunk_rise = organ.conifer ? 0.46 : 0.40;
     organ.centre = organ.root + organ.up * trunk_rise * organ.tree_height;
-    organ.radius_x =
-      organ.tree_height * mix (0.018, 0.030, float (tree.identity.z) / 3.0);
+    // A spruce bole is slender for its height; the broadleaf keeps its
+    // stouter stem.
+    organ.radius_x = organ.tree_height *
+                     mix (0.018, 0.030, float (tree.identity.z) / 3.0) *
+                     (organ.conifer ? 0.62 : 1.0);
     organ.radius_z = organ.radius_x;
     organ.half_height = trunk_rise * organ.tree_height;
     organ.bend = 0.12;
     organ.flutter = 0.0;
   } else if (organ.frond) {
-    // Hero bough: eight whorls of four boughs, golden-angle interleaved.
+    // Hero bough: nine whorls of seven boughs, golden-angle interleaved.
     // The organ basis becomes the bough frame: across points along the
     // bough, forward across it, and the fan comb hangs off that axis.
-    const uint index = part.part - 3u;
-    const uint whorl = index / 4u;
-    const uint bough = index % 4u;
-    const float t = float (whorl) / 7.0;
-    const float rise = mix (0.24, 0.93, t);
+    const uint index = part.part - 1u;
+    const uint whorl = index / 7u;
+    const uint bough = index % 7u;
+    const float t = float (whorl) / 8.0;
+    const float rise = mix (0.22, 0.97, t);
     const float turn =
-      6.2831853 * (float (bough) / 4.0 + 0.618034 * float (whorl) +
+      6.2831853 * (float (bough) / 7.0 + 0.618034 * float (whorl) +
                    0.07 * (forest_hash (organ.seed, part.part + 211u) - 0.5));
     const float3 radial =
       normalize (organ.across * cos (turn) + organ.forward * sin (turn));
@@ -294,7 +286,7 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     organ.forward = normalize (cross (organ.up, radial));
     const float reach =
       0.72 + 0.50 * forest_hash (organ.seed, part.part + 223u);
-    organ.radius_x = crown * mix (1.30, 0.30, t) * reach;
+    organ.radius_x = crown * mix (1.35, 0.18, t) * reach;
     organ.radius_z = organ.radius_x * 0.34;
     organ.half_height = organ.tree_height * mix (0.055, 0.028, t);
     organ.bend = 0.30 + 0.45 * rise;
@@ -437,41 +429,44 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
   }
 
   if (organ.frond) {
-    // One frond meshlet is a comb of twelve serrated needle fans along a
-    // drooping bough axis: an apex plus seven rim vertices each. The fans
-    // shrink toward the tip and alternate a slight side offset, so the
-    // bough reads as a feather rather than a paddle.
-    const uint fan = vertex_index / 8u;
-    const uint local = vertex_index % 8u;
-    const float s = mix (0.14, 1.0, float (fan) / 11.0);
-    const float droop = 0.30 - 0.95 * s * s;
+    // One frond meshlet is a comb of thirteen needle tufts along a drooping
+    // bough axis: an apex plus four separated two-vertex blades each. A twig
+    // is mostly air, so the blades stay disconnected: connected fans read as
+    // paddles, and overlapping paddles rebuild the very cone this tier
+    // replaces.
+    const uint fan = vertex_index / 9u;
+    const uint local = vertex_index % 9u;
+    const float s = mix (0.08, 1.0, float (fan) / 12.0);
+    // The axis droops in proportion to its reach, so long lower boughs
+    // sweep down through the band beneath their whorl.
+    const float droop = 0.10 - 0.40 * s * s;
     const float side = fan % 2u == 0u ? 1.0 : -1.0;
     const float3 axis_point = organ.centre + organ.across * organ.radius_x * s +
-                              organ.forward * organ.radius_z * 0.22 * side *
+                              organ.forward * organ.radius_z * 0.35 * side *
                                 forest_hash (organ.seed, fan + 17u) +
-                              organ.up * organ.half_height * droop;
+                              organ.up * organ.radius_x * droop;
     if (local == 0u) {
       point.position = axis_point;
       point.normal = normalize (organ.up + organ.across * 0.2);
       point.exposure = 0.32;
       return point;
     }
-    const float radius = organ.radius_x * mix (0.17, 0.08, s) *
+    const float radius = organ.radius_x * mix (0.22, 0.10, s) *
                          (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
-    const uint blade = local - 1u;
-    // Seven blades sweep a forward arc; serrated rim radii keep the
-    // silhouette needled instead of scalloped.
+    const uint rim = local - 1u;
+    const uint blade = rim / 2u;
+    const float edge = rim % 2u == 0u ? -1.0 : 1.0;
     const float arc =
-      mix (-1.9, 1.9, float (blade) / 6.0) +
-      0.16 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
-    const float serration =
+      mix (-2.5, 2.5, float (blade) / 3.0) + edge * 0.42 +
+      0.20 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
+    const float needle =
       0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + blade + 57u);
     const float3 rim_dir =
       normalize (organ.across * cos (arc) + organ.forward * sin (arc));
     point.position =
-      axis_point + rim_dir * radius * serration - organ.up * radius * 0.30;
+      axis_point + rim_dir * radius * needle - organ.up * radius * 0.55;
     point.normal = normalize (organ.up + rim_dir * 0.35);
-    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * serration);
+    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
     return point;
   }
 
@@ -557,10 +552,10 @@ static inline void forest_indices (thread Mesh& out,
     triangle = primitive % 2u == 0u ? uint3 (side, next, 12u + next)
                                     : uint3 (side, 12u + next, 12u + side);
   } else if (organ.frond) {
-    const uint fan = primitive / 6u;
-    const uint blade = primitive % 6u;
-    const uint base = fan * 8u;
-    triangle = uint3 (base, base + 1u + blade, base + 2u + blade);
+    const uint fan = primitive / 4u;
+    const uint blade = primitive % 4u;
+    const uint base = fan * 9u;
+    triangle = uint3 (base, base + 1u + 2u * blade, base + 2u + 2u * blade);
   } else if (organ.conifer && !organ.proxy) {
     const uint bough = primitive / 4u;
     const uint local = primitive % 4u;
@@ -604,11 +599,11 @@ static inline void forest_indices (thread Mesh& out,
   const bool boughs =
     organ.conifer && !organ.proxy && !organ.wood && !organ.frond;
   const uint vertices = organ.wood    ? 24u
-                        : organ.frond ? 96u
+                        : organ.frond ? 117u
                         : boughs      ? 30u
                                       : 32u;
   const uint primitives = organ.wood    ? 24u
-                          : organ.frond ? 72u
+                          : organ.frond ? 52u
                           : boughs      ? 20u
                                         : 60u;
   if (thread_id == 0u)

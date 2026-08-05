@@ -707,6 +707,22 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
     target_compile_definitions(moppe-testbed PRIVATE
       MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
     target_link_libraries(moppe-testbed PRIVATE "-framework AppKit")
+
+    # Tree studio: a flat plane and a lineup of conifer specimens, the fast
+    # instrument for iterating on tree geometry without a generated world.
+    add_executable(moppe-tree-studio EXCLUDE_FROM_ALL
+      moppe/game/tree_studio.cc
+      ${MOPPE_RENDER_SOURCES}
+      ${MOPPE_TERRAIN_SOURCES}
+      ${MOPPE_APPLE_COMMON_SOURCES}
+      ${MOPPE_METAL_RENDER_SOURCES}
+      moppe/platform/mac/main_mac.mm)
+    moppe_configure_code_target(moppe-tree-studio)
+    moppe_configure_apple_target(moppe-tree-studio)
+    moppe_configure_metal_target(moppe-tree-studio)
+    target_compile_definitions(moppe-tree-studio PRIVATE
+      MOPPE_SHADER_NAME="${MOPPE_SHADER_NAME}")
+    target_link_libraries(moppe-tree-studio PRIVATE "-framework AppKit")
   endif()
 
   # The game, as a proper .app bundle with the assets inside.
