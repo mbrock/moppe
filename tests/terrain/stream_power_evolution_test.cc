@@ -251,7 +251,7 @@ MOPPE_TEST (depression_routing_closes_the_sediment_ledger) {
 
   const auto cubic_metre = u::m * u::m * u::m;
   const double detached =
-    result.report.incised_volume.numerical_value_in (cubic_metre);
+    result.report.eroded_volume.numerical_value_in (cubic_metre);
   const double deposited =
     result.report.deposited_volume.numerical_value_in (cubic_metre);
   const double exported =
@@ -294,7 +294,7 @@ MOPPE_TEST (stream_power_evolution_is_bit_deterministic) {
                             }));
 }
 
-MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
+MOPPE_TEST (stream_power_interleaves_conservative_hillslope_transport) {
   std::array<float, 25> heights;
   heights.fill (0.2f);
   heights[12] = 1.0f;
@@ -318,7 +318,15 @@ MOPPE_TEST (stream_power_interleaves_stable_hillslope_diffusion) {
                surface_elevation_point (heights[12] * u::m));
   MOPPE_CHECK (result.heights[11] >
                surface_elevation_point (heights[11] * u::m));
-  MOPPE_CHECK (result.report.diffusion_sweeps == iteration_count (1));
+  MOPPE_CHECK (result.report.hillslope_sweeps == iteration_count (1));
+  MOPPE_CHECK (result.report.hillslope_transferred_volume >
+               cubic_meters_f64_t::zero ());
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (
+      result.report.sediment_balance_residual.numerical_value_in (u::m * u::m *
+                                                                  u::m)),
+    0.0f,
+    1e-6f);
 }
 
 MOPPE_TEST (hillslope_catchments_are_left_to_creep) {

@@ -65,3 +65,29 @@ connected low-gradient region of the 750-ky world.
 Fine parallel fluting remains conspicuous at 500 ky. That defect did not
 respond to river-network scale in this matrix and now passes cleanly to
 TER-010: conservative hillslope sediment transport.
+
+## TER-010: conservative hillslope sediment
+
+The elevation-only Laplacian is gone. The same linear-creep calibration now
+moves an explicit solid volume once across every cardinal face, with equal and
+opposite cell postings, stable internal sweeps, and no flux across fixed
+base-level faces. A source consumes mobile cover before the remainder is
+reported as bedrock detachment. These transfers join the cumulative eroded and
+deposited material histories and the signed sediment residual.
+
+Synthetic peaks round, synthetic basins fill, fixed boundaries do not absorb
+material, long geological intervals remain finite, and both surface volume
+and mobile-plus-detached solid close. The selected seed-123 Play world then
+completed at 2048-square resolution and produced all sixteen gazetteer views
+in 96 seconds. Its finished-world cache hit on the next launch.
+
+This item deliberately preserves the accepted terrain shape. Against the
+TER-002 500-ky baseline, relief changed from 268.53 to 269.23 m, median slope
+from 22.94 to 22.89 degrees, land below ten degrees from 9.96% to 10.07%, and
+the largest connected low-gradient region from 0.896 to 0.907 km2. In return,
+1.39 billion m3 of formerly implicit internal smoothing appears as matching
+additional erosion and deposition; inferred ocean export changes by only
+0.15%. The fine fluting remains, now ready to be addressed by physical channel
+initiation rather than by an unaccounted elevation filter.
+
+Artifacts are under `/tmp/moppe-hillslope.UGoY4S/gazetteer`.
