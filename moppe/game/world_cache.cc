@@ -196,9 +196,12 @@ namespace moppe::game {
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
         return false;
-      for (std::size_t component = 0; component < 3; ++component)
-        if (!input.scalar (extent[component]))
+      for (std::size_t component = 0; component < 3; ++component) {
+        float value = 0.0f;
+        if (!input.scalar (value))
           return false;
+        extent[component] = value;
+      }
       return input.scalar (water) && magic == CACHE_MAGIC &&
              version == CACHE_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
