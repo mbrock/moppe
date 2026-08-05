@@ -75,6 +75,10 @@ namespace moppe::terrain {
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t fluvial_bedrock_detached_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t lake_sediment_storage_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t ocean_mouth_deposition_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t sediment_balance_residual =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t hillslope_transferred_volume =

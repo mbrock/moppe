@@ -309,6 +309,113 @@ MOPPE_TEST (lateral_deposition_raises_a_valley_floor_not_a_center_ridge) {
     test_sediment_value (result.deposited[2 * 9 + 6]), 0.0f, 0.0f);
 }
 
+MOPPE_TEST (lake_storage_is_distributed_without_overfilling_the_basin) {
+  const TerrainDomain domain (7, 7, 1.0f * u::m, 1.0f * u::m);
+  std::vector<float> heights (domain.size (), -1.0f);
+  for (std::size_t row = 1; row <= 5; ++row)
+    for (std::size_t column = 1; column <= 5; ++column)
+      heights[domain.offset ({ column, row })] =
+        row == 1 || row == 5 || column == 1 || column == 5 ? 3.0f : -2.0f;
+  const ElevationMap terrain = make_elevation_map (domain, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const FractionalFlowDomain flow = flat_flow_domain (domain);
+  const std::vector<FractionalContributingArea> areas (
+    domain.size (), 2500.0f * fractional_contributing_area[u::m * u::m]);
+  const std::vector<ChannelTangent> tangents (
+    domain.size (), Vec3 (1.0f, 0.0f, 0.0f) * channel_tangent[mp_units::one]);
+  std::vector<SedimentVolume> centerline (domain.size (),
+                                          SedimentVolume::zero ());
+  centerline[domain.offset ({ 3, 3 })] = test_sediment_volume (6.0);
+  const std::vector<SedimentVolume> maximum (domain.size (),
+                                             test_sediment_volume (1.0));
+
+  const StandingWaterDepositionResult result =
+    spread_standing_water_deposition (
+      flood, census, flow, areas, tangents, centerline, maximum);
+
+  double deposited_m3 = 0.0;
+  std::size_t occupied_lake_cells = 0;
+  for (std::size_t cell = 0; cell < domain.size (); ++cell) {
+    const double local_m3 = test_sediment_value (result.deposited[cell]);
+    deposited_m3 += local_m3;
+    if (!flood.ocean[cell] && flood.water_depth_m (cell) > 0.0f) {
+      occupied_lake_cells += local_m3 > 0.0;
+      MOPPE_CHECK (local_m3 <= 1.0);
+      MOPPE_CHECK (heights[cell] + static_cast<float> (local_m3) <=
+                   flood.water_level_m (cell));
+    } else {
+      MOPPE_CHECK_NEAR (local_m3, 0.0f, 0.0f);
+    }
+  }
+  MOPPE_CHECK (occupied_lake_cells == 9);
+  MOPPE_CHECK_NEAR (static_cast<float> (deposited_m3), 6.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (test_sediment_value (result.lake_storage)),
+    6.0f,
+    1e-6f);
+  MOPPE_CHECK (result.exported == SedimentVolume::zero ());
+  MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 1e-6f);
+
+  std::vector<float> filled = heights;
+  for (std::size_t cell = 0; cell < domain.size (); ++cell)
+    filled[cell] +=
+      static_cast<float> (test_sediment_value (result.deposited[cell]));
+  const FloodField next_flood =
+    analyze_standing_water (make_elevation_map (domain, filled), 0.0f);
+  const std::size_t lake_center = domain.offset ({ 3, 3 });
+  MOPPE_CHECK (next_flood.water_depth_m (lake_center) <
+               flood.water_depth_m (lake_center));
+}
+
+MOPPE_TEST (mouth_deposition_fans_out_and_exports_excess_accommodation) {
+  const TerrainDomain domain (9, 9, 1.0f * u::m, 1.0f * u::m);
+  std::vector<float> heights (domain.size ());
+  for (std::size_t row = 0; row < domain.height (); ++row)
+    for (std::size_t column = 0; column < domain.width (); ++column)
+      heights[domain.offset ({ column, row })] = column < 4 ? 1.0f : -2.0f;
+  const ElevationMap terrain = make_elevation_map (domain, heights);
+  const FloodField flood = analyze_standing_water (terrain, 0.0f);
+  const LakeCensus census = census_lakes (flood);
+  const FractionalFlowDomain flow = flat_flow_domain (domain);
+  const std::vector<FractionalContributingArea> areas (
+    domain.size (), 1.0f * fractional_contributing_area[u::m * u::m]);
+  const std::vector<ChannelTangent> tangents (
+    domain.size (), Vec3 (1.0f, 0.0f, 0.0f) * channel_tangent[mp_units::one]);
+  std::vector<SedimentVolume> centerline (domain.size (),
+                                          SedimentVolume::zero ());
+  const std::size_t mouth = domain.offset ({ 4, 4 });
+  centerline[mouth] = test_sediment_volume (100.0);
+  const std::vector<SedimentVolume> maximum (domain.size (),
+                                             test_sediment_volume (1.0));
+  const ValleyDeposition footprint { .minimum_width = 4.0f * u::m,
+                                     .maximum_width = 4.0f * u::m,
+                                     .width_per_sqrt_area =
+                                       0.0f * proportion[mp_units::one] };
+
+  const StandingWaterDepositionResult result =
+    spread_standing_water_deposition (
+      flood, census, flow, areas, tangents, centerline, maximum, footprint);
+
+  double deposited_m3 = 0.0;
+  std::size_t occupied = 0;
+  for (std::size_t cell = 0; cell < domain.size (); ++cell) {
+    const double local_m3 = test_sediment_value (result.deposited[cell]);
+    deposited_m3 += local_m3;
+    occupied += local_m3 > 0.0;
+    MOPPE_CHECK (local_m3 <= 1.0 + 1e-12);
+    if (local_m3 > 0.0)
+      MOPPE_CHECK (flood.ocean[cell]);
+  }
+  const double exported_m3 = test_sediment_value (result.exported);
+  MOPPE_CHECK (occupied > 1);
+  MOPPE_CHECK (deposited_m3 > 0.0);
+  MOPPE_CHECK (exported_m3 > 0.0);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (deposited_m3 + exported_m3), 100.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 1e-6f);
+}
+
 MOPPE_TEST (fluvial_transport_entrains_cover_before_cutting_bedrock) {
   const FractionalFlowDomain flow = flow_domain (
     { route_to (1), {}, {}, {} },
@@ -378,6 +485,87 @@ MOPPE_TEST (sediment_routes_from_source_to_ocean_without_loss) {
   MOPPE_CHECK_NEAR (
     test_sediment_value (result.exported_to_ocean), 10.0f, 0.0f);
   MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 0.0f);
+}
+
+MOPPE_TEST (sediment_uses_lake_accommodation_before_ocean_export) {
+  const FractionalFlowDomain flow = flow_domain (
+    { route_to (1), route_to (2), {}, {} },
+    { CellIndex { 0 }, CellIndex { 1 }, CellIndex { 2 }, CellIndex { 3 } });
+  const std::array potential { test_sediment_volume (10.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0) };
+  const std::array capacity { test_sediment_volume (20.0),
+                              test_sediment_volume (20.0),
+                              test_sediment_volume (0.0),
+                              test_sediment_volume (0.0) };
+  const std::array deposition_limit { test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0),
+                                      test_sediment_volume (20.0) };
+  const std::array<std::uint8_t, 4> ocean { 0, 0, 1, 1 };
+  const std::array water_body {
+    no_water_body, WaterBodyId { 0 }, WaterBodyId { 1 }, WaterBodyId { 1 }
+  };
+  const std::array body_storage { test_sediment_volume (4.0),
+                                  test_sediment_volume (0.0) };
+  const std::array mouth_storage { test_sediment_volume (0.0),
+                                   test_sediment_volume (0.0),
+                                   test_sediment_volume (3.0),
+                                   test_sediment_volume (0.0) };
+
+  const SedimentRoutingResult result = route_sediment (flow,
+                                                       potential,
+                                                       capacity,
+                                                       deposition_limit,
+                                                       ocean,
+                                                       {},
+                                                       water_body,
+                                                       body_storage,
+                                                       mouth_storage);
+
+  MOPPE_CHECK_NEAR (test_sediment_value (result.deposited[1]), 4.0f, 0.0f);
+  MOPPE_CHECK_NEAR (test_sediment_value (result.deposited[2]), 3.0f, 0.0f);
+  MOPPE_CHECK_NEAR (test_sediment_value (result.deposited_total), 7.0f, 0.0f);
+  MOPPE_CHECK_NEAR (test_sediment_value (result.exported_to_ocean), 3.0f, 0.0f);
+  MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 0.0f);
+}
+
+MOPPE_TEST (standing_water_inputs_allow_a_world_without_censused_bodies) {
+  const FractionalFlowDomain flow = flow_domain (
+    { route_to (1), {}, {}, {} },
+    { CellIndex { 0 }, CellIndex { 1 }, CellIndex { 2 }, CellIndex { 3 } });
+  const std::array potential { test_sediment_volume (1.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0),
+                               test_sediment_volume (0.0) };
+  const std::array capacity { test_sediment_volume (1.0),
+                              test_sediment_volume (0.0),
+                              test_sediment_volume (0.0),
+                              test_sediment_volume (0.0) };
+  const std::array deposition_limit { test_sediment_volume (1.0),
+                                      test_sediment_volume (1.0),
+                                      test_sediment_volume (1.0),
+                                      test_sediment_volume (1.0) };
+  const std::array<std::uint8_t, 4> ocean { 0, 1, 1, 1 };
+  const std::array<WaterBodyId, 4> no_bodies {
+    no_water_body, no_water_body, no_water_body, no_water_body
+  };
+  const std::array mouth_storage { test_sediment_volume (0.0),
+                                   test_sediment_volume (0.0),
+                                   test_sediment_volume (0.0),
+                                   test_sediment_volume (0.0) };
+
+  const SedimentRoutingResult result = route_sediment (flow,
+                                                       potential,
+                                                       capacity,
+                                                       deposition_limit,
+                                                       ocean,
+                                                       {},
+                                                       no_bodies,
+                                                       {},
+                                                       mouth_storage);
+  MOPPE_CHECK_NEAR (test_sediment_value (result.exported_to_ocean), 1.0f, 0.0f);
 }
 
 MOPPE_TEST (sediment_deposits_where_transport_capacity_falls) {

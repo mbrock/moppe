@@ -1,6 +1,7 @@
 #ifndef MOPPE_TERRAIN_SEDIMENT_TRANSPORT_HH
 #define MOPPE_TERRAIN_SEDIMENT_TRANSPORT_HH
 
+#include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
 
 #include <cstdint>
@@ -63,20 +64,37 @@ namespace moppe::terrain {
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
   };
 
+  struct StandingWaterStorage {
+    std::vector<SedimentVolume> body_capacity;
+    std::vector<SedimentVolume> ocean_mouth_capacity;
+  };
+
+  StandingWaterStorage standing_water_storage_capacity (
+    const FloodField& flood,
+    const LakeCensus& census,
+    std::span<const FractionalContributingArea> contributing_areas,
+    std::span<const SedimentVolume> maximum_deposition,
+    const ValleyDeposition& parameters = {});
+
   // Routes solid material through an already-solved fractional drainage DAG.
   // Potential detachment and transport capacity are volumes for this one
   // geological step. A cell deposits incoming material above its capacity up
   // to its aggradation limit, then carries the remainder onward. It uses any
-  // spare capacity to detach its own surface. Ocean cells export incoming
-  // flux; non-ocean sinks retain it locally. Stored mobile cover consumes
-  // spare capacity before the router may detach underlying bedrock.
+  // spare capacity to detach its own surface. Optional standing-water storage
+  // lets one lake share a finite accommodation budget and lets an ocean mouth
+  // retain a bounded part of its incoming load; all remaining ocean flux is
+  // exported. Non-ocean sinks retain incoming material locally. Stored mobile
+  // cover consumes spare capacity before the router may detach bedrock.
   SedimentRoutingResult
   route_sediment (const FractionalFlowDomain& flow,
                   std::span<const SedimentVolume> potential_detachment,
                   std::span<const SedimentVolume> transport_capacity,
                   std::span<const SedimentVolume> maximum_deposition,
                   std::span<const std::uint8_t> ocean,
-                  std::span<const SedimentVolume> available_cover = {});
+                  std::span<const SedimentVolume> available_cover = {},
+                  std::span<const WaterBodyId> water_body = {},
+                  std::span<const SedimentVolume> body_storage_capacity = {},
+                  std::span<const SedimentVolume> ocean_mouth_capacity = {});
 
   struct LateralDepositionResult {
     std::vector<SedimentVolume> deposited;
@@ -95,6 +113,26 @@ namespace moppe::terrain {
     std::span<const ChannelTangent> channel_tangents,
     std::span<const SedimentVolume> centerline_deposition,
     std::span<const std::uint8_t> ocean,
+    const ValleyDeposition& parameters = {});
+
+  struct StandingWaterDepositionResult {
+    std::vector<SedimentVolume> dry_centerline;
+    std::vector<SedimentVolume> deposited;
+    SedimentVolume lake_storage = SedimentVolume::zero ();
+    SedimentVolume ocean_mouth_storage = SedimentVolume::zero ();
+    SedimentVolume exported = SedimentVolume::zero ();
+    cubic_meters_f64_t balance_residual =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+  };
+
+  StandingWaterDepositionResult spread_standing_water_deposition (
+    const FloodField& flood,
+    const LakeCensus& census,
+    const FractionalFlowDomain& flow,
+    std::span<const FractionalContributingArea> contributing_areas,
+    std::span<const ChannelTangent> channel_tangents,
+    std::span<const SedimentVolume> centerline_deposition,
+    std::span<const SedimentVolume> maximum_deposition,
     const ValleyDeposition& parameters = {});
 
   struct HillslopeTransportResult {
