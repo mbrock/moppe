@@ -75,6 +75,45 @@ the handoff:
   survivors carry mass, per-shoot stagger (audit the existing
   `UNDERGROWTH_LOD_TRANSITION` behaviour against these rules).
 
+## Trees influence the surface: analytic ground deformation
+
+Big trees should raise a root bulge in the ground itself. The terrain's
+5 m height lattice cannot store a 1-2 m feature, but that lattice is an
+*information* budget, not a vertex budget: the near field already renders
+a subdivided lattice (`mesh_coord` finer than `grid_coord`), with
+Catmull-Rom reconstruction deliberately clamped so interpolation cannot
+invent features the physics heightmap does not know. That faithfulness
+principle -- the rendered ground never shows what the wheel cannot feel --
+is the constraint to preserve, and an analytic bulge preserves it by
+lifting the single source of truth from shared *data* to a shared
+*function*:
+
+    ground height = heightmap + sum of nearby root bulges,
+
+where each bulge is a pure smooth radial function of tree position, age,
+and distance to trunk -- data both sides already have. The terrain vertex
+shader adds the term on the subdivided near field; the CPU height sampler
+adds the identical term for physics. The bike then genuinely rides over an
+ancient spruce's root plate, the walker's feet plant on it, and no texture
+resolution was ever involved. Agreement by construction, the same move as
+the typed quantities.
+
+Required plumbing, none of it deep:
+
+- A coarse spatial bin of trees per terrain tile so a vertex evaluates a
+  handful of bulge terms, not twelve thousand (the forest instances are
+  already resident on the GPU).
+- The same query in the CPU surface sampler.
+- A fade coherent with the terrain LOD rings, so the bulge appears with
+  the subdivision that can express it and never pops a ring boundary.
+- A cost check in the terrain vertex shader, which is currently cheap.
+
+Complements, not prerequisites: a trunk-base flare in the wood organ
+(a few vertices in `forest.metal`, hero tier only) and needle-litter /
+moss darkening of the ground under canopy through the surface
+presentation lanes -- the bulge reads as roots when the ground around it
+reads as forest floor.
+
 ## If the mesh stage becomes the wall
 
 The pure generate-every-frame position pays full price on every still
