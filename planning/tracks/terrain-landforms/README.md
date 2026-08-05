@@ -16,11 +16,12 @@ flowchart LR
   TER020["TER-020: cover-aware transport"]
   TER021["TER-021: valley-width deposition"]
   TER022["TER-022: lakes and deltas"]
+  TER025["TER-025: nonlinear hillslopes"]
   TER030["TER-030: trunk-river scale"]
   TER040["TER-040: calibrate Play"]
 
   TER000 --> TER001 --> TER002 --> TER010 --> TER020 --> TER021
-  TER021 --> TER022 --> TER011 --> TER030 --> TER040
+  TER021 --> TER022 --> TER025 --> TER011 --> TER030 --> TER040
   TER022 --> TER040
 ```
 
@@ -94,7 +95,25 @@ and retain explicit export. The optimized seed-123 world keeps 199 m of relief
 while growing land below ten degrees from 10.4% to 27.3% and the largest
 connected gentle region from 0.423 to 2.50 km2. Generation remains at the
 TER-021 performance baseline after compacting the mouth footprint work.
-TER-011 is ready for a renewed physical channel-scale matrix.
+The renewed TER-011 matrix reveals one more missing gate. The attractive 7 and
+10 m2 worlds coincide with a single 2048-grid cell and lose the confluence
+target. At 25 and 100 m2, inland water and upper-tail slope rise sharply again.
+The optimized spillway A/B changed inland water by only 1%, and a subsequent
+0--20% diffuse-wash sweep left gentle-land coverage flat, reduced its largest
+connected region, retained parallel fluting, and at 20% lost the confluence
+target. Both experiments were removed rather than kept as ineffective special
+cases. TER-025 now returns to the RFC's actual distinction: below channel
+heads, conservative hillslope transport accelerates near a critical gradient
+without granting every small catchment stream-power bedrock incision.
+
+TER-025 and TER-011 now close that dependency together. A bounded multiplier
+of four above a 0.6 critical gradient turns the first resolution-independent
+100 m2 channel head into rolling country at both 2048 and 1024 while retaining
+roughly 260 m of relief, completed trails, river reaches, lakes, and mouths.
+The 2048 world resolves every gazetteer target; the 1024 world loses only the
+confluence selection. TER-030 is therefore ready to align physical catchment,
+river extraction, valley width, and rendered water scale before any values
+become Play defaults.
 
 ## Deferred until the shape works
 

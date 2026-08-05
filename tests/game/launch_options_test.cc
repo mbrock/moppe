@@ -79,9 +79,12 @@ MOPPE_TEST (launch_help_lists_every_supported_option_and_short_alias) {
          "--gazetteer-settle",
          "--fast",
          "--terrain-quality",
+         "--terrain-resolution",
          "--uplift-years",
          "--channel-initiation-area",
          "--sediment-concentration",
+         "--hillslope-critical-gradient",
+         "--hillslope-max-multiplier",
          "--world-cache-key",
          "--refresh-world-cache",
          "--no-world-cache",
@@ -167,6 +170,8 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--drawable-scale", "half" }));
   MOPPE_CHECK (rejects ({ "--render-scale", "1.1" }));
   MOPPE_CHECK (rejects ({ "--terrain-quality", "sculpted" }));
+  MOPPE_CHECK (rejects ({ "--terrain-resolution", "1024.5" }));
+  MOPPE_CHECK (rejects ({ "--terrain-resolution", "64" }));
   MOPPE_CHECK (rejects ({ "--uplift-years" }));
   MOPPE_CHECK (rejects ({ "--uplift-years", "ancient" }));
   MOPPE_CHECK (rejects ({ "--uplift-years", "-1" }));
@@ -178,6 +183,8 @@ MOPPE_TEST (launch_rejects_malformed_command_lines) {
   MOPPE_CHECK (rejects ({ "--sediment-concentration" }));
   MOPPE_CHECK (rejects ({ "--sediment-concentration", "muddy" }));
   MOPPE_CHECK (rejects ({ "--sediment-concentration", "1.1" }));
+  MOPPE_CHECK (rejects ({ "--hillslope-critical-gradient", "0" }));
+  MOPPE_CHECK (rejects ({ "--hillslope-max-multiplier", "0.9" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "../shared" }));
   MOPPE_CHECK (rejects ({ "--world-cache-key", "spaces are unsafe" }));
@@ -240,6 +247,9 @@ MOPPE_TEST (launch_resolutions_follow_the_generation_they_serve) {
   MOPPE_CHECK (parsed ({ "--terrain-quality", "smoke" }).world.resolution ==
                1024);
   MOPPE_CHECK (parsed ({}).world.resolution != 1024);
+  MOPPE_CHECK (
+    parsed ({ "--terrain-quality", "play", "--terrain-resolution", "1024" })
+      .world.resolution == 1024);
 }
 
 MOPPE_TEST (launch_benchmark_pacing_survives_flag_order) {
@@ -268,7 +278,11 @@ MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
                                           "--channel-initiation-area",
                                           "1200",
                                           "--sediment-concentration",
-                                          "0.00001" });
+                                          "0.00001",
+                                          "--hillslope-critical-gradient",
+                                          "0.8",
+                                          "--hillslope-max-multiplier",
+                                          "4" });
   options.seed = 4321;
   const terrain::WorldRecipe recipe = game::make_launch_recipe (options);
   MOPPE_CHECK (recipe.seed ().value == 4321u);
@@ -282,6 +296,10 @@ MOPPE_TEST (launch_recipe_carries_the_resolved_seed_and_profile) {
   MOPPE_CHECK (
     recipe.evolution ().fluvial_transport.concentration_at_unit_slope ==
     0.00001f * terrain::sediment_concentration[mp_units::one]);
+  MOPPE_CHECK (recipe.evolution ().critical_hillslope_gradient ==
+               0.8f * proportion[mp_units::one]);
+  MOPPE_CHECK (recipe.evolution ().maximum_hillslope_diffusivity_multiplier ==
+               4.0f * proportion[mp_units::one]);
 }
 
 MOPPE_TEST (launch_benchmark_environment_reaches_the_backend) {

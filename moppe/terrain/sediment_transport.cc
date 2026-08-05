@@ -23,13 +23,31 @@ namespace moppe::terrain {
       return cubic_metres * sediment_volume[cubic_metre];
     }
 
+    double hillslope_diffusivity_multiplier (
+      double face_gradient,
+      proportion_t critical_gradient,
+      proportion_t maximum_diffusivity_multiplier) {
+      const double critical =
+        critical_gradient.numerical_value_in (mp_units::one);
+      const double maximum =
+        maximum_diffusivity_multiplier.numerical_value_in (mp_units::one);
+      const double activation =
+        std::clamp (2.0 * face_gradient / critical - 1.0, 0.0, 1.0);
+      const double smooth_activation =
+        activation * activation * (3.0 - 2.0 * activation);
+      return 1.0 + (maximum - 1.0) * smooth_activation;
+    }
+
     int hillslope_sweep_count (const TerrainDomain& domain,
                                julian_years_f64_t duration,
-                               square_meters_per_julian_year_t diffusivity) {
+                               square_meters_per_julian_year_t diffusivity,
+                               double maximum_diffusivity_multiplier) {
       if (duration == 0 || diffusivity == 0)
         return 0;
+      const auto maximum_diffusivity =
+        maximum_diffusivity_multiplier * diffusivity;
       const auto stable_duration =
-        1.0 / (2.0 * diffusivity *
+        1.0 / (2.0 * maximum_diffusivity *
                (1.0 / (domain.spacing_x () * domain.spacing_x ()) +
                 1.0 / (domain.spacing_z () * domain.spacing_z ())));
       const auto requested =
@@ -49,15 +67,20 @@ namespace moppe::terrain {
                                   std::span<const SedimentThickness> sediment,
                                   std::span<const std::uint8_t> fixed,
                                   julian_years_f64_t duration,
-                                  square_meters_per_julian_year_t diffusivity) {
+                                  square_meters_per_julian_year_t diffusivity,
+                                  proportion_t critical_gradient,
+                                  proportion_t maximum_diffusivity_multiplier) {
       if (elevations.size () != domain.size () ||
           sediment.size () != domain.size () || fixed.size () != domain.size ())
         throw std::invalid_argument (
           "hillslope transport inputs do not match terrain domain");
       if (!mp_units::isfinite (duration) || duration < 0 ||
-          !mp_units::isfinite (diffusivity) || diffusivity < 0)
+          !mp_units::isfinite (diffusivity) || diffusivity < 0 ||
+          !mp_units::isfinite (critical_gradient) || critical_gradient <= 0 ||
+          !mp_units::isfinite (maximum_diffusivity_multiplier) ||
+          maximum_diffusivity_multiplier < 1 * mp_units::one)
         throw std::invalid_argument (
-          "hillslope transport parameters must be finite and non-negative");
+          "hillslope transport parameters are outside their physical range");
       for (std::size_t cell = 0; cell < domain.size (); ++cell) {
         if (!mp_units::isfinite (elevations[cell].quantity_from_zero ()))
           throw std::invalid_argument ("hillslope elevations must be finite");
@@ -785,9 +808,17 @@ namespace moppe::terrain {
                             std::span<const SedimentThickness> sediment,
                             std::span<const std::uint8_t> fixed,
                             julian_years_f64_t duration,
-                            square_meters_per_julian_year_t diffusivity) {
-    validate_hillslope_transport (
-      domain, elevations, sediment, fixed, duration, diffusivity);
+                            square_meters_per_julian_year_t diffusivity,
+                            proportion_t critical_gradient,
+                            proportion_t maximum_diffusivity_multiplier) {
+    validate_hillslope_transport (domain,
+                                  elevations,
+                                  sediment,
+                                  fixed,
+                                  duration,
+                                  diffusivity,
+                                  critical_gradient,
+                                  maximum_diffusivity_multiplier);
 
     const std::size_t count = domain.size ();
     HillslopeTransportResult result {
@@ -798,8 +829,33 @@ namespace moppe::terrain {
       .deposited_thickness =
         std::vector<SedimentThickness> (count, SedimentThickness::zero ()),
     };
-    const int sweep_count =
-      hillslope_sweep_count (domain, duration, diffusivity);
+    bool nonlinear_flux_active = false;
+    for (std::size_t cell = 0; cell < count; ++cell) {
+      if (fixed[cell])
+        continue;
+      const TerrainIndex index = domain.index (cell);
+      const auto inspect_face = [&] (TerrainIndex neighbor, meters_t run) {
+        const std::size_t other = domain.offset (neighbor);
+        if (fixed[other])
+          return;
+        const double difference_m =
+          std::abs (surface_elevation_value (elevations[cell]) -
+                    surface_elevation_value (elevations[other]));
+        const double gradient =
+          difference_m / run.numerical_value_in (mp_units::si::metre);
+        nonlinear_flux_active |=
+          hillslope_diffusivity_multiplier (
+            gradient, critical_gradient, maximum_diffusivity_multiplier) > 1.0;
+      };
+      inspect_face (domain.shifted (index, 1, 0), domain.spacing_x ());
+      inspect_face (domain.shifted (index, 0, 1), domain.spacing_z ());
+    }
+    const double stability_multiplier =
+      nonlinear_flux_active
+        ? maximum_diffusivity_multiplier.numerical_value_in (mp_units::one)
+        : 1.0;
+    const int sweep_count = hillslope_sweep_count (
+      domain, duration, diffusivity, stability_multiplier);
     result.sweeps = iteration_count (sweep_count);
     if (sweep_count == 0)
       return result;
@@ -835,8 +891,13 @@ namespace moppe::terrain {
         const double difference_m = height_m[first] - height_m[second];
         if (difference_m == 0.0)
           return;
+        const double face_gradient =
+          std::abs (difference_m) /
+          run.numerical_value_in (mp_units::si::metre);
+        const double local_multiplier = hillslope_diffusivity_multiplier (
+          face_gradient, critical_gradient, maximum_diffusivity_multiplier);
         const double conductance_m2 =
-          (diffusivity * sweep_duration * face_width / run)
+          (local_multiplier * diffusivity * sweep_duration * face_width / run)
             .numerical_value_in (mp_units::si::metre * mp_units::si::metre);
         const double volume_m3 = std::abs (difference_m) * conductance_m2;
         const std::size_t source = difference_m > 0.0 ? first : second;

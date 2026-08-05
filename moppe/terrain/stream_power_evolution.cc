@@ -75,6 +75,10 @@ namespace moppe::terrain {
           p.reference_area <= 0 || !std::isfinite (p.area_exponent) ||
           p.area_exponent < 0 || !isfinite (p.diffusivity) ||
           p.diffusivity < 0 || !std::isfinite (p.sea_level) ||
+          !isfinite (p.critical_hillslope_gradient) ||
+          p.critical_hillslope_gradient <= 0 ||
+          !isfinite (p.maximum_hillslope_diffusivity_multiplier) ||
+          p.maximum_hillslope_diffusivity_multiplier < 1 * one ||
           !isfinite (p.fluvial_transport.runoff_rate) ||
           p.fluvial_transport.runoff_rate < 0 ||
           !isfinite (p.fluvial_transport.concentration_at_unit_slope) ||
@@ -523,13 +527,15 @@ namespace moppe::terrain {
       IterationCount step_sweeps = 0 * one;
       {
         MOPPE_PROFILE_ZONE ("orogeny.route_hillslope_sediment");
-        HillslopeTransportResult hillslope =
-          route_hillslope_sediment (grid,
-                                    next_heights,
-                                    mobile_sediment,
-                                    boundary,
-                                    dt,
-                                    parameters.diffusivity);
+        HillslopeTransportResult hillslope = route_hillslope_sediment (
+          grid,
+          next_heights,
+          mobile_sediment,
+          boundary,
+          dt,
+          parameters.diffusivity,
+          parameters.critical_hillslope_gradient,
+          parameters.maximum_hillslope_diffusivity_multiplier);
         step_sweeps = hillslope.sweeps;
         next_heights = std::move (hillslope.heights);
         mobile_sediment = std::move (hillslope.sediment_thickness);

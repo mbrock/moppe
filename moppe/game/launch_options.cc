@@ -72,6 +72,21 @@ namespace moppe::game {
       return parse_float_option (value, option, 0.25f, 1.0f, result, error);
     }
 
+    bool parse_terrain_resolution (const char* value,
+                                   int& result,
+                                   std::string& error) {
+      char* end = nullptr;
+      errno = 0;
+      const long parsed = std::strtol (value, &end, 10);
+      if (errno || end == value || *end != '\0' || parsed < 128 ||
+          parsed > 4096) {
+        error = "--terrain-resolution must be an integer from 128 to 4096";
+        return false;
+      }
+      result = static_cast<int> (parsed);
+      return true;
+    }
+
     bool set_world_cache_key (LaunchOptions& options,
                               const char* value,
                               std::string& error) {
@@ -357,6 +372,20 @@ namespace moppe::game {
             return unknown ("terrain quality", values[0], error);
           return true;
         } },
+      { "--terrain-resolution",
+        "",
+        1,
+        "<SAMPLES>",
+        "Override terrain samples per side for a resolution experiment.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          int resolution = 0;
+          if (!parse_terrain_resolution (values[0], resolution, error))
+            return false;
+          options.terrain_resolution = resolution;
+          return true;
+        } },
       { "--uplift-years",
         "",
         1,
@@ -410,6 +439,46 @@ namespace moppe::game {
             return false;
           options.sediment_concentration =
             concentration * terrain::sediment_concentration[mp_units::one];
+          return true;
+        } },
+      { "--hillslope-critical-gradient",
+        "",
+        1,
+        "<GRADIENT>",
+        "Set the dimensionless gradient where bounded wasting saturates.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float gradient = 0.0f;
+          if (!parse_float_option (values[0],
+                                   "--hillslope-critical-gradient",
+                                   0.01f,
+                                   10.0f,
+                                   gradient,
+                                   error))
+            return false;
+          options.critical_hillslope_gradient =
+            gradient * proportion[mp_units::one];
+          return true;
+        } },
+      { "--hillslope-max-multiplier",
+        "",
+        1,
+        "<FACTOR>",
+        "Bound the near-critical hillslope diffusivity multiplier.",
+        [] (LaunchOptions& options,
+            const char* const* values,
+            std::string& error) {
+          float multiplier = 0.0f;
+          if (!parse_float_option (values[0],
+                                   "--hillslope-max-multiplier",
+                                   1.0f,
+                                   16.0f,
+                                   multiplier,
+                                   error))
+            return false;
+          options.maximum_hillslope_multiplier =
+            multiplier * proportion[mp_units::one];
           return true;
         } },
       { "--world-cache-key",
@@ -533,6 +602,8 @@ namespace moppe::game {
             terrain::TerrainGenerationProfile::Smoke ||
           options.generation_profile == terrain::TerrainGenerationProfile::Fast)
         options.world.resolution = 1024;
+      if (options.terrain_resolution)
+        options.world.resolution = *options.terrain_resolution;
       options.config.capture_frames = !options.screenshot_path.empty () ||
                                       options.gazetteer ||
                                       ::getenv ("MOPPE_CINEMATIC_CAPTURE_DIR");
@@ -665,6 +736,8 @@ namespace moppe::game {
                                        options.generation_profile,
                                        options.uplift_duration,
                                        options.channel_initiation_area,
-                                       options.sediment_concentration);
+                                       options.sediment_concentration,
+                                       options.critical_hillslope_gradient,
+                                       options.maximum_hillslope_multiplier);
   }
 }

@@ -153,13 +153,16 @@ namespace moppe::terrain {
   // result independent of a geological step being longer than the explicit
   // diffusion limit. Existing mobile cover leaves a source before any
   // bedrock is detached there.
-  HillslopeTransportResult
-  route_hillslope_sediment (const TerrainDomain& domain,
-                            std::span<const SurfaceElevation> elevations,
-                            std::span<const SedimentThickness> sediment,
-                            std::span<const std::uint8_t> fixed,
-                            julian_years_f64_t duration,
-                            square_meters_per_julian_year_t diffusivity);
+  HillslopeTransportResult route_hillslope_sediment (
+    const TerrainDomain& domain,
+    std::span<const SurfaceElevation> elevations,
+    std::span<const SedimentThickness> sediment,
+    std::span<const std::uint8_t> fixed,
+    julian_years_f64_t duration,
+    square_meters_per_julian_year_t diffusivity,
+    proportion_t critical_gradient = 1.0f * proportion[mp_units::one],
+    proportion_t maximum_diffusivity_multiplier = 1.0f *
+                                                  proportion[mp_units::one]);
 }
 
 #endif

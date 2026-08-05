@@ -84,15 +84,19 @@ namespace {
                        std::span<const float> heights,
                        std::span<const SedimentThickness> cover,
                        std::span<const std::uint8_t> fixed,
-                       float years = 0.1f) {
+                       float years = 0.1f,
+                       float critical_gradient = 1.0f,
+                       float maximum_multiplier = 1.0f) {
     const auto elevations = hillslope_heights (heights);
-    return route_hillslope_sediment (domain,
-                                     elevations,
-                                     cover,
-                                     fixed,
-                                     years * mp_units::astronomy::Julian_year,
-                                     0.1f * u::m * u::m /
-                                       mp_units::astronomy::Julian_year);
+    return route_hillslope_sediment (
+      domain,
+      elevations,
+      cover,
+      fixed,
+      years * mp_units::astronomy::Julian_year,
+      0.1f * u::m * u::m / mp_units::astronomy::Julian_year,
+      critical_gradient * proportion[mp_units::one],
+      maximum_multiplier * proportion[mp_units::one]);
   }
 }
 
@@ -191,6 +195,37 @@ MOPPE_TEST (hillslope_transport_rounds_convexities_and_fills_concavities) {
   MOPPE_CHECK (surface_elevation_value (rounded.heights[1]) > peak[1]);
   MOPPE_CHECK (surface_elevation_value (filled.heights[4]) > basin[4]);
   MOPPE_CHECK (surface_elevation_value (filled.heights[1]) < basin[1]);
+}
+
+MOPPE_TEST (critical_hillslope_flux_accelerates_only_steep_faces) {
+  const TerrainDomain domain (3, 3, 10.0f * u::m, 10.0f * u::m);
+  const std::array rolling { 0.0f, 0.0f, 0.0f, 0.0f, 3.0f,
+                             0.0f, 0.0f, 0.0f, 0.0f };
+  const std::array steep {
+    0.0f, 0.0f, 0.0f, 0.0f, 10.0f, 0.0f, 0.0f, 0.0f, 0.0f
+  };
+  const auto cover = hillslope_cover (rolling.size ());
+  const std::array<std::uint8_t, 9> fixed {};
+
+  const HillslopeTransportResult rolling_linear =
+    hillslope_transport (domain, rolling, cover, fixed);
+  const HillslopeTransportResult rolling_critical =
+    hillslope_transport (domain, rolling, cover, fixed, 0.1f, 0.8f, 4.0f);
+  const HillslopeTransportResult steep_linear =
+    hillslope_transport (domain, steep, cover, fixed, 100.0f);
+  const HillslopeTransportResult steep_critical =
+    hillslope_transport (domain, steep, cover, fixed, 100.0f, 0.8f, 4.0f);
+
+  MOPPE_CHECK (rolling_critical.heights == rolling_linear.heights);
+  MOPPE_CHECK (rolling_critical.transferred == rolling_linear.transferred);
+  MOPPE_CHECK (surface_elevation_value (steep_critical.heights[4]) <
+               surface_elevation_value (steep_linear.heights[4]));
+  MOPPE_CHECK (steep_critical.transferred > steep_linear.transferred);
+  MOPPE_CHECK (steep_critical.sweeps > steep_linear.sweeps);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (test_balance_value (steep_critical.balance_residual)),
+    0.0f,
+    1e-6f);
 }
 
 MOPPE_TEST (hillslope_transport_substeps_long_geological_intervals) {

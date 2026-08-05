@@ -49,6 +49,12 @@ namespace moppe::terrain {
     square_meters_per_julian_year_t diffusivity =
       0.0f * mp_units::si::metre * mp_units::si::metre /
       mp_units::astronomy::Julian_year;
+    // Linear creep remains exact below half this face gradient. Near the
+    // critical gradient, bounded mass wasting multiplies the same
+    // conservative cover-first flux.
+    proportion_t critical_hillslope_gradient = 1.0f * proportion[mp_units::one];
+    proportion_t maximum_hillslope_diffusivity_multiplier =
+      1.0f * proportion[mp_units::one];
     // Metres in the terrain elevation frame.
     float sea_level = 50.0f;
     // How strongly the prior geological step's channel tangent favours an

@@ -23,7 +23,9 @@ namespace moppe::terrain {
     TerrainGenerationProfile generation_profile,
     std::optional<julian_years_t> uplift_duration,
     std::optional<square_meters_t> channel_initiation_area,
-    std::optional<SedimentConcentration> sediment_concentration)
+    std::optional<SedimentConcentration> sediment_concentration,
+    std::optional<proportion_t> critical_hillslope_gradient,
+    std::optional<proportion_t> maximum_hillslope_multiplier)
       : m_extent (extent), m_resolution (resolution), m_seed (seed),
         m_water_datum (water_datum), m_generation_profile (generation_profile) {
     // Evolution age and tectonic forcing are separate clocks. The initial
@@ -49,6 +51,11 @@ namespace moppe::terrain {
     if (sediment_concentration)
       m_evolution.fluvial_transport.concentration_at_unit_slope =
         *sediment_concentration;
+    if (critical_hillslope_gradient)
+      m_evolution.critical_hillslope_gradient = *critical_hillslope_gradient;
+    if (maximum_hillslope_multiplier)
+      m_evolution.maximum_hillslope_diffusivity_multiplier =
+        *maximum_hillslope_multiplier;
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
@@ -65,7 +72,9 @@ namespace moppe::terrain {
     TerrainGenerationProfile generation_profile,
     std::optional<julian_years_t> uplift_duration,
     std::optional<square_meters_t> channel_initiation_area,
-    std::optional<SedimentConcentration> sediment_concentration) {
+    std::optional<SedimentConcentration> sediment_concentration,
+    std::optional<proportion_t> critical_hillslope_gradient,
+    std::optional<proportion_t> maximum_hillslope_multiplier) {
     return { extent,
              resolution,
              seed,
@@ -73,6 +82,8 @@ namespace moppe::terrain {
              generation_profile,
              uplift_duration,
              channel_initiation_area,
-             sediment_concentration };
+             sediment_concentration,
+             critical_hillslope_gradient,
+             maximum_hillslope_multiplier };
   }
 }
