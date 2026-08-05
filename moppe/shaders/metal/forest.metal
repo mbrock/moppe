@@ -502,13 +502,19 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     // so the blades stay disconnected: connected fans read as paddles, and
     // overlapping paddles rebuild the very cone this tier replaced. The
     // bough frame derives per vertex from the stable rank, which is what
-    // lets a bundle pack several distant boughs into one meshlet.
+    // lets a bundle pack several distant boughs into one meshlet. In the
+    // bundled band a whole tuft is a few pixels, where four overlapping
+    // micro-triangles cost quadruple fragment work for no resolvable
+    // difference, so the coarse tuft is one quad spanning the same splay
+    // (Kuth 2025's pixels-per-triangle discipline at organ scale).
+    const bool coarse = organ.bundle == 4u;
+    const uint per_tuft = coarse ? 4u : 9u;
     const uint tufts = forest_bough_tufts (organ.bundle);
-    const uint stride = tufts * 9u;
+    const uint stride = tufts * per_tuft;
     const uint rank = organ.rank + vertex_index / stride;
     const uint rem = vertex_index % stride;
-    const uint fan = rem / 9u;
-    const uint local = rem % 9u;
+    const uint fan = rem / per_tuft;
+    const uint local = rem % per_tuft;
     const uint slot = forest_bough_slot (rank);
     const uint whorl = slot / 7u;
     const uint spoke = slot % 7u;
@@ -541,14 +547,34 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
       origin + along * length * s +
       side * length * 0.12 * wobble * forest_hash (organ.seed, fan + 17u) +
       organ.up * length * droop;
+    const float radius = length * mix (0.22, 0.10, s) * organ.boost *
+                         (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
+    if (coarse) {
+      // Two triangles spanning the arc the blades splay over: outer
+      // corners at full reach and rim depth, inner corners high and
+      // tucked toward the axis, so the sheet is TENTED like the fan --
+      // a flat quad in the bough plane disappears edge-on, and the
+      // tuft's silhouette lives in the apex-to-rim drop.
+      const bool inner = local == 1u || local == 2u;
+      const float arc =
+        mix (-2.2, 2.2, float (local) / 3.0) +
+        0.20 * (forest_hash (organ.seed, fan * 13u + local + 41u) - 0.5);
+      const float needle =
+        0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + local + 57u);
+      const float3 rim_dir = normalize (along * cos (arc) + side * sin (arc));
+      point.position = axis_point +
+                       rim_dir * radius * needle * (inner ? 0.40 : 1.0) -
+                       organ.up * radius * (inner ? 0.06 : 0.55);
+      point.normal = normalize (organ.up + rim_dir * 0.35);
+      point.exposure = saturate (0.34 + 0.50 * s + 0.14 * needle);
+      return point;
+    }
     if (local == 0u) {
       point.position = axis_point;
       point.normal = normalize (organ.up + along * 0.2);
       point.exposure = 0.32;
       return point;
     }
-    const float radius = length * mix (0.22, 0.10, s) * organ.boost *
-                         (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
     const uint rim = local - 1u;
     const uint blade = rim / 2u;
     const float edge = rim % 2u == 0u ? -1.0 : 1.0;
@@ -611,13 +637,19 @@ static inline void forest_indices (thread Mesh& out,
     triangle = primitive % 2u == 0u ? uint3 (side, next, 12u + next)
                                     : uint3 (side, 12u + next, 12u + side);
   } else if (organ.frond) {
+    const bool coarse = organ.bundle == 4u;
     const uint tufts = forest_bough_tufts (organ.bundle);
-    const uint bough = primitive / (tufts * 4u);
-    const uint rem = primitive % (tufts * 4u);
-    const uint fan = rem / 4u;
-    const uint blade = rem % 4u;
-    const uint base = bough * tufts * 9u + fan * 9u;
-    triangle = uint3 (base, base + 1u + 2u * blade, base + 2u + 2u * blade);
+    const uint per_prims = coarse ? 2u : 4u;
+    const uint per_verts = coarse ? 4u : 9u;
+    const uint bough = primitive / (tufts * per_prims);
+    const uint rem = primitive % (tufts * per_prims);
+    const uint fan = rem / per_prims;
+    const uint blade = rem % per_prims;
+    const uint base = bough * tufts * per_verts + fan * per_verts;
+    triangle = coarse
+                 ? (blade == 0u ? uint3 (base, base + 1u, base + 2u)
+                                : uint3 (base, base + 2u, base + 3u))
+                 : uint3 (base, base + 1u + 2u * blade, base + 2u + 2u * blade);
   } else if (primitive < 10u) {
     const uint side = primitive;
     triangle = uint3 (0u, 1u + (side + 1u) % 10u, 1u + side);
@@ -652,11 +684,13 @@ static inline void forest_indices (thread Mesh& out,
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ = forest_organ (tree, u, part, false);
   const uint tufts = organ.frond ? forest_bough_tufts (organ.bundle) : 0u;
+  const uint per_tuft_verts = organ.bundle == 4u ? 4u : 9u;
+  const uint per_tuft_prims = organ.bundle == 4u ? 2u : 4u;
   const uint vertices = organ.wood    ? 24u
-                        : organ.frond ? organ.bundle * tufts * 9u
+                        : organ.frond ? organ.bundle * tufts * per_tuft_verts
                                       : 32u;
   const uint primitives = organ.wood    ? 24u
-                          : organ.frond ? organ.bundle * tufts * 4u
+                          : organ.frond ? organ.bundle * tufts * per_tuft_prims
                                         : 60u;
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
