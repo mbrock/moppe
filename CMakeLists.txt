@@ -744,6 +744,13 @@ if(APPLE AND NOT MOPPE_MOBILE_APPLE)
   set_target_properties(moppe PROPERTIES
     XCODE_GENERATE_SCHEME TRUE
     XCODE_SCHEME_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    # Xcode's GPU capture layer crashes the MetalFX temporal scaler under
+    # Metal 4 (GPUToolsCapture wraps the scaler, MetalFX then calls
+    # globalTraceObjectID on the MTL4 debug encoder, which lacks it), so
+    # plain Run keeps capture injection off. For a GPU trace, run with
+    # --upscaling linear -- the exact non-MetalFX fallback.
+    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE "Disabled"
+    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION FALSE
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "se.brockman.moppe"
     MACOSX_BUNDLE_INFO_PLIST
       ${CMAKE_CURRENT_SOURCE_DIR}/moppe/platform/mac/Info.plist.in
