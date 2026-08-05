@@ -142,7 +142,7 @@ namespace moppe::game {
     DisplayColor sun_diffuse {};
     DisplayColor sun_specular {};
     DisplayColor ambient {};
-    float sun_height = 0.56f;
+    float sun_height = 0.62f;
     float time = 0.0f;
     cloud_cover_t cloudiness = 0.0f * cloud_cover[mp_units::one];
     float sun_visibility = 0.0f;
