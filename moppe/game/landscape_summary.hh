@@ -43,6 +43,8 @@ namespace moppe::game {
     double largest_connected_below_10_deg_m2 = 0.0;
     double largest_connected_below_20_deg_m2 = 0.0;
     std::size_t river_reaches = 0;
+    std::size_t river_graph_junctions = 0;
+    std::size_t dry_confluence_cells = 0;
     double river_length_m = 0.0;
     double drainage_density_m_per_km2 = 0.0;
     double largest_river_catchment_m2 = 0.0;
