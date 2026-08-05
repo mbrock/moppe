@@ -14,11 +14,6 @@ window=${MOPPE_GAZETTEER_WINDOW:-1600x900}
 settle=${MOPPE_GAZETTEER_SETTLE:-18}
 channel_areas=${MOPPE_CHANNEL_AREAS:-"1 4 7 10 16 25 100 400 1200"}
 
-if [[ -e $output ]]; then
-  echo "$output already exists" >&2
-  exit 1
-fi
-
 mkdir -p "$output"
 
 # The logarithmic series begins at the legacy all-cell incision baseline and
@@ -31,6 +26,20 @@ for channel_area in $channel_areas; do
   fi
   variant="$output/channel-$channel_area"
   cache_key="channel-$channel_area"
+  if [[ -f $variant/terrain-summary.csv &&
+        -f $variant/terrain-spectrum.csv &&
+        -f $variant/capture.txt &&
+        -f $variant/cache-check/stderr.log ]] &&
+     grep -q "world cache: local=" "$variant/cache-check/stderr.log"; then
+    echo "reusing completed channel area $channel_area"
+    continue
+  fi
+  if [[ -f $variant/failure.txt ]]; then
+    echo "reusing failed channel area $channel_area"
+    continue
+  fi
+  mkdir -p "$variant"
+  set +e
   MOPPE_SEED="$seed" \
   MOPPE_TERRAIN_PROFILE=play \
   MOPPE_GAZETTEER_GRAPHICS="$graphics" \
@@ -42,6 +51,14 @@ for channel_area in $channel_areas; do
   MOPPE_REFRESH_WORLD_CACHE=1 \
   MOPPE_MAPCACHE="$variant/terrain-cache.arrows" \
     "$root/tools/capture-terrain-gazetteer" "$variant"
+  capture_status=$?
+  set -e
+  if [[ $capture_status -ne 0 ]]; then
+    printf 'capture_exit_status=%s\n' "$capture_status" \
+      >"$variant/failure.txt"
+    echo "channel area $channel_area failed with status $capture_status" >&2
+    continue
+  fi
 
   "$root/tools/terrain-spectrum" "$variant"
 
@@ -101,6 +118,18 @@ with (root / "matrix.csv").open("w", newline="") as destination:
     writer = csv.DictWriter(destination, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
+
+with (root / "failures.csv").open("w", newline="") as destination:
+    writer = csv.writer(destination)
+    writer.writerow(["channel_initiation_area_m2", "failure"])
+    for path in sorted(
+        root.glob("channel-*/failure.txt"),
+        key=lambda item: float(item.parent.name.removeprefix("channel-")),
+    ):
+        writer.writerow([
+            path.parent.name.removeprefix("channel-"),
+            path.read_text().strip(),
+        ])
 PY
 
 echo "wrote terrain channel matrix to $output/matrix.csv"

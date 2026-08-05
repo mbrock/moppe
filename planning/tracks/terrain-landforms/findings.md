@@ -255,3 +255,50 @@ the freshwater approaches visibly occupy broader ground while mountain groups
 remain intact.
 
 Decision artifacts are under `/tmp/moppe-valley.Z16cEc/gazetteer`.
+
+## TER-011 revisit: physical thresholds still expose undrained basins
+
+### Decision
+
+Do not select a physical channel-initiation threshold after TER-021. Keep the
+1 m2 all-cell fallback in Play while TER-022 adds standing-water accommodation
+and mouth deposition. This is not completion of TER-011: the selected default
+still lies below one 5.96 m2 Play cell and therefore does not establish the
+RFC's channel/hillslope distinction.
+
+### Optimized coarse matrix
+
+The resumable `tools/terrain-channel-matrix` ran the optimized RelWithDebInfo
+build (`-O2 -g -DNDEBUG`) at 1, 25, 100, 400, and 1200 m2 after both
+cover-aware transport and valley-width deposition. Each completed candidate
+used a fresh terrain cache, made a frozen gazetteer and spectrum, saved a
+recipe-specific finished world, and loaded it on the verification launch. The
+tool now records generation failures and continues later anchors instead of
+discarding a long experiment.
+
+| Reading | 1 m2 | 25 m2 | 100 m2 | 1200 m2 |
+| --- | ---: | ---: | ---: | ---: |
+| Land relief | 194.6 m | 222.9 m | 266.5 m | 332.8 m |
+| Median slope | 25.5 deg | 47.8 deg | 70.0 deg | 48.0 deg |
+| 90th-percentile slope | 39.6 deg | 64.8 deg | 79.4 deg | 80.9 deg |
+| Land at or below 10 deg | 10.36% | 4.50% | 1.09% | 11.83% |
+| Largest connected gentle land | 0.423 km2 | 0.016 km2 | 0.0005 km2 | 0.095 km2 |
+| Visible river length | 36.55 km | 28.20 km | 7.69 km | 3.30 km |
+| Inland water area | 0.598 km2 | 1.594 km2 | 3.296 km2 | 0.988 km2 |
+| Spectral peak excess | +0.463 dex | +0.684 dex | +0.717 dex | +0.312 dex |
+
+The 25 m2 contact sheet is already dominated by parallel fins, perched water,
+and abrupt coastal faces. At 100 m2 the fixed cameras frequently sit inside
+near-vertical walls, the confluence view disappears, and forest
+representatives fall from 64,090 to 9,839. The 400 m2 terrain fails the normal
+world gate because no complete home-base expedition circuit exists. The
+1200 m2 non-monotonic low-gradient fraction comes from isolated plateaus above
+sheer walls, not rideable rolling geography.
+
+Cover feedback and lateral deposition therefore did not replace the process
+being removed: below-threshold incision still drains local basins and cuts
+their outlets. TER-022 must let standing water retain incoming solid over its
+available bed and evolve mouths/outlets before TER-011 can be tried honestly
+again.
+
+Decision artifacts are under `/tmp/moppe-channel-cover.nU3Bp4/matrix`.

@@ -80,6 +80,14 @@ regression. The cover and valley dependencies are therefore closed; TER-011
 is ready to revisit physical channel initiation against the improved process
 model.
 
+The post-TER-021 channel matrix still rejects every physically resolved
+threshold. At 25 m2 the median slope nearly doubles and inland water area
+nearly triples; at 100 m2 median slope reaches 70 degrees; at 400 m2 no
+complete trail circuit exists. Valley floors can receive sediment but do not
+provide basin accommodation or evolve outlets. TER-011 returns to backlog and
+TER-022 is ready; lake-bed storage and mouth deposition are now the missing
+process gate rather than another threshold calibration.
+
 ## Deferred until the shape works
 
 Grain classes, porosity, compaction, stratigraphy, and detailed suspended-load
