@@ -442,6 +442,62 @@ namespace moppe {
     }
   };
 
+#ifdef __APPLE__
+  // Keep the generic quaternion available for other component types while the
+  // gameplay float quaternion uses Apple's native SIMD register and ABI.
+  template <>
+  class QuaternionG<float> {
+  public:
+    QuaternionG (float x, float y, float z, float w)
+        : m_value (simd_quaternion (x, y, z, w)) {}
+
+    QuaternionG (const Vec3& v, float w) : QuaternionG (v[0], v[1], v[2], w) {}
+
+    static QuaternionG rotation (const Vec3& axis, radians_t angle) {
+      const radians_t half_angle = angle / 2;
+      return QuaternionG (moppe::sin (half_angle) * axis,
+                          moppe::cos (half_angle));
+    }
+
+    static Vec3 rotate (const Vec3& v, const Vec3& axis, radians_t angle) {
+      return rotate (v, rotation (axis, angle));
+    }
+
+    static Vec3 rotate (const Vec3& v, const QuaternionG& q) {
+      const simd_quatf vector = simd_quaternion (v[0], v[1], v[2], 0.0f);
+      const simd_quatf rotated =
+        simd_mul (simd_mul (q.m_value, vector), simd_conjugate (q.m_value));
+      return Vec3 (rotated.vector.xyz);
+    }
+
+    Vec3 vector () const {
+      return Vec3 (m_value.vector.xyz);
+    }
+
+    QuaternionG& operator*= (const QuaternionG& q) {
+      m_value = simd_mul (m_value, q.m_value);
+      return *this;
+    }
+
+    QuaternionG conjugate () const {
+      return QuaternionG (simd_conjugate (m_value));
+    }
+
+    float length () const {
+      return simd_length (m_value.vector);
+    }
+
+    const simd_quatf& native () const {
+      return m_value;
+    }
+
+  private:
+    explicit QuaternionG (simd_quatf value) : m_value (value) {}
+
+    simd_quatf m_value;
+  };
+#endif
+
   template <typename T>
   inline QuaternionG<T> operator* (QuaternionG<T> a, const QuaternionG<T>& b) {
     a *= b;
@@ -449,6 +505,13 @@ namespace moppe {
   }
 
   using Quaternion = QuaternionG<float>;
+
+#ifdef __APPLE__
+  static_assert (sizeof (Quaternion) == sizeof (simd_quatf));
+  static_assert (alignof (Quaternion) == alignof (simd_quatf));
+  static_assert (std::is_trivially_copyable_v<Quaternion>);
+  static_assert (std::is_standard_layout_v<Quaternion>);
+#endif
 
   // Physical spatial vectors keep one unit around one numerical vector.  The
   // simulation can migrate fields to these types incrementally without ever
