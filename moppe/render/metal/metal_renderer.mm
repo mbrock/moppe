@@ -4659,11 +4659,9 @@ namespace moppe {
                      m_frame,
                      MTLRenderStageObject | MTLRenderStageMesh |
                        MTLRenderStageFragment);
-      [enc drawMeshThreadgroups:MTLSizeMake ((forest.count +
-                                              MOPPE_FOREST_OBJECT_THREADS - 1) /
-                                               MOPPE_FOREST_OBJECT_THREADS,
-                                             1,
-                                             1)
+      // One object threadgroup per individual: a hero assembly owns the
+      // whole payload instead of sharing it with seven neighbours.
+      [enc drawMeshThreadgroups:MTLSizeMake (forest.count, 1, 1)
         threadsPerObjectThreadgroup:MTLSizeMake (
                                       MOPPE_FOREST_OBJECT_THREADS, 1, 1)
           threadsPerMeshThreadgroup:MTLSizeMake (
