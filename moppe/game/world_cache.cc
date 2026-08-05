@@ -20,9 +20,10 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 9 spreads routed deposition across physical valley footprints;
-    // version 8 worlds retain the former one-cell centerline deposits.
-    constexpr std::uint32_t CACHE_VERSION = 9;
+    // Version 10 distributes sediment through standing-water accommodation
+    // and mouth fans; version 9 worlds export it immediately at the coast and
+    // retain lake loads at one routed cell.
+    constexpr std::uint32_t CACHE_VERSION = 10;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());

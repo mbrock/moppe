@@ -237,6 +237,8 @@ namespace moppe::terrain {
       0.0 * stream_cubic_metre;
     cubic_meters_f64_t fluvial_bedrock_detached_volume =
       0.0 * stream_cubic_metre;
+    cubic_meters_f64_t lake_sediment_storage_volume = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t ocean_mouth_deposition_volume = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t sediment_balance_residual = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t hillslope_transferred_volume = 0.0 * stream_cubic_metre;
     cubic_meters_f64_t hillslope_bedrock_detached_volume =
@@ -419,13 +421,23 @@ namespace moppe::terrain {
             mobile_sediment[cell].numerical_value_in (u::m) * cell_area_m2;
           available_cover[cell] = stream_sediment_volume_from (cover_m3);
         }
+        const StandingWaterStorage standing_storage =
+          standing_water_storage_capacity (
+            flood,
+            census,
+            spatial::get<fractional_contributing_area> (drainage),
+            maximum_deposition,
+            parameters.valley_deposition);
         const SedimentRoutingResult routed =
           route_sediment (drainage.domain (),
                           potential_detachment,
                           transport_capacity,
                           maximum_deposition,
                           flood.ocean,
-                          available_cover);
+                          available_cover,
+                          census.membership ().values (),
+                          standing_storage.body_capacity,
+                          standing_storage.ocean_mouth_capacity);
 
         for (std::size_t cell = 0; cell < count; ++cell) {
           const double detached_m =
@@ -446,19 +458,40 @@ namespace moppe::terrain {
             static_cast<float> (detached_m) * sediment_thickness[u::m];
         }
 
+        const StandingWaterDepositionResult standing =
+          spread_standing_water_deposition (
+            flood,
+            census,
+            drainage.domain (),
+            spatial::get<fractional_contributing_area> (drainage),
+            spatial::get<channel_tangent> (drainage),
+            routed.deposited,
+            maximum_deposition,
+            parameters.valley_deposition);
+        sediment_balance_residual += standing.balance_residual;
+        lake_sediment_storage_volume +=
+          stream_sediment_volume_value (standing.lake_storage) *
+          stream_cubic_metre;
+        ocean_mouth_deposition_volume +=
+          stream_sediment_volume_value (standing.ocean_mouth_storage) *
+          stream_cubic_metre;
+        const double storage_overflow_m3 =
+          stream_sediment_volume_value (standing.exported);
+
         const LateralDepositionResult lateral = spread_valley_deposition (
           drainage.domain (),
           next_heights,
           spatial::get<fractional_contributing_area> (drainage),
           spatial::get<channel_tangent> (drainage),
-          routed.deposited,
+          standing.dry_centerline,
           flood.ocean,
           parameters.valley_deposition);
         sediment_balance_residual += lateral.balance_residual;
 
         for (std::size_t cell = 0; cell < count; ++cell) {
           const double deposited_m =
-            stream_sediment_volume_value (lateral.deposited[cell]) /
+            (stream_sediment_volume_value (lateral.deposited[cell]) +
+             stream_sediment_volume_value (standing.deposited[cell])) /
             cell_area_m2;
           next_heights[cell] = mp_units::value_cast<float> (next_heights[cell] +
                                                             deposited_m * u::m);
@@ -471,10 +504,12 @@ namespace moppe::terrain {
         eroded_volume += stream_sediment_volume_value (routed.detached_total) *
                          stream_cubic_metre;
         deposited_volume +=
-          stream_sediment_volume_value (routed.deposited_total) *
+          (stream_sediment_volume_value (routed.deposited_total) -
+           storage_overflow_m3) *
           stream_cubic_metre;
         exported_sediment_volume +=
-          stream_sediment_volume_value (routed.exported_to_ocean) *
+          (stream_sediment_volume_value (routed.exported_to_ocean) +
+           storage_overflow_m3) *
           stream_cubic_metre;
         fluvial_entrained_cover_volume +=
           stream_sediment_volume_value (routed.entrained_cover_total) *
@@ -550,6 +585,8 @@ namespace moppe::terrain {
     report.exported_sediment_volume = exported_sediment_volume;
     report.fluvial_entrained_cover_volume = fluvial_entrained_cover_volume;
     report.fluvial_bedrock_detached_volume = fluvial_bedrock_detached_volume;
+    report.lake_sediment_storage_volume = lake_sediment_storage_volume;
+    report.ocean_mouth_deposition_volume = ocean_mouth_deposition_volume;
     report.sediment_balance_residual = sediment_balance_residual;
     report.hillslope_transferred_volume = hillslope_transferred_volume;
     report.hillslope_bedrock_detached_volume =

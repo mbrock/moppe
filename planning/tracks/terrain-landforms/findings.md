@@ -302,3 +302,67 @@ available bed and evolve mouths/outlets before TER-011 can be tried honestly
 again.
 
 Decision artifacts are under `/tmp/moppe-channel-cover.nU3Bp4/matrix`.
+
+## TER-022: standing-water storage and mouth deposition
+
+### Decision
+
+Give every censused inland body one shared storage budget equal to the sum of
+its cell accommodation, bounded by the existing per-step aggradation limit.
+An entering load consumes that budget once for the body and carries any excess
+along the already-solved drainage DAG. Distribute retained load across the
+eligible lake bed in proportion to local capacity, so the body fills as a
+surface rather than growing a routed-cell tower.
+
+At the coast, retain only the volume admitted by a meter-scaled mouth
+footprint. Place it in a tangent-oriented fan that widens downstream, enforce
+the accommodation and per-step limit globally across overlapping fans, and
+record everything that does not fit as ocean export. Flood and drainage are
+recomputed after every geological step, so accumulated fill changes later
+water bodies and outlet routes without any one step crossing the water
+surface. World cache schema 10 excludes the former standing-water geography.
+
+### Synthetic proof
+
+The routing fixture sends ten cubic metres through a four-cubic-metre lake
+budget and a three-cubic-metre mouth budget, retaining seven and exporting
+three with zero ledger residual. A finite nine-cell lake receives six cubic
+metres over all nine cells, stays below its flood surface, and has less water
+depth on the next analysis. A deliberately overloaded coastal source spreads
+over multiple ocean cells, never exceeds any one-cell capacity, and explicitly
+exports the remainder. The optimized build passes all 250 tests.
+
+### Optimized Play result
+
+The seed-123 acceptance held the TER-020 concentration, 500-ky uplift,
+two-million-year duration, one-square-metre channel fallback, renderer, and
+capture settings fixed. The finished 16 MB elevation field was byte-identical
+before and after compacting the mouth scratch storage. The compact fresh run
+made all seventeen gazetteer views in 115 seconds, compared with 113 seconds
+for TER-021, and the version-10 finished-world cache loaded on the next launch.
+
+| Reading | TER-021 | Standing water |
+| --- | ---: | ---: |
+| Land relief | 194.63 m | 199.16 m |
+| Median slope | 25.49 deg | 17.22 deg |
+| 90th-percentile slope | 39.58 deg | 40.13 deg |
+| Land at or below 10 deg | 10.36% | 27.28% |
+| Largest connected gentle land | 0.423 km2 | 2.496 km2 |
+| Visible river length | 36.55 km | 34.58 km |
+| Inland water area | 0.598 km2 | 1.041 km2 |
+| Mobile sediment | 24.99 Mm3 | 31.67 Mm3 |
+| Inferred bedrock detached | 2.156 Bm3 | 1.309 Bm3 |
+| Inferred ocean export | 2.131 Bm3 | 1.278 Bm3 |
+| Spectral peak excess | +0.463 dex | +0.435 dex |
+
+This is the first process addition in the track that changes the global
+landscape class rather than merely broadening a local floor: the fixed views
+now include extensive rolling lowlands, while mountain groups and roughly
+two-hundred-metre relief remain. River, confluence, lake, and mouth targets all
+resolve. The mouth view shows a shallow vegetated approach entering the sea;
+the lake overview also exposes many small satellite basins, which should be
+watched during the renewed channel matrix rather than hidden by a threshold
+change.
+
+Decision artifacts are under
+`/tmp/moppe-standing-water-perf.7FQs7m/gazetteer`.

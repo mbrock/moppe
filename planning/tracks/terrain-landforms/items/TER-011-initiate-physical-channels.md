@@ -3,8 +3,8 @@ id = "TER-011"
 title = "Initiate channels above a physical catchment scale"
 rfc = "RFC-0005"
 track = "terrain-landforms"
-status = "backlog"
-depends_on = ["TER-021"]
+status = "ready"
+depends_on = ["TER-021", "TER-022"]
 order = 60
 areas = ["terrain", "hydrology", "analysis"]
 +++
@@ -41,3 +41,8 @@ cannot form a complete trail circuit. TER-022 now precedes another attempt:
 standing-water accommodation and outlet evolution must be explicit before
 small-catchment incision can stop serving as the world's accidental basin
 drainage process.
+
+TER-022 now supplies that missing process and materially expands connected
+low-gradient land while retaining mountain relief. The physical threshold
+matrix can therefore be rerun against the new evolved drainage rather than
+the former perched-basin geography.

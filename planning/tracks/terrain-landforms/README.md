@@ -20,8 +20,8 @@ flowchart LR
   TER040["TER-040: calibrate Play"]
 
   TER000 --> TER001 --> TER002 --> TER010 --> TER020 --> TER021
-  TER021 --> TER011 --> TER030 --> TER040
-  TER021 --> TER022 --> TER040
+  TER021 --> TER022 --> TER011 --> TER030 --> TER040
+  TER022 --> TER040
 ```
 
 ## Program, not queue
@@ -80,13 +80,21 @@ regression. The cover and valley dependencies are therefore closed; TER-011
 is ready to revisit physical channel initiation against the improved process
 model.
 
-The post-TER-021 channel matrix still rejects every physically resolved
+The post-TER-021 channel matrix rejected every physically resolved
 threshold. At 25 m2 the median slope nearly doubles and inland water area
 nearly triples; at 100 m2 median slope reaches 70 degrees; at 400 m2 no
 complete trail circuit exists. Valley floors can receive sediment but do not
-provide basin accommodation or evolve outlets. TER-011 returns to backlog and
-TER-022 is ready; lake-bed storage and mouth deposition are now the missing
-process gate rather than another threshold calibration.
+provide basin accommodation or evolve outlets. That made lake-bed storage and
+mouth deposition the missing process gate rather than another threshold
+calibration.
+
+TER-022 closes that gate. Lake loads now consume a shared, accommodation-aware
+body budget and spread across the available bed; mouth loads form bounded fans
+and retain explicit export. The optimized seed-123 world keeps 199 m of relief
+while growing land below ten degrees from 10.4% to 27.3% and the largest
+connected gentle region from 0.423 to 2.50 km2. Generation remains at the
+TER-021 performance baseline after compacting the mouth footprint work.
+TER-011 is ready for a renewed physical channel-scale matrix.
 
 ## Deferred until the shape works
 
