@@ -1,0 +1,68 @@
+#!/bin/bash
+# Size-normalized tree LOD atlas.
+#
+# Renders one solo conifer from the tree studio's dolly ladder (28 stops,
+# 350 m to 10 m), then crops every frame around the specimen by its known
+# projected size and rescales the crops to identical tiles. The result is a
+# contact sheet in which the tree is the SAME SIZE at every distance, so the
+# only thing that changes from tile to tile is the level-of-detail decision
+# itself -- any structural morphing along the approach is directly visible
+# without the confound of the tree changing screen size.
+#
+#   tools/tree-lod-atlas [OUTPUT_DIR] [TREE_HEIGHT_M]
+#
+# Writes tile-NN-<distance>.png and an index.html contact sheet.
+
+set -euo pipefail
+
+OUT="${1:-/tmp/tree-lod-atlas}"
+HEIGHT="${2:-15}"
+STUDIO=./build/moppe-tree-studio
+
+if [ ! -x "$STUDIO" ]; then
+  cmake --build build --target moppe-tree-studio
+fi
+
+RAW="$OUT/raw"
+mkdir -p "$RAW"
+rm -f "$RAW"/dolly-*.png "$OUT"/tile-*.png
+
+MOPPE_STUDIO_SOLO="$HEIGHT" MOPPE_STUDIO_DOLLY="$RAW" "$STUDIO"
+
+H_PX=$(sips -g pixelHeight "$RAW/dolly-00.png" | awk '/pixelHeight/{print $2}')
+
+# The studio's dolly: distance = 350 * (10/350)^(shot/27), 50-degree
+# vertical field of view aimed at the specimen's mid-height. The projected
+# tree height in pixels is therefore H * h / (2 * tan(25 deg) * d).
+TILES=""
+for i in $(seq 0 27); do
+  n=$(printf "%02d" "$i")
+  d=$(awk -v i="$i" 'BEGIN{printf "%.1f", 350*exp(log(10/350.0)*i/27)}')
+  side=$(awk -v H="$H_PX" -v h="$HEIGHT" -v d="$d" 'BEGIN{
+    px = H*h/(2*0.46631*d); s = int(1.35*px);
+    if (s < 96) s = 96; if (s > H) s = H; print s}')
+  label=$(awk -v d="$d" 'BEGIN{printf "%dm", d+0.5}')
+  tile="tile-$n-$label.png"
+  sips --cropToHeightWidth "$side" "$side" "$RAW/dolly-$n.png" \
+       --out "$OUT/$tile" > /dev/null
+  sips -z 512 512 "$OUT/$tile" > /dev/null
+  TILES="$TILES $tile"
+done
+
+{
+  echo '<!doctype html><meta charset="utf-8"><title>Tree LOD atlas</title>'
+  echo '<style>body{background:#1b1e23;color:#dde;font:13px system-ui}'
+  echo '.g{display:flex;flex-wrap:wrap;gap:6px}'
+  echo 'figure{margin:0}img{width:256px;height:256px;image-rendering:auto}'
+  echo 'figcaption{text-align:center}</style>'
+  echo "<h1>Solo conifer, ${HEIGHT} m, constant apparent size</h1>"
+  echo '<div class=g>'
+  for tile in $TILES; do
+    label=${tile#tile-??-}
+    label=${label%.png}
+    echo "<figure><img src=\"$tile\"><figcaption>$label</figcaption></figure>"
+  done
+  echo '</div>'
+} > "$OUT/index.html"
+
+echo "tree-lod-atlas: $OUT/index.html"

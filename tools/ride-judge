@@ -1,0 +1,88 @@
+#!/bin/bash
+# Ride judge: capture a deterministic autopilot ride as VIDEO and ask a
+# video-capable model whether the trees behave -- the verification that
+# still frames cannot provide, because temporal artifacts (organs popping,
+# crowns morphing, the forest "growing" around the rider) are visible only
+# in motion.
+#
+#   tools/ride-judge [OUTPUT_DIR]
+#
+# Stage 1 always runs: capture consecutive gameplay frames from the demo
+# autopilot and encode OUTPUT_DIR/ride.mp4 (deterministic: seed 123).
+# Stage 2 runs when GEMINI_API_KEY is set: upload the video to the Gemini
+# API and ask for a 1-5 temporal-stability rating with timestamps of any
+# artifacts. GEMINI_MODEL overrides the default model.
+#
+# Env: MOPPE_RIDE_JUDGE_FRAMES (default 240 captured frames, ~8 s of ride).
+
+set -euo pipefail
+
+OUT="${1:-/tmp/ride-judge}"
+FRAMES="${MOPPE_RIDE_JUDGE_FRAMES:-240}"
+MODEL="${GEMINI_MODEL:-gemini-3.6-flash}"
+GAME=./build/moppe.app/Contents/MacOS/moppe
+
+mkdir -p "$OUT/frames"
+
+if [ ! -f "$OUT/frames/ride-0000.png" ]; then
+  MOPPE_DEMO=1 \
+  MOPPE_RIDE_CAPTURE_DIR="$OUT/frames" \
+  MOPPE_RIDE_CAPTURE_START=600 \
+  MOPPE_RIDE_CAPTURE_FRAMES="$FRAMES" \
+  "$GAME" --windowed --inactive --seed 123 --terrain-quality fast
+fi
+
+if ! command -v ffmpeg > /dev/null; then
+  echo "ride-judge: ffmpeg not found; frames are in $OUT/frames" >&2
+  exit 1
+fi
+
+# The capture takes every second render frame of a 60 Hz run.
+ffmpeg -y -loglevel error -framerate 30 -i "$OUT/frames/ride-%04d.png" \
+       -vf scale=1280:-2 -c:v libx264 -pix_fmt yuv420p -crf 23 \
+       "$OUT/ride.mp4"
+echo "ride-judge: wrote $OUT/ride.mp4"
+
+if [ -z "${GEMINI_API_KEY:-}" ]; then
+  echo "ride-judge: GEMINI_API_KEY not set; skipping the judging step."
+  echo "ride-judge: watch $OUT/ride.mp4 yourself, or set the key and rerun."
+  exit 0
+fi
+
+PROMPT='You are judging a motocross video game ride-through for TEMPORAL
+STABILITY of the procedurally generated trees. The camera moves fast; that
+is normal. Watch the conifers at all distances and judge ONLY how they
+behave over time: do trees visibly morph, grow new branches, shed branches,
+pop between representations, or otherwise change structure while the camera
+moves? Stable trees may scale and parallax but never restructure.
+Respond with:
+RATING: <1-5>  (5 = completely stable, indistinguishable from fixed
+geometry; 1 = constant conspicuous morphing)
+ARTIFACTS: a bullet list of each artifact you saw, with its timestamp and
+screen location, or "none".'
+
+VIDEO_B64=$(base64 < "$OUT/ride.mp4" | tr -d '\n')
+
+curl -s "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent" \
+  -H "x-goog-api-key: $GEMINI_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d @- << EOF > "$OUT/judgement.json"
+{
+  "contents": [{
+    "parts": [
+      { "inline_data": { "mime_type": "video/mp4", "data": "$VIDEO_B64" } },
+      { "text": $(printf '%s' "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))') }
+    ]
+  }]
+}
+EOF
+
+python3 - "$OUT/judgement.json" << 'EOF'
+import json, sys
+with open(sys.argv[1]) as f:
+    reply = json.load(f)
+try:
+    print(reply["candidates"][0]["content"]["parts"][0]["text"])
+except (KeyError, IndexError):
+    print("ride-judge: unexpected API reply:", json.dumps(reply)[:2000])
+EOF

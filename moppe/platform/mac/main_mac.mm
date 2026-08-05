@@ -55,6 +55,10 @@ static Key map_key (NSEvent* event) {
     return Key::D;
   case 'e':
     return Key::E;
+  case 'f':
+    return Key::Mount;
+  case 'p':
+    return Key::Screenshot;
   case 'g':
     return Key::G;
   case 'm':
@@ -603,8 +607,9 @@ namespace moppe {
         view.colorPixelFormat = MTLPixelFormatRGBA16Float;
         view.depthStencilPixelFormat = MTLPixelFormatInvalid;
         view.sampleCount = 1;
-        if (config.capture_frames)
-          view.framebufferOnly = NO;
+        // The in-game screenshot key can blit any frame, so every run keeps
+        // its drawables blit-readable, not only automated capture runs.
+        view.framebufferOnly = NO;
         window.contentView = view;
         match_screen_refresh_rate (view, config.frame_interpolation);
         match_screen_render_size (view);

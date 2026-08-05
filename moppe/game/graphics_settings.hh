@@ -25,6 +25,8 @@ namespace moppe::game {
     snow_support_filter,
     channel_flux_detail,
     undergrowth,
+    light_shafts,
+    gtao,
   };
 
   struct GraphicsSettings {
@@ -40,7 +42,7 @@ namespace moppe::game {
     // the budget and restores the point-relative rule on its own.
     float scene_megapixel_budget = 4.2f;
     // Late afternoon: a lower, warmer sun with longer shadows.
-    float sun_height = 0.56f;
+    float sun_height = 0.62f;
 
     bool terrain_shadows = true;
     bool ocean = true;
@@ -57,6 +59,8 @@ namespace moppe::game {
     bool snow_support_filter = true;
     bool channel_flux_detail = true;
     bool undergrowth = true;
+    bool light_shafts = true;
+    bool gtao = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -168,15 +172,35 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 15> graphics_features {
-    &terrain_shadows_feature,     &ocean_feature,
-    &waterfall_curtains_feature,  &particles_feature,
-    &vehicle_effects_feature,     &star_effects_feature,
-    &motion_blur_feature,         &bloom_feature,
-    &auto_exposure_feature,       &lens_flare_feature,
-    &terrain_topology_feature,    &terrain_fragment_normals_feature,
-    &snow_support_filter_feature, &channel_flux_detail_feature,
+  inline constexpr GraphicsFeature light_shafts_feature {
+    GraphicsFeatureId::light_shafts,
+    "light-shafts",
+    &GraphicsSettings::light_shafts,
+    true
+  };
+
+  inline constexpr GraphicsFeature gtao_feature {
+    GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 17> graphics_features {
+    &terrain_shadows_feature,
+    &ocean_feature,
+    &waterfall_curtains_feature,
+    &particles_feature,
+    &vehicle_effects_feature,
+    &star_effects_feature,
+    &motion_blur_feature,
+    &bloom_feature,
+    &auto_exposure_feature,
+    &lens_flare_feature,
+    &terrain_topology_feature,
+    &terrain_fragment_normals_feature,
+    &snow_support_filter_feature,
+    &channel_flux_detail_feature,
     &undergrowth_feature,
+    &light_shafts_feature,
+    &gtao_feature,
   };
 
   // Ordinary play favors stable high-refresh presentation. Explicit quality

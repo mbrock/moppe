@@ -372,6 +372,11 @@ namespace moppe {
         id<MTLRenderPipelineState> present = nil, ghost = nil;
         id<MTLRenderPipelineState> copy = nil;
         id<MTLRenderPipelineState> underwater = nil;
+        id<MTLRenderPipelineState> shafts = nil;
+        id<MTLRenderPipelineState> shafts_add = nil;
+        id<MTLRenderPipelineState> gtao = nil;
+        id<MTLRenderPipelineState> gtao_blur = nil;
+        id<MTLRenderPipelineState> gtao_apply = nil;
         id<MTLRenderPipelineState> bloom_bright = nil;
         id<MTLRenderPipelineState> bloom_blur = nil;
         id<MTLRenderPipelineState> probe = nil;
@@ -481,6 +486,11 @@ namespace moppe {
         id<MTLTexture> msaa_color = nil, msaa_depth = nil;
         id<MTLTexture> scene_a = nil;
         id<MTLTexture> post_a = nil, post_b = nil;
+        // Half-resolution sun-shaft scatter; the march is the entire cost
+        // of the effect and its result is low-frequency light.
+        id<MTLTexture> shafts = nil;
+        // Half-resolution ambient occlusion, ping-ponged through its blur.
+        id<MTLTexture> ao_a = nil, ao_b = nil;
         id<MTLTexture> motion = nil, reactive = nil;
         id<MTLTexture> prev_frame = nil;
         id<MTLTexture> bloom_a = nil, bloom_b = nil;
@@ -571,6 +581,7 @@ namespace moppe {
         bool capture_active = false;
         int capture_frames = 0;
         int capture_frame_limit = 120;
+        int capture_start_frames = 0;
         std::string capture_path;
 #endif
       };
@@ -788,6 +799,13 @@ namespace moppe {
 
       class MetalPostPass {
       public:
+        static void apply_gtao (const MetalPostPassInputs& inputs,
+                                const MoppeGtaoUniforms& gtao,
+                                id<MTLTexture> scene_depth);
+        static void apply_light_shafts (const MetalPostPassInputs& inputs,
+                                        const MoppeShaftUniforms& shaft,
+                                        id<MTLTexture> scene_depth,
+                                        id<MTLTexture> shadow_map);
         static void apply_underwater (const MetalPostPassInputs& inputs,
                                       float time);
         static void apply_motion_blur (const MetalPostPassInputs& inputs,
@@ -897,6 +915,8 @@ namespace moppe {
                       uint64_t motion_id = 0) override;
       void draw_list (const DrawList& list, uint64_t motion_id = 0) override;
       void reconstruct_scene () override;
+      void apply_gtao (const GtaoParams& params) override;
+      void apply_light_shafts (const LightShaftParams& params) override;
       void apply_underwater (float time) override;
       void apply_motion_blur (float strength) override;
       void apply_scene_blur () override;
@@ -1535,6 +1555,36 @@ namespace moppe {
                                         false);
       m_pipelines.underwater = make_pipeline (@"quad_vertex",
                                               @"underwater_fragment",
+                                              scene,
+                                              MTLPixelFormatInvalid,
+                                              1,
+                                              false);
+      m_pipelines.shafts = make_pipeline (@"quad_vertex",
+                                          @"shafts_gather_fragment",
+                                          scene,
+                                          MTLPixelFormatInvalid,
+                                          1,
+                                          false);
+      m_pipelines.shafts_add = make_pipeline (@"quad_vertex",
+                                              @"shafts_add_fragment",
+                                              scene,
+                                              MTLPixelFormatInvalid,
+                                              1,
+                                              false);
+      m_pipelines.gtao = make_pipeline (@"quad_vertex",
+                                        @"gtao_gather_fragment",
+                                        MTLPixelFormatR8Unorm,
+                                        MTLPixelFormatInvalid,
+                                        1,
+                                        false);
+      m_pipelines.gtao_blur = make_pipeline (@"quad_vertex",
+                                             @"gtao_blur_fragment",
+                                             MTLPixelFormatR8Unorm,
+                                             MTLPixelFormatInvalid,
+                                             1,
+                                             false);
+      m_pipelines.gtao_apply = make_pipeline (@"quad_vertex",
+                                              @"gtao_apply_fragment",
                                               scene,
                                               MTLPixelFormatInvalid,
                                               1,
@@ -3248,6 +3298,9 @@ namespace moppe {
       retire (m_targets.scene_a);
       retire (m_targets.post_a);
       retire (m_targets.post_b);
+      retire (m_targets.shafts);
+      retire (m_targets.ao_a);
+      retire (m_targets.ao_b);
       retire (m_targets.motion);
       retire (m_targets.reactive);
       retire (m_targets.prev_frame);
@@ -3392,7 +3445,10 @@ namespace moppe {
           m_targets.spatial_fence.label = @"Moppe MetalFX temporal fence";
           m_targets.temporal_scaler.fence = m_targets.spatial_fence;
           color_input_usage = m_targets.temporal_scaler.colorTextureUsage;
-          depth_input_usage = m_targets.temporal_scaler.depthTextureUsage;
+          // The sun-shaft march reads the stored scene depth after
+          // reconstruction, on top of whatever the scaler requires.
+          depth_input_usage = m_targets.temporal_scaler.depthTextureUsage |
+                              MTLTextureUsageShaderRead;
           motion_input_usage = m_targets.temporal_scaler.motionTextureUsage;
           reactive_input_usage = m_targets.temporal_scaler.reactiveTextureUsage;
           reconstruction_output_usage =
@@ -3508,6 +3564,14 @@ namespace moppe {
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
       m_targets.post_b = make_target (
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
+      const int half_w = drawable_w / 2 > 0 ? drawable_w / 2 : 1;
+      const int half_h = drawable_h / 2 > 0 ? drawable_h / 2 : 1;
+      m_targets.shafts =
+        make_target (MTLPixelFormatRGBA16Float, half_w, half_h, 1, false);
+      m_targets.ao_a =
+        make_target (MTLPixelFormatR8Unorm, half_w, half_h, 1, false);
+      m_targets.ao_b =
+        make_target (MTLPixelFormatR8Unorm, half_w, half_h, 1, false);
       const int bw = drawable_w / 4 > 0 ? drawable_w / 4 : 1;
       const int bh = drawable_h / 4 > 0 ? drawable_h / 4 : 1;
       m_targets.bloom_a =
@@ -3733,7 +3797,15 @@ namespace moppe {
       m_frame.current_gpu_pass = GpuPass::Count;
 
 #if !TARGET_OS_IPHONE
-      if (params.profile && !m_frame.capture_path.empty () &&
+      // MOPPE_METAL_CAPTURE_START delays the trace so it lands on the view
+      // under study -- a demo ride, not the loading screen.
+      static const int capture_start = [] {
+        const char* start = ::getenv ("MOPPE_METAL_CAPTURE_START");
+        return start ? std::max (0, ::atoi (start)) : 0;
+      }();
+      const bool capture_reached =
+        ++m_frame.capture_start_frames > capture_start;
+      if (params.profile && !m_frame.capture_path.empty () && capture_reached &&
           !m_frame.capture_active && m_frame.capture_frames == 0) {
         NSString* path =
           [NSString stringWithUTF8String:m_frame.capture_path.c_str ()];
@@ -4596,11 +4668,9 @@ namespace moppe {
                      m_frame,
                      MTLRenderStageObject | MTLRenderStageMesh |
                        MTLRenderStageFragment);
-      [enc drawMeshThreadgroups:MTLSizeMake ((forest.count +
-                                              MOPPE_FOREST_OBJECT_THREADS - 1) /
-                                               MOPPE_FOREST_OBJECT_THREADS,
-                                             1,
-                                             1)
+      // One object threadgroup per individual: a hero assembly owns the
+      // whole payload instead of sharing it with seven neighbours.
+      [enc drawMeshThreadgroups:MTLSizeMake (forest.count, 1, 1)
         threadsPerObjectThreadgroup:MTLSizeMake (
                                       MOPPE_FOREST_OBJECT_THREADS, 1, 1)
           threadsPerMeshThreadgroup:MTLSizeMake (
@@ -5018,6 +5088,228 @@ namespace moppe {
     }
 
     // -- post ----------------------------------------------------------
+
+    void MetalPostPass::apply_gtao (const MetalPostPassInputs& inputs,
+                                    const MoppeGtaoUniforms& gtao,
+                                    id<MTLTexture> scene_depth) {
+      const MetalPipelines& pipelines = inputs.pipelines;
+      MetalFrameTargets& targets = inputs.targets;
+      MetalFrameEncoding& frame = inputs.frame;
+
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1; // no zoom
+      const MTLGPUAddress quad_uniforms = frame.arena[frame.slot].write (q);
+
+      const auto quad_pass = [&] (id<MTLRenderPipelineState> pipeline,
+                                  id<MTLTexture> destination,
+                                  NSString* label,
+                                  const MoppeGtaoUniforms& uniforms,
+                                  id<MTLTexture> scene,
+                                  id<MTLTexture> occlusion,
+                                  bool fence) {
+        MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+        rp.colorAttachments[0].texture = destination;
+        rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+        id<MTL4RenderCommandEncoder> enc =
+          [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+        enc.label = label;
+        if (fence && targets.spatial_fence)
+          [enc waitForFence:targets.spatial_fence
+            beforeEncoderStages:MTLStageFragment];
+        wait_for_render_or_blit_writes (enc);
+        record_gpu_pass_start (frame, enc, GpuPass::Post);
+        [enc setRenderPipelineState:pipeline];
+        bind_address (
+          frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
+        bind_address (frame,
+                      MTLRenderStageFragment,
+                      MOPPE_BUF_FRAME,
+                      frame.arena[frame.slot].write (uniforms));
+        if (scene)
+          bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, scene);
+        if (occlusion)
+          bind_texture (
+            frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, occlusion);
+        bind_texture (
+          frame, MTLRenderStageFragment, MOPPE_TEX_POST_DEPTH, scene_depth);
+        use_arguments (
+          enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:3];
+        if (fence && targets.spatial_fence)
+          [enc updateFence:targets.spatial_fence
+            afterEncoderStages:MTLStageFragment];
+        [enc endEncoding];
+      };
+
+      MoppeGtaoUniforms horizontal = gtao;
+      horizontal.blur.x = 1.0f / (float)targets.ao_a.width;
+      horizontal.blur.y = 0.0f;
+      MoppeGtaoUniforms vertical = gtao;
+      vertical.blur.x = 0.0f;
+      vertical.blur.y = 1.0f / (float)targets.ao_a.height;
+
+      quad_pass (
+        pipelines.gtao, targets.ao_a, @"GTAO gather", gtao, nil, nil, false);
+      quad_pass (pipelines.gtao_blur,
+                 targets.ao_b,
+                 @"GTAO blur",
+                 horizontal,
+                 nil,
+                 targets.ao_a,
+                 false);
+      quad_pass (pipelines.gtao_blur,
+                 targets.ao_a,
+                 @"GTAO blur",
+                 vertical,
+                 nil,
+                 targets.ao_b,
+                 false);
+
+      id<MTLTexture> src = frame.current_scene;
+      id<MTLTexture> dst =
+        (src == targets.post_a) ? targets.post_b : targets.post_a;
+      quad_pass (pipelines.gtao_apply,
+                 dst,
+                 @"GTAO apply",
+                 gtao,
+                 src,
+                 targets.ao_a,
+                 true);
+      frame.current_scene = dst;
+    }
+
+    void MetalRenderer::apply_gtao (const GtaoParams& params) {
+      if (!m_pipelines.gtao || !m_pipelines.gtao_blur ||
+          !m_pipelines.gtao_apply || !m_targets.ao_a || !m_targets.ao_b ||
+          !m_frame.command_buffer)
+        return;
+      // Occlusion needs the stored scene depth, which only the temporal
+      // path keeps.
+      if (!m_targets.temporal_scaler || !m_targets.msaa_depth)
+        return;
+      reconstruct_scene ();
+
+      MoppeGtaoUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.camera_pos = f4 (position_value (params.camera_pos));
+      u.ray_forward = f4 (params.forward);
+      u.ray_right = f4 (params.right_span);
+      u.ray_up = f4 (params.up_span);
+      u.params.x = params.radius.numerical_value_in (u::m);
+      u.params.y = scalar_value (params.strength);
+      u.params.z = params.near_plane.numerical_value_in (u::m);
+      u.params.w = params.far_plane.numerical_value_in (u::m);
+      MetalPostPass::apply_gtao (
+        { m_pipelines, m_targets, m_frame }, u, m_targets.msaa_depth);
+    }
+
+    void MetalPostPass::apply_light_shafts (const MetalPostPassInputs& inputs,
+                                            const MoppeShaftUniforms& shaft,
+                                            id<MTLTexture> scene_depth,
+                                            id<MTLTexture> shadow_map) {
+      const MetalPipelines& pipelines = inputs.pipelines;
+      MetalFrameTargets& targets = inputs.targets;
+      MetalFrameEncoding& frame = inputs.frame;
+
+      // The shared fullscreen vertex still wants quad uniforms; the march
+      // parameters ride the fragment stage at the same slot.
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1; // no zoom
+      const MTLGPUAddress quad_uniforms = frame.arena[frame.slot].write (q);
+
+      // Gather: march at half resolution into the scatter target.
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+      rp.colorAttachments[0].texture = targets.shafts;
+      rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+      id<MTL4RenderCommandEncoder> enc =
+        [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+      enc.label = @"Sun shafts gather";
+      wait_for_render_or_blit_writes (enc);
+      record_gpu_pass_start (frame, enc, GpuPass::Post);
+      [enc setRenderPipelineState:pipelines.shafts];
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
+      bind_address (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_BUF_FRAME,
+                    frame.arena[frame.slot].write (shaft));
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_POST_DEPTH, scene_depth);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_SHADOW, shadow_map);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+      [enc endEncoding];
+
+      // Add: bilinear-upsample the scatter onto the full-size scene.
+      id<MTLTexture> src = frame.current_scene;
+      id<MTLTexture> dst =
+        (src == targets.post_a) ? targets.post_b : targets.post_a;
+      MTL4RenderPassDescriptor* add = [[MTL4RenderPassDescriptor alloc] init];
+      add.colorAttachments[0].texture = dst;
+      add.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      add.colorAttachments[0].storeAction = MTLStoreActionStore;
+      enc = [frame.command_buffer renderCommandEncoderWithDescriptor:add];
+      enc.label = @"Sun shafts add";
+      if (targets.spatial_fence)
+        [enc waitForFence:targets.spatial_fence
+          beforeEncoderStages:MTLStageFragment];
+      wait_for_render_or_blit_writes (enc);
+      record_gpu_pass_start (frame, enc, GpuPass::Post);
+      [enc setRenderPipelineState:pipelines.shafts_add];
+      bind_address (
+        frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
+      bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, targets.shafts);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+      if (targets.spatial_fence)
+        [enc updateFence:targets.spatial_fence
+          afterEncoderStages:MTLStageFragment];
+      [enc endEncoding];
+
+      frame.current_scene = dst;
+    }
+
+    void MetalRenderer::apply_light_shafts (const LightShaftParams& params) {
+      if (!m_pipelines.shafts || !m_pipelines.shafts_add || !m_targets.shafts ||
+          !m_frame.command_buffer)
+        return;
+      // The march needs the stored scene depth, which only the temporal
+      // path keeps, and the per-frame camera-local shadow map.
+      if (!m_targets.temporal_scaler || !m_targets.msaa_depth)
+        return;
+      if (!m_terrain_resources.shadow_map || !m_terrain_resources.have_shadow)
+        return;
+      reconstruct_scene ();
+
+      MoppeShaftUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m4 (m_current_view_proj);
+      u.light_matrix = m4 (m_terrain_resources.light_biased);
+      u.camera_pos = f4 (position_value (params.camera_pos));
+      u.ray_forward = f4 (params.forward);
+      u.ray_right = f4 (params.right_span);
+      u.ray_up = f4 (params.up_span);
+      u.sun_dir = f4 (params.sun_dir);
+      u.sun_color = f4lin (params.sun_color, scalar_value (params.strength));
+      u.params.x = params.max_distance.numerical_value_in (u::m);
+      u.params.y = 0.011f; // extinction per metre
+      u.params.z = 24.0f;  // march steps
+      MetalPostPass::apply_light_shafts ({ m_pipelines, m_targets, m_frame },
+                                         u,
+                                         m_targets.msaa_depth,
+                                         m_terrain_resources.shadow_map);
+    }
 
     void MetalPostPass::apply_underwater (const MetalPostPassInputs& inputs,
                                           float time) {
