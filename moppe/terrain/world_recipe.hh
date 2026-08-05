@@ -6,6 +6,7 @@
 #include <moppe/terrain/stream_power_evolution.hh>
 #include <moppe/terrain/trail.hh>
 
+#include <optional>
 #include <string_view>
 
 namespace moppe::terrain {
@@ -50,12 +51,14 @@ namespace moppe::terrain {
                        int resolution,
                        Seed seed,
                        meters_t water_datum,
-                       TerrainGenerationProfile generation_profile);
+                       TerrainGenerationProfile generation_profile,
+                       std::optional<julian_years_t> uplift_duration);
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
                  Seed seed,
                  meters_t water_datum,
-                 TerrainGenerationProfile generation_profile);
+                 TerrainGenerationProfile generation_profile,
+                 std::optional<julian_years_t> uplift_duration);
 
     spatial_extent_t m_extent;
     int m_resolution;
@@ -66,11 +69,13 @@ namespace moppe::terrain {
     TrailFormation m_trail_formation;
   };
 
-  WorldRecipe make_world_recipe (spatial_extent_t extent,
-                                 int resolution,
-                                 Seed seed,
-                                 meters_t water_datum,
-                                 TerrainGenerationProfile generation_profile);
+  WorldRecipe make_world_recipe (
+    spatial_extent_t extent,
+    int resolution,
+    Seed seed,
+    meters_t water_datum,
+    TerrainGenerationProfile generation_profile,
+    std::optional<julian_years_t> uplift_duration = std::nullopt);
 }
 
 #endif

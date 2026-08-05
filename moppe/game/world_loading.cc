@@ -54,6 +54,9 @@ namespace moppe::game {
            << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
            << bits (extent[2]) << "-water-"
            << bits ((recipe.water_datum ()).numerical_value_in (moppe::u::m))
+           << "-uplift-"
+           << bits (recipe.evolution ().uplift_duration.numerical_value_in (
+                mp_units::astronomy::Julian_year))
            << ".arrows";
       return platform::cache_path (name.str ());
     }
@@ -66,7 +69,9 @@ namespace moppe::game {
           terrain::TerrainGenerationProfile::Play &&
         recipe.resolution () == 1024 && recipe.seed ().value == 123 &&
         extent[0] == 5000.0f && extent[1] == 320.0f && extent[2] == 5000.0f &&
-        recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f;
+        recipe.water_datum ().numerical_value_in (moppe::u::m) == 50.0f &&
+        recipe.evolution ().uplift_duration ==
+          500000.0f * mp_units::astronomy::Julian_year;
       if (is_apple_tv_default)
         return platform::asset_path (MOPPE_BUNDLED_WORLD_CACHE);
 #else

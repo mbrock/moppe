@@ -19,7 +19,8 @@ namespace moppe::terrain {
                             int resolution,
                             Seed seed,
                             meters_t water_datum,
-                            TerrainGenerationProfile generation_profile)
+                            TerrainGenerationProfile generation_profile,
+                            std::optional<julian_years_t> uplift_duration)
       : m_extent (extent), m_resolution (resolution), m_seed (seed),
         m_water_datum (water_datum), m_generation_profile (generation_profile) {
     // Evolution age and tectonic forcing are separate clocks. The initial
@@ -32,14 +33,14 @@ namespace moppe::terrain {
       : generation_profile == TerrainGenerationProfile::Research ? 1000000.0f
                                                                  : 2000000.0f;
     m_evolution.duration = duration * mp_units::astronomy::Julian_year;
-    const float uplift_duration =
+    const float profile_uplift_duration =
       generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
       : generation_profile == TerrainGenerationProfile::Fast     ? 50000.0f
       : generation_profile == TerrainGenerationProfile::Play     ? 500000.0f
       : generation_profile == TerrainGenerationProfile::Research ? 250000.0f
                                                                  : 500000.0f;
-    m_evolution.uplift_duration =
-      uplift_duration * mp_units::astronomy::Julian_year;
+    m_evolution.uplift_duration = uplift_duration.value_or (
+      profile_uplift_duration * mp_units::astronomy::Julian_year);
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
@@ -48,11 +49,14 @@ namespace moppe::terrain {
       (water_datum).numerical_value_in (moppe::u::m);
   }
 
-  WorldRecipe make_world_recipe (spatial_extent_t extent,
-                                 int resolution,
-                                 Seed seed,
-                                 meters_t water_datum,
-                                 TerrainGenerationProfile generation_profile) {
-    return { extent, resolution, seed, water_datum, generation_profile };
+  WorldRecipe
+  make_world_recipe (spatial_extent_t extent,
+                     int resolution,
+                     Seed seed,
+                     meters_t water_datum,
+                     TerrainGenerationProfile generation_profile,
+                     std::optional<julian_years_t> uplift_duration) {
+    return { extent,      resolution,         seed,
+             water_datum, generation_profile, uplift_duration };
   }
 }

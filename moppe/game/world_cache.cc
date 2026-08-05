@@ -20,9 +20,9 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 4 invalidates continuously uplifted heightfields now that
-    // recipes separate finite tectonic forcing from geomorphic relaxation.
-    constexpr std::uint32_t CACHE_VERSION = 4;
+    // Version 5 records the exact tectonic forcing duration so experimental
+    // schedules have independent, recipe-validated finished worlds.
+    constexpr std::uint32_t CACHE_VERSION = 5;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
@@ -35,6 +35,9 @@ namespace moppe::game {
            << "-extent-" << bits (extent[0]) << '-' << bits (extent[1]) << '-'
            << bits (extent[2]) << "-water-"
            << bits ((recipe.water_datum ()).numerical_value_in (u::m));
+      name << "-uplift-"
+           << bits (recipe.evolution ().uplift_duration.numerical_value_in (
+                mp_units::astronomy::Julian_year));
       return name.str ();
     }
 
@@ -182,6 +185,8 @@ namespace moppe::game {
       for (std::size_t component = 0; component < 3; ++component)
         output.scalar (extent[component]);
       output.scalar (meters (recipe.water_datum ()));
+      output.scalar (recipe.evolution ().uplift_duration.numerical_value_in (
+        mp_units::astronomy::Julian_year));
     }
 
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
@@ -192,6 +197,7 @@ namespace moppe::game {
       std::uint32_t profile = 0;
       Vec3 extent;
       float water = 0.0f;
+      float uplift_years = 0.0f;
       if (!input.bytes (magic.data (), magic.size ()) ||
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
@@ -199,14 +205,17 @@ namespace moppe::game {
       for (std::size_t component = 0; component < 3; ++component)
         if (!input.scalar (extent[component]))
           return false;
-      return input.scalar (water) && magic == CACHE_MAGIC &&
-             version == CACHE_VERSION &&
+      return input.scalar (water) && input.scalar (uplift_years) &&
+             magic == CACHE_MAGIC && version == CACHE_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
              profile ==
                static_cast<std::uint32_t> (recipe.generation_profile ()) &&
              extent == extent_value (recipe.extent ()) &&
-             water == meters (recipe.water_datum ());
+             water == meters (recipe.water_datum ()) &&
+             uplift_years ==
+               recipe.evolution ().uplift_duration.numerical_value_in (
+                 mp_units::astronomy::Julian_year);
     }
 
     void write_flood (BinaryWriter& output, const terrain::FloodField& flood) {

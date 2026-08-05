@@ -24,6 +24,7 @@
 #include <moppe/game/hud.hh>
 #include <moppe/game/input_frame_adapter.hh>
 #include <moppe/game/landscape_gazetteer.hh>
+#include <moppe/game/landscape_summary.hh>
 #include <moppe/game/launch_options.hh>
 #include <moppe/game/moppe_game.hh>
 #include <moppe/game/seed_memory.hh>
@@ -528,6 +529,21 @@ namespace moppe {
           throw std::runtime_error ("cannot write gazetteer manifest: " +
                                     manifest.string ());
         write_landscape_gazetteer_csv (output, m_gazetteer_plan);
+        const std::filesystem::path summary_path =
+          std::filesystem::path (m_gazetteer->output_directory) /
+          "terrain-summary.csv";
+        std::ofstream summary_output (summary_path);
+        if (!summary_output)
+          throw std::runtime_error ("cannot write landscape summary: " +
+                                    summary_path.string ());
+        const LandscapeSummary summary =
+          summarize_landscape (surface (),
+                               standing_water (),
+                               lake_census (),
+                               drainage (),
+                               rivers (),
+                               generated_world ().recipe ());
+        write_landscape_summary_csv (summary_output, summary);
         std::cerr << "landscape gazetteer: " << m_gazetteer_plan.shots.size ()
                   << " frozen viewpoints -> " << manifest << '\n';
       }

@@ -52,6 +52,12 @@ CSV is the deliberate numerical exit: unit suffixes in names such as
 `eye_x_m`, `vertical_fov_deg`, and `waterline_distance_m` make the flattened
 contract explicit. Image names and CSV rows correspond exactly.
 
+Each capture also writes `terrain-summary.csv`, one global row measured from
+the same completed world. It records the recipe, elevation and slope
+percentiles, connected low-gradient land, visible-river density, water bodies,
+and cumulative eroded, deposited, and inferred exported solid volume. This is
+the physical counterpart to the camera-by-camera visual manifest.
+
 ## Frozen composition
 
 Gazetteer mode freezes simulation, weather, and wind at a documentary time.

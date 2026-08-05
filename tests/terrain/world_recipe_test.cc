@@ -88,3 +88,21 @@ MOPPE_TEST (research_world_recipe_has_a_finite_uplift_schedule) {
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
                250000.0f * mp_units::astronomy::Julian_year);
 }
+
+MOPPE_TEST (world_recipe_accepts_an_explicit_uplift_experiment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Play,
+                       750000.0f * mp_units::astronomy::Julian_year);
+
+  MOPPE_CHECK (recipe.evolution ().duration ==
+               2000000.0f * mp_units::astronomy::Julian_year);
+  MOPPE_CHECK (recipe.evolution ().uplift_duration ==
+               750000.0f * mp_units::astronomy::Julian_year);
+}
