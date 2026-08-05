@@ -14,7 +14,7 @@
 namespace moppe::game {
   namespace {
     constexpr std::uint64_t forest_plan_magic = 0x4d4f505045465253ULL;
-    constexpr std::uint32_t forest_plan_version = 3;
+    constexpr std::uint32_t forest_plan_version = 4;
 
     struct ForestPlanHeader {
       std::uint64_t magic;
@@ -163,15 +163,10 @@ namespace moppe::game {
           continue;
         const terrain::SurfaceElevation elevation =
           elevation_at (surface, x, z);
-        const proportion_t high_ground =
-          band (terrain::surface_elevation_point (115.0f * u::m),
-                terrain::surface_elevation_point (195.0f * u::m),
-                elevation);
-        // A boreal stand: spruce is the forest. Broadleaf stays as the
-        // occasional warm accent in the lowlands rather than the default
-        // form, so every view reads as one species across all ages.
-        const float conifer_chance =
-          0.84f + 0.14f * high_ground.numerical_value_in (one);
+        // A boreal stand: spruce IS the forest. The broadleaf construction
+        // is a placeholder blob that has received none of the conifer's
+        // assembly work, so it stays out of the world until it earns its
+        // place.
         const ForestAge age = age_from_identity (identity);
         plan.sites.push_back ({ .position = forest_position (x, elevation, z),
                                 .normal = normal_at (surface, x, z),
@@ -179,9 +174,7 @@ namespace moppe::game {
                                 .moisture = moisture_at (readings, x, z),
                                 .size = size_for_age (age, identity),
                                 .seed = identity,
-                                .form = hash_lane (identity, 5) < conifer_chance
-                                          ? ForestForm::conifer
-                                          : ForestForm::broadleaf,
+                                .form = ForestForm::conifer,
                                 .age = age });
       }
     return plan;
