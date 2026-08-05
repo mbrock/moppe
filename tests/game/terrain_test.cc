@@ -25,6 +25,6 @@ MOPPE_TEST (terrain_local_shadow_keeps_a_typed_bounded_focus) {
   MOPPE_CHECK (std::fabs (focus[0] - 100.0f) <= texel);
   MOPPE_CHECK (std::fabs (focus[1] - 20.0f) <= texel);
   MOPPE_CHECK (std::fabs (focus[2] - 248.0f) <= texel);
-  for (float value : shadow.light_view_proj.m)
-    MOPPE_CHECK (std::isfinite (value));
+  for (int element = 0; element < 16; ++element)
+    MOPPE_CHECK (std::isfinite (shadow.light_view_proj.element (element)));
 }
