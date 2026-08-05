@@ -9,7 +9,7 @@ means no construction stage remains optional or in progress.
 | Artifact | Meaning |
 | --- | --- |
 | `WorldParams` and `WorldRecipe` | bound extent, resolution, datum, seed, profile, and algorithms |
-| `map::SurfaceGeometry` | authoritative elevation, normals, material history, and snow support |
+| `map::SurfaceGeometry` | authoritative elevation, mobile sediment, geological material history, normals, and snow support |
 | `game::Hydrology` | flood, lakes, wet drainage, and rivers in derivation order |
 | `terrain::WaterSheets` | water elevation, wave amplitude, and velocity |
 | `terrain::TrailNetwork` | built route, alignment, grading report, and typed use readings |

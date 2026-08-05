@@ -177,6 +177,15 @@ namespace moppe::terrain {
 
   QUANTITY_SPEC (continent_shape, mp_units::dimensionless);
   QUANTITY_SPEC (uplift_weight, mp_units::dimensionless);
+  // Solid material carried, stored, or exported by one geological step.
+  // This is deliberately not water volume: equal dimensions do not make the
+  // two reservoirs interchangeable.
+  QUANTITY_SPEC (sediment_volume,
+                 mp_units::isq::volume,
+                 mp_units::non_negative);
+  QUANTITY_SPEC (sediment_thickness,
+                 mp_units::isq::height,
+                 mp_units::non_negative);
 
   // ---- Human use ----
 

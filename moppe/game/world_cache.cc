@@ -20,9 +20,9 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 2 deliberately invalidates worlds generated with the former
-    // 500,000-year Play evolution.
-    constexpr std::uint32_t CACHE_VERSION = 2;
+    // Version 3 adds mobile sediment and geological material history, and
+    // invalidates heightfields made by the former detachment-only evolution.
+    constexpr std::uint32_t CACHE_VERSION = 3;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());

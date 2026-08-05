@@ -51,7 +51,7 @@ The current surface values are:
 
 | Value | Owner | Typed contents |
 | --- | --- | --- |
-| `map::SurfaceGeometry` | `GeneratedWorld` | elevation, normal, eroded and deposited material, snow support |
+| `map::SurfaceGeometry` | `GeneratedWorld` | elevation, mobile sediment thickness, normal, geological detachment and deposition history, snow support |
 | `map::SurfaceReadings` | `GeneratedWorld` | channel flux, moisture, waterline distance, geology/ecology signals, trail and home-base influence |
 | `terrain::WaterSheets` | `GeneratedWorld` | water elevation, wave amplitude, planar velocity |
 

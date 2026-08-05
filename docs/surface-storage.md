@@ -5,7 +5,7 @@ typed bundles over one periodic `terrain::TerrainDomain`.
 
 | Bundle | Owner | Columns |
 | --- | --- | --- |
-| `map::SurfaceGeometry` | `GeneratedWorld` | surface elevation, terrain normal, eroded material, deposited material, snow support |
+| `map::SurfaceGeometry` | `GeneratedWorld` | surface elevation, mobile sediment thickness, terrain normal, geological detachment and deposition history, snow support |
 | `map::SurfaceReadings` | `GeneratedWorld` | channel flux, moisture, waterline distance, erosion exposure, deposition cover, tree habitat, forest cover, trail influence, home-base influence |
 | `terrain::WaterSheets` | `GeneratedWorld` | surface elevation, wave amplitude, water velocity |
 
@@ -20,7 +20,9 @@ stored directly as one `float` in metres. Ground and water use the same
 elevation specification, so their difference is a physical length. Normals
 are vector quantities with the native `Vec3` representation.
 
-Generation mutates `SurfaceGeometry` directly. `map::rebuild_geometry`
+Generation mutates `SurfaceGeometry` directly. Stream-power evolution retains
+mobile sediment and the two one-way geological material histories; trail cut
+and fill remains in `TrailNetwork::earthwork_delta_m`. `map::rebuild_geometry`
 reconstructs normals and broad snow support after either generation or cache
 loading. Continuous reads use `TerrainDomain`'s periodic interpolation
 stencil; there is no copied refresh surface.
