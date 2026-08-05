@@ -47,11 +47,34 @@ export is outside the modeled land surface rather than an offshore deposit.
 Lakes currently receive sediment at their routed cells rather than spreading
 it over a delta or lake bed.
 
+## Conservative hillslope transport
+
+Hillslope creep is now the second conservative solid pass. For each cardinal
+cell face and stable internal sweep it evaluates the linear diffusive volume:
+
+```text
+V = diffusivity * sweep duration * face width / face run * height difference
+```
+
+The higher cell receives a `-V` posting and the lower cell receives `+V` from
+that one calculation. Periodic east and south faces enumerate the complete
+lattice without independently rounding two directions of the same face.
+Faces touching an ocean or other fixed base-level cell are explicitly
+no-flux; hillslope creep neither changes that boundary nor invents an
+unreported coastal export.
+
+Each geological interval divides into the same explicit-stability sweeps the
+former Laplacian required. Existing mobile cover supplies a cell's outgoing
+postings first. Only an outgoing remainder beyond that cover detaches bedrock;
+all incoming solid becomes mobile cover at its destination. Cumulative eroded
+and deposited thickness therefore includes hillslope work, and the report
+retains hillslope transfer, bedrock detachment, sweep count, and its signed
+zero-sum residual separately.
+
 ## Conservation boundary
 
-The fluvial detachment and transport pass is conservative. The existing
-Laplacian hillslope diffusion pass still changes elevation after that ledger
-and does not yet route a face-by-face sediment flux or update mobile sediment.
-It must not be described as part of the conservative sediment budget. A later
-replacement should post equal and opposite solid-volume transfers across
-cell faces and feed the same stored sediment thickness.
+Fluvial routing and hillslope transport now share one solid-volume ledger.
+The only geological material leaving it is explicit fluvial ocean export;
+fixed hillslope faces are no-flux. Trail cut and fill remains a separately
+owned construction ledger. Offshore deposition and distributed lake storage
+remain later work.

@@ -163,8 +163,7 @@ MOPPE_TEST (terrain_evolution_materializes_its_sediment_history) {
     }));
 
   const auto cubic_metre = u::m * u::m * u::m;
-  const double detached =
-    report.incised_volume.numerical_value_in (cubic_metre);
+  const double detached = report.eroded_volume.numerical_value_in (cubic_metre);
   const double retained =
     report.deposited_volume.numerical_value_in (cubic_metre);
   const double exported =

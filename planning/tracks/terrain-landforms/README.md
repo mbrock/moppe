@@ -55,7 +55,10 @@ fluting remains. TER-002 compared 250, 500, and 750 ky and selected 500 ky:
 250 ky loses convincing mountain groups, while 750 ky reaches 407 m of relief
 and leaves only 4.4% of land below ten degrees. The full finding is recorded
 in [`findings.md`](findings.md). TER-010 now addresses the remaining fluting
-with conservative hillslope transport.
+with conservative hillslope transport. TER-010 preserves that shape while
+making every creep transfer part of the solid ledger. TER-011 can now suppress
+cell-scale fluvial incision against an accepted, material-conserving hillslope
+process.
 
 ## Deferred until the shape works
 

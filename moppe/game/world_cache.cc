@@ -20,9 +20,9 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 5 records the exact tectonic forcing duration so experimental
-    // schedules have independent, recipe-validated finished worlds.
-    constexpr std::uint32_t CACHE_VERSION = 5;
+    // Version 6 invalidates worlds made by the elevation-only hillslope
+    // diffusion pass; hillslope motion now participates in the solid ledger.
+    constexpr std::uint32_t CACHE_VERSION = 6;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());

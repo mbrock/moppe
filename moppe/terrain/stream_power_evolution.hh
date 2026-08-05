@@ -60,16 +60,20 @@ namespace moppe::terrain {
     CellCount cells = cell_count (0);
     CellCount fixed_boundaries = cell_count (0);
     IterationCount steps = iteration_count (0);
-    IterationCount diffusion_sweeps = iteration_count (0);
+    IterationCount hillslope_sweeps = iteration_count (0);
     cubic_meters_f64_t tectonic_uplift_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
-    cubic_meters_f64_t incised_volume =
+    cubic_meters_f64_t eroded_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t deposited_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t exported_sediment_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t sediment_balance_residual =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t hillslope_transferred_volume =
+      0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
+    cubic_meters_f64_t hillslope_bedrock_detached_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
     cubic_meters_f64_t lowered_volume =
       0.0 * mp_units::si::metre * mp_units::si::metre * mp_units::si::metre;
