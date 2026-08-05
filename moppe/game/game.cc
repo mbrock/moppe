@@ -303,10 +303,10 @@ namespace moppe {
         Vec3 high (0, 0, 0);
         for (const terrain::TrailAlignmentPoint alignment_point : alignment) {
           const Vec3 point = relative_alignment (alignment_point);
-          low[0] = std::min (low[0], point[0]);
-          low[2] = std::min (low[2], point[2]);
-          high[0] = std::max (high[0], point[0]);
-          high[2] = std::max (high[2], point[2]);
+          low[0] = std::min (static_cast<float> (low[0]), point[0]);
+          low[2] = std::min (static_cast<float> (low[2]), point[2]);
+          high[0] = std::max (static_cast<float> (high[0]), point[0]);
+          high[2] = std::max (static_cast<float> (high[2]), point[2]);
         }
         const float world_span =
           std::max ({ high[0] - low[0], high[2] - low[2], 100.0f }) * 1.16f;
@@ -376,10 +376,12 @@ namespace moppe {
           0,
           wrap_delta (subject[2] - home_z, period_z));
         Vec3 player = map_point (relative_subject);
-        player[0] =
-          std::clamp (player[0], map_x + 5.0f, map_x + map_size - 5.0f);
-        player[1] =
-          std::clamp (player[1], map_y + 5.0f, map_y + map_size - 5.0f);
+        player[0] = std::clamp (static_cast<float> (player[0]),
+                                map_x + 5.0f,
+                                map_x + map_size - 5.0f);
+        player[1] = std::clamp (static_cast<float> (player[1]),
+                                map_y + 5.0f,
+                                map_y + map_size - 5.0f);
         heading[1] = 0.0f;
         if (length2 (heading) < 1e-5f)
           heading = Vec3 (0, 0, 1);

@@ -9,9 +9,15 @@
 #include <mp-units/systems/si.h>
 #include <mp-units/utility/cartesian_vector.h>
 
+#ifdef __APPLE__
+#include <simd/simd.h>
+#endif
+
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <numbers>
+#include <type_traits>
 
 namespace moppe {
   using namespace mp_units;
@@ -174,6 +180,189 @@ namespace moppe {
                      linear_interpolate (from[2], to[2], alpha));
   }
 
+#ifdef __APPLE__
+  // mp-units deliberately accepts user-owned linear-algebra representations.
+  // Keep the general Vec3T available for non-float component types while the
+  // ubiquitous gameplay Vec3 uses Apple's native SIMD register and ABI.
+  class Vec3 {
+  public:
+    using value_type = float;
+    static constexpr std::integral_constant<std::size_t, 3> extent {};
+
+    class component_ref {
+    public:
+      component_ref (Vec3& vector, std::size_t index)
+          : m_vector (vector), m_index (index) {}
+
+      operator float () const {
+        return m_vector.m_value[m_index];
+      }
+
+      component_ref& operator= (float value) {
+        m_vector.m_value[m_index] = value;
+        return *this;
+      }
+
+      component_ref& operator= (const component_ref& other) {
+        return *this = static_cast<float> (other);
+      }
+
+      component_ref& operator+= (float value) {
+        return *this = static_cast<float> (*this) + value;
+      }
+
+      component_ref& operator-= (float value) {
+        return *this = static_cast<float> (*this) - value;
+      }
+
+      component_ref& operator*= (float value) {
+        return *this = static_cast<float> (*this) * value;
+      }
+
+      component_ref& operator/= (float value) {
+        return *this = static_cast<float> (*this) / value;
+      }
+
+    private:
+      Vec3& m_vector;
+      std::size_t m_index;
+    };
+
+    Vec3 () : m_value {} {}
+
+    Vec3 (float x, float y = 0.0f, float z = 0.0f) : m_value { x, y, z } {}
+
+    explicit Vec3 (simd_float3 value) : m_value (value) {}
+
+    component_ref operator[] (std::size_t index) {
+      return component_ref (*this, index);
+    }
+
+    float operator[] (std::size_t index) const {
+      return m_value[index];
+    }
+
+    float magnitude () const {
+      return simd_length (m_value);
+    }
+
+    float norm () const {
+      return magnitude ();
+    }
+
+    Vec3 unit () const {
+      return Vec3 (simd_normalize (m_value));
+    }
+
+    Vec3& operator+= (const Vec3& other) {
+      m_value += other.m_value;
+      return *this;
+    }
+
+    Vec3& operator-= (const Vec3& other) {
+      m_value -= other.m_value;
+      return *this;
+    }
+
+    Vec3& operator*= (float scale) {
+      m_value *= scale;
+      return *this;
+    }
+
+    Vec3& operator/= (float scale) {
+      m_value /= scale;
+      return *this;
+    }
+
+    const simd_float3& native () const {
+      return m_value;
+    }
+
+    simd_float3& native () {
+      return m_value;
+    }
+
+    friend Vec3 operator- (const Vec3& value) {
+      return Vec3 (-value.m_value);
+    }
+
+    friend Vec3 operator+ (const Vec3& left, const Vec3& right) {
+      return Vec3 (left.m_value + right.m_value);
+    }
+
+    friend Vec3 operator- (const Vec3& left, const Vec3& right) {
+      return Vec3 (left.m_value - right.m_value);
+    }
+
+    friend Vec3 operator* (const Vec3& value, float scale) {
+      return Vec3 (value.m_value * scale);
+    }
+
+    friend Vec3 operator* (float scale, const Vec3& value) {
+      return value * scale;
+    }
+
+    friend Vec3 operator/ (const Vec3& value, float scale) {
+      return Vec3 (value.m_value / scale);
+    }
+
+    friend bool operator== (const Vec3& left, const Vec3& right) {
+      return simd_all (left.m_value == right.m_value);
+    }
+
+    friend float scalar_product (const Vec3& left, const Vec3& right) {
+      return simd_dot (left.m_value, right.m_value);
+    }
+
+    friend Vec3 vector_product (const Vec3& left, const Vec3& right) {
+      return Vec3 (simd_cross (left.m_value, right.m_value));
+    }
+
+    friend std::ostream& operator<< (std::ostream& stream, const Vec3& value) {
+      return stream << '[' << value[0] << ", " << value[1] << ", " << value[2]
+                    << ']';
+    }
+
+  private:
+    simd_float3 m_value;
+  };
+
+  inline float length (const Vec3& value) {
+    return value.magnitude ();
+  }
+
+  inline float length2 (const Vec3& value) {
+    return scalar_product (value, value);
+  }
+
+  inline void normalize (Vec3& value) {
+    value = value.unit ();
+  }
+
+  inline Vec3 normalized (const Vec3& value) {
+    return value.unit ();
+  }
+
+  inline float dot (const Vec3& left, const Vec3& right) {
+    return scalar_product (left, right);
+  }
+
+  inline Vec3 cross (const Vec3& left, const Vec3& right) {
+    return vector_product (left, right);
+  }
+
+  inline Vec3 scaled (const Vec3& left, const Vec3& right) {
+    return Vec3 (left.native () * right.native ());
+  }
+
+  inline Vec3
+  linear_vector_interpolate (const Vec3& from, const Vec3& to, float alpha) {
+    return (1.0f - alpha) * from + alpha * to;
+  }
+#else
+  using Vec3 = Vec3T<float>;
+#endif
+
   template <Quantity Q1, Quantity Q2>
   auto dot (const Q1& left, const Q2& right) {
     return scalar_product (left.numerical_value_in (Q1::unit),
@@ -189,29 +378,36 @@ namespace moppe {
   }
 
   template <typename T>
+  using QuaternionVector =
+    std::conditional_t<std::same_as<T, float>, Vec3, Vec3T<T>>;
+
+  template <typename T>
   struct QuaternionG {
     T x, y, z, w;
 
     QuaternionG (T x, T y, T z, T w) : x (x), y (y), z (z), w (w) {}
 
-    QuaternionG (const Vec3T<T>& v, T w)
+    QuaternionG (const QuaternionVector<T>& v, T w)
         : x (v[0]), y (v[1]), z (v[2]), w (w) {}
 
     // Make a rotation quaternion from an axis and an angle.
-    static inline QuaternionG rotation (const Vec3T<T>& axis, radians_t angle) {
+    static inline QuaternionG rotation (const QuaternionVector<T>& axis,
+                                        radians_t angle) {
       return QuaternionG (moppe::sin (angle / 2) * axis,
                           moppe::cos (angle / 2));
     }
 
     // Rotate a vector around an axis by an angle.
-    static inline Vec3T<T>
-    rotate (const Vec3T<T>& v, const Vec3T<T>& axis, radians_t angle) {
+    static inline QuaternionVector<T> rotate (const QuaternionVector<T>& v,
+                                              const QuaternionVector<T>& axis,
+                                              radians_t angle) {
       QuaternionG r = rotation (axis, angle);
       return rotate (v, r);
     }
 
     // Apply a rotation quaternion to a vector.
-    static inline Vec3T<T> rotate (const Vec3T<T>& v, const QuaternionG& q) {
+    static inline QuaternionVector<T> rotate (const QuaternionVector<T>& v,
+                                              const QuaternionG& q) {
       QuaternionG r (q);
       const QuaternionG rc (r.conjugate ());
 
@@ -222,8 +418,8 @@ namespace moppe {
     }
 
     // Return my non-w components as a 3D vector.
-    inline Vec3T<T> vector () const {
-      return Vec3T<T> (x, y, z);
+    inline QuaternionVector<T> vector () const {
+      return QuaternionVector<T> (x, y, z);
     }
 
     QuaternionG& operator*= (const QuaternionG& q) {
@@ -252,7 +448,6 @@ namespace moppe {
     return a;
   }
 
-  using Vec3 = Vec3T<float>;
   using Quaternion = QuaternionG<float>;
 
   // Physical spatial vectors keep one unit around one numerical vector.  The

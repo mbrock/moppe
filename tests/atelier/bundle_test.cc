@@ -158,9 +158,9 @@ MOPPE_TEST (bundle_operation_can_supply_its_own_neighbourhood_policy) {
 MOPPE_TEST (bundle_laplacian_preserves_vector_quantity_representation) {
   Bundle<AtelierThreeSiteRing, Displacement> field;
   auto& displacement = get<isq::displacement> (field);
-  displacement[0] = Displacement (Vec3 { 1, 2, 3 } * m);
-  displacement[1] = Displacement (Vec3 { 4, 6, 8 } * m);
-  displacement[2] = Displacement (Vec3 { 10, 12, 14 } * m);
+  displacement[0] = Displacement (atelier::Vec3 { 1, 2, 3 } * m);
+  displacement[1] = Displacement (atelier::Vec3 { 4, 6, 8 } * m);
+  displacement[2] = Displacement (atelier::Vec3 { 10, 12, 14 } * m);
 
   const auto result =
     laplacian<isq::displacement> (BundleFocus (field, std::size_t { 0 }));

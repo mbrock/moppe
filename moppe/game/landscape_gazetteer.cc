@@ -218,7 +218,7 @@ namespace moppe::game {
     Vec3 clear_eye (Vec3 eye,
                     const map::SurfaceGeometry& surface,
                     meters_t minimum_clearance) {
-      eye[1] = std::max (eye[1],
+      eye[1] = std::max (static_cast<float> (eye[1]),
                          surface_height (surface, eye[0], eye[2]) +
                            metres (minimum_clearance));
       return eye;
