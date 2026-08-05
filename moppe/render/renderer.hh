@@ -67,6 +67,22 @@ namespace moppe {
       meters_t radius = 160.0f * u::m;
     };
 
+    // Sun-shaft raymarch through the camera-local shadow map. The caller
+    // supplies the shaken camera basis with the frustum half-extents folded
+    // into the right/up vectors, so the backend reconstructs a view ray per
+    // pixel without inverting any matrix. Directions are unit-length basis
+    // vectors; the measurable quantities keep their units to the boundary.
+    struct LightShaftParams {
+      position_t camera_pos;
+      Vec3 forward;    // unit view direction
+      Vec3 right_span; // right * tan(fov/2) * aspect
+      Vec3 up_span;    // up * tan(fov/2)
+      Vec3 sun_dir;    // toward the sun
+      DisplayColor sun_color;
+      magnitude_t strength = 1.0f * one;
+      meters_t max_distance = 140.0f * u::m;
+    };
+
     // World-change-time terrain setup.  Heights/normals are the same
     // arrays the CPU-side physics samples, so sim and render cannot
     // diverge.
@@ -347,6 +363,8 @@ namespace moppe {
       // boundary again before HUD/present.
       virtual void reconstruct_scene () {}
       // Post effects; call after reconstruction and before draw_hud.
+      // Backends without a stored scene depth may ignore light shafts.
+      virtual void apply_light_shafts (const LightShaftParams&) {}
       virtual void apply_underwater (float time) = 0;
       virtual void apply_motion_blur (float strength) = 0;
       // Soft-focus the completed 3D scene; HUD drawn afterwards stays crisp.

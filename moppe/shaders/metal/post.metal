@@ -253,3 +253,63 @@ fragment float4 underwater_fragment (QuadVaryings in [[stage_in]],
 
   return float4 (c, 1.0);
 }
+
+// Sun shafts: march each view ray through the camera-local shadow map and
+// add forward-scattered sunlight for the lit spans. The scene depth stops
+// the march at the first surface; the shadow map supplies the tree- and
+// terrain-shaped occlusion that turns open sky into visible beams. An
+// interleaved-gradient jitter per pixel replaces banding with fine noise
+// that stays deterministic for captures.
+fragment float4
+shafts_fragment (QuadVaryings in [[stage_in]],
+                 constant MoppeShaftUniforms& u [[buffer (MOPPE_BUF_FRAME)]],
+                 texture2d<float> scene [[texture (MOPPE_TEX_SCENE)]],
+                 depth2d<float> scene_depth [[texture (MOPPE_TEX_POST_DEPTH)]],
+                 depth2d<float> shadow_map [[texture (MOPPE_TEX_SHADOW)]]) {
+  constexpr sampler smp (
+    coord::normalized, address::clamp_to_edge, filter::linear);
+  constexpr sampler depth_smp (
+    coord::normalized, address::clamp_to_edge, filter::nearest);
+  constexpr sampler shadow_smp (coord::normalized,
+                                address::clamp_to_edge,
+                                filter::linear,
+                                compare_func::less_equal);
+  const float3 base = scene.sample (smp, in.uv).rgb;
+  const float3 dir =
+    normalize (u.ray_forward.xyz + u.ray_right.xyz * (2.0 * in.uv.x - 1.0) +
+               u.ray_up.xyz * (1.0 - 2.0 * in.uv.y));
+  const float surface_z = scene_depth.sample (depth_smp, in.uv);
+  const float2 px = in.position.xy;
+  const float jitter =
+    fract (52.9829189 * fract (0.06711056 * px.x + 0.00583715 * px.y));
+
+  const uint steps = uint (u.params.z);
+  const float dt = u.params.x / float (steps);
+  const float sigma = u.params.y;
+  float scatter = 0.0;
+  for (uint i = 0u; i < steps; ++i) {
+    const float t = (float (i) + jitter) * dt;
+    const float3 world = u.camera_pos.xyz + dir * t;
+    const float4 clip = u.view_proj * float4 (world, 1.0);
+    if (clip.w <= 0.0)
+      break;
+    // Reversed-Z: a sample farther than the first surface reads smaller.
+    if (clip.z / clip.w < surface_z)
+      break;
+    const float4 sc = u.light_matrix * float4 (world, 1.0);
+    const float3 proj = sc.xyz / sc.w;
+    float lit = 1.0;
+    if (all (proj >= 0.0) && all (proj <= 1.0))
+      lit = shadow_map.sample_compare (shadow_smp, proj.xy, proj.z - 0.0015);
+    scatter += lit * exp (-sigma * t);
+  }
+  scatter *= sigma * dt;
+
+  // Henyey-Greenstein forward lobe: beams live around the solar direction.
+  const float mu = dot (dir, normalize (u.sun_dir.xyz));
+  const float g = 0.60;
+  const float phase =
+    (1.0 - g * g) / (4.0 * 3.14159265 * pow (1.0 + g * g - 2.0 * g * mu, 1.5));
+  const float3 shafts = u.sun_color.rgb * u.sun_color.w * phase * scatter;
+  return float4 (base + shafts, 1.0);
+}

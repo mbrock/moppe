@@ -370,6 +370,7 @@ namespace moppe {
         id<MTLRenderPipelineState> present = nil, ghost = nil;
         id<MTLRenderPipelineState> copy = nil;
         id<MTLRenderPipelineState> underwater = nil;
+        id<MTLRenderPipelineState> shafts = nil;
         id<MTLRenderPipelineState> bloom_bright = nil;
         id<MTLRenderPipelineState> bloom_blur = nil;
         id<MTLRenderPipelineState> probe = nil;
@@ -786,6 +787,10 @@ namespace moppe {
 
       class MetalPostPass {
       public:
+        static void apply_light_shafts (const MetalPostPassInputs& inputs,
+                                        const MoppeShaftUniforms& shaft,
+                                        id<MTLTexture> scene_depth,
+                                        id<MTLTexture> shadow_map);
         static void apply_underwater (const MetalPostPassInputs& inputs,
                                       float time);
         static void apply_motion_blur (const MetalPostPassInputs& inputs,
@@ -895,6 +900,7 @@ namespace moppe {
                       uint64_t motion_id = 0) override;
       void draw_list (const DrawList& list, uint64_t motion_id = 0) override;
       void reconstruct_scene () override;
+      void apply_light_shafts (const LightShaftParams& params) override;
       void apply_underwater (float time) override;
       void apply_motion_blur (float strength) override;
       void apply_scene_blur () override;
@@ -1537,6 +1543,12 @@ namespace moppe {
                                               MTLPixelFormatInvalid,
                                               1,
                                               false);
+      m_pipelines.shafts = make_pipeline (@"quad_vertex",
+                                          @"shafts_fragment",
+                                          scene,
+                                          MTLPixelFormatInvalid,
+                                          1,
+                                          false);
       m_pipelines.bloom_bright = make_pipeline (@"quad_vertex",
                                                 @"bloom_bright_fragment",
                                                 scene,
@@ -3390,7 +3402,10 @@ namespace moppe {
           m_targets.spatial_fence.label = @"Moppe MetalFX temporal fence";
           m_targets.temporal_scaler.fence = m_targets.spatial_fence;
           color_input_usage = m_targets.temporal_scaler.colorTextureUsage;
-          depth_input_usage = m_targets.temporal_scaler.depthTextureUsage;
+          // The sun-shaft march reads the stored scene depth after
+          // reconstruction, on top of whatever the scaler requires.
+          depth_input_usage = m_targets.temporal_scaler.depthTextureUsage |
+                              MTLTextureUsageShaderRead;
           motion_input_usage = m_targets.temporal_scaler.motionTextureUsage;
           reactive_input_usage = m_targets.temporal_scaler.reactiveTextureUsage;
           reconstruction_output_usage =
@@ -5012,6 +5027,91 @@ namespace moppe {
     }
 
     // -- post ----------------------------------------------------------
+
+    void MetalPostPass::apply_light_shafts (const MetalPostPassInputs& inputs,
+                                            const MoppeShaftUniforms& shaft,
+                                            id<MTLTexture> scene_depth,
+                                            id<MTLTexture> shadow_map) {
+      const MetalPipelines& pipelines = inputs.pipelines;
+      MetalFrameTargets& targets = inputs.targets;
+      MetalFrameEncoding& frame = inputs.frame;
+
+      id<MTLTexture> src = frame.current_scene;
+      id<MTLTexture> dst =
+        (src == targets.post_a) ? targets.post_b : targets.post_a;
+
+      MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+      rp.colorAttachments[0].texture = dst;
+      rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+      rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+
+      id<MTL4RenderCommandEncoder> enc =
+        [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+      enc.label = @"Sun shafts";
+      if (targets.spatial_fence)
+        [enc waitForFence:targets.spatial_fence
+          beforeEncoderStages:MTLStageFragment];
+      wait_for_render_or_blit_writes (enc);
+      record_gpu_pass_start (frame, enc, GpuPass::Post);
+      // The shared fullscreen vertex still wants quad uniforms; the march
+      // parameters ride the fragment stage at the same slot.
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1; // no zoom
+      [enc setRenderPipelineState:pipelines.shafts];
+      bind_address (frame,
+                    MTLRenderStageVertex,
+                    MOPPE_BUF_FRAME,
+                    frame.arena[frame.slot].write (q));
+      bind_address (frame,
+                    MTLRenderStageFragment,
+                    MOPPE_BUF_FRAME,
+                    frame.arena[frame.slot].write (shaft));
+      bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, src);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_POST_DEPTH, scene_depth);
+      bind_texture (
+        frame, MTLRenderStageFragment, MOPPE_TEX_SHADOW, shadow_map);
+      use_arguments (enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+      [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+      if (targets.spatial_fence)
+        [enc updateFence:targets.spatial_fence
+          afterEncoderStages:MTLStageFragment];
+      [enc endEncoding];
+
+      frame.current_scene = dst;
+    }
+
+    void MetalRenderer::apply_light_shafts (const LightShaftParams& params) {
+      if (!m_pipelines.shafts || !m_frame.command_buffer)
+        return;
+      // The march needs the stored scene depth, which only the temporal
+      // path keeps, and the per-frame camera-local shadow map.
+      if (!m_targets.temporal_scaler || !m_targets.msaa_depth)
+        return;
+      if (!m_terrain_resources.shadow_map || !m_terrain_resources.have_shadow)
+        return;
+      reconstruct_scene ();
+
+      MoppeShaftUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.view_proj = m4 (m_current_view_proj);
+      u.light_matrix = m4 (m_terrain_resources.light_biased);
+      u.camera_pos = f4 (position_value (params.camera_pos));
+      u.ray_forward = f4 (params.forward);
+      u.ray_right = f4 (params.right_span);
+      u.ray_up = f4 (params.up_span);
+      u.sun_dir = f4 (params.sun_dir);
+      u.sun_color = f4lin (params.sun_color, scalar_value (params.strength));
+      u.params.x = params.max_distance.numerical_value_in (u::m);
+      u.params.y = 0.011f; // extinction per metre
+      u.params.z = 24.0f;  // march steps
+      MetalPostPass::apply_light_shafts ({ m_pipelines, m_targets, m_frame },
+                                         u,
+                                         m_targets.msaa_depth,
+                                         m_terrain_resources.shadow_map);
+    }
 
     void MetalPostPass::apply_underwater (const MetalPostPassInputs& inputs,
                                           float time) {
