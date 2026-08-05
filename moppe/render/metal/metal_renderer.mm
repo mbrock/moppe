@@ -372,6 +372,9 @@ namespace moppe {
         id<MTLRenderPipelineState> underwater = nil;
         id<MTLRenderPipelineState> shafts = nil;
         id<MTLRenderPipelineState> shafts_add = nil;
+        id<MTLRenderPipelineState> gtao = nil;
+        id<MTLRenderPipelineState> gtao_blur = nil;
+        id<MTLRenderPipelineState> gtao_apply = nil;
         id<MTLRenderPipelineState> bloom_bright = nil;
         id<MTLRenderPipelineState> bloom_blur = nil;
         id<MTLRenderPipelineState> probe = nil;
@@ -484,6 +487,8 @@ namespace moppe {
         // Half-resolution sun-shaft scatter; the march is the entire cost
         // of the effect and its result is low-frequency light.
         id<MTLTexture> shafts = nil;
+        // Half-resolution ambient occlusion, ping-ponged through its blur.
+        id<MTLTexture> ao_a = nil, ao_b = nil;
         id<MTLTexture> motion = nil, reactive = nil;
         id<MTLTexture> prev_frame = nil;
         id<MTLTexture> bloom_a = nil, bloom_b = nil;
@@ -791,6 +796,9 @@ namespace moppe {
 
       class MetalPostPass {
       public:
+        static void apply_gtao (const MetalPostPassInputs& inputs,
+                                const MoppeGtaoUniforms& gtao,
+                                id<MTLTexture> scene_depth);
         static void apply_light_shafts (const MetalPostPassInputs& inputs,
                                         const MoppeShaftUniforms& shaft,
                                         id<MTLTexture> scene_depth,
@@ -904,6 +912,7 @@ namespace moppe {
                       uint64_t motion_id = 0) override;
       void draw_list (const DrawList& list, uint64_t motion_id = 0) override;
       void reconstruct_scene () override;
+      void apply_gtao (const GtaoParams& params) override;
       void apply_light_shafts (const LightShaftParams& params) override;
       void apply_underwater (float time) override;
       void apply_motion_blur (float strength) override;
@@ -1555,6 +1564,24 @@ namespace moppe {
                                           false);
       m_pipelines.shafts_add = make_pipeline (@"quad_vertex",
                                               @"shafts_add_fragment",
+                                              scene,
+                                              MTLPixelFormatInvalid,
+                                              1,
+                                              false);
+      m_pipelines.gtao = make_pipeline (@"quad_vertex",
+                                        @"gtao_gather_fragment",
+                                        MTLPixelFormatR8Unorm,
+                                        MTLPixelFormatInvalid,
+                                        1,
+                                        false);
+      m_pipelines.gtao_blur = make_pipeline (@"quad_vertex",
+                                             @"gtao_blur_fragment",
+                                             MTLPixelFormatR8Unorm,
+                                             MTLPixelFormatInvalid,
+                                             1,
+                                             false);
+      m_pipelines.gtao_apply = make_pipeline (@"quad_vertex",
+                                              @"gtao_apply_fragment",
                                               scene,
                                               MTLPixelFormatInvalid,
                                               1,
@@ -3269,6 +3296,8 @@ namespace moppe {
       retire (m_targets.post_a);
       retire (m_targets.post_b);
       retire (m_targets.shafts);
+      retire (m_targets.ao_a);
+      retire (m_targets.ao_b);
       retire (m_targets.motion);
       retire (m_targets.reactive);
       retire (m_targets.prev_frame);
@@ -3532,11 +3561,14 @@ namespace moppe {
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
       m_targets.post_b = make_target (
         MTLPixelFormatRGBA16Float, drawable_w, drawable_h, 1, false);
-      m_targets.shafts = make_target (MTLPixelFormatRGBA16Float,
-                                      drawable_w / 2 > 0 ? drawable_w / 2 : 1,
-                                      drawable_h / 2 > 0 ? drawable_h / 2 : 1,
-                                      1,
-                                      false);
+      const int half_w = drawable_w / 2 > 0 ? drawable_w / 2 : 1;
+      const int half_h = drawable_h / 2 > 0 ? drawable_h / 2 : 1;
+      m_targets.shafts =
+        make_target (MTLPixelFormatRGBA16Float, half_w, half_h, 1, false);
+      m_targets.ao_a =
+        make_target (MTLPixelFormatR8Unorm, half_w, half_h, 1, false);
+      m_targets.ao_b =
+        make_target (MTLPixelFormatR8Unorm, half_w, half_h, 1, false);
       const int bw = drawable_w / 4 > 0 ? drawable_w / 4 : 1;
       const int bh = drawable_h / 4 > 0 ? drawable_h / 4 : 1;
       m_targets.bloom_a =
@@ -5043,6 +5075,125 @@ namespace moppe {
     }
 
     // -- post ----------------------------------------------------------
+
+    void MetalPostPass::apply_gtao (const MetalPostPassInputs& inputs,
+                                    const MoppeGtaoUniforms& gtao,
+                                    id<MTLTexture> scene_depth) {
+      const MetalPipelines& pipelines = inputs.pipelines;
+      MetalFrameTargets& targets = inputs.targets;
+      MetalFrameEncoding& frame = inputs.frame;
+
+      MoppeQuadUniforms q;
+      std::memset (&q, 0, sizeof (q));
+      q.tint.x = q.tint.y = q.tint.z = q.tint.w = 1;
+      q.params.x = 1; // no zoom
+      const MTLGPUAddress quad_uniforms = frame.arena[frame.slot].write (q);
+
+      const auto quad_pass = [&] (id<MTLRenderPipelineState> pipeline,
+                                  id<MTLTexture> destination,
+                                  NSString* label,
+                                  const MoppeGtaoUniforms& uniforms,
+                                  id<MTLTexture> scene,
+                                  id<MTLTexture> occlusion,
+                                  bool fence) {
+        MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
+        rp.colorAttachments[0].texture = destination;
+        rp.colorAttachments[0].loadAction = MTLLoadActionDontCare;
+        rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+        id<MTL4RenderCommandEncoder> enc =
+          [frame.command_buffer renderCommandEncoderWithDescriptor:rp];
+        enc.label = label;
+        if (fence && targets.spatial_fence)
+          [enc waitForFence:targets.spatial_fence
+            beforeEncoderStages:MTLStageFragment];
+        wait_for_render_or_blit_writes (enc);
+        record_gpu_pass_start (frame, enc, GpuPass::Post);
+        [enc setRenderPipelineState:pipeline];
+        bind_address (
+          frame, MTLRenderStageVertex, MOPPE_BUF_FRAME, quad_uniforms);
+        bind_address (frame,
+                      MTLRenderStageFragment,
+                      MOPPE_BUF_FRAME,
+                      frame.arena[frame.slot].write (uniforms));
+        if (scene)
+          bind_texture (frame, MTLRenderStageFragment, MOPPE_TEX_SCENE, scene);
+        if (occlusion)
+          bind_texture (
+            frame, MTLRenderStageFragment, MOPPE_TEX_BLOOM, occlusion);
+        bind_texture (
+          frame, MTLRenderStageFragment, MOPPE_TEX_POST_DEPTH, scene_depth);
+        use_arguments (
+          enc, frame, MTLRenderStageVertex | MTLRenderStageFragment);
+        [enc drawPrimitives:MTLPrimitiveTypeTriangle
+                vertexStart:0
+                vertexCount:3];
+        if (fence && targets.spatial_fence)
+          [enc updateFence:targets.spatial_fence
+            afterEncoderStages:MTLStageFragment];
+        [enc endEncoding];
+      };
+
+      MoppeGtaoUniforms horizontal = gtao;
+      horizontal.blur.x = 1.0f / (float)targets.ao_a.width;
+      horizontal.blur.y = 0.0f;
+      MoppeGtaoUniforms vertical = gtao;
+      vertical.blur.x = 0.0f;
+      vertical.blur.y = 1.0f / (float)targets.ao_a.height;
+
+      quad_pass (
+        pipelines.gtao, targets.ao_a, @"GTAO gather", gtao, nil, nil, false);
+      quad_pass (pipelines.gtao_blur,
+                 targets.ao_b,
+                 @"GTAO blur",
+                 horizontal,
+                 nil,
+                 targets.ao_a,
+                 false);
+      quad_pass (pipelines.gtao_blur,
+                 targets.ao_a,
+                 @"GTAO blur",
+                 vertical,
+                 nil,
+                 targets.ao_b,
+                 false);
+
+      id<MTLTexture> src = frame.current_scene;
+      id<MTLTexture> dst =
+        (src == targets.post_a) ? targets.post_b : targets.post_a;
+      quad_pass (pipelines.gtao_apply,
+                 dst,
+                 @"GTAO apply",
+                 gtao,
+                 src,
+                 targets.ao_a,
+                 true);
+      frame.current_scene = dst;
+    }
+
+    void MetalRenderer::apply_gtao (const GtaoParams& params) {
+      if (!m_pipelines.gtao || !m_pipelines.gtao_blur ||
+          !m_pipelines.gtao_apply || !m_targets.ao_a || !m_targets.ao_b ||
+          !m_frame.command_buffer)
+        return;
+      // Occlusion needs the stored scene depth, which only the temporal
+      // path keeps.
+      if (!m_targets.temporal_scaler || !m_targets.msaa_depth)
+        return;
+      reconstruct_scene ();
+
+      MoppeGtaoUniforms u;
+      std::memset (&u, 0, sizeof (u));
+      u.camera_pos = f4 (position_value (params.camera_pos));
+      u.ray_forward = f4 (params.forward);
+      u.ray_right = f4 (params.right_span);
+      u.ray_up = f4 (params.up_span);
+      u.params.x = params.radius.numerical_value_in (u::m);
+      u.params.y = scalar_value (params.strength);
+      u.params.z = params.near_plane.numerical_value_in (u::m);
+      u.params.w = params.far_plane.numerical_value_in (u::m);
+      MetalPostPass::apply_gtao (
+        { m_pipelines, m_targets, m_frame }, u, m_targets.msaa_depth);
+    }
 
     void MetalPostPass::apply_light_shafts (const MetalPostPassInputs& inputs,
                                             const MoppeShaftUniforms& shaft,

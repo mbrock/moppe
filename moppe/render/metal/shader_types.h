@@ -294,6 +294,18 @@ struct MOPPE_SHADER_ALIGN MoppeShaftUniforms {
   MoppeFloat4 params;      // x=max distance m, y=extinction /m, z=steps
 };
 
+// Screen-space ambient occlusion over the stored scene depth. Positions
+// reconstruct through the same camera-ray basis as the sun shafts; normals
+// come from screen derivatives of those positions.
+struct MOPPE_SHADER_ALIGN MoppeGtaoUniforms {
+  MoppeFloat4 camera_pos;  // xyz
+  MoppeFloat4 ray_forward; // xyz unit view direction
+  MoppeFloat4 ray_right;   // xyz right * tan(fov/2) * aspect
+  MoppeFloat4 ray_up;      // xyz up * tan(fov/2)
+  MoppeFloat4 params;      // x=world radius m, y=strength, z=near m, w=far m
+  MoppeFloat4 blur;        // xy=blur step in uv
+};
+
 struct MOPPE_SHADER_ALIGN MoppeForestUniforms {
   MoppeMat4 view_proj;
   MoppeMat4 unjittered_view_proj;

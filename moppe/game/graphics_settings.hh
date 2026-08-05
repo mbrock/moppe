@@ -26,6 +26,7 @@ namespace moppe::game {
     channel_flux_detail,
     undergrowth,
     light_shafts,
+    gtao,
   };
 
   struct GraphicsSettings {
@@ -59,6 +60,7 @@ namespace moppe::game {
     bool channel_flux_detail = true;
     bool undergrowth = true;
     bool light_shafts = true;
+    bool gtao = true;
   };
 
   // A Boolean graphics feature has one canonical name and knows where its
@@ -177,15 +179,28 @@ namespace moppe::game {
     true
   };
 
-  inline constexpr std::array<const GraphicsFeature*, 16> graphics_features {
-    &terrain_shadows_feature,     &ocean_feature,
-    &waterfall_curtains_feature,  &particles_feature,
-    &vehicle_effects_feature,     &star_effects_feature,
-    &motion_blur_feature,         &bloom_feature,
-    &auto_exposure_feature,       &lens_flare_feature,
-    &terrain_topology_feature,    &terrain_fragment_normals_feature,
-    &snow_support_filter_feature, &channel_flux_detail_feature,
-    &undergrowth_feature,         &light_shafts_feature,
+  inline constexpr GraphicsFeature gtao_feature {
+    GraphicsFeatureId::gtao, "gtao", &GraphicsSettings::gtao, true
+  };
+
+  inline constexpr std::array<const GraphicsFeature*, 17> graphics_features {
+    &terrain_shadows_feature,
+    &ocean_feature,
+    &waterfall_curtains_feature,
+    &particles_feature,
+    &vehicle_effects_feature,
+    &star_effects_feature,
+    &motion_blur_feature,
+    &bloom_feature,
+    &auto_exposure_feature,
+    &lens_flare_feature,
+    &terrain_topology_feature,
+    &terrain_fragment_normals_feature,
+    &snow_support_filter_feature,
+    &channel_flux_detail_feature,
+    &undergrowth_feature,
+    &light_shafts_feature,
+    &gtao_feature,
   };
 
   // Ordinary play favors stable high-refresh presentation. Explicit quality
