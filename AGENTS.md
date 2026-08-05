@@ -61,6 +61,13 @@
     `tools/capture-cinematic /tmp/cinematic.mp4 12`. Set `MOPPE_SEED`,
     `MOPPE_TERRAIN_PROFILE`, or `MOPPE_CINEMATIC_CAPTURE_FPS` to override the
     defaults.
+  - Temporal-stability verification of the riding experience:
+    `tools/ride-judge /tmp/ride-judge` captures a deterministic autopilot
+    ride as consecutive frames (`MOPPE_RIDE_CAPTURE_DIR`, with `_START` and
+    `_FRAMES` overrides), encodes `ride.mp4`, and -- when `GEMINI_API_KEY`
+    is set -- asks a video-capable model to rate whether trees morph or
+    restructure in motion. Still frames cannot verify this; only video (or
+    a human) judges temporal behaviour.
   - Representative still survey along the cinematic drone route:
     `tools/capture-terrain-survey /tmp/terrain-survey 12`. This writes the
     individual frames, a contact sheet, and the deterministic capture settings.

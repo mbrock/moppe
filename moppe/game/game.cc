@@ -1142,6 +1142,36 @@ namespace moppe {
           m_snapshot_requested = false;
           r.request_screenshot (next_snapshot_path ());
         }
+        // A ride capture records CONSECUTIVE gameplay frames: the stimulus a
+        // rider actually receives, per-frame LOD transitions included --
+        // exactly what settled single captures can never show. Pair with
+        // MOPPE_DEMO=1 for a deterministic autopilot ride.
+        if (!cinematic && m_ready) {
+          static const char* ride_directory =
+            ::getenv ("MOPPE_RIDE_CAPTURE_DIR");
+          static const int ride_start = [] {
+            const char* start = ::getenv ("MOPPE_RIDE_CAPTURE_START");
+            return start ? std::max (0, ::atoi (start)) : 600;
+          }();
+          static const int ride_count = [] {
+            const char* count = ::getenv ("MOPPE_RIDE_CAPTURE_FRAMES");
+            return count ? std::max (1, ::atoi (count)) : 90;
+          }();
+          if (ride_directory) {
+            const int frame_index = m_ride_capture_render_frame++;
+            if (frame_index >= ride_start && frame_index % 2 == 0 &&
+                m_ride_capture_frame < ride_count) {
+              if (m_ride_capture_frame == 0)
+                std::filesystem::create_directories (ride_directory);
+              std::ostringstream path;
+              path << ride_directory << "/ride-" << std::setfill ('0')
+                   << std::setw (4) << m_ride_capture_frame++ << ".png";
+              r.request_screenshot (path.str ());
+            }
+            if (m_ride_capture_frame >= ride_count)
+              platform::request_quit ();
+          }
+        }
         if (!r.begin_frame (frame_params_for (frame)))
           return;
 
@@ -1700,6 +1730,8 @@ namespace moppe {
       int m_screenshot_frames;
       int m_cinematic_capture_frame = 0;
       int m_cinematic_capture_render_frame = 0;
+      int m_ride_capture_frame = 0;
+      int m_ride_capture_render_frame = 0;
       std::atomic<bool> m_ready;
       std::optional<GraphicsBenchmarkConfig> m_benchmark;
       GraphicsSettings m_benchmark_baseline;
