@@ -14,9 +14,8 @@ namespace moppe::game {
     std::string last_seed_path (const WorldParams& world,
                                 terrain::TerrainGenerationProfile profile) {
       std::ostringstream name;
-      name << "last-seed-" << platform::executable_build_id () << '-'
-           << terrain::profile_id (profile) << '-' << world.resolution
-           << ".txt";
+      name << "world-seed-" << terrain::profile_id (profile) << '-'
+           << world.resolution << ".txt";
       return platform::cache_path (name.str ());
     }
   }
@@ -48,14 +47,19 @@ namespace moppe::game {
         continue;
       const std::string name = entry.path ().filename ().string ();
       const bool terrain_file =
-        entry.is_regular_file () &&
-        (name.starts_with ("terrain-") || name.starts_with ("last-seed-"));
-      const bool automatic_world = entry.is_directory () &&
-                                   name.starts_with ("world-") &&
-                                   !name.starts_with ("world-key-");
+        entry.is_regular_file () && name.starts_with ("terrain-");
+      const bool legacy_seed =
+        entry.is_regular_file () && name.starts_with ("last-seed-");
+      const bool legacy_automatic_world = entry.is_directory () &&
+                                          name.starts_with ("world-") &&
+                                          !name.starts_with ("world-key-") &&
+                                          !name.starts_with ("world-default-");
       if (terrain_file && name.find (build_id) == std::string::npos)
         std::filesystem::remove (entry.path (), error);
-      else if (automatic_world && name.find (build_id) == std::string::npos)
+      else if (legacy_seed)
+        std::filesystem::remove (entry.path (), error);
+      else if (legacy_automatic_world &&
+               name.find (build_id) == std::string::npos)
         std::filesystem::remove_all (entry.path (), error);
     }
   }

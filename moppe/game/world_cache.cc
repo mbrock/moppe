@@ -469,12 +469,11 @@ namespace moppe::game {
   }
 
   std::string world_cache_name (const terrain::WorldRecipe& recipe,
-                                const WorldCacheConfig& config,
-                                std::string_view build_identity) {
+                                const WorldCacheConfig& config) {
     if (config.mode == WorldCacheMode::Disabled)
       return {};
     const std::string cache_namespace =
-      config.key.empty () ? std::string (build_identity) : "key-" + config.key;
+      config.key.empty () ? "default" : "key-" + config.key;
     return "world-" + cache_namespace + '-' + recipe_cache_identity (recipe) +
            ".world";
   }

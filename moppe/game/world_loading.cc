@@ -268,8 +268,8 @@ namespace moppe::game {
                   << std::endl;
       }
 
-      const std::string world_cache_file = world_cache_name (
-        recipe, state.cache_config, platform::executable_build_id ());
+      const std::string world_cache_file =
+        world_cache_name (recipe, state.cache_config);
       const std::string world_cache =
         world_cache_file.empty () ? std::string {}
                                   : platform::cache_path (world_cache_file);
@@ -277,7 +277,7 @@ namespace moppe::game {
           state.cache_config.mode == WorldCacheMode::Reuse) {
         state.report ("Looking for a saved world",
                       state.cache_config.key.empty ()
-                        ? "Checking this executable build, profile, and seed"
+                        ? "Checking the stable default world, profile, and seed"
                         : "Checking named cache '" + state.cache_config.key +
                             "'");
         if (std::unique_ptr<GeneratedWorld> world =
@@ -352,7 +352,7 @@ namespace moppe::game {
       if (!world_cache.empty ()) {
         state.report ("Saving the finished world",
                       state.cache_config.key.empty ()
-                        ? "Keeping every generated artifact for this build"
+                        ? "Keeping every generated artifact across builds"
                         : "Updating named cache '" + state.cache_config.key +
                             "'");
         save_world_cache (*world, world_cache);
