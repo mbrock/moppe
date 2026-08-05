@@ -372,15 +372,15 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     organ.bundle =
       forest_bough_bundle (part.copy, forest_lod_threshold (organ.seed));
     organ.rank = (part.part - 1u) * organ.bundle;
-    // Survivor widening is a far-field device: it holds a sparse crown's
-    // coverage where individual tufts are subpixel, and must fade out as
-    // the crown fills, or every tuft visibly shrinks through the approach.
-    // Near geometry has to be STABLE. The square-root ratio is area
-    // conservation, at full strength at the twenty-one-bough floor and
-    // gone by two-thirds complement.
+    // Survivor widening: conservation of foliage. A crown must never thin
+    // with distance -- a removed bough's mass moves into the survivors, so
+    // the square-root area ratio applies at FULL strength at every count.
+    // It converges to exactly one as the complement completes, so near
+    // geometry is stable without any fade, and mid-band trees keep the
+    // same visual density they have up close.
     const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
-    organ.boost = mix (sparse, 1.0, smoothstep (21.0, 42.0, organ.count)) *
-                  sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
+    organ.boost =
+      sparse * sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
     organ.centre = organ.root;
     organ.radius_x = crown;
     organ.radius_z = crown;
@@ -507,9 +507,13 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     const float reach = 0.72 + 0.50 * forest_hash (organ.seed, slot + 223u);
     // Large low boughs fade in over many ranks and small high ones over
     // few, so whatever arrives while the rider is close changes the crown
-    // imperceptibly per frame.
+    // imperceptibly per frame. The floor complement never arrives -- those
+    // boughs exist at every distance -- so it stands at full growth;
+    // half-grown permanent boughs would leak crown mass at the far end.
     const float grow =
-      saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
+      rank < 21u
+        ? 1.0
+        : saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
     const float length = organ.crown * mix (1.35, 0.18, t) * reach * grow;
     const float3 origin = organ.root + organ.up * rise * organ.tree_height;
     const float s = mix (0.08, 1.0, float (fan) / float (max (tufts - 1u, 1u)));
