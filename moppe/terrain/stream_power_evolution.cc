@@ -70,7 +70,8 @@ namespace moppe::terrain {
     void
     check_stream_power_evolution_parameters (const StreamPowerEvolution& p) {
       if (!isfinite (p.duration) || p.duration < 0 || !isfinite (p.time_step) ||
-          p.time_step <= 0 || !isfinite (p.reference_incision_rate) ||
+          p.time_step <= 0 || !isfinite (p.uplift_duration) ||
+          p.uplift_duration < 0 || !isfinite (p.reference_incision_rate) ||
           p.reference_incision_rate < 0 ||
           !isfinite (p.maximum_deposition_rate) ||
           p.maximum_deposition_rate < 0 || !isfinite (p.reference_area) ||
@@ -301,6 +302,10 @@ namespace moppe::terrain {
 
       const julian_years_f64_t elapsed = step * step_pace;
       const julian_years_f64_t dt = std::min (time_step, duration - elapsed);
+      const julian_years_f64_t uplift_remaining =
+        julian_years_f64_t (parameters.uplift_duration) - elapsed;
+      const julian_years_f64_t uplift_dt =
+        std::clamp (uplift_remaining, julian_years_f64_t::zero (), dt);
 
       const FloodField flood =
         analyze_standing_water (current, parameters.sea_level);
@@ -372,7 +377,7 @@ namespace moppe::terrain {
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
 
-          const meters_f64_t uplift = dt * uplift_rate[cell];
+          const meters_f64_t uplift = uplift_dt * uplift_rate[cell];
           const ElevationF64 uplifted = current_heights[cell] + uplift;
 
           // Backward Euler in affine form: the receiver, plus the cell's
