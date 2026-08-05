@@ -9,6 +9,7 @@ test.tga
 field-demo.png
 terrain-lab.png
 screenshots/waterglitch/
+screenshots/run-*/
 *.xcworkspace/xcuserdata/
 moppe.xcworkspace/
 .cache/

@@ -27,6 +27,7 @@ namespace moppe {
       Escape,
       Mount,
       Restart,
+      Screenshot,
       E,
       G,
       M,
