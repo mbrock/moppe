@@ -151,6 +151,8 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
   MOPPE_CHECK (summary.seed == 42u);
   MOPPE_CHECK (summary.resolution == 17);
   MOPPE_CHECK_NEAR (static_cast<float> (summary.uplift_years), 750000.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    static_cast<float> (summary.channel_initiation_area_m2), 1.0f, 0.0f);
   MOPPE_CHECK (summary.land_cells > 0);
   MOPPE_CHECK (summary.land_area_m2 > 0.0);
   MOPPE_CHECK (summary.land_elevation_max_m >= summary.land_elevation_p90_m);
@@ -164,9 +166,13 @@ MOPPE_TEST (landscape_summary_measures_one_complete_world) {
   std::ostringstream output;
   game::write_landscape_summary_csv (output, summary);
   MOPPE_CHECK (output.str ().starts_with (
-    "seed,resolution,evolution_years,uplift_years,land_cells,"));
-  MOPPE_CHECK (output.str ().find ("\n42,17,200000,750000,") !=
-               std::string::npos);
+    "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"));
+  MOPPE_CHECK (output.str ().find (",200000,750000,1,") != std::string::npos);
+
+  std::ostringstream elevation_output (std::ios::out | std::ios::binary);
+  game::write_landscape_elevation_f32 (elevation_output, world->surface ());
+  MOPPE_CHECK (elevation_output.str ().size () ==
+               world->surface ().size () * sizeof (float));
 }
 
 MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
@@ -207,6 +213,16 @@ MOPPE_TEST (finished_world_cache_round_trips_every_owned_artifact) {
                        750000.0f * mp_units::astronomy::Julian_year);
   MOPPE_CHECK (!game::try_load_world_cache (
     game::WorldParams {}, other_uplift, cache.string ()));
+  const WorldRecipe other_channel_scale =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       std::nullopt,
+                       1200.0f * u::m * u::m);
+  MOPPE_CHECK (!game::try_load_world_cache (
+    game::WorldParams {}, other_channel_scale, cache.string ()));
   std::filesystem::remove_all (cache);
 }
 
@@ -225,12 +241,22 @@ MOPPE_TEST (world_cache_names_are_stable_and_recipe_specific) {
                        50.0f * u::m,
                        TerrainGenerationProfile::Fast,
                        750000.0f * mp_units::astronomy::Julian_year);
+  const WorldRecipe other_channel_scale =
+    make_world_recipe (extent,
+                       17,
+                       Seed { 91 },
+                       50.0f * u::m,
+                       TerrainGenerationProfile::Fast,
+                       std::nullopt,
+                       1200.0f * u::m * u::m);
   const game::WorldCacheConfig automatic;
   const std::string automatic_path = game::world_cache_name (first, automatic);
   MOPPE_CHECK (automatic_path.find ("world-default-") != std::string::npos);
   MOPPE_CHECK (automatic_path != game::world_cache_name (second, automatic));
   MOPPE_CHECK (automatic_path !=
                game::world_cache_name (other_uplift, automatic));
+  MOPPE_CHECK (automatic_path !=
+               game::world_cache_name (other_channel_scale, automatic));
 
   game::WorldCacheConfig named { .key = "terrain-tuning" };
   const std::string first_path = game::world_cache_name (first, named);

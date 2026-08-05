@@ -22,6 +22,7 @@ MOPPE_TERRAIN_PROFILE=fast \
 MOPPE_GAZETTEER_GRAPHICS=high \
 MOPPE_GAZETTEER_WINDOW=1600x900 \
 MOPPE_GAZETTEER_SETTLE=18 \
+MOPPE_CHANNEL_INITIATION_AREA=100 \
   tools/capture-terrain-gazetteer /tmp/moppe-gazetteer
 ```
 
@@ -57,6 +58,10 @@ the same completed world. It records the recipe, elevation and slope
 percentiles, connected low-gradient land, visible-river density, water bodies,
 and cumulative eroded, deposited, and inferred exported solid volume. This is
 the physical counterpart to the camera-by-camera visual manifest.
+It also writes the completed periodic heightfield as little-endian float32 in
+`terrain-elevation.f32`. `tools/terrain-spectrum` reads these two files and
+records the physical wavelength and excess of the strongest 10--200 m radial
+spectral feature without needing to regenerate the world.
 
 ## Frozen composition
 

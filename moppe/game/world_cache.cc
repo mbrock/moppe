@@ -20,9 +20,10 @@ namespace moppe::game {
   namespace {
     constexpr std::array<char, 12> CACHE_MAGIC { 'M', 'O', 'P', 'P', 'E', 'W',
                                                  'O', 'R', 'L', 'D', '0', '1' };
-    // Version 6 invalidates worlds made by the elevation-only hillslope
-    // diffusion pass; hillslope motion now participates in the solid ledger.
-    constexpr std::uint32_t CACHE_VERSION = 6;
+    // Version 7 records the physical channel-head scale as part of the
+    // immutable recipe. Worlds evolved under another incision scale must
+    // never masquerade as the selected one.
+    constexpr std::uint32_t CACHE_VERSION = 7;
 
     std::string recipe_cache_identity (const terrain::WorldRecipe& recipe) {
       const Vec3 extent = extent_value (recipe.extent ());
@@ -38,6 +39,10 @@ namespace moppe::game {
       name << "-uplift-"
            << bits (recipe.evolution ().uplift_duration.numerical_value_in (
                 mp_units::astronomy::Julian_year));
+      name << "-channel-"
+           << bits (
+                recipe.evolution ().channel_initiation_area.numerical_value_in (
+                  u::m * u::m));
       return name.str ();
     }
 
@@ -187,6 +192,8 @@ namespace moppe::game {
       output.scalar (meters (recipe.water_datum ()));
       output.scalar (recipe.evolution ().uplift_duration.numerical_value_in (
         mp_units::astronomy::Julian_year));
+      output.scalar (
+        square_meters (recipe.evolution ().channel_initiation_area));
     }
 
     bool read_recipe (BinaryReader& input, const terrain::WorldRecipe& recipe) {
@@ -198,6 +205,7 @@ namespace moppe::game {
       Vec3 extent;
       float water = 0.0f;
       float uplift_years = 0.0f;
+      float channel_initiation_area_m2 = 0.0f;
       if (!input.bytes (magic.data (), magic.size ()) ||
           !input.scalar (version) || !input.scalar (resolution) ||
           !input.scalar (seed) || !input.scalar (profile))
@@ -206,6 +214,7 @@ namespace moppe::game {
         if (!input.scalar (extent[component]))
           return false;
       return input.scalar (water) && input.scalar (uplift_years) &&
+             input.scalar (channel_initiation_area_m2) &&
              magic == CACHE_MAGIC && version == CACHE_VERSION &&
              resolution == static_cast<std::uint32_t> (recipe.resolution ()) &&
              seed == recipe.seed ().value &&
@@ -215,7 +224,9 @@ namespace moppe::game {
              water == meters (recipe.water_datum ()) &&
              uplift_years ==
                recipe.evolution ().uplift_duration.numerical_value_in (
-                 mp_units::astronomy::Julian_year);
+                 mp_units::astronomy::Julian_year) &&
+             channel_initiation_area_m2 ==
+               square_meters (recipe.evolution ().channel_initiation_area);
     }
 
     void write_flood (BinaryWriter& output, const terrain::FloodField& flood) {

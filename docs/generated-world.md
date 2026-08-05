@@ -48,7 +48,10 @@ same finished world instead of rerunning erosion. Profile, resolution, seed,
 extent, and water datum still select separate worlds, and the stored schema and
 recipe are validated before reuse. An explicit `--uplift-years YEARS`
 experiment becomes part of that immutable recipe and both cache identities,
-so forcing-matrix launches cannot reuse another schedule's terrain.
+so forcing-matrix launches cannot reuse another schedule's terrain. The typed
+`--channel-initiation-area SQUARE_METERS` experiment has the same identity
+guarantee; it is available for process matrices but is not yet a selected Play
+calibration.
 `--world-cache-key NAME` selects an additional stable developer namespace.
 `--refresh-world-cache` rebuilds and replaces the selected entry, while
 `--no-world-cache` retains the older terrain-only cache path without loading or

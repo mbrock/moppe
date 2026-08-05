@@ -44,6 +44,10 @@ namespace moppe::game {
     // A development experiment may replace the profile's tectonic clock
     // without changing its total evolution age or any process law.
     std::optional<julian_years_t> uplift_duration;
+    // The catchment area where fluvial incision begins to dominate. This is
+    // a physical scale, so one experiment means the same thing at every grid
+    // resolution.
+    std::optional<square_meters_t> channel_initiation_area;
     WorldCacheConfig world_cache;
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;

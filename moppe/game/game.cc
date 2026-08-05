@@ -544,6 +544,14 @@ namespace moppe {
                                rivers (),
                                generated_world ().recipe ());
         write_landscape_summary_csv (summary_output, summary);
+        const std::filesystem::path elevation_path =
+          std::filesystem::path (m_gazetteer->output_directory) /
+          "terrain-elevation.f32";
+        std::ofstream elevation_output (elevation_path, std::ios::binary);
+        if (!elevation_output)
+          throw std::runtime_error ("cannot write landscape elevation: " +
+                                    elevation_path.string ());
+        write_landscape_elevation_f32 (elevation_output, surface ());
         std::cerr << "landscape gazetteer: " << m_gazetteer_plan.shots.size ()
                   << " frozen viewpoints -> " << manifest << '\n';
       }
@@ -1538,12 +1546,14 @@ namespace moppe {
         m_waterfall_surface.clear ();
         m_water_inspection.reset ();
         const terrain::Seed next_seed = terrain::next_seed (recipe ().seed ());
-        terrain::WorldRecipe next_recipe =
-          terrain::make_world_recipe (recipe ().extent (),
-                                      recipe ().resolution (),
-                                      next_seed,
-                                      recipe ().water_datum (),
-                                      recipe ().generation_profile ());
+        terrain::WorldRecipe next_recipe = terrain::make_world_recipe (
+          recipe ().extent (),
+          recipe ().resolution (),
+          next_seed,
+          recipe ().water_datum (),
+          recipe ().generation_profile (),
+          recipe ().evolution ().uplift_duration,
+          recipe ().evolution ().channel_initiation_area);
         logic ().m_mode = M_BIKE;
         logic ().m_car_exists = false;
         logic ().m_game_over = false;

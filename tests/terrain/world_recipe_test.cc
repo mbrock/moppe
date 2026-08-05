@@ -106,3 +106,20 @@ MOPPE_TEST (world_recipe_accepts_an_explicit_uplift_experiment) {
   MOPPE_CHECK (recipe.evolution ().uplift_duration ==
                750000.0f * mp_units::astronomy::Julian_year);
 }
+
+MOPPE_TEST (world_recipe_accepts_a_physical_channel_head_experiment) {
+  using namespace moppe;
+  using namespace moppe::terrain;
+
+  const WorldRecipe recipe =
+    make_world_recipe (spatial_extent_in_metres (Vec3 (5000, 320, 5000)),
+                       33,
+                       Seed { 77 },
+                       50.0f * mp_units::si::metre,
+                       TerrainGenerationProfile::Play,
+                       std::nullopt,
+                       1200.0f * mp_units::si::metre * mp_units::si::metre);
+
+  MOPPE_CHECK (recipe.evolution ().channel_initiation_area ==
+               1200.0f * mp_units::si::metre * mp_units::si::metre);
+}

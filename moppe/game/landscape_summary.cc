@@ -128,10 +128,15 @@ namespace moppe::game {
     return {
       .seed = recipe.seed ().value,
       .resolution = recipe.resolution (),
+      .spacing_x_m = domain.spacing_x ().numerical_value_in (u::m),
+      .spacing_z_m = domain.spacing_z ().numerical_value_in (u::m),
       .evolution_years = recipe.evolution ().duration.numerical_value_in (
         mp_units::astronomy::Julian_year),
       .uplift_years = recipe.evolution ().uplift_duration.numerical_value_in (
         mp_units::astronomy::Julian_year),
+      .channel_initiation_area_m2 =
+        recipe.evolution ().channel_initiation_area.numerical_value_in (u::m *
+                                                                        u::m),
       .land_cells = land_cells,
       .land_area_m2 = land_area_m2,
       .land_elevation_p10_m = percentile (land_elevations, 0.10),
@@ -165,7 +170,8 @@ namespace moppe::game {
 
   void write_landscape_summary_csv (std::ostream& output,
                                     const LandscapeSummary& s) {
-    output << "seed,resolution,evolution_years,uplift_years,land_cells,"
+    output << "seed,resolution,spacing_x_m,spacing_z_m,evolution_years,"
+              "uplift_years,channel_initiation_area_m2,land_cells,"
               "land_area_m2,land_elevation_p10_m,land_elevation_p50_m,"
               "land_elevation_p90_m,land_elevation_p99_m,"
               "land_elevation_max_m,land_relief_m,slope_p50_deg,"
@@ -177,19 +183,30 @@ namespace moppe::game {
               "inland_water_area_m2,eroded_sediment_m3,"
               "deposited_sediment_m3,inferred_exported_sediment_m3\n";
     output << std::setprecision (12) << s.seed << ',' << s.resolution << ','
-           << s.evolution_years << ',' << s.uplift_years << ',' << s.land_cells
-           << ',' << s.land_area_m2 << ',' << s.land_elevation_p10_m << ','
-           << s.land_elevation_p50_m << ',' << s.land_elevation_p90_m << ','
-           << s.land_elevation_p99_m << ',' << s.land_elevation_max_m << ','
-           << s.land_relief_m << ',' << s.slope_p50_deg << ','
-           << s.slope_p90_deg << ',' << s.slope_p99_deg << ','
-           << s.land_below_5_deg_fraction << ',' << s.land_below_10_deg_fraction
-           << ',' << s.largest_connected_below_10_deg_m2 << ','
-           << s.river_reaches << ',' << s.river_length_m << ','
-           << s.drainage_density_m_per_km2 << ','
-           << s.largest_river_catchment_m2 << ',' << s.inland_water_bodies
-           << ',' << s.lakes << ',' << s.inland_water_area_m2 << ','
-           << s.eroded_sediment_m3 << ',' << s.deposited_sediment_m3 << ','
-           << s.inferred_exported_sediment_m3 << '\n';
+           << s.spacing_x_m << ',' << s.spacing_z_m << ',' << s.evolution_years
+           << ',' << s.uplift_years << ',' << s.channel_initiation_area_m2
+           << ',' << s.land_cells << ',' << s.land_area_m2 << ','
+           << s.land_elevation_p10_m << ',' << s.land_elevation_p50_m << ','
+           << s.land_elevation_p90_m << ',' << s.land_elevation_p99_m << ','
+           << s.land_elevation_max_m << ',' << s.land_relief_m << ','
+           << s.slope_p50_deg << ',' << s.slope_p90_deg << ','
+           << s.slope_p99_deg << ',' << s.land_below_5_deg_fraction << ','
+           << s.land_below_10_deg_fraction << ','
+           << s.largest_connected_below_10_deg_m2 << ',' << s.river_reaches
+           << ',' << s.river_length_m << ',' << s.drainage_density_m_per_km2
+           << ',' << s.largest_river_catchment_m2 << ','
+           << s.inland_water_bodies << ',' << s.lakes << ','
+           << s.inland_water_area_m2 << ',' << s.eroded_sediment_m3 << ','
+           << s.deposited_sediment_m3 << ',' << s.inferred_exported_sediment_m3
+           << '\n';
+  }
+
+  void write_landscape_elevation_f32 (std::ostream& output,
+                                      const map::SurfaceGeometry& surface) {
+    const auto& elevations = spatial::get<terrain::surface_elevation> (surface);
+    for (const terrain::SurfaceElevation elevation : elevations) {
+      const float value = terrain::surface_elevation_value (elevation);
+      output.write (reinterpret_cast<const char*> (&value), sizeof (value));
+    }
   }
 }

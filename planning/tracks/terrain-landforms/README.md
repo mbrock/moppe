@@ -19,9 +19,9 @@ flowchart LR
   TER030["TER-030: trunk-river scale"]
   TER040["TER-040: calibrate Play"]
 
-  TER000 --> TER001 --> TER002 --> TER010 --> TER011 --> TER020
-  TER020 --> TER021 --> TER022 --> TER040
-  TER021 --> TER030 --> TER040
+  TER000 --> TER001 --> TER002 --> TER010 --> TER020 --> TER021
+  TER021 --> TER011 --> TER030 --> TER040
+  TER021 --> TER022 --> TER040
 ```
 
 ## Program, not queue
@@ -30,9 +30,10 @@ The track keeps the long argument visible while individual commits stay
 small. Its gates are causal:
 
 - forcing is chosen before a hillslope law is tuned against it;
-- a conservative hillslope regime exists before channel heads suppress
-  every-cell incision;
-- mobile-cover feedback exists before deposition is widened into landforms;
+- a conservative hillslope regime exists before transport is coupled to
+  mobile cover;
+- mobile-cover feedback and valley-floor deposition exist before channel
+  heads suppress the incision that currently drains small basins;
 - valley floors exist before river width is judged; and
 - the default profile changes only after the whole seed suite passes.
 
@@ -56,9 +57,11 @@ fluting remains. TER-002 compared 250, 500, and 750 ky and selected 500 ky:
 and leaves only 4.4% of land below ten degrees. The full finding is recorded
 in [`findings.md`](findings.md). TER-010 now addresses the remaining fluting
 with conservative hillslope transport. TER-010 preserves that shape while
-making every creep transfer part of the solid ledger. TER-011 can now suppress
-cell-scale fluvial incision against an accepted, material-conserving hillslope
-process.
+making every creep transfer part of the solid ledger. The first TER-011 matrix
+then exposed a dependency error: physically meaningful channel-head scales
+produce perched basins and sheer channel walls before cover feedback and
+valley-floor deposition exist. The typed experiment and evidence remain, but
+TER-020 and TER-021 now precede the final channel-scale selection.
 
 ## Deferred until the shape works
 

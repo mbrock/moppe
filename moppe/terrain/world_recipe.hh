@@ -52,13 +52,15 @@ namespace moppe::terrain {
                        Seed seed,
                        meters_t water_datum,
                        TerrainGenerationProfile generation_profile,
-                       std::optional<julian_years_t> uplift_duration);
+                       std::optional<julian_years_t> uplift_duration,
+                       std::optional<square_meters_t> channel_initiation_area);
     WorldRecipe (spatial_extent_t extent,
                  int resolution,
                  Seed seed,
                  meters_t water_datum,
                  TerrainGenerationProfile generation_profile,
-                 std::optional<julian_years_t> uplift_duration);
+                 std::optional<julian_years_t> uplift_duration,
+                 std::optional<square_meters_t> channel_initiation_area);
 
     spatial_extent_t m_extent;
     int m_resolution;
@@ -75,7 +77,8 @@ namespace moppe::terrain {
     Seed seed,
     meters_t water_datum,
     TerrainGenerationProfile generation_profile,
-    std::optional<julian_years_t> uplift_duration = std::nullopt);
+    std::optional<julian_years_t> uplift_duration = std::nullopt,
+    std::optional<square_meters_t> channel_initiation_area = std::nullopt);
 }
 
 #endif

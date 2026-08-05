@@ -4,7 +4,7 @@ title = "Set an honest trunk-river and world scale"
 rfc = "RFC-0005"
 track = "terrain-landforms"
 status = "backlog"
-depends_on = ["TER-021"]
+depends_on = ["TER-011", "TER-021"]
 order = 80
 areas = ["terrain", "rivers", "world-recipe", "rendering"]
 +++

@@ -15,12 +15,14 @@ namespace moppe::terrain {
     return "play";
   }
 
-  WorldRecipe::WorldRecipe (spatial_extent_t extent,
-                            int resolution,
-                            Seed seed,
-                            meters_t water_datum,
-                            TerrainGenerationProfile generation_profile,
-                            std::optional<julian_years_t> uplift_duration)
+  WorldRecipe::WorldRecipe (
+    spatial_extent_t extent,
+    int resolution,
+    Seed seed,
+    meters_t water_datum,
+    TerrainGenerationProfile generation_profile,
+    std::optional<julian_years_t> uplift_duration,
+    std::optional<square_meters_t> channel_initiation_area)
       : m_extent (extent), m_resolution (resolution), m_seed (seed),
         m_water_datum (water_datum), m_generation_profile (generation_profile) {
     // Evolution age and tectonic forcing are separate clocks. The initial
@@ -41,6 +43,8 @@ namespace moppe::terrain {
                                                                  : 500000.0f;
     m_evolution.uplift_duration = uplift_duration.value_or (
       profile_uplift_duration * mp_units::astronomy::Julian_year);
+    if (channel_initiation_area)
+      m_evolution.channel_initiation_area = *channel_initiation_area;
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
@@ -55,8 +59,14 @@ namespace moppe::terrain {
                      Seed seed,
                      meters_t water_datum,
                      TerrainGenerationProfile generation_profile,
-                     std::optional<julian_years_t> uplift_duration) {
-    return { extent,      resolution,         seed,
-             water_datum, generation_profile, uplift_duration };
+                     std::optional<julian_years_t> uplift_duration,
+                     std::optional<square_meters_t> channel_initiation_area) {
+    return { extent,
+             resolution,
+             seed,
+             water_datum,
+             generation_profile,
+             uplift_duration,
+             channel_initiation_area };
   }
 }

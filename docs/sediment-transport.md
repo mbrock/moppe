@@ -47,6 +47,13 @@ export is outside the modeled land surface rather than an offshore deposit.
 Lakes currently receive sediment at their routed cells rather than spreading
 it over a delta or lake bed.
 
+Fluvial incision already has a typed physical channel-initiation area and a
+smooth fourfold transition around it. The default remains 1 m2 for now. A
+same-seed 1--1200 m2 matrix found that physically resolved thresholds expose
+perched basins and sheer channel walls before cover feedback and distributed
+valley deposition exist. The experiment is available through
+`--channel-initiation-area`; it is not yet a selected process calibration.
+
 ## Conservative hillslope transport
 
 Hillslope creep is now the second conservative solid pass. For each cardinal

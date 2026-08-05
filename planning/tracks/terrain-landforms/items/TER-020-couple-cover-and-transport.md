@@ -3,9 +3,9 @@ id = "TER-020"
 title = "Couple mobile cover, bedrock incision, and transport capacity"
 rfc = "RFC-0005"
 track = "terrain-landforms"
-status = "backlog"
-depends_on = ["TER-011"]
-order = 50
+status = "ready"
+depends_on = ["TER-010"]
+order = 40
 areas = ["terrain", "sediment", "hydrology"]
 +++
 # Couple mobile cover, bedrock incision, and transport capacity
