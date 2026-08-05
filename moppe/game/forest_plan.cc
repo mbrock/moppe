@@ -167,8 +167,11 @@ namespace moppe::game {
           band (terrain::surface_elevation_point (115.0f * u::m),
                 terrain::surface_elevation_point (195.0f * u::m),
                 elevation);
+        // A boreal stand: spruce is the forest. Broadleaf stays as the
+        // occasional warm accent in the lowlands rather than the default
+        // form, so every view reads as one species across all ages.
         const float conifer_chance =
-          0.12f + 0.58f * high_ground.numerical_value_in (one);
+          0.84f + 0.14f * high_ground.numerical_value_in (one);
         const ForestAge age = age_from_identity (identity);
         plan.sites.push_back ({ .position = forest_position (x, elevation, z),
                                 .normal = normal_at (surface, x, z),

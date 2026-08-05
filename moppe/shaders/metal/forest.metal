@@ -98,7 +98,9 @@ static inline uint forest_part_count (float pixels, uint seed) {
     return 1u;
   if (pixels < 48.0 * threshold)
     return 3u;
-  return MOPPE_FOREST_PARTS_PER_TREE;
+  if (pixels < 320.0 * threshold)
+    return MOPPE_FOREST_PARTS_PER_TREE;
+  return MOPPE_FOREST_HERO_PARTS;
 }
 
 // Eight object threads consider eight individuals. Each survivor can schedule
@@ -138,12 +140,20 @@ static inline uint forest_part_count (float pixels, uint seed) {
       if (bottom.w > 0.01 && top.w > 0.01)
         pixels = abs (top.y / top.w - bottom.y / bottom.w) * 0.5 * u.temporal.y;
     }
-    const uint parts =
-      visible ? forest_part_count (pixels, tree.identity.x) : 0u;
+    uint parts = visible ? forest_part_count (pixels, tree.identity.x) : 0u;
+    // Only conifers own a bough-assembly expansion; a hero broadleaf keeps
+    // the ordinary organ set.
+    if (parts == MOPPE_FOREST_HERO_PARTS && tree.identity.y != 1u)
+      parts = MOPPE_FOREST_PARTS_PER_TREE;
     if (parts > 0u) {
       const uint first = atomic_fetch_add_explicit (
         &emitted, parts, metal::memory_order_relaxed);
-      for (uint part = 0u; part < parts; ++part)
+      // Hero assemblies can oversubscribe the shared payload; the fringe of
+      // the last crowded tree yields rather than overflowing the buffer.
+      const uint budget = first < MOPPE_FOREST_PAYLOAD_PARTS
+                            ? min (parts, MOPPE_FOREST_PAYLOAD_PARTS - first)
+                            : 0u;
+      for (uint part = 0u; part < budget; ++part)
         payload.parts[first + part] = { tree_index, part, parts, 4u };
     }
   }
@@ -151,7 +161,8 @@ static inline uint forest_part_count (float pixels, uint seed) {
   threadgroup_barrier (metal::mem_flags::mem_threadgroup);
   if (thread_id == 0u) {
     payload.count =
-      atomic_load_explicit (&emitted, metal::memory_order_relaxed);
+      min (atomic_load_explicit (&emitted, metal::memory_order_relaxed),
+           uint (MOPPE_FOREST_PAYLOAD_PARTS));
     mesh_grid.set_threadgroups_per_grid (uint3 (payload.count, 1, 1));
   }
 }
@@ -219,6 +230,9 @@ struct ForestOrgan {
   bool wood;
   bool conifer;
   bool proxy;
+  // A frond organ is one feathered bough of the nearest conifers: a comb of
+  // serrated needle fans along a drooping axis, one meshlet per bough.
+  bool frond;
 };
 
 static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
@@ -233,6 +247,8 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
   organ.conifer = tree.identity.y == 1u;
   organ.proxy = part.lod == 1u;
   organ.wood = part.part == 0u && !organ.proxy;
+  organ.frond =
+    organ.conifer && part.lod == MOPPE_FOREST_HERO_PARTS && part.part >= 3u;
   const float heading = 6.2831853 * forest_hash (organ.seed, 3u);
   const float3 reference =
     abs (organ.up.y) > 0.92 ? float3 (0.0, 0.0, 1.0) : float3 (0.0, 1.0, 0.0);
@@ -259,6 +275,30 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     organ.half_height = trunk_rise * organ.tree_height;
     organ.bend = 0.12;
     organ.flutter = 0.0;
+  } else if (organ.frond) {
+    // Hero bough: eight whorls of four boughs, golden-angle interleaved.
+    // The organ basis becomes the bough frame: across points along the
+    // bough, forward across it, and the fan comb hangs off that axis.
+    const uint index = part.part - 3u;
+    const uint whorl = index / 4u;
+    const uint bough = index % 4u;
+    const float t = float (whorl) / 7.0;
+    const float rise = mix (0.24, 0.93, t);
+    const float turn =
+      6.2831853 * (float (bough) / 4.0 + 0.618034 * float (whorl) +
+                   0.07 * (forest_hash (organ.seed, part.part + 211u) - 0.5));
+    const float3 radial =
+      normalize (organ.across * cos (turn) + organ.forward * sin (turn));
+    organ.centre = organ.root + organ.up * rise * organ.tree_height;
+    organ.across = radial;
+    organ.forward = normalize (cross (organ.up, radial));
+    const float reach =
+      0.72 + 0.50 * forest_hash (organ.seed, part.part + 223u);
+    organ.radius_x = crown * mix (1.30, 0.30, t) * reach;
+    organ.radius_z = organ.radius_x * 0.34;
+    organ.half_height = organ.tree_height * mix (0.055, 0.028, t);
+    organ.bend = 0.30 + 0.45 * rise;
+    organ.flutter = 0.24 + 0.30 * t;
   } else if (organ.conifer) {
     // A conifer is a cone of mass fringed by bough whorls. Two overlapping
     // cone shells arrive first and are the whole tree at middle distance —
@@ -288,7 +328,7 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
       const float t = tier / 4.0;
       const float rise = mix (0.26, 0.96, t);
       const float irregular =
-        0.90 + 0.20 * forest_hash (organ.seed, part.part + 31u);
+        0.82 + 0.36 * forest_hash (organ.seed, part.part + 31u);
       const float spin = 2.3999632 * tier;
       const float3 across =
         organ.across * cos (spin) + organ.forward * sin (spin);
@@ -299,7 +339,7 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
       organ.radius_z =
         organ.radius_x *
         (0.86 + 0.20 * forest_hash (organ.seed, part.part + 43u));
-      organ.half_height = organ.tree_height * mix (0.085, 0.055, t);
+      organ.half_height = organ.tree_height * mix (0.10, 0.055, t);
       organ.bend = 0.34 + 0.48 * rise;
       organ.flutter = 0.20 + 0.30 * t;
     }
@@ -343,11 +383,14 @@ static inline float3 forest_palette (thread const MoppeForestInstance& tree,
   // the brightness spread; a stand of one green reads as painted, not grown.
   const float hue = forest_hash (tree.identity.x, 113u) - 0.5;
   float3 leaf =
-    organ.conifer ? float3 (0.185, 0.335, 0.150) : float3 (0.275, 0.455, 0.165);
+    organ.conifer ? float3 (0.148, 0.280, 0.152) : float3 (0.275, 0.455, 0.165);
   leaf *= float3 (1.08 - 0.20 * wet, 0.88 + 0.26 * wet, 0.90 + 0.16 * cover);
   leaf *= float3 (1.0 + 0.30 * hue, 1.0, 1.0 - 0.34 * hue);
   leaf *= 0.90 + 0.24 * variation;
-  return leaf * (0.55 + 0.50 * exposure);
+  // Spruce is read by the contrast between dark needle mass and its lit
+  // fringe, so the conifer exposure range runs deeper and brighter.
+  return leaf *
+         (organ.conifer ? 0.50 + 0.58 * exposure : 0.55 + 0.50 * exposure);
 }
 
 static inline float forest_ring_level (uint ring, bool conifer, bool proxy) {
@@ -393,6 +436,45 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     return point;
   }
 
+  if (organ.frond) {
+    // One frond meshlet is a comb of twelve serrated needle fans along a
+    // drooping bough axis: an apex plus seven rim vertices each. The fans
+    // shrink toward the tip and alternate a slight side offset, so the
+    // bough reads as a feather rather than a paddle.
+    const uint fan = vertex_index / 8u;
+    const uint local = vertex_index % 8u;
+    const float s = mix (0.14, 1.0, float (fan) / 11.0);
+    const float droop = 0.30 - 0.95 * s * s;
+    const float side = fan % 2u == 0u ? 1.0 : -1.0;
+    const float3 axis_point = organ.centre + organ.across * organ.radius_x * s +
+                              organ.forward * organ.radius_z * 0.22 * side *
+                                forest_hash (organ.seed, fan + 17u) +
+                              organ.up * organ.half_height * droop;
+    if (local == 0u) {
+      point.position = axis_point;
+      point.normal = normalize (organ.up + organ.across * 0.2);
+      point.exposure = 0.32;
+      return point;
+    }
+    const float radius = organ.radius_x * mix (0.17, 0.08, s) *
+                         (0.80 + 0.40 * forest_hash (organ.seed, fan + 31u));
+    const uint blade = local - 1u;
+    // Seven blades sweep a forward arc; serrated rim radii keep the
+    // silhouette needled instead of scalloped.
+    const float arc =
+      mix (-1.9, 1.9, float (blade) / 6.0) +
+      0.16 * (forest_hash (organ.seed, fan * 13u + blade + 41u) - 0.5);
+    const float serration =
+      0.62 + 0.55 * forest_hash (organ.seed, fan * 29u + blade + 57u);
+    const float3 rim_dir =
+      normalize (organ.across * cos (arc) + organ.forward * sin (arc));
+    point.position =
+      axis_point + rim_dir * radius * serration - organ.up * radius * 0.30;
+    point.normal = normalize (organ.up + rim_dir * 0.35);
+    point.exposure = saturate (0.34 + 0.50 * s + 0.14 * serration);
+    return point;
+  }
+
   if (organ.conifer && !organ.proxy) {
     // One conifer organ is a whorl of five explicit bough sprays. Each spray
     // widens away from the trunk, droops through the loaded middle, and turns
@@ -410,16 +492,20 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
     const float3 sideways = normalize (cross (organ.up, radial));
     const float distance = float3 (0.10, 0.62, 1.0)[section];
     const float breadth = float3 (0.06, 0.30, 0.05)[section];
-    const float droop = float3 (0.26, -0.16, 0.08)[section];
+    const float droop = float3 (0.28, -0.20, 0.06)[section];
+    // A spruce silhouette is feathery: bough reach varies by half its
+    // length, so the crown edge breaks instead of tracing a smooth cone.
     const float asymmetry =
-      0.88 + 0.22 * forest_hash (organ.seed, bough + 229u);
+      0.70 + 0.45 * forest_hash (organ.seed, bough + 229u);
     point.position = organ.centre +
                      radial * organ.radius_x * distance * asymmetry +
                      sideways * organ.radius_z * breadth * side +
                      organ.up * organ.half_height * droop;
     point.normal =
       normalize (organ.up + radial * 0.16 + sideways * side * 0.08);
-    point.exposure = saturate (0.42 + 0.24 * distance + 0.10 * droop);
+    // Interior stays dark needle mass; only the outer spray tips carry the
+    // bright sunlit fringe the crown is read by.
+    point.exposure = saturate (0.30 + 0.50 * distance);
     return point;
   }
 
@@ -438,14 +524,17 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
   const float turn =
     base_turn +
     0.09 * (forest_hash (organ.seed, ring * 17u + side + 111u) - 0.5);
-  const float r =
-    forest_ring_radius (ring, organ.conifer, organ.proxy) *
-    (0.88 + 0.22 * forest_hash (organ.seed, ring * 23u + side + 131u));
+  // Conifer shells wear a rougher edge than broadleaf lobes: the cone is a
+  // mass reading, and an even rim is what makes it read as felt.
+  const float jitter = organ.conifer ? 0.40 : 0.22;
+  const float r = forest_ring_radius (ring, organ.conifer, organ.proxy) *
+                  (1.0 - 0.5 * jitter +
+                   jitter * forest_hash (organ.seed, ring * 23u + side + 131u));
   const float silhouette =
     organ.conifer && !organ.proxy ? (side % 2u == 0u ? 1.18 : 0.70) : 1.0;
-  const float y =
-    forest_ring_level (ring, organ.conifer, organ.proxy) +
-    0.07 * (forest_hash (organ.seed, ring * 29u + side + 151u) - 0.5);
+  const float y = forest_ring_level (ring, organ.conifer, organ.proxy) +
+                  (organ.conifer ? 0.10 : 0.07) *
+                    (forest_hash (organ.seed, ring * 29u + side + 151u) - 0.5);
   const float x = cos (turn) * organ.radius_x * r * silhouette;
   const float z = sin (turn) * organ.radius_z * r * silhouette;
   point.position = organ.centre + organ.across * x + organ.forward * z +
@@ -453,7 +542,7 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
   point.normal = normalize (organ.across * (x / max (organ.radius_x, 0.001)) +
                             organ.forward * (z / max (organ.radius_z, 0.001)) +
                             organ.up * y * 0.72);
-  point.exposure = saturate (0.34 + 0.52 * y + 0.22 * point.normal.y);
+  point.exposure = saturate (0.40 + 0.38 * y + 0.22 * point.normal.y);
   return point;
 }
 
@@ -467,6 +556,11 @@ static inline void forest_indices (thread Mesh& out,
     const uint next = (side + 1u) % 12u;
     triangle = primitive % 2u == 0u ? uint3 (side, next, 12u + next)
                                     : uint3 (side, 12u + next, 12u + side);
+  } else if (organ.frond) {
+    const uint fan = primitive / 6u;
+    const uint blade = primitive % 6u;
+    const uint base = fan * 8u;
+    triangle = uint3 (base, base + 1u + blade, base + 2u + blade);
   } else if (organ.conifer && !organ.proxy) {
     const uint bough = primitive / 4u;
     const uint local = primitive % 4u;
@@ -507,9 +601,16 @@ static inline void forest_indices (thread Mesh& out,
   const ForestPart part = payload.parts[min (mesh_id, payload.count - 1u)];
   const MoppeForestInstance tree = trees[part.tree];
   const ForestOrgan organ = forest_organ (tree, u, part, false);
-  const bool boughs = organ.conifer && !organ.proxy && !organ.wood;
-  const uint vertices = organ.wood ? 24u : boughs ? 30u : 32u;
-  const uint primitives = organ.wood ? 24u : boughs ? 20u : 60u;
+  const bool boughs =
+    organ.conifer && !organ.proxy && !organ.wood && !organ.frond;
+  const uint vertices = organ.wood    ? 24u
+                        : organ.frond ? 96u
+                        : boughs      ? 30u
+                                      : 32u;
+  const uint primitives = organ.wood    ? 24u
+                          : organ.frond ? 72u
+                          : boughs      ? 20u
+                                        : 60u;
   if (thread_id == 0u)
     out.set_primitive_count (primitives);
 
@@ -672,7 +773,7 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
   // sunward side. It is deliberately separate from the sky exposure signal.
   const float wrap = saturate ((dot (n, l) + 0.26) / 1.26);
   float3 color = base * (moppe_hemisphere_light (u.ambient.rgb, n) *
-                           (0.54 + 0.46 * in.exposure) +
+                           (0.62 + 0.38 * in.exposure) +
                          u.sun_diffuse.rgb * wrap * visibility);
   color +=
     base * float3 (0.10, 0.16, 0.20) * (0.35 + 0.65 * in.exposure) * in.leaf;
