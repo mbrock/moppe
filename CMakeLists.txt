@@ -276,10 +276,14 @@ if(MOPPE_METAL_RESULT EQUAL 0)
   foreach(src ${MOPPE_METAL_SOURCES})
     get_filename_component(name ${src} NAME_WE)
     set(air ${CMAKE_CURRENT_BINARY_DIR}/${name}.air)
+    # Debug line tables and embedded sources let Xcode's shader profiler
+    # attribute GPU time to shader source lines. They add nothing to the
+    # compiled code itself, only to the metallib's debug payload.
     add_custom_command(
       OUTPUT ${air}
       COMMAND xcrun -sdk ${MOPPE_METAL_SDK} metal
               -std=metal4.0
+              -gline-tables-only -frecord-sources
               -c ${CMAKE_CURRENT_SOURCE_DIR}/${src}
               -o ${air}
       DEPENDS ${src} ${MOPPE_METAL_DEPS}
