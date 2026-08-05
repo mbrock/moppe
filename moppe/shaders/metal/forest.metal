@@ -112,8 +112,11 @@ static inline float forest_bough_count (float pixels, float threshold) {
 // Mesh-group coalescing for the middle band: a small distant assembly
 // bundles four boughs of three tufts into each meshlet instead of paying a
 // mostly idle meshlet per bough, the same cure Kuth 2025 applies to leaves.
-static inline uint forest_bough_bundle (uint pixel_code) {
-  return pixel_code < 240u ? 4u : 1u;
+// The boundary sits where a tree is a few percent of the frame, so the
+// tuft-layout change stays subtle, and the per-individual threshold keeps a
+// stand from crossing it on the same frame.
+static inline uint forest_bough_bundle (uint pixel_code, float threshold) {
+  return float (pixel_code) < 130.0 * threshold ? 4u : 1u;
 }
 
 static inline uint forest_bough_tufts (uint bundle) {
@@ -129,7 +132,7 @@ forest_part_count (float pixels, uint pixel_code, uint seed, bool conifer) {
     return 1u;
   if (conifer) {
     const float count = forest_bough_count (float (pixel_code), threshold);
-    const float bundle = float (forest_bough_bundle (pixel_code));
+    const float bundle = float (forest_bough_bundle (pixel_code, threshold));
     return 1u + uint (ceil (count / bundle));
   }
   if (pixels < 48.0 * threshold)
@@ -174,16 +177,14 @@ forest_part_count (float pixels, uint pixel_code, uint seed, bool conifer) {
                          abs (clip.y) < clip.w + clip_radius;
     float pixels = 0.0;
     if (visible) {
-      const float4 bottom = u.view_proj * float4 (root, 1.0);
-      const float4 top = u.view_proj * float4 (root + up * height, 1.0);
-      if (bottom.w > 0.01 && top.w > 0.01)
-        pixels = abs (top.y / top.w - bottom.y / bottom.w) * 0.5 * u.temporal.y;
-      else
-        // An endpoint behind the camera plane means the rider is beside or
-        // beneath this organism. That is the closest a tree ever gets: it
-        // must be a full assembly, never a zero-pixel cull that vanishes the
-        // trunk you are about to ride past.
-        pixels = 1.0e6;
+      // Projected size from the centre's view depth rather than endpoint
+      // projection: the same smooth, monotone measure at every approach
+      // angle. Endpoint differences collapse discontinuously the moment the
+      // root or tip crosses the camera plane, which used to pop a passing
+      // tree's whole complement of boughs in one frame. The clamped depth
+      // saturates the measure once the rider is beside the organism.
+      const float focal = abs (u.view_proj[1][1]);
+      pixels = height * focal * 0.5 * u.temporal.y / max (clip.w, 0.6);
       // The scene path never tiles periodic copies, so the copy slot carries
       // the projected size instead: the mesh stage reads it back to grow the
       // newest boughs in continuously.
@@ -338,9 +339,15 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     // coverage: detail migrates continuously, never switching.
     organ.count =
       forest_bough_count (float (part.copy), forest_lod_threshold (organ.seed));
-    organ.bundle = forest_bough_bundle (part.copy);
+    organ.bundle =
+      forest_bough_bundle (part.copy, forest_lod_threshold (organ.seed));
     organ.rank = (part.part - 1u) * organ.bundle;
-    organ.boost = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0) *
+    // Survivor widening is a far-field device: it holds a sparse crown's
+    // coverage where individual tufts are subpixel, and must fade out as
+    // the crown fills, or every tuft visibly shrinks through the approach.
+    // Near geometry has to be STABLE.
+    const float sparse = clamp (sqrt (63.0 / max (organ.count, 1.0)), 1.0, 2.0);
+    organ.boost = mix (sparse, 1.0, smoothstep (16.0, 32.0, organ.count)) *
                   sqrt (13.0 / float (forest_bough_tufts (organ.bundle)));
     organ.centre = organ.root;
     organ.radius_x = crown;
@@ -466,7 +473,11 @@ static inline ForestPoint forest_vertex (thread const ForestOrgan& organ,
       normalize (organ.across * cos (turn) + organ.forward * sin (turn));
     const float3 side = normalize (cross (organ.up, along));
     const float reach = 0.72 + 0.50 * forest_hash (organ.seed, slot + 223u);
-    const float grow = saturate ((organ.count - float (rank)) / 3.0);
+    // Large low boughs fade in over many ranks and small high ones over
+    // few, so whatever arrives while the rider is close changes the crown
+    // imperceptibly per frame.
+    const float grow =
+      saturate ((organ.count - float (rank)) / (3.0 + 10.0 * (1.0 - t)));
     const float length = organ.crown * mix (1.35, 0.18, t) * reach * grow;
     const float3 origin = organ.root + organ.up * rise * organ.tree_height;
     const float s = mix (0.08, 1.0, float (fan) / float (max (tufts - 1u, 1u)));

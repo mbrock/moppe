@@ -13,6 +13,7 @@
 #include <moppe/render/renderer.hh>
 
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -27,6 +28,8 @@ namespace {
         m_output = out;
       if (const char* distance = ::getenv ("MOPPE_STUDIO_DISTANCE"))
         m_distance = std::max (10.0f, (float)::atof (distance));
+      if (const char* dolly = ::getenv ("MOPPE_STUDIO_DOLLY"))
+        m_dolly_directory = dolly;
     }
 
     void setup (render::Renderer& r, int, int) override {
@@ -70,11 +73,21 @@ namespace {
     void render (render::Renderer& r) override {
       render::FrameParams fp;
       const bool capture = !m_output.empty ();
-      const float orbit = capture ? 0.0f : m_time * 0.15f;
+      const bool dolly = !m_dolly_directory.empty ();
+      // A dolly run steps the camera toward the lineup along a geometric
+      // distance ladder -- uniform steps in projected size, which is the
+      // variable the LOD responds to -- capturing one settled frame per
+      // stop so adjacent frames reveal any discontinuous change.
+      float distance = m_distance;
+      if (dolly) {
+        const float progress = float (m_shot) / float (DOLLY_SHOTS - 1);
+        distance = 350.0f * std::pow (10.0f / 350.0f, progress);
+      }
+      const float orbit = (capture || dolly) ? 0.0f : m_time * 0.15f;
       const Vec3 at (4, 9, 0);
-      const Vec3 eye = at + Vec3 (std::sin (orbit) * m_distance,
-                                  3.0f,
-                                  std::cos (orbit) * m_distance);
+      const Vec3 eye =
+        at +
+        Vec3 (std::sin (orbit) * distance, 3.0f, std::cos (orbit) * distance);
       fp.view = Mat4::look_at (eye, at, Vec3 (0, 1, 0));
       fp.proj = Mat4::perspective_reversed (
         50 * u::deg, (float)r.width_pts () / r.height_pts (), 0.5f, 9000.0f);
@@ -92,7 +105,7 @@ namespace {
       fp.sun_diffuse = DisplayColor (1.0f, 0.93f, 0.80f);
       fp.sun_specular = DisplayColor (0.6f, 0.6f, 0.55f);
       fp.ambient = DisplayColor (0.34f, 0.36f, 0.40f);
-      fp.time = capture ? 0.0f : m_time;
+      fp.time = (capture || dolly) ? 0.0f : m_time;
       // The studio wants raw, predictable light: no adaptation, no bloom.
       fp.auto_exposure = false;
       fp.bloom = false;
@@ -129,6 +142,20 @@ namespace {
       r.end_frame ();
 
       ++m_frames;
+      if (dolly) {
+        ++m_frame_in_shot;
+        if (m_frame_in_shot == DOLLY_SETTLE) {
+          char name[64];
+          std::snprintf (name, sizeof name, "/dolly-%02d.png", m_shot);
+          r.request_screenshot (m_dolly_directory + name);
+        }
+        if (m_frame_in_shot >= DOLLY_SETTLE + 3) {
+          m_frame_in_shot = 0;
+          if (++m_shot >= DOLLY_SHOTS)
+            platform::request_quit ();
+        }
+        return;
+      }
       if (capture) {
         if (m_frames == 40)
           r.request_screenshot (m_output);
@@ -138,10 +165,16 @@ namespace {
     }
 
   private:
+    static constexpr int DOLLY_SHOTS = 28;
+    static constexpr int DOLLY_SETTLE = 14;
+
     float m_time = 0.0f;
     int m_frames = 0;
+    int m_shot = 0;
+    int m_frame_in_shot = 0;
     float m_distance = 55.0f;
     std::string m_output;
+    std::string m_dolly_directory;
     render::DrawList m_list;
     render::DrawList m_hud;
   };
@@ -153,6 +186,7 @@ int main (int, char**) {
   config.title = "Moppe Tree Studio";
   config.fullscreen = false;
   // Captures need blit-readable drawables, exactly like game screenshots.
-  config.capture_frames = ::getenv ("MOPPE_STUDIO_OUT") != nullptr;
+  config.capture_frames = ::getenv ("MOPPE_STUDIO_OUT") != nullptr ||
+                          ::getenv ("MOPPE_STUDIO_DOLLY") != nullptr;
   return platform::run (studio, config);
 }
