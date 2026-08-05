@@ -109,6 +109,17 @@ static inline float forest_bough_count (float pixels, float threshold) {
     (pixels - 14.0 * threshold) * 63.0 / (286.0 * threshold), 1.0, 63.0);
 }
 
+// The ramp measures projected pixels, so on its own a completion point is a
+// completion DISTANCE proportional to tree height: a twenty-metre tree
+// finishes at forty metres, but a five-metre sapling keeps growing until the
+// walker stands beside it. Boosting a short tree's measure makes every tree
+// complete near forty-five metres, so growth happens where a bough is around
+// a pixel, never in front of the walker. Gates and bundling keep the raw
+// measure: a distant sapling is still a distant sapling.
+static inline float forest_bough_measure (float pixels, float tree_height) {
+  return pixels * clamp (22.5 / max (tree_height, 0.01), 1.0, 4.5);
+}
+
 // Emission rank to whorl-grid slot. The first nine ranks sketch the whole
 // silhouette with one bough per whorl, bottom to top; later ranks fill the
 // remaining spokes whorl by whorl from the bottom. So a sparse crown is a
@@ -135,15 +146,16 @@ static inline uint forest_bough_tufts (uint bundle) {
   return bundle == 1u ? 13u : 3u;
 }
 
-static inline uint
-forest_part_count (float pixels, uint pixel_code, uint seed, bool conifer) {
+static inline uint forest_part_count (
+  float pixels, uint pixel_code, float height, uint seed, bool conifer) {
   const float threshold = forest_lod_threshold (seed);
   if (pixels < 2.0)
     return 0u;
   if (pixels < 14.0 * threshold)
     return 1u;
   if (conifer) {
-    const float count = forest_bough_count (float (pixel_code), threshold);
+    const float count = forest_bough_count (
+      forest_bough_measure (float (pixel_code), height), threshold);
     const float bundle = float (forest_bough_bundle (pixel_code, threshold));
     return 1u + uint (ceil (count / bundle));
   }
@@ -202,7 +214,7 @@ forest_part_count (float pixels, uint pixel_code, uint seed, bool conifer) {
       // newest boughs in continuously.
       pixel_code = min (uint (pixels), 65535u);
       parts = forest_part_count (
-        pixels, pixel_code, tree.identity.x, tree.identity.y == 1u);
+        pixels, pixel_code, height, tree.identity.x, tree.identity.y == 1u);
     }
   }
   if (thread_id == 0u) {
@@ -349,8 +361,9 @@ static inline ForestOrgan forest_organ (thread const MoppeForestInstance& tree,
     // newest boughs grow in from nothing as projected size increases, and
     // while the crown is sparse the surviving tufts widen to hold its
     // coverage: detail migrates continuously, never switching.
-    organ.count =
-      forest_bough_count (float (part.copy), forest_lod_threshold (organ.seed));
+    organ.count = forest_bough_count (
+      forest_bough_measure (float (part.copy), organ.tree_height),
+      forest_lod_threshold (organ.seed));
     organ.bundle =
       forest_bough_bundle (part.copy, forest_lod_threshold (organ.seed));
     organ.rank = (part.part - 1u) * organ.bundle;
