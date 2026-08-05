@@ -7,19 +7,14 @@
 
 #include "common.h"
 
-// Varyings are packed to fifty-six bytes: Metal caps one mesh
-// threadgroup's output at 16 KB, and the vertex budget divides it, so
-// every byte here trades directly against boughs per meshlet. Position
-// and world position need full float; the perceptual lanes -- normal,
-// albedo, motion, exposure -- are comfortably half precision.
 struct ForestVaryings {
   float4 position [[position]];
   float3 world_pos;
-  half3 normal;
-  half3 albedo;
-  half2 motion [[center_no_perspective]];
-  half exposure;
-  half leaf;
+  float3 normal;
+  float3 albedo;
+  float exposure;
+  float leaf;
+  float2 motion [[center_no_perspective]];
 };
 
 struct ForestShadowVaryings {
@@ -137,27 +132,35 @@ static inline float forest_bough_measure (float pixels, float tree_height) {
 // top whorls last read as the tree growing taller against the sky, and
 // filling any whorl's spokes consecutively read as a lopsided branch.
 // Consecutive arrivals within a whorl land on opposite azimuths.
+//
+// TOTAL over any rank: bundling rounds the scheduled rank range up past
+// the sixty-three real slots (a two-bough meshlet on a full crown asks
+// for rank sixty-three), and an out-of-range read here fed NaN through
+// the bough frame -- zero grow times NaN is still NaN -- which rasterized
+// as screen-sized stretched triangles. Phantom ranks wrap onto valid
+// slots and their zero grow keeps them degenerate.
 static inline uint forest_bough_slot (uint rank) {
   if (rank < 9u)
     return rank * 7u;
-  const uint fill = rank - 9u;
+  const uint fill = (rank - 9u) % 54u;
   const uint spread[6] = { 4u, 2u, 6u, 1u, 5u, 3u };
   return (8u - fill % 9u) * 7u + spread[fill / 9u];
 }
 
-// Mesh-group coalescing at every tier: no meshlet launches mostly empty
-// (Kuth 2025's decisive optimization). A small distant assembly bundles
-// four boughs of three tufts into each meshlet, and a hero assembly packs
-// two thirteen-tuft boughs -- one bough per meshlet left primitive
-// occupancy below a third. Two hero boughs are 234 vertices of output,
-// which fits Metal's 16 KB mesh-output ceiling only because the varyings
-// are packed to fifty-six bytes; the ceiling faults silently, so any
-// growth here must re-check that budget. The boundary aligns with ramp
+// Mesh-group coalescing for the middle band: a small distant assembly
+// bundles four boughs of three tufts into each meshlet instead of paying
+// a mostly idle meshlet per bough, the same cure Kuth 2025 applies to
+// leaves. A hero bough keeps its own meshlet for now: two attempts at
+// packing a pair (234 vertices of output) produced garbage triangles in
+// motion even with fifty-six-byte varyings, so the real interpolant
+// allocation evidently sits closer to Metal's silent 16 KB mesh-output
+// ceiling than the struct arithmetic suggests. Retry only under the
+// Metal debugger, not by arithmetic. The boundary aligns with ramp
 // saturation, so BOTH representation changes finish while the tree is
 // around a tenth of the frame, and the per-individual threshold keeps a
 // stand from crossing on the same frame.
 static inline uint forest_bough_bundle (uint pixel_code, float threshold) {
-  return float (pixel_code) < 90.0 * threshold ? 4u : 2u;
+  return float (pixel_code) < 90.0 * threshold ? 4u : 1u;
 }
 
 static inline uint forest_bough_tufts (uint bundle) {
@@ -309,7 +312,7 @@ struct ForestOrgan {
   // A frond organ carries feathered conifer boughs: combs of needle tufts
   // along drooping axes. Every non-proxy conifer crown is made of these and
   // nothing else. Bough geometry is evaluated per vertex from a stable
-  // rank, so one meshlet holds two near boughs at thirteen tufts or bundles
+  // rank, so one meshlet holds one near bough at thirteen tufts or bundles
   // four distant boughs at three.
   bool frond;
   uint bundle;
@@ -671,14 +674,14 @@ static inline void forest_indices (thread Mesh& out,
     ForestVaryings v;
     v.position = u.view_proj * float4 (current, 1.0);
     v.world_pos = current;
-    v.normal = half3 (base.normal);
-    v.albedo = half3 (forest_palette (tree, organ, base.exposure));
-    v.exposure = half (base.exposure);
-    v.leaf = organ.wood ? half (0.0) : half (1.0);
-    v.motion = half2 (
+    v.normal = base.normal;
+    v.albedo = forest_palette (tree, organ, base.exposure);
+    v.exposure = base.exposure;
+    v.leaf = organ.wood ? 0.0 : 1.0;
+    v.motion =
       moppe_motion_vector (u.unjittered_view_proj * float4 (current, 1.0),
                            u.previous_view_proj * float4 (previous, 1.0),
-                           u.temporal.xy));
+                           u.temporal.xy);
     out.set_vertex (thread_id, v);
   }
   if (thread_id < primitives)
@@ -763,7 +766,7 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
                                               [[buffer (MOPPE_BUF_FRAME)]],
                                               depth2d<float> shadow_map
                                               [[texture (MOPPE_TEX_SHADOW)]]) {
-  const float3 n = normalize (float3 (front_facing ? in.normal : -in.normal));
+  const float3 n = normalize (front_facing ? in.normal : -in.normal);
   const float3 l = normalize (u.sun_dir.xyz);
   const float3 to_eye = u.camera_pos.xyz - in.world_pos;
   const float distance = length (to_eye);
@@ -797,7 +800,7 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
     }
   }
 
-  float3 base = moppe_srgb (float3 (in.albedo));
+  float3 base = moppe_srgb (in.albedo);
   if (in.leaf < 0.5) {
     // Bark fissures: two vertical planes of stretched value noise blended by
     // facing, so striation follows any trunk without a UV seam.
@@ -836,5 +839,5 @@ fragment MoppeTemporalOutput forest_fragment (ForestVaryings in [[stage_in]],
     moppe_warmed_fog (u.fog_color.rgb, -to_eye / max (distance, 0.001), l);
   color = mix (color, fog_color, smoothstep (0.0, 0.92, fog));
   return moppe_temporal_output (
-    float4 (color, 1.0), float2 (in.motion), in.leaf > 0.5h ? 0.48 : 0.12);
+    float4 (color, 1.0), in.motion, in.leaf > 0.5 ? 0.48 : 0.12);
 }
