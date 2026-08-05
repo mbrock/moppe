@@ -31,6 +31,8 @@ namespace moppe::map {
   // concrete columns a surface stores.
 
   using terrain::home_base_influence;
+  using terrain::sediment_thickness;
+  using terrain::SedimentThickness;
   using terrain::surface_elevation;
   using terrain::surface_moisture;
   using terrain::SurfaceElevation;
@@ -58,6 +60,7 @@ namespace moppe::map {
   // begins; completed worlds contain every column.
   using SurfaceGeometry = spatial::Bundle<terrain::TerrainDomain,
                                           SurfaceElevation,
+                                          SedimentThickness,
                                           SurfaceNormal,
                                           ErodedSurfaceMaterial,
                                           DepositedSurfaceMaterial,

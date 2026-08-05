@@ -3,7 +3,6 @@
 #include <moppe/gfx/signal.hh>
 #include <moppe/profile.hh>
 #include <moppe/quantities.hh>
-#include <moppe/spatial/bundle_operations.hh>
 #include <moppe/terrain/domain.hh>
 #include <moppe/terrain/flood.hh>
 #include <moppe/terrain/fractional_drainage.hh>
@@ -30,9 +29,7 @@ namespace moppe::terrain {
     using mp_units::quantity_point;
     using mp_units::astronomy::Julian_year;
     using mp_units::si::metre;
-    using spatial::for_each_site;
     using spatial::get;
-    using spatial::laplacian;
 
     // The backward-Euler solve mixes heights of the whole world with small
     // per-step changes, so it carries its points at double precision and
@@ -42,11 +39,39 @@ namespace moppe::terrain {
                      default_point_origin (surface_elevation[u::m]),
                      double>;
 
+    constexpr auto stream_cubic_metre = u::m * u::m * u::m;
+
+    SedimentVolume stream_sediment_volume_from (double cubic_metres) {
+      return cubic_metres * sediment_volume[stream_cubic_metre];
+    }
+
+    double stream_sediment_volume_value (SedimentVolume volume) {
+      return volume.numerical_value_in (stream_cubic_metre);
+    }
+
+    std::vector<SedimentThickness>
+    validated_sediment (std::span<const SedimentThickness> sediment,
+                        std::size_t count) {
+      if (sediment.empty ())
+        return std::vector<SedimentThickness> (count,
+                                               0.0f * sediment_thickness[u::m]);
+      if (sediment.size () != count)
+        throw std::invalid_argument ("initial sediment does not match terrain");
+      for (const SedimentThickness value : sediment)
+        if (!isfinite (value) || value < SedimentThickness::zero ())
+          throw std::invalid_argument (
+            "initial sediment must be finite and non-negative");
+      return { sediment.begin (), sediment.end () };
+    }
+
     void
     check_stream_power_evolution_parameters (const StreamPowerEvolution& p) {
       if (!isfinite (p.duration) || p.duration < 0 || !isfinite (p.time_step) ||
-          p.time_step <= 0 || !isfinite (p.reference_incision_rate) ||
-          p.reference_incision_rate < 0 || !isfinite (p.reference_area) ||
+          p.time_step <= 0 || !isfinite (p.uplift_duration) ||
+          p.uplift_duration < 0 || !isfinite (p.reference_incision_rate) ||
+          p.reference_incision_rate < 0 ||
+          !isfinite (p.maximum_deposition_rate) ||
+          p.maximum_deposition_rate < 0 || !isfinite (p.reference_area) ||
           p.reference_area <= 0 || !std::isfinite (p.area_exponent) ||
           p.area_exponent < 0 || !isfinite (p.diffusivity) ||
           p.diffusivity < 0 || !std::isfinite (p.sea_level) ||
@@ -132,68 +157,6 @@ namespace moppe::terrain {
       return { tangents.begin (), tangents.end () };
     }
 
-    IterationCount
-    diffuse_evolution_step (ElevationMap& elevation,
-                            const std::vector<std::uint8_t>& boundary,
-                            julian_years_f64_t duration,
-                            square_meters_per_julian_year_t diffusivity) {
-      MOPPE_PROFILE_ZONE ("orogeny.diffuse_step");
-
-      if (duration == 0 || diffusivity == 0)
-        return 0 * one;
-
-      const TerrainDomain& grid = elevation.domain ();
-      const meters_t spacing_x = grid.spacing_x ();
-      const meters_t spacing_z = grid.spacing_z ();
-
-      // The longest time one sweep may cover and stay stable: a pace, not a
-      // duration, because it is a property of each iteration of the scheme.
-      const IterationPace stable_pace =
-        1.0 /
-        (2.0 * diffusivity *
-         (1.0 / (spacing_x * spacing_x) + 1.0 / (spacing_z * spacing_z))) /
-        one_iteration;
-
-      const IterationCount sweeps = std::max (
-        one_iteration,
-        whole_step_count (duration,
-                          stable_pace,
-                          "stream-power diffusion requests too many sweeps"));
-
-      // The pace actually swept: the duration shared evenly across the
-      // count. Diffusivity times a pace is then an area per iteration --
-      // the square of the distance each sweep spreads material across.
-      const IterationPace pace = duration / sweeps;
-      const auto sweep_spread =
-        mp_units::value_cast<float> (diffusivity * pace);
-
-      // Each sweep advances the discrete time axis by one iteration,
-      // displacing every free cell along the Laplacian of the elevation
-      // around it, which the metric neighbourhood serves as an elevation
-      // per area; fixed base-level cells keep their height but still
-      // support their neighbours.
-
-      ElevationMap scratch (grid);
-
-      auto& heights = get<surface_elevation> (elevation);
-      auto& smoothed = get<surface_elevation> (scratch);
-
-      for (IterationCount sweep = 0 * one; sweep < sweeps;
-           sweep += one_iteration) {
-        for_each_site (elevation, [&] (const auto& focus) {
-          const std::size_t cell = grid.offset (focus.index ());
-          const SurfaceElevation centre = get<surface_elevation> (focus);
-          smoothed[cell] = boundary[cell]
-                             ? centre
-                             : centre + sweep_spread * one_iteration *
-                                          laplacian<surface_elevation> (focus);
-        });
-
-        heights.swap (smoothed);
-      }
-
-      return sweeps;
-    }
   }
 
   StreamPowerEvolutionResult detail::evolve_stream_power (
@@ -202,7 +165,8 @@ namespace moppe::terrain {
     std::span<const meters_per_julian_year_t> uplift_rate,
     const StreamPowerEvolution& parameters,
     const StreamPowerProgress& progress,
-    std::span<const ChannelTangent> initial_channel_tangents) {
+    std::span<const ChannelTangent> initial_channel_tangents,
+    std::span<const SedimentThickness> initial_sediment) {
 
     MOPPE_PROFILE_ZONE ("evolve_stream_power");
     validate_stream_power_evolution (grid, elevations, uplift_rate, parameters);
@@ -219,6 +183,12 @@ namespace moppe::terrain {
 
     std::vector<ChannelTangent> channel_memory =
       validated_channel_memory (initial_channel_tangents, count);
+    std::vector<SedimentThickness> mobile_sediment =
+      validated_sediment (initial_sediment, count);
+    std::vector<SedimentThickness> eroded_thickness (
+      count, 0.0f * sediment_thickness[u::m]);
+    std::vector<SedimentThickness> deposited_thickness (
+      count, 0.0f * sediment_thickness[u::m]);
 
     StreamPowerEvolutionReport report { .cells = cell_count (count) };
 
@@ -228,6 +198,9 @@ namespace moppe::terrain {
 
     if (duration == 0)
       return { .heights = std::move (current_heights),
+               .sediment_thickness = std::move (mobile_sediment),
+               .eroded_thickness = std::move (eroded_thickness),
+               .deposited_thickness = std::move (deposited_thickness),
                .channel_tangents = std::move (channel_memory),
                .report = report };
 
@@ -239,21 +212,38 @@ namespace moppe::terrain {
 
     report.steps = steps;
 
-    IterationCount diffusion_sweeps = 0 * one;
+    IterationCount hillslope_sweeps = 0 * one;
 
     cubic_meters_f64_t tectonic_uplift_volume = 0.0 * u::m * u::m * u::m;
-    cubic_meters_f64_t incised_volume = 0.0 * u::m * u::m * u::m;
+    cubic_meters_f64_t eroded_volume = 0.0 * u::m * u::m * u::m;
+    cubic_meters_f64_t deposited_volume = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t exported_sediment_volume = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t sediment_balance_residual = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t hillslope_transferred_volume = 0.0 * stream_cubic_metre;
+    cubic_meters_f64_t hillslope_bedrock_detached_volume =
+      0.0 * stream_cubic_metre;
 
     ElevationMap next (grid);
 
     auto& next_heights = get<surface_elevation> (next);
     std::vector<std::uint8_t> boundary (count);
+    std::vector<ElevationF64> uplifted_heights (count);
+    std::vector<SedimentVolume> potential_detachment (count,
+                                                      SedimentVolume::zero ());
+    std::vector<SedimentVolume> transport_capacity (count,
+                                                    SedimentVolume::zero ());
+    std::vector<SedimentVolume> maximum_deposition (count,
+                                                    SedimentVolume::zero ());
 
     for (IterationCount step = 0 * one; step < steps; step += one_iteration) {
       MOPPE_PROFILE_NAMED_ZONE (geological_step, "orogeny.geological_step");
 
       const julian_years_f64_t elapsed = step * step_pace;
       const julian_years_f64_t dt = std::min (time_step, duration - elapsed);
+      const julian_years_f64_t uplift_remaining =
+        julian_years_f64_t (parameters.uplift_duration) - elapsed;
+      const julian_years_f64_t uplift_dt =
+        std::clamp (uplift_remaining, julian_years_f64_t::zero (), dt);
 
       const FloodField flood =
         analyze_standing_water (current, parameters.sea_level);
@@ -264,7 +254,23 @@ namespace moppe::terrain {
                  current_heights.end (),
                  next_heights.begin ());
       std::fill (boundary.begin (), boundary.end (), 0);
+      std::fill (potential_detachment.begin (),
+                 potential_detachment.end (),
+                 SedimentVolume::zero ());
+      std::fill (transport_capacity.begin (),
+                 transport_capacity.end (),
+                 SedimentVolume::zero ());
+      const double maximum_deposition_m3 =
+        (dt * parameters.maximum_deposition_rate * cell_area)
+          .numerical_value_in (stream_cubic_metre);
+      std::fill (maximum_deposition.begin (),
+                 maximum_deposition.end (),
+                 stream_sediment_volume_from (maximum_deposition_m3));
       std::size_t fixed_boundaries = 0;
+
+      const FractionalDrainage drainage = analyze_fractional_drainage (
+        flood, census, channel_memory, parameters.channel_persistence);
+      channel_memory = spatial::get<channel_tangent> (drainage);
 
       {
         MOPPE_PROFILE_ZONE ("orogeny.solve_uplift_and_incision");
@@ -279,6 +285,7 @@ namespace moppe::terrain {
             // the water surface. Preserve submerged relief rather than lifting
             // the entire ocean floor to sea level at every geological step.
             next_heights[cell] = current_heights[cell];
+            uplifted_heights[cell] = current_heights[cell];
             ++fixed_boundaries;
             return;
           }
@@ -308,26 +315,42 @@ namespace moppe::terrain {
             throw std::overflow_error (
               "stream-power implicit weight is not finite");
 
-          const meters_f64_t uplift = dt * uplift_rate[cell];
+          const meters_f64_t uplift = uplift_dt * uplift_rate[cell];
           const ElevationF64 uplifted = current_heights[cell] + uplift;
 
           // Backward Euler in affine form: the receiver, plus the cell's
           // surplus above it shrunk by the implicit weight. Depression
-          // routing may cross a raw uphill bed edge, and incision is not
-          // deposition: the solve may never raise a cell above uplift alone.
+          // routing may cross a raw uphill bed edge. This solve is only the
+          // potential detachment: the forward sediment pass below decides
+          // how much can move and where transported material is laid down.
           const ElevationF64 solved =
             receiver + (uplifted - receiver) / (1.0 + weight);
           const ElevationF64 evolved = std::min (solved, uplifted);
 
           next_heights[cell] = mp_units::value_cast<float> (evolved);
+          uplifted_heights[cell] = uplifted;
           tectonic_uplift_volume += uplift * cell_area;
-          incised_volume +=
-            mp_units::isq::height (uplifted - evolved) * cell_area;
+          const auto potential_height =
+            mp_units::isq::height (uplifted - evolved);
+          const double potential_m3 =
+            (potential_height * cell_area)
+              .numerical_value_in (stream_cubic_metre);
+          potential_detachment[cell] =
+            stream_sediment_volume_from (potential_m3);
+
+          // Unit catchments collectively supply material in proportion to
+          // their number. Extending the stream-power area's A^m response to
+          // A^1 gives trunk channels enough capacity to carry that aggregate
+          // supply while still forcing deposition where the local slope --
+          // and therefore the potential incision -- collapses.
+          const double catchment_cells =
+            (area / cell_area).numerical_value_in (mp_units::one);
+          const double transport_growth = std::pow (
+            catchment_cells, std::max (0.0, 1.0 - parameters.area_exponent));
+          transport_capacity[cell] =
+            stream_sediment_volume_from (potential_m3 * transport_growth);
         };
 
-        const FractionalDrainage drainage = analyze_fractional_drainage (
-          flood, census, channel_memory, parameters.channel_persistence);
-        channel_memory = spatial::get<channel_tangent> (drainage);
         const auto& areas =
           spatial::get<fractional_contributing_area> (drainage);
 
@@ -360,19 +383,84 @@ namespace moppe::terrain {
         }
       }
 
+      {
+        MOPPE_PROFILE_ZONE ("orogeny.route_sediment");
+        const SedimentRoutingResult routed =
+          route_sediment (drainage.domain (),
+                          potential_detachment,
+                          transport_capacity,
+                          maximum_deposition,
+                          flood.ocean);
+        const double cell_area_m2 = cell_area.numerical_value_in (u::m * u::m);
+
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          const double detached_m =
+            stream_sediment_volume_value (routed.detached[cell]) / cell_area_m2;
+          const double deposited_m =
+            stream_sediment_volume_value (routed.deposited[cell]) /
+            cell_area_m2;
+          next_heights[cell] = mp_units::value_cast<float> (
+            uplifted_heights[cell] + (deposited_m - detached_m) * u::m);
+
+          const double prior_sediment_m =
+            mobile_sediment[cell].numerical_value_in (u::m);
+          const double removed_sediment_m =
+            std::min (prior_sediment_m, detached_m);
+          mobile_sediment[cell] =
+            static_cast<float> (std::max (
+              0.0, prior_sediment_m - removed_sediment_m + deposited_m)) *
+            sediment_thickness[u::m];
+          eroded_thickness[cell] +=
+            static_cast<float> (detached_m) * sediment_thickness[u::m];
+          deposited_thickness[cell] +=
+            static_cast<float> (deposited_m) * sediment_thickness[u::m];
+        }
+
+        eroded_volume += stream_sediment_volume_value (routed.detached_total) *
+                         stream_cubic_metre;
+        deposited_volume +=
+          stream_sediment_volume_value (routed.deposited_total) *
+          stream_cubic_metre;
+        exported_sediment_volume +=
+          stream_sediment_volume_value (routed.exported_to_ocean) *
+          stream_cubic_metre;
+        sediment_balance_residual += routed.balance_residual;
+      }
+
       IterationCount step_sweeps = 0 * one;
       {
-        MOPPE_PROFILE_ZONE ("orogeny.apply_hillslope_diffusion");
-        step_sweeps =
-          diffuse_evolution_step (next, boundary, dt, parameters.diffusivity);
+        MOPPE_PROFILE_ZONE ("orogeny.route_hillslope_sediment");
+        HillslopeTransportResult hillslope =
+          route_hillslope_sediment (grid,
+                                    next_heights,
+                                    mobile_sediment,
+                                    boundary,
+                                    dt,
+                                    parameters.diffusivity);
+        step_sweeps = hillslope.sweeps;
+        next_heights = std::move (hillslope.heights);
+        mobile_sediment = std::move (hillslope.sediment_thickness);
+        for (std::size_t cell = 0; cell < count; ++cell) {
+          eroded_thickness[cell] += hillslope.eroded_thickness[cell];
+          deposited_thickness[cell] += hillslope.deposited_thickness[cell];
+        }
+        const double transferred_m3 =
+          stream_sediment_volume_value (hillslope.transferred);
+        eroded_volume += transferred_m3 * stream_cubic_metre;
+        deposited_volume += transferred_m3 * stream_cubic_metre;
+        sediment_balance_residual += hillslope.balance_residual;
+        hillslope_transferred_volume += transferred_m3 * stream_cubic_metre;
+        hillslope_bedrock_detached_volume +=
+          stream_sediment_volume_value (hillslope.bedrock_detached) *
+          stream_cubic_metre;
       }
 
       if (step_sweeps >
-          std::numeric_limits<IterationCount>::max () - diffusion_sweeps)
+          std::numeric_limits<IterationCount>::max () - hillslope_sweeps)
         throw std::overflow_error (
-          "stream-power diffusion sweep count overflow");
+          "stream-power hillslope sweep count overflow");
 
-      diffusion_sweeps += step_sweeps;
+      hillslope_sweeps += step_sweeps;
       meters_f64_t total_step_change = 0.0 * u::m;
       meters_f64_t maximum_step_change = 0.0 * u::m;
 
@@ -397,9 +485,15 @@ namespace moppe::terrain {
         progress (step + one_iteration, steps, current_heights);
     }
 
-    report.diffusion_sweeps = diffusion_sweeps;
+    report.hillslope_sweeps = hillslope_sweeps;
     report.tectonic_uplift_volume = tectonic_uplift_volume;
-    report.incised_volume = incised_volume;
+    report.eroded_volume = eroded_volume;
+    report.deposited_volume = deposited_volume;
+    report.exported_sediment_volume = exported_sediment_volume;
+    report.sediment_balance_residual = sediment_balance_residual;
+    report.hillslope_transferred_volume = hillslope_transferred_volume;
+    report.hillslope_bedrock_detached_volume =
+      hillslope_bedrock_detached_volume;
 
     cubic_meters_f64_t lowered_volume = 0.0 * u::m * u::m * u::m;
     cubic_meters_f64_t raised_volume = 0.0 * u::m * u::m * u::m;
@@ -427,6 +521,9 @@ namespace moppe::terrain {
     report.maximum_absolute_change = maximum_absolute_change;
 
     return { .heights = std::move (current_heights),
+             .sediment_thickness = std::move (mobile_sediment),
+             .eroded_thickness = std::move (eroded_thickness),
+             .deposited_thickness = std::move (deposited_thickness),
              .channel_tangents = std::move (channel_memory),
              .report = report };
   }

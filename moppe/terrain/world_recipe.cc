@@ -19,15 +19,13 @@ namespace moppe::terrain {
                             int resolution,
                             Seed seed,
                             meters_t water_datum,
-                            TerrainGenerationProfile generation_profile)
+                            TerrainGenerationProfile generation_profile,
+                            std::optional<julian_years_t> uplift_duration)
       : m_extent (extent), m_resolution (resolution), m_seed (seed),
         m_water_datum (water_datum), m_generation_profile (generation_profile) {
-    // How long the world erodes also decides how tall it ends up, because this
-    // landscape does not approach steady state over these runs: relief grows
-    // nearly linearly with the clock. Play nevertheless uses the deliberately
-    // long two-million-year evolution selected from current visual evaluation.
-    // See docs/what-age-does-to-this-world.md for the earlier shorter-world
-    // evidence and the subsequent decision reversal.
+    // Evolution age and tectonic forcing are separate clocks. The initial
+    // orogeny raises the country, then erosion and deposition reorganize that
+    // finite relief without banking uplift for the whole geological run.
     const float duration =
       generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
       : generation_profile == TerrainGenerationProfile::Fast     ? 200000.0f
@@ -35,6 +33,14 @@ namespace moppe::terrain {
       : generation_profile == TerrainGenerationProfile::Research ? 1000000.0f
                                                                  : 2000000.0f;
     m_evolution.duration = duration * mp_units::astronomy::Julian_year;
+    const float profile_uplift_duration =
+      generation_profile == TerrainGenerationProfile::Smoke      ? 50000.0f
+      : generation_profile == TerrainGenerationProfile::Fast     ? 50000.0f
+      : generation_profile == TerrainGenerationProfile::Play     ? 500000.0f
+      : generation_profile == TerrainGenerationProfile::Research ? 250000.0f
+                                                                 : 500000.0f;
+    m_evolution.uplift_duration = uplift_duration.value_or (
+      profile_uplift_duration * mp_units::astronomy::Julian_year);
     m_evolution.diffusivity = 0.0001f * mp_units::si::metre *
                               mp_units::si::metre /
                               mp_units::astronomy::Julian_year;
@@ -43,11 +49,14 @@ namespace moppe::terrain {
       (water_datum).numerical_value_in (moppe::u::m);
   }
 
-  WorldRecipe make_world_recipe (spatial_extent_t extent,
-                                 int resolution,
-                                 Seed seed,
-                                 meters_t water_datum,
-                                 TerrainGenerationProfile generation_profile) {
-    return { extent, resolution, seed, water_datum, generation_profile };
+  WorldRecipe
+  make_world_recipe (spatial_extent_t extent,
+                     int resolution,
+                     Seed seed,
+                     meters_t water_datum,
+                     TerrainGenerationProfile generation_profile,
+                     std::optional<julian_years_t> uplift_duration) {
+    return { extent,      resolution,         seed,
+             water_datum, generation_profile, uplift_duration };
   }
 }

@@ -3,14 +3,20 @@
 A note on why the terrain reads as over-eroded, written after riding it and
 disagreeing with it.
 
-## Current decision: prefer the older-looking terrain
+## Current decision: separate mountain building from landscape age
 
-On 2026-08-05, current visual evaluation reversed the conclusion below: the
-500 ky Play terrain reads as much too little eroded. Play now evolves for
-2 My. This intentionally accepts the greater relief and steeper country that
-the earlier experiments measured. The note remains below because it records
-the model behavior and the reason this is an aesthetic terrain decision, not
-evidence that the erosion model has reached a mature steady state.
+On 2026-08-05, Play keeps the requested 2 My of erosion, transport, deposition,
+and hillslope evolution, but tectonic uplift is active only for the first
+500 ky. That turns uplift from a perpetual source of new relief into a finite
+orogeny followed by 1.5 My of relaxation. Geological steps crossing 500 ky
+integrate only the active fraction, so the result does not depend on whether
+the forcing boundary happens to divide the configured time step.
+
+This is the first controlled move in
+[the depositional-landforms program](../planning/rfcs/0005-depositional-landforms.md),
+not its final calibration. The profile schedule is an explicit starting
+hypothesis. The next work item compares forcing windows before changing
+hillslopes, channel initiation, or sediment capacity.
 
 ## Settled by the screenshot gallery
 

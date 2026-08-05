@@ -41,6 +41,9 @@ namespace moppe::game {
     platform::Config config { .title = "Moppe" };
     terrain::TerrainGenerationProfile generation_profile =
       terrain::TerrainGenerationProfile::Play;
+    // A development experiment may replace the profile's tectonic clock
+    // without changing its total evolution age or any process law.
+    std::optional<julian_years_t> uplift_duration;
     WorldCacheConfig world_cache;
     std::string screenshot_path;
     std::optional<WaterShot> water_shot;

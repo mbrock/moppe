@@ -352,6 +352,7 @@ set(MOPPE_TERRAIN_SOURCES
   moppe/terrain/flood.cc
   moppe/terrain/merge_tree.cc
   moppe/terrain/waterline.cc
+  moppe/terrain/sediment_transport.cc
   moppe/terrain/stream_power_evolution.cc
   moppe/terrain/trail.cc
   moppe/terrain/moisture.cc
@@ -367,6 +368,7 @@ set(MOPPE_WORLD_SOURCES
   moppe/game/forest_plan.cc
   moppe/game/water_capture.cc
   moppe/game/landscape_gazetteer.cc
+  moppe/game/landscape_summary.cc
 )
 
 set(MOPPE_SIMULATION_SOURCES
@@ -528,6 +530,7 @@ if(BUILD_TESTING AND NOT MOPPE_MOBILE_APPLE)
     tests/terrain/flood_test.cc
     tests/terrain/merge_tree_test.cc
     tests/terrain/waterline_test.cc
+    tests/terrain/sediment_transport_test.cc
     tests/terrain/stream_power_evolution_test.cc
     tests/terrain/trail_test.cc
     tests/terrain/moisture_test.cc
