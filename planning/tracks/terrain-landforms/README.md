@@ -69,8 +69,16 @@ and a four-candidate optimized matrix selects 0.00002 as the Play
 concentration. Lower capacity preserves the knife-edge terrain under a cover
 blanket; twice the selected capacity collapses most upland relief. The
 selected world shows rivers and local depositional plains while retaining
-mountain groups. TER-021 is now ready to spread that centerline deposition
-across physical valley-width footprints.
+mountain groups. That calibration supplied the centerline volume carried into
+TER-021's physical valley-width footprints.
+
+TER-021 now performs that conservative lateral placement. A meter-scaled,
+downstream-widening footprint equalizes its lowest receiving cells and stops
+at local valley walls. At seed 123 it triples the largest connected gentle
+region with almost no loss of total relief and no material generation-time
+regression. The cover and valley dependencies are therefore closed; TER-011
+is ready to revisit physical channel initiation against the improved process
+model.
 
 ## Deferred until the shape works
 

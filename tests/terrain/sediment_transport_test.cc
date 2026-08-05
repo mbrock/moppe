@@ -54,6 +54,16 @@ namespace {
       std::move (order));
   }
 
+  FractionalFlowDomain flat_flow_domain (const TerrainDomain& domain) {
+    std::vector<FractionalFlowRoute> routes (domain.size ());
+    std::vector<CellIndex> order;
+    order.reserve (domain.size ());
+    for (std::size_t cell = 0; cell < domain.size (); ++cell)
+      order.push_back (CellIndex { static_cast<std::uint32_t> (cell) });
+    return FractionalFlowDomain (
+      TerrainCellDomain (domain), std::move (routes), std::move (order));
+  }
+
   std::vector<SurfaceElevation>
   hillslope_heights (std::span<const float> values) {
     std::vector<SurfaceElevation> heights;
@@ -224,6 +234,79 @@ MOPPE_TEST (fluvial_capacity_is_typed_discharge_times_slope_and_time) {
 
   MOPPE_CHECK_NEAR (test_sediment_value (capacity (100.0f)), 2.5f, 1e-6f);
   MOPPE_CHECK_NEAR (test_sediment_value (capacity (200.0f)), 5.0f, 1e-6f);
+}
+
+MOPPE_TEST (alluvial_valley_width_is_continuous_and_physical) {
+  const float headwater_m =
+    alluvial_valley_width (1.0f * u::m * u::m).numerical_value_in (u::m);
+  const float tributary_m =
+    alluvial_valley_width (10000.0f * u::m * u::m).numerical_value_in (u::m);
+  const float trunk_m =
+    alluvial_valley_width (1000000.0f * u::m * u::m).numerical_value_in (u::m);
+  MOPPE_CHECK_NEAR (headwater_m, 6.04f, 1e-6f);
+  MOPPE_CHECK_NEAR (tributary_m, 10.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (trunk_m, 46.0f, 1e-6f);
+  MOPPE_CHECK (headwater_m < tributary_m && tributary_m < trunk_m);
+}
+
+MOPPE_TEST (lateral_valley_postings_conserve_the_centerline_volume) {
+  const TerrainDomain domain (9, 5, 1.0f * u::m, 1.0f * u::m);
+  const FractionalFlowDomain flow = flat_flow_domain (domain);
+  const auto elevations =
+    hillslope_heights (std::vector<float> (domain.size (), 0.0f));
+  const std::vector<FractionalContributingArea> areas (
+    domain.size (), 2500.0f * fractional_contributing_area[u::m * u::m]);
+  const std::vector<ChannelTangent> tangents (
+    domain.size (), Vec3 (0.0f, 0.0f, 1.0f) * channel_tangent[mp_units::one]);
+  std::vector<SedimentVolume> centerline (domain.size (),
+                                          SedimentVolume::zero ());
+  centerline[2 * 9 + 4] = test_sediment_volume (27.0);
+  const std::vector<std::uint8_t> ocean (domain.size ());
+
+  const LateralDepositionResult result = spread_valley_deposition (
+    flow, elevations, areas, tangents, centerline, ocean);
+  double deposited_m3 = 0.0;
+  std::size_t occupied = 0;
+  for (const SedimentVolume volume : result.deposited) {
+    deposited_m3 += test_sediment_value (volume);
+    occupied += test_sediment_value (volume) > 0.0;
+  }
+  MOPPE_CHECK_NEAR (static_cast<float> (deposited_m3), 27.0f, 0.0f);
+  MOPPE_CHECK (occupied > 1);
+  MOPPE_CHECK_NEAR (test_balance_value (result.balance_residual), 0.0f, 0.0f);
+}
+
+MOPPE_TEST (lateral_deposition_raises_a_valley_floor_not_a_center_ridge) {
+  const TerrainDomain domain (9, 5, 1.0f * u::m, 1.0f * u::m);
+  const FractionalFlowDomain flow = flat_flow_domain (domain);
+  const std::array<float, 9> profile { 10.0f, 5.0f, 5.0f, 0.0f, 0.0f,
+                                       0.0f,  5.0f, 5.0f, 10.0f };
+  std::vector<float> height_values (domain.size ());
+  for (std::size_t row = 0; row < domain.height (); ++row)
+    std::copy (profile.begin (),
+               profile.end (),
+               height_values.begin () +
+                 static_cast<std::ptrdiff_t> (row * domain.width ()));
+  const auto elevations = hillslope_heights (height_values);
+  const std::vector<FractionalContributingArea> areas (
+    domain.size (), 2500.0f * fractional_contributing_area[u::m * u::m]);
+  const std::vector<ChannelTangent> tangents (
+    domain.size (), Vec3 (0.0f, 0.0f, 1.0f) * channel_tangent[mp_units::one]);
+  std::vector<SedimentVolume> centerline (domain.size (),
+                                          SedimentVolume::zero ());
+  centerline[2 * 9 + 4] = test_sediment_volume (9.0);
+  const std::vector<std::uint8_t> ocean (domain.size ());
+
+  const LateralDepositionResult result = spread_valley_deposition (
+    flow, elevations, areas, tangents, centerline, ocean);
+  for (std::size_t row = 1; row <= 3; ++row)
+    for (std::size_t column = 3; column <= 5; ++column)
+      MOPPE_CHECK_NEAR (
+        test_sediment_value (result.deposited[row * 9 + column]), 1.0f, 1e-6f);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (result.deposited[2 * 9 + 2]), 0.0f, 0.0f);
+  MOPPE_CHECK_NEAR (
+    test_sediment_value (result.deposited[2 * 9 + 6]), 0.0f, 0.0f);
 }
 
 MOPPE_TEST (fluvial_transport_entrains_cover_before_cutting_bedrock) {

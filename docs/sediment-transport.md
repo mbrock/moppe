@@ -37,6 +37,30 @@ detachment and deposition thickness. Later incision removes mobile sediment
 before it reaches the underlying surface. Trail cut and fill remains in the
 trail network's `earthwork_delta_m`; it does not rewrite geological history.
 
+## Valley-width deposition
+
+Routing still decides the exact centerline volume that leaves the moving load.
+A separate conservative placement stage decides which ground cells receive
+that volume. Its physical full width is:
+
+```text
+clamp(6 m + 0.04 * sqrt(contributing area), 6 m, 160 m)
+```
+
+The channel tangent orients a short cross-valley footprint. Local cells above
+the channel by more than `1 m + 0.08 * width` are treated as valley walls and
+excluded. Within the remaining footprint, sediment raises the lowest cells
+toward a common floor elevation before higher cells receive anything. The
+last lateral posting receives the exact volume remainder, just as the final
+downstream arc does, so spreading changes geography without changing the
+solid ledger.
+
+Width depends on square metres rather than a number of raster cells. A coarse
+grid resolves a narrow headwater footprint with fewer samples, but it does
+not ask for a physically wider valley. The short along-channel radius follows
+the source cell's physical diagonal; overlapping source footprints join into
+continuous downstream floors over geological steps.
+
 ## Discharge-based transport capacity
 
 The backward-Euler stream-power result supplies only the upper bound on new
@@ -67,8 +91,8 @@ cache identity.
 This is deliberately a small first model. It has one solid material, no grain
 classes, density, porosity, compaction, suspension, or dissolved load. Ocean
 export is outside the modeled land surface rather than an offshore deposit.
-Lakes currently receive sediment at their routed cells rather than spreading
-it over a delta or lake bed.
+Lakes currently receive sediment through local valley footprints rather than
+spreading it over a delta or lake bed.
 
 Fluvial incision already has a typed physical channel-initiation area and a
 smooth fourfold transition around it. The default remains 1 m2 for now. A
