@@ -329,8 +329,10 @@ namespace moppe {
       }
 
       MoppeMat4 m4 (const Mat4& m) {
+        static_assert (sizeof (Mat4) == sizeof (MoppeMat4));
+        static_assert (alignof (Mat4) == alignof (MoppeMat4));
         MoppeMat4 r;
-        std::memcpy (&r, m.m, sizeof (r));
+        std::memcpy (&r, m.bytes (), sizeof (r));
         return r;
       }
 
@@ -2040,7 +2042,7 @@ namespace moppe {
         return;
 
       const Mat4& view = m_frame.params.view;
-      Vec3 forward (-view.m[2], 0.0f, -view.m[10]);
+      Vec3 forward (-view.element (2), 0.0f, -view.element (10));
       const float forward_length = std::sqrt (dot (forward, forward));
       if (forward_length > 1e-4f)
         forward = forward * (1.0f / forward_length);
@@ -2686,10 +2688,10 @@ namespace moppe {
       // Bias: xy from NDC [-1,1] to uv [0,1], with the Metal
       // texture-space Y flip; z is already [0,1].
       Mat4 bias;
-      bias.m[0] = 0.5f;
-      bias.m[5] = -0.5f;
-      bias.m[12] = 0.5f;
-      bias.m[13] = 0.5f;
+      bias.set_element (0, 0.5f);
+      bias.set_element (5, -0.5f);
+      bias.set_element (12, 0.5f);
+      bias.set_element (13, 0.5f);
       m_terrain_resources.light_biased = bias * light_view_proj;
 
       MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
@@ -2871,10 +2873,10 @@ namespace moppe {
       }
 
       Mat4 bias;
-      bias.m[0] = 0.5f;
-      bias.m[5] = -0.5f;
-      bias.m[12] = 0.5f;
-      bias.m[13] = 0.5f;
+      bias.set_element (0, 0.5f);
+      bias.set_element (5, -0.5f);
+      bias.set_element (12, 0.5f);
+      bias.set_element (13, 0.5f);
       m_terrain_resources.light_biased = bias * params.light_view_proj;
 
       MTL4RenderPassDescriptor* rp = [[MTL4RenderPassDescriptor alloc] init];
@@ -3833,12 +3835,14 @@ namespace moppe {
       m_frame.jitter_x = temporal ? halton (next_sequence, 2) - 0.5f : 0.0f;
       m_frame.jitter_y = temporal ? halton (next_sequence, 3) - 0.5f : 0.0f;
       Mat4 clip_jitter;
-      clip_jitter.m[12] = 2.0f * m_frame.jitter_x / m_targets.width;
-      clip_jitter.m[13] = -2.0f * m_frame.jitter_y / m_targets.height;
+      clip_jitter.set_element (12, 2.0f * m_frame.jitter_x / m_targets.width);
+      clip_jitter.set_element (13, -2.0f * m_frame.jitter_y / m_targets.height);
       const Mat4 jittered_view_proj =
         (temporal ? clip_jitter * params.proj : params.proj) * params.view;
       Mat4 sky_view = params.view;
-      sky_view.m[12] = sky_view.m[13] = sky_view.m[14] = 0.0f;
+      sky_view.set_element (12, 0.0f);
+      sky_view.set_element (13, 0.0f);
+      sky_view.set_element (14, 0.0f);
       m_current_sky_view_proj = params.proj * sky_view;
       m_frame.current_sky_view_proj = m_current_sky_view_proj;
       m_frame.previous_sky_view_proj = m_camera_history_valid
@@ -4214,8 +4218,10 @@ namespace moppe {
       MoppeSkyUniforms u;
       std::memset (&u, 0, sizeof (u));
       Mat4 sky_jitter;
-      sky_jitter.m[12] = 2.0f * frame.jitter_x / frame.uniforms.temporal.x;
-      sky_jitter.m[13] = -2.0f * frame.jitter_y / frame.uniforms.temporal.y;
+      sky_jitter.set_element (
+        12, 2.0f * frame.jitter_x / frame.uniforms.temporal.x);
+      sky_jitter.set_element (
+        13, -2.0f * frame.jitter_y / frame.uniforms.temporal.y);
       u.view_proj = m4 (sky_jitter * frame.current_sky_view_proj);
       u.unjittered_view_proj = m4 (frame.current_sky_view_proj);
       u.previous_view_proj = m4 (frame.previous_sky_view_proj);
@@ -5665,10 +5671,12 @@ namespace moppe {
           const Mat4 vp = frame.params.proj * frame.params.view;
           const Vec3 sp =
             frame.params.camera_pos + frame.params.sun_dir * 4000.0f;
-          const float* m = vp.m;
-          const float cx = m[0] * sp[0] + m[4] * sp[1] + m[8] * sp[2] + m[12];
-          const float cy = m[1] * sp[0] + m[5] * sp[1] + m[9] * sp[2] + m[13];
-          const float cw = m[3] * sp[0] + m[7] * sp[1] + m[11] * sp[2] + m[15];
+          const float cx = vp.element (0) * sp[0] + vp.element (4) * sp[1] +
+                           vp.element (8) * sp[2] + vp.element (12);
+          const float cy = vp.element (1) * sp[0] + vp.element (5) * sp[1] +
+                           vp.element (9) * sp[2] + vp.element (13);
+          const float cw = vp.element (3) * sp[0] + vp.element (7) * sp[1] +
+                           vp.element (11) * sp[2] + vp.element (15);
           if (cw > 0.01f) {
             const float nx = cx / cw, ny = cy / cw;
             const float edge =
@@ -5799,18 +5807,18 @@ namespace moppe {
       interpolator.motionVectorScaleX = 1.0f;
       interpolator.motionVectorScaleY = 1.0f;
       interpolator.deltaTime = frame.interpolation_delta_time;
-      const float projection_a = frame.params.proj.m[10];
-      const float projection_b = frame.params.proj.m[14];
+      const float projection_a = frame.params.proj.element (10);
+      const float projection_b = frame.params.proj.element (14);
       interpolator.nearPlane =
         projection_b / std::max (projection_a + 1.0f, 1e-6f);
       interpolator.farPlane =
         projection_a > 1e-6f ? projection_b / projection_a : 9000.0f;
-      interpolator.fieldOfView = 2.0f *
-                                 std::atan (1.0f / frame.params.proj.m[5]) *
-                                 (180.0f / 3.14159265358979323846f);
+      interpolator.fieldOfView =
+        2.0f * std::atan (1.0f / frame.params.proj.element (5)) *
+        (180.0f / 3.14159265358979323846f);
       interpolator.aspectRatio =
-        frame.params.proj.m[0] != 0.0f
-          ? frame.params.proj.m[5] / frame.params.proj.m[0]
+        frame.params.proj.element (0) != 0.0f
+          ? frame.params.proj.element (5) / frame.params.proj.element (0)
           : (float)targets.output_width / targets.output_height;
       interpolator.jitterOffsetX = frame.jitter_x;
       interpolator.jitterOffsetY = frame.jitter_y;
@@ -6011,11 +6019,17 @@ namespace moppe {
         uniforms.camera = f4 (m_frame.params.camera_pos);
         uniforms.camera.w = 8192.0f;
         const Mat4& view = m_frame.params.view;
-        uniforms.camera_right = { view.m[0], view.m[4], view.m[8], 0.0f };
-        uniforms.camera_up = { view.m[1], view.m[5], view.m[9], 0.0f };
-        uniforms.camera_back = { view.m[2], view.m[6], view.m[10], 0.0f };
-        uniforms.projection = { m_frame.params.proj.m[0],
-                                m_frame.params.proj.m[5],
+        uniforms.camera_right = {
+          view.element (0), view.element (4), view.element (8), 0.0f
+        };
+        uniforms.camera_up = {
+          view.element (1), view.element (5), view.element (9), 0.0f
+        };
+        uniforms.camera_back = {
+          view.element (2), view.element (6), view.element (10), 0.0f
+        };
+        uniforms.projection = { m_frame.params.proj.element (0),
+                                m_frame.params.proj.element (5),
                                 static_cast<float> (width),
                                 static_cast<float> (height) };
         uniforms.output.x = static_cast<float> (reflection_row_bytes / 8);

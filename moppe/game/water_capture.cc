@@ -348,7 +348,7 @@ namespace moppe::game {
     target[1] += shot == WaterShot::Lake ? 2.0f : 0.7f;
     Vec3 eye = target - flow * back + side * sideways + Vec3 (0, height, 0);
     eye[1] =
-      std::max (eye[1],
+      std::max (static_cast<float> (eye[1]),
                 terrain::surface_elevation_value (
                   spatial::sample<terrain::surface_elevation> (
                     surface, moppe::position (Vec3 (eye[0], 0.0f, eye[2])))) +
@@ -357,7 +357,7 @@ namespace moppe::game {
       Vec3 opposite =
         target - flow * back - side * sideways + Vec3 (0, height, 0);
       opposite[1] = std::max (
-        opposite[1],
+        static_cast<float> (opposite[1]),
         terrain::surface_elevation_value (
           spatial::sample<terrain::surface_elevation> (
             surface, moppe::position (Vec3 (opposite[0], 0.0f, opposite[2])))) +
