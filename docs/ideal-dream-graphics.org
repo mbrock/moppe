@@ -1,0 +1,208 @@
+#+title: Moppe Ideal Dream Graphics
+#+startup: overview
+#+todo: TODO(t) ACTIVE(a) VERIFY(v) | DONE(d) DROPPED(x)
+
+* Purpose
+
+This is the living plan and completion record for moving Moppe's production
+renderer toward the visual target below.  It is deliberately about the actual
+game path, not the Atelier.  A task becomes DONE only after it is present in a
+gameplay or gazetteer capture and survives the performance gate.
+
+[[file:../ideal-dream-gfx.png][Ideal dream graphics concept, 2026-08-05]]
+
+The reference is not primarily a request for Nanite.  Its strongest cues are
+composition, directional light, readable shadow hierarchy, varied conifer
+silhouettes, dense multi-scale ground cover, terrain material structure, and
+depth from atmosphere.  Geometry streaming and mesh shaders matter because
+they let those cues remain dense and stable, not because they create the look
+by themselves.
+
+* Visual contract
+
+- The rider and route remain the focus; the chase lens does not flatten the
+  entire landscape into a wide-angle panorama.
+- Nearby trees read as living organisms: trunk, tiered boughs, smaller sprays,
+  gaps, asymmetry, age variation, warm transmitted light, and cool interior
+  shade.
+- Forests make broad pools of shade, while local boughs, grass, rocks, and the
+  rider make sharper contact shadows.
+- Distant trees retain a calm, coherent silhouette.  LOD changes must not
+  crawl, shimmer, or form obvious distance rings.
+- The ground is a layered habitat rather than one grass primitive repeated at
+  even spacing: grass heights, herbs, flowers, ferns, litter, stones, bare
+  trail, and moisture all occupy different ecological niches.
+- Mountains have readable large-scale geology and snow support.  Haze
+  separates ridges without bleaching the whole image.
+- Sun, sky, clouds, fog, materials, and exposure agree on one time of day.
+
+* Baseline already completed
+
+** DONE GFX-001 GPU tree assembly path
+:PROPERTIES:
+:COMMIT: 036de3d
+:END:
+
+Compact typed =ForestInstance= individuals are culled in a Metal object stage
+and expanded into reusable trunk/crown organs in mesh stages.  They cast
+coarse forest shadows and have age classes.  Production no longer renders the
+Atelier organisms.
+
+* Ordered roadmap
+
+** Composition and repeatable evaluation
+
+*** TODO GFX-010 Canonical dream shot
+
+Add a deterministic gameplay/gazetteer viewpoint with a trail foreground,
+rider, near hero conifers, middle forest, mountain background, and low sun.
+Keep the camera and world recipe fixed so comparisons mean something.
+
+*** DONE GFX-011 Cinematic chase framing
+
+Replace the current 100--109 degree gameplay lens with a typed, narrower chase
+lens and restrained speed widening.  Preserve authored cinematic, gazetteer,
+water-inspection, and helmet-camera lenses.
+
+Acceptance: the rider reads larger, trees retain height, and the route still
+offers enough peripheral information at speed.
+
+** Light and shade
+
+*** VERIFY GFX-020 Camera-local sun shadow level
+
+Render a texel-stable, camera-local orthographic sun map every frame.  Draw
+only the nearby periodic terrain chunks and nearest periodic image of each
+tree.  This replaces the low-density whole-world map in the production Metal
+path; retain an explicit future seam for a far terrain level if captures prove
+it necessary.
+
+Acceptance: nearby trunks and crowns visibly anchor to the ground; shadow
+resolution follows the player; CPU submission and forest candidate counts are
+bounded by the local region.
+
+*** TODO GFX-021 Temporal ground-truth ambient occlusion
+
+Add GTAO from reversed-Z depth and normals, temporally accumulated with motion
+vectors.  Apply it mainly to indirect light, never as a grey full-image grade.
+
+*** TODO GFX-022 Foliage light transport
+
+Give leaf material a two-sided diffuse/transmission lobe, sun-facing edge
+warmth, sky exposure, and restrained specular variation.  Keep tree interiors
+legible without making every crown uniformly emissive.
+
+** Tree form and continuity
+
+*** VERIFY GFX-030 Conifer bough assemblies
+
+Replace the near conifer tier's single lobed volume with an assembly of radial
+boughs and needle sprays.  Keep it opaque geometry, under the existing bounded
+meshlet budget, with deterministic asymmetry from the individual's seed.
+
+*** TODO GFX-031 Continuous projected-detail transitions
+
+Stagger thresholds per individual and grow/fade newly admitted organs using a
+stable screen-space transition.  Add a calm far representation only after the
+near and middle tree are convincing.
+
+*** TODO GFX-032 Species and life-history grammar
+
+Author several conifer architectures and broadleaf crowns.  Drive height,
+crown ratio, trunk taper, dead lower branches, lean, hue, and spacing from age
+and habitat instead of uniform independent noise.
+
+** Habitat floor
+
+*** TODO GFX-040 Multi-species undergrowth assemblies
+
+Extend the undergrowth mesh-shader population from grass alone to bounded
+assemblies for bunch grass, fern, low herb, flower, seed head, litter, and
+small stone.  Keep projected-size rejection and stable individual decisions.
+
+*** TODO GFX-041 Trail and clearing composition
+
+Make the route a material and population event: compressed dirt, loose stone,
+edge flowers, lower cover, and occasional roots.  Preserve gameplay clearance.
+
+** Terrain, atmosphere, and finishing
+
+*** TODO GFX-050 Material-scale terrain detail
+
+Add macro albedo/roughness breakup, slope-aligned rock, soil exposure, and
+actual scattered rock assemblies without turning the terrain into texture
+noise.
+
+*** TODO GFX-051 Layered aerial perspective
+
+Replace one uniform distance wash with height-aware aerial perspective and a
+low-frequency valley component.  Evaluate silhouettes against three or more
+ridge depths.
+
+*** TODO GFX-052 Volumetric cloud and sun integration
+
+Give clouds light-facing volume, self-shadow, and agreement with ground
+illumination.  Keep the existing physical visibility signal as the sun/flare
+authority.
+
+*** TODO GFX-060 Performance and quality tiers
+
+Measure the target shot at low, balanced, and high.  Track terrain shadow
+draws, forest candidates, emitted meshlets, undergrowth instances, GPU pass
+times, temporal stability, and memory.  Quality tiers should change density
+and reach, not silently substitute a different visual language.
+
+* Current tranche: 2026-08-05
+
+- [X] GFX-011 narrower typed chase field of view
+- [X] GFX-020 camera-local terrain and forest shadow pass
+- [X] GFX-030 explicit radial conifer bough assembly
+- [X] Unit tests and Metal shader compilation
+- [X] Production gameplay and cinematic survey captures
+- [X] Format, completion log, commit, and push
+
+* Verification protocol
+
+1. Build the production macOS app and run unit tests.
+2. Capture the same target viewpoint before and after whenever possible.
+3. Inspect full-resolution crops of a hero tree, its ground contact, a middle
+   forest, and the distant tree line.
+4. Move slowly through the scene and inspect LOD transitions, TAA breakup,
+   shadow swimming, and wind motion; a still image alone cannot verify them.
+5. Record GPU pass timing and emitted/candidate counters before increasing
+   density.
+6. Update this file with what actually shipped, what the capture showed, and
+   the next highest visual bottleneck.
+
+* Work log
+
+** 2026-08-05
+
+- Created this campaign record from the supplied concept mockup and the
+  production screenshots.
+- Confirmed that the first tranche must couple camera composition, local
+  shadow density, and near-tree silhouette rather than treating mesh shaders
+  as a standalone visual feature.
+- Changed chase/front gameplay framing from 100--109 degrees to a typed
+  78--86 degree range.  Helmet, cinematic, gazetteer, and inspection cameras
+  retain authored lenses.  Unit tests cover the chase endpoints and helmet
+  boundary.
+- Added a 2048-pixel, 160-metre-radius, 48-metre look-ahead sun-shadow level.
+  Its light-space origin advances in texel increments.  It submits only nearby
+  native terrain chunks and one nearest periodic image of each tree, and has a
+  distinct =shadow= GPU timing column.
+- Replaced each detailed conifer tier's sealed lobed volume with five explicit
+  seeded bough sprays.  They widen, droop, and turn upward, leaving real light
+  gaps while remaining within the existing 32-vertex/60-primitive meshlet
+  bounds.  Per-tree projected-detail thresholds are now stably staggered.
+- Built the macOS production app, compiled the Metal library, passed all unit
+  tests, and captured =/tmp/moppe-dream-tranche.png= plus the four-view
+  =/tmp/moppe-dream-survey/terrain-survey.png= survey.  The gameplay capture
+  ran at 2560x1600 drawable / 1920x1200 scene and displayed 57 FPS, but that is
+  an observational capture rather than the isolated performance gate.
+- Capture verdict: composition and ground anchoring are materially better;
+  forest shadow pools are now obvious and coherent.  Conifer whorls admit
+  light and read as branches, but remain too sparse and regular.  Faceted
+  broadleaf crown blobs are now the most conspicuous tree-form defect.  Keep
+  GFX-020 and GFX-030 in VERIFY until a moving stability pass and isolated GPU
+  timing are recorded.

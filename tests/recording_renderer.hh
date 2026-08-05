@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -21,6 +22,7 @@ namespace moppe::test {
     render::ForestSetup forest_setup {};
     std::vector<render::ForestInstance> forest_instances;
     std::size_t forest_draws = 0;
+    std::optional<render::LocalShadowParams> local_shadow;
 
     render::TexturePtr create_texture (const render::TextureDesc&,
                                        const void*) override {
@@ -87,6 +89,10 @@ namespace moppe::test {
     }
     bool begin_frame (const render::FrameParams&) override {
       return true;
+    }
+    void
+    render_local_shadow (const render::LocalShadowParams& params) override {
+      local_shadow = params;
     }
     void draw_terrain (const render::ChunkDraw*, int) override {}
     void draw_sky (const render::SkyParams&) override {}

@@ -58,6 +58,15 @@ namespace moppe {
       bool benchmark_measured = false;
     };
 
+    // A bounded sun-shadow reading for the current camera neighborhood.
+    // Geometry becomes unit-blind only at the backend boundary: callers keep
+    // the focus as a position point and the reach as a length quantity.
+    struct LocalShadowParams {
+      Mat4 light_view_proj;
+      position_t focus;
+      meters_t radius = 160.0f * u::m;
+    };
+
     // World-change-time terrain setup.  Heights/normals are the same
     // arrays the CPU-side physics samples, so sim and render cannot
     // diverge.
@@ -308,6 +317,9 @@ namespace moppe {
 
       // -- frame -------------------------------------------------------
       virtual bool begin_frame (const FrameParams& params) = 0;
+      // Encode before the first scene draw. Backends without a dynamic local
+      // shadow level may retain their setup-time world map.
+      virtual void render_local_shadow (const LocalShadowParams&) {}
       virtual void draw_terrain (const ChunkDraw* chunks, int count) = 0;
       virtual void draw_sky (const SkyParams& params) = 0;
       virtual void draw_ocean (const OceanParams& params) = 0;

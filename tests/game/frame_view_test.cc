@@ -311,6 +311,31 @@ MOPPE_TEST (frame_view_selects_cinematic_rules) {
   MOPPE_CHECK (!flight.visibility.game_hud);
 }
 
+MOPPE_TEST (frame_view_uses_a_narrow_typed_chase_lens) {
+  FrameFixture fixture;
+  game::FrameViewInput input = gameplay_input (fixture);
+
+  const game::FrameView chase = game::compose_frame_view (input);
+  MOPPE_CHECK_NEAR (
+    chase.camera.field_of_view.numerical_value_in (u::deg), 80.0f, 1e-6f);
+
+  fixture.running ().logic ().m_fov_k = 1.0f;
+  const game::FrameView fast = game::compose_frame_view (input);
+  MOPPE_CHECK_NEAR (
+    fast.camera.field_of_view.numerical_value_in (u::deg), 86.0f, 1e-6f);
+}
+
+MOPPE_TEST (frame_view_preserves_the_helmet_camera_lens) {
+  FrameFixture fixture;
+  fixture.running ().logic ().m_cam_mode = game::CAM_HELMET;
+  game::FrameViewInput input = gameplay_input (fixture);
+  input.selected_camera.field_of_view = 67.0f * u::deg;
+
+  const game::FrameView helmet = game::compose_frame_view (input);
+  MOPPE_CHECK_NEAR (
+    helmet.camera.field_of_view.numerical_value_in (u::deg), 67.0f, 1e-6f);
+}
+
 MOPPE_TEST (frame_view_selects_frozen_gazetteer_rules) {
   FrameFixture fixture;
   game::FrameViewInput input = gameplay_input (fixture);

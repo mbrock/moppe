@@ -822,6 +822,11 @@ namespace moppe {
       void draw_world_layers (render::Renderer& r, const FrameView& frame) {
         const FrameVisibility& visibility = frame.visibility;
         const Vec3& camera = frame.camera.position;
+        if (m_graphics.terrain_shadows)
+          m_terrain.render_local_shadow (r,
+                                         position (camera),
+                                         frame.camera.frame_forward,
+                                         frame.lighting.sun_direction);
         const auto draw_world_sky = [&] {
           render::SkyParams sky;
           sky.time = frame.lighting.time;
